@@ -113,8 +113,8 @@ export async function searchJobs(params: SearchJobsParams = {}): Promise<SearchJ
     // RPC not present in DB schema yet, proceed to direct PostgREST query
   }
 
-  // 2. Direct PostgREST query (card fields only, status=active)
-  let query = supabase.from("jobs").select(CARD_FIELDS, { count: "exact" }).eq("status", "active");
+  // 2. Direct PostgREST query (public preview fields from jobs_public view)
+  let query = supabase.from("jobs_public").select(CARD_FIELDS, { count: "exact" }).eq("status", "active");
 
   if (q) {
     query = query.or(`title.ilike.%${q}%,company.ilike.%${q}%`);
@@ -255,7 +255,7 @@ export async function searchJobs(params: SearchJobsParams = {}): Promise<SearchJ
   }));
 
   // Calculate facet counts for categories and countries based on current filtered results
-  let facetQuery = supabase.from("jobs").select("category, country").eq("status", "active");
+  let facetQuery = supabase.from("jobs_public").select("category, country").eq("status", "active");
   if (q) {
     facetQuery = facetQuery.or(`title.ilike.%${q}%,company.ilike.%${q}%`);
   }

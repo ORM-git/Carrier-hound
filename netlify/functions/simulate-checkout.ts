@@ -26,6 +26,18 @@ export async function handler(event: any) {
     };
   }
 
+  // Simulation code is strictly gated behind SIMULATE_PAYMENTS=true.
+  // In production builds, this endpoint returns 404.
+  const isProd = process.env.NODE_ENV === "production" || process.env.CONTEXT === "production";
+  const allowSimulation = process.env.SIMULATE_PAYMENTS === "true";
+  if (isProd && !allowSimulation) {
+    return {
+      statusCode: 404,
+      headers,
+      body: JSON.stringify({ error: "Endpoint not found" }),
+    };
+  }
+
   try {
     const authHeader = event.headers.authorization || event.headers.Authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -113,20 +125,6 @@ export async function handler(event: any) {
         headers,
         body: JSON.stringify({ error: subError.message }),
       };
-    }
-
-    // Also persist entitlement to auth user metadata for instantaneous auth checks
-    try {
-      await supabaseAdmin.auth.admin.updateUserById(user.id, {
-        user_metadata: {
-          ...(user.user_metadata || {}),
-          is_pro: true,
-          pro_plan: planId,
-          pro_activated_at: currentPeriodStart,
-        },
-      });
-    } catch (metaErr) {
-      console.warn("Could not update user_metadata:", metaErr);
     }
 
     return {

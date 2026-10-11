@@ -35,12 +35,12 @@ export default function Footer({ isGuide = false }: FooterProps) {
             <h4 className="text-sm font-semibold uppercase tracking-wider text-slate-200">Navigation</h4>
             <ul className="space-y-1 text-sm text-slate-400">
               <li>
-                <Link href="/job-search/all" className="inline-flex items-center py-2 sm:py-1 min-h-[44px] sm:min-h-0 hover:text-white transition-colors">
+                <Link href="/job-search/all" prefetch={false} className="inline-flex items-center py-2 sm:py-1 min-h-[44px] sm:min-h-0 hover:text-white transition-colors">
                   Live Job Search
                 </Link>
               </li>
               <li>
-                <Link href="/worldwide" className="inline-flex items-center py-2 sm:py-1 min-h-[44px] sm:min-h-0 hover:text-white transition-colors">
+                <Link href="/worldwide" prefetch={false} className="inline-flex items-center py-2 sm:py-1 min-h-[44px] sm:min-h-0 hover:text-white transition-colors">
                   Companies Hiring Worldwide
                 </Link>
               </li>
@@ -62,12 +62,12 @@ export default function Footer({ isGuide = false }: FooterProps) {
                 </a>
               </li>
               <li>
-                <Link href="/privacy-policy" className="inline-flex items-center py-2 sm:py-1 min-h-[44px] sm:min-h-0 hover:text-white transition-colors">
+                <Link href="/privacy-policy" prefetch={false} className="inline-flex items-center py-2 sm:py-1 min-h-[44px] sm:min-h-0 hover:text-white transition-colors">
                   Privacy Policy
                 </Link>
               </li>
               <li>
-                <Link href="/terms-and-conditions" className="inline-flex items-center py-2 sm:py-1 min-h-[44px] sm:min-h-0 hover:text-white transition-colors">
+                <Link href="/terms-and-conditions" prefetch={false} className="inline-flex items-center py-2 sm:py-1 min-h-[44px] sm:min-h-0 hover:text-white transition-colors">
                   Terms & Conditions
                 </Link>
               </li>

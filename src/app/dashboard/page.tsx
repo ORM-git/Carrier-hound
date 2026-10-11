@@ -249,6 +249,7 @@ export default function DashboardPage() {
               </div>
               <Link
                 href="/tracker"
+                prefetch={false}
                 className="font-bold text-blue-600 hover:text-blue-800 inline-flex items-center gap-1"
               >
                 <span>Open Application Tracker</span>

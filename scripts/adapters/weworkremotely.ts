@@ -59,7 +59,7 @@ export class WeWorkRemotelyAdapter implements SourceAdapter {
         }
 
         const description = cleanAndTruncateDescription(rawDesc, 4000);
-        const salary = parseSalary(description);
+        const salary = parseSalary(description, { title, location: 'Remote' });
         const jobType = detectJobType(title);
         const seniority = detectSeniority(title);
         const postedAt = normalizeDate(pubDate);
@@ -89,7 +89,7 @@ export class WeWorkRemotelyAdapter implements SourceAdapter {
           salary_min: salary.salary_min,
           salary_max: salary.salary_max,
           currency: salary.currency,
-          salary_period: 'yearly',
+          salary_period: salary.salary_period,
           category,
           posted_at: postedAt,
           discovered_at: nowIso,

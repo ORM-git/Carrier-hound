@@ -53,7 +53,7 @@ export class GreenhouseAdapter implements SourceAdapter {
         const remote = detectRemote(title, location);
         const jobType = detectJobType(title);
         const description = cleanAndTruncateDescription(j.content, 4000);
-        const salary = parseSalary(description);
+        const salary = parseSalary(description, { title, location });
         const postedAt = normalizeDate(j.updated_at);
         const category = source.category || detectCategory(title);
         const seniority = detectSeniority(title);
@@ -81,7 +81,7 @@ export class GreenhouseAdapter implements SourceAdapter {
           salary_min: salary.salary_min,
           salary_max: salary.salary_max,
           currency: salary.currency,
-          salary_period: 'yearly',
+          salary_period: salary.salary_period,
           category,
           posted_at: postedAt,
           discovered_at: nowIso,

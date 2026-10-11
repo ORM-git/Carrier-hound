@@ -68,7 +68,7 @@ function JobsPageInner() {
 
   // Live Supabase Jobs Data
   const [liveJobs, setLiveJobs] = useState<LiveJob[]>([]);
-  const [totalCount, setTotalCount] = useState<number>(16423);
+  const [totalCount, setTotalCount] = useState<number>(0);
   const [loadingJobs, setLoadingJobs] = useState<boolean>(true);
 
   useEffect(() => {
@@ -117,7 +117,7 @@ function JobsPageInner() {
 
   const [loadingMore, setLoadingMore] = useState(false);
 
-  // Fetch live verified jobs from Supabase whenever search/category/filters or Pro status updates
+  // Fetch live active jobs from Supabase whenever search, category, filters, sorting, or profile updates
   useEffect(() => {
     let cancelled = false;
     setLoadingJobs(true);
@@ -130,6 +130,9 @@ function JobsPageInner() {
       search,
       remoteOnly,
       isPro,
+      sortBy,
+      candidate,
+      preferences,
     }).then((res) => {
       if (!cancelled) {
         setLiveJobs(res.jobs);
@@ -146,7 +149,7 @@ function JobsPageInner() {
     return () => {
       cancelled = true;
     };
-  }, [selectedCategory, search, remoteOnly, isPro]);
+  }, [selectedCategory, search, remoteOnly, isPro, sortBy, candidate, preferences]);
 
   const handleLoadMore = async () => {
     const nextPage = page + 1;
@@ -159,6 +162,9 @@ function JobsPageInner() {
         search,
         remoteOnly,
         isPro,
+        sortBy,
+        candidate,
+        preferences,
       });
       setLiveJobs((prev) => [...prev, ...res.jobs]);
       setPage(nextPage);
@@ -170,7 +176,7 @@ function JobsPageInner() {
     }
   };
 
-  // Filtered & Sorted Jobs
+  // Filtered Jobs (Server handles corpus-wide ranking and sorting)
   const filteredJobs = useMemo(() => {
     let result = liveJobs.slice();
 
@@ -192,34 +198,8 @@ function JobsPageInner() {
       }
     }
 
-    if (sortBy === "match" && hasConfirmedResume && candidate) {
-      result.sort((a, b) => {
-        const scoreA = computeFitDiagnostics(candidate, {
-          id: a.id,
-          title: a.title,
-          company: a.company,
-          location: a.location,
-          remote_scope: a.remoteScope || (a.remote ? "worldwide" : undefined),
-          category: a.category,
-          skills: a.skills,
-          salary_text: a.salary,
-        }).score;
-        const scoreB = computeFitDiagnostics(candidate, {
-          id: b.id,
-          title: b.title,
-          company: b.company,
-          location: b.location,
-          remote_scope: b.remoteScope || (b.remote ? "worldwide" : undefined),
-          category: b.category,
-          skills: b.skills,
-          salary_text: b.salary,
-        }).score;
-        return scoreB - scoreA;
-      });
-    }
-
     return result;
-  }, [liveJobs, activeTab, savedJobIds, preferences, sortBy, hasConfirmedResume, candidate, user]);
+  }, [liveJobs, activeTab, savedJobIds, preferences, user]);
 
   const displayedJobs = filteredJobs;
 
@@ -418,10 +398,10 @@ function JobsPageInner() {
         <div className="flex items-center justify-between text-xs text-slate-500 pb-1 border-b border-slate-200">
           <span>
             {loadingJobs ? (
-              <span>Loading verified jobs…</span>
+              <span>Loading active jobs…</span>
             ) : (
               <>
-                Showing <strong className="text-slate-900">{displayedJobs.length}</strong> of {totalCount.toLocaleString()} verified jobs
+                Showing <strong className="text-slate-900">{displayedJobs.length}</strong> of {totalCount > 0 ? `${totalCount.toLocaleString()} active jobs` : "active jobs"}
               </>
             )}
           </span>

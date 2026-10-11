@@ -4,7 +4,10 @@ import BrandIcon from "@/components/BrandIcon";
 
 export const metadata = {
   title: "Privacy Policy | CareerMonke",
-  description: "Privacy policy and data protection terms for CareerMonke job discovery service.",
+  description: "Privacy policy and data protection terms for CareerMonke job discovery and AI resume tailoring service.",
+  alternates: {
+    canonical: "https://careerhound.netlify.app/privacy-policy",
+  },
 };
 
 export default function PrivacyPolicyPage() {
@@ -25,50 +28,94 @@ export default function PrivacyPolicyPage() {
         <h1 className="text-2xl sm:text-3xl font-bold text-[#09090B] tracking-tight">
           Privacy Policy
         </h1>
-        <p className="text-xs text-gray-400 font-mono">Last Updated: September 24, 2026</p>
+        <p className="text-xs text-gray-400 font-mono">Last Updated: October 10, 2026</p>
 
         <p className="mb-2">
-          1. Information We Collect. CareerMonke collects information you provide directly to us when creating an account, subscribing to job alert notifications, or contacting customer support. This may include your email address, career preferences, target job titles, and communication logs.
+          1. Information We Collect. CareerMonke collects information you provide directly to us when creating an account, subscribing to job alert notifications, uploading resumes, or contacting customer support:
         </p>
         <p className="mb-2">
-          - We automatically collect diagnostic telemetry such as browser version, operating system, IP address, and anonymized referral links to protect service integrity and prevent scraping abuse.
+          - <strong>Account &amp; Contact Information:</strong> Your email address, authentication credentials, communication logs, and job search preferences (such as target titles, locations, and salary expectations).
         </p>
         <p className="mb-2">
-          - We do not store financial payment credentials; all checkout transactions are processed directly by our compliant payment providers.
-        </p>
-
-        <p className="mb-2">
-          2. How We Use Collected Data. We utilize collected records solely to furnish, personalize, and improve our career radar services. This comprises:
+          - <strong>Resume &amp; Professional Data:</strong> When you use our AI Resume or Cover Letter features, you may upload your existing resume or enter professional credentials. We extract relevant career information, including your full name, contact information, work experience, past employers, job titles, technical skills, certifications, and educational history.
         </p>
         <p className="mb-2">
-          - Delivering transactional login verification magic links and account authentication tokens.
+          - <strong>Telemetry &amp; Usage Diagnostics:</strong> We automatically collect standard diagnostic telemetry, including browser type, operating system, IP address, device metadata, and referral paths to maintain service performance and prevent automated scraping abuse.
         </p>
         <p className="mb-2">
-          - Dispatching personalized daily or weekly alert notifications corresponding to your specified category filters.
-        </p>
-        <p className="mb-2">
-          - Detecting fraudulent bot automation or automated scraping behavior against our indexing pipelines.
+          - <strong>Payment Information:</strong> We do not store sensitive payment card details or bank account numbers on our servers; transactions are processed directly by PCI-compliant payment partners.
         </p>
 
         <p className="mb-2">
-          3. Third-Party Integrations. When you click an &ldquo;Apply&rdquo; or destination link, you are directed to third-party employer applicant tracking systems (such as Greenhouse, Lever, Ashby, or Workday). CareerMonke does not share your private resume data with these employers unless you explicitly submit through their native web forms.
+          2. Artificial Intelligence Processing and Sub-Processors. CareerMonke incorporates artificial intelligence to tailor your resume and draft customized cover letters for specific job requisitions:
+        </p>
+        <p className="mb-2">
+          - <strong>Third-Party AI Processor (Groq):</strong> We transmit user resume contents, selected professional experience points, and target job descriptions to our cloud AI sub-processor, Groq, Inc. (groq.com), which executes high-speed inference on our behalf.
+        </p>
+        <p className="mb-2">
+          - <strong>Limited Scope of Processing:</strong> Data transferred to Groq is processed strictly to generate tailored resumes, cover letters, keyword alignment summaries, and ATS compatibility match scores requested by you.
+        </p>
+        <p className="mb-2">
+          - <strong>No Foundation Model Training:</strong> Your private resume contents and personally identifiable details are not used by CareerMonke or our AI sub-processor to train public foundation models without your express authorization.
         </p>
 
         <p className="mb-2">
-          4. Cookies and Local Storage. We utilize minimal local storage and session cookies necessary to maintain authentication states and remember your active search filter preferences. You may disable cookies in your browser settings at any time without impacting public listing visibility.
+          3. How We Use Collected Data. We utilize collected information solely to provide, operate, and enhance our job discovery and resume optimization services, including:
+        </p>
+        <p className="mb-2">
+          - Delivering secure magic-link authentications and session management tokens.
+        </p>
+        <p className="mb-2">
+          - Tailoring resumes and generating cover letters matched to specific corporate job descriptions.
+        </p>
+        <p className="mb-2">
+          - Sending transactional updates and customized job alerts based on your preferences.
+        </p>
+        <p className="mb-2">
+          - Detecting fraudulent bot automation, rate-limit circumvention, or unauthorized database extraction.
         </p>
 
         <p className="mb-2">
-          5. Data Retention and Erasure. You retain the right to request full deletion of your user profile and registered email alerts. Requests may be transmitted to privacy@careermonke.io and will be executed within 30 business days.
+          4. Data Storage, Retention, and Security.
+        </p>
+        <p className="mb-2">
+          - <strong>Secure Cloud Storage:</strong> All user profile data, uploaded resumes, and generated documents are stored in secure cloud database infrastructure provided by Supabase (PostgreSQL), protected with Row Level Security (RLS) policies so that only authenticated account owners can access their records.
+        </p>
+        <p className="mb-2">
+          - <strong>Retention Period:</strong> Your uploaded resumes and generated career documents are retained for as long as your account remains active, allowing you to access and re-download them at any time. When you remove a resume or delete your account, the associated data is purged from active databases.
+        </p>
+        <p className="mb-2">
+          - <strong>Security Safeguards:</strong> We enforce Transport Layer Security (TLS 1.3) encryption in transit across all web and API traffic, encryption at rest in our databases, server-side secret isolation, and strict administrative access controls.
         </p>
 
         <p className="mb-2">
-          6. Policy Revisions. We reserve the authority to amend this Privacy Policy periodically. Substantial updates will be accompanied by an updated timestamp above and a notification banner within user dashboards.
+          5. Third-Party Job Listings and Employer Forms. When you click an &ldquo;Apply&rdquo; or destination link on CareerMonke, you are routed directly to official third-party employer applicant tracking systems (such as Greenhouse, Lever, Ashby, or Workday). CareerMonke never shares or transfers your private resume data to prospective employers unless you explicitly submit your application on their respective portal.
+        </p>
+
+        <p className="mb-2">
+          6. User Rights and Data Erasure. You maintain full ownership and control over your personal data:
+        </p>
+        <p className="mb-2">
+          - <strong>Access and Portability:</strong> You may view and export your saved profile data and generated resumes directly from your user dashboard at any time.
+        </p>
+        <p className="mb-2">
+          - <strong>Deletion Requests:</strong> You may permanently delete individual resumes or delete your entire account through account settings, or by emailing our privacy team at <a href="mailto:support@careermonke.com" className="text-blue-600 hover:underline">support@careermonke.com</a>.
+        </p>
+        <p className="mb-2">
+          - <strong>Response Timeline:</strong> Valid account deletion and data erasure requests submitted via email will be processed and confirmed within thirty (30) business days.
+        </p>
+
+        <p className="mb-2">
+          7. Cookies and Local Storage. We utilize minimal local browser storage and session cookies strictly necessary to maintain authentication states and remember your active search filter preferences. You may disable cookies in your browser settings at any time without impacting public job listing search.
+        </p>
+
+        <p className="mb-2">
+          8. Policy Updates. We reserve the right to amend this Privacy Policy periodically to reflect technological, operational, or legal developments. Significant updates will be reflected by the revised &ldquo;Last Updated&rdquo; date at the top of this page.
         </p>
 
         <div className="pt-8 border-t border-gray-200 text-xs text-gray-400">
           <Link href="/" className="text-blue-600 hover:underline">
-            ← Return to Homepage
+            &larr; Return to Homepage
           </Link>
         </div>
       </div>

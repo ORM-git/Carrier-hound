@@ -270,23 +270,21 @@ export default function PaywallModal({
                 </ul>
               </div>
 
-              {/* Action State: Sign In vs Checkout */}
+              {/* Action State: Honest Disabled Coming Soon State */}
               {!currentUser ? (
-                /* Visitor is NOT signed in: send through sign-in first, then continue */
+                /* Visitor is NOT signed in: show disabled Coming Soon state with option to sign in */
                 <div className="space-y-3 pt-1">
                   <button
                     type="button"
-                    onClick={() => {
-                      onOpenChange(false);
-                      window.location.href = `/login?next=${encodeURIComponent(loginNextUrl)}`;
-                    }}
-                    className="w-full min-h-[48px] bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white py-3.5 rounded-xl font-bold text-sm sm:text-base shadow-sm hover:shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+                    disabled
+                    className="w-full min-h-[48px] bg-slate-200 text-slate-500 py-3.5 rounded-xl font-bold text-sm sm:text-base border border-slate-300/80 cursor-not-allowed select-none transition-all flex items-center justify-center gap-2 shadow-none"
                   >
-                    <Sparkles className="w-4 h-4 text-yellow-300" />
-                    <span>
-                      Unlock Pro — {selectedPlan.formattedPrice}
-                    </span>
+                    <Lock className="w-4 h-4 text-slate-400" />
+                    <span>Payments Coming Soon</span>
                   </button>
+                  <p className="text-[11px] text-center text-slate-500 font-medium">
+                    Payments launching soon
+                  </p>
 
                   <div className="text-center pt-1">
                     <Link
@@ -295,12 +293,12 @@ export default function PaywallModal({
                       className="text-xs text-blue-600 hover:text-blue-800 font-semibold inline-flex items-center gap-1"
                     >
                       <LogIn className="w-3.5 h-3.5" />
-                      <span>Or sign in with existing account</span>
+                      <span>Sign in with existing account</span>
                     </Link>
                   </div>
                 </div>
               ) : (
-                /* User IS signed in */
+                /* User IS signed in: show disabled Coming Soon state */
                 <div className="space-y-3 pt-1">
                   <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
                     <span className="text-slate-500 font-medium">Logged in account:</span>
@@ -311,24 +309,15 @@ export default function PaywallModal({
 
                   <button
                     type="button"
-                    onClick={handleCheckout}
-                    disabled={isProcessing}
-                    className="w-full min-h-[48px] bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white py-3.5 rounded-xl font-bold text-sm sm:text-base shadow-sm hover:shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+                    disabled
+                    className="w-full min-h-[48px] bg-slate-200 text-slate-500 py-3.5 rounded-xl font-bold text-sm sm:text-base border border-slate-300/80 cursor-not-allowed select-none transition-all flex items-center justify-center gap-2 shadow-none"
                   >
-                    {isProcessing ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin text-white" />
-                        <span>Processing checkout…</span>
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="w-4 h-4 text-yellow-300" />
-                        <span>
-                          Subscribe to Pro — {selectedPlan.formattedPrice}
-                        </span>
-                      </>
-                    )}
+                    <Lock className="w-4 h-4 text-slate-400" />
+                    <span>Payments Coming Soon</span>
                   </button>
+                  <p className="text-[11px] text-center text-slate-500 font-medium">
+                    Payments launching soon
+                  </p>
                 </div>
               )}
 

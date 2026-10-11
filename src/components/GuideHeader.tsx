@@ -121,6 +121,7 @@ export default function GuideHeader() {
 
             <Link
               href="/jobs"
+              prefetch={false}
               className={`px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold transition ${
                 pathname === "/jobs" || pathname?.startsWith("/job-search")
                   ? "bg-blue-50 text-blue-600"
@@ -131,15 +132,8 @@ export default function GuideHeader() {
             </Link>
 
             <Link
-              href="/jobs"
-              className="px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold transition flex items-center gap-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-50"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-              <span>Job Fit Score</span>
-            </Link>
-
-            <Link
               href="/resume"
+              prefetch={false}
               className={`px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold transition ${
                 pathname === "/resume"
                   ? "bg-blue-50 text-blue-600"
@@ -151,6 +145,7 @@ export default function GuideHeader() {
 
             <Link
               href="/tracker"
+              prefetch={false}
               className={`px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold transition ${
                 pathname === "/tracker"
                   ? "bg-blue-50 text-blue-600"
@@ -162,6 +157,7 @@ export default function GuideHeader() {
 
             <Link
               href="/remote"
+              prefetch={false}
               className={`px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold transition ${
                 pathname?.startsWith("/remote")
                   ? "bg-blue-50 text-blue-600"
@@ -186,6 +182,7 @@ export default function GuideHeader() {
                 <div className="absolute left-0 mt-1 w-48 bg-white border border-slate-200 rounded-xl shadow-lg py-1.5 z-50 animate-fadeIn">
                   <Link
                     href="/radar"
+                    prefetch={false}
                     onClick={() => setExploreOpen(false)}
                     className="flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-blue-600"
                   >
@@ -194,6 +191,7 @@ export default function GuideHeader() {
                   </Link>
                   <Link
                     href="/worldwide"
+                    prefetch={false}
                     onClick={() => setExploreOpen(false)}
                     className="flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-blue-600"
                   >
@@ -255,7 +253,7 @@ export default function GuideHeader() {
                       <span>Billing</span>
                     </Link>
                     <a
-                      href="mailto:contact@careermonke.io"
+                      href="mailto:support@careermonke.com"
                       onClick={() => setAccountOpen(false)}
                       className="flex items-center gap-2.5 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-blue-600"
                     >
@@ -355,6 +353,7 @@ export default function GuideHeader() {
                 </Link>
                 <Link
                   href="/jobs"
+                  prefetch={false}
                   onClick={() => setMobileMenuOpen(false)}
                   className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 text-xs font-bold text-slate-800"
                 >
@@ -362,15 +361,8 @@ export default function GuideHeader() {
                   <span>Jobs</span>
                 </Link>
                 <Link
-                  href="/jobs"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 text-xs font-bold text-slate-800"
-                >
-                  <Sparkles className="w-4 h-4 text-blue-600" />
-                  <span>Job Fit Score</span>
-                </Link>
-                <Link
                   href="/resume"
+                  prefetch={false}
                   onClick={() => setMobileMenuOpen(false)}
                   className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 text-xs font-bold text-slate-800"
                 >
@@ -379,6 +371,7 @@ export default function GuideHeader() {
                 </Link>
                 <Link
                   href="/tracker"
+                  prefetch={false}
                   onClick={() => setMobileMenuOpen(false)}
                   className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 text-xs font-bold text-slate-800"
                 >
@@ -387,6 +380,7 @@ export default function GuideHeader() {
                 </Link>
                 <Link
                   href="/remote"
+                  prefetch={false}
                   onClick={() => setMobileMenuOpen(false)}
                   className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 text-xs font-bold text-slate-800"
                 >
@@ -399,6 +393,7 @@ export default function GuideHeader() {
                 </div>
                 <Link
                   href="/radar"
+                  prefetch={false}
                   onClick={() => setMobileMenuOpen(false)}
                   className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 text-xs font-semibold text-slate-700"
                 >
@@ -407,6 +402,7 @@ export default function GuideHeader() {
                 </Link>
                 <Link
                   href="/worldwide"
+                  prefetch={false}
                   onClick={() => setMobileMenuOpen(false)}
                   className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 text-xs font-semibold text-slate-700"
                 >

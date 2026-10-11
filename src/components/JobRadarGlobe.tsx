@@ -363,7 +363,7 @@ export default function JobRadarGlobe() {
         const offset = (page - 1) * pageSize;
 
         let query = supabase
-          .from("jobs")
+          .from("jobs_public")
           .select(
             "id, title, company, location, country_code, remote_scope, remote_eligibility, job_type, salary_text, verified, source_type, apply_url, posted_at, discovered_at, last_seen_at, seniority, category",
             { count: "exact" }
@@ -426,6 +426,42 @@ export default function JobRadarGlobe() {
           lastSeenAt: row.last_seen_at,
           seniority: row.seniority,
         }));
+
+        // For verified Pro members, unlock full details from server
+        if (isPro && cards.length > 0) {
+          try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const token = session?.access_token;
+            if (token) {
+              const proRes = await fetch("/api/jobs/pro", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({ ids: cards.map((c) => c.id) }),
+              });
+              if (proRes.ok) {
+                const proData = await proRes.json();
+                if (Array.isArray(proData.jobs)) {
+                  const unlockedMap = new Map<string, any>(
+                    proData.jobs.map((pj: any) => [pj.id, pj])
+                  );
+                  cards.forEach((c) => {
+                    const u = unlockedMap.get(c.id);
+                    if (u) {
+                      if (u.company) c.company = u.company;
+                      if (u.salary_text) c.salaryText = u.salary_text;
+                      if (u.apply_url) c.applyUrl = u.apply_url;
+                    }
+                  });
+                }
+              }
+            }
+          } catch (proErr) {
+            console.warn("Could not unlock radar drawer jobs:", proErr);
+          }
+        }
 
         if (append) {
           setDrawerJobs((prev) => [...prev, ...cards]);

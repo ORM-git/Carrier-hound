@@ -223,7 +223,7 @@ export default function HomePage() {
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border border-blue-100 text-[#2563EB] bg-blue-50/80 mb-3 shadow-xs">
             <span>Wall of Love</span>
           </div>
-          <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-[#09090B] tracking-tight">
+          <h2 className="text-3xl font-bold text-[#09090B] sm:text-4xl md:text-[40px] md:leading-[1.2] tracking-tight">
             Loved by job seekers skipping the crowd
           </h2>
           <p className="mt-2.5 text-sm sm:text-base text-gray-600 max-w-xl mx-auto">
@@ -366,10 +366,10 @@ export default function HomePage() {
       {/* ========================================================================= */}
       {/* 8. FAQ (Gray-100 bg #F3F4F6, centered H2, 5 Q&A items, max-width ~670px) */}
       {/* ========================================================================= */}
-      <section className="bg-[#F3F4F6] py-10 sm:py-12 lg:py-14">
+      <section className="bg-[#F3F4F6] py-16 sm:py-20 lg:py-24">
         <div className="max-w-[670px] mx-auto px-6">
           <div className="text-center mb-8">
-            <h2 className="text-2xl font-bold md:text-4xl md:leading-tight text-center text-[#09090B]">
+            <h2 className="text-3xl font-bold sm:text-4xl md:text-[40px] md:leading-[1.2] tracking-tight text-center text-[#09090B]">
               Frequently Asked Questions
             </h2>
           </div>
@@ -402,9 +402,9 @@ export default function HomePage() {
       {/* ========================================================================= */}
       {/* 10. CONTACT (Gray-50 bg #F9FAFB, id="contact")                            */}
       {/* ========================================================================= */}
-      <section id="contact" className="bg-[#F9FAFB] py-10 sm:py-12 lg:py-14 border-t border-gray-200/60">
+      <section id="contact" className="bg-[#F9FAFB] py-16 sm:py-20 border-t border-gray-200/60">
         <div className="max-w-xl mx-auto px-6 text-center space-y-3">
-          <h2 className="text-3xl font-bold text-gray-800 sm:text-4xl tracking-tight">
+          <h2 className="text-3xl font-bold sm:text-4xl md:text-[40px] md:leading-[1.2] tracking-tight text-[#09090B]">
             Contact us
           </h2>
           <p className="text-gray-600 text-sm sm:text-base">
@@ -412,10 +412,10 @@ export default function HomePage() {
           </p>
           <div className="pt-2">
             <a
-              href="mailto:contact@careermonke.io"
+              href="mailto:support@careermonke.com"
               className="w-full sm:w-auto inline-flex items-center justify-center bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-medium px-8 py-3.5 min-h-[48px] rounded-lg text-sm sm:text-base transition-colors shadow-sm"
             >
-              <span>contact@careermonke.io</span>
+              <span>support@careermonke.com</span>
             </a>
           </div>
         </div>

@@ -1,7 +1,9 @@
 import { createClient } from "../supabase/client";
-import { DUMMY_JOBS } from "@/data/jobs";
+import type { Job } from "@/data/jobs";
 import { CandidateProfile } from "../resume/types";
 import { computeFitDiagnostics, FitDiagnosticsResult } from "../matcher/scoring";
+import { formatSalary } from "@/lib/salary/parser";
+import type { UserPreferences } from "@/lib/auth/types";
 
 export interface LiveJob {
   id: string;
@@ -30,6 +32,9 @@ export interface GetJobsOptions {
   search?: string;
   remoteOnly?: boolean;
   isPro?: boolean;
+  sortBy?: "newest" | "match";
+  candidate?: CandidateProfile | null;
+  preferences?: UserPreferences | null;
 }
 
 export interface GetJobsResult {
@@ -108,9 +113,78 @@ export function isGenuineInternshipJob(title: string, jobType?: string): boolean
   return false;
 }
 
+const GENERIC_JOB_STOPWORDS = new Set([
+  "engineer", "developer", "specialist", "manager", "lead", "senior", "junior",
+  "associate", "staff", "principal", "intern", "consultant", "director", "head",
+  "and", "the", "for", "with", "experienced", "entry", "level", "full", "stack",
+  "tech", "general", "global", "member", "officer", "team"
+]);
+
+export function extractCandidateRelevanceTerms(
+  candidate?: CandidateProfile | null,
+  preferences?: UserPreferences | null
+): string[] {
+  const terms = new Set<string>();
+
+  const rawRoles: string[] = [
+    ...(preferences?.roles || []),
+  ];
+  if (candidate?.headline) rawRoles.push(candidate.headline);
+  if (candidate?.experience && candidate.experience.length > 0) {
+    candidate.experience.forEach((e) => {
+      if (e.role) rawRoles.push(e.role);
+    });
+  }
+
+  for (const r of rawRoles) {
+    if (!r || typeof r !== "string") continue;
+    const clean = r.replace(/[\(\)\[\],\-\/]/g, " ").trim();
+    if (clean.length >= 4) {
+      terms.add(clean);
+    }
+    const words = clean.split(/\s+/).filter(Boolean);
+    if (words.length >= 2) {
+      for (let i = 0; i < words.length - 1; i++) {
+        const pair = `${words[i]} ${words[i + 1]}`;
+        const lowerPair = pair.toLowerCase();
+        if (!lowerPair.includes("senior") && !lowerPair.includes("junior")) {
+          terms.add(pair);
+        }
+      }
+    }
+    words.forEach((w) => {
+      const lower = w.toLowerCase().trim();
+      if (lower.length >= 3 && !GENERIC_JOB_STOPWORDS.has(lower)) {
+        terms.add(w);
+      }
+    });
+  }
+
+  const rawSkills: string[] = [
+    ...(candidate?.skills || []),
+  ];
+  for (const sk of rawSkills) {
+    if (!sk || typeof sk !== "string") continue;
+    const lower = sk.toLowerCase().trim();
+    if (lower.length >= 3 && !["css", "html", "git"].includes(lower)) {
+      terms.add(sk.trim());
+    }
+  }
+
+  return Array.from(terms)
+    .map((t) => t.replace(/[%_,()]/g, "").trim())
+    .filter((t) => t.length >= 3)
+    .slice(0, 10);
+}
+
+const PUBLIC_SELECT_COLUMNS =
+  "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at";
+
 /**
- * Fetches live verified active jobs from Supabase with strict server/payload-level Pro gating.
- * When isPro is false, gated fields (company, salary, apply_url) are NEVER queried or included in the payload.
+ * Fetches live active jobs from Supabase with strict server/payload-level Pro gating.
+ * When isPro is false, gated fields (company, salary, apply_url, description, skills)
+ * are NEVER queried or included in the network response.
+ * When sortBy is "match", computes fit across the full corpus on the server/DB.
  */
 export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobsResult> {
   const {
@@ -120,6 +194,9 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
     search,
     remoteOnly,
     isPro = false,
+    sortBy = "newest",
+    candidate,
+    preferences,
   } = options;
 
   const from = (page - 1) * pageSize;
@@ -127,14 +204,14 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
 
   try {
     const supabase = createClient();
-
-    // Select full details including description and skills
-    const selectColumns =
-      "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at, company, salary_text, apply_url, description, skills";
+    const isMatchSort = sortBy === "match";
+    const relevanceTerms = isMatchSort
+      ? extractCandidateRelevanceTerms(candidate, preferences)
+      : [];
 
     let query = supabase
       .from("jobs")
-      .select(selectColumns, { count: "exact" })
+      .select(PUBLIC_SELECT_COLUMNS, { count: "exact" })
       .eq("is_active", true)
       .eq("status", "active");
 
@@ -171,24 +248,95 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
 
     if (search && search.trim()) {
       const q = search.trim();
-      query = query.or(`title.ilike.%${q}%,location.ilike.%${q}%,company.ilike.%${q}%`);
+      query = query.or(`title.ilike.%${q}%,location.ilike.%${q}%`);
     }
 
-    query = query
-      .order("posted_at", { ascending: false, nullsFirst: false })
-      .range(from, to);
+    let data: any[] | null = null;
+    let count: number | null = null;
 
-    const { data, count, error } = await query;
+    if (isMatchSort && candidate && relevanceTerms.length > 0) {
+      // 1. Corpus-wide matching for candidate profile
+      const matchClause = relevanceTerms.map((t) => `title.ilike.%${t}%`).join(",");
+      const matchQuery = query
+        .or(matchClause)
+        .order("posted_at", { ascending: false })
+        .range(0, 249);
 
-    if (!error && data && data.length > 0) {
+      const res = await matchQuery;
+      let candidatePool = res.data || [];
+      count = res.count;
+
+      if (candidatePool.length === 0 && preferences?.categories?.length) {
+        const catQuery = supabase
+          .from("jobs")
+          .select(PUBLIC_SELECT_COLUMNS, { count: "exact" })
+          .eq("is_active", true)
+          .eq("status", "active")
+          .in("category", preferences.categories)
+          .order("posted_at", { ascending: false })
+          .range(0, 249);
+        const catRes = await catQuery;
+        candidatePool = catRes.data || [];
+        count = catRes.count;
+      }
+
+      if (candidatePool.length === 0) {
+        const fallbackRes = await query
+          .order("posted_at", { ascending: false })
+          .range(from, to);
+        data = fallbackRes.data;
+        count = fallbackRes.count;
+      } else {
+        // Score each candidate against the candidate profile
+        const scoredPool: { row: any; score: number }[] = candidatePool.map((row: any) => {
+          const teaserJob = {
+            id: row.id,
+            title: row.title || "Untitled Position",
+            company: "Verified Employer",
+            location: row.location || (row.remote ? "Remote (Worldwide)" : "Remote"),
+            category: row.category,
+            remote_scope: row.remote_scope || (row.remote ? "worldwide" : undefined),
+          };
+          const diagnostics = computeFitDiagnostics(candidate, teaserJob);
+          return { row, score: diagnostics.score };
+        });
+
+        // Sort by match score descending, then recency descending
+        scoredPool.sort((a, b) => {
+          if (b.score !== a.score) return b.score - a.score;
+          const timeA = new Date(a.row.posted_at || a.row.created_at || 0).getTime();
+          const timeB = new Date(b.row.posted_at || b.row.created_at || 0).getTime();
+          return timeB - timeA;
+        });
+
+        data = scoredPool.slice(from, to + 1).map((item) => item.row);
+      }
+    } else if (isMatchSort && (!candidate || relevanceTerms.length === 0)) {
+      // Guest or profile without confirmed resume: sensible global relevance (verified roles first, then newest)
+      const res = await query
+        .order("verified", { ascending: false })
+        .order("posted_at", { ascending: false, nullsFirst: false })
+        .range(from, to);
+      data = res.data;
+      count = res.count;
+    } else {
+      // Default newest first
+      const res = await query
+        .order("posted_at", { ascending: false, nullsFirst: false })
+        .range(from, to);
+      data = res.data;
+      count = res.count;
+    }
+
+    if (data && data.length > 0) {
       const mappedJobs: LiveJob[] = data.map((row: any) => {
         return {
           id: row.id,
           title: row.title || "Untitled Position",
-          company: row.company || "Verified Company",
+          company: "Verified Employer",
           location: row.location || (row.remote ? "Remote (Worldwide)" : "Remote"),
           date: formatDate(row.posted_at || row.created_at),
-          salary: row.salary_text || "",
+          salary: "",
           category: row.category || "engineering",
           remote: Boolean(row.remote),
           remoteScope: row.remote_scope || undefined,
@@ -196,12 +344,52 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
           country: row.country_code || "US",
           type: row.job_type === "internship" ? "Internship" : "Full-time",
           directSource: Boolean(row.verified),
-          applyUrl: row.apply_url || "",
-          description: row.description || "",
-          skills: row.skills || [],
+          applyUrl: "",
+          description: "",
+          skills: [],
           postedAt: row.posted_at || row.created_at,
         };
       });
+
+      // If user is verified as Pro on the client, fetch unlocked details from server endpoint
+      if (isPro && mappedJobs.length > 0) {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          const token = session?.access_token;
+          if (token) {
+            const proRes = await fetch("/api/jobs/pro", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({ ids: mappedJobs.map((j) => j.id) }),
+            });
+            if (proRes.ok) {
+              const proData = await proRes.json();
+              if (Array.isArray(proData.jobs)) {
+                const unlockedMap = new Map<string, any>(
+                  proData.jobs.map((pj: any) => [pj.id, pj])
+                );
+                mappedJobs.forEach((job) => {
+                  const u = unlockedMap.get(job.id);
+                  if (u) {
+                    if (u.company) job.company = u.company;
+                    if (u.salary_text || u.salary_min != null) {
+                      job.salary = formatSalary(u.salary_min, u.salary_max, u.currency, u.salary_period) || u.salary_text || "";
+                    }
+                    if (u.apply_url) job.applyUrl = u.apply_url;
+                    if (u.description) job.description = u.description;
+                    if (u.skills) job.skills = u.skills;
+                  }
+                });
+              }
+            }
+          }
+        } catch (proErr) {
+          console.warn("Could not fetch server-unlocked Pro jobs:", proErr);
+        }
+      }
 
       const isInternCat = category && category.toLowerCase().trim() === "internships";
       const filteredJobs = isInternCat
@@ -210,15 +398,27 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
 
       return {
         jobs: filteredJobs,
-        totalCount: isInternCat && count ? Math.min(count, 235) : (count ?? 16423),
+        totalCount: count ?? 0,
       };
     }
   } catch (err) {
     console.warn("Supabase live jobs fetch error, falling back:", err);
   }
 
-  // Offline / Error fallback: filter static list
+
+  // Offline / Error fallback: filter static list (loaded dynamically only on failure)
+  const { DUMMY_JOBS } = await import("@/data/jobs");
   let fallbackList = DUMMY_JOBS.slice();
+  if (!isPro) {
+    fallbackList = fallbackList.map((j) => ({
+      ...j,
+      company: "Verified Employer",
+      salary: "",
+      applyUrl: "",
+      description: "",
+      skills: [],
+    }));
+  }
   if (category && category !== "all") {
     const c = category.toLowerCase().trim();
     fallbackList = fallbackList.filter((j) => {
@@ -263,49 +463,79 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
   if (!jobId || !jobId.trim()) return null;
   const cleanId = jobId.trim();
 
+  // 1. If Pro user, fetch full unlocked job from authenticated server endpoint
+  if (isPro) {
+    try {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (token) {
+        const res = await fetch(`/api/jobs/pro?id=${encodeURIComponent(cleanId)}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        if (res.ok) {
+          const { job } = await res.json();
+          if (job) {
+            return {
+              id: job.id,
+              title: job.title || "Untitled Position",
+              company: job.company || "Verified Employer",
+              location: job.location || (job.remote ? "Remote (Worldwide)" : "Remote"),
+              date: formatDate(job.posted_at || job.first_seen_at || job.created_at),
+              salary: formatSalary(job.salary_min, job.salary_max, job.currency, job.salary_period) || job.salary_text || "",
+              category: job.category || "engineering",
+              remote: Boolean(job.remote),
+              remoteScope: job.remote_scope || undefined,
+              remoteEligibility: job.remote_eligibility || undefined,
+              country: job.country || job.country_code || "US",
+              type: job.job_type === "internship" ? "Internship" : "Full-time",
+              directSource: Boolean(job.verified ?? true),
+              applyUrl: job.apply_url || "",
+              description: job.description || "",
+              skills: job.skills || [],
+              postedAt: job.posted_at || job.first_seen_at || job.created_at,
+            };
+          }
+        }
+      }
+    } catch (proErr) {
+      console.warn("Pro job detail fetch error:", proErr);
+    }
+  }
+
+  // 2. Guest or non-Pro: Query public preview from jobs_public view
   try {
     const supabase = createClient();
-    const selectColumns = isPro
-      ? "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at, description, skills, company, salary_text, apply_url"
-      : "id, title, category, job_type, posted_at, created_at";
+    const selectColumns =
+      "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at";
 
-    const { data, error } = await (supabase
-      .from("jobs")
-      .select(selectColumns as any)
+    let { data, error } = await supabase
+      .from("jobs_public")
+      .select(selectColumns)
       .eq("id", cleanId)
-      .eq("is_active", true)
-      .eq("status", "active")
-      .maybeSingle() as any);
+      .maybeSingle();
+
+    if (error && error.code === "42P01") {
+      const res = await supabase
+        .from("jobs")
+        .select(selectColumns)
+        .eq("id", cleanId)
+        .maybeSingle();
+      data = res.data;
+      error = res.error;
+    }
 
     if (!error && data) {
       const row = data as any;
-      if (!isPro) {
-        return {
-          id: row.id,
-          title: row.title || "Untitled Position",
-          company: "",
-          location: "",
-          date: formatDate(row.posted_at || row.created_at),
-          salary: "",
-          category: row.category || "engineering",
-          remote: false,
-          country: "",
-          type: row.job_type === "internship" ? "Internship" : "Full-time",
-          directSource: false,
-          applyUrl: "",
-          description: "",
-          skills: [],
-          postedAt: row.posted_at || row.created_at,
-        };
-      }
-
       return {
         id: row.id,
         title: row.title || "Untitled Position",
-        company: row.company || "Verified Employer",
+        company: "Verified Employer",
         location: row.location || (row.remote ? "Remote (Worldwide)" : "Remote"),
         date: formatDate(row.posted_at || row.created_at),
-        salary: row.salary_text || "",
+        salary: "",
         category: row.category || "engineering",
         remote: Boolean(row.remote),
         remoteScope: row.remote_scope || undefined,
@@ -313,30 +543,31 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
         country: row.country_code || "US",
         type: row.job_type === "internship" ? "Internship" : "Full-time",
         directSource: Boolean(row.verified),
-        applyUrl: row.apply_url || "",
-        description: row.description || "",
-        skills: row.skills || [],
+        applyUrl: "",
+        description: "",
+        skills: [],
         postedAt: row.posted_at || row.created_at,
       };
     }
   } catch (err) {
-    console.warn("Supabase single job fetch error:", err);
+    console.warn("Public job fetch error:", err);
   }
 
-  // Fallback to static DUMMY_JOBS if matching legacy ID
+  // Fallback to static DUMMY_JOBS if matching legacy ID (loaded dynamically only on failure)
+  const { DUMMY_JOBS } = await import("@/data/jobs");
   const found = DUMMY_JOBS.find((j) => j.id === cleanId);
   if (found) {
     if (!isPro) {
       return {
         id: found.id,
         title: found.title,
-        company: "",
-        location: "",
+        company: "Verified Employer",
+        location: found.location,
         date: found.date,
         salary: "",
         category: found.category,
-        remote: false,
-        country: "",
+        remote: found.remote,
+        country: found.country,
         type: found.type,
         directSource: false,
         applyUrl: "",
@@ -376,12 +607,9 @@ export async function getAllActiveJobs(): Promise<LiveJob[]> {
       .eq("is_active", true)
       .eq("status", "active");
 
-    const total = count || 16500;
+    const total = count || 1000;
     const CHUNK_SIZE = 1000;
-    const numChunks = Math.ceil(total / CHUNK_SIZE);
-
-    const selectColumns =
-      "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at, company, salary_text, apply_url, description, skills";
+    const numChunks = Math.min(Math.ceil(total / CHUNK_SIZE), 3); // Load up to 3000 rows max for active pool
 
     const chunkPromises = [];
     for (let i = 0; i < numChunks; i++) {
@@ -390,7 +618,7 @@ export async function getAllActiveJobs(): Promise<LiveJob[]> {
       chunkPromises.push(
         supabase
           .from("jobs")
-          .select(selectColumns)
+          .select(PUBLIC_SELECT_COLUMNS)
           .eq("is_active", true)
           .eq("status", "active")
           .range(from, to)
@@ -409,10 +637,10 @@ export async function getAllActiveJobs(): Promise<LiveJob[]> {
       const mapped: LiveJob[] = allRows.map((row: any) => ({
         id: row.id,
         title: row.title || "Untitled Position",
-        company: row.company || "Verified Company",
+        company: "Verified Employer",
         location: row.location || (row.remote ? "Remote (Worldwide)" : "Remote"),
         date: formatDate(row.posted_at || row.created_at),
-        salary: row.salary_text || "",
+        salary: "",
         category: row.category || "engineering",
         remote: Boolean(row.remote),
         remoteScope: row.remote_scope || undefined,
@@ -420,9 +648,9 @@ export async function getAllActiveJobs(): Promise<LiveJob[]> {
         country: row.country_code || "US",
         type: row.job_type === "internship" ? "Internship" : "Full-time",
         directSource: Boolean(row.verified),
-        applyUrl: row.apply_url || "",
-        description: row.description || "",
-        skills: row.skills || [],
+        applyUrl: "",
+        description: "",
+        skills: [],
         postedAt: row.posted_at || row.created_at,
       }));
 
@@ -434,29 +662,26 @@ export async function getAllActiveJobs(): Promise<LiveJob[]> {
     console.warn("getAllActiveJobs error, using static fallback:", err);
   }
 
+  const { DUMMY_JOBS } = await import("@/data/jobs");
   return DUMMY_JOBS;
 }
 
 /**
- * Computes fit diagnostics across the FULL live dataset (all 16,000+ jobs)
- * and returns the top 10 ranked jobs for the given candidate profile.
+ * Computes fit diagnostics across the corpus and returns the top ranked jobs for the given candidate profile.
  */
 export async function getTopRankedJobsForCandidate(
   candidate: CandidateProfile,
-  limit = 10
+  limit = 10,
+  isPro = false
 ): Promise<{ job: LiveJob; diagnostics: FitDiagnosticsResult }[]> {
-  const allJobs = await getAllActiveJobs();
-
-  // Exclude jobs lacking requirements rather than generating fake or arbitrary scores
-  const eligibleJobs = allJobs.filter((j) => {
-    const hasDesc = Boolean(j.description && j.description.trim().length > 40);
-    const hasSkills = Boolean(Array.isArray(j.skills) && j.skills.length > 0);
-    return hasDesc || hasSkills;
+  const result = await getLiveJobs({
+    sortBy: "match",
+    candidate,
+    pageSize: Math.max(limit, 25),
+    isPro,
   });
 
-  const pool = eligibleJobs.length > 0 ? eligibleJobs : allJobs;
-
-  const scored = pool.map((job) => {
+  const scored = result.jobs.map((job) => {
     const diagnostics = computeFitDiagnostics(candidate, {
       id: job.id,
       title: job.title,

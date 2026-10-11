@@ -1,11 +1,8 @@
-// Copyright (c) 2026 Santiago Fernandez de Valderrama, MIT License
 /**
- * Adapted from career-ops (https://github.com/career-ops-hq/career-ops)
  * Clean, single-column, ATS-parsed PDF document generator.
  * Produces parse-friendly, vector-sharp PDFs for Tailored Resumes and Cover Letters.
  */
 
-import { jsPDF } from "jspdf";
 import { CandidateProfile } from "./types";
 
 interface PageConfig {
@@ -16,7 +13,8 @@ interface PageConfig {
   bottomLimit: number;
 }
 
-function initPdfDoc(): { doc: jsPDF; config: PageConfig } {
+async function initPdfDoc(): Promise<{ doc: any; config: PageConfig }> {
+  const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({
     orientation: "portrait",
     unit: "pt",
@@ -47,13 +45,13 @@ function initPdfDoc(): { doc: jsPDF; config: PageConfig } {
  * - Standard Helvetica typography
  * - Action-oriented bullet hierarchies
  */
-export function downloadAtsResumePdf(
+export async function downloadAtsResumePdf(
   candidate: CandidateProfile,
   customFilename?: string
-): void {
+): Promise<void> {
   if (typeof window === "undefined") return;
 
-  const { doc, config } = initPdfDoc();
+  const { doc, config } = await initPdfDoc();
   let y = config.margin;
 
   const checkPageBreak = (neededHeight: number) => {
@@ -223,16 +221,16 @@ export function downloadAtsResumePdf(
  * Generates and downloads a clean, professional PDF Cover Letter.
  * Adapted from Career-Ops Cover Letter styling.
  */
-export function downloadCoverLetterPdf(data: {
+export async function downloadCoverLetterPdf(data: {
   candidate: CandidateProfile;
   company: string;
   jobTitle: string;
   content: string;
   customFilename?: string;
-}): void {
+}): Promise<void> {
   if (typeof window === "undefined") return;
 
-  const { doc, config } = initPdfDoc();
+  const { doc, config } = await initPdfDoc();
   let y = config.margin;
 
   const checkPageBreak = (neededHeight: number) => {

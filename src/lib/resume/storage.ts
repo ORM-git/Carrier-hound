@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Santiago Fernandez de Valderrama, MIT License
 import { CandidateProfile } from "./types";
 import { createClient } from "../supabase/client";
 import type { TailoredJobResumeResult } from "./atsScorer";

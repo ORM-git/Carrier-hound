@@ -12,11 +12,13 @@ import { CandidateProfile } from "@/lib/resume/types";
 import { computeFitDiagnostics, FitDiagnosticsResult } from "@/lib/matcher/scoring";
 import { addApplicationToTracker, getTrackedApplications, removeApplicationFromTracker } from "@/lib/tracker/storage";
 import { getProAccessStatus } from "@/lib/billing/subscription";
+import dynamic from "next/dynamic";
 import PaywallModal from "@/components/PaywallModal";
 import ProUpgradeScreen from "@/components/billing/ProUpgradeScreen";
-import CoverLetterModal from "@/components/resume/CoverLetterModal";
-import TailorResumeModal from "@/components/resume/TailorResumeModal";
-import FitDiagnosticsModal from "@/components/matcher/FitDiagnosticsModal";
+
+const CoverLetterModal = dynamic(() => import("@/components/resume/CoverLetterModal"), { ssr: false });
+const TailorResumeModal = dynamic(() => import("@/components/resume/TailorResumeModal"), { ssr: false });
+const FitDiagnosticsModal = dynamic(() => import("@/components/matcher/FitDiagnosticsModal"), { ssr: false });
 import type { User } from "@supabase/supabase-js";
 import {
   ArrowLeft,

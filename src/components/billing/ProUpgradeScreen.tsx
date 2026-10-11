@@ -161,30 +161,18 @@ export default function ProUpgradeScreen({
           </div>
         )}
 
-        {/* Upgrade Action Button */}
+        {/* Upgrade Action Button: Disabled Coming Soon State */}
         <div className="pt-2 space-y-2">
           <button
             type="button"
-            onClick={handleUpgrade}
-            disabled={loading}
-            className="w-full py-3.5 px-6 rounded-2xl bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white font-bold text-sm shadow-md hover:shadow-lg transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+            disabled
+            className="w-full py-3.5 px-6 rounded-2xl bg-slate-200 text-slate-500 font-bold text-sm border border-slate-300/80 cursor-not-allowed select-none transition flex items-center justify-center gap-2 shadow-none"
           >
-            {loading ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin text-white" />
-                <span>Activating Pro membership…</span>
-              </>
-            ) : (
-              <>
-                <Sparkles className="w-4 h-4 text-yellow-300" />
-                <span>
-                  Subscribe to Pro — {selectedPlan.formattedPrice}
-                </span>
-              </>
-            )}
+            <Lock className="w-4 h-4 text-slate-400" />
+            <span>Payments Coming Soon</span>
           </button>
-          <p className="text-[11px] text-slate-400">
-            Instant Pro activation • Auto-renews monthly • Cancel anytime in Settings
+          <p className="text-[11px] text-slate-500 font-medium">
+            Payments launching soon
           </p>
         </div>
 

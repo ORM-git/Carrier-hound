@@ -228,69 +228,8 @@ export function detectJobType(title: string = '', rawType: string = ''): 'job' |
   return isIntern ? 'internship' : 'job';
 }
 
-/**
- * Parses salary strings and returns min, max, currency, and clean formatted text.
- * E.g. "$120,000 - $160,000", "$150k - $200k", "£60,000 - £80,000", "₹25L - ₹40L"
- */
-export function parseSalary(rawSalary: string | null | undefined): {
-  salary_text: string | null;
-  salary_min: number | null;
-  salary_max: number | null;
-  currency: string;
-} {
-  if (!rawSalary || !rawSalary.trim()) {
-    return { salary_text: null, salary_min: null, salary_max: null, currency: 'USD' };
-  }
-
-  const text = rawSalary.trim();
-  let currency = 'USD';
-  if (text.includes('€') || /eur/i.test(text)) currency = 'EUR';
-  else if (text.includes('£') || /gbp/i.test(text)) currency = 'GBP';
-  else if (text.includes('₹') || /inr/i.test(text) || /\b(lakh|inr)\b/i.test(text)) currency = 'INR';
-  else if (text.includes('C$') || /cad/i.test(text)) currency = 'CAD';
-  else if (text.includes('A$') || /aud/i.test(text)) currency = 'AUD';
-
-  // Extract numeric amounts like 120,000 or 120k or 25L
-  const numbers: number[] = [];
-  const regex = /(\d+(?:[.,]\d+)?)\s*(k|m|l|lakh)?/gi;
-  let match: RegExpExecArray | null;
-
-  while ((match = regex.exec(text)) !== null) {
-    let val = parseFloat(match[1].replace(/,/g, ''));
-    const unit = (match[2] || '').toLowerCase();
-    if (unit === 'k') val *= 1000;
-    else if (unit === 'm') val *= 1000000;
-    else if (unit === 'l' || unit === 'lakh') val *= 100000;
-
-    // Filter out unlikely salary values (e.g. year 2024 or 401)
-    if (val >= 1000 && val <= 50000000) {
-      numbers.push(val);
-    }
-  }
-
-  let salary_min: number | null = null;
-  let salary_max: number | null = null;
-  let salary_text: string | null = null;
-
-  if (numbers.length >= 2) {
-    numbers.sort((a, b) => a - b);
-    salary_min = numbers[0];
-    salary_max = numbers[numbers.length - 1];
-    salary_text = `${currency === 'USD' ? '$' : currency + ' '}${salary_min.toLocaleString()} - ${salary_max.toLocaleString()}`;
-  } else if (numbers.length === 1) {
-    salary_min = numbers[0];
-    salary_text = `${currency === 'USD' ? '$' : currency + ' '}${salary_min.toLocaleString()}`;
-  } else if (text.length <= 60 && /\$|€|£|₹|\b(salary|compensation|usd|inr|eur|gbp)\b/i.test(text)) {
-    salary_text = text;
-  }
-
-  return {
-    salary_text,
-    salary_min,
-    salary_max,
-    currency,
-  };
-}
+export { parseSalary, formatSalary } from '../../src/lib/salary/parser';
+export type { ParsedSalary, ParseSalaryOptions, SalaryPeriod } from '../../src/lib/salary/parser';
 
 /**
  * Normalizes any date into a valid ISO string. Falls back to current time.

@@ -16,11 +16,13 @@ import {
   ShieldCheck,
   CheckCircle2,
 } from "lucide-react";
+import dynamic from "next/dynamic";
 import { CandidateProfile } from "@/lib/resume/types";
 import { getLiveJobs, getTopRankedJobsForCandidate, LiveJob } from "@/lib/jobs/service";
 import { computeFitDiagnostics, FitDiagnosticsResult } from "@/lib/matcher/scoring";
-import TailorResumeModal from "@/components/resume/TailorResumeModal";
-import CoverLetterModal from "@/components/resume/CoverLetterModal";
+
+const TailorResumeModal = dynamic(() => import("@/components/resume/TailorResumeModal"), { ssr: false });
+const CoverLetterModal = dynamic(() => import("@/components/resume/CoverLetterModal"), { ssr: false });
 import { addApplicationToTracker, getTrackedApplications, removeApplicationFromTracker } from "@/lib/tracker/storage";
 import CompanyLogo from "@/components/CompanyLogo";
 import { toast } from "react-toastify";
@@ -50,15 +52,15 @@ export default function TopTenCompatibleJobs({
   const loadTopJobs = React.useCallback(async () => {
     setLoading(true);
     try {
-      // Fetch and rank across the FULL live dataset (all 16,000+ jobs)
-      const topJobs = await getTopRankedJobsForCandidate(candidate, 10);
+      // Fetch and rank across the FULL live dataset (all 16,000+ jobs) with Pro unlocking
+      const topJobs = await getTopRankedJobsForCandidate(candidate, 10, isPro);
       setRankedJobs(topJobs);
     } catch (err) {
       console.warn("Could not compute Top 10 jobs:", err);
     } finally {
       setLoading(false);
     }
-  }, [candidate]);
+  }, [candidate, isPro]);
 
   useEffect(() => {
     loadTopJobs();

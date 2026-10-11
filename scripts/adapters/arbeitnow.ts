@@ -53,7 +53,7 @@ export class ArbeitnowAdapter implements SourceAdapter {
         const remote = detectRemote(title, location, j.remote);
         const jobType = detectJobType(title, (j.job_types || []).join(' '));
         const description = cleanAndTruncateDescription(j.description, 4000);
-        const salary = parseSalary(description);
+        const salary = parseSalary(description, { title, location });
         const postedAt = j.created_at
           ? new Date(j.created_at * 1000).toISOString()
           : normalizeDate(null);
@@ -83,7 +83,7 @@ export class ArbeitnowAdapter implements SourceAdapter {
           salary_min: salary.salary_min,
           salary_max: salary.salary_max,
           currency: salary.currency,
-          salary_period: 'yearly',
+          salary_period: salary.salary_period,
           category,
           posted_at: postedAt,
           discovered_at: nowIso,

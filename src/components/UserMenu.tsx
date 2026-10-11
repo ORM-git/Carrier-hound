@@ -60,9 +60,7 @@ export default function UserMenu({
           setUser({
             id: "local-user",
             email: localEmail,
-            user_metadata: {
-              is_pro: false,
-            },
+            user_metadata: {},
           } as any);
         } else {
           setUser(null);
@@ -201,6 +199,7 @@ export default function UserMenu({
             <div className="p-1.5 space-y-0.5">
               <Link
                 href="/dashboard"
+                prefetch={false}
                 onClick={() => setOpen(false)}
                 className="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 rounded-lg transition-colors font-medium"
               >
@@ -208,6 +207,7 @@ export default function UserMenu({
               </Link>
               <Link
                 href="/jobs"
+                prefetch={false}
                 onClick={() => setOpen(false)}
                 className="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 rounded-lg transition-colors font-medium"
               >
@@ -215,6 +215,7 @@ export default function UserMenu({
               </Link>
               <Link
                 href="/tracker"
+                prefetch={false}
                 onClick={() => setOpen(false)}
                 className="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 rounded-lg transition-colors font-medium"
               >
@@ -222,6 +223,7 @@ export default function UserMenu({
               </Link>
               <Link
                 href="/resume"
+                prefetch={false}
                 onClick={() => setOpen(false)}
                 className="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 rounded-lg transition-colors font-medium"
               >
@@ -229,6 +231,7 @@ export default function UserMenu({
               </Link>
               <Link
                 href="/radar"
+                prefetch={false}
                 onClick={() => setOpen(false)}
                 className="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 rounded-lg transition-colors font-medium"
               >

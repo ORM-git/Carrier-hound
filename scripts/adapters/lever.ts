@@ -58,7 +58,7 @@ export class LeverAdapter implements SourceAdapter {
         const jobType = detectJobType(title, j.categories?.commitment || '');
         const rawDesc = j.descriptionPlain || stripHtml(j.description);
         const description = cleanAndTruncateDescription(rawDesc, 4000);
-        const salary = parseSalary(description);
+        const salary = parseSalary(description, { title, location });
         const postedAt = j.createdAt ? new Date(j.createdAt).toISOString() : normalizeDate(null);
         const category =
           source.category ||
@@ -88,7 +88,7 @@ export class LeverAdapter implements SourceAdapter {
           salary_min: salary.salary_min,
           salary_max: salary.salary_max,
           currency: salary.currency,
-          salary_period: 'yearly',
+          salary_period: salary.salary_period,
           category,
           posted_at: postedAt,
           discovered_at: nowIso,

@@ -63,7 +63,9 @@ export class AshbyAdapter implements SourceAdapter {
 
         const compSummary =
           j.compensation?.compensationTierSummary || j.compensation?.summary || '';
-        const salary = parseSalary(compSummary || description);
+        const salary = compSummary
+          ? parseSalary(compSummary, { title, location, isExplicitSalaryField: true })
+          : parseSalary(description, { title, location });
         const postedAt = normalizeDate(j.publishedAt);
         const category = source.category || detectCategory(title, [j.department || '']);
         const seniority = detectSeniority(title);
@@ -93,7 +95,7 @@ export class AshbyAdapter implements SourceAdapter {
           salary_min: salary.salary_min,
           salary_max: salary.salary_max,
           currency: salary.currency,
-          salary_period: 'yearly',
+          salary_period: salary.salary_period,
           category,
           posted_at: postedAt,
           discovered_at: nowIso,

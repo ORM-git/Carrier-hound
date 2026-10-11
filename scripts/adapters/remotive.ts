@@ -53,7 +53,9 @@ export class RemotiveAdapter implements SourceAdapter {
         const remote = true; // Remotive is 100% remote
         const jobType = detectJobType(title, j.job_type || '');
         const description = cleanAndTruncateDescription(j.description, 4000);
-        const salary = parseSalary(j.salary || description);
+        const salary = j.salary
+          ? parseSalary(j.salary, { title, location, isExplicitSalaryField: true })
+          : parseSalary(description, { title, location });
         const postedAt = normalizeDate(j.publication_date);
         const category = source.category || detectCategory(title, [j.category || '']);
         const seniority = detectSeniority(title);
@@ -80,7 +82,7 @@ export class RemotiveAdapter implements SourceAdapter {
           salary_min: salary.salary_min,
           salary_max: salary.salary_max,
           currency: salary.currency,
-          salary_period: 'yearly',
+          salary_period: salary.salary_period,
           category,
           posted_at: postedAt,
           discovered_at: nowIso,

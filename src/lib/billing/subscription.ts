@@ -6,12 +6,33 @@ import {
   PLAN_INTERNATIONAL,
 } from "./types";
 
-const LOCAL_SUB_KEY = "careermonke_subscription_cache";
+interface CachedProStatusEntry {
+  userId: string;
+  status: ProAccessStatus;
+  timestamp: number;
+}
+
+let cachedProStatus: CachedProStatusEntry | null = null;
+let activeProStatusPromise: Promise<ProAccessStatus> | null = null;
+let activeProStatusUserId: string | null = null;
+const CACHE_TTL_MS = 60 * 1000; // 60 seconds session cache
+
+export function invalidateProAccessCache(): void {
+  cachedProStatus = null;
+  activeProStatusPromise = null;
+  activeProStatusUserId = null;
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("careermonke_auth_updated", invalidateProAccessCache);
+  window.addEventListener("careermonke_pro_updated", invalidateProAccessCache);
+}
 
 /**
  * Checks the user's active Pro access status, strictly server-verified from Supabase subscriptions table.
  * Default is FALSE (signed-in non-Pro) until server subscription is active.
  * Client-side overrides (localStorage/user_metadata) are strictly disabled.
+ * Deduplicated and cached in-memory per session to prevent repeated network queries.
  */
 export async function getProAccessStatus(userId?: string): Promise<ProAccessStatus> {
   const freeDefault: ProAccessStatus = {
@@ -39,66 +60,88 @@ export async function getProAccessStatus(userId?: string): Promise<ProAccessStat
       return freeDefault;
     }
 
-    if (resolvedUserId) {
-      const subPromise = supabase
-        .from("subscriptions")
-        .select("*")
-        .eq("user_id", resolvedUserId)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+    const now = Date.now();
+    if (
+      cachedProStatus &&
+      cachedProStatus.userId === resolvedUserId &&
+      now - cachedProStatus.timestamp < CACHE_TTL_MS
+    ) {
+      return cachedProStatus.status;
+    }
 
-      const timeoutPromise = new Promise<{ data: null; error: Error }>((resolve) =>
-        setTimeout(() => resolve({ data: null, error: new Error("Subscription query timeout") }), 4000)
-      );
+    if (activeProStatusPromise && activeProStatusUserId === resolvedUserId) {
+      return activeProStatusPromise;
+    }
 
-      const { data: sub, error } = await Promise.race([subPromise, timeoutPromise]);
+    activeProStatusUserId = resolvedUserId;
+    activeProStatusPromise = (async () => {
+      try {
+        const subPromise = supabase
+          .from("subscriptions")
+          .select("*")
+          .eq("user_id", resolvedUserId!)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
-      if (!error && sub) {
-        const now = new Date();
-        const periodEnd = sub.current_period_end ? new Date(sub.current_period_end) : null;
-        const graceEnd = sub.grace_period_end ? new Date(sub.grace_period_end) : null;
+        const timeoutPromise = new Promise<{ data: null; error: Error }>((resolve) =>
+          setTimeout(() => resolve({ data: null, error: new Error("Subscription query timeout") }), 4000)
+        );
 
-        // Check if within 7-day grace period
-        if (sub.status === "in_grace_period" && graceEnd) {
-          const diffMs = graceEnd.getTime() - now.getTime();
-          const daysLeft = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+        const { data: sub, error } = await Promise.race([subPromise, timeoutPromise]);
 
-          if (diffMs > 0) {
-            return {
+        let resultStatus: ProAccessStatus = {
+          isPro: false,
+          status: "none",
+          planName: "Free Tier",
+          inGracePeriod: false,
+        };
+
+        if (!error && sub) {
+          const nowTime = new Date();
+          const periodEnd = sub.current_period_end ? new Date(sub.current_period_end) : null;
+          const graceEnd = sub.grace_period_end ? new Date(sub.grace_period_end) : null;
+
+          // Check if within 7-day grace period
+          if (sub.status === "in_grace_period" && graceEnd) {
+            const diffMs = graceEnd.getTime() - nowTime.getTime();
+            const daysLeft = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+
+            if (diffMs > 0) {
+              resultStatus = {
+                isPro: true,
+                status: "in_grace_period",
+                planName: sub.plan_id === PLAN_INTERNATIONAL.id ? PLAN_INTERNATIONAL.name : PLAN_DOMESTIC.name,
+                inGracePeriod: true,
+                graceDaysLeft: daysLeft,
+                expirationDate: graceEnd.toISOString(),
+              };
+            }
+          } else if (sub.status === "active" || sub.status === "trialing") {
+            resultStatus = {
               isPro: true,
-              status: "in_grace_period",
+              status: sub.status,
               planName: sub.plan_id === PLAN_INTERNATIONAL.id ? PLAN_INTERNATIONAL.name : PLAN_DOMESTIC.name,
-              inGracePeriod: true,
-              graceDaysLeft: daysLeft,
-              expirationDate: graceEnd.toISOString(),
+              inGracePeriod: false,
+              expirationDate: periodEnd ? periodEnd.toISOString() : undefined,
             };
           }
         }
 
-        // Active subscription check
-        if (sub.status === "active" || sub.status === "trialing") {
-          return {
-            isPro: true,
-            status: sub.status,
-            planName: sub.plan_id === PLAN_INTERNATIONAL.id ? PLAN_INTERNATIONAL.name : PLAN_DOMESTIC.name,
-            inGracePeriod: false,
-            expirationDate: periodEnd ? periodEnd.toISOString() : undefined,
-          };
-        }
-      }
-
-      // Check server-persisted user_metadata in Supabase auth
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user?.id === resolvedUserId && user.user_metadata?.is_pro === true) {
-        return {
-          isPro: true,
-          status: "active",
-          planName: user.user_metadata?.pro_plan === PLAN_INTERNATIONAL.id ? PLAN_INTERNATIONAL.name : PLAN_DOMESTIC.name,
-          inGracePeriod: false,
+        cachedProStatus = {
+          userId: resolvedUserId!,
+          status: resultStatus,
+          timestamp: Date.now(),
         };
+
+        return resultStatus;
+      } finally {
+        activeProStatusPromise = null;
+        activeProStatusUserId = null;
       }
-    }
+    })();
+
+    return activeProStatusPromise;
   } catch (e) {
     console.warn("Could not check remote subscription status", e);
   }
@@ -176,10 +219,6 @@ export async function cancelSubscription(): Promise<UserSubscription | null> {
         .from("subscriptions")
         .update({ status: "canceled", cancel_at_period_end: true })
         .eq("user_id", user.id);
-
-      try {
-        await supabase.auth.updateUser({ data: { is_pro: false } });
-      } catch (_) {}
     }
   } catch (e) {
     console.warn("Could not cancel subscription remotely", e);

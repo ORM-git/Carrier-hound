@@ -3,11 +3,13 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { Sparkles, Target, Zap } from "lucide-react";
+import dynamic from "next/dynamic";
 import { computeFitDiagnostics, FitDiagnosticsResult } from "@/lib/matcher/scoring";
 import { CandidateProfile } from "@/lib/resume/types";
 import { getCandidateProfile } from "@/lib/resume/storage";
-import FitDiagnosticsModal from "./FitDiagnosticsModal";
-import CoverLetterModal from "../resume/CoverLetterModal";
+
+const FitDiagnosticsModal = dynamic(() => import("./FitDiagnosticsModal"), { ssr: false });
+const CoverLetterModal = dynamic(() => import("../resume/CoverLetterModal"), { ssr: false });
 
 interface MatchScoreBadgeProps {
   job: {

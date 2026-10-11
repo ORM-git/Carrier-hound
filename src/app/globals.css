@@ -56,17 +56,28 @@ body {
   padding: 0;
 }
 
-/* Reduced motion support */
+/* Global prefers-reduced-motion: disables all non-essential animations & transitions */
 @media (prefers-reduced-motion: reduce) {
-  html {
-    scroll-behavior: auto;
-  }
-  *:not(.animate-marquee-left):not(.animate-marquee-right):not(.animate-marquee) {
+  *,
+  *::before,
+  *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+  html {
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Subtle, professional interactive transitions (150ms max, ease-out) */
+button,
+a,
+input,
+select {
+  transition-duration: 150ms;
+  transition-timing-function: cubic-bezier(0, 0, 0.2, 1);
 }
 
 /* Bi-directional Continuous Marquee Keyframes & Classes */
@@ -130,11 +141,11 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
   outline-offset: 2px;
 }
 
-/* Footer fade-in animation on reveal */
+/* Subtle non-shifting entrance animations (150-200ms max, ease-out, no bounce) */
 @keyframes fadeInUp {
   from {
     opacity: 0;
-    transform: translateY(20px);
+    transform: translateY(4px);
   }
   to {
     opacity: 1;
@@ -142,8 +153,64 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
   }
 }
 
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes scaleUp {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
 .animate-fadeInUp {
-  animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: fadeInUp 180ms cubic-bezier(0, 0, 0.2, 1) forwards;
+}
+
+.animate-fadeIn {
+  animation: fadeIn 150ms cubic-bezier(0, 0, 0.2, 1) forwards;
+}
+
+.animate-scaleUp {
+  animation: scaleUp 180ms cubic-bezier(0, 0, 0.2, 1) forwards;
+}
+
+.animate-slideUp {
+  animation: slideUp 180ms cubic-bezier(0, 0, 0.2, 1) forwards;
+}
+
+.animate-slideInRight {
+  animation: slideInRight 200ms cubic-bezier(0, 0, 0.2, 1) forwards;
 }
 
 /* Custom scrollbars for clean UI */
@@ -171,25 +238,38 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
   scrollbar-width: none;
 }
 
-/* Netlify floating badge suppression */
+/* Netlify floating badge & collaborative drawer widget suppression */
 #netlify-badge,
 .netlify-badge,
-[data-netlify-badge] {
+[data-netlify-badge],
+#netlify-drawer,
+.netlify-drawer,
+[data-netlify-drawer],
+netlify-drawer,
+#netlify-feedback-widget,
+.netlify-feedback-widget,
+iframe[src*="netlify.com"],
+iframe[id*="netlify"],
+iframe[title*="Netlify"],
+a[href*="netlify.com"][class*="badge"],
+div[class*="netlify-badge"] {
   display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  opacity: 0 !important;
+  clip: rect(0, 0, 0, 0) !important;
+  height: 0 !important;
+  width: 0 !important;
 }
 
-/* 3D Globe Job Radar Custom Animations */
+/* 3D Globe Job Radar Custom Animations (Subtle & Professional) */
 @keyframes radarPing {
   0% {
-    transform: scale(0.7);
-    opacity: 0.9;
-  }
-  75% {
-    transform: scale(2.4);
-    opacity: 0;
+    transform: scale(0.85);
+    opacity: 0.8;
   }
   100% {
-    transform: scale(2.6);
+    transform: scale(2.2);
     opacity: 0;
   }
 }
@@ -203,17 +283,15 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
   }
 }
 
+/* Smooth popup without bouncy/elastic overshoot */
 @keyframes popOut {
   0% {
     opacity: 0;
-    transform: scale(0.88) translateY(28px);
-  }
-  75% {
-    transform: scale(1.02) translateY(-4px);
+    transform: scale(0.98);
   }
   100% {
     opacity: 1;
-    transform: scale(1) translateY(0);
+    transform: scale(1);
   }
 }
 
@@ -231,7 +309,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 }
 
 .animate-pop-out {
-  animation: popOut 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: popOut 180ms cubic-bezier(0, 0, 0.2, 1) forwards;
 }
 
 /* Mapbox Marker Custom Styles */

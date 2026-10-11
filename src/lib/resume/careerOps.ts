@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Santiago Fernandez de Valderrama, MIT License
 /**
  * Adapted from career-ops (https://github.com/career-ops-hq/career-ops)
  * Core ATS CV reframing, prompt templates, ATS linting rules, and 4-stage cover letter generation.

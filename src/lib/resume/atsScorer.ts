@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Santiago Fernandez de Valderrama, MIT License
 import { CandidateProfile } from "./types";
 import { extractSkillsFromJob, normalizeSkillToTokens } from "../matcher/scoring";
 import { SKILLS_TAXONOMY } from "./parser";
