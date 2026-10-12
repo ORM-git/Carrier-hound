@@ -33,6 +33,7 @@ export default function DashboardPage() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [isPro, setIsPro] = useState(false);
+  const [isProDefinitive, setIsProDefinitive] = useState(false);
   const [preferences, setPreferences] = useState<UserPreferences | null>(null);
   const [candidate, setCandidate] = useState<CandidateProfile | null>(null);
   const [applications, setApplications] = useState<TrackedApplication[]>([]);
@@ -49,6 +50,7 @@ export default function DashboardPage() {
       ]);
 
       setIsPro(proRes.isPro);
+      setIsProDefinitive(Boolean(proRes.isDefinitive));
       setPreferences(prefRes);
       setCandidate(profileRes && profileRes.confirmedAt ? profileRes : null);
       setApplications(appsRes);
@@ -79,7 +81,7 @@ export default function DashboardPage() {
     });
   }, [router, loadData]);
 
-  if (loading) {
+  if (loading || (!isPro && !isProDefinitive)) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col">
         <GuideHeader />
@@ -94,7 +96,7 @@ export default function DashboardPage() {
     );
   }
 
-  // TIER 2: Signed-in but NOT Pro
+  // TIER 2: Signed-in but NOT Pro (Definitively confirmed by server)
   if (!isPro) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col">

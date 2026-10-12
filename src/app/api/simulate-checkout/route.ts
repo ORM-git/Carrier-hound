@@ -7,12 +7,19 @@ interface SimulationPayload {
 }
 
 export async function POST(req: Request) {
-  // Simulation code is strictly gated behind SIMULATE_PAYMENTS=true.
-  // In production builds, this endpoint returns 404.
-  const isProd = process.env.NODE_ENV === "production" || process.env.CONTEXT === "production";
-  const allowSimulation = process.env.SIMULATE_PAYMENTS === "true";
+  // Hard guard: Payment simulation must be impossible in production, whatever the env says.
+  const isProd =
+    process.env.NODE_ENV === "production" ||
+    process.env.CONTEXT === "production" ||
+    process.env.NETLIFY_ENV === "production";
 
-  if (isProd && !allowSimulation) {
+  if (isProd) {
+    return NextResponse.json({ error: "Endpoint not found" }, { status: 404 });
+  }
+
+  // Outside production, simulation is strictly gated behind SIMULATE_PAYMENTS=true.
+  const allowSimulation = process.env.SIMULATE_PAYMENTS === "true";
+  if (!allowSimulation) {
     return NextResponse.json({ error: "Endpoint not found" }, { status: 404 });
   }
 

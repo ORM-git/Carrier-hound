@@ -1,33 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
-
-// In-memory sliding window rate limiter: 30 requests per minute per user ID
-interface RateLimitBucket {
-  count: number;
-  resetAt: number;
-}
-const rateLimitMap = new Map<string, RateLimitBucket>();
-const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
-const MAX_REQUESTS_PER_WINDOW = 30;
-
-function checkRateLimit(userId: string): boolean {
-  const now = Date.now();
-  const bucket = rateLimitMap.get(userId);
-
-  if (!bucket || now > bucket.resetAt) {
-    rateLimitMap.set(userId, {
-      count: 1,
-      resetAt: now + RATE_LIMIT_WINDOW_MS,
-    });
-    return true;
-  }
-
-  if (bucket.count >= MAX_REQUESTS_PER_WINDOW) {
-    return false;
-  }
-
-  bucket.count++;
-  return true;
-}
+import { getServerEntitlement } from "../../src/lib/billing/serverEntitlement";
+import {
+  resolveOperation,
+  buildOperationPayload,
+  checkAndIncrementAiQuota,
+  OPERATION_CONFIGS,
+} from "../../src/lib/ai/security";
 
 export async function handler(event: any) {
   const headers = {
@@ -95,16 +73,21 @@ export async function handler(event: any) {
       };
     }
 
-    // 2. Per-User Rate Limiting (30 requests/minute)
-    if (!checkRateLimit(user.id)) {
+    // 2. Server-side Pro Entitlement check (Single Source of Truth)
+    const entitlement = await getServerEntitlement(user.id);
+    if (!entitlement.isPro) {
       return {
-        statusCode: 429,
+        statusCode: 403,
         headers,
-        body: JSON.stringify({ error: "Rate limit exceeded. Please wait a moment before trying again." }),
+        body: JSON.stringify({
+          error: "CareerMonke Pro subscription required for AI features.",
+          isPro: false,
+          code: "PRO_REQUIRED",
+        }),
       };
     }
 
-    // 3. Parse Request Payload
+    // 3. Parse Request Payload & Enforce Allowlisted Operations
     let body: any = {};
     try {
       body = JSON.parse(event.body || "{}");
@@ -116,17 +99,54 @@ export async function handler(event: any) {
       };
     }
 
-    const { messages, feature, temperature, jsonMode } = body;
+    const opName = body.operation || body.feature;
+    const config = resolveOperation(opName);
 
-    if (!Array.isArray(messages) || messages.length === 0) {
+    if (!config) {
       return {
         statusCode: 400,
         headers,
-        body: JSON.stringify({ error: "Bad request. 'messages' must be a non-empty array." }),
+        body: JSON.stringify({
+          error: `Invalid AI operation '${opName || "unspecified"}'. Allowed operations: ${Object.keys(OPERATION_CONFIGS).join(", ")}. Raw models and arbitrary messages are rejected.`,
+          allowedOperations: Object.keys(OPERATION_CONFIGS),
+        }),
       };
     }
 
-    // 4. Server-Side Groq API Key
+    // Extract structured params (reject raw client messages)
+    const params = body.params || body;
+    const payloadResult = buildOperationPayload(config, params);
+    if (!payloadResult.ok) {
+      return {
+        statusCode: 400,
+        headers,
+        body: JSON.stringify({ error: payloadResult.error }),
+      };
+    }
+
+    const { payload } = payloadResult;
+
+    // 4. Durable Quotas Enforcement (Per-User Daily Quota in Supabase)
+    const quotaResult = await checkAndIncrementAiQuota(
+      supabaseAdmin,
+      user.id,
+      config.operation,
+      payload.estimatedInputTokens
+    );
+
+    if (!quotaResult.allowed) {
+      return {
+        statusCode: 429,
+        headers,
+        body: JSON.stringify({
+          error: `Daily AI usage quota exceeded for operation '${config.operation}' (${quotaResult.currentCount}/${quotaResult.limit}). Quotas reset daily at midnight UTC.`,
+          currentCount: quotaResult.currentCount,
+          limit: quotaResult.limit,
+        }),
+      };
+    }
+
+    // 5. Server-Side Groq API Key Check
     const groqApiKey = process.env.GROQ_API_KEY;
     if (!groqApiKey) {
       return {
@@ -136,13 +156,7 @@ export async function handler(event: any) {
       };
     }
 
-    const defaultModel =
-      feature === "cover-letter"
-        ? process.env.SMART_MODEL || "openai/gpt-oss-120b"
-        : process.env.FAST_MODEL || "openai/gpt-oss-20b";
-    const model = body.model || defaultModel;
-
-    // 5. Server-to-Server Call to Groq (Keys NEVER logged or returned)
+    // 6. Upstream Groq Call with Enforced Model, Tokens, & Server Prompts
     const groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -150,15 +164,15 @@ export async function handler(event: any) {
         Authorization: `Bearer ${groqApiKey}`,
       },
       body: JSON.stringify({
-        model,
-        messages,
-        temperature: typeof temperature === "number" ? temperature : 0.2,
-        ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
+        model: payload.model,
+        messages: payload.messages,
+        max_tokens: payload.maxOutputTokens,
+        temperature: payload.temperature,
+        ...(payload.jsonMode ? { response_format: { type: "json_object" } } : {}),
       }),
     });
 
     if (!groqResponse.ok) {
-      // Log sanitized status only
       console.warn(`[AI Netlify Function] Upstream provider returned status ${groqResponse.status}`);
       return {
         statusCode: 502,
@@ -176,11 +190,12 @@ export async function handler(event: any) {
       body: JSON.stringify({
         content,
         text: content,
-        model,
+        operation: config.operation,
+        model: payload.model,
       }),
     };
   } catch (error) {
-    console.warn("[AI Netlify Function] Internal server error handling AI request");
+    console.warn("[AI Netlify Function] Internal error processing AI request:", error);
     return {
       statusCode: 500,
       headers,

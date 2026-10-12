@@ -2,6 +2,7 @@ import { createClient } from "../supabase/client";
 import {
   UserSubscription,
   ProAccessStatus,
+  SubscriptionStatus,
   PLAN_DOMESTIC,
   PLAN_INTERNATIONAL,
 } from "./types";
@@ -26,6 +27,69 @@ export function invalidateProAccessCache(): void {
 if (typeof window !== "undefined") {
   window.addEventListener("careermonke_auth_updated", invalidateProAccessCache);
   window.addEventListener("careermonke_pro_updated", invalidateProAccessCache);
+  window.addEventListener("careermonke_route_changed", invalidateProAccessCache);
+  window.addEventListener("focus", invalidateProAccessCache);
+  window.addEventListener("popstate", invalidateProAccessCache);
+}
+
+/**
+ * Queries the user subscription from Supabase with exponential backoff retry.
+ * Prevents false "Free" downgrades due to slow 3G or transient network timeouts.
+ */
+async function querySubscriptionWithRetry(
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+  maxRetries = 2
+): Promise<{ data: any | null; error: any | null; isDefinitive: boolean }> {
+  const timeoutMs = 10000; // 10s timeout accommodates Slow 3G round-trips and TLS handshakes
+  let attempt = 0;
+
+  while (attempt <= maxRetries) {
+    try {
+      const fetchPromise = supabase
+        .from("subscriptions")
+        .select("*")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const timeoutPromise = new Promise<{ data: null; error: Error }>((resolve) =>
+        setTimeout(
+          () => resolve({ data: null, error: new Error(`Subscription query timeout (${timeoutMs}ms)`) }),
+          timeoutMs
+        )
+      );
+
+      const res = await Promise.race([fetchPromise, timeoutPromise]);
+
+      if (!res.error) {
+        // Successful response: res.data is either the subscription row OR null (if user has no subscription).
+        // In both cases, this is a DEFINITIVE response from the server!
+        return { data: res.data, error: null, isDefinitive: true };
+      }
+
+      console.warn(`[Billing] Subscription check attempt ${attempt + 1}/${maxRetries + 1} failed:`, res.error.message);
+
+      if (attempt < maxRetries) {
+        // Exponential backoff: 500ms, 1000ms
+        await new Promise((resolve) => setTimeout(resolve, 500 * Math.pow(2, attempt)));
+      }
+    } catch (err: any) {
+      console.warn(`[Billing] Subscription query exception on attempt ${attempt + 1}:`, err);
+      if (attempt < maxRetries) {
+        await new Promise((resolve) => setTimeout(resolve, 500 * Math.pow(2, attempt)));
+      }
+    }
+    attempt++;
+  }
+
+  // All retries failed (timeout or network error) -> NOT definitive!
+  return {
+    data: null,
+    error: new Error("Failed to reach billing verification server after retries"),
+    isDefinitive: false,
+  };
 }
 
 /**
@@ -35,11 +99,13 @@ if (typeof window !== "undefined") {
  * Deduplicated and cached in-memory per session to prevent repeated network queries.
  */
 export async function getProAccessStatus(userId?: string): Promise<ProAccessStatus> {
-  const freeDefault: ProAccessStatus = {
+  const unauthenticatedDefault: ProAccessStatus = {
     isPro: false,
     status: "none",
     planName: "Free Tier",
     inGracePeriod: false,
+    isLoading: false,
+    isDefinitive: true,
   };
 
   try {
@@ -57,18 +123,21 @@ export async function getProAccessStatus(userId?: string): Promise<ProAccessStat
     }
 
     if (!resolvedUserId) {
-      return freeDefault;
+      return unauthenticatedDefault;
     }
 
     const now = Date.now();
+    // Only return cached status if it exists, belongs to this user, was definitive, and is not expired
     if (
       cachedProStatus &&
       cachedProStatus.userId === resolvedUserId &&
+      cachedProStatus.status.isDefinitive &&
       now - cachedProStatus.timestamp < CACHE_TTL_MS
     ) {
       return cachedProStatus.status;
     }
 
+    // Deduplicate concurrent in-flight queries
     if (activeProStatusPromise && activeProStatusUserId === resolvedUserId) {
       return activeProStatusPromise;
     }
@@ -76,35 +145,49 @@ export async function getProAccessStatus(userId?: string): Promise<ProAccessStat
     activeProStatusUserId = resolvedUserId;
     activeProStatusPromise = (async () => {
       try {
-        const subPromise = supabase
-          .from("subscriptions")
-          .select("*")
-          .eq("user_id", resolvedUserId!)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
+        const { data: sub, error, isDefinitive } = await querySubscriptionWithRetry(supabase, resolvedUserId!);
 
-        const timeoutPromise = new Promise<{ data: null; error: Error }>((resolve) =>
-          setTimeout(() => resolve({ data: null, error: new Error("Subscription query timeout") }), 4000)
-        );
+        if (!isDefinitive || error) {
+          // Timeout or network failure: NEVER resolve to Free!
+          // NEVER cache a negative timeout/error result.
+          // If the user was already verified as Pro in this session, retain Pro to prevent lockout
+          if (cachedProStatus && cachedProStatus.userId === resolvedUserId && cachedProStatus.status.isPro) {
+            return {
+              ...cachedProStatus.status,
+              isLoading: false,
+              isDefinitive: false,
+            };
+          }
 
-        const { data: sub, error } = await Promise.race([subPromise, timeoutPromise]);
+          // Otherwise, stay in loading/unknown state (never Free)
+          return {
+            isPro: false,
+            status: "unknown",
+            inGracePeriod: false,
+            isLoading: true,
+            isDefinitive: false,
+          };
+        }
 
+        // Definitive response from the server:
         let resultStatus: ProAccessStatus = {
           isPro: false,
           status: "none",
           planName: "Free Tier",
           inGracePeriod: false,
+          isLoading: false,
+          isDefinitive: true,
         };
 
-        if (!error && sub) {
-          const nowTime = new Date();
+        if (sub) {
+          const nowDate = new Date();
+          const nowMs = nowDate.getTime();
           const periodEnd = sub.current_period_end ? new Date(sub.current_period_end) : null;
           const graceEnd = sub.grace_period_end ? new Date(sub.grace_period_end) : null;
 
-          // Check if within 7-day grace period
+          // 1. Check if within 7-day grace period
           if (sub.status === "in_grace_period" && graceEnd) {
-            const diffMs = graceEnd.getTime() - nowTime.getTime();
+            const diffMs = graceEnd.getTime() - nowMs;
             const daysLeft = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
 
             if (diffMs > 0) {
@@ -115,24 +198,69 @@ export async function getProAccessStatus(userId?: string): Promise<ProAccessStat
                 inGracePeriod: true,
                 graceDaysLeft: daysLeft,
                 expirationDate: graceEnd.toISOString(),
+                isLoading: false,
+                isDefinitive: true,
+              };
+            } else {
+              // Grace period expired
+              resultStatus = {
+                isPro: false,
+                status: "canceled",
+                planName: "Free Tier",
+                inGracePeriod: false,
+                expirationDate: graceEnd.toISOString(),
+                isLoading: false,
+                isDefinitive: true,
               };
             }
           } else if (sub.status === "active" || sub.status === "trialing") {
+            // Requirement 2: Client-side subscription period end expiry check
+            const isPeriodExpired = Boolean(periodEnd && periodEnd.getTime() <= nowMs);
+
+            if (!isPeriodExpired) {
+              resultStatus = {
+                isPro: true,
+                status: sub.status,
+                planName: sub.plan_id === PLAN_INTERNATIONAL.id ? PLAN_INTERNATIONAL.name : PLAN_DOMESTIC.name,
+                inGracePeriod: false,
+                expirationDate: periodEnd ? periodEnd.toISOString() : undefined,
+                isLoading: false,
+                isDefinitive: true,
+              };
+            } else {
+              // Period has ended -> Expired!
+              resultStatus = {
+                isPro: false,
+                status: "canceled",
+                planName: "Free Tier",
+                inGracePeriod: false,
+                expirationDate: periodEnd?.toISOString(),
+                isLoading: false,
+                isDefinitive: true,
+              };
+            }
+          } else {
+            // Explicitly inactive subscription row: canceled, past_due, unpaid
             resultStatus = {
-              isPro: true,
-              status: sub.status,
-              planName: sub.plan_id === PLAN_INTERNATIONAL.id ? PLAN_INTERNATIONAL.name : PLAN_DOMESTIC.name,
+              isPro: false,
+              status: sub.status || "none",
+              planName: "Free Tier",
               inGracePeriod: false,
               expirationDate: periodEnd ? periodEnd.toISOString() : undefined,
+              isLoading: false,
+              isDefinitive: true,
             };
           }
         }
 
-        cachedProStatus = {
-          userId: resolvedUserId!,
-          status: resultStatus,
-          timestamp: Date.now(),
-        };
+        // Requirement 3: ONLY cache definitive server answers
+        if (resultStatus.isDefinitive) {
+          cachedProStatus = {
+            userId: resolvedUserId!,
+            status: resultStatus,
+            timestamp: Date.now(),
+          };
+        }
 
         return resultStatus;
       } finally {
@@ -146,10 +274,13 @@ export async function getProAccessStatus(userId?: string): Promise<ProAccessStat
     console.warn("Could not check remote subscription status", e);
   }
 
+  // Fallback on unexpected unhandled error: stay unknown/loading, do not cache
   return {
     isPro: false,
-    status: "canceled",
+    status: "unknown",
     inGracePeriod: false,
+    isLoading: true,
+    isDefinitive: false,
   };
 }
 
@@ -180,6 +311,15 @@ export async function getUserSubscription(): Promise<UserSubscription | null> {
         .maybeSingle();
 
       if (!error && sub) {
+        const now = new Date();
+        const periodEnd = sub.current_period_end ? new Date(sub.current_period_end) : null;
+        let resolvedStatus: SubscriptionStatus = sub.status || "active";
+
+        // Expiry check: if active/trialing but past current_period_end, treat as expired
+        if ((resolvedStatus === "active" || resolvedStatus === "trialing") && periodEnd && periodEnd <= now) {
+          resolvedStatus = "canceled";
+        }
+
         return {
           id: sub.id,
           userId: sub.user_id,
@@ -187,7 +327,7 @@ export async function getUserSubscription(): Promise<UserSubscription | null> {
           planId: sub.plan_id || PLAN_DOMESTIC.id,
           currency: sub.currency || "INR",
           amount: sub.amount || 199,
-          status: sub.status || "active",
+          status: resolvedStatus,
           currentPeriodStart: sub.current_period_start || new Date().toISOString(),
           currentPeriodEnd: sub.current_period_end || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
           gracePeriodEnd: sub.grace_period_end,

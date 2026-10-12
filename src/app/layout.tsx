@@ -1,9 +1,11 @@
+import { Suspense } from "react";
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import "react-toastify/dist/ReactToastify.css";
 import { ToastContainer } from "react-toastify";
 import BackToTop from "@/components/BackToTop";
+import PageViewTracker from "@/components/analytics/PageViewTracker";
+import BlockedAccountNotice from "@/components/auth/BlockedAccountNotice";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -48,6 +50,10 @@ export default function RootLayout({
         <div id="main-content" className="flex-1 flex flex-col">
           {children}
         </div>
+        <Suspense fallback={null}>
+          <PageViewTracker />
+        </Suspense>
+        <BlockedAccountNotice />
         <BackToTop />
         <ToastContainer
           position="bottom-right"

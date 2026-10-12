@@ -1,28 +1,18 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useMemo } from "react";
 import Link from "next/link";
 import { Sparkles, Target, Zap } from "lucide-react";
 import dynamic from "next/dynamic";
-import { computeFitDiagnostics, FitDiagnosticsResult } from "@/lib/matcher/scoring";
+import { computeFitDiagnostics, FitDiagnosticsResult, StandardJobScoringInput } from "@/lib/matcher/scoring";
 import { CandidateProfile } from "@/lib/resume/types";
-import { getCandidateProfile } from "@/lib/resume/storage";
+import { useSharedCandidateProfile } from "@/lib/resume/useCandidateProfile";
 
 const FitDiagnosticsModal = dynamic(() => import("./FitDiagnosticsModal"), { ssr: false });
 const CoverLetterModal = dynamic(() => import("../resume/CoverLetterModal"), { ssr: false });
 
 interface MatchScoreBadgeProps {
-  job: {
-    id?: string;
-    title: string;
-    company: string;
-    description?: string;
-    location?: string;
-    remote_scope?: string;
-    category?: string;
-    salary_text?: string;
-    apply_url?: string;
-  };
+  job: StandardJobScoringInput;
   candidateProfile?: CandidateProfile | null;
   size?: "xs" | "sm" | "md";
   showLabel?: boolean;
@@ -34,61 +24,27 @@ export default function MatchScoreBadge({
   size = "sm",
   showLabel = true,
 }: MatchScoreBadgeProps) {
-  const [candidate, setCandidate] = useState<CandidateProfile | null>(() => {
-    if (candidateProfile && candidateProfile.confirmedAt) {
-      return candidateProfile;
-    }
-    return null;
-  });
-  const [diagnostics, setDiagnostics] = useState<FitDiagnosticsResult | null>(() => {
-    if (candidateProfile && candidateProfile.confirmedAt) {
-      return computeFitDiagnostics(candidateProfile, job);
-    }
-    return null;
-  });
+  // Read from shared memoized store or parent-passed candidateProfile
+  const candidate = useSharedCandidateProfile(candidateProfile);
+
+  // Synchronous, stable memoized diagnostics based on primitive job attributes
+  const diagnostics = useMemo<FitDiagnosticsResult | null>(() => {
+    if (!candidate || !candidate.confirmedAt) return null;
+    return computeFitDiagnostics(candidate, job);
+  }, [
+    candidate,
+    job?.id,
+    job?.title,
+    job?.company,
+    job?.location,
+    job?.remote_scope,
+    job?.category,
+    job?.skills?.length,
+    job?.description?.length,
+  ]);
+
   const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false);
   const [isCoverLetterOpen, setIsCoverLetterOpen] = useState(false);
-
-  useEffect(() => {
-    if (candidateProfile !== undefined) {
-      if (candidateProfile && candidateProfile.confirmedAt) {
-        setCandidate(candidateProfile);
-        setDiagnostics(computeFitDiagnostics(candidateProfile, job));
-      } else {
-        setCandidate(null);
-        setDiagnostics(null);
-      }
-      return;
-    }
-
-    // Load from storage (e.g. user's confirmed resume)
-    getCandidateProfile().then((p) => {
-      if (p && p.confirmedAt) {
-        setCandidate(p);
-        setDiagnostics(computeFitDiagnostics(p, job));
-      } else {
-        setCandidate(null);
-        setDiagnostics(null);
-      }
-    });
-
-    const handleProfileUpdate = () => {
-      getCandidateProfile().then((p) => {
-        if (p && p.confirmedAt) {
-          setCandidate(p);
-          setDiagnostics(computeFitDiagnostics(p, job));
-        } else {
-          setCandidate(null);
-          setDiagnostics(null);
-        }
-      });
-    };
-
-    window.addEventListener("careermonke_profile_updated", handleProfileUpdate);
-    return () => {
-      window.removeEventListener("careermonke_profile_updated", handleProfileUpdate);
-    };
-  }, [candidateProfile, job]);
 
   if (!candidate || !candidate.confirmedAt || !diagnostics) {
     return (
@@ -158,7 +114,10 @@ export default function MatchScoreBadge({
           onOpenChange={setIsDiagnosticsOpen}
           diagnostics={diagnostics}
           candidate={candidate}
-          job={job}
+          job={{
+            ...job,
+            company: job.company || "Verified Employer",
+          }}
           onOpenCoverLetter={() => {
             setIsDiagnosticsOpen(false);
             setIsCoverLetterOpen(true);
@@ -172,7 +131,10 @@ export default function MatchScoreBadge({
           open={isCoverLetterOpen}
           onOpenChange={setIsCoverLetterOpen}
           candidate={candidate}
-          job={job}
+          job={{
+            ...job,
+            company: job.company || "Verified Employer",
+          }}
         />
       )}
     </>

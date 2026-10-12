@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { getProAccessStatus } from "@/lib/billing/subscription";
+import { signOutUser } from "@/lib/auth/session";
 import type { User } from "@supabase/supabase-js";
 import { LogOut, ChevronDown, LogIn } from "lucide-react";
 
@@ -82,17 +83,7 @@ export default function UserMenu({
   }, []);
 
   const handleSignOut = async () => {
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("careermonke_user_email");
-      localStorage.removeItem("careermonke_pro_active");
-      document.cookie = "careermonke_user_email=; path=/; max-age=0";
-      window.dispatchEvent(new Event("careermonke_auth_updated"));
-      window.dispatchEvent(new Event("careermonke_pro_updated"));
-    }
-    const supabase = createClient();
-    try {
-      await supabase.auth.signOut();
-    } catch {}
+    await signOutUser();
     setUser(null);
     setOpen(false);
     router.replace("/");

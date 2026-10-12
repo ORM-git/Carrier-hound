@@ -2,7 +2,6 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import * as d3 from "d3";
 import { cn } from "@/lib/utils";
 
 interface WireframeDottedGlobeProps {
@@ -14,8 +13,35 @@ export function WireframeDottedGlobe({ className }: WireframeDottedGlobeProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isInView, setIsInView] = useState(false);
+
+  // Lazy-load: Observe container intersection so offscreen globe never eagerly downloads assets
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    if (typeof IntersectionObserver === "undefined") {
+      setIsInView(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          setIsInView(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "200px" }
+    );
+
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
+    if (!isInView) return;
+
     let animId: number;
     let isCancelled = false;
 
@@ -27,16 +53,21 @@ export function WireframeDottedGlobe({ className }: WireframeDottedGlobeProps) {
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
 
-      // 1. Fetch GeoJSON from local /data/ne_110m_land.json
+      // 1. Fetch GeoJSON and d3 dynamically ONLY when scrolled into view
       let geoData: any = null;
+      let d3: any = null;
       try {
-        const res = await fetch("/data/ne_110m_land.json");
-        geoData = await res.json();
+        const [d3Module, res] = await Promise.all([
+          import("d3"),
+          fetch("/data/ne_110m_land.json").then((r) => r.json()),
+        ]);
+        d3 = d3Module;
+        geoData = res;
       } catch {
         return;
       }
 
-      if (isCancelled) return;
+      if (isCancelled || !geoData || !d3) return;
       setLoading(false);
 
       // 2. Dense dots with spacing 16

@@ -153,29 +153,51 @@ function SettingsPageInner() {
   };
 
   const handleDeleteAccount = async () => {
-    if (!window.confirm("WARNING: This will permanently wipe your saved resume facts, preferences, and application history. Are you sure?")) {
+    if (
+      !window.confirm(
+        "WARNING: This will permanently delete your account, authentication identity, saved resume facts, preferences, and application history. This action cannot be undone. Are you sure?"
+      )
+    ) {
       return;
     }
-    const supabase = createClient();
-    if (user?.id && user.id !== "local-user") {
-      try {
-        await Promise.allSettled([
-          supabase.from("candidate_profiles").delete().eq("user_id", user.id),
-          supabase.from("user_preferences").delete().eq("user_id", user.id),
-          supabase.from("applications").delete().eq("user_id", user.id),
-          supabase.from("subscriptions").delete().eq("user_id", user.id),
-        ]);
-      } catch (e) {
-        console.warn("Could not delete remote data", e);
+
+    try {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      if (!token) {
+        toast.error("You must be signed in to delete your account.");
+        return;
       }
+
+      const res = await fetch("/api/account/delete", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const result = await res.json().catch(() => ({}));
+
+      if (!res.ok || !result.success) {
+        toast.error(result.error || "Failed to delete account. Please contact support.");
+        return;
+      }
+
+      // Success: clean local state and sign out
+      await deleteCandidateProfile();
+      if (typeof window !== "undefined") {
+        localStorage.clear();
+      }
+      await signOutUser();
+      router.push("/");
+      toast.info("Account and all personal data permanently deleted.");
+    } catch (err: any) {
+      console.error("Delete account error:", err);
+      toast.error(err?.message || "An unexpected error occurred while deleting your account.");
     }
-    await deleteCandidateProfile();
-    if (typeof window !== "undefined") {
-      localStorage.clear();
-    }
-    await signOutUser();
-    router.push("/");
-    toast.info("Account data purged. You have been signed out.");
   };
 
   if (loading) {
@@ -528,9 +550,9 @@ function SettingsPageInner() {
               {/* Delete Account */}
               <div className="p-4 rounded-xl border border-red-200 bg-red-50/40 flex items-center justify-between gap-4">
                 <div className="space-y-0.5">
-                  <span className="font-bold text-xs sm:text-sm text-red-900 block">Purge User Data & Sign Out</span>
+                  <span className="font-bold text-xs sm:text-sm text-red-900 block">Delete Account</span>
                   <p className="text-[11px] text-red-700">
-                    Permanently wipes your saved resume facts, target preferences, application history, and cached credentials, then signs you out.
+                    Permanently deletes your account, authentication identity, saved resume facts, preferences, and application history.
                   </p>
                 </div>
                 <button

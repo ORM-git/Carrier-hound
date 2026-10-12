@@ -1,4 +1,4 @@
-@import "mapbox-gl/dist/mapbox-gl.css";
+@import "react-toastify/dist/ReactToastify.css";
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -238,29 +238,6 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
   scrollbar-width: none;
 }
 
-/* Netlify floating badge & collaborative drawer widget suppression */
-#netlify-badge,
-.netlify-badge,
-[data-netlify-badge],
-#netlify-drawer,
-.netlify-drawer,
-[data-netlify-drawer],
-netlify-drawer,
-#netlify-feedback-widget,
-.netlify-feedback-widget,
-iframe[src*="netlify.com"],
-iframe[id*="netlify"],
-iframe[title*="Netlify"],
-a[href*="netlify.com"][class*="badge"],
-div[class*="netlify-badge"] {
-  display: none !important;
-  visibility: hidden !important;
-  pointer-events: none !important;
-  opacity: 0 !important;
-  clip: rect(0, 0, 0, 0) !important;
-  height: 0 !important;
-  width: 0 !important;
-}
 
 /* 3D Globe Job Radar Custom Animations (Subtle & Professional) */
 @keyframes radarPing {
@@ -312,15 +289,6 @@ div[class*="netlify-badge"] {
   animation: popOut 180ms cubic-bezier(0, 0, 0.2, 1) forwards;
 }
 
-/* Mapbox Marker Custom Styles */
-.radar-marker-wrap {
-  cursor: pointer;
-  transform: translate(-50%, -50%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  user-select: none;
-}
 
 /* Hide Microsoft Edge / IE password clear and reveal buttons */
 input[type="password"]::-ms-reveal,

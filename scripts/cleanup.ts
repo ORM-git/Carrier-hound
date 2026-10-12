@@ -5,6 +5,7 @@ export interface CleanupConfig {
   maxPostedDays?: number; // default: 45 days
   permanentDeleteDays?: number; // default: 14 days
   dryRun?: boolean;
+  skipUnseenCheck?: boolean; // destructive safety: skips last_seen_at expiration during seed/partial runs
 }
 
 export interface CleanupResult {
@@ -26,6 +27,7 @@ export async function runJobCleanup(
     maxPostedDays = 45,
     permanentDeleteDays = 14,
     dryRun = false,
+    skipUnseenCheck = false,
   } = config;
 
   const now = new Date();
@@ -35,7 +37,11 @@ export async function runJobCleanup(
   const nowIso = now.toISOString();
 
   console.log(`\n🧹 [Cleanup] Running expiration & retention checks...`);
-  console.log(`   - Unseen cutoff: ${unseenCutoff} (${unseenExpiryDays} days)`);
+  if (skipUnseenCheck) {
+    console.log(`   - Unseen cutoff: SKIPPED (destructive safety active: partial/seed/incomplete run)`);
+  } else {
+    console.log(`   - Unseen cutoff: ${unseenCutoff} (${unseenExpiryDays} days)`);
+  }
   console.log(`   - Max age cutoff: ${postedCutoff} (${maxPostedDays} days)`);
   console.log(`   - Permanent purge cutoff: ${deleteCutoff} (${permanentDeleteDays} days)`);
 
@@ -43,27 +49,37 @@ export async function runJobCleanup(
   let permanentlyDeleted = 0;
 
   // Find active jobs that meet expiration criteria
-  // Condition: is_active = true AND (expires_at < now OR last_seen_at < unseenCutoff OR posted_at < postedCutoff)
+  // Condition: is_active = true AND (expires_at < now OR (last_seen_at < unseenCutoff IF not skipped) OR posted_at < postedCutoff)
   let expiredJobs: any[] | null = null;
   let selectExpiredError: any = null;
+
+  const orFilter = skipUnseenCheck
+    ? `expires_at.lt.${nowIso},posted_at.lt.${postedCutoff}`
+    : `expires_at.lt.${nowIso},last_seen_at.lt.${unseenCutoff},posted_at.lt.${postedCutoff}`;
 
   const res = await supabase
     .from('jobs')
     .select('id, title, company, last_seen_at, posted_at, expires_at')
     .eq('is_active', true)
-    .or(`expires_at.lt.${nowIso},last_seen_at.lt.${unseenCutoff},posted_at.lt.${postedCutoff}`)
+    .or(orFilter)
     .limit(1000);
 
   if (res.error && res.error.message.includes('does not exist')) {
-    console.warn(`   ⚠️ [Cleanup] Notice: 'is_active' or 'posted_at' column not yet migrated. Falling back to status='active' & last_seen_at.`);
-    const fallbackRes = await supabase
-      .from('jobs')
-      .select('id, title, company, last_seen_at')
-      .eq('status', 'active')
-      .lt('last_seen_at', unseenCutoff)
-      .limit(1000);
-    expiredJobs = fallbackRes.data;
-    selectExpiredError = fallbackRes.error;
+    console.warn(`   ⚠️ [Cleanup] Notice: 'is_active' or 'posted_at' column not yet migrated. Falling back to status='active'.`);
+    if (skipUnseenCheck) {
+      console.log(`   ✨ [Cleanup] Unseen check skipped under destructive safety.`);
+      expiredJobs = [];
+      selectExpiredError = null;
+    } else {
+      const fallbackRes = await supabase
+        .from('jobs')
+        .select('id, title, company, last_seen_at')
+        .eq('status', 'active')
+        .lt('last_seen_at', unseenCutoff)
+        .limit(1000);
+      expiredJobs = fallbackRes.data;
+      selectExpiredError = fallbackRes.error;
+    }
   } else {
     expiredJobs = res.data;
     selectExpiredError = res.error;

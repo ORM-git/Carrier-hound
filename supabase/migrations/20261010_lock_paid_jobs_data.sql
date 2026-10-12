@@ -37,8 +37,8 @@ SELECT
 FROM public.jobs
 WHERE is_active = true OR status = 'active';
 
--- 2. Grant access to public view for anonymous and authenticated clients
-GRANT SELECT ON public.jobs_public TO anon, authenticated;
+-- 2. Grant access to public view for anonymous and authenticated clients (and service role)
+GRANT SELECT ON public.jobs_public TO anon, authenticated, service_role;
 
 -- 3. Restrict direct SELECT on public.jobs so client keys cannot read locked columns
 REVOKE SELECT ON public.jobs FROM anon, authenticated;

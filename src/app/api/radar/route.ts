@@ -48,7 +48,7 @@ export async function GET() {
 
     // 2. Fetch active jobs in parallel chunks (bypassing PostgREST 1000 row cap)
     const { count: totalActive } = await supabase
-      .from('jobs')
+      .from('jobs_public')
       .select('*', { count: 'exact', head: true })
       .eq('is_active', true)
       .eq('status', 'active');
@@ -62,7 +62,7 @@ export async function GET() {
       const to = from + chunkSize - 1;
       chunkPromises.push(
         supabase
-          .from('jobs')
+          .from('jobs_public')
           .select('id, company, title, location, country_code, remote_scope, remote_eligibility, verified')
           .eq('is_active', true)
           .eq('status', 'active')

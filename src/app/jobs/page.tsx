@@ -59,6 +59,7 @@ function JobsPageInner() {
   // User state
   const [user, setUser] = useState<User | null>(null);
   const [isPro, setIsPro] = useState(false);
+  const [isProDefinitive, setIsProDefinitive] = useState(false);
   const [candidate, setCandidate] = useState<CandidateProfile | null>(null);
   const [preferences, setPreferences] = useState<UserPreferences | null>(null);
   const [savedJobIds, setSavedJobIds] = useState<string[]>([]);
@@ -86,15 +87,14 @@ function JobsPageInner() {
 
     getProAccessStatus().then((res) => {
       setIsPro(res.isPro);
+      setIsProDefinitive(Boolean(res.isDefinitive));
     });
 
     getCandidateProfile().then((cp) => {
       if (cp && cp.confirmedAt) {
         setCandidate(cp);
-        setSortBy("match");
       } else {
         setCandidate(null);
-        setSortBy("newest");
       }
     });
 
@@ -103,13 +103,29 @@ function JobsPageInner() {
     });
 
     const handleSubUpdate = () => {
-      getProAccessStatus().then((res) => setIsPro(res.isPro));
+      getProAccessStatus().then((res) => {
+        setIsPro(res.isPro);
+        setIsProDefinitive(Boolean(res.isDefinitive));
+      });
     };
+
+    const handleProfileUpdate = () => {
+      getCandidateProfile().then((cp) => {
+        if (cp && cp.confirmedAt) {
+          setCandidate(cp);
+        } else {
+          setCandidate(null);
+        }
+      });
+    };
+
     window.addEventListener("careermonke_pro_updated", handleSubUpdate);
     window.addEventListener("careermonke_auth_updated", handleSubUpdate);
+    window.addEventListener("careermonke_profile_updated", handleProfileUpdate);
     return () => {
       window.removeEventListener("careermonke_pro_updated", handleSubUpdate);
       window.removeEventListener("careermonke_auth_updated", handleSubUpdate);
+      window.removeEventListener("careermonke_profile_updated", handleProfileUpdate);
     };
   }, []);
 
@@ -119,9 +135,20 @@ function JobsPageInner() {
 
   // Fetch live active jobs from Supabase whenever search, category, filters, sorting, or profile updates
   useEffect(() => {
+    // If authenticated user is still resolving Pro status, avoid fetching jobs with unverified Free mask prematurely
+    if (user && !isPro && !isProDefinitive) {
+      setLoadingJobs(true);
+      return;
+    }
+
     let cancelled = false;
     setLoadingJobs(true);
     setPage(1);
+
+    const isForYouTab = activeTab === "foryou";
+    const effectiveSortBy = isForYouTab ? "match" : sortBy;
+    const effectiveCandidate = (isForYouTab || sortBy === "match") ? candidate : null;
+    const effectivePreferences = (isForYouTab || sortBy === "match") ? preferences : null;
 
     getLiveJobs({
       page: 1,
@@ -130,9 +157,9 @@ function JobsPageInner() {
       search,
       remoteOnly,
       isPro,
-      sortBy,
-      candidate,
-      preferences,
+      sortBy: effectiveSortBy,
+      candidate: effectiveCandidate,
+      preferences: effectivePreferences,
     }).then((res) => {
       if (!cancelled) {
         setLiveJobs(res.jobs);
@@ -149,12 +176,17 @@ function JobsPageInner() {
     return () => {
       cancelled = true;
     };
-  }, [selectedCategory, search, remoteOnly, isPro, sortBy, candidate, preferences]);
+  }, [selectedCategory, search, remoteOnly, isPro, isProDefinitive, user, sortBy, activeTab, candidate, preferences]);
 
   const handleLoadMore = async () => {
     const nextPage = page + 1;
     setLoadingMore(true);
     try {
+      const isForYouTab = activeTab === "foryou";
+      const effectiveSortBy = isForYouTab ? "match" : sortBy;
+      const effectiveCandidate = (isForYouTab || sortBy === "match") ? candidate : null;
+      const effectivePreferences = (isForYouTab || sortBy === "match") ? preferences : null;
+
       const res = await getLiveJobs({
         page: nextPage,
         pageSize: 50,
@@ -162,9 +194,9 @@ function JobsPageInner() {
         search,
         remoteOnly,
         isPro,
-        sortBy,
-        candidate,
-        preferences,
+        sortBy: effectiveSortBy,
+        candidate: effectiveCandidate,
+        preferences: effectivePreferences,
       });
       setLiveJobs((prev) => [...prev, ...res.jobs]);
       setPage(nextPage);
@@ -301,6 +333,7 @@ function JobsPageInner() {
                 type="button"
                 onClick={() => {
                   setActiveTab("all");
+                  setSortBy("newest");
                   setPage(1);
                 }}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
@@ -522,9 +555,12 @@ function JobsPageInner() {
                               location: job.location,
                               remote_scope: job.remoteScope || (job.remote ? "worldwide" : undefined),
                               category: job.category,
+                              skills: job.skills,
+                              description: job.description,
                               salary_text: job.salary,
                               apply_url: job.applyUrl,
                             }}
+                            candidateProfile={candidate}
                             size="xs"
                           />
                         ) : (

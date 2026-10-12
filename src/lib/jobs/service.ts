@@ -202,6 +202,39 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
+  // 1. Route text search through safe server endpoint so company and keywords can be searched
+  // without exposing raw database tables or leaking paid fields to guests
+  if (search && search.trim() && typeof window !== "undefined") {
+    try {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
+      const params = new URLSearchParams({
+        q: search.trim(),
+        page: String(page),
+        pageSize: String(pageSize),
+      });
+      if (category && category !== "all") params.set("category", category);
+      if (remoteOnly) params.set("remoteOnly", "true");
+
+      const res = await fetch(`/api/jobs/search?${params.toString()}`, { headers });
+      if (res.ok) {
+        const json = await res.json();
+        return {
+          jobs: json.jobs || [],
+          totalCount: json.totalCount ?? (json.jobs?.length || 0),
+        };
+      }
+    } catch (searchErr) {
+      console.warn("Server search failed, falling back to public preview query:", searchErr);
+    }
+  }
+
   try {
     const supabase = createClient();
     const isMatchSort = sortBy === "match";
@@ -210,7 +243,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       : [];
 
     let query = supabase
-      .from("jobs")
+      .from("jobs_public")
       .select(PUBLIC_SELECT_COLUMNS, { count: "exact" })
       .eq("is_active", true)
       .eq("status", "active");
@@ -247,8 +280,8 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
     }
 
     if (search && search.trim()) {
-      const q = search.trim();
-      query = query.or(`title.ilike.%${q}%,location.ilike.%${q}%`);
+      const q = search.trim().replace(/[%_(),"'`;\\$]/g, " ").replace(/\s+/g, " ").trim();
+      query = query.or(`title.ilike.%${q}%,location.ilike.%${q}%,category.ilike.%${q}%`);
     }
 
     let data: any[] | null = null;
@@ -268,7 +301,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
 
       if (candidatePool.length === 0 && preferences?.categories?.length) {
         const catQuery = supabase
-          .from("jobs")
+          .from("jobs_public")
           .select(PUBLIC_SELECT_COLUMNS, { count: "exact" })
           .eq("is_active", true)
           .eq("status", "active")
@@ -287,7 +320,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         data = fallbackRes.data;
         count = fallbackRes.count;
       } else {
-        // Score each candidate against the candidate profile
+        // Score each candidate against the candidate profile using unified attributes
         const scoredPool: { row: any; score: number }[] = candidatePool.map((row: any) => {
           const teaserJob = {
             id: row.id,
@@ -296,6 +329,8 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
             location: row.location || (row.remote ? "Remote (Worldwide)" : "Remote"),
             category: row.category,
             remote_scope: row.remote_scope || (row.remote ? "worldwide" : undefined),
+            skills: row.skills,
+            description: row.description,
           };
           const diagnostics = computeFitDiagnostics(candidate, teaserJob);
           return { row, score: diagnostics.score };
@@ -511,21 +546,11 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
     const selectColumns =
       "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at";
 
-    let { data, error } = await supabase
+    const { data, error } = await supabase
       .from("jobs_public")
       .select(selectColumns)
       .eq("id", cleanId)
       .maybeSingle();
-
-    if (error && error.code === "42P01") {
-      const res = await supabase
-        .from("jobs")
-        .select(selectColumns)
-        .eq("id", cleanId)
-        .maybeSingle();
-      data = res.data;
-      error = res.error;
-    }
 
     if (!error && data) {
       const row = data as any;
@@ -602,7 +627,7 @@ export async function getAllActiveJobs(): Promise<LiveJob[]> {
   try {
     const supabase = createClient();
     const { count } = await supabase
-      .from("jobs")
+      .from("jobs_public")
       .select("id", { count: "exact", head: true })
       .eq("is_active", true)
       .eq("status", "active");
@@ -617,7 +642,7 @@ export async function getAllActiveJobs(): Promise<LiveJob[]> {
       const to = from + CHUNK_SIZE - 1;
       chunkPromises.push(
         supabase
-          .from("jobs")
+          .from("jobs_public")
           .select(PUBLIC_SELECT_COLUMNS)
           .eq("is_active", true)
           .eq("status", "active")
@@ -668,12 +693,40 @@ export async function getAllActiveJobs(): Promise<LiveJob[]> {
 
 /**
  * Computes fit diagnostics across the corpus and returns the top ranked jobs for the given candidate profile.
+ * Delegates to the server-side /api/jobs/top10 endpoint to avoid heavy client-side downloads.
  */
 export async function getTopRankedJobsForCandidate(
   candidate: CandidateProfile,
   limit = 10,
   isPro = false
 ): Promise<{ job: LiveJob; diagnostics: FitDiagnosticsResult }[]> {
+  try {
+    const supabase = createClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+
+    if (token && isPro) {
+      const res = await fetch("/api/jobs/top10", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ candidate, limit }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.jobs) && data.jobs.length > 0) {
+          return data.jobs;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("[getTopRankedJobsForCandidate] Server top10 fetch failed, using fallback:", err);
+  }
+
+  // Graceful client fallback using unified scoring and identical inputs
   const result = await getLiveJobs({
     sortBy: "match",
     candidate,

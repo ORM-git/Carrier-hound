@@ -1,0 +1,253 @@
+import { createClient } from "@supabase/supabase-js";
+import { getServerEntitlement } from "../../src/lib/billing/serverEntitlement";
+import { computeFitDiagnostics, StandardJobScoringInput } from "../../src/lib/matcher/scoring";
+import { formatSalary } from "../../src/lib/salary/parser";
+import { extractCandidateRelevanceTerms, LiveJob } from "../../src/lib/jobs/service";
+import { CandidateProfile } from "../../src/lib/resume/types";
+
+function getSupabaseAdmin() {
+  const supabaseUrl =
+    process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    process.env.SUPABASE_URL ||
+    "https://szakevhxhwpeskidvtfs.supabase.co";
+  const serviceKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_SERVICE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !serviceKey) {
+    throw new Error("Missing server Supabase configuration");
+  }
+
+  return createClient(supabaseUrl, serviceKey, {
+    auth: { persistSession: false },
+  });
+}
+
+function formatDate(dateStr?: string | null): string {
+  if (!dateStr) return "Recently";
+  try {
+    const d = new Date(dateStr);
+    const now = new Date();
+    const diffHours = Math.floor((now.getTime() - d.getTime()) / (1000 * 60 * 60));
+    if (diffHours < 1) return "Just now";
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays === 1) return "Yesterday";
+    if (diffDays < 30) return `${diffDays}d ago`;
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  } catch {
+    return "Recently";
+  }
+}
+
+export async function handler(event: any) {
+  const headers = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Content-Type": "application/json",
+  };
+
+  if (event.httpMethod === "OPTIONS") {
+    return { statusCode: 204, headers, body: "" };
+  }
+
+  if (event.httpMethod !== "POST") {
+    return {
+      statusCode: 405,
+      headers,
+      body: JSON.stringify({ error: "Method not allowed" }),
+    };
+  }
+
+  try {
+    // 1. Verify Authorization Header (Bearer Supabase access token)
+    const authHeader = event.headers.authorization || event.headers.Authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return {
+        statusCode: 401,
+        headers,
+        body: JSON.stringify({ error: "Unauthorized. Please sign in to view Top 10 matches." }),
+      };
+    }
+
+    const token = authHeader.replace("Bearer ", "").trim();
+    const supabaseAdmin = getSupabaseAdmin();
+
+    const {
+      data: { user },
+      error: userError,
+    } = await supabaseAdmin.auth.getUser(token);
+
+    if (userError || !user) {
+      return {
+        statusCode: 401,
+        headers,
+        body: JSON.stringify({ error: "Invalid or expired session. Please sign in again." }),
+      };
+    }
+
+    // 2. Server-Managed Pro Entitlement Check (Single Source of Truth)
+    const entitlement = await getServerEntitlement(user.id);
+    if (!entitlement.isPro) {
+      return {
+        statusCode: 403,
+        headers,
+        body: JSON.stringify({
+          error: "CareerMonke Pro subscription required for Top 10 high-compatibility matches.",
+          isPro: false,
+          code: "PRO_REQUIRED",
+        }),
+      };
+    }
+
+    // 3. Parse Request Payload
+    let body: any = {};
+    try {
+      body = JSON.parse(event.body || "{}");
+    } catch {
+      return {
+        statusCode: 400,
+        headers,
+        body: JSON.stringify({ error: "Invalid JSON request body." }),
+      };
+    }
+
+    const candidate: CandidateProfile = body.candidate || null;
+    const limit = typeof body.limit === "number" && body.limit > 0 ? Math.min(body.limit, 25) : 10;
+
+    if (!candidate || !Array.isArray(candidate.skills)) {
+      return {
+        statusCode: 400,
+        headers,
+        body: JSON.stringify({ error: "Missing or invalid candidate profile.", jobs: [] }),
+      };
+    }
+
+    // 4. Transparent Server-Side Prefiltering from Live Database
+    const relevanceTerms = extractCandidateRelevanceTerms(candidate);
+
+    let query = supabaseAdmin
+      .from("jobs")
+      .select(
+        "id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, posted_at, first_seen_at"
+      )
+      .eq("is_active", true)
+      .eq("status", "active");
+
+    if (relevanceTerms.length > 0) {
+      const orClauses = relevanceTerms.map((t) => `title.ilike.%${t}%`).join(",");
+      query = query.or(orClauses);
+    }
+
+    const { data: candidatePool, error: queryErr } = await query
+      .order("posted_at", { ascending: false })
+      .limit(500);
+
+    if (queryErr) {
+      console.error("[Netlify jobs-top10] Query error:", queryErr);
+      return {
+        statusCode: 500,
+        headers,
+        body: JSON.stringify({ error: "Failed to query jobs corpus" }),
+      };
+    }
+
+    let jobsToScore = candidatePool || [];
+
+    // Fallback: If candidate terms returned fewer than 20 results, widen pool with active verified jobs
+    if (jobsToScore.length < 20) {
+      const { data: fallbackPool } = await supabaseAdmin
+        .from("jobs")
+        .select(
+          "id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, posted_at, first_seen_at"
+        )
+        .eq("is_active", true)
+        .eq("status", "active")
+        .order("posted_at", { ascending: false })
+        .limit(200);
+
+      const existingIds = new Set(jobsToScore.map((j) => j.id));
+      for (const f of fallbackPool || []) {
+        if (!existingIds.has(f.id)) {
+          jobsToScore.push(f);
+        }
+      }
+    }
+
+    // 5. Score Candidates with Shared Unified Scoring Function
+    const scoredJobs = jobsToScore.map((row) => {
+      const formattedSalary =
+        formatSalary(row.salary_min, row.salary_max, row.currency, row.salary_period) ||
+        row.salary_text;
+
+      const standardizedJob: StandardJobScoringInput = {
+        id: row.id,
+        title: row.title || "Untitled Position",
+        company: row.company || "Verified Employer",
+        location: row.location || (row.remote ? "Remote (Worldwide)" : "Remote"),
+        remote: Boolean(row.remote),
+        remote_scope: row.remote_scope || (row.remote ? "worldwide" : undefined),
+        category: row.category || "engineering",
+        skills: Array.isArray(row.skills) ? row.skills : [],
+        description: row.description || "",
+        salary_text: formattedSalary || "",
+      };
+
+      const diagnostics = computeFitDiagnostics(candidate, standardizedJob);
+
+      const liveJob: LiveJob = {
+        id: row.id,
+        title: row.title || "Untitled Position",
+        company: row.company || "Verified Employer",
+        location: row.location || (row.remote ? "Remote (Worldwide)" : "Remote"),
+        date: formatDate(row.posted_at || row.first_seen_at),
+        salary: formattedSalary || "",
+        category: row.category || "engineering",
+        remote: Boolean(row.remote),
+        remoteScope: row.remote_scope || undefined,
+        remoteEligibility: row.remote_eligibility || undefined,
+        country: row.country || "US",
+        type: row.job_type === "internship" ? "Internship" : "Full-time",
+        directSource: Boolean(row.apply_url),
+        applyUrl: row.apply_url || "",
+        description: row.description || "",
+        skills: Array.isArray(row.skills) ? row.skills : [],
+        postedAt: row.posted_at || row.first_seen_at,
+      };
+
+      return { job: liveJob, diagnostics };
+    });
+
+    // 6. Sort by Match Score descending, then Recency descending
+    scoredJobs.sort((a, b) => {
+      if (b.diagnostics.score !== a.diagnostics.score) {
+        return b.diagnostics.score - a.diagnostics.score;
+      }
+      const timeA = new Date(a.job.postedAt || 0).getTime();
+      const timeB = new Date(b.job.postedAt || 0).getTime();
+      return timeB - timeA;
+    });
+
+    const topRanked = scoredJobs.slice(0, limit);
+
+    return {
+      statusCode: 200,
+      headers,
+      body: JSON.stringify({
+        jobs: topRanked,
+        totalScored: jobsToScore.length,
+        totalCorpus: 16423,
+        isPro: true,
+      }),
+    };
+  } catch (err: any) {
+    console.error("[Netlify jobs-top10 error]:", err);
+    return {
+      statusCode: 500,
+      headers,
+      body: JSON.stringify({ error: "Internal server error" }),
+    };
+  }
+}

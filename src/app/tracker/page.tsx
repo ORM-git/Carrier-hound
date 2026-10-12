@@ -50,6 +50,7 @@ export default function TrackerPage() {
   const router = useRouter();
   const [applications, setApplications] = useState<TrackedApplication[]>([]);
   const [isPro, setIsPro] = useState(false);
+  const [isProDefinitive, setIsProDefinitive] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"kanban" | "list">("kanban");
@@ -89,6 +90,7 @@ export default function TrackerPage() {
         getTrackedApplications(userId),
       ]);
       setIsPro(subRes.isPro);
+      setIsProDefinitive(Boolean(subRes.isDefinitive));
       setApplications(apps);
     } catch (err: any) {
       console.error("Failed to load tracked applications", err);
@@ -269,7 +271,7 @@ export default function TrackerPage() {
     { saved: 0, applied: 0, interview: 0, offer: 0, rejected: 0 }
   );
 
-  if (isLoading) {
+  if (isLoading || (!isPro && !isProDefinitive)) {
     return (
       <div className="min-h-screen bg-[#F8FAFC] flex flex-col justify-between">
         <GuideHeader />
@@ -281,6 +283,7 @@ export default function TrackerPage() {
     );
   }
 
+  // Definitively non-Pro
   if (!isPro) {
     return (
       <div className="min-h-screen bg-[#F8FAFC] flex flex-col justify-between">

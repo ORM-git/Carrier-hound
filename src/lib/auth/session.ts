@@ -1,5 +1,6 @@
 import { createClient } from "../supabase/client";
 import { UserPreferences, DEFAULT_USER_PREFERENCES } from "./types";
+import { clearCandidateProfileMemoryCache } from "../resume/storage";
 import type { User } from "@supabase/supabase-js";
 
 const PREFS_STORAGE_KEY = "careermonke_preferences";
@@ -30,6 +31,17 @@ export async function getAuthUser(): Promise<User | null> {
     // Check local session first for instantaneous response
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.user) {
+      const now = new Date();
+      const isBanned = Boolean(session.user.banned_until && new Date(session.user.banned_until) > now);
+      const isBlocked = session.user.user_metadata?.is_blocked === true;
+      if (isBanned || isBlocked) {
+        if (typeof window !== "undefined") {
+          localStorage.setItem("careermonke_blocked_notice", "true");
+        }
+        await signOutUser();
+        return null;
+      }
+
       if (typeof window !== "undefined" && session.user.email) {
         localStorage.setItem(USER_EMAIL_KEY, session.user.email);
       }
@@ -44,6 +56,17 @@ export async function getAuthUser(): Promise<User | null> {
 
     const { data: { user }, error } = await Promise.race([userPromise, timeoutPromise]);
     if (user && !error) {
+      const now = new Date();
+      const isBanned = Boolean(user.banned_until && new Date(user.banned_until) > now);
+      const isBlocked = user.user_metadata?.is_blocked === true;
+      if (isBanned || isBlocked) {
+        if (typeof window !== "undefined") {
+          localStorage.setItem("careermonke_blocked_notice", "true");
+        }
+        await signOutUser();
+        return null;
+      }
+
       if (typeof window !== "undefined" && user.email) {
         localStorage.setItem(USER_EMAIL_KEY, user.email);
       }
@@ -176,7 +199,26 @@ export async function signOutUser(): Promise<void> {
     localStorage.removeItem(USER_PRO_KEY);
     localStorage.removeItem(PREFS_STORAGE_KEY);
     localStorage.removeItem(CANDIDATE_PROFILE_KEY);
+
+    // Purge any candidate profile or preferences keys
+    const toRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (
+        k &&
+        (k.startsWith("careermonke_candidate_profile") ||
+          k.startsWith("careermonke_preferences"))
+      ) {
+        toRemove.push(k);
+      }
+    }
+    toRemove.forEach((k) => localStorage.removeItem(k));
+
     document.cookie = `${USER_EMAIL_KEY}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+    clearCandidateProfileMemoryCache();
     window.dispatchEvent(new Event("careermonke_auth_updated"));
+    window.dispatchEvent(new Event("careermonke_pro_updated"));
+    window.dispatchEvent(new Event("careermonke_profile_updated"));
+    window.dispatchEvent(new Event("careermonke_preferences_updated"));
   }
 }

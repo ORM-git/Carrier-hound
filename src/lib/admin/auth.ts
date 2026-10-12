@@ -1,0 +1,161 @@
+import { createClient as createAdminSupabaseClient } from "@supabase/supabase-js";
+import type { User } from "@supabase/supabase-js";
+import { ADMIN_EMAIL } from "./constants";
+
+export { ADMIN_EMAIL };
+
+/**
+ * Returns a server-side Supabase admin client using the service role key.
+ */
+export function getSupabaseAdmin() {
+  const supabaseUrl =
+    process.env.NEXT_PUBLIC_SUPABASE_URL || "https://szakevhxhwpeskidvtfs.supabase.co";
+  const serviceKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
+
+  if (!serviceKey) {
+    throw new Error("SUPABASE_SERVICE_ROLE_KEY is required for admin operations");
+  }
+
+  return createAdminSupabaseClient(supabaseUrl, serviceKey, {
+    auth: { persistSession: false },
+  });
+}
+
+/**
+ * Extracts a token from Authorization header or Cookie header.
+ */
+function extractToken(req?: Request): string | null {
+  if (!req) return null;
+
+  // 1. Check Authorization Bearer header
+  const authHeader = req.headers.get("authorization") || req.headers.get("Authorization");
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    return authHeader.replace("Bearer ", "").trim();
+  }
+
+  // 2. Check Cookie header for Supabase session token
+  const cookieHeader = req.headers.get("cookie");
+  if (cookieHeader) {
+    const cookiePairs = cookieHeader.split(";").map((c) => c.trim());
+    
+    // Check for combined or chunked sb-*-auth-token cookies
+    const chunkMap: { [key: number]: string } = {};
+    let singleVal: string | null = null;
+
+    for (const c of cookiePairs) {
+      const eqIdx = c.indexOf("=");
+      if (eqIdx === -1) continue;
+      const key = c.slice(0, eqIdx);
+      const val = c.slice(eqIdx + 1);
+
+      if (key.startsWith("sb-") && key.includes("-auth-token")) {
+        const chunkMatch = key.match(/-auth-token\.(\d+)$/);
+        if (chunkMatch) {
+          chunkMap[parseInt(chunkMatch[1], 10)] = val;
+        } else {
+          singleVal = val;
+        }
+      }
+    }
+
+    let fullVal = singleVal;
+    if (!fullVal && Object.keys(chunkMap).length > 0) {
+      const sortedKeys = Object.keys(chunkMap).map(Number).sort((a, b) => a - b);
+      fullVal = sortedKeys.map((k) => chunkMap[k]).join("");
+    }
+
+    if (fullVal) {
+      try {
+        const decoded = decodeURIComponent(fullVal);
+        let payloadStr = decoded;
+        if (payloadStr.startsWith("base64-")) {
+          const b64 = payloadStr.slice(7);
+          payloadStr = Buffer.from(b64, "base64url").toString("utf-8");
+        }
+        if (payloadStr.startsWith("[") || payloadStr.startsWith("{")) {
+          const parsed = JSON.parse(payloadStr);
+          const token = parsed?.access_token || (Array.isArray(parsed) ? parsed[0] : null);
+          if (token) return token;
+        }
+        return payloadStr;
+      } catch (_) {
+        return fullVal;
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Verifies if the request or current session is authorized as the Admin (xbsuryakant@gmail.com).
+ */
+export async function verifyAdminSession(req?: Request): Promise<{
+  isAdmin: boolean;
+  user: User | null;
+  error?: string;
+}> {
+  try {
+    const adminClient = getSupabaseAdmin();
+    const token = extractToken(req);
+
+    if (token) {
+      const { data: { user }, error } = await adminClient.auth.getUser(token);
+      if (!error && user && user.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
+        return { isAdmin: true, user };
+      }
+    }
+
+    // Also support test bypass when explicitly configured in testing env
+    if (process.env.ADMIN_TEST_BYPASS === "true") {
+      const { data: { users } } = await adminClient.auth.admin.listUsers();
+      const admin = users?.find((u) => u.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase());
+      if (admin) {
+        return { isAdmin: true, user: admin };
+      }
+    }
+
+    return { isAdmin: false, user: null, error: "Unauthorized: Admin access required." };
+  } catch (err: any) {
+    return { isAdmin: false, user: null, error: err?.message || "Internal auth check failure" };
+  }
+}
+
+/**
+ * Checks whether a given user is blocked or banned.
+ */
+export async function isUserBlocked(userId: string): Promise<boolean> {
+  if (!userId) return false;
+
+  try {
+    const admin = getSupabaseAdmin();
+
+    // 1. Check user profile / auth ban in Supabase Auth
+    const { data: { user } } = await admin.auth.admin.getUserById(userId);
+    if (user) {
+      const now = new Date();
+      if (user.banned_until && new Date(user.banned_until) > now) {
+        return true;
+      }
+      if (user.user_metadata?.is_blocked === true) {
+        return true;
+      }
+    }
+
+    // 2. Check blocked_users table if present
+    const { data: blockedRow, error } = await admin
+      .from("blocked_users")
+      .select("user_id")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (!error && blockedRow) {
+      return true;
+    }
+  } catch (_) {
+    // Fail safe
+  }
+
+  return false;
+}

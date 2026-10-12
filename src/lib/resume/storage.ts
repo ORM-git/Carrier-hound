@@ -46,91 +46,145 @@ export const DEFAULT_CANDIDATE_PROFILE: CandidateProfile = {
   updatedAt: new Date().toISOString()
 };
 
-/**
- * Gets the confirmed candidate profile from local storage and Supabase.
- * Returns null if the user has not uploaded and confirmed a resume.
- */
-export async function getCandidateProfile(userId?: string): Promise<CandidateProfile | null> {
-  let profile: CandidateProfile | null = null;
+let memoizedProfile: CandidateProfile | null = null;
+let profileInFlightPromise: Promise<CandidateProfile | null> | null = null;
 
-  if (typeof window !== "undefined") {
+type ProfileListener = (profile: CandidateProfile | null) => void;
+const profileListeners = new Set<ProfileListener>();
+
+export function subscribeCandidateProfile(listener: ProfileListener): () => void {
+  profileListeners.add(listener);
+  return () => {
+    profileListeners.delete(listener);
+  };
+}
+
+function emitProfileUpdate(profile: CandidateProfile | null) {
+  profileListeners.forEach((fn) => {
     try {
-      const stored = localStorage.getItem(PROFILE_STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (parsed && parsed.confirmedAt) {
-          profile = parsed;
-        }
-      }
+      fn(profile);
     } catch (e) {
-      console.warn("Could not read local candidate profile", e);
+      console.warn("Profile listener error", e);
     }
-  }
+  });
+}
 
-  // Try fetching from Supabase if logged in
-  try {
-    const supabase = createClient();
-    let resolvedUserId = userId;
-    let userEmail: string | undefined = undefined;
-
-    if (!resolvedUserId) {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        resolvedUserId = session.user.id;
-        userEmail = session.user.email;
-      } else {
-        const { data: { user } } = await supabase.auth.getUser();
-        resolvedUserId = user?.id;
-        userEmail = user?.email;
-      }
-    }
-
-    if (resolvedUserId) {
-      const queryPromise = supabase
-        .from("candidate_profiles")
-        .select("*")
-        .eq("user_id", resolvedUserId)
-        .maybeSingle();
-
-      const timeoutPromise = new Promise<{ data: null; error: Error }>((resolve) =>
-        setTimeout(() => resolve({ data: null, error: new Error("Profile query timeout") }), 4000)
-      );
-
-      const { data, error } = await Promise.race([queryPromise, timeoutPromise]);
-
-      if (!error && data && data.confirmed_at) {
-        const remoteProfile: CandidateProfile = {
-          name: data.name || profile?.name || "",
-          email: data.email || userEmail || profile?.email || "",
-          phone: data.phone || profile?.phone || "",
-          location: data.location || profile?.location || "",
-          headline: data.headline || profile?.headline || "",
-          summary: data.summary || profile?.summary || "",
-          skills: data.skills || profile?.skills || [],
-          experience: data.experience_json || profile?.experience || [],
-          education: data.education_json || profile?.education || [],
-          certifications: data.certifications || profile?.certifications || [],
-          rawText: data.raw_resume_text || profile?.rawText || "",
-          confirmedAt: data.confirmed_at,
-          updatedAt: data.updated_at,
-        };
-        saveCandidateProfileLocally(remoteProfile);
-        return remoteProfile;
-      }
-    }
-  } catch (err) {}
-
-  return profile;
+export function clearCandidateProfileMemoryCache() {
+  memoizedProfile = null;
+  profileInFlightPromise = null;
 }
 
 /**
- * Saves candidate profile to local storage and dispatches event
+ * Gets the confirmed candidate profile from local storage and Supabase.
+ * Reads are strictly side-effect free: NEVER dispatches careermonke_profile_updated.
+ * In-flight calls are deduplicated and in-memory results are memoized.
+ * Returns null if the user has not uploaded and confirmed a resume.
  */
-export function saveCandidateProfileLocally(profile: CandidateProfile) {
+export async function getCandidateProfile(userId?: string): Promise<CandidateProfile | null> {
+  // 1. Return in-memory memoized profile immediately if available
+  if (memoizedProfile && memoizedProfile.confirmedAt) {
+    return memoizedProfile;
+  }
+
+  // 2. If a fetch is already in-flight, reuse it so concurrent calls coalesce into 1 request
+  if (profileInFlightPromise) {
+    return profileInFlightPromise;
+  }
+
+  profileInFlightPromise = (async () => {
+    let profile: CandidateProfile | null = null;
+
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem(PROFILE_STORAGE_KEY);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed && parsed.confirmedAt) {
+            profile = parsed;
+            memoizedProfile = parsed;
+          }
+        }
+      } catch (e) {
+        console.warn("Could not read local candidate profile", e);
+      }
+    }
+
+    // Try fetching from Supabase if logged in
+    try {
+      const supabase = createClient();
+      let resolvedUserId = userId;
+      let userEmail: string | undefined = undefined;
+
+      if (!resolvedUserId) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          resolvedUserId = session.user.id;
+          userEmail = session.user.email;
+        } else {
+          const { data: { user } } = await supabase.auth.getUser();
+          resolvedUserId = user?.id;
+          userEmail = user?.email;
+        }
+      }
+
+      if (resolvedUserId) {
+        const queryPromise = supabase
+          .from("candidate_profiles")
+          .select("*")
+          .eq("user_id", resolvedUserId)
+          .maybeSingle();
+
+        const timeoutPromise = new Promise<{ data: null; error: Error }>((resolve) =>
+          setTimeout(() => resolve({ data: null, error: new Error("Profile query timeout") }), 4000)
+        );
+
+        const { data, error } = await Promise.race([queryPromise, timeoutPromise]);
+
+        if (!error && data && data.confirmed_at) {
+          const remoteProfile: CandidateProfile = {
+            name: data.name || profile?.name || "",
+            email: data.email || userEmail || profile?.email || "",
+            phone: data.phone || profile?.phone || "",
+            location: data.location || profile?.location || "",
+            headline: data.headline || profile?.headline || "",
+            summary: data.summary || profile?.summary || "",
+            skills: data.skills || profile?.skills || [],
+            experience: data.experience_json || profile?.experience || [],
+            education: data.education_json || profile?.education || [],
+            certifications: data.certifications || profile?.certifications || [],
+            rawText: data.raw_resume_text || profile?.rawText || "",
+            confirmedAt: data.confirmed_at,
+            updatedAt: data.updated_at,
+          };
+          // CRITICAL: Silent local write only (reads are side-effect free, NEVER dispatch profile_updated)
+          saveCandidateProfileLocally(remoteProfile, false);
+          memoizedProfile = remoteProfile;
+          return remoteProfile;
+        }
+      }
+    } catch (err) {}
+
+    memoizedProfile = profile;
+    return profile;
+  })().finally(() => {
+    profileInFlightPromise = null;
+  });
+
+  return profileInFlightPromise;
+}
+
+/**
+ * Saves candidate profile to local storage. Only user-initiated actions dispatch profile_updated.
+ */
+export function saveCandidateProfileLocally(profile: CandidateProfile, dispatchEvent = true) {
   if (typeof window !== "undefined") {
     try {
       localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile));
-      window.dispatchEvent(new Event("careermonke_profile_updated"));
+      memoizedProfile = profile;
+      if (dispatchEvent) {
+        window.dispatchEvent(new Event("careermonke_profile_updated"));
+        emitProfileUpdate(profile);
+      }
     } catch (e) {
       console.warn("Could not save candidate profile locally", e);
     }
@@ -196,10 +250,12 @@ export const saveCandidateProfileToSupabase = saveConfirmedCandidateProfile;
  * Deletes candidate profile from local storage and Supabase
  */
 export async function deleteCandidateProfile(): Promise<void> {
+  clearCandidateProfileMemoryCache();
   if (typeof window !== "undefined") {
     try {
       localStorage.removeItem(PROFILE_STORAGE_KEY);
       window.dispatchEvent(new Event("careermonke_profile_updated"));
+      emitProfileUpdate(null);
     } catch (e) {
       console.warn("Could not remove local candidate profile", e);
     }

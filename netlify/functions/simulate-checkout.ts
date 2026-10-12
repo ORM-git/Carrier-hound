@@ -26,11 +26,23 @@ export async function handler(event: any) {
     };
   }
 
-  // Simulation code is strictly gated behind SIMULATE_PAYMENTS=true.
-  // In production builds, this endpoint returns 404.
-  const isProd = process.env.NODE_ENV === "production" || process.env.CONTEXT === "production";
+  // Hard guard: Payment simulation must be impossible in production, whatever the env says.
+  const isProd =
+    process.env.NODE_ENV === "production" ||
+    process.env.CONTEXT === "production" ||
+    process.env.NETLIFY_ENV === "production";
+
+  if (isProd) {
+    return {
+      statusCode: 404,
+      headers,
+      body: JSON.stringify({ error: "Endpoint not found" }),
+    };
+  }
+
+  // Outside production, simulation is strictly gated behind SIMULATE_PAYMENTS=true.
   const allowSimulation = process.env.SIMULATE_PAYMENTS === "true";
-  if (isProd && !allowSimulation) {
+  if (!allowSimulation) {
     return {
       statusCode: 404,
       headers,

@@ -22,6 +22,30 @@
   force = true
 
 [[redirects]]
+  from = "/api/jobs/top10"
+  to = "/.netlify/functions/jobs-top10"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/jobs/search"
+  to = "/.netlify/functions/jobs-search"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/account/delete"
+  to = "/.netlify/functions/account-delete"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/stats"
+  to = "/.netlify/functions/stats"
+  status = 200
+  force = true
+
+[[redirects]]
   from = "/job-search"
   to = "/job-search/all"
   status = 301

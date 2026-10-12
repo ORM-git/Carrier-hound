@@ -37,6 +37,7 @@ export default function RadarPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [isPro, setIsPro] = useState(false);
+  const [isProDefinitive, setIsProDefinitive] = useState(false);
 
   useEffect(() => {
     getAuthUser().then(async (authUser) => {
@@ -46,11 +47,12 @@ export default function RadarPage() {
       }
       const proRes = await getProAccessStatus(authUser.id);
       setIsPro(proRes.isPro);
+      setIsProDefinitive(Boolean(proRes.isDefinitive));
       setLoading(false);
     });
   }, [router]);
 
-  if (loading) {
+  if (loading || (!isPro && !isProDefinitive)) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col">
         <GuideHeader />
@@ -65,7 +67,7 @@ export default function RadarPage() {
     );
   }
 
-  // Signed-in but NOT Pro
+  // Definitively signed-in non-Pro
   if (!isPro) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col">

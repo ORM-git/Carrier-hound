@@ -7,7 +7,9 @@ export type SubscriptionStatus =
   | "in_grace_period"
   | "past_due"
   | "canceled"
-  | "unpaid";
+  | "unpaid"
+  | "loading"
+  | "unknown";
 
 export interface BillingPlan {
   id: string;
@@ -81,4 +83,6 @@ export interface ProAccessStatus {
   inGracePeriod: boolean;
   graceDaysLeft?: number;
   expirationDate?: string;
+  isLoading?: boolean;
+  isDefinitive?: boolean;
 }

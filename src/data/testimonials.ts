@@ -32,7 +32,7 @@ export const FULL_REVIEWS: Review[] = [
     quote: "This tool is a game changer! I didn't realize how many jobs aren't listed on indeed or LinkedIn.",
     stars: 5,
     role: "Verified Job Seeker",
-    avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&h=200&q=80",
+    avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=96&h=96&q=75",
   },
   {
     id: "rev-2",
@@ -43,7 +43,7 @@ export const FULL_REVIEWS: Review[] = [
     quote: "It makes so much more sense to apply directly on the website. Good stuff! Works as advertised.",
     stars: 5,
     role: "Software Engineer",
-    avatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&h=200&q=80",
+    avatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=96&h=96&q=75",
   },
   {
     id: "rev-3",
@@ -54,7 +54,7 @@ export const FULL_REVIEWS: Review[] = [
     quote: "On a hunt for a remote SDR/BDR role. Definitely many jobs that aren't on LinkedIn. It's cool!",
     stars: 5,
     role: "Remote SDR Candidate",
-    avatar: "https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?auto=format&fit=crop&w=200&h=200&q=80",
+    avatar: "https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?auto=format&fit=crop&w=96&h=96&q=75",
   },
   // Row 2
   {
@@ -66,7 +66,7 @@ export const FULL_REVIEWS: Review[] = [
     quote: "I found this web service is very helpful. Thank you for sharing this kind of an amazing service. Nice and easy way to mass apply to jobs. I was impressed by its intuitiveness and smoothness.",
     stars: 5,
     role: "Platform Engineer",
-    avatar: "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=200&h=200&q=80",
+    avatar: "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=96&h=96&q=75",
   },
   {
     id: "rev-5",
@@ -77,7 +77,7 @@ export const FULL_REVIEWS: Review[] = [
     quote: "My friend told me about this to find better listings for jobs. I am so glad I discovered this, it has been so helpful for finding more work listings. It is nice to see that they actually respond to feedback and always improve!",
     stars: 5,
     role: "Product Designer",
-    avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&h=200&q=80",
+    avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=96&h=96&q=75",
   },
   {
     id: "rev-6",
@@ -88,7 +88,7 @@ export const FULL_REVIEWS: Review[] = [
     quote: "I wasn't sure if there would be any jobs in marketing available that match my criteria & experience, but a test search showed over 200+ jobs that fit exactly what I was looking for!",
     stars: 5,
     role: "Marketing Specialist",
-    avatar: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=200&h=200&q=80",
+    avatar: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=96&h=96&q=75",
   },
   // Row 3
   {
@@ -100,7 +100,7 @@ export const FULL_REVIEWS: Review[] = [
     quote: "Got this for my brother looking for a job! Thanks for answering all of my questions before purchasing.",
     stars: 5,
     role: "Talent Partner",
-    avatar: "https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=200&h=200&q=80",
+    avatar: "https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=96&h=96&q=75",
   },
   {
     id: "rev-8",
@@ -111,7 +111,7 @@ export const FULL_REVIEWS: Review[] = [
     quote: "Saw this on reddit. I was confused about how to get hired by a US company. It's nice to get all these remote US jobs in one place.",
     stars: 5,
     role: "Full Stack Developer",
-    avatar: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=200&h=200&q=80",
+    avatar: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=96&h=96&q=75",
   },
   {
     id: "rev-9",
@@ -122,7 +122,7 @@ export const FULL_REVIEWS: Review[] = [
     quote: "Already seeing some good job leads that weren't on LinkedIn!!! Highly recommend it.",
     stars: 5,
     role: "DevOps Engineer",
-    avatar: "https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?auto=format&fit=crop&w=200&h=200&q=80",
+    avatar: "https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?auto=format&fit=crop&w=96&h=96&q=75",
   },
 ];
 

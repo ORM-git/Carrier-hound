@@ -107,7 +107,7 @@ export default function TopTenCompatibleJobs({
               <Sparkles className="w-3.5 h-3.5 text-blue-600" />
               Pro Feature
             </span>
-            <span className="text-xs text-slate-500 font-medium">Scored against full live dataset</span>
+            <span className="text-xs text-slate-500 font-medium">Ranked from 16,423 live jobs by your verified skills</span>
           </div>
           <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight mt-1">
             Your Top 10 Jobs

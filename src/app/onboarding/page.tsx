@@ -53,6 +53,7 @@ function OnboardingPageInner() {
   const [loading, setLoading] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [isPro, setIsPro] = useState(false);
+  const [isProDefinitive, setIsProDefinitive] = useState(false);
 
   // Step 1: Preferences State
   const [roles, setRoles] = useState<string[]>(["Full-Stack Developer"]);
@@ -82,6 +83,7 @@ function OnboardingPageInner() {
       setUserId(user.id);
       const proRes = await getProAccessStatus(user.id);
       setIsPro(proRes.isPro);
+      setIsProDefinitive(Boolean(proRes.isDefinitive));
       setCheckingAuth(false);
 
       getUserPreferences(user.id).then((p) => {
@@ -177,7 +179,7 @@ function OnboardingPageInner() {
     router.push(next);
   };
 
-  if (checkingAuth) {
+  if (checkingAuth || (!isPro && !isProDefinitive)) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col">
         <GuideHeader />
@@ -192,7 +194,7 @@ function OnboardingPageInner() {
     );
   }
 
-  // Signed-in but NOT Pro
+  // Definitively signed-in non-Pro
   if (!isPro) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col">

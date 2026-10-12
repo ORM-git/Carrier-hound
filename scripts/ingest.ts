@@ -65,14 +65,25 @@ const companyCache = new Map<string, string>(); // slug -> company_id
 // Initialize Supabase Client
 function getSupabaseClient(): SupabaseClient | null {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
 
   if (!supabaseUrl || !serviceRoleKey) {
     if (isDryRun) {
       console.warn('⚠️ [Ingest] Supabase credentials not found in env, proceeding in offline DRY-RUN mode.');
       return null;
     }
-    console.error('❌ [Ingest] Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in environment.');
+    console.error('❌ [Ingest] Missing Supabase credentials in environment:');
+    if (!supabaseUrl) console.error('   - Missing: NEXT_PUBLIC_SUPABASE_URL / SUPABASE_URL');
+    if (!serviceRoleKey) console.error('   - Missing: SUPABASE_SERVICE_ROLE_KEY / SUPABASE_SERVICE_KEY');
+    console.error('   Please configure repository secrets in GitHub: Settings -> Secrets and variables -> Actions.');
+    process.exit(1);
+  }
+
+  try {
+    const parsed = new URL(supabaseUrl);
+    console.log(`🔌 [Ingest] Initialized Supabase client for host: ${parsed.host}`);
+  } catch {
+    console.error(`❌ [Ingest] Invalid Supabase URL format in environment.`);
     process.exit(1);
   }
 
@@ -591,40 +602,63 @@ async function main() {
                   .eq('id', companyId);
               }
 
-              // Disappearance Detection: Any active job in DB for this board not returned in latest sync was closed!
-              const cleanCompName = source.name.replace(/\s*\((?:Greenhouse|Lever|Ashby|SmartRecruiters|Recruitee|Workable)\)$/i, '').trim();
-              const activeQuery = supabase
-                .from('jobs')
-                .select('id, source_job_id')
-                .eq('source', source.type)
-                .eq('is_active', true);
+              // DESTRUCTIVE SAFETY: A source fetch returning empty or error must NEVER be treated as proof
+              // that all jobs disappeared. Board cleanup must not expire jobs based on failed/incomplete fetches.
+              const isCappedOrIncomplete = Boolean(
+                MAX_PER_SOURCE ||
+                totalAccumulatedJobs >= MAX_RUN_JOBS ||
+                stats.failed > 0 ||
+                validJobs.length === 0
+              );
 
-              if (companyId) {
-                activeQuery.eq('company_id', companyId);
+              if (isCappedOrIncomplete) {
+                if (validJobs.length === 0) {
+                  console.log(`   🛡️ [Destructive Safety] Source returned 0 jobs. Skipping disappearance detection to preserve active jobs.`);
+                } else {
+                  console.log(`   🛡️ [Destructive Safety] Incomplete or capped fetch detected. Skipping disappearance detection.`);
+                }
               } else {
-                activeQuery.ilike('company', cleanCompName);
-              }
+                const cleanCompName = source.name.replace(/\s*\((?:Greenhouse|Lever|Ashby|SmartRecruiters|Recruitee|Workable)\)$/i, '').trim();
+                const activeQuery = supabase
+                  .from('jobs')
+                  .select('id, source_job_id')
+                  .eq('source', source.type)
+                  .eq('is_active', true);
 
-              const { data: dbActiveJobs } = await activeQuery;
-              if (dbActiveJobs && dbActiveJobs.length > 0) {
-                const returnedIds = new Set(validJobs.map((j) => j.source_job_id));
-                const disappearedIds = dbActiveJobs
-                  .filter((j) => !returnedIds.has(j.source_job_id))
-                  .map((j) => j.id);
+                if (companyId) {
+                  activeQuery.eq('company_id', companyId);
+                } else {
+                  activeQuery.ilike('company', cleanCompName);
+                }
 
-                if (disappearedIds.length > 0) {
-                  const { error: expErr } = await supabase
-                    .from('jobs')
-                    .update({
-                      is_active: false,
-                      status: 'expired',
-                      expires_at: new Date().toISOString(),
-                    })
-                    .in('id', disappearedIds);
+                const { data: dbActiveJobs } = await activeQuery;
+                if (dbActiveJobs && dbActiveJobs.length > 0) {
+                  // Destructive safety guard: if returned count drops by >50% on boards with >5 active jobs,
+                  // do not mass-expire in a single sync (protect against partial/paginated API outages)
+                  const isSuspiciousDrop = dbActiveJobs.length > 5 && validJobs.length < dbActiveJobs.length * 0.5;
+                  if (isSuspiciousDrop) {
+                    console.warn(`   ⚠️ [Destructive Safety] Anomaly detected: returned ${validJobs.length} jobs vs ${dbActiveJobs.length} active in DB (>50% drop). Preserving active jobs.`);
+                  } else {
+                    const returnedIds = new Set(validJobs.map((j) => j.source_job_id));
+                    const disappearedIds = dbActiveJobs
+                      .filter((j) => !returnedIds.has(j.source_job_id))
+                      .map((j) => j.id);
 
-                  if (!expErr) {
-                    console.log(`   📉 Disappearance Detection: Expired ${disappearedIds.length} obsolete jobs no longer on ATS board.`);
-                    summary.cleanup.markedExpired += disappearedIds.length;
+                    if (disappearedIds.length > 0) {
+                      const { error: expErr } = await supabase
+                        .from('jobs')
+                        .update({
+                          is_active: false,
+                          status: 'expired',
+                          expires_at: new Date().toISOString(),
+                        })
+                        .in('id', disappearedIds);
+
+                      if (!expErr) {
+                        console.log(`   📉 Disappearance Detection: Expired ${disappearedIds.length} obsolete jobs verified removed from ATS board.`);
+                        summary.cleanup.markedExpired += disappearedIds.length;
+                      }
+                    }
                   }
                 }
               }
@@ -665,17 +699,9 @@ async function main() {
           .eq('slug', source.target);
 
         if (shouldDisable) {
-          console.warn(`   ⚠️ Board [${source.type}] ${source.target} disabled after 3 consecutive failures. Expiring its jobs.`);
-          await supabase
-            .from('jobs')
-            .update({
-              is_active: false,
-              status: 'expired',
-              expires_at: new Date().toISOString(),
-            })
-            .eq('source', source.type)
-            .eq('is_active', true)
-            .ilike('company', source.name.replace(/\s*\(.*?\)$/, '').trim());
+          console.warn(`   ⚠️ Board [${source.type}] ${source.target} disabled after 3 consecutive failures. Active jobs preserved.`);
+          // DESTRUCTIVE SAFETY: Do NOT mass-expire jobs on fetch failures!
+          // A source fetch returning empty or error must NEVER be treated as proof that jobs disappeared.
         }
       } catch {}
     }
@@ -707,7 +733,12 @@ async function main() {
 
   // Cleanup & expiration phase
   if (!isSkipCleanup && supabase) {
-    const cleanupResult = await runJobCleanup(supabase, { dryRun: isDryRun });
+    // Destructive safety: only run unseen-based expiration if this was a complete, full-corpus run with zero source failures
+    const isFullRun = !isSeedRun && !sourceFilter && !MAX_SOURCES_LIMIT && !OFFSET && !MAX_PER_SOURCE && summary.totalFailed === 0;
+    const cleanupResult = await runJobCleanup(supabase, {
+      dryRun: isDryRun,
+      skipUnseenCheck: !isFullRun,
+    });
     summary.cleanup = cleanupResult;
   }
 

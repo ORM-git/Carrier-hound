@@ -148,41 +148,54 @@ export function calculateYearsOfExperience(experience?: WorkExperienceItem[]): n
   return Math.round(totalYears * 10) / 10;
 }
 
-/**
- * Extracts ONLY skills actually evidenced in the job description or explicit requirements.
- * Never invents skills or pushes title-inferred assumptions as requirements.
- */
-export function extractSkillsFromJob(job: {
-  title?: string;
+export interface StandardJobScoringInput {
+  id?: string;
+  title: string;
+  company?: string;
   description?: string;
+  location?: string;
+  remote?: boolean;
+  remote_scope?: string;
+  remoteScope?: string;
   category?: string;
   skills?: string[];
-}): string[] {
+  salary_text?: string;
+  salary?: string;
+  apply_url?: string;
+  applyUrl?: string;
+}
+
+/**
+ * Extracts ONLY skills actually evidenced in the job description, skills array, or title.
+ * Never invents skills or pushes title-inferred assumptions as requirements.
+ * Handles missing/short description stubs identically across all surfaces.
+ */
+export function extractSkillsFromJob(job: StandardJobScoringInput): string[] {
   const evidenced = new Set<string>();
 
-  // If the job already has explicit skills array in database
+  // 1. If the job already has explicit skills array in database
   if (Array.isArray(job.skills) && job.skills.length > 0) {
     job.skills.forEach((s) => {
-      if (s && s.trim()) evidenced.add(s.trim());
+      if (s && typeof s === "string" && s.trim()) evidenced.add(s.trim());
     });
   }
 
-  const descText = (job.description || "").toLowerCase();
-  const titleText = (job.title || "").toLowerCase();
-
-  // Search description for evidenced skills
-  if (descText.length > 0) {
+  // 2. Search substantive description for evidenced skills (requires minimum 60 chars)
+  const cleanDesc = (job.description || "").trim();
+  if (cleanDesc.length >= 60) {
+    const descLower = cleanDesc.toLowerCase();
     for (const skill of SKILLS_TAXONOMY) {
       const lowerSkill = skill.toLowerCase();
       const escaped = lowerSkill.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const regex = new RegExp(`(?:^|[\\s,;/|])${escaped}(?:$|[\\s,;/|])`, "i");
-      if (regex.test(descText)) {
+      if (regex.test(descLower)) {
         evidenced.add(skill);
       }
     }
   }
 
-  // Also check if title explicitly names a specific technology (e.g. "React Developer", "Python Engineer")
+  // 3. Also check if title explicitly names a specific technology (e.g. "React Developer", "Python Engineer")
+  const titleText = (job.title || "").toLowerCase();
   for (const skill of SKILLS_TAXONOMY) {
     const lowerSkill = skill.toLowerCase();
     const escaped = lowerSkill.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -223,24 +236,30 @@ export function extractInferredDomainSignals(job: {
  * - Title & Role Alignment (25%)
  * - Experience & Seniority (15% based on actual years of experience)
  * - Location Compatibility (10% - 0 if geography restricted and not matching)
+ *
+ * Guarantees 100% score consistency across list cards, detail pages, and dashboards
+ * by using the same normalized inputs and handling missing/short JDs identically.
  */
 export function computeFitDiagnostics(
   candidate: CandidateProfile,
-  job: {
-    id?: string;
-    title: string;
-    company: string;
-    description?: string;
-    location?: string;
-    remote_scope?: string;
-    category?: string;
-    skills?: string[];
-    salary_text?: string;
-  }
+  job: StandardJobScoringInput
 ): FitDiagnosticsResult {
+  const normalizedJob: StandardJobScoringInput = {
+    id: job.id,
+    title: job.title || "Untitled Position",
+    company: job.company || "Verified Employer",
+    description: typeof job.description === "string" ? job.description : "",
+    location: job.location || "",
+    remote: Boolean(job.remote),
+    remote_scope: job.remote_scope || job.remoteScope || (job.remote ? "worldwide" : undefined),
+    category: job.category || "",
+    skills: Array.isArray(job.skills) ? job.skills : [],
+    salary_text: job.salary_text || job.salary || "",
+  };
+
   const candidateSkillTokens = (candidate.skills || []).map(normalizeSkillToTokens);
-  const jobEvidencedSkills = extractSkillsFromJob(job);
-  const inferredSignals = extractInferredDomainSignals(job);
+  const jobEvidencedSkills = extractSkillsFromJob(normalizedJob);
+  const inferredSignals = extractInferredDomainSignals(normalizedJob);
 
   // 1. Skill Match Component (Weight: 50%)
   const matchedSkills: string[] = [];
@@ -431,3 +450,9 @@ export function computeFitDiagnostics(
     },
   };
 }
+
+/**
+ * Single shared scoring function used across list card, detail page, dashboard, and Top 10.
+ */
+export const calculateConsistentJobMatchScore = computeFitDiagnostics;
+

@@ -49,3 +49,4 @@ deno.lock
 scripts/read_docs.mjs
 scripts/extract_docx.py
 
+supabase/.temp/

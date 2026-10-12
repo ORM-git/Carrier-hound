@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 
-const FALLBACK_JOBS_TODAY = 820;
+const FALLBACK_JOBS_TODAY = 0;
 const FALLBACK_TOTAL_JOBS = 16423;
 const FALLBACK_COMPANIES_SCANNED = 500;
 
@@ -44,7 +44,7 @@ export default function GlobeLiveStats() {
         const data: StatsData = await res.json();
         if (isMounted) {
           setStats({
-            jobsToday: data.jobsToday || FALLBACK_JOBS_TODAY,
+            jobsToday: data.jobsToday ?? 0,
             totalJobs: data.totalJobs || FALLBACK_TOTAL_JOBS,
             companiesScanned: data.companiesScanned || FALLBACK_COMPANIES_SCANNED,
           });

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
@@ -12,24 +13,44 @@ import { FaqHomeItem } from "@/components/FaqItems";
 import { WhiteHeroButton } from "@/components/Buttons";
 import CategorySelectModal from "@/components/CategorySelectModal";
 import Footer from "@/components/Footer";
-import WireframeDottedGlobe from "@/components/ui/wireframe-dotted-globe";
 import GlobeLiveStats from "@/components/GlobeLiveStats";
-import { Testimonials } from "@/components/testimonials";
 import { TestimonialMarqueeDemo } from "@/components/ui/marquee-01";
-import UserMenu from "@/components/UserMenu";
-import { getAuthUser } from "@/lib/auth/session";
 import { X, Check, ArrowRight } from "lucide-react";
+
+const WireframeDottedGlobe = dynamic(
+  () => import("@/components/ui/wireframe-dotted-globe"),
+  { ssr: false }
+);
+
+const Testimonials = dynamic(
+  () => import("@/components/testimonials").then((m) => m.Testimonials),
+  { ssr: false }
+);
+
+const UserMenu = dynamic(() => import("@/components/UserMenu"), {
+  ssr: false,
+  loading: () => (
+    <Link
+      href="/login"
+      className="inline-flex items-center gap-1.5 px-4 py-2 min-h-[44px] rounded-lg text-sm font-semibold transition-all border border-white/30 text-white hover:bg-white/10"
+    >
+      <span>Sign In</span>
+    </Link>
+  ),
+});
 
 export default function HomePage() {
   const router = useRouter();
   const [modalOpen, setModalOpen] = useState(false);
 
-  // Returning signed-in user visiting / goes to /dashboard
+  // Returning signed-in user visiting / goes to /dashboard (lazy loaded so Supabase isn't critical path)
   useEffect(() => {
-    getAuthUser().then((user) => {
-      if (user) {
-        router.replace("/dashboard");
-      }
+    import("@/lib/auth/session").then(({ getAuthUser }) => {
+      getAuthUser().then((user) => {
+        if (user) {
+          router.replace("/dashboard");
+        }
+      });
     });
   }, [router]);
 
@@ -309,7 +330,7 @@ export default function HomePage() {
             <div className="flex flex-col items-center flex-shrink-0 space-y-3">
               <div className="relative w-28 h-28 rounded-full overflow-hidden border-2 border-blue-500 shadow-md">
                 <Image
-                  src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=240&h=240&q=80"
+                  src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=160&h=160&q=75"
                   alt="Roman - Creator of CareerMonke"
                   fill
                   className="object-cover"

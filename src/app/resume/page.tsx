@@ -26,6 +26,7 @@ export default function ResumePage() {
   const router = useRouter();
   const [candidate, setCandidate] = useState<CandidateProfile | null>(null);
   const [isPro, setIsPro] = useState(false);
+  const [isProDefinitive, setIsProDefinitive] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const loadData = async (userId?: string) => {
@@ -35,6 +36,7 @@ export default function ResumePage() {
         getCandidateProfile(userId),
       ]);
       setIsPro(proRes.isPro);
+      setIsProDefinitive(Boolean(proRes.isDefinitive));
       if (cp && cp.confirmedAt) {
         setCandidate(cp);
       } else {
@@ -74,7 +76,7 @@ export default function ResumePage() {
     toast.info("Resume facts deleted. Personalized match scores reset.");
   };
 
-  if (loading) {
+  if (loading || (!isPro && !isProDefinitive)) {
     return (
       <div className="min-h-screen bg-[#F8FAFC] flex flex-col justify-between">
         <GuideHeader />
@@ -86,6 +88,7 @@ export default function ResumePage() {
     );
   }
 
+  // Definitively non-Pro
   if (!isPro) {
     return (
       <div className="min-h-screen bg-[#F8FAFC] flex flex-col justify-between">

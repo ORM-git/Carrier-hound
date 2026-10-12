@@ -69,6 +69,7 @@ function JobDetailInner() {
 
   const [user, setUser] = useState<User | null>(null);
   const [isPro, setIsPro] = useState(false);
+  const [isProDefinitive, setIsProDefinitive] = useState(false);
   const [candidate, setCandidate] = useState<CandidateProfile | null>(null);
   const [job, setJob] = useState<LiveJob | null>(null);
   const [loading, setLoading] = useState(true);
@@ -81,6 +82,8 @@ function JobDetailInner() {
   const [showApplyConfirmModal, setShowApplyConfirmModal] = useState(false);
   const [isSavedInTracker, setIsSavedInTracker] = useState(false);
 
+  const urlJobId = searchParams?.get("id") || searchParams?.get("jobId") || "";
+
   useEffect(() => {
     const resolvedId = getResolvedJobId(searchParams);
 
@@ -88,6 +91,7 @@ function JobDetailInner() {
     getProAccessStatus().then((subRes) => {
       const activePro = subRes.isPro;
       setIsPro(activePro);
+      setIsProDefinitive(Boolean(subRes.isDefinitive));
 
       getAuthUser().then((u) => {
         setUser(u);
@@ -117,9 +121,9 @@ function JobDetailInner() {
         setIsSavedInTracker(tracked);
       });
     }
-  }, [searchParams]);
+  }, [urlJobId]);
 
-  if (loading) {
+  if (loading || (user && !isPro && !isProDefinitive)) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col">
         <GuideHeader />
@@ -159,7 +163,7 @@ function JobDetailInner() {
     );
   }
 
-  // Tier 2: Signed-in non-Pro member
+  // Tier 2: Signed-in non-Pro member (Definitively confirmed by server)
   if (!isPro) {
     return (
       <div className="min-h-screen bg-[#F8FAFC] flex flex-col">
@@ -213,6 +217,7 @@ function JobDetailInner() {
         remote_scope: job.remoteScope || (job.remote ? "worldwide" : undefined),
         category: job.category,
         skills: job.skills,
+        description: job.description,
         salary_text: job.salary,
       })
     : null;
