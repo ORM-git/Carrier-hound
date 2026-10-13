@@ -69,27 +69,100 @@ export function cleanAndTruncateDescription(raw: string | null | undefined, maxC
 /**
  * Detects role seniority level matching database enum/check constraint.
  * Supported: 'entry' | 'mid' | 'senior' | 'staff' | 'lead' | 'director' | 'unknown'
+ *
+ * V2 Rules Alignment:
+ * - director: only matches director, vp, vice president, head of, chief [X] officer, cto, cpo, ceo, cfo, executive director.
+ *   Bare "executive", "Account Executive", and "Executive Assistant" are excluded.
+ * - staff: matches staff, principal, distinguished, fellow. (Non-engineering titles like "Staff Nurse" match staff).
+ * - senior: matches senior, sr, sr., level 3, sde 3, sde iii, software engineer iii BEFORE manager/lead.
+ *   Mistakes removed: "specialist", "expert", bare "iii/iv", and bare "l3".
+ * - mid management exemptions: "associate manager" and "assistant manager" map to 'mid' before manager/lead.
+ * - lead: matches manager and contextual/role-word lead, excluding "lead gen", "lead generation", "leads", "lead capture".
+ * - mid: matches mid-level, intermediate, level 2, l2, sde 2, sde ii, software engineer ii, and bare mid excluding "Mid-Market".
+ * - entry: matches intern, internship, fresher, graduate, trainee, apprentice, junior, jr., level 1, l1, sde 1, and associate (excluding account/sales/consulting executives).
+ *   "Data Entry" is strictly excluded from matching entry.
+ * - unknown: default fallback.
  */
 export function detectSeniority(title: string = ''): 'entry' | 'mid' | 'senior' | 'staff' | 'lead' | 'director' | 'unknown' {
-  const t = title.toLowerCase();
-  if (/\b(director|vp|vice president|head of|chief|cto|cpo|ceo|cfo|executive)\b/i.test(t)) {
-    return 'director';
+  if (!title || typeof title !== 'string') return 'unknown';
+  const t = title.trim();
+
+  // 1. Director & Executive level
+  // Matches: director, vp, vice president, head of, chief [X] officer, cto, cpo, ceo, cfo, coo, ciso, executive director.
+  // EXCLUDES: bare "executive", "Account Executive", "Sales Executive", "Executive Assistant", "CRO" (e.g. CRO Specialist).
+  if (
+    /\b(director|vp|vice president|head of|executive director)\b/i.test(t) ||
+    /\bchief\s+[a-z]+\s+officer\b/i.test(t) ||
+    (/\bchief\b/i.test(t) && /\b(executive|technology|operating|financial|information|product|revenue|marketing)\b/i.test(t)) ||
+    /\b(cto|cpo|ceo|cfo|coo|ciso)\b/i.test(t)
+  ) {
+    if (!/\bexecutive assistant\b/i.test(t) || /\b(director|vp|vice president)\b/i.test(t)) {
+      return 'director';
+    }
   }
-  if (/\b(staff|principal|fellow|distinguished)\b/i.test(t)) {
+
+  // 2. Staff & Principal level
+  // Matches: staff, principal, distinguished, fellow.
+  // EXCLUDES: "Chief of Staff" (unknown), "Member of Technical Staff" (MTS -> unknown, SMTS -> senior).
+  // Note: Non-engineering titles like "Staff Nurse" match 'staff'.
+  if (
+    /\b(staff|principal|distinguished|fellow)\b/i.test(t) &&
+    !/\b(chief of staff|member of technical staff)\b/i.test(t)
+  ) {
     return 'staff';
   }
-  if (/\b(lead|tech lead|team lead|engineering manager|manager|lead engineer|lead developer)\b/i.test(t)) {
-    return 'lead';
-  }
-  if (/\b(senior|sr|sr\.|iii|iv|expert|specialist)\b/i.test(t)) {
+
+  // 3. Senior level (BEFORE manager/lead)
+  // "Senior" wins over manager (Senior Engineering Manager -> senior) and account executive.
+  // Removed mistakes: specialist, expert, bare iii/iv, bare l3.
+  if (/\b(senior|sr\.?|level 3|sde 3|sde iii|software engineer iii)\b/i.test(t)) {
     return 'senior';
   }
-  if (/\b(intern|internship|trainee|apprentice|entry|associate|junior|jr|jr\.|graduate|grad|campus|new grad|co-op|level 1|l1)\b/i.test(t)) {
-    return 'entry';
-  }
-  if (/\b(mid|ii|level 2|l2|l3|intermediate)\b/i.test(t)) {
+
+  // 4. Mid-level management exemptions
+  // Associate Manager and Assistant Manager win over general manager -> 'mid'
+  if (/\b(associate manager|assistant manager)\b/i.test(t)) {
     return 'mid';
   }
+
+  // 5. Manager titles & contextual role Leads -> 'lead'
+  // EXCLUDES: "Lead Generation", "Lead Gen", "Leads", "Lead Capture".
+  const isManager = /\b(manager|general manager)\b/i.test(t);
+  const isRoleLead = (
+    /(^|[,\-\/:|]\s*)lead\b/i.test(t) ||
+    /\blead($|[,\-\/:|])/i.test(t) ||
+    /\b(team lead|tech lead|engineering lead|product lead|shift lead|alliance lead|lead engineer|lead developer|lead architect|lead data scientist)\b/i.test(t)
+  );
+  const isLeadGen = /\b(lead gen(eration)?|leads|lead capture)\b/i.test(t);
+
+  if ((isManager || isRoleLead) && !isLeadGen) {
+    return 'lead';
+  }
+
+  // 6. Mid level (explicit mid / intermediate)
+  // EXCLUDES: "Mid-Market" (e.g. "Sales Manager, Mid-Market - APAC" must not match mid).
+  if (
+    /\b(mid-level|intermediate|level 2|l2|sde 2|sde ii|software engineer ii)\b/i.test(t) ||
+    (/\bmid\b/i.test(t) && !/\bmid-?market\b/i.test(t))
+  ) {
+    return 'mid';
+  }
+
+  // 7. Entry level & Internships
+  // EXCLUDES: "Data Entry" (Data Entry Clerk -> unknown).
+  // EXCLUDES: Sales/Account/Consulting Executives when matching "associate".
+  if (/\b(intern|internship|fresher|graduate|grad|trainee|apprentice|co-op|campus|new grad)\b/i.test(t)) {
+    return 'entry';
+  }
+  if (
+    (/\b(junior|entry|entry-level|jr\.?|level 1|l1|sde 1|sde i|software engineer i)\b/i.test(t) ||
+     (/\bassociate\b/i.test(t) && !/\b(account executive|sales executive|consulting executive)\b/i.test(t))) &&
+    !/\bdata entry\b/i.test(t)
+  ) {
+    return 'entry';
+  }
+
+  // 8. Default unranked roles to unknown
   return 'unknown';
 }
 
@@ -214,18 +287,24 @@ export function detectRemote(
 }
 
 /**
- * Detects if a role is an internship/trainee role based on title.
+ * Detects if a role is an internship/trainee role based on title and raw type.
+ * Prevents false positives like "International" or "Internal Audit" while capturing
+ * "Intern", "Co-op", "Apprentice", etc.
  */
 export function detectJobType(title: string = '', rawType: string = ''): 'job' | 'internship' {
-  const combined = `${title} ${rawType}`.toLowerCase();
-  const isIntern =
-    combined.includes('intern') ||
-    combined.includes('internship') ||
-    combined.includes('trainee') ||
-    combined.includes('apprentice') ||
-    combined.includes('co-op');
+  if (!title && !rawType) return 'job';
+  const cleanTitle = title.replace(/\b(international|internals?|cooperative)\b/gi, ' ');
+  const cleanRaw = rawType.replace(/\b(international|internals?|cooperative)\b/gi, ' ');
+  const combined = `${cleanTitle} ${cleanRaw}`;
 
-  return isIntern ? 'internship' : 'job';
+  const isIntern = /\b(intern|interns|internship|internships|co-op|coop|trainee|trainees|apprentice|apprenticeship)\b/i.test(combined);
+  if (!isIntern) return 'job';
+
+  if (/\b(director|head|vp|vice president|manager)\s+of\s+.*intern/i.test(title)) {
+    return 'job';
+  }
+
+  return 'internship';
 }
 
 export { parseSalary, formatSalary } from '../../src/lib/salary/parser';
