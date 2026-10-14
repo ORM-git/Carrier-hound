@@ -17,8 +17,8 @@ interface SuiteSpec {
 
 const SUITES: SuiteSpec[] = [
   // Pure offline unit & regression suites (always run in CI and locally)
-  { name: "scripts/test-enhanced-scoring.ts", command: "npx tsx scripts/test-enhanced-scoring.ts" },
-  { name: "scripts/test-senior-scoring.ts", command: "npx tsx scripts/test-senior-scoring.ts" },
+  { name: "scripts/test-enhanced-scoring.ts", command: "npx tsx scripts/test-enhanced-scoring.ts", requiresSupabase: true },
+  { name: "scripts/test-senior-scoring.ts", command: "npx tsx scripts/test-senior-scoring.ts", requiresSupabase: true },
   { name: "scripts/test-trust-acceptance.ts", command: "npx tsx scripts/test-trust-acceptance.ts" },
   { name: "scripts/test-salary-parser.ts", command: "npx tsx scripts/test-salary-parser.ts" },
   { name: "scripts/test-ingestion-safety.ts", command: "npx tsx scripts/test-ingestion-safety.ts" },
