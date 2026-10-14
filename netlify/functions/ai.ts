@@ -4,6 +4,7 @@ import {
   resolveOperation,
   buildOperationPayload,
   checkAndIncrementAiQuota,
+  refundAiQuota,
   OPERATION_CONFIGS,
 } from "../../src/lib/ai/security";
 import { buildCorsHeaders, handleCorsPreflight } from "./_cors";
@@ -163,6 +164,7 @@ export async function handler(event: any) {
     // 5. Server-Side Groq API Key Check
     const groqApiKey = process.env.GROQ_API_KEY;
     if (!groqApiKey) {
+      await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
       return {
         statusCode: 503,
         headers,
@@ -171,23 +173,35 @@ export async function handler(event: any) {
     }
 
     // 6. Upstream Groq Call with Enforced Model, Tokens, & Server Prompts
-    const groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${groqApiKey}`,
-      },
-      body: JSON.stringify({
-        model: payload.model,
-        messages: payload.messages,
-        max_tokens: payload.maxOutputTokens,
-        temperature: payload.temperature,
-        ...(payload.jsonMode ? { response_format: { type: "json_object" } } : {}),
-      }),
-    });
+    let groqResponse: Response;
+    try {
+      groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${groqApiKey}`,
+        },
+        body: JSON.stringify({
+          model: payload.model,
+          messages: payload.messages,
+          max_tokens: payload.maxOutputTokens,
+          temperature: payload.temperature,
+          ...(payload.jsonMode ? { response_format: { type: "json_object" } } : {}),
+        }),
+      });
+    } catch (fetchErr) {
+      console.warn("[AI Netlify Function] Network error calling upstream provider:", fetchErr);
+      await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
+      return {
+        statusCode: 502,
+        headers,
+        body: JSON.stringify({ error: "AI service request failed or timed out. Please try again." }),
+      };
+    }
 
     if (!groqResponse.ok) {
       console.warn(`[AI Netlify Function] Upstream provider returned status ${groqResponse.status}`);
+      await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
       return {
         statusCode: 502,
         headers,
@@ -195,7 +209,19 @@ export async function handler(event: any) {
       };
     }
 
-    const groqData = await groqResponse.json();
+    let groqData: any;
+    try {
+      groqData = await groqResponse.json();
+    } catch (parseErr) {
+      console.warn("[AI Netlify Function] Failed to parse upstream provider JSON:", parseErr);
+      await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
+      return {
+        statusCode: 502,
+        headers,
+        body: JSON.stringify({ error: "AI service returned an invalid response. Please try again." }),
+      };
+    }
+
     const content = groqData?.choices?.[0]?.message?.content || "";
 
     return {

@@ -5,6 +5,7 @@ import {
   resolveOperation,
   buildOperationPayload,
   checkAndIncrementAiQuota,
+  refundAiQuota,
   OPERATION_CONFIGS,
 } from "@/lib/ai/security";
 
@@ -118,6 +119,7 @@ export async function POST(req: Request) {
     // 5. Server-Side Groq API Key Check
     const groqApiKey = process.env.GROQ_API_KEY;
     if (!groqApiKey) {
+      await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
       return NextResponse.json(
         { error: "AI service is currently unavailable. Please check back shortly." },
         { status: 503 }
@@ -125,30 +127,52 @@ export async function POST(req: Request) {
     }
 
     // 6. Upstream Groq Call with Enforced Model, Tokens, & Server Prompts
-    const groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${groqApiKey}`,
-      },
-      body: JSON.stringify({
-        model: payload.model,
-        messages: payload.messages,
-        max_tokens: payload.maxOutputTokens,
-        temperature: payload.temperature,
-        ...(payload.jsonMode ? { response_format: { type: "json_object" } } : {}),
-      }),
-    });
+    let groqResponse: Response;
+    try {
+      groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${groqApiKey}`,
+        },
+        body: JSON.stringify({
+          model: payload.model,
+          messages: payload.messages,
+          max_tokens: payload.maxOutputTokens,
+          temperature: payload.temperature,
+          ...(payload.jsonMode ? { response_format: { type: "json_object" } } : {}),
+        }),
+      });
+    } catch (fetchErr) {
+      console.warn("[AI Route] Network error calling upstream provider:", fetchErr);
+      await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
+      return NextResponse.json(
+        { error: "AI service request failed or timed out. Please try again." },
+        { status: 502 }
+      );
+    }
 
     if (!groqResponse.ok) {
       console.warn(`[AI Route] Upstream provider returned status ${groqResponse.status}`);
+      await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
       return NextResponse.json(
         { error: "AI service generation failed. Please try again." },
         { status: 502 }
       );
     }
 
-    const groqData = await groqResponse.json();
+    let groqData: any;
+    try {
+      groqData = await groqResponse.json();
+    } catch (parseErr) {
+      console.warn("[AI Route] Failed to parse upstream provider JSON:", parseErr);
+      await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
+      return NextResponse.json(
+        { error: "AI service returned an invalid response. Please try again." },
+        { status: 502 }
+      );
+    }
+
     const content = groqData?.choices?.[0]?.message?.content || "";
 
     return NextResponse.json({
