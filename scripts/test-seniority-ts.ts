@@ -31,7 +31,7 @@ export const TEST_FIXTURE: TestCase[] = [
   { title: "Events Program Manager", expected: "lead", category: "Prompt 12 Core" },
   { title: "Associate Manager", expected: "mid", category: "Prompt 12 Core" },
   { title: "Assistant Manager", expected: "mid", category: "Prompt 12 Core" },
-  { title: "Staff Nurse", expected: "staff", category: "Prompt 12 Core" },
+  { title: "Staff Nurse", expected: "unknown", category: "Staff Rule Context" },
   { title: "Lead Generation Specialist", expected: "unknown", category: "Prompt 12 Core" },
   { title: "Lead Gen Representative", expected: "unknown", category: "Prompt 12 Core" },
   { title: "Market Research Leads Specialist", expected: "unknown", category: "Prompt 12 Core" },
@@ -142,8 +142,37 @@ export const TEST_FIXTURE: TestCase[] = [
   // ============================================================================
   { title: "CRO Specialist", expected: "unknown", category: "Prompt 15 Calibration" },
   { title: "Clinical Research Associate", expected: "entry", category: "Prompt 15 Calibration" },
-  { title: "Research Fellow", expected: "staff", category: "Prompt 15 Calibration" },
-  { title: "Lead Engineer", expected: "lead", category: "Prompt 15 Calibration" }
+  { title: "Research Fellow", expected: "unknown", category: "Staff Rule Context" },
+  { title: "Lead Engineer", expected: "lead", category: "Prompt 15 Calibration" },
+
+  // ============================================================================
+  // 12. PROMPT 16 STAFF RULE CONTEXT (TECH VS NON-TECH)
+  // ============================================================================
+  // Positive: Staff / Principal with engineering/product/design/data/ML/software/SRE/security/architect context
+  { title: "Staff Software Engineer", expected: "staff", category: "Prompt 16 Staff Context" },
+  { title: "Principal Engineer", expected: "staff", category: "Prompt 16 Staff Context" },
+  { title: "Staff Product Designer", expected: "staff", category: "Prompt 16 Staff Context" },
+  { title: "Principal Systems Architect", expected: "staff", category: "Prompt 16 Staff Context" },
+  { title: "Staff Data Scientist", expected: "staff", category: "Prompt 16 Staff Context" },
+  { title: "Staff ML Engineer", expected: "staff", category: "Prompt 16 Staff Context" },
+  { title: "Principal Security Architect", expected: "staff", category: "Prompt 16 Staff Context" },
+  { title: "Staff Site Reliability Engineer", expected: "staff", category: "Prompt 16 Staff Context" },
+  { title: "Staff SRE", expected: "staff", category: "Prompt 16 Staff Context" },
+  { title: "Staff Frontend Developer", expected: "staff", category: "Prompt 16 Staff Context" },
+  { title: "Staff Backend Programmer", expected: "staff", category: "Prompt 16 Staff Context" },
+  { title: "Distinguished Software Engineer", expected: "staff", category: "Prompt 16 Staff Context" },
+
+  // Negative: Non-engineering/non-tech titles must NOT be staff
+  { title: "Staff Accountant", expected: "unknown", category: "Prompt 16 Non-Staff" },
+  { title: "Staff Writer", expected: "unknown", category: "Prompt 16 Non-Staff" },
+  { title: "Staff Attorney", expected: "unknown", category: "Prompt 16 Non-Staff" },
+  { title: "Staff Recruiter", expected: "unknown", category: "Prompt 16 Non-Staff" },
+  { title: "Principal (school)", expected: "unknown", category: "Prompt 16 Non-Staff" },
+  { title: "School Principal", expected: "unknown", category: "Prompt 16 Non-Staff" },
+  { title: "Principal Consultant", expected: "unknown", category: "Prompt 16 Non-Staff" },
+  { title: "Fellow of the Royal Society", expected: "unknown", category: "Prompt 16 Non-Staff" },
+  { title: "Teaching Fellow", expected: "unknown", category: "Prompt 16 Non-Staff" },
+  { title: "Staff Operations Specialist", expected: "unknown", category: "Prompt 16 Non-Staff" }
 ];
 
 export function runSuite() {
