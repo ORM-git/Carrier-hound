@@ -96,7 +96,7 @@ export async function GET(req: Request) {
 
     // Category filter matching getLiveJobs logic
     if (category && category !== "all") {
-      const c = category.toLowerCase().trim();
+      const c = sanitizeSearchQuery(category).toLowerCase().trim();
       if (c === "trending") {
         query = query.in("category", ["ai", "engineering", "devops"]);
       } else if (c === "tech") {

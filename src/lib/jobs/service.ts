@@ -280,7 +280,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
     }
 
     if (search && search.trim()) {
-      const q = search.trim().replace(/[%_(),"'`;\\$]/g, " ").replace(/\s+/g, " ").trim();
+      const q = search.trim().replace(/[%_(),"'`;\\$*]/g, " ").replace(/\s+/g, " ").trim().slice(0, 200);
       const parts = q.split(" ").filter((p) => p.length >= 2);
       if (parts.length > 1) {
         for (const p of parts) {
