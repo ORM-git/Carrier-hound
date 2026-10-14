@@ -96,6 +96,15 @@ export async function POST(req: Request) {
     );
 
     if (!quotaResult.allowed) {
+      if (quotaResult.isServiceUnavailable) {
+        return NextResponse.json(
+          {
+            error: quotaResult.error || "AI quota service is temporarily unavailable. Please try again shortly.",
+            code: "AI_QUOTA_SERVICE_UNAVAILABLE",
+          },
+          { status: 503 }
+        );
+      }
       return NextResponse.json(
         {
           error: `Daily AI usage quota exceeded for operation '${config.operation}' (${quotaResult.currentCount}/${quotaResult.limit}). Quotas reset daily at midnight UTC.`,

@@ -139,6 +139,16 @@ export async function handler(event: any) {
     );
 
     if (!quotaResult.allowed) {
+      if (quotaResult.isServiceUnavailable) {
+        return {
+          statusCode: 503,
+          headers,
+          body: JSON.stringify({
+            error: quotaResult.error || "AI quota service is temporarily unavailable. Please try again shortly.",
+            code: "AI_QUOTA_SERVICE_UNAVAILABLE",
+          }),
+        };
+      }
       return {
         statusCode: 429,
         headers,
