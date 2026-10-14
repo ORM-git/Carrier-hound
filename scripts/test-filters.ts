@@ -388,16 +388,21 @@ async function runTests() {
     const { data: updateData, error: updateError } = await anonClient
       .from("jobs")
       .update({ status: "inactive" })
-      .eq("id", 1);
+      .eq("id", "1")
+      .select("id");
 
-    // Either updateError is present or 0 rows modified
-    const updateBlocked = insertError !== null;
-    assert(updateBlocked, "Anonymous writes must be blocked by RLS");
+    // Either updateError is returned (table revoke / RLS policy error) or 0 rows modified
+    const updatedRows = Array.isArray(updateData) ? updateData.length : 0;
+    const updateBlocked = (updateError !== null || updatedRows === 0) && updatedRows === 0;
+    assert(
+      updateBlocked,
+      `Anonymous update into 'jobs' table succeeded (updated ${updatedRows} rows)! RLS must block anonymous updates.`
+    );
 
     results.push({
       name: "8. Anonymous write denied (RLS check on jobs table)",
       passed: true,
-      details: `Anonymous insert rejected with error: "${insertError?.message}". RLS write protection verified.`,
+      details: `Anonymous insert rejected ("${insertError?.message}"), anonymous update blocked (${updateError ? `"${updateError.message}"` : "0 rows modified"}). RLS write protection verified.`,
     });
   } catch (err: any) {
     results.push({

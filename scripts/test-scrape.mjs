@@ -22,13 +22,18 @@ async function test() {
       url: gRes.jobs[0].absolute_url,
       location: gRes.jobs[0].location?.name
     });
-    console.log("SmartRecruiters (Visa):", {
-      name: sRes.content[0].name,
-      id: sRes.content[0].id,
-      location: sRes.content[0].location
-    });
+    if (Array.isArray(sRes?.content) && sRes.content.length > 0) {
+      console.log("SmartRecruiters (Visa):", {
+        name: sRes.content[0].name,
+        id: sRes.content[0].id,
+        location: sRes.content[0].location
+      });
+    } else {
+      console.log("SmartRecruiters (Visa): empty content[] (totalFound:", sRes?.totalFound ?? 0, ")");
+    }
   } catch (err) {
     console.error("Test failed:", err);
+    process.exit(1);
   }
 }
 test();
