@@ -1,14 +1,13 @@
 "use client";
 
 import React, { useState, useMemo, useEffect, Suspense } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import GuideHeader from "@/components/GuideHeader";
 import Footer from "@/components/Footer";
 import CategoryPillBar from "@/components/CategoryPillBar";
-import PaywallModal from "@/components/PaywallModal";
 import MatchScoreBadge from "@/components/matcher/MatchScoreBadge";
-import ProUpgradeScreen from "@/components/billing/ProUpgradeScreen";
 import { getLiveJobs, LiveJob } from "@/lib/jobs/service";
 import { getAuthUser, getUserPreferences } from "@/lib/auth/session";
 import { getCandidateProfile } from "@/lib/resume/storage";
@@ -16,7 +15,6 @@ import { CandidateProfile } from "@/lib/resume/types";
 import { UserPreferences } from "@/lib/auth/types";
 import { addApplicationToTracker, getTrackedApplications, removeApplicationFromTracker } from "@/lib/tracker/storage";
 import { getProAccessStatus } from "@/lib/billing/subscription";
-import { computeFitDiagnostics } from "@/lib/matcher/scoring";
 import type { User } from "@supabase/supabase-js";
 import {
   Search,
@@ -28,15 +26,13 @@ import {
   ArrowRight,
   Lock,
   RotateCcw,
-  Sparkles,
-  ExternalLink,
   ChevronRight,
-  ShieldCheck,
-  Check,
   Globe
 } from "lucide-react";
 import CompanyLogo from "@/components/CompanyLogo";
 import { toast } from "react-toastify";
+
+const PaywallModal = dynamic(() => import("@/components/PaywallModal"), { ssr: false });
 
 function JobsPageInner() {
   const router = useRouter();
