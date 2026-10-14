@@ -1,12 +1,15 @@
 import { createClient } from "@supabase/supabase-js";
 import { getServerEntitlement } from "../../src/lib/billing/serverEntitlement";
+import { verifyUserNotBanned } from "../../src/lib/admin/auth";
 import {
   resolveOperation,
   buildOperationPayload,
   checkAndIncrementAiQuota,
+  refundAiQuota,
   OPERATION_CONFIGS,
 } from "../../src/lib/ai/security";
 import { buildCorsHeaders, handleCorsPreflight } from "./_cors";
+import { safeLog } from "./_logger";
 
 const CORS_OPTIONS = {
   allowedMethods: "POST, OPTIONS",
@@ -77,6 +80,16 @@ export async function handler(event: any) {
       };
     }
 
+    // Ban check (fails closed on lookup error)
+    const banCheck = await verifyUserNotBanned(supabaseAdmin, user.id, user.user_metadata);
+    if (banCheck.isBlocked) {
+      return {
+        statusCode: banCheck.isServiceUnavailable ? 503 : 403,
+        headers,
+        body: JSON.stringify({ error: banCheck.error || "Account suspended. Access revoked by administrator." }),
+      };
+    }
+
     // 2. Server-side Pro Entitlement check (Single Source of Truth)
     const entitlement = await getServerEntitlement(user.id);
     if (!entitlement.isPro) {
@@ -95,7 +108,8 @@ export async function handler(event: any) {
     let body: any = {};
     try {
       body = JSON.parse(event.body || "{}");
-    } catch {
+    } catch (parseErr) {
+      safeLog.warn("[Netlify /ai] Request body parse error", parseErr);
       return {
         statusCode: 400,
         headers,
@@ -163,6 +177,7 @@ export async function handler(event: any) {
     // 5. Server-Side Groq API Key Check
     const groqApiKey = process.env.GROQ_API_KEY;
     if (!groqApiKey) {
+      await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
       return {
         statusCode: 503,
         headers,
@@ -171,23 +186,35 @@ export async function handler(event: any) {
     }
 
     // 6. Upstream Groq Call with Enforced Model, Tokens, & Server Prompts
-    const groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${groqApiKey}`,
-      },
-      body: JSON.stringify({
-        model: payload.model,
-        messages: payload.messages,
-        max_tokens: payload.maxOutputTokens,
-        temperature: payload.temperature,
-        ...(payload.jsonMode ? { response_format: { type: "json_object" } } : {}),
-      }),
-    });
+    let groqResponse: Response;
+    try {
+      groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${groqApiKey}`,
+        },
+        body: JSON.stringify({
+          model: payload.model,
+          messages: payload.messages,
+          max_tokens: payload.maxOutputTokens,
+          temperature: payload.temperature,
+          ...(payload.jsonMode ? { response_format: { type: "json_object" } } : {}),
+        }),
+      });
+    } catch (fetchErr) {
+      console.warn("[AI Netlify Function] Network error calling upstream provider:", fetchErr);
+      await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
+      return {
+        statusCode: 502,
+        headers,
+        body: JSON.stringify({ error: "AI service request failed or timed out. Please try again." }),
+      };
+    }
 
     if (!groqResponse.ok) {
       console.warn(`[AI Netlify Function] Upstream provider returned status ${groqResponse.status}`);
+      await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
       return {
         statusCode: 502,
         headers,
@@ -195,7 +222,19 @@ export async function handler(event: any) {
       };
     }
 
-    const groqData = await groqResponse.json();
+    let groqData: any;
+    try {
+      groqData = await groqResponse.json();
+    } catch (parseErr) {
+      console.warn("[AI Netlify Function] Failed to parse upstream provider JSON:", parseErr);
+      await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
+      return {
+        statusCode: 502,
+        headers,
+        body: JSON.stringify({ error: "AI service returned an invalid response. Please try again." }),
+      };
+    }
+
     const content = groqData?.choices?.[0]?.message?.content || "";
 
     return {
@@ -209,7 +248,7 @@ export async function handler(event: any) {
       }),
     };
   } catch (error) {
-    console.warn("[AI Netlify Function] Internal error processing AI request:", error);
+    safeLog.error("[Netlify /ai]", error);
     return {
       statusCode: 500,
       headers,

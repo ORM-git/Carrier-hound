@@ -333,10 +333,14 @@ async function runRegression() {
     await page.screenshot({ path: resumePreviewScreenshotPath, fullPage: false });
     console.log(`Saved screenshot: ${resumePreviewScreenshotPath}`);
 
-    if (tailorModalData.hasTailorHeader) {
+    if (tailorModalData.hasTailorHeader && tailorModalData.hasScore && tailorModalData.hasPreview) {
       recordResult('Tailored Resume Modal & Preview', 'PASS', `Tailor ATS Resume modal verified (ATS Score breakdown present=${tailorModalData.hasScore}, preview loaded=${tailorModalData.hasPreview}). Screenshot captured.`);
     } else {
-      recordResult('Tailored Resume Modal & Preview', 'FAIL', `Modal not detected. Snippet: ${tailorModalData.snippet}`);
+      const missing = [];
+      if (!tailorModalData.hasTailorHeader) missing.push('header');
+      if (!tailorModalData.hasScore) missing.push('fit score breakdown');
+      if (!tailorModalData.hasPreview) missing.push('resume preview');
+      recordResult('Tailored Resume Modal & Preview', 'FAIL', `Strict modal check failed: missing ${missing.join(', ')}. Snippet: ${tailorModalData.snippet}`);
     }
 
     // FLOW 5: PDF and Word Export

@@ -20,6 +20,7 @@ function getSupabaseAdmin() {
 }
 
 import { buildCorsHeaders, handleCorsPreflight } from "./_cors";
+import { safeLog } from "./_logger";
 
 const CORS_OPTIONS = {
   allowedMethods: "GET, OPTIONS",
@@ -73,6 +74,7 @@ export async function handler(event?: any) {
       }),
     };
   } catch (err: any) {
+    safeLog.error("[Netlify /stats]", err);
     return {
       statusCode: 500,
       headers,
