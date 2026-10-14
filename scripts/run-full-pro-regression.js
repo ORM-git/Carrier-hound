@@ -224,22 +224,41 @@ async function runRegression() {
     });
     await new Promise(r => setTimeout(r, 1500));
 
-    const resumeStepAccessible = await page.evaluate(() => {
-      const text = document.body.innerText;
-      return text.includes('Verify Your Resume Facts') ||
-             text.includes('Resume Document') ||
-             text.includes('Candidate Facts') ||
-             text.includes('Confirmed Facts') ||
-             text.includes('Resume & Fact Profile');
-    });
+    const isMockFailResume = process.argv.includes('--mock-fail-resume') || process.env.MOCK_FAIL_RESUME === 'true';
+
+    let resumeStepAccessible = false;
+    if (isMockFailResume) {
+      console.log('⚠️ [NEGATIVE CONTROL ACTIVE]: Injecting mocked failing response for Resume step...');
+      resumeStepAccessible = false;
+    } else {
+      resumeStepAccessible = await page.evaluate(() => {
+        const text = document.body.innerText;
+        return text.includes('Verify Your Resume Facts') ||
+               text.includes('Resume Document') ||
+               text.includes('Candidate Facts') ||
+               text.includes('Confirmed Facts') ||
+               text.includes('Resume & Fact Profile');
+      });
+    }
+
+    if (!resumeStepAccessible) {
+      recordResult(
+        'Resume Parse & Confirm Flow',
+        'FAIL',
+        'Resume facts step failed to render expected confirmation UI.'
+      );
+      console.error('\n❌ FAILURE [Resume Parse & Confirm Flow]: Resume facts step failed to render expected confirmation UI.');
+      console.error('Halting regression execution immediately with non-zero exit code (1).');
+      try { await browser.close(); } catch (_) {}
+      process.exit(1);
+    }
 
     recordResult(
       'Resume Parse & Confirm Flow',
-      resumeStepAccessible ? 'PASS' : 'FAIL',
-      resumeStepAccessible
-        ? 'Resume facts step verified accessible and confirmed.'
-        : 'Resume facts step failed to render expected confirmation UI.'
+      'PASS',
+      'Resume facts step verified accessible and confirmed.'
     );
+
 
     // FLOW 3: Top 10 Personalized Jobs
     console.log('\n4. Testing Flow 3: Top 10 Personalized Jobs...');
