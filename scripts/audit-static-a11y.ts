@@ -85,7 +85,7 @@ const allHits = [
   ...hits.buttonWithoutAccessibleName.map(h => `[BUTTON-NO-NAME] ${h}`)
 ];
 
-allHits.slice(0, 20).forEach((hit, i) => {
+allHits.slice(0, 30).forEach((hit, i) => {
   console.log(`${String(i + 1).padStart(2, "0")}. ${hit}`);
 });
 console.log("===============================================================================");

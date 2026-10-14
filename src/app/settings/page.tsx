@@ -289,6 +289,7 @@ function SettingsPageInner() {
               <div className="flex gap-2">
                 <input
                   type="text"
+                  aria-label="Add another role"
                   value={customRole}
                   onChange={(e) => setCustomRole(e.target.value)}
                   placeholder="Add another role (e.g. Lead Frontend Engineer)"
@@ -346,6 +347,7 @@ function SettingsPageInner() {
                 </label>
                 <input
                   type="text"
+                  aria-label="Work Authorization"
                   value={workAuth}
                   onChange={(e) => setWorkAuth(e.target.value)}
                   placeholder="e.g. Authorized (No sponsorship needed)"
@@ -370,6 +372,7 @@ function SettingsPageInner() {
                   </select>
                   <input
                     type="number"
+                    aria-label="Minimum salary target"
                     value={minSalary || ""}
                     onChange={(e) => setMinSalary(e.target.value ? Number(e.target.value) : undefined)}
                     placeholder="Min salary target"
@@ -412,6 +415,7 @@ function SettingsPageInner() {
                 </div>
                 <input
                   type="checkbox"
+                  aria-label="Daily AI Matching Digest"
                   checked={dailyDigestOptIn}
                   onChange={(e) => setDailyDigestOptIn(e.target.checked)}
                   className="mt-1 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"

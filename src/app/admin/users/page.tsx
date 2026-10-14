@@ -215,6 +215,7 @@ export default function AdminUsersPage() {
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
+            aria-label="Search users by email address"
             placeholder="Search users by email address..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -495,6 +496,7 @@ export default function AdminUsersPage() {
               </label>
               <input
                 type="text"
+                aria-label="Reason for suspension (optional)"
                 placeholder="e.g. Terms violation, scraping, suspicious activity"
                 value={blockReason}
                 onChange={(e) => setBlockReason(e.target.value)}
