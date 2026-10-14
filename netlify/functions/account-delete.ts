@@ -99,17 +99,32 @@ export async function handler(event: any) {
       console.warn("[Netlify /account-delete] Billing reconciliation warning:", billingErr);
     }
 
+    // 1.5. Security Tradeoff: Anonymise ban row (disconnect user_id so CASCADE delete doesn't wipe ban, preserving email ban to prevent ban evasion)
+    try {
+      await supabaseAdmin
+        .from("blocked_users")
+        .update({ user_id: null })
+        .eq("user_id", userId);
+    } catch (banErr) {
+      console.warn("[Netlify /account-delete] Ban record anonymisation warning:", banErr);
+    }
+
     // 2. Delete user-owned data across all tables with individual error checking
     const errors: string[] = [];
 
     const tablesToDelete = [
       "candidate_profiles",
       "user_preferences",
+      "search_alerts",
       "applications",
+      "job_applications",
       "tailored_resumes",
       "daily_digests",
       "ai_usage_quotas",
+      "ai_usage_ledger",
       "page_views",
+      "user_roles",
+      "user_consents",
     ];
 
     const isIgnorableDeleteError = (err: any) => {
