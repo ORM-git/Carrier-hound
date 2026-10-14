@@ -118,11 +118,24 @@ async function runBrowserTests() {
     await page.goto("http://localhost:3000/admin");
     await new Promise((r) => setTimeout(r, 2500));
     const nonAdminUrl = page.url();
-    console.log(`Non-admin navigated to /admin -> Result URL: ${nonAdminUrl}`);
-    if (nonAdminUrl === "http://localhost:3000/" || nonAdminUrl.endsWith(":3000/")) {
-      console.log("[PASS] Non-admin logged-in user hitting /admin was successfully redirected to homepage!");
+    const nonAdminHasAdminContent = await page.evaluate(() => {
+      const body = document.body.innerText.toUpperCase();
+      return (
+        body.includes("TOP PAGES RANKED") ||
+        body.includes("TOTAL PAGE VIEWS") ||
+        body.includes("ADMIN ANALYTICS")
+      );
+    });
+    console.log(`Non-admin navigated to /admin -> Result URL: ${nonAdminUrl} (adminContent=${nonAdminHasAdminContent})`);
+    const landedOnSafeRoute =
+      !nonAdminUrl.includes("/admin") &&
+      (nonAdminUrl === "http://localhost:3000/" ||
+        nonAdminUrl.endsWith(":3000/") ||
+        nonAdminUrl.includes("/dashboard"));
+    if (landedOnSafeRoute && !nonAdminHasAdminContent) {
+      console.log("[PASS] Non-admin logged-in user hitting /admin was redirected away from /admin with zero admin content exposed!");
     } else {
-      console.error(`[FAIL] Non-admin was NOT redirected to homepage, stayed on: ${nonAdminUrl}`);
+      console.error(`[FAIL] Non-admin check failed: URL=${nonAdminUrl}, adminContent=${nonAdminHasAdminContent}`);
       process.exit(1);
     }
 

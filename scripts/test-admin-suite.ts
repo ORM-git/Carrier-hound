@@ -125,6 +125,12 @@ async function runAdminSuite() {
     assert(ADMIN_EMAIL === "xbsuryakant@gmail.com", "Admin identity is protected from self-revocation");
   }
 
+  // Clean up test page_views record
+  await adminClient
+    .from("page_views")
+    .delete()
+    .eq("path", testTrackPayload.path);
+
   console.log("\n================================================================================");
   console.log(`TEST RESULTS: ${passes}/${total} CHECKS PASSED (${Math.round((passes / total) * 100)}%)`);
   console.log("================================================================================");

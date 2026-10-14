@@ -229,8 +229,8 @@ async function verifyTask3_WorldwideDirectoryRealData() {
   }
   console.log("✅ PASS: data/companies.ts replaced with real ingested company data.");
 
-  // Sample check database counts vs companies.json
-  const topCompanies = ["OpenAI", "Databricks", "Stripe", "Anthropic", "Supabase"];
+  // Sample check database counts vs companies.json (worldwide-remote roles)
+  const topCompanies = ["OpenAI", "Harvey", "Plaid", "Cohere", "Supabase"];
   for (const compName of topCompanies) {
     const entry = companiesJson.find(c => c.name === compName);
     if (!entry) {
@@ -243,6 +243,7 @@ async function verifyTask3_WorldwideDirectoryRealData() {
       .select("id", { count: "exact", head: true })
       .eq("is_active", true)
       .eq("status", "active")
+      .or("remote_eligibility.eq.worldwide,location.ilike.%worldwide%,location.ilike.%anywhere%,location.ilike.%global%,location.ilike.%all timezones%,location.ilike.%work from anywhere%")
       .eq("company", compName);
 
     if (error) {
@@ -255,7 +256,7 @@ async function verifyTask3_WorldwideDirectoryRealData() {
       return false;
     }
 
-    console.log(`✅ PASS: ${compName} job count matches DB exactly: ${dbCount} active jobs.`);
+    console.log(`✅ PASS: ${compName} worldwide job count matches DB exactly: ${dbCount} active worldwide jobs.`);
   }
 
   return true;

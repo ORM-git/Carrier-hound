@@ -170,6 +170,9 @@ async function verifyTask1_AccountDeletion() {
   }
   console.log("✅ PASS: Active billing relationship was reconciled prior to deletion (billingReconciled: true, status set to canceled).");
 
+  // Clean up throwaway subscription record
+  await adminClient.from("subscriptions").delete().eq("user_id", userId);
+
   return true;
 }
 

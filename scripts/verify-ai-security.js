@@ -82,6 +82,14 @@ async function runTests() {
   console.log(`- Free User ID: ${freeAuth.user.id}`);
   console.log(`- Pro User ID:  ${proAuth.user.id}\n`);
 
+  const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_KEY);
+  const { data: subBefore } = await supabaseAdmin
+    .from('subscriptions')
+    .select('metadata')
+    .eq('user_id', proAuth.user.id)
+    .single();
+  const originalMetadata = subBefore?.metadata ?? {};
+
   async function invokeNetlify(token, body) {
     const event = {
       httpMethod: 'POST',
@@ -175,7 +183,6 @@ async function runTests() {
 
   // Quota Verification in Supabase
   console.log('\n>>> TESTING DURABLE SUPABASE QUOTA PERSISTENCE <<<');
-  const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_KEY);
   const { data: subData } = await supabaseAdmin
     .from('subscriptions')
     .select('metadata')
@@ -188,6 +195,12 @@ async function runTests() {
     typeof quotaExtract === 'number' && quotaExtract >= 2,
     `Supabase durable quota counter accurately persisted: ${quotaExtract} calls recorded for ${today}`
   );
+
+  // Restore original subscription metadata (clean up after test)
+  await supabaseAdmin
+    .from('subscriptions')
+    .update({ metadata: originalMetadata })
+    .eq('user_id', proAuth.user.id);
 
   console.log('\n================================================================');
   console.log(`DUAL SUITE COMPLETE: ${passed} PASSED, ${failed} FAILED`);

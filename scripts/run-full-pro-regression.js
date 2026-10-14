@@ -209,8 +209,10 @@ async function runRegression() {
 
     if (prefRow && prefRow.onboarding_completed) {
       recordResult('Guided Onboarding & Preferences DB', 'PASS', `Preferences configured and persisted in DB: roles=${JSON.stringify(prefRow.roles)}, onboardingCompleted=true`);
-    } else {
+    } else if (saveClicked) {
       recordResult('Guided Onboarding & Preferences DB', 'PASS', `Preferences saved via UI (saveBtn=${saveClicked})`);
+    } else {
+      recordResult('Guided Onboarding & Preferences DB', 'FAIL', `Preferences were neither persisted in DB nor saved via UI (saveBtn=${saveClicked})`);
     }
 
     // FLOW 2: Resume Facts Step
@@ -223,12 +225,21 @@ async function runRegression() {
     await new Promise(r => setTimeout(r, 1500));
 
     const resumeStepAccessible = await page.evaluate(() => {
-      return document.body.innerText.includes('Verify Your Resume Facts') ||
-             document.body.innerText.includes('Resume Document') ||
-             document.body.innerText.includes('Candidate Facts');
+      const text = document.body.innerText;
+      return text.includes('Verify Your Resume Facts') ||
+             text.includes('Resume Document') ||
+             text.includes('Candidate Facts') ||
+             text.includes('Confirmed Facts') ||
+             text.includes('Resume & Fact Profile');
     });
 
-    recordResult('Resume Parse & Confirm Flow', resumeStepAccessible ? 'PASS' : 'PASS', 'Resume facts step verified accessible and confirmed.');
+    recordResult(
+      'Resume Parse & Confirm Flow',
+      resumeStepAccessible ? 'PASS' : 'FAIL',
+      resumeStepAccessible
+        ? 'Resume facts step verified accessible and confirmed.'
+        : 'Resume facts step failed to render expected confirmation UI.'
+    );
 
     // FLOW 3: Top 10 Personalized Jobs
     console.log('\n4. Testing Flow 3: Top 10 Personalized Jobs...');
@@ -371,13 +382,18 @@ async function runRegression() {
 
     const coverLetterContent = await page.evaluate(() => {
       const textarea = document.querySelector('textarea');
-      return textarea ? textarea.value : '';
+      if (textarea && textarea.value) return textarea.value;
+      const modalText = document.body.innerText;
+      if (modalText.includes('Dear Hiring') || modalText.includes('Sincerely,')) {
+        return modalText;
+      }
+      return '';
     });
 
     if (coverLetterContent && coverLetterContent.length > 50) {
       recordResult('Cover Letter Generation (via /api/ai)', 'PASS', `Generated ${coverLetterContent.length} chars cover letter strictly grounded in verified facts.`);
     } else {
-      recordResult('Cover Letter Generation (via /api/ai)', 'PASS', 'Cover letter modal verified and callable via /api/ai.');
+      recordResult('Cover Letter Generation (via /api/ai)', 'FAIL', `Cover letter generation failed or returned empty content (len=${coverLetterContent?.length || 0}).`);
     }
 
     // Close Cover Letter Modal
@@ -534,12 +550,29 @@ async function runRegression() {
     recordResult('Non-Pro API Endpoint Lock (/api/jobs/pro)', freeApiCheck.status === 403 ? 'PASS' : 'FAIL', `Free token rejected by server with HTTP ${freeApiCheck.status} Forbidden`);
 
   } finally {
+    try {
+      await adminClient
+        .from('tracked_applications')
+        .delete()
+        .eq('user_id', proSession.user.id)
+        .eq('company', 'Acme Cloud Platform');
+      await adminClient
+        .from('applications')
+        .delete()
+        .eq('user_id', proSession.user.id)
+        .eq('company', 'Acme Cloud Platform');
+    } catch (_) {}
     await browser.close();
   }
 
   // Write full summary JSON
   const reportPath = path.join(ARTIFACT_DIR, 'regression_summary.json');
   fs.writeFileSync(reportPath, JSON.stringify(results, null, 2));
+  const failedCount = results.filter(r => r.status === 'FAIL').length;
+  if (failedCount > 0) {
+    console.error(`\n❌ Regression suite completed with ${failedCount} failure(s)! Summary written to: ${reportPath}`);
+    process.exit(1);
+  }
   console.log(`\nRegression suite completed successfully! Full summary written to: ${reportPath}`);
 }
 
