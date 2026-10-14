@@ -57,17 +57,22 @@ function getTop10CacheKey(userId: string, candidate: CandidateProfile, limit: nu
   return `${userId}:${limit}:${headline}:${loc}:${expCount}:${skills}`;
 }
 
+import { buildCorsHeaders, handleCorsPreflight } from "./_cors";
+
+const CORS_OPTIONS = {
+  allowedMethods: "POST, OPTIONS",
+  allowedHeaders: "Content-Type, Authorization",
+};
+
 export async function handler(event: any) {
+  const preflight = handleCorsPreflight(event, CORS_OPTIONS);
+  if (preflight) return preflight;
+
   const headers = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Content-Type": "application/json",
+    ...buildCorsHeaders(event, CORS_OPTIONS),
   };
 
-  if (event.httpMethod === "OPTIONS") {
-    return { statusCode: 204, headers, body: "" };
-  }
 
   if (event.httpMethod !== "POST") {
     return {

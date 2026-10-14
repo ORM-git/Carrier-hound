@@ -43,17 +43,76 @@ function sanitizeSearchQuery(input: string): string {
     .trim();
 }
 
+import { buildCorsHeaders, handleCorsPreflight } from "./_cors";
+
+interface RateLimitBucket {
+  count: number;
+  resetAt: number;
+}
+
+// In-memory rate-limit store (best-effort per serverless container)
+const searchRateLimitStore = new Map<string, RateLimitBucket>();
+
+export const SEARCH_RATE_LIMIT = {
+  maxRequests: 30,
+  windowMs: 60 * 1000,
+};
+
+export function _resetSearchRateLimitStore() {
+  searchRateLimitStore.clear();
+}
+
+export function _setSearchRateLimitConfig(maxRequests: number, windowMs?: number) {
+  SEARCH_RATE_LIMIT.maxRequests = maxRequests;
+  if (windowMs) SEARCH_RATE_LIMIT.windowMs = windowMs;
+}
+
+export function getClientIp(event: any): string {
+  if (!event || !event.headers) return "anonymous-client";
+  const xfwd = event.headers["x-forwarded-for"] || event.headers["X-Forwarded-For"];
+  if (xfwd) {
+    const first = xfwd.split(",")[0].trim();
+    if (first) return first;
+  }
+  const clientIp =
+    event.headers["x-nf-client-connection-ip"] ||
+    event.headers["client-ip"] ||
+    event.headers["Client-Ip"];
+  return clientIp || "anonymous-client";
+}
+
+export function checkSearchRateLimit(clientIp: string): { allowed: boolean; retryAfter: number; currentCount: number } {
+  const now = Date.now();
+  let bucket = searchRateLimitStore.get(clientIp);
+
+  if (!bucket || now >= bucket.resetAt) {
+    bucket = { count: 1, resetAt: now + SEARCH_RATE_LIMIT.windowMs };
+    searchRateLimitStore.set(clientIp, bucket);
+    return { allowed: true, retryAfter: 0, currentCount: 1 };
+  }
+
+  if (bucket.count >= SEARCH_RATE_LIMIT.maxRequests) {
+    const retryAfter = Math.max(1, Math.ceil((bucket.resetAt - now) / 1000));
+    return { allowed: false, retryAfter, currentCount: bucket.count };
+  }
+
+  bucket.count++;
+  return { allowed: true, retryAfter: 0, currentCount: bucket.count };
+}
+
+const CORS_OPTIONS = {
+  allowedMethods: "GET, OPTIONS",
+  allowedHeaders: "Content-Type, Authorization",
+};
+
 export async function handler(event: any) {
+  const preflight = handleCorsPreflight(event, CORS_OPTIONS);
+  if (preflight) return preflight;
+
   const headers = {
     "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    "Access-Control-Allow-Methods": "GET, OPTIONS",
+    ...buildCorsHeaders(event, CORS_OPTIONS),
   };
-
-  if (event.httpMethod === "OPTIONS") {
-    return { statusCode: 204, headers, body: "" };
-  }
 
   if (event.httpMethod !== "GET") {
     return {
@@ -62,6 +121,24 @@ export async function handler(event: any) {
       body: JSON.stringify({ error: "Method not allowed" }),
     };
   }
+
+  // Request Rate Limiting (30 requests per 60s per client IP)
+  const clientIp = getClientIp(event);
+  const rateLimit = checkSearchRateLimit(clientIp);
+  if (!rateLimit.allowed) {
+    return {
+      statusCode: 429,
+      headers: {
+        ...headers,
+        "Retry-After": String(rateLimit.retryAfter),
+      },
+      body: JSON.stringify({
+        error: "Rate limit exceeded. Please wait a moment.",
+        retryAfter: rateLimit.retryAfter,
+      }),
+    };
+  }
+
 
   try {
     const params = event.queryStringParameters || {};
