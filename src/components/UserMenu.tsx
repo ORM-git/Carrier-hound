@@ -205,7 +205,7 @@ export default function UserMenu({
                 <span>Browse All Jobs</span>
               </Link>
               <Link
-                href="/tracker"
+                href="/applications"
                 prefetch={false}
                 onClick={() => setOpen(false)}
                 className="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 rounded-lg transition-colors font-medium"

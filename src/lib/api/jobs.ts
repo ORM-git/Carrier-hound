@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/client";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { expandCategoryFilter, normalizeCategorySlug } from "@/lib/taxonomy";
 import type { Job } from "@/data/jobs";
 
@@ -37,10 +38,18 @@ const ALLOWED_DATE = new Set(["all", "24h", "7d", "30d"]);
 
 // Card fields only — no description or skills bloat
 const CARD_FIELDS =
-  "id, title, company, location, remote_scope, job_type, salary_text, first_seen_at, last_seen_at, status, category, country, date, apply_url";
+  "id, title, company, location, remote, remote_scope, job_type, salary_text, first_seen_at, last_seen_at, posted_at, status, category, country, apply_url";
 
 export async function searchJobs(params: SearchJobsParams = {}): Promise<SearchJobsResult> {
-  const supabase = createClient();
+  const isServerWithServiceKey =
+    typeof window === "undefined" && Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY);
+  const supabase = isServerWithServiceKey
+    ? createSupabaseClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL || "https://szakevhxhwpeskidvtfs.supabase.co",
+        process.env.SUPABASE_SERVICE_ROLE_KEY!
+      )
+    : createClient();
+  const targetTable = isServerWithServiceKey ? "jobs" : "jobs_public";
 
   // Parameter validation and allowlisting
   const q = (params.q || "").replace(/[,()]/g, " ").replace(/\s+/g, " ").trim();
@@ -61,60 +70,8 @@ export async function searchJobs(params: SearchJobsParams = {}): Promise<SearchJ
     categoryTokens.push(...params.categories);
   }
 
-  // 1. First attempt: call RPC `get_jobs_with_facets`
-  try {
-    const { data: rpcData, error: rpcError } = await supabase.rpc("get_jobs_with_facets", {
-      p_q: q || null,
-      p_categories: categoryTokens.length > 0 ? expandCategoryFilter(categoryTokens) : null,
-      p_country: country !== "all" ? country : null,
-      p_remote_only: remoteOnly,
-      p_salary: salary !== "all" ? salary : null,
-      p_experience: experience !== "all" ? experience : null,
-      p_date: date !== "all" ? date : null,
-      p_page: page,
-      p_page_size: pageSize,
-    });
-
-    if (!rpcError && rpcData && typeof rpcData === "object") {
-      const mappedJobs: Job[] = (rpcData.jobs || []).map((d: any) => ({
-        id: d.id,
-        title: d.title,
-        company: d.company,
-        location: d.location,
-        date: d.date || (d.first_seen_at ? new Date(d.first_seen_at).toLocaleDateString() : "Today"),
-        salary: d.salary_text || "Competitive",
-        category: d.category || "software",
-        remote: d.remote === true || d.remote_scope === "remote",
-        country: d.country || "United States",
-        type:
-          d.job_type === "full-time"
-            ? "Full-time"
-            : d.job_type === "job"
-            ? "Full-time"
-            : d.job_type || "Full-time",
-        directSource: true,
-        applyUrl: d.apply_url || "#",
-      }));
-
-      return {
-        jobs: mappedJobs,
-        total: rpcData.total || 0,
-        totalPages: rpcData.total_pages || 1,
-        page: rpcData.page || page,
-        pageSize: rpcData.page_size || pageSize,
-        facets: {
-          categories: rpcData.facets?.categories || {},
-          countries: rpcData.facets?.countries || {},
-        },
-        availableCountries: rpcData.available_countries || [],
-      };
-    }
-  } catch {
-    // RPC not present in DB schema yet, proceed to direct PostgREST query
-  }
-
-  // 2. Direct PostgREST query (public preview fields from jobs_public view)
-  let query = supabase.from("jobs_public").select(CARD_FIELDS, { count: "exact" }).eq("status", "active");
+  // Direct PostgREST query (uses jobs_public for client/anon to preserve paid-field masking, or jobs on server with service role)
+  let query = supabase.from(targetTable).select(CARD_FIELDS, { count: "exact" }).eq("status", "active");
 
   if (q) {
     query = query.or(`title.ilike.%${q}%,company.ilike.%${q}%`);

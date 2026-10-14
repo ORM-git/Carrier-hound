@@ -2,698 +2,284 @@
   {
     "id": "comp-openai",
     "name": "OpenAI",
-    "jobCount": 1204,
+    "jobCount": 332,
     "slug": "openai"
-  },
-  {
-    "id": "comp-databricks",
-    "name": "Databricks",
-    "jobCount": 893,
-    "slug": "databricks"
-  },
-  {
-    "id": "comp-stripe",
-    "name": "Stripe",
-    "jobCount": 729,
-    "slug": "stripe"
-  },
-  {
-    "id": "comp-anthropic",
-    "name": "Anthropic",
-    "jobCount": 636,
-    "slug": "anthropic"
-  },
-  {
-    "id": "comp-doordash",
-    "name": "DoorDash",
-    "jobCount": 464,
-    "slug": "doordash"
-  },
-  {
-    "id": "comp-datadog",
-    "name": "Datadog",
-    "jobCount": 451,
-    "slug": "datadog"
-  },
-  {
-    "id": "comp-cloudflare",
-    "name": "Cloudflare",
-    "jobCount": 421,
-    "slug": "cloudflare"
-  },
-  {
-    "id": "comp-mongodb",
-    "name": "MongoDB",
-    "jobCount": 402,
-    "slug": "mongodb"
-  },
-  {
-    "id": "comp-elastic",
-    "name": "Elastic",
-    "jobCount": 399,
-    "slug": "elastic"
-  },
-  {
-    "id": "comp-okta",
-    "name": "Okta",
-    "jobCount": 377,
-    "slug": "okta"
-  },
-  {
-    "id": "comp-zscaler",
-    "name": "Zscaler",
-    "jobCount": 376,
-    "slug": "zscaler"
-  },
-  {
-    "id": "comp-snowflake",
-    "name": "Snowflake",
-    "jobCount": 347,
-    "slug": "snowflake"
-  },
-  {
-    "id": "comp-braze",
-    "name": "Braze",
-    "jobCount": 343,
-    "slug": "braze"
-  },
-  {
-    "id": "comp-toast",
-    "name": "Toast",
-    "jobCount": 335,
-    "slug": "toast"
   },
   {
     "id": "comp-harvey",
     "name": "Harvey",
-    "jobCount": 309,
+    "jobCount": 225,
     "slug": "harvey"
-  },
-  {
-    "id": "comp-roblox",
-    "name": "Roblox",
-    "jobCount": 266,
-    "slug": "roblox"
-  },
-  {
-    "id": "comp-samsara",
-    "name": "Samsara",
-    "jobCount": 244,
-    "slug": "samsara"
-  },
-  {
-    "id": "comp-elevenlabs",
-    "name": "ElevenLabs",
-    "jobCount": 237,
-    "slug": "elevenlabs"
-  },
-  {
-    "id": "comp-cohere",
-    "name": "Cohere",
-    "jobCount": 229,
-    "slug": "cohere"
-  },
-  {
-    "id": "comp-gitlab",
-    "name": "GitLab",
-    "jobCount": 215,
-    "slug": "gitlab"
-  },
-  {
-    "id": "comp-scale-ai",
-    "name": "Scale AI",
-    "jobCount": 208,
-    "slug": "scale-ai"
-  },
-  {
-    "id": "comp-cursor",
-    "name": "Cursor",
-    "jobCount": 207,
-    "slug": "cursor"
-  },
-  {
-    "id": "comp-flexport",
-    "name": "Flexport",
-    "jobCount": 204,
-    "slug": "flexport"
-  },
-  {
-    "id": "comp-coinbase",
-    "name": "Coinbase",
-    "jobCount": 204,
-    "slug": "coinbase"
-  },
-  {
-    "id": "comp-notion",
-    "name": "Notion",
-    "jobCount": 199,
-    "slug": "notion"
-  },
-  {
-    "id": "comp-sierra",
-    "name": "Sierra",
-    "jobCount": 194,
-    "slug": "sierra"
-  },
-  {
-    "id": "comp-lyft",
-    "name": "Lyft",
-    "jobCount": 190,
-    "slug": "lyft"
-  },
-  {
-    "id": "comp-clickhouse",
-    "name": "ClickHouse",
-    "jobCount": 188,
-    "slug": "clickhouse"
-  },
-  {
-    "id": "comp-fivetran",
-    "name": "Fivetran",
-    "jobCount": 185,
-    "slug": "fivetran"
-  },
-  {
-    "id": "comp-brex",
-    "name": "Brex",
-    "jobCount": 180,
-    "slug": "brex"
-  },
-  {
-    "id": "comp-scopely",
-    "name": "Scopely",
-    "jobCount": 173,
-    "slug": "scopely"
-  },
-  {
-    "id": "comp-robinhood",
-    "name": "Robinhood",
-    "jobCount": 171,
-    "slug": "robinhood"
-  },
-  {
-    "id": "comp-pinterest",
-    "name": "Pinterest",
-    "jobCount": 169,
-    "slug": "pinterest"
-  },
-  {
-    "id": "comp-deliveroo",
-    "name": "Deliveroo",
-    "jobCount": 167,
-    "slug": "deliveroo"
-  },
-  {
-    "id": "comp-riot-games",
-    "name": "Riot Games",
-    "jobCount": 167,
-    "slug": "riot-games"
-  },
-  {
-    "id": "comp-airbnb",
-    "name": "Airbnb",
-    "jobCount": 165,
-    "slug": "airbnb"
-  },
-  {
-    "id": "comp-epic-games",
-    "name": "Epic Games",
-    "jobCount": 150,
-    "slug": "epic-games"
-  },
-  {
-    "id": "comp-klaviyo",
-    "name": "Klaviyo",
-    "jobCount": 145,
-    "slug": "klaviyo"
-  },
-  {
-    "id": "comp-ramp",
-    "name": "Ramp",
-    "jobCount": 142,
-    "slug": "ramp"
-  },
-  {
-    "id": "comp-reddit",
-    "name": "Reddit",
-    "jobCount": 141,
-    "slug": "reddit"
-  },
-  {
-    "id": "comp-affirm",
-    "name": "Affirm",
-    "jobCount": 137,
-    "slug": "affirm"
-  },
-  {
-    "id": "comp-twilio",
-    "name": "Twilio",
-    "jobCount": 134,
-    "slug": "twilio"
-  },
-  {
-    "id": "comp-instacart",
-    "name": "Instacart",
-    "jobCount": 127,
-    "slug": "instacart"
   },
   {
     "id": "comp-plaid",
     "name": "Plaid",
-    "jobCount": 123,
+    "jobCount": 107,
     "slug": "plaid"
   },
   {
-    "id": "comp-grafana-labs",
-    "name": "Grafana Labs",
-    "jobCount": 122,
-    "slug": "grafana-labs"
+    "id": "comp-cohere",
+    "name": "Cohere",
+    "jobCount": 72,
+    "slug": "cohere"
   },
   {
-    "id": "comp-baseten",
-    "name": "Baseten",
-    "jobCount": 117,
-    "slug": "baseten"
-  },
-  {
-    "id": "comp-intercom",
-    "name": "Intercom",
-    "jobCount": 109,
-    "slug": "intercom"
-  },
-  {
-    "id": "comp-gusto",
-    "name": "Gusto",
-    "jobCount": 107,
-    "slug": "gusto"
-  },
-  {
-    "id": "comp-langchain",
-    "name": "LangChain",
-    "jobCount": 101,
-    "slug": "langchain"
+    "id": "comp-notion",
+    "name": "Notion",
+    "jobCount": 69,
+    "slug": "notion"
   },
   {
     "id": "comp-supabase",
     "name": "Supabase",
-    "jobCount": 98,
+    "jobCount": 67,
     "slug": "supabase"
   },
   {
-    "id": "comp-perplexity",
-    "name": "Perplexity",
-    "jobCount": 98,
-    "slug": "perplexity"
+    "id": "comp-cloudflare",
+    "name": "Cloudflare",
+    "jobCount": 66,
+    "slug": "cloudflare"
   },
   {
-    "id": "comp-asana",
-    "name": "Asana",
-    "jobCount": 96,
-    "slug": "asana"
-  },
-  {
-    "id": "comp-vercel",
-    "name": "Vercel",
-    "jobCount": 91,
-    "slug": "vercel"
-  },
-  {
-    "id": "comp-palantir",
-    "name": "Palantir",
-    "jobCount": 88,
-    "slug": "palantir"
-  },
-  {
-    "id": "comp-deepgram",
-    "name": "Deepgram",
-    "jobCount": 88,
-    "slug": "deepgram"
-  },
-  {
-    "id": "comp-perplexity-ai",
-    "name": "Perplexity AI",
-    "jobCount": 86,
-    "slug": "perplexity-ai"
-  },
-  {
-    "id": "comp-chainguard",
-    "name": "Chainguard",
-    "jobCount": 84,
-    "slug": "chainguard"
+    "id": "comp-databricks",
+    "name": "Databricks",
+    "jobCount": 64,
+    "slug": "databricks"
   },
   {
     "id": "comp-vanta",
     "name": "Vanta",
-    "jobCount": 84,
+    "jobCount": 50,
     "slug": "vanta"
   },
   {
-    "id": "comp-duolingo",
-    "name": "Duolingo",
-    "jobCount": 83,
-    "slug": "duolingo"
+    "id": "comp-baseten",
+    "name": "Baseten",
+    "jobCount": 44,
+    "slug": "baseten"
   },
   {
-    "id": "comp-figma",
-    "name": "Figma",
-    "jobCount": 82,
-    "slug": "figma"
+    "id": "comp-perplexity",
+    "name": "Perplexity",
+    "jobCount": 41,
+    "slug": "perplexity"
   },
   {
-    "id": "comp-carta",
-    "name": "Carta",
-    "jobCount": 77,
-    "slug": "carta"
+    "id": "comp-samsara",
+    "name": "Samsara",
+    "jobCount": 31,
+    "slug": "samsara"
   },
   {
-    "id": "comp-monzo",
-    "name": "Monzo",
-    "jobCount": 75,
-    "slug": "monzo"
-  },
-  {
-    "id": "comp-faire",
-    "name": "Faire",
-    "jobCount": 74,
-    "slug": "faire"
-  },
-  {
-    "id": "comp-replit",
-    "name": "Replit",
-    "jobCount": 74,
-    "slug": "replit"
-  },
-  {
-    "id": "comp-mixpanel",
-    "name": "Mixpanel",
-    "jobCount": 72,
-    "slug": "mixpanel"
-  },
-  {
-    "id": "comp-sentry",
-    "name": "Sentry",
-    "jobCount": 70,
-    "slug": "sentry"
-  },
-  {
-    "id": "comp-1password",
-    "name": "1Password",
-    "jobCount": 68,
-    "slug": "1password"
-  },
-  {
-    "id": "comp-modal",
-    "name": "Modal",
-    "jobCount": 67,
-    "slug": "modal"
-  },
-  {
-    "id": "comp-chime",
-    "name": "Chime",
-    "jobCount": 64,
-    "slug": "chime"
-  },
-  {
-    "id": "comp-temporal",
-    "name": "Temporal",
-    "jobCount": 64,
-    "slug": "temporal"
-  },
-  {
-    "id": "comp-mercury",
-    "name": "Mercury",
-    "jobCount": 62,
-    "slug": "mercury"
-  },
-  {
-    "id": "comp-docker",
-    "name": "Docker",
-    "jobCount": 60,
-    "slug": "docker"
-  },
-  {
-    "id": "comp-launchdarkly",
-    "name": "LaunchDarkly",
-    "jobCount": 59,
-    "slug": "launchdarkly"
-  },
-  {
-    "id": "comp-twitch",
-    "name": "Twitch",
-    "jobCount": 55,
-    "slug": "twitch"
-  },
-  {
-    "id": "comp-discord",
-    "name": "Discord",
-    "jobCount": 55,
-    "slug": "discord"
-  },
-  {
-    "id": "comp-tailscale",
-    "name": "Tailscale",
-    "jobCount": 52,
-    "slug": "tailscale"
-  },
-  {
-    "id": "comp-clickup",
-    "name": "ClickUp",
-    "jobCount": 52,
-    "slug": "clickup"
+    "id": "comp-cursor",
+    "name": "Cursor",
+    "jobCount": 30,
+    "slug": "cursor"
   },
   {
     "id": "comp-synthesia",
     "name": "Synthesia",
-    "jobCount": 49,
+    "jobCount": 28,
     "slug": "synthesia"
   },
   {
-    "id": "comp-spotify",
-    "name": "Spotify",
-    "jobCount": 45,
-    "slug": "spotify"
+    "id": "comp-temporal",
+    "name": "Temporal",
+    "jobCount": 27,
+    "slug": "temporal"
   },
   {
-    "id": "comp-fastly",
-    "name": "Fastly",
-    "jobCount": 42,
-    "slug": "fastly"
+    "id": "comp-sentry",
+    "name": "Sentry",
+    "jobCount": 25,
+    "slug": "sentry"
   },
   {
-    "id": "comp-dropbox",
-    "name": "Dropbox",
-    "jobCount": 39,
-    "slug": "dropbox"
+    "id": "comp-elevenlabs",
+    "name": "ElevenLabs",
+    "jobCount": 24,
+    "slug": "elevenlabs"
+  },
+  {
+    "id": "comp-stripe",
+    "name": "Stripe",
+    "jobCount": 19,
+    "slug": "stripe"
+  },
+  {
+    "id": "comp-twilio",
+    "name": "Twilio",
+    "jobCount": 19,
+    "slug": "twilio"
   },
   {
     "id": "comp-drata",
     "name": "Drata",
-    "jobCount": 37,
+    "jobCount": 17,
     "slug": "drata"
   },
   {
-    "id": "comp-stockx",
-    "name": "StockX",
-    "jobCount": 37,
-    "slug": "stockx"
+    "id": "comp-gitlab",
+    "name": "GitLab",
+    "jobCount": 15,
+    "slug": "gitlab"
   },
   {
-    "id": "comp-amplitude",
-    "name": "Amplitude",
-    "jobCount": 35,
-    "slug": "amplitude"
+    "id": "comp-clickhouse",
+    "name": "ClickHouse",
+    "jobCount": 14,
+    "slug": "clickhouse"
   },
   {
-    "id": "comp-watershed",
-    "name": "Watershed",
-    "jobCount": 35,
-    "slug": "watershed"
-  },
-  {
-    "id": "comp-culture-amp",
-    "name": "Culture Amp",
-    "jobCount": 34,
-    "slug": "culture-amp"
-  },
-  {
-    "id": "comp-bitwarden",
-    "name": "Bitwarden",
-    "jobCount": 34,
-    "slug": "bitwarden"
-  },
-  {
-    "id": "comp-starburst-data",
-    "name": "Starburst Data",
-    "jobCount": 30,
-    "slug": "starburst-data"
+    "id": "comp-snowflake",
+    "name": "Snowflake",
+    "jobCount": 13,
+    "slug": "snowflake"
   },
   {
     "id": "comp-webflow",
     "name": "Webflow",
-    "jobCount": 26,
+    "jobCount": 12,
     "slug": "webflow"
   },
   {
-    "id": "comp-miro",
-    "name": "Miro",
-    "jobCount": 26,
-    "slug": "miro"
-  },
-  {
-    "id": "comp-anyscale",
-    "name": "Anyscale",
-    "jobCount": 21,
-    "slug": "anyscale"
-  },
-  {
-    "id": "comp-warp",
-    "name": "Warp",
-    "jobCount": 21,
-    "slug": "warp"
-  },
-  {
-    "id": "comp-linear",
-    "name": "Linear",
-    "jobCount": 20,
-    "slug": "linear"
-  },
-  {
-    "id": "comp-cockroach-labs",
-    "name": "Cockroach Labs",
-    "jobCount": 19,
-    "slug": "cockroach-labs"
-  },
-  {
-    "id": "comp-hopper",
-    "name": "Hopper",
-    "jobCount": 19,
-    "slug": "hopper"
-  },
-  {
-    "id": "comp-vapi-ai",
-    "name": "Vapi AI",
-    "jobCount": 18,
-    "slug": "vapi-ai"
-  },
-  {
-    "id": "comp-midjourney",
-    "name": "Midjourney",
-    "jobCount": 18,
-    "slug": "midjourney"
-  },
-  {
-    "id": "comp-coursera",
-    "name": "Coursera",
-    "jobCount": 17,
-    "slug": "coursera"
-  },
-  {
-    "id": "comp-confluent",
-    "name": "Confluent",
-    "jobCount": 17,
-    "slug": "confluent"
-  },
-  {
-    "id": "comp-honeycomb",
-    "name": "Honeycomb",
-    "jobCount": 16,
-    "slug": "honeycomb"
-  },
-  {
-    "id": "comp-character-ai",
-    "name": "Character.ai",
-    "jobCount": 13,
-    "slug": "character-ai"
-  },
-  {
-    "id": "comp-planetscale",
-    "name": "PlanetScale",
-    "jobCount": 12,
-    "slug": "planetscale"
-  },
-  {
-    "id": "comp-lattice",
-    "name": "Lattice",
+    "id": "comp-bitwarden",
+    "name": "Bitwarden",
     "jobCount": 11,
-    "slug": "lattice"
-  },
-  {
-    "id": "comp-infisical",
-    "name": "Infisical",
-    "jobCount": 10,
-    "slug": "infisical"
+    "slug": "bitwarden"
   },
   {
     "id": "comp-zapier",
     "name": "Zapier",
-    "jobCount": 10,
+    "jobCount": 9,
     "slug": "zapier"
   },
   {
-    "id": "comp-udemy",
-    "name": "Udemy",
+    "id": "comp-roblox",
+    "name": "Roblox",
     "jobCount": 9,
-    "slug": "udemy"
+    "slug": "roblox"
+  },
+  {
+    "id": "comp-discord",
+    "name": "Discord",
+    "jobCount": 9,
+    "slug": "discord"
+  },
+  {
+    "id": "comp-midjourney",
+    "name": "Midjourney",
+    "jobCount": 8,
+    "slug": "midjourney"
+  },
+  {
+    "id": "comp-anyscale",
+    "name": "Anyscale",
+    "jobCount": 8,
+    "slug": "anyscale"
   },
   {
     "id": "comp-llamaindex",
     "name": "LlamaIndex",
-    "jobCount": 9,
+    "jobCount": 8,
     "slug": "llamaindex"
   },
   {
-    "id": "comp-secureframe",
-    "name": "Secureframe",
-    "jobCount": 8,
-    "slug": "secureframe"
+    "id": "comp-replit",
+    "name": "Replit",
+    "jobCount": 7,
+    "slug": "replit"
   },
   {
-    "id": "comp-snyk",
-    "name": "Snyk",
-    "jobCount": 8,
-    "slug": "snyk"
+    "id": "comp-deepgram",
+    "name": "Deepgram",
+    "jobCount": 7,
+    "slug": "deepgram"
+  },
+  {
+    "id": "comp-hopper",
+    "name": "Hopper",
+    "jobCount": 7,
+    "slug": "hopper"
+  },
+  {
+    "id": "comp-amplitude",
+    "name": "Amplitude",
+    "jobCount": 6,
+    "slug": "amplitude"
+  },
+  {
+    "id": "comp-coinbase",
+    "name": "Coinbase",
+    "jobCount": 6,
+    "slug": "coinbase"
+  },
+  {
+    "id": "comp-chainguard",
+    "name": "Chainguard",
+    "jobCount": 6,
+    "slug": "chainguard"
+  },
+  {
+    "id": "comp-zscaler",
+    "name": "Zscaler",
+    "jobCount": 6,
+    "slug": "zscaler"
+  },
+  {
+    "id": "comp-toast",
+    "name": "Toast",
+    "jobCount": 5,
+    "slug": "toast"
+  },
+  {
+    "id": "comp-sierra",
+    "name": "Sierra",
+    "jobCount": 5,
+    "slug": "sierra"
+  },
+  {
+    "id": "comp-langchain",
+    "name": "LangChain",
+    "jobCount": 5,
+    "slug": "langchain"
   },
   {
     "id": "comp-posthog",
     "name": "PostHog",
-    "jobCount": 8,
+    "jobCount": 5,
     "slug": "posthog"
   },
   {
-    "id": "comp-isaraerospace",
-    "name": "isaraerospace",
-    "jobCount": 7,
-    "slug": "isaraerospace"
-  },
-  {
-    "id": "comp-browserbase",
-    "name": "Browserbase",
-    "jobCount": 6,
-    "slug": "browserbase"
-  },
-  {
-    "id": "comp-motive",
-    "name": "Motive",
-    "jobCount": 6,
-    "slug": "motive"
-  },
-  {
-    "id": "comp-resend",
-    "name": "Resend",
+    "id": "comp-planetscale",
+    "name": "PlanetScale",
     "jobCount": 5,
-    "slug": "resend"
+    "slug": "planetscale"
   },
   {
-    "id": "comp-virtual7-gmbh",
-    "name": "virtual7 GmbH",
-    "jobCount": 5,
-    "slug": "virtual7-gmbh"
+    "id": "comp-airbnb",
+    "name": "Airbnb",
+    "jobCount": 4,
+    "slug": "airbnb"
   },
   {
-    "id": "comp-pinecone",
-    "name": "Pinecone",
-    "jobCount": 5,
-    "slug": "pinecone"
+    "id": "comp-elastic",
+    "name": "Elastic",
+    "jobCount": 4,
+    "slug": "elastic"
+  },
+  {
+    "id": "comp-linear",
+    "name": "Linear",
+    "jobCount": 4,
+    "slug": "linear"
+  },
+  {
+    "id": "comp-watershed",
+    "name": "Watershed",
+    "jobCount": 4,
+    "slug": "watershed"
   },
   {
     "id": "comp-runway",
@@ -702,40 +288,40 @@
     "slug": "runway"
   },
   {
-    "id": "comp-neon",
-    "name": "Neon",
+    "id": "comp-confluent",
+    "name": "Confluent",
     "jobCount": 4,
-    "slug": "neon"
+    "slug": "confluent"
   },
   {
-    "id": "comp-airtable",
-    "name": "Airtable",
-    "jobCount": 4,
-    "slug": "airtable"
-  },
-  {
-    "id": "comp-lemon-io",
-    "name": "Lemon.io",
+    "id": "comp-1password",
+    "name": "1Password",
     "jobCount": 3,
-    "slug": "lemon-io"
+    "slug": "1password"
   },
   {
-    "id": "comp-remote",
-    "name": "Remote",
-    "jobCount": 2,
-    "slug": "remote"
+    "id": "comp-klaviyo",
+    "name": "Klaviyo",
+    "jobCount": 3,
+    "slug": "klaviyo"
   },
   {
-    "id": "comp-imerit-technology",
-    "name": "iMerit Technology",
-    "jobCount": 2,
-    "slug": "imerit-technology"
+    "id": "comp-lyft",
+    "name": "Lyft",
+    "jobCount": 3,
+    "slug": "lyft"
   },
   {
-    "id": "comp-a-team",
-    "name": "A.Team",
+    "id": "comp-duolingo",
+    "name": "Duolingo",
     "jobCount": 2,
-    "slug": "a-team"
+    "slug": "duolingo"
+  },
+  {
+    "id": "comp-docker",
+    "name": "Docker",
+    "jobCount": 2,
+    "slug": "docker"
   },
   {
     "id": "comp-coalition-technologies",
@@ -744,130 +330,52 @@
     "slug": "coalition-technologies"
   },
   {
-    "id": "comp-ceezer",
-    "name": "Ceezer",
+    "id": "comp-datadog",
+    "name": "Datadog",
     "jobCount": 2,
-    "slug": "ceezer"
+    "slug": "datadog"
   },
   {
-    "id": "comp-extreme-networks",
-    "name": "Extreme Networks",
+    "id": "comp-modal",
+    "name": "Modal",
     "jobCount": 2,
-    "slug": "extreme-networks"
+    "slug": "modal"
   },
   {
-    "id": "comp-bjak",
-    "name": "Bjak",
+    "id": "comp-pinecone",
+    "name": "Pinecone",
     "jobCount": 2,
-    "slug": "bjak"
+    "slug": "pinecone"
   },
   {
-    "id": "comp-telus-digital",
-    "name": "TELUS Digital",
-    "jobCount": 1,
-    "slug": "telus-digital"
+    "id": "comp-intercom",
+    "name": "Intercom",
+    "jobCount": 2,
+    "slug": "intercom"
   },
   {
-    "id": "comp-kobotoolbox",
-    "name": "KoboToolbox",
-    "jobCount": 1,
-    "slug": "kobotoolbox"
+    "id": "comp-clickup",
+    "name": "ClickUp",
+    "jobCount": 2,
+    "slug": "clickup"
   },
   {
-    "id": "comp-sanctuary-computer-inc",
-    "name": "Sanctuary Computer Inc",
+    "id": "comp-character-ai",
+    "name": "Character.ai",
     "jobCount": 1,
-    "slug": "sanctuary-computer-inc"
+    "slug": "character-ai"
   },
   {
-    "id": "comp-hey-contact-heroes-gmbh",
-    "name": "hey contact heroes GmbH",
+    "id": "comp-infisical",
+    "name": "Infisical",
     "jobCount": 1,
-    "slug": "hey-contact-heroes-gmbh"
+    "slug": "infisical"
   },
   {
-    "id": "comp-busch-protective-germany-gmbh---co--kg",
-    "name": "Busch PROtective Germany GmbH & Co. KG",
+    "id": "comp-deliveroo",
+    "name": "Deliveroo",
     "jobCount": 1,
-    "slug": "busch-protective-germany-gmbh---co--kg"
-  },
-  {
-    "id": "comp-bonial-international-gmbh",
-    "name": "Bonial International GmbH",
-    "jobCount": 1,
-    "slug": "bonial-international-gmbh"
-  },
-  {
-    "id": "comp-verve",
-    "name": "Verve",
-    "jobCount": 1,
-    "slug": "verve"
-  },
-  {
-    "id": "comp-siho-insurance-services",
-    "name": "SIHO Insurance Services",
-    "jobCount": 1,
-    "slug": "siho-insurance-services"
-  },
-  {
-    "id": "comp-mercier-consultancy-group",
-    "name": "Mercier Consultancy Group",
-    "jobCount": 1,
-    "slug": "mercier-consultancy-group"
-  },
-  {
-    "id": "comp-proxify-ab",
-    "name": "Proxify AB",
-    "jobCount": 1,
-    "slug": "proxify-ab"
-  },
-  {
-    "id": "comp-prenosis",
-    "name": "Prenosis",
-    "jobCount": 1,
-    "slug": "prenosis"
-  },
-  {
-    "id": "comp-sticker-mule",
-    "name": "Sticker Mule",
-    "jobCount": 1,
-    "slug": "sticker-mule"
-  },
-  {
-    "id": "comp-acculynx",
-    "name": "AccuLynx",
-    "jobCount": 1,
-    "slug": "acculynx"
-  },
-  {
-    "id": "comp-toptal",
-    "name": "Toptal",
-    "jobCount": 1,
-    "slug": "toptal"
-  },
-  {
-    "id": "comp-satispay",
-    "name": "Satispay",
-    "jobCount": 1,
-    "slug": "satispay"
-  },
-  {
-    "id": "comp-praxiseins",
-    "name": "PraxisEins",
-    "jobCount": 1,
-    "slug": "praxiseins"
-  },
-  {
-    "id": "comp-mitre-media",
-    "name": "Mitre Media",
-    "jobCount": 1,
-    "slug": "mitre-media"
-  },
-  {
-    "id": "comp-credit-wellness--llc",
-    "name": "Credit Wellness, LLC",
-    "jobCount": 1,
-    "slug": "credit-wellness--llc"
+    "slug": "deliveroo"
   },
   {
     "id": "comp-unio-digital",
@@ -876,45 +384,81 @@
     "slug": "unio-digital"
   },
   {
+    "id": "comp-credit-wellness-llc",
+    "name": "Credit Wellness, LLC",
+    "jobCount": 1,
+    "slug": "credit-wellness-llc"
+  },
+  {
+    "id": "comp-instacart",
+    "name": "Instacart",
+    "jobCount": 1,
+    "slug": "instacart"
+  },
+  {
+    "id": "comp-secureframe",
+    "name": "Secureframe",
+    "jobCount": 1,
+    "slug": "secureframe"
+  },
+  {
+    "id": "comp-snyk",
+    "name": "Snyk",
+    "jobCount": 1,
+    "slug": "snyk"
+  },
+  {
+    "id": "comp-warp",
+    "name": "Warp",
+    "jobCount": 1,
+    "slug": "warp"
+  },
+  {
+    "id": "comp-flexport",
+    "name": "Flexport",
+    "jobCount": 1,
+    "slug": "flexport"
+  },
+  {
+    "id": "comp-neon",
+    "name": "Neon",
+    "jobCount": 1,
+    "slug": "neon"
+  },
+  {
+    "id": "comp-anthropic",
+    "name": "Anthropic",
+    "jobCount": 1,
+    "slug": "anthropic"
+  },
+  {
+    "id": "comp-launchdarkly",
+    "name": "LaunchDarkly",
+    "jobCount": 1,
+    "slug": "launchdarkly"
+  },
+  {
+    "id": "comp-faire",
+    "name": "Faire",
+    "jobCount": 1,
+    "slug": "faire"
+  },
+  {
+    "id": "comp-sanctuary-computer-inc",
+    "name": "Sanctuary Computer Inc",
+    "jobCount": 1,
+    "slug": "sanctuary-computer-inc"
+  },
+  {
     "id": "comp-iapwe",
     "name": "IAPWE",
     "jobCount": 1,
     "slug": "iapwe"
   },
   {
-    "id": "comp-encontec-gmbh",
-    "name": "encontec GmbH",
+    "id": "comp-ramp",
+    "name": "Ramp",
     "jobCount": 1,
-    "slug": "encontec-gmbh"
-  },
-  {
-    "id": "comp-ircagroup",
-    "name": "Ircagroup",
-    "jobCount": 1,
-    "slug": "ircagroup"
-  },
-  {
-    "id": "comp-workana",
-    "name": "Workana",
-    "jobCount": 1,
-    "slug": "workana"
-  },
-  {
-    "id": "comp-omega-enterprises",
-    "name": "Omega Enterprises",
-    "jobCount": 1,
-    "slug": "omega-enterprises"
-  },
-  {
-    "id": "comp-redmimicry",
-    "name": "RedMimicry",
-    "jobCount": 1,
-    "slug": "redmimicry"
-  },
-  {
-    "id": "comp-doppler",
-    "name": "Doppler",
-    "jobCount": 1,
-    "slug": "doppler"
+    "slug": "ramp"
   }
 ]

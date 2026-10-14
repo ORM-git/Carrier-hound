@@ -144,10 +144,10 @@ export default function GuideHeader() {
             </Link>
 
             <Link
-              href="/tracker"
+              href="/applications"
               prefetch={false}
               className={`px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold transition ${
-                pathname === "/tracker"
+                pathname === "/applications" || pathname === "/tracker"
                   ? "bg-blue-50 text-blue-600"
                   : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
               }`}
@@ -370,7 +370,7 @@ export default function GuideHeader() {
                   <span>ATS Resume</span>
                 </Link>
                 <Link
-                  href="/tracker"
+                  href="/applications"
                   prefetch={false}
                   onClick={() => setMobileMenuOpen(false)}
                   className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 text-xs font-bold text-slate-800"

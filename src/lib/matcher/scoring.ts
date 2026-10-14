@@ -16,6 +16,7 @@ export interface FitDiagnosticsResult {
     experienceScore: number;
     remoteScore: number;
     yearsOfExperience: number;
+    seniorityAdjustment?: number;
   };
 }
 
@@ -165,18 +166,62 @@ export interface StandardJobScoringInput {
   applyUrl?: string;
 }
 
+export const CATEGORY_LEVEL_WORDS = new Set([
+  "engineering",
+  "software engineering",
+  "data engineering",
+  "design",
+  "product",
+  "product management",
+  "marketing",
+  "sales",
+  "operations",
+  "finance",
+  "accounting",
+  "hr",
+  "human resources",
+  "customer support",
+  "customer service",
+  "customer-support",
+  "legal",
+  "healthcare",
+  "cyber-security",
+  "cybersecurity",
+  "tech",
+  "technology",
+  "information technology",
+  "administration",
+  "general",
+  "other",
+  "recruiting",
+  "talent acquisition",
+  "internship",
+  "internships",
+]);
+
 /**
  * Extracts ONLY skills actually evidenced in the job description, skills array, or title.
  * Never invents skills or pushes title-inferred assumptions as requirements.
+ * Filters out category-level and department words (e.g. "engineering", "design")
+ * so they are never classified as missing skills.
  * Handles missing/short description stubs identically across all surfaces.
  */
 export function extractSkillsFromJob(job: StandardJobScoringInput): string[] {
   const evidenced = new Set<string>();
 
+  const isCategoryWord = (skill: string): boolean => {
+    const lower = skill.trim().toLowerCase();
+    if (CATEGORY_LEVEL_WORDS.has(lower)) return true;
+    if (job.category && lower === job.category.trim().toLowerCase()) return true;
+    return false;
+  };
+
   // 1. If the job already has explicit skills array in database
   if (Array.isArray(job.skills) && job.skills.length > 0) {
     job.skills.forEach((s) => {
-      if (s && typeof s === "string" && s.trim()) evidenced.add(s.trim());
+      if (s && typeof s === "string" && s.trim() && !isCategoryWord(s)) {
+        evidenced.add(s.trim());
+      }
     });
   }
 
@@ -185,6 +230,7 @@ export function extractSkillsFromJob(job: StandardJobScoringInput): string[] {
   if (cleanDesc.length >= 60) {
     const descLower = cleanDesc.toLowerCase();
     for (const skill of SKILLS_TAXONOMY) {
+      if (isCategoryWord(skill)) continue;
       const lowerSkill = skill.toLowerCase();
       const escaped = lowerSkill.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const regex = new RegExp(`(?:^|[\\s,;/|])${escaped}(?:$|[\\s,;/|])`, "i");
@@ -197,6 +243,7 @@ export function extractSkillsFromJob(job: StandardJobScoringInput): string[] {
   // 3. Also check if title explicitly names a specific technology (e.g. "React Developer", "Python Engineer")
   const titleText = (job.title || "").toLowerCase();
   for (const skill of SKILLS_TAXONOMY) {
+    if (isCategoryWord(skill)) continue;
     const lowerSkill = skill.toLowerCase();
     const escaped = lowerSkill.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const regex = new RegExp(`\\b${escaped}\\b`, "i");
@@ -205,7 +252,7 @@ export function extractSkillsFromJob(job: StandardJobScoringInput): string[] {
     }
   }
 
-  return Array.from(evidenced);
+  return Array.from(evidenced).filter((s) => !isCategoryWord(s));
 }
 
 /**
@@ -228,6 +275,76 @@ export function extractInferredDomainSignals(job: {
 
   return signals;
 }
+
+export type SeniorityLevel = "intern" | "entry" | "mid" | "senior" | "lead";
+
+export function detectCandidateSeniority(candidate: CandidateProfile): SeniorityLevel {
+  const headline = (candidate.headline || "").toLowerCase();
+  const summary = (candidate.summary || "").toLowerCase();
+  const years = calculateYearsOfExperience(candidate.experience);
+
+  if (/\b(intern|internship|co-op|coop)\b/i.test(headline)) return "intern";
+  if (
+    /\b(entry|entry-level|junior|jr\.?|associate|graduate|grad|new grad|fresher|apprentice|trainee)\b/i.test(headline) ||
+    (/\b(entry|entry-level|junior|fresher|new grad)\b/i.test(summary) && years <= 2)
+  ) {
+    return "entry";
+  }
+  if (/\b(lead|principal|staff|director|head of|vp|architect)\b/i.test(headline)) return "lead";
+  if (/\b(senior|sr\.?)\b/i.test(headline)) return "senior";
+
+  if (years <= 1.5) return "entry";
+  if (years >= 5) return "senior";
+  return "mid";
+}
+
+export function detectJobSeniority(title: string): SeniorityLevel {
+  const t = (title || "").toLowerCase();
+  if (/\b(intern|internship|co-op|coop)\b/i.test(t)) return "intern";
+  if (/\b(lead|principal|staff|director|head of|vp|chief|architect)\b/i.test(t)) return "lead";
+  if (/\b(senior|sr\.?)\b/i.test(t)) return "senior";
+  if (/\b(junior|jr\.?|entry|entry-level|associate|graduate|new grad|apprentice|trainee|fresher)\b/i.test(t)) return "entry";
+  return "mid";
+}
+
+export const DOMAIN_SKILL_TAXONOMY: Record<string, { patterns: RegExp; skills: string[] }> = {
+  data_analytics: {
+    patterns: /\b(data analyst|business analyst|bi analyst|analytics|reporting analyst|data analysis|insights analyst)\b/i,
+    skills: ["sql", "python", "r", "excel", "tableau", "power bi", "data analysis", "statistics", "pandas", "looker", "bi", "reporting", "etl", "snowflake", "bigquery"],
+  },
+  data_engineering: {
+    patterns: /\b(data engineer|etl developer|pipeline engineer|big data)\b/i,
+    skills: ["python", "sql", "spark", "kafka", "airflow", "aws", "gcp", "snowflake", "etl", "databricks", "postgresql"],
+  },
+  frontend: {
+    patterns: /\b(frontend|front-end|ui developer|web developer|react developer)\b/i,
+    skills: ["javascript", "typescript", "react", "html", "css", "tailwind", "next.js", "vue", "redux", "ui"],
+  },
+  backend: {
+    patterns: /\b(backend|back-end|api developer|server engineer|software engineer)\b/i,
+    skills: ["python", "node.js", "java", "golang", "c#", "postgresql", "sql", "docker", "aws", "rest api", "graphql"],
+  },
+  machine_learning: {
+    patterns: /\b(machine learning|ml engineer|ai engineer|data scientist|nlp|computer vision)\b/i,
+    skills: ["python", "machine learning", "deep learning", "pytorch", "tensorflow", "scikit-learn", "sql", "ai", "pandas"],
+  },
+  devops_cloud: {
+    patterns: /\b(devops|sre|site reliability|cloud engineer|platform engineer|infrastructure)\b/i,
+    skills: ["docker", "kubernetes", "aws", "gcp", "azure", "terraform", "ci/cd", "linux", "git"],
+  },
+  qa_testing: {
+    patterns: /\b(qa|quality assurance|test engineer|automation engineer|sdet)\b/i,
+    skills: ["selenium", "cypress", "jest", "automation", "python", "javascript", "testing", "qa"],
+  },
+  security: {
+    patterns: /\b(security|threat|soc|cybersecurity|infosec|incident response)\b/i,
+    skills: ["cybersecurity", "security", "threat", "siem", "soc", "incident response", "network security", "compliance"],
+  },
+  product_management: {
+    patterns: /\b(product manager|product owner|technical product)\b/i,
+    skills: ["product management", "agile", "scrum", "jira", "roadmap", "user research", "analytics", "sql"],
+  },
+};
 
 /**
  * Computes a transparent, reproducible fit score (0-100) and diagnostics breakdown.
@@ -260,6 +377,7 @@ export function computeFitDiagnostics(
   const candidateSkillTokens = (candidate.skills || []).map(normalizeSkillToTokens);
   const jobEvidencedSkills = extractSkillsFromJob(normalizedJob);
   const inferredSignals = extractInferredDomainSignals(normalizedJob);
+  const jobTitleLower = (normalizedJob.title || "").toLowerCase();
 
   // 1. Skill Match Component (Weight: 50%)
   const matchedSkills: string[] = [];
@@ -278,32 +396,67 @@ export function computeFitDiagnostics(
     }
   }
 
-  // If no explicit skills in listing description, check category/title overlap instead of blind 35/50
+  // Count candidate's domain skills for the job title / category
+  let matchedDomain: { key: string; skills: string[] } | null = null;
+  for (const [key, domain] of Object.entries(DOMAIN_SKILL_TAXONOMY)) {
+    if (domain.patterns.test(jobTitleLower) || (normalizedJob.category && domain.patterns.test(normalizedJob.category))) {
+      matchedDomain = { key, skills: domain.skills };
+      break;
+    }
+  }
+
+  let candidateDomainSkillCount = 0;
+  if (matchedDomain) {
+    for (const dSkill of matchedDomain.skills) {
+      if (doesSkillMatch(dSkill, candidateSkillTokens).matched) {
+        candidateDomainSkillCount++;
+      }
+    }
+  }
+
   let skillScore = 0;
-  if (jobEvidencedSkills.length > 0) {
+  if (jobEvidencedSkills.length >= 3) {
+    // Rich job posting with explicit requirements list
     const skillRatio = matchedSkills.length / jobEvidencedSkills.length;
     skillScore = Math.round(skillRatio * 50);
+  } else if (jobEvidencedSkills.length > 0) {
+    // 1-2 tagged skills (common in scraped jobs that only have ['ai'] or ['sql'])
+    const listedRatioScore = Math.round((matchedSkills.length / jobEvidencedSkills.length) * 20);
+    let domainScore = 0;
+    if (candidateDomainSkillCount >= 4) domainScore = 30;
+    else if (candidateDomainSkillCount >= 2) domainScore = 20;
+    else if (candidateDomainSkillCount >= 1) domainScore = 10;
+    skillScore = Math.min(50, Math.max(listedRatioScore + domainScore, matchedSkills.length > 0 ? 35 : 0));
   } else {
-    const jobTitleLower = job.title.toLowerCase();
-    const candidateHasRelevantSkill = (candidate.skills || []).some((s) => {
-      const sLower = s.toLowerCase();
-      return jobTitleLower.includes(sLower) || (job.category && job.category.toLowerCase().includes(sLower));
-    });
-    if (candidateHasRelevantSkill) {
-      skillScore = 20;
-    } else if ((candidate.skills || []).length > 0) {
-      skillScore = 10;
-    } else {
-      skillScore = 0;
+    // 0 listed skills
+    if (candidateDomainSkillCount >= 4) skillScore = 35;
+    else if (candidateDomainSkillCount >= 2) skillScore = 25;
+    else if (candidateDomainSkillCount >= 1) skillScore = 15;
+    else {
+      const candidateHasRelevantSkill = (candidate.skills || []).some((s) => {
+        const sLower = s.toLowerCase();
+        return jobTitleLower.includes(sLower) || (normalizedJob.category && normalizedJob.category.toLowerCase().includes(sLower));
+      });
+      if (candidateHasRelevantSkill) {
+        skillScore = 20;
+      } else if ((candidate.skills || []).length > 0) {
+        skillScore = 10;
+      } else {
+        skillScore = 0;
+      }
     }
   }
 
   // 2. Title & Role Alignment (Weight: 25%)
   let titleScore = 0;
-  const jobTitleLower = job.title.toLowerCase();
   const headlineLower = (candidate.headline || "").toLowerCase();
 
-  const jobTokens = jobTitleLower.split(/[\s\-_,]+/).filter((t) => t.length > 2);
+  const TITLE_STOP_TOKENS = new Set([
+    "senior", "junior", "entry", "level", "lead", "principal", "staff", "intern", "internship", "associate", "and", "the", "for", "with", "remote"
+  ]);
+  const jobTokens = jobTitleLower
+    .split(/[\s\-_,()/]+/)
+    .filter((t) => t.length > 2 && !TITLE_STOP_TOKENS.has(t));
   let titleMatches = 0;
   for (const token of jobTokens) {
     if (headlineLower.includes(token)) {
@@ -322,23 +475,45 @@ export function computeFitDiagnostics(
   else if (titleMatches >= 0.5) titleScore = 10;
   else titleScore = 0; // STRICT: 0 points if no title match
 
-  // 3. Experience & Seniority Alignment (Weight: 15% - based on actual years, not position count)
+  // Seniority Alignment Adjustments
+  const candSeniority = detectCandidateSeniority(candidate);
+  const jobSeniority = detectJobSeniority(normalizedJob.title);
   const yearsOfExperience = calculateYearsOfExperience(candidate.experience);
+  const hasDomainAlignment = skillScore > 0 || titleScore > 0;
+  let seniorityAdjustment = 0;
+
+  if (candSeniority === "entry" || candSeniority === "intern") {
+    if (jobSeniority === "senior" || jobSeniority === "lead") {
+      titleScore = Math.min(5, titleScore); // Heavy mismatch: cap title score at 5
+      seniorityAdjustment = -20; // -20 penalty
+    } else if ((jobSeniority === "entry" || jobSeniority === "intern") && hasDomainAlignment) {
+      seniorityAdjustment = +10; // Entry match bonus when domain aligns!
+    }
+  } else if (candSeniority === "senior" || candSeniority === "lead") {
+    if (jobSeniority === "entry" || jobSeniority === "intern") {
+      titleScore = Math.min(8, titleScore); // Overqualified penalty
+      seniorityAdjustment = -15;
+    } else if ((jobSeniority === "senior" || jobSeniority === "lead") && hasDomainAlignment) {
+      seniorityAdjustment = +10; // Senior match bonus when domain aligns!
+    }
+  } else if (candSeniority === "mid") {
+    if (jobSeniority === "mid" && hasDomainAlignment) {
+      seniorityAdjustment = +5;
+    } else if (jobSeniority === "senior" && yearsOfExperience < 3) {
+      seniorityAdjustment = -5;
+    }
+  }
+
+  // 3. Experience & Seniority Alignment (Weight: 15% - based on actual years, not position count)
   let experienceScore = 0;
 
   if (yearsOfExperience >= 5) experienceScore = 15;
   else if (yearsOfExperience >= 2) experienceScore = 12;
   else if (yearsOfExperience >= 0.5) experienceScore = 8;
   else if (yearsOfExperience > 0) experienceScore = 4;
-  else experienceScore = 0; // ZERO years = 0 points!
+  else experienceScore = candSeniority === "entry" || candSeniority === "intern" ? 2 : 0;
 
-  const isSeniorJob =
-    jobTitleLower.includes("senior") ||
-    jobTitleLower.includes("lead") ||
-    jobTitleLower.includes("staff") ||
-    jobTitleLower.includes("principal");
-
-  if (isSeniorJob) {
+  if (jobSeniority === "senior" || jobSeniority === "lead") {
     if (yearsOfExperience < 1) {
       experienceScore = 0; // 0 points for senior role with 0 or negligible years
     } else if (yearsOfExperience < 4) {
@@ -349,8 +524,8 @@ export function computeFitDiagnostics(
   // 4. Remote & Location Compatibility (Weight: 10%)
   // STRICT: Do not award default points when geography restrictions exist
   let remoteScore = 0;
-  const jobRemote = (job.remote_scope || "").toLowerCase();
-  const jobLoc = (job.location || "").toLowerCase();
+  const jobRemote = (normalizedJob.remote_scope || "").toLowerCase();
+  const jobLoc = (normalizedJob.location || "").toLowerCase();
   const candLoc = (candidate.location || "").toLowerCase();
 
   const isWorldwide =
@@ -361,7 +536,7 @@ export function computeFitDiagnostics(
   const isGeographicallyRestricted =
     jobRemote === "country_restricted" ||
     /\b(united states|u\.s\.|usa|remote - us|remote \(us\)|uk|canada|india|germany|europe|emea|apac)\b/i.test(jobLoc) ||
-    (!isWorldwide && job.location && !jobLoc.includes("remote"));
+    (!isWorldwide && normalizedJob.location && !jobLoc.includes("remote"));
 
   if (isWorldwide) {
     remoteScore = 10;
@@ -376,7 +551,10 @@ export function computeFitDiagnostics(
   }
 
   // Sum components
-  const finalScore = Math.min(100, Math.max(5, skillScore + titleScore + experienceScore + remoteScore));
+  const finalScore = Math.min(
+    100,
+    Math.max(5, skillScore + titleScore + experienceScore + remoteScore + seniorityAdjustment)
+  );
 
   let scoreGrade: "high" | "good" | "moderate" | "low" = "low";
   if (finalScore >= 75) scoreGrade = "high";
@@ -394,12 +572,20 @@ export function computeFitDiagnostics(
     whyYouFit.push(
       `Evidenced ${matchedSkills.length} of ${jobEvidencedSkills.length} listed requirements: ${evidenceSnippets.join(", ")}${matchedSkills.length > 3 ? ` +${matchedSkills.length - 3} more` : ""}.`
     );
+  } else if (candidateDomainSkillCount >= 3 && matchedDomain) {
+    whyYouFit.push(
+      `Strong foundational domain skill coverage for ${matchedDomain.key.replace("_", " ")} role.`
+    );
   }
 
   if (titleMatches >= 1) {
     whyYouFit.push(
-      `Background as "${candidate.headline || candidate.experience?.[0]?.role || "Engineer"}" aligns with "${job.title}".`
+      `Background as "${candidate.headline || candidate.experience?.[0]?.role || "Engineer"}" aligns with "${normalizedJob.title}".`
     );
+  }
+
+  if ((candSeniority === "entry" && (jobSeniority === "entry" || jobSeniority === "intern")) || (candSeniority === "senior" && (jobSeniority === "senior" || jobSeniority === "lead"))) {
+    whyYouFit.push(`Seniority level (${jobSeniority}) aligns directly with your career stage.`);
   }
 
   if (yearsOfExperience > 0) {
@@ -418,18 +604,28 @@ export function computeFitDiagnostics(
 
   // Construct "Gaps" reasons
   const gaps: string[] = [];
+  if (candSeniority === "entry" && (jobSeniority === "senior" || jobSeniority === "lead")) {
+    gaps.push(
+      `Seniority mismatch: Role is ${jobSeniority} level, but your profile is entry level.`
+    );
+  } else if (candSeniority === "senior" && (jobSeniority === "entry" || jobSeniority === "intern")) {
+    gaps.push(
+      `Seniority mismatch: Role is entry/junior level, but your profile indicates senior experience.`
+    );
+  }
+
   if (missingSkills.length > 0) {
     gaps.push(
       `Skills mentioned in listing without explicit resume evidence (${missingSkills.length}): ${missingSkills.slice(0, 5).join(", ")}${missingSkills.length > 5 ? "..." : ""}.`
     );
   }
 
-  if (isSeniorJob && yearsOfExperience < 4) {
+  if (jobSeniority === "senior" && yearsOfExperience < 4) {
     gaps.push(`Senior role scope typically requires 5+ years; resume shows ~${yearsOfExperience} years.`);
   }
 
   if (isGeographicallyRestricted && remoteScore === 0) {
-    gaps.push(`Listing has geographic restrictions (${job.location || "specific region"}) that may not match your profile location.`);
+    gaps.push(`Listing has geographic restrictions (${normalizedJob.location || "specific region"}) that may not match your profile location.`);
   }
 
   return {
@@ -447,6 +643,7 @@ export function computeFitDiagnostics(
       experienceScore,
       remoteScore,
       yearsOfExperience,
+      seniorityAdjustment,
     },
   };
 }
