@@ -5,6 +5,10 @@ import { normalizeSkillToTokens, doesSkillMatch, calculateYearsOfExperience } fr
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://szakevhxhwpeskidvtfs.supabase.co';
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
+if (!key) {
+  console.log('[SKIPPED] Missing SUPABASE_SERVICE_ROLE_KEY');
+  process.exit(0);
+}
 const supabase = createClient(url, key);
 
 const DOMAIN_SKILL_TAXONOMY: Record<string, { patterns: RegExp; skills: string[] }> = {
