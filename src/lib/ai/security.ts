@@ -333,6 +333,7 @@ export interface QuotaCheckResult {
   limit: number;
   storage: "ai_usage_quotas" | "subscriptions_metadata";
   error?: string;
+  isServiceUnavailable?: boolean;
 }
 
 /**
@@ -449,11 +450,14 @@ export async function checkAndIncrementAiQuota(
     console.warn("[Quota Check] Error updating subscriptions fallback quota:", fallbackErr);
   }
 
-  // Default fail-open safe return if DB is unreachable
+  // Fail closed: Database unreachable or both quota stores errored
+  console.error("[Quota Check] Database unreachable or error in quota stores; failing closed.");
   return {
-    allowed: true,
-    currentCount: 1,
+    allowed: false,
+    currentCount: limit,
     limit,
     storage: "subscriptions_metadata",
+    error: "AI quota verification is temporarily unavailable. Please try again shortly.",
+    isServiceUnavailable: true,
   };
 }

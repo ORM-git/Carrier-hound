@@ -166,7 +166,7 @@ export default function UserMenu({
       {/* Dropdown Menu */}
       {open && (
         <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="fixed inset-0 z-40" role="presentation" onClick={() => setOpen(false)} />
           <div className="absolute right-0 top-full mt-2 w-56 bg-white border border-gray-200 rounded-xl shadow-xl z-50 overflow-hidden text-left">
             <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/50">
               <div className="flex items-center justify-between">

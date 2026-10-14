@@ -66,6 +66,7 @@ export default function WorldwidePage() {
             <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="text"
+              aria-label="Filter companies"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Filter companies (e.g. GitLab, Automattic, Stripe)..."

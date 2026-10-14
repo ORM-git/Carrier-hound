@@ -213,6 +213,7 @@ export default function FilterSlideOver({
               </div>
               <input
                 type="checkbox"
+                aria-label="100% Remote Only"
                 checked={remoteOnly}
                 onChange={(e) => onToggleRemote(e.target.checked)}
                 className="w-5 h-5 rounded text-blue-600 focus:ring-blue-500 border-gray-300 cursor-pointer"
