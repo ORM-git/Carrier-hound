@@ -6,14 +6,15 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "tsc --noEmit",
     "ingest": "tsx scripts/ingest.ts",
     "ingest:dry": "tsx scripts/ingest.ts --dry",
     "ingest:seed": "tsx scripts/ingest.ts --seed",
     "ingest:seed:dry": "tsx scripts/ingest.ts --seed --dry",
     "cron:digest": "tsx scripts/daily-digest-cron.ts",
     "cron:digest:dry": "tsx scripts/daily-digest-cron.ts --dry",
-    "test:filters": "tsx scripts/test-filters.ts"
+    "test:filters": "tsx scripts/test-filters.ts",
+    "test:all": "tsx scripts/suite-runner.ts"
   },
   "dependencies": {
     "@netlify/plugin-nextjs": "5.16.0",
