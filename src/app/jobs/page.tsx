@@ -5,9 +5,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import GuideHeader from "@/components/GuideHeader";
-import Footer from "@/components/Footer";
 import CategoryPillBar from "@/components/CategoryPillBar";
-import MatchScoreBadge from "@/components/matcher/MatchScoreBadge";
 import { getLiveJobs, LiveJob } from "@/lib/jobs/service";
 import { getAuthUser, getUserPreferences } from "@/lib/auth/session";
 import { getCandidateProfile } from "@/lib/resume/storage";
@@ -18,7 +16,6 @@ import { getProAccessStatus } from "@/lib/billing/subscription";
 import type { User } from "@supabase/supabase-js";
 import {
   Search,
-  Filter,
   MapPin,
   Building,
   DollarSign,
@@ -33,6 +30,8 @@ import CompanyLogo from "@/components/CompanyLogo";
 import { toast } from "react-toastify";
 
 const PaywallModal = dynamic(() => import("@/components/PaywallModal"), { ssr: false });
+const MatchScoreBadge = dynamic(() => import("@/components/matcher/MatchScoreBadge"), { ssr: false });
+const Footer = dynamic(() => import("@/components/Footer"), { ssr: false });
 
 function JobsPageInner() {
   const router = useRouter();
