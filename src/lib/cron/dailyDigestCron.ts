@@ -16,13 +16,26 @@ export interface CronRunStats {
 }
 
 /**
- * Creates a server-side Supabase client using Service Role Key (or anon key fallback)
+ * Creates a server-side Supabase client using Service Role Key (or anon key fallback).
+ * Returns null in dry-run mode if credentials are not configured in the environment.
  */
-function getCronSupabaseClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://szakevhxhwpeskidvtfs.supabase.co";
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+function getCronSupabaseClient(isDryRun = false) {
+  const url =
+    process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    process.env.SUPABASE_URL ||
+    "https://szakevhxhwpeskidvtfs.supabase.co";
+  const key =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_SERVICE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    process.env.SUPABASE_ANON_KEY;
   if (!key) {
-    throw new Error("Missing Supabase key for cron job");
+    if (isDryRun) {
+      return null;
+    }
+    throw new Error(
+      "Missing Supabase key for cron job (require SUPABASE_SERVICE_ROLE_KEY or NEXT_PUBLIC_SUPABASE_ANON_KEY)"
+    );
   }
   return createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -50,7 +63,7 @@ export async function runDailyDigestCron(options: {
 
   let supabase: any;
   try {
-    supabase = getCronSupabaseClient();
+    supabase = getCronSupabaseClient(isDryRun);
   } catch (err: any) {
     return {
       runId: "local-failed",
@@ -67,7 +80,7 @@ export async function runDailyDigestCron(options: {
 
   // 1. Create run audit entry
   let runId = `run-${Date.now()}`;
-  if (!isDryRun) {
+  if (!isDryRun && supabase) {
     try {
       const { data, error } = await supabase
         .from("cron_run_logs")
@@ -95,45 +108,44 @@ export async function runDailyDigestCron(options: {
   try {
     // 2. Fetch candidate profiles with confirmed facts
     let candidateProfiles: Array<{ userId: string; profile: CandidateProfile }> = [];
-    const { data: profilesData, error: profilesError } = await supabase
-      .from("candidate_profiles")
-      .select("*")
-      .not("skills", "is", null);
-
-    if (profilesError) {
-      console.warn("Notice: candidate_profiles table not yet migrated in Supabase. Using sample evaluation profile for evaluation.");
+    if (!supabase) {
+      console.warn("Notice: Running in offline dry-run mode without Supabase credentials. Using sample evaluation profile.");
       const { getSampleCandidateProfile } = await import("../resume/parser");
       candidateProfiles = [{ userId: "sample-candidate-evaluation", profile: getSampleCandidateProfile() }];
     } else {
-      candidateProfiles = (profilesData || []).map((row: any) => ({
-        userId: row.user_id,
-        profile: {
-          name: row.name || "Candidate",
-          email: row.email,
-          phone: row.phone,
-          headline: row.headline,
-          summary: row.summary,
-          skills: row.skills || [],
-          experience: row.experience_json || [],
-          education: row.education_json || [],
-          certifications: row.certifications || [],
-          confirmedAt: row.confirmed_at,
-          updatedAt: row.updated_at,
-        },
-      }));
+      const { data: profilesData, error: profilesError } = await supabase
+        .from("candidate_profiles")
+        .select("*")
+        .not("skills", "is", null);
+
+      if (profilesError) {
+        console.warn("Notice: candidate_profiles table not yet migrated in Supabase. Using sample evaluation profile for evaluation.");
+        const { getSampleCandidateProfile } = await import("../resume/parser");
+        candidateProfiles = [{ userId: "sample-candidate-evaluation", profile: getSampleCandidateProfile() }];
+      } else {
+        candidateProfiles = (profilesData || []).map((row: any) => ({
+          userId: row.user_id,
+          profile: {
+            name: row.name || "Candidate",
+            email: row.email,
+            phone: row.phone,
+            headline: row.headline,
+            summary: row.summary,
+            skills: row.skills || [],
+            experience: row.experience_json || [],
+            education: row.education_json || [],
+            certifications: row.certifications || [],
+            confirmedAt: row.confirmed_at,
+            updatedAt: row.updated_at,
+          },
+        }));
+      }
     }
 
     // 3. Fetch active job listings (limit 500 most recent active)
     let activeJobs: any[] = [];
-    const { data: jobsData, error: jobsError } = await supabase
-      .from("jobs")
-      .select("id, title, company, location, remote_scope, category, salary_text, apply_url, discovered_at")
-      .order("discovered_at", { ascending: false })
-      .limit(500);
-
-    if (jobsError) {
-      console.warn("Notice: jobs table query returned error, falling back to local dataset:", jobsError.message);
-      const { DUMMY_JOBS } = await import("@/data/jobs");
+    if (!supabase) {
+      const { DUMMY_JOBS } = await import("../../../data/jobs");
       activeJobs = (DUMMY_JOBS || []).map((j) => ({
         id: j.id,
         title: j.title,
@@ -146,7 +158,29 @@ export async function runDailyDigestCron(options: {
         discovered_at: new Date().toISOString(),
       }));
     } else {
-      activeJobs = jobsData || [];
+      const { data: jobsData, error: jobsError } = await supabase
+        .from("jobs")
+        .select("id, title, company, location, remote_scope, category, salary_text, apply_url, discovered_at")
+        .order("discovered_at", { ascending: false })
+        .limit(500);
+
+      if (jobsError) {
+        console.warn("Notice: jobs table query returned error, falling back to local dataset:", jobsError.message);
+        const { DUMMY_JOBS } = await import("../../../data/jobs");
+        activeJobs = (DUMMY_JOBS || []).map((j) => ({
+          id: j.id,
+          title: j.title,
+          company: j.company,
+          location: j.location,
+          remote_scope: j.remote ? "worldwide" : undefined,
+          category: j.category,
+          salary_text: j.salary,
+          apply_url: j.applyUrl,
+          discovered_at: new Date().toISOString(),
+        }));
+      } else {
+        activeJobs = jobsData || [];
+      }
     }
 
     jobsScannedCount = activeJobs.length;

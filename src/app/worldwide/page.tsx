@@ -52,7 +52,7 @@ export default function WorldwidePage() {
 
           <div className="pt-1 flex flex-wrap items-center justify-center gap-3">
             <Link
-              href="/jobs"
+              href="/jobs?remote=true"
               onClick={() => setIsNavigating(true)}
               className="inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold px-6 py-2.5 min-h-[44px] rounded-xl text-xs sm:text-sm transition-colors shadow-xs cursor-pointer"
             >
@@ -102,7 +102,7 @@ export default function WorldwidePage() {
                   className="py-3 sm:py-3.5 px-4 sm:px-5 min-h-[48px] flex items-center justify-between hover:bg-slate-50 transition-colors group"
                 >
                   <Link
-                    href={`/jobs?search=${encodeURIComponent(company.name)}`}
+                    href={`/jobs?search=${encodeURIComponent(company.name)}&remote=true`}
                     className="text-sm sm:text-base font-bold text-slate-900 group-hover:text-blue-600 transition-colors flex-1 py-1"
                   >
                     {company.name}

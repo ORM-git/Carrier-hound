@@ -281,7 +281,14 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
 
     if (search && search.trim()) {
       const q = search.trim().replace(/[%_(),"'`;\\$]/g, " ").replace(/\s+/g, " ").trim();
-      query = query.or(`title.ilike.%${q}%,location.ilike.%${q}%,category.ilike.%${q}%`);
+      const parts = q.split(" ").filter((p) => p.length >= 2);
+      if (parts.length > 1) {
+        for (const p of parts) {
+          query = query.or(`title.ilike.%${p}%,location.ilike.%${p}%,category.ilike.%${p}%`);
+        }
+      } else {
+        query = query.or(`title.ilike.%${q}%,location.ilike.%${q}%,category.ilike.%${q}%`);
+      }
     }
 
     let data: any[] | null = null;

@@ -19,27 +19,48 @@ function isValidUUID(str?: string | null): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 }
 
+let inFlightApplicationsPromise: Promise<TrackedApplication[]> | null = null;
+let cachedApplications: { data: TrackedApplication[]; timestamp: number } | null = null;
+const APPS_CACHE_TTL_MS = 30000; // 30 seconds memoization to prevent duplicate calls
+
+export function invalidateTrackedApplicationsCache() {
+  cachedApplications = null;
+  inFlightApplicationsPromise = null;
+}
+
 /**
  * Loads applications from localStorage, then fetches & syncs with Supabase if logged in.
+ * Memoized and deduplicated to prevent concurrent duplicate queries.
  */
 export async function getTrackedApplications(userId?: string): Promise<TrackedApplication[]> {
-  let localApps: TrackedApplication[] = [];
-
-  if (typeof window !== "undefined") {
-    try {
-      const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
-      if (stored) {
-        localApps = JSON.parse(stored);
-      }
-    } catch (e) {
-      console.warn("Failed to load local tracker applications", e);
-    }
+  const now = Date.now();
+  if (cachedApplications && now - cachedApplications.timestamp < APPS_CACHE_TTL_MS) {
+    return cachedApplications.data;
   }
 
-  // Try fetching from Supabase if user is authenticated
-  try {
-    const supabase = createClient();
-    let resolvedUserId = userId;
+  if (inFlightApplicationsPromise) {
+    return inFlightApplicationsPromise;
+  }
+
+  inFlightApplicationsPromise = (async () => {
+    try {
+      let localApps: TrackedApplication[] = [];
+
+      if (typeof window !== "undefined") {
+        try {
+          const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
+          if (stored) {
+            localApps = JSON.parse(stored);
+          }
+        } catch (e) {
+          console.warn("Failed to load local tracker applications", e);
+        }
+      }
+
+      // Try fetching from Supabase if user is authenticated
+      try {
+        const supabase = createClient();
+        let resolvedUserId = userId;
 
     if (!resolvedUserId) {
       const { data: { session } } = await supabase.auth.getSession();
@@ -88,6 +109,7 @@ export async function getTrackedApplications(userId?: string): Promise<TrackedAp
 
         const finalApps = Array.from(mergedMap.values());
         saveToLocalStorage(finalApps);
+        cachedApplications = { data: finalApps, timestamp: Date.now() };
         return finalApps;
       }
     }
@@ -95,13 +117,22 @@ export async function getTrackedApplications(userId?: string): Promise<TrackedAp
     // Offline or guest mode
   }
 
-  return localApps;
+      cachedApplications = { data: localApps, timestamp: Date.now() };
+      return localApps;
+    } finally {
+      inFlightApplicationsPromise = null;
+    }
+  })();
+
+  return inFlightApplicationsPromise;
 }
 
 /**
  * Saves applications to local storage
  */
 function saveToLocalStorage(apps: TrackedApplication[]) {
+  invalidateTrackedApplicationsCache();
+  cachedApplications = { data: apps, timestamp: Date.now() };
   if (typeof window !== "undefined") {
     try {
       localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(apps));

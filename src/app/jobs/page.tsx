@@ -73,34 +73,41 @@ function JobsPageInner() {
   const [loadingJobs, setLoadingJobs] = useState<boolean>(true);
 
   useEffect(() => {
-    getAuthUser().then((u) => {
-      setUser(u);
-      if (u) {
-        getUserPreferences(u.id).then((p) => {
-          setPreferences(p);
-          if (searchParams.get("tab") === "foryou" && p.onboardingCompleted) {
-            setActiveTab("foryou");
-          }
-        });
+    let cancelled = false;
+
+    async function loadInitialContext() {
+      try {
+        const [u, proRes, cp, apps] = await Promise.all([
+          getAuthUser(),
+          getProAccessStatus(),
+          getCandidateProfile(),
+          getTrackedApplications(),
+        ]);
+
+        if (cancelled) return;
+
+        setUser(u);
+        setIsPro(proRes.isPro);
+        setIsProDefinitive(Boolean(proRes.isDefinitive));
+        setCandidate(cp && cp.confirmedAt ? cp : null);
+        setSavedJobIds(apps.map((a) => a.jobId || ""));
+
+        if (u) {
+          getUserPreferences(u.id).then((p) => {
+            if (!cancelled) {
+              setPreferences(p);
+              if (searchParams.get("tab") === "foryou" && p.onboardingCompleted) {
+                setActiveTab("foryou");
+              }
+            }
+          });
+        }
+      } catch (err) {
+        console.warn("Failed to load initial context on jobs page:", err);
       }
-    });
+    }
 
-    getProAccessStatus().then((res) => {
-      setIsPro(res.isPro);
-      setIsProDefinitive(Boolean(res.isDefinitive));
-    });
-
-    getCandidateProfile().then((cp) => {
-      if (cp && cp.confirmedAt) {
-        setCandidate(cp);
-      } else {
-        setCandidate(null);
-      }
-    });
-
-    getTrackedApplications().then((apps) => {
-      setSavedJobIds(apps.map((a) => a.jobId || ""));
-    });
+    loadInitialContext();
 
     const handleSubUpdate = () => {
       getProAccessStatus().then((res) => {
@@ -123,6 +130,7 @@ function JobsPageInner() {
     window.addEventListener("careermonke_auth_updated", handleSubUpdate);
     window.addEventListener("careermonke_profile_updated", handleProfileUpdate);
     return () => {
+      cancelled = true;
       window.removeEventListener("careermonke_pro_updated", handleSubUpdate);
       window.removeEventListener("careermonke_auth_updated", handleSubUpdate);
       window.removeEventListener("careermonke_profile_updated", handleProfileUpdate);

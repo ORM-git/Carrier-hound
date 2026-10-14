@@ -129,29 +129,30 @@ export async function GET(req: Request) {
     // Search query matching across title, company, location, category, description
     if (cleanQuery) {
       const parts = cleanQuery.split(" ").filter((p) => p.length >= 2);
-      const clauses = [
-        `title.ilike.%${cleanQuery}%`,
-        `company.ilike.%${cleanQuery}%`,
-        `location.ilike.%${cleanQuery}%`,
-        `category.ilike.%${cleanQuery}%`,
-        `description.ilike.%${cleanQuery}%`,
-      ];
-
-      // If user typed multiple words, also match individual terms against company and title
       if (parts.length > 1) {
+        // All-words matching (AND): every word must appear in (title OR company OR location OR category OR description)
         for (const p of parts) {
-          clauses.push(`company.ilike.%${p}%`);
-          clauses.push(`title.ilike.%${p}%`);
+          query = query.or(
+            `title.ilike.%${p}%,company.ilike.%${p}%,location.ilike.%${p}%,category.ilike.%${p}%,description.ilike.%${p}%`
+          );
         }
+      } else {
+        query = query.or(
+          `title.ilike.%${cleanQuery}%,company.ilike.%${cleanQuery}%,location.ilike.%${cleanQuery}%,category.ilike.%${cleanQuery}%,description.ilike.%${cleanQuery}%`
+        );
       }
-
-      query = query.or(clauses.join(","));
     }
 
     const from = (page - 1) * pageSize;
     const to = from + pageSize - 1;
 
-    query = query.order("posted_at", { ascending: false }).range(from, to);
+    // For multi-word text queries, pull pool to rank by relevance before pagination
+    const isMultiWord = cleanQuery && cleanQuery.includes(" ");
+    if (isMultiWord) {
+      query = query.order("posted_at", { ascending: false }).limit(200);
+    } else {
+      query = query.order("posted_at", { ascending: false }).range(from, to);
+    }
 
     const { data, count, error } = await query;
 
@@ -160,7 +161,49 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: error.message, jobs: [], totalCount: 0 }, { status: 500 });
     }
 
-    const rows = data || [];
+    let rows = data || [];
+
+    if (isMultiWord && cleanQuery) {
+      const lowerQuery = cleanQuery.toLowerCase();
+      const parts = lowerQuery.split(" ").filter(Boolean);
+
+      const computeRelevance = (row: any): number => {
+        let score = 0;
+        const lowerTitle = (row.title || "").toLowerCase();
+        const lowerCompany = (row.company || "").toLowerCase();
+        const lowerCategory = (row.category || "").toLowerCase();
+        const lowerDesc = (row.description || "").toLowerCase();
+
+        // Exact phrase match in title or company
+        if (lowerTitle.includes(lowerQuery)) score += 100;
+        else if (lowerCompany.includes(lowerQuery)) score += 80;
+
+        // Individual search words in title
+        let titleTokens = 0;
+        let descTokens = 0;
+        for (const p of parts) {
+          if (lowerTitle.includes(p)) titleTokens++;
+          if (lowerDesc.includes(p)) descTokens++;
+        }
+        score += titleTokens * 25;
+        score += descTokens * 5;
+
+        if (lowerCategory.includes(lowerQuery)) score += 15;
+        return score;
+      };
+
+      rows.sort((a: any, b: any) => {
+        const relA = computeRelevance(a);
+        const relB = computeRelevance(b);
+        if (relB !== relA) return relB - relA;
+        const timeA = new Date(a.posted_at || a.created_at || 0).getTime();
+        const timeB = new Date(b.posted_at || b.created_at || 0).getTime();
+        return timeB - timeA;
+      });
+
+      // Slice to page window
+      rows = rows.slice(from, to + 1);
+    }
     const formattedJobs = rows.map((row: any) => {
       if (isPro) {
         return {

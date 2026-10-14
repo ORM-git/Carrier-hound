@@ -205,7 +205,7 @@ export async function GET() {
 
     const payload = {
       header: {
-        totalActive: distinctJobIds.size,
+        totalActive: totalActive || distinctJobIds.size,
         totalVerified: distinctVerifiedIds.size,
         dataAsOf: latestRun?.finished_at || new Date().toISOString(),
       },
