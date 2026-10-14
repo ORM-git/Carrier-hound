@@ -160,6 +160,7 @@ export default function ProOnboardingCard({
           </div>
           <input
             type="text"
+            aria-label="Or type a specific title"
             value={customRole}
             onChange={(e) => setCustomRole(e.target.value)}
             placeholder="Or type a specific title (e.g. Lead Growth Marketer)"
