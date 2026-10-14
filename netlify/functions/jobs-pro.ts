@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { formatSalary } from "../../src/lib/salary/parser";
 import { verifyUserNotBanned } from "../../src/lib/admin/auth";
+import { safeLog } from "./_logger";
 
 function getSupabaseAdmin() {
   const supabaseUrl =
@@ -155,7 +156,8 @@ export async function handler(event: any) {
       let body: any = {};
       try {
         body = JSON.parse(event.body || "{}");
-      } catch {
+      } catch (err) {
+        safeLog.warn("[Netlify /jobs-pro] Request body parse error", err);
         return {
           statusCode: 400,
           headers,
@@ -203,7 +205,7 @@ export async function handler(event: any) {
       body: JSON.stringify({ error: "Method not allowed" }),
     };
   } catch (err: any) {
-    console.error("[Netlify /jobs-pro handler error]:", err);
+    safeLog.error("[Netlify /jobs-pro]", err);
     return {
       statusCode: 500,
       headers,

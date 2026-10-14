@@ -5,6 +5,7 @@ import { computeFitDiagnostics, StandardJobScoringInput } from "../../src/lib/ma
 import { formatSalary } from "../../src/lib/salary/parser";
 import { extractCandidateRelevanceTerms, LiveJob } from "../../src/lib/jobs/service";
 import { CandidateProfile } from "../../src/lib/resume/types";
+import { safeLog } from "./_logger";
 
 function getSupabaseAdmin() {
   const supabaseUrl =
@@ -138,7 +139,8 @@ export async function handler(event: any) {
     let body: any = {};
     try {
       body = JSON.parse(event.body || "{}");
-    } catch {
+    } catch (parseErr) {
+      safeLog.warn("[Netlify /jobs-top10] Request body parse error", parseErr);
       return {
         statusCode: 400,
         headers,
@@ -326,7 +328,7 @@ export async function handler(event: any) {
       body: JSON.stringify(responsePayload),
     };
   } catch (err: any) {
-    console.error("[Netlify jobs-top10 error]:", err);
+    safeLog.error("[Netlify /jobs-top10]", err);
     return {
       statusCode: 500,
       headers,

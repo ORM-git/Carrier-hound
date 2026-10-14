@@ -9,6 +9,7 @@ import {
   OPERATION_CONFIGS,
 } from "../../src/lib/ai/security";
 import { buildCorsHeaders, handleCorsPreflight } from "./_cors";
+import { safeLog } from "./_logger";
 
 const CORS_OPTIONS = {
   allowedMethods: "POST, OPTIONS",
@@ -107,7 +108,8 @@ export async function handler(event: any) {
     let body: any = {};
     try {
       body = JSON.parse(event.body || "{}");
-    } catch {
+    } catch (parseErr) {
+      safeLog.warn("[Netlify /ai] Request body parse error", parseErr);
       return {
         statusCode: 400,
         headers,
@@ -246,7 +248,7 @@ export async function handler(event: any) {
       }),
     };
   } catch (error) {
-    console.warn("[AI Netlify Function] Internal error processing AI request:", error);
+    safeLog.error("[Netlify /ai]", error);
     return {
       statusCode: 500,
       headers,
