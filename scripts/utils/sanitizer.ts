@@ -73,7 +73,8 @@ export function cleanAndTruncateDescription(raw: string | null | undefined, maxC
  * V2 Rules Alignment:
  * - director: only matches director, vp, vice president, head of, chief [X] officer, cto, cpo, ceo, cfo, executive director.
  *   Bare "executive", "Account Executive", and "Executive Assistant" are excluded.
- * - staff: matches staff, principal, distinguished, fellow. (Non-engineering titles like "Staff Nurse" match staff).
+ * - staff: matches staff, principal, distinguished only with tech/product/design context (engineer, developer, programmer, scientist, designer, product, architect, data, ML, software, SRE, security).
+ *   Excludes non-tech titles like "Staff Nurse", "Staff Accountant", "Research Fellow".
  * - senior: matches senior, sr, sr., level 3, sde 3, sde iii, software engineer iii BEFORE manager/lead.
  *   Mistakes removed: "specialist", "expert", bare "iii/iv", and bare "l3".
  * - mid management exemptions: "associate manager" and "assistant manager" map to 'mid' before manager/lead.
@@ -102,11 +103,13 @@ export function detectSeniority(title: string = ''): 'entry' | 'mid' | 'senior' 
   }
 
   // 2. Staff & Principal level
-  // Matches: staff, principal, distinguished, fellow.
+  // Matches: staff, principal, distinguished when accompanied by engineering/product/design/data/ML/software/security/architect context.
+  // Context words: engineer, developer, programmer, scientist, designer, product, architect, data, ML, software, SRE, security.
   // EXCLUDES: "Chief of Staff" (unknown), "Member of Technical Staff" (MTS -> unknown, SMTS -> senior).
-  // Note: Non-engineering titles like "Staff Nurse" match 'staff'.
+  // Non-tech titles like "Staff Nurse", "Staff Accountant", "Staff Writer", "Research Fellow", "Principal (school)" -> not staff.
   if (
-    /\b(staff|principal|distinguished|fellow)\b/i.test(t) &&
+    /\b(staff|principal|distinguished)\b/i.test(t) &&
+    /\b(engineers?|engineering|developers?|programmers?|scientists?|designers?|design|products?|architects?|architecture|data|ml|software|sre|security)\b/i.test(t) &&
     !/\b(chief of staff|member of technical staff)\b/i.test(t)
   ) {
     return 'staff';
