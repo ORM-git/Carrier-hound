@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
+import { verifyUserNotBanned } from "@/lib/admin/auth";
 import {
   resolveOperation,
   buildOperationPayload,
@@ -45,6 +46,15 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { error: "Invalid or expired session. Please sign in again." },
         { status: 401 }
+      );
+    }
+
+    // Ban check (fails closed on lookup error)
+    const banCheck = await verifyUserNotBanned(supabaseAdmin, user.id, user.user_metadata);
+    if (banCheck.isBlocked) {
+      return NextResponse.json(
+        { error: banCheck.error || "Account suspended. Access revoked by administrator." },
+        { status: banCheck.isServiceUnavailable ? 503 : 403 }
       );
     }
 
