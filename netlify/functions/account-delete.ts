@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { buildCorsHeaders, handleCorsPreflight } from "./_cors";
 
 function getSupabaseAdmin() {
   const supabaseUrl =
@@ -17,17 +18,20 @@ function getSupabaseAdmin() {
   });
 }
 
+const CORS_OPTIONS = {
+  allowedMethods: "POST, OPTIONS",
+  allowedHeaders: "Content-Type, Authorization",
+};
+
 export async function handler(event: any) {
+  const preflight = handleCorsPreflight(event, CORS_OPTIONS);
+  if (preflight) return preflight;
+
   const headers = {
     "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    ...buildCorsHeaders(event, CORS_OPTIONS),
   };
 
-  if (event.httpMethod === "OPTIONS") {
-    return { statusCode: 204, headers, body: "" };
-  }
 
   if (event.httpMethod !== "POST") {
     return {

@@ -19,12 +19,23 @@ function getSupabaseAdmin() {
   });
 }
 
-export async function handler() {
+import { buildCorsHeaders, handleCorsPreflight } from "./_cors";
+
+const CORS_OPTIONS = {
+  allowedMethods: "GET, OPTIONS",
+  allowedHeaders: "Content-Type",
+};
+
+export async function handler(event?: any) {
+  const preflight = handleCorsPreflight(event, CORS_OPTIONS);
+  if (preflight) return preflight;
+
   const headers = {
     "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
     "Cache-Control": "public, s-maxage=60, stale-while-revalidate=120",
+    ...buildCorsHeaders(event, CORS_OPTIONS),
   };
+
 
   try {
     const supabase = getSupabaseAdmin();

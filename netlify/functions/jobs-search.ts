@@ -43,17 +43,22 @@ function sanitizeSearchQuery(input: string): string {
     .trim();
 }
 
+import { buildCorsHeaders, handleCorsPreflight } from "./_cors";
+
+const CORS_OPTIONS = {
+  allowedMethods: "GET, OPTIONS",
+  allowedHeaders: "Content-Type, Authorization",
+};
+
 export async function handler(event: any) {
+  const preflight = handleCorsPreflight(event, CORS_OPTIONS);
+  if (preflight) return preflight;
+
   const headers = {
     "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    "Access-Control-Allow-Methods": "GET, OPTIONS",
+    ...buildCorsHeaders(event, CORS_OPTIONS),
   };
 
-  if (event.httpMethod === "OPTIONS") {
-    return { statusCode: 204, headers, body: "" };
-  }
 
   if (event.httpMethod !== "GET") {
     return {
