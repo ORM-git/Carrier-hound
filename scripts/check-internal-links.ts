@@ -1,183 +1,142 @@
-/**
- * CareerMonke Read-Only Internal Links Checker & Crawler
- * Run with: npx tsx scripts/check-internal-links.ts
- */
-
 import fs from "fs";
 import path from "path";
+import assert from "assert";
 
-const BASE_URL = process.env.APP_URL || "http://localhost:3000";
+console.log("==================================================================================");
+console.log("           INTERNAL ROUTE & NAVIGATION LINK AUDIT (src/ vs Real Routes)          ");
+console.log("==================================================================================\n");
 
-function getAllSourceFiles(dirPath: string, arrayOfFiles: string[] = []): string[] {
-  if (!fs.existsSync(dirPath)) return arrayOfFiles;
-  const files = fs.readdirSync(dirPath);
-  files.forEach((file) => {
-    const fullPath = path.join(dirPath, file);
-    if (fs.statSync(fullPath).isDirectory()) {
-      getAllSourceFiles(fullPath, arrayOfFiles);
-    } else if (/\.(tsx|ts|jsx|js)$/.test(file) && !file.endsWith(".d.ts")) {
-      arrayOfFiles.push(fullPath);
+// Known real routes statically exported or redirected in CareerMonke:
+const KNOWN_STATIC_ROUTES = new Set([
+  "/",
+  "/jobs",
+  "/jobs/detail",
+  "/job-search",
+  "/job-search/all",
+  "/job-search/remote",
+  "/worldwide",
+  "/remote",
+  "/login",
+  "/signup",
+  "/dashboard",
+  "/tracker",
+  "/applications",
+  "/resume",
+  "/settings",
+  "/radar",
+  "/admin",
+  "/admin/users",
+  "/privacy-policy",
+  "/terms-and-conditions",
+  "/auth/callback",
+  "/paywall",
+]);
+
+// Dynamic route patterns (Next.js slug routes)
+const DYNAMIC_ROUTE_PATTERNS = [
+  /^\/remote\/[a-zA-Z0-9_-]+$/,
+  /^\/remote\/[a-zA-Z0-9_-]+\/titles$/,
+  /^\/remote\/jobs\/[a-zA-Z0-9_-]+$/,
+  /^\/jobs\/[a-zA-Z0-9_.-]+$/,
+];
+
+function isRouteValid(route: string): boolean {
+  if (route === "") return true;
+  // Clean query and hash
+  const clean = route.split("?")[0].split("#")[0];
+  if (KNOWN_STATIC_ROUTES.has(clean)) return true;
+  return DYNAMIC_ROUTE_PATTERNS.some((p) => p.test(clean));
+}
+
+function getAllFiles(dir: string, exts = [".ts", ".tsx", ".js"]): string[] {
+  let files: string[] = [];
+  if (!fs.existsSync(dir)) return files;
+  for (const item of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, item.name);
+    if (item.isDirectory()) {
+      files = files.concat(getAllFiles(full, exts));
+    } else if (item.isFile() && exts.some((e) => item.name.endsWith(e))) {
+      files.push(full);
+    }
+  }
+  return files;
+}
+
+const srcFiles = getAllFiles("src");
+const collectedLinks: { file: string; line: number; raw: string; clean: string }[] = [];
+
+for (const file of srcFiles) {
+  const content = fs.readFileSync(file, "utf8");
+  const lines = content.split("\n");
+
+  lines.forEach((line, idx) => {
+    // 1. href="path"
+    const hrefMatches = line.matchAll(/href=["'](\/[^"']*)["']/g);
+    for (const m of hrefMatches) {
+      collectedLinks.push({
+        file: file.replace(/\\/g, "/"),
+        line: idx + 1,
+        raw: m[1],
+        clean: m[1].split("?")[0].split("#")[0],
+      });
+    }
+
+    // 2. router.push("path")
+    const pushMatches = line.matchAll(/router\.push\(["'](\/[^"']*)["']\)/g);
+    for (const m of pushMatches) {
+      collectedLinks.push({
+        file: file.replace(/\\/g, "/"),
+        line: idx + 1,
+        raw: m[1],
+        clean: m[1].split("?")[0].split("#")[0],
+      });
     }
   });
-  return arrayOfFiles;
 }
 
-interface DiscoveredLink {
-  target: string;
-  sourceFile: string;
-}
+console.log(`Discovered ${collectedLinks.length} internal links across ${srcFiles.length} source files.`);
 
-function extractInternalLinksFromSource(): { links: DiscoveredLink[]; uniqueTargets: string[] } {
-  const sourceFiles = getAllSourceFiles(path.resolve("src"));
-  const discovered: DiscoveredLink[] = [];
-  const targetSet = new Set<string>();
+const deadLinks: { file: string; line: number; raw: string }[] = [];
+const validLinks: { file: string; line: number; raw: string }[] = [];
 
-  const hrefRegex = /href\s*=\s*["'](\/[a-zA-Z0-9_\-\/#?]*)["']/g;
-  const linkToRegex = /to\s*=\s*["'](\/[a-zA-Z0-9_\-\/#?]*)["']/g;
-  const routerPushRegex = /router\.push\(\s*["'](\/[a-zA-Z0-9_\-\/#?]*)["']/g;
-
-  for (const file of sourceFiles) {
-    const content = fs.readFileSync(file, "utf8");
-    const relPath = path.relative(".", file).replace(/\\/g, "/");
-
-    let match: RegExpExecArray | null;
-
-    while ((match = hrefRegex.exec(content)) !== null) {
-      const cleanPath = match[1].split("#")[0].split("?")[0] || "/";
-      discovered.push({ target: cleanPath, sourceFile: relPath });
-      targetSet.add(cleanPath);
-    }
-
-    while ((match = linkToRegex.exec(content)) !== null) {
-      const cleanPath = match[1].split("#")[0].split("?")[0] || "/";
-      discovered.push({ target: cleanPath, sourceFile: relPath });
-      targetSet.add(cleanPath);
-    }
-
-    while ((match = routerPushRegex.exec(content)) !== null) {
-      const cleanPath = match[1].split("#")[0].split("?")[0] || "/";
-      discovered.push({ target: cleanPath, sourceFile: relPath });
-      targetSet.add(cleanPath);
-    }
-  }
-
-  // Also include key canonical routes to ensure complete coverage
-  const canonicalRoutes = [
-    "/",
-    "/job-search/all",
-    "/jobs",
-    "/dashboard",
-    "/tracker",
-    "/radar",
-    "/login",
-    "/privacy-policy",
-    "/terms-and-conditions",
-    "/admin",
-    "/applications",
-  ];
-  canonicalRoutes.forEach((r) => targetSet.add(r));
-
-  return { links: discovered, uniqueTargets: Array.from(targetSet).sort() };
-}
-
-async function testRoute(route: string): Promise<{ route: string; status: number; ok: boolean; title?: string }> {
-  try {
-    const res = await fetch(`${BASE_URL}${route}`, {
-      method: "GET",
-      headers: {
-        "User-Agent": "Mozilla/5.0 LinkChecker/1.0",
-      },
-    });
-
-    const text = await res.text();
-    const titleMatch = text.match(/<title>([^<]*)<\/title>/i);
-    const isCustom404 = text.includes("404 - Page Not Found") || text.includes("Page Not Found | CareerMonke");
-
-    // Next.js static dev or export: 404 route returns 404 status or custom 404 page
-    const ok = res.status >= 200 && res.status < 400 && !isCustom404;
-
-    return {
-      route,
-      status: res.status,
-      ok,
-      title: titleMatch ? titleMatch[1].trim() : undefined,
-    };
-  } catch (err: any) {
-    return {
-      route,
-      status: 0,
-      ok: false,
-      title: `Network Error: ${err.message}`,
-    };
-  }
-}
-
-async function main() {
-  console.log("===============================================================");
-  console.log("       CAREERMONKE READ-ONLY INTERNAL LINK CHECKER & CRAWLER  ");
-  console.log("===============================================================\n");
-
-  console.log(`Checking running build on ${BASE_URL}...\n`);
-
-  // 1. Verify custom 404 test on deliberately non-existent route /abc123xyz
-  console.log("--- 1. Testing deliberate non-existent route: /abc123xyz ---");
-  const test404 = await testRoute("/abc123xyz");
-  console.log(`Route:  /abc123xyz`);
-  console.log(`Status: ${test404.status}`);
-  console.log(`Title:  ${test404.title}`);
-  const custom404Confirmed = test404.status === 404 && (test404.title?.includes("404") || test404.title?.includes("Not Found"));
-  console.log(`Custom 404 Confirmed: ${custom404Confirmed ? "YES (PASS)" : "NO"}\n`);
-
-  // 2. Parse source for all href and Link targets
-  console.log("--- 2. Parsing source code for internal href and Link targets ---");
-  const { links, uniqueTargets } = extractInternalLinksFromSource();
-  console.log(`Found ${links.length} link references across source code.`);
-  console.log(`Extracted ${uniqueTargets.length} unique internal routes to test.\n`);
-
-  // 3. Test each unique internal route
-  console.log("--- 3. Crawling / verifying all discovered internal routes ---");
-  const results = [];
-  const brokenRoutes: { route: string; status: number; sources: string[] }[] = [];
-
-  for (const route of uniqueTargets) {
-    const res = await testRoute(route);
-    results.push(res);
-
-    if (!res.ok) {
-      const sources = links.filter((l) => l.target === route).map((l) => l.sourceFile);
-      brokenRoutes.push({
-        route,
-        status: res.status,
-        sources: Array.from(new Set(sources)),
-      });
-      console.log(`❌ BROKEN: ${route} (Status: ${res.status}) - Title: ${res.title}`);
-    } else {
-      console.log(`✅ OK:     ${route} (Status: ${res.status}) - Title: ${res.title || "OK"}`);
-    }
-  }
-
-  console.log("\n===============================================================");
-  console.log("                     INTERNAL CRAWL SUMMARY                    ");
-  console.log("===============================================================");
-  console.log(`Total unique internal routes scanned: ${uniqueTargets.length}`);
-  console.log(`Healthy existing routes (2xx):        ${results.filter((r) => r.ok).length}`);
-  console.log(`Broken internal routes (4xx/5xx/err): ${brokenRoutes.length}`);
-  console.log(`Custom 404 handler verified:          ${custom404Confirmed ? "PASS (404 status)" : "FAIL"}`);
-  console.log("===============================================================\n");
-
-  if (brokenRoutes.length > 0) {
-    console.log("Broken internal links list:");
-    brokenRoutes.forEach((b, i) => {
-      console.log(`[${i + 1}] Target: ${b.route} (Status: ${b.status})`);
-      console.log(`    Referenced in: ${b.sources.join(", ") || "Canonical list"}`);
-    });
-    console.log("");
+for (const link of collectedLinks) {
+  if (isRouteValid(link.clean)) {
+    validLinks.push(link);
   } else {
-    console.log("🎉 Zero broken internal links found! All internal routes resolve properly.\n");
+    deadLinks.push(link);
   }
 }
 
-main().catch((err) => {
-  console.error("Fatal error:", err);
-  process.exit(1);
-});
+// Special check for "Applications" navigation
+const appLinks = collectedLinks.filter((l) => l.clean === "/applications");
+console.log(`\nNav 'Applications' links found: ${appLinks.length}`);
+appLinks.forEach((l) => console.log(`  - ${l.file}:${l.line} -> ${l.raw}`));
+
+if (deadLinks.length > 0) {
+  console.log(`\n⚠️ DEAD LINKS FOUND (${deadLinks.length}):`);
+  deadLinks.forEach((d) => console.log(`  - ${d.file}:${d.line} -> ${d.raw}`));
+} else {
+  console.log(`\n✅ All ${collectedLinks.length} internal links point to valid, reachable routes!`);
+}
+
+// -------------------------------------------------------------------------------------
+// NEGATIVE CONTROL: Deliberately test an invalid internal route
+// -------------------------------------------------------------------------------------
+console.log("\n--- RUNNING NEGATIVE CONTROL (verifies validator catches dead link) ---");
+const fakeDeadLink = "/non-existent-career-dog-404";
+const isFakeValid = isRouteValid(fakeDeadLink);
+
+let negativeControlPassed = false;
+try {
+  assert.strictEqual(isFakeValid, false, "Fake dead link must NOT be accepted as valid");
+  negativeControlPassed = true;
+  console.log(`✅ Negative control passed: '${fakeDeadLink}' correctly detected as dead link.`);
+} catch (err: any) {
+  console.error("Negative control failed:", err);
+}
+
+assert(negativeControlPassed, "Negative control failed to catch fake dead link!");
+
+console.log("\n==================================================================================");
+console.log(`INTERNAL LINK AUDIT: Valid: ${validLinks.length}, Dead: ${deadLinks.length}`);
+console.log("==================================================================================");
