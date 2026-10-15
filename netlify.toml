@@ -47,13 +47,19 @@
 
 [[redirects]]
   from = "/job-search"
-  to = "/job-search/all"
+  to = "/jobs"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/job-search/all"
+  to = "/jobs"
   status = 301
   force = true
 
 [[redirects]]
   from = "/paywall"
-  to = "/job-search/all"
+  to = "/jobs"
   status = 301
   force = true
 

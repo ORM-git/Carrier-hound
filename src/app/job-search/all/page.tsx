@@ -1,17 +1,18 @@
 "use client";
 
-import { useEffect, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { buildJobsRedirectUrl } from "@/lib/jobs/redirects";
 
-function JobSearchRedirectInner() {
+export default function JobSearchAllRedirectPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
 
   useEffect(() => {
-    const qs = searchParams.toString();
-    const destination = qs ? `/jobs?${qs}` : "/jobs";
-    router.replace(destination);
-  }, [router, searchParams]);
+    if (typeof window !== "undefined") {
+      const target = buildJobsRedirectUrl(window.location.search, window.location.hash);
+      router.replace(target);
+    }
+  }, [router]);
 
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
@@ -22,13 +23,5 @@ function JobSearchRedirectInner() {
         </p>
       </div>
     </div>
-  );
-}
-
-export default function JobSearchAllRedirectPage() {
-  return (
-    <Suspense>
-      <JobSearchRedirectInner />
-    </Suspense>
   );
 }
