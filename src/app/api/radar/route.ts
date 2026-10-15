@@ -13,6 +13,44 @@ interface CachedRadarData {
 let memoryCache: CachedRadarData | null = null;
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
+async function fetchJobsChunks(
+  supabase: any,
+  totalActive: number | null,
+  batchSize: number = 5,
+  chunkSize: number = 1000
+): Promise<any[]> {
+  const chunkCount = Math.ceil((totalActive || 0) / chunkSize);
+  const jobs: any[] = [];
+
+  for (let b = 0; b < chunkCount; b += batchSize) {
+    const batchPromises = [];
+    const end = Math.min(b + batchSize, chunkCount);
+    for (let i = b; i < end; i++) {
+      const from = i * chunkSize;
+      const to = from + chunkSize - 1;
+      batchPromises.push(
+        supabase
+          .from('jobs_public')
+          .select('id, company, title, location, country_code, remote_scope, remote_eligibility, verified')
+          .eq('is_active', true)
+          .eq('status', 'active')
+          .range(from, to)
+      );
+    }
+    const batchResults = await Promise.all(batchPromises);
+    for (const r of batchResults) {
+      if (r.error) {
+        throw new Error(`Failed to fetch jobs chunk: ${r.error.message || JSON.stringify(r.error)}`);
+      }
+      if (r.data) {
+        jobs.push(...r.data);
+      }
+    }
+  }
+
+  return jobs;
+}
+
 export async function GET() {
   const now = Date.now();
 
@@ -53,28 +91,7 @@ export async function GET() {
       .eq('is_active', true)
       .eq('status', 'active');
 
-    const chunkSize = 1000;
-    const chunkCount = Math.ceil((totalActive || 0) / chunkSize);
-    const chunkPromises = [];
-
-    for (let i = 0; i < chunkCount; i++) {
-      const from = i * chunkSize;
-      const to = from + chunkSize - 1;
-      chunkPromises.push(
-        supabase
-          .from('jobs_public')
-          .select('id, company, title, location, country_code, remote_scope, remote_eligibility, verified')
-          .eq('is_active', true)
-          .eq('status', 'active')
-          .range(from, to)
-      );
-    }
-
-    const chunkResults = await Promise.all(chunkPromises);
-    const jobs: any[] = [];
-    for (const r of chunkResults) {
-      if (r.data) jobs.push(...r.data);
-    }
+    const jobs = await fetchJobsChunks(supabase, totalActive);
 
     const distinctJobIds = new Set<string>();
     const distinctVerifiedIds = new Set<string>();
