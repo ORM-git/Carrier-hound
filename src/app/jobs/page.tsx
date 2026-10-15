@@ -167,7 +167,6 @@ function JobsPageInner() {
     }
     lastQueryKeyRef.current = queryKey;
 
-    let cancelled = false;
     setLoadingJobs(true);
     setPage(1);
 
@@ -182,21 +181,17 @@ function JobsPageInner() {
       candidate: effectiveCandidate,
       preferences: effectivePreferences,
     }).then((res) => {
-      if (!cancelled) {
+      if (queryKey === lastQueryKeyRef.current) {
         setLiveJobs(res.jobs);
         setTotalCount(res.totalCount);
         setLoadingJobs(false);
       }
     }).catch((err) => {
       console.warn("Failed to fetch live jobs:", err);
-      if (!cancelled) {
+      if (queryKey === lastQueryKeyRef.current) {
         setLoadingJobs(false);
       }
     });
-
-    return () => {
-      cancelled = true;
-    };
   }, [selectedCategory, search, remoteOnly, isPro, isProDefinitive, user, sortBy, activeTab, candidate, preferences]);
 
   const handleLoadMore = async () => {

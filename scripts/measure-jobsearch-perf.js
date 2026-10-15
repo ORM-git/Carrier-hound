@@ -78,6 +78,8 @@ function extractMetrics(report) {
   const unusedJsBytes = report?.audits?.["unused-javascript"]?.numericValue || 0;
   const unusedJsKb = Math.round(unusedJsBytes / 1024);
 
+  const requestCount = report?.audits?.["network-requests"]?.details?.items?.length || 0;
+
   return {
     requestedUrl: report.requestedUrl,
     finalDisplayedUrl: report.finalDisplayedUrl,
@@ -85,6 +87,7 @@ function extractMetrics(report) {
     lcp: Math.round(lcp),
     tbt: Math.round(tbt),
     cls: Number(cls.toFixed(3)),
+    requestCount,
     transferKb,
     unusedJsKb,
   };
@@ -121,12 +124,13 @@ async function main() {
       lcp: median(runs.map((r) => r.lcp)),
       tbt: median(runs.map((r) => r.tbt)),
       cls: Number(median(runs.map((r) => r.cls)).toFixed(3)),
+      requestCount: median(runs.map((r) => r.requestCount)),
       transferKb: median(runs.map((r) => r.transferKb)),
       unusedJsKb: median(runs.map((r) => r.unusedJsKb)),
     };
 
     console.log("\n==================================================================================");
-    console.log("LIGHTHOUSE 3-RUN MEDIAN BASELINE (BEFORE): /job-search/all");
+    console.log("LIGHTHOUSE 3-RUN MEDIAN AFTER: /job-search/all");
     console.log("==================================================================================");
     console.log(JSON.stringify(medianResults, null, 2));
 

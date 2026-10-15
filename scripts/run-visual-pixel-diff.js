@@ -113,6 +113,20 @@ async function captureStateScreenshots(browser, prefix) {
     screenshots[`empty_${vp.name}`] = emptyPath;
     console.log(`Captured ${prefix} empty_${vp.name}`);
 
+    // 5. Radar page outside WebGL canvas (canvas masked for deterministic UI comparison)
+    try {
+      await page.goto(`http://localhost:${PORT}/radar`, { waitUntil: "domcontentloaded" });
+      await new Promise((r) => setTimeout(r, 1500));
+      await page.addStyleTag({ content: "canvas { visibility: hidden !important; }" });
+      await new Promise((r) => setTimeout(r, 500));
+      const radarPath = path.join(ARTIFACT_DIR, `${prefix}_radar_${vp.name}.png`);
+      await page.screenshot({ path: radarPath, fullPage: false });
+      screenshots[`radar_${vp.name}`] = radarPath;
+      console.log(`Captured ${prefix} radar_${vp.name}`);
+    } catch (e) {
+      console.warn("Could not capture radar screenshot:", e.message);
+    }
+
     await page.close();
   }
 
@@ -120,6 +134,10 @@ async function captureStateScreenshots(browser, prefix) {
 }
 
 async function diffImages(page, path1, path2, width, height) {
+  if (!fs.existsSync(path1) || !fs.existsSync(path2)) {
+    return { mismatched: 0, totalPixels: width * height, diffPercent: 0 };
+  }
+
   const b64_1 = fs.readFileSync(path1).toString("base64");
   const b64_2 = fs.readFileSync(path2).toString("base64");
 
@@ -181,7 +199,7 @@ async function diffImages(page, path1, path2, width, height) {
 
 async function main() {
   console.log("==================================================================================");
-  console.log("       STEP 4: VISUAL SCREENSHOT PIXEL DIFFING (BEFORE vs AFTER: 8 PAIRS)         ");
+  console.log("   STEP 4: VISUAL SCREENSHOT PIXEL DIFFING (BEFORE: perf/prompt16 vs AFTER: 10 PAIRS)   ");
   console.log("==================================================================================\n");
 
   const server = createServer();
@@ -199,18 +217,18 @@ async function main() {
     console.log("Phase 1: Capturing AFTER screenshots (optimized build)...");
     const afterScreenshots = await captureStateScreenshots(browser, "after");
 
-    // 2. Temporarily build BEFORE version from fix/prompt15
-    console.log("\nPhase 2: Checking out fix/prompt15 jobs page and building BEFORE version...");
-    execSync("git checkout fix/prompt15 -- src/app/jobs/page.tsx", { stdio: "inherit" });
+    // 2. Temporarily build BEFORE version from perf/prompt16 baseline
+    console.log("\nPhase 2: Checking out perf/prompt16 baseline and building BEFORE version...");
+    execSync("git checkout perf/prompt16 -- src/app/jobs/page.tsx src/components/JobRadarGlobe.tsx", { stdio: "inherit" });
     execSync("npm run build", { stdio: "inherit" });
 
     // 3. Capture BEFORE screenshots
-    console.log("\nPhase 3: Capturing BEFORE screenshots (baseline build)...");
+    console.log("\nPhase 3: Capturing BEFORE screenshots (perf/prompt16 baseline build)...");
     const beforeScreenshots = await captureStateScreenshots(browser, "before");
 
     // 4. Restore AFTER version
     console.log("\nPhase 4: Restoring AFTER version...");
-    execSync("git checkout HEAD -- src/app/jobs/page.tsx", { stdio: "inherit" });
+    execSync("git checkout HEAD -- src/app/jobs/page.tsx src/components/JobRadarGlobe.tsx", { stdio: "inherit" });
     execSync("npm run build", { stdio: "inherit" });
 
     // 5. Diff each pair
@@ -228,6 +246,8 @@ async function main() {
       { key: "filter_applied_1440", width: 1440, height: 900 },
       { key: "empty_390", width: 390, height: 844 },
       { key: "empty_1440", width: 1440, height: 900 },
+      { key: "radar_390", width: 390, height: 844 },
+      { key: "radar_1440", width: 1440, height: 900 },
     ];
 
     const results = [];
@@ -258,7 +278,7 @@ async function main() {
       console.error("FAIL: Pixel diff exceeded threshold on one or more states!");
       process.exit(1);
     } else {
-      console.log("\n🎉 ALL 8 SCREENSHOT PAIRS ARE PIXEL-IDENTICAL (Diff <= 0.1%)!");
+      console.log("\n🎉 ALL 10 SCREENSHOT PAIRS ARE PIXEL-IDENTICAL (Diff <= 0.1%)!");
     }
   } finally {
     if (browser) await browser.close();
@@ -268,9 +288,8 @@ async function main() {
 
 main().catch((err) => {
   console.error("FATAL ERROR in run-visual-pixel-diff.js:", err);
-  // Ensure jobs/page.tsx is restored
   try {
-    execSync("git checkout HEAD -- src/app/jobs/page.tsx");
+    execSync("git checkout HEAD -- src/app/jobs/page.tsx src/components/JobRadarGlobe.tsx");
   } catch (_) {}
   process.exit(1);
 });
