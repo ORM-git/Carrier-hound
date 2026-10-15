@@ -27,6 +27,7 @@ const SUITES: SuiteSpec[] = [
   { name: "scripts/daily-digest-cron.ts --dry", command: "npx tsx scripts/daily-digest-cron.ts --dry" },
   { name: "scripts/test-scrape.mjs", command: "node scripts/test-scrape.mjs" },
   { name: "scripts/test-insert.ts", command: "npx tsx scripts/test-insert.ts" },
+  { name: "scripts/test-admin-analytics-reads.ts", command: "npx tsx scripts/test-admin-analytics-reads.ts" },
 
   // Supabase read/safe-cleanup verification suites (run whenever Supabase credentials exist)
   { name: "scripts/test-filters.ts", command: "npx tsx scripts/test-filters.ts", requiresSupabase: true },
