@@ -32,7 +32,7 @@ export default function Footer({ isGuide = false }: FooterProps) {
 
           {/* Quick Links Column */}
           <div className="sm:col-span-1 lg:col-span-3 space-y-3">
-            <h4 className="text-sm font-semibold uppercase tracking-wider text-slate-200">Navigation</h4>
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-200">Navigation</h2>
             <ul className="space-y-1 text-sm text-slate-400">
               <li>
                 <Link href="/job-search/all" prefetch={false} className="inline-flex items-center py-2 sm:py-1 min-h-[44px] sm:min-h-0 hover:text-white transition-colors">
@@ -54,7 +54,7 @@ export default function Footer({ isGuide = false }: FooterProps) {
 
           {/* Links Column with Support, Privacy, Terms, Socials */}
           <div className="sm:col-span-1 lg:col-span-3 space-y-3">
-            <h4 className="text-sm font-semibold uppercase tracking-wider text-slate-200">Links</h4>
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-200">Links</h2>
             <ul className="space-y-1 text-sm text-slate-400">
               <li>
                 <a href="mailto:support@careermonke.com" className="inline-flex items-center py-2 sm:py-1 min-h-[44px] sm:min-h-0 hover:text-white transition-colors">

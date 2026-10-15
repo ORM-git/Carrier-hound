@@ -76,9 +76,9 @@ export const TestimonialsColumn = (props: {
                   </div>
 
                   {/* 2. Name */}
-                  <h5 className="text-sm sm:text-base font-bold text-[#09090B] leading-tight">
+                  <h3 className="text-sm sm:text-base font-bold text-[#09090B] leading-tight">
                     {item.name}
-                  </h5>
+                  </h3>
 
                   {/* 3. Handle / Role */}
                   <span className="text-xs text-gray-500 font-normal mt-0.5 mb-2.5">

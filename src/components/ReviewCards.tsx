@@ -56,9 +56,9 @@ export function ReviewCard({ review, className }: ReviewCardProps) {
       </div>
 
       {/* 2. Candidate Name */}
-      <h4 className="text-base sm:text-lg font-bold text-[#09090B] tracking-tight leading-snug">
+      <h3 className="text-base sm:text-lg font-bold text-[#09090B] tracking-tight leading-snug">
         {review.name}
-      </h4>
+      </h3>
 
       {/* 3. Role / Designation */}
       <p className="text-xs sm:text-sm text-gray-500 font-normal mt-0.5 mb-3">
@@ -119,9 +119,9 @@ export function MiniReviewCard({ review, className }: MiniReviewCardProps) {
       </div>
 
       {/* 2. Name */}
-      <h5 className="text-sm sm:text-base font-bold text-[#09090B] leading-tight">
+      <h3 className="text-sm sm:text-base font-bold text-[#09090B] leading-tight">
         {review.name}
-      </h5>
+      </h3>
 
       {/* 3. Handle / Role */}
       <span className="text-xs text-gray-500 font-normal mt-0.5 mb-2.5">
