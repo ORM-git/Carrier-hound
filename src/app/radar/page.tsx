@@ -84,11 +84,11 @@ export default function RadarPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#040610] text-white flex flex-col overflow-hidden">
+    <div className="min-h-screen bg-[#040610] text-white flex flex-col overflow-hidden">
       <GuideHeader />
-      <div className="flex-1 w-full relative">
+      <main className="flex-1 w-full relative">
         <JobRadarGlobe />
-      </div>
-    </main>
+      </main>
+    </div>
   );
 }
