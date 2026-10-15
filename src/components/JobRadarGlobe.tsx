@@ -60,6 +60,11 @@ function latLngToVector3(lat: number, lng: number, radius: number = 5) {
   return { x, y, z };
 }
 
+// Reusable scratch vectors for 60 FPS marker projection loop to prevent heap allocation & GC thrash
+const scratchWorldPos = new THREE.Vector3();
+const scratchMarkerDir = new THREE.Vector3();
+const scratchScreenVec = new THREE.Vector3();
+
 // Region & Country matching helper for filtering cities on globe
 function matchesFilters(
   city: RadarCityAggregate,
@@ -756,17 +761,17 @@ export default function JobRadarGlobe() {
           if (!el) continue;
 
           const { x, y, z } = latLngToVector3(city.coordinates[1], city.coordinates[0], 5.05);
-          const worldPos = new THREE.Vector3(x, y, z);
-          const markerDir = worldPos.clone().normalize();
-          const dot = camPos.dot(markerDir);
+          scratchWorldPos.set(x, y, z);
+          scratchMarkerDir.copy(scratchWorldPos).normalize();
+          const dot = camPos.dot(scratchMarkerDir);
           const isFacingCamera = dot > 0.15;
           const isMatch = matchesFilters(city, cFilter, rFilter);
 
           if (isFacingCamera && isMatch) {
-            const screenVec = worldPos.clone().project(camera);
-            if (screenVec.z < 1) {
-              const screenX = (screenVec.x * 0.5 + 0.5) * cWidth;
-              const screenY = (-screenVec.y * 0.5 + 0.5) * cHeight;
+            scratchScreenVec.copy(scratchWorldPos).project(camera);
+            if (scratchScreenVec.z < 1) {
+              const screenX = (scratchScreenVec.x * 0.5 + 0.5) * cWidth;
+              const screenY = (-scratchScreenVec.y * 0.5 + 0.5) * cHeight;
               el.style.transform = `translate3d(${screenX}px, ${screenY}px, 0) translate(-50%, -50%)`;
               el.style.display = "flex";
               const isSelected = selectedCityRef.current?.id === city.id;
