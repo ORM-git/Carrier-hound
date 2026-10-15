@@ -423,6 +423,7 @@ function JobsPageInner() {
             <div className="flex items-center gap-1.5">
               <span className="text-xs text-slate-500 font-medium">Sort:</span>
               <select
+                aria-label="Sort by"
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as any)}
                 className="text-xs font-bold py-2 px-3 rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-blue-600 cursor-pointer shadow-2xs"
