@@ -55,7 +55,7 @@ export default function HomePage() {
   }, [router]);
 
   return (
-    <div className="min-h-screen bg-white text-[#09090B] flex flex-col selection:bg-blue-100 selection:text-blue-900">
+    <main className="min-h-screen bg-white text-[#09090B] flex flex-col selection:bg-blue-100 selection:text-blue-900">
       {/* ========================================================================= */}
       {/* 1. HERO SECTION (Blue #2563EB, centered) with overlay header              */}
       {/* ========================================================================= */}
@@ -449,6 +449,6 @@ export default function HomePage() {
 
       {/* Category selection modal triggered by both "View Jobs" buttons */}
       <CategorySelectModal open={modalOpen} onOpenChange={setModalOpen} />
-    </div>
+    </main>
   );
 }
