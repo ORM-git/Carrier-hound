@@ -1,0 +1,10 @@
+{
+  "390": {
+    "status": "NOT RUN",
+    "reason": "Requires authenticated session with live Supabase JWT verification; live DB writes/auth calls prohibited by safety lock"
+  },
+  "1440": {
+    "status": "NOT RUN",
+    "reason": "Requires authenticated session with live Supabase JWT verification; live DB writes/auth calls prohibited by safety lock"
+  }
+}
