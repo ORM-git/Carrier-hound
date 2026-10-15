@@ -24,7 +24,14 @@ const CORS_OPTIONS = {
   allowedHeaders: "Content-Type, Authorization",
 };
 
-export async function handler(event: any) {
+export interface AccountDeleteDeps {
+  getSupabaseAdmin?: () => any;
+}
+
+export function createHandler(deps: AccountDeleteDeps = {}) {
+  const getAdmin = deps.getSupabaseAdmin || getSupabaseAdmin;
+
+  return async function handler(event: any) {
   const preflight = handleCorsPreflight(event, CORS_OPTIONS);
   if (preflight) return preflight;
 
@@ -53,7 +60,7 @@ export async function handler(event: any) {
     }
 
     const token = authHeader.replace("Bearer ", "").trim();
-    const supabaseAdmin = getSupabaseAdmin();
+    const supabaseAdmin = getAdmin();
 
     const {
       data: { user },
@@ -160,7 +167,7 @@ export async function handler(event: any) {
             .from(bucket.name)
             .list(userId);
           if (files && files.length > 0) {
-            const filePaths = files.map((f) => `${userId}/${f.name}`);
+            const filePaths = files.map((f: any) => `${userId}/${f.name}`);
             await supabaseAdmin.storage.from(bucket.name).remove(filePaths);
           }
         }
@@ -210,4 +217,9 @@ export async function handler(event: any) {
       body: JSON.stringify({ success: false, error: err?.message || "Internal server error" }),
     };
   }
+  };
 }
+
+export const handler = createHandler();
+export const createAccountDeleteHandler = createHandler;
+

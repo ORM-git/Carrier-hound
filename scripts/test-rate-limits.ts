@@ -6,8 +6,7 @@
  * Includes a negative control demonstrating non-zero exit when rate limiting is absent.
  */
 
-import * as dotenv from "dotenv";
-dotenv.config({ path: ".env.local" });
+
 
 import {
   createHandler as createAiHandler,
@@ -15,11 +14,50 @@ import {
   AI_RATE_LIMIT,
 } from "../netlify/functions/ai";
 import {
-  handler as searchHandler,
+  createHandler as createSearchHandler,
   _resetSearchRateLimitStore,
   SEARCH_RATE_LIMIT,
 } from "../netlify/functions/jobs-search";
-import { handler as deleteHandler } from "../netlify/functions/account-delete";
+import {
+  createHandler as createDeleteHandler,
+} from "../netlify/functions/account-delete";
+
+function createMockSupabaseForSearch() {
+  const sampleJob = {
+    id: "job-mock-1",
+    title: "Senior Full Stack Engineer",
+    company: "Tech Corp",
+    location: "Remote",
+    category: "engineering",
+    remote: true,
+    remote_scope: "worldwide",
+    remote_eligibility: "Anywhere",
+    country_code: "US",
+    job_type: "full-time",
+    verified: true,
+    posted_at: new Date().toISOString(),
+    created_at: new Date().toISOString(),
+  };
+
+  const builder: any = {
+    eq: () => builder,
+    in: () => builder,
+    or: () => builder,
+    order: () => builder,
+    range: () => builder,
+    limit: () => builder,
+    then: (resolve: (val: any) => void) => resolve({ data: [sampleJob], count: 1, error: null }),
+  };
+
+  return {
+    auth: {
+      getUser: async () => ({ data: { user: null }, error: null }),
+    },
+    from: () => ({
+      select: () => builder,
+    }),
+  };
+}
 
 function createMockSupabaseForAi() {
   return {
@@ -179,6 +217,11 @@ async function runRateLimitTests() {
   console.log("2. Testing Search Handler (netlify/functions/jobs-search.ts)...");
   _resetSearchRateLimitStore();
 
+  const mockDbSearch = createMockSupabaseForSearch();
+  const searchHandler = createSearchHandler({
+    getSupabaseAdmin: () => mockDbSearch,
+  });
+
   const eventSearch = {
     httpMethod: "GET",
     queryStringParameters: { q: "engineer" },
@@ -213,6 +256,11 @@ async function runRateLimitTests() {
 
   // 3. TEST ACCOUNT DELETE ROUTE (netlify/functions/account-delete.ts)
   console.log("3. Testing Account Delete Handler (netlify/functions/account-delete.ts)...");
+
+  const mockDbDelete = createMockSupabaseForDelete();
+  const deleteHandler = createDeleteHandler({
+    getSupabaseAdmin: () => mockDbDelete,
+  });
 
   const eventDel = {
     httpMethod: "POST",
