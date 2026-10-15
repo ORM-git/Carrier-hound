@@ -96,9 +96,9 @@ export default function ProductScreenshotMock() {
             <div className="space-y-1.5 sm:space-y-2">
               {/* Job Title & Company */}
               <div>
-                <h4 className="font-bold text-[#09090B] text-xs sm:text-base md:text-lg tracking-tight truncate leading-tight">
+                <h3 className="font-bold text-[#09090B] text-xs sm:text-base md:text-lg tracking-tight truncate leading-tight">
                   Software Engineer
-                </h4>
+                </h3>
                 <p className="text-[10px] sm:text-xs text-gray-500 font-normal mt-0.5">
                   Tenable, Inc.
                 </p>
