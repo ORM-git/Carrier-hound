@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useEffect, Suspense } from "react";
+import React, { useState, useMemo, useEffect, useRef, Suspense } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
@@ -66,6 +66,7 @@ function JobsPageInner() {
   const [liveJobs, setLiveJobs] = useState<LiveJob[]>([]);
   const [totalCount, setTotalCount] = useState<number>(0);
   const [loadingJobs, setLoadingJobs] = useState<boolean>(true);
+  const lastQueryKeyRef = useRef<string>("");
 
   useEffect(() => {
     let cancelled = false;
@@ -144,14 +145,31 @@ function JobsPageInner() {
       return;
     }
 
-    let cancelled = false;
-    setLoadingJobs(true);
-    setPage(1);
-
     const isForYouTab = activeTab === "foryou";
     const effectiveSortBy = isForYouTab ? "match" : sortBy;
     const effectiveCandidate = (isForYouTab || sortBy === "match") ? candidate : null;
     const effectivePreferences = (isForYouTab || sortBy === "match") ? preferences : null;
+
+    // Eliminate duplicate identical fetches when effect re-triggers from unrelated state updates (e.g. isProDefinitive resolving for guests)
+    const queryKey = JSON.stringify({
+      tab: activeTab,
+      category: selectedCategory,
+      search: search.trim(),
+      remoteOnly,
+      isPro,
+      sortBy: effectiveSortBy,
+      candidateUpdated: effectiveCandidate?.updatedAt || null,
+      preferencesUpdated: effectivePreferences?.updatedAt || null,
+    });
+
+    if (queryKey === lastQueryKeyRef.current) {
+      return;
+    }
+    lastQueryKeyRef.current = queryKey;
+
+    let cancelled = false;
+    setLoadingJobs(true);
+    setPage(1);
 
     getLiveJobs({
       page: 1,
