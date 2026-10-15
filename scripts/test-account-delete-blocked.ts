@@ -1,9 +1,5 @@
 import assert from "assert";
-import {
-  handler,
-  setSupabaseAdminForTesting,
-  setBypassBanCheckForTesting,
-} from "../netlify/functions/account-delete";
+import { createHandler } from "../netlify/functions/account-delete";
 
 console.log("==================================================================================");
 console.log("        ACCOUNT DELETE VS BANNED USERS & FAIL-CLOSED INTEGRITY TEST SUITE          ");
@@ -114,29 +110,63 @@ function createMockSupabaseAdmin(config: MockConfig) {
   };
 }
 
+/**
+ * Creates an in-memory mutation copy of the deletion flow with the ban check stripped.
+ * Used exclusively by negative controls to prove that tests fail if ban enforcement is absent.
+ */
+function createMutatedHandlerWithoutBanCheck(admin: any) {
+  return async function mutatedHandler(event: any) {
+    const authHeader = event.headers.authorization || event.headers.Authorization;
+    const token = authHeader.replace("Bearer ", "").trim();
+    const { data: { user } } = await admin.auth.getUser(token);
+    const userId = user.id;
+
+    // MUTATION: Moderation ban check is intentionally omitted in this test-only copy
+
+    const tablesToDelete = [
+      "candidate_profiles", "user_preferences", "search_alerts", "applications",
+      "job_applications", "tailored_resumes", "daily_digests", "ai_usage_quotas",
+      "ai_usage_ledger", "page_views", "user_roles", "user_consents",
+    ];
+
+    for (const table of tablesToDelete) {
+      await admin.from(table).delete().eq("user_id", userId);
+    }
+
+    await admin.auth.admin.deleteUser(userId);
+
+    return {
+      statusCode: 200,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        success: true,
+        billingReconciled: true,
+        message: "User account and all owned data permanently deleted.",
+      }),
+    };
+  };
+}
+
 async function runTests() {
-  // If invoked with --negative-control, remove the ban check in memory and run the banned case.
-  // The banned user must cause the test to exit non-zero!
+  // If invoked with --negative-control, run the in-memory mutated handler against a banned user.
+  // The banned user assertion MUST fail and exit non-zero!
   if (isNegativeControl) {
-    console.log("--- RUNNING NEGATIVE CONTROL: Ban check removed in memory ---");
-    setBypassBanCheckForTesting(true);
+    console.log("--- RUNNING NEGATIVE CONTROL: Mutating test copy in memory (ban check omitted) ---");
     const mockAdmin = createMockSupabaseAdmin({
       userId: "banned-bad-actor-001",
       isBanned: true,
     });
-    setSupabaseAdminForTesting(mockAdmin);
 
+    const mutatedHandler = createMutatedHandlerWithoutBanCheck(mockAdmin);
     const event = {
       httpMethod: "POST",
       headers: { authorization: "Bearer valid-token-banned" },
     };
 
-    const res = await handler(event);
+    const res = await mutatedHandler(event);
     const body = JSON.parse(res.body);
 
     console.log(`[NEGATIVE-CONTROL RESULT] Status: ${res.statusCode}, Body:`, body);
-    // Banned user MUST receive 403 and zero delete calls. Since ban check was removed in memory,
-    // this assertion WILL fail and crash the process with non-zero exit code as required.
     assert.strictEqual(
       res.statusCode,
       403,
@@ -150,9 +180,6 @@ async function runTests() {
     return;
   }
 
-  // Normal test execution (all checks enabled)
-  setBypassBanCheckForTesting(false);
-
   // ---------------------------------------------------------------------------
   // Case 1: Normal user -> all tables cleaned, 200
   // ---------------------------------------------------------------------------
@@ -162,7 +189,7 @@ async function runTests() {
       userId: "normal-user-123",
       isBanned: false,
     });
-    setSupabaseAdminForTesting(mockAdmin);
+    const handler = createHandler({ getSupabaseAdmin: () => mockAdmin });
 
     const event = {
       httpMethod: "POST",
@@ -192,7 +219,7 @@ async function runTests() {
       userId: "banned-violator-456",
       isBanned: true,
     });
-    setSupabaseAdminForTesting(mockAdmin);
+    const handler = createHandler({ getSupabaseAdmin: () => mockAdmin });
 
     const event = {
       httpMethod: "POST",
@@ -225,7 +252,7 @@ async function runTests() {
       userId: "user-with-db-glitch-789",
       lookupError: { message: "Connection timeout", code: "57014" },
     });
-    setSupabaseAdminForTesting(mockAdmin);
+    const handler = createHandler({ getSupabaseAdmin: () => mockAdmin });
 
     const event = {
       httpMethod: "POST",
@@ -255,7 +282,7 @@ async function runTests() {
         applications: { message: "Foreign key constraint failure", code: "23503" },
       },
     });
-    setSupabaseAdminForTesting(mockAdmin);
+    const handler = createHandler({ getSupabaseAdmin: () => mockAdmin });
 
     const event = {
       httpMethod: "POST",
@@ -281,32 +308,30 @@ async function runTests() {
   // ---------------------------------------------------------------------------
   console.log("\n--- 5. Running In-Memory Negative Control Verification ---");
   {
-    setBypassBanCheckForTesting(true);
     const mockAdmin = createMockSupabaseAdmin({
       userId: "banned-in-memory-999",
       isBanned: true,
     });
-    setSupabaseAdminForTesting(mockAdmin);
 
+    const mutatedHandler = createMutatedHandlerWithoutBanCheck(mockAdmin);
     const event = {
       httpMethod: "POST",
       headers: { authorization: "Bearer token-banned-999" },
     };
 
-    const res = await handler(event);
+    const res = await mutatedHandler(event);
     let caughtVulnerability = false;
     try {
       assert.strictEqual(res.statusCode, 403, "Expected 403 for banned user");
     } catch (err: any) {
       caughtVulnerability = true;
-      console.log(`[PASS] In-memory removal of ban check successfully caught: "${err.message}"`);
+      console.log(`[PASS] In-memory mutation (omitted ban check) successfully caught: "${err.message}"`);
     }
 
     assert(
       caughtVulnerability,
-      "Negative control failed: Removing ban check in memory did not trigger test assertion failure!"
+      "Negative control failed: Mutating test copy in memory did not trigger test assertion failure!"
     );
-    setBypassBanCheckForTesting(false);
   }
 
   console.log("\n==================================================================================");
