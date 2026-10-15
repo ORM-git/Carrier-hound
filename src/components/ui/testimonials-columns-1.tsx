@@ -87,12 +87,14 @@ export const TestimonialsColumn = (props: {
 
                   {/* 4. 5 Coral-red stars */}
                   <div
+                    role="img"
                     className="flex items-center justify-center gap-1 mb-3 text-[#FF4938]"
                     aria-label={`${item.stars || 5} out of 5 stars`}
                   >
                     {Array.from({ length: item.stars || 5 }).map((_, starIdx) => (
                       <Star
                         key={starIdx}
+                        aria-hidden="true"
                         className="w-3.5 h-3.5 fill-[#FF4938] text-[#FF4938]"
                       />
                     ))}

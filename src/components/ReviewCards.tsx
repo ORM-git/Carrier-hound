@@ -67,11 +67,12 @@ export function ReviewCard({ review, className }: ReviewCardProps) {
 
       {/* 4. 5 Coral-red / Orange-red stars */}
       <div
+        role="img"
         className="flex items-center justify-center gap-1 mb-4 text-[#FF4938]"
         aria-label={`${review.stars} out of 5 stars`}
       >
         {Array.from({ length: 5 }).map((_, i) => (
-          <Star key={i} className="w-4 h-4 fill-[#FF4938] text-[#FF4938]" />
+          <Star key={i} aria-hidden="true" className="w-4 h-4 fill-[#FF4938] text-[#FF4938]" />
         ))}
       </div>
 
@@ -129,11 +130,12 @@ export function MiniReviewCard({ review, className }: MiniReviewCardProps) {
 
       {/* 4. 5 Coral-red stars */}
       <div
+        role="img"
         className="flex items-center justify-center gap-1 mb-3 text-[#FF4938]"
         aria-label={`${review.stars} out of 5 stars`}
       >
         {Array.from({ length: 5 }).map((_, i) => (
-          <Star key={i} className="w-3.5 h-3.5 fill-[#FF4938] text-[#FF4938]" />
+          <Star key={i} aria-hidden="true" className="w-3.5 h-3.5 fill-[#FF4938] text-[#FF4938]" />
         ))}
       </div>
 
