@@ -40,7 +40,6 @@ export function createHandler(deps: AccountDeleteDeps = {}) {
     ...buildCorsHeaders(event, CORS_OPTIONS),
   };
 
-
   if (event.httpMethod !== "POST") {
     return {
       statusCode: 405,
@@ -50,7 +49,7 @@ export function createHandler(deps: AccountDeleteDeps = {}) {
   }
 
   try {
-    const authHeader = event.headers.authorization || event.headers.Authorization;
+    const authHeader = event.headers?.authorization || event.headers?.Authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return {
         statusCode: 401,
@@ -146,7 +145,7 @@ export function createHandler(deps: AccountDeleteDeps = {}) {
       safeLog.warn("[Netlify /account-delete] Billing reconciliation warning", billingErr);
     }
 
-    // 2. Delete user-owned data across all tables with individual error checking
+    // 2. Delete user-owned data across all tables with individual error checking in bounded parallel groups of 4
     const errors: string[] = [];
 
     const tablesToDelete = [
@@ -166,24 +165,35 @@ export function createHandler(deps: AccountDeleteDeps = {}) {
 
     const isIgnorableDeleteError = (err: any) => {
       if (!err) return true;
-      const msg = (err.message || "").toLowerCase();
-      return (
-        err.code === "PGRST116" ||
-        err.code === "PGRST205" ||
-        err.code === "42P01" ||
-        msg.includes("schema cache") ||
-        msg.includes("does not exist") ||
-        msg.includes("relation")
-      );
+      if (err.code === "23503") return false;
+      return err.code === "42P01" || err.code === "PGRST205";
     };
 
-    for (const table of tablesToDelete) {
-      const { error } = await supabaseAdmin
-        .from(table)
-        .delete()
-        .eq("user_id", userId);
-      if (!isIgnorableDeleteError(error)) {
-        errors.push(`${table}: ${error?.message}`);
+    const DELETE_BATCH_SIZE = 4;
+    for (let i = 0; i < tablesToDelete.length; i += DELETE_BATCH_SIZE) {
+      const batch = tablesToDelete.slice(i, i + DELETE_BATCH_SIZE);
+      const batchResults = await Promise.allSettled(
+        batch.map(async (table) => {
+          const { error } = await supabaseAdmin
+            .from(table)
+            .delete()
+            .eq("user_id", userId);
+          return { table, error };
+        })
+      );
+
+      for (let j = 0; j < batchResults.length; j++) {
+        const res = batchResults[j];
+        const table = batch[j];
+        if (res.status === "rejected") {
+          const reasonMsg = res.reason?.message || String(res.reason);
+          errors.push(`${table}: ${reasonMsg}`);
+        } else {
+          const { error } = res.value;
+          if (!isIgnorableDeleteError(error)) {
+            errors.push(`${table}: ${error?.message || JSON.stringify(error)}`);
+          }
+        }
       }
     }
 
