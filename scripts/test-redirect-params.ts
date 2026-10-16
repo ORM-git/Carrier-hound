@@ -55,7 +55,7 @@ function runFunctionTests(fn: typeof buildJobsRedirectUrl) {
   const res7b = fn("?redirect=https://evil.com/phish", "");
   assert(res7b.startsWith("/jobs?redirect="), "Must stay anchored to /jobs path");
   assert(!res7b.startsWith("https://"), "Must never become an external URL");
-  console.log(`[PASS] Case 7b (absolute URL injection): "?redirect=https://evil.com" -> "${res7b}" (Host strictly preserved)`);
+  console.log(`[PASS] Case 7b (absolute URL injection): "?redirect=https://evil.com/phish" -> "${res7b}" (Host strictly preserved)`);
 }
 
 runFunctionTests(buildJobsRedirectUrl);
