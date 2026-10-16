@@ -28,6 +28,9 @@ const SUITES: SuiteSpec[] = [
   { name: "scripts/test-scrape.mjs", command: "node scripts/test-scrape.mjs" },
   { name: "scripts/test-insert.ts", command: "npx tsx scripts/test-insert.ts" },
   { name: "scripts/test-admin-analytics-reads.ts", command: "npx tsx scripts/test-admin-analytics-reads.ts" },
+  { name: "scripts/test-radar-concurrency.ts", command: "npx tsx scripts/test-radar-concurrency.ts" },
+  { name: "scripts/test-account-delete-parallel.ts", command: "npx tsx scripts/test-account-delete-parallel.ts" },
+  { name: "scripts/test-rate-limits.ts", command: "npx tsx scripts/test-rate-limits.ts" },
   { name: "scripts/test-worldwide-view.ts", command: "npx tsx scripts/test-worldwide-view.ts" },
 
   // Supabase read/safe-cleanup verification suites (run whenever Supabase credentials exist)

@@ -10,8 +10,82 @@ import {
   OPERATION_CONFIGS,
 } from "@/lib/ai/security";
 
+interface RateLimitBucket {
+  count: number;
+  resetAt: number;
+}
+
+const ipRateLimitStore = new Map<string, RateLimitBucket>();
+const userRateLimitStore = new Map<string, RateLimitBucket>();
+
+const AI_RATE_LIMIT = {
+  ipMaxRequests: 20,
+  ipWindowMs: 60 * 1000,
+  userMaxRequests: 10,
+  userWindowMs: 60 * 1000,
+};
+
+function getClientIpFromRequest(req: Request): string {
+  const xfwd = req.headers.get("x-forwarded-for");
+  if (xfwd) {
+    const first = xfwd.split(",")[0].trim();
+    if (first) return first;
+  }
+  const clientIp =
+    req.headers.get("x-nf-client-connection-ip") ||
+    req.headers.get("client-ip");
+  return clientIp || "anonymous-client";
+}
+
+function checkRateLimit(
+  key: string,
+  store: Map<string, RateLimitBucket>,
+  maxRequests: number,
+  windowMs: number
+): { allowed: boolean; retryAfter: number; currentCount: number } {
+  const now = Date.now();
+  let bucket = store.get(key);
+
+  if (!bucket || now >= bucket.resetAt) {
+    bucket = { count: 1, resetAt: now + windowMs };
+    store.set(key, bucket);
+    return { allowed: true, retryAfter: 0, currentCount: 1 };
+  }
+
+  if (bucket.count >= maxRequests) {
+    const retryAfter = Math.max(1, Math.ceil((bucket.resetAt - now) / 1000));
+    return { allowed: false, retryAfter, currentCount: bucket.count };
+  }
+
+  bucket.count++;
+  return { allowed: true, retryAfter: 0, currentCount: bucket.count };
+}
+
 export async function POST(req: Request) {
   try {
+    // 0. Per-IP Rate Limiting (in-memory sliding window)
+    const clientIp = getClientIpFromRequest(req);
+    const ipLimit = checkRateLimit(
+      clientIp,
+      ipRateLimitStore,
+      AI_RATE_LIMIT.ipMaxRequests,
+      AI_RATE_LIMIT.ipWindowMs
+    );
+    if (!ipLimit.allowed) {
+      return NextResponse.json(
+        {
+          error: "Too many AI requests from this IP. Please wait before retrying.",
+          retryAfter: ipLimit.retryAfter,
+        },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(ipLimit.retryAfter),
+          },
+        }
+      );
+    }
+
     // 1. Verify Authorization Header (Bearer Supabase access token)
     const authHeader = req.headers.get("authorization") || req.headers.get("Authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -46,6 +120,28 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { error: "Invalid or expired session. Please sign in again." },
         { status: 401 }
+      );
+    }
+
+    // 1.1 Per-User Burst Rate Limiting (in-memory sliding window)
+    const userLimit = checkRateLimit(
+      user.id,
+      userRateLimitStore,
+      AI_RATE_LIMIT.userMaxRequests,
+      AI_RATE_LIMIT.userWindowMs
+    );
+    if (!userLimit.allowed) {
+      return NextResponse.json(
+        {
+          error: "Too many AI requests in a short time. Please wait before retrying.",
+          retryAfter: userLimit.retryAfter,
+        },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(userLimit.retryAfter),
+          },
+        }
       );
     }
 
@@ -122,7 +218,12 @@ export async function POST(req: Request) {
           currentCount: quotaResult.currentCount,
           limit: quotaResult.limit,
         },
-        { status: 429 }
+        {
+          status: 429,
+          headers: {
+            "Retry-After": "86400",
+          },
+        }
       );
     }
 
@@ -154,7 +255,7 @@ export async function POST(req: Request) {
         }),
       });
     } catch (fetchErr) {
-      console.warn("[AI Route] Network error calling upstream provider:", fetchErr);
+      console.warn("[AI Route Handler] Network error calling upstream provider:", fetchErr);
       await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
       return NextResponse.json(
         { error: "AI service request failed or timed out. Please try again." },
@@ -163,7 +264,7 @@ export async function POST(req: Request) {
     }
 
     if (!groqResponse.ok) {
-      console.warn(`[AI Route] Upstream provider returned status ${groqResponse.status}`);
+      console.warn(`[AI Route Handler] Upstream provider returned status ${groqResponse.status}`);
       await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
       return NextResponse.json(
         { error: "AI service generation failed. Please try again." },
@@ -175,7 +276,7 @@ export async function POST(req: Request) {
     try {
       groqData = await groqResponse.json();
     } catch (parseErr) {
-      console.warn("[AI Route] Failed to parse upstream provider JSON:", parseErr);
+      console.warn("[AI Route Handler] Failed to parse upstream provider JSON:", parseErr);
       await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
       return NextResponse.json(
         { error: "AI service returned an invalid response. Please try again." },
@@ -183,18 +284,33 @@ export async function POST(req: Request) {
       );
     }
 
-    const content = groqData?.choices?.[0]?.message?.content || "";
+    const content = groqData?.choices?.[0]?.message?.content;
+    if (!content) {
+      await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
+      return NextResponse.json(
+        { error: "AI service returned an empty generation." },
+        { status: 502 }
+      );
+    }
+
+    let parsedResult = content;
+    if (payload.jsonMode) {
+      try {
+        parsedResult = JSON.parse(content);
+      } catch {
+        parsedResult = content;
+      }
+    }
 
     return NextResponse.json({
-      content,
-      text: content,
+      success: true,
+      result: parsedResult,
       operation: config.operation,
-      model: payload.model,
     });
-  } catch (error) {
-    console.warn("[AI Route] Internal error processing AI request:", error);
+  } catch (err: any) {
+    console.error("[AI Route Handler] Unhandled error:", err);
     return NextResponse.json(
-      { error: "Internal error processing AI request." },
+      { error: err?.message || "Internal server error occurred." },
       { status: 500 }
     );
   }
