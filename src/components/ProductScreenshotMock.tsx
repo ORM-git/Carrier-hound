@@ -105,8 +105,8 @@ export default function ProductScreenshotMock() {
               </div>
 
               {/* Salary Badge / Text with Amber Coin Icon */}
-              <div className="flex items-center gap-1 sm:gap-1.5 text-[10px] sm:text-[13px] font-semibold text-[#D97706]">
-                <CircleDollarSign className="w-3.5 h-3.5 text-[#D97706] shrink-0" />
+              <div className="flex items-center gap-1 sm:gap-1.5 text-[10px] sm:text-[13px] font-semibold text-[#B45309]">
+                <CircleDollarSign className="w-3.5 h-3.5 text-[#B45309] shrink-0" />
                 <span className="truncate">$106,000 - $141,333</span>
               </div>
 
