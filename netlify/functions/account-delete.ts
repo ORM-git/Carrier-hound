@@ -2,22 +2,11 @@ import { createClient } from "@supabase/supabase-js";
 import { buildCorsHeaders, handleCorsPreflight } from "./_cors";
 import { safeLog } from "./_logger";
 
-let adminClientOverride: any = null;
-let bypassBanCheckForTesting = false;
-
-export function setSupabaseAdminForTesting(client: any) {
-  adminClientOverride = client;
-}
-
-export function setBypassBanCheckForTesting(bypass: boolean) {
-  bypassBanCheckForTesting = bypass;
+export interface AccountDeleteDeps {
+  getSupabaseAdmin?: () => any;
 }
 
 function getSupabaseAdmin() {
-  if (adminClientOverride) {
-    return adminClientOverride;
-  }
-
   const supabaseUrl =
     process.env.NEXT_PUBLIC_SUPABASE_URL ||
     process.env.SUPABASE_URL ||
@@ -39,7 +28,10 @@ const CORS_OPTIONS = {
   allowedHeaders: "Content-Type, Authorization",
 };
 
-export async function handler(event: any) {
+export function createHandler(deps: AccountDeleteDeps = {}) {
+  const adminGetter = deps.getSupabaseAdmin || getSupabaseAdmin;
+
+  return async function handler(event: any) {
   const preflight = handleCorsPreflight(event, CORS_OPTIONS);
   if (preflight) return preflight;
 
@@ -68,7 +60,7 @@ export async function handler(event: any) {
     }
 
     const token = authHeader.replace("Bearer ", "").trim();
-    const supabaseAdmin = getSupabaseAdmin();
+    const supabaseAdmin = adminGetter();
 
     const {
       data: { user },
@@ -86,34 +78,32 @@ export async function handler(event: any) {
     const userId = user.id;
 
     // 0. Moderation check: Refuse deletion if user is banned (fail-closed)
-    if (!bypassBanCheckForTesting) {
-      const { data: banRecord, error: banLookupError } = await supabaseAdmin
-        .from("blocked_users")
-        .select("user_id")
-        .eq("user_id", userId)
-        .maybeSingle();
+    const { data: banRecord, error: banLookupError } = await supabaseAdmin
+      .from("blocked_users")
+      .select("user_id")
+      .eq("user_id", userId)
+      .maybeSingle();
 
-      if (banLookupError) {
-        safeLog.error("[Netlify /account-delete] Error checking blocked_users", banLookupError);
-        return {
-          statusCode: 503,
-          headers,
-          body: JSON.stringify({
-            error: "Service temporarily unavailable. Please try again later.",
-          }),
-        };
-      }
+    if (banLookupError) {
+      safeLog.error("[Netlify /account-delete] Error checking blocked_users", banLookupError);
+      return {
+        statusCode: 503,
+        headers,
+        body: JSON.stringify({
+          error: "Service temporarily unavailable. Please try again later.",
+        }),
+      };
+    }
 
-      if (banRecord) {
-        safeLog.warn("[Netlify /account-delete]", `Refusing deletion for banned user ${userId}`);
-        return {
-          statusCode: 403,
-          headers,
-          body: JSON.stringify({
-            error: "Account cannot be deleted. Contact support@careermonke.com",
-          }),
-        };
-      }
+    if (banRecord) {
+      safeLog.warn("[Netlify /account-delete]", `Refusing deletion for banned user ${userId}`);
+      return {
+        statusCode: 403,
+        headers,
+        body: JSON.stringify({
+          error: "Account cannot be deleted. Contact support@careermonke.com",
+        }),
+      };
     }
 
     // 1. Reconcile active billing relationship without destroying audit records
@@ -265,4 +255,7 @@ export async function handler(event: any) {
       body: JSON.stringify({ success: false, error: err?.message || "Internal server error" }),
     };
   }
+  };
 }
+
+export const handler = createHandler();
