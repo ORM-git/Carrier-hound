@@ -269,3 +269,4 @@ export function createHandler(deps: AccountDeleteDeps = {}) {
 }
 
 export const handler = createHandler();
+export const createAccountDeleteHandler = createHandler;
