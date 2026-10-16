@@ -16,7 +16,71 @@ const CORS_OPTIONS = {
   allowedHeaders: "Content-Type, Authorization",
 };
 
-export async function handler(event: any) {
+export interface RateLimitBucket {
+  count: number;
+  resetAt: number;
+}
+
+const ipRateLimitStore = new Map<string, RateLimitBucket>();
+const userRateLimitStore = new Map<string, RateLimitBucket>();
+
+export const AI_RATE_LIMIT = {
+  ipMaxRequests: 20,
+  ipWindowMs: 60 * 1000,
+  userMaxRequests: 10,
+  userWindowMs: 60 * 1000,
+};
+
+export function _resetAiRateLimitStore() {
+  ipRateLimitStore.clear();
+  userRateLimitStore.clear();
+}
+
+export function getClientIp(event: any): string {
+  if (!event || !event.headers) return "anonymous-client";
+  const xfwd = event.headers["x-forwarded-for"] || event.headers["X-Forwarded-For"];
+  if (xfwd) {
+    const first = xfwd.split(",")[0].trim();
+    if (first) return first;
+  }
+  const clientIp =
+    event.headers["x-nf-client-connection-ip"] ||
+    event.headers["client-ip"] ||
+    event.headers["Client-Ip"];
+  return clientIp || "anonymous-client";
+}
+
+export function checkRateLimit(
+  key: string,
+  store: Map<string, RateLimitBucket>,
+  maxRequests: number,
+  windowMs: number
+): { allowed: boolean; retryAfter: number; currentCount: number } {
+  const now = Date.now();
+  let bucket = store.get(key);
+
+  if (!bucket || now >= bucket.resetAt) {
+    bucket = { count: 1, resetAt: now + windowMs };
+    store.set(key, bucket);
+    return { allowed: true, retryAfter: 0, currentCount: 1 };
+  }
+
+  if (bucket.count >= maxRequests) {
+    const retryAfter = Math.max(1, Math.ceil((bucket.resetAt - now) / 1000));
+    return { allowed: false, retryAfter, currentCount: bucket.count };
+  }
+
+  bucket.count++;
+  return { allowed: true, retryAfter: 0, currentCount: bucket.count };
+}
+
+export interface AiHandlerDeps {
+  getSupabaseAdmin?: () => any;
+  getServerEntitlement?: typeof getServerEntitlement;
+  callGroq?: (payload: any) => Promise<any>;
+}
+
+export async function handler(event: any, deps: AiHandlerDeps = {}) {
   const preflight = handleCorsPreflight(event, CORS_OPTIONS);
   if (preflight) return preflight;
 
@@ -31,6 +95,28 @@ export async function handler(event: any) {
       statusCode: 405,
       headers,
       body: JSON.stringify({ error: "Method not allowed" }),
+    };
+  }
+
+  // 0. Per-IP Rate Limiting (in-memory sliding window)
+  const clientIp = getClientIp(event);
+  const ipLimit = checkRateLimit(
+    clientIp,
+    ipRateLimitStore,
+    AI_RATE_LIMIT.ipMaxRequests,
+    AI_RATE_LIMIT.ipWindowMs
+  );
+  if (!ipLimit.allowed) {
+    return {
+      statusCode: 429,
+      headers: {
+        ...headers,
+        "Retry-After": String(ipLimit.retryAfter),
+      },
+      body: JSON.stringify({
+        error: "Too many AI requests from this IP. Please wait before retrying.",
+        retryAfter: ipLimit.retryAfter,
+      }),
     };
   }
 
@@ -55,7 +141,7 @@ export async function handler(event: any) {
       process.env.SUPABASE_SERVICE_KEY ||
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-    if (!supabaseUrl || !serviceKey) {
+    if (!deps.getSupabaseAdmin && (!supabaseUrl || !serviceKey)) {
       return {
         statusCode: 500,
         headers,
@@ -63,9 +149,11 @@ export async function handler(event: any) {
       };
     }
 
-    const supabaseAdmin = createClient(supabaseUrl, serviceKey, {
-      auth: { persistSession: false },
-    });
+    const supabaseAdmin = deps.getSupabaseAdmin
+      ? deps.getSupabaseAdmin()
+      : createClient(supabaseUrl!, serviceKey!, {
+          auth: { persistSession: false },
+        });
 
     const {
       data: { user },
@@ -80,6 +168,27 @@ export async function handler(event: any) {
       };
     }
 
+    // 1.1 Per-User Burst Rate Limiting (in-memory sliding window)
+    const userLimit = checkRateLimit(
+      user.id,
+      userRateLimitStore,
+      AI_RATE_LIMIT.userMaxRequests,
+      AI_RATE_LIMIT.userWindowMs
+    );
+    if (!userLimit.allowed) {
+      return {
+        statusCode: 429,
+        headers: {
+          ...headers,
+          "Retry-After": String(userLimit.retryAfter),
+        },
+        body: JSON.stringify({
+          error: "Too many AI requests in a short time. Please wait before retrying.",
+          retryAfter: userLimit.retryAfter,
+        }),
+      };
+    }
+
     // Ban check (fails closed on lookup error)
     const banCheck = await verifyUserNotBanned(supabaseAdmin, user.id, user.user_metadata);
     if (banCheck.isBlocked) {
@@ -91,7 +200,8 @@ export async function handler(event: any) {
     }
 
     // 2. Server-side Pro Entitlement check (Single Source of Truth)
-    const entitlement = await getServerEntitlement(user.id);
+    const entitlementChecker = deps.getServerEntitlement || getServerEntitlement;
+    const entitlement = await entitlementChecker(user.id);
     if (!entitlement.isPro) {
       return {
         statusCode: 403,
@@ -165,7 +275,10 @@ export async function handler(event: any) {
       }
       return {
         statusCode: 429,
-        headers,
+        headers: {
+          ...headers,
+          "Retry-After": "86400",
+        },
         body: JSON.stringify({
           error: `Daily AI usage quota exceeded for operation '${config.operation}' (${quotaResult.currentCount}/${quotaResult.limit}). Quotas reset daily at midnight UTC.`,
           currentCount: quotaResult.currentCount,
@@ -175,6 +288,20 @@ export async function handler(event: any) {
     }
 
     // 5. Server-Side Groq API Key Check
+    if (deps.callGroq) {
+      const simulatedText = await deps.callGroq(payload);
+      return {
+        statusCode: 200,
+        headers,
+        body: JSON.stringify({
+          content: simulatedText,
+          text: simulatedText,
+          operation: config.operation,
+          model: payload.model,
+        }),
+      };
+    }
+
     const groqApiKey = process.env.GROQ_API_KEY;
     if (!groqApiKey) {
       await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
@@ -256,3 +383,8 @@ export async function handler(event: any) {
     };
   }
 }
+
+export function createHandler(deps: AiHandlerDeps = {}) {
+  return (event: any) => handler(event, deps);
+}
+

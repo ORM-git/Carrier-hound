@@ -106,7 +106,14 @@ const CORS_OPTIONS = {
   allowedHeaders: "Content-Type, Authorization",
 };
 
-export async function handler(event: any) {
+export interface JobsSearchDeps {
+  getSupabaseAdmin?: () => any;
+}
+
+export function createHandler(deps: JobsSearchDeps = {}) {
+  const getAdmin = deps.getSupabaseAdmin || getSupabaseAdmin;
+
+  return async function handler(event: any) {
   const preflight = handleCorsPreflight(event, CORS_OPTIONS);
   if (preflight) return preflight;
 
@@ -150,7 +157,7 @@ export async function handler(event: any) {
     const pageSize = Math.min(100, Math.max(1, parseInt(params.pageSize || "50", 10)));
 
     const cleanQuery = sanitizeSearchQuery(rawQuery);
-    const supabaseAdmin = getSupabaseAdmin();
+    const supabaseAdmin = getAdmin();
 
     // Check optional Pro entitlement
     let isPro = false;
@@ -370,4 +377,9 @@ export async function handler(event: any) {
       body: JSON.stringify({ error: err?.message || "Internal server error", jobs: [], totalCount: 0 }),
     };
   }
+  };
 }
+
+export const handler = createHandler();
+export const createSearchHandler = createHandler;
+

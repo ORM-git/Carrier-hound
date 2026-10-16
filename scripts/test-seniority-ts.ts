@@ -146,33 +146,45 @@ export const TEST_FIXTURE: TestCase[] = [
   { title: "Lead Engineer", expected: "lead", category: "Prompt 15 Calibration" },
 
   // ============================================================================
-  // 12. PROMPT 16 STAFF RULE CONTEXT (TECH VS NON-TECH)
+  // 12. PROMPT 17 STAFF RULE BLOCKLIST (TECH/LEGAL/RECRUITING VS INSTITUTIONAL BLOCKLIST)
   // ============================================================================
-  // Positive: Staff / Principal with engineering/product/design/data/ML/software/SRE/security/architect context
-  { title: "Staff Software Engineer", expected: "staff", category: "Prompt 16 Staff Context" },
-  { title: "Principal Engineer", expected: "staff", category: "Prompt 16 Staff Context" },
-  { title: "Staff Product Designer", expected: "staff", category: "Prompt 16 Staff Context" },
-  { title: "Principal Systems Architect", expected: "staff", category: "Prompt 16 Staff Context" },
-  { title: "Staff Data Scientist", expected: "staff", category: "Prompt 16 Staff Context" },
-  { title: "Staff ML Engineer", expected: "staff", category: "Prompt 16 Staff Context" },
-  { title: "Principal Security Architect", expected: "staff", category: "Prompt 16 Staff Context" },
-  { title: "Staff Site Reliability Engineer", expected: "staff", category: "Prompt 16 Staff Context" },
-  { title: "Staff SRE", expected: "staff", category: "Prompt 16 Staff Context" },
-  { title: "Staff Frontend Developer", expected: "staff", category: "Prompt 16 Staff Context" },
-  { title: "Staff Backend Programmer", expected: "staff", category: "Prompt 16 Staff Context" },
-  { title: "Distinguished Software Engineer", expected: "staff", category: "Prompt 16 Staff Context" },
+  // Positive: Staff / Principal (engineering, TPM, design, UX, research, counsel, recruiting)
+  { title: "Staff Technical Program Manager", expected: "staff", category: "Prompt 17 Staff Blocklist" },
+  { title: "Staff UX Researcher", expected: "staff", category: "Prompt 17 Staff Blocklist" },
+  { title: "Principal Threat Researcher", expected: "staff", category: "Prompt 17 Staff Blocklist" },
+  { title: "Senior Staff Program Manager", expected: "staff", category: "Prompt 17 Staff Blocklist" },
+  { title: "Staff Software Engineer", expected: "staff", category: "Prompt 17 Staff Blocklist" },
+  { title: "Principal Counsel", expected: "staff", category: "Prompt 17 Staff Blocklist" },
+  { title: "Principal Recruiter", expected: "staff", category: "Prompt 17 Staff Blocklist" },
+  { title: "Principal Engineer", expected: "staff", category: "Prompt 17 Staff Blocklist" },
+  { title: "Staff Product Designer", expected: "staff", category: "Prompt 17 Staff Blocklist" },
+  { title: "Principal Systems Architect", expected: "staff", category: "Prompt 17 Staff Blocklist" },
+  { title: "Staff Data Scientist", expected: "staff", category: "Prompt 17 Staff Blocklist" },
+  { title: "Staff ML Engineer", expected: "staff", category: "Prompt 17 Staff Blocklist" },
+  { title: "Principal Security Architect", expected: "staff", category: "Prompt 17 Staff Blocklist" },
+  { title: "Staff Site Reliability Engineer", expected: "staff", category: "Prompt 17 Staff Blocklist" },
+  { title: "Staff SRE", expected: "staff", category: "Prompt 17 Staff Blocklist" },
+  { title: "Staff Frontend Developer", expected: "staff", category: "Prompt 17 Staff Blocklist" },
+  { title: "Staff Backend Programmer", expected: "staff", category: "Prompt 17 Staff Blocklist" },
+  { title: "Distinguished Software Engineer", expected: "staff", category: "Prompt 17 Staff Blocklist" },
+  { title: "Principal Consultant", expected: "staff", category: "Prompt 17 Staff Blocklist" },
+  { title: "Staff Operations Specialist", expected: "staff", category: "Prompt 17 Staff Blocklist" },
 
-  // Negative: Non-engineering/non-tech titles must NOT be staff
-  { title: "Staff Accountant", expected: "unknown", category: "Prompt 16 Non-Staff" },
-  { title: "Staff Writer", expected: "unknown", category: "Prompt 16 Non-Staff" },
-  { title: "Staff Attorney", expected: "unknown", category: "Prompt 16 Non-Staff" },
-  { title: "Staff Recruiter", expected: "unknown", category: "Prompt 16 Non-Staff" },
-  { title: "Principal (school)", expected: "unknown", category: "Prompt 16 Non-Staff" },
-  { title: "School Principal", expected: "unknown", category: "Prompt 16 Non-Staff" },
-  { title: "Principal Consultant", expected: "unknown", category: "Prompt 16 Non-Staff" },
-  { title: "Fellow of the Royal Society", expected: "unknown", category: "Prompt 16 Non-Staff" },
-  { title: "Teaching Fellow", expected: "unknown", category: "Prompt 16 Non-Staff" },
-  { title: "Staff Operations Specialist", expected: "unknown", category: "Prompt 16 Non-Staff" }
+  // Negative: Non-staff (institutional blocklist & fellow exclusions)
+  { title: "Staff Nurse", expected: "unknown", category: "Prompt 17 Blocklisted Non-Staff" },
+  { title: "Staff Accountant", expected: "unknown", category: "Prompt 17 Blocklisted Non-Staff" },
+  { title: "Research Fellow", expected: "unknown", category: "Prompt 17 Blocklisted Non-Staff" },
+  { title: "STEM Fellow - Human Frontier Collective", expected: "unknown", category: "Prompt 17 Blocklisted Non-Staff" },
+  { title: "Machine Learning Fellow", expected: "unknown", category: "Prompt 17 Blocklisted Non-Staff" },
+  { title: "Transaction Principal EU", expected: "unknown", category: "Prompt 17 Blocklisted Non-Staff" },
+  { title: "School Principal", expected: "unknown", category: "Prompt 17 Blocklisted Non-Staff" },
+  { title: "Chief of Staff", expected: "unknown", category: "Prompt 17 Blocklisted Non-Staff" },
+  { title: "Member of Technical Staff", expected: "unknown", category: "Prompt 17 Blocklisted Non-Staff" },
+  { title: "Principal (school)", expected: "unknown", category: "Prompt 17 Blocklisted Non-Staff" },
+  { title: "Staff Writer", expected: "unknown", category: "Prompt 17 Blocklisted Non-Staff" },
+  { title: "Staff Attorney", expected: "unknown", category: "Prompt 17 Blocklisted Non-Staff" },
+  { title: "Fellow of the Royal Society", expected: "unknown", category: "Prompt 17 Blocklisted Non-Staff" },
+  { title: "Teaching Fellow", expected: "unknown", category: "Prompt 17 Blocklisted Non-Staff" }
 ];
 
 export function runSuite() {
