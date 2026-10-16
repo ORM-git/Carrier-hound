@@ -265,11 +265,11 @@ function LoginPageInner() {
 
           <div className="text-center text-[11px] text-gray-500">
             By signing in, you agree to our{" "}
-            <Link href="/terms-and-conditions" className="hover:underline text-gray-600">
+            <Link href="/terms-and-conditions" className="underline text-gray-600 hover:text-gray-900">
               Terms
             </Link>{" "}
             and{" "}
-            <Link href="/privacy-policy" className="hover:underline text-gray-600">
+            <Link href="/privacy-policy" className="underline text-gray-600 hover:text-gray-900">
               Privacy Policy
             </Link>
             .

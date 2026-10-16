@@ -99,7 +99,7 @@ export default function PrivacyPolicyPage() {
           - <strong>Access and Portability:</strong> You may view and export your saved profile data and generated resumes directly from your user dashboard at any time.
         </p>
         <p className="mb-2">
-          - <strong>Deletion Requests:</strong> You may permanently delete individual resumes or delete your entire account through account settings, or by emailing our privacy team at <a href="mailto:support@careermonke.com" className="text-blue-600 hover:underline">support@careermonke.com</a>.
+          - <strong>Deletion Requests:</strong> You may permanently delete individual resumes or delete your entire account through account settings, or by emailing our privacy team at <a href="mailto:support@careermonke.com" className="text-blue-600 underline underline-offset-2 hover:text-blue-800 transition-colors">support@careermonke.com</a>.
         </p>
         <p className="mb-2">
           - <strong>Response Timeline:</strong> Valid account deletion and data erasure requests submitted via email will be processed and confirmed within thirty (30) business days.
