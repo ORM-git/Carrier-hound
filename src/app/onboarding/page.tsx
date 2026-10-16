@@ -303,6 +303,7 @@ function OnboardingPageInner() {
               <form onSubmit={handleAddCustomRole} className="flex gap-2 pt-1">
                 <input
                   type="text"
+                  aria-label="Or type a custom role"
                   value={customRole}
                   onChange={(e) => setCustomRole(e.target.value)}
                   placeholder="Or type a custom role (e.g. Technical Product Manager)"
@@ -417,6 +418,7 @@ function OnboardingPageInner() {
                   </select>
                   <input
                     type="number"
+                    aria-label="Minimum annual compensation expectation"
                     value={minSalary || ""}
                     onChange={(e) => setMinSalary(e.target.value ? Number(e.target.value) : undefined)}
                     placeholder="e.g. 90000"

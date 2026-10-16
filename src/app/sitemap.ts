@@ -4,7 +4,7 @@ import { ROLE_GUIDES } from "@/data/guides/roles";
 import { CATEGORY_LANDINGS } from "@/data/guides/categories";
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const baseUrl = "https://careermonke.io";
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://careermonke.com";
 
   const staticRoutes: MetadataRoute.Sitemap = [
     {

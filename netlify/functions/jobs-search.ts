@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { formatSalary } from "../../src/lib/salary/parser";
+import { safeLog } from "./_logger";
 
 function getSupabaseAdmin() {
   const supabaseUrl =
@@ -179,6 +180,7 @@ export async function handler(event: any) {
           }
         }
       } catch (authErr) {
+        safeLog.warn("[Netlify /jobs-search] Token verification failed", authErr);
         isPro = false;
       }
     }
@@ -194,7 +196,7 @@ export async function handler(event: any) {
       .eq("status", "active");
 
     if (category && category !== "all") {
-      const c = category.toLowerCase().trim();
+      const c = sanitizeSearchQuery(category).toLowerCase().trim();
       if (c === "trending") {
         query = query.in("category", ["ai", "engineering", "devops"]);
       } else if (c === "tech") {
@@ -361,7 +363,7 @@ export async function handler(event: any) {
       }),
     };
   } catch (err: any) {
-    console.error("[Netlify /jobs-search] error:", err);
+    safeLog.error("[Netlify /jobs-search]", err);
     return {
       statusCode: 500,
       headers,

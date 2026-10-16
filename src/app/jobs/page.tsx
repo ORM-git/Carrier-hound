@@ -1,14 +1,11 @@
 "use client";
 
 import React, { useState, useMemo, useEffect, Suspense } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import GuideHeader from "@/components/GuideHeader";
-import Footer from "@/components/Footer";
 import CategoryPillBar from "@/components/CategoryPillBar";
-import PaywallModal from "@/components/PaywallModal";
-import MatchScoreBadge from "@/components/matcher/MatchScoreBadge";
-import ProUpgradeScreen from "@/components/billing/ProUpgradeScreen";
 import { getLiveJobs, LiveJob } from "@/lib/jobs/service";
 import { getAuthUser, getUserPreferences } from "@/lib/auth/session";
 import { getCandidateProfile } from "@/lib/resume/storage";
@@ -16,11 +13,9 @@ import { CandidateProfile } from "@/lib/resume/types";
 import { UserPreferences } from "@/lib/auth/types";
 import { addApplicationToTracker, getTrackedApplications, removeApplicationFromTracker } from "@/lib/tracker/storage";
 import { getProAccessStatus } from "@/lib/billing/subscription";
-import { computeFitDiagnostics } from "@/lib/matcher/scoring";
 import type { User } from "@supabase/supabase-js";
 import {
   Search,
-  Filter,
   MapPin,
   Building,
   DollarSign,
@@ -28,15 +23,15 @@ import {
   ArrowRight,
   Lock,
   RotateCcw,
-  Sparkles,
-  ExternalLink,
   ChevronRight,
-  ShieldCheck,
-  Check,
   Globe
 } from "lucide-react";
 import CompanyLogo from "@/components/CompanyLogo";
 import { toast } from "react-toastify";
+
+const PaywallModal = dynamic(() => import("@/components/PaywallModal"), { ssr: false });
+const MatchScoreBadge = dynamic(() => import("@/components/matcher/MatchScoreBadge"), { ssr: false });
+const Footer = dynamic(() => import("@/components/Footer"), { ssr: false });
 
 function JobsPageInner() {
   const router = useRouter();
@@ -380,6 +375,7 @@ function JobsPageInner() {
               <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
+                aria-label="Search by job title, company, or keyword"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search by job title, company, or keyword..."

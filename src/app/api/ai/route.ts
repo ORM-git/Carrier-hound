@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
+import { verifyUserNotBanned } from "@/lib/admin/auth";
 import {
   resolveOperation,
   buildOperationPayload,
   checkAndIncrementAiQuota,
+  refundAiQuota,
   OPERATION_CONFIGS,
 } from "@/lib/ai/security";
 
@@ -44,6 +46,15 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { error: "Invalid or expired session. Please sign in again." },
         { status: 401 }
+      );
+    }
+
+    // Ban check (fails closed on lookup error)
+    const banCheck = await verifyUserNotBanned(supabaseAdmin, user.id, user.user_metadata);
+    if (banCheck.isBlocked) {
+      return NextResponse.json(
+        { error: banCheck.error || "Account suspended. Access revoked by administrator." },
+        { status: banCheck.isServiceUnavailable ? 503 : 403 }
       );
     }
 
@@ -96,6 +107,15 @@ export async function POST(req: Request) {
     );
 
     if (!quotaResult.allowed) {
+      if (quotaResult.isServiceUnavailable) {
+        return NextResponse.json(
+          {
+            error: quotaResult.error || "AI quota service is temporarily unavailable. Please try again shortly.",
+            code: "AI_QUOTA_SERVICE_UNAVAILABLE",
+          },
+          { status: 503 }
+        );
+      }
       return NextResponse.json(
         {
           error: `Daily AI usage quota exceeded for operation '${config.operation}' (${quotaResult.currentCount}/${quotaResult.limit}). Quotas reset daily at midnight UTC.`,
@@ -109,6 +129,7 @@ export async function POST(req: Request) {
     // 5. Server-Side Groq API Key Check
     const groqApiKey = process.env.GROQ_API_KEY;
     if (!groqApiKey) {
+      await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
       return NextResponse.json(
         { error: "AI service is currently unavailable. Please check back shortly." },
         { status: 503 }
@@ -116,30 +137,52 @@ export async function POST(req: Request) {
     }
 
     // 6. Upstream Groq Call with Enforced Model, Tokens, & Server Prompts
-    const groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${groqApiKey}`,
-      },
-      body: JSON.stringify({
-        model: payload.model,
-        messages: payload.messages,
-        max_tokens: payload.maxOutputTokens,
-        temperature: payload.temperature,
-        ...(payload.jsonMode ? { response_format: { type: "json_object" } } : {}),
-      }),
-    });
+    let groqResponse: Response;
+    try {
+      groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${groqApiKey}`,
+        },
+        body: JSON.stringify({
+          model: payload.model,
+          messages: payload.messages,
+          max_tokens: payload.maxOutputTokens,
+          temperature: payload.temperature,
+          ...(payload.jsonMode ? { response_format: { type: "json_object" } } : {}),
+        }),
+      });
+    } catch (fetchErr) {
+      console.warn("[AI Route] Network error calling upstream provider:", fetchErr);
+      await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
+      return NextResponse.json(
+        { error: "AI service request failed or timed out. Please try again." },
+        { status: 502 }
+      );
+    }
 
     if (!groqResponse.ok) {
       console.warn(`[AI Route] Upstream provider returned status ${groqResponse.status}`);
+      await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
       return NextResponse.json(
         { error: "AI service generation failed. Please try again." },
         { status: 502 }
       );
     }
 
-    const groqData = await groqResponse.json();
+    let groqData: any;
+    try {
+      groqData = await groqResponse.json();
+    } catch (parseErr) {
+      console.warn("[AI Route] Failed to parse upstream provider JSON:", parseErr);
+      await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
+      return NextResponse.json(
+        { error: "AI service returned an invalid response. Please try again." },
+        { status: 502 }
+      );
+    }
+
     const content = groqData?.choices?.[0]?.message?.content || "";
 
     return NextResponse.json({

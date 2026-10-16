@@ -40,20 +40,38 @@ const ALLOWED_DATE = new Set(["all", "24h", "7d", "30d"]);
 const CARD_FIELDS =
   "id, title, company, location, remote, remote_scope, job_type, salary_text, first_seen_at, last_seen_at, posted_at, status, category, country, apply_url";
 
-export async function searchJobs(params: SearchJobsParams = {}): Promise<SearchJobsResult> {
+/**
+ * Sanitizes user input to prevent SQL and PostgREST injection syntax breakage.
+ * Strips special control characters (% _ ( ) , " ' ` ; \ $ *) and limits query length.
+ */
+export function sanitizeSearchQuery(input: string): string {
+  if (!input) return "";
+  return input
+    .replace(/[%_(),"'`;\\$*]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 200);
+}
+
+export async function searchJobs(
+  params: SearchJobsParams = {},
+  clientOverride?: any
+): Promise<SearchJobsResult> {
   const isServerWithServiceKey =
     typeof window === "undefined" && Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY);
-  const supabase = isServerWithServiceKey
-    ? createSupabaseClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL || "https://szakevhxhwpeskidvtfs.supabase.co",
-        process.env.SUPABASE_SERVICE_ROLE_KEY!
-      )
-    : createClient();
+  const supabase =
+    clientOverride ||
+    (isServerWithServiceKey
+      ? createSupabaseClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL || "https://szakevhxhwpeskidvtfs.supabase.co",
+          process.env.SUPABASE_SERVICE_ROLE_KEY!
+        )
+      : createClient());
   const targetTable = isServerWithServiceKey ? "jobs" : "jobs_public";
 
   // Parameter validation and allowlisting
-  const q = (params.q || "").replace(/[,()]/g, " ").replace(/\s+/g, " ").trim();
-  const city = (params.city || "").replace(/[,()]/g, " ").replace(/\s+/g, " ").trim();
+  const q = sanitizeSearchQuery(params.q || "");
+  const city = sanitizeSearchQuery(params.city || "");
   const salary = ALLOWED_SALARY.has(params.salary || "") ? params.salary! : "all";
   const experience = ALLOWED_EXPERIENCE.has(params.experience || "") ? params.experience! : "all";
   const date = ALLOWED_DATE.has(params.date || "") ? params.date! : "all";

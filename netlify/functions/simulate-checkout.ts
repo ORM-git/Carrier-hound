@@ -6,6 +6,7 @@ interface SimulationPayload {
 }
 
 import { buildCorsHeaders, handleCorsPreflight } from "./_cors";
+import { safeLog } from "./_logger";
 
 const CORS_OPTIONS = {
   allowedMethods: "POST, OPTIONS",
@@ -96,7 +97,9 @@ export async function handler(event: any) {
     if (event.body) {
       try {
         body = JSON.parse(event.body);
-      } catch {}
+      } catch (e) {
+        safeLog.warn("[Netlify /simulate-checkout] JSON parse error", e);
+      }
     }
 
     const planId = body.planId === "intl_monthly_9" ? "intl_monthly_9" : "domestic_monthly_199";
@@ -153,7 +156,7 @@ export async function handler(event: any) {
       }),
     };
   } catch (err: any) {
-    console.error("Checkout simulation error:", err);
+    safeLog.error("[Netlify /simulate-checkout]", err);
     return {
       statusCode: 500,
       headers,

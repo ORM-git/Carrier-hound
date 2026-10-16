@@ -384,7 +384,10 @@ export default function JobRadarGlobe() {
 
         // Filter 2: Category
         if (categoryFilter !== "all") {
-          query = query.or(`category.ilike.%${categoryFilter}%,title.ilike.%${categoryFilter}%`);
+          const cleanCat = categoryFilter.replace(/[%_(),"'`;\\$*]/g, " ").trim();
+          if (cleanCat) {
+            query = query.or(`category.ilike.%${cleanCat}%,title.ilike.%${cleanCat}%`);
+          }
         }
 
         // Filter 3: Remote Only

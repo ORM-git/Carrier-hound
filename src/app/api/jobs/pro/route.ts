@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
 import { formatSalary } from "@/lib/salary/parser";
+import { verifyUserNotBanned } from "@/lib/admin/auth";
 
 function getSupabaseAdmin() {
   const supabaseUrl =
@@ -34,6 +35,17 @@ async function verifyProUser(req: Request) {
 
   if (userError || !user) {
     return { error: "Invalid or expired session. Please sign in again.", status: 401, user: null };
+  }
+
+  // Ban check (fails closed on lookup error)
+  const banCheck = await verifyUserNotBanned(supabaseAdmin, user.id, user.user_metadata);
+  if (banCheck.isBlocked) {
+    return {
+      error: banCheck.error || "Account suspended. Access revoked by administrator.",
+      status: banCheck.isServiceUnavailable ? 503 : 403,
+      user: null,
+      isPro: false,
+    };
   }
 
   // Server-managed subscription check — ONLY source of truth

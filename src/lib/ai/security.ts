@@ -333,6 +333,7 @@ export interface QuotaCheckResult {
   limit: number;
   storage: "ai_usage_quotas" | "subscriptions_metadata";
   error?: string;
+  isServiceUnavailable?: boolean;
 }
 
 /**
@@ -449,11 +450,85 @@ export async function checkAndIncrementAiQuota(
     console.warn("[Quota Check] Error updating subscriptions fallback quota:", fallbackErr);
   }
 
-  // Default fail-open safe return if DB is unreachable
+  // Fail closed: Database unreachable or both quota stores errored
+  console.error("[Quota Check] Database unreachable or error in quota stores; failing closed.");
   return {
-    allowed: true,
-    currentCount: 1,
+    allowed: false,
+    currentCount: limit,
     limit,
     storage: "subscriptions_metadata",
+    error: "AI quota verification is temporarily unavailable. Please try again shortly.",
+    isServiceUnavailable: true,
   };
 }
+
+/**
+ * Refunds a reserved AI quota slot in the event of upstream provider failure (429, 5xx, timeout, garbage).
+ */
+export async function refundAiQuota(
+  supabaseAdmin: SupabaseClient,
+  userId: string,
+  operation: AllowedAiOperation,
+  estimatedTokens: number
+): Promise<void> {
+  const today = new Date().toISOString().split("T")[0];
+
+  // 1. Try primary storage: public.ai_usage_quotas
+  try {
+    const { data: row, error: selectErr } = await supabaseAdmin
+      .from("ai_usage_quotas")
+      .select("count, total_tokens")
+      .eq("user_id", userId)
+      .eq("period_date", today)
+      .eq("operation", operation)
+      .maybeSingle();
+
+    if (!selectErr && row && typeof row.count === "number" && row.count > 0) {
+      await supabaseAdmin
+        .from("ai_usage_quotas")
+        .update({
+          count: Math.max(0, row.count - 1),
+          total_tokens: Math.max(0, (row.total_tokens || 0) - estimatedTokens),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("user_id", userId)
+        .eq("period_date", today)
+        .eq("operation", operation);
+      return;
+    }
+  } catch (err) {
+    // Proceed to resilient fallback
+  }
+
+  // 2. Resilient fallback storage: subscriptions.metadata.ai_usage
+  try {
+    const { data: sub, error: subErr } = await supabaseAdmin
+      .from("subscriptions")
+      .select("id, metadata")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!subErr && sub && sub.metadata && typeof sub.metadata === "object") {
+      const metadata = { ...sub.metadata };
+      const aiUsage = metadata.ai_usage && typeof metadata.ai_usage === "object" ? { ...metadata.ai_usage } : {};
+      const todayUsage = aiUsage[today] && typeof aiUsage[today] === "object" ? { ...aiUsage[today] } : {};
+      const currentCount = typeof todayUsage[operation] === "number" ? todayUsage[operation] : 0;
+
+      if (currentCount > 0) {
+        todayUsage[operation] = currentCount - 1;
+        aiUsage[today] = todayUsage;
+        metadata.ai_usage = aiUsage;
+
+        await supabaseAdmin
+          .from("subscriptions")
+          .update({ metadata })
+          .eq("id", sub.id);
+      }
+    }
+  } catch (fallbackErr) {
+    console.warn("[Quota Refund] Error refunding subscriptions fallback quota:", fallbackErr);
+  }
+}
+

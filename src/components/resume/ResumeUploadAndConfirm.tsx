@@ -380,6 +380,7 @@ export default function ResumeUploadAndConfirm({
       <input
         ref={fileInputRef}
         type="file"
+        aria-label="Upload resume file"
         accept=".pdf,.docx,.txt"
         onChange={handleFileUpload}
         className="hidden"
@@ -699,6 +700,7 @@ export default function ResumeUploadAndConfirm({
             <div className="flex items-center gap-2 max-w-sm">
               <input
                 type="text"
+                aria-label="Add skill"
                 value={newSkillInput}
                 onChange={(e) => setNewSkillInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleAddSkill())}
@@ -895,6 +897,7 @@ export default function ResumeUploadAndConfirm({
                     <div className="space-y-2">
                       <input
                         type="text"
+                        aria-label="Degree / Major"
                         value={edu.degree}
                         onChange={(e) => handleUpdateEducation(idx, "degree", e.target.value)}
                         placeholder="Degree / Major"
@@ -903,6 +906,7 @@ export default function ResumeUploadAndConfirm({
                       <div className="grid grid-cols-2 gap-2">
                         <input
                           type="text"
+                          aria-label="Institution"
                           value={edu.institution}
                           onChange={(e) => handleUpdateEducation(idx, "institution", e.target.value)}
                           placeholder="Institution"
@@ -910,6 +914,7 @@ export default function ResumeUploadAndConfirm({
                         />
                         <input
                           type="text"
+                          aria-label="Graduation Year"
                           value={edu.year}
                           onChange={(e) => handleUpdateEducation(idx, "year", e.target.value)}
                           placeholder="Graduation Year"
@@ -953,6 +958,7 @@ export default function ResumeUploadAndConfirm({
               <div className="flex items-center gap-2">
                 <input
                   type="text"
+                  aria-label="Add certification"
                   value={newCertInput}
                   onChange={(e) => setNewCertInput(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleAddCert())}

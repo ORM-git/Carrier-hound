@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { buildCorsHeaders, handleCorsPreflight } from "./_cors";
+import { safeLog } from "./_logger";
 
 function getSupabaseAdmin() {
   const supabaseUrl =
@@ -96,7 +97,17 @@ export async function handler(event: any) {
         billingReconciled = true;
       }
     } catch (billingErr) {
-      console.warn("[Netlify /account-delete] Billing reconciliation warning:", billingErr);
+      safeLog.warn("[Netlify /account-delete] Billing reconciliation warning", billingErr);
+    }
+
+    // 1.5. Security Tradeoff: Anonymise ban row (disconnect user_id so CASCADE delete doesn't wipe ban, preserving email ban to prevent ban evasion)
+    try {
+      await supabaseAdmin
+        .from("blocked_users")
+        .update({ user_id: null })
+        .eq("user_id", userId);
+    } catch (banErr) {
+      safeLog.warn("[Netlify /account-delete] Ban record anonymisation warning", banErr);
     }
 
     // 2. Delete user-owned data across all tables with individual error checking
@@ -105,11 +116,16 @@ export async function handler(event: any) {
     const tablesToDelete = [
       "candidate_profiles",
       "user_preferences",
+      "search_alerts",
       "applications",
+      "job_applications",
       "tailored_resumes",
       "daily_digests",
       "ai_usage_quotas",
+      "ai_usage_ledger",
       "page_views",
+      "user_roles",
+      "user_consents",
     ];
 
     const isIgnorableDeleteError = (err: any) => {
@@ -150,7 +166,7 @@ export async function handler(event: any) {
         }
       }
     } catch (storageErr) {
-      console.warn("[Netlify /account-delete] Storage cleanup warning:", storageErr);
+      safeLog.warn("[Netlify /account-delete] Storage cleanup warning", storageErr);
     }
 
     if (errors.length > 0) {
@@ -187,7 +203,7 @@ export async function handler(event: any) {
       }),
     };
   } catch (err: any) {
-    console.error("[Netlify /account-delete] error:", err);
+    safeLog.error("[Netlify /account-delete]", err);
     return {
       statusCode: 500,
       headers,

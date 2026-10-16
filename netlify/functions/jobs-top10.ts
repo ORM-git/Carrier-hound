@@ -1,9 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
 import { getServerEntitlement } from "../../src/lib/billing/serverEntitlement";
+import { verifyUserNotBanned } from "../../src/lib/admin/auth";
 import { computeFitDiagnostics, StandardJobScoringInput } from "../../src/lib/matcher/scoring";
 import { formatSalary } from "../../src/lib/salary/parser";
 import { extractCandidateRelevanceTerms, LiveJob } from "../../src/lib/jobs/service";
 import { CandidateProfile } from "../../src/lib/resume/types";
+import { safeLog } from "./_logger";
 
 function getSupabaseAdmin() {
   const supabaseUrl =
@@ -109,6 +111,16 @@ export async function handler(event: any) {
       };
     }
 
+    // Ban check (fails closed on lookup error)
+    const banCheck = await verifyUserNotBanned(supabaseAdmin, user.id, user.user_metadata);
+    if (banCheck.isBlocked) {
+      return {
+        statusCode: banCheck.isServiceUnavailable ? 503 : 403,
+        headers,
+        body: JSON.stringify({ error: banCheck.error || "Account suspended. Access revoked by administrator." }),
+      };
+    }
+
     // 2. Server-Managed Pro Entitlement Check (Single Source of Truth)
     const entitlement = await getServerEntitlement(user.id);
     if (!entitlement.isPro) {
@@ -127,7 +139,8 @@ export async function handler(event: any) {
     let body: any = {};
     try {
       body = JSON.parse(event.body || "{}");
-    } catch {
+    } catch (parseErr) {
+      safeLog.warn("[Netlify /jobs-top10] Request body parse error", parseErr);
       return {
         statusCode: 400,
         headers,
@@ -315,7 +328,7 @@ export async function handler(event: any) {
       body: JSON.stringify(responsePayload),
     };
   } catch (err: any) {
-    console.error("[Netlify jobs-top10 error]:", err);
+    safeLog.error("[Netlify /jobs-top10]", err);
     return {
       statusCode: 500,
       headers,

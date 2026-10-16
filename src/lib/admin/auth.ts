@@ -122,6 +122,68 @@ export async function verifyAdminSession(req?: Request): Promise<{
   }
 }
 
+export interface BanCheckResult {
+  isBlocked: boolean;
+  isServiceUnavailable?: boolean;
+  error?: string;
+}
+
+/**
+ * Cheap ban verification helper that checks the exact sources written by the admin ban action:
+ * 1. user_metadata.is_blocked (0 DB round trips if userMetadata provided)
+ * 2. blocked_users indexed table (1 cheap indexed lookup)
+ * Fails closed on database or network error (returns isServiceUnavailable: true).
+ */
+export async function verifyUserNotBanned(
+  supabaseAdmin: any,
+  userId: string,
+  userMetadata?: any
+): Promise<BanCheckResult> {
+  if (!userId) return { isBlocked: false };
+
+  // 1. In-memory check on user_metadata (0 DB round trips)
+  if (userMetadata?.is_blocked === true) {
+    return {
+      isBlocked: true,
+      error: "Account suspended. Access revoked by administrator.",
+    };
+  }
+
+  // 2. Cheap single-row indexed lookup on blocked_users table (1 DB round trip)
+  try {
+    const { data: blockedRow, error } = await supabaseAdmin
+      .from("blocked_users")
+      .select("user_id")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (error) {
+      console.warn("[Ban Check] Database error checking blocked_users; failing closed:", error);
+      return {
+        isBlocked: true,
+        isServiceUnavailable: true,
+        error: "Security verification service is temporarily unavailable. Please try again shortly.",
+      };
+    }
+
+    if (blockedRow) {
+      return {
+        isBlocked: true,
+        error: "Account suspended. Access revoked by administrator.",
+      };
+    }
+
+    return { isBlocked: false };
+  } catch (err: any) {
+    console.warn("[Ban Check] Network or database exception; failing closed:", err);
+    return {
+      isBlocked: true,
+      isServiceUnavailable: true,
+      error: "Security verification service is temporarily unavailable. Please try again shortly.",
+    };
+  }
+}
+
 /**
  * Checks whether a given user is blocked or banned.
  */
@@ -130,32 +192,10 @@ export async function isUserBlocked(userId: string): Promise<boolean> {
 
   try {
     const admin = getSupabaseAdmin();
-
-    // 1. Check user profile / auth ban in Supabase Auth
-    const { data: { user } } = await admin.auth.admin.getUserById(userId);
-    if (user) {
-      const now = new Date();
-      if (user.banned_until && new Date(user.banned_until) > now) {
-        return true;
-      }
-      if (user.user_metadata?.is_blocked === true) {
-        return true;
-      }
-    }
-
-    // 2. Check blocked_users table if present
-    const { data: blockedRow, error } = await admin
-      .from("blocked_users")
-      .select("user_id")
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    if (!error && blockedRow) {
-      return true;
-    }
+    const result = await verifyUserNotBanned(admin, userId);
+    return result.isBlocked;
   } catch (_) {
-    // Fail safe
+    return false;
   }
-
-  return false;
 }
+
