@@ -124,11 +124,201 @@ export async function recordPageView(payload: PageViewPayload): Promise<void> {
   }
 }
 
+export const ADMIN_USERS_PAGE_CAP = 200;
+export const ADMIN_USERS_PER_PAGE = 50;
+export const DB_CHUNK_SIZE = 1000;
+export const DB_SUBSCRIPTIONS_CHUNK_CAP = 100; // max 100,000 subscriptions
+export const DB_BLOCKED_USERS_CHUNK_CAP = 100; // max 100,000 blocked users
+export const DB_PAGE_VIEWS_CHUNK_CAP = 50; // max 50,000 page views
+
+/**
+ * Paginates admin.auth.admin.listUsers until a short page (< perPage) is returned.
+ * Protects against unbounded loops with a hard cap of ADMIN_USERS_PAGE_CAP (200 pages).
+ * Throws an error if the cap is reached without completing the list.
+ */
+export async function fetchAllAdminUsers(
+  adminClient: any,
+  options?: { perPage?: number; maxPages?: number }
+): Promise<any[]> {
+  const perPage = options?.perPage ?? ADMIN_USERS_PER_PAGE;
+  const maxPages = options?.maxPages ?? ADMIN_USERS_PAGE_CAP;
+  const allUsers: any[] = [];
+  let page = 1;
+
+  while (page <= maxPages) {
+    const { data, error } = await adminClient.auth.admin.listUsers({
+      page,
+      perPage,
+    });
+    if (error) {
+      throw new Error(error.message || `Failed to list users on page ${page}`);
+    }
+    const users = data?.users || [];
+    allUsers.push(...users);
+
+    // If page is short (< perPage), we have reached the last page
+    if (users.length < perPage) {
+      return allUsers;
+    }
+    page++;
+  }
+
+  throw new Error(`Safety cap of ${maxPages} pages (${maxPages * perPage} users) exceeded while listing users.`);
+}
+
+/**
+ * Paginates subscriptions table selecting only used columns: "user_id, status, current_period_end".
+ * Queries in chunks of 1000 with .range(), stops when chunk < 1000 or cap is reached.
+ */
+export async function fetchAllSubscriptions(
+  adminClient: any,
+  options?: { chunkSize?: number; maxChunks?: number }
+): Promise<Array<{ user_id: string; status: string; current_period_end?: string | null }>> {
+  const chunkSize = options?.chunkSize ?? DB_CHUNK_SIZE;
+  const maxChunks = options?.maxChunks ?? DB_SUBSCRIPTIONS_CHUNK_CAP;
+  const allSubs: any[] = [];
+  let chunkIndex = 0;
+
+  while (chunkIndex < maxChunks) {
+    const from = chunkIndex * chunkSize;
+    const to = from + chunkSize - 1;
+    const { data, error } = await adminClient
+      .from("subscriptions")
+      .select("user_id, status, current_period_end")
+      .range(from, to);
+
+    if (error) {
+      console.warn(`[analytics] Error fetching subscriptions chunk ${chunkIndex}:`, error.message || error);
+      break;
+    }
+
+    const rows = data || [];
+    allSubs.push(...rows);
+
+    if (rows.length < chunkSize) {
+      break;
+    }
+    chunkIndex++;
+  }
+
+  return allSubs;
+}
+
+/**
+ * Paginates blocked_users table selecting only used columns: "user_id, blocked_at, reason".
+ * Queries in chunks of 1000 with .range(), stops when chunk < 1000 or cap is reached.
+ */
+export async function fetchAllBlockedUsers(
+  adminClient: any,
+  options?: { chunkSize?: number; maxChunks?: number }
+): Promise<Array<{ user_id: string; blocked_at?: string; reason?: string }>> {
+  const chunkSize = options?.chunkSize ?? DB_CHUNK_SIZE;
+  const maxChunks = options?.maxChunks ?? DB_BLOCKED_USERS_CHUNK_CAP;
+  const allBlocked: any[] = [];
+  let chunkIndex = 0;
+
+  while (chunkIndex < maxChunks) {
+    const from = chunkIndex * chunkSize;
+    const to = from + chunkSize - 1;
+    const { data, error } = await adminClient
+      .from("blocked_users")
+      .select("user_id, blocked_at, reason")
+      .range(from, to);
+
+    if (error) {
+      console.warn(`[analytics] Error fetching blocked_users chunk ${chunkIndex}:`, error.message || error);
+      break;
+    }
+
+    const rows = data || [];
+    allBlocked.push(...rows);
+
+    if (rows.length < chunkSize) {
+      break;
+    }
+    chunkIndex++;
+  }
+
+  return allBlocked;
+}
+
+/**
+ * Paginates page_views table selecting only "user_id".
+ * Queries in chunks of 1000 with .range() up to safe cap.
+ * If cap is reached, logs a warning and returns aggregated counts from rows read so far.
+ */
+export async function fetchUserPageViewsCount(
+  adminClient: any,
+  options?: { chunkSize?: number; maxChunks?: number }
+): Promise<Map<string, number>> {
+  const chunkSize = options?.chunkSize ?? DB_CHUNK_SIZE;
+  const maxChunks = options?.maxChunks ?? DB_PAGE_VIEWS_CHUNK_CAP;
+  const userViewsCount = new Map<string, number>();
+  let chunkIndex = 0;
+  let hitCap = false;
+
+  try {
+    while (chunkIndex < maxChunks) {
+      const from = chunkIndex * chunkSize;
+      const to = from + chunkSize - 1;
+      const { data, error } = await adminClient
+        .from("page_views")
+        .select("user_id")
+        .range(from, to);
+
+      if (error) {
+        break;
+      }
+
+      const rows = data || [];
+      for (const row of rows) {
+        if (row.user_id) {
+          userViewsCount.set(row.user_id, (userViewsCount.get(row.user_id) || 0) + 1);
+        }
+      }
+
+      if (rows.length < chunkSize) {
+        break;
+      }
+      chunkIndex++;
+      if (chunkIndex === maxChunks) {
+        hitCap = true;
+      }
+    }
+
+    if (hitCap) {
+      console.warn(
+        `[analytics] Warning: page_views count query reached safe limit of ${maxChunks * chunkSize} rows; results may be truncated.`
+      );
+    }
+  } catch (_) {
+    // Check fallback
+    const fallback = getFallbackRecords();
+    for (const row of fallback) {
+      if (row.user_id) {
+        userViewsCount.set(row.user_id, (userViewsCount.get(row.user_id) || 0) + 1);
+      }
+    }
+  }
+
+  // Include in-memory
+  for (const row of inMemoryViews) {
+    if (row.user_id) {
+      userViewsCount.set(row.user_id, (userViewsCount.get(row.user_id) || 0) + 1);
+    }
+  }
+
+  return userViewsCount;
+}
+
 /**
  * Returns analytics overview data for 7 or 30 days.
  */
-export async function getAnalyticsStats(rangeDays: 7 | 30 = 7): Promise<AnalyticsStats> {
-  const admin = getSupabaseAdmin();
+export async function getAnalyticsStats(
+  rangeDays: 7 | 30 = 7,
+  adminClient?: any
+): Promise<AnalyticsStats> {
+  const admin = adminClient || getSupabaseAdmin();
   const now = new Date();
   const cutoff = new Date(now.getTime() - rangeDays * 24 * 60 * 60 * 1000);
   const cutoffIso = cutoff.toISOString();
@@ -137,15 +327,42 @@ export async function getAnalyticsStats(rangeDays: 7 | 30 = 7): Promise<Analytic
   let allViews: PageViewRecord[] = [];
 
   try {
-    const { data, error } = await admin
-      .from("page_views")
-      .select("*")
-      .gte("created_at", cutoffIso)
-      .order("created_at", { ascending: false });
+    let chunkIndex = 0;
+    const maxChunks = DB_PAGE_VIEWS_CHUNK_CAP;
+    let hitCap = false;
 
-    if (!error && Array.isArray(data) && data.length > 0) {
-      allViews = data;
-    } else {
+    while (chunkIndex < maxChunks) {
+      const from = chunkIndex * DB_CHUNK_SIZE;
+      const to = from + DB_CHUNK_SIZE - 1;
+      const { data, error } = await admin
+        .from("page_views")
+        .select("path, created_at, ip_hash, user_id")
+        .gte("created_at", cutoffIso)
+        .order("created_at", { ascending: false })
+        .range(from, to);
+
+      if (error || !Array.isArray(data)) {
+        break;
+      }
+
+      allViews.push(...data);
+
+      if (data.length < DB_CHUNK_SIZE) {
+        break;
+      }
+      chunkIndex++;
+      if (chunkIndex === maxChunks) {
+        hitCap = true;
+      }
+    }
+
+    if (hitCap) {
+      console.warn(
+        `[analytics] Warning: getAnalyticsStats page_views reached safe limit of ${maxChunks * DB_CHUNK_SIZE} rows; results may be truncated.`
+      );
+    }
+
+    if (allViews.length === 0) {
       // Use fallback data
       const fallback = getFallbackRecords();
       allViews = fallback.filter((r) => r.created_at >= cutoffIso);
@@ -173,8 +390,8 @@ export async function getAnalyticsStats(rangeDays: 7 | 30 = 7): Promise<Analytic
   let recentSignups: AnalyticsStats["recentSignups"] = [];
 
   try {
-    const { data: usersData } = await admin.auth.admin.listUsers();
-    const { data: subsData } = await admin.from("subscriptions").select("*");
+    const users = await fetchAllAdminUsers(admin);
+    const subsData = await fetchAllSubscriptions(admin);
 
     const activeSubs = new Set(
       (subsData || [])
@@ -182,7 +399,6 @@ export async function getAnalyticsStats(rangeDays: 7 | 30 = 7): Promise<Analytic
         .map((s: any) => s.user_id)
     );
 
-    const users = usersData?.users || [];
     totalUsers = users.length;
 
     // Sort users by created_at desc
@@ -281,72 +497,42 @@ export async function getAnalyticsStats(rangeDays: 7 | 30 = 7): Promise<Analytic
  * Returns all registered users with activity, Pro status, and moderation state.
  */
 export async function getUsersManagementList(
-  searchQuery?: string
+  searchQuery?: string,
+  adminClient?: any
 ): Promise<UserManagementItem[]> {
-  const admin = getSupabaseAdmin();
+  const admin = adminClient || getSupabaseAdmin();
   const now = new Date();
 
-  // 1. Fetch users from Supabase Auth
-  const { data: usersData, error: usersError } = await admin.auth.admin.listUsers();
-  if (usersError || !usersData?.users) {
-    throw new Error(usersError?.message || "Failed to list users");
-  }
+  // 1. Fetch users from Supabase Auth (paginated until short page, with safety cap)
+  const users = await fetchAllAdminUsers(admin);
 
-  // 2. Fetch subscriptions
-  const { data: subsData } = await admin.from("subscriptions").select("*");
+  // 2. Fetch subscriptions (paginated in chunks of 1000, selecting only needed columns)
+  const subsData = await fetchAllSubscriptions(admin);
   const activeSubs = new Set(
     (subsData || [])
       .filter((s: any) => s.status === "active" && (!s.current_period_end || new Date(s.current_period_end) > now))
       .map((s: any) => s.user_id)
   );
 
-  // 3. Fetch blocked users from blocked_users table
+  // 3. Fetch blocked users from blocked_users table (paginated in chunks of 1000, selecting only needed columns)
   const blockedUsersMap = new Map<string, { blockedAt?: string; reason?: string }>();
   try {
-    const { data: blockedRows } = await admin.from("blocked_users").select("*");
-    if (Array.isArray(blockedRows)) {
-      for (const b of blockedRows) {
-        blockedUsersMap.set(b.user_id, {
-          blockedAt: b.blocked_at,
-          reason: b.reason,
-        });
-      }
+    const blockedRows = await fetchAllBlockedUsers(admin);
+    for (const b of blockedRows) {
+      blockedUsersMap.set(b.user_id, {
+        blockedAt: b.blocked_at,
+        reason: b.reason,
+      });
     }
   } catch (_) {}
 
-  // 4. Fetch page views count per user
-  const userViewsCount = new Map<string, number>();
-
-  try {
-    const { data: viewsData } = await admin.from("page_views").select("user_id");
-    if (Array.isArray(viewsData)) {
-      for (const row of viewsData) {
-        if (row.user_id) {
-          userViewsCount.set(row.user_id, (userViewsCount.get(row.user_id) || 0) + 1);
-        }
-      }
-    }
-  } catch (_) {
-    // Check fallback
-    const fallback = getFallbackRecords();
-    for (const row of fallback) {
-      if (row.user_id) {
-        userViewsCount.set(row.user_id, (userViewsCount.get(row.user_id) || 0) + 1);
-      }
-    }
-  }
-
-  // Include in-memory
-  for (const row of inMemoryViews) {
-    if (row.user_id) {
-      userViewsCount.set(row.user_id, (userViewsCount.get(row.user_id) || 0) + 1);
-    }
-  }
+  // 4. Fetch page views count per user (paginated in chunks of 1000 with safe cap)
+  const userViewsCount = await fetchUserPageViewsCount(admin);
 
   // 5. Construct user management items
   const query = (searchQuery || "").trim().toLowerCase();
 
-  const userItems: UserManagementItem[] = usersData.users
+  const userItems: UserManagementItem[] = users
     .filter((u) => {
       if (!query) return true;
       return (u.email || "").toLowerCase().includes(query);
@@ -379,16 +565,19 @@ export async function getUsersManagementList(
 /**
  * Returns timeline activity logs for a specific user ID.
  */
-export async function getUserActivityLogs(userId: string): Promise<PageViewRecord[]> {
+export async function getUserActivityLogs(
+  userId: string,
+  adminClient?: any
+): Promise<PageViewRecord[]> {
   if (!userId) return [];
-  const admin = getSupabaseAdmin();
+  const admin = adminClient || getSupabaseAdmin();
 
   let userLogs: PageViewRecord[] = [];
 
   try {
     const { data, error } = await admin
       .from("page_views")
-      .select("*")
+      .select("id, path, user_id, referrer, ip_hash, user_agent, created_at")
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(200);
