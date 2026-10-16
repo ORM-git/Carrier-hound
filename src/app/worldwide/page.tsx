@@ -74,7 +74,7 @@ export default function WorldwidePage() {
             />
           </div>
 
-          <p className="text-[11px] uppercase tracking-wider font-bold text-slate-400 pt-1">
+          <p className="text-[11px] uppercase tracking-wider font-bold text-slate-600 pt-1">
             Showing {filtered.length} of {WORLDWIDE_COMPANIES.length} companies hiring worldwide
           </p>
         </div>
@@ -109,7 +109,7 @@ export default function WorldwidePage() {
                     {company.name}
                   </Link>
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-slate-500 font-mono bg-slate-100 px-2 py-0.5 rounded-md">
+                    <span className="text-xs text-slate-600 font-mono bg-slate-100 px-2 py-0.5 rounded-md">
                       {company.jobCount} open roles
                     </span>
                     <ArrowRight className="w-3.5 h-3.5 text-slate-300 opacity-0 group-hover:opacity-100 group-hover:text-blue-600 transition-all -translate-x-1 group-hover:translate-x-0" />
