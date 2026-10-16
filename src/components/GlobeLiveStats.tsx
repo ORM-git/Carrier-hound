@@ -156,7 +156,7 @@ export default function GlobeLiveStats() {
           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
           <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
         </span>
-        <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 tracking-wider uppercase">
+        <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400 tracking-wider uppercase">
           LIVE
         </span>
       </div>
