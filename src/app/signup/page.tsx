@@ -31,18 +31,33 @@ function GoogleIcon() {
   );
 }
 
+function SignupSearchParamsHandler({
+  onParams,
+}: {
+  onParams: (next: string) => void;
+}) {
+  const searchParams = useSearchParams();
+  useEffect(() => {
+    const rawNext = searchParams.get("next");
+    const next = getValidReturnUrl(rawNext, "/onboarding");
+    onParams(next);
+  }, [searchParams, onParams]);
+  return null;
+}
+
 function SignupPageInner() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const rawNext = searchParams.get("next");
-  const next = getValidReturnUrl(rawNext, "/onboarding");
-
+  const [next, setNext] = useState("/onboarding");
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState("");
   const [emailSent, setEmailSent] = useState(false);
   const [resendTimer, setResendTimer] = useState(0);
+
+  const handleParams = React.useCallback((resolvedNext: string) => {
+    setNext(resolvedNext);
+  }, []);
 
   // If already authenticated, redirect to dashboard or next directly
   useEffect(() => {
@@ -119,6 +134,9 @@ function SignupPageInner() {
 
   return (
     <main className="min-h-[100dvh] bg-[#F3F4F6] flex flex-col items-center justify-center p-4 sm:p-6 text-[#09090B] py-6 sm:py-12">
+      <Suspense fallback={null}>
+        <SignupSearchParamsHandler onParams={handleParams} />
+      </Suspense>
       <div className="w-full max-w-[520px] mb-4 sm:mb-6">
         <Link
           href="/"
@@ -270,9 +288,5 @@ function SignupPageInner() {
 }
 
 export default function SignupPage() {
-  return (
-    <Suspense>
-      <SignupPageInner />
-    </Suspense>
-  );
+  return <SignupPageInner />;
 }

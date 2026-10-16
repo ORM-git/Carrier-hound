@@ -24,7 +24,7 @@ const WireframeDottedGlobe = dynamic(
 
 const Testimonials = dynamic(
   () => import("@/components/testimonials").then((m) => m.Testimonials),
-  { ssr: false }
+  { ssr: true }
 );
 
 const UserMenu = dynamic(() => import("@/components/UserMenu"), {

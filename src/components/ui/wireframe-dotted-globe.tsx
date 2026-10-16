@@ -53,12 +53,12 @@ export function WireframeDottedGlobe({ className }: WireframeDottedGlobeProps) {
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
 
-      // 1. Fetch GeoJSON and d3 dynamically ONLY when scrolled into view
+      // 1. Fetch GeoJSON and d3-geo dynamically ONLY when scrolled into view
       let geoData: any = null;
       let d3: any = null;
       try {
         const [d3Module, res] = await Promise.all([
-          import("d3"),
+          import("d3-geo"),
           fetch("/data/ne_110m_land.json").then((r) => r.json()),
         ]);
         d3 = d3Module;

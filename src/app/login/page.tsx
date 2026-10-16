@@ -31,19 +31,37 @@ function GoogleIcon() {
   );
 }
 
+function LoginSearchParamsHandler({
+  onParams,
+}: {
+  onParams: (next: string, error: string) => void;
+}) {
+  const searchParams = useSearchParams();
+  useEffect(() => {
+    const rawNext = searchParams.get("next");
+    const next = getValidReturnUrl(rawNext, "/dashboard");
+    const queryError = searchParams.get("error") || "";
+    onParams(next, queryError);
+  }, [searchParams, onParams]);
+  return null;
+}
+
 function LoginPageInner() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const rawNext = searchParams.get("next");
-  const next = getValidReturnUrl(rawNext, "/dashboard");
-  const queryError = searchParams.get("error");
-
+  const [next, setNext] = useState("/dashboard");
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
-  const [error, setError] = useState(queryError || "");
+  const [error, setError] = useState("");
   const [emailSent, setEmailSent] = useState(false);
   const [resendTimer, setResendTimer] = useState(0);
+
+  const handleParams = React.useCallback((resolvedNext: string, queryError: string) => {
+    setNext(resolvedNext);
+    if (queryError) {
+      setError(queryError);
+    }
+  }, []);
 
   // Auto-redirect if already logged in
   useEffect(() => {
@@ -123,6 +141,9 @@ function LoginPageInner() {
 
   return (
     <main className="min-h-[100dvh] bg-[#F3F4F6] flex flex-col items-center justify-center p-4 sm:p-6 text-[#09090B] py-6 sm:py-12">
+      <Suspense fallback={null}>
+        <LoginSearchParamsHandler onParams={handleParams} />
+      </Suspense>
       {/* Back button */}
       <div className="w-full max-w-[520px] mb-4 sm:mb-6">
         <Link
@@ -280,9 +301,5 @@ function LoginPageInner() {
 }
 
 export default function LoginPage() {
-  return (
-    <Suspense>
-      <LoginPageInner />
-    </Suspense>
-  );
+  return <LoginPageInner />;
 }
