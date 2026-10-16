@@ -76,9 +76,9 @@ export const TestimonialsColumn = (props: {
                   </div>
 
                   {/* 2. Name */}
-                  <h5 className="text-sm sm:text-base font-bold text-[#09090B] leading-tight">
+                  <h3 className="text-sm sm:text-base font-bold text-[#09090B] leading-tight">
                     {item.name}
-                  </h5>
+                  </h3>
 
                   {/* 3. Handle / Role */}
                   <span className="text-xs text-gray-500 font-normal mt-0.5 mb-2.5">
@@ -87,12 +87,14 @@ export const TestimonialsColumn = (props: {
 
                   {/* 4. 5 Coral-red stars */}
                   <div
+                    role="img"
                     className="flex items-center justify-center gap-1 mb-3 text-[#FF4938]"
                     aria-label={`${item.stars || 5} out of 5 stars`}
                   >
                     {Array.from({ length: item.stars || 5 }).map((_, starIdx) => (
                       <Star
                         key={starIdx}
+                        aria-hidden="true"
                         className="w-3.5 h-3.5 fill-[#FF4938] text-[#FF4938]"
                       />
                     ))}

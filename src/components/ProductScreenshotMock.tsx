@@ -12,9 +12,9 @@ export default function ProductScreenshotMock() {
       <div className="flex flex-row items-start gap-2 sm:gap-4 md:gap-5">
         {/* Left Side: Minimalist Filters Card */}
         <div className="w-[105px] xs:w-[110px] sm:w-[155px] md:w-[175px] shrink-0 bg-white border border-[#E5E7EB] rounded-xl sm:rounded-2xl p-2 sm:p-4 shadow-[0_2px_8px_rgba(0,0,0,0.04)]">
-          <h3 className="text-xs sm:text-sm md:text-[15px] font-bold text-[#09090B] tracking-tight mb-2 sm:mb-3">
+          <h2 className="text-xs sm:text-sm md:text-[15px] font-bold text-[#09090B] tracking-tight mb-2 sm:mb-3">
             Filters
-          </h3>
+          </h2>
 
           <div className="grid grid-cols-1 gap-1.5 sm:gap-2.5">
             {/* Filter 1: Role */}
@@ -96,9 +96,9 @@ export default function ProductScreenshotMock() {
             <div className="space-y-1.5 sm:space-y-2">
               {/* Job Title & Company */}
               <div>
-                <h4 className="font-bold text-[#09090B] text-xs sm:text-base md:text-lg tracking-tight truncate leading-tight">
+                <h3 className="font-bold text-[#09090B] text-xs sm:text-base md:text-lg tracking-tight truncate leading-tight">
                   Software Engineer
-                </h4>
+                </h3>
                 <p className="text-[10px] sm:text-xs text-gray-500 font-normal mt-0.5">
                   Tenable, Inc.
                 </p>

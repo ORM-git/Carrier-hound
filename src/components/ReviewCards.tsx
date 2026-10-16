@@ -56,9 +56,9 @@ export function ReviewCard({ review, className }: ReviewCardProps) {
       </div>
 
       {/* 2. Candidate Name */}
-      <h4 className="text-base sm:text-lg font-bold text-[#09090B] tracking-tight leading-snug">
+      <h3 className="text-base sm:text-lg font-bold text-[#09090B] tracking-tight leading-snug">
         {review.name}
-      </h4>
+      </h3>
 
       {/* 3. Role / Designation */}
       <p className="text-xs sm:text-sm text-gray-500 font-normal mt-0.5 mb-3">
@@ -67,11 +67,12 @@ export function ReviewCard({ review, className }: ReviewCardProps) {
 
       {/* 4. 5 Coral-red / Orange-red stars */}
       <div
+        role="img"
         className="flex items-center justify-center gap-1 mb-4 text-[#FF4938]"
         aria-label={`${review.stars} out of 5 stars`}
       >
         {Array.from({ length: 5 }).map((_, i) => (
-          <Star key={i} className="w-4 h-4 fill-[#FF4938] text-[#FF4938]" />
+          <Star key={i} aria-hidden="true" className="w-4 h-4 fill-[#FF4938] text-[#FF4938]" />
         ))}
       </div>
 
@@ -118,9 +119,9 @@ export function MiniReviewCard({ review, className }: MiniReviewCardProps) {
       </div>
 
       {/* 2. Name */}
-      <h5 className="text-sm sm:text-base font-bold text-[#09090B] leading-tight">
+      <h3 className="text-sm sm:text-base font-bold text-[#09090B] leading-tight">
         {review.name}
-      </h5>
+      </h3>
 
       {/* 3. Handle / Role */}
       <span className="text-xs text-gray-500 font-normal mt-0.5 mb-2.5">
@@ -129,11 +130,12 @@ export function MiniReviewCard({ review, className }: MiniReviewCardProps) {
 
       {/* 4. 5 Coral-red stars */}
       <div
+        role="img"
         className="flex items-center justify-center gap-1 mb-3 text-[#FF4938]"
         aria-label={`${review.stars} out of 5 stars`}
       >
         {Array.from({ length: 5 }).map((_, i) => (
-          <Star key={i} className="w-3.5 h-3.5 fill-[#FF4938] text-[#FF4938]" />
+          <Star key={i} aria-hidden="true" className="w-3.5 h-3.5 fill-[#FF4938] text-[#FF4938]" />
         ))}
       </div>
 
