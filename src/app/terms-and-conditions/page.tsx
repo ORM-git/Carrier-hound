@@ -28,10 +28,10 @@ export default function TermsPage() {
         <h1 className="text-2xl sm:text-3xl font-bold text-[#09090B] tracking-tight">
           Terms and Conditions
         </h1>
-        <p className="text-xs text-gray-400 font-mono">Last Updated: October 10, 2026</p>
+        <p className="text-xs text-gray-500 font-mono">Last Updated: October 10, 2026</p>
 
         <p className="mb-2">
-          1. Acceptance of Terms &amp; Business Identity. By accessing or using the CareerMonke website, application, or features, you agree to be legally bound by these Terms and Conditions. CareerMonke is operated by CareerMonke. For all official notices, billing inquiries, or customer support, please contact us at <a href="mailto:support@careermonke.com" className="text-blue-600 hover:underline">support@careermonke.com</a>. If you do not agree to these terms, you must discontinue using our services immediately.
+          1. Acceptance of Terms &amp; Business Identity. By accessing or using the CareerMonke website, application, or features, you agree to be legally bound by these Terms and Conditions. CareerMonke is operated by CareerMonke. For all official notices, billing inquiries, or customer support, please contact us at <a href="mailto:support@careermonke.com" className="text-blue-600 underline underline-offset-2 hover:text-blue-800 transition-colors">support@careermonke.com</a>. If you do not agree to these terms, you must discontinue using our services immediately.
         </p>
 
         <p className="mb-2">
@@ -75,7 +75,7 @@ export default function TermsPage() {
           - <strong>Billing &amp; Auto-Renewal:</strong> When paid subscriptions are active, CareerMonke Pro is billed on a recurring monthly basis at the posted subscription rate. Subscriptions auto-renew automatically at the end of each billing cycle unless cancelled prior to the renewal date.
         </p>
         <p className="mb-2">
-          - <strong>Cancellation:</strong> You may cancel your subscription at any time through your account settings or by emailing <a href="mailto:support@careermonke.com" className="text-blue-600 hover:underline">support@careermonke.com</a>. Upon cancellation, you retain full Pro access until the conclusion of your current prepaid billing cycle, with no subsequent charges.
+          - <strong>Cancellation:</strong> You may cancel your subscription at any time through your account settings or by emailing <a href="mailto:support@careermonke.com" className="text-blue-600 underline underline-offset-2 hover:text-blue-800 transition-colors">support@careermonke.com</a>. Upon cancellation, you retain full Pro access until the conclusion of your current prepaid billing cycle, with no subsequent charges.
         </p>
 
         <p className="mb-2">
@@ -85,7 +85,7 @@ export default function TermsPage() {
           - <strong>Immediate Compute Consumption:</strong> Because AI resume tailoring and cover letter generation consume immediate third-party computational GPU/LLM infrastructure upon execution, subscription fees are non-refundable once any AI document has been generated in the active billing period.
         </p>
         <p className="mb-2">
-          - <strong>Seven-Day Technical Defect Exception:</strong> If you subscribe and do not generate any AI documents, or if an unresolvable technical fault on our platform prevents you from accessing Pro features, you may request a full refund within seven (7) calendar days of initial billing by contacting <a href="mailto:support@careermonke.com" className="text-blue-600 hover:underline">support@careermonke.com</a>.
+          - <strong>Seven-Day Technical Defect Exception:</strong> If you subscribe and do not generate any AI documents, or if an unresolvable technical fault on our platform prevents you from accessing Pro features, you may request a full refund within seven (7) calendar days of initial billing by contacting <a href="mailto:support@careermonke.com" className="text-blue-600 underline underline-offset-2 hover:text-blue-800 transition-colors">support@careermonke.com</a>.
         </p>
 
         <p className="mb-2">
@@ -96,7 +96,7 @@ export default function TermsPage() {
           9. Governing Law and Jurisdiction. These Terms and Conditions shall be governed by, interpreted, and construed in accordance with the substantive laws of India. Any legal dispute, claim, or proceeding arising out of or related to these terms shall be subject to the exclusive jurisdiction of the competent courts located in Bengaluru, Karnataka, India.
         </p>
 
-        <div className="pt-8 border-t border-gray-200 text-xs text-gray-400">
+        <div className="pt-8 border-t border-gray-200 text-xs text-gray-500">
           <Link href="/" className="text-blue-600 hover:underline">
             &larr; Return to Homepage
           </Link>

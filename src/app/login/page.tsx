@@ -212,7 +212,7 @@ function LoginPageInner() {
               {/* Or separator */}
               <div className="flex items-center gap-3">
                 <div className="flex-1 h-px bg-gray-200" />
-                <span className="text-xs text-gray-400 font-medium">or continue with email</span>
+                <span className="text-xs text-gray-500 font-medium">or continue with email</span>
                 <div className="flex-1 h-px bg-gray-200" />
               </div>
 
@@ -262,13 +262,13 @@ function LoginPageInner() {
             </Link>
           </div>
 
-          <div className="text-center text-[11px] text-gray-400">
+          <div className="text-center text-[11px] text-gray-500">
             By signing in, you agree to our{" "}
-            <Link href="/terms-and-conditions" className="hover:underline text-gray-600">
+            <Link href="/terms-and-conditions" className="underline text-gray-600 hover:text-gray-900">
               Terms
             </Link>{" "}
             and{" "}
-            <Link href="/privacy-policy" className="hover:underline text-gray-600">
+            <Link href="/privacy-policy" className="underline text-gray-600 hover:text-gray-900">
               Privacy Policy
             </Link>
             .

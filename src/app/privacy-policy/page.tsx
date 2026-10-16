@@ -28,7 +28,7 @@ export default function PrivacyPolicyPage() {
         <h1 className="text-2xl sm:text-3xl font-bold text-[#09090B] tracking-tight">
           Privacy Policy
         </h1>
-        <p className="text-xs text-gray-400 font-mono">Last Updated: October 10, 2026</p>
+        <p className="text-xs text-gray-500 font-mono">Last Updated: October 10, 2026</p>
 
         <p className="mb-2">
           1. Information We Collect. CareerMonke collects information you provide directly to us when creating an account, subscribing to job alert notifications, uploading resumes, or contacting customer support:
@@ -99,7 +99,7 @@ export default function PrivacyPolicyPage() {
           - <strong>Access and Portability:</strong> You may view and export your saved profile data and generated resumes directly from your user dashboard at any time.
         </p>
         <p className="mb-2">
-          - <strong>Deletion Requests:</strong> You may permanently delete individual resumes or delete your entire account through account settings, or by emailing our privacy team at <a href="mailto:support@careermonke.com" className="text-blue-600 hover:underline">support@careermonke.com</a>.
+          - <strong>Deletion Requests:</strong> You may permanently delete individual resumes or delete your entire account through account settings, or by emailing our privacy team at <a href="mailto:support@careermonke.com" className="text-blue-600 underline underline-offset-2 hover:text-blue-800 transition-colors">support@careermonke.com</a>.
         </p>
         <p className="mb-2">
           - <strong>Response Timeline:</strong> Valid account deletion and data erasure requests submitted via email will be processed and confirmed within thirty (30) business days.
@@ -113,7 +113,7 @@ export default function PrivacyPolicyPage() {
           8. Policy Updates. We reserve the right to amend this Privacy Policy periodically to reflect technological, operational, or legal developments. Significant updates will be reflected by the revised &ldquo;Last Updated&rdquo; date at the top of this page.
         </p>
 
-        <div className="pt-8 border-t border-gray-200 text-xs text-gray-400">
+        <div className="pt-8 border-t border-gray-200 text-xs text-gray-500">
           <Link href="/" className="text-blue-600 hover:underline">
             &larr; Return to Homepage
           </Link>
