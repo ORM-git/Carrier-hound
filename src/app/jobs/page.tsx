@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useEffect, useRef, Suspense } from "react";
+import React, { useState, useMemo, useEffect, useRef, useCallback, Suspense } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
@@ -33,22 +33,49 @@ const PaywallModal = dynamic(() => import("@/components/PaywallModal"), { ssr: f
 const MatchScoreBadge = dynamic(() => import("@/components/matcher/MatchScoreBadge"), { ssr: false });
 const Footer = dynamic(() => import("@/components/Footer"), { ssr: false });
 
+interface JobsParams {
+  search: string;
+  category: string;
+  remote: boolean;
+  tab: string;
+  page: number;
+}
+
+function JobsSearchParamsHandler({
+  onParams,
+}: {
+  onParams: (params: JobsParams) => void;
+}) {
+  const searchParams = useSearchParams();
+  useEffect(() => {
+    const rawSearch = searchParams.get("search") || searchParams.get("q") || "";
+    const rawCategory = searchParams.get("category") || searchParams.get("categories") || "";
+    const rawRemote = searchParams.get("remote") === "true";
+    const rawTab = searchParams.get("tab") || "";
+    const rawPage = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
+
+    onParams({
+      search: rawSearch,
+      category: rawCategory,
+      remote: rawRemote,
+      tab: rawTab,
+      page: rawPage,
+    });
+  }, [searchParams, onParams]);
+
+  return null;
+}
+
 function JobsPageInner() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-
-  // URL Query Params
-  const querySearch = searchParams.get("search") || "";
-  const queryCategory = searchParams.get("category") || searchParams.get("categories") || "";
-  const queryRemote = searchParams.get("remote") === "true";
 
   // Active Tab: 'foryou' | 'all' | 'saved'
   const [activeTab, setActiveTab] = useState<"foryou" | "all" | "saved">("all");
 
   // Search & Filter state
-  const [search, setSearch] = useState(querySearch);
-  const [selectedCategory, setSelectedCategory] = useState(queryCategory);
-  const [remoteOnly, setRemoteOnly] = useState(queryRemote);
+  const [search, setSearch] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("");
+  const [remoteOnly, setRemoteOnly] = useState(false);
   const [sortBy, setSortBy] = useState<"match" | "newest">("newest");
 
   // User state
@@ -67,6 +94,25 @@ function JobsPageInner() {
   const [totalCount, setTotalCount] = useState<number>(0);
   const [loadingJobs, setLoadingJobs] = useState<boolean>(true);
   const lastQueryKeyRef = useRef<string>("");
+
+  const urlTabRef = useRef<string>("");
+
+  const handleParams = useCallback((params: JobsParams) => {
+    if (params.search) setSearch(params.search);
+    if (params.category) setSelectedCategory(params.category);
+    if (params.remote) setRemoteOnly(true);
+    if (params.page > 1) setPage(params.page);
+    if (params.tab) {
+      urlTabRef.current = params.tab;
+      if (params.tab === "foryou") {
+        setActiveTab("foryou");
+      } else if (params.tab === "saved") {
+        setActiveTab("saved");
+      } else if (params.tab === "all") {
+        setActiveTab("all");
+      }
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -92,7 +138,7 @@ function JobsPageInner() {
           getUserPreferences(u.id).then((p) => {
             if (!cancelled) {
               setPreferences(p);
-              if (searchParams.get("tab") === "foryou" && p.onboardingCompleted) {
+              if (urlTabRef.current === "foryou" && p.onboardingCompleted) {
                 setActiveTab("foryou");
               }
             }
@@ -312,6 +358,9 @@ function JobsPageInner() {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#09090B] flex flex-col">
+      <Suspense fallback={null}>
+        <JobsSearchParamsHandler onParams={handleParams} />
+      </Suspense>
       <GuideHeader />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
@@ -740,9 +789,5 @@ function JobsPageInner() {
 }
 
 export default function JobsPage() {
-  return (
-    <Suspense>
-      <JobsPageInner />
-    </Suspense>
-  );
+  return <JobsPageInner />;
 }
