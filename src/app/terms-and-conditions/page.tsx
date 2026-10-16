@@ -28,7 +28,7 @@ export default function TermsPage() {
         <h1 className="text-2xl sm:text-3xl font-bold text-[#09090B] tracking-tight">
           Terms and Conditions
         </h1>
-        <p className="text-xs text-gray-400 font-mono">Last Updated: October 10, 2026</p>
+        <p className="text-xs text-gray-500 font-mono">Last Updated: October 10, 2026</p>
 
         <p className="mb-2">
           1. Acceptance of Terms &amp; Business Identity. By accessing or using the CareerMonke website, application, or features, you agree to be legally bound by these Terms and Conditions. CareerMonke is operated by CareerMonke. For all official notices, billing inquiries, or customer support, please contact us at <a href="mailto:support@careermonke.com" className="text-blue-600 hover:underline">support@careermonke.com</a>. If you do not agree to these terms, you must discontinue using our services immediately.
@@ -96,7 +96,7 @@ export default function TermsPage() {
           9. Governing Law and Jurisdiction. These Terms and Conditions shall be governed by, interpreted, and construed in accordance with the substantive laws of India. Any legal dispute, claim, or proceeding arising out of or related to these terms shall be subject to the exclusive jurisdiction of the competent courts located in Bengaluru, Karnataka, India.
         </p>
 
-        <div className="pt-8 border-t border-gray-200 text-xs text-gray-400">
+        <div className="pt-8 border-t border-gray-200 text-xs text-gray-500">
           <Link href="/" className="text-blue-600 hover:underline">
             &larr; Return to Homepage
           </Link>

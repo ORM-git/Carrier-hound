@@ -203,7 +203,7 @@ function SignupPageInner() {
 
               <div className="flex items-center gap-3">
                 <div className="flex-1 h-px bg-gray-200" />
-                <span className="text-xs text-gray-400 font-medium">or with email</span>
+                <span className="text-xs text-gray-500 font-medium">or with email</span>
                 <div className="flex-1 h-px bg-gray-200" />
               </div>
 
@@ -252,7 +252,7 @@ function SignupPageInner() {
             </Link>
           </div>
 
-          <div className="text-center text-[11px] text-gray-400">
+          <div className="text-center text-[11px] text-gray-500">
             By signing up, you agree to CareerMonke&apos;s{" "}
             <Link href="/terms-and-conditions" className="hover:underline text-gray-600">
               Terms

@@ -195,7 +195,7 @@ export default function GlobeLiveStats() {
       </div>
 
       {/* Bottom: Muted "updated just now" line */}
-      <p className="text-xs text-gray-400 dark:text-zinc-500 font-normal text-center lg:text-left">
+      <p className="text-xs text-gray-500 dark:text-zinc-500 font-normal text-center lg:text-left">
         {updatedText}
       </p>
     </div>

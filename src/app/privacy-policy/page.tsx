@@ -28,7 +28,7 @@ export default function PrivacyPolicyPage() {
         <h1 className="text-2xl sm:text-3xl font-bold text-[#09090B] tracking-tight">
           Privacy Policy
         </h1>
-        <p className="text-xs text-gray-400 font-mono">Last Updated: October 10, 2026</p>
+        <p className="text-xs text-gray-500 font-mono">Last Updated: October 10, 2026</p>
 
         <p className="mb-2">
           1. Information We Collect. CareerMonke collects information you provide directly to us when creating an account, subscribing to job alert notifications, uploading resumes, or contacting customer support:
@@ -113,7 +113,7 @@ export default function PrivacyPolicyPage() {
           8. Policy Updates. We reserve the right to amend this Privacy Policy periodically to reflect technological, operational, or legal developments. Significant updates will be reflected by the revised &ldquo;Last Updated&rdquo; date at the top of this page.
         </p>
 
-        <div className="pt-8 border-t border-gray-200 text-xs text-gray-400">
+        <div className="pt-8 border-t border-gray-200 text-xs text-gray-500">
           <Link href="/" className="text-blue-600 hover:underline">
             &larr; Return to Homepage
           </Link>

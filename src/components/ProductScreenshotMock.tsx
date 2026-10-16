@@ -22,7 +22,7 @@ export default function ProductScreenshotMock() {
               <label className="block text-[10px] sm:text-[11px] font-semibold text-gray-700 mb-0.5 sm:mb-1">
                 Role
               </label>
-              <div className="w-full h-6 sm:h-7.5 px-1.5 sm:px-3 rounded-md sm:rounded-lg border border-gray-200 bg-white flex items-center text-[10px] sm:text-xs text-gray-400 select-none">
+              <div className="w-full h-6 sm:h-7.5 px-1.5 sm:px-3 rounded-md sm:rounded-lg border border-gray-200 bg-white flex items-center text-[10px] sm:text-xs text-gray-500 select-none">
                 Select...
               </div>
             </div>
@@ -32,7 +32,7 @@ export default function ProductScreenshotMock() {
               <label className="block text-[10px] sm:text-[11px] font-semibold text-gray-700 mb-0.5 sm:mb-1">
                 Location
               </label>
-              <div className="w-full h-6 sm:h-7.5 px-1.5 sm:px-3 rounded-md sm:rounded-lg border border-gray-200 bg-white flex items-center text-[10px] sm:text-xs text-gray-400 select-none">
+              <div className="w-full h-6 sm:h-7.5 px-1.5 sm:px-3 rounded-md sm:rounded-lg border border-gray-200 bg-white flex items-center text-[10px] sm:text-xs text-gray-500 select-none">
                 Select...
               </div>
             </div>
@@ -42,7 +42,7 @@ export default function ProductScreenshotMock() {
               <label className="block text-[10px] sm:text-[11px] font-semibold text-gray-700 mb-0.5 sm:mb-1">
                 Tools
               </label>
-              <div className="w-full h-6 sm:h-7.5 px-1.5 sm:px-3 rounded-md sm:rounded-lg border border-gray-200 bg-white flex items-center text-[10px] sm:text-xs text-gray-400 select-none">
+              <div className="w-full h-6 sm:h-7.5 px-1.5 sm:px-3 rounded-md sm:rounded-lg border border-gray-200 bg-white flex items-center text-[10px] sm:text-xs text-gray-500 select-none">
                 Select...
               </div>
             </div>
@@ -52,7 +52,7 @@ export default function ProductScreenshotMock() {
               <label className="block text-[10px] sm:text-[11px] font-semibold text-gray-700 mb-0.5 sm:mb-1">
                 Remote
               </label>
-              <div className="w-full h-6 sm:h-7.5 px-1.5 sm:px-3 rounded-md sm:rounded-lg border border-gray-200 bg-white flex items-center text-[10px] sm:text-xs text-gray-400 select-none">
+              <div className="w-full h-6 sm:h-7.5 px-1.5 sm:px-3 rounded-md sm:rounded-lg border border-gray-200 bg-white flex items-center text-[10px] sm:text-xs text-gray-500 select-none">
                 Select...
               </div>
             </div>
@@ -119,8 +119,8 @@ export default function ProductScreenshotMock() {
               </div>
 
               {/* Verified Date with Clock Icon */}
-              <div className="flex items-center gap-1 sm:gap-1.5 text-[9px] sm:text-xs text-gray-400">
-                <Clock className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+              <div className="flex items-center gap-1 sm:gap-1.5 text-[9px] sm:text-xs text-gray-500">
+                <Clock className="w-3.5 h-3.5 text-gray-500 shrink-0" />
                 <span>November 14, 2024</span>
               </div>
 
