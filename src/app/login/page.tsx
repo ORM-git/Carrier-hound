@@ -122,7 +122,7 @@ function LoginPageInner() {
   };
 
   return (
-    <div className="min-h-[100dvh] bg-[#F3F4F6] flex flex-col items-center justify-center p-4 sm:p-6 text-[#09090B] py-6 sm:py-12">
+    <main className="min-h-[100dvh] bg-[#F3F4F6] flex flex-col items-center justify-center p-4 sm:p-6 text-[#09090B] py-6 sm:py-12">
       {/* Back button */}
       <div className="w-full max-w-[520px] mb-4 sm:mb-6">
         <Link
@@ -276,7 +276,7 @@ function LoginPageInner() {
           </div>
         </div>
       </div>
-    </div>
+    </main>
   );
 }
 

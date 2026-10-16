@@ -12,7 +12,7 @@ export const metadata = {
 
 export default function TermsPage() {
   return (
-    <div className="min-h-screen bg-white text-[#09090B] py-16 px-6">
+    <main className="min-h-screen bg-white text-[#09090B] py-16 px-6">
       {/* Small blue logo (max-width 200px) centered at top */}
       <div className="max-w-[200px] mx-auto text-center mb-10">
         <Link href="/" className="inline-flex items-center gap-2 text-blue-600 group">
@@ -102,6 +102,6 @@ export default function TermsPage() {
           </Link>
         </div>
       </div>
-    </div>
+    </main>
   );
 }
