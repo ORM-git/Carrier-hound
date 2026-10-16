@@ -107,7 +107,7 @@ export default function Footer({ isGuide = false }: FooterProps) {
         </div>
 
         {/* Bottom row: copyright */}
-        <div className="pt-8 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-4 text-center sm:text-left">
+        <div className="pt-8 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-400 gap-4 text-center sm:text-left">
           <p>© {new Date().getFullYear()} CareerMonke Inc. All rights reserved.</p>
           <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6">
             <Link href="/privacy-policy" className="inline-flex items-center min-h-[44px] sm:min-h-0 py-2 sm:py-0 hover:text-slate-300 transition-colors">
