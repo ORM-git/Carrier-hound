@@ -23,6 +23,8 @@ interface PageProps {
   };
 }
 
+export const dynamicParams = false;
+
 export function generateStaticParams() {
   return Object.keys(ROLE_GUIDES).map((role) => ({
     slug: role,
