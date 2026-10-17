@@ -10,6 +10,8 @@ import {
   OPERATION_CONFIGS,
 } from "@/lib/ai/security";
 
+export const runtime = "edge";
+
 interface RateLimitBucket {
   count: number;
   resetAt: number;

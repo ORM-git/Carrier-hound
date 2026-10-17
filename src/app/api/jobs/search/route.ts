@@ -3,6 +3,8 @@ import { createClient } from "@supabase/supabase-js";
 import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
 import { formatSalary } from "@/lib/salary/parser";
 
+export const runtime = "edge";
+
 function getSupabaseAdmin() {
   const supabaseUrl =
     process.env.NEXT_PUBLIC_SUPABASE_URL ||

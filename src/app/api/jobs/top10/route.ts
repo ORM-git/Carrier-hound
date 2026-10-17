@@ -7,6 +7,8 @@ import { formatSalary } from "@/lib/salary/parser";
 import { extractCandidateRelevanceTerms, LiveJob } from "@/lib/jobs/service";
 import { CandidateProfile } from "@/lib/resume/types";
 
+export const runtime = "edge";
+
 function getSupabaseAdmin() {
   const supabaseUrl =
     process.env.NEXT_PUBLIC_SUPABASE_URL || "https://szakevhxhwpeskidvtfs.supabase.co";

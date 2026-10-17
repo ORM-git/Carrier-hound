@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { verifyAdminSession } from "@/lib/admin/auth";
 import { setUserBlockStatus } from "@/lib/admin/analytics";
 
+export const runtime = "edge";
+
 export async function POST(req: Request) {
   const auth = await verifyAdminSession(req);
   if (!auth.isAdmin) {

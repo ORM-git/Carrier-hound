@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { verifyAdminSession } from "@/lib/admin/auth";
 import { getAnalyticsStats } from "@/lib/admin/analytics";
 
+export const runtime = "edge";
+
 export async function GET(req: Request) {
   const auth = await verifyAdminSession(req);
   if (!auth.isAdmin) {

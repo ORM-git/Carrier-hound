@@ -4,6 +4,8 @@ import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
 import { formatSalary } from "@/lib/salary/parser";
 import { verifyUserNotBanned } from "@/lib/admin/auth";
 
+export const runtime = "edge";
+
 function getSupabaseAdmin() {
   const supabaseUrl =
     process.env.NEXT_PUBLIC_SUPABASE_URL || "https://szakevhxhwpeskidvtfs.supabase.co";
