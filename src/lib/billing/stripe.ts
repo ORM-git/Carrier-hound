@@ -34,7 +34,8 @@ export async function redirectToStripeCheckout(options: {
 export async function verifyStripeWebhookSignature(
   rawBody: string,
   signatureHeader: string,
-  secret: string
+  secret: string,
+  toleranceSeconds: number = 300
 ): Promise<boolean> {
   if (!rawBody || !signatureHeader || !secret) return false;
 
@@ -53,6 +54,14 @@ export async function verifyStripeWebhookSignature(
     }
 
     if (!timestamp || !signature) return false;
+
+    // Reject expired timestamps (replay attack prevention)
+    const tsNumber = parseInt(timestamp, 10);
+    if (isNaN(tsNumber)) return false;
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    if (Math.abs(nowSeconds - tsNumber) > toleranceSeconds) {
+      return false;
+    }
 
     const signedPayload = `${timestamp}.${rawBody}`;
     const expectedSignature = crypto
