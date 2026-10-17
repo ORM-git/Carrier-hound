@@ -16,7 +16,6 @@ interface PageProps {
   };
 }
 
-export const runtime = process.env.CF_PAGES === "1" ? "edge" : "nodejs";
 export const dynamicParams = false;
 
 export function generateStaticParams() {

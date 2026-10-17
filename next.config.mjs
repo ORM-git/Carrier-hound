@@ -3,9 +3,9 @@
 // On Netlify (NETLIFY=true) or default local builds, keep `output: "export"`
 // so Netlify's publish="out" build is 100% unaffected.
 const isCloudflareBuild =
-  process.env.CF_PAGES === "1" ||
-  process.env.NEXT_ON_PAGES === "1" ||
-  process.env.VERCEL === "1";
+  process.env.CF_PAGES?.trim() === "1" ||
+  process.env.NEXT_ON_PAGES?.trim() === "1" ||
+  process.env.VERCEL?.trim() === "1";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
