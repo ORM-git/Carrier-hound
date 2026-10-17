@@ -1,10 +1,11 @@
 import { MetadataRoute } from "next";
+import { getSiteUrl } from "@/lib/siteUrl";
 import { GUIDE_ARTICLES } from "@/data/guides/articles";
 import { ROLE_GUIDES } from "@/data/guides/roles";
 import { CATEGORY_LANDINGS } from "@/data/guides/categories";
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://careermonke.com";
+  const baseUrl = getSiteUrl();
 
   const staticRoutes: MetadataRoute.Sitemap = [
     {

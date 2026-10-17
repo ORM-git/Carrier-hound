@@ -6,6 +6,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import BrandIcon from "@/components/BrandIcon";
 import { createClient } from "@/lib/supabase/client";
 import { getValidReturnUrl, getAuthUser } from "@/lib/auth/session";
+import { getSiteUrl } from "@/lib/siteUrl";
 import { ArrowLeft, Loader2, CheckCircle2, AlertCircle, RefreshCw, ShieldCheck } from "lucide-react";
 
 function GoogleIcon() {
@@ -70,7 +71,8 @@ function SignupPageInner() {
 
     try {
       const supabase = createClient();
-      const redirectUrl = `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`;
+      const origin = typeof window !== "undefined" && window.location.origin ? window.location.origin : getSiteUrl();
+      const redirectUrl = `${origin}/auth/callback?next=${encodeURIComponent(next)}`;
       const { error: signUpError } = await supabase.auth.signInWithOtp({
         email: cleanEmail,
         options: {
@@ -99,7 +101,8 @@ function SignupPageInner() {
 
     try {
       const supabase = createClient();
-      const redirectUrl = `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`;
+      const origin = typeof window !== "undefined" && window.location.origin ? window.location.origin : getSiteUrl();
+      const redirectUrl = `${origin}/auth/callback?next=${encodeURIComponent(next)}`;
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {

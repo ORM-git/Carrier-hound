@@ -65,4 +65,35 @@ for (const filePath of targetFiles) {
   modifiedCount++;
 }
 
-console.log(`[cloudflare-prebuild] Complete (${isRevert ? 'revert' : 'inject'}). Modified ${modifiedCount} file(s).`);
+const redirectsFile = path.join(rootDir, 'public', '_redirects');
+const redirectsBackup = path.join(rootDir, 'public', '_redirects.netlify.bak');
+
+const CLOUDFLARE_REDIRECTS_CONTENT = [
+  '# Cloudflare Pages static redirects (no Netlify function proxies, no /* 404 catch-all)',
+  '/job-search /jobs 301',
+  '/paywall /jobs 301',
+  '/jobs/detail /jobs/detail.html 200',
+  '/jobs/:id /jobs/detail.html 200',
+  '/jobs/* /jobs/detail.html 200',
+  '',
+].join('\n');
+
+if (isRevert) {
+  if (fs.existsSync(redirectsBackup)) {
+    fs.copyFileSync(redirectsBackup, redirectsFile);
+    fs.unlinkSync(redirectsBackup);
+    console.log('[cloudflare-prebuild] Restored Netlify public/_redirects');
+    modifiedCount++;
+  }
+} else {
+  if (fs.existsSync(redirectsFile)) {
+    if (!fs.existsSync(redirectsBackup)) {
+      fs.copyFileSync(redirectsFile, redirectsBackup);
+    }
+    fs.writeFileSync(redirectsFile, CLOUDFLARE_REDIRECTS_CONTENT, 'utf8');
+    console.log('[cloudflare-prebuild] Replaced public/_redirects with Cloudflare-safe routing');
+    modifiedCount++;
+  }
+}
+
+console.log(`[cloudflare-prebuild] Complete (${isRevert ? 'revert' : 'inject'}). Modified ${modifiedCount} file(s)/artifact(s).`);
