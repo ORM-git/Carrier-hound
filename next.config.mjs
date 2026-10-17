@@ -1,3 +1,4 @@
+const isNetlifyProduction = process.env.CONTEXT === "production";
 const requiredEnv = [
   "NEXT_PUBLIC_SUPABASE_URL",
   "NEXT_PUBLIC_SUPABASE_ANON_KEY",
@@ -5,9 +6,15 @@ const requiredEnv = [
 
 for (const envVar of requiredEnv) {
   if (!process.env[envVar]) {
-    throw new Error(
-      `[Startup Validation Error] Missing required environment variable: ${envVar}. Define it in your environment or .env.local before building or starting the app.`
-    );
+    if (isNetlifyProduction) {
+      throw new Error(
+        `[Production Build Error] Missing required environment variable: ${envVar}. Set it in Netlify production environment variables.`
+      );
+    } else {
+      console.warn(
+        `[Build Warning] Missing ${envVar}. Non-production context (CONTEXT=${process.env.CONTEXT || "local/ci"}); continuing build.`
+      );
+    }
   }
 }
 

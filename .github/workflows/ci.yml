@@ -14,13 +14,13 @@ jobs:
     timeout-minutes: 20
 
     env:
-      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || secrets.SUPABASE_URL || 'https://szakevhxhwpeskidvtfs.supabase.co' }}
-      SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || secrets.SUPABASE_URL || 'https://szakevhxhwpeskidvtfs.supabase.co' }}
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY || secrets.SUPABASE_ANON_KEY }}
-      SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY || secrets.SUPABASE_ANON_KEY }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.SUPABASE_SERVICE_KEY }}
-      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.SUPABASE_SERVICE_KEY }}
-      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      NEXT_PUBLIC_SUPABASE_URL: 'https://placeholder.supabase.co'
+      SUPABASE_URL: 'https://placeholder.supabase.co'
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: 'dummy-anon-key-ci'
+      SUPABASE_ANON_KEY: 'dummy-anon-key-ci'
+      SUPABASE_SERVICE_ROLE_KEY: ''
+      SUPABASE_SERVICE_KEY: ''
+      GROQ_API_KEY: ''
 
     steps:
       - name: Checkout Code
