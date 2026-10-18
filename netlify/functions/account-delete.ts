@@ -14,8 +14,20 @@ function getSupabaseAdmin() {
   const serviceKey =
     process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
 
-  if (!supabaseUrl || !serviceKey) {
-    throw new Error("Missing server Supabase configuration");
+  if (!supabaseUrl) {
+    safeLog.error("[Netlify /account-delete] Missing required environment variable: NEXT_PUBLIC_SUPABASE_URL");
+    throw new Error(JSON.stringify({
+      error: "Missing required environment variable: NEXT_PUBLIC_SUPABASE_URL",
+      missingVariable: "NEXT_PUBLIC_SUPABASE_URL",
+    }));
+  }
+
+  if (!serviceKey) {
+    safeLog.error("[Netlify /account-delete] Missing required environment variable: SUPABASE_SERVICE_ROLE_KEY");
+    throw new Error(JSON.stringify({
+      error: "Missing required environment variable: SUPABASE_SERVICE_ROLE_KEY",
+      missingVariable: "SUPABASE_SERVICE_ROLE_KEY",
+    }));
   }
 
   return createClient(supabaseUrl, serviceKey, {
@@ -259,6 +271,16 @@ export function createHandler(deps: AccountDeleteDeps = {}) {
     };
   } catch (err: any) {
     safeLog.error("[Netlify /account-delete]", err);
+    try {
+      const parsed = JSON.parse(err?.message);
+      if (parsed.missingVariable) {
+        return {
+          statusCode: 500,
+          headers,
+          body: JSON.stringify(parsed),
+        };
+      }
+    } catch {}
     return {
       statusCode: 500,
       headers,

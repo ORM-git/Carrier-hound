@@ -17,8 +17,20 @@ function getSupabaseAdmin() {
     process.env.SUPABASE_SERVICE_KEY ||
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  if (!supabaseUrl || !serviceKey) {
-    throw new Error("Missing server Supabase configuration");
+  if (!supabaseUrl) {
+    safeLog.error("[Netlify /jobs-top10] Missing required environment variable: NEXT_PUBLIC_SUPABASE_URL");
+    throw new Error(JSON.stringify({
+      error: "Missing required environment variable: NEXT_PUBLIC_SUPABASE_URL",
+      missingVariable: "NEXT_PUBLIC_SUPABASE_URL",
+    }));
+  }
+
+  if (!serviceKey) {
+    safeLog.error("[Netlify /jobs-top10] Missing required environment variable: SUPABASE_SERVICE_ROLE_KEY");
+    throw new Error(JSON.stringify({
+      error: "Missing required environment variable: SUPABASE_SERVICE_ROLE_KEY",
+      missingVariable: "SUPABASE_SERVICE_ROLE_KEY",
+    }));
   }
 
   return createClient(supabaseUrl, serviceKey, {
@@ -329,6 +341,16 @@ export async function handler(event: any) {
     };
   } catch (err: any) {
     safeLog.error("[Netlify /jobs-top10]", err);
+    try {
+      const parsed = JSON.parse(err?.message);
+      if (parsed.missingVariable) {
+        return {
+          statusCode: 500,
+          headers,
+          body: JSON.stringify(parsed),
+        };
+      }
+    } catch {}
     return {
       statusCode: 500,
       headers,

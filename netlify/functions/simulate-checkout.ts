@@ -41,7 +41,7 @@ export async function handler(event: any) {
     return {
       statusCode: 404,
       headers,
-      body: JSON.stringify({ error: "Endpoint not found" }),
+      body: JSON.stringify({ error: "Payments not enabled", code: "PAYMENTS_DISABLED" }),
     };
   }
 
@@ -51,7 +51,7 @@ export async function handler(event: any) {
     return {
       statusCode: 404,
       headers,
-      body: JSON.stringify({ error: "Endpoint not found" }),
+      body: JSON.stringify({ error: "Payments not enabled", code: "PAYMENTS_DISABLED" }),
     };
   }
 
@@ -69,11 +69,27 @@ export async function handler(event: any) {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "https://szakevhxhwpeskidvtfs.supabase.co";
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
 
-    if (!supabaseUrl || !serviceRoleKey) {
+    if (!supabaseUrl) {
+      safeLog.error("[Netlify /simulate-checkout] Missing required environment variable: NEXT_PUBLIC_SUPABASE_URL");
       return {
         statusCode: 500,
         headers,
-        body: JSON.stringify({ error: "Server missing Supabase configuration" }),
+        body: JSON.stringify({
+          error: "Missing required environment variable: NEXT_PUBLIC_SUPABASE_URL",
+          missingVariable: "NEXT_PUBLIC_SUPABASE_URL",
+        }),
+      };
+    }
+
+    if (!serviceRoleKey) {
+      safeLog.error("[Netlify /simulate-checkout] Missing required environment variable: SUPABASE_SERVICE_ROLE_KEY");
+      return {
+        statusCode: 500,
+        headers,
+        body: JSON.stringify({
+          error: "Missing required environment variable: SUPABASE_SERVICE_ROLE_KEY",
+          missingVariable: "SUPABASE_SERVICE_ROLE_KEY",
+        }),
       };
     }
 

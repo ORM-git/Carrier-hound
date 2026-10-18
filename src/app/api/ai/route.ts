@@ -9,6 +9,7 @@ import {
   refundAiQuota,
   OPERATION_CONFIGS,
 } from "@/lib/ai/security";
+import { checkRequiredEnv } from "@/lib/api/envCheck";
 
 export const runtime = "edge";
 
@@ -98,18 +99,27 @@ export async function POST(req: Request) {
     }
 
     const token = authHeader.replace("Bearer ", "").trim();
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://szakevhxhwpeskidvtfs.supabase.co";
+    const supabaseUrl =
+      process.env.NEXT_PUBLIC_SUPABASE_URL ||
+      process.env.SUPABASE_URL ||
+      "https://szakevhxhwpeskidvtfs.supabase.co";
     const serviceKey =
-      process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      process.env.SUPABASE_SERVICE_ROLE_KEY ||
+      process.env.SUPABASE_SERVICE_KEY ||
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-    if (!supabaseUrl || !serviceKey) {
-      return NextResponse.json(
-        { error: "Server authentication configuration missing." },
-        { status: 500 }
-      );
+    const missingSupabase = checkRequiredEnv(
+      {
+        NEXT_PUBLIC_SUPABASE_URL: supabaseUrl,
+        SUPABASE_SERVICE_ROLE_KEY: serviceKey,
+      },
+      "API /ai"
+    );
+    if (missingSupabase) {
+      return NextResponse.json(missingSupabase, { status: 500 });
     }
 
-    const supabaseAdmin = createClient(supabaseUrl, serviceKey, {
+    const supabaseAdmin = createClient(supabaseUrl, serviceKey!, {
       auth: { persistSession: false },
     });
 
@@ -231,11 +241,15 @@ export async function POST(req: Request) {
 
     // 5. Server-Side Groq API Key Check
     const groqApiKey = process.env.GROQ_API_KEY;
-    if (!groqApiKey) {
+    if (!groqApiKey || !groqApiKey.trim()) {
+      console.error("[API /ai] Missing required environment variable: GROQ_API_KEY");
       await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
       return NextResponse.json(
-        { error: "AI service is currently unavailable. Please check back shortly." },
-        { status: 503 }
+        {
+          error: "Missing required environment variable: GROQ_API_KEY",
+          missingVariable: "GROQ_API_KEY",
+        },
+        { status: 500 }
       );
     }
 

@@ -142,10 +142,15 @@ export async function handler(event: any, deps: AiHandlerDeps = {}) {
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
     if (!deps.getSupabaseAdmin && (!supabaseUrl || !serviceKey)) {
+      const missingVar = !supabaseUrl ? "NEXT_PUBLIC_SUPABASE_URL" : "SUPABASE_SERVICE_ROLE_KEY";
+      safeLog.error(`[Netlify /ai] Missing required environment variable: ${missingVar}`);
       return {
         statusCode: 500,
         headers,
-        body: JSON.stringify({ error: "Server authentication configuration missing." }),
+        body: JSON.stringify({
+          error: `Missing required environment variable: ${missingVar}`,
+          missingVariable: missingVar,
+        }),
       };
     }
 
@@ -303,12 +308,16 @@ export async function handler(event: any, deps: AiHandlerDeps = {}) {
     }
 
     const groqApiKey = process.env.GROQ_API_KEY;
-    if (!groqApiKey) {
+    if (!groqApiKey || !groqApiKey.trim()) {
+      safeLog.error("[Netlify /ai] Missing required environment variable: GROQ_API_KEY");
       await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
       return {
-        statusCode: 503,
+        statusCode: 500,
         headers,
-        body: JSON.stringify({ error: "AI service is currently unavailable. Please check back shortly." }),
+        body: JSON.stringify({
+          error: "Missing required environment variable: GROQ_API_KEY",
+          missingVariable: "GROQ_API_KEY",
+        }),
       };
     }
 

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
+import { checkRequiredEnv } from "@/lib/api/envCheck";
+
 export const runtime = "edge";
 
 function getSupabaseAdmin() {
@@ -11,11 +13,18 @@ function getSupabaseAdmin() {
   const serviceKey =
     process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
 
-  if (!supabaseUrl || !serviceKey) {
-    throw new Error("Missing server Supabase configuration");
+  const missing = checkRequiredEnv(
+    {
+      NEXT_PUBLIC_SUPABASE_URL: supabaseUrl,
+      SUPABASE_SERVICE_ROLE_KEY: serviceKey,
+    },
+    "API /account/delete"
+  );
+  if (missing) {
+    throw new Error(JSON.stringify(missing));
   }
 
-  return createClient(supabaseUrl, serviceKey, {
+  return createClient(supabaseUrl, serviceKey!, {
     auth: { persistSession: false },
   });
 }
@@ -226,6 +235,12 @@ export async function POST(req: Request) {
       message: "User account and all owned data permanently deleted.",
     });
   } catch (err: any) {
+    try {
+      const parsed = JSON.parse(err?.message);
+      if (parsed.missingVariable) {
+        return NextResponse.json(parsed, { status: 500 });
+      }
+    } catch {}
     console.error("Account delete error:", err);
     return NextResponse.json(
       { success: false, error: err?.message || "Internal server error during account deletion." },

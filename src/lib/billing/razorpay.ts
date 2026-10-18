@@ -34,18 +34,18 @@ export interface RazorpayCheckoutOptions {
  * Initiates Razorpay checkout in browser (Domestic Rs 199/month, UPI & Cards)
  */
 export async function openRazorpayCheckout(options: RazorpayCheckoutOptions) {
-  const isLoaded = await loadRazorpayScript();
-  if (!isLoaded) {
-    options.onError(new Error("Failed to load Razorpay payment gateway"));
-    return;
-  }
-
   const keyId =
     process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID ||
     process.env.RAZORPAY_KEY_ID;
 
   if (!keyId) {
-    options.onError(new Error("Razorpay billing is not configured yet."));
+    options.onError(new Error("Payments not enabled. Razorpay is not configured."));
+    return;
+  }
+
+  const isLoaded = await loadRazorpayScript();
+  if (!isLoaded) {
+    options.onError(new Error("Failed to load Razorpay payment gateway"));
     return;
   }
 

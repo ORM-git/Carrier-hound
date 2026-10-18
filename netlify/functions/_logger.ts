@@ -52,13 +52,25 @@ export function sanitizeLogString(input: string): string {
 }
 
 export const safeLog = {
-  error: (tag: string, err: unknown) => {
-    console.error(`${tag}: ${safeFormatError(err)}`);
+  error: (tag: string, err?: unknown) => {
+    if (err !== undefined) {
+      console.error(`${tag}: ${safeFormatError(err)}`);
+    } else {
+      console.error(sanitizeLogString(tag));
+    }
   },
-  warn: (tag: string, err: unknown) => {
-    console.warn(`${tag}: ${safeFormatError(err)}`);
+  warn: (tag: string, err?: unknown) => {
+    if (err !== undefined) {
+      console.warn(`${tag}: ${safeFormatError(err)}`);
+    } else {
+      console.warn(sanitizeLogString(tag));
+    }
   },
-  info: (tag: string, message: string) => {
-    console.log(`${tag}: ${sanitizeLogString(message)}`);
+  info: (tag: string, message?: string) => {
+    if (message !== undefined) {
+      console.log(`${tag}: ${sanitizeLogString(message)}`);
+    } else {
+      console.log(sanitizeLogString(tag));
+    }
   },
 };

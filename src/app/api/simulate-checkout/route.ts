@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { checkRequiredEnv } from "@/lib/api/envCheck";
 
 export const runtime = "edge";
 
@@ -16,13 +17,13 @@ export async function POST(req: Request) {
     process.env.NETLIFY_ENV === "production";
 
   if (isProd) {
-    return NextResponse.json({ error: "Endpoint not found" }, { status: 404 });
+    return NextResponse.json({ error: "Payments not enabled", code: "PAYMENTS_DISABLED" }, { status: 404 });
   }
 
   // Outside production, simulation is strictly gated behind SIMULATE_PAYMENTS=true.
   const allowSimulation = process.env.SIMULATE_PAYMENTS === "true";
   if (!allowSimulation) {
-    return NextResponse.json({ error: "Endpoint not found" }, { status: 404 });
+    return NextResponse.json({ error: "Payments not enabled", code: "PAYMENTS_DISABLED" }, { status: 404 });
   }
 
   try {
@@ -39,12 +40,19 @@ export async function POST(req: Request) {
     const serviceRoleKey =
       process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
 
-    if (!supabaseUrl || !serviceRoleKey) {
-      return NextResponse.json({ error: "Server missing Supabase configuration" }, { status: 500 });
+    const missingSupabase = checkRequiredEnv(
+      {
+        NEXT_PUBLIC_SUPABASE_URL: supabaseUrl,
+        SUPABASE_SERVICE_ROLE_KEY: serviceRoleKey,
+      },
+      "API /simulate-checkout"
+    );
+    if (missingSupabase) {
+      return NextResponse.json(missingSupabase, { status: 500 });
     }
 
     // Verify user token with Supabase
-    const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
+    const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey!, {
       auth: { persistSession: false },
     });
 
