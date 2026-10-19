@@ -63,7 +63,9 @@ export function WireframeDottedGlobe({ className }: WireframeDottedGlobeProps) {
         ]);
         d3 = d3Module;
         geoData = res;
-      } catch {
+      } catch (err) {
+        console.error("[WireframeDottedGlobe] Failed to load globe data:", err);
+        setLoading(false);
         return;
       }
 
@@ -343,7 +345,7 @@ export function WireframeDottedGlobe({ className }: WireframeDottedGlobeProps) {
       if (animId) cancelAnimationFrame(animId);
       if (cleanupFn) cleanupFn();
     };
-  }, [router]);
+  }, [router, isInView]);
 
   return (
     <div
