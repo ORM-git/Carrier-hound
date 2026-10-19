@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
 import { formatSalary } from "@/lib/salary/parser";
+import { checkRequiredEnv } from "@/lib/api/envCheck";
+
+export const runtime = "edge";
 
 function getSupabaseAdmin() {
   const supabaseUrl =
@@ -9,13 +12,22 @@ function getSupabaseAdmin() {
     process.env.SUPABASE_URL ||
     "https://szakevhxhwpeskidvtfs.supabase.co";
   const serviceKey =
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_SERVICE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  if (!supabaseUrl || !serviceKey) {
-    throw new Error("Missing server Supabase configuration");
+  const missing = checkRequiredEnv(
+    {
+      NEXT_PUBLIC_SUPABASE_URL: supabaseUrl,
+      SUPABASE_SERVICE_ROLE_KEY: serviceKey,
+    },
+    "API /jobs/search"
+  );
+  if (missing) {
+    throw new Error(JSON.stringify(missing));
   }
 
-  return createClient(supabaseUrl, serviceKey, {
+  return createClient(supabaseUrl, serviceKey!, {
     auth: { persistSession: false },
   });
 }
@@ -257,6 +269,12 @@ export async function GET(req: Request) {
       isPro,
     });
   } catch (err: any) {
+    try {
+      const parsed = JSON.parse(err?.message);
+      if (parsed.missingVariable) {
+        return NextResponse.json({ ...parsed, jobs: [], totalCount: 0 }, { status: 500 });
+      }
+    } catch {}
     console.error("Jobs search API route error:", err);
     return NextResponse.json(
       { error: err?.message || "Internal server error", jobs: [], totalCount: 0 },

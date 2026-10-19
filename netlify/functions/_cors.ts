@@ -34,9 +34,14 @@ export function buildCorsHeaders(
     "https://careermonke.com",
     "https://www.careermonke.com",
     "https://careermonke.netlify.app",
+    "https://careermonke12.netlify.app",
+    "https://carrier-hound.pages.dev",
     "https://careerhound.netlify.app",
   ]);
 
+  if (process.env.NEXT_PUBLIC_SITE_URL) {
+    allowedSet.add(process.env.NEXT_PUBLIC_SITE_URL.trim().replace(/\/+$/, ""));
+  }
   if (process.env.URL) {
     allowedSet.add(process.env.URL.trim().replace(/\/+$/, ""));
   }
@@ -59,7 +64,9 @@ export function buildCorsHeaders(
   }
 
   const normalizedOrigin = origin ? origin.trim().replace(/\/+$/, "") : null;
-  const isAllowed = normalizedOrigin ? allowedSet.has(normalizedOrigin) : false;
+  const isAllowed = normalizedOrigin
+    ? allowedSet.has(normalizedOrigin) || /^https:\/\/[a-zA-Z0-9-]+\.carrier-hound\.pages\.dev$/.test(normalizedOrigin)
+    : false;
 
   const headers: Record<string, string> = {
     Vary: "Origin",

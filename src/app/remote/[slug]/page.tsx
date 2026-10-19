@@ -14,6 +14,8 @@ interface PageProps {
   };
 }
 
+export const dynamicParams = false;
+
 export function generateStaticParams() {
   return Object.keys(GUIDE_ARTICLES).map((slug) => ({
     slug,

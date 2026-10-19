@@ -1,6 +1,15 @@
 import { NextResponse } from "next/server";
-import crypto from "crypto";
 import { recordPageView } from "@/lib/admin/analytics";
+
+export const runtime = "edge";
+
+async function sha256Hex16(input: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(input);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 16);
+}
 
 export async function POST(req: Request) {
   try {
@@ -17,11 +26,7 @@ export async function POST(req: Request) {
     const userAgent = req.headers.get("user-agent") || "";
 
     // Salted anonymous IP hash (non-reversible)
-    const ipHash = crypto
-      .createHash("sha256")
-      .update(`${ip}_careermonke_salt`)
-      .digest("hex")
-      .slice(0, 16);
+    const ipHash = await sha256Hex16(`${ip}_careermonke_salt`);
 
     // Fire and record
     await recordPageView({

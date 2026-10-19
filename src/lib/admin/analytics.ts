@@ -1,6 +1,3 @@
-import fs from "fs";
-import path from "path";
-import crypto from "crypto";
 import { getSupabaseAdmin } from "./auth";
 
 export interface PageViewPayload {
@@ -61,37 +58,18 @@ export interface UserManagementItem {
   blockedReason?: string;
 }
 
-const FALLBACK_DIR = path.resolve(process.cwd(), "data");
-const FALLBACK_FILE = path.resolve(FALLBACK_DIR, "page_views_fallback.json");
-
-// In-memory buffer to supplement storage
+// In-memory buffer to supplement storage (Edge/Worker safe, max 5,000 records)
 let inMemoryViews: PageViewRecord[] = [];
 
 function getFallbackRecords(): PageViewRecord[] {
-  try {
-    if (!fs.existsSync(FALLBACK_DIR)) {
-      fs.mkdirSync(FALLBACK_DIR, { recursive: true });
-    }
-    if (fs.existsSync(FALLBACK_FILE)) {
-      const content = fs.readFileSync(FALLBACK_FILE, "utf-8");
-      return JSON.parse(content);
-    }
-  } catch (_) {}
-  return [];
+  return inMemoryViews;
 }
 
 function saveFallbackRecord(record: PageViewRecord) {
-  try {
-    inMemoryViews.push(record);
-    if (!fs.existsSync(FALLBACK_DIR)) {
-      fs.mkdirSync(FALLBACK_DIR, { recursive: true });
-    }
-    const current = getFallbackRecords();
-    current.push(record);
-    // Keep max 5,000 recent fallback records
-    const trimmed = current.slice(-5000);
-    fs.writeFileSync(FALLBACK_FILE, JSON.stringify(trimmed, null, 2), "utf-8");
-  } catch (_) {}
+  inMemoryViews.push(record);
+  if (inMemoryViews.length > 5000) {
+    inMemoryViews = inMemoryViews.slice(-5000);
+  }
 }
 
 /**

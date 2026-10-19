@@ -16,6 +16,8 @@ interface PageProps {
   };
 }
 
+export const dynamicParams = false;
+
 export function generateStaticParams() {
   return Object.keys(CATEGORY_LANDINGS).map((category) => ({
     category,

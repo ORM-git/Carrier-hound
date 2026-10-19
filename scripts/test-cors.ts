@@ -24,6 +24,8 @@ interface TestCase {
 
 const TEST_CASES: TestCase[] = [
   { origin: "https://careermonke.com", desc: "Production Canonical", expectedAllowed: true },
+  { origin: "https://careermonke12.netlify.app", desc: "Netlify Production", expectedAllowed: true },
+  { origin: "https://carrier-hound.pages.dev", desc: "Cloudflare Preview", expectedAllowed: true },
   { origin: "http://localhost:3000", desc: "Local Dev (allowed in dev)", expectedAllowed: true },
   { origin: "https://evil.example", desc: "Untrusted Origin", expectedAllowed: false },
   { origin: undefined, desc: "No Origin (server/direct)", expectedAllowed: false },

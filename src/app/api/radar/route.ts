@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { resolveLocation, TRUSTED_CITIES, COUNTRY_CENTROIDS } from '@/lib/geo/cities';
 
-export const dynamic = 'force-static';
+export const runtime = 'edge';
 
 // In-memory cache for ultra-fast responses (5-minute TTL)
 interface CachedRadarData {

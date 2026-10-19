@@ -4,17 +4,30 @@ import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
 import { formatSalary } from "@/lib/salary/parser";
 import { verifyUserNotBanned } from "@/lib/admin/auth";
 
+import { checkRequiredEnv } from "@/lib/api/envCheck";
+
+export const runtime = "edge";
+
 function getSupabaseAdmin() {
   const supabaseUrl =
-    process.env.NEXT_PUBLIC_SUPABASE_URL || "https://szakevhxhwpeskidvtfs.supabase.co";
+    process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    process.env.SUPABASE_URL ||
+    "https://szakevhxhwpeskidvtfs.supabase.co";
   const serviceKey =
     process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
 
-  if (!supabaseUrl || !serviceKey) {
-    throw new Error("Missing server Supabase configuration");
+  const missing = checkRequiredEnv(
+    {
+      NEXT_PUBLIC_SUPABASE_URL: supabaseUrl,
+      SUPABASE_SERVICE_ROLE_KEY: serviceKey,
+    },
+    "API /jobs/pro"
+  );
+  if (missing) {
+    throw new Error(JSON.stringify(missing));
   }
 
-  return createClient(supabaseUrl, serviceKey, {
+  return createClient(supabaseUrl, serviceKey!, {
     auth: { persistSession: false },
   });
 }
@@ -99,6 +112,12 @@ export async function GET(req: Request) {
 
     return NextResponse.json({ job: formattedJob, isPro: true });
   } catch (err: any) {
+    try {
+      const parsed = JSON.parse(err?.message);
+      if (parsed.missingVariable) {
+        return NextResponse.json(parsed, { status: 500 });
+      }
+    } catch {}
     console.error("[API /jobs/pro GET error]:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
@@ -142,6 +161,12 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ jobs: formattedJobs, isPro: true });
   } catch (err: any) {
+    try {
+      const parsed = JSON.parse(err?.message);
+      if (parsed.missingVariable) {
+        return NextResponse.json(parsed, { status: 500 });
+      }
+    } catch {}
     console.error("[API /jobs/pro POST error]:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

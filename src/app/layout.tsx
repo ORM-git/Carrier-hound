@@ -6,6 +6,7 @@ import { ToastContainer } from "react-toastify";
 import BackToTop from "@/components/BackToTop";
 import PageViewTracker from "@/components/analytics/PageViewTracker";
 import BlockedAccountNotice from "@/components/auth/BlockedAccountNotice";
+import { getSiteUrl } from "@/lib/siteUrl";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -23,7 +24,7 @@ export const viewport: Viewport = {
 const siteTitle = "CareerMonke — Unindexed Jobs & Remote Career Discovery";
 const siteDescription =
   "Discover unindexed remote engineering, design, marketing, and data roles directly from verified employer career pages before they hit public aggregators.";
-const siteUrl = "https://careermonke.com";
+const siteUrl = getSiteUrl();
 const ogImageUrl = `${siteUrl}/careermonke.png`;
 
 export const metadata: Metadata = {
@@ -99,3 +100,4 @@ export default function RootLayout({
     </html>
   );
 }
+
