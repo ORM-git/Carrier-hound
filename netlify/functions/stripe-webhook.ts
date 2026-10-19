@@ -10,9 +10,7 @@ const CORS_OPTIONS = {
 
 function getSupabaseAdmin() {
   const supabaseUrl =
-    process.env.NEXT_PUBLIC_SUPABASE_URL ||
-    process.env.SUPABASE_URL ||
-    "https://szakevhxhwpeskidvtfs.supabase.co";
+    process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
   const serviceKey =
     process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
 
@@ -156,7 +154,11 @@ export async function handler(event: any) {
           user_id: userId,
           provider: "stripe",
           customer_id: eventObj.customer || existingSub?.customer_id,
-          subscription_id: eventObj.subscription || eventObj.id || existingSub?.subscription_id,
+          subscription_id:
+            eventObj.subscription ||
+            (eventType.startsWith("customer.subscription.") ? eventObj.id : null) ||
+            existingSub?.subscription_id ||
+            null,
           plan_id: "intl_monthly_9",
           currency: (eventObj.currency || "USD").toUpperCase(),
           amount: eventObj.amount_total || eventObj.plan?.amount || 900,
