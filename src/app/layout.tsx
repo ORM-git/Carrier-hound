@@ -21,12 +21,40 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
+const siteTitle = "CareerMonke — Unindexed Jobs & Remote Career Discovery";
+const siteDescription =
+  "Discover unindexed remote engineering, design, marketing, and data roles directly from verified employer career pages before they hit public aggregators.";
+const siteUrl = getSiteUrl();
+const ogImageUrl = `${siteUrl}/careermonke.png`;
+
 export const metadata: Metadata = {
-  title: "CareerMonke — Unindexed Jobs & Remote Career Discovery",
-  description: "Discover unindexed remote engineering, design, marketing, and data roles directly from verified employer career pages before they hit public aggregators.",
-  metadataBase: new URL(getSiteUrl()),
+  title: siteTitle,
+  description: siteDescription,
+  metadataBase: new URL(siteUrl),
   alternates: {
     canonical: "/",
+  },
+  openGraph: {
+    title: siteTitle,
+    description: siteDescription,
+    url: siteUrl,
+    siteName: "CareerMonke",
+    images: [
+      {
+        url: ogImageUrl,
+        width: 1200,
+        height: 630,
+        alt: siteTitle,
+      },
+    ],
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: siteTitle,
+    description: siteDescription,
+    images: [ogImageUrl],
   },
   robots: {
     index: true,
@@ -72,3 +100,4 @@ export default function RootLayout({
     </html>
   );
 }
+

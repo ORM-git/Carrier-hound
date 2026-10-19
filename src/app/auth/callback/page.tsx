@@ -38,6 +38,10 @@ function AuthCallbackContent() {
           finish(next);
           return;
         }
+        console.error("[Auth Callback] exchangeCodeForSession error:", error.message || error);
+        const safeErrorMessage = error.message || "Could not authenticate session. Please try again.";
+        finish(`/login?error=${encodeURIComponent(safeErrorMessage)}`);
+        return;
       }
 
       // 3. Check existing active session
