@@ -6,20 +6,16 @@ import { cookies } from "next/headers";
  * Use this in Server Components, Route Handlers, and middleware.
  * Reads the session from HTTP cookies so auth state is always current.
  * NEVER import this in "use client" components.
+ * Throws when the public Supabase env vars are missing. No placeholder fallbacks.
  */
 export async function createClient() {
   const cookieStore = await cookies();
-  const supabaseUrl =
-    process.env.NEXT_PUBLIC_SUPABASE_URL || "https://placeholder.supabase.co";
-  const supabaseAnonKey =
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "dummy-anon-key";
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  if (
-    process.env.CONTEXT === "production" &&
-    (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
-  ) {
+  if (!supabaseUrl || !supabaseAnonKey) {
     throw new Error(
-      "Missing Supabase environment variables: NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY must be defined in production."
+      "Missing Supabase environment variables: NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY must be set."
     );
   }
 
@@ -48,24 +44,18 @@ export async function createClient() {
 
 /**
  * Server-side Supabase client with the service-role key.
- * Bypasses RLS — use ONLY in trusted server-side admin scripts and workers.
+ * Bypasses RLS - use ONLY in trusted server-side admin scripts and workers.
  * Never expose to the browser.
+ * Throws when SUPABASE_SERVICE_ROLE_KEY is missing. Never falls back to the anon key.
  */
 export async function createAdminClient() {
   const cookieStore = await cookies();
-  const supabaseUrl =
-    process.env.NEXT_PUBLIC_SUPABASE_URL || "https://placeholder.supabase.co";
-  const supabaseKey =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-    "dummy-service-key";
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  if (
-    process.env.CONTEXT === "production" &&
-    (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY)
-  ) {
+  if (!supabaseUrl || !supabaseKey) {
     throw new Error(
-      "Missing Supabase environment variables: NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be defined in production."
+      "Missing Supabase environment variables: NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set for admin access."
     );
   }
 
@@ -83,7 +73,7 @@ export async function createAdminClient() {
               cookieStore.set(name, value, options)
             );
           } catch {
-            // Server Component — middleware handles writes
+            // Server Component - middleware handles writes
           }
         },
       },
