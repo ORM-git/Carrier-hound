@@ -9,6 +9,7 @@ import {
   OPERATION_CONFIGS,
 } from "../../src/lib/ai/security";
 import { buildCorsHeaders, handleCorsPreflight } from "./_cors";
+import { checkSharedRateLimit } from "./_sharedRateLimit";
 import { safeLog } from "./_logger";
 
 const CORS_OPTIONS = {
@@ -98,13 +99,14 @@ export async function handler(event: any, deps: AiHandlerDeps = {}) {
     };
   }
 
-  // 0. Per-IP Rate Limiting (in-memory sliding window)
+  // 0. Per-IP Rate Limiting (shared Supabase store, in-memory fallback)
   const clientIp = getClientIp(event);
-  const ipLimit = checkRateLimit(
-    clientIp,
-    ipRateLimitStore,
+  const ipLimit = await checkSharedRateLimit(
+    `ip:${clientIp}`,
     AI_RATE_LIMIT.ipMaxRequests,
-    AI_RATE_LIMIT.ipWindowMs
+    Math.ceil(AI_RATE_LIMIT.ipWindowMs / 1000),
+    () =>
+      checkRateLimit(clientIp, ipRateLimitStore, AI_RATE_LIMIT.ipMaxRequests, AI_RATE_LIMIT.ipWindowMs)
   );
   if (!ipLimit.allowed) {
     return {
@@ -173,12 +175,13 @@ export async function handler(event: any, deps: AiHandlerDeps = {}) {
       };
     }
 
-    // 1.1 Per-User Burst Rate Limiting (in-memory sliding window)
-    const userLimit = checkRateLimit(
-      user.id,
-      userRateLimitStore,
+    // 1.1 Per-User Burst Rate Limiting (shared Supabase store, in-memory fallback)
+    const userLimit = await checkSharedRateLimit(
+      `user:${user.id}`,
       AI_RATE_LIMIT.userMaxRequests,
-      AI_RATE_LIMIT.userWindowMs
+      Math.ceil(AI_RATE_LIMIT.userWindowMs / 1000),
+      () =>
+        checkRateLimit(user.id, userRateLimitStore, AI_RATE_LIMIT.userMaxRequests, AI_RATE_LIMIT.userWindowMs)
     );
     if (!userLimit.allowed) {
       return {
