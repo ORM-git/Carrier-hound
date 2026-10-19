@@ -105,7 +105,30 @@ export async function handler(event: any) {
       };
     }
 
-    // 3. Idempotency Check (Row 54 requirement e)
+    // 3a. Atomic idempotency guard via webhook_events table (owner-applied migration).
+    // INSERT with PRIMARY KEY on event_id: a duplicate insert means this exact event
+    // was already processed, even under concurrent deliveries. If the table is not
+    // applied yet (or any other error), fall back to the metadata check below.
+    try {
+      const { error: idemErr } = await supabaseAdmin
+        .from("webhook_events")
+        .insert({ event_id: eventId, provider: "stripe", event_type: eventType });
+      if (!idemErr) {
+        safeLog.info("[Stripe Webhook]", `Event ${eventId} recorded in webhook_events.`);
+      } else if (idemErr.code === "23505") {
+        safeLog.info("[Stripe Webhook]", `Duplicate event ${eventId} rejected atomically.`);
+        return {
+          statusCode: 200,
+          headers,
+          body: JSON.stringify({ received: true, alreadyProcessed: true, eventId }),
+        };
+      }
+      // Other errors (table missing, etc.): metadata fallback below still applies.
+    } catch {
+      // fall back to metadata-based idempotency below
+    }
+
+    // 3b. Idempotency Check (Row 54 requirement e)
     const { data: existingSub, error: subError } = await supabaseAdmin
       .from("subscriptions")
       .select("*")
