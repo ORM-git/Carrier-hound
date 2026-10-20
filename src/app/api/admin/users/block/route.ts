@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { verifyAdminSession } from "@/lib/admin/auth";
 import { setUserBlockStatus } from "@/lib/admin/analytics";
+import { logAdminAction } from "@/lib/admin/auditLog";
 
 export const runtime = "edge";
 
@@ -48,6 +49,16 @@ export async function POST(req: Request) {
         { status: 500 }
       );
     }
+
+    // Log successful administrative mutation
+    await logAdminAction({
+      adminUserId: auth.user!.id,
+      action: shouldBlock ? "user.block" : "user.unblock",
+      targetType: "user",
+      targetId: userId,
+      metadata: reason ? { reason } : {},
+      request: req,
+    });
 
     return NextResponse.json({
       ok: true,
