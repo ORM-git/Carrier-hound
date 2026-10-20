@@ -1,3 +1,5 @@
+import { withSentryConfig } from "@sentry/nextjs/config";
+
 // On Cloudflare Pages (@cloudflare/next-on-pages / Vercel CLI), omit `output: "export"`
 // so Next.js builds the Edge server route handlers into .vercel/output/functions.
 // On Netlify (NETLIFY=true) or default local builds, keep `output: "export"`
@@ -37,4 +39,10 @@ const nextConfig = {
   },
 };
 
-export default nextConfig;
+export default withSentryConfig(nextConfig, {
+  org: "olive-ridley-media",
+  project: "careermonke",
+  silent: true,
+  widenClientFileUpload: true,
+  disableLogger: true,
+});
