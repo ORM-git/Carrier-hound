@@ -19,7 +19,7 @@ async function run() {
     .eq('is_active', true)
     .eq('status', 'active');
 
-  const total = totalActive || 16423;
+  const total = totalActive ?? 0;
   console.log(`Total active jobs in DB: ${total}`);
 
   const chunkSize = 1000;

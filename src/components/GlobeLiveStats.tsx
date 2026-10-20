@@ -2,31 +2,27 @@
 
 import React, { useEffect, useRef, useState } from "react";
 
-const FALLBACK_JOBS_TODAY = 0;
-const FALLBACK_TOTAL_JOBS = 16423;
-const FALLBACK_COMPANIES_SCANNED = 500;
-
 interface StatsData {
-  jobsToday: number;
-  totalJobs: number;
-  companiesScanned: number;
+  jobsToday: number | null;
+  totalJobs: number | null;
+  companiesScanned: number | null;
   updatedAt?: string;
 }
 
 export default function GlobeLiveStats() {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // Target values from API or fallback
+  // Target values from API (strictly real from database, null when not yet loaded or on fetch failure)
   const [stats, setStats] = useState<StatsData>({
-    jobsToday: FALLBACK_JOBS_TODAY,
-    totalJobs: FALLBACK_TOTAL_JOBS,
-    companiesScanned: FALLBACK_COMPANIES_SCANNED,
+    jobsToday: null,
+    totalJobs: null,
+    companiesScanned: null,
   });
 
   // Display animated count-up values
-  const [displayJobsToday, setDisplayJobsToday] = useState(0);
-  const [displayTotalJobs, setDisplayTotalJobs] = useState(0);
-  const [displayCompanies, setDisplayCompanies] = useState(0);
+  const [displayJobsToday, setDisplayJobsToday] = useState<number | null>(null);
+  const [displayTotalJobs, setDisplayTotalJobs] = useState<number | null>(null);
+  const [displayCompanies, setDisplayCompanies] = useState<number | null>(null);
 
   // Track if count-up has already executed
   const hasAnimatedRef = useRef(false);
@@ -41,18 +37,21 @@ export default function GlobeLiveStats() {
       try {
         const res = await fetch("/api/stats");
         if (!res.ok) throw new Error("Failed to fetch stats");
-        const data: StatsData = await res.json();
+        const data = await res.json();
         if (isMounted) {
           setStats({
-            jobsToday: data.jobsToday ?? 0,
-            totalJobs: data.totalJobs || FALLBACK_TOTAL_JOBS,
-            companiesScanned: data.companiesScanned || FALLBACK_COMPANIES_SCANNED,
+            jobsToday: typeof data.jobsToday === "number" ? data.jobsToday : 0,
+            totalJobs: typeof data.totalJobs === "number" ? data.totalJobs : null,
+            companiesScanned:
+              typeof data.companiesScanned === "number"
+                ? data.companiesScanned
+                : null,
           });
           setLastUpdatedTime(Date.now());
           setUpdatedText("updated just now");
         }
       } catch {
-        // Keep fallback constants on network or parse failure
+        // Fallback: show NO fake figure on network or parse failure
       }
     }
 
@@ -67,8 +66,15 @@ export default function GlobeLiveStats() {
 
   // 2. Count-up animation helper (ease-out over 1.5s)
   const runCountUp = (target: StatsData) => {
+    if (target.totalJobs === null && target.companiesScanned === null) {
+      return;
+    }
+
     const duration = 1500; // 1.5 seconds
     const startTime = performance.now();
+    const targetJobsToday = target.jobsToday ?? 0;
+    const targetTotalJobs = target.totalJobs ?? 0;
+    const targetCompanies = target.companiesScanned ?? 0;
 
     const animate = (currentTime: number) => {
       const elapsed = currentTime - startTime;
@@ -76,9 +82,15 @@ export default function GlobeLiveStats() {
       // Cubic ease-out
       const easeOut = 1 - Math.pow(1 - progress, 3);
 
-      setDisplayJobsToday(Math.round(target.jobsToday * easeOut));
-      setDisplayTotalJobs(Math.round(target.totalJobs * easeOut));
-      setDisplayCompanies(Math.round(target.companiesScanned * easeOut));
+      if (target.jobsToday !== null) {
+        setDisplayJobsToday(Math.round(targetJobsToday * easeOut));
+      }
+      if (target.totalJobs !== null) {
+        setDisplayTotalJobs(Math.round(targetTotalJobs * easeOut));
+      }
+      if (target.companiesScanned !== null) {
+        setDisplayCompanies(Math.round(targetCompanies * easeOut));
+      }
 
       if (progress < 1) {
         requestAnimationFrame(animate);
@@ -101,9 +113,11 @@ export default function GlobeLiveStats() {
       (entries) => {
         const [entry] = entries;
         if (entry.isIntersecting && !hasAnimatedRef.current) {
-          hasAnimatedRef.current = true;
-          observer.disconnect();
-          runCountUp(stats);
+          if (stats.totalJobs !== null || stats.companiesScanned !== null) {
+            hasAnimatedRef.current = true;
+            observer.disconnect();
+            runCountUp(stats);
+          }
         }
       },
       { threshold: 0.15 }
@@ -116,12 +130,17 @@ export default function GlobeLiveStats() {
     };
   }, [stats]);
 
-  // If stats update after initial animation (e.g. from 60s refetch), smoothly reflect changes
+  // If stats update after initial animation (e.g. from 60s refetch or initial load), smoothly reflect changes
   useEffect(() => {
-    if (hasAnimatedRef.current) {
-      setDisplayJobsToday(stats.jobsToday);
-      setDisplayTotalJobs(stats.totalJobs);
-      setDisplayCompanies(stats.companiesScanned);
+    if (stats.totalJobs !== null || stats.companiesScanned !== null) {
+      if (!hasAnimatedRef.current) {
+        hasAnimatedRef.current = true;
+        runCountUp(stats);
+      } else {
+        setDisplayJobsToday(stats.jobsToday);
+        setDisplayTotalJobs(stats.totalJobs);
+        setDisplayCompanies(stats.companiesScanned);
+      }
     }
   }, [stats]);
 
@@ -166,17 +185,21 @@ export default function GlobeLiveStats() {
         {/* Stat 1: jobs found today */}
         <div className="text-center lg:text-left min-w-[90px] max-[480px]:w-[calc(50%-0.6rem)]">
           <div className="text-2xl sm:text-3xl font-extrabold text-[#09090B] dark:text-white tracking-tight">
-            {displayJobsToday.toLocaleString("en-US")}
+            {displayJobsToday !== null
+              ? displayJobsToday.toLocaleString("en-US")
+              : "—"}
           </div>
           <div className="text-xs text-gray-500 dark:text-gray-400 font-medium mt-0.5">
-            jobs found today (est.)
+            jobs found today
           </div>
         </div>
 
         {/* Stat 2: total hidden jobs */}
         <div className="text-center lg:text-left min-w-[90px] max-[480px]:w-[calc(50%-0.6rem)]">
           <div className="text-2xl sm:text-3xl font-extrabold text-[#09090B] dark:text-white tracking-tight">
-            {displayTotalJobs.toLocaleString("en-US")}
+            {displayTotalJobs !== null
+              ? displayTotalJobs.toLocaleString("en-US")
+              : "—"}
           </div>
           <div className="text-xs text-gray-500 dark:text-gray-400 font-medium mt-0.5">
             total hidden jobs
@@ -186,7 +209,9 @@ export default function GlobeLiveStats() {
         {/* Stat 3: companies scanned */}
         <div className="text-center lg:text-left min-w-[90px] max-[480px]:w-full max-[480px]:text-center">
           <div className="text-2xl sm:text-3xl font-extrabold text-[#09090B] dark:text-white tracking-tight">
-            {displayCompanies.toLocaleString("en-US")}
+            {displayCompanies !== null
+              ? displayCompanies.toLocaleString("en-US")
+              : "—"}
           </div>
           <div className="text-xs text-gray-500 dark:text-gray-400 font-medium mt-0.5">
             companies scanned

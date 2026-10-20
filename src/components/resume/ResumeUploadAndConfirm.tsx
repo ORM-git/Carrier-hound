@@ -553,7 +553,7 @@ export default function ResumeUploadAndConfirm({
             <Link
               href="/jobs"
               className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition cursor-pointer"
-              title="Score this verified resume against 16,000+ jobs"
+              title="Score this verified resume against live jobs"
             >
               <Sparkles className="w-3.5 h-3.5 text-blue-200" />
               <span>Score this resume against jobs</span>

@@ -259,7 +259,7 @@ export default function GuideArticlePage({ params }: PageProps) {
                   href="/job-search/all"
                   className="inline-flex items-center gap-2 bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-semibold px-7 py-3 rounded-md text-sm transition-colors shadow-sm"
                 >
-                  <span>Explore 61,000+ Verified Jobs</span>
+                  <span>Explore Verified Jobs</span>
                   <ArrowRight className="w-4 h-4" />
                 </Link>
               </div>
