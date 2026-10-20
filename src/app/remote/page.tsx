@@ -107,7 +107,7 @@ export default function ResourcesIndexPage() {
         {/* Global Directory Link */}
         <section className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl border border-blue-200 p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="space-y-1">
-            <h3 className="font-bold text-base text-slate-900">Explore 150+ Companies Hiring Worldwide</h3>
+            <h3 className="font-bold text-base text-slate-900">Explore Verified Companies Hiring Worldwide</h3>
             <p className="text-xs text-slate-600">
               Verified distributed organizations with open job feeds.
             </p>

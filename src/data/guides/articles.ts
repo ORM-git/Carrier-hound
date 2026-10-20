@@ -139,7 +139,7 @@ export const GUIDE_ARTICLES: Record<string, GuideArticle> = {
         id: "how-direct-tracking-works",
         h2: "Architectural Shift: From Gatekeepers to Automated Radar",
         paragraphs: [
-          "CareerMonke operates as an automated discovery radar. Rather than asking employers to manually submit listings or wait for staffing agencies, our crawlers query verified career endpoints continuously across 12,000+ top software and product companies.",
+          "CareerMonke operates as an automated discovery radar. Rather than asking employers to manually submit listings or wait for staffing agencies, our crawlers query verified career endpoints continuously across verified top software and product companies.",
           "When an opening is removed or marked filled on the employer's internal board, it immediately drops from our active search index. This eliminates the widespread frustration of spending hours tailoring cover letters for defunct positions.",
         ],
       },

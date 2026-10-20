@@ -20,7 +20,7 @@ const AVATAR_URLS = [
 export default function AvatarStack({
   className,
   peopleCount = "8,573",
-  jobsCount = "4.5 million",
+  jobsCount,
   textColor = "text-white",
 }: AvatarStackProps) {
   return (
@@ -53,7 +53,14 @@ export default function AvatarStack({
       {/* Social proof line - single line on mobile */}
       <p className={cn("text-[13px] sm:text-sm md:text-base font-normal mt-3 leading-snug tracking-tight text-white whitespace-nowrap", textColor)}>
         <span className="font-bold text-white">{peopleCount}</span> people finding{" "}
-        <span className="font-bold text-white">{jobsCount}</span> hidden jobs
+        {jobsCount ? (
+          <>
+            <span className="font-bold text-white">{jobsCount}</span>{" "}
+          </>
+        ) : (
+          "verified "
+        )}
+        hidden jobs
       </p>
     </div>
   );

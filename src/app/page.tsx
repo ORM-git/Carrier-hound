@@ -14,6 +14,7 @@ import { WhiteHeroButton } from "@/components/Buttons";
 import CategorySelectModal from "@/components/CategorySelectModal";
 import Footer from "@/components/Footer";
 import GlobeLiveStats from "@/components/GlobeLiveStats";
+import { useLiveStats } from "@/lib/api/stats";
 import { TestimonialMarqueeDemo } from "@/components/ui/marquee-01";
 import { X, Check, ArrowRight } from "lucide-react";
 
@@ -42,6 +43,7 @@ const UserMenu = dynamic(() => import("@/components/UserMenu"), {
 export default function HomePage() {
   const router = useRouter();
   const [modalOpen, setModalOpen] = useState(false);
+  const { totalJobs } = useLiveStats();
 
   // Returning signed-in user visiting / goes to /dashboard (lazy loaded so Supabase isn't critical path)
   useEffect(() => {
@@ -101,7 +103,7 @@ export default function HomePage() {
           <div className="mt-4">
             <AvatarStack
               peopleCount="8,573"
-              jobsCount="4.5 million"
+              jobsCount={totalJobs !== null && totalJobs > 0 ? `${totalJobs.toLocaleString()}+` : undefined}
               textColor="text-white"
             />
           </div>

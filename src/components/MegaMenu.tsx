@@ -165,7 +165,7 @@ export default function MegaMenu({ isOpen, onClose }: MegaMenuProps) {
                 Direct ATS Compensation Benchmarks
               </h5>
               <p className="text-xs text-[#4B5563]">
-                Access verified salary bands scraped from employer disclosures across 12,000+ tech companies.
+                Access verified salary bands scraped directly from verified employer disclosures.
               </p>
             </div>
           </div>
@@ -186,7 +186,7 @@ export default function MegaMenu({ isOpen, onClose }: MegaMenuProps) {
                   <ChevronRight className="w-3.5 h-3.5 text-gray-400 group-hover:text-blue-600" />
                 </div>
                 <p className="text-xs text-[#4B5563] mt-1 leading-relaxed">
-                  150+ verified employers hiring without local residency barriers.
+                  Verified employers hiring without local residency barriers.
                 </p>
               </Link>
 

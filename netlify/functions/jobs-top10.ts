@@ -321,10 +321,18 @@ export async function handler(event: any) {
 
     const topRanked = dedupedScoredJobs.slice(0, limit);
 
+    // Query exact active count for totalCorpus (same source as /api/stats)
+    const { count: totalActiveCount } = await supabaseAdmin
+      .from("jobs_public")
+      .select("id", { count: "exact", head: true })
+      .eq("is_active", true)
+      .eq("status", "active");
+    const totalCorpus = totalActiveCount ?? dedupedScoredJobs.length;
+
     const responsePayload = {
       jobs: topRanked,
       totalScored: dedupedScoredJobs.length,
-      totalCorpus: 16423,
+      totalCorpus,
       isPro: true,
     };
 

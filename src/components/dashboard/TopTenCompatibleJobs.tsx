@@ -26,6 +26,7 @@ const CoverLetterModal = dynamic(() => import("@/components/resume/CoverLetterMo
 import { addApplicationToTracker, getTrackedApplications, removeApplicationFromTracker } from "@/lib/tracker/storage";
 import CompanyLogo from "@/components/CompanyLogo";
 import { toast } from "react-toastify";
+import { useLiveStats } from "@/lib/api/stats";
 
 interface TopTenCompatibleJobsProps {
   candidate: CandidateProfile;
@@ -41,6 +42,7 @@ export default function TopTenCompatibleJobs({
   candidate,
   isPro,
 }: TopTenCompatibleJobsProps) {
+  const { totalJobs } = useLiveStats();
   const [loading, setLoading] = useState(true);
   const [rankedJobs, setRankedJobs] = useState<RankedJobItem[]>([]);
   const [savedJobIds, setSavedJobIds] = useState<string[]>([]);
@@ -52,7 +54,7 @@ export default function TopTenCompatibleJobs({
   const loadTopJobs = React.useCallback(async () => {
     setLoading(true);
     try {
-      // Fetch and rank across the FULL live dataset (all 16,000+ jobs) with Pro unlocking
+      // Fetch and rank across the full live dataset with Pro unlocking
       const topJobs = await getTopRankedJobsForCandidate(candidate, 10, isPro);
       setRankedJobs(topJobs);
     } catch (err) {
@@ -107,7 +109,7 @@ export default function TopTenCompatibleJobs({
               <Sparkles className="w-3.5 h-3.5 text-blue-600" />
               Pro Feature
             </span>
-            <span className="text-xs text-slate-500 font-medium">Ranked from 16,423 live jobs by your verified skills</span>
+            <span className="text-xs text-slate-500 font-medium">Ranked from {totalJobs !== null && totalJobs > 0 ? `${totalJobs.toLocaleString()} live jobs` : "live jobs"} by your verified skills</span>
           </div>
           <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight mt-1">
             Your Top 10 Jobs

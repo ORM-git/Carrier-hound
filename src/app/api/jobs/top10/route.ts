@@ -74,7 +74,7 @@ function getTop10CacheKey(userId: string, candidate: CandidateProfile, limit: nu
  * POST /api/jobs/top10
  * 
  * Server-Side Top 10 High-Compatibility Matching:
- * Transparently prefilters against the live 16,423-job corpus by the candidate's
+ * Transparently prefilters against the live active jobs corpus by the candidate's
  * verified skills and role titles, executes unified scoring server-side, and returns
  * only the top N results with full unlocked Pro data.
  */
@@ -146,7 +146,7 @@ export async function POST(req: Request) {
     }
 
     // 4. Transparent Server-Side Prefiltering from Live Database
-    // Strategy: Filter candidate's verified skills & title keywords across all 16,423 jobs
+    // Strategy: Filter candidate's verified skills & title keywords across active jobs
     const relevanceTerms = extractCandidateRelevanceTerms(candidate);
 
     let query = supabaseAdmin
@@ -281,10 +281,18 @@ export async function POST(req: Request) {
 
     const topRanked = dedupedScoredJobs.slice(0, limit);
 
+    // Query exact active count for totalCorpus (same source as /api/stats)
+    const { count: totalActiveCount } = await supabaseAdmin
+      .from("jobs_public")
+      .select("id", { count: "exact", head: true })
+      .eq("is_active", true)
+      .eq("status", "active");
+    const totalCorpus = totalActiveCount ?? dedupedScoredJobs.length;
+
     const responsePayload = {
       jobs: topRanked,
       totalScored: dedupedScoredJobs.length,
-      totalCorpus: 16423,
+      totalCorpus,
       isPro: true,
     };
 
