@@ -15,6 +15,7 @@ import { getProAccessStatus } from "@/lib/billing/subscription";
 import dynamic from "next/dynamic";
 import PaywallModal from "@/components/PaywallModal";
 import ProUpgradeScreen from "@/components/billing/ProUpgradeScreen";
+import { buildJobPostingSchema } from "@/lib/seo/jobPostingSchema";
 
 const CoverLetterModal = dynamic(() => import("@/components/resume/CoverLetterModal"), { ssr: false });
 const TailorResumeModal = dynamic(() => import("@/components/resume/TailorResumeModal"), { ssr: false });
@@ -135,10 +136,18 @@ function JobDetailInner() {
   }
 
   // Tier 1: Signed-out visitor
+  const jobPostingJsonLd = job ? buildJobPostingSchema(job) : null;
+
   if (!user) {
     const returnUrl = typeof window !== "undefined" ? window.location.pathname + window.location.search : `/jobs/detail?id=${job?.id || ""}`;
     return (
       <div className="min-h-screen bg-[#F8FAFC] flex flex-col">
+        {jobPostingJsonLd && (
+          <script
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{ __html: JSON.stringify(jobPostingJsonLd) }}
+          />
+        )}
         <GuideHeader />
         <main className="flex-1 max-w-lg w-full mx-auto px-4 py-16 flex flex-col items-center justify-center text-center space-y-5">
           <div className="w-14 h-14 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-200 shadow-xs">
@@ -167,6 +176,12 @@ function JobDetailInner() {
   if (!isPro) {
     return (
       <div className="min-h-screen bg-[#F8FAFC] flex flex-col">
+        {jobPostingJsonLd && (
+          <script
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{ __html: JSON.stringify(jobPostingJsonLd) }}
+          />
+        )}
         <GuideHeader />
         <main className="flex-1 max-w-4xl w-full mx-auto px-4 py-8">
           <ProUpgradeScreen
@@ -298,6 +313,12 @@ function JobDetailInner() {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#09090B] flex flex-col">
+      {jobPostingJsonLd && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jobPostingJsonLd) }}
+        />
+      )}
       <GuideHeader />
 
       <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-10 space-y-6">
