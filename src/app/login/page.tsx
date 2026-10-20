@@ -38,22 +38,29 @@ function LoginPageInner() {
   const rawNext = searchParams.get("next");
   const next = getValidReturnUrl(rawNext, "/dashboard");
   const queryError = searchParams.get("error");
+  const queryMessage = searchParams.get("message");
 
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState(queryError || "");
+  const [successMessage, setSuccessMessage] = useState(
+    queryMessage === "password-updated"
+      ? "Your password has been successfully reset. You can now sign in."
+      : queryMessage || ""
+  );
   const [emailSent, setEmailSent] = useState(false);
   const [resendTimer, setResendTimer] = useState(0);
 
-  // Auto-redirect if already logged in
+  // Auto-redirect if already logged in (skip if displaying password-updated notification)
   useEffect(() => {
+    if (queryMessage === "password-updated") return;
     getAuthUser().then((user) => {
       if (user) {
         router.replace(next);
       }
     });
-  }, [next, router]);
+  }, [next, router, queryMessage]);
 
   // Resend cooldown timer
   useEffect(() => {
@@ -159,6 +166,13 @@ function LoginPageInner() {
             </p>
           </div>
 
+          {successMessage && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3.5 flex items-start gap-2.5 text-sm text-emerald-800 animate-fadeIn">
+              <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0 text-emerald-600" />
+              <span>{successMessage}</span>
+            </div>
+          )}
+
           {error && (
             <div className="bg-red-50 border border-red-200 rounded-xl p-3.5 flex items-start gap-2.5 text-sm text-red-700 animate-fadeIn">
               <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-red-500" />
@@ -222,9 +236,17 @@ function LoginPageInner() {
               {/* Email Form */}
               <form onSubmit={handleEmailSubmit} className="space-y-4">
                 <div>
-                  <label htmlFor="email" className="block text-xs font-bold text-[#09090B] uppercase tracking-wider mb-1.5">
-                    Email address
-                  </label>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label htmlFor="email" className="block text-xs font-bold text-[#09090B] uppercase tracking-wider">
+                      Email address
+                    </label>
+                    <Link
+                      href="/forgot-password"
+                      className="text-xs font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                    >
+                      Forgot password?
+                    </Link>
+                  </div>
                   <input
                     id="email"
                     type="email"
