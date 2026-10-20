@@ -37,6 +37,9 @@ const nextConfig = {
     domains: ["images.unsplash.com", "randomuser.me", "avatar.iran.liara.run", "i.pravatar.cc"],
     unoptimized: true,
   },
+  experimental: {
+    instrumentationHook: false,
+  },
 };
 
 export default withSentryConfig(nextConfig, {
@@ -45,4 +48,9 @@ export default withSentryConfig(nextConfig, {
   silent: true,
   widenClientFileUpload: true,
   disableLogger: true,
+  // Disable automatic server/edge handler instrumentation to prevent
+  // duplicate webpack module identifier collisions under @cloudflare/next-on-pages
+  autoInstrumentServerFunctions: false,
+  autoInstrumentMiddleware: false,
+  autoInstrumentAppDirectory: false,
 });
