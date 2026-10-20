@@ -11,7 +11,16 @@ import {
   SourceConfig,
   SourceStats,
 } from './types';
-import { slugify } from './utils/sanitizer';
+import { detectCategory, slugify } from './utils/sanitizer';
+
+// ISO alpha-2 -> display name for the legacy `country` text column (kept in sync with country_code)
+const COUNTRY_NAMES: Record<string, string> = {
+  US: 'United States', IN: 'India', GB: 'United Kingdom', CA: 'Canada', DE: 'Germany',
+  SG: 'Singapore', AU: 'Australia', FR: 'France', NL: 'Netherlands', IE: 'Ireland',
+  JP: 'Japan', BR: 'Brazil', CH: 'Switzerland', SE: 'Sweden', ES: 'Spain', IT: 'Italy',
+  PL: 'Poland', MX: 'Mexico', IL: 'Israel', AE: 'United Arab Emirates', AT: 'Austria',
+  DK: 'Denmark', NO: 'Norway', FI: 'Finland', NZ: 'New Zealand', PT: 'Portugal', PH: 'Philippines',
+};
 
 // Load environment variables
 dotenv.config();
@@ -380,7 +389,7 @@ async function main() {
                 salary_min: j.salary_min,
                 salary_max: j.salary_max,
                 currency: j.currency || 'USD',
-                category: j.category || 'software',
+                category: j.category || detectCategory(j.title),
                 posted_at: j.posted_at || new Date().toISOString(),
                 last_seen_at: new Date().toISOString(),
                 is_active: true,
@@ -399,6 +408,10 @@ async function main() {
                 row.source_type = j.source_type || 'ats';
                 row.discovered_at = j.discovered_at || new Date().toISOString();
                 row.country_code = j.country_code || null;
+                // Fill the legacy country text from the code, but keep 'Remote' style rows untouched
+                if (j.country_code && COUNTRY_NAMES[j.country_code] && !j.remote) {
+                  row.country = COUNTRY_NAMES[j.country_code];
+                }
                 row.remote_eligibility = j.remote_eligibility || 'unknown';
                 row.seniority = j.seniority || 'unknown';
                 row.salary_period = j.salary_period || 'yearly';
