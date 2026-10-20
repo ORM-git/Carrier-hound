@@ -6,6 +6,7 @@ import { ToastContainer } from "react-toastify";
 import BackToTop from "@/components/BackToTop";
 import PageViewTracker from "@/components/analytics/PageViewTracker";
 import BlockedAccountNotice from "@/components/auth/BlockedAccountNotice";
+import CookieNotice from "@/components/CookieNotice";
 import { getSiteUrl } from "@/lib/siteUrl";
 
 const inter = Inter({
@@ -83,6 +84,7 @@ export default function RootLayout({
           <PageViewTracker />
         </Suspense>
         <BlockedAccountNotice />
+        <CookieNotice />
         <BackToTop />
         <ToastContainer
           position="bottom-right"

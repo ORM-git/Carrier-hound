@@ -2,9 +2,11 @@
 
 import { useEffect, useRef } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
+import { COOKIE_CONSENT_KEY, COOKIE_CONSENT_EVENT } from "@/components/CookieNotice";
 
 /**
  * Lightweight, non-blocking, fire-and-forget page view tracker.
+ * Gated strictly behind user consent (cm_cookie_notice).
  * Zero external libraries, zero layout shift, fail-safe.
  */
 export default function PageViewTracker() {
@@ -28,6 +30,14 @@ export default function PageViewTracker() {
 
     const track = () => {
       try {
+        if (typeof window !== "undefined") {
+          const consent = localStorage.getItem(COOKIE_CONSENT_KEY);
+          if (!consent) {
+            // Strictly gate pageview analytics behind user consent
+            return;
+          }
+        }
+
         let userId: string | null = null;
 
         if (typeof window !== "undefined") {
@@ -76,6 +86,21 @@ export default function PageViewTracker() {
         setTimeout(track, 100);
       }
     }
+
+    // Listen for consent granted event to track immediately once acknowledged
+    const onConsentGranted = () => {
+      track();
+    };
+
+    if (typeof window !== "undefined") {
+      window.addEventListener(COOKIE_CONSENT_EVENT, onConsentGranted);
+    }
+
+    return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener(COOKIE_CONSENT_EVENT, onConsentGranted);
+      }
+    };
   }, [pathname, searchParams]);
 
   return null;
