@@ -1,3 +1,5 @@
+import { withSentryConfig } from "@sentry/nextjs/config";
+
 // On Cloudflare Pages (@cloudflare/next-on-pages / Vercel CLI), omit `output: "export"`
 // so Next.js builds the Edge server route handlers into .vercel/output/functions.
 // On Netlify (NETLIFY=true) or default local builds, keep `output: "export"`
@@ -35,6 +37,20 @@ const nextConfig = {
     domains: ["images.unsplash.com", "randomuser.me", "avatar.iran.liara.run", "i.pravatar.cc"],
     unoptimized: true,
   },
+  experimental: {
+    instrumentationHook: false,
+  },
 };
 
-export default nextConfig;
+export default withSentryConfig(nextConfig, {
+  org: "olive-ridley-media",
+  project: "careermonke",
+  silent: true,
+  widenClientFileUpload: true,
+  disableLogger: true,
+  // Disable automatic server/edge handler instrumentation to prevent
+  // duplicate webpack module identifier collisions under @cloudflare/next-on-pages
+  autoInstrumentServerFunctions: false,
+  autoInstrumentMiddleware: false,
+  autoInstrumentAppDirectory: false,
+});

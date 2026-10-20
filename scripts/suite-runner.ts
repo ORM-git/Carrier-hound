@@ -34,6 +34,7 @@ const SUITES: SuiteSpec[] = [
   { name: "scripts/test-worldwide-view.ts", command: "npx tsx scripts/test-worldwide-view.ts" },
   { name: "scripts/test-domain-resolution.ts", command: "npx tsx scripts/test-domain-resolution.ts" },
   { name: "scripts/test-env-guards.ts", command: "npx tsx scripts/test-env-guards.ts" },
+  { name: "scripts/test-sentry-config.ts", command: "npx tsx scripts/test-sentry-config.ts" },
 
   // Supabase read/safe-cleanup verification suites (run whenever Supabase credentials exist)
   { name: "scripts/test-filters.ts", command: "npx tsx scripts/test-filters.ts", requiresSupabase: true },
