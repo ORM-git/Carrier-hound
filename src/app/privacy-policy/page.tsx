@@ -106,7 +106,19 @@ export default function PrivacyPolicyPage() {
         </p>
 
         <p className="mb-2">
-          7. Cookies and Local Storage. We utilize minimal local browser storage and session cookies strictly necessary to maintain authentication states and remember your active search filter preferences. You may disable cookies in your browser settings at any time without impacting public job listing search.
+          7. Cookies and monitoring. CareerMonke uses only essential cookies and privacy-preserving error monitoring:
+        </p>
+        <p className="mb-2">
+          - <strong>Essential Cookies for Authentication:</strong> We use essential cookies strictly to maintain secure user authentication sessions (Supabase session).
+        </p>
+        <p className="mb-2">
+          - <strong>Sentry Error Monitoring:</strong> We utilize Sentry error monitoring with PII scrubbing (no email, IP or auth tokens sent).
+        </p>
+        <p className="mb-2">
+          - <strong>No Advertising Cookies:</strong> We do not use any advertising cookies, tracking pixels, or cross-site tracking technologies.
+        </p>
+        <p className="mb-2">
+          - <strong>How to Clear Cookies:</strong> You can clear cookies at any time directly through your web browser preferences or settings. Note that clearing cookies will end your active login session.
         </p>
 
         <p className="mb-2">
