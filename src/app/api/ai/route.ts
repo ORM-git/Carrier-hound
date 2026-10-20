@@ -10,6 +10,7 @@ import {
   OPERATION_CONFIGS,
 } from "@/lib/ai/security";
 import { checkRequiredEnv } from "@/lib/api/envCheck";
+import { checkSharedRateLimit } from "@/lib/api/sharedRateLimit";
 
 export const runtime = "edge";
 
@@ -29,6 +30,8 @@ const AI_RATE_LIMIT = {
 };
 
 function getClientIpFromRequest(req: Request): string {
+  const cfIp = req.headers.get("cf-connecting-ip");
+  if (cfIp) return cfIp.trim();
   const xfwd = req.headers.get("x-forwarded-for");
   if (xfwd) {
     const first = xfwd.split(",")[0].trim();
@@ -66,13 +69,19 @@ function checkRateLimit(
 
 export async function POST(req: Request) {
   try {
-    // 0. Per-IP Rate Limiting (in-memory sliding window)
+    // 0. Per-IP Rate Limiting (shared Supabase store, memory fallback)
     const clientIp = getClientIpFromRequest(req);
-    const ipLimit = checkRateLimit(
-      clientIp,
-      ipRateLimitStore,
+    const ipLimit = await checkSharedRateLimit(
+      `ai:ip:${clientIp}`,
       AI_RATE_LIMIT.ipMaxRequests,
-      AI_RATE_LIMIT.ipWindowMs
+      AI_RATE_LIMIT.ipWindowMs / 1000,
+      () =>
+        checkRateLimit(
+          clientIp,
+          ipRateLimitStore,
+          AI_RATE_LIMIT.ipMaxRequests,
+          AI_RATE_LIMIT.ipWindowMs
+        )
     );
     if (!ipLimit.allowed) {
       return NextResponse.json(
@@ -135,12 +144,18 @@ export async function POST(req: Request) {
       );
     }
 
-    // 1.1 Per-User Burst Rate Limiting (in-memory sliding window)
-    const userLimit = checkRateLimit(
-      user.id,
-      userRateLimitStore,
+    // 1.1 Per-User Burst Rate Limiting (shared Supabase store, memory fallback)
+    const userLimit = await checkSharedRateLimit(
+      `ai:user:${user.id}`,
       AI_RATE_LIMIT.userMaxRequests,
-      AI_RATE_LIMIT.userWindowMs
+      AI_RATE_LIMIT.userWindowMs / 1000,
+      () =>
+        checkRateLimit(
+          user.id,
+          userRateLimitStore,
+          AI_RATE_LIMIT.userMaxRequests,
+          AI_RATE_LIMIT.userWindowMs
+        )
     );
     if (!userLimit.allowed) {
       return NextResponse.json(
@@ -331,3 +346,4 @@ export async function POST(req: Request) {
     );
   }
 }
+
