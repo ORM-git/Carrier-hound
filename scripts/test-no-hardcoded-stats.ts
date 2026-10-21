@@ -32,7 +32,7 @@ function check(desc: string, fn: () => void) {
   }
 }
 
-// Prohibited hardcoded marketing patterns for jobs and companies
+// Prohibited hardcoded marketing patterns for jobs, companies, and sample job cards
 const FORBIDDEN_PATTERNS: { pattern: RegExp; desc: string }[] = [
   { pattern: /16[,.]?423/g, desc: "Stale hardcoded job count 16,423" },
   { pattern: /16[,.]?000\+/g, desc: "Fabricated 16,000+ job marketing count" },
@@ -43,6 +43,9 @@ const FORBIDDEN_PATTERNS: { pattern: RegExp; desc: string }[] = [
   { pattern: /FALLBACK_TOTAL_JOBS\s*=\s*16/g, desc: "Fake hardcoded fallback job count constant" },
   { pattern: /FALLBACK_COMPANIES_SCANNED\s*=\s*500/g, desc: "Fake hardcoded fallback company count constant" },
   { pattern: /totalCorpus:\s*16423/g, desc: "Hardcoded totalCorpus in top10 response" },
+  { pattern: /Tenable/g, desc: "Hardcoded sample job company 'Tenable'" },
+  { pattern: /106,000/g, desc: "Hardcoded sample job salary '106,000'" },
+  { pattern: /141,333/g, desc: "Hardcoded sample job salary '141,333'" },
 ];
 
 function scanDirectories(dirList: string[]): { file: string; line: number; match: string; patternDesc: string }[] {
@@ -185,20 +188,51 @@ check("Top 10 server routes compute real active corpus dynamically from jobs_pub
   );
 });
 
+check("Landing source contains no hardcoded sample jobs (Tenable, 106,000, 141,333) and fetches from jobs_public", () => {
+  const landingPath = path.resolve(process.cwd(), "src", "app", "page.tsx");
+  const mockPath = path.resolve(process.cwd(), "src", "components", "ProductScreenshotMock.tsx");
+  const landingContent = fs.readFileSync(landingPath, "utf8");
+  const mockContent = fs.readFileSync(mockPath, "utf8");
+  const combined = `${landingContent}\n${mockContent}`;
+
+  for (const forbidden of ["Tenable", "106,000", "141,333", "Cribl", "Interface AI", "November 14, 2024"]) {
+    assert.strictEqual(
+      combined.includes(forbidden),
+      false,
+      `Landing source must not contain hardcoded sample job string "${forbidden}"`
+    );
+  }
+
+  assert.ok(
+    mockContent.includes('.from("jobs_public")'),
+    "ProductScreenshotMock must fetch guest jobs from jobs_public"
+  );
+  assert.ok(
+    mockContent.includes('"Verified Employer"'),
+    "ProductScreenshotMock must keep company name masked as 'Verified Employer'"
+  );
+});
+
 // -----------------------------------------------------------------------------
 // SECTION 3: Negative Control
 // -----------------------------------------------------------------------------
 if (IS_NEGATIVE_CONTROL) {
   console.log("\n--- EXECUTING NEGATIVE CONTROL INJECTION ---");
-  // Deliberately simulate encountering a prohibited hardcoded marketing number
-  const simulatedBadCode = "<span>Explore 61,000+ Verified Jobs</span>";
-  const matched = FORBIDDEN_PATTERNS.some((rule) => {
-    rule.pattern.lastIndex = 0;
-    return rule.pattern.test(simulatedBadCode);
-  });
+  // Deliberately simulate encountering prohibited hardcoded marketing numbers and sample job strings
+  const simulatedSamples = [
+    "<span>Explore 61,000+ Verified Jobs</span>",
+    "<p>Tenable, Inc.</p>",
+    "<span>$106,000 - $141,333</span>",
+  ];
+  const allDetected = simulatedSamples.every((sample) =>
+    FORBIDDEN_PATTERNS.some((rule) => {
+      rule.pattern.lastIndex = 0;
+      return rule.pattern.test(sample);
+    })
+  );
 
-  if (matched) {
-    console.error("❌ NEGATIVE CONTROL TRIGGERED: Intentionally injected hardcoded '61,000+ Verified Jobs' was detected!");
+  if (allDetected) {
+    console.error("❌ NEGATIVE CONTROL TRIGGERED: Intentionally injected hardcoded strings ('61,000+', 'Tenable', '106,000', '141,333') were detected!");
     process.exit(1);
   } else {
     process.exit(0);
