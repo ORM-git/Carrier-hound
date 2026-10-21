@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
+import "@/styles/tokens.css";
 import "./globals.css";
 import { ToastContainer } from "react-toastify";
 import BackToTop from "@/components/BackToTop";
