@@ -40,6 +40,11 @@ jobs:
 
       - name: Build Application
         run: npm run build
+        env:
+          # Build the Cloudflare (next-on-pages) variant: production ships on
+          # Cloudflare Pages; the edge-runtime /jobs/detail page cannot go
+          # through the Node prerender step of `output: "export"` builds.
+          CF_PAGES: '1'
 
       - name: Run Test Suite (test:all)
         run: npm run test:all
