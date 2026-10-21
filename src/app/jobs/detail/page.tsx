@@ -16,13 +16,13 @@ import { computeFitDiagnostics, FitDiagnosticsResult } from "@/lib/matcher/scori
 import { addApplicationToTracker, getTrackedApplications, removeApplicationFromTracker } from "@/lib/tracker/storage";
 import { getProAccessStatus } from "@/lib/billing/subscription";
 import { sanitizeExternalUrl, stripHtmlAndExecutableMarkup } from "@/lib/security/xss";
-import dynamic from "next/dynamic";
+import nextDynamic from "next/dynamic";
 import PaywallModal from "@/components/PaywallModal";
 import ProUpgradeScreen from "@/components/billing/ProUpgradeScreen";
 
-const CoverLetterModal = dynamic(() => import("@/components/resume/CoverLetterModal"), { ssr: false });
-const TailorResumeModal = dynamic(() => import("@/components/resume/TailorResumeModal"), { ssr: false });
-const FitDiagnosticsModal = dynamic(() => import("@/components/matcher/FitDiagnosticsModal"), { ssr: false });
+const CoverLetterModal = nextDynamic(() => import("@/components/resume/CoverLetterModal"), { ssr: false });
+const TailorResumeModal = nextDynamic(() => import("@/components/resume/TailorResumeModal"), { ssr: false });
+const FitDiagnosticsModal = nextDynamic(() => import("@/components/matcher/FitDiagnosticsModal"), { ssr: false });
 import type { User } from "@supabase/supabase-js";
 import {
   ArrowLeft,
