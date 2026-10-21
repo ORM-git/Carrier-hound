@@ -46,6 +46,7 @@ import {
 import MatchScoreBadge from "@/components/matcher/MatchScoreBadge";
 import { quickTrackJob } from "@/lib/tracker/storage";
 import { getProAccessStatus } from "@/lib/billing/subscription";
+import { sanitizeExternalUrl } from "@/lib/security/xss";
 import { toast } from "react-toastify";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -1663,7 +1664,7 @@ export default function JobRadarGlobe() {
                         {/* Apply Button: Pro vs Free Gated */}
                         {isPro ? (
                           <a
-                            href={job.applyUrl}
+                            href={sanitizeExternalUrl(job.applyUrl) || "#"}
                             target="_blank"
                             rel="noopener noreferrer"
                             onClick={() => handleApplyClick(job.id)}

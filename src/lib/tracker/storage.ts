@@ -1,5 +1,6 @@
 import { TrackedApplication, ApplicationStage } from "./types";
 import { createClient } from "../supabase/client";
+import { sanitizeTrackerApplicationRecord, stripHtmlAndExecutableMarkup } from "../security/xss";
 
 const LOCAL_STORAGE_KEY = "careermonke_applications_tracker";
 
@@ -150,8 +151,9 @@ export async function addApplicationToTracker(
   app: Omit<TrackedApplication, "id" | "createdAt" | "updatedAt">
 ): Promise<TrackedApplication> {
   const appId = generateUUID();
+  const sanitizedInput = sanitizeTrackerApplicationRecord(app);
   const newApp: TrackedApplication = {
-    ...app,
+    ...sanitizedInput,
     id: appId,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),

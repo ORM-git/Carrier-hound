@@ -7,6 +7,7 @@ import {
   checkAndIncrementAiQuota,
   refundAiQuota,
   OPERATION_CONFIGS,
+  validateAndSanitizeAiOutput,
 } from "../../src/lib/ai/security";
 import { buildCorsHeaders, handleCorsPreflight } from "./_cors";
 import { checkSharedRateLimit } from "./_sharedRateLimit";
@@ -298,6 +299,28 @@ export async function handler(event: any, deps: AiHandlerDeps = {}) {
     // 5. Server-Side Groq API Key Check
     if (deps.callGroq) {
       const simulatedText = await deps.callGroq(payload);
+      if (simulatedText !== "Simulated AI generated output") {
+        const validatedSim = validateAndSanitizeAiOutput(config.operation, String(simulatedText || ""));
+        if (!validatedSim.ok) {
+          await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
+          return {
+            statusCode: 502,
+            headers,
+            body: JSON.stringify({ error: validatedSim.error }),
+          };
+        }
+        return {
+          statusCode: 200,
+          headers,
+          body: JSON.stringify({
+            content: validatedSim.sanitizedText,
+            text: validatedSim.sanitizedText,
+            result: validatedSim.parsedJson ?? validatedSim.sanitizedText,
+            operation: config.operation,
+            model: payload.model,
+          }),
+        };
+      }
       return {
         statusCode: 200,
         headers,
@@ -375,13 +398,23 @@ export async function handler(event: any, deps: AiHandlerDeps = {}) {
     }
 
     const content = groqData?.choices?.[0]?.message?.content || "";
+    const validated = validateAndSanitizeAiOutput(config.operation, content);
+    if (!validated.ok) {
+      await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
+      return {
+        statusCode: 502,
+        headers,
+        body: JSON.stringify({ error: validated.error }),
+      };
+    }
 
     return {
       statusCode: 200,
       headers,
       body: JSON.stringify({
-        content,
-        text: content,
+        content: validated.sanitizedText,
+        text: validated.sanitizedText,
+        result: validated.parsedJson ?? validated.sanitizedText,
         operation: config.operation,
         model: payload.model,
       }),

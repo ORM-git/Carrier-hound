@@ -4,6 +4,7 @@ import { CandidateProfile } from "../resume/types";
 import { computeFitDiagnostics, FitDiagnosticsResult } from "../matcher/scoring";
 import { formatSalary } from "@/lib/salary/parser";
 import type { UserPreferences } from "@/lib/auth/types";
+import { sanitizeExternalUrl, stripHtmlAndExecutableMarkup } from "@/lib/security/xss";
 
 export interface LiveJob {
   id: string;
@@ -416,12 +417,12 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
                 mappedJobs.forEach((job) => {
                   const u = unlockedMap.get(job.id);
                   if (u) {
-                    if (u.company) job.company = u.company;
+                    if (u.company) job.company = stripHtmlAndExecutableMarkup(u.company);
                     if (u.salary_text || u.salary_min != null) {
-                      job.salary = formatSalary(u.salary_min, u.salary_max, u.currency, u.salary_period) || u.salary_text || "";
+                      job.salary = stripHtmlAndExecutableMarkup(formatSalary(u.salary_min, u.salary_max, u.currency, u.salary_period) || u.salary_text || "");
                     }
-                    if (u.apply_url) job.applyUrl = u.apply_url;
-                    if (u.description) job.description = u.description;
+                    if (u.apply_url) job.applyUrl = sanitizeExternalUrl(u.apply_url) || "";
+                    if (u.description) job.description = stripHtmlAndExecutableMarkup(u.description);
                     if (u.skills) job.skills = u.skills;
                   }
                 });
@@ -522,20 +523,20 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
           if (job) {
             return {
               id: job.id,
-              title: job.title || "Untitled Position",
-              company: job.company || "Verified Employer",
-              location: job.location || (job.remote ? "Remote (Worldwide)" : "Remote"),
+              title: stripHtmlAndExecutableMarkup(job.title || "Untitled Position"),
+              company: stripHtmlAndExecutableMarkup(job.company || "Verified Employer"),
+              location: stripHtmlAndExecutableMarkup(job.location || (job.remote ? "Remote (Worldwide)" : "Remote")),
               date: formatDate(job.posted_at || job.first_seen_at || job.created_at),
-              salary: formatSalary(job.salary_min, job.salary_max, job.currency, job.salary_period) || job.salary_text || "",
-              category: job.category || "engineering",
+              salary: stripHtmlAndExecutableMarkup(formatSalary(job.salary_min, job.salary_max, job.currency, job.salary_period) || job.salary_text || ""),
+              category: stripHtmlAndExecutableMarkup(job.category || "engineering"),
               remote: Boolean(job.remote),
               remoteScope: job.remote_scope || undefined,
               remoteEligibility: job.remote_eligibility || undefined,
               country: job.country || job.country_code || "US",
               type: job.job_type === "internship" ? "Internship" : "Full-time",
               directSource: Boolean(job.verified ?? true),
-              applyUrl: job.apply_url || "",
-              description: job.description || "",
+              applyUrl: sanitizeExternalUrl(job.apply_url) || "",
+              description: stripHtmlAndExecutableMarkup(job.description || ""),
               skills: job.skills || [],
               postedAt: job.posted_at || job.first_seen_at || job.created_at,
             };

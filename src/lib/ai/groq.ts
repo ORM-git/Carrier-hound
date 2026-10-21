@@ -4,6 +4,8 @@ import {
   validateCoverLetter,
   formatContactHeader,
 } from "../resume/tailor";
+import { validateAndSanitizeAiOutput } from "./security";
+import { stripHtmlAndExecutableMarkup } from "../security/xss";
 import { createClient } from "../supabase/client";
 
 /**
@@ -86,7 +88,11 @@ export async function extractResumeFactsWithGroq(
     });
 
     if (output) {
-      const parsed = JSON.parse(output);
+      const check = validateAndSanitizeAiOutput("resume_extraction", output);
+      if (!check.ok || !check.parsedJson) {
+        return baseProfile;
+      }
+      const parsed = check.parsedJson;
       return {
         ...baseProfile,
         name: parsed.name || baseProfile.name,
@@ -135,8 +141,17 @@ export async function generateGroqTailoredCoverLetter(
     });
 
     if (output && output.trim().length > 80) {
+      const check = validateAndSanitizeAiOutput("cover_letter", output);
+      if (!check.ok) {
+        return {
+          text: fallback.fullText,
+          isValidated: true,
+          error: check.error,
+        };
+      }
+      const cleanOutput = check.sanitizedText;
       // Validate the generated paragraphs against candidate facts
-      const validation = validateCoverLetter(output, candidate, job);
+      const validation = validateCoverLetter(cleanOutput, candidate, job);
       if (!validation.valid) {
         console.warn("AI cover letter failed strict evidence verification:", validation.reasons);
         return {
@@ -150,10 +165,10 @@ export async function generateGroqTailoredCoverLetter(
       const header = formatContactHeader(candidate);
       const blocks: string[] = [];
       if (header) blocks.push(header);
-      blocks.push(`Dear Hiring Team at ${job.company},`);
-      blocks.push(output.trim());
+      blocks.push(`Dear Hiring Team at ${stripHtmlAndExecutableMarkup(job.company)},`);
+      blocks.push(cleanOutput.trim());
       blocks.push("Sincerely,");
-      blocks.push(candidate.name || "Candidate");
+      blocks.push(stripHtmlAndExecutableMarkup(candidate.name || "Candidate"));
 
       return {
         text: blocks.join("\n\n"),

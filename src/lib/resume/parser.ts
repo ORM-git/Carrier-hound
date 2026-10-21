@@ -1,4 +1,82 @@
 import { CandidateProfile, ExtractedFact, ParsedResumeResult, WorkExperienceItem, EducationItem } from "./types";
+import {
+  sanitizeCandidateProfile,
+  sanitizeDownloadFilename,
+  stripHtmlAndExecutableMarkup,
+} from "../security/xss";
+
+export const MAX_RESUME_UPLOAD_BYTES = 10 * 1024 * 1024; // 10 MB
+export const ALLOWED_RESUME_EXTENSIONS = new Set(["pdf", "docx", "txt", "md"]);
+
+export interface ResumeUploadValidationResult {
+  valid: boolean;
+  sanitizedFilename: string;
+  extension: string;
+  error?: string;
+}
+
+/**
+ * Validates an uploaded resume file's size, extension allowlist, and sanitizes its filename
+ * so HTML/XSS payloads in filenames (e.g. `<img src=x onerror=alert(1)>.pdf`) are neutralized.
+ */
+export function validateResumeUploadFile(file: {
+  name?: string;
+  size?: number;
+  type?: string;
+}): ResumeUploadValidationResult {
+  const rawName = typeof file?.name === "string" ? file.name : "";
+  const sanitizedFilename = sanitizeDownloadFilename(rawName, "resume");
+  const dotParts = rawName.split(".");
+  const extension = dotParts.length > 1 ? dotParts.pop()!.toLowerCase().trim() : "";
+
+  if (typeof file?.size !== "number" || file.size <= 0) {
+    return {
+      valid: false,
+      sanitizedFilename,
+      extension,
+      error: "Uploaded file is empty.",
+    };
+  }
+
+  if (file.size > MAX_RESUME_UPLOAD_BYTES) {
+    return {
+      valid: false,
+      sanitizedFilename,
+      extension,
+      error: "File size exceeds 10MB limit. Please upload a smaller document.",
+    };
+  }
+
+  if (!extension || !ALLOWED_RESUME_EXTENSIONS.has(extension)) {
+    return {
+      valid: false,
+      sanitizedFilename,
+      extension,
+      error: "Unsupported file format. Please upload a PDF, DOCX, TXT, or MD document.",
+    };
+  }
+
+  return {
+    valid: true,
+    sanitizedFilename,
+    extension,
+  };
+}
+
+/**
+ * Strips embedded PDF /JavaScript and /JS action dictionaries and streams from raw PDF content
+ * so embedded PDF scripts are never evaluated or extracted as resume text.
+ */
+export function stripEmbeddedPdfJavaScript(rawPdfContent: string): string {
+  if (!rawPdfContent || typeof rawPdfContent !== "string") return "";
+  return rawPdfContent
+    .replace(/\/JavaScript\s*<<[\s\S]*?>>/gi, "")
+    .replace(/\/JS\s*<<[\s\S]*?>>/gi, "")
+    .replace(/\/JS\s*\([^)]*\)/gi, "")
+    .replace(/\/JS\s*<[^>]*>/gi, "")
+    .replace(/\/S\s*\/JavaScript\b/gi, "")
+    .replace(/\bapp\.alert\s*\([^)]*\)/gi, "");
+}
 
 // Canonical dictionary of tech & industry skills across domains
 export const SKILLS_TAXONOMY: string[] = [
@@ -31,7 +109,12 @@ export const SKILLS_TAXONOMY: string[] = [
  * Extracts raw text from an uploaded File (PDF, DOCX, or TXT)
  */
 export async function extractTextFromFile(file: File): Promise<string> {
-  const extension = file.name.split(".").pop()?.toLowerCase();
+  const validation = validateResumeUploadFile(file);
+  if (!validation.valid) {
+    throw new Error(validation.error || "Invalid resume file.");
+  }
+
+  const extension = validation.extension;
 
   if (extension === "docx") {
     // Dynamically import mammoth
@@ -39,19 +122,20 @@ export async function extractTextFromFile(file: File): Promise<string> {
       const mammoth = await import("mammoth");
       const arrayBuffer = await file.arrayBuffer();
       const result = await mammoth.extractRawText({ arrayBuffer });
-      return result.value || "";
+      return stripHtmlAndExecutableMarkup(result.value || "");
     } catch (err) {
       console.warn("Mammoth DOCX extraction failed, falling back to basic reader", err);
-      return await file.text();
+      return stripHtmlAndExecutableMarkup(await file.text());
     }
   }
 
   if (extension === "pdf") {
-    return extractTextFromPdf(file);
+    const pdfText = await extractTextFromPdf(file);
+    return stripHtmlAndExecutableMarkup(pdfText);
   }
 
-  // Plain text / markdown fallback
-  return await file.text();
+  // Plain text / markdown (.txt, .md)
+  return stripHtmlAndExecutableMarkup(await file.text());
 }
 
 /**
@@ -81,7 +165,7 @@ async function extractTextFromPdf(file: File): Promise<string> {
       }
 
       if (pdfjs) {
-        const loadingTask = pdfjs.getDocument({ data: arrayBuffer });
+        const loadingTask = pdfjs.getDocument({ data: arrayBuffer, isEvalSupported: false });
         const pdf = await loadingTask.promise;
         let fullText = "";
 
@@ -120,14 +204,15 @@ async function extractTextFromPdf(file: File): Promise<string> {
     console.warn("Client PDF.js parsing failed, trying text decoder fallback", err);
   }
 
-  // Fallback: decode text strings from PDF binary stream
+  // Fallback: decode text strings from PDF binary stream (stripping any embedded /JS or /JavaScript actions)
   try {
-    const text = await file.text();
+    const rawPdfText = await file.text();
+    const text = stripEmbeddedPdfJavaScript(rawPdfText);
     // Basic regex extract of text objects within PDF streams (BT...ET)
     const matches = text.match(/\(([^)]+)\)\s*Tj/g);
     if (matches && matches.length > 10) {
       const decoded = matches.map((m) => m.replace(/\(|\)\s*Tj/g, "")).join(" ");
-      if (decoded.trim().length > 40) return decoded;
+      if (decoded.trim().length > 40) return stripHtmlAndExecutableMarkup(decoded);
     }
   } catch (_) {}
 
@@ -138,7 +223,8 @@ async function extractTextFromPdf(file: File): Promise<string> {
  * Parses raw resume text into structured CandidateProfile and ExtractedFact[]
  * NEVER invents facts: ambiguities are marked as "needs_review".
  */
-export function parseResumeText(rawText: string): ParsedResumeResult {
+export function parseResumeText(inputRawText: string): ParsedResumeResult {
+  const rawText = stripHtmlAndExecutableMarkup(inputRawText || "");
   if (!rawText || rawText.trim().length < 15) {
     throw new Error("Resume content is empty or unreadable. Please paste your resume text or upload a valid PDF/Word file.");
   }
@@ -465,7 +551,7 @@ export function parseResumeText(rawText: string): ParsedResumeResult {
     ? `${confirmedSkills.slice(0, 2).join(" / ")} Specialist`
     : "";
 
-  const profile: CandidateProfile = {
+  const profile: CandidateProfile = sanitizeCandidateProfile({
     name: name || "Candidate",
     email,
     phone,
@@ -478,7 +564,7 @@ export function parseResumeText(rawText: string): ParsedResumeResult {
     certifications,
     rawText,
     updatedAt: new Date().toISOString(),
-  };
+  });
 
   return {
     profile,

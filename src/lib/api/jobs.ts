@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/client";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { expandCategoryFilter, normalizeCategorySlug } from "@/lib/taxonomy";
 import type { Job } from "@/data/jobs";
+import { sanitizeExternalUrl, stripHtmlAndExecutableMarkup } from "@/lib/security/xss";
 
 export interface SearchJobsParams {
   q?: string;
@@ -211,9 +212,9 @@ export async function searchJobs(
 
   const mappedJobs: Job[] = (data || []).map((d: any) => ({
     id: d.id,
-    title: d.title,
-    company: d.company,
-    location: d.location,
+    title: stripHtmlAndExecutableMarkup(d.title),
+    company: stripHtmlAndExecutableMarkup(d.company),
+    location: stripHtmlAndExecutableMarkup(d.location),
     date: d.date || (d.first_seen_at ? new Date(d.first_seen_at).toLocaleDateString() : "Today"),
     salary: d.salary_text || "Competitive",
     category: d.category || "software",
@@ -226,7 +227,7 @@ export async function searchJobs(
         ? "Full-time"
         : d.job_type || "Full-time",
     directSource: true,
-    applyUrl: d.apply_url || "#",
+    applyUrl: sanitizeExternalUrl(d.apply_url) || "#",
   }));
 
   // Calculate facet counts for categories and countries based on current filtered results

@@ -11,6 +11,7 @@ import {
 } from "@/lib/resume/storage";
 import { downloadCoverLetterPdf } from "@/lib/resume/atsPdfGenerator";
 import { generateGroqTailoredCoverLetter, getGroqApiKey } from "@/lib/ai/groq";
+import { buildCoverLetterDocHtml, sanitizeDownloadFilename } from "@/lib/security/xss";
 import { toast } from "react-toastify";
 
 interface CoverLetterModalProps {
@@ -140,26 +141,24 @@ export default function CoverLetterModal({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `Cover_Letter_${(job.company || "Company").replace(/\s+/g, "_")}_${(job.title || "Role").replace(/\s+/g, "_")}.txt`;
+    const safeComp = sanitizeDownloadFilename(job.company, "Company");
+    const safeRole = sanitizeDownloadFilename(job.title, "Role");
+    a.download = `Cover_Letter_${safeComp}_${safeRole}.txt`;
     a.click();
     URL.revokeObjectURL(url);
     toast.success("Cover letter downloaded as text file!");
   };
 
   const handleDownloadDoc = () => {
-    // Generate clean Word-compatible document
-    const html = `<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><title>Cover Letter - ${job.company}</title>
-<style>body { font-family: Calibri, Arial, sans-serif; font-size: 11pt; line-height: 1.5; margin: 1in; white-space: pre-line; }</style>
-</head>
-<body>${content.replace(/\n/g, "<br>")}</body>
-</html>`;
+    // Generate clean Word-compatible document with strict HTML escaping
+    const html = buildCoverLetterDocHtml(job.company, content);
     const blob = new Blob([html], { type: "application/msword;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `Cover_Letter_${(job.company || "Company").replace(/\s+/g, "_")}_${(job.title || "Role").replace(/\s+/g, "_")}.doc`;
+    const safeComp = sanitizeDownloadFilename(job.company, "Company");
+    const safeRole = sanitizeDownloadFilename(job.title, "Role");
+    a.download = `Cover_Letter_${safeComp}_${safeRole}.doc`;
     a.click();
     URL.revokeObjectURL(url);
     toast.success("Cover letter downloaded as Word document!");
