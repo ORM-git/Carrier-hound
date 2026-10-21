@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import BrandIcon from "./BrandIcon";
@@ -26,18 +26,88 @@ import {
   Sparkles,
   BookOpen
 } from "lucide-react";
+import { cnTokens } from "@/components/ui/cn-tokens";
+import { buttonClasses } from "@/components/ui/button";
+
+/* Token-driven class helpers (Redesign PART 1) */
+const desktopLinkClass = (active: boolean) =>
+  cnTokens(
+    "inline-flex items-center h-10 px-2.5 lg:px-3 rounded-tk-lg text-[13px] lg:text-tk-body-sm font-medium",
+    "transition-colors duration-tk-fast ease-tk-standard",
+    active ? "bg-brand-50 text-brand-700" : "text-ink-muted hover:text-ink hover:bg-surface-muted"
+  );
+
+const dropdownItemClass =
+  "flex items-center gap-2.5 px-3 min-h-[40px] rounded-tk-md text-tk-body-sm font-medium text-ink-muted hover:bg-surface-muted hover:text-ink transition-colors duration-tk-fast";
+
+const mobileLinkClass = (active: boolean) =>
+  cnTokens(
+    "flex items-center gap-3 px-3 min-h-[44px] rounded-tk-lg text-tk-body-sm font-semibold",
+    "transition-colors duration-tk-fast",
+    active ? "bg-brand-50 text-brand-700" : "text-ink hover:bg-surface-muted"
+  );
+
+const mobileSectionLabel =
+  "px-3 pt-tk-2 pb-tk-half text-[11px] font-bold uppercase tracking-wider text-ink-subtle";
+
+type MenuState = "closed" | "open" | "closing";
 
 export default function GuideHeader() {
   const pathname = usePathname();
   const router = useRouter();
 
   const [user, setUser] = useState<User | null>(null);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [menuState, setMenuState] = useState<MenuState>("closed");
   const [exploreOpen, setExploreOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
 
   const exploreRef = useRef<HTMLDivElement>(null);
   const accountRef = useRef<HTMLDivElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+
+  const mobileMenuOpen = menuState === "open";
+  const mobileMenuMounted = menuState !== "closed";
+
+  // Open/close the mobile panel. Closing plays a short ease-in exit before unmount.
+  const setMobileMenuOpen = useCallback((open: boolean) => {
+    setMenuState((prev) => (open ? "open" : prev === "open" ? "closing" : prev));
+  }, []);
+
+  useEffect(() => {
+    if (menuState !== "closing") return;
+    const reduceMotion =
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    const t = window.setTimeout(() => setMenuState("closed"), reduceMotion ? 0 : 150);
+    return () => window.clearTimeout(t);
+  }, [menuState]);
+
+  // Lock page scroll + Escape to close while the mobile panel is open.
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setMobileMenuOpen(false);
+        menuButtonRef.current?.focus();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [mobileMenuOpen, setMobileMenuOpen]);
+
+  // Subtle blur/elevation only once the page has scrolled.
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 8);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   useEffect(() => {
     const checkAuth = () => {
@@ -62,8 +132,18 @@ export default function GuideHeader() {
         setAccountOpen(false);
       }
     };
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setExploreOpen(false);
+        setAccountOpen(false);
+      }
+    };
     document.addEventListener("mousedown", handleOutsideClick);
-    return () => document.removeEventListener("mousedown", handleOutsideClick);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+      document.removeEventListener("keydown", handleEscape);
+    };
   }, []);
 
   const [isPro, setIsPro] = useState(false);
@@ -91,79 +171,57 @@ export default function GuideHeader() {
 
   const userInitials = (user?.email ? user.email.slice(0, 2).toUpperCase() : "CM");
 
+  const isJobsActive = pathname === "/jobs" || Boolean(pathname?.startsWith("/job-search"));
+  const isApplicationsActive = pathname === "/applications" || pathname === "/tracker";
+  const isRemoteActive = Boolean(pathname?.startsWith("/remote"));
+  const closeMobile = () => setMobileMenuOpen(false);
+
   return (
     <>
-      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-gray-100 shadow-2xs">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+      <header
+        className={cnTokens(
+          "sticky top-0 z-tk-header border-b",
+          "transition-[background-color,border-color,box-shadow] duration-tk-base ease-tk-standard",
+          scrolled
+            ? "bg-surface/80 backdrop-blur-md border-line shadow-tk-sm"
+            : "bg-surface border-line/70"
+        )}
+      >
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-tk-2">
         {/* Left: Brand */}
-        <Link href={user ? "/dashboard" : "/"} className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center p-0.5 shadow-xs border border-gray-100">
+        <Link
+          href={user ? "/dashboard" : "/"}
+          className="flex items-center gap-2.5 shrink-0 min-h-[44px] rounded-tk-lg"
+        >
+          <div className="w-8 h-8 rounded-tk-full bg-surface flex items-center justify-center p-0.5 shadow-tk-xs border border-line">
             <BrandIcon className="w-7 h-7" />
           </div>
-          <span className="text-xl font-black text-blue-600 tracking-tight">CareerMonke</span>
+          <span className="text-xl font-black text-brand-600 tracking-tight">CareerMonke</span>
         </Link>
 
         {/* =================================================================== */}
         {/* DESKTOP NAV: AUTHENTICATED USER                                      */}
         {/* =================================================================== */}
         {user ? (
-          <nav className="hidden md:flex items-center gap-1 sm:gap-2">
-            <Link
-              href="/dashboard"
-              className={`px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold transition ${
-                pathname === "/dashboard"
-                  ? "bg-blue-50 text-blue-600"
-                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
-              }`}
-            >
+          <>
+          <nav aria-label="Primary" className="hidden md:flex flex-1 items-center justify-center gap-0.5 lg:gap-1">
+            <Link href="/dashboard" className={desktopLinkClass(pathname === "/dashboard")}>
               Dashboard
             </Link>
 
-            <Link
-              href="/jobs"
-              prefetch={false}
-              className={`px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold transition ${
-                pathname === "/jobs" || pathname?.startsWith("/job-search")
-                  ? "bg-blue-50 text-blue-600"
-                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
-              }`}
-            >
+            <Link href="/jobs" prefetch={false} className={desktopLinkClass(isJobsActive)}>
               Jobs
             </Link>
 
-            <Link
-              href="/resume"
-              prefetch={false}
-              className={`px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold transition ${
-                pathname === "/resume"
-                  ? "bg-blue-50 text-blue-600"
-                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
-              }`}
-            >
+            <Link href="/resume" prefetch={false} className={desktopLinkClass(pathname === "/resume")}>
               ATS Resume
             </Link>
 
-            <Link
-              href="/applications"
-              prefetch={false}
-              className={`px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold transition ${
-                pathname === "/applications" || pathname === "/tracker"
-                  ? "bg-blue-50 text-blue-600"
-                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
-              }`}
-            >
+            <Link href="/applications" prefetch={false} className={desktopLinkClass(isApplicationsActive)}>
               Applications
             </Link>
 
-            <Link
-              href="/remote"
-              prefetch={false}
-              className={`px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold transition ${
-                pathname?.startsWith("/remote")
-                  ? "bg-blue-50 text-blue-600"
-                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
-              }`}
-            >
+            <Link href="/remote" prefetch={false} className={desktopLinkClass(isRemoteActive)}>
               Resources
             </Link>
 
@@ -172,92 +230,100 @@ export default function GuideHeader() {
               <button
                 type="button"
                 onClick={() => setExploreOpen(!exploreOpen)}
-                className="flex items-center gap-1 px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition cursor-pointer"
+                aria-expanded={exploreOpen}
+                aria-haspopup="true"
+                className={cnTokens(desktopLinkClass(false), "gap-1 cursor-pointer")}
               >
                 <span>Explore</span>
-                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${exploreOpen ? "rotate-180" : ""}`} />
+                <ChevronDown
+                  className={`w-3.5 h-3.5 transition-transform duration-tk-fast ${exploreOpen ? "rotate-180" : ""}`}
+                />
               </button>
 
               {exploreOpen && (
-                <div className="absolute left-0 mt-1 w-48 bg-white border border-slate-200 rounded-xl shadow-lg py-1.5 z-50 animate-fadeIn">
+                <div className="absolute left-0 mt-2 w-52 bg-surface border border-line rounded-tk-xl shadow-tk-lg p-1.5 z-tk-dropdown motion-safe:animate-tk-slide-down-in">
                   <Link
                     href="/radar"
                     prefetch={false}
                     onClick={() => setExploreOpen(false)}
-                    className="flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-blue-600"
+                    className={dropdownItemClass}
                   >
-                    <Globe className="w-4 h-4 text-cyan-600" />
+                    <Globe className="w-4 h-4 text-brand-600" />
                     <span>3D Job Radar</span>
                   </Link>
                   <Link
                     href="/worldwide"
                     prefetch={false}
                     onClick={() => setExploreOpen(false)}
-                    className="flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-blue-600"
+                    className={dropdownItemClass}
                   >
-                    <Building className="w-4 h-4 text-slate-500" />
+                    <Building className="w-4 h-4 text-ink-subtle" />
                     <span>Companies Hiring</span>
                   </Link>
                 </div>
               )}
             </div>
+          </nav>
 
             {/* Account Dropdown */}
-            <div className="relative ml-2" ref={accountRef}>
+            <div className="relative hidden md:block shrink-0" ref={accountRef}>
               <button
                 type="button"
                 onClick={() => setAccountOpen(!accountOpen)}
-                className="flex items-center gap-2 pl-2 pr-1.5 py-1 rounded-full border border-slate-200 bg-white hover:bg-slate-50 transition cursor-pointer shadow-2xs"
+                aria-expanded={accountOpen}
+                aria-haspopup="true"
+                aria-label="Account menu"
+                className="flex items-center gap-2 pl-1 pr-2 h-10 rounded-tk-full border border-line bg-surface hover:bg-surface-muted transition-colors duration-tk-fast cursor-pointer shadow-tk-xs"
               >
-                <div className="w-7 h-7 rounded-full bg-blue-600 text-white font-bold text-xs flex items-center justify-center">
+                <div className="w-8 h-8 rounded-tk-full bg-brand-600 text-ink-inverse font-bold text-xs flex items-center justify-center">
                   {userInitials}
                 </div>
                 {isPro && (
-                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800">
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-tk-xs bg-success-100 text-success-700">
                     Pro
                   </span>
                 )}
-                <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                <ChevronDown className="w-3.5 h-3.5 text-ink-subtle" />
               </button>
 
               {accountOpen && (
-                <div className="absolute right-0 mt-2 w-56 bg-white border border-slate-200 rounded-2xl shadow-xl py-2 z-50 animate-fadeIn divide-y divide-slate-100">
-                  <div className="px-4 py-2">
-                    <p className="text-[11px] text-slate-400 uppercase font-bold tracking-wider">Signed in as</p>
-                    <p className="text-xs font-semibold text-slate-900 truncate">{user.email}</p>
+                <div className="absolute right-0 mt-2 w-60 bg-surface border border-line rounded-tk-xl shadow-tk-xl p-1.5 z-tk-dropdown motion-safe:animate-tk-slide-down-in divide-y divide-line">
+                  <div className="px-3 py-2">
+                    <p className="text-[11px] text-ink-subtle uppercase font-bold tracking-wider">Signed in as</p>
+                    <p className="text-tk-body-sm font-semibold text-ink truncate">{user.email}</p>
                   </div>
 
                   <div className="py-1">
                     <Link
                       href="/settings?tab=preferences"
                       onClick={() => setAccountOpen(false)}
-                      className="flex items-center gap-2.5 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-blue-600"
+                      className={dropdownItemClass}
                     >
-                      <Settings className="w-3.5 h-3.5" />
+                      <Settings className="w-4 h-4" />
                       <span>Preferences</span>
                     </Link>
                     <Link
                       href="/settings?tab=notifications"
                       onClick={() => setAccountOpen(false)}
-                      className="flex items-center gap-2.5 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-blue-600"
+                      className={dropdownItemClass}
                     >
-                      <Bell className="w-3.5 h-3.5" />
+                      <Bell className="w-4 h-4" />
                       <span>Notifications</span>
                     </Link>
                     <Link
                       href="/settings?tab=billing"
                       onClick={() => setAccountOpen(false)}
-                      className="flex items-center gap-2.5 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-blue-600"
+                      className={dropdownItemClass}
                     >
-                      <CreditCard className="w-3.5 h-3.5" />
+                      <CreditCard className="w-4 h-4" />
                       <span>Billing</span>
                     </Link>
                     <a
                       href="mailto:support@careermonke.com"
                       onClick={() => setAccountOpen(false)}
-                      className="flex items-center gap-2.5 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-blue-600"
+                      className={dropdownItemClass}
                     >
-                      <HelpCircle className="w-3.5 h-3.5" />
+                      <HelpCircle className="w-4 h-4" />
                       <span>Help & Support</span>
                     </a>
                   </div>
@@ -266,31 +332,28 @@ export default function GuideHeader() {
                     <button
                       type="button"
                       onClick={handleSignOut}
-                      className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 text-left cursor-pointer"
+                      className="w-full flex items-center gap-2.5 px-3 min-h-[40px] rounded-tk-md text-tk-body-sm font-semibold text-danger-700 hover:bg-danger-50 text-left cursor-pointer transition-colors duration-tk-fast"
                     >
-                      <LogOut className="w-3.5 h-3.5" />
+                      <LogOut className="w-4 h-4" />
                       <span>Sign Out</span>
                     </button>
                   </div>
                 </div>
               )}
             </div>
-          </nav>
+          </>
         ) : (
           /* =================================================================== */
           /* DESKTOP NAV: PUBLIC GUEST                                            */
           /* =================================================================== */
-          <nav className="hidden md:flex items-center gap-6">
-            <Link href="/remote" className="text-sm font-medium text-slate-600 hover:text-blue-600 transition">
+          <nav aria-label="Primary" className="hidden md:flex items-center gap-tk-1">
+            <Link href="/remote" className={desktopLinkClass(isRemoteActive)}>
               Resources
             </Link>
-            <Link href="/login" className="text-sm font-semibold text-slate-700 hover:text-blue-600 px-3 py-2 transition">
+            <Link href="/login" className={buttonClasses({ variant: "ghost", size: "sm" })}>
               Sign In
             </Link>
-            <Link
-              href="/signup"
-              className="inline-flex items-center justify-center bg-[#2563EB] hover:bg-[#1D4ED8] active:scale-[0.98] text-white px-4 py-2.5 min-h-[40px] rounded-xl text-sm font-bold transition shadow-xs cursor-pointer"
-            >
+            <Link href="/signup" className={buttonClasses({ variant: "primary", size: "sm", className: "px-tk-2" })}>
               <span>Get started</span>
             </Link>
           </nav>
@@ -299,179 +362,133 @@ export default function GuideHeader() {
         {/* Mobile Hamburger Menu button */}
         <div className="flex items-center gap-2 md:hidden">
           <button
+            ref={menuButtonRef}
             type="button"
-            onClick={() => setMobileMenuOpen(true)}
-            aria-label="Open navigation menu"
-            className="inline-flex items-center gap-1.5 px-3 py-2 min-h-[40px] rounded-xl border border-slate-200 text-xs font-bold text-slate-700 bg-white shadow-2xs active:bg-slate-100"
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            aria-label={mobileMenuOpen ? "Close navigation menu" : "Open navigation menu"}
+            aria-expanded={mobileMenuOpen}
+            aria-controls="mobile-nav-panel"
+            className="inline-flex items-center justify-center w-11 h-11 rounded-tk-lg border border-line text-ink bg-surface shadow-tk-xs hover:bg-surface-muted active:bg-surface-sunken transition-colors duration-tk-fast cursor-pointer"
           >
-            <Menu className="w-4 h-4" />
-            <span>Menu</span>
+            {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
         </div>
       </div>
     </header>
 
     {/* =================================================================== */}
-    {/* MOBILE DRAWER: OUTSIDE HEADER TO PREVENT 64PX BACKDROP-FILTER CLIPPING */}
+    {/* MOBILE PANEL: OUTSIDE HEADER TO PREVENT 64PX BACKDROP-FILTER CLIPPING */}
+    {/* Slides down beneath the 64px header; ease-in exit before unmount.     */}
     {/* =================================================================== */}
-    {mobileMenuOpen && (
-      <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex justify-end md:hidden animate-fadeIn">
-        <div className="w-full max-w-xs bg-white h-dvh min-h-screen shadow-2xl p-6 pb-28 sm:pb-24 flex flex-col justify-between overflow-y-auto">
-          <div className="space-y-6">
-            <div className="flex items-center justify-between pb-4 border-b border-gray-100">
-              <Link
-                href={user ? "/dashboard" : "/"}
-                onClick={() => setMobileMenuOpen(false)}
-                className="flex items-center gap-2"
-              >
-                <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center shadow-xs p-0.5 border border-gray-100">
-                  <BrandIcon className="w-7 h-7" />
-                </div>
-                <span className="font-bold text-lg text-blue-600">CareerMonke</span>
+    {mobileMenuMounted && (
+      <div className="fixed inset-x-0 top-16 bottom-0 z-tk-overlay md:hidden">
+        {/* Backdrop */}
+        <div
+          role="presentation"
+          onClick={closeMobile}
+          className={cnTokens(
+            "absolute inset-0 bg-ink/40",
+            mobileMenuOpen ? "motion-safe:animate-tk-fade-in" : "motion-safe:animate-tk-fade-out opacity-0"
+          )}
+        />
+
+        <div
+          id="mobile-nav-panel"
+          className={cnTokens(
+            "relative bg-surface border-b border-line shadow-tk-xl rounded-b-tk-2xl",
+            "max-h-[calc(100dvh-4rem)] overflow-y-auto overscroll-contain px-4 pt-tk-1 pb-tk-3",
+            mobileMenuOpen ? "motion-safe:animate-tk-slide-down-in" : "motion-safe:animate-tk-slide-up-out opacity-0"
+          )}
+        >
+          {user ? (
+            <nav aria-label="Mobile" className="space-y-0.5">
+              <div className={mobileSectionLabel}>Main Navigation</div>
+              <Link href="/dashboard" onClick={closeMobile} className={mobileLinkClass(pathname === "/dashboard")}>
+                <LayoutDashboard className="w-4 h-4 text-brand-600" />
+                <span>Dashboard</span>
               </Link>
-              <button
-                type="button"
-                onClick={() => setMobileMenuOpen(false)}
-                className="p-2 rounded-lg text-slate-400 hover:text-slate-700 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+              <Link href="/jobs" prefetch={false} onClick={closeMobile} className={mobileLinkClass(isJobsActive)}>
+                <Briefcase className="w-4 h-4 text-brand-600" />
+                <span>Jobs</span>
+              </Link>
+              <Link href="/resume" prefetch={false} onClick={closeMobile} className={mobileLinkClass(pathname === "/resume")}>
+                <FileText className="w-4 h-4 text-brand-600" />
+                <span>ATS Resume</span>
+              </Link>
+              <Link href="/applications" prefetch={false} onClick={closeMobile} className={mobileLinkClass(isApplicationsActive)}>
+                <CheckSquare className="w-4 h-4 text-brand-600" />
+                <span>Applications</span>
+              </Link>
+              <Link href="/remote" prefetch={false} onClick={closeMobile} className={mobileLinkClass(isRemoteActive)}>
+                <BookOpen className="w-4 h-4 text-brand-600" />
+                <span>Resources</span>
+              </Link>
 
-            {user ? (
-              <div className="space-y-1.5">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-3 pb-1">
-                  Main Navigation
-                </div>
-                <Link
-                  href="/dashboard"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 text-xs font-bold text-slate-800"
-                >
-                  <LayoutDashboard className="w-4 h-4 text-blue-600" />
-                  <span>Dashboard</span>
-                </Link>
-                <Link
-                  href="/jobs"
-                  prefetch={false}
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 text-xs font-bold text-slate-800"
-                >
-                  <Briefcase className="w-4 h-4 text-blue-600" />
-                  <span>Jobs</span>
-                </Link>
-                <Link
-                  href="/resume"
-                  prefetch={false}
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 text-xs font-bold text-slate-800"
-                >
-                  <FileText className="w-4 h-4 text-blue-600" />
-                  <span>ATS Resume</span>
-                </Link>
-                <Link
-                  href="/applications"
-                  prefetch={false}
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 text-xs font-bold text-slate-800"
-                >
-                  <CheckSquare className="w-4 h-4 text-blue-600" />
-                  <span>Applications</span>
-                </Link>
-                <Link
-                  href="/remote"
-                  prefetch={false}
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 text-xs font-bold text-slate-800"
-                >
-                  <BookOpen className="w-4 h-4 text-blue-600" />
-                  <span>Resources</span>
-                </Link>
+              <div className={mobileSectionLabel}>Explore</div>
+              <Link href="/radar" prefetch={false} onClick={closeMobile} className={mobileLinkClass(pathname === "/radar")}>
+                <Globe className="w-4 h-4 text-brand-600" />
+                <span>3D Job Radar</span>
+              </Link>
+              <Link href="/worldwide" prefetch={false} onClick={closeMobile} className={mobileLinkClass(pathname === "/worldwide")}>
+                <Building className="w-4 h-4 text-ink-subtle" />
+                <span>Companies Hiring</span>
+              </Link>
 
-                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-3 pt-3 pb-1">
-                  Explore
-                </div>
-                <Link
-                  href="/radar"
-                  prefetch={false}
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 text-xs font-semibold text-slate-700"
-                >
-                  <Globe className="w-4 h-4 text-cyan-600" />
-                  <span>3D Job Radar</span>
-                </Link>
-                <Link
-                  href="/worldwide"
-                  prefetch={false}
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 text-xs font-semibold text-slate-700"
-                >
-                  <Building className="w-4 h-4 text-slate-500" />
-                  <span>Companies Hiring</span>
-                </Link>
+              <div className={mobileSectionLabel}>Account & Settings</div>
+              <Link href="/settings?tab=preferences" onClick={closeMobile} className={mobileLinkClass(false)}>
+                <Settings className="w-4 h-4 text-ink-subtle" />
+                <span>Preferences</span>
+              </Link>
+              <Link href="/settings?tab=billing" onClick={closeMobile} className={mobileLinkClass(false)}>
+                <CreditCard className="w-4 h-4 text-ink-subtle" />
+                <span>Billing</span>
+              </Link>
 
-                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-3 pt-3 pb-1">
-                  Account & Settings
-                </div>
-                <Link
-                  href="/settings?tab=preferences"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-slate-50 text-xs font-medium text-slate-700"
+              <div className="pt-tk-2 mt-tk-1 border-t border-line">
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  className={buttonClasses({
+                    variant: "ghost",
+                    size: "md",
+                    fullWidth: true,
+                    className: "text-danger-700 hover:bg-danger-50 hover:text-danger-700",
+                  })}
                 >
-                  <Settings className="w-4 h-4 text-slate-400" />
-                  <span>Preferences</span>
-                </Link>
-                <Link
-                  href="/settings?tab=billing"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-slate-50 text-xs font-medium text-slate-700"
-                >
-                  <CreditCard className="w-4 h-4 text-slate-400" />
-                  <span>Billing</span>
-                </Link>
+                  <LogOut className="w-4 h-4" />
+                  <span>Sign Out</span>
+                </button>
               </div>
-            ) : (
-              <div className="space-y-2">
-                <Link
-                  href="/remote"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="block px-3 py-2 rounded-xl text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                >
-                  Resources
-                </Link>
-              </div>
-            )}
-          </div>
+            </nav>
+          ) : (
+            <nav aria-label="Mobile" className="space-y-0.5 pt-tk-1">
+              <Link href="/remote" onClick={closeMobile} className={mobileLinkClass(isRemoteActive)}>
+                Resources
+              </Link>
 
-          <div className="pt-4 pb-8 border-t border-gray-100">
-            {user ? (
-              <button
-                type="button"
-                onClick={handleSignOut}
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-slate-100 hover:bg-red-50 text-red-600 font-bold text-xs transition cursor-pointer"
-              >
-                <LogOut className="w-4 h-4" />
-                <span>Sign Out</span>
-              </button>
-            ) : (
-              <div className="space-y-2.5 pb-6">
+              <div className="pt-tk-2 mt-tk-1 border-t border-line space-y-tk-1">
                 <Link
                   href="/signup"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="w-full flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white py-3.5 rounded-xl font-bold text-xs shadow-xs transition"
+                  onClick={closeMobile}
+                  className={buttonClasses({ variant: "primary", size: "lg", fullWidth: true })}
                 >
                   Get Started Free
                 </Link>
                 <Link
                   href="/login"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="w-full flex items-center justify-center border border-slate-300 hover:bg-slate-50 bg-white text-slate-800 py-3 rounded-xl font-bold text-xs shadow-2xs transition"
+                  onClick={closeMobile}
+                  className={buttonClasses({
+                    variant: "ghost",
+                    size: "lg",
+                    fullWidth: true,
+                    className: "border border-line text-ink",
+                  })}
                 >
                   Sign In
                 </Link>
               </div>
-            )}
-          </div>
+            </nav>
+          )}
         </div>
       </div>
     )}

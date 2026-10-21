@@ -1,0 +1,223 @@
+/*
+ * CareerMonke design tokens (Redesign PART 1).
+ *
+ * Single source of truth for color, spacing, radius, shadow, typography,
+ * z-index and motion. Imported ONCE in src/app/layout.tsx and mapped into
+ * Tailwind in tailwind.config.ts.
+ *
+ * Conventions:
+ *  - Colors are stored as space-separated RGB channels so Tailwind opacity
+ *    modifiers work: `bg-brand-600/80`.
+ *  - Non-color Tailwind keys are prefixed `tk-` (e.g. `rounded-tk-md`,
+ *    `shadow-tk-sm`, `text-tk-h1`, `z-tk-header`, `duration-tk-fast`) so they
+ *    never collide with Tailwind defaults or legacy keys already used by pages.
+ *  - Light theme first. Every text/background pair listed in
+ *    scripts/test-design-tokens.ts is verified to meet WCAG AA (>= 4.5:1).
+ */
+
+:root {
+  /* ---------------------------------------------------------------- */
+  /* Color: primary brand scale                                        */
+  /* ---------------------------------------------------------------- */
+  --cm-brand-50: 239 246 255;   /* #EFF6FF */
+  --cm-brand-100: 219 234 254;  /* #DBEAFE */
+  --cm-brand-200: 191 219 254;  /* #BFDBFE */
+  --cm-brand-300: 147 197 253;  /* #93C5FD */
+  --cm-brand-400: 96 165 250;   /* #60A5FA */
+  --cm-brand-500: 59 130 246;   /* #3B82F6 */
+  --cm-brand-600: 37 99 235;    /* #2563EB  primary (5.17:1 on white) */
+  --cm-brand-700: 29 78 216;    /* #1D4ED8  primary hover / text on tint */
+  --cm-brand-800: 30 64 175;    /* #1E40AF */
+  --cm-brand-900: 30 58 138;    /* #1E3A8A */
+
+  /* ---------------------------------------------------------------- */
+  /* Color: surfaces                                                   */
+  /* ---------------------------------------------------------------- */
+  --cm-surface: 255 255 255;         /* #FFFFFF  cards, header */
+  --cm-surface-subtle: 248 250 252;  /* #F8FAFC  page canvas, footer */
+  --cm-surface-muted: 241 245 249;   /* #F1F5F9  skeletons, hovers */
+  --cm-surface-sunken: 226 232 240;  /* #E2E8F0  tracks */
+
+  /* Borders / dividers */
+  --cm-line: 228 231 236;            /* #E4E7EC */
+  --cm-line-strong: 203 213 225;     /* #CBD5E1 */
+
+  /* ---------------------------------------------------------------- */
+  /* Color: ink (text)                                                 */
+  /* ---------------------------------------------------------------- */
+  --cm-ink: 15 23 42;                /* #0F172A  headings/body  (17.8:1) */
+  --cm-ink-muted: 71 85 105;         /* #475569  secondary text (7.6:1)  */
+  --cm-ink-subtle: 100 116 139;      /* #64748B  captions       (4.76:1) */
+  --cm-ink-inverse: 255 255 255;     /* text on brand/dark fills */
+
+  /* ---------------------------------------------------------------- */
+  /* Color: status                                                     */
+  /* ---------------------------------------------------------------- */
+  --cm-success-50: 236 253 245;      /* #ECFDF5 */
+  --cm-success-100: 209 250 229;     /* #D1FAE5 */
+  --cm-success-500: 16 185 129;      /* #10B981  dots / fills only */
+  --cm-success-600: 5 150 105;       /* #059669 */
+  --cm-success-700: 4 120 87;        /* #047857  text (5.48:1) */
+
+  --cm-warning-50: 255 251 235;      /* #FFFBEB */
+  --cm-warning-100: 254 243 199;     /* #FEF3C7 */
+  --cm-warning-500: 245 158 11;      /* #F59E0B  dots / fills only */
+  --cm-warning-600: 217 119 6;       /* #D97706 */
+  --cm-warning-700: 180 83 9;        /* #B45309  text (5.02:1) */
+
+  --cm-danger-50: 254 242 242;       /* #FEF2F2 */
+  --cm-danger-100: 254 226 226;      /* #FEE2E2 */
+  --cm-danger-600: 220 38 38;        /* #DC2626  destructive fill (4.83:1) */
+  --cm-danger-700: 185 28 28;        /* #B91C1C  hover / text */
+
+  /* ---------------------------------------------------------------- */
+  /* Spacing: 8px rhythm (--cm-space-N = N * 8px; half step = 4px)     */
+  /* ---------------------------------------------------------------- */
+  --cm-space-0: 0px;
+  --cm-space-half: 4px;
+  --cm-space-1: 8px;
+  --cm-space-2: 16px;
+  --cm-space-3: 24px;
+  --cm-space-4: 32px;
+  --cm-space-5: 40px;
+  --cm-space-6: 48px;
+  --cm-space-8: 64px;
+  --cm-space-10: 80px;
+  --cm-space-12: 96px;
+
+  /* ---------------------------------------------------------------- */
+  /* Radius scale                                                      */
+  /* ---------------------------------------------------------------- */
+  --cm-radius-xs: 4px;
+  --cm-radius-sm: 6px;
+  --cm-radius-md: 8px;
+  --cm-radius-lg: 12px;
+  --cm-radius-xl: 16px;
+  --cm-radius-2xl: 24px;
+  --cm-radius-full: 9999px;
+
+  /* ---------------------------------------------------------------- */
+  /* Shadow scale: soft, layered (ambient + key light)                 */
+  /* ---------------------------------------------------------------- */
+  --cm-shadow-xs: 0 1px 2px 0 rgb(15 23 42 / 0.05);
+  --cm-shadow-sm: 0 1px 2px 0 rgb(15 23 42 / 0.04), 0 1px 3px 0 rgb(15 23 42 / 0.06);
+  --cm-shadow-md: 0 2px 4px -1px rgb(15 23 42 / 0.04), 0 4px 12px -2px rgb(15 23 42 / 0.08);
+  --cm-shadow-lg: 0 4px 8px -2px rgb(15 23 42 / 0.04), 0 12px 24px -4px rgb(15 23 42 / 0.10);
+  --cm-shadow-xl: 0 8px 16px -4px rgb(15 23 42 / 0.06), 0 24px 48px -8px rgb(15 23 42 / 0.14);
+  --cm-shadow-focus: 0 0 0 3px rgb(37 99 235 / 0.35);
+
+  /* ---------------------------------------------------------------- */
+  /* Typography scale (size / line-height)                             */
+  /* ---------------------------------------------------------------- */
+  --cm-font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+
+  --cm-text-display: 3rem;        /* 48px */
+  --cm-leading-display: 1.1;
+  --cm-text-h1: 2.25rem;          /* 36px */
+  --cm-leading-h1: 1.2;
+  --cm-text-h2: 1.75rem;          /* 28px */
+  --cm-leading-h2: 1.25;
+  --cm-text-h3: 1.25rem;          /* 20px */
+  --cm-leading-h3: 1.4;
+  --cm-text-body: 1rem;           /* 16px */
+  --cm-leading-body: 1.5;
+  --cm-text-body-sm: 0.875rem;    /* 14px */
+  --cm-leading-body-sm: 1.5;
+  --cm-text-caption: 0.75rem;     /* 12px */
+  --cm-leading-caption: 1.4;
+
+  /* ---------------------------------------------------------------- */
+  /* Z-index scale                                                     */
+  /* ---------------------------------------------------------------- */
+  --cm-z-base: 0;
+  --cm-z-raised: 10;
+  --cm-z-sticky: 30;      /* in-page sticky bars (sit under the header) */
+  --cm-z-header: 40;      /* app header (matches legacy z-40) */
+  --cm-z-dropdown: 45;    /* header menus / popovers */
+  --cm-z-overlay: 50;     /* mobile nav panel + backdrop */
+  --cm-z-modal: 60;
+  --cm-z-toast: 70;
+
+  /* ---------------------------------------------------------------- */
+  /* Motion                                                            */
+  /* ---------------------------------------------------------------- */
+  --cm-duration-fast: 150ms;
+  --cm-duration-base: 250ms;
+  --cm-duration-slow: 400ms;
+  --cm-ease-entrance: cubic-bezier(0.22, 1, 0.36, 1);
+  --cm-ease-exit: cubic-bezier(0.4, 0, 1, 1); /* ease-in */
+  --cm-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ------------------------------------------------------------------ */
+/* Token-driven keyframes (transform / opacity only — no layout shift) */
+/* ------------------------------------------------------------------ */
+@keyframes cm-slide-down-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes cm-slide-up-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes cm-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes cm-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes cm-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes cm-skeleton-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/* Reduced motion: token animations collapse to instant, final state kept. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --cm-duration-fast: 0.01ms;
+    --cm-duration-base: 0.01ms;
+    --cm-duration-slow: 0.01ms;
+  }
+}
