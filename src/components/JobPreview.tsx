@@ -6,6 +6,7 @@ import BrandIcon from "./BrandIcon";
 import Chip from "./Chip";
 import { Job } from "@/data/jobs";
 import { ArrowRight } from "lucide-react";
+import { sanitizeExternalUrl } from "@/lib/security/xss";
 
 interface JobPreviewProps {
   title?: string;
@@ -73,7 +74,7 @@ export default function JobPreview({
                 First seen {job.date}
               </span>
               <a
-                href={job.applyUrl || "#"}
+                href={sanitizeExternalUrl(job.applyUrl) || "#"}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md bg-[#2563EB] hover:bg-blue-700 text-white text-sm font-semibold transition-colors whitespace-nowrap group shadow-xs"

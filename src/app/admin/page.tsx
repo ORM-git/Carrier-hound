@@ -13,6 +13,7 @@ import {
   ArrowUpRight,
 } from "lucide-react";
 import type { AnalyticsStats } from "@/lib/admin/analytics";
+import { sanitizeInternalPath } from "@/lib/security/xss";
 
 export default function AdminDashboardPage() {
   const [rangeDays, setRangeDays] = useState<7 | 30>(7);
@@ -237,12 +238,12 @@ export default function AdminDashboardPage() {
                       </td>
                       <td className="px-5 py-3 font-medium text-slate-900 flex items-center gap-1.5">
                         <span className="font-mono text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
-                          {page.path}
+                          {sanitizeInternalPath(page.path)}
                         </span>
                         <a
-                          href={page.path}
+                          href={sanitizeInternalPath(page.path)}
                           target="_blank"
-                          rel="noreferrer"
+                          rel="noopener noreferrer"
                           className="text-slate-400 hover:text-slate-600"
                         >
                           <ArrowUpRight className="w-3.5 h-3.5" />

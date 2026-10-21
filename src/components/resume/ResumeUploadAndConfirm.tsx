@@ -29,7 +29,7 @@ import {
   EducationItem,
   ParsedResumeResult,
 } from "@/lib/resume/types";
-import { extractTextFromFile, parseResumeText, getSampleCandidateProfile } from "@/lib/resume/parser";
+import { extractTextFromFile, parseResumeText, getSampleCandidateProfile, validateResumeUploadFile } from "@/lib/resume/parser";
 import {
   getCandidateProfile,
   saveCandidateProfileLocally,
@@ -78,8 +78,10 @@ export default function ResumeUploadAndConfirm({
   }, []);
 
   const processFile = async (file: File) => {
-    if (file.size > 10 * 1024 * 1024) {
-      setParseError("File size exceeds 10MB limit. Please upload a smaller document.");
+    const validation = validateResumeUploadFile(file);
+    if (!validation.valid) {
+      setParseError(validation.error || "Unsupported or invalid file.");
+      if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
 

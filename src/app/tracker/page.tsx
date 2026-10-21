@@ -43,6 +43,7 @@ import { getTodayDigest, DigestMatchItem } from "@/lib/cron/digestStorage";
 import { toast } from "react-toastify";
 import MatchScoreBadge from "@/components/matcher/MatchScoreBadge";
 import ProUpgradeScreen from "@/components/billing/ProUpgradeScreen";
+import { sanitizeExternalUrl } from "@/lib/security/xss";
 import { getAuthUser } from "@/lib/auth/session";
 import { getProAccessStatus } from "@/lib/billing/subscription";
 
@@ -444,9 +445,9 @@ export default function TrackerPage() {
                         <span>Add to Saved</span>
                       </button>
 
-                      {item.applyUrl && (
+                      {sanitizeExternalUrl(item.applyUrl) && (
                         <a
-                          href={item.applyUrl}
+                          href={sanitizeExternalUrl(item.applyUrl)!}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-[11px] text-slate-400 hover:text-slate-600 flex items-center gap-0.5"
@@ -692,9 +693,9 @@ export default function TrackerPage() {
                                 <FileText className="w-3.5 h-3.5" />
                               </button>
 
-                              {app.applyUrl && (
+                              {sanitizeExternalUrl(app.applyUrl) && (
                                 <a
-                                  href={app.applyUrl}
+                                  href={sanitizeExternalUrl(app.applyUrl)!}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="p-1 text-slate-400 hover:text-blue-600 transition"
@@ -794,9 +795,9 @@ export default function TrackerPage() {
                         </td>
                         <td className="py-3.5 px-4 text-right">
                           <div className="inline-flex items-center gap-2">
-                            {app.applyUrl && (
+                            {sanitizeExternalUrl(app.applyUrl) && (
                               <a
-                                href={app.applyUrl}
+                                href={sanitizeExternalUrl(app.applyUrl)!}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="p-1.5 text-slate-400 hover:text-blue-600 transition"

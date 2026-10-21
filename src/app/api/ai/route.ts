@@ -8,6 +8,7 @@ import {
   checkAndIncrementAiQuota,
   refundAiQuota,
   OPERATION_CONFIGS,
+  validateAndSanitizeAiOutput,
 } from "@/lib/ai/security";
 import { checkRequiredEnv } from "@/lib/api/envCheck";
 import { checkSharedRateLimit } from "@/lib/api/sharedRateLimit";
@@ -324,19 +325,19 @@ export async function POST(req: Request) {
       );
     }
 
-    let parsedResult = content;
-    if (payload.jsonMode) {
-      try {
-        parsedResult = JSON.parse(content);
-      } catch {
-        parsedResult = content;
-      }
+    const validated = validateAndSanitizeAiOutput(config.operation, content);
+    if (!validated.ok) {
+      await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
+      return NextResponse.json({ error: validated.error }, { status: 502 });
     }
 
     return NextResponse.json({
       success: true,
-      result: parsedResult,
+      result: validated.parsedJson ?? validated.sanitizedText,
+      content: validated.sanitizedText,
+      text: validated.sanitizedText,
       operation: config.operation,
+      model: payload.model,
     });
   } catch (err: any) {
     console.error("[AI Route Handler] Unhandled error:", err);

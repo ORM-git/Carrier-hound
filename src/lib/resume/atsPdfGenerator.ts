@@ -4,6 +4,11 @@
  */
 
 import { CandidateProfile } from "./types";
+import {
+  sanitizeCandidateProfile,
+  stripHtmlAndExecutableMarkup,
+  sanitizeDownloadFilename,
+} from "../security/xss";
 
 interface PageConfig {
   margin: number;
@@ -46,10 +51,11 @@ async function initPdfDoc(): Promise<{ doc: any; config: PageConfig }> {
  * - Action-oriented bullet hierarchies
  */
 export async function downloadAtsResumePdf(
-  candidate: CandidateProfile,
+  rawCandidate: CandidateProfile,
   customFilename?: string
 ): Promise<void> {
   if (typeof window === "undefined") return;
+  const candidate = sanitizeCandidateProfile(rawCandidate);
 
   const { doc, config } = await initPdfDoc();
   let y = config.margin;
@@ -213,7 +219,8 @@ export async function downloadAtsResumePdf(
     }
   }
 
-  const filename = customFilename || `${(candidate.name || "Resume").replace(/\s+/g, "_")}_ATS.pdf`;
+  const safeBase = sanitizeDownloadFilename(candidate.name, "Resume");
+  const filename = customFilename ? sanitizeDownloadFilename(customFilename, `${safeBase}_ATS.pdf`) : `${safeBase}_ATS.pdf`;
   doc.save(filename);
 }
 
@@ -221,7 +228,7 @@ export async function downloadAtsResumePdf(
  * Generates and downloads a clean, professional PDF Cover Letter.
  * Adapted from Career-Ops Cover Letter styling.
  */
-export async function downloadCoverLetterPdf(data: {
+export async function downloadCoverLetterPdf(rawData: {
   candidate: CandidateProfile;
   company: string;
   jobTitle: string;
@@ -229,6 +236,13 @@ export async function downloadCoverLetterPdf(data: {
   customFilename?: string;
 }): Promise<void> {
   if (typeof window === "undefined") return;
+  const data = {
+    ...rawData,
+    candidate: sanitizeCandidateProfile(rawData.candidate),
+    company: stripHtmlAndExecutableMarkup(rawData.company),
+    jobTitle: stripHtmlAndExecutableMarkup(rawData.jobTitle),
+    content: stripHtmlAndExecutableMarkup(rawData.content),
+  };
 
   const { doc, config } = await initPdfDoc();
   let y = config.margin;
@@ -329,9 +343,9 @@ export async function downloadCoverLetterPdf(data: {
     doc.text(name, config.margin, y);
   }
 
-  const filename =
-    data.customFilename ||
-    `Cover_Letter_${data.company.replace(/\s+/g, "_")}_${data.jobTitle.replace(/\s+/g, "_")}.pdf`;
+  const filename = data.customFilename
+    ? sanitizeDownloadFilename(data.customFilename, "Cover_Letter.pdf")
+    : `Cover_Letter_${sanitizeDownloadFilename(data.company, "Company")}_${sanitizeDownloadFilename(data.jobTitle, "Role")}.pdf`;
 
   doc.save(filename);
 }

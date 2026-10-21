@@ -1,5 +1,10 @@
 import { CandidateProfile } from "./types";
 import { extractSkillsFromJob } from "../matcher/scoring";
+import {
+  sanitizeCandidateProfile,
+  stripHtmlAndExecutableMarkup,
+  sanitizeDownloadFilename,
+} from "../security/xss";
 
 export interface TailoredCoverLetterResult {
   recipient: string;
@@ -44,6 +49,11 @@ export function validateCoverLetter(
 ): CoverLetterValidationResult {
   const reasons: string[] = [];
   const text = letterBody || "";
+
+  // 0. Executable HTML / XSS markup check
+  if (/<(?:script|img|svg|iframe|object|embed)\b|\bon(?:error|load|click|mouseover)\s*=|javascript\s*:/i.test(text)) {
+    reasons.push("Contains disallowed HTML or script markup.");
+  }
 
   // 1. Email check: No unverified emails
   const emailMatches = text.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g) || [];
@@ -146,8 +156,8 @@ function extractJdCoreFocus(description?: string): string {
  * Adapts cleanly for freshers with 0 previous roles without fabricating tenure.
  */
 export function generateTailoredCoverLetter(
-  candidate: CandidateProfile,
-  job: {
+  rawCandidate: CandidateProfile,
+  rawJob: {
     id?: string;
     title: string;
     company: string;
@@ -155,6 +165,14 @@ export function generateTailoredCoverLetter(
     location?: string;
   }
 ): TailoredCoverLetterResult {
+  const candidate = sanitizeCandidateProfile(rawCandidate);
+  const job = {
+    ...rawJob,
+    title: stripHtmlAndExecutableMarkup(rawJob.title),
+    company: stripHtmlAndExecutableMarkup(rawJob.company),
+    description: rawJob.description ? stripHtmlAndExecutableMarkup(rawJob.description) : undefined,
+    location: rawJob.location ? stripHtmlAndExecutableMarkup(rawJob.location) : undefined,
+  };
   const jobSkills = extractSkillsFromJob({
     title: job.title,
     description: job.description || `${job.title} at ${job.company}`,
@@ -305,7 +323,8 @@ export function generateTailoredCoverLetter(
  * Builds an ATS-compliant, single-column plain text resume string.
  * Strictly avoids tables, multi-column layouts, graphics, or text boxes that break ATS software.
  */
-export function buildAtsResumePlainText(candidate: CandidateProfile): string {
+export function buildAtsResumePlainText(rawCandidate: CandidateProfile): string {
+  const candidate = sanitizeCandidateProfile(rawCandidate);
   const sections: string[] = [];
 
   // Header
@@ -495,7 +514,8 @@ function escapeXml(str: string): string {
  * Provides clean, single-column ATS-friendly formatting without tables or graphics.
  * Note: ATS-friendly formatting optimizes parser readability, but does not guarantee job acceptance.
  */
-export function exportAtsWordDocument(candidate: CandidateProfile): Blob {
+export function exportAtsWordDocument(rawCandidate: CandidateProfile): Blob {
+  const candidate = sanitizeCandidateProfile(rawCandidate);
   const contentTypesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
@@ -666,7 +686,8 @@ export function downloadAtsResumeDocx(candidate: CandidateProfile, customFilenam
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = customFilename || `${(candidate.name || "Resume").replace(/\s+/g, "_")}_ATS.docx`;
+  const safeBase = (candidate.name || "Resume").replace(/[<>:"/\\|?*\x00-\x1F]+/g, "_").replace(/\s+/g, "_");
+  a.download = customFilename ? customFilename.replace(/[<>:"/\\|?*\x00-\x1F]+/g, "_") : `${safeBase}_ATS.docx`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -681,7 +702,8 @@ export function downloadAtsResumeText(candidate: CandidateProfile, customFilenam
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = customFilename || `${(candidate.name || "Resume").replace(/\s+/g, "_")}_ATS.txt`;
+  const safeBase = (candidate.name || "Resume").replace(/[<>:"/\\|?*\x00-\x1F]+/g, "_").replace(/\s+/g, "_");
+  a.download = customFilename ? customFilename.replace(/[<>:"/\\|?*\x00-\x1F]+/g, "_") : `${safeBase}_ATS.txt`;
   a.click();
   URL.revokeObjectURL(url);
 }

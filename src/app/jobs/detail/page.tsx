@@ -12,6 +12,7 @@ import { CandidateProfile } from "@/lib/resume/types";
 import { computeFitDiagnostics, FitDiagnosticsResult } from "@/lib/matcher/scoring";
 import { addApplicationToTracker, getTrackedApplications, removeApplicationFromTracker } from "@/lib/tracker/storage";
 import { getProAccessStatus } from "@/lib/billing/subscription";
+import { sanitizeExternalUrl, stripHtmlAndExecutableMarkup } from "@/lib/security/xss";
 import dynamic from "next/dynamic";
 import PaywallModal from "@/components/PaywallModal";
 import ProUpgradeScreen from "@/components/billing/ProUpgradeScreen";
@@ -228,9 +229,10 @@ function JobDetailInner() {
       return;
     }
 
-    // Open employer ATS in new tab
-    if (job.applyUrl) {
-      window.open(job.applyUrl, "_blank", "noopener,noreferrer");
+    // Open employer ATS in new tab (strictly http/https/mailto only)
+    const safeApplyUrl = sanitizeExternalUrl(job.applyUrl);
+    if (safeApplyUrl) {
+      window.open(safeApplyUrl, "_blank", "noopener,noreferrer");
       // Prompt user with confirmation modal
       setShowApplyConfirmModal(true);
     }
@@ -245,7 +247,7 @@ function JobDetailInner() {
         company: job.company,
         location: job.location,
         salaryText: job.salary,
-        applyUrl: job.applyUrl,
+        applyUrl: sanitizeExternalUrl(job.applyUrl) || undefined,
         stage: status,
         appliedAt: status === "applied" ? new Date().toISOString() : undefined,
       });
@@ -648,7 +650,7 @@ function JobDetailInner() {
               {job.salary && <p>• Compensation: {job.salary}</p>}
             </div>
             {job.description ? (
-              <div className="pt-2 whitespace-pre-wrap">{job.description}</div>
+              <div className="pt-2 whitespace-pre-wrap">{stripHtmlAndExecutableMarkup(job.description)}</div>
             ) : (
               <p className="text-slate-500">
                 Apply directly on the employer&apos;s site to view the complete posting and application requirements.

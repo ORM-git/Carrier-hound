@@ -18,6 +18,7 @@ import {
 import { FitDiagnosticsResult } from "@/lib/matcher/scoring";
 import { CandidateProfile } from "@/lib/resume/types";
 import { addApplicationToTracker } from "@/lib/tracker/storage";
+import { sanitizeExternalUrl } from "@/lib/security/xss";
 import { toast } from "react-toastify";
 
 interface FitDiagnosticsModalProps {
@@ -305,9 +306,9 @@ export default function FitDiagnosticsModal({
           <span className="text-xs text-slate-500">
             Source: <strong className="text-slate-800">{job.company} Direct ATS</strong>
           </span>
-          {job.apply_url && (
+          {sanitizeExternalUrl(job.apply_url) && (
             <a
-              href={job.apply_url}
+              href={sanitizeExternalUrl(job.apply_url)!}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-[#2563EB] hover:bg-[#1D4ED8] text-white shadow-xs transition-colors min-h-[44px]"
