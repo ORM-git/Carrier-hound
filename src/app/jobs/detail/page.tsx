@@ -1,9 +1,10 @@
 "use client";
 
+export const runtime = "edge";
 
 import React, { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import GuideHeader from "@/components/GuideHeader";
 import Footer from "@/components/Footer";
 import { getLiveJobById, LiveJob, getJobRemoteEligibility } from "@/lib/jobs/service";
@@ -14,13 +15,13 @@ import { computeFitDiagnostics, FitDiagnosticsResult } from "@/lib/matcher/scori
 import { addApplicationToTracker, getTrackedApplications, removeApplicationFromTracker } from "@/lib/tracker/storage";
 import { getProAccessStatus } from "@/lib/billing/subscription";
 import { sanitizeExternalUrl, stripHtmlAndExecutableMarkup } from "@/lib/security/xss";
-import dynamic from "next/dynamic";
+import nextDynamic from "next/dynamic";
 import PaywallModal from "@/components/PaywallModal";
 import ProUpgradeScreen from "@/components/billing/ProUpgradeScreen";
 
-const CoverLetterModal = dynamic(() => import("@/components/resume/CoverLetterModal"), { ssr: false });
-const TailorResumeModal = dynamic(() => import("@/components/resume/TailorResumeModal"), { ssr: false });
-const FitDiagnosticsModal = dynamic(() => import("@/components/matcher/FitDiagnosticsModal"), { ssr: false });
+const CoverLetterModal = nextDynamic(() => import("@/components/resume/CoverLetterModal"), { ssr: false });
+const TailorResumeModal = nextDynamic(() => import("@/components/resume/TailorResumeModal"), { ssr: false });
+const FitDiagnosticsModal = nextDynamic(() => import("@/components/matcher/FitDiagnosticsModal"), { ssr: false });
 import type { User } from "@supabase/supabase-js";
 import {
   ArrowLeft,
@@ -46,10 +47,13 @@ import {
 } from "lucide-react";
 import { toast } from "react-toastify";
 
-function getResolvedJobId(): string {
+function getResolvedJobId(searchParams: URLSearchParams | null): string {
+  const queryId = searchParams?.get("id");
+  if (queryId && queryId.trim()) return queryId.trim();
+
   if (typeof window !== "undefined") {
     const urlParams = new URLSearchParams(window.location.search);
-    const winId = urlParams.get("id") || urlParams.get("jobId");
+    const winId = urlParams.get("id");
     if (winId && winId.trim()) return winId.trim();
 
     const pathname = window.location.pathname;
@@ -64,6 +68,7 @@ function getResolvedJobId(): string {
 
 function JobDetailInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [user, setUser] = useState<User | null>(null);
   const [isPro, setIsPro] = useState(false);
@@ -80,15 +85,10 @@ function JobDetailInner() {
   const [showApplyConfirmModal, setShowApplyConfirmModal] = useState(false);
   const [isSavedInTracker, setIsSavedInTracker] = useState(false);
 
-  const urlJobId =
-    typeof window !== "undefined"
-      ? new URLSearchParams(window.location.search).get("id") ||
-        new URLSearchParams(window.location.search).get("jobId") ||
-        ""
-      : "";
+  const urlJobId = searchParams?.get("id") || searchParams?.get("jobId") || "";
 
   useEffect(() => {
-    const resolvedId = getResolvedJobId();
+    const resolvedId = getResolvedJobId(searchParams);
 
     // 1. Load server-verified Pro status and user
     getProAccessStatus().then((subRes) => {
