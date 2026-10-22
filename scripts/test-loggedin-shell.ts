@@ -39,6 +39,9 @@ function run() {
     topBarCode = topBarCode.replace(/bg-\[#2563EB\]/g, "");
     jobsCode = jobsCode + '\n<aside className="w-[220px]">Old Sidebar</aside>';
     topBarCode = topBarCode + '\n<span>AI Career Coaching Agent</span>';
+    jobsCode = jobsCode + '\ncount: "24+"';
+    jobsCode = jobsCode.replace(/appliedJobIds\.includes\(job\.id\)/g, "true ? [] : false");
+    jobsCode = jobsCode.replace(/min-h-\[44px\]/g, "min-h-[30px]");
   }
 
   const failures: string[] = [];
@@ -235,6 +238,40 @@ function run() {
     failures.push(`BRAND/FEATURE PURITY FAIL: Found forbidden elements: ${violatedPhrases.join("; ")}`);
   } else {
     console.log("  [PASS] brand & feature purity: zero Jobright copy, mascots, or coaching/agent/autofill pills");
+  }
+
+  // -------------------------------------------------------------------------
+  // 6. FOLLOW-UP AUDITS: TAB BADGE DATA INTEGRITY & TOUCH TARGETS
+  // -------------------------------------------------------------------------
+  // 6a. Zero hardcoded "24+" count literal in jobs page; real length used and hidden when 0 or loading
+  const hasHardcoded24 = jobsCode.includes('"24+"') || jobsCode.includes("24+");
+  const hasExternalCountCalc = jobsCode.includes("externalJobsCount") && jobsCode.includes("job.directSource");
+  const hasHideExternalWhenZero =
+    jobsCode.includes("!loadingJobs && externalJobsCount > 0 ? externalJobsCount : undefined") &&
+    jobsCode.includes("!loadingJobs && externalJobsCount > 0 &&");
+
+  if (hasHardcoded24 || !hasExternalCountCalc || !hasHideExternalWhenZero) {
+    failures.push('DATA INTEGRITY FAIL: External tab must NOT contain hardcoded "24+" literal; must derive dynamically from job.directSource and hide when 0 or loading.');
+  } else {
+    console.log('  [PASS] tab counts: zero hardcoded "24+" count literal; External tab badge derives dynamically and hides when 0/loading');
+  }
+
+  // 6b. Applied tab list derives from tracker data (not hardcoded empty array)
+  const hasAppliedFilter = jobsCode.includes('appliedJobIds.includes(job.id)');
+  const hasHardcodedEmptyApplied = /activeTab\s*===\s*["']applied["']\s*\)\s*\{\s*result\s*=\s*\[\]/.test(jobsCode);
+
+  if (!hasAppliedFilter || hasHardcodedEmptyApplied) {
+    failures.push('APPLIED TAB FAIL: Applied tab must filter live jobs by applied tracker application jobIds, not result = [].');
+  } else {
+    console.log("  [PASS] applied tab list: filters live jobs by tracker applied jobIds to match badge count");
+  }
+
+  // 6c. Tab buttons: min-h-[44px] touch target
+  const tabButtonsTouchTargets = jobsCode.includes("min-h-[44px]") && topBarCode.includes("min-h-[44px]");
+  if (!tabButtonsTouchTargets) {
+    failures.push("TOUCH ACCESSIBILITY FAIL: Tab buttons must have min-h-[44px] on touch screens.");
+  } else {
+    console.log("  [PASS] tab buttons: min-h-[44px] touch target enforced across desktop and mobile tabs");
   }
 
   console.log("\n----------------------------------------------------------------------------------");

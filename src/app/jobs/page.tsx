@@ -251,6 +251,7 @@ function JobsPageInner() {
   const [candidate, setCandidate] = useState<CandidateProfile | null>(null);
   const [preferences, setPreferences] = useState<UserPreferences | null>(null);
   const [savedJobIds, setSavedJobIds] = useState<string[]>([]);
+  const [appliedJobIds, setAppliedJobIds] = useState<string[]>([]);
   const [appliedCount, setAppliedCount] = useState<number>(0);
   const [isPaywallOpen, setIsPaywallOpen] = useState(false);
   const [page, setPage] = useState(1);
@@ -303,8 +304,10 @@ function JobsPageInner() {
         setIsProDefinitive(Boolean(proRes.isDefinitive));
         setCandidate(cp && cp.confirmedAt ? cp : null);
         setSavedJobIds(apps.map((a) => a.jobId || ""));
-        const applied = apps.filter((a) => a.stage === "applied").length;
-        setAppliedCount(applied);
+        const appliedApps = apps.filter((a) => a.stage === "applied");
+        const appliedIds = appliedApps.map((a) => a.jobId || "").filter(Boolean);
+        setAppliedJobIds(appliedIds);
+        setAppliedCount(appliedApps.length);
 
         if (u) {
           getUserPreferences(u.id).then((p) => {
@@ -462,7 +465,7 @@ function JobsPageInner() {
     if (activeTab === "liked") {
       result = result.filter((job) => savedJobIds.includes(job.id));
     } else if (activeTab === "applied") {
-      result = [];
+      result = result.filter((job) => appliedJobIds.includes(job.id));
     } else if (activeTab === "external") {
       result = result.filter((job) => Boolean(job.directSource));
     }
@@ -490,6 +493,7 @@ function JobsPageInner() {
     liveJobs,
     activeTab,
     savedJobIds,
+    appliedJobIds,
     hiddenJobIds,
     selectedLocation,
     selectedLevel,
@@ -591,6 +595,10 @@ function JobsPageInner() {
     (selectedJobType ? 1 : 0);
   const hasActiveFilters = activeFiltersCount > 0;
 
+  const externalJobsCount = useMemo(() => {
+    return liveJobs.filter((job) => Boolean(job.directSource)).length;
+  }, [liveJobs]);
+
   const jobTabs: TopBarTab[] = [
     {
       id: "recommended",
@@ -625,7 +633,7 @@ function JobsPageInner() {
     {
       id: "external",
       label: "External",
-      count: "24+",
+      count: !loadingJobs && externalJobsCount > 0 ? externalJobsCount : undefined,
       active: activeTab === "external",
       onClick: () => {
         setActiveTab("external");
@@ -676,7 +684,7 @@ function JobsPageInner() {
                       setActiveTab("recommended");
                       setPage(1);
                     }}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 min-h-[36px] cursor-pointer ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 min-h-[44px] cursor-pointer ${
                       activeTab === "recommended"
                         ? "bg-white text-blue-600 shadow-xs"
                         : "text-slate-600 hover:text-slate-900"
@@ -694,7 +702,7 @@ function JobsPageInner() {
                       setActiveTab("liked");
                       setPage(1);
                     }}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 min-h-[36px] cursor-pointer ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 min-h-[44px] cursor-pointer ${
                       activeTab === "liked"
                         ? "bg-white text-blue-600 shadow-xs"
                         : "text-slate-600 hover:text-slate-900"
@@ -712,7 +720,7 @@ function JobsPageInner() {
                       setActiveTab("applied");
                       setPage(1);
                     }}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 min-h-[36px] cursor-pointer ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 min-h-[44px] cursor-pointer ${
                       activeTab === "applied"
                         ? "bg-white text-blue-600 shadow-xs"
                         : "text-slate-600 hover:text-slate-900"
@@ -730,16 +738,18 @@ function JobsPageInner() {
                       setActiveTab("external");
                       setPage(1);
                     }}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 min-h-[36px] cursor-pointer ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 min-h-[44px] cursor-pointer ${
                       activeTab === "external"
                         ? "bg-white text-blue-600 shadow-xs"
                         : "text-slate-600 hover:text-slate-900"
                     }`}
                   >
                     <span>External</span>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-slate-200 text-slate-700">
-                      24+
-                    </span>
+                    {!loadingJobs && externalJobsCount > 0 && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-slate-200 text-slate-700">
+                        {externalJobsCount}
+                      </span>
+                    )}
                   </button>
                 </div>
               </div>
