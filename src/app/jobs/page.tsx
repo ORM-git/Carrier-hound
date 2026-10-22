@@ -291,7 +291,7 @@ interface JobCardItemProps {
   handleLockedAction: (e: React.MouseEvent) => void;
 }
 
-const JobCardItem = React.memo(function JobCardItem({
+function JobCardItem({
   job,
   index,
   isSaved,
@@ -570,7 +570,7 @@ const JobCardItem = React.memo(function JobCardItem({
       </div>
     </motion.article>
   );
-});
+}
 
 function JobsPageInner() {
   const router = useRouter();

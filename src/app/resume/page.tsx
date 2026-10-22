@@ -29,7 +29,6 @@ import {
   Eye,
   EyeOff,
   Edit3,
-  Star,
   X,
   MapPin,
   Mail,
@@ -71,7 +70,6 @@ export default function ResumePage() {
 
   // Resume card state
   const [resumeTitle, setResumeTitle] = useState<string>("Master Resume");
-  const [isDefault, setIsDefault] = useState<boolean>(true);
   const [isViewDetailsOpen, setIsViewDetailsOpen] = useState<boolean>(false);
   const [isRenameModalOpen, setIsRenameModalOpen] = useState<boolean>(false);
   const [renameInput, setRenameInput] = useState<string>("");
@@ -171,11 +169,6 @@ export default function ResumePage() {
     toast.success("Resume renamed successfully");
   };
 
-  const handleSetDefault = () => {
-    setIsDefault(true);
-    toast.success("Set as default resume");
-  };
-
   const handleProfileConfirmed = (cp: CandidateProfile) => {
     setCandidate(cp);
     const newTitle = cp.name ? `${cp.name} - Resume` : "Master Resume";
@@ -269,7 +262,7 @@ export default function ResumePage() {
                 className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-4 sm:p-5 shadow-none transition hover:ring-[#93C5FD] space-y-4"
               >
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3.5">
-                  {/* Left: File icon tile, Title bold 15px, Date 13px, Status Chip, Default Chip */}
+                  {/* Left: File icon tile, Title bold 15px, Date 13px, Status Chip */}
                   <div className="flex items-center gap-3.5 min-w-0">
                     <div className="w-10 h-10 rounded-lg bg-[#EFF6FF] border border-[#BFDBFE] flex items-center justify-center text-[#2563EB] shrink-0">
                       <FileText className="w-5 h-5 text-[#2563EB]" />
@@ -297,16 +290,6 @@ export default function ResumePage() {
                             Needs review
                           </span>
                         )}
-
-                        {/* Default chip: #EFF6FF chip "Default" */}
-                        {isDefault && (
-                          <span
-                            data-testid="resume-default-chip"
-                            className="text-[12px] font-medium px-2.5 py-0.5 rounded-full bg-[#EFF6FF] text-[#1E3A8A] border border-[#BFDBFE]"
-                          >
-                            Default
-                          </span>
-                        )}
                       </div>
 
                       <div className="text-[13px] text-[#94A3B8] flex items-center gap-1.5">
@@ -321,7 +304,7 @@ export default function ResumePage() {
                     </div>
                   </div>
 
-                  {/* Right: Row of icon buttons for existing actions (view, rename, delete, set default) */}
+                  {/* Right: Row of icon buttons for existing actions (view, rename, delete) */}
                   <div
                     data-testid="resume-actions-row"
                     className="flex items-center gap-1 sm:gap-1.5 shrink-0 self-end sm:self-auto border-t sm:border-t-0 pt-2 sm:pt-0 w-full sm:w-auto justify-end border-[#E2E8F0]"
@@ -344,16 +327,6 @@ export default function ResumePage() {
                       className="p-2 min-h-[36px] min-w-[36px] rounded-full text-[#475569] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition-colors flex items-center justify-center cursor-pointer border border-transparent hover:border-[#CBD5E1]"
                     >
                       <Edit3 className="w-4 h-4" />
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={handleSetDefault}
-                      title={isDefault ? "Default resume" : "Set as default"}
-                      aria-label="Set as default resume"
-                      className="p-2 min-h-[36px] min-w-[36px] rounded-full text-[#475569] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition-colors flex items-center justify-center cursor-pointer border border-transparent hover:border-[#CBD5E1]"
-                    >
-                      <Star className={`w-4 h-4 ${isDefault ? "text-[#2563EB] fill-[#2563EB]" : "text-[#475569]"}`} />
                     </button>
 
                     <button

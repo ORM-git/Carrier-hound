@@ -2,7 +2,9 @@
  * scripts/test-tracker-resume-rebuild.ts
  *
  * Audit suite for Prompt 6 of the Jobright-style rebuild:
- * 1. Jobs page: useMemo memoization for per-card getJobDiagnostics keyed by confirmed resume & job id.
+ * 1. Jobs page:
+ *    - useMemo memoization for per-card getJobDiagnostics keyed by confirmed resume & job id.
+ *    - no-op outer React.memo removed from JobCardItem.
  * 2. Tracker page:
  *    - Board view with 5 canonical stages (saved, applied, interview, offer, rejected).
  *    - Column tokens: #F1F5F9 bg, 16px radius, 12px padding, bold 14px header with dark count badge.
@@ -17,8 +19,9 @@
  *    - Header: "Resumes" bold 24px and primary blue pill upload action.
  *    - Card: white, 16px radius, 1px #E2E8F0 ring.
  *    - Card elements: file icon tile, resume name bold 15px, uploaded date 13px,
- *      status chip (Confirmed or Needs review), #EFF6FF "Default" chip.
- *    - Action icon buttons: view, rename, delete, set default.
+ *      status chip (Confirmed or Needs review).
+ *    - Real action icon buttons: view, rename, delete.
+ *    - Authenticity: NO fake "Set as default" button and NO "Default" chip.
  *    - Delete confirmation message preserved.
  *    - Empty state: centred icon, one line, upload button.
  *    - Free user ProUpgradeScreen gating preserved with exact copy.
@@ -52,15 +55,14 @@ function runAudit() {
   let jobsCode = fs.readFileSync(jobsFile, "utf-8");
 
   if (isNegativeControl) {
-    // Sabotage code: remove "Default" chip check or alter stage name
-    resumeCode = resumeCode.replace('data-testid="resume-default-chip"', 'data-testid="sabotaged"');
-    resumeCode = resumeCode.replace('data-testid="resume-status-chip"', 'data-testid="sabotaged"');
+    // Sabotage code: simulate re-adding fake Default chip or Set as default action
+    resumeCode += '<span data-testid="resume-default-chip">Default</span>\n<button>Set as default</button>';
   }
 
   const failures: string[] = [];
 
   // ===========================================================================
-  // SECTION 1: JOBS PAGE MEMOIZATION
+  // SECTION 1: JOBS PAGE MEMOIZATION & CLEANUP
   // ===========================================================================
   const hasUseMemoMemo = jobsCode.includes("useMemo") && jobsCode.includes("getJobDiagnostics");
   const hasKeyedMemo = jobsCode.includes("job.id") && (jobsCode.includes("confirmedResumeKey") || jobsCode.includes("candidate?.confirmedAt"));
@@ -68,6 +70,13 @@ function runAudit() {
     console.log("  [PASS] Jobs Memoization: per-card getJobDiagnostics wrapped in useMemo keyed by job.id and confirmed resume");
   } else {
     failures.push("Jobs Memoization: getJobDiagnostics must be memoized in useMemo keyed by job.id and confirmed resume.");
+  }
+
+  const hasNoOuterReactMemo = !jobsCode.includes("const JobCardItem = React.memo") && !jobsCode.includes("React.memo(function JobCardItem");
+  if (hasNoOuterReactMemo) {
+    console.log("  [PASS] Jobs Memoization: no-op outer React.memo removed from JobCardItem");
+  } else {
+    failures.push("Jobs Memoization: no-op outer React.memo on JobCardItem must be removed.");
   }
 
   // ===========================================================================
@@ -175,27 +184,36 @@ function runAudit() {
   // - Resume name bold 15px
   // - Uploaded date 13px
   // - Status chip (Confirmed or Needs review)
-  // - #EFF6FF chip "Default"
-  // - Row of icon buttons: view, rename, delete, set default
+  // - Row of real icon buttons: view, rename, delete
   const hasFileIconTile = resumeCode.includes("w-10 h-10 rounded-lg bg-[#EFF6FF]") && resumeCode.includes("border-[#BFDBFE]");
   const hasResumeName15 = resumeCode.includes("text-[15px] font-bold text-[#0F172A]");
   const hasUploadedDate13 = resumeCode.includes("text-[13px] text-[#94A3B8]") && resumeCode.includes("Uploaded");
   const hasStatusChip = resumeCode.includes('data-testid="resume-status-chip"') &&
     resumeCode.includes("Confirmed") &&
     resumeCode.includes("Needs review");
-  const hasDefaultChip = resumeCode.includes('data-testid="resume-default-chip"') &&
-    resumeCode.includes("bg-[#EFF6FF]") &&
-    resumeCode.includes("Default");
-  const hasActionButtons = resumeCode.includes('data-testid="resume-actions-row"') &&
+  const hasRealActionButtons = resumeCode.includes('data-testid="resume-actions-row"') &&
     resumeCode.includes("View resume") &&
     resumeCode.includes("Rename resume") &&
-    resumeCode.includes("Delete resume") &&
-    resumeCode.includes("Set as default");
+    resumeCode.includes("Delete resume");
 
-  if (hasFileIconTile && hasResumeName15 && hasUploadedDate13 && hasStatusChip && hasDefaultChip && hasActionButtons) {
-    console.log("  [PASS] Resume Card Elements: file icon tile, 15px title, 13px date, status chip, #EFF6FF default chip, and 4 action icon buttons");
+  if (hasFileIconTile && hasResumeName15 && hasUploadedDate13 && hasStatusChip && hasRealActionButtons) {
+    console.log("  [PASS] Resume Card Elements: file icon tile, 15px title, 13px date, status chip, and real action buttons (view, rename, delete)");
   } else {
-    failures.push("Resume Card Elements: Missing file icon tile, title, date, status chip, #EFF6FF default chip, or action buttons.");
+    failures.push("Resume Card Elements: Missing file icon tile, title, date, status chip, or real action buttons.");
+  }
+
+  // Authenticity Check: Strict absence of fake "Set as default" action and "Default" chip
+  const hasFakeDefaultChip = resumeCode.includes('data-testid="resume-default-chip"') ||
+    resumeCode.includes('>Default</span>') ||
+    resumeCode.includes('"Default"') ||
+    resumeCode.includes("'Default'");
+  const hasFakeSetDefaultAction = resumeCode.includes("Set as default") ||
+    resumeCode.includes("handleSetDefault");
+
+  if (!hasFakeDefaultChip && !hasFakeSetDefaultAction) {
+    console.log("  [PASS] Resume Authenticity: fake 'Set as default' action and 'Default' chip strictly omitted until multi-resume ships");
+  } else {
+    failures.push("Resume Authenticity: 'Set as default' action or 'Default' chip must not be present until multi-resume backend ships.");
   }
 
   // Delete Confirmation: preserves exact confirmation wording
