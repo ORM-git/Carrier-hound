@@ -46,6 +46,7 @@ const SUITES: SuiteSpec[] = [
   { name: "scripts/test-loggedin-shell.ts", command: "npx tsx scripts/test-loggedin-shell.ts" },
   { name: "scripts/test-jobs-list-detail.ts", command: "npx tsx scripts/test-jobs-list-detail.ts" },
   { name: "scripts/test-card-hover-match.ts", command: "npx tsx scripts/test-card-hover-match.ts" },
+  { name: "scripts/test-tracker-resume-rebuild.ts", command: "npx tsx scripts/test-tracker-resume-rebuild.ts" },
   { name: "scripts/test-razorpay-billing.ts", command: "npx tsx scripts/test-razorpay-billing.ts" },
 
   // Supabase read/safe-cleanup verification suites (run whenever Supabase credentials exist)
