@@ -291,7 +291,7 @@ function JobDetailInner() {
               <Lock className="w-7 h-7" />
             </div>
             <div className="space-y-tk-1">
-              <h1 className="text-tk-h2 font-bold text-ink tracking-tight">
+              <h1 className="text-[18px] font-bold uppercase tracking-wider text-ink">
                 Sign in to view job details
               </h1>
               <p className="text-tk-body-sm text-ink-muted max-w-sm mx-auto">
@@ -348,7 +348,7 @@ function JobDetailInner() {
             <div className="w-16 h-16 rounded-tk-xl bg-warning-50 text-warning-700 flex items-center justify-center mx-auto border border-warning-100">
               <AlertCircle className="w-8 h-8" />
             </div>
-            <h1 className="text-tk-h2 font-bold text-ink">Job Opening Not Found</h1>
+            <h1 className="text-[18px] font-bold uppercase tracking-wider text-ink">Job Opening Not Found</h1>
             <p className="text-tk-body-sm text-ink-muted max-w-md mx-auto">
               This opening may have been unlisted or closed by the employer.
             </p>
@@ -550,7 +550,7 @@ function JobDetailInner() {
                         )}
                       </div>
 
-                      <h1 className="text-tk-h2 sm:text-tk-h1 font-extrabold text-ink tracking-tight break-words">
+                      <h1 className="text-[22px] font-bold text-ink tracking-tight break-words">
                         {job.title}
                       </h1>
 
@@ -673,14 +673,14 @@ function JobDetailInner() {
                     <div className="p-tk-2 sm:p-tk-3 rounded-tk-xl bg-surface-subtle border border-line flex flex-col sm:flex-row sm:items-center justify-between gap-tk-2">
                       <div className="flex items-center gap-tk-2">
                         <div
-                          className={`w-14 h-14 sm:w-16 sm:h-16 rounded-tk-xl flex flex-col items-center justify-center border font-extrabold text-xl sm:text-2xl shadow-tk-xs shrink-0 ${
+                          className={`w-14 h-14 sm:w-16 sm:h-16 rounded-[16px] flex flex-col items-center justify-center font-extrabold text-xl sm:text-2xl shadow-none shrink-0 text-white border border-white/10 ${
                             diagnostics.score >= 80
-                              ? "bg-success-50 text-success-700 border-success-100"
-                              : diagnostics.score >= 65
-                              ? "bg-brand-50 text-brand-700 border-brand-200"
-                              : diagnostics.score >= 45
-                              ? "bg-warning-50 text-warning-700 border-warning-100"
-                              : "bg-danger-50 text-danger-700 border-danger-100"
+                              ? "bg-gradient-to-br from-[#1E3A8A] to-[#2563EB]"
+                              : diagnostics.score >= 50
+                              ? "bg-gradient-to-br from-[#0F172A] to-[#1E3A8A]"
+
+
+                              : "bg-gradient-to-br from-[#0F172A] to-[#334155]"
                           }`}
                         >
                           <span>{diagnostics.score}%</span>
@@ -693,11 +693,11 @@ function JobDetailInner() {
                             <span>
                               {diagnostics.score >= 80
                                 ? "Strong Match"
-                                : diagnostics.score >= 65
+                                : diagnostics.score >= 50
                                 ? "Good Alignment"
-                                : diagnostics.score >= 45
-                                ? "Moderate Fit"
-                                : "Low Match"}
+  
+                                : "Moderate Fit"}
+
                             </span>
                           </div>
                           <p className="text-tk-caption sm:text-tk-body-sm text-ink-muted">

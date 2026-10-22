@@ -14,7 +14,7 @@ export type CardVariant = "legacy" | "surface" | "elevated" | "interactive"
 
 const TOKEN_CARD_BASE = "rounded-tk-xl border border-line bg-surface text-ink"
 const TOKEN_CARD_VARIANTS: Record<Exclude<CardVariant, "legacy">, string> = {
-  surface: "shadow-tk-xs",
+  surface: "shadow-none ring-1 ring-[#E2E8F0]",
   elevated: "shadow-tk-md",
   interactive:
     "shadow-tk-sm transition-[transform,box-shadow] duration-tk-base ease-tk-entrance hover:shadow-tk-lg motion-safe:hover:-translate-y-0.5",

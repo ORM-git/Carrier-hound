@@ -25,7 +25,7 @@ export default function ResourcesIndexPage() {
           <span className="text-[11px] font-bold uppercase tracking-wider text-blue-600 bg-blue-50 border border-blue-200 px-3 py-1 rounded-full">
             Knowledge Hub
           </span>
-          <h1 className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight">
+          <h1 className="text-[18px] font-bold uppercase tracking-wider text-[#0F172A]">
             CareerMonke Guides & Resources
           </h1>
           <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">

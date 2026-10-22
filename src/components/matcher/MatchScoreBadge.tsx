@@ -67,21 +67,17 @@ export default function MatchScoreBadge({
   let dotColor = "bg-blue-500";
 
   if (score >= 80) {
-    colorClasses = "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100";
-    ringClasses = "focus:ring-emerald-400";
-    dotColor = "bg-emerald-500";
-  } else if (score >= 65) {
-    colorClasses = "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100";
-    ringClasses = "focus:ring-blue-400";
-    dotColor = "bg-blue-500";
-  } else if (score >= 45) {
-    colorClasses = "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100";
-    ringClasses = "focus:ring-amber-400";
-    dotColor = "bg-amber-500";
+    colorClasses = "bg-[#DBEAFE] text-[#1E3A8A] border-[#BFDBFE] hover:bg-blue-100";
+    ringClasses = "focus:ring-[#93C5FD]";
+    dotColor = "bg-[#2563EB]";
+  } else if (score >= 50) {
+    colorClasses = "bg-[#EFF6FF] text-[#1D4ED8] border-[#BFDBFE] hover:bg-[#DBEAFE]";
+    ringClasses = "focus:ring-[#93C5FD]";
+    dotColor = "bg-[#1D4ED8]";
   } else {
-    colorClasses = "bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200";
-    ringClasses = "focus:ring-slate-400";
-    dotColor = "bg-slate-400";
+    colorClasses = "bg-[#F1F5F9] text-[#475569] border-[#E2E8F0] hover:bg-[#E2E8F0]";
+    ringClasses = "focus:ring-slate-300";
+    dotColor = "bg-[#94A3B8]";
   }
 
   const sizeClasses =

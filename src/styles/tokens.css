@@ -1,5 +1,5 @@
 /*
- * CareerMonke design tokens (Redesign PART 1).
+ * CareerMonke design tokens (Jobright-style rebuild).
  *
  * Single source of truth for color, spacing, radius, shadow, typography,
  * z-index and motion. Imported ONCE in src/app/layout.tsx and mapped into
@@ -18,57 +18,91 @@
 :root {
   /* ---------------------------------------------------------------- */
   /* Color: primary brand scale                                        */
+  /* Primary blue: base #2563EB, hover #1D4ED8 (darker on hover),     */
+  /* pressed #1E40AF, tint #EFF6FF, tint hover #DBEAFE,               */
+  /* tint border #BFDBFE, border hover #93C5FD.                       */
   /* ---------------------------------------------------------------- */
-  --cm-brand-50: 239 246 255;   /* #EFF6FF */
-  --cm-brand-100: 219 234 254;  /* #DBEAFE */
-  --cm-brand-200: 191 219 254;  /* #BFDBFE */
-  --cm-brand-300: 147 197 253;  /* #93C5FD */
+  --cm-brand-50: 239 246 255;   /* #EFF6FF  tint */
+  --cm-brand-100: 219 234 254;  /* #DBEAFE  tint hover / selected chip bg */
+  --cm-brand-200: 191 219 254;  /* #BFDBFE  tint border */
+  --cm-brand-300: 147 197 253;  /* #93C5FD  border hover / focus ring */
   --cm-brand-400: 96 165 250;   /* #60A5FA */
   --cm-brand-500: 59 130 246;   /* #3B82F6 */
-  --cm-brand-600: 37 99 235;    /* #2563EB  primary (5.17:1 on white) */
-  --cm-brand-700: 29 78 216;    /* #1D4ED8  primary hover / text on tint */
-  --cm-brand-800: 30 64 175;    /* #1E40AF */
-  --cm-brand-900: 30 58 138;    /* #1E3A8A */
+  --cm-brand-600: 37 99 235;    /* #2563EB  primary base */
+  --cm-brand-700: 29 78 216;    /* #1D4ED8  primary hover / light chip text */
+  --cm-brand-800: 30 64 175;    /* #1E40AF  primary pressed */
+  --cm-brand-900: 30 58 138;    /* #1E3A8A  selected chip text / match gradient */
+
+  /* Focus ring 2px #93C5FD with 1px offset */
+  --cm-focus-ring: 2px solid #93C5FD;
+  --cm-focus-offset: 1px;
+
+  /* Chips tokens */
+  --cm-chip-selected-bg: #DBEAFE;
+  --cm-chip-selected-text: #1E3A8A;
+  --cm-chip-light-bg: #EFF6FF;
+  --cm-chip-light-text: #1D4ED8;
 
   /* ---------------------------------------------------------------- */
-  /* Color: surfaces                                                   */
+  /* Color: neutrals & surfaces                                        */
+  /* Neutrals: text #0F172A, secondary #475569, meta #94A3B8,         */
+  /* disabled #CBD5E1; borders #E2E8F0 (cards) and #CBD5E1 (inputs);   */
+  /* surfaces: page and drawer panes #F8FAFC, chips and rail items     */
+  /* #F1F5F9, cards white. Secondary pill buttons #F1F5F9 with ink     */
   /* ---------------------------------------------------------------- */
-  --cm-surface: 255 255 255;         /* #FFFFFF  cards, header */
-  --cm-surface-subtle: 248 250 252;  /* #F8FAFC  page canvas, footer */
-  --cm-surface-muted: 241 245 249;   /* #F1F5F9  skeletons, hovers */
+  --cm-surface: 255 255 255;         /* #FFFFFF  cards white */
+  --cm-surface-subtle: 248 250 252;  /* #F8FAFC  page and drawer panes */
+  --cm-surface-muted: 241 245 249;   /* #F1F5F9  chips, rail items, secondary pill buttons */
   --cm-surface-sunken: 226 232 240;  /* #E2E8F0  tracks */
 
   /* Borders / dividers */
-  --cm-line: 228 231 236;            /* #E4E7EC */
-  --cm-line-strong: 203 213 225;     /* #CBD5E1 */
+  --cm-line: 226 232 240;            /* #E2E8F0  cards border */
+  --cm-line-strong: 203 213 225;     /* #CBD5E1  inputs border, disabled */
+  --cm-line-card: 226 232 240;       /* #E2E8F0 */
+  --cm-line-input: 203 213 225;      /* #CBD5E1 */
+
+  /* Color: ink (text) */
+  --cm-ink: 15 23 42;                /* #0F172A  primary text (17.8:1) */
+  --cm-ink-muted: 71 85 105;         /* #475569  secondary text (7.6:1) */
+  --cm-ink-subtle: 100 116 139;      /* #64748B  captions (4.76:1) */
+  --cm-ink-meta: 148 163 184;        /* #94A3B8  meta */
+  --cm-ink-disabled: 203 213 225;    /* #CBD5E1  disabled */
+  --cm-ink-inverse: 255 255 255;     /* #FFFFFF  text on primary buttons is white */
 
   /* ---------------------------------------------------------------- */
-  /* Color: ink (text)                                                 */
+  /* Match panel gradients & rings                                     */
+  /* Below 50%: #0F172A to #334155; 50 to 79: #0F172A to #1E3A8A;      */
+  /* 80 and above: #1E3A8A to #2563EB;                                */
+  /* white ring on a white 12% track.                                  */
   /* ---------------------------------------------------------------- */
-  --cm-ink: 15 23 42;                /* #0F172A  headings/body  (17.8:1) */
-  --cm-ink-muted: 71 85 105;         /* #475569  secondary text (7.6:1)  */
-  --cm-ink-subtle: 100 116 139;      /* #64748B  captions       (4.76:1) */
-  --cm-ink-inverse: 255 255 255;     /* text on brand/dark fills */
+  --cm-match-gradient-low: linear-gradient(135deg, #0F172A 0%, #334155 100%);
+  --cm-match-gradient-mid: linear-gradient(135deg, #0F172A 0%, #1E3A8A 100%);
+  --cm-match-gradient-high: linear-gradient(135deg, #1E3A8A 0%, #2563EB 100%);
+  --cm-match-track: rgba(255, 255, 255, 0.12);
+  --cm-match-ring: #FFFFFF;
+  --cm-match-ring-duration: 0.3s;
 
   /* ---------------------------------------------------------------- */
   /* Color: status                                                     */
+  /* Status: success #16A34A on #DCFCE7, warning #D97706 on #FEF3C7,  */
+  /* error #DC2626 on #FEE2E2.                                        */
   /* ---------------------------------------------------------------- */
   --cm-success-50: 236 253 245;      /* #ECFDF5 */
-  --cm-success-100: 209 250 229;     /* #D1FAE5 */
-  --cm-success-500: 16 185 129;      /* #10B981  dots / fills only */
-  --cm-success-600: 5 150 105;       /* #059669 */
-  --cm-success-700: 4 120 87;        /* #047857  text (5.48:1) */
+  --cm-success-100: 220 252 231;     /* #DCFCE7  status success bg */
+  --cm-success-500: 16 185 129;      /* #10B981  dots / fills */
+  --cm-success-600: 22 163 74;       /* #16A34A  status success text */
+  --cm-success-700: 4 120 87;        /* #047857  text (4.83:1 on #DCFCE7) */
 
   --cm-warning-50: 255 251 235;      /* #FFFBEB */
-  --cm-warning-100: 254 243 199;     /* #FEF3C7 */
-  --cm-warning-500: 245 158 11;      /* #F59E0B  dots / fills only */
-  --cm-warning-600: 217 119 6;       /* #D97706 */
-  --cm-warning-700: 180 83 9;        /* #B45309  text (5.02:1) */
+  --cm-warning-100: 254 243 199;     /* #FEF3C7  status warning bg */
+  --cm-warning-500: 245 158 11;      /* #F59E0B  dots / fills */
+  --cm-warning-600: 217 119 6;       /* #D97706  status warning text */
+  --cm-warning-700: 180 83 9;        /* #B45309  text (5.02:1 on #FFFBEB) */
 
   --cm-danger-50: 254 242 242;       /* #FEF2F2 */
-  --cm-danger-100: 254 226 226;      /* #FEE2E2 */
-  --cm-danger-600: 220 38 38;        /* #DC2626  destructive fill (4.83:1) */
-  --cm-danger-700: 185 28 28;        /* #B91C1C  hover / text */
+  --cm-danger-100: 254 226 226;      /* #FEE2E2  status error bg */
+  --cm-danger-600: 220 38 38;        /* #DC2626  status error text */
+  --cm-danger-700: 185 28 28;        /* #B91C1C  text */
 
   /* ---------------------------------------------------------------- */
   /* Spacing: 8px rhythm (--cm-space-N = N * 8px; half step = 4px)     */
@@ -87,27 +121,42 @@
 
   /* ---------------------------------------------------------------- */
   /* Radius scale                                                      */
+  /* Card radius 16px, modal and drawer 20px, buttons fully rounded    */
+  /* pills (9999px).                                                  */
   /* ---------------------------------------------------------------- */
   --cm-radius-xs: 4px;
   --cm-radius-sm: 6px;
   --cm-radius-md: 8px;
   --cm-radius-lg: 12px;
-  --cm-radius-xl: 16px;
-  --cm-radius-2xl: 24px;
-  --cm-radius-full: 9999px;
+  --cm-radius-xl: 16px;              /* Card radius 16px */
+  --cm-radius-2xl: 20px;             /* Modal and drawer 20px */
+  --cm-radius-full: 9999px;          /* Buttons fully rounded pills */
 
   /* ---------------------------------------------------------------- */
-  /* Shadow scale: soft, layered (ambient + key light)                 */
+  /* Shadow scale                                                      */
+  /* Shadows: popover 0 16px 48px rgba(15,23,42,.18);                 */
+  /* cards use a 1px #E2E8F0 ring, no drop shadow;                     */
+  /* mask rgba(15,23,42,.6);                                           */
+  /* tooltip bg #0F172A, white text, 8px radius.                       */
   /* ---------------------------------------------------------------- */
   --cm-shadow-xs: 0 1px 2px 0 rgb(15 23 42 / 0.05);
   --cm-shadow-sm: 0 1px 2px 0 rgb(15 23 42 / 0.04), 0 1px 3px 0 rgb(15 23 42 / 0.06);
   --cm-shadow-md: 0 2px 4px -1px rgb(15 23 42 / 0.04), 0 4px 12px -2px rgb(15 23 42 / 0.08);
   --cm-shadow-lg: 0 4px 8px -2px rgb(15 23 42 / 0.04), 0 12px 24px -4px rgb(15 23 42 / 0.10);
   --cm-shadow-xl: 0 8px 16px -4px rgb(15 23 42 / 0.06), 0 24px 48px -8px rgb(15 23 42 / 0.14);
-  --cm-shadow-focus: 0 0 0 3px rgb(37 99 235 / 0.35);
+  --cm-shadow-focus: 0 0 0 2px #93C5FD;
+  --cm-shadow-popover: 0 16px 48px rgba(15, 23, 42, 0.18);
+  --cm-shadow-card: 0 0 0 1px #E2E8F0;
+  --cm-mask: rgba(15, 23, 42, 0.6);
+  --cm-tooltip-bg: #0F172A;
+  --cm-tooltip-text: #FFFFFF;
+  --cm-tooltip-radius: 8px;
 
   /* ---------------------------------------------------------------- */
   /* Typography scale (size / line-height)                             */
+  /* Type: a single clean sans (Inter):                                */
+  /* page titles 700 uppercase 18px in the app, job title 22px/700,    */
+  /* body 14px, meta 12px, chips 12px/500.                             */
   /* ---------------------------------------------------------------- */
   --cm-font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 
@@ -121,10 +170,14 @@
   --cm-leading-h3: 1.4;
   --cm-text-body: 1rem;           /* 16px */
   --cm-leading-body: 1.5;
-  --cm-text-body-sm: 0.875rem;    /* 14px */
+  --cm-text-body-sm: 0.875rem;    /* 14px  body */
   --cm-leading-body-sm: 1.5;
-  --cm-text-caption: 0.75rem;     /* 12px */
+  --cm-text-caption: 0.75rem;     /* 12px  meta / chips */
   --cm-leading-caption: 1.4;
+  --cm-text-app-title: 1.125rem;  /* 18px  page titles 700 uppercase 18px */
+  --cm-leading-app-title: 1.333;  /* 24px */
+  --cm-text-job-title: 1.375rem;  /* 22px  job title 22px/700 */
+  --cm-leading-job-title: 1.273;  /* 28px */
 
   /* ---------------------------------------------------------------- */
   /* Z-index scale                                                     */
@@ -140,6 +193,11 @@
 
   /* ---------------------------------------------------------------- */
   /* Motion                                                            */
+  /* Motion: hover all 0.2s cubic-bezier(.645,.045,.355,1);           */
+  /* drawers slide from the right 0.3s cubic-bezier(.2,0,0,1);         */
+  /* dropdowns slide-up 0.2s; modals fade plus scale 0.2s;             */
+  /* list cards fade and rise 0.5s with a small stagger;               */
+  /* match ring stroke 0.3s.                                           */
   /* ---------------------------------------------------------------- */
   --cm-duration-fast: 150ms;
   --cm-duration-base: 250ms;
@@ -147,6 +205,15 @@
   --cm-ease-entrance: cubic-bezier(0.22, 1, 0.36, 1);
   --cm-ease-exit: cubic-bezier(0.4, 0, 1, 1); /* ease-in */
   --cm-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+
+  --cm-duration-hover: 0.2s;
+  --cm-ease-hover: cubic-bezier(0.645, 0.045, 0.355, 1);
+  --cm-duration-drawer: 0.3s;
+  --cm-ease-drawer: cubic-bezier(0.2, 0, 0, 1);
+  --cm-duration-dropdown: 0.2s;
+  --cm-duration-modal: 0.2s;
+  --cm-duration-card-rise: 0.5s;
+  --cm-duration-match-ring: 0.3s;
 }
 
 /* ------------------------------------------------------------------ */
@@ -213,11 +280,60 @@
   }
 }
 
+/* Jobright-style animation keyframes */
+@keyframes cm-drawer-slide-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes cm-dropdown-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes cm-modal-fade-scale {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes cm-card-fade-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* Reduced motion: token animations collapse to instant, final state kept. */
 @media (prefers-reduced-motion: reduce) {
   :root {
     --cm-duration-fast: 0.01ms;
     --cm-duration-base: 0.01ms;
     --cm-duration-slow: 0.01ms;
+    --cm-duration-hover: 0.01ms;
+    --cm-duration-drawer: 0.01ms;
+    --cm-duration-dropdown: 0.01ms;
+    --cm-duration-modal: 0.01ms;
+    --cm-duration-card-rise: 0.01ms;
+    --cm-duration-match-ring: 0.01ms;
   }
 }

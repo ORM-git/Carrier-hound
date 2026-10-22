@@ -79,9 +79,9 @@ export default function PaywallModal({
       : "/pricing");
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-ink/75 backdrop-blur-md animate-fadeIn">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-[#0F172A]/60 backdrop-blur-md animate-fadeIn">
       <div
-        className="relative w-full max-w-lg bg-surface rounded-t-tk-2xl sm:rounded-tk-2xl shadow-tk-2xl overflow-hidden border border-line animate-slideUp sm:animate-scaleUp max-h-[94dvh] sm:max-h-[90vh] flex flex-col text-ink"
+        className="relative w-full max-w-lg bg-surface rounded-t-[20px] sm:rounded-[20px] shadow-popover overflow-hidden border border-line animate-slideUp sm:animate-scaleUp max-h-[94dvh] sm:max-h-[90vh] flex flex-col text-ink"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Mobile Drag Indicator Handle */}

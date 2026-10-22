@@ -46,7 +46,7 @@ export default function WorldwideClient({
             <span>Worldwide Remote</span>
           </div>
 
-          <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900">
+          <h1 className="text-[18px] font-bold uppercase tracking-wider text-[#0F172A]">
             Companies Hiring Worldwide
           </h1>
 

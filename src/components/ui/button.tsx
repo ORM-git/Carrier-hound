@@ -2,18 +2,20 @@ import * as React from "react";
 import { Loader2 } from "lucide-react";
 import { cnTokens } from "./cn-tokens";
 
-export type ButtonVariant = "primary" | "ghost" | "destructive";
+export type ButtonVariant = "primary" | "secondary" | "ghost" | "destructive";
 export type ButtonSize = "sm" | "md" | "lg";
 
 const BASE =
   "inline-flex items-center justify-center gap-tk-1 whitespace-nowrap font-semibold select-none " +
-  "rounded-tk-lg transition-[background-color,color,box-shadow,transform] duration-tk-fast ease-tk-standard " +
-  "focus-visible:outline-none focus-visible:shadow-tk-focus " +
+  "rounded-full transition-all duration-200 ease-[cubic-bezier(0.645,0.045,0.355,1)] " +
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] focus-visible:ring-offset-1 " +
   "disabled:cursor-not-allowed disabled:opacity-60 motion-safe:active:scale-[0.98] cursor-pointer";
 
 const VARIANTS: Record<ButtonVariant, string> = {
   primary:
-    "bg-brand-600 text-ink-inverse shadow-tk-sm hover:bg-brand-700 disabled:hover:bg-brand-600",
+    "bg-[#2563EB] text-white hover:bg-[#1D4ED8] active:bg-[#1E40AF] disabled:hover:bg-[#2563EB]",
+  secondary:
+    "bg-[#F1F5F9] text-[#0F172A] hover:bg-[#E2E8F0] active:bg-[#CBD5E1] disabled:hover:bg-[#F1F5F9]",
   ghost:
     "bg-transparent text-ink-muted hover:bg-surface-muted hover:text-ink disabled:hover:bg-transparent",
   destructive:
