@@ -11,11 +11,10 @@ import {
   FileCheck2,
   CheckCircle2,
   LogOut,
-  Loader2,
+  ArrowRight,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { PLAN_DOMESTIC, PLAN_INTERNATIONAL, BillingPlan } from "@/lib/billing/types";
-import { handleProCheckout } from "@/lib/billing/checkout";
+import { PLAN_DOMESTIC, PLAN_INTERNATIONAL } from "@/lib/billing/types";
 
 interface ProUpgradeScreenProps {
   title?: string;
@@ -27,25 +26,6 @@ export default function ProUpgradeScreen({
   subtitle = "Complete your membership to access full job details, match scores, and AI application tools.",
 }: ProUpgradeScreenProps) {
   const [selectedPlanId, setSelectedPlanId] = useState<"domestic" | "intl">("domestic");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const selectedPlan = selectedPlanId === "domestic" ? PLAN_DOMESTIC : PLAN_INTERNATIONAL;
-
-  const handleUpgrade = async () => {
-    setLoading(true);
-    setError(null);
-    await handleProCheckout(selectedPlan, {
-      redirectTarget: typeof window !== "undefined" ? window.location.pathname + window.location.search : "/dashboard",
-      onError: (err) => {
-        setError(err);
-        setLoading(false);
-      },
-      onSuccess: () => {
-        setLoading(false);
-      },
-    });
-  };
 
   const handleSignOut = async () => {
     try {
@@ -85,47 +65,47 @@ export default function ProUpgradeScreen({
 
   return (
     <div className="min-h-[80vh] flex items-center justify-center p-4 sm:p-6 animate-fadeIn">
-      <div className="w-full max-w-xl bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-xl space-y-6 text-center">
+      <div className="w-full max-w-xl bg-surface rounded-tk-2xl border border-line p-6 sm:p-8 shadow-tk-xl space-y-6 text-center text-ink">
         {/* Lock Badge */}
-        <div className="w-14 h-14 rounded-2xl bg-blue-50 border border-blue-200 text-blue-600 flex items-center justify-center mx-auto shadow-xs">
+        <div className="w-14 h-14 rounded-tk-2xl bg-brand-50 border border-brand-200 text-brand-600 flex items-center justify-center mx-auto shadow-tk-xs">
           <Lock className="w-7 h-7" />
         </div>
 
         {/* Heading */}
         <div className="space-y-2">
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+          <h1 className="text-2xl sm:text-3xl font-black text-ink tracking-tight">
             {title}
           </h1>
-          <p className="text-sm text-slate-600 max-w-md mx-auto leading-relaxed">
+          <p className="text-xs sm:text-sm text-ink-muted max-w-md mx-auto leading-relaxed">
             {subtitle}
           </p>
         </div>
 
         {/* Plan Switcher */}
-        <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-2xl">
+        <div className="grid grid-cols-2 gap-2 p-1 bg-surface-muted rounded-tk-xl border border-line">
           <button
             type="button"
             onClick={() => setSelectedPlanId("domestic")}
-            className={`py-2 px-3 rounded-xl text-xs font-bold transition cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
+            className={`py-2 px-3 rounded-tk-lg text-xs font-bold transition cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
               selectedPlanId === "domestic"
-                ? "bg-white text-blue-600 shadow-xs"
-                : "text-slate-600 hover:text-slate-900"
+                ? "bg-surface text-brand-600 shadow-tk-xs border border-line"
+                : "text-ink-muted hover:text-ink"
             }`}
           >
             <span>India Domestic</span>
-            <span className="text-[11px] font-semibold text-slate-500">₹199 / month</span>
+            <span className="text-xs font-semibold text-ink-muted">₹199 / month</span>
           </button>
           <button
             type="button"
             onClick={() => setSelectedPlanId("intl")}
-            className={`py-2 px-3 rounded-xl text-xs font-bold transition cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
+            className={`py-2 px-3 rounded-tk-lg text-xs font-bold transition cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
               selectedPlanId === "intl"
-                ? "bg-white text-blue-600 shadow-xs"
-                : "text-slate-600 hover:text-slate-900"
+                ? "bg-surface text-brand-600 shadow-tk-xs border border-line"
+                : "text-ink-muted hover:text-ink"
             }`}
           >
             <span>International</span>
-            <span className="text-[11px] font-semibold text-slate-500">$9 / month</span>
+            <span className="text-xs font-semibold text-ink-muted">$9 / month</span>
           </button>
         </div>
 
@@ -136,17 +116,17 @@ export default function ProUpgradeScreen({
             return (
               <div
                 key={feat.title}
-                className="flex items-start gap-3 p-3.5 rounded-2xl bg-slate-50 border border-slate-100 hover:border-slate-200 transition"
+                className="flex items-start gap-3 p-3.5 rounded-tk-xl bg-surface-subtle border border-line hover:border-line-strong transition"
               >
-                <div className="p-2 rounded-xl bg-white text-blue-600 border border-slate-200 shrink-0">
+                <div className="p-2 rounded-tk-lg bg-surface text-brand-600 border border-line shrink-0">
                   <Icon className="w-4 h-4" />
                 </div>
                 <div className="space-y-0.5 min-w-0">
-                  <h3 className="text-xs sm:text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                  <h3 className="text-xs sm:text-sm font-bold text-ink flex items-center gap-1.5">
                     <span>{feat.title}</span>
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    <CheckCircle2 className="w-3.5 h-3.5 text-success-600" />
                   </h3>
-                  <p className="text-xs text-slate-500 leading-normal">
+                  <p className="text-xs text-ink-muted leading-normal">
                     {feat.desc}
                   </p>
                 </div>
@@ -155,36 +135,29 @@ export default function ProUpgradeScreen({
           })}
         </div>
 
-        {error && (
-          <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700 text-center">
-            {error}
-          </div>
-        )}
-
-        {/* Upgrade Action Button: Disabled Coming Soon State */}
+        {/* Primary Action Button: Links to /pricing */}
         <div className="pt-2 space-y-2">
-          <button
-            type="button"
-            disabled
-            className="w-full py-3.5 px-6 rounded-2xl bg-slate-200 text-slate-500 font-bold text-sm border border-slate-300/80 cursor-not-allowed select-none transition flex items-center justify-center gap-2 shadow-none"
+          <Link
+            href="/pricing"
+            className="w-full h-12 rounded-tk-lg bg-brand-600 hover:bg-brand-700 text-ink-inverse font-semibold flex items-center justify-center gap-2 shadow-tk-sm transition-colors cursor-pointer text-sm sm:text-base min-h-[48px]"
           >
-            <Lock className="w-4 h-4 text-slate-400" />
-            <span>Payments Coming Soon</span>
-          </button>
-          <p className="text-[11px] text-slate-500 font-medium">
-            Payments launching soon
+            <span>See Pro Plans - ₹199/mo</span>
+            <ArrowRight className="w-4 h-4" />
+          </Link>
+          <p className="text-xs text-ink-muted font-medium">
+            UPI, RuPay, NetBanking & Cards (Razorpay Test Mode)
           </p>
         </div>
 
         {/* Secondary Navigation */}
-        <div className="pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-          <Link href="/" className="hover:text-blue-600 font-medium">
+        <div className="pt-4 border-t border-line flex items-center justify-between text-xs text-ink-muted">
+          <Link href="/" className="hover:text-brand-600 font-medium">
             ← Back to Home
           </Link>
           <button
             type="button"
             onClick={handleSignOut}
-            className="hover:text-red-600 font-medium inline-flex items-center gap-1 cursor-pointer"
+            className="hover:text-danger-600 font-medium inline-flex items-center gap-1 cursor-pointer"
           >
             <LogOut className="w-3.5 h-3.5" />
             <span>Sign Out</span>

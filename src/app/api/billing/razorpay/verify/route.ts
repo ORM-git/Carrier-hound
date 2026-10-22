@@ -43,6 +43,13 @@ async function verifySignature(
 
 export async function POST(req: Request) {
   try {
+    if (process.env.NEXT_PUBLIC_BILLING_ENABLED !== "true") {
+      return NextResponse.json(
+        { error: "Billing is currently unavailable", code: "BILLING_DISABLED" },
+        { status: 503 }
+      );
+    }
+
     const authHeader = req.headers.get("authorization") || req.headers.get("Authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return NextResponse.json({ error: "Missing or invalid authorization header" }, { status: 401 });
@@ -103,7 +110,18 @@ export async function POST(req: Request) {
       );
     }
 
-    // On success: persist subscription exactly like simulate-checkout
+    // Test mode safety check: if key id starts with rzp_test_, NEVER upsert a Pro subscription!
+    const keyId = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID || "";
+    if (keyId.startsWith("rzp_test_")) {
+      return NextResponse.json({
+        success: true,
+        testMode: true,
+        isPro: false,
+        message: "Test payment successful (no Pro granted)",
+      });
+    }
+
+    // On live mode success: persist subscription exactly like simulate-checkout
     const currentPeriodStart = new Date().toISOString();
     const currentPeriodEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
@@ -124,7 +142,7 @@ export async function POST(req: Request) {
             razorpay_order_id: orderId,
             razorpay_payment_id: paymentId,
             verified_at: new Date().toISOString(),
-            mode: "test",
+            mode: "live",
             source: "razorpay_standard_checkout",
           },
           updated_at: new Date().toISOString(),

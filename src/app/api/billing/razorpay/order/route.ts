@@ -6,6 +6,13 @@ export const runtime = "edge";
 
 export async function POST(req: Request) {
   try {
+    if (process.env.NEXT_PUBLIC_BILLING_ENABLED !== "true") {
+      return NextResponse.json(
+        { error: "Billing is currently unavailable", code: "BILLING_DISABLED" },
+        { status: 503 }
+      );
+    }
+
     const authHeader = req.headers.get("authorization") || req.headers.get("Authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return NextResponse.json({ error: "Missing or invalid authorization header" }, { status: 401 });

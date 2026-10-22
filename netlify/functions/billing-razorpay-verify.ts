@@ -35,6 +35,17 @@ export async function handler(event: any) {
   }
 
   try {
+    if (process.env.NEXT_PUBLIC_BILLING_ENABLED !== "true") {
+      return {
+        statusCode: 503,
+        headers,
+        body: JSON.stringify({
+          error: "Billing is currently unavailable",
+          code: "BILLING_DISABLED",
+        }),
+      };
+    }
+
     const authHeader = event.headers.authorization || event.headers.Authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return {
@@ -133,6 +144,21 @@ export async function handler(event: any) {
       };
     }
 
+    // Test mode safety check: if key id starts with rzp_test_, NEVER upsert a Pro subscription!
+    const keyId = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID || "";
+    if (keyId.startsWith("rzp_test_")) {
+      return {
+        statusCode: 200,
+        headers,
+        body: JSON.stringify({
+          success: true,
+          testMode: true,
+          isPro: false,
+          message: "Test payment successful (no Pro granted)",
+        }),
+      };
+    }
+
     // Persist entitlement to subscriptions table
     const currentPeriodStart = new Date().toISOString();
     const currentPeriodEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
@@ -154,7 +180,7 @@ export async function handler(event: any) {
             razorpay_order_id: orderId,
             razorpay_payment_id: paymentId,
             verified_at: new Date().toISOString(),
-            mode: "test",
+            mode: "live",
             source: "razorpay_standard_checkout",
           },
           updated_at: new Date().toISOString(),

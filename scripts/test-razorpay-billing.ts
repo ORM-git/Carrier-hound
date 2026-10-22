@@ -5,7 +5,7 @@ import path from "path";
 import { PLAN_DOMESTIC, PLAN_INTERNATIONAL } from "../src/lib/billing/types";
 
 console.log("==================================================================================");
-console.log("           RAZORPAY TEST-MODE BILLING & /PRICING VERIFICATION                     ");
+console.log("           RAZORPAY TEST-MODE BILLING & SAFETY VERIFICATION                       ");
 console.log("==================================================================================\n");
 
 let passed = 0;
@@ -30,6 +30,10 @@ check("Pricing page exists and has 'use client'", () => {
   assert(!content.includes("export const runtime"), "Pricing page must NOT export edge runtime (static export)");
   assert(content.includes("Subscribe with Razorpay (Test)"), "India CTA must include 'Subscribe with Razorpay (Test)'");
   assert(content.includes("Coming soon"), "International CTA must include 'Coming soon'");
+  assert(content.includes("Pro launching soon"), "Pricing page must support 'Pro launching soon' state");
+  assert(content.includes("Checkout is unavailable right now, please try again later."), "Error copy must be updated");
+  assert(!content.includes("Cancel anytime with one click"), "Must NOT contain 'Cancel anytime with one click'");
+  assert(content.includes("Test payment successful (no Pro granted)"), "Success screen must show test mode message");
 });
 
 // 2. Billing types integrity
@@ -63,29 +67,35 @@ check("Razorpay HMAC-SHA256 signature verification algorithm matches", () => {
   assert.notStrictEqual(expectedSignature, tamperedSignature, "Tampered signature must not match");
 });
 
-// 4. API Endpoints edge runtime contracts
-check("API route endpoints are configured with edge runtime", () => {
+// 4. API Endpoints edge runtime contracts and billing safety
+check("API route endpoints are configured with edge runtime and safety gates", () => {
   const orderRoute = fs.readFileSync(path.resolve("src/app/api/billing/razorpay/order/route.ts"), "utf8");
   assert(orderRoute.includes('runtime = "edge"'), "order route must use edge runtime");
   assert(orderRoute.includes("rzp_test_"), "order route must enforce rzp_test_ key prefix");
+  assert(orderRoute.includes("NEXT_PUBLIC_BILLING_ENABLED"), "order route must check NEXT_PUBLIC_BILLING_ENABLED");
 
   const verifyRoute = fs.readFileSync(path.resolve("src/app/api/billing/razorpay/verify/route.ts"), "utf8");
   assert(verifyRoute.includes('runtime = "edge"'), "verify route must use edge runtime");
   assert(verifyRoute.includes("crypto.subtle"), "verify route must use Web Crypto subtle API for Edge runtime");
-  assert(verifyRoute.includes("subscriptions"), "verify route must persist to subscriptions table");
+  assert(verifyRoute.includes("NEXT_PUBLIC_BILLING_ENABLED"), "verify route must check NEXT_PUBLIC_BILLING_ENABLED");
+  assert(verifyRoute.includes("testMode: true"), "verify route must return testMode: true for rzp_test_ keys");
+  assert(verifyRoute.includes("Test payment successful (no Pro granted)"), "verify route must return test mode message");
 });
 
-// 5. Netlify functions and redirects
-check("Netlify functions and netlify.toml redirects are configured", () => {
+// 5. Netlify functions and safety gates
+check("Netlify functions enforce CORS and billing safety gates", () => {
   const toml = fs.readFileSync(path.resolve("netlify.toml"), "utf8");
   assert(toml.includes('from = "/api/billing/razorpay/order"'), "netlify.toml must redirect /api/billing/razorpay/order");
   assert(toml.includes('from = "/api/billing/razorpay/verify"'), "netlify.toml must redirect /api/billing/razorpay/verify");
 
   const netlifyOrder = fs.readFileSync(path.resolve("netlify/functions/billing-razorpay-order.ts"), "utf8");
   assert(netlifyOrder.includes("buildCorsHeaders"), "Netlify order function must use centralized CORS");
+  assert(netlifyOrder.includes("NEXT_PUBLIC_BILLING_ENABLED"), "Netlify order function must check NEXT_PUBLIC_BILLING_ENABLED");
 
   const netlifyVerify = fs.readFileSync(path.resolve("netlify/functions/billing-razorpay-verify.ts"), "utf8");
   assert(netlifyVerify.includes("buildCorsHeaders"), "Netlify verify function must use centralized CORS");
+  assert(netlifyVerify.includes("NEXT_PUBLIC_BILLING_ENABLED"), "Netlify verify function must check NEXT_PUBLIC_BILLING_ENABLED");
+  assert(netlifyVerify.includes("testMode: true"), "Netlify verify function must return testMode: true for rzp_test_ keys");
 });
 
 // 6. Navigation links
@@ -97,7 +107,20 @@ check("Navigation links in GuideHeader and Footer include /pricing", () => {
   assert(footer.includes('href="/pricing"'), "Footer must link to /pricing");
 });
 
-// 7. Negative Control: Invalid signature verification fails
+// 7. PaywallModal and ProUpgradeScreen link to /pricing
+check("PaywallModal and ProUpgradeScreen have primary button linking to /pricing without Coming Soon", () => {
+  const modal = fs.readFileSync(path.resolve("src/components/PaywallModal.tsx"), "utf8");
+  assert(modal.includes('href="/pricing"'), "PaywallModal must link to /pricing");
+  assert(modal.includes("See Pro Plans - ₹199/mo"), "PaywallModal must feature 'See Pro Plans - ₹199/mo'");
+  assert(!modal.includes("Payments Coming Soon"), "PaywallModal must remove 'Payments Coming Soon'");
+
+  const screen = fs.readFileSync(path.resolve("src/components/billing/ProUpgradeScreen.tsx"), "utf8");
+  assert(screen.includes('href="/pricing"'), "ProUpgradeScreen must link to /pricing");
+  assert(screen.includes("See Pro Plans - ₹199/mo"), "ProUpgradeScreen must feature 'See Pro Plans - ₹199/mo'");
+  assert(!screen.includes("Payments Coming Soon"), "ProUpgradeScreen must remove 'Payments Coming Soon'");
+});
+
+// 8. Negative Control: Invalid signature verification fails
 check("Negative Control: Verification rejects mismatched signature", () => {
   const secret = "test_secret_123";
   const validSig = crypto.createHmac("sha256", secret).update("order_1|pay_1").digest("hex");
