@@ -48,13 +48,14 @@ import {
   BookOpen,
   MessageSquare,
   Settings,
-  Copy,
 } from "lucide-react";
 import CompanyLogo from "@/components/CompanyLogo";
 import BrandIcon from "@/components/BrandIcon";
 import { toast } from "react-toastify";
 
 const PaywallModal = dynamic(() => import("@/components/PaywallModal"), { ssr: false });
+
+const STORAGE_KEY_HIDDEN_JOBS = "cm_hidden_jobs";
 
 type JobTab = "recommended" | "liked" | "applied" | "external";
 
@@ -81,21 +82,36 @@ function inferJobLevel(title: string): string {
 }
 
 function formatRelativeTime(dateStr?: string): string {
-  if (!dateStr) return "17 minutes ago";
+  if (!dateStr) return "Recently posted";
   try {
+    const s = dateStr.trim().toLowerCase();
+    if (s === "today") return "Today";
     const d = new Date(dateStr);
     const now = new Date();
     const diffMs = now.getTime() - d.getTime();
+    if (isNaN(diffMs)) return dateStr;
     const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-    if (diffHours < 1) return "17 minutes ago";
+    if (diffHours < 1) return "Just now";
     if (diffHours < 24) return `${diffHours} hours ago`;
     const diffDays = Math.floor(diffHours / 24);
     if (diffDays === 1) return "1 day ago";
     if (diffDays < 30) return `${diffDays} days ago`;
     return "Recently posted";
   } catch {
-    return "17 minutes ago";
+    return "Recently posted";
   }
+}
+
+function isPostedUnder24Hours(dateStr?: string): boolean {
+  if (!dateStr) return false;
+  const s = dateStr.trim().toLowerCase();
+  if (s === "today" || s === "just now" || s.includes("minute") || s.includes("hour")) {
+    return true;
+  }
+  const timestamp = Date.parse(dateStr);
+  if (isNaN(timestamp)) return false;
+  const diffMs = Date.now() - timestamp;
+  return diffMs >= 0 && diffMs < 24 * 60 * 60 * 1000;
 }
 
 function getJobMatchScore(job: LiveJob, candidate: CandidateProfile | null): number {
@@ -203,8 +219,22 @@ function JobsPageInner() {
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
 
-  // Hidden jobs list for session
+  // Hidden jobs list persisted in localStorage
   const [hiddenJobIds, setHiddenJobIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY_HIDDEN_JOBS);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          setHiddenJobIds(parsed);
+        }
+      }
+    } catch {
+      // Ignore localStorage read errors
+    }
+  }, []);
 
   // User state
   const [user, setUser] = useState<User | null>(null);
@@ -509,20 +539,16 @@ function JobsPageInner() {
   };
 
   const handleHideJob = (jobId: string) => {
-    setHiddenJobIds((prev) => [...prev, jobId]);
+    setHiddenJobIds((prev) => {
+      const next = prev.includes(jobId) ? prev : [...prev, jobId];
+      try {
+        localStorage.setItem(STORAGE_KEY_HIDDEN_JOBS, JSON.stringify(next));
+      } catch {
+        // Ignore localStorage quota errors
+      }
+      return next;
+    });
     toast.info("Job hidden from your feed.");
-  };
-
-  const handleAskAi = (job: LiveJob) => {
-    if (!user) {
-      router.push(`/login?next=${encodeURIComponent(`/job-detail?id=${job.id}`)}`);
-      return;
-    }
-    if (!isPro) {
-      setIsPaywallOpen(true);
-      return;
-    }
-    router.push(`/job-detail?id=${encodeURIComponent(job.id)}`);
   };
 
   const handleLockedAction = (e?: React.MouseEvent) => {
@@ -631,28 +657,22 @@ function JobsPageInner() {
 
         {/* Bottom Promo & Controls */}
         <div className="space-y-3 pt-4 border-t border-slate-100">
-          {/* Promo / Referral Card */}
+          {/* Plain Upgrade to Pro Card */}
           <div className="p-3 rounded-xl bg-gradient-to-br from-blue-50 to-indigo-50/70 border border-blue-100 space-y-1.5">
             <div className="flex items-center gap-1.5 text-xs font-bold text-blue-900">
               <Sparkles className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-              <span>Refer & Get Pro</span>
+              <span>Upgrade to Pro</span>
             </div>
             <p className="text-[11px] text-slate-600 leading-snug">
-              Invite 2 friends and receive 1 month of CareerMonke Pro access free.
+              Unlock verified company names, compensation & direct ATS apply links.
             </p>
-            <button
-              type="button"
-              onClick={() => {
-                if (typeof navigator !== "undefined" && navigator.clipboard) {
-                  navigator.clipboard.writeText("https://careermonke.com/signup?ref=member");
-                  toast.success("Referral invite link copied to clipboard!");
-                }
-              }}
-              className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:text-blue-800 transition pt-0.5 cursor-pointer min-h-[32px]"
+            <Link
+              href="/pricing"
+              className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:text-blue-800 transition pt-0.5 min-h-[32px]"
             >
-              <Copy className="w-3 h-3" />
-              <span>Copy Invite Link</span>
-            </button>
+              <span>View Plans</span>
+              <ArrowRight className="w-3 h-3" />
+            </Link>
           </div>
 
           {/* Feedback & Settings */}
@@ -1371,6 +1391,11 @@ function JobsPageInner() {
                         : matchScore >= 50
                         ? "Good match"
                         : "Fair match";
+                    const isNew = isPostedUnder24Hours(job.postedAt || job.date);
+                    const applicantCount =
+                      (job as any).applicantCount ??
+                      (job as any).applicants ??
+                      (job as any).applicant_count;
 
                     return (
                       <motion.article
@@ -1411,9 +1436,11 @@ function JobsPageInner() {
                                 <span className="inline-flex items-center text-[11px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
                                   {formatRelativeTime(job.postedAt || job.date)}
                                 </span>
-                                <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/60">
-                                  Early applicant
-                                </span>
+                                {isNew && (
+                                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/60">
+                                    New
+                                  </span>
+                                )}
                               </div>
 
                               {/* Bold Title */}
@@ -1516,10 +1543,18 @@ function JobsPageInner() {
 
                         {/* Card Footer Row: Applicant Count on Left & Actions on Right */}
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-slate-100">
-                          <div className="flex items-center gap-2 text-xs text-slate-500">
-                            <Users className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                            <span>Under 15 applicants · Direct Company ATS</span>
-                          </div>
+                          {applicantCount != null && applicantCount !== "" ? (
+                            <div className="flex items-center gap-2 text-xs text-slate-500">
+                              <Users className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                              <span>
+                                {typeof applicantCount === "number"
+                                  ? `${applicantCount.toLocaleString()} applicants`
+                                  : `${applicantCount} applicants`}
+                              </span>
+                            </div>
+                          ) : (
+                            <div />
+                          )}
 
                           <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
                             {/* Hide button */}
@@ -1546,16 +1581,6 @@ function JobsPageInner() {
                               }`}
                             >
                               <Heart className={`w-4 h-4 ${isSaved ? "fill-rose-500 text-rose-500" : ""}`} />
-                            </button>
-
-                            {/* Ask AI button */}
-                            <button
-                              type="button"
-                              onClick={() => handleAskAi(job)}
-                              className="inline-flex items-center gap-1.5 px-3.5 py-2 min-h-[44px] rounded-xl border border-blue-200 bg-blue-50/60 text-blue-700 hover:bg-blue-100 hover:border-blue-300 text-xs font-bold transition cursor-pointer"
-                            >
-                              <Sparkles className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                              <span>Ask AI</span>
                             </button>
 
                             {/* Primary Apply Now button */}
