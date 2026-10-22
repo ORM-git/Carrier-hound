@@ -5,7 +5,7 @@ import { useEffect } from "react";
 export default function JobsDetailRedirectPage() {
   useEffect(() => {
     if (typeof window !== "undefined") {
-      window.location.replace(`/job-detail${window.location.search || ""}`);
+      window.location.replace(`/jobs${window.location.search || ""}`);
     }
   }, []);
 
