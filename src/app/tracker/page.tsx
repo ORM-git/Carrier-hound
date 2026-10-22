@@ -32,6 +32,8 @@ import {
 } from "lucide-react";
 import BrandIcon from "@/components/BrandIcon";
 import Footer from "@/components/Footer";
+import AppIconRail from "@/components/shell/AppIconRail";
+import AppTopBar from "@/components/shell/AppTopBar";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonClasses } from "@/components/ui/button";
@@ -281,31 +283,13 @@ export default function TrackerPage() {
     { saved: 0, applied: 0, interview: 0, offer: 0, rejected: 0 }
   );
 
-  // Loading skeleton matching the dashboard shell
+  // Loading skeleton matching the shell
   if (isLoading || (!isPro && !isProDefinitive)) {
     return (
-      <div className="min-h-screen bg-surface-subtle text-ink flex flex-col">
-        {/* Desktop Sidebar Skeleton */}
-        <aside className="hidden lg:flex flex-col justify-between w-[220px] fixed top-0 bottom-0 left-0 bg-surface border-r border-line z-30 p-4">
-          <div className="space-y-6">
-            <div className="flex items-center gap-2">
-              <Skeleton className="w-8 h-8 rounded-tk-lg" />
-              <Skeleton className="h-6 w-28 rounded-tk-md" />
-            </div>
-            <div className="space-y-2">
-              {[0, 1, 2, 3, 4, 5].map((i) => (
-                <Skeleton key={i} className="h-11 w-full rounded-tk-lg" />
-              ))}
-            </div>
-          </div>
-        </aside>
-
-        {/* Content Skeleton */}
-        <div className="flex-1 lg:pl-[220px] flex flex-col min-w-0">
-          <header className="lg:hidden sticky top-0 z-30 bg-surface/95 backdrop-blur-md border-b border-line px-4 h-14 flex items-center justify-between">
-            <Skeleton className="h-7 w-32 rounded-tk-md" />
-            <Skeleton className="w-9 h-9 rounded-tk-full" />
-          </header>
+      <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col font-sans">
+        <AppIconRail />
+        <div className="flex-1 md:pl-[72px] flex flex-col min-w-0 pb-16 md:pb-0">
+          <AppTopBar pageLabel="TRACKER" user={user} isPro={isPro} />
           <main className="flex-1 max-w-[1400px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-6 space-y-4">
             <div className="flex items-center justify-between">
               <Skeleton className="h-8 w-64 rounded-tk-md" />
@@ -329,67 +313,10 @@ export default function TrackerPage() {
   // Definitively non-Pro
   if (!isPro) {
     return (
-      <div className="min-h-screen bg-surface-subtle text-ink flex flex-col justify-between">
-        {/* Desktop Sidebar Shell */}
-        <aside className="hidden lg:flex flex-col justify-between w-[220px] fixed top-0 bottom-0 left-0 bg-surface border-r border-line z-30 p-4">
-          <div className="space-y-6">
-            <Link href={user ? "/dashboard" : "/"} className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-tk-lg bg-surface flex items-center justify-center p-1 shadow-tk-xs border border-line">
-                <BrandIcon className="w-6 h-6" />
-              </div>
-              <span className="text-lg font-black text-brand-600 tracking-tight">
-                CareerMonke
-              </span>
-            </Link>
-
-            <nav className="space-y-1">
-              <Link
-                href="/jobs"
-                className="flex items-center gap-3 px-3 py-2.5 rounded-tk-xl text-xs font-semibold text-ink-muted hover:text-ink hover:bg-surface-muted transition min-h-[44px]"
-              >
-                <Briefcase className="w-4 h-4 text-ink-subtle shrink-0" />
-                <span>Jobs</span>
-              </Link>
-              <Link
-                href="/radar"
-                className="flex items-center gap-3 px-3 py-2.5 rounded-tk-xl text-xs font-semibold text-ink-muted hover:text-ink hover:bg-surface-muted transition min-h-[44px]"
-              >
-                <Globe className="w-4 h-4 text-ink-subtle shrink-0" />
-                <span>Explore</span>
-              </Link>
-              <Link
-                href="/resume"
-                className="flex items-center gap-3 px-3 py-2.5 rounded-tk-xl text-xs font-semibold text-ink-muted hover:text-ink hover:bg-surface-muted transition min-h-[44px]"
-              >
-                <FileText className="w-4 h-4 text-ink-subtle shrink-0" />
-                <span>Resume</span>
-              </Link>
-              <Link
-                href="/settings?tab=preferences"
-                className="flex items-center gap-3 px-3 py-2.5 rounded-tk-xl text-xs font-semibold text-ink-muted hover:text-ink hover:bg-surface-muted transition min-h-[44px]"
-              >
-                <UserIcon className="w-4 h-4 text-ink-subtle shrink-0" />
-                <span>Profile</span>
-              </Link>
-              <Link
-                href="/applications"
-                className="flex items-center gap-3 px-3 py-2.5 rounded-tk-xl text-xs font-bold transition min-h-[44px] bg-brand-50 text-brand-700 shadow-tk-xs"
-              >
-                <CheckSquare className="w-4 h-4 text-brand-600 shrink-0" />
-                <span>Applications</span>
-              </Link>
-              <Link
-                href="/remote"
-                className="flex items-center gap-3 px-3 py-2.5 rounded-tk-xl text-xs font-semibold text-ink-muted hover:text-ink hover:bg-surface-muted transition min-h-[44px]"
-              >
-                <BookOpen className="w-4 h-4 text-ink-subtle shrink-0" />
-                <span>Resources</span>
-              </Link>
-            </nav>
-          </div>
-        </aside>
-
-        <div className="flex-1 lg:pl-[220px] flex flex-col min-w-0">
+      <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col justify-between font-sans">
+        <AppIconRail />
+        <div className="flex-1 md:pl-[72px] flex flex-col min-w-0 pb-16 md:pb-0">
+          <AppTopBar pageLabel="TRACKER" user={user} isPro={isPro} />
           <main className="flex-1 max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
             <ProUpgradeScreen
               title="Unlock Application Tracker"
@@ -403,148 +330,13 @@ export default function TrackerPage() {
   }
 
   return (
-    <div className="min-h-screen bg-surface-subtle text-ink flex flex-col">
-      {/* ========================================================================= */}
-      {/* 1. LEFT SIDEBAR (Desktop Fixed 220px)                                     */}
-      {/* ========================================================================= */}
-      <aside className="hidden lg:flex flex-col justify-between w-[220px] fixed top-0 bottom-0 left-0 bg-surface border-r border-line z-30 p-4">
-        <div className="space-y-6">
-          {/* Logo */}
-          <Link href={user ? "/dashboard" : "/"} className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-tk-lg bg-surface flex items-center justify-center p-1 shadow-tk-xs border border-line">
-              <BrandIcon className="w-6 h-6" />
-            </div>
-            <span className="text-lg font-black text-brand-600 tracking-tight">
-              CareerMonke
-            </span>
-          </Link>
+    <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col font-sans">
+      {/* Left Icon Rail (fixed 72px desktop, bottom tab bar mobile) */}
+      <AppIconRail />
 
-          {/* Navigation Links */}
-          <nav className="space-y-1">
-            <Link
-              href="/jobs"
-              className="flex items-center gap-3 px-3 py-2.5 rounded-tk-xl text-xs font-semibold text-ink-muted hover:text-ink hover:bg-surface-muted transition min-h-[44px]"
-            >
-              <Briefcase className="w-4 h-4 text-ink-subtle shrink-0" />
-              <span>Jobs</span>
-            </Link>
-
-            <Link
-              href="/radar"
-              className="flex items-center gap-3 px-3 py-2.5 rounded-tk-xl text-xs font-semibold text-ink-muted hover:text-ink hover:bg-surface-muted transition min-h-[44px]"
-            >
-              <Globe className="w-4 h-4 text-ink-subtle shrink-0" />
-              <span>Explore</span>
-            </Link>
-
-            <Link
-              href="/resume"
-              className="flex items-center gap-3 px-3 py-2.5 rounded-tk-xl text-xs font-semibold text-ink-muted hover:text-ink hover:bg-surface-muted transition min-h-[44px]"
-            >
-              <FileText className="w-4 h-4 text-ink-subtle shrink-0" />
-              <span>Resume</span>
-            </Link>
-
-            <Link
-              href="/settings?tab=preferences"
-              className="flex items-center gap-3 px-3 py-2.5 rounded-tk-xl text-xs font-semibold text-ink-muted hover:text-ink hover:bg-surface-muted transition min-h-[44px]"
-            >
-              <UserIcon className="w-4 h-4 text-ink-subtle shrink-0" />
-              <span>Profile</span>
-            </Link>
-
-            <Link
-              href="/applications"
-              className="flex items-center gap-3 px-3 py-2.5 rounded-tk-xl text-xs font-bold transition min-h-[44px] bg-brand-50 text-brand-700 shadow-tk-xs"
-            >
-              <CheckSquare className="w-4 h-4 text-brand-600 shrink-0" />
-              <span>Applications</span>
-            </Link>
-
-            <Link
-              href="/remote"
-              className="flex items-center gap-3 px-3 py-2.5 rounded-tk-xl text-xs font-semibold text-ink-muted hover:text-ink hover:bg-surface-muted transition min-h-[44px]"
-            >
-              <BookOpen className="w-4 h-4 text-ink-subtle shrink-0" />
-              <span>Resources</span>
-            </Link>
-          </nav>
-        </div>
-
-        {/* Bottom Promo & Controls */}
-        <div className="space-y-3 pt-4 border-t border-line">
-          {/* Pro Upgrade / Status Card */}
-          <div className="p-3 rounded-tk-xl bg-brand-50/70 border border-brand-200 space-y-1.5">
-            <div className="flex items-center gap-1.5 text-xs font-bold text-brand-900">
-              <Sparkles className="w-3.5 h-3.5 text-brand-600 shrink-0" />
-              <span>CareerMonke Pro</span>
-            </div>
-            <p className="text-xs text-ink-muted leading-snug">
-              Direct ATS endpoints, verified salary bands, and AI match diagnostics.
-            </p>
-            <Link
-              href="/pricing"
-              className="inline-flex items-center gap-1 text-xs font-bold text-brand-600 hover:text-brand-800 transition pt-0.5 min-h-[32px]"
-            >
-              <span>View Plans</span>
-              <ArrowRight className="w-3 h-3" />
-            </Link>
-          </div>
-
-          {/* Feedback & Settings */}
-          <div className="space-y-0.5">
-            <a
-              href="mailto:support@careermonke.com"
-              className="flex items-center gap-2.5 px-3 py-2 rounded-tk-lg text-xs font-semibold text-ink-muted hover:text-ink hover:bg-surface-muted transition min-h-[44px]"
-            >
-              <MessageSquare className="w-4 h-4 text-ink-subtle shrink-0" />
-              <span>Feedback</span>
-            </a>
-
-            <Link
-              href="/settings"
-              className="flex items-center gap-2.5 px-3 py-2 rounded-tk-lg text-xs font-semibold text-ink-muted hover:text-ink hover:bg-surface-muted transition min-h-[44px]"
-            >
-              <Settings className="w-4 h-4 text-ink-subtle shrink-0" />
-              <span>Settings</span>
-            </Link>
-          </div>
-        </div>
-      </aside>
-
-      {/* ========================================================================= */}
-      {/* MOBILE TOP BAR (<900px)                                                   */}
-      {/* ========================================================================= */}
-      <header className="lg:hidden sticky top-0 z-30 bg-surface/95 backdrop-blur-md border-b border-line px-4 h-14 flex items-center justify-between">
-        <Link href={user ? "/dashboard" : "/"} className="flex items-center gap-2 min-h-[44px]">
-          <div className="w-7 h-7 rounded-tk-full bg-surface flex items-center justify-center p-0.5 shadow-tk-xs border border-line">
-            <BrandIcon className="w-6 h-6" />
-          </div>
-          <span className="text-base font-black text-brand-600 tracking-tight">CareerMonke</span>
-        </Link>
-        <div className="flex items-center gap-2">
-          {!user ? (
-            <Link
-              href="/login"
-              className="text-xs font-bold text-brand-600 px-3 py-1.5 rounded-tk-lg border border-brand-200 bg-brand-50 min-h-[44px] flex items-center"
-            >
-              Sign In
-            </Link>
-          ) : (
-            <Link
-              href="/settings"
-              className="w-9 h-9 rounded-tk-full bg-brand-600 text-ink-inverse font-bold text-xs flex items-center justify-center min-h-[44px] min-w-[44px]"
-            >
-              {(user.email || "CM").slice(0, 2).toUpperCase()}
-            </Link>
-          )}
-        </div>
-      </header>
-
-      {/* ========================================================================= */}
-      {/* 2. MAIN CONTENT AREA (offset by 220px on desktop)                         */}
-      {/* ========================================================================= */}
-      <div className="flex-1 lg:pl-[220px] flex flex-col min-w-0">
+      {/* Main Content Area (offset by 72px on desktop) */}
+      <div className="flex-1 md:pl-[72px] flex flex-col min-w-0 pb-16 md:pb-0">
+        <AppTopBar pageLabel="TRACKER" user={user} isPro={isPro} />
         <main
           id="main-content"
           className="flex-1 max-w-[1400px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-6 space-y-4 pb-24 lg:pb-12"
@@ -1077,50 +869,7 @@ export default function TrackerPage() {
         <Footer />
       </div>
 
-      {/* ========================================================================= */}
-      {/* MOBILE BOTTOM TAB BAR (<900px)                                            */}
-      {/* ========================================================================= */}
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-surface/95 backdrop-blur-md border-t border-line flex items-center justify-around h-16 px-2">
-        <Link
-          href="/jobs"
-          className="flex flex-col items-center justify-center flex-1 min-h-[44px] min-w-[44px] text-xs font-semibold text-ink-muted hover:text-ink"
-        >
-          <Briefcase className="w-5 h-5 text-ink-subtle mb-0.5" />
-          <span>Jobs</span>
-        </Link>
-
-        <Link
-          href="/radar"
-          className="flex flex-col items-center justify-center flex-1 min-h-[44px] min-w-[44px] text-xs font-semibold text-ink-muted hover:text-ink"
-        >
-          <Globe className="w-5 h-5 text-ink-subtle mb-0.5" />
-          <span>Explore</span>
-        </Link>
-
-        <Link
-          href="/resume"
-          className="flex flex-col items-center justify-center flex-1 min-h-[44px] min-w-[44px] text-xs font-semibold text-ink-muted hover:text-ink"
-        >
-          <FileText className="w-5 h-5 text-ink-subtle mb-0.5" />
-          <span>Resume</span>
-        </Link>
-
-        <Link
-          href="/applications"
-          className="flex flex-col items-center justify-center flex-1 min-h-[44px] min-w-[44px] text-xs font-bold text-brand-600"
-        >
-          <CheckSquare className="w-5 h-5 text-brand-600 mb-0.5" />
-          <span>Applications</span>
-        </Link>
-
-        <Link
-          href="/settings?tab=preferences"
-          className="flex flex-col items-center justify-center flex-1 min-h-[44px] min-w-[44px] text-xs font-semibold text-ink-muted hover:text-ink"
-        >
-          <UserIcon className="w-5 h-5 text-ink-subtle mb-0.5" />
-          <span>Profile</span>
-        </Link>
-      </nav>
+{/* Mobile bottom navigation handled by AppIconRail */}
 
       {/* MODAL 1: ADD APPLICATION */}
       {isAddModalOpen && (
