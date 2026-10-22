@@ -187,7 +187,7 @@ export default function TopTenCompatibleJobs({
                     <div className="flex items-center gap-2.5">
                       <CompanyLogo company={job.company} applyUrl={job.applyUrl} className="w-8 h-8 shrink-0" />
                       <Link
-                        href={`/jobs/detail?id=${encodeURIComponent(job.id)}`}
+                        href={`/job-detail?id=${encodeURIComponent(job.id)}`}
                         className="text-base sm:text-lg font-bold text-slate-900 hover:text-blue-600 transition-colors break-words line-clamp-1"
                       >
                         {job.title}
@@ -283,7 +283,7 @@ export default function TopTenCompatibleJobs({
 
                   {/* Action 4: Inspect & Apply */}
                   <Link
-                    href={`/jobs/detail?id=${encodeURIComponent(job.id)}`}
+                    href={`/job-detail?id=${encodeURIComponent(job.id)}`}
                     className="inline-flex items-center gap-1 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition shadow-xs"
                   >
                     <span>Inspect</span>

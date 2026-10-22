@@ -11,6 +11,7 @@ const KNOWN_STATIC_ROUTES = new Set([
   "/",
   "/jobs",
   "/jobs/detail",
+  "/job-detail",
   "/job-search",
   "/job-search/all",
   "/job-search/remote",
