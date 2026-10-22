@@ -759,7 +759,7 @@ function JobsPageInner() {
                       <div className="flex flex-wrap items-center gap-2">
                         {isPro ? (
                           <Link
-                            href={`/jobs/detail?id=${encodeURIComponent(job.id)}`}
+                            href={`/job-detail?id=${encodeURIComponent(job.id)}`}
                             className="text-base sm:text-lg font-bold text-slate-900 group-hover:text-blue-600 transition-colors break-words leading-snug"
                           >
                             {job.title}
@@ -897,7 +897,7 @@ function JobsPageInner() {
 
                     {isPro ? (
                       <Link
-                        href={`/jobs/detail?id=${encodeURIComponent(job.id)}`}
+                        href={`/job-detail?id=${encodeURIComponent(job.id)}`}
                         className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-tk-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition shadow-tk-xs min-h-[44px]"
                       >
                         <span>Inspect Job</span>
