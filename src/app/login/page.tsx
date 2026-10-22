@@ -4,6 +4,8 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import BrandIcon from "@/components/BrandIcon";
+import GuideHeader from "@/components/GuideHeader";
+import Footer from "@/components/Footer";
 import { createClient } from "@/lib/supabase/client";
 import { getValidReturnUrl, getAuthUser } from "@/lib/auth/session";
 import { getSiteUrl } from "@/lib/siteUrl";
@@ -140,20 +142,12 @@ export default function LoginPage() {
   };
 
   return (
-    <main
-      id="main-content"
-      className="min-h-[100dvh] bg-surface-subtle flex flex-col items-center justify-center p-4 sm:p-6 text-ink py-6 sm:py-12 font-sans"
-    >
-      {/* Back button */}
-      <div className="w-full max-w-[480px] mb-4">
-        <Link
-          href="/"
-          className="inline-flex items-center gap-1.5 text-tk-body-sm font-medium text-ink-muted hover:text-ink transition-colors min-h-[44px] py-2 px-1 -ml-1 rounded-tk-md focus-visible:outline-none focus-visible:shadow-tk-focus"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span>Back to Home</span>
-        </Link>
-      </div>
+    <div className="min-h-screen bg-[#F8FAFC] flex flex-col justify-between">
+      <GuideHeader />
+      <main
+        id="main-content"
+        className="flex-1 flex flex-col items-center justify-center p-4 sm:p-6 text-[#0F172A] py-8 sm:py-12 font-sans"
+      >
 
       {/* Main Single-Column Auth Card (Jobright style) */}
       <Card
@@ -325,6 +319,8 @@ export default function LoginPage() {
           </p>
         </div>
       </Card>
-    </main>
+      </main>
+      <Footer />
+    </div>
   );
 }
