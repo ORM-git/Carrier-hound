@@ -653,3 +653,27 @@ export function computeFitDiagnostics(
  */
 export const calculateConsistentJobMatchScore = computeFitDiagnostics;
 
+/**
+ * Constructs a factual, 1-2 line summary built strictly from real diagnostics
+ * (matched skills, years of experience) with zero invented claims or marketing fluff.
+ */
+export function getDiagnosticsSummary(diagnostics: FitDiagnosticsResult): string {
+  const matched = diagnostics.matchedSkills || [];
+  const years = diagnostics.breakdown?.yearsOfExperience ?? 0;
+
+  if (matched.length > 0 && years > 0) {
+    const skillList = matched.slice(0, 3).join(", ");
+    const more = matched.length > 3 ? ` +${matched.length - 3} more` : "";
+    return `Matches ${matched.length} of your skills (${skillList}${more}) and ${years}+ years of experience.`;
+  }
+  if (matched.length > 0) {
+    const skillList = matched.slice(0, 3).join(", ");
+    const more = matched.length > 3 ? ` +${matched.length - 3} more` : "";
+    return `Matches ${matched.length} of your confirmed skills: ${skillList}${more}.`;
+  }
+  if (years > 0) {
+    return `Aligns with your ${years}+ years of confirmed experience in this opening.`;
+  }
+  return "Evaluated against your confirmed resume facts and requirements.";
+}
+
