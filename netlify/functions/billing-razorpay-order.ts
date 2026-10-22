@@ -25,6 +25,14 @@ export async function handler(event: any) {
     };
   }
 
+  if (process.env.NEXT_PUBLIC_BILLING_ENABLED !== "true") {
+    return {
+      statusCode: 503,
+      headers,
+      body: JSON.stringify({ error: "Billing is currently unavailable", code: "BILLING_DISABLED" }),
+    };
+  }
+
   try {
     const authHeader = event.headers.authorization || event.headers.Authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
