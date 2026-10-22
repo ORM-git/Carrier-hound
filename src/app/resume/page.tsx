@@ -179,7 +179,7 @@ export default function ResumePage() {
           >
             <div className="space-y-1">
               <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-tk-h2 font-black text-ink tracking-tight">
+                <h1 className="text-[18px] font-bold uppercase tracking-wider text-ink">
                   Resume & Fact Profile
                 </h1>
                 {isConfirmed ? (

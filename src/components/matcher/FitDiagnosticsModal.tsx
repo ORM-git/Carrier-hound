@@ -55,12 +55,12 @@ export default function FitDiagnosticsModal({
 
   const scoreBadgeColor =
     score >= 80
-      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-      : score >= 65
-      ? "bg-blue-50 text-blue-700 border-blue-200"
-      : score >= 45
-      ? "bg-amber-50 text-amber-700 border-amber-200"
-      : "bg-rose-50 text-rose-700 border-rose-200";
+      ? "bg-gradient-to-br from-[#1E3A8A] to-[#2563EB] text-white border-white/10"
+      : score >= 50
+      ? "bg-gradient-to-br from-[#0F172A] to-[#1E3A8A] text-white border-white/10"
+
+
+      : "bg-gradient-to-br from-[#0F172A] to-[#334155] text-white border-white/10";
 
   const handleTrackJob = async () => {
     await addApplicationToTracker({
@@ -78,9 +78,9 @@ export default function FitDiagnosticsModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#0F172A]/60 backdrop-blur-xs animate-fadeIn">
       <div
-        className="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden flex flex-col max-h-[92dvh] animate-scaleUp"
+        className="relative w-full max-w-2xl bg-white rounded-[20px] shadow-popover border border-[#E2E8F0] overflow-hidden flex flex-col max-h-[92dvh] animate-scaleUp"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -125,11 +125,11 @@ export default function FitDiagnosticsModal({
                   <span>
                     {score >= 80
                       ? "High Role Match"
-                      : score >= 65
+                      : score >= 50
                       ? "Strong Role Alignment"
-                      : score >= 45
-                      ? "Moderate Fit — Address Missing Skills"
-                      : "Low Alignment"}
+                
+                      : "Moderate Fit — Address Missing Skills"}
+
                   </span>
                 </div>
                 <p className="text-xs text-slate-600 leading-relaxed">

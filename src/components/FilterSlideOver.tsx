@@ -72,14 +72,14 @@ export default function FilterSlideOver({
     <div className="fixed inset-0 z-50 flex justify-end animate-fadeIn">
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black/40 backdrop-blur-xs transition-opacity"
+        className="fixed inset-0 bg-[#0F172A]/60 backdrop-blur-xs transition-opacity duration-300"
         onClick={onClose}
         aria-hidden="true"
       />
 
       {/* Slide-Over Panel */}
       <div
-        className="relative w-full max-w-md bg-white h-full shadow-2xl z-10 flex flex-col justify-between overflow-hidden animate-slideInRight"
+        className="relative w-full max-w-md bg-[#F8FAFC] h-full shadow-popover z-10 flex flex-col justify-between overflow-hidden rounded-l-[20px] animate-slideInRight"
         role="dialog"
         aria-modal="true"
         aria-label="Filter panel"
@@ -251,10 +251,10 @@ export default function FilterSlideOver({
                     key={cat.id}
                     type="button"
                     onClick={() => onToggleCategory(cat.slug)}
-                    className={`px-2.5 py-1 min-h-[36px] rounded-md text-xs font-medium border transition-colors flex items-center gap-1 cursor-pointer ${
+                    className={`px-3 py-1 min-h-[36px] rounded-full text-[12px] font-medium border transition-all duration-200 ease-[cubic-bezier(0.645,0.045,0.355,1)] flex items-center gap-1 cursor-pointer ${
                       isSelected
-                        ? "bg-blue-600 text-white border-blue-600"
-                        : "bg-white border-gray-200 text-gray-700 hover:border-gray-300"
+                        ? "bg-[#DBEAFE] text-[#1E3A8A] border-[#BFDBFE]"
+                        : "bg-[#F1F5F9] border-[#E2E8F0] text-[#0F172A] hover:border-[#CBD5E1]"
                     }`}
                   >
                     <span>{cat.name}</span>
@@ -271,7 +271,7 @@ export default function FilterSlideOver({
           <button
             type="button"
             onClick={onClose}
-            className="w-full bg-[#2563EB] hover:bg-[#1D4ED8] text-white py-3 min-h-[48px] rounded-xl font-bold text-sm sm:text-base shadow-sm transition-colors flex items-center justify-center cursor-pointer"
+            className="w-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white py-3 min-h-[48px] rounded-full font-bold text-sm sm:text-base shadow-none transition-all duration-200 ease-[cubic-bezier(0.645,0.045,0.355,1)] flex items-center justify-center cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1"
           >
             Apply Filters
           </button>

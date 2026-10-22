@@ -114,7 +114,7 @@ function isPostedUnder24Hours(dateStr?: string): boolean {
   return diffMs >= 0 && diffMs < 24 * 60 * 60 * 1000;
 }
 
-function getJobMatchScore(job: LiveJob, candidate: CandidateProfile | null): number {
+function getJobMatchScore(job: LiveJob, candidate: CandidateProfile | null): number | null {
   if (candidate && candidate.confirmedAt) {
     try {
       const res = computeFitDiagnostics(candidate, {
@@ -129,14 +129,18 @@ function getJobMatchScore(job: LiveJob, candidate: CandidateProfile | null): num
         salary_text: job.salary,
         apply_url: job.applyUrl,
       });
-      if (res && typeof res.score === "number") {
+      if (res && typeof res.score === "number" && !isNaN(res.score)) {
         return Math.max(10, Math.min(99, Math.round(res.score)));
       }
     } catch {}
   }
-  // Deterministic realistic score (62% - 94%)
-  const hash = (job.id || "job").split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
-  return 62 + (hash % 33);
+  return null;
+}
+
+function getMatchPanelGradient(score: number): string {
+  if (score >= 80) return "bg-gradient-to-br from-[#1E3A8A] to-[#2563EB]";
+  if (score >= 50) return "bg-gradient-to-br from-[#0F172A] to-[#1E3A8A]";
+  return "bg-gradient-to-br from-[#0F172A] to-[#334155]";
 }
 
 function CircularMatchRing({
@@ -166,7 +170,7 @@ function CircularMatchRing({
           cx={size / 2}
           cy={size / 2}
           r={radius}
-          stroke="#1E293B"
+          stroke="rgba(255, 255, 255, 0.12)"
           strokeWidth={strokeWidth}
           fill="transparent"
         />
@@ -174,13 +178,13 @@ function CircularMatchRing({
           cx={size / 2}
           cy={size / 2}
           r={radius}
-          stroke={color}
+          stroke="#FFFFFF"
           strokeWidth={strokeWidth}
           strokeDasharray={circumference}
           strokeDashoffset={isPro ? offset : circumference * 0.25}
           strokeLinecap="round"
           fill="transparent"
-          className="transition-all duration-500 ease-out"
+          className="transition-all duration-300 ease-out"
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
@@ -584,7 +588,7 @@ function JobsPageInner() {
   const hasActiveFilters = activeFiltersCount > 0;
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-[#09090B] flex flex-col font-sans">
+    <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col font-sans">
       {/* ========================================================================= */}
       {/* 1. APP SHELL: FIXED LEFT SIDEBAR (about 220px, hidden on mobile)         */}
       {/* ========================================================================= */}
@@ -737,7 +741,7 @@ function JobsPageInner() {
           <div className="space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-4 sm:gap-6 min-w-0 max-w-full">
-                <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-wider uppercase">
+                <h1 className="text-[18px] font-bold text-[#0F172A] tracking-wider uppercase">
                   JOBS
                 </h1>
 
@@ -853,10 +857,10 @@ function JobsPageInner() {
                     <button
                       type="button"
                       onClick={() => setOpenDropdown(openDropdown === "loc" ? null : "loc")}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs transition cursor-pointer min-h-[36px] ${
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[12px] font-medium transition cursor-pointer min-h-[36px] ${
                         selectedLocation
-                          ? "bg-blue-50 border-blue-300 text-blue-700 font-bold"
-                          : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+                          ? "bg-[#DBEAFE] border-[#BFDBFE] text-[#1E3A8A] font-medium"
+                          : "bg-[#F1F5F9] border-[#E2E8F0] text-[#0F172A] hover:border-[#CBD5E1]"
                       }`}
                     >
                       <MapPin className="w-3.5 h-3.5 text-slate-400" />
@@ -889,10 +893,10 @@ function JobsPageInner() {
                     <button
                       type="button"
                       onClick={() => setOpenDropdown(openDropdown === "title" ? null : "title")}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs transition cursor-pointer min-h-[36px] ${
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[12px] font-medium transition cursor-pointer min-h-[36px] ${
                         search
-                          ? "bg-blue-50 border-blue-300 text-blue-700 font-bold"
-                          : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+                          ? "bg-[#DBEAFE] border-[#BFDBFE] text-[#1E3A8A] font-medium"
+                          : "bg-[#F1F5F9] border-[#E2E8F0] text-[#0F172A] hover:border-[#CBD5E1]"
                       }`}
                     >
                       <Briefcase className="w-3.5 h-3.5 text-slate-400" />
@@ -925,10 +929,10 @@ function JobsPageInner() {
                     <button
                       type="button"
                       onClick={() => setOpenDropdown(openDropdown === "level" ? null : "level")}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs transition cursor-pointer min-h-[36px] ${
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[12px] font-medium transition cursor-pointer min-h-[36px] ${
                         selectedLevel
-                          ? "bg-blue-50 border-blue-300 text-blue-700 font-bold"
-                          : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+                          ? "bg-[#DBEAFE] border-[#BFDBFE] text-[#1E3A8A] font-medium"
+                          : "bg-[#F1F5F9] border-[#E2E8F0] text-[#0F172A] hover:border-[#CBD5E1]"
                       }`}
                     >
                       <TrendingUp className="w-3.5 h-3.5 text-slate-400" />
@@ -961,10 +965,10 @@ function JobsPageInner() {
                     <button
                       type="button"
                       onClick={() => setOpenDropdown(openDropdown === "type" ? null : "type")}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs transition cursor-pointer min-h-[36px] ${
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[12px] font-medium transition cursor-pointer min-h-[36px] ${
                         selectedJobType
-                          ? "bg-blue-50 border-blue-300 text-blue-700 font-bold"
-                          : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+                          ? "bg-[#DBEAFE] border-[#BFDBFE] text-[#1E3A8A] font-medium"
+                          : "bg-[#F1F5F9] border-[#E2E8F0] text-[#0F172A] hover:border-[#CBD5E1]"
                       }`}
                     >
                       <Clock className="w-3.5 h-3.5 text-slate-400" />
@@ -1042,10 +1046,10 @@ function JobsPageInner() {
                     <button
                       type="button"
                       onClick={() => setOpenDropdown(openDropdown === "ind" ? null : "ind")}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs transition cursor-pointer min-h-[36px] ${
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[12px] font-medium transition cursor-pointer min-h-[36px] ${
                         selectedCategory
-                          ? "bg-blue-50 border-blue-300 text-blue-700 font-bold"
-                          : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+                          ? "bg-[#DBEAFE] border-[#BFDBFE] text-[#1E3A8A] font-medium"
+                          : "bg-[#F1F5F9] border-[#E2E8F0] text-[#0F172A] hover:border-[#CBD5E1]"
                       }`}
                     >
                       <Building className="w-3.5 h-3.5 text-slate-400" />
@@ -1371,7 +1375,7 @@ function JobsPageInner() {
                     <button
                       type="button"
                       onClick={handleResetFilters}
-                      className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition shadow-xs cursor-pointer min-h-[44px]"
+                      className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-[#F1F5F9] hover:bg-[#E2E8F0] active:bg-[#CBD5E1] text-[#0F172A] text-xs font-semibold transition cursor-pointer min-h-[44px]"
                     >
                       <RotateCcw className="w-3.5 h-3.5" />
                       <span>Reset All Filters</span>
@@ -1386,11 +1390,13 @@ function JobsPageInner() {
                     const staggerDelay = Math.min(index * 0.03, 0.3);
                     const matchScore = getJobMatchScore(job, candidate);
                     const matchLabel =
-                      matchScore > 70
-                        ? "Great match"
-                        : matchScore >= 50
-                        ? "Good match"
-                        : "Fair match";
+                      matchScore !== null
+                        ? matchScore > 70
+                          ? "Great match"
+                          : matchScore >= 50
+                          ? "Good match"
+                          : "Fair match"
+                        : "";
                     const isNew = isPostedUnder24Hours(job.postedAt || job.date);
                     const applicantCount =
                       (job as any).applicantCount ??
@@ -1408,17 +1414,19 @@ function JobsPageInner() {
                             ? { duration: 0.01 }
                             : { duration: 0.22, delay: staggerDelay, ease: [0.22, 1, 0.36, 1] }
                         }
-                        className="bg-white rounded-xl border border-slate-200/90 p-4 sm:p-5 shadow-xs hover:shadow-md transition-all duration-200 motion-safe:hover:-translate-y-0.5 space-y-3 relative group"
+                        className="bg-white rounded-[16px] border border-[#E2E8F0] p-4 sm:p-5 shadow-none ring-1 ring-[#E2E8F0] transition-all duration-200 motion-safe:hover:-translate-y-0.5 space-y-3 relative group"
                       >
                         {/* Mobile Compact Circular Match Ring at Top Right */}
-                        <div className="sm:hidden absolute top-4 right-4 bg-slate-900 border border-slate-800 rounded-full p-1 shadow-sm">
-                          <CircularMatchRing
-                            score={matchScore}
-                            size={42}
-                            strokeWidth={3.5}
-                            isPro={isPro}
-                          />
-                        </div>
+                        {matchScore !== null && (
+                          <div className={`sm:hidden absolute top-4 right-4 ${getMatchPanelGradient(matchScore)} border border-white/10 rounded-full p-1 shadow-sm`}>
+                            <CircularMatchRing
+                              score={matchScore}
+                              size={42}
+                              strokeWidth={3.5}
+                              isPro={isPro}
+                            />
+                          </div>
+                        )}
 
                         {/* Card Top: Logo Tile + Meta Chips + Title + 3-Col Grid + Right Match Panel */}
                         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
@@ -1448,7 +1456,7 @@ function JobsPageInner() {
                                 {isPro ? (
                                   <Link
                                     href={`/job-detail?id=${encodeURIComponent(job.id)}`}
-                                    className="text-base sm:text-lg font-bold text-slate-900 group-hover:text-blue-600 transition-colors break-words leading-snug"
+                                    className="text-[22px] font-bold text-[#0F172A] group-hover:text-[#1D4ED8] transition-colors break-words leading-snug"
                                   >
                                     {job.title}
                                   </Link>
@@ -1456,7 +1464,7 @@ function JobsPageInner() {
                                   <button
                                     type="button"
                                     onClick={handleLockedAction}
-                                    className="text-base sm:text-lg font-bold text-slate-900 group-hover:text-blue-600 transition-colors break-words text-left cursor-pointer leading-snug"
+                                    className="text-[22px] font-bold text-[#0F172A] group-hover:text-[#1D4ED8] transition-colors break-words text-left cursor-pointer leading-snug"
                                   >
                                     {job.title}
                                   </button>
@@ -1510,35 +1518,49 @@ function JobsPageInner() {
                             </div>
                           </div>
 
-                          {/* Desktop Match Panel (Dark gradient rounded block on the right) */}
-                          <div className="hidden sm:flex flex-col items-center justify-between p-3.5 sm:p-4 rounded-xl bg-gradient-to-br from-slate-950 via-slate-900 to-slate-850 text-white w-44 shrink-0 text-center border border-slate-800 shadow-sm space-y-2">
-                            <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-300 uppercase tracking-wider">
-                              <Sparkles className="w-3 h-3 text-blue-400" />
-                              <span>Fit Match</span>
-                            </div>
-
-                            <CircularMatchRing
-                              score={matchScore}
-                              size={64}
-                              strokeWidth={5}
-                              isPro={isPro}
-                            />
-
-                            <div>
-                              <div className="text-xs font-bold text-slate-100">
-                                {isPro ? matchLabel : "Locked Preview"}
+                          {/* Desktop Match Panel (Dark gradient rounded block on the right) or Upload Resume CTA */}
+                          {matchScore !== null ? (
+                            <div className={`hidden sm:flex flex-col items-center justify-between p-3.5 sm:p-4 rounded-[16px] ${getMatchPanelGradient(matchScore)} text-white w-44 shrink-0 text-center border border-white/10 shadow-sm space-y-2`}>
+                              <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-300 uppercase tracking-wider">
+                                <Sparkles className="w-3 h-3 text-blue-400" />
+                                <span>Fit Match</span>
                               </div>
-                              <div className="flex flex-wrap items-center justify-center gap-1.5 text-[10px] text-slate-400 pt-1">
-                                <span className="inline-flex items-center gap-0.5 text-emerald-400">
-                                  ✓ {job.remote ? "Remote" : "Verified"}
-                                </span>
-                                <span>•</span>
-                                <span className="inline-flex items-center gap-0.5 text-emerald-400">
-                                  ✓ Direct ATS
-                                </span>
+
+                              <CircularMatchRing
+                                score={matchScore}
+                                size={64}
+                                strokeWidth={5}
+                                isPro={isPro}
+                              />
+
+                              <div>
+                                <div className="text-xs font-bold text-slate-100">
+                                  {isPro ? matchLabel : "Locked Preview"}
+                                </div>
+                                <div className="flex flex-wrap items-center justify-center gap-1.5 text-[10px] text-slate-400 pt-1">
+                                  <span className="inline-flex items-center gap-0.5 text-emerald-400">
+                                    ✓ {job.remote ? "Remote" : "Verified"}
+                                  </span>
+                                  <span>•</span>
+                                  <span className="inline-flex items-center gap-0.5 text-emerald-400">
+                                    ✓ Direct ATS
+                                  </span>
+                                </div>
                               </div>
                             </div>
-                          </div>
+                          ) : (
+                            <Link
+                              href="/resume"
+                              className="hidden sm:flex flex-col items-center justify-center p-3.5 sm:p-4 rounded-[16px] bg-[#F8FAFC] hover:bg-[#EFF6FF] border border-[#E2E8F0] hover:border-[#93C5FD] text-center w-44 shrink-0 transition-all duration-200 group/cta space-y-2.5 self-stretch focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1"
+                            >
+                              <div className="w-9 h-9 rounded-full bg-[#EFF6FF] group-hover/cta:bg-[#DBEAFE] border border-[#BFDBFE] flex items-center justify-center transition-colors">
+                                <Sparkles className="w-4 h-4 text-[#2563EB]" />
+                              </div>
+                              <span className="text-xs font-semibold text-[#0F172A] group-hover/cta:text-[#1D4ED8] transition-colors leading-snug">
+                                Upload your resume to see your real match
+                              </span>
+                            </Link>
+                          )}
                         </div>
 
                         {/* Card Footer Row: Applicant Count on Left & Actions on Right */}
@@ -1563,7 +1585,7 @@ function JobsPageInner() {
                               onClick={() => handleHideJob(job.id)}
                               aria-label="Hide job"
                               title="Hide this job from recommendations"
-                              className="w-10 h-10 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl border border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                              className="w-10 h-10 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full border border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-50 transition cursor-pointer"
                             >
                               <EyeOff className="w-4 h-4" />
                             </button>
@@ -1574,7 +1596,7 @@ function JobsPageInner() {
                               onClick={() => handleSaveJob(job)}
                               aria-label={isSaved ? "Unlike job" : "Like job"}
                               title={isSaved ? "Saved to Tracker (Liked)" : "Like & save to Tracker"}
-                              className={`w-10 h-10 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl border transition cursor-pointer ${
+                              className={`w-10 h-10 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full border transition cursor-pointer ${
                                 isSaved
                                   ? "border-rose-200 bg-rose-50 text-rose-600"
                                   : "border-slate-200 bg-white text-slate-400 hover:text-rose-500 hover:bg-rose-50/50"
@@ -1587,7 +1609,7 @@ function JobsPageInner() {
                             {isPro ? (
                               <Link
                                 href={`/job-detail?id=${encodeURIComponent(job.id)}`}
-                                className="inline-flex items-center gap-1.5 px-4 py-2 min-h-[44px] rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition shadow-xs"
+                                className="inline-flex items-center gap-1.5 px-4 py-2 min-h-[44px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-xs font-bold transition shadow-none focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1"
                               >
                                 <span>Apply now</span>
                                 <ArrowUpRight className="w-3.5 h-3.5" />
@@ -1596,7 +1618,7 @@ function JobsPageInner() {
                               <button
                                 type="button"
                                 onClick={handleLockedAction}
-                                className="inline-flex items-center gap-1.5 px-4 py-2 min-h-[44px] rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition shadow-xs cursor-pointer"
+                                className="inline-flex items-center gap-1.5 px-4 py-2 min-h-[44px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-xs font-bold transition shadow-none focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1 cursor-pointer"
                               >
                                 <Lock className="w-3.5 h-3.5" />
                                 <span>Apply now</span>
@@ -1813,7 +1835,7 @@ function JobsPageInner() {
 
 function JobsPageFallback() {
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-[#09090B] flex flex-col font-sans">
+    <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col font-sans">
       <div className="flex-1 max-w-[1400px] w-full mx-auto px-4 sm:px-6 py-6 space-y-4">
         <div className="h-8 w-48 bg-slate-200/80 rounded-lg animate-pulse" />
         <div className="h-14 w-full bg-white rounded-xl border border-slate-200 animate-pulse" />

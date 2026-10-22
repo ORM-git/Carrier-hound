@@ -29,15 +29,33 @@
 
   --primary-blue: #2563EB;
   --primary-blue-hover: #1D4ED8;
-  --blue-tint: #F8FAFF;
+  --primary-blue-pressed: #1E40AF;
+  --blue-tint: #EFF6FF;
+  --blue-tint-hover: #DBEAFE;
+  --blue-tint-border: #BFDBFE;
+  --border-hover: #93C5FD;
+  --focus-ring: 2px solid #93C5FD;
+  --chip-selected-bg: #DBEAFE;
+  --chip-selected-text: #1E3A8A;
+  --chip-light-bg: #EFF6FF;
+  --chip-light-text: #1D4ED8;
+  --surface-page: #F8FAFC;
+  --surface-rail: #F1F5F9;
+  --surface-card: #FFFFFF;
+  --neutral-text: #0F172A;
+  --neutral-secondary: #475569;
+  --neutral-meta: #94A3B8;
+  --neutral-disabled: #CBD5E1;
+  --border-card: #E2E8F0;
+  --border-input: #CBD5E1;
   --navy: #090E34;
   --headline-ink: #142033;
-  --muted-text: #4B5563;
+  --muted-text: #475569;
   --guide-text: rgb(99, 115, 129);
-  --border-default: #E4E4E7;
-  --border-soft-blue: #DBE3EF;
-  --bg-faq: #F3F4F6;
-  --bg-contact: #F9FAFB;
+  --border-default: #E2E8F0;
+  --border-soft-blue: #BFDBFE;
+  --bg-faq: #F1F5F9;
+  --bg-contact: #F8FAFC;
   --star-amber: #EAB308;
 }
 
@@ -71,13 +89,12 @@ body {
   }
 }
 
-/* Subtle, professional interactive transitions (150ms max, ease-out) */
+/* Jobright-style interactive hover transitions */
 button,
 a,
 input,
 select {
-  transition-duration: 150ms;
-  transition-timing-function: cubic-bezier(0, 0, 0.2, 1);
+  transition: all 0.2s cubic-bezier(0.645, 0.045, 0.355, 1);
 }
 
 /* Bi-directional Continuous Marquee Keyframes & Classes */
@@ -135,13 +152,13 @@ select {
   animation-play-state: paused !important;
 }
 
-/* Focus styles */
+/* Focus styles: focus ring 2px #93C5FD with 1px offset */
 a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible {
-  outline: 2px solid #2563EB;
-  outline-offset: 2px;
+  outline: 2px solid #93C5FD;
+  outline-offset: 1px;
 }
 
-/* Subtle non-shifting entrance animations (150-200ms max, ease-out, no bounce) */
+/* Entrance animations */
 @keyframes fadeInUp {
   from {
     opacity: 0;
@@ -165,7 +182,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 @keyframes scaleUp {
   from {
     opacity: 0;
-    transform: scale(0.98);
+    transform: scale(0.96);
   }
   to {
     opacity: 1;
@@ -176,7 +193,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 @keyframes slideUp {
   from {
     opacity: 0;
-    transform: translateY(4px);
+    transform: translateY(6px);
   }
   to {
     opacity: 1;
@@ -194,23 +211,23 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 }
 
 .animate-fadeInUp {
-  animation: fadeInUp 180ms cubic-bezier(0, 0, 0.2, 1) forwards;
+  animation: fadeInUp 0.2s cubic-bezier(0.2, 0, 0, 1) forwards;
 }
 
 .animate-fadeIn {
-  animation: fadeIn 150ms cubic-bezier(0, 0, 0.2, 1) forwards;
+  animation: fadeIn 0.2s cubic-bezier(0.2, 0, 0, 1) forwards;
 }
 
 .animate-scaleUp {
-  animation: scaleUp 180ms cubic-bezier(0, 0, 0.2, 1) forwards;
+  animation: scaleUp 0.2s cubic-bezier(0.2, 0, 0, 1) forwards;
 }
 
 .animate-slideUp {
-  animation: slideUp 180ms cubic-bezier(0, 0, 0.2, 1) forwards;
+  animation: slideUp 0.2s cubic-bezier(0.2, 0, 0, 1) forwards;
 }
 
 .animate-slideInRight {
-  animation: slideInRight 200ms cubic-bezier(0, 0, 0.2, 1) forwards;
+  animation: slideInRight 0.3s cubic-bezier(0.2, 0, 0, 1) forwards;
 }
 
 /* Custom scrollbars for clean UI */

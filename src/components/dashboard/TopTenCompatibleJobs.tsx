@@ -93,10 +93,10 @@ export default function TopTenCompatibleJobs({
   };
 
   const getScoreBadgeColor = (score: number) => {
-    if (score >= 75) return "bg-emerald-50 text-emerald-700 border-emerald-300";
-    if (score >= 55) return "bg-blue-50 text-blue-700 border-blue-300";
-    if (score >= 35) return "bg-amber-50 text-amber-700 border-amber-300";
-    return "bg-slate-50 text-slate-700 border-slate-300";
+    if (score >= 80) return "bg-gradient-to-br from-[#1E3A8A] to-[#2563EB] text-white border-white/10";
+    if (score >= 50) return "bg-gradient-to-br from-[#0F172A] to-[#1E3A8A] text-white border-white/10";
+
+    return "bg-gradient-to-br from-[#0F172A] to-[#334155] text-white border-white/10";
   };
 
   return (

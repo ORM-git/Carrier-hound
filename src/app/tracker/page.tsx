@@ -554,7 +554,7 @@ export default function TrackerPage() {
             <div>
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-tk-full bg-brand-600 animate-pulse" />
-                <h1 className="text-2xl sm:text-3xl font-black text-ink tracking-tight">
+                <h1 className="text-[18px] font-bold uppercase tracking-wider text-ink">
                   Application Pipeline Tracker
                 </h1>
               </div>

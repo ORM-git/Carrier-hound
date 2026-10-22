@@ -317,7 +317,7 @@ export default function DashboardPage() {
               <Badge tone="brand" size="md" className="font-extrabold">
                 PRO MEMBER
               </Badge>
-              <h1 className="text-tk-h2 sm:text-tk-h1 text-ink break-words">
+              <h1 className="text-[18px] font-bold uppercase tracking-wider text-ink break-words">
                 {firstName ? `Welcome back, ${firstName}` : "Welcome back"}
               </h1>
               <p className="text-tk-body-sm text-ink-muted">

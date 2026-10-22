@@ -219,7 +219,7 @@ function SettingsPageInner() {
 
       <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-12 space-y-8">
         <div>
-          <h1 className="text-xl sm:text-3xl font-black text-slate-900 tracking-tight">
+          <h1 className="text-[18px] font-bold uppercase tracking-wider text-[#0F172A]">
             Account & Settings
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
