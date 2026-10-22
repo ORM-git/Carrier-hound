@@ -4,20 +4,20 @@ import { cn } from "@/lib/utils"
 import { cnTokens } from "./cn-tokens"
 
 /**
- * `legacy` (default) preserves the original shadcn styling used by existing
- * consumers (e.g. marquee-01). Token variants are opt-in:
- *  - `surface`:     flat white card with hairline border
- *  - `elevated`:    soft layered shadow
- *  - `interactive`: elevated + subtle hover lift (transform only, reduced-motion safe)
+ * `legacy` preserves the original shadcn styling used by landing page components (e.g. marquee-01).
+ * Token variants:
+ *  - `surface`:     flat white card with 16px radius and 1px #E2E8F0 ring, no drop shadow, 16-24px padding
+ *  - `elevated`:    flat white card with 16px radius and 1px #E2E8F0 ring, no drop shadow, 16-24px padding
+ *  - `interactive`: 16px radius card with 0.2s hover transition
  */
 export type CardVariant = "legacy" | "surface" | "elevated" | "interactive"
 
-const TOKEN_CARD_BASE = "rounded-tk-xl border border-line bg-surface text-ink"
+const TOKEN_CARD_BASE = "rounded-[16px] border border-[#E2E8F0] ring-1 ring-[#E2E8F0] bg-white text-[#0F172A] shadow-none"
 const TOKEN_CARD_VARIANTS: Record<Exclude<CardVariant, "legacy">, string> = {
-  surface: "shadow-none ring-1 ring-[#E2E8F0]",
-  elevated: "shadow-tk-md",
+  surface: "p-4 sm:p-6",
+  elevated: "p-4 sm:p-6",
   interactive:
-    "shadow-tk-sm transition-[transform,box-shadow] duration-tk-base ease-tk-entrance hover:shadow-tk-lg motion-safe:hover:-translate-y-0.5",
+    "p-4 sm:p-6 transition-all duration-200 ease-[cubic-bezier(0.645,0.045,0.355,1)] motion-safe:hover:-translate-y-0.5",
 }
 
 const Card = React.forwardRef<

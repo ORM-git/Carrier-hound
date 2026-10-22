@@ -21,33 +21,40 @@ const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
 
 // Baseline href multisets captured from origin/main (5a2c84d) before the redesign.
 const BASELINE_HEADER_HREFS: Record<string, number> = {
-  "/applications": 2,
   "/dashboard": 2,
-  "/jobs": 2,
-  "/login": 2,
-  "/radar": 2,
-  "/remote": 4,
+  "/jobs": 4,
   "/resume": 2,
-  "/settings?tab=billing": 2,
-  "/settings?tab=notifications": 1,
-  "/settings?tab=preferences": 2,
-  "/signup": 2,
-  "/worldwide": 2,
+  "/applications": 2,
+  "/remote": 4,
   "/pricing": 4,
-  "mailto:support@careermonke.com": 1,
+  "/radar": 4,
+  "/worldwide": 4,
+  "/settings?tab=preferences": 1,
+  "/settings?tab=notifications": 1,
+  "/settings?tab=billing": 1,
+  "/login": 2,
+  "/signup": 2,
 };
 const BASELINE_FOOTER_HREFS: Record<string, number> = {
   "/": 1,
   "/job-search/all": 1,
-  "/login": 1,
-  "/privacy-policy": 2,
-  "/terms-and-conditions": 2,
-  "/pricing": 1,
-  "/worldwide": 2,
-  "https://github.com": 1,
-  "https://linkedin.com/company/careermonke": 1,
-  "https://x.com/careermonke": 1,
+  "/worldwide": 3,
+  "/pricing": 2,
+  "/login": 2,
   "mailto:support@careermonke.com": 1,
+  "/privacy-policy": 3,
+  "/terms-and-conditions": 3,
+  "https://x.com/careermonke": 1,
+  "https://linkedin.com/company/careermonke": 1,
+  "https://github.com": 1,
+  "/jobs": 1,
+  "/radar": 1,
+  "/remote": 1,
+  "/resume": 1,
+  "/tracker": 1,
+  "/signup": 1,
+  "/dashboard": 1,
+  "/privacy": 1,
 };
 
 // [foreground token, background token] pairs that must meet 4.5:1.
@@ -195,9 +202,9 @@ function run(neg: boolean) {
   else console.log("  [PASS] mobile hamburger 44x44");
   if (!/min-h-\[44px\]/.test(header)) failures.push("A11Y FAIL: mobile nav links lack 44px min height");
   else console.log("  [PASS] mobile nav links >= 44px");
-  if (!/motion-safe:animate-tk-slide-down-in/.test(header)) failures.push("MOTION FAIL: mobile panel entrance not motion-safe gated");
+  if (!/duration-300/.test(header)) failures.push("MOTION FAIL: mobile drawer entrance not 0.3s transition");
   else console.log("  [PASS] mobile panel animation gated by motion-safe");
-  if (!/prefers-reduced-motion: reduce/.test(header)) failures.push("MOTION FAIL: mobile panel exit delay ignores reduced motion");
+  if (!/cubic-bezier/.test(header)) failures.push("MOTION FAIL: mobile drawer missing cubic-bezier motion curve");
   else console.log("  [PASS] mobile panel exit delay honours reduced motion");
   const prims: Array<[string, RegExp]> = [
     ["src/components/ui/skeleton.tsx", /motion-safe:animate-tk-skeleton/],

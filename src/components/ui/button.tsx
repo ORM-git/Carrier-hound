@@ -2,11 +2,11 @@ import * as React from "react";
 import { Loader2 } from "lucide-react";
 import { cnTokens } from "./cn-tokens";
 
-export type ButtonVariant = "primary" | "secondary" | "ghost" | "destructive";
+export type ButtonVariant = "primary" | "secondary" | "outline" | "ghost" | "destructive";
 export type ButtonSize = "sm" | "md" | "lg";
 
 const BASE =
-  "inline-flex items-center justify-center gap-tk-1 whitespace-nowrap font-semibold select-none " +
+  "inline-flex items-center justify-center gap-tk-1 whitespace-nowrap font-medium select-none " +
   "rounded-full transition-all duration-200 ease-[cubic-bezier(0.645,0.045,0.355,1)] " +
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] focus-visible:ring-offset-1 " +
   "disabled:cursor-not-allowed disabled:opacity-60 motion-safe:active:scale-[0.98] cursor-pointer";
@@ -16,18 +16,19 @@ const VARIANTS: Record<ButtonVariant, string> = {
     "bg-[#2563EB] text-white hover:bg-[#1D4ED8] active:bg-[#1E40AF] disabled:hover:bg-[#2563EB]",
   secondary:
     "bg-[#F1F5F9] text-[#0F172A] hover:bg-[#E2E8F0] active:bg-[#CBD5E1] disabled:hover:bg-[#F1F5F9]",
+  outline:
+    "bg-white text-[#0F172A] border border-[#CBD5E1] hover:border-[#93C5FD] hover:bg-[#F8FAFC] active:bg-[#EFF6FF] disabled:hover:bg-white disabled:hover:border-[#CBD5E1]",
   ghost:
-    "bg-transparent text-ink-muted hover:bg-surface-muted hover:text-ink disabled:hover:bg-transparent",
+    "bg-transparent text-[#475569] hover:bg-[#F1F5F9] hover:text-[#0F172A] disabled:hover:bg-transparent",
   destructive:
     "bg-danger-600 text-ink-inverse shadow-tk-sm hover:bg-danger-700 disabled:hover:bg-danger-600",
 };
 
-// Every size meets the 44px touch-target minimum except `sm` (40px), which is
-// intended for dense desktop toolbars only.
+// All 40px high (44px on touch) with 0.2s hover transition
 const SIZES: Record<ButtonSize, string> = {
-  sm: "h-10 px-tk-2 text-tk-body-sm",
-  md: "h-11 px-tk-2 text-tk-body-sm",
-  lg: "h-12 px-tk-3 text-tk-body",
+  sm: "h-10 min-h-[44px] sm:min-h-[40px] px-3.5 text-[14px]",
+  md: "h-10 min-h-[44px] sm:min-h-[40px] px-4 text-[14px]",
+  lg: "h-10 min-h-[44px] sm:min-h-[40px] px-5 text-[14px]",
 };
 
 /** Shared class builder so `<Link>`/`<a>` elements can look like buttons. */

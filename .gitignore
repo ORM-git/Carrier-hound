@@ -57,3 +57,6 @@ scripts/extract_docx.py
 
 supabase/.temp/
 reports/
+
+# Local agent instructions
+/AGENTS.md

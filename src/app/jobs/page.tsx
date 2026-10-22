@@ -16,6 +16,8 @@ import {
   removeApplicationFromTracker,
 } from "@/lib/tracker/storage";
 import { getProAccessStatus } from "@/lib/billing/subscription";
+import GuideHeader from "@/components/GuideHeader";
+import Footer from "@/components/Footer";
 import { computeFitDiagnostics } from "@/lib/matcher/scoring";
 import type { User } from "@supabase/supabase-js";
 import {
@@ -589,10 +591,12 @@ function JobsPageInner() {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col font-sans">
+      {!user && <GuideHeader />}
+
       {/* ========================================================================= */}
       {/* 1. APP SHELL: FIXED LEFT SIDEBAR (about 220px, hidden on mobile)         */}
       {/* ========================================================================= */}
-      <aside className="hidden lg:flex flex-col fixed left-0 top-0 bottom-0 w-[220px] bg-white border-r border-slate-200 z-30 p-4 justify-between">
+      <aside className={`flex-col fixed left-0 top-0 bottom-0 w-[220px] bg-white border-r border-slate-200 z-30 p-4 justify-between ${user ? "hidden lg:flex" : "hidden"}`}>
         <div className="space-y-6">
           {/* Brand Logo */}
           <Link
@@ -701,38 +705,31 @@ function JobsPageInner() {
       </aside>
 
       {/* ========================================================================= */}
-      {/* MOBILE TOP BAR (<900px)                                                   */}
+      {/* MOBILE TOP BAR (<900px) for authenticated user                             */}
       {/* ========================================================================= */}
-      <header className="lg:hidden sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 h-14 flex items-center justify-between">
-        <Link href={user ? "/dashboard" : "/"} className="flex items-center gap-2 min-h-[44px]">
-          <div className="w-7 h-7 rounded-full bg-white flex items-center justify-center p-0.5 shadow-xs border border-slate-200">
-            <BrandIcon className="w-6 h-6" />
-          </div>
-          <span className="text-base font-black text-blue-600 tracking-tight">CareerMonke</span>
-        </Link>
-        <div className="flex items-center gap-2">
-          {!user ? (
-            <Link
-              href="/login"
-              className="text-xs font-bold text-blue-600 px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 min-h-[36px] flex items-center"
-            >
-              Sign In
-            </Link>
-          ) : (
+      {user && (
+        <header className="lg:hidden sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 h-14 flex items-center justify-between">
+          <Link href="/dashboard" className="flex items-center gap-2 min-h-[44px]">
+            <div className="w-7 h-7 rounded-full bg-white flex items-center justify-center p-0.5 shadow-xs border border-slate-200">
+              <BrandIcon className="w-6 h-6" />
+            </div>
+            <span className="text-base font-black text-blue-600 tracking-tight">CareerMonke</span>
+          </Link>
+          <div className="flex items-center gap-2">
             <Link
               href="/settings"
               className="w-8 h-8 rounded-full bg-blue-600 text-white font-bold text-xs flex items-center justify-center min-h-[44px] min-w-[44px]"
             >
               {(user.email || "CM").slice(0, 2).toUpperCase()}
             </Link>
-          )}
-        </div>
-      </header>
+          </div>
+        </header>
+      )}
 
       {/* ========================================================================= */}
       {/* 2. MAIN CONTENT AREA (offset by 220px on desktop)                        */}
       {/* ========================================================================= */}
-      <div className="flex-1 lg:pl-[220px] flex flex-col min-w-0">
+      <div className={`flex-1 ${user ? "lg:pl-[220px]" : ""} flex flex-col min-w-0`}>
         <main
           id="main-content"
           className="flex-1 max-w-[1400px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-6 space-y-4 pb-24 lg:pb-12"
@@ -1774,13 +1771,16 @@ function JobsPageInner() {
         </main>
       </div>
 
+      {!user && <Footer />}
+
       {/* ========================================================================= */}
-      {/* 6. RESPONSIVE BOTTOM TAB BAR (<900px, 44px tap targets)                   */}
+      {/* 6. RESPONSIVE BOTTOM TAB BAR (<900px, 44px tap targets) for auth user      */}
       {/* ========================================================================= */}
-      <nav
-        aria-label="Mobile Navigation"
-        className="lg:hidden fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur-md border-t border-slate-200 z-50 flex items-center justify-around h-16 px-1 shadow-lg"
-      >
+      {user && (
+        <nav
+          aria-label="Mobile Navigation"
+          className="lg:hidden fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur-md border-t border-slate-200 z-50 flex items-center justify-around h-16 px-1 shadow-lg"
+        >
         <Link
           href="/jobs"
           className="flex flex-col items-center justify-center flex-1 min-h-[44px] min-w-[44px] text-[10px] font-bold text-blue-600"
@@ -1821,6 +1821,7 @@ function JobsPageInner() {
           <span>Profile</span>
         </Link>
       </nav>
+      )}
 
       {/* Paywall Modal */}
       <PaywallModal
