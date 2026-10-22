@@ -31,6 +31,7 @@ const KNOWN_STATIC_ROUTES = new Set([
   "/terms-and-conditions",
   "/auth/callback",
   "/paywall",
+  "/pricing",
 ]);
 
 // Dynamic route patterns (Next.js slug routes)

@@ -225,6 +225,10 @@ export default function GuideHeader() {
               Resources
             </Link>
 
+            <Link href="/pricing" prefetch={false} className={desktopLinkClass(pathname === "/pricing")}>
+              Pricing
+            </Link>
+
             {/* Explore Dropdown: Radar & Companies */}
             <div className="relative" ref={exploreRef}>
               <button
@@ -347,6 +351,9 @@ export default function GuideHeader() {
           /* DESKTOP NAV: PUBLIC GUEST                                            */
           /* =================================================================== */
           <nav aria-label="Primary" className="hidden md:flex items-center gap-tk-1">
+            <Link href="/pricing" className={desktopLinkClass(pathname === "/pricing")}>
+              Pricing
+            </Link>
             <Link href="/remote" className={desktopLinkClass(isRemoteActive)}>
               Resources
             </Link>
@@ -423,6 +430,10 @@ export default function GuideHeader() {
                 <BookOpen className="w-4 h-4 text-brand-600" />
                 <span>Resources</span>
               </Link>
+              <Link href="/pricing" prefetch={false} onClick={closeMobile} className={mobileLinkClass(pathname === "/pricing")}>
+                <CreditCard className="w-4 h-4 text-brand-600" />
+                <span>Pricing</span>
+              </Link>
 
               <div className={mobileSectionLabel}>Explore</div>
               <Link href="/radar" prefetch={false} onClick={closeMobile} className={mobileLinkClass(pathname === "/radar")}>
@@ -462,6 +473,9 @@ export default function GuideHeader() {
             </nav>
           ) : (
             <nav aria-label="Mobile" className="space-y-0.5 pt-tk-1">
+              <Link href="/pricing" onClick={closeMobile} className={mobileLinkClass(pathname === "/pricing")}>
+                Pricing
+              </Link>
               <Link href="/remote" onClick={closeMobile} className={mobileLinkClass(isRemoteActive)}>
                 Resources
               </Link>

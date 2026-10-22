@@ -33,6 +33,7 @@ const BASELINE_HEADER_HREFS: Record<string, number> = {
   "/settings?tab=preferences": 2,
   "/signup": 2,
   "/worldwide": 2,
+  "/pricing": 4,
   "mailto:support@careermonke.com": 1,
 };
 const BASELINE_FOOTER_HREFS: Record<string, number> = {
@@ -41,6 +42,7 @@ const BASELINE_FOOTER_HREFS: Record<string, number> = {
   "/login": 1,
   "/privacy-policy": 2,
   "/terms-and-conditions": 2,
+  "/pricing": 1,
   "/worldwide": 2,
   "https://github.com": 1,
   "https://linkedin.com/company/careermonke": 1,
