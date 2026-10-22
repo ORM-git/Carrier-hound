@@ -23,6 +23,9 @@ function run() {
     code = code.replace(/data-testid="job-card"/g, "");
     code = code.replace(/useReducedMotion/g, "badMotion");
     code = code.replace(/aria-label="Sort by"/g, "");
+    code = code.replace(/matchScore !== null/g, "true");
+    code = code.replace(/Upload your resume to see your real match/g, "Corrupted CTA Text");
+    code = code.replace("return null;", "return 62 + (hash % 33);");
     code = code + '\nimport { useSearchParams } from "next/navigation";';
   }
 
@@ -122,11 +125,86 @@ function run() {
     console.log("  [PASS] business logic: effective candidate, sorting, save, and paywall handlers intact");
   }
 
+  // Check 13: Zero unbacked match score fallback
+  const hasHashFallback = /hash\s*%\s*33/.test(code) || /62\s*\+\s*\(hash/.test(code);
+  if (hasHashFallback) {
+    failures.push("SECURITY/ACCURACY FAIL: Found unbacked hash score fallback in src/app/jobs/page.tsx.");
+  } else {
+    console.log("  [PASS] match score: zero unbacked hash/random score fallback in getJobMatchScore");
+  }
+
+  // Check 14: Fit Match panel & CircularMatchRing conditioned strictly on real score
+  const hasConditionedFitPanel = code.includes("matchScore !== null ?");
+  const hasUploadResumeCta =
+    code.includes("Upload your resume to see your real match") &&
+    code.includes('href="/resume"');
+  if (!hasConditionedFitPanel || !hasUploadResumeCta) {
+    failures.push('FIT MATCH FAIL: Fit Match panel must be conditioned on matchScore !== null, with "Upload your resume to see your real match" CTA linking to /resume.');
+  } else {
+    console.log('  [PASS] fit match: Fit Match panel and CircularMatchRing strictly gated; "Upload your resume to see your real match" rendered when null');
+  }
+
+  // Check 15: Exact layout and card size preservation for CTA
+  const hasMatchingCardSize = code.includes("w-44 shrink-0") && code.includes("rounded-[16px]");
+  if (!hasMatchingCardSize) {
+    failures.push("LAYOUT SHIFT FAIL: Upload resume CTA must match desktop Fit Match panel size (w-44 shrink-0 rounded-[16px]).");
+  } else {
+    console.log("  [PASS] layout: zero shift; CTA uses identical w-44 shrink-0 rounded-[16px] dimensions and design tokens");
+  }
+
+  // Check 16: Dynamic execution simulation: user without confirmed resume never receives a percentage
+  try {
+    const fnMatch = code.match(/function getJobMatchScore\([\s\S]*?\n\}/);
+    if (!fnMatch) {
+      failures.push("EXTRACTION FAIL: Unable to parse getJobMatchScore function body.");
+    } else {
+      const jsFn = fnMatch[0]
+        .replace(/:\s*LiveJob/g, "")
+        .replace(/:\s*CandidateProfile\s*\|\s*null/g, "")
+        .replace(/\):\s*number\s*\|\s*null/g, ")");
+
+      const scoringCode = `
+        const computeFitDiagnostics = (cand, j) => {
+          if (!cand || !cand.confirmedAt) return null;
+          return { score: 88, breakdown: {} };
+        };
+        ${jsFn}
+        return getJobMatchScore;
+      `;
+      const fn = new Function(scoringCode)();
+      const dummyJob = { id: "job-test-123", title: "Senior Engineer", company: "MonkeCorp" };
+
+      const unauthScore = fn(dummyJob, null);
+      const unconfirmedScore = fn(dummyJob, { confirmedAt: null, skills: ["React"] });
+      const emptyConfirmedScore = fn(dummyJob, { confirmedAt: "", skills: ["React"] });
+      const confirmedScore = fn(dummyJob, { confirmedAt: "2026-10-01T00:00:00Z", skills: ["React"] });
+
+      if (unauthScore !== null) {
+        failures.push(`SCORE LEAK: User without candidate profile got score ${unauthScore}% instead of null.`);
+      }
+      if (unconfirmedScore !== null) {
+        failures.push(`SCORE LEAK: User with unconfirmed resume got score ${unconfirmedScore}% instead of null.`);
+      }
+      if (emptyConfirmedScore !== null) {
+        failures.push(`SCORE LEAK: User with empty confirmedAt got score ${emptyConfirmedScore}% instead of null.`);
+      }
+      if (typeof confirmedScore !== "number" || confirmedScore < 10 || confirmedScore > 99) {
+        failures.push(`SCORE ERROR: User with confirmed resume failed to get valid score (got ${confirmedScore}).`);
+      }
+
+      if (unauthScore === null && unconfirmedScore === null && emptyConfirmedScore === null && typeof confirmedScore === "number") {
+        console.log("  [PASS] score integrity: user without confirmed resume strictly receives null (never sees a percentage)");
+      }
+    }
+  } catch (err: any) {
+    failures.push(`SCORING TEST RUNTIME ERROR: ${err.message}`);
+  }
+
   console.log("\n----------------------------------------------------------------------------------");
   if (isNegativeControl) {
     if (failures.length >= 4) {
       console.log(`NEGATIVE CONTROL PASSED: Detected ${failures.length} expected intentional failure(s):`);
-      failures.forEach((f) => console.log(f));
+      failures.forEach((f) => console.log(`  - ${f}`));
       process.exit(1); // Non-zero exit code proves negative control works
     } else {
       console.error(`NEGATIVE CONTROL FAILED: Expected >= 4 failures, got ${failures.length}`);
@@ -136,7 +214,7 @@ function run() {
 
   if (failures.length > 0) {
     console.error("VALIDATION FAILED:");
-    failures.forEach((f) => console.error(f));
+    failures.forEach((f) => console.error(`  - ${f}`));
     process.exit(1);
   }
 
