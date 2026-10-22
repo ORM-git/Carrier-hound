@@ -1,17 +1,19 @@
 "use client";
 
-import React, { useState, useEffect, Suspense } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import BrandIcon from "@/components/BrandIcon";
 import { createClient } from "@/lib/supabase/client";
 import { getValidReturnUrl, getAuthUser } from "@/lib/auth/session";
 import { getSiteUrl } from "@/lib/siteUrl";
-import { ArrowLeft, Loader2, CheckCircle2, AlertCircle, RefreshCw, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Mail, Loader2, CheckCircle2, AlertCircle, RefreshCw, ShieldCheck } from "lucide-react";
+import { Card } from "@/components/ui/card";
+import { buttonClasses } from "@/components/ui/button";
 
 function GoogleIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" className="shrink-0">
       <path
         d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"
         fill="#4285F4"
@@ -32,18 +34,25 @@ function GoogleIcon() {
   );
 }
 
-function SignupPageInner() {
+export default function SignupPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const rawNext = searchParams.get("next");
-  const next = getValidReturnUrl(rawNext, "/onboarding");
 
+  const [next, setNext] = useState("/onboarding");
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState("");
   const [emailSent, setEmailSent] = useState(false);
   const [resendTimer, setResendTimer] = useState(0);
+
+  // Read search params via window.location (safe for static export)
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const rawNext = params.get("next");
+      setNext(getValidReturnUrl(rawNext, "/onboarding"));
+    }
+  }, []);
 
   // If already authenticated, redirect to dashboard or next directly
   useEffect(() => {
@@ -68,6 +77,9 @@ function SignupPageInner() {
       setError("Please enter a valid email address.");
       return;
     }
+
+    setLoading(true);
+    setError("");
 
     try {
       const supabase = createClient();
@@ -121,161 +133,192 @@ function SignupPageInner() {
   };
 
   return (
-    <main className="min-h-[100dvh] bg-[#F3F4F6] flex flex-col items-center justify-center p-4 sm:p-6 text-[#09090B] py-6 sm:py-12">
-      <div className="w-full max-w-[520px] mb-4 sm:mb-6">
+    <main
+      id="main-content"
+      className="min-h-[100dvh] bg-surface-subtle flex flex-col items-center justify-center p-4 sm:p-6 text-ink py-6 sm:py-12 font-sans"
+    >
+      <div className="w-full max-w-[480px] mb-4">
         <Link
           href="/"
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-black transition-colors min-h-[44px] py-2 px-1 -ml-1"
+          className="inline-flex items-center gap-1.5 text-tk-body-sm font-medium text-ink-muted hover:text-ink transition-colors min-h-[44px] py-2 px-1 -ml-1 rounded-tk-md focus-visible:outline-none focus-visible:shadow-tk-focus"
         >
           <ArrowLeft className="w-4 h-4" />
           <span>Back to Home</span>
         </Link>
       </div>
 
-      <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-white shadow-md border border-gray-100 flex items-center justify-center p-2 mb-4 sm:mb-6">
-        <BrandIcon className="w-12 h-12 sm:w-16 sm:h-16" />
-      </div>
-
-      <div className="w-full max-w-[520px] bg-white border border-[#E4E4E7] rounded-2xl shadow-sm overflow-hidden">
-        <div className="bg-[#F8FAFF] border-b border-gray-100 py-3 px-6 text-center">
-          <p className="text-xs sm:text-sm font-medium text-gray-700 flex items-center justify-center gap-1.5">
-            <ShieldCheck className="w-4 h-4 text-emerald-600" />
+      <Card
+        variant="surface"
+        data-testid="signup-auth-card"
+        className="w-full max-w-[480px] overflow-hidden p-6 sm:p-8 space-y-6"
+      >
+        {/* Reassurance pill */}
+        <div className="bg-brand-50 border border-brand-200/60 rounded-tk-lg py-2 px-3 text-center">
+          <p className="text-tk-caption font-medium text-brand-800 flex items-center justify-center gap-1.5">
+            <ShieldCheck className="w-4 h-4 text-brand-600 shrink-0" />
             <span>Create your account to discover unadvertised career page jobs.</span>
           </p>
         </div>
 
-        <div className="p-6 sm:p-10 space-y-6">
-          <div className="text-center space-y-1.5">
-            <h1 className="text-2xl font-bold text-[#09090B] tracking-tight">Get Started with CareerMonke</h1>
-            <p className="text-sm text-[#4B5563]">
+        {/* Brand Logo & Header */}
+        <div className="text-center space-y-3">
+          <div className="w-14 h-14 rounded-tk-xl bg-surface-muted border border-line flex items-center justify-center mx-auto p-2">
+            <BrandIcon className="w-10 h-10" />
+          </div>
+          <div className="space-y-1">
+            <h1 className="text-tk-h2 font-black text-ink tracking-tight">Get Started with CareerMonke</h1>
+            <p className="text-tk-body-sm text-ink-muted">
               30-second setup. No credit card required.
             </p>
           </div>
+        </div>
 
-          {error && (
-            <div className="bg-red-50 border border-red-200 rounded-xl p-3.5 flex items-start gap-2.5 text-sm text-red-700 animate-fadeIn">
-              <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-red-500" />
-              <span>{error}</span>
+        {error && (
+          <div
+            data-testid="auth-error-banner"
+            role="alert"
+            className="bg-danger-50 border border-danger-200 rounded-tk-lg p-3.5 flex items-start gap-2.5 text-tk-body-sm text-danger-700 animate-fadeIn"
+          >
+            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-danger-600" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        {emailSent ? (
+          <div
+            data-testid="auth-email-sent"
+            className="bg-success-50 border border-success-200 rounded-tk-xl p-6 text-center space-y-4 animate-fadeIn"
+          >
+            <div className="w-12 h-12 rounded-tk-full bg-success-100 text-success-700 flex items-center justify-center mx-auto">
+              <CheckCircle2 className="w-6 h-6" />
             </div>
-          )}
-
-          {emailSent ? (
-            <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-6 text-center space-y-4 animate-fadeIn">
-              <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
-                <CheckCircle2 className="w-6 h-6" />
-              </div>
-              <div className="space-y-1">
-                <h3 className="font-bold text-base text-slate-900">Check your email</h3>
-                <p className="text-xs text-slate-600 max-w-sm mx-auto">
-                  We sent an account activation link to <strong className="text-slate-900">{email}</strong>. Click it to begin your 3-step setup.
-                </p>
-              </div>
-
-              <div className="pt-2 flex flex-col items-center gap-2">
-                <button
-                  type="button"
-                  disabled={resendTimer > 0 || loading}
-                  onClick={handleSignup}
-                  className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-800 disabled:opacity-50 cursor-pointer"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  <span>
-                    {resendTimer > 0 ? `Resend link in ${resendTimer}s` : "Resend confirmation email"}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setEmailSent(false)}
-                  className="text-xs text-slate-400 hover:text-slate-600"
-                >
-                  Change email address
-                </button>
-              </div>
+            <div className="space-y-1">
+              <h3 className="font-bold text-tk-body text-ink">Check your email</h3>
+              <p className="text-tk-caption text-ink-muted max-w-sm mx-auto">
+                We sent an account activation link to <strong className="text-ink">{email}</strong>. Click it to begin your 3-step setup.
+              </p>
             </div>
-          ) : (
-            <div className="space-y-4">
+
+            <div className="pt-2 flex flex-col items-center gap-2">
               <button
                 type="button"
-                onClick={handleGoogle}
-                disabled={googleLoading || loading}
-                className="w-full h-12 flex items-center justify-center gap-3 border border-[#E4E4E7] rounded-xl text-sm font-semibold text-[#09090B] hover:bg-gray-50 active:scale-[0.99] transition shadow-2xs disabled:opacity-60 cursor-pointer"
+                disabled={resendTimer > 0 || loading}
+                onClick={handleSignup}
+                className="min-h-[44px] inline-flex items-center gap-1.5 text-tk-caption font-bold text-brand-700 hover:text-brand-800 disabled:opacity-50 cursor-pointer rounded-tk-md px-3 focus-visible:outline-none focus-visible:shadow-tk-focus"
               >
-                {googleLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <GoogleIcon />}
-                <span>Sign up with Google</span>
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>
+                  {resendTimer > 0 ? `Resend link in ${resendTimer}s` : "Resend confirmation email"}
+                </span>
               </button>
+              <button
+                type="button"
+                onClick={() => setEmailSent(false)}
+                className="min-h-[44px] text-tk-caption text-ink-subtle hover:text-ink-muted px-3 rounded-tk-md focus-visible:outline-none focus-visible:shadow-tk-focus"
+              >
+                Change email address
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <button
+              type="button"
+              onClick={handleGoogle}
+              disabled={googleLoading || loading}
+              className="min-h-[44px] h-12 w-full inline-flex items-center justify-center gap-2.5 rounded-tk-lg border border-line bg-surface hover:bg-surface-muted text-ink text-tk-body-sm font-semibold transition-colors duration-tk-fast disabled:opacity-60 cursor-pointer focus-visible:outline-none focus-visible:shadow-tk-focus"
+            >
+              {googleLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-ink-muted" />
+                  <span>Connecting to Google…</span>
+                </>
+              ) : (
+                <>
+                  <GoogleIcon />
+                  <span>Continue with Google</span>
+                </>
+              )}
+            </button>
 
-              <div className="flex items-center gap-3">
-                <div className="flex-1 h-px bg-gray-200" />
-                <span className="text-xs text-gray-500 font-medium">or with email</span>
-                <div className="flex-1 h-px bg-gray-200" />
+            <div className="relative flex items-center justify-center py-1">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-line" />
               </div>
+              <span className="relative bg-surface px-3 text-tk-caption text-ink-subtle uppercase tracking-wider font-semibold">
+                Or with email
+              </span>
+            </div>
 
-              <form onSubmit={handleSignup} className="space-y-4">
-                <div>
-                  <label htmlFor="signup-email" className="block text-xs font-bold text-[#09090B] uppercase tracking-wider mb-1.5">
-                    Your Email Address
-                  </label>
+            <form onSubmit={handleSignup} className="space-y-3.5">
+              <div className="space-y-1">
+                <label htmlFor="signup-email" className="block text-tk-caption font-semibold text-ink">
+                  Work or Personal Email
+                </label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-ink-subtle absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
                     id="signup-email"
                     type="email"
-                    required
-                    autoFocus
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="you@domain.com"
-                    className="w-full h-11 px-3.5 bg-white border border-[#E4E4E7] rounded-xl text-sm text-[#09090B] focus:outline-blue-600 shadow-2xs"
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      if (error) setError("");
+                    }}
+                    placeholder="name@company.com"
+                    autoComplete="email"
+                    required
+                    className="min-h-[44px] h-12 w-full rounded-tk-lg border border-line bg-surface pl-10 pr-4 text-tk-body text-ink placeholder:text-ink-subtle transition-colors focus-visible:outline-none focus-visible:shadow-tk-focus"
                   />
                 </div>
+              </div>
 
-                <button
-                  type="submit"
-                  disabled={loading || googleLoading}
-                  className="w-full h-12 bg-[#2563EB] hover:bg-[#1D4ED8] active:scale-[0.99] text-white font-bold text-sm rounded-xl transition shadow-xs cursor-pointer disabled:opacity-60 flex items-center justify-center gap-2"
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Creating your account…</span>
-                    </>
-                  ) : (
-                    <span>Create Free Account →</span>
-                  )}
-                </button>
-              </form>
-            </div>
-          )}
-
-          <div className="pt-4 border-t border-gray-100 text-center text-xs text-slate-600">
-            <span>Already have an account? </span>
-            <Link
-              href={`/login?next=${encodeURIComponent(next)}`}
-              className="font-bold text-blue-600 hover:text-blue-800 hover:underline"
-            >
-              Sign In
-            </Link>
+              <button
+                type="submit"
+                disabled={loading || googleLoading}
+                className={buttonClasses({
+                  variant: "primary",
+                  size: "lg",
+                  fullWidth: true,
+                  className: "min-h-[44px] h-12 cursor-pointer font-bold",
+                })}
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-ink-inverse" />
+                    <span>Creating your account…</span>
+                  </>
+                ) : (
+                  <span>Create Account</span>
+                )}
+              </button>
+            </form>
           </div>
+        )}
 
-          <div className="text-center text-[11px] text-gray-500">
-            By signing up, you agree to CareerMonke&apos;s{" "}
-            <Link href="/terms-and-conditions" className="underline text-gray-600 hover:text-gray-900">
+        <div className="pt-2 border-t border-line text-center space-y-2">
+          <p className="text-tk-body-sm text-ink-muted">
+            Already have an account?{" "}
+            <Link
+              href={next ? `/login?next=${encodeURIComponent(next)}` : "/login"}
+              className="font-bold text-brand-700 hover:text-brand-800 hover:underline min-h-[44px] inline-flex items-center focus-visible:outline-none focus-visible:shadow-tk-focus rounded-tk-sm"
+            >
+              Sign in
+            </Link>
+          </p>
+          <p className="text-tk-caption text-ink-subtle">
+            By creating an account, you agree to our{" "}
+            <Link href="/terms-and-conditions" className="underline hover:text-ink-muted">
               Terms
             </Link>{" "}
             and{" "}
-            <Link href="/privacy-policy" className="underline text-gray-600 hover:text-gray-900">
+            <Link href="/privacy-policy" className="underline hover:text-ink-muted">
               Privacy Policy
             </Link>
             .
-          </div>
+          </p>
         </div>
-      </div>
+      </Card>
     </main>
-  );
-}
-
-export default function SignupPage() {
-  return (
-    <Suspense>
-      <SignupPageInner />
-    </Suspense>
   );
 }

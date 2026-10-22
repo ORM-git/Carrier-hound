@@ -1,17 +1,25 @@
 "use client";
 
-import React, { useEffect, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import React, { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { getValidReturnUrl } from "@/lib/auth/session";
+import BrandIcon from "@/components/BrandIcon";
+import { Card } from "@/components/ui/card";
+import { Loader2 } from "lucide-react";
 
-function AuthCallbackContent() {
+export default function AuthCallbackPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
 
   useEffect(() => {
     let resolved = false;
-    const next = getValidReturnUrl(searchParams.get("next"), "/onboarding");
+
+    // Read search params via window.location (safe for static export)
+    const search = typeof window !== "undefined" ? window.location.search : "";
+    const params = new URLSearchParams(search);
+    const next = getValidReturnUrl(params.get("next"), "/onboarding");
+    const code = params.get("code");
+
     const supabase = createClient();
 
     const finish = (destination: string) => {
@@ -22,15 +30,15 @@ function AuthCallbackContent() {
     };
 
     // 1. Listen for auth state changes (automatically catches hash token / magic link)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event: any, session: any) => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event: any, session: any) => {
       if (session && (event === "SIGNED_IN" || event === "INITIAL_SESSION" || event === "TOKEN_REFRESHED")) {
         finish(next);
       }
     });
 
     const handleAuth = async () => {
-      const code = searchParams.get("code");
-
       // 2. PKCE code exchange
       if (code) {
         const { error } = await supabase.auth.exchangeCodeForSession(code);
@@ -45,13 +53,15 @@ function AuthCallbackContent() {
       }
 
       // 3. Check existing active session
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       if (session) {
         finish(next);
         return;
       }
 
-      // 4. If window has hash (e.g. #access_token=... from magic link), give it 2 seconds to complete
+      // 4. If window has hash (e.g. #access_token=... from magic link), give it 1.5 seconds to complete
       if (typeof window !== "undefined" && window.location.hash.includes("access_token")) {
         setTimeout(() => {
           supabase.auth.getSession().then(({ data }: any) => {
@@ -79,28 +89,28 @@ function AuthCallbackContent() {
     return () => {
       subscription.unsubscribe();
     };
-  }, [router, searchParams]);
+  }, [router]);
 
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
-      <div className="text-center space-y-3">
-        <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto" />
-        <p className="text-xs font-semibold text-slate-500">Signing you in to CareerMonke…</p>
-      </div>
-    </div>
-  );
-}
-
-export default function AuthCallbackPage() {
-  return (
-    <Suspense
-      fallback={
-        <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
-          <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-        </div>
-      }
+    <div
+      data-testid="auth-callback-container"
+      className="min-h-screen bg-surface-subtle flex flex-col items-center justify-center p-6 text-ink font-sans"
     >
-      <AuthCallbackContent />
-    </Suspense>
+      <Card
+        variant="surface"
+        className="w-full max-w-sm p-8 text-center space-y-4 shadow-tk-sm border border-line"
+      >
+        <div className="w-14 h-14 rounded-tk-xl bg-surface-muted border border-line flex items-center justify-center mx-auto p-2">
+          <BrandIcon className="w-10 h-10" />
+        </div>
+        <div className="space-y-1.5">
+          <Loader2 className="w-6 h-6 text-brand-600 animate-spin mx-auto" />
+          <h1 className="text-tk-body font-bold text-ink">Signing you in to CareerMonke…</h1>
+          <p className="text-tk-caption text-ink-muted">
+            Verifying your secure credentials. This only takes a moment.
+          </p>
+        </div>
+      </Card>
+    </div>
   );
 }
