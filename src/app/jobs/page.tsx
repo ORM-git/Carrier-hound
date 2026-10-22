@@ -18,6 +18,8 @@ import {
 import { getProAccessStatus } from "@/lib/billing/subscription";
 import GuideHeader from "@/components/GuideHeader";
 import Footer from "@/components/Footer";
+import AppIconRail from "@/components/shell/AppIconRail";
+import AppTopBar, { TopBarTab } from "@/components/shell/AppTopBar";
 import { computeFitDiagnostics } from "@/lib/matcher/scoring";
 import type { User } from "@supabase/supabase-js";
 import {
@@ -589,153 +591,77 @@ function JobsPageInner() {
     (selectedJobType ? 1 : 0);
   const hasActiveFilters = activeFiltersCount > 0;
 
+  const jobTabs: TopBarTab[] = [
+    {
+      id: "recommended",
+      label: "Recommended",
+      count: totalCount > 0 ? totalCount.toLocaleString() : liveJobs.length,
+      active: activeTab === "recommended",
+      onClick: () => {
+        setActiveTab("recommended");
+        setPage(1);
+      },
+    },
+    {
+      id: "liked",
+      label: "Saved",
+      count: savedJobIds.length,
+      active: activeTab === "liked",
+      onClick: () => {
+        setActiveTab("liked");
+        setPage(1);
+      },
+    },
+    {
+      id: "applied",
+      label: "Applied",
+      count: appliedCount,
+      active: activeTab === "applied",
+      onClick: () => {
+        setActiveTab("applied");
+        setPage(1);
+      },
+    },
+    {
+      id: "external",
+      label: "External",
+      count: "24+",
+      active: activeTab === "external",
+      onClick: () => {
+        setActiveTab("external");
+        setPage(1);
+      },
+    },
+  ];
+
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col font-sans">
       {!user && <GuideHeader />}
 
-      {/* ========================================================================= */}
-      {/* 1. APP SHELL: FIXED LEFT SIDEBAR (about 220px, hidden on mobile)         */}
-      {/* ========================================================================= */}
-      <aside className={`flex-col fixed left-0 top-0 bottom-0 w-[220px] bg-white border-r border-slate-200 z-30 p-4 justify-between ${user ? "hidden lg:flex" : "hidden"}`}>
-        <div className="space-y-6">
-          {/* Brand Logo */}
-          <Link
-            href={user ? "/dashboard" : "/"}
-            className="flex items-center gap-2.5 px-2 min-h-[44px] rounded-xl hover:bg-slate-50 transition"
-          >
-            <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center p-0.5 shadow-xs border border-slate-200 shrink-0">
-              <BrandIcon className="w-7 h-7" />
-            </div>
-            <span className="text-lg font-black text-blue-600 tracking-tight">
-              CareerMonke
-            </span>
-          </Link>
+      {/* Left Icon Rail (fixed 72px wide, full height, white, #E2E8F0; bottom tab bar on mobile) */}
+      {user && <AppIconRail />}
 
-          {/* Navigation Links */}
-          <nav className="space-y-1">
-            <Link
-              href="/jobs"
-              className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition min-h-[44px] bg-blue-50 text-blue-700 shadow-2xs"
-            >
-              <Briefcase className="w-4 h-4 text-blue-600 shrink-0" />
-              <span>Jobs</span>
-            </Link>
-
-            <Link
-              href="/radar"
-              className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition min-h-[44px]"
-            >
-              <Globe className="w-4 h-4 text-slate-400 shrink-0" />
-              <span>Explore</span>
-            </Link>
-
-            <Link
-              href="/resume"
-              className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition min-h-[44px]"
-            >
-              <FileText className="w-4 h-4 text-slate-400 shrink-0" />
-              <span>Resume</span>
-            </Link>
-
-            <Link
-              href="/settings?tab=preferences"
-              className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition min-h-[44px]"
-            >
-              <UserIcon className="w-4 h-4 text-slate-400 shrink-0" />
-              <span>Profile</span>
-            </Link>
-
-            <Link
-              href="/applications"
-              className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition min-h-[44px]"
-            >
-              <CheckSquare className="w-4 h-4 text-slate-400 shrink-0" />
-              <span>Applications</span>
-            </Link>
-
-            <Link
-              href="/remote"
-              className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition min-h-[44px]"
-            >
-              <BookOpen className="w-4 h-4 text-slate-400 shrink-0" />
-              <span>Resources</span>
-            </Link>
-          </nav>
-        </div>
-
-        {/* Bottom Promo & Controls */}
-        <div className="space-y-3 pt-4 border-t border-slate-100">
-          {/* Plain Upgrade to Pro Card */}
-          <div className="p-3 rounded-xl bg-gradient-to-br from-blue-50 to-indigo-50/70 border border-blue-100 space-y-1.5">
-            <div className="flex items-center gap-1.5 text-xs font-bold text-blue-900">
-              <Sparkles className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-              <span>Upgrade to Pro</span>
-            </div>
-            <p className="text-[11px] text-slate-600 leading-snug">
-              Unlock verified company names, compensation & direct ATS apply links.
-            </p>
-            <Link
-              href="/pricing"
-              className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:text-blue-800 transition pt-0.5 min-h-[32px]"
-            >
-              <span>View Plans</span>
-              <ArrowRight className="w-3 h-3" />
-            </Link>
-          </div>
-
-          {/* Feedback & Settings */}
-          <div className="space-y-0.5">
-            <a
-              href="mailto:support@careermonke.com"
-              className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition min-h-[44px]"
-            >
-              <MessageSquare className="w-4 h-4 text-slate-400 shrink-0" />
-              <span>Feedback</span>
-            </a>
-
-            <Link
-              href="/settings"
-              className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition min-h-[44px]"
-            >
-              <Settings className="w-4 h-4 text-slate-400 shrink-0" />
-              <span>Settings</span>
-            </Link>
-          </div>
-        </div>
-      </aside>
-
-      {/* ========================================================================= */}
-      {/* MOBILE TOP BAR (<900px) for authenticated user                             */}
-      {/* ========================================================================= */}
-      {user && (
-        <header className="lg:hidden sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 h-14 flex items-center justify-between">
-          <Link href="/dashboard" className="flex items-center gap-2 min-h-[44px]">
-            <div className="w-7 h-7 rounded-full bg-white flex items-center justify-center p-0.5 shadow-xs border border-slate-200">
-              <BrandIcon className="w-6 h-6" />
-            </div>
-            <span className="text-base font-black text-blue-600 tracking-tight">CareerMonke</span>
-          </Link>
-          <div className="flex items-center gap-2">
-            <Link
-              href="/settings"
-              className="w-8 h-8 rounded-full bg-blue-600 text-white font-bold text-xs flex items-center justify-center min-h-[44px] min-w-[44px]"
-            >
-              {(user.email || "CM").slice(0, 2).toUpperCase()}
-            </Link>
-          </div>
-        </header>
-      )}
-
-      {/* ========================================================================= */}
-      {/* 2. MAIN CONTENT AREA (offset by 220px on desktop)                        */}
-      {/* ========================================================================= */}
-      <div className={`flex-1 ${user ? "lg:pl-[220px]" : ""} flex flex-col min-w-0`}>
+      {/* Main Content Area (offset by 72px on desktop when user is logged in) */}
+      <div className={`flex-1 ${user ? "md:pl-[72px]" : ""} flex flex-col min-w-0 ${user ? "pb-16 md:pb-0" : ""}`}>
+        {/* Top bar for logged-in user: 56px, white, 1px bottom border */}
+        {user && (
+          <AppTopBar
+            pageLabel="JOBS"
+            tabs={jobTabs}
+            searchValue={search}
+            onSearchChange={setSearch}
+            searchPlaceholder="Search by title or company"
+            user={user}
+            isPro={isPro}
+          />
+        )}
         <main
           id="main-content"
           className="flex-1 max-w-[1400px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-6 space-y-4 pb-24 lg:pb-12"
         >
           {/* Header Row: Title "JOBS" + Tabs with Count Badges + Search Box */}
           <div className="space-y-4">
+            {!user && (
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-4 sm:gap-6 min-w-0 max-w-full">
                 <h1 className="text-[18px] font-bold text-[#0F172A] tracking-wider uppercase">
@@ -841,11 +767,12 @@ function JobsPageInner() {
                 )}
               </div>
             </div>
+            )}
 
             {/* ========================================================================= */}
             {/* 3. FILTER BAR: ROUNDED PILL DROPDOWNS IN A WRAP ROW                      */}
             {/* ========================================================================= */}
-            <div className="sticky top-[64px] z-tk-sticky bg-white/95 backdrop-blur-md rounded-xl border border-slate-200/90 shadow-xs p-3 space-y-2.5">
+            <div className={`${user ? "sticky top-[56px]" : "sticky top-[64px]"} z-tk-sticky bg-white/95 backdrop-blur-md rounded-xl border border-slate-200/90 shadow-xs p-3 space-y-2.5`}>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 {/* Pill Dropdowns Row */}
                 <div className="flex flex-wrap items-center gap-2">
@@ -1380,7 +1307,7 @@ function JobsPageInner() {
                   </div>
                 </div>
               ) : (
-                /* Job Cards List (Jobright-style Reference Layout) */
+                /* Job Cards List */
                 <div className="space-y-3.5">
                   {displayedJobs.map((job, index) => {
                     const isSaved = savedJobIds.includes(job.id);
@@ -1773,55 +1700,7 @@ function JobsPageInner() {
 
       {!user && <Footer />}
 
-      {/* ========================================================================= */}
-      {/* 6. RESPONSIVE BOTTOM TAB BAR (<900px, 44px tap targets) for auth user      */}
-      {/* ========================================================================= */}
-      {user && (
-        <nav
-          aria-label="Mobile Navigation"
-          className="lg:hidden fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur-md border-t border-slate-200 z-50 flex items-center justify-around h-16 px-1 shadow-lg"
-        >
-        <Link
-          href="/jobs"
-          className="flex flex-col items-center justify-center flex-1 min-h-[44px] min-w-[44px] text-[10px] font-bold text-blue-600"
-        >
-          <Briefcase className="w-5 h-5 text-blue-600 mb-0.5" />
-          <span>Jobs</span>
-        </Link>
-
-        <Link
-          href="/radar"
-          className="flex flex-col items-center justify-center flex-1 min-h-[44px] min-w-[44px] text-[10px] font-semibold text-slate-500 hover:text-slate-800"
-        >
-          <Globe className="w-5 h-5 text-slate-400 mb-0.5" />
-          <span>Explore</span>
-        </Link>
-
-        <Link
-          href="/resume"
-          className="flex flex-col items-center justify-center flex-1 min-h-[44px] min-w-[44px] text-[10px] font-semibold text-slate-500 hover:text-slate-800"
-        >
-          <FileText className="w-5 h-5 text-slate-400 mb-0.5" />
-          <span>Resume</span>
-        </Link>
-
-        <Link
-          href="/applications"
-          className="flex flex-col items-center justify-center flex-1 min-h-[44px] min-w-[44px] text-[10px] font-semibold text-slate-500 hover:text-slate-800"
-        >
-          <CheckSquare className="w-5 h-5 text-slate-400 mb-0.5" />
-          <span>Applications</span>
-        </Link>
-
-        <Link
-          href="/settings?tab=preferences"
-          className="flex flex-col items-center justify-center flex-1 min-h-[44px] min-w-[44px] text-[10px] font-semibold text-slate-500 hover:text-slate-800"
-        >
-          <UserIcon className="w-5 h-5 text-slate-400 mb-0.5" />
-          <span>Profile</span>
-        </Link>
-      </nav>
-      )}
+{/* Mobile bottom navigation handled by AppIconRail */}
 
       {/* Paywall Modal */}
       <PaywallModal

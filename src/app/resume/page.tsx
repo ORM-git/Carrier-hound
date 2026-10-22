@@ -6,6 +6,9 @@ import { useRouter } from "next/navigation";
 import { motion, useReducedMotion } from "framer-motion";
 import { toast } from "react-toastify";
 import GuideHeader from "@/components/GuideHeader";
+import AppIconRail from "@/components/shell/AppIconRail";
+import AppTopBar from "@/components/shell/AppTopBar";
+import type { User } from "@supabase/supabase-js";
 import Footer from "@/components/Footer";
 import ProUpgradeScreen from "@/components/billing/ProUpgradeScreen";
 import ResumeUploadAndConfirm from "@/components/resume/ResumeUploadAndConfirm";
@@ -36,11 +39,13 @@ import {
   GraduationCap,
 } from "lucide-react";
 
-function ResumeSkeleton() {
+function ResumeSkeleton({ user, isPro }: { user?: User | null; isPro?: boolean }) {
   return (
-    <div className="min-h-screen bg-surface-subtle text-ink flex flex-col font-sans">
-      <GuideHeader />
-      <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-tk-3 sm:py-tk-4 space-y-tk-3">
+    <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col font-sans">
+      <AppIconRail />
+      <div className="flex-1 md:pl-[72px] flex flex-col min-w-0 pb-16 md:pb-0">
+        <AppTopBar pageLabel="RESUME" user={user} isPro={isPro} />
+        <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-tk-3 sm:py-tk-4 space-y-tk-3">
         {/* Header Ribbon Skeleton */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-tk-2 pb-tk-2 border-b border-line">
           <div className="space-y-2">
@@ -70,6 +75,7 @@ function ResumeSkeleton() {
         </Card>
       </main>
       <Footer />
+      </div>
     </div>
   );
 }
@@ -82,6 +88,7 @@ export default function ResumePage() {
   const [isPro, setIsPro] = useState(false);
   const [isProDefinitive, setIsProDefinitive] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<User | null>(null);
 
   const loadData = useCallback(async (userId?: string) => {
     try {
@@ -109,12 +116,16 @@ export default function ResumePage() {
         router.replace("/login?next=/resume");
         return;
       }
+      setUser(u);
       loadData(u.id);
     });
 
     const handleUpdate = () => {
       getAuthUser().then((u) => {
-        if (u) loadData(u.id);
+        if (u) {
+          setUser(u);
+          loadData(u.id);
+        }
       });
     };
     window.addEventListener("careermonke_profile_updated", handleUpdate);
@@ -135,7 +146,7 @@ export default function ResumePage() {
   };
 
   if (loading || (!isPro && !isProDefinitive)) {
-    return <ResumeSkeleton />;
+    return <ResumeSkeleton user={user} isPro={isPro} />;
   }
 
   // Definitively non-Pro
@@ -162,13 +173,16 @@ export default function ResumePage() {
   const isConfirmed = Boolean(candidate && candidate.confirmedAt);
 
   return (
-    <div className="min-h-screen bg-surface-subtle text-ink flex flex-col font-sans">
-      <GuideHeader />
+    <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col font-sans">
+      <AppIconRail />
 
-      <main
-        id="main-content"
-        className="flex-1 max-w-5xl mx-auto px-4 sm:px-6 py-tk-3 sm:py-tk-4 w-full"
-      >
+      <div className="flex-1 md:pl-[72px] flex flex-col min-w-0 pb-16 md:pb-0">
+        <AppTopBar pageLabel="RESUME" user={user} isPro={isPro} />
+
+        <main
+          id="main-content"
+          className="flex-1 max-w-5xl mx-auto px-4 sm:px-6 py-tk-3 sm:py-tk-4 w-full"
+        >
         <motion.div {...entrance} className="space-y-tk-3">
           {/* ================================================================= */}
           {/* HEADER RIBBON                                                     */}
@@ -417,6 +431,7 @@ export default function ResumePage() {
       </main>
 
       <Footer />
+      </div>
     </div>
   );
 }

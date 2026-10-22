@@ -3,6 +3,8 @@
 import React, { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import GuideHeader from "@/components/GuideHeader";
+import AppIconRail from "@/components/shell/AppIconRail";
+import AppTopBar from "@/components/shell/AppTopBar";
 import Footer from "@/components/Footer";
 import { getAuthUser, getUserPreferences, saveUserPreferences, signOutUser } from "@/lib/auth/session";
 import { UserPreferences } from "@/lib/auth/types";
@@ -202,10 +204,17 @@ function SettingsPageInner() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col">
-        <GuideHeader />
-        <div className="flex-1 flex items-center justify-center">
-          <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+      <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col font-sans">
+        <AppIconRail />
+        <div className="flex-1 md:pl-[72px] flex flex-col min-w-0 pb-16 md:pb-0">
+          <AppTopBar
+            pageLabel={activeTab === "preferences" ? "PROFILE" : "SETTINGS"}
+            user={user}
+            isPro={false}
+          />
+          <div className="flex-1 flex items-center justify-center">
+            <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+          </div>
         </div>
       </div>
     );
@@ -214,10 +223,17 @@ function SettingsPageInner() {
   const isPro = subscription?.status === "active";
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-[#09090B] flex flex-col">
-      <GuideHeader />
+    <div className="min-h-screen bg-[#F8FAFC] text-[#09090B] flex flex-col font-sans">
+      <AppIconRail />
 
-      <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-12 space-y-8">
+      <div className="flex-1 md:pl-[72px] flex flex-col min-w-0 pb-16 md:pb-0">
+        <AppTopBar
+          pageLabel={activeTab === "preferences" ? "PROFILE" : "SETTINGS"}
+          user={user}
+          isPro={isPro}
+        />
+
+        <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-12 space-y-8">
         <div>
           <h1 className="text-[18px] font-bold uppercase tracking-wider text-[#0F172A]">
             Account & Settings
@@ -573,14 +589,15 @@ function SettingsPageInner() {
         )}
       </main>
 
+      <Footer />
+      </div>
+
       <PaywallModal
         open={isPaywallOpen}
         onOpenChange={setIsPaywallOpen}
         user={user}
         featureTitle="Upgrade to CareerMonke Pro"
       />
-
-      <Footer />
     </div>
   );
 }
