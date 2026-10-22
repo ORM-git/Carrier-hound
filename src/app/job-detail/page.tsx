@@ -1,11 +1,15 @@
 "use client";
 
-
 import React, { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { motion, useReducedMotion } from "motion/react";
 import GuideHeader from "@/components/GuideHeader";
 import Footer from "@/components/Footer";
+import CompanyLogo from "@/components/CompanyLogo";
+import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { getLiveJobById, LiveJob, getJobRemoteEligibility } from "@/lib/jobs/service";
 import { getAuthUser } from "@/lib/auth/session";
 import { getCandidateProfile } from "@/lib/resume/storage";
@@ -38,11 +42,8 @@ import {
   FileText,
   Sparkles,
   AlertCircle,
-  Clock,
-  HelpCircle,
-  Share2,
   ChevronRight,
-  ArrowRight
+  ArrowRight,
 } from "lucide-react";
 import { toast } from "react-toastify";
 
@@ -62,8 +63,138 @@ function getResolvedJobId(): string {
   return "";
 }
 
+function formatPostedDateLabel(dateStr?: string, postedAt?: string): string {
+  if (dateStr && dateStr.trim()) return dateStr.trim();
+  if (postedAt) {
+    const parsed = new Date(postedAt);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      });
+    }
+  }
+  return "Recently verified";
+}
+
+/**
+ * Full-layout skeleton matching the final 2-column desktop + mobile sticky CTA layout
+ * to prevent Cumulative Layout Shift (CLS) while auth, entitlement, and job data resolve.
+ */
+function JobDetailSkeleton() {
+  return (
+    <div className="min-h-screen bg-surface-subtle text-ink flex flex-col">
+      <GuideHeader />
+      <main
+        id="main-content"
+        className="flex-1 max-w-container w-full mx-auto px-4 sm:px-6 lg:px-8 py-tk-3 sm:py-tk-4 pb-28 lg:pb-tk-6"
+      >
+        <div
+          role="status"
+          aria-label="Loading job details"
+          data-testid="job-detail-skeleton"
+          className="space-y-tk-3"
+        >
+          {/* Top breadcrumb bar skeleton */}
+          <div className="flex items-center justify-between min-h-[44px]">
+            <Skeleton shape="text" className="h-5 w-36 rounded-tk-sm" />
+            <Skeleton shape="text" className="h-5 w-28 rounded-tk-sm" />
+          </div>
+
+          {/* 2-Column Jobright-style layout skeleton */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-tk-3 lg:gap-tk-4 items-start">
+            {/* Left column (8 cols) */}
+            <div className="lg:col-span-8 space-y-tk-3">
+              {/* Header + Meta Block card skeleton */}
+              <Card variant="surface" className="p-tk-3 sm:p-tk-4 space-y-tk-3">
+                <div className="flex items-start gap-tk-2">
+                  <Skeleton className="w-14 h-14 rounded-tk-lg shrink-0" />
+                  <div className="flex-1 space-y-tk-1.5 min-w-0">
+                    <div className="flex flex-wrap items-center gap-tk-1">
+                      <Skeleton className="h-6 w-24 rounded-tk-full" />
+                      <Skeleton className="h-6 w-36 rounded-tk-full" />
+                    </div>
+                    <Skeleton className="h-8 sm:h-9 w-4/5 rounded-tk-md" />
+                    <Skeleton className="h-5 w-48 rounded-tk-sm" />
+                  </div>
+                </div>
+
+                {/* Scannable 4-item Meta Block skeleton */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-tk-1.5 sm:gap-tk-2 pt-tk-2 border-t border-line">
+                  {[0, 1, 2, 3].map((idx) => (
+                    <div
+                      key={idx}
+                      className="rounded-tk-lg bg-surface-subtle border border-line p-tk-1.5 space-y-1.5"
+                    >
+                      <Skeleton shape="text" className="h-3 w-16" />
+                      <Skeleton shape="text" className="h-4 w-24" />
+                    </div>
+                  ))}
+                </div>
+              </Card>
+
+              {/* Match & Skill Analysis card skeleton */}
+              <Card variant="surface" className="p-tk-3 sm:p-tk-4 space-y-tk-3">
+                <div className="flex items-center justify-between">
+                  <Skeleton className="h-6 w-48 rounded-tk-sm" />
+                  <Skeleton className="h-6 w-24 rounded-tk-full" />
+                </div>
+                <div className="p-tk-2 rounded-tk-xl bg-surface-subtle border border-line flex items-center justify-between gap-tk-2">
+                  <div className="flex items-center gap-tk-2 flex-1">
+                    <Skeleton className="w-14 h-14 rounded-tk-xl shrink-0" />
+                    <div className="space-y-2 flex-1">
+                      <Skeleton shape="text" className="h-4 w-36" />
+                      <Skeleton shape="text" className="h-3.5 w-64 max-w-full" />
+                    </div>
+                  </div>
+                  <Skeleton className="h-11 w-40 rounded-tk-lg hidden sm:block" />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-tk-2">
+                  <Skeleton className="h-28 w-full rounded-tk-lg" />
+                  <Skeleton className="h-28 w-full rounded-tk-lg" />
+                </div>
+              </Card>
+
+              {/* Role Overview card skeleton */}
+              <Card variant="surface" className="p-tk-3 sm:p-tk-4 space-y-tk-3">
+                <Skeleton className="h-6 w-40 rounded-tk-sm" />
+                <Skeleton className="h-24 w-full rounded-tk-lg" />
+                <div className="space-y-2.5 max-w-[70ch]">
+                  <Skeleton shape="text" className="h-4 w-full" />
+                  <Skeleton shape="text" className="h-4 w-11/12" />
+                  <Skeleton shape="text" className="h-4 w-4/5" />
+                  <Skeleton shape="text" className="h-4 w-full" />
+                  <Skeleton shape="text" className="h-4 w-3/4" />
+                </div>
+              </Card>
+            </div>
+
+            {/* Right column: Sticky Apply CTA skeleton (4 cols) */}
+            <aside className="hidden lg:block lg:col-span-4 lg:sticky lg:top-[84px]">
+              <Card variant="elevated" className="p-tk-3 space-y-tk-2">
+                <Skeleton shape="text" className="h-5 w-3/4" />
+                <Skeleton shape="text" className="h-4 w-1/2" />
+                <Skeleton className="h-11 w-full rounded-tk-lg" />
+                <Skeleton className="h-11 w-full rounded-tk-lg" />
+                <div className="pt-tk-2 border-t border-line space-y-tk-1">
+                  <Skeleton shape="text" className="h-3 w-28" />
+                  <Skeleton className="h-11 w-full rounded-tk-lg" />
+                  <Skeleton className="h-11 w-full rounded-tk-lg" />
+                </div>
+              </Card>
+            </aside>
+          </div>
+        </div>
+      </main>
+      <Footer />
+    </div>
+  );
+}
+
 function JobDetailInner() {
   const router = useRouter();
+  const shouldReduceMotion = useReducedMotion();
 
   const [user, setUser] = useState<User | null>(null);
   const [isPro, setIsPro] = useState(false);
@@ -127,39 +258,56 @@ function JobDetailInner() {
   }, [urlJobId]);
 
   if (loading || (user && !isPro && !isProDefinitive)) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex flex-col">
-        <GuideHeader />
-        <div className="flex-1 flex items-center justify-center">
-          <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-        </div>
-      </div>
-    );
+    return <JobDetailSkeleton />;
   }
+
+  const entranceMotionProps = shouldReduceMotion
+    ? { initial: false as const, animate: { opacity: 1, y: 0 }, transition: { duration: 0.01 } }
+    : {
+        initial: { opacity: 0, y: 6 },
+        animate: { opacity: 1, y: 0 },
+        transition: { duration: 0.25, ease: [0.22, 1, 0.36, 1] as const },
+      };
 
   // Tier 1: Signed-out visitor
   if (!user) {
-    const returnUrl = typeof window !== "undefined" ? window.location.pathname + window.location.search : `/job-detail?id=${job?.id || ""}`;
+    const returnUrl =
+      typeof window !== "undefined"
+        ? window.location.pathname + window.location.search
+        : `/job-detail?id=${job?.id || ""}`;
     return (
-      <div className="min-h-screen bg-[#F8FAFC] flex flex-col">
+      <div className="min-h-screen bg-surface-subtle text-ink flex flex-col">
         <GuideHeader />
-        <main className="flex-1 max-w-lg w-full mx-auto px-4 py-16 flex flex-col items-center justify-center text-center space-y-5">
-          <div className="w-14 h-14 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-200 shadow-xs">
-            <Lock className="w-7 h-7" />
-          </div>
-          <div className="space-y-2">
-            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Sign in to view job details</h1>
-            <p className="text-sm text-slate-600 max-w-sm mx-auto leading-relaxed">
-              Sign in to unlock full role descriptions, company info, salary ranges, and match scores.
-            </p>
-          </div>
-          <Link
-            href={`/login?next=${encodeURIComponent(returnUrl)}`}
-            className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-blue-600 text-white font-bold text-sm shadow-xs hover:bg-blue-700 transition"
+        <main
+          id="main-content"
+          className="flex-1 max-w-lg w-full mx-auto px-4 py-tk-6 flex flex-col items-center justify-center"
+        >
+          <motion.div
+            {...entranceMotionProps}
+            data-testid="guest-signin-wall"
+            className="w-full bg-surface rounded-tk-2xl border border-line p-tk-4 shadow-tk-md text-center space-y-tk-2"
           >
-            <span>Sign In to Continue</span>
-            <ArrowRight className="w-4 h-4" />
-          </Link>
+            <div className="w-14 h-14 rounded-tk-xl bg-brand-50 text-brand-600 flex items-center justify-center border border-brand-200 shadow-tk-xs mx-auto">
+              <Lock className="w-7 h-7" />
+            </div>
+            <div className="space-y-tk-1">
+              <h1 className="text-tk-h2 font-bold text-ink tracking-tight">
+                Sign in to view job details
+              </h1>
+              <p className="text-tk-body-sm text-ink-muted max-w-sm mx-auto">
+                Sign in to unlock full role descriptions, company info, salary ranges, and match scores.
+              </p>
+            </div>
+            <div className="pt-tk-1">
+              <Link
+                href={`/login?next=${encodeURIComponent(returnUrl)}`}
+                className="inline-flex items-center justify-center gap-2 px-tk-3 min-h-[44px] rounded-tk-lg bg-brand-600 text-ink-inverse font-semibold text-tk-body-sm shadow-tk-sm hover:bg-brand-700 transition duration-tk-fast ease-tk-standard focus-visible:outline-none focus-visible:shadow-tk-focus"
+              >
+                <span>Sign In to Continue</span>
+                <ArrowRight className="w-4 h-4" />
+              </Link>
+            </div>
+          </motion.div>
         </main>
         <Footer />
       </div>
@@ -169,13 +317,15 @@ function JobDetailInner() {
   // Tier 2: Signed-in non-Pro member (Definitively confirmed by server)
   if (!isPro) {
     return (
-      <div className="min-h-screen bg-[#F8FAFC] flex flex-col">
+      <div className="min-h-screen bg-surface-subtle text-ink flex flex-col">
         <GuideHeader />
-        <main className="flex-1 max-w-4xl w-full mx-auto px-4 py-8">
-          <ProUpgradeScreen
-            title="Unlock Full Job Details"
-            subtitle="Upgrade to CareerMonke Pro to see verified company names, compensation, direct ATS apply links, and compatibility scores."
-          />
+        <main id="main-content" className="flex-1 max-w-4xl w-full mx-auto px-4 py-tk-4">
+          <motion.div {...entranceMotionProps} data-testid="free-user-pro-wall">
+            <ProUpgradeScreen
+              title="Unlock Full Job Details"
+              subtitle="Upgrade to CareerMonke Pro to see verified company names, compensation, direct ATS apply links, and compatibility scores."
+            />
+          </motion.div>
         </main>
         <Footer />
       </div>
@@ -185,31 +335,38 @@ function JobDetailInner() {
   // Not found or closed job state (for Pro user)
   if (!job) {
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col">
+      <div className="min-h-screen bg-surface-subtle text-ink flex flex-col">
         <GuideHeader />
-        <main className="flex-1 max-w-3xl w-full mx-auto px-4 py-16 text-center space-y-4">
-          <div className="w-16 h-16 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto border border-amber-200">
-            <AlertCircle className="w-8 h-8" />
-          </div>
-          <h1 className="text-2xl font-bold text-slate-900">Job Opening Not Found</h1>
-          <p className="text-sm text-slate-600 max-w-md mx-auto">
-            This opening may have been unlisted or closed by the employer.
-          </p>
-          <div className="pt-4">
-            <Link
-              href="/jobs"
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-blue-600 text-white font-bold text-sm shadow-xs hover:bg-blue-700 transition"
-            >
-              <span>Browse Active Verified Jobs</span>
-              <ArrowLeft className="w-4 h-4 rotate-180" />
-            </Link>
-          </div>
+        <main
+          id="main-content"
+          className="flex-1 max-w-3xl w-full mx-auto px-4 py-tk-6 flex items-center justify-center"
+        >
+          <motion.div
+            {...entranceMotionProps}
+            className="w-full bg-surface rounded-tk-2xl border border-line p-tk-4 shadow-tk-sm text-center space-y-tk-2"
+          >
+            <div className="w-16 h-16 rounded-tk-xl bg-warning-50 text-warning-700 flex items-center justify-center mx-auto border border-warning-100">
+              <AlertCircle className="w-8 h-8" />
+            </div>
+            <h1 className="text-tk-h2 font-bold text-ink">Job Opening Not Found</h1>
+            <p className="text-tk-body-sm text-ink-muted max-w-md mx-auto">
+              This opening may have been unlisted or closed by the employer.
+            </p>
+            <div className="pt-tk-1">
+              <Link
+                href="/jobs"
+                className="inline-flex items-center justify-center gap-2 px-tk-3 min-h-[44px] rounded-tk-lg bg-brand-600 text-ink-inverse font-semibold text-tk-body-sm shadow-tk-sm hover:bg-brand-700 transition duration-tk-fast ease-tk-standard"
+              >
+                <span>Browse Active Verified Jobs</span>
+                <ArrowLeft className="w-4 h-4 rotate-180" />
+              </Link>
+            </div>
+          </motion.div>
         </main>
         <Footer />
       </div>
     );
   }
-
 
   const diagnostics: FitDiagnosticsResult | null = candidate
     ? computeFitDiagnostics(candidate, {
@@ -224,6 +381,8 @@ function JobDetailInner() {
         salary_text: job.salary,
       })
     : null;
+
+  const postedDateLabel = formatPostedDateLabel(job.date, job.postedAt);
 
   const handleApplyClick = () => {
     if (!isPro) {
@@ -267,7 +426,10 @@ function JobDetailInner() {
   const handleSaveOnly = async () => {
     if (!user) {
       toast.info("Please sign up or sign in to save jobs to your tracker.");
-      const currentUrl = typeof window !== "undefined" ? window.location.pathname + window.location.search : `/job-detail?id=${job.id}`;
+      const currentUrl =
+        typeof window !== "undefined"
+          ? window.location.pathname + window.location.search
+          : `/job-detail?id=${job.id}`;
       router.push(`/signup?next=${encodeURIComponent(currentUrl)}`);
       return;
     }
@@ -300,392 +462,539 @@ function JobDetailInner() {
     }
   };
 
+  const handleTailorResumeClick = () => {
+    if (!candidate) {
+      toast.info("Please upload your resume first to view ATS skill highlighting for this job.");
+      router.push("/resume");
+      return;
+    }
+    setIsTailorResumeOpen(true);
+  };
+
+  const handleCoverLetterClick = () => {
+    if (!candidate) {
+      toast.info("Please upload your resume first to generate tailored cover letters.");
+      router.push("/resume");
+      return;
+    }
+    setIsCoverLetterOpen(true);
+  };
+
+  const remoteElig = getJobRemoteEligibility(job);
+
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-[#09090B] flex flex-col">
+    <div className="min-h-screen bg-surface-subtle text-ink flex flex-col">
       <GuideHeader />
 
-      <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-10 space-y-6">
-        {/* Back Link */}
-        <div className="flex items-center justify-between">
-          <Link
-            href="/jobs"
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-900 transition"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            <span>Back to All Jobs</span>
-          </Link>
+      <main
+        id="main-content"
+        className="flex-1 max-w-container w-full mx-auto px-4 sm:px-6 lg:px-8 py-tk-3 sm:py-tk-4 pb-28 lg:pb-tk-6"
+      >
+        <motion.div {...entranceMotionProps} className="space-y-tk-3">
+          {/* Top Breadcrumb & Source Verification Bar */}
+          <div className="flex flex-wrap items-center justify-between gap-tk-1">
+            <Link
+              href="/jobs"
+              className="inline-flex items-center gap-1.5 min-h-[44px] px-tk-1 -ml-tk-1 rounded-tk-md text-tk-body-sm font-semibold text-ink-muted hover:text-ink transition-colors duration-tk-fast focus-visible:outline-none focus-visible:shadow-tk-focus"
+            >
+              <ArrowLeft className="w-4 h-4 shrink-0" />
+              <span>Back to All Jobs</span>
+            </Link>
 
-          <span className="text-[11px] font-bold text-slate-400">
-            Job ID: {job.id.slice(0, 8)}
-          </span>
-        </div>
+            <div className="flex items-center gap-tk-1.5">
+              <Badge tone="neutral" size="md">
+                <ShieldCheck className="w-3.5 h-3.5 text-brand-600 shrink-0" />
+                <span>Verified Direct Feed</span>
+              </Badge>
+              <span className="text-tk-caption font-semibold text-ink-subtle">
+                Job ID: {job.id.slice(0, 8)}
+              </span>
+            </div>
+          </div>
 
-        {/* ========================================================================= */}
-        {/* 1. HEADER CARD: Title, Company, Eligibility, Source                       */}
-        {/* ========================================================================= */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-2xs space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-            <div className="space-y-2 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
-                  {job.category || "Engineering"}
-                </span>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
-                  {job.type || "Full-time"}
-                </span>
-                {(() => {
-                  const elig = getJobRemoteEligibility(job);
-                  if (elig === "worldwide") {
-                    return (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
-                        Worldwide Remote Eligible
-                      </span>
-                    );
-                  }
-                  if (elig === "country_restricted") {
-                    return (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200">
-                        Remote ({job.location || "Geographically Restricted"})
-                      </span>
-                    );
-                  }
-                  if (job.remote) {
-                    return (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
-                        Remote (Eligibility Unknown)
-                      </span>
-                    );
-                  }
-                  return null;
-                })()}
-              </div>
+          {/* ========================================================================= */}
+          {/* 2-COLUMN JOBRIGHT-STYLE SCANNABLE LAYOUT                                  */}
+          {/* ========================================================================= */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-tk-3 lg:gap-tk-4 items-start">
+            {/* LEFT COLUMN: Header + Meta Block, Match Analysis, Role Description */}
+            <div className="lg:col-span-8 space-y-tk-3 min-w-0">
+              {/* 1. HEADER & SCANNABLE META BLOCK CARD */}
+              <Card variant="surface" className="p-tk-3 sm:p-tk-4 space-y-tk-3">
+                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-tk-2">
+                  <div className="flex items-start gap-tk-2 flex-1 min-w-0">
+                    <CompanyLogo
+                      company={job.company}
+                      applyUrl={job.applyUrl}
+                      className="w-14 h-14 rounded-tk-lg shrink-0 object-contain p-1.5 border border-line bg-surface-subtle"
+                    />
 
-              <h1 className="text-xl sm:text-3xl font-black text-slate-900 tracking-tight">
-                {job.title}
-              </h1>
+                    <div className="space-y-tk-1 flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <Badge tone="brand" size="md" className="uppercase tracking-wider">
+                          {job.category || "Engineering"}
+                        </Badge>
+                        {remoteElig === "worldwide" && (
+                          <Badge tone="success" size="md" dot>
+                            Worldwide Remote Eligible
+                          </Badge>
+                        )}
+                        {remoteElig === "country_restricted" && (
+                          <Badge tone="warning" size="md" dot>
+                            Remote ({job.location || "Geographically Restricted"})
+                          </Badge>
+                        )}
+                        {remoteElig !== "worldwide" && remoteElig !== "country_restricted" && job.remote && (
+                          <Badge tone="neutral" size="md">
+                            Remote (Eligibility Unknown)
+                          </Badge>
+                        )}
+                      </div>
 
-              {/* Company & Location */}
-              <div className="flex flex-wrap items-center gap-3 text-xs sm:text-sm text-slate-600 font-medium">
-                <div className="flex items-center gap-1.5">
-                  <Building className="w-4 h-4 text-slate-400 shrink-0" />
-                  <span className="font-bold text-slate-900">
-                    {job.company}
-                  </span>
+                      <h1 className="text-tk-h2 sm:text-tk-h1 font-extrabold text-ink tracking-tight break-words">
+                        {job.title}
+                      </h1>
+
+                      <div className="flex flex-wrap items-center gap-2 text-tk-body-sm text-ink-muted">
+                        <span className="inline-flex items-center gap-1.5 font-bold text-ink">
+                          <Building className="w-4 h-4 text-ink-subtle shrink-0" />
+                          <span>{job.company}</span>
+                        </span>
+                        <span aria-hidden="true" className="text-ink-subtle">•</span>
+                        <span className="text-tk-caption text-ink-subtle">Official career portal</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
-                <span>•</span>
+                {/* SCANNABLE META BLOCK: Location, Type, Posted Date, Salary (when visible) */}
+                <div
+                  data-testid="job-meta-block"
+                  className={`grid grid-cols-2 ${
+                    job.salary ? "sm:grid-cols-4" : "sm:grid-cols-3"
+                  } gap-tk-1.5 sm:gap-tk-2 pt-tk-2 border-t border-line`}
+                >
+                  <div className="rounded-tk-lg bg-surface-subtle border border-line p-tk-1.5 space-y-0.5 min-w-0">
+                    <div className="flex items-center gap-1 text-tk-caption font-semibold text-ink-subtle">
+                      <MapPin className="w-3.5 h-3.5 shrink-0" />
+                      <span>Location</span>
+                    </div>
+                    <p className="text-tk-body-sm font-bold text-ink truncate" title={job.location || "Remote / Global"}>
+                      {job.location || "Remote / Global"}
+                    </p>
+                  </div>
 
-                <div className="flex items-center gap-1.5">
-                  <MapPin className="w-4 h-4 text-slate-400 shrink-0" />
-                  <span>{job.location || "Remote / Global"}</span>
+                  <div className="rounded-tk-lg bg-surface-subtle border border-line p-tk-1.5 space-y-0.5 min-w-0">
+                    <div className="flex items-center gap-1 text-tk-caption font-semibold text-ink-subtle">
+                      <Briefcase className="w-3.5 h-3.5 shrink-0" />
+                      <span>Employment Type</span>
+                    </div>
+                    <p className="text-tk-body-sm font-bold text-ink truncate">
+                      {job.type || "Full-time"}
+                    </p>
+                  </div>
+
+                  <div className="rounded-tk-lg bg-surface-subtle border border-line p-tk-1.5 space-y-0.5 min-w-0">
+                    <div className="flex items-center gap-1 text-tk-caption font-semibold text-ink-subtle">
+                      <Calendar className="w-3.5 h-3.5 shrink-0" />
+                      <span>Posted</span>
+                    </div>
+                    <p className="text-tk-body-sm font-bold text-ink truncate">
+                      {postedDateLabel}
+                    </p>
+                  </div>
+
+                  {job.salary && (
+                    <div className="rounded-tk-lg bg-success-50/70 border border-success-100 p-tk-1.5 space-y-0.5 min-w-0">
+                      <div className="flex items-center gap-1 text-tk-caption font-semibold text-success-700">
+                        <DollarSign className="w-3.5 h-3.5 shrink-0" />
+                        <span>Compensation</span>
+                      </div>
+                      <p className="text-tk-body-sm font-bold text-success-700 truncate" title={job.salary}>
+                        {job.salary}
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Mobile / Tablet AI Copilot Quick Actions (Desktop has them in the sticky right rail) */}
+                <div className="flex flex-wrap items-center gap-tk-1 pt-tk-1 border-t border-line lg:hidden">
+                  <button
+                    type="button"
+                    onClick={handleTailorResumeClick}
+                    className="inline-flex items-center justify-center gap-1.5 px-tk-2 min-h-[44px] rounded-tk-lg border border-success-100 bg-success-50 hover:bg-success-100 text-success-700 text-tk-body-sm font-semibold transition duration-tk-fast cursor-pointer"
+                  >
+                    <Sparkles className="w-4 h-4 shrink-0" />
+                    <span>ATS Skill Highlighting</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleCoverLetterClick}
+                    className="inline-flex items-center justify-center gap-1.5 px-tk-2 min-h-[44px] rounded-tk-lg border border-brand-200 bg-brand-50 hover:bg-brand-100 text-brand-700 text-tk-body-sm font-semibold transition duration-tk-fast cursor-pointer"
+                  >
+                    <FileText className="w-4 h-4 shrink-0" />
+                    <span>Prepare Cover Letter</span>
+                  </button>
+                </div>
+              </Card>
+
+              {/* 2. MATCH & SKILL ANALYSIS SECTION */}
+              <Card variant="surface" className="p-tk-3 sm:p-tk-4 space-y-tk-3">
+                <div className="flex items-center justify-between gap-tk-2">
+                  <div className="flex items-center gap-tk-1">
+                    <Sparkles className="w-5 h-5 text-brand-600 shrink-0" />
+                    <h2 className="text-tk-h3 font-bold text-ink">
+                      Match & Skill Analysis
+                    </h2>
+                  </div>
+
+                  {diagnostics && (
+                    <Badge
+                      tone={
+                        diagnostics.score >= 80
+                          ? "success"
+                          : diagnostics.score >= 65
+                          ? "brand"
+                          : diagnostics.score >= 45
+                          ? "warning"
+                          : "danger"
+                      }
+                      size="md"
+                      dot
+                    >
+                      {diagnostics.score}% Match
+                    </Badge>
+                  )}
+                </div>
+
+                {candidate && diagnostics ? (
+                  <>
+                    {/* Match Score Summary Banner */}
+                    <div className="p-tk-2 sm:p-tk-3 rounded-tk-xl bg-surface-subtle border border-line flex flex-col sm:flex-row sm:items-center justify-between gap-tk-2">
+                      <div className="flex items-center gap-tk-2">
+                        <div
+                          className={`w-14 h-14 sm:w-16 sm:h-16 rounded-tk-xl flex flex-col items-center justify-center border font-extrabold text-xl sm:text-2xl shadow-tk-xs shrink-0 ${
+                            diagnostics.score >= 80
+                              ? "bg-success-50 text-success-700 border-success-100"
+                              : diagnostics.score >= 65
+                              ? "bg-brand-50 text-brand-700 border-brand-200"
+                              : diagnostics.score >= 45
+                              ? "bg-warning-50 text-warning-700 border-warning-100"
+                              : "bg-danger-50 text-danger-700 border-danger-100"
+                          }`}
+                        >
+                          <span>{diagnostics.score}%</span>
+                          <span className="text-[10px] uppercase font-bold tracking-wider -mt-0.5">
+                            Match
+                          </span>
+                        </div>
+                        <div className="space-y-0.5">
+                          <div className="text-tk-body-sm font-bold text-ink flex items-center gap-1.5">
+                            <span>
+                              {diagnostics.score >= 80
+                                ? "Strong Match"
+                                : diagnostics.score >= 65
+                                ? "Good Alignment"
+                                : diagnostics.score >= 45
+                                ? "Moderate Fit"
+                                : "Low Match"}
+                            </span>
+                          </div>
+                          <p className="text-tk-caption sm:text-tk-body-sm text-ink-muted">
+                            {diagnostics.matchedSkills.length} matched skills • {diagnostics.missingSkills.length} missing • {diagnostics.breakdown.yearsOfExperience}y experience alignment
+                          </p>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setIsDiagnosticsOpen(true)}
+                        className="inline-flex items-center justify-center gap-1.5 px-tk-2 min-h-[44px] rounded-tk-lg bg-surface hover:bg-surface-muted border border-line-strong text-tk-body-sm font-semibold text-ink shadow-tk-xs transition duration-tk-fast cursor-pointer shrink-0"
+                      >
+                        <span>View Match Breakdown</span>
+                        <ChevronRight className="w-4 h-4 text-brand-600" />
+                      </button>
+                    </div>
+
+                    {/* Matched vs Missing Skills Grid */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-tk-2">
+                      <div className="p-tk-2 rounded-tk-lg bg-success-50/70 border border-success-100 space-y-1.5">
+                        <span className="font-bold text-success-700 block text-tk-body-sm">
+                          ✓ Matched Skills
+                        </span>
+                        <p className="text-ink-muted text-tk-caption">
+                          Skills from your profile found in this job:
+                        </p>
+                        <div className="flex flex-wrap gap-1.5 pt-1">
+                          {diagnostics.matchedSkills.length ? (
+                            diagnostics.matchedSkills.map((s) => (
+                              <span
+                                key={s}
+                                className="px-2 py-0.5 rounded-tk-sm bg-surface text-success-700 font-semibold border border-success-100 text-tk-caption"
+                              >
+                                {s}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-ink-subtle italic text-tk-caption">
+                              No direct skill overlap
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="p-tk-2 rounded-tk-lg bg-warning-50/70 border border-warning-100 space-y-1.5">
+                        <span className="font-bold text-warning-700 block text-tk-body-sm">
+                          ⚠ Missing Skills
+                        </span>
+                        <p className="text-ink-muted text-tk-caption">
+                          Required skills not currently on your profile:
+                        </p>
+                        <div className="flex flex-wrap gap-1.5 pt-1">
+                          {diagnostics.missingSkills.length ? (
+                            diagnostics.missingSkills.map((s) => (
+                              <span
+                                key={s}
+                                className="px-2 py-0.5 rounded-tk-sm bg-surface text-warning-700 font-semibold border border-warning-100 text-tk-caption"
+                              >
+                                {s}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-success-700 font-semibold text-tk-caption">
+                              Zero critical skill gaps!
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="pt-tk-2 border-t border-line flex flex-wrap items-center justify-between gap-tk-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setIsDiagnosticsOpen(true)}
+                        className="min-h-[44px] px-tk-1 -ml-tk-1 rounded-tk-md text-tk-body-sm font-semibold text-brand-700 hover:text-brand-800 inline-flex items-center gap-1 cursor-pointer"
+                      >
+                        <span>View Full Score Breakdown →</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setIsTailorResumeOpen(true)}
+                        className="inline-flex items-center gap-1.5 px-tk-2 min-h-[44px] rounded-tk-lg bg-success-50 hover:bg-success-100 text-success-700 border border-success-100 text-tk-body-sm font-semibold transition duration-tk-fast cursor-pointer"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                        <span>Highlight Skills for this Role →</span>
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="p-tk-2 sm:p-tk-3 rounded-tk-xl bg-brand-50/70 border border-brand-200 flex flex-col sm:flex-row sm:items-center justify-between gap-tk-2">
+                    <div className="flex items-center gap-tk-2">
+                      <div className="w-12 h-12 rounded-tk-lg bg-brand-600 text-ink-inverse flex items-center justify-center font-bold shrink-0">
+                        <Sparkles className="w-6 h-6" />
+                      </div>
+                      <div className="space-y-0.5">
+                        <h3 className="text-tk-body-sm font-bold text-ink">
+                          See Your AI Job Fit Score & Skill Diagnostics
+                        </h3>
+                        <p className="text-tk-caption text-ink-muted">
+                          Upload your ATS resume facts to see matched skills, missing requirements, and experience fit for this role.
+                        </p>
+                      </div>
+                    </div>
+
+                    <Link
+                      href="/resume"
+                      className="inline-flex items-center justify-center gap-1.5 px-tk-2 min-h-[44px] rounded-tk-lg bg-brand-600 hover:bg-brand-700 text-ink-inverse text-tk-body-sm font-semibold shadow-tk-xs transition duration-tk-fast shrink-0"
+                    >
+                      <span>Upload Resume</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </Link>
+                  </div>
+                )}
+              </Card>
+
+              {/* 3. ROLE OVERVIEW / DESCRIPTION (Readable measure <= 70ch) */}
+              <Card variant="surface" className="p-tk-3 sm:p-tk-4 space-y-tk-3">
+                <h2 className="text-tk-h3 font-bold text-ink">
+                  About the Role
+                </h2>
+
+                <div className="p-tk-2 rounded-tk-lg bg-surface-subtle border border-line space-y-1 font-mono text-tk-caption text-ink-muted">
+                  <p>• Category: {job.category || "General Tech"}</p>
+                  <p>• Location: {job.location || "Remote"}</p>
+                  <p>• Employment Type: {job.type || "Full-Time"}</p>
+                  {job.salary && <p>• Compensation: {job.salary}</p>}
+                </div>
+
+                <div
+                  data-testid="job-description-body"
+                  className="max-w-[70ch] text-tk-body text-ink leading-relaxed"
+                >
+                  {job.description ? (
+                    <div className="whitespace-pre-wrap break-words">
+                      {stripHtmlAndExecutableMarkup(job.description)}
+                    </div>
+                  ) : (
+                    <p className="text-ink-muted">
+                      Apply directly on the employer&apos;s site to view the complete posting and application requirements.
+                    </p>
+                  )}
+                </div>
+              </Card>
+            </div>
+
+            {/* RIGHT COLUMN: DESKTOP STICKY APPLY CTA CARD */}
+            <aside
+              aria-label="Job application actions"
+              data-testid="desktop-sticky-apply-card"
+              className="hidden lg:block lg:col-span-4 lg:sticky lg:top-[84px]"
+            >
+              <Card variant="elevated" className="p-tk-3 space-y-tk-2">
+                <div className="space-y-1">
+                  <p className="text-tk-caption font-semibold uppercase tracking-wider text-brand-700">
+                    Direct Employer Portal
+                  </p>
+                  <h2 className="text-tk-h3 font-bold text-ink line-clamp-2">
+                    {job.title}
+                  </h2>
+                  <p className="text-tk-body-sm font-medium text-ink-muted flex items-center gap-1.5">
+                    <Building className="w-3.5 h-3.5 text-ink-subtle shrink-0" />
+                    <span className="truncate">{job.company}</span>
+                  </p>
                 </div>
 
                 {job.salary && (
-                  <>
-                    <span>•</span>
-                    <div className="flex items-center gap-1 text-emerald-700 font-semibold">
-                      <DollarSign className="w-4 h-4 shrink-0" />
-                      <span>{job.salary}</span>
-                    </div>
-                  </>
+                  <div className="rounded-tk-lg bg-success-50 border border-success-100 px-tk-1.5 py-tk-1 flex items-center gap-1.5 text-tk-body-sm font-bold text-success-700">
+                    <DollarSign className="w-4 h-4 shrink-0" />
+                    <span className="truncate">{job.salary}</span>
+                  </div>
                 )}
-              </div>
-            </div>
 
-            {/* Direct Feed Badge */}
-            <div className="sm:text-right shrink-0 space-y-1">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
-                <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
-                <span>Verified Direct Feed</span>
-              </span>
-              <p className="text-[10px] text-slate-400">Official career portal</p>
-            </div>
-          </div>
+                {/* ONE Primary High-Contrast CTA */}
+                <button
+                  type="button"
+                  onClick={handleApplyClick}
+                  className="w-full min-h-[44px] h-12 px-tk-3 rounded-tk-lg bg-brand-600 hover:bg-brand-700 motion-safe:active:scale-[0.98] text-ink-inverse text-tk-body-sm font-semibold shadow-tk-sm transition duration-tk-fast ease-tk-standard inline-flex items-center justify-center gap-2 cursor-pointer focus-visible:outline-none focus-visible:shadow-tk-focus"
+                >
+                  <span>{isPro ? "Apply on Employer Site" : "Unlock Direct Apply (Pro)"}</span>
+                  <ExternalLink className="w-4 h-4 shrink-0" />
+                </button>
 
-          {/* Match Score Banner */}
-          {candidate && diagnostics ? (
-            <div className="p-4 sm:p-5 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <div
-                  className={`w-14 h-14 sm:w-16 sm:h-16 rounded-2xl flex flex-col items-center justify-center border font-black text-xl sm:text-2xl shadow-xs shrink-0 ${
-                    diagnostics.score >= 80
-                      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                      : diagnostics.score >= 65
-                      ? "bg-blue-50 text-blue-700 border-blue-200"
-                      : diagnostics.score >= 45
-                      ? "bg-amber-50 text-amber-800 border-amber-200"
-                      : "bg-rose-50 text-rose-700 border-rose-200"
+                {/* Secondary Action: Save to Tracker */}
+                <button
+                  type="button"
+                  onClick={handleSaveOnly}
+                  className={`w-full min-h-[44px] px-tk-2 rounded-tk-lg text-tk-body-sm font-semibold border transition duration-tk-fast inline-flex items-center justify-center gap-1.5 cursor-pointer focus-visible:outline-none focus-visible:shadow-tk-focus ${
+                    isSavedInTracker
+                      ? "bg-surface-muted text-ink border-line-strong hover:bg-surface-sunken"
+                      : "bg-surface text-ink-muted border-line hover:bg-surface-muted hover:text-ink"
                   }`}
                 >
-                  <span>{diagnostics.score}%</span>
-                  <span className="text-[9px] uppercase font-bold tracking-wider -mt-1">Match</span>
-                </div>
-                <div className="space-y-1">
-                  <div className="text-xs sm:text-sm font-bold text-slate-900 flex items-center gap-1.5">
-                    <Sparkles className="w-4 h-4 text-blue-600" />
-                    <span>
-                      {diagnostics.score >= 80
-                        ? "Strong Match"
-                        : diagnostics.score >= 65
-                        ? "Good Alignment"
-                        : diagnostics.score >= 45
-                        ? "Moderate Fit"
-                        : "Low Match"}
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-600 leading-relaxed">
-                    {diagnostics.matchedSkills.length} matched skills • {diagnostics.missingSkills.length} missing • {diagnostics.breakdown.yearsOfExperience}y experience alignment
+                  <BookmarkPlus className="w-4 h-4 shrink-0" />
+                  <span>{isSavedInTracker ? "Remove from Saved" : "Save Job"}</span>
+                </button>
+
+                {/* Secondary AI Copilot Actions */}
+                <div className="pt-tk-2 border-t border-line space-y-tk-1">
+                  <p className="text-tk-caption font-semibold uppercase tracking-wider text-ink-subtle">
+                    AI Application Copilot
                   </p>
-                </div>
-              </div>
 
-              <button
-                type="button"
-                onClick={() => setIsDiagnosticsOpen(true)}
-                className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-white hover:bg-slate-100 border border-slate-300 text-xs font-bold text-slate-800 shadow-2xs transition cursor-pointer shrink-0 min-h-[44px]"
-              >
-                <span>View Match Breakdown</span>
-                <ChevronRight className="w-4 h-4 text-blue-600" />
-              </button>
-            </div>
-          ) : (
-            <div className="p-4 rounded-xl bg-blue-50/70 border border-blue-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-sm shrink-0">
-                  <Sparkles className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="text-xs sm:text-sm font-bold text-blue-950">
-                    See Your AI Job Fit Score & Skill Diagnostics
-                  </h3>
-                  <p className="text-xs text-blue-700 mt-0.5">
-                    Upload your ATS resume facts to see matched skills, missing requirements, and experience fit for this role.
-                  </p>
-                </div>
-              </div>
-
-              <Link
-                href="/resume"
-                className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition shrink-0 min-h-[44px]"
-              >
-                <span>Upload Resume</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </Link>
-            </div>
-          )}
-
-          {/* Action Ribbon */}
-          <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleApplyClick}
-                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white text-xs sm:text-sm font-bold shadow-xs transition cursor-pointer"
-              >
-                <span>{isPro ? "Apply on Employer Site" : "Unlock Direct Apply (Pro)"}</span>
-                <ExternalLink className="w-4 h-4" />
-              </button>
-
-              <button
-                type="button"
-                onClick={handleSaveOnly}
-                className={`inline-flex items-center gap-1.5 px-4 py-3 rounded-xl text-xs sm:text-sm font-bold border transition cursor-pointer ${
-                  isSavedInTracker
-                    ? "bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200"
-                    : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
-                }`}
-              >
-                <BookmarkPlus className="w-4 h-4" />
-                <span>{isSavedInTracker ? "Remove from Saved" : "Save Job"}</span>
-              </button>
-            </div>
-
-            {/* AI Tailoring Actions */}
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  if (!candidate) {
-                    toast.info("Please upload your resume first to view ATS skill highlighting for this job.");
-                    router.push("/resume");
-                    return;
-                  }
-                  setIsTailorResumeOpen(true);
-                }}
-                className="inline-flex items-center gap-1.5 px-4 py-2.5 min-h-[44px] rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100/80 text-emerald-900 text-xs font-bold transition cursor-pointer shadow-2xs"
-              >
-                <Sparkles className="w-4 h-4 text-emerald-600" />
-                <span>ATS Skill Highlighting</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  if (!candidate) {
-                    toast.info("Please upload your resume first to generate tailored cover letters.");
-                    router.push("/resume");
-                    return;
-                  }
-                  setIsCoverLetterOpen(true);
-                }}
-                className="inline-flex items-center gap-1.5 px-4 py-2.5 min-h-[44px] rounded-xl border border-blue-200 bg-blue-50/70 hover:bg-blue-100 text-blue-700 text-xs font-bold transition cursor-pointer"
-              >
-                <FileText className="w-4 h-4" />
-                <span>Prepare Cover Letter</span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* ========================================================================= */}
-        {/* 2. MATCH & SKILL ANALYSIS SECTION                                         */}
-        {/* ========================================================================= */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-2xs space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-blue-600" />
-              <h2 className="text-base sm:text-lg font-bold text-slate-900">
-                Match & Skill Analysis
-              </h2>
-            </div>
-
-            {diagnostics && (
-              <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                {diagnostics.score}% Match
-              </span>
-            )}
-          </div>
-
-          {candidate ? (
-            <>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                <div className="p-4 rounded-xl bg-emerald-50/60 border border-emerald-100 space-y-2 text-xs">
-                  <span className="font-bold text-emerald-900 block text-xs">
-                    ✓ Matched Skills
-                  </span>
-                  <p className="text-emerald-800 text-[11px]">
-                    Skills from your profile found in this job:
-                  </p>
-                  <div className="flex flex-wrap gap-1.5 pt-1">
-                    {diagnostics?.matchedSkills.length ? (
-                      diagnostics.matchedSkills.map((s) => (
-                        <span key={s} className="px-2 py-0.5 rounded bg-white text-emerald-800 font-semibold border border-emerald-200 text-[11px]">
-                          {s}
-                        </span>
-                      ))
-                    ) : (
-                      <span className="text-slate-400 italic">No direct skill overlap</span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="p-4 rounded-xl bg-amber-50/60 border border-amber-100 space-y-2 text-xs">
-                  <span className="font-bold text-amber-900 block text-xs">
-                    ⚠ Missing Skills
-                  </span>
-                  <p className="text-amber-800 text-[11px]">
-                    Required skills not currently on your profile:
-                  </p>
-                  <div className="flex flex-wrap gap-1.5 pt-1">
-                    {diagnostics?.missingSkills.length ? (
-                      diagnostics.missingSkills.map((s) => (
-                        <span key={s} className="px-2 py-0.5 rounded bg-white text-amber-800 font-semibold border border-amber-200 text-[11px]">
-                          {s}
-                        </span>
-                      ))
-                    ) : (
-                      <span className="text-emerald-700 font-semibold">Zero critical skill gaps!</span>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {diagnostics && (
-                <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
                   <button
                     type="button"
-                    onClick={() => setIsDiagnosticsOpen(true)}
-                    className="text-xs font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer"
+                    onClick={handleTailorResumeClick}
+                    className="w-full min-h-[44px] px-tk-2 rounded-tk-lg border border-line bg-surface-subtle hover:bg-surface-muted text-ink text-tk-body-sm font-semibold transition duration-tk-fast inline-flex items-center justify-center gap-1.5 cursor-pointer focus-visible:outline-none focus-visible:shadow-tk-focus"
                   >
-                    <span>View Full Score Breakdown →</span>
+                    <Sparkles className="w-4 h-4 text-success-700 shrink-0" />
+                    <span>ATS Skill Highlighting</span>
                   </button>
 
                   <button
                     type="button"
-                    onClick={() => setIsTailorResumeOpen(true)}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold transition cursor-pointer"
+                    onClick={handleCoverLetterClick}
+                    className="w-full min-h-[44px] px-tk-2 rounded-tk-lg border border-line bg-surface-subtle hover:bg-surface-muted text-ink text-tk-body-sm font-semibold transition duration-tk-fast inline-flex items-center justify-center gap-1.5 cursor-pointer focus-visible:outline-none focus-visible:shadow-tk-focus"
                   >
-                    <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Highlight Skills for this Role →</span>
+                    <FileText className="w-4 h-4 text-brand-600 shrink-0" />
+                    <span>Prepare Cover Letter</span>
                   </button>
                 </div>
-              )}
-            </>
-          ) : (
-            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-center space-y-2">
-              <p className="text-xs text-slate-600">
-                Upload your resume to see your match score and skill gaps.
-              </p>
-              <Link
-                href="/resume"
-                className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-800"
-              >
-                <span>Upload Resume →</span>
-              </Link>
-            </div>
-          )}
-        </div>
 
-        {/* ========================================================================= */}
-        {/* 3. ROLE OVERVIEW                                                          */}
-        {/* ========================================================================= */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-2xs space-y-4">
-          <h2 className="text-base sm:text-lg font-bold text-slate-900">
-            About the Role
-          </h2>
-
-          <div className="text-xs sm:text-sm text-slate-700 leading-relaxed space-y-3">
-            <div className="p-4 rounded-xl bg-slate-50 border border-slate-100 space-y-2 font-mono text-xs text-slate-800">
-              <p>• Category: {job.category || "General Tech"}</p>
-              <p>• Location: {job.location || "Remote"}</p>
-              <p>• Employment Type: {job.type || "Full-Time"}</p>
-              {job.salary && <p>• Compensation: {job.salary}</p>}
-            </div>
-            {job.description ? (
-              <div className="pt-2 whitespace-pre-wrap">{stripHtmlAndExecutableMarkup(job.description)}</div>
-            ) : (
-              <p className="text-slate-500">
-                Apply directly on the employer&apos;s site to view the complete posting and application requirements.
-              </p>
-            )}
+                <div className="pt-tk-1.5 border-t border-line flex items-center justify-between text-tk-caption text-ink-subtle">
+                  <span className="inline-flex items-center gap-1">
+                    <Globe className="w-3.5 h-3.5 shrink-0" />
+                    <span>Direct ATS Link</span>
+                  </span>
+                  <span>Posted {postedDateLabel}</span>
+                </div>
+              </Card>
+            </aside>
           </div>
-        </div>
+        </motion.div>
       </main>
+
+      {/* ========================================================================= */}
+      {/* MOBILE STICKY BOTTOM APPLY BAR (one primary CTA, 44px touch targets)      */}
+      {/* ========================================================================= */}
+      <div
+        role="region"
+        aria-label="Quick apply bar"
+        data-testid="mobile-sticky-apply-bar"
+        className="lg:hidden fixed bottom-0 inset-x-0 z-tk-sticky bg-surface/95 backdrop-blur-md border-t border-line px-4 py-3 shadow-tk-lg"
+      >
+        <div className="max-w-container mx-auto flex items-center gap-tk-1.5">
+          <button
+            type="button"
+            onClick={handleSaveOnly}
+            aria-label={isSavedInTracker ? "Remove from Saved" : "Save Job"}
+            className={`min-h-[44px] min-w-[44px] px-tk-2 rounded-tk-lg border text-tk-body-sm font-semibold transition duration-tk-fast inline-flex items-center justify-center gap-1.5 shrink-0 cursor-pointer focus-visible:outline-none focus-visible:shadow-tk-focus ${
+              isSavedInTracker
+                ? "bg-surface-muted text-ink border-line-strong"
+                : "bg-surface text-ink-muted border-line hover:bg-surface-muted hover:text-ink"
+            }`}
+          >
+            <BookmarkPlus className="w-4 h-4 shrink-0" />
+            <span className="hidden xs:inline">
+              {isSavedInTracker ? "Saved" : "Save"}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleApplyClick}
+            className="flex-1 min-h-[44px] px-tk-2 rounded-tk-lg bg-brand-600 hover:bg-brand-700 motion-safe:active:scale-[0.98] text-ink-inverse text-tk-body-sm font-semibold shadow-tk-sm transition duration-tk-fast inline-flex items-center justify-center gap-2 cursor-pointer focus-visible:outline-none focus-visible:shadow-tk-focus"
+          >
+            <span>{isPro ? "Apply on Employer Site" : "Unlock Direct Apply (Pro)"}</span>
+            <ExternalLink className="w-4 h-4 shrink-0" />
+          </button>
+        </div>
+      </div>
 
       {/* ========================================================================= */}
       {/* 4. POST-APPLY CONFIRMATION MODAL ("Did you submit it?")                   */}
       {/* ========================================================================= */}
       {showApplyConfirmModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
-            <div className="w-12 h-12 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center mx-auto">
+        <div className="fixed inset-0 z-tk-modal bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 motion-safe:animate-tk-fade-in">
+          <div className="bg-surface rounded-tk-2xl max-w-md w-full p-tk-3 shadow-tk-xl border border-line space-y-tk-2">
+            <div className="w-12 h-12 rounded-tk-full bg-brand-50 text-brand-600 flex items-center justify-center mx-auto">
               <CheckCircle2 className="w-6 h-6" />
             </div>
 
             <div className="text-center space-y-1">
-              <h3 className="text-base sm:text-lg font-bold text-slate-900">
+              <h3 className="text-tk-h3 font-bold text-ink">
                 Did you submit your application?
               </h3>
-              <p className="text-xs text-slate-500">
+              <p className="text-tk-caption text-ink-muted">
                 Opening the company portal doesn&apos;t automatically record an application. If you finalized the employer&apos;s form, we will update your pipeline.
               </p>
             </div>
 
-            <div className="pt-2 flex flex-col sm:flex-row items-center gap-2">
+            <div className="pt-tk-1 flex flex-col sm:flex-row items-center gap-tk-1">
               <button
                 type="button"
                 onClick={() => handleConfirmApplication("applied")}
-                className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm transition shadow-xs cursor-pointer"
+                className="w-full min-h-[44px] py-2.5 rounded-tk-lg bg-brand-600 hover:bg-brand-700 text-ink-inverse font-semibold text-tk-body-sm transition duration-tk-fast shadow-tk-xs cursor-pointer"
               >
                 Yes, Mark as Applied
               </button>
@@ -693,7 +1002,7 @@ function JobDetailInner() {
               <button
                 type="button"
                 onClick={() => handleConfirmApplication("saved")}
-                className="w-full py-3 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold text-xs sm:text-sm transition cursor-pointer"
+                className="w-full min-h-[44px] py-2.5 rounded-tk-lg border border-line hover:bg-surface-muted text-ink font-semibold text-tk-body-sm transition duration-tk-fast cursor-pointer"
               >
                 Not yet, keep Saved
               </button>
@@ -772,16 +1081,7 @@ function JobDetailInner() {
 
 export default function JobDetailPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="min-h-screen bg-slate-50 flex flex-col">
-          <GuideHeader />
-          <div className="flex-1 flex items-center justify-center">
-            <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-          </div>
-        </div>
-      }
-    >
+    <Suspense fallback={<JobDetailSkeleton />}>
       <JobDetailInner />
     </Suspense>
   );
