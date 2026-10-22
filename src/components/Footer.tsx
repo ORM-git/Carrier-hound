@@ -50,6 +50,11 @@ export default function Footer({ isGuide = false }: FooterProps) {
                   </Link>
                 </li>
                 <li>
+                  <Link href="/pricing" prefetch={false} className={footerLinkClass}>
+                    Pricing & Plans
+                  </Link>
+                </li>
+                <li>
                   <Link href="/login" className={footerLinkClass}>
                     Member Sign In
                   </Link>
