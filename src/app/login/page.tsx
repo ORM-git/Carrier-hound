@@ -9,9 +9,7 @@ import Footer from "@/components/Footer";
 import { createClient } from "@/lib/supabase/client";
 import { getValidReturnUrl, getAuthUser } from "@/lib/auth/session";
 import { getSiteUrl } from "@/lib/siteUrl";
-import { ArrowLeft, Mail, Loader2, CheckCircle2, AlertCircle, RefreshCw } from "lucide-react";
-import { Card } from "@/components/ui/card";
-import { buttonClasses } from "@/components/ui/button";
+import { Mail, Loader2, CheckCircle2, AlertCircle, RefreshCw } from "lucide-react";
 
 function GoogleIcon() {
   return (
@@ -142,183 +140,181 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] flex flex-col justify-between">
+    <div className="min-h-screen bg-blue-50 flex flex-col justify-between overflow-x-hidden">
       <GuideHeader />
       <main
         id="main-content"
-        className="flex-1 flex flex-col items-center justify-center p-4 sm:p-6 text-[#0F172A] py-8 sm:py-12 font-sans"
+        className="flex-1 flex flex-col items-center justify-center px-4 py-8 sm:py-12 text-[#0F172A] font-sans"
       >
-
-      {/* Main Single-Column Auth Card (Jobright style) */}
-      <Card
-        variant="surface"
-        data-testid="login-auth-card"
-        className="w-full max-w-[480px] overflow-hidden p-6 sm:p-8 space-y-6"
-      >
-        {/* Brand Logo & Header */}
-        <div className="text-center space-y-3">
-          <div className="w-14 h-14 rounded-tk-xl bg-surface-muted border border-line flex items-center justify-center mx-auto p-2">
-            <BrandIcon className="w-10 h-10" />
+        {/* Main Centred Auth Card (Jobright style: 440-470px max-width, 24px radius, 32-40px padding) */}
+        <div
+          data-testid="login-auth-card"
+          className="w-full max-w-[460px] bg-white rounded-[24px] border border-[#E2E8F0] shadow-sm p-8 sm:p-10 space-y-6"
+        >
+          {/* Centred Brand Logo & Heading */}
+          <div className="text-center space-y-3">
+            <div className="flex justify-center">
+              <div className="w-12 h-12 rounded-2xl bg-[#EFF6FF] border border-[#BFDBFE] flex items-center justify-center p-2 shadow-xs">
+                <BrandIcon className="w-8 h-8" />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <h1 className="text-[22px] sm:text-[24px] font-bold text-[#0F172A] tracking-tight">
+                Welcome back to CareerMonke
+              </h1>
+              <p className="text-[14px] text-[#64748B]">
+                Sign in to access your dashboard and applications.
+              </p>
+            </div>
           </div>
-          <div className="space-y-1">
-            <h1 className="text-tk-h2 font-black text-ink tracking-tight">Sign In to CareerMonke</h1>
-            <p className="text-tk-body-sm text-ink-muted">
-              Welcome back! Access your tailored applications & live feeds.
+
+          {/* Readable red-tinted error notification banner */}
+          {error && (
+            <div
+              data-testid="auth-error-banner"
+              role="alert"
+              className="bg-[#FEF2F2] border border-[#FECACA] rounded-xl p-3.5 flex items-start gap-2.5 text-[14px] text-[#B91C1C] animate-fadeIn"
+            >
+              <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-[#DC2626]" />
+              <span className="leading-snug">{error}</span>
+            </div>
+          )}
+
+          {emailSent ? (
+            <div
+              data-testid="auth-email-sent"
+              className="bg-[#F0FDF4] border border-[#BBF7D0] rounded-2xl p-6 text-center space-y-4 animate-fadeIn"
+            >
+              <div className="w-12 h-12 rounded-full bg-[#DCFCE7] text-[#16A34A] flex items-center justify-center mx-auto">
+                <CheckCircle2 className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="font-bold text-[16px] text-[#0F172A]">Check your inbox</h3>
+                <p className="text-[13px] text-[#475569] max-w-sm mx-auto">
+                  We sent a sign-in link to <strong className="text-[#0F172A]">{email}</strong>. Click the link to complete sign in.
+                </p>
+              </div>
+
+              <div className="pt-2 flex flex-col items-center gap-2">
+                <button
+                  type="button"
+                  disabled={resendTimer > 0 || loading}
+                  onClick={handleEmailSubmit}
+                  className="min-h-[44px] inline-flex items-center gap-1.5 text-xs font-semibold text-[#2563EB] hover:text-[#1D4ED8] disabled:opacity-50 cursor-pointer rounded-lg px-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>
+                    {resendTimer > 0 ? `Resend link in ${resendTimer}s` : "Resend sign-in link"}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEmailSent(false)}
+                  className="min-h-[44px] text-xs text-[#64748B] hover:text-[#0F172A] px-3 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] cursor-pointer"
+                >
+                  Use a different email
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {/* Working Continue with Google Button */}
+              <button
+                type="button"
+                onClick={handleGoogle}
+                disabled={googleLoading || loading}
+                className="min-h-[44px] h-12 w-full inline-flex items-center justify-center gap-3 rounded-full border border-[#CBD5E1] bg-white hover:bg-[#F8FAFC] active:bg-[#F1F5F9] text-[#0F172A] text-[14px] font-semibold transition-colors duration-150 disabled:opacity-60 cursor-pointer shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] focus-visible:ring-offset-1"
+              >
+                {googleLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-[#64748B]" />
+                    <span>Connecting to Google…</span>
+                  </>
+                ) : (
+                  <>
+                    <GoogleIcon />
+                    <span>Continue with Google</span>
+                  </>
+                )}
+              </button>
+
+              {/* OR Divider with neutral text and thin lines */}
+              <div className="relative flex items-center justify-center py-1">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-[#E2E8F0]" />
+                </div>
+                <span className="relative bg-white px-3 text-xs uppercase tracking-wider font-semibold text-[#64748B]">
+                  OR
+                </span>
+              </div>
+
+              {/* Email Magic Link Form */}
+              <form onSubmit={handleEmailSubmit} className="space-y-4">
+                <div className="space-y-1.5">
+                  <label htmlFor="login-email" className="block text-xs font-semibold text-[#0F172A] uppercase tracking-wider">
+                    Work or personal email
+                  </label>
+                  <div className="relative">
+                    <Mail className="w-4 h-4 text-[#94A3B8] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      id="login-email"
+                      type="email"
+                      value={email}
+                      onChange={(e) => {
+                        setEmail(e.target.value);
+                        if (error) setError("");
+                      }}
+                      placeholder="name@company.com"
+                      autoComplete="email"
+                      required
+                      className="min-h-[44px] h-12 w-full rounded-[12px] border border-[#CBD5E1] bg-[#F8FAFC] pl-10 pr-4 text-[14px] text-[#0F172A] placeholder-[#94A3B8] transition-all focus:border-[#2563EB] focus:ring-2 focus:ring-[#93C5FD] focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Full-width blue primary pill */}
+                <button
+                  type="submit"
+                  disabled={loading || googleLoading}
+                  className="min-h-[44px] h-12 w-full rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-[14px] font-semibold transition-colors duration-150 inline-flex items-center justify-center gap-2 cursor-pointer shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] focus-visible:ring-offset-1 disabled:opacity-60"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-white" />
+                      <span>Sending link…</span>
+                    </>
+                  ) : (
+                    <span>Email me a sign-in link</span>
+                  )}
+                </button>
+              </form>
+            </div>
+          )}
+
+          {/* Bottom login/signup switch links separated by subtle divider */}
+          <div className="pt-4 border-t border-[#E2E8F0] text-center space-y-2">
+            <p className="text-[14px] text-[#64748B]">
+              Don&apos;t have an account?{" "}
+              <Link
+                href={next ? `/signup?next=${encodeURIComponent(next)}` : "/signup"}
+                className="font-bold text-[#2563EB] hover:text-[#1D4ED8] underline min-h-[44px] inline-flex items-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] rounded"
+              >
+                Sign up
+              </Link>
+            </p>
+            <p className="text-xs text-[#94A3B8]">
+              By continuing, you agree to our{" "}
+              <Link href="/terms-and-conditions" className="underline hover:text-[#64748B]">
+                Terms
+              </Link>{" "}
+              and{" "}
+              <Link href="/privacy-policy" className="underline hover:text-[#64748B]">
+                Privacy Policy
+              </Link>
+              .
             </p>
           </div>
         </div>
-
-        {/* Error notification banner */}
-        {error && (
-          <div
-            data-testid="auth-error-banner"
-            role="alert"
-            className="bg-danger-50 border border-danger-200 rounded-tk-lg p-3.5 flex items-start gap-2.5 text-tk-body-sm text-danger-700 animate-fadeIn"
-          >
-            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-danger-600" />
-            <span>{error}</span>
-          </div>
-        )}
-
-        {emailSent ? (
-          <div
-            data-testid="auth-email-sent"
-            className="bg-success-50 border border-success-200 rounded-tk-xl p-6 text-center space-y-4 animate-fadeIn"
-          >
-            <div className="w-12 h-12 rounded-tk-full bg-success-100 text-success-700 flex items-center justify-center mx-auto">
-              <CheckCircle2 className="w-6 h-6" />
-            </div>
-            <div className="space-y-1">
-              <h3 className="font-bold text-tk-body text-ink">Check your inbox</h3>
-              <p className="text-tk-caption text-ink-muted max-w-sm mx-auto">
-                We sent a verified magic sign-in link to <strong className="text-ink">{email}</strong>. Click the link to complete sign in.
-              </p>
-            </div>
-
-            <div className="pt-2 flex flex-col items-center gap-2">
-              <button
-                type="button"
-                disabled={resendTimer > 0 || loading}
-                onClick={handleEmailSubmit}
-                className="min-h-[44px] inline-flex items-center gap-1.5 text-tk-caption font-bold text-brand-700 hover:text-brand-800 disabled:opacity-50 cursor-pointer rounded-tk-md px-3 focus-visible:outline-none focus-visible:shadow-tk-focus"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                <span>
-                  {resendTimer > 0 ? `Resend link in ${resendTimer}s` : "Resend magic link"}
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setEmailSent(false)}
-                className="min-h-[44px] text-tk-caption text-ink-subtle hover:text-ink-muted px-3 rounded-tk-md focus-visible:outline-none focus-visible:shadow-tk-focus"
-              >
-                Use a different email
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {/* Google OAuth Button */}
-            <button
-              type="button"
-              onClick={handleGoogle}
-              disabled={googleLoading || loading}
-              className="min-h-[44px] h-12 w-full inline-flex items-center justify-center gap-2.5 rounded-tk-lg border border-line bg-surface hover:bg-surface-muted text-ink text-tk-body-sm font-semibold transition-colors duration-tk-fast disabled:opacity-60 cursor-pointer focus-visible:outline-none focus-visible:shadow-tk-focus"
-            >
-              {googleLoading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin text-ink-muted" />
-                  <span>Connecting to Google…</span>
-                </>
-              ) : (
-                <>
-                  <GoogleIcon />
-                  <span>Continue with Google</span>
-                </>
-              )}
-            </button>
-
-            {/* Divider */}
-            <div className="relative flex items-center justify-center py-1">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-line" />
-              </div>
-              <span className="relative bg-surface px-3 text-tk-caption text-ink-subtle uppercase tracking-wider font-semibold">
-                Or with email
-              </span>
-            </div>
-
-            {/* Email Magic Link Form */}
-            <form onSubmit={handleEmailSubmit} className="space-y-3.5">
-              <div className="space-y-1">
-                <label htmlFor="login-email" className="block text-tk-caption font-semibold text-ink">
-                  Work or Personal Email
-                </label>
-                <div className="relative">
-                  <Mail className="w-4 h-4 text-ink-subtle absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <input
-                    id="login-email"
-                    type="email"
-                    value={email}
-                    onChange={(e) => {
-                      setEmail(e.target.value);
-                      if (error) setError("");
-                    }}
-                    placeholder="name@company.com"
-                    autoComplete="email"
-                    required
-                    className="min-h-[44px] h-12 w-full rounded-tk-lg border border-line bg-surface pl-10 pr-4 text-tk-body text-ink placeholder:text-ink-subtle transition-colors focus-visible:outline-none focus-visible:shadow-tk-focus"
-                  />
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                disabled={loading || googleLoading}
-                className={buttonClasses({
-                  variant: "primary",
-                  size: "lg",
-                  fullWidth: true,
-                  className: "min-h-[44px] h-12 cursor-pointer font-bold",
-                })}
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin text-ink-inverse" />
-                    <span>Sending magic link…</span>
-                  </>
-                ) : (
-                  <span>Send Magic Link</span>
-                )}
-              </button>
-            </form>
-          </div>
-        )}
-
-        {/* Footer info & switcher */}
-        <div className="pt-2 border-t border-line text-center space-y-2">
-          <p className="text-tk-body-sm text-ink-muted">
-            Don&apos;t have an account?{" "}
-            <Link
-              href={next ? `/signup?next=${encodeURIComponent(next)}` : "/signup"}
-              className="font-bold text-brand-700 hover:text-brand-800 hover:underline min-h-[44px] inline-flex items-center focus-visible:outline-none focus-visible:shadow-tk-focus rounded-tk-sm"
-            >
-              Sign up free
-            </Link>
-          </p>
-          <p className="text-tk-caption text-ink-subtle">
-            By continuing, you agree to our{" "}
-            <Link href="/terms-and-conditions" className="underline hover:text-ink-muted">
-              Terms
-            </Link>{" "}
-            and{" "}
-            <Link href="/privacy-policy" className="underline hover:text-ink-muted">
-              Privacy Policy
-            </Link>
-            .
-          </p>
-        </div>
-      </Card>
       </main>
       <Footer />
     </div>
