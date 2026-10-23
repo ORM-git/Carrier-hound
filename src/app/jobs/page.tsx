@@ -279,6 +279,299 @@ function CircularMatchRing({
   );
 }
 
+interface JobCardItemProps {
+  job: LiveJob;
+  index: number;
+  isSaved: boolean;
+  isPro: boolean;
+  candidate: CandidateProfile | null;
+  shouldReduceMotion: boolean | null;
+  handleSelectJob: (job: LiveJob) => void;
+  handleSaveJob: (job: LiveJob) => void;
+  handleLockedAction: (e: React.MouseEvent) => void;
+}
+
+function JobCardItem({
+  job,
+  index,
+  isSaved,
+  isPro,
+  candidate,
+  shouldReduceMotion,
+  handleSelectJob,
+  handleSaveJob,
+  handleLockedAction,
+}: JobCardItemProps) {
+  const staggerDelay = Math.min(index * 0.03, 0.3);
+  const confirmedResumeKey = candidate?.confirmedAt || "";
+  const diagnostics = useMemo(
+    () => getJobDiagnostics(job, candidate),
+    [job.id, confirmedResumeKey]
+  );
+  const matchScore = useMemo(
+    () => (diagnostics ? Math.max(10, Math.min(99, Math.round(diagnostics.score))) : null),
+    [diagnostics]
+  );
+  const matchLabel =
+    matchScore !== null
+      ? matchScore > 70
+        ? "Great match"
+        : matchScore >= 50
+        ? "Good match"
+        : "Fair match"
+      : "";
+
+  return (
+    <motion.article
+      key={job.id}
+      data-testid="job-card"
+      initial={shouldReduceMotion ? false : { opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={
+        shouldReduceMotion
+          ? { duration: 0.01 }
+          : { duration: 0.22, delay: staggerDelay, ease: [0.22, 1, 0.36, 1] }
+      }
+      onClick={() => handleSelectJob(job)}
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" && e.target === e.currentTarget) {
+          handleSelectJob(job);
+        }
+      }}
+      className="group bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-5 shadow-none transition-[box-shadow,border-color] duration-200 hover:ring-[#93C5FD] focus:ring-2 focus:ring-[#93C5FD] focus:outline-none space-y-4 cursor-pointer"
+    >
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+        <div className="flex items-start gap-3.5 min-w-0 flex-1">
+          {/* 48px company logo square */}
+          <CompanyLogo
+            company={job.company}
+            applyUrl={job.applyUrl}
+            className="w-12 h-12 rounded-xl shrink-0 object-contain p-1 border border-[#E2E8F0] bg-white"
+          />
+
+          <div className="relative min-w-0 flex-1 grid grid-cols-1 grid-rows-1">
+            {/* View A: Standard content (Title, Company, Chips) - crossfades out over 0.2s on desktop hover/focus */}
+            <div className="col-start-1 row-start-1 w-full space-y-1 transition-opacity duration-200 motion-reduce:transition-none sm:group-hover:opacity-0 sm:group-focus-within:opacity-0 sm:group-focus:opacity-0 pointer-events-auto sm:group-hover:pointer-events-none sm:group-focus-within:pointer-events-none sm:group-focus:pointer-events-none">
+              {/* Title bold 16px ink */}
+              <h2 className="text-[16px] font-bold text-[#0F172A] leading-snug break-words">
+                {job.title}
+              </h2>
+
+              {/* Company 14px #475569 */}
+              <div className="text-[14px] text-[#475569]">
+                <span className={!isPro ? "filter blur-[4.5px] select-none" : ""}>
+                  {job.company || "Verified Employer"}
+                </span>
+                {job.category && <span className="capitalize"> · {job.category}</span>}
+              </div>
+
+              {/* Row of small gray chips: location, work type, salary only if present, posted time */}
+              <div className="flex flex-wrap items-center gap-1.5 pt-1.5">
+                <span className="inline-flex items-center text-[12px] font-medium px-2.5 py-0.5 rounded-full bg-[#F1F5F9] text-[#475569]">
+                  {isPro ? (job.location || "Remote") : <span className="filter blur-[3px] select-none">Location Locked</span>}
+                </span>
+                <span className="inline-flex items-center text-[12px] font-medium px-2.5 py-0.5 rounded-full bg-[#F1F5F9] text-[#475569]">
+                  {job.type || "Full-time"}
+                </span>
+                {job.salary && (
+                  <span className="inline-flex items-center text-[12px] font-medium px-2.5 py-0.5 rounded-full bg-[#F1F5F9] text-[#475569]">
+                    {isPro ? job.salary : "••••••••"}
+                  </span>
+                )}
+                <span className="inline-flex items-center text-[12px] font-medium px-2.5 py-0.5 rounded-full bg-[#F1F5F9] text-[#475569]">
+                  {formatRelativeTime(job.postedAt || job.date)}
+                </span>
+              </div>
+
+              {/* Mobile: Fit Match panel moves under the chips */}
+              <div className="sm:hidden pt-2">
+                {matchScore !== null ? (
+                  <div className={`flex items-center justify-between p-3 rounded-[16px] ${getMatchPanelGradient(matchScore)} text-white`}>
+                    <div className="flex items-center gap-3">
+                      <CircularMatchRing
+                        score={matchScore}
+                        size={44}
+                        strokeWidth={4}
+                        isPro={isPro}
+                      />
+                      <div className="text-left">
+                        <div className="text-xs font-bold text-white uppercase tracking-wider">
+                          Fit Match
+                        </div>
+                        <div className="text-[11px] text-slate-300">
+                          {isPro ? matchLabel : "Locked Preview"}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <Link
+                    href="/resume"
+                    onClick={(e) => e.stopPropagation()}
+                    className="flex items-center gap-2.5 p-3 rounded-[16px] bg-[#F8FAFC] hover:bg-[#EFF6FF] border border-[#E2E8F0] hover:border-[#93C5FD] text-left transition-all duration-200"
+                  >
+                    <div className="w-8 h-8 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] flex items-center justify-center shrink-0">
+                      <Sparkles className="w-4 h-4 text-[#2563EB]" />
+                    </div>
+                    <span className="text-xs font-semibold text-[#0F172A]">
+                      Upload your resume to see your real match
+                    </span>
+                  </Link>
+                )}
+              </div>
+            </div>
+
+            {/* View B: Desktop Hover panel "Why this job is a match" (14px bold ink) - crossfades in over 0.2s */}
+            <div
+              data-testid="card-hover-match-panel"
+              className="col-start-1 row-start-1 w-full hidden sm:flex flex-col justify-center space-y-1.5 opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 sm:group-focus:opacity-100 transition-opacity duration-200 motion-reduce:transition-none pointer-events-none sm:group-hover:pointer-events-auto sm:group-focus-within:pointer-events-auto sm:group-focus:pointer-events-auto"
+            >
+              <h3 className="text-[14px] font-bold text-[#0F172A] leading-snug">
+                Why this job is a match
+              </h3>
+
+              {diagnostics ? (
+                <>
+                  <p className="text-[12px] text-[#475569] leading-snug line-clamp-2">
+                    {getDiagnosticsSummary(diagnostics)}
+                  </p>
+
+                  <div className="flex items-center gap-4 pt-0.5" data-testid="match-component-rings">
+                    <SmallComponentRing
+                      label="Experience"
+                      score={Math.min(100, Math.max(0, Math.round((diagnostics.breakdown.experienceScore / 15) * 100)))}
+                    />
+                    <SmallComponentRing
+                      label="Skill"
+                      score={Math.min(100, Math.max(0, Math.round((diagnostics.breakdown.skillScore / 50) * 100)))}
+                    />
+                    {typeof (diagnostics.breakdown as any)?.industryScore === "number" && (
+                      <SmallComponentRing
+                        label="Industry"
+                        score={Math.min(100, Math.max(0, Math.round((diagnostics.breakdown as any).industryScore)))}
+                      />
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="pt-0.5">
+                  <Link
+                    href="/resume"
+                    data-testid="hover-upload-resume-cta"
+                    onClick={(e) => e.stopPropagation()}
+                    className="inline-flex items-center gap-2 p-2.5 rounded-[12px] bg-[#F8FAFC] hover:bg-[#EFF6FF] border border-[#E2E8F0] hover:border-[#93C5FD] text-left transition-all duration-200 group/cta focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1 w-fit"
+                  >
+                    <div className="w-6 h-6 rounded-full bg-[#EFF6FF] group-hover/cta:bg-[#DBEAFE] border border-[#BFDBFE] flex items-center justify-center shrink-0 transition-colors">
+                      <Sparkles className="w-3.5 h-3.5 text-[#2563EB]" />
+                    </div>
+                    <span className="text-[12px] font-semibold text-[#0F172A] group-hover/cta:text-[#1D4ED8] transition-colors leading-snug">
+                      Upload your resume to see why this job matches
+                    </span>
+                  </Link>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Right: Fit Match panel from PR #68, unchanged (hidden on mobile, sm:flex) */}
+        {matchScore !== null ? (
+          <div className={`hidden sm:flex flex-col items-center justify-between p-3.5 sm:p-4 rounded-[16px] ${getMatchPanelGradient(matchScore)} text-white w-44 shrink-0 text-center border border-white/10 shadow-none space-y-2`}>
+            <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-300 uppercase tracking-wider">
+              <Sparkles className="w-3 h-3 text-blue-400" />
+              <span>Fit Match</span>
+            </div>
+
+            <CircularMatchRing
+              score={matchScore}
+              size={64}
+              strokeWidth={5}
+              isPro={isPro}
+            />
+
+            <div>
+              <div className="text-xs font-bold text-slate-100">
+                {isPro ? matchLabel : "Locked Preview"}
+              </div>
+              <div className="flex flex-wrap items-center justify-center gap-1.5 text-[10px] text-slate-400 pt-1">
+                <span className="inline-flex items-center gap-0.5 text-emerald-400">
+                  ✓ {job.remote ? "Remote" : "Verified"}
+                </span>
+                <span>•</span>
+                <span className="inline-flex items-center gap-0.5 text-emerald-400">
+                  ✓ Direct ATS
+                </span>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <Link
+            href="/resume"
+            onClick={(e) => e.stopPropagation()}
+            className="hidden sm:flex flex-col items-center justify-center p-3.5 sm:p-4 rounded-[16px] bg-[#F8FAFC] hover:bg-[#EFF6FF] border border-[#E2E8F0] hover:border-[#93C5FD] text-center w-44 shrink-0 transition-all duration-200 group/cta space-y-2.5 self-stretch focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1"
+          >
+            <div className="w-9 h-9 rounded-full bg-[#EFF6FF] group-hover/cta:bg-[#DBEAFE] border border-[#BFDBFE] flex items-center justify-center transition-colors">
+              <Sparkles className="w-4 h-4 text-[#2563EB]" />
+            </div>
+            <span className="text-xs font-semibold text-[#0F172A] group-hover/cta:text-[#1D4ED8] transition-colors leading-snug">
+              Upload your resume to see your real match
+            </span>
+          </Link>
+        )}
+      </div>
+
+      {/* Bottom row of the card: Save icon button and primary blue pill Apply */}
+      <div className="flex items-center justify-between pt-3 border-t border-[#E2E8F0]">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleSaveJob(job);
+          }}
+          aria-label={isSaved ? "Unlike job" : "Save job"}
+          title={isSaved ? "Saved to Tracker (Liked)" : "Like & save to Tracker"}
+          className={`w-10 h-10 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full border transition cursor-pointer ${
+            isSaved
+              ? "border-rose-200 bg-rose-50 text-rose-600"
+              : "border-[#E2E8F0] bg-[#F1F5F9] text-[#475569] hover:bg-[#E2E8F0] hover:text-[#0F172A]"
+          }`}
+        >
+          <Heart className={`w-4 h-4 ${isSaved ? "fill-rose-500 text-rose-500" : ""}`} />
+        </button>
+
+        <div className="flex items-center gap-2">
+          {isPro ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleSelectJob(job);
+              }}
+              className="inline-flex items-center gap-1.5 px-5 py-2 min-h-[44px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-xs font-bold transition shadow-none focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1 cursor-pointer"
+            >
+              <span>Apply</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleLockedAction(e);
+              }}
+              className="inline-flex items-center gap-1.5 px-5 py-2 min-h-[44px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-xs font-bold transition shadow-none focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1 cursor-pointer"
+            >
+              <Lock className="w-3.5 h-3.5" />
+              <span>Apply</span>
+            </button>
+          )}
+        </div>
+      </div>
+    </motion.article>
+  );
+}
+
 function JobsPageInner() {
   const router = useRouter();
   const shouldReduceMotion = useReducedMotion();
@@ -1443,270 +1736,20 @@ function JobsPageInner() {
                 ) : (
                   /* Job Cards List (Single column, 12px gap) */
                   <div className="space-y-3">
-                    {displayedJobs.map((job, index) => {
-                      const isSaved = savedJobIds.includes(job.id);
-                      const staggerDelay = Math.min(index * 0.03, 0.3);
-                      const diagnostics = getJobDiagnostics(job, candidate);
-                      const matchScore = getJobMatchScore(job, candidate);
-                      const matchLabel =
-                        matchScore !== null
-                          ? matchScore > 70
-                            ? "Great match"
-                            : matchScore >= 50
-                            ? "Good match"
-                            : "Fair match"
-                          : "";
-
-                      return (
-                        <motion.article
-                          key={job.id}
-                          data-testid="job-card"
-                          initial={shouldReduceMotion ? false : { opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={
-                            shouldReduceMotion
-                              ? { duration: 0.01 }
-                              : { duration: 0.22, delay: staggerDelay, ease: [0.22, 1, 0.36, 1] }
-                          }
-                          onClick={() => handleSelectJob(job)}
-                          tabIndex={0}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" && e.target === e.currentTarget) {
-                              handleSelectJob(job);
-                            }
-                          }}
-                          className="group bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-5 shadow-none transition-[box-shadow,border-color] duration-200 hover:ring-[#93C5FD] focus:ring-2 focus:ring-[#93C5FD] focus:outline-none space-y-4 cursor-pointer"
-                        >
-                          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-                            <div className="flex items-start gap-3.5 min-w-0 flex-1">
-                              {/* 48px company logo square */}
-                              <CompanyLogo
-                                company={job.company}
-                                applyUrl={job.applyUrl}
-                                className="w-12 h-12 rounded-xl shrink-0 object-contain p-1 border border-[#E2E8F0] bg-white"
-                              />
-
-                              <div className="relative min-w-0 flex-1 grid grid-cols-1 grid-rows-1">
-                                {/* View A: Standard content (Title, Company, Chips) - crossfades out over 0.2s on desktop hover/focus */}
-                                <div className="col-start-1 row-start-1 w-full space-y-1 transition-opacity duration-200 motion-reduce:transition-none sm:group-hover:opacity-0 sm:group-focus-within:opacity-0 sm:group-focus:opacity-0 pointer-events-auto sm:group-hover:pointer-events-none sm:group-focus-within:pointer-events-none sm:group-focus:pointer-events-none">
-                                  {/* Title bold 16px ink */}
-                                  <h2 className="text-[16px] font-bold text-[#0F172A] leading-snug break-words">
-                                    {job.title}
-                                  </h2>
-
-                                  {/* Company 14px #475569 */}
-                                  <div className="text-[14px] text-[#475569]">
-                                    <span className={!isPro ? "filter blur-[4.5px] select-none" : ""}>
-                                      {job.company || "Verified Employer"}
-                                    </span>
-                                    {job.category && <span className="capitalize"> · {job.category}</span>}
-                                  </div>
-
-                                  {/* Row of small gray chips: location, work type, salary only if present, posted time */}
-                                  <div className="flex flex-wrap items-center gap-1.5 pt-1.5">
-                                    <span className="inline-flex items-center text-[12px] font-medium px-2.5 py-0.5 rounded-full bg-[#F1F5F9] text-[#475569]">
-                                      {isPro ? (job.location || "Remote") : <span className="filter blur-[3px] select-none">Location Locked</span>}
-                                    </span>
-                                    <span className="inline-flex items-center text-[12px] font-medium px-2.5 py-0.5 rounded-full bg-[#F1F5F9] text-[#475569]">
-                                      {job.type || "Full-time"}
-                                    </span>
-                                    {job.salary && (
-                                      <span className="inline-flex items-center text-[12px] font-medium px-2.5 py-0.5 rounded-full bg-[#F1F5F9] text-[#475569]">
-                                        {isPro ? job.salary : "••••••••"}
-                                      </span>
-                                    )}
-                                    <span className="inline-flex items-center text-[12px] font-medium px-2.5 py-0.5 rounded-full bg-[#F1F5F9] text-[#475569]">
-                                      {formatRelativeTime(job.postedAt || job.date)}
-                                    </span>
-                                  </div>
-
-                                  {/* Mobile: Fit Match panel moves under the chips */}
-                                  <div className="sm:hidden pt-2">
-                                    {matchScore !== null ? (
-                                      <div className={`flex items-center justify-between p-3 rounded-[16px] ${getMatchPanelGradient(matchScore)} text-white`}>
-                                        <div className="flex items-center gap-3">
-                                          <CircularMatchRing
-                                            score={matchScore}
-                                            size={44}
-                                            strokeWidth={4}
-                                            isPro={isPro}
-                                          />
-                                          <div className="text-left">
-                                            <div className="text-xs font-bold text-white uppercase tracking-wider">
-                                              Fit Match
-                                            </div>
-                                            <div className="text-[11px] text-slate-300">
-                                              {isPro ? matchLabel : "Locked Preview"}
-                                            </div>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    ) : (
-                                      <Link
-                                        href="/resume"
-                                        onClick={(e) => e.stopPropagation()}
-                                        className="flex items-center gap-2.5 p-3 rounded-[16px] bg-[#F8FAFC] hover:bg-[#EFF6FF] border border-[#E2E8F0] hover:border-[#93C5FD] text-left transition-all duration-200"
-                                      >
-                                        <div className="w-8 h-8 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] flex items-center justify-center shrink-0">
-                                          <Sparkles className="w-4 h-4 text-[#2563EB]" />
-                                        </div>
-                                        <span className="text-xs font-semibold text-[#0F172A]">
-                                          Upload your resume to see your real match
-                                        </span>
-                                      </Link>
-                                    )}
-                                  </div>
-                                </div>
-
-                                {/* View B: Desktop Hover panel "Why this job is a match" (14px bold ink) - crossfades in over 0.2s */}
-                                <div
-                                  data-testid="card-hover-match-panel"
-                                  className="col-start-1 row-start-1 w-full hidden sm:flex flex-col justify-center space-y-1.5 opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 sm:group-focus:opacity-100 transition-opacity duration-200 motion-reduce:transition-none pointer-events-none sm:group-hover:pointer-events-auto sm:group-focus-within:pointer-events-auto sm:group-focus:pointer-events-auto"
-                                >
-                                  <h3 className="text-[14px] font-bold text-[#0F172A] leading-snug">
-                                    Why this job is a match
-                                  </h3>
-
-                                  {diagnostics ? (
-                                    <>
-                                      <p className="text-[12px] text-[#475569] leading-snug line-clamp-2">
-                                        {getDiagnosticsSummary(diagnostics)}
-                                      </p>
-
-                                      <div className="flex items-center gap-4 pt-0.5" data-testid="match-component-rings">
-                                        <SmallComponentRing
-                                          label="Experience"
-                                          score={Math.min(100, Math.max(0, Math.round((diagnostics.breakdown.experienceScore / 15) * 100)))}
-                                        />
-                                        <SmallComponentRing
-                                          label="Skill"
-                                          score={Math.min(100, Math.max(0, Math.round((diagnostics.breakdown.skillScore / 50) * 100)))}
-                                        />
-                                        {typeof (diagnostics.breakdown as any)?.industryScore === "number" && (
-                                          <SmallComponentRing
-                                            label="Industry"
-                                            score={Math.min(100, Math.max(0, Math.round((diagnostics.breakdown as any).industryScore)))}
-                                          />
-                                        )}
-                                      </div>
-                                    </>
-                                  ) : (
-                                    <div className="pt-0.5">
-                                      <Link
-                                        href="/resume"
-                                        data-testid="hover-upload-resume-cta"
-                                        onClick={(e) => e.stopPropagation()}
-                                        className="inline-flex items-center gap-2 p-2.5 rounded-[12px] bg-[#F8FAFC] hover:bg-[#EFF6FF] border border-[#E2E8F0] hover:border-[#93C5FD] text-left transition-all duration-200 group/cta focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1 w-fit"
-                                      >
-                                        <div className="w-6 h-6 rounded-full bg-[#EFF6FF] group-hover/cta:bg-[#DBEAFE] border border-[#BFDBFE] flex items-center justify-center shrink-0 transition-colors">
-                                          <Sparkles className="w-3.5 h-3.5 text-[#2563EB]" />
-                                        </div>
-                                        <span className="text-[12px] font-semibold text-[#0F172A] group-hover/cta:text-[#1D4ED8] transition-colors leading-snug">
-                                          Upload your resume to see why this job matches
-                                        </span>
-                                      </Link>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Right: Fit Match panel from PR #68, unchanged (hidden on mobile, sm:flex) */}
-                            {matchScore !== null ? (
-                              <div className={`hidden sm:flex flex-col items-center justify-between p-3.5 sm:p-4 rounded-[16px] ${getMatchPanelGradient(matchScore)} text-white w-44 shrink-0 text-center border border-white/10 shadow-none space-y-2`}>
-                                <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-300 uppercase tracking-wider">
-                                  <Sparkles className="w-3 h-3 text-blue-400" />
-                                  <span>Fit Match</span>
-                                </div>
-
-                                <CircularMatchRing
-                                  score={matchScore}
-                                  size={64}
-                                  strokeWidth={5}
-                                  isPro={isPro}
-                                />
-
-                                <div>
-                                  <div className="text-xs font-bold text-slate-100">
-                                    {isPro ? matchLabel : "Locked Preview"}
-                                  </div>
-                                  <div className="flex flex-wrap items-center justify-center gap-1.5 text-[10px] text-slate-400 pt-1">
-                                    <span className="inline-flex items-center gap-0.5 text-emerald-400">
-                                      ✓ {job.remote ? "Remote" : "Verified"}
-                                    </span>
-                                    <span>•</span>
-                                    <span className="inline-flex items-center gap-0.5 text-emerald-400">
-                                      ✓ Direct ATS
-                                    </span>
-                                  </div>
-                                </div>
-                              </div>
-                            ) : (
-                              <Link
-                                href="/resume"
-                                onClick={(e) => e.stopPropagation()}
-                                className="hidden sm:flex flex-col items-center justify-center p-3.5 sm:p-4 rounded-[16px] bg-[#F8FAFC] hover:bg-[#EFF6FF] border border-[#E2E8F0] hover:border-[#93C5FD] text-center w-44 shrink-0 transition-all duration-200 group/cta space-y-2.5 self-stretch focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1"
-                              >
-                                <div className="w-9 h-9 rounded-full bg-[#EFF6FF] group-hover/cta:bg-[#DBEAFE] border border-[#BFDBFE] flex items-center justify-center transition-colors">
-                                  <Sparkles className="w-4 h-4 text-[#2563EB]" />
-                                </div>
-                                <span className="text-xs font-semibold text-[#0F172A] group-hover/cta:text-[#1D4ED8] transition-colors leading-snug">
-                                  Upload your resume to see your real match
-                                </span>
-                              </Link>
-                            )}
-                          </div>
-
-                          {/* Bottom row of the card: Save icon button and primary blue pill Apply */}
-                          <div className="flex items-center justify-between pt-3 border-t border-[#E2E8F0]">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleSaveJob(job);
-                              }}
-                              aria-label={isSaved ? "Unlike job" : "Save job"}
-                              title={isSaved ? "Saved to Tracker (Liked)" : "Like & save to Tracker"}
-                              className={`w-10 h-10 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full border transition cursor-pointer ${
-                                isSaved
-                                  ? "border-rose-200 bg-rose-50 text-rose-600"
-                                  : "border-[#E2E8F0] bg-[#F1F5F9] text-[#475569] hover:bg-[#E2E8F0] hover:text-[#0F172A]"
-                              }`}
-                            >
-                              <Heart className={`w-4 h-4 ${isSaved ? "fill-rose-500 text-rose-500" : ""}`} />
-                            </button>
-
-                            <div className="flex items-center gap-2">
-                              {isPro ? (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleSelectJob(job);
-                                  }}
-                                  className="inline-flex items-center gap-1.5 px-5 py-2 min-h-[44px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-xs font-bold transition shadow-none focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1 cursor-pointer"
-                                >
-                                  <span>Apply</span>
-                                  <ArrowRight className="w-3.5 h-3.5" />
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleLockedAction(e);
-                                  }}
-                                  className="inline-flex items-center gap-1.5 px-5 py-2 min-h-[44px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-xs font-bold transition shadow-none focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1 cursor-pointer"
-                                >
-                                  <Lock className="w-3.5 h-3.5" />
-                                  <span>Apply</span>
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        </motion.article>
-                      );
-                    })}
+                    {displayedJobs.map((job, index) => (
+                      <JobCardItem
+                        key={job.id}
+                        job={job}
+                        index={index}
+                        isSaved={savedJobIds.includes(job.id)}
+                        isPro={isPro}
+                        candidate={candidate}
+                        shouldReduceMotion={shouldReduceMotion}
+                        handleSelectJob={handleSelectJob}
+                        handleSaveJob={handleSaveJob}
+                        handleLockedAction={handleLockedAction}
+                      />
+                    ))}
 
                     {/* Load More Pagination */}
                     {liveJobs.length < totalCount && (
