@@ -154,7 +154,7 @@ export default function LoginPage() {
       <GuideHeader />
       <main
         id="main-content"
-        className="flex-1 flex items-center justify-center p-0 sm:p-4 text-[#0F172A] font-sans relative"
+        className="flex-1 flex items-end sm:items-center justify-center p-0 sm:p-4 text-[#0F172A] font-sans relative"
       >
         {/* Dimmed backdrop over existing auth-route page */}
         <div
@@ -164,13 +164,16 @@ export default function LoginPage() {
           className="fixed inset-0 bg-black/40 z-40 animate-auth-backdrop cursor-pointer"
         />
 
-        {/* Modal-style white card (Jobright reference: 488px max-width, 24px radius, 48px top / 32px sides / 32px bottom on desktop; 8px outer margins on mobile; content width 424px) */}
+        {/* Modal-style white surface:
+            - Mobile: bottom-anchored drawer, full viewport width (no side margins), 20px top corners, 0px bottom corners, respect safe area, vertical scroll on short screens
+            - Desktop: centred 488px max-width card, 24px radius, 48px top / 32px sides / 32px bottom, 424px content width
+        */}
         <div
           data-testid="login-auth-card"
           role="dialog"
           aria-modal="true"
           aria-labelledby="auth-title"
-          className="relative z-50 w-full max-w-[488px] mx-2 sm:mx-auto bg-white rounded-[24px] border border-[#E5E7EB] pt-8 px-4 pb-5 sm:pt-[48px] sm:px-[32px] sm:pb-[32px] my-4 max-h-[calc(100vh-32px)] overflow-y-auto space-y-5 animate-auth-modal"
+          className="fixed bottom-0 left-0 right-0 sm:relative sm:bottom-auto sm:left-auto sm:right-auto z-50 w-full max-w-full sm:max-w-[488px] m-0 sm:mx-auto bg-white rounded-t-[20px] rounded-b-none sm:rounded-[24px] border border-[#E5E7EB] border-b-0 sm:border-b pt-8 px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:pt-[48px] sm:px-[32px] sm:pb-[32px] my-0 sm:my-4 max-h-[92vh] sm:max-h-[calc(100vh-32px)] overflow-y-auto space-y-5 animate-auth-modal"
         >
           {/* Top-right dark circular close control */}
           <Link
@@ -321,8 +324,12 @@ export default function LoginPage() {
             </div>
           )}
 
-          {/* Account switch last: full-width 48px light-grey filled box (#F3F4F5), 8px radius; regular text with bold blue Sign up link */}
-          <div className="w-full h-[48px] min-h-[48px] rounded-[8px] bg-[#F3F4F5] flex items-center justify-center text-[14px] text-[#4B5563]">
+          {/* Account switch:
+              - Mobile: white background with 1px #E5E7EB border
+              - Desktop: full-width 48px light-grey filled box (#F3F4F5), 8px radius, border-transparent
+              - Regular text with bold blue Sign up link
+          */}
+          <div className="w-full h-[48px] min-h-[48px] rounded-[8px] bg-white border border-[#E5E7EB] sm:bg-[#F3F4F5] sm:border-transparent flex items-center justify-center text-[14px] text-[#4B5563]">
             <span>Don&apos;t have an account? </span>
             <Link
               href={next ? `/signup?next=${encodeURIComponent(next)}` : "/signup"}

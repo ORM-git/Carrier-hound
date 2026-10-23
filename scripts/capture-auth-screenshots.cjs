@@ -78,6 +78,13 @@ async function captureScreenshots() {
     await page.screenshot({ path: path.join(REPORT_DIR, "login-mobile.png"), fullPage: false });
     console.log("Captured: login-mobile.png");
 
+    // Short mobile screen capture (390x600)
+    await page.setViewport({ width: 390, height: 600, isMobile: true, hasTouch: true });
+    await page.goto(`http://localhost:${PORT}/login`, { waitUntil: "networkidle0" });
+    await page.waitForSelector('[data-testid="login-auth-card"]');
+    await page.screenshot({ path: path.join(REPORT_DIR, "login-mobile-short.png"), fullPage: false });
+    console.log("Captured: login-mobile-short.png");
+
     // Focus desktop
     await page.setViewport({ width: 1280, height: 900 });
     await page.goto(`http://localhost:${PORT}/login`, { waitUntil: "networkidle0" });
@@ -157,21 +164,18 @@ async function captureScreenshots() {
     console.log("Captured: signup-email-sent-desktop.png");
 
     // -------------------------------------------------------------------------
-    // 3. ENTRANCE MOTION RECORDING (0.3s cubic-bezier(0.08, 0.82, 0.17, 1))
+    // 3. DESKTOP ENTRANCE MOTION RECORDING (scale 0.98 -> 1)
     // -------------------------------------------------------------------------
-    console.log("Recording entrance motion frames (0 to 350ms)...");
-    const framesDir = path.join(REPORT_DIR, "entrance-frames");
-    if (!fs.existsSync(framesDir)) {
-      fs.mkdirSync(framesDir, { recursive: true });
+    console.log("Recording desktop entrance motion frames (0 to 300ms)...");
+    const desktopFramesDir = path.join(REPORT_DIR, "desktop-entrance-frames");
+    if (!fs.existsSync(desktopFramesDir)) {
+      fs.mkdirSync(desktopFramesDir, { recursive: true });
     }
 
     const entrancePage = await browser.newPage();
     await entrancePage.setViewport({ width: 1280, height: 900 });
-
-    // We can inject animation paused and advance animation in discrete steps
     await entrancePage.goto(`http://localhost:${PORT}/login`, { waitUntil: "networkidle0" });
 
-    // Advance animation manually to capture 8 discrete interpolation stages from 0% to 100%
     const stages = [
       { name: "frame_000.png", progress: 0.0, timeMs: 0 },
       { name: "frame_001.png", progress: 0.15, timeMs: 45 },
@@ -184,7 +188,6 @@ async function captureScreenshots() {
 
     for (let i = 0; i < stages.length; i++) {
       const s = stages[i];
-      // Apply exact progress state: opacity from 0 to 1, scale from 0.98 to 1
       const scale = 0.98 + (1.0 - 0.98) * s.progress;
       const opacity = s.progress;
       const backdropOpacity = Math.min(1.0, s.progress * 1.2);
@@ -203,24 +206,72 @@ async function captureScreenshots() {
         }
       }, { op: opacity, sc: scale, bOp: backdropOpacity });
 
-      const framePath = path.join(framesDir, s.name);
+      const framePath = path.join(desktopFramesDir, s.name);
       await entrancePage.screenshot({ path: framePath });
-      console.log(`Captured entrance stage: ${s.name} (${s.timeMs}ms, opacity=${opacity.toFixed(2)}, scale=${scale.toFixed(4)})`);
     }
-
     await entrancePage.close();
 
-    // Use ffmpeg to compile frames into an animated GIF: login-entrance.gif
-    console.log("Encoding frames into reports/prompt8-auth/login-entrance.gif via ffmpeg...");
+    // Compile desktop GIF
     const gifPath = path.join(REPORT_DIR, "login-entrance.gif");
     try {
       execSync(
-        `ffmpeg -y -framerate 10 -i "${framesDir}/frame_%03d.png" -filter_complex "[0:v] fps=10,scale=800:-1:flags=lanczos,split [a][b];[a] palettegen [p];[b][p] paletteuse" "${gifPath}"`,
+        `ffmpeg -y -framerate 10 -i "${desktopFramesDir}/frame_%03d.png" -filter_complex "[0:v] fps=10,scale=800:-1:flags=lanczos,split [a][b];[a] palettegen [p];[b][p] paletteuse" "${gifPath}"`,
         { stdio: "inherit" }
       );
       console.log(`Generated animated entrance GIF: ${gifPath}`);
     } catch (e) {
       console.warn("Notice: GIF encoding via ffmpeg encountered notice:", e.message);
+    }
+
+    // -------------------------------------------------------------------------
+    // 4. MOBILE DRAWER ENTRANCE MOTION RECORDING (translateY 100% -> 0%)
+    // -------------------------------------------------------------------------
+    console.log("Recording mobile drawer slide-up entrance frames (0 to 300ms)...");
+    const mobileFramesDir = path.join(REPORT_DIR, "mobile-drawer-frames");
+    if (!fs.existsSync(mobileFramesDir)) {
+      fs.mkdirSync(mobileFramesDir, { recursive: true });
+    }
+
+    const mobileEntrancePage = await browser.newPage();
+    await mobileEntrancePage.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
+    await mobileEntrancePage.goto(`http://localhost:${PORT}/login`, { waitUntil: "networkidle0" });
+
+    for (let i = 0; i < stages.length; i++) {
+      const s = stages[i];
+      // translateY from 100% to 0%
+      const translateY = (1.0 - s.progress) * 100;
+      const opacity = Math.min(1.0, s.progress * 1.5);
+      const backdropOpacity = Math.min(1.0, s.progress * 1.2);
+
+      await mobileEntrancePage.evaluate(({ op, ty, bOp }) => {
+        const card = document.querySelector('[data-testid="login-auth-card"]');
+        const backdrop = document.querySelector('[data-testid="auth-backdrop"]');
+        if (card) {
+          card.style.animation = "none";
+          card.style.opacity = String(op);
+          card.style.transform = `translateY(${ty}%)`;
+        }
+        if (backdrop) {
+          backdrop.style.animation = "none";
+          backdrop.style.opacity = String(bOp);
+        }
+      }, { op: opacity, ty: translateY, bOp: backdropOpacity });
+
+      const framePath = path.join(mobileFramesDir, s.name);
+      await mobileEntrancePage.screenshot({ path: framePath });
+    }
+    await mobileEntrancePage.close();
+
+    // Compile mobile drawer GIF
+    const mobileGifPath = path.join(REPORT_DIR, "mobile-drawer-entrance.gif");
+    try {
+      execSync(
+        `ffmpeg -y -framerate 10 -i "${mobileFramesDir}/frame_%03d.png" -filter_complex "[0:v] fps=10,scale=390:-1:flags=lanczos,split [a][b];[a] palettegen [p];[b][p] paletteuse" "${mobileGifPath}"`,
+        { stdio: "inherit" }
+      );
+      console.log(`Generated mobile drawer entrance GIF: ${mobileGifPath}`);
+    } catch (e) {
+      console.warn("Notice: Mobile GIF encoding via ffmpeg encountered notice:", e.message);
     }
 
     console.log("\nAll screenshots and entrance recordings captured successfully in reports/prompt8-auth/");

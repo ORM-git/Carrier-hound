@@ -326,8 +326,25 @@ input[type="password"]::-ms-clear {
   }
 }
 
+@keyframes authDrawerEntranceMobile {
+  0% {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .animate-auth-modal {
-  animation: authModalEntrance 0.3s cubic-bezier(0.08, 0.82, 0.17, 1) forwards;
+  animation: authDrawerEntranceMobile 0.3s cubic-bezier(0.08, 0.82, 0.17, 1) forwards;
+}
+
+@media (min-width: 640px) {
+  .animate-auth-modal {
+    animation: authModalEntrance 0.3s cubic-bezier(0.08, 0.82, 0.17, 1) forwards;
+  }
 }
 
 @keyframes authBackdropFade {

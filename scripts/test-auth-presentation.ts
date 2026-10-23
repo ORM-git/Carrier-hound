@@ -32,17 +32,20 @@ function run() {
 
   if (isNegativeControl) {
     // Deliberately inject corruptions to verify negative control failure detection
-    loginCode = loginCode.replace(/max-w-\[488px\]/g, "max-w-[800px]");
+    loginCode = loginCode.replace(/sm:max-w-\[488px\]/g, "max-w-[800px]");
     loginCode = loginCode.replace(/Welcome back to/g, "Incorrect Heading");
-    loginCode = loginCode.replace(/rounded-\[8px\] bg-\[#F3F4F5\]/g, "rounded-none bg-red-500");
+    loginCode = loginCode.replace(/sm:bg-\[#F3F4F5\]/g, "bg-red-500");
+    loginCode = loginCode.replace(/items-end sm:items-center/g, "items-start");
+    loginCode = loginCode.replace(/rounded-t-\[20px\] rounded-b-none/g, "rounded-none");
     signupCode = signupCode.replace(/Welcome to/g, "Unsupported Heading");
-    signupCode = signupCode.replace(/rounded-\[24px\]/g, "rounded-none");
+    signupCode = signupCode.replace(/sm:rounded-\[24px\]/g, "rounded-none");
+    signupCode = signupCode.replace(/sm:hidden text-\[12px\]/g, "hidden text-[12px]");
   }
 
   const failures: string[] = [];
 
   // -------------------------------------------------------------------------
-  // 1. MODAL CARD DIMENSIONS, PADDING & BACKDROP
+  // 1. MODAL CARD DIMENSIONS, PADDING, BACKDROP & MOBILE DRAWER SPEC
   // -------------------------------------------------------------------------
   const hasLoginBackdrop = loginCode.includes('data-testid="auth-backdrop"') && loginCode.includes("fixed inset-0 bg-black/40");
   const hasSignupBackdrop = signupCode.includes('data-testid="auth-backdrop"') && signupCode.includes("fixed inset-0 bg-black/40");
@@ -52,24 +55,48 @@ function run() {
     console.log("  [PASS] dimmed backdrop: Dimmed backdrop present over auth route page");
   }
 
-  const hasLoginCardDims =
-    loginCode.includes("max-w-[488px]") &&
-    loginCode.includes("rounded-[24px]") &&
+  const hasLoginDesktopCardDims =
+    loginCode.includes("sm:max-w-[488px]") &&
+    loginCode.includes("sm:rounded-[24px]") &&
     loginCode.includes("sm:pt-[48px] sm:px-[32px] sm:pb-[32px]") &&
-    loginCode.includes("mx-2 sm:mx-auto") &&
+    loginCode.includes("sm:mx-auto") &&
     loginCode.includes('data-testid="login-auth-card"');
 
-  const hasSignupCardDims =
-    signupCode.includes("max-w-[488px]") &&
-    signupCode.includes("rounded-[24px]") &&
+  const hasSignupDesktopCardDims =
+    signupCode.includes("sm:max-w-[488px]") &&
+    signupCode.includes("sm:rounded-[24px]") &&
     signupCode.includes("sm:pt-[48px] sm:px-[32px] sm:pb-[32px]") &&
-    signupCode.includes("mx-2 sm:mx-auto") &&
+    signupCode.includes("sm:mx-auto") &&
     signupCode.includes('data-testid="signup-auth-card"');
 
-  if (!hasLoginCardDims || !hasSignupCardDims) {
-    failures.push("CARD DIMS FAIL: Auth cards must have max-w-[488px], 24px radius, 48px top / 32px sides / 32px bottom on desktop (424px content width), and 8px outer margins on mobile (mx-2 sm:mx-auto).");
+  if (!hasLoginDesktopCardDims || !hasSignupDesktopCardDims) {
+    failures.push("DESKTOP CARD DIMS FAIL: Auth cards must have sm:max-w-[488px], 24px radius, 48px top / 32px sides / 32px bottom on desktop.");
   } else {
-    console.log("  [PASS] card dimensions: White modal card 488px max width, 24px radius, 424px content width, 8px mobile outer margins");
+    console.log("  [PASS] desktop card dimensions: White modal card 488px max width, 24px radius, 424px content width");
+  }
+
+  const hasLoginMobileDrawer =
+    loginCode.includes("items-end sm:items-center") &&
+    loginCode.includes("m-0 sm:mx-auto") &&
+    loginCode.includes("rounded-t-[20px] rounded-b-none sm:rounded-[24px]") &&
+    loginCode.includes("pb-[max(1.5rem,env(safe-area-inset-bottom))]") &&
+    loginCode.includes("sm:pb-[32px]") &&
+    loginCode.includes("max-h-[92vh] sm:max-h-[calc(100vh-32px)]") &&
+    loginCode.includes("overflow-y-auto");
+
+  const hasSignupMobileDrawer =
+    signupCode.includes("items-end sm:items-center") &&
+    signupCode.includes("m-0 sm:mx-auto") &&
+    signupCode.includes("rounded-t-[20px] rounded-b-none sm:rounded-[24px]") &&
+    signupCode.includes("pb-[max(1.5rem,env(safe-area-inset-bottom))]") &&
+    signupCode.includes("sm:pb-[32px]") &&
+    signupCode.includes("max-h-[92vh] sm:max-h-[calc(100vh-32px)]") &&
+    signupCode.includes("overflow-y-auto");
+
+  if (!hasLoginMobileDrawer || !hasSignupMobileDrawer) {
+    failures.push("MOBILE DRAWER SPEC FAIL: On mobile, auth surface must be full width, anchored to bottom (items-end), no side margins (m-0), 20px top radii with square bottom corners, safe-area inset padding and vertical scrolling on short screens.");
+  } else {
+    console.log("  [PASS] mobile bottom drawer: Full width, bottom-anchored, 0 side margins, 20px top corners, square bottom, safe-area aware, vertical scrolling");
   }
 
   // -------------------------------------------------------------------------
@@ -185,7 +212,7 @@ function run() {
   }
 
   // -------------------------------------------------------------------------
-  // 6. LEGAL TEXT & ACCOUNT SWITCH BOX (#F3F4F5, 8PX RADIUS, NO DIVIDER ABOVE)
+  // 6. LEGAL TEXT & SIGNUP MOBILE PLACEMENT
   // -------------------------------------------------------------------------
   const hasCentredLegal =
     loginCode.includes("/terms-and-conditions") &&
@@ -194,40 +221,55 @@ function run() {
     signupCode.includes("/privacy-policy");
 
   if (!hasCentredLegal) {
-    failures.push("LEGAL TEXT FAIL: Must preserve Terms and Privacy Policy links centred below primary button.");
+    failures.push("LEGAL TEXT FAIL: Must preserve Terms and Privacy Policy links centred.");
   } else {
-    console.log("  [PASS] legal links: Small centred Terms and Privacy Policy links preserved");
+    console.log("  [PASS] legal links: Terms and Privacy Policy links preserved with valid destinations");
   }
 
-  const hasSwitchBox =
-    loginCode.includes("bg-[#F3F4F5]") &&
+  // On signup: desktop terms is above switch box (hidden sm:block), mobile terms is below switch box (sm:hidden)
+  const hasSignupTermsPlacement =
+    signupCode.includes("hidden sm:block text-[12px] text-center text-[#6B7280]") &&
+    signupCode.includes("sm:hidden text-[12px] text-center text-[#6B7280]");
+
+  if (!hasSignupTermsPlacement) {
+    failures.push("SIGNUP TERMS PLACEMENT FAIL: On signup, Terms must be above switch box on desktop (hidden sm:block) and below switch box on mobile (sm:hidden).");
+  } else {
+    console.log("  [PASS] signup terms placement: Desktop above switch box; mobile below switch box");
+  }
+
+  // -------------------------------------------------------------------------
+  // 7. ACCOUNT SWITCH BOX: MOBILE WHITE + BORDER, DESKTOP GREY FILL
+  // -------------------------------------------------------------------------
+  const hasResponsiveSwitchBox =
+    loginCode.includes("bg-white border border-[#E5E7EB] sm:bg-[#F3F4F5] sm:border-transparent") &&
     loginCode.includes("rounded-[8px]") &&
     loginCode.includes("h-[48px]") &&
     loginCode.includes("/signup?next=") &&
-    signupCode.includes("bg-[#F3F4F5]") &&
+    signupCode.includes("bg-white border border-[#E5E7EB] sm:bg-[#F3F4F5] sm:border-transparent") &&
     signupCode.includes("rounded-[8px]") &&
     signupCode.includes("h-[48px]") &&
     signupCode.includes("/login?next=");
 
-  if (!hasSwitchBox) {
-    failures.push("SWITCH BOX FAIL: Must feature full-width 48px light-grey box (#F3F4F5) with 8px radius and no divider above.");
+  if (!hasResponsiveSwitchBox) {
+    failures.push("SWITCH BOX FAIL: Must feature mobile white background with 1px #E5E7EB border, desktop #F3F4F5 grey fill with transparent border, 8px radius, and preserve ?next.");
   } else {
-    console.log("  [PASS] switch box: Full-width 48px #F3F4F5 box, 8px radius, no divider above, ?next preserved");
+    console.log("  [PASS] switch box: Mobile white + 1px #E5E7EB border; Desktop #F3F4F5 grey fill, 8px radius, ?next preserved");
   }
 
   // -------------------------------------------------------------------------
-  // 7. MOTION: 0.3S CUBIC-BEZIER(0.08,0.82,0.17,1) & PREFERS-REDUCED-MOTION
+  // 8. MOTION: 0.3S CUBIC-BEZIER(0.08,0.82,0.17,1) & PREFERS-REDUCED-MOTION
   // -------------------------------------------------------------------------
   const hasMotionKeyframes =
     cssCode.includes("authModalEntrance") &&
+    cssCode.includes("authDrawerEntranceMobile") &&
     cssCode.includes("cubic-bezier(0.08, 0.82, 0.17, 1)") &&
     cssCode.includes("0.3s") &&
     cssCode.includes("prefers-reduced-motion");
 
   if (!hasMotionKeyframes) {
-    failures.push("MOTION FAIL: globals.css must define authModalEntrance timing 0.3s cubic-bezier(0.08,0.82,0.17,1) and honor prefers-reduced-motion.");
+    failures.push("MOTION FAIL: globals.css must define authModalEntrance, authDrawerEntranceMobile timing 0.3s cubic-bezier(0.08,0.82,0.17,1) and honor prefers-reduced-motion.");
   } else {
-    console.log("  [PASS] entrance motion: 0.3s cubic-bezier(0.08,0.82,0.17,1) modal entrance with prefers-reduced-motion support");
+    console.log("  [PASS] entrance motion: 0.3s cubic-bezier(0.08,0.82,0.17,1) mobile drawer slide-up & desktop modal scale entrance with prefers-reduced-motion");
   }
 
   // -------------------------------------------------------------------------
