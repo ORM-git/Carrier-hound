@@ -30,6 +30,8 @@ function run() {
     detailCode = detailCode.replace(/text-\[24px\] font-bold text-\[#0F172A\]/g, "text-[14px]");
     detailCode = detailCode.replace(/text-\[18px\] font-bold text-\[#0F172A\]/g, "text-[12px]");
     detailCode = detailCode.replace(/leading-\[24px\]/g, "leading-none");
+    detailCode = detailCode.replace(/getCanonicalJobUrl/g, "getBadUrl");
+    detailCode = detailCode.replace(/support@careermonke.com/g, "invented@unknown.com");
     jobsCode = jobsCode + '\n<div className="jobright-mascot">Jobright Coaching Agent Autofill</div>';
   }
 
@@ -217,6 +219,49 @@ function run() {
     if (term.test(jobsCode) || term.test(detailCode)) {
       failures.push(`BRAND PURITY FAIL: Prohibited term "${term.source}" found in source.`);
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // 6. JOB DETAIL ACTIONS: SHARE & REPORT ISSUE SPECIFICATIONS
+  // -------------------------------------------------------------------------
+  const hasCanonicalShare =
+    detailCode.includes("getCanonicalJobUrl") &&
+    detailCode.includes("/jobs?id=") &&
+    detailCode.includes("navigator.clipboard.writeText") &&
+    detailCode.includes("data-testid=\"share-job-button\"") &&
+    detailCode.includes("data-testid=\"mobile-share-job-button\"");
+
+  const hasCopiedSuccessCondition =
+    detailCode.includes('shareStatus === "success"') &&
+    detailCode.includes("Link copied");
+
+  const hasUsableFallbackOnError =
+    detailCode.includes('shareStatus === "error"') &&
+    detailCode.includes('data-testid="share-fallback-container"') &&
+    detailCode.includes('data-testid="share-fallback-input"');
+
+  if (!hasCanonicalShare || !hasCopiedSuccessCondition || !hasUsableFallbackOnError) {
+    failures.push("SHARE CONTROL FAIL: Job detail must have desktop & mobile Share controls, copy canonical URL without session params, show 'Link copied' only on success, and provide usable fallback container on failure.");
+  } else {
+    console.log("  [PASS] share control: Desktop and mobile share controls copy canonical URL (/jobs?id=); 'Link copied' shown strictly on success; usable fallback input on failure");
+  }
+
+  const hasVerifiedSupportDestination =
+    detailCode.includes("support@careermonke.com") &&
+    detailCode.includes("getReportJobMailto") &&
+    detailCode.includes("data-testid=\"report-issue-link\"") &&
+    detailCode.includes("data-testid=\"report-issue-detail-link\"");
+
+  const hasNoPrivateCandidateDataInReport =
+    !detailCode.includes("candidate.email") &&
+    !detailCode.includes("user.email") &&
+    !detailCode.includes("candidate.skills") &&
+    !detailCode.includes("candidate.name");
+
+  if (!hasVerifiedSupportDestination || !hasNoPrivateCandidateDataInReport) {
+    failures.push("REPORT ISSUE FAIL: Report Issue must reuse verified support@careermonke.com with job id/title context, accessible links, and zero private candidate data.");
+  } else {
+    console.log("  [PASS] report issue: Reuses verified destination support@careermonke.com with job id/title context and zero candidate data");
   }
 
   if (failures.some((f) => f.includes("BRAND PURITY FAIL"))) {

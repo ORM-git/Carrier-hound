@@ -161,7 +161,7 @@ export default function LoginPage() {
           data-testid="auth-backdrop"
           aria-hidden="true"
           onClick={() => router.push("/")}
-          className="fixed inset-0 bg-black/40 z-40 animate-auth-backdrop cursor-pointer"
+          className="fixed inset-0 bg-black/40 z-[70] animate-auth-backdrop cursor-pointer"
         />
 
         {/* Modal-style white surface:
@@ -173,7 +173,7 @@ export default function LoginPage() {
           role="dialog"
           aria-modal="true"
           aria-labelledby="auth-title"
-          className="fixed bottom-0 left-0 right-0 sm:relative sm:bottom-auto sm:left-auto sm:right-auto z-50 w-full max-w-full sm:max-w-[488px] m-0 sm:mx-auto bg-white rounded-t-[20px] rounded-b-none sm:rounded-[24px] border border-[#E5E7EB] border-b-0 sm:border-b pt-8 px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:pt-[48px] sm:px-[32px] sm:pb-[32px] my-0 sm:my-4 max-h-[92vh] sm:max-h-[calc(100vh-32px)] overflow-y-auto space-y-5 animate-auth-modal"
+          className="fixed bottom-0 left-0 right-0 sm:relative sm:bottom-auto sm:left-auto sm:right-auto z-[71] w-full max-w-full sm:max-w-[488px] m-0 sm:mx-auto bg-white rounded-t-[20px] rounded-b-none sm:rounded-[24px] border border-[#E5E7EB] border-b-0 sm:border-b pt-8 px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:pt-[48px] sm:px-[32px] sm:pb-[32px] my-0 sm:my-4 max-h-[92vh] sm:max-h-[calc(100vh-32px)] overflow-y-auto space-y-5 animate-auth-modal"
         >
           {/* Top-right dark circular close control */}
           <Link

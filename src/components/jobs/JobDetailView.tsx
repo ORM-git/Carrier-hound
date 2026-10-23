@@ -1,11 +1,12 @@
 "use client";
 
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import Link from "next/link";
 import { LiveJob } from "@/lib/jobs/service";
 import { CandidateProfile } from "@/lib/resume/types";
 import { computeFitDiagnostics, FitDiagnosticsResult } from "@/lib/matcher/scoring";
 import { stripHtmlAndExecutableMarkup } from "@/lib/security/xss";
+import { getSiteUrl } from "@/lib/siteUrl";
 import CompanyLogo from "@/components/CompanyLogo";
 import type { User } from "@supabase/supabase-js";
 import {
@@ -21,6 +22,9 @@ import {
   Briefcase,
   DollarSign,
   MapPin,
+  Share2,
+  Flag,
+  X,
 } from "lucide-react";
 
 interface JobDetailViewProps {
@@ -117,8 +121,34 @@ function CircularDetailMatchRing({
           </div>
         )}
       </div>
+
     </div>
   );
+}
+
+export const VERIFIED_SUPPORT_EMAIL = "support@careermonke.com";
+
+/**
+ * Pure helper to construct the canonical job URL without private/session parameters.
+ */
+export function getCanonicalJobUrl(jobId: string): string {
+  const base =
+    typeof window !== "undefined" && window.location.origin && window.location.origin !== "null"
+      ? window.location.origin
+      : getSiteUrl();
+  return `${base}/jobs?id=${encodeURIComponent(jobId)}`;
+}
+
+/**
+ * Reuses verified support destination with job context and zero candidate data.
+ */
+export function getReportJobMailto(job: { id: string; title: string; company?: string }): string {
+  const canonicalUrl = getCanonicalJobUrl(job.id);
+  const subject = encodeURIComponent(`[Job Issue] ${job.title} (${job.id})`);
+  const body = encodeURIComponent(
+    `Job ID: ${job.id}\nJob Title: ${job.title}\nCompany: ${job.company || "N/A"}\nURL: ${canonicalUrl}\n\nPlease describe the issue with this job posting:`
+  );
+  return `mailto:${VERIFIED_SUPPORT_EMAIL}?subject=${subject}&body=${body}`;
 }
 
 export default function JobDetailView({
@@ -132,6 +162,27 @@ export default function JobDetailView({
   onBack,
 }: JobDetailViewProps) {
   const hasConfirmedResume = Boolean(candidate && candidate.confirmedAt);
+
+  const [shareStatus, setShareStatus] = useState<"idle" | "success" | "error">("idle");
+  const [shareErrorMsg, setShareErrorMsg] = useState<string>("");
+
+  const handleShare = async () => {
+    const canonicalUrl = getCanonicalJobUrl(job.id);
+    try {
+      if (!navigator.clipboard || typeof navigator.clipboard.writeText !== "function") {
+        throw new Error("Clipboard API unavailable in this browser context");
+      }
+      await navigator.clipboard.writeText(canonicalUrl);
+      setShareStatus("success");
+      setShareErrorMsg("");
+      setTimeout(() => {
+        setShareStatus((cur) => (cur === "success" ? "idle" : cur));
+      }, 2500);
+    } catch (err: any) {
+      setShareStatus("error");
+      setShareErrorMsg(err?.message || "Failed to copy link to clipboard");
+    }
+  };
 
   const diagnostics: FitDiagnosticsResult | null = useMemo(() => {
     if (!hasConfirmedResume || !candidate) return null;
@@ -191,7 +242,7 @@ export default function JobDetailView({
 
   return (
     <div className="max-w-[880px] w-full mx-auto space-y-4 pb-28 md:pb-12">
-      {/* Top Left Back Button */}
+      {/* Top Left Back Button & Utility Actions */}
       <div className="flex items-center justify-between">
         <button
           type="button"
@@ -202,7 +253,57 @@ export default function JobDetailView({
           <ArrowLeft className="w-4 h-4" />
           <span>Back</span>
         </button>
+
+        <div className="flex items-center gap-2">
+          {/* Report Issue link in top utility bar */}
+          <a
+            href={getReportJobMailto(job)}
+            data-testid="report-issue-link"
+            aria-label="Report an issue with this job posting"
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-[#64748B] hover:text-[#2563EB] transition-colors py-2 px-2.5 rounded-lg hover:bg-slate-100 min-h-[44px]"
+          >
+            <Flag className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Report issue</span>
+          </a>
+        </div>
       </div>
+
+      {/* Clipboard Fallback Alert when copy fails */}
+      {shareStatus === "error" && (
+        <div
+          data-testid="share-fallback-container"
+          role="alert"
+          className="bg-[#FEF2F2] border border-[#FECACA] rounded-[12px] p-3.5 text-xs text-[#991B1B] space-y-2 animate-fadeIn"
+        >
+          <div className="flex items-center justify-between">
+            <span className="font-semibold flex items-center gap-1.5 text-[#B91C1C]">
+              <AlertCircle className="w-4 h-4" />
+              Unable to copy link automatically
+            </span>
+            <button
+              type="button"
+              onClick={() => setShareStatus("idle")}
+              aria-label="Dismiss error"
+              className="text-[#991B1B] hover:text-[#7F1D1D] p-1 cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <p className="text-[11px] text-[#B91C1C]">
+            Select and copy this link manually:
+          </p>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              readOnly
+              data-testid="share-fallback-input"
+              value={getCanonicalJobUrl(job.id)}
+              onFocus={(e) => e.currentTarget.select()}
+              className="flex-1 bg-white border border-[#FCA5A5] rounded-lg px-2.5 py-1.5 text-xs text-[#0F172A] select-all focus:outline-none focus:ring-1 focus:ring-[#EF4444]"
+            />
+          </div>
+        </div>
+      )}
 
       {/* 1. Header Block Card */}
       <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-5 sm:p-6 shadow-none space-y-4">
@@ -230,6 +331,30 @@ export default function JobDetailView({
 
           {/* Action buttons (Desktop header) */}
           <div className="hidden sm:flex items-center gap-2.5 shrink-0 self-start">
+            <button
+              type="button"
+              onClick={handleShare}
+              data-testid="share-job-button"
+              aria-label={shareStatus === "success" ? "Link copied" : "Share job"}
+              className={`min-h-[44px] px-3.5 flex items-center gap-1.5 rounded-full border transition cursor-pointer text-xs font-semibold ${
+                shareStatus === "success"
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                  : "border-[#E2E8F0] bg-[#F1F5F9] text-[#475569] hover:bg-[#E2E8F0] hover:text-[#0F172A]"
+              }`}
+            >
+              {shareStatus === "success" ? (
+                <>
+                  <Check className="w-4 h-4 text-emerald-600" />
+                  <span data-testid="link-copied-text">Link copied</span>
+                </>
+              ) : (
+                <>
+                  <Share2 className="w-4 h-4 text-[#475569]" />
+                  <span>Share</span>
+                </>
+              )}
+            </button>
+
             <button
               type="button"
               onClick={onSave}
@@ -406,6 +531,19 @@ export default function JobDetailView({
             </p>
           )}
         </div>
+
+        {/* Footer info: Job ID & Report Issue */}
+        <div className="pt-4 border-t border-[#E2E8F0] flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-[#64748B]">
+          <span>Job ID: <code className="font-mono text-[#0F172A]">{job.id}</code></span>
+          <a
+            href={getReportJobMailto(job)}
+            data-testid="report-issue-detail-link"
+            className="inline-flex items-center gap-1.5 text-[#475569] hover:text-[#2563EB] transition-colors min-h-[44px] py-1 cursor-pointer"
+          >
+            <Flag className="w-3.5 h-3.5" />
+            <span>Report issue with this listing</span>
+          </a>
+        </div>
       </div>
 
       {/* 4. Requirements Section (only if data exists) */}
@@ -445,6 +583,23 @@ export default function JobDetailView({
         className={`md:hidden fixed ${user ? "bottom-16" : "bottom-0"} inset-x-0 z-30 bg-white/95 backdrop-blur-md border-t border-[#E2E8F0] p-4 flex items-center justify-between gap-3 shadow-lg`}
       >
         <div className="flex items-center gap-2 min-w-0">
+          <button
+            type="button"
+            onClick={handleShare}
+            data-testid="mobile-share-job-button"
+            aria-label={shareStatus === "success" ? "Link copied" : "Share job"}
+            className={`w-10 h-10 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full border transition cursor-pointer shrink-0 ${
+              shareStatus === "success"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                : "border-[#E2E8F0] bg-[#F1F5F9] text-[#475569]"
+            }`}
+          >
+            {shareStatus === "success" ? (
+              <Check className="w-4 h-4 text-emerald-600" />
+            ) : (
+              <Share2 className="w-4 h-4" />
+            )}
+          </button>
           <button
             type="button"
             onClick={onSave}
@@ -489,6 +644,18 @@ export default function JobDetailView({
           </button>
         )}
       </div>
+
+      {/* Mobile Copied Notification Toast */}
+      {shareStatus === "success" && (
+        <div
+          data-testid="share-success-banner"
+          role="status"
+          className="sm:hidden fixed bottom-28 left-1/2 -translate-x-1/2 z-40 bg-[#0F172A] text-white text-xs font-medium px-4 py-2 rounded-full shadow-lg flex items-center gap-1.5 animate-fadeIn"
+        >
+          <Check className="w-3.5 h-3.5 text-emerald-400" />
+          <span>Link copied</span>
+        </div>
+      )}
     </div>
   );
 }

@@ -32,6 +32,8 @@ function run() {
 
   if (isNegativeControl) {
     // Deliberately inject corruptions to verify negative control failure detection
+    loginCode = loginCode.replace(/z-\[70\]/g, "z-40");
+    loginCode = loginCode.replace(/z-\[71\]/g, "z-50");
     loginCode = loginCode.replace(/sm:max-w-\[488px\]/g, "max-w-[800px]");
     loginCode = loginCode.replace(/Welcome back to/g, "Incorrect Heading");
     loginCode = loginCode.replace(/sm:bg-\[#F3F4F5\]/g, "bg-red-500");
@@ -47,12 +49,20 @@ function run() {
   // -------------------------------------------------------------------------
   // 1. MODAL CARD DIMENSIONS, PADDING, BACKDROP & MOBILE DRAWER SPEC
   // -------------------------------------------------------------------------
-  const hasLoginBackdrop = loginCode.includes('data-testid="auth-backdrop"') && loginCode.includes("fixed inset-0 bg-black/40");
-  const hasSignupBackdrop = signupCode.includes('data-testid="auth-backdrop"') && signupCode.includes("fixed inset-0 bg-black/40");
+  const hasLoginBackdrop = loginCode.includes('data-testid="auth-backdrop"') && loginCode.includes("fixed inset-0 bg-black/40") && loginCode.includes("z-[70]");
+  const hasSignupBackdrop = signupCode.includes('data-testid="auth-backdrop"') && signupCode.includes("fixed inset-0 bg-black/40") && signupCode.includes("z-[70]");
   if (!hasLoginBackdrop || !hasSignupBackdrop) {
-    failures.push("BACKDROP FAIL: Both /login and /signup must render a dimmed backdrop (fixed inset-0 bg-black/40).");
+    failures.push("BACKDROP FAIL: Both /login and /signup must render a dimmed backdrop with z-[70] (above CookieNotice z-50 and nav z-[60]).");
   } else {
-    console.log("  [PASS] dimmed backdrop: Dimmed backdrop present over auth route page");
+    console.log("  [PASS] dimmed backdrop: Dimmed backdrop present with z-[70] over auth route page");
+  }
+
+  const hasLoginCardZ = loginCode.includes("z-[71]");
+  const hasSignupCardZ = signupCode.includes("z-[71]");
+  if (!hasLoginCardZ || !hasSignupCardZ) {
+    failures.push("CARD Z-INDEX FAIL: Auth card/drawer must use z-[71] to stay above backdrop z-[70] and CookieNotice z-50.");
+  } else {
+    console.log("  [PASS] auth card z-index: Auth card/drawer at z-[71] above backdrop z-[70] and CookieNotice z-50");
   }
 
   const hasLoginDesktopCardDims =

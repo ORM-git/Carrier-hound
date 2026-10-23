@@ -191,3 +191,50 @@ All visual artifacts captured and stored in `reports/prompt8-auth/`:
 3. [`scripts/test-mobile-nav-stacking.cjs`](file:///d:/Carrer-hound/scripts/test-mobile-nav-stacking.cjs): Created automated browser test suite verifying drawer stacking above CookieNotice, hit testing on Sign Out button, interactive click with mocked handler, close button, Escape key, focus return, and 390x600 short screen reachability.
 4. [`scripts/capture-sidebar-screenshots.cjs`](file:///d:/Carrer-hound/scripts/capture-sidebar-screenshots.cjs): Updated screenshot capture runner.
 5. [`reports/prompt8-auth/auth-presentation-report.md`](file:///d:/Carrer-hound/reports/prompt8-auth/auth-presentation-report.md): Updated audit and verification documentation.
+
+---
+
+## 6. Prompt 1/4: Auth Overlays (Cookie Fix) & Job-Detail Actions
+
+### 6.1. Stacking Order Resolution (Auth Backdrops & Drawers)
+To prevent the root `CookieNotice` (`z-50`) from occluding bottom links on mobile `/login` and `/signup`:
+- **Auth Backdrop**: Set to `z-[70]` in both `src/app/login/page.tsx` and `src/app/signup/page.tsx`.
+- **Auth Card/Drawer**: Set to `z-[71]` in both pages.
+- **Navigation Layers**: Retained at `z-[60]` (backdrop) and `z-[61]` (drawer) in `AppTopBar.tsx`.
+- **Root Cookie Notice**: Retained at `z-50` in `CookieNotice.tsx` without auto-dismissal or altering consent logic.
+- **Desktop Geometry**: Unaltered (centred 488px card, 24px radius, 48px/32px padding).
+
+#### Stacking Hierarchy Matrix
+| Surface | Z-Index Layer | DOM Location | Relative Order |
+| :--- | :--- | :--- | :--- |
+| **Auth Card / Drawer** | `z-[71]` | `src/app/login/page.tsx`, `signup/page.tsx` | Highest active modal surface |
+| **Auth Backdrop** | `z-[70]` | `src/app/login/page.tsx`, `signup/page.tsx` | Above nav & cookie notice |
+| **Mobile Nav Drawer** | `z-[61]` | `src/components/shell/AppTopBar.tsx` | Above nav backdrop & cookie notice |
+| **Mobile Nav Backdrop** | `z-[60]` | `src/components/shell/AppTopBar.tsx` | Above cookie notice |
+| **Cookie Notice** | `z-50` | `src/components/CookieNotice.tsx` | Global bottom banner |
+
+### 6.2. Job-Detail Actions (Share & Report Issue)
+1. **Canonical Job URL Sharing**:
+   - `getCanonicalJobUrl(jobId)` pure helper strictly generates `${base}/jobs?id=${encodeURIComponent(jobId)}`.
+   - Strips all private, tracking, and session query parameters (`search`, `tab`, `session`, `token`, `utm_*`).
+   - Reuses `getSiteUrl()` from `@/lib/siteUrl` with fallback to `window.location.origin`.
+2. **Share Control Success & Failure Handling**:
+   - Success: Copies canonical URL to clipboard, button switches to emerald state (`border-emerald-200 bg-emerald-50 text-emerald-700`) with `<Check>` icon and `"Link copied"` text.
+   - Failure: When clipboard API is unavailable or throws, `"Link copied"` is **strictly omitted**. Renders an accessible alert box (`role="alert"`, `data-testid="share-fallback-container"`) containing `"Unable to copy automatically"`, a dismiss button, and an auto-selecting read-only input (`data-testid="share-fallback-input"`) with the canonical URL for manual copying.
+   - Mobile: Dedicated 44px tap target Share button added to the sticky bottom apply bar, with mobile floating confirmation toast (`data-testid="share-success-banner"`) on success and top fallback on failure.
+3. **Report Issue Inspection & Gap Analysis**:
+   - **Inspection**: Codebase search across `src/`, `netlify/`, and `reports/` confirmed that `support@careermonke.com` is the platform's verified configured destination (referenced in `src/app/page.tsx:438`, `src/components/Footer.tsx:325`, `src/components/auth/BlockedAccountNotice.tsx:43`, and `src/app/terms-and-conditions/page.tsx:18`).
+   - **Gap Analysis**: CareerMonke currently has **no dedicated backend ticketing API** or database table (e.g. `/api/jobs/report` or `job_reports` table) for automated issue submission.
+   - **Implementation**: Reused verified `support@careermonke.com` destination via structured `mailto:` link (`getReportJobMailto`) with sanitized public job context (`[Job Issue] ${job.title} (${job.id})`, company, canonical URL) and **zero private candidate data**.
+
+### 6.3. Prompt 1/4 Visual Artifacts
+- **Mobile Login (390x844) Stacking**: [mobile-login-390x844-cookie-stacking.png](file:///d:/Carrer-hound/reports/prompt8-auth/mobile-login-390x844-cookie-stacking.png)
+- **Mobile Signup (390x844) Stacking**: [mobile-signup-390x844-cookie-stacking.png](file:///d:/Carrer-hound/reports/prompt8-auth/mobile-signup-390x844-cookie-stacking.png)
+- **Mobile Login (390x600) Short View**: [mobile-login-390x600-cookie-stacking.png](file:///d:/Carrer-hound/reports/prompt8-auth/mobile-login-390x600-cookie-stacking.png)
+- **Mobile Signup (390x600) Short View**: [mobile-signup-390x600-cookie-stacking.png](file:///d:/Carrer-hound/reports/prompt8-auth/mobile-signup-390x600-cookie-stacking.png)
+- **Job Detail Desktop Actions**: [job-detail-desktop-actions.png](file:///d:/Carrer-hound/reports/prompt8-auth/job-detail-desktop-actions.png)
+- **Job Detail Desktop Share Success**: [job-detail-share-success-desktop.png](file:///d:/Carrer-hound/reports/prompt8-auth/job-detail-share-success-desktop.png)
+- **Job Detail Desktop Share Failure Fallback**: [job-detail-share-failure-desktop.png](file:///d:/Carrer-hound/reports/prompt8-auth/job-detail-share-failure-desktop.png)
+- **Job Detail Mobile Actions**: [job-detail-mobile-actions.png](file:///d:/Carrer-hound/reports/prompt8-auth/job-detail-mobile-actions.png)
+- **Job Detail Mobile Share Success**: [job-detail-share-success-mobile.png](file:///d:/Carrer-hound/reports/prompt8-auth/job-detail-share-success-mobile.png)
+- **Job Detail Mobile Share Failure Fallback**: [job-detail-share-failure-mobile.png](file:///d:/Carrer-hound/reports/prompt8-auth/job-detail-share-failure-mobile.png)
