@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useState } from "react";
 import {
   Users,
   Search,
@@ -14,14 +14,19 @@ import {
   Eye,
   X,
   AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import type { UserManagementItem, PageViewRecord } from "@/lib/admin/analytics";
+
+const USERS_PER_PAGE = 25;
 
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<UserManagementItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [filter, setFilter] = useState<"all" | "pro" | "free" | "blocked">("all");
+  const [page, setPage] = useState<number>(1);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [feedbackMsg, setFeedbackMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
@@ -29,6 +34,11 @@ export default function AdminUsersPage() {
   const [selectedUser, setSelectedUser] = useState<UserManagementItem | null>(null);
   const [activity, setActivity] = useState<PageViewRecord[]>([]);
   const [activityLoading, setActivityLoading] = useState<boolean>(false);
+  const [activitySummary, setActivitySummary] = useState<{
+    views24h: number;
+    views7d: number;
+    totalRecordedViews: number;
+  } | null>(null);
 
   // Block modal confirmation state
   const [blockingUser, setBlockingUser] = useState<UserManagementItem | null>(null);
@@ -74,6 +84,7 @@ export default function AdminUsersPage() {
       const data = await res.json();
       if (data.ok && Array.isArray(data.users)) {
         setUsers(data.users);
+        setPage(1);
       }
     } catch (_) {
       setFeedbackMsg({ type: "error", text: "Failed to load users list." });
@@ -83,7 +94,6 @@ export default function AdminUsersPage() {
   };
 
   useEffect(() => {
-    // If URL has search query param
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       const q = params.get("q") || "";
@@ -105,6 +115,7 @@ export default function AdminUsersPage() {
     setSelectedUser(user);
     setActivityLoading(true);
     setActivity([]);
+    setActivitySummary(null);
     try {
       const authHeader = await getAuthHeader();
       const res = await fetch(`/api/admin/users/activity?userId=${user.id}`, {
@@ -113,6 +124,9 @@ export default function AdminUsersPage() {
       const data = await res.json();
       if (data.ok && Array.isArray(data.activity)) {
         setActivity(data.activity);
+        if (data.summary) {
+          setActivitySummary(data.summary);
+        }
       }
     } catch (_) {
       //
@@ -145,7 +159,6 @@ export default function AdminUsersPage() {
         text: data.message || (action === "block" ? "User blocked successfully." : "User unblocked successfully."),
       });
 
-      // Update state locally
       setUsers((prev) =>
         prev.map((u) => (u.id === user.id ? { ...u, isBlocked: action === "block" } : u))
       );
@@ -166,6 +179,13 @@ export default function AdminUsersPage() {
     if (filter === "blocked") return u.isBlocked;
     return true;
   });
+
+  // Bounded pagination logic
+  const totalFiltered = filteredUsers.length;
+  const totalPages = Math.max(1, Math.ceil(totalFiltered / USERS_PER_PAGE));
+  const safePage = Math.min(Math.max(1, page), totalPages);
+  const startIdx = (safePage - 1) * USERS_PER_PAGE;
+  const paginatedUsers = filteredUsers.slice(startIdx, startIdx + USERS_PER_PAGE);
 
   return (
     <div className="space-y-6">
@@ -218,7 +238,10 @@ export default function AdminUsersPage() {
             aria-label="Search users by email address"
             placeholder="Search users by email address..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setPage(1);
+            }}
             className="w-full pl-9 pr-20 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent shadow-sm"
           />
           <button
@@ -232,7 +255,10 @@ export default function AdminUsersPage() {
         {/* Filter Pills */}
         <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm self-start">
           <button
-            onClick={() => setFilter("all")}
+            onClick={() => {
+              setFilter("all");
+              setPage(1);
+            }}
             className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
               filter === "all" ? "bg-slate-900 text-white" : "text-slate-600 hover:text-slate-900"
             }`}
@@ -240,7 +266,10 @@ export default function AdminUsersPage() {
             All ({users.length})
           </button>
           <button
-            onClick={() => setFilter("pro")}
+            onClick={() => {
+              setFilter("pro");
+              setPage(1);
+            }}
             className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
               filter === "pro" ? "bg-slate-900 text-white" : "text-slate-600 hover:text-slate-900"
             }`}
@@ -248,7 +277,10 @@ export default function AdminUsersPage() {
             Pro ({users.filter((u) => u.isPro).length})
           </button>
           <button
-            onClick={() => setFilter("free")}
+            onClick={() => {
+              setFilter("free");
+              setPage(1);
+            }}
             className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
               filter === "free" ? "bg-slate-900 text-white" : "text-slate-600 hover:text-slate-900"
             }`}
@@ -256,7 +288,10 @@ export default function AdminUsersPage() {
             Free ({users.filter((u) => !u.isPro).length})
           </button>
           <button
-            onClick={() => setFilter("blocked")}
+            onClick={() => {
+              setFilter("blocked");
+              setPage(1);
+            }}
             className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
               filter === "blocked" ? "bg-slate-900 text-white" : "text-slate-600 hover:text-slate-900"
             }`}
@@ -274,7 +309,7 @@ export default function AdminUsersPage() {
               <tr>
                 <th scope="col" className="px-5 py-3.5">User Email</th>
                 <th scope="col" className="px-5 py-3.5">Signup Date</th>
-                <th scope="col" className="px-5 py-3.5">Pro Status</th>
+                <th scope="col" className="px-5 py-3.5">Plan</th>
                 <th scope="col" className="px-5 py-3.5">Last Active</th>
                 <th scope="col" className="px-5 py-3.5 text-center">Page Views</th>
                 <th scope="col" className="px-5 py-3.5">Status</th>
@@ -295,7 +330,7 @@ export default function AdminUsersPage() {
                   </td>
                 </tr>
               ) : (
-                filteredUsers.map((user) => {
+                paginatedUsers.map((user) => {
                   const isAdminUser = user.email === "xbsuryakant@gmail.com";
                   const isProcessing = actionLoadingId === user.id;
 
@@ -313,11 +348,15 @@ export default function AdminUsersPage() {
                         <div className="text-xs text-slate-400 font-mono mt-0.5">{user.id}</div>
                       </td>
                       <td className="px-5 py-3.5 text-xs text-slate-600">
-                        {new Date(user.createdAt).toLocaleDateString("en-US", {
-                          year: "numeric",
-                          month: "short",
-                          day: "numeric",
-                        })}
+                        {user.createdAt ? (
+                          new Date(user.createdAt).toLocaleDateString("en-US", {
+                            year: "numeric",
+                            month: "short",
+                            day: "numeric",
+                          })
+                        ) : (
+                          <span className="text-slate-400 italic">Unavailable</span>
+                        )}
                       </td>
                       <td className="px-5 py-3.5">
                         {user.isPro ? (
@@ -332,13 +371,15 @@ export default function AdminUsersPage() {
                         )}
                       </td>
                       <td className="px-5 py-3.5 text-xs text-slate-600">
-                        {user.lastSignInAt
-                          ? new Date(user.lastSignInAt).toLocaleDateString("en-US", {
-                              year: "numeric",
-                              month: "short",
-                              day: "numeric",
-                            })
-                          : "Never"}
+                        {user.lastSignInAt ? (
+                          new Date(user.lastSignInAt).toLocaleDateString("en-US", {
+                            year: "numeric",
+                            month: "short",
+                            day: "numeric",
+                          })
+                        ) : (
+                          <span className="text-slate-400 italic">Unavailable</span>
+                        )}
                       </td>
                       <td className="px-5 py-3.5 text-center">
                         <button
@@ -393,6 +434,40 @@ export default function AdminUsersPage() {
             </tbody>
           </table>
         </div>
+
+        {/* Bounded Pagination Controls */}
+        {totalFiltered > 0 && (
+          <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600">
+            <div>
+              Showing <span className="font-semibold text-slate-900">{startIdx + 1}</span> to{" "}
+              <span className="font-semibold text-slate-900">{Math.min(startIdx + USERS_PER_PAGE, totalFiltered)}</span> of{" "}
+              <span className="font-semibold text-slate-900">{totalFiltered}</span> users
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={safePage <= 1}
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded border border-slate-200 bg-white font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm transition-colors"
+                aria-label="Previous page"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+                <span>Previous</span>
+              </button>
+              <span className="font-semibold text-slate-900 px-2">
+                Page {safePage} of {totalPages}
+              </span>
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={safePage >= totalPages}
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded border border-slate-200 bg-white font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm transition-colors"
+                aria-label="Next page"
+              >
+                <span>Next</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* User Activity Modal */}
@@ -406,54 +481,102 @@ export default function AdminUsersPage() {
             {/* Modal Header */}
             <div className="p-5 border-b border-slate-200 flex items-center justify-between">
               <div>
-                <h3 className="text-base font-bold text-slate-900">User Activity Timeline</h3>
+                <h3 className="text-base font-bold text-slate-900">User Usage & Activity Summary</h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Page journeys recorded for <span className="font-semibold text-slate-800">{selectedUser.email}</span>
+                  Page journeys and usage metrics for <span className="font-semibold text-slate-800">{selectedUser.email}</span>
                 </p>
               </div>
               <button
                 onClick={() => setSelectedUser(null)}
                 className="text-slate-400 hover:text-slate-600 p-1 rounded-md"
+                aria-label="Close dialog"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Modal Body */}
-            <div className="p-5 flex-1 overflow-y-auto">
-              {activityLoading ? (
-                <div className="py-12 text-center text-slate-400 text-sm">
-                  Loading activity log...
+            <div className="p-5 flex-1 overflow-y-auto space-y-4">
+              {/* 24h & 7d Usage Summary Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+                  <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Past 24h</div>
+                  <div className="text-lg font-bold text-slate-900 mt-1">
+                    {activitySummary ? activitySummary.views24h : "..."}{" "}
+                    <span className="text-xs font-normal text-slate-500">views</span>
+                  </div>
                 </div>
-              ) : activity.length === 0 ? (
-                <div className="py-12 text-center text-slate-400 text-sm">
-                  No individual page views recorded for this user yet.
+                <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+                  <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Past 7d</div>
+                  <div className="text-lg font-bold text-slate-900 mt-1">
+                    {activitySummary ? activitySummary.views7d : "..."}{" "}
+                    <span className="text-xs font-normal text-slate-500">views</span>
+                  </div>
                 </div>
-              ) : (
-                <div className="space-y-3">
-                  {activity.map((entry, idx) => (
-                    <div
-                      key={idx}
-                      className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono font-semibold text-blue-700 bg-blue-100 px-2 py-0.5 rounded">
-                          {entry.path}
-                        </span>
-                        {entry.referrer && (
-                          <span className="text-slate-400 text-[11px] truncate max-w-xs" title={`Referrer: ${entry.referrer}`}>
-                            via {entry.referrer}
+                <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+                  <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">All-Time</div>
+                  <div className="text-lg font-bold text-slate-900 mt-1">
+                    {selectedUser.totalViews}{" "}
+                    <span className="text-xs font-normal text-slate-500">views</span>
+                  </div>
+                </div>
+                <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+                  <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Status</div>
+                  <div className="mt-1 flex items-center">
+                    {selectedUser.isBlocked ? (
+                      <span className="text-xs font-bold text-red-700 bg-red-100 px-2 py-0.5 rounded">Blocked</span>
+                    ) : (
+                      <span className="text-xs font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded">Active</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Telemetry Disclosures */}
+              <div className="p-3 rounded-lg bg-amber-50/70 border border-amber-200 text-xs text-amber-900 flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div className="leading-relaxed">
+                  <span className="font-semibold">Telemetry Boundaries Notice:</span> Metrics reflect generic page visits from the <code className="font-mono text-[11px] bg-amber-100 px-1 py-0.5 rounded">page_views</code> table. Granular job searches, application outbound clicks, and individual AI completions are not recorded per account in the database. No synthetic abuse thresholds or automatic suspensions are enforced.
+                </div>
+              </div>
+
+              {/* Individual Page Hits */}
+              <div>
+                <h4 className="text-xs font-semibold text-slate-700 mb-2 uppercase tracking-wider">Recent Page Visits</h4>
+                {activityLoading ? (
+                  <div className="py-8 text-center text-slate-400 text-sm">
+                    Loading activity log...
+                  </div>
+                ) : activity.length === 0 ? (
+                  <div className="py-8 text-center text-slate-400 text-sm">
+                    No individual page views recorded for this user yet.
+                  </div>
+                ) : (
+                  <div className="space-y-2.5 max-h-60 overflow-y-auto pr-1">
+                    {activity.map((entry, idx) => (
+                      <div
+                        key={idx}
+                        className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono font-semibold text-blue-700 bg-blue-100 px-2 py-0.5 rounded">
+                            {entry.path}
                           </span>
-                        )}
+                          {entry.referrer && (
+                            <span className="text-slate-400 text-[11px] truncate max-w-xs" title={`Referrer: ${entry.referrer}`}>
+                              via {entry.referrer}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-slate-500 font-mono text-[11px] flex items-center gap-1 shrink-0">
+                          <Clock className="w-3 h-3 text-slate-400" />
+                          <span>{new Date(entry.created_at).toLocaleString()}</span>
+                        </div>
                       </div>
-                      <div className="text-slate-500 font-mono text-[11px] flex items-center gap-1">
-                        <Clock className="w-3 h-3 text-slate-400" />
-                        <span>{new Date(entry.created_at).toLocaleString()}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Modal Footer */}
@@ -491,33 +614,35 @@ export default function AdminUsersPage() {
             </p>
 
             <div className="mb-4">
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
+              <label htmlFor="block-reason-input" className="block text-xs font-semibold text-slate-700 mb-1.5">
                 Reason for suspension (optional)
               </label>
-              <input
-                type="text"
-                aria-label="Reason for suspension (optional)"
-                placeholder="e.g. Terms violation, scraping, suspicious activity"
+              <textarea
+                id="block-reason-input"
                 value={blockReason}
                 onChange={(e) => setBlockReason(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-600"
+                placeholder="e.g. Terms violation, scrapers, fraudulent activity..."
+                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500"
+                rows={3}
               />
             </div>
 
-            <div className="flex items-center justify-end gap-3">
+            <div className="flex items-center justify-end gap-2.5">
               <button
+                type="button"
                 onClick={() => {
                   setBlockingUser(null);
                   setBlockReason("");
                 }}
-                className="px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+                className="px-4 py-2 text-xs font-medium text-slate-600 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
               >
                 Cancel
               </button>
               <button
+                type="button"
                 onClick={() => handleBlockAction(blockingUser, "block", blockReason)}
                 disabled={actionLoadingId === blockingUser.id}
-                className="px-4 py-2 text-xs font-semibold bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors disabled:opacity-50"
+                className="px-4 py-2 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg shadow-sm transition-colors disabled:opacity-50"
               >
                 {actionLoadingId === blockingUser.id ? "Blocking..." : "Confirm & Block"}
               </button>
