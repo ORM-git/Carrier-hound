@@ -112,7 +112,7 @@ function runAudit() {
   const hasLogo32px = trackerCode.includes("w-8 h-8 rounded-lg");
   const hasTitle14px = trackerCode.includes("text-[14px] font-bold text-[#0F172A]");
   const hasCompany13px = trackerCode.includes("text-[13px] text-[#475569]");
-  const hasDate12px = trackerCode.includes("text-[12px] text-[#94A3B8]");
+  const hasDate12px = trackerCode.includes("text-[12px] text-[#94A3B8]") || trackerCode.includes("text-[12px] text-[#64748B]");
 
   if (hasCardRadius && hasCardRing && hasCardPadding && hasLogo32px && hasTitle14px && hasCompany13px && hasDate12px) {
     console.log("  [PASS] Tracker Cards: white, 12px radius, 1px #E2E8F0 ring, 14px padding, 32px logo, 14px title, 13px company, 12px date");
@@ -187,7 +187,7 @@ function runAudit() {
   // - Row of real icon buttons: view, rename, delete
   const hasFileIconTile = resumeCode.includes("w-10 h-10 rounded-lg bg-[#EFF6FF]") && resumeCode.includes("border-[#BFDBFE]");
   const hasResumeName15 = resumeCode.includes("text-[15px] font-bold text-[#0F172A]");
-  const hasUploadedDate13 = resumeCode.includes("text-[13px] text-[#94A3B8]") && resumeCode.includes("Uploaded");
+  const hasUploadedDate13 = (resumeCode.includes("text-[13px] text-[#94A3B8]") || resumeCode.includes("text-[13px] text-[#64748B]")) && resumeCode.includes("Uploaded");
   const hasStatusChip = resumeCode.includes('data-testid="resume-status-chip"') &&
     resumeCode.includes("Confirmed") &&
     resumeCode.includes("Needs review");

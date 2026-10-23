@@ -89,7 +89,7 @@ export default function RadarPage() {
       pageLabel="RADAR"
       user={user}
       isPro={true}
-      mainClassName="flex-1 w-full relative bg-[#040610] overflow-hidden"
+      mainClassName="flex-1 w-full relative bg-[#040610] overflow-hidden flex flex-col"
     >
       <JobRadarGlobe />
     </LoggedInAppShell>

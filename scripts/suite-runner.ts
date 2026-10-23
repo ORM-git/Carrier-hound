@@ -93,11 +93,16 @@ function main() {
   let passed = 0;
   let failed = 0;
   let blocked = 0;
+  let skipped = 0;
+  const skippedSuites: Array<{ name: string; reason: string }> = [];
+  const blockedSuites: Array<{ name: string; reason: string }> = [];
 
   for (const suite of SUITES) {
     if (suite.requiresSupabase && !hasDb) {
-      console.log(`⏸️  [BLOCKED] ${suite.name} — Skipped (SUPABASE credentials not set in environment)`);
+      const reason = "SUPABASE credentials not set in environment";
+      console.log(`⏸️  [BLOCKED] ${suite.name} — ${reason}`);
       blocked++;
+      blockedSuites.push({ name: suite.name, reason });
       continue;
     }
 
@@ -107,12 +112,22 @@ function main() {
       encoding: "utf8",
       shell: true,
       timeout: 120000,
+      env: {
+        ...process.env,
+        TEST_DB: "0", // Safety lock: protect live database from throwaway inserts
+      },
     });
     const elapsed = ((Date.now() - start) / 1000).toFixed(2) + "s";
     const output = `${res.stdout || ""}\n${res.stderr || ""}`.trim();
     const hasFailureMarker = /(?:^|\n)\s*(?:❌\s*FAIL|FAIL:|⚠️ SOME VERIFICATION TESTS FAILED|TEST SUITE FAILED)/i.test(output);
+    const skipMatch = output.match(/(?:^|\n)\s*\[SKIPPED\]\s*(.*)/i);
 
-    if (res.status === 0 && !hasFailureMarker) {
+    if (skipMatch) {
+      const reason = skipMatch[1]?.trim() || "Skipped by safety gate";
+      console.log(`⏸️  [SKIP]    ${suite.name} (${elapsed}) — ${reason}`);
+      skipped++;
+      skippedSuites.push({ name: suite.name, reason });
+    } else if (res.status === 0 && !hasFailureMarker) {
       console.log(`✅ [PASS]    ${suite.name} (${elapsed})`);
       passed++;
     } else {
@@ -131,7 +146,19 @@ function main() {
   }
 
   console.log("\n================================================================================");
-  console.log(`SUMMARY: ${passed} passed, ${failed} failed, ${blocked} blocked/skipped`);
+  console.log(`SUMMARY: ${passed} passed, ${failed} failed, ${skipped} skipped, ${blocked} blocked`);
+  if (skippedSuites.length > 0) {
+    console.log("\nSKIPPED SUITES:");
+    for (const s of skippedSuites) {
+      console.log(`  - ${s.name}: ${s.reason}`);
+    }
+  }
+  if (blockedSuites.length > 0) {
+    console.log("\nBLOCKED SUITES:");
+    for (const b of blockedSuites) {
+      console.log(`  - ${b.name}: ${b.reason}`);
+    }
+  }
   console.log("================================================================================");
 
   if (failed > 0) {

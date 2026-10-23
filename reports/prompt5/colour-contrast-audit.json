@@ -1,0 +1,72 @@
+[
+  {
+    "page": "/dashboard",
+    "element": "Dashboard Greeting Heading",
+    "fg": "rgb(15, 23, 42)",
+    "bg": "rgb(255, 255, 255)",
+    "font": "18px / 700",
+    "ratio": "17.85:1",
+    "minReq": "4.5:1",
+    "status": "PASS"
+  },
+  {
+    "page": "/jobs?jobId=mock_job_1",
+    "element": "Job Detail Title",
+    "fg": "rgb(15, 23, 42)",
+    "bg": "rgb(255, 255, 255)",
+    "font": "18px / 700",
+    "ratio": "17.85:1",
+    "minReq": "4.5:1",
+    "status": "PASS"
+  },
+  {
+    "page": "/jobs?jobId=mock_job_1",
+    "element": "Job Detail Skills Warning Text",
+    "fg": "rgb(146, 64, 14)",
+    "bg": "rgb(254, 243, 199)",
+    "font": "12px / 700",
+    "ratio": "6.37:1",
+    "minReq": "4.5:1",
+    "status": "PASS"
+  },
+  {
+    "page": "/resume",
+    "element": "Resume Confirmed Status Chip",
+    "fg": "rgb(22, 101, 52)",
+    "bg": "rgb(220, 252, 231)",
+    "font": "11px / 600",
+    "ratio": "6.49:1",
+    "minReq": "4.5:1",
+    "status": "PASS"
+  },
+  {
+    "page": "/resume",
+    "element": "Resume Table Header",
+    "fg": "rgb(15, 23, 42)",
+    "bg": "rgb(255, 255, 255)",
+    "font": "13px / 600",
+    "ratio": "17.85:1",
+    "minReq": "4.5:1",
+    "status": "PASS"
+  },
+  {
+    "page": "/profile",
+    "element": "Profile Name Title",
+    "fg": "rgb(15, 23, 42)",
+    "bg": "rgb(255, 255, 255)",
+    "font": "18px / 700",
+    "ratio": "17.85:1",
+    "minReq": "4.5:1",
+    "status": "PASS"
+  },
+  {
+    "page": "/settings",
+    "element": "Settings Title Heading",
+    "fg": "rgb(15, 23, 42)",
+    "bg": "rgb(255, 255, 255)",
+    "font": "18px / 700",
+    "ratio": "17.85:1",
+    "minReq": "4.5:1",
+    "status": "PASS"
+  }
+]

@@ -477,7 +477,7 @@ export default function TrackerPage() {
                     <div>
                       <div className="flex items-start justify-between gap-1.5">
                         <span className="font-bold text-[13px] text-[#0F172A] line-clamp-1">{item.title}</span>
-                        <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-[#DCFCE7] text-[#16A34A] shrink-0">
+                        <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-[#DCFCE7] text-[#166534] shrink-0">
                           {item.score}% Match
                         </span>
                       </div>
@@ -586,7 +586,7 @@ export default function TrackerPage() {
                       {colApps.length === 0 ? (
                         /* Empty column: dashed #CBD5E1 border, one muted line of existing wording */
                         <div className="h-32 border-2 border-dashed border-[#CBD5E1] rounded-[12px] flex items-center justify-center p-4 text-center">
-                          <span className="text-[12px] text-[#94A3B8] font-medium">
+                          <span className="text-[12px] text-[#64748B] font-medium">
                             Drop applications here
                           </span>
                         </div>
@@ -622,7 +622,7 @@ export default function TrackerPage() {
                                     <button
                                       type="button"
                                       onClick={() => handleDelete(app.id)}
-                                      className="text-[#94A3B8] hover:text-[#DC2626] transition p-1 cursor-pointer shrink-0 min-h-[28px] min-w-[28px] flex items-center justify-center"
+                                      className="text-[#64748B] hover:text-[#DC2626] transition p-1 cursor-pointer shrink-0 min-h-[28px] min-w-[28px] flex items-center justify-center"
                                       title="Remove application"
                                     >
                                       <Trash2 className="w-3.5 h-3.5" />
@@ -654,14 +654,14 @@ export default function TrackerPage() {
                                   </span>
                                 )}
                                 {app.salaryText && (
-                                  <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-[#DCFCE7] text-[#16A34A] truncate max-w-[140px]">
+                                  <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-[#DCFCE7] text-[#166534] truncate max-w-[140px]">
                                     {app.salaryText}
                                   </span>
                                 )}
                               </div>
 
-                              {/* Applied/updated date 12px #94A3B8 */}
-                              <div className="text-[12px] text-[#94A3B8] flex items-center gap-1">
+                              {/* Applied/updated date 12px #64748B */}
+                              <div className="text-[12px] text-[#64748B] flex items-center gap-1">
                                 <Clock className="w-3 h-3 shrink-0" />
                                 <span>
                                   {app.appliedAt
@@ -746,7 +746,7 @@ export default function TrackerPage() {
                   <tbody className="divide-y divide-[#E2E8F0]">
                     {filteredApps.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="py-8 text-center text-[#94A3B8]">
+                        <td colSpan={6} className="py-8 text-center text-[#64748B]">
                           No applications tracked yet. Click "Add application" to add one.
                         </td>
                       </tr>
@@ -769,7 +769,7 @@ export default function TrackerPage() {
                               />
                             </div>
                             <div className="text-xs text-[#475569] flex items-center gap-1 mt-0.5">
-                              <Building className="w-3 h-3 text-[#94A3B8]" />
+                              <Building className="w-3 h-3 text-[#64748B]" />
                               <span>{app.company}</span>
                             </div>
                           </td>
@@ -789,7 +789,7 @@ export default function TrackerPage() {
                           <td className="py-3.5 px-4 hidden sm:table-cell text-xs text-[#475569]">
                             <div>{app.location || "Remote"}</div>
                             {app.salaryText && (
-                              <div className="text-[#16A34A] font-medium text-xs">
+                              <div className="text-[#166534] font-medium text-xs">
                                 {app.salaryText}
                               </div>
                             )}

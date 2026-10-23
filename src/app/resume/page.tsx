@@ -244,9 +244,9 @@ export default function ResumePage() {
 
   return (
     <LoggedInAppShell pageLabel="RESUME" user={user} isPro={isPro}>
-      <div className="max-w-[1176px] mx-auto px-4 sm:px-6 py-6 sm:py-8 w-full space-y-6">
+      <div className="w-full max-w-[1176px] mx-auto px-4 lg:px-0 py-6 sm:py-8 space-y-6">
         {/* ================================================================= */}
-        {/* PAGE HEADER: "RESUME" bold 24px + primary blue pill upload action */}
+        {/* PAGE HEADER: "RESUME" bold 24px                                   */}
         {/* ================================================================= */}
         <div
           data-testid="resume-page-header"
@@ -260,20 +260,10 @@ export default function ResumePage() {
               Manage your verified resumes and confirmed background facts for automated matching.
             </p>
           </div>
-
-          <button
-            type="button"
-            data-testid="upload-resume-button"
-            onClick={() => setIsUploadModalOpen(true)}
-            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 min-h-[44px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-[14px] font-bold transition shadow-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1 shrink-0 self-start sm:self-auto"
-          >
-            <UploadCloud className="w-4 h-4" />
-            <span>Upload resume</span>
-          </button>
         </div>
 
         {/* ================================================================= */}
-        {/* INFO ROW: "You have 1 resume saved out of 5 available slots. (?)"  */}
+        {/* INFO ROW: Verified resume status & single + Add Resume entry point*/}
         {/* ================================================================= */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-1 text-[14px] font-medium text-[#0F172A]">
           <div className="flex items-center gap-2">
@@ -281,11 +271,13 @@ export default function ResumePage() {
               💬
             </span>
             <span>
-              You have {candidate ? 1 : 0} resume saved out of 5 available slots.
+              {candidate
+                ? "You have 1 verified resume active for AI tailoring and fit scoring."
+                : "No active resume. Upload a resume to ground AI tailoring and fit scoring."}
             </span>
             <span
-              title="CareerMonke provides 5 active resume slots for targeting multiple engineering, product, and leadership roles."
-              className="text-[#94A3B8] hover:text-[#0F172A] cursor-help inline-flex items-center"
+              title="CareerMonke uses your confirmed resume facts to calculate match scores and tailor applications."
+              className="text-[#64748B] hover:text-[#0F172A] cursor-help inline-flex items-center"
             >
               ⓘ
             </span>
@@ -293,8 +285,9 @@ export default function ResumePage() {
 
           <button
             type="button"
+            data-testid="upload-resume-button"
             onClick={() => setIsUploadModalOpen(true)}
-            className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg border border-[#E2E8F0] bg-white hover:bg-[#F8FAFC] text-[13px] font-semibold text-[#0F172A] transition shadow-2xs self-start sm:self-auto cursor-pointer"
+            className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg border border-[#E2E8F0] bg-white hover:bg-[#F8FAFC] text-[13px] font-semibold text-[#0F172A] transition shadow-2xs self-start sm:self-auto cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#93C5FD]"
           >
             <span className="w-4 h-4 rounded bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center font-bold text-xs">
               +
@@ -304,7 +297,7 @@ export default function ResumePage() {
         </div>
 
         {/* ================================================================= */}
-        {/* RESUMES TABLE CARD (Measured: 1176px max-w, 16px radius, 80px row)*/}
+        {/* RESUMES TABLE CARD (Measured: 1176px w, 16px radius, 80px row)    */}
         {/* ================================================================= */}
         {candidate ? (
           <div
@@ -318,12 +311,12 @@ export default function ResumePage() {
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="border-b border-[#E2E8F0] text-[13px] font-semibold text-[#0F172A] bg-white">
-                      <th className="py-3.5 px-5 font-semibold">Resume</th>
-                      <th className="py-3.5 px-4 font-semibold hidden md:table-cell">Target Job Title</th>
-                      <th className="py-3.5 px-4 font-semibold hidden lg:table-cell">Last Modified</th>
-                      <th className="py-3.5 px-4 font-semibold hidden sm:table-cell">Created</th>
-                      <th className="py-3.5 px-5 text-right font-semibold">
+                    <tr className="h-[49px] border-b border-[#E2E8F0] text-[13px] font-semibold text-[#0F172A] bg-white">
+                      <th className="py-3 px-6 font-semibold">Resume</th>
+                      <th className="py-3 px-4 font-semibold hidden md:table-cell">Target Job Title</th>
+                      <th className="py-3 px-4 font-semibold hidden lg:table-cell">Last Modified</th>
+                      <th className="py-3 px-4 font-semibold hidden sm:table-cell">Created</th>
+                      <th className="py-3 px-6 text-right font-semibold">
                         <span className="sr-only">Actions</span>
                       </th>
                     </tr>
@@ -331,7 +324,7 @@ export default function ResumePage() {
                   <tbody>
                     <tr className="h-[80px] border-b border-[#E2E8F0] last:border-b-0 hover:bg-[#F8FAFC]/80 transition-colors">
                       {/* Column 1: Resume */}
-                      <td className="py-2.5 px-5 align-middle">
+                      <td className="py-2.5 px-6 align-middle">
                         <div className="flex items-center gap-3.5 min-w-0">
                           {/* Hexagon/Tile Avatar */}
                           <div className="w-10 h-10 rounded-lg bg-[#EFF6FF] border border-[#BFDBFE] flex items-center justify-center text-[#2563EB] font-bold text-[15px] shrink-0">
@@ -351,11 +344,11 @@ export default function ResumePage() {
                               >
                                 <span>★</span>
                                 <span>PRIMARY</span>
-                                <span className="text-[10px] text-[#3B82F6]">ⓘ</span>
+                                <span className="text-[10px] text-[#2563EB]">ⓘ</span>
                               </span>
                             </div>
 
-                            <div className="text-[13px] text-[#94A3B8] flex items-center gap-2 flex-wrap">
+                            <div className="text-[13px] text-[#64748B] flex items-center gap-2 flex-wrap">
                               <span>Uploaded {formattedDate}</span>
                               {candidate.name && (
                                 <>
@@ -367,14 +360,14 @@ export default function ResumePage() {
                               {isConfirmed ? (
                                 <span
                                   data-testid="resume-status-chip"
-                                  className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-[#DCFCE7] text-[#16A34A] border border-[#BBF7D0] inline-flex items-center"
+                                  className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-[#DCFCE7] text-[#166534] border border-[#BBF7D0] inline-flex items-center"
                                 >
                                   Confirmed · Analysis Complete
                                 </span>
                               ) : (
                                 <span
                                   data-testid="resume-status-chip"
-                                  className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#D97706] border border-[#FDE68A] inline-flex items-center"
+                                  className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#92400E] border border-[#FDE68A] inline-flex items-center"
                                 >
                                   Needs review
                                 </span>
@@ -402,7 +395,7 @@ export default function ResumePage() {
                       </td>
 
                       {/* Column 5: Action Menu */}
-                      <td className="py-2.5 px-5 align-middle text-right">
+                      <td className="py-2.5 px-6 align-middle text-right">
                         <div
                           ref={menuRef}
                           data-testid="resume-actions-row"
@@ -589,14 +582,14 @@ export default function ResumePage() {
                     </div>
                     <div className="p-2.5 rounded-[12px] bg-white border border-[#E2E8F0]">
                       <span className="text-[11px] text-[#475569] font-medium">Status</span>
-                      <p className="text-[14px] font-bold text-[#16A34A]">Confirmed</p>
+                      <p className="text-[14px] font-bold text-[#166534]">Confirmed</p>
                     </div>
                   </div>
 
                   {/* Top Skills Preview */}
                   {candidate.skills && candidate.skills.length > 0 && (
                     <div className="space-y-1.5 pt-1">
-                      <span className="text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">
+                      <span className="text-[11px] font-semibold uppercase tracking-wider text-[#64748B]">
                         Extracted Core Competencies
                       </span>
                       <div className="flex flex-wrap gap-1.5">
@@ -695,7 +688,8 @@ export default function ResumePage() {
               <button
                 type="button"
                 onClick={() => setIsRenameModalOpen(false)}
-                className="text-[#94A3B8] hover:text-[#0F172A] p-1 rounded-full cursor-pointer"
+                aria-label="Close rename dialog"
+                className="text-[#475569] hover:text-[#0F172A] p-1 rounded-full cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -763,7 +757,8 @@ export default function ResumePage() {
               <button
                 type="button"
                 onClick={() => setIsUploadModalOpen(false)}
-                className="text-[#94A3B8] hover:text-[#0F172A] p-1.5 rounded-full hover:bg-[#F1F5F9] cursor-pointer"
+                aria-label="Close upload dialog"
+                className="text-[#475569] hover:text-[#0F172A] p-1.5 rounded-full hover:bg-[#F1F5F9] cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>

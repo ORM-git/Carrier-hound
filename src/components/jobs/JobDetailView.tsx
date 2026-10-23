@@ -397,26 +397,26 @@ export default function JobDetailView({
         {/* Gray Chips Row */}
         <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-[#E2E8F0]">
           <span className="inline-flex items-center gap-1 text-[12px] font-medium px-2.5 py-0.5 rounded-full bg-[#F1F5F9] text-[#475569]">
-            <MapPin className="w-3 h-3 text-[#94A3B8]" />
+            <MapPin className="w-3 h-3 text-[#64748B]" />
             <span className="truncate">
               {isPro ? (job.location || "Remote") : <span className="filter blur-[3.5px] select-none">Location Locked</span>}
             </span>
           </span>
 
           <span className="inline-flex items-center gap-1 text-[12px] font-medium px-2.5 py-0.5 rounded-full bg-[#F1F5F9] text-[#475569]">
-            <Briefcase className="w-3 h-3 text-[#94A3B8]" />
+            <Briefcase className="w-3 h-3 text-[#64748B]" />
             <span>{job.type || "Full-time"}</span>
           </span>
 
           {job.salary && (
             <span className="inline-flex items-center gap-1 text-[12px] font-medium px-2.5 py-0.5 rounded-full bg-[#F1F5F9] text-[#475569]">
-              <DollarSign className="w-3 h-3 text-[#16A34A]" />
+              <DollarSign className="w-3 h-3 text-[#166534]" />
               <span>{isPro ? job.salary : "••••••••"}</span>
             </span>
           )}
 
           <span className="inline-flex items-center gap-1 text-[12px] font-medium px-2.5 py-0.5 rounded-full bg-[#F1F5F9] text-[#475569]">
-            <Clock className="w-3 h-3 text-[#94A3B8]" />
+            <Clock className="w-3 h-3 text-[#64748B]" />
             <span>{formatRelativeTime(job.postedAt || job.date)}</span>
           </span>
         </div>
@@ -453,7 +453,7 @@ export default function JobDetailView({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
                 <div className="p-3.5 rounded-[12px] bg-[#EFF6FF] border border-[#BFDBFE] space-y-2">
                   <div className="text-xs font-bold text-[#1E3A8A] flex items-center gap-1.5">
-                    <Check className="w-3.5 h-3.5 text-[#16A34A]" />
+                    <Check className="w-3.5 h-3.5 text-[#166534]" />
                     <span>Matched Skills ({diagnostics.matchedSkills.length})</span>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
@@ -473,8 +473,8 @@ export default function JobDetailView({
                 </div>
 
                 <div className="p-3.5 rounded-[12px] bg-[#FEF3C7] border border-[#FDE68A] space-y-2">
-                  <div className="text-xs font-bold text-[#D97706] flex items-center gap-1.5">
-                    <AlertCircle className="w-3.5 h-3.5 text-[#D97706]" />
+                  <div className="text-xs font-bold text-[#92400E] flex items-center gap-1.5">
+                    <AlertCircle className="w-3.5 h-3.5 text-[#92400E]" />
                     <span>Skills to Highlight ({diagnostics.missingSkills.length})</span>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
@@ -482,13 +482,13 @@ export default function JobDetailView({
                       diagnostics.missingSkills.map((s) => (
                         <span
                           key={s}
-                          className="text-[12px] font-medium px-2 py-0.5 rounded-full bg-white text-[#D97706] border border-[#FDE68A]"
+                          className="text-[12px] font-medium px-2 py-0.5 rounded-full bg-white text-[#92400E] border border-[#FDE68A]"
                         >
                           {s}
                         </span>
                       ))
                     ) : (
-                      <span className="text-xs text-[#16A34A] font-semibold">Zero critical skill gaps!</span>
+                      <span className="text-xs text-[#166534] font-semibold">Zero critical skill gaps!</span>
                     )}
                   </div>
                 </div>
@@ -570,7 +570,7 @@ export default function JobDetailView({
           <ul className="space-y-2 max-w-[720px] text-[15px] leading-[24px] text-[#0F172A]">
             {benefitsList.map((ben, idx) => (
               <li key={idx} className="flex items-start gap-2.5">
-                <span className="text-[#16A34A] font-bold select-none">✓</span>
+                <span className="text-[#166534] font-bold select-none">✓</span>
                 <span className="flex-1 break-words">{ben}</span>
               </li>
             ))}

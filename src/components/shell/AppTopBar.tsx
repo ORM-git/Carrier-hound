@@ -131,7 +131,7 @@ export default function AppTopBar({
                     className={`relative h-14 min-h-[44px] inline-flex items-center gap-1.5 px-2.5 sm:px-3 text-[14px] cursor-pointer whitespace-nowrap transition-colors duration-200 ${
                       tab.active
                         ? "font-bold text-[#0F172A] after:absolute after:bottom-0 after:left-2 after:right-2 after:h-[2px] after:bg-[#0F172A]"
-                        : "font-medium text-[#94A3B8] hover:text-[#0F172A]"
+                        : "font-medium text-[#475569] hover:text-[#0F172A]"
                     }`}
                   >
                     <span>{tab.label}</span>

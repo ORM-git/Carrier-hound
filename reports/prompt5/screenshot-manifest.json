@@ -1,0 +1,135 @@
+[
+  {
+    "fileName": "dashboard_desktop_1280.png",
+    "route": "/dashboard",
+    "viewport": "1280x850",
+    "sizeBytes": 64551,
+    "sha256": "ed43b2139212af1a..."
+  },
+  {
+    "fileName": "jobs_desktop_1280.png",
+    "route": "/jobs",
+    "viewport": "1280x850",
+    "sizeBytes": 168132,
+    "sha256": "8573d0b52f61ca96..."
+  },
+  {
+    "fileName": "jobs_detail_desktop_1280.png",
+    "route": "/jobs?jobId=mock_job_1",
+    "viewport": "1280x850",
+    "sizeBytes": 190783,
+    "sha256": "3dbe7e6ce91217a6..."
+  },
+  {
+    "fileName": "resume_desktop_1280.png",
+    "route": "/resume",
+    "viewport": "1280x850",
+    "sizeBytes": 78389,
+    "sha256": "956afec3450513a1..."
+  },
+  {
+    "fileName": "tracker_desktop_1280.png",
+    "route": "/tracker",
+    "viewport": "1280x850",
+    "sizeBytes": 103074,
+    "sha256": "021da812761380f8..."
+  },
+  {
+    "fileName": "profile_desktop_1280.png",
+    "route": "/profile",
+    "viewport": "1280x850",
+    "sizeBytes": 89301,
+    "sha256": "cc99d4a24f65a56a..."
+  },
+  {
+    "fileName": "settings_desktop_1280.png",
+    "route": "/settings",
+    "viewport": "1280x850",
+    "sizeBytes": 72833,
+    "sha256": "9b5530672743103d..."
+  },
+  {
+    "fileName": "radar_desktop_1280.png",
+    "route": "/radar",
+    "viewport": "1280x850",
+    "sizeBytes": 1947451,
+    "sha256": "6180159bb5257508..."
+  },
+  {
+    "fileName": "dashboard_mobile_390.png",
+    "route": "/dashboard",
+    "viewport": "390x844",
+    "sizeBytes": 9782,
+    "sha256": "ed0632bc6abda41f..."
+  },
+  {
+    "fileName": "jobs_mobile_390.png",
+    "route": "/jobs",
+    "viewport": "390x844",
+    "sizeBytes": 81821,
+    "sha256": "e8187f24bf77ea62..."
+  },
+  {
+    "fileName": "jobs_detail_mobile_390.png",
+    "route": "/jobs?jobId=mock_job_1",
+    "viewport": "390x844",
+    "sizeBytes": 116219,
+    "sha256": "cb2afb13723028a9..."
+  },
+  {
+    "fileName": "resume_mobile_390.png",
+    "route": "/resume",
+    "viewport": "390x844",
+    "sizeBytes": 44418,
+    "sha256": "4494aa0d5a620698..."
+  },
+  {
+    "fileName": "tracker_mobile_390.png",
+    "route": "/tracker",
+    "viewport": "390x844",
+    "sizeBytes": 76412,
+    "sha256": "e66a04e9186e0b40..."
+  },
+  {
+    "fileName": "profile_mobile_390.png",
+    "route": "/profile",
+    "viewport": "390x844",
+    "sizeBytes": 51157,
+    "sha256": "515fa50960eea7dd..."
+  },
+  {
+    "fileName": "settings_mobile_390.png",
+    "route": "/settings",
+    "viewport": "390x844",
+    "sizeBytes": 47760,
+    "sha256": "fb1bd519630bed96..."
+  },
+  {
+    "fileName": "radar_mobile_390.png",
+    "route": "/radar",
+    "viewport": "390x844",
+    "sizeBytes": 650450,
+    "sha256": "d79fa8cde54df42a..."
+  },
+  {
+    "fileName": "mobile_overlap_cookie_visible_signedin_nav_390.png",
+    "route": "/dashboard",
+    "viewport": "390x844",
+    "sizeBytes": 9782,
+    "sha256": "ed0632bc6abda41f..."
+  },
+  {
+    "fileName": "mobile_overlap_cookie_dismissed_signedin_nav_390.png",
+    "route": "/dashboard",
+    "viewport": "390x844",
+    "sizeBytes": 35500,
+    "sha256": "453adb0bbd48bb9b..."
+  },
+  {
+    "fileName": "mobile_overlap_cookie_visible_guest_apply_390.png",
+    "route": "/jobs?jobId=mock_job_1",
+    "viewport": "390x844",
+    "sizeBytes": 116219,
+    "sha256": "cb2afb13723028a9..."
+  }
+]

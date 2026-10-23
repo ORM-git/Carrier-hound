@@ -418,7 +418,7 @@ export default function ProfilePage() {
                           {edu.degree || "Degree"}
                         </h4>
                         {edu.year && (
-                          <span className="text-xs text-[#94A3B8] font-medium">{edu.year}</span>
+                          <span className="text-xs text-[#64748B] font-medium">{edu.year}</span>
                         )}
                       </div>
 
@@ -482,7 +482,7 @@ export default function ProfilePage() {
                         <h4 className="text-[15px] font-bold text-[#0F172A]">
                           {exp.role || "Role"}
                         </h4>
-                        <span className="text-xs text-[#94A3B8] font-medium">
+                        <span className="text-xs text-[#64748B] font-medium">
                           {exp.startDate || ""} {exp.startDate && exp.endDate ? "—" : ""}{" "}
                           {exp.endDate || ""}
                         </span>
@@ -493,7 +493,7 @@ export default function ProfilePage() {
                         {exp.location && (
                           <>
                             <span className="text-[#CBD5E1]">•</span>
-                            <span className="text-xs text-[#94A3B8]">{exp.location}</span>
+                            <span className="text-xs text-[#64748B]">{exp.location}</span>
                           </>
                         )}
                       </div>
@@ -608,8 +608,8 @@ export default function ProfilePage() {
               {/* Checklist & Missing Items Warning */}
               {completionPercentage < 100 ? (
                 <div className="space-y-3 pt-1">
-                  <div className="flex items-start gap-2 text-xs text-[#D97706] bg-[#FEF3C7] p-2.5 rounded-xl border border-[#FDE68A]">
-                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-[#D97706]" />
+                  <div className="flex items-start gap-2 text-xs text-[#92400E] bg-[#FEF3C7] p-2.5 rounded-xl border border-[#FDE68A]">
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-[#92400E]" />
                     <span>
                       Complete your profile to improve job matching accuracy and tailor applications.
                     </span>
@@ -621,7 +621,7 @@ export default function ProfilePage() {
                         <div className="flex items-center gap-2">
                           <CheckCircle2
                             className={`w-4 h-4 ${
-                              item.done ? "text-[#16A34A]" : "text-[#CBD5E1]"
+                              item.done ? "text-[#166534]" : "text-[#CBD5E1]"
                             }`}
                           />
                           <span
@@ -646,7 +646,7 @@ export default function ProfilePage() {
                   </ul>
                 </div>
               ) : (
-                <div className="flex items-center gap-2 text-xs text-[#16A34A] bg-[#DCFCE7] p-3 rounded-xl border border-[#BBF7D0]">
+                <div className="flex items-center gap-2 text-xs text-[#166534] bg-[#DCFCE7] p-3 rounded-xl border border-[#BBF7D0]">
                   <CheckCircle2 className="w-4 h-4 shrink-0" />
                   <span className="font-medium">All core profile sections are completed.</span>
                 </div>
@@ -665,7 +665,7 @@ export default function ProfilePage() {
                     <FileText className="w-4 h-4 text-[#2563EB]" />
                     <span className="text-xs font-medium">Manage Resumes</span>
                   </div>
-                  <ArrowRight className="w-4 h-4 text-[#94A3B8] group-hover:text-[#0F172A] group-hover:translate-x-0.5 transition-all" />
+                  <ArrowRight className="w-4 h-4 text-[#64748B] group-hover:text-[#0F172A] group-hover:translate-x-0.5 transition-all" />
                 </Link>
 
                 <Link
@@ -676,7 +676,7 @@ export default function ProfilePage() {
                     <CheckSquare className="w-4 h-4 text-[#2563EB]" />
                     <span className="text-xs font-medium">Application Tracker</span>
                   </div>
-                  <ArrowRight className="w-4 h-4 text-[#94A3B8] group-hover:text-[#0F172A] group-hover:translate-x-0.5 transition-all" />
+                  <ArrowRight className="w-4 h-4 text-[#64748B] group-hover:text-[#0F172A] group-hover:translate-x-0.5 transition-all" />
                 </Link>
 
                 <Link
@@ -687,7 +687,7 @@ export default function ProfilePage() {
                     <Briefcase className="w-4 h-4 text-[#2563EB]" />
                     <span className="text-xs font-medium">Explore Jobs</span>
                   </div>
-                  <ArrowRight className="w-4 h-4 text-[#94A3B8] group-hover:text-[#0F172A] group-hover:translate-x-0.5 transition-all" />
+                  <ArrowRight className="w-4 h-4 text-[#64748B] group-hover:text-[#0F172A] group-hover:translate-x-0.5 transition-all" />
                 </Link>
 
                 <Link
@@ -698,7 +698,7 @@ export default function ProfilePage() {
                     <Settings className="w-4 h-4 text-[#2563EB]" />
                     <span className="text-xs font-medium">Account Settings</span>
                   </div>
-                  <ArrowRight className="w-4 h-4 text-[#94A3B8] group-hover:text-[#0F172A] group-hover:translate-x-0.5 transition-all" />
+                  <ArrowRight className="w-4 h-4 text-[#64748B] group-hover:text-[#0F172A] group-hover:translate-x-0.5 transition-all" />
                 </Link>
               </nav>
             </div>
