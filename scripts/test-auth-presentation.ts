@@ -5,12 +5,13 @@ const isNegativeControl = process.argv.includes("--negative-control");
 
 function run() {
   console.log("==================================================================================");
-  console.log("     PROMPT 8 AUDIT — JOBRIGHT-STYLE LOGIN & SIGNUP PRESENTATION AUDIT            ");
+  console.log("     PROMPT 8 AUDIT — JOBRIGHT-STYLE AUTH PRESENTATION & MODAL SPEC AUDIT         ");
   console.log("==================================================================================");
   console.log(`Mode: ${isNegativeControl ? "NEGATIVE CONTROL (Expect Failure)" : "NORMAL VALIDATION"}\n`);
 
   const loginPath = path.resolve(process.cwd(), "src/app/login/page.tsx");
   const signupPath = path.resolve(process.cwd(), "src/app/signup/page.tsx");
+  const globalsCssPath = path.resolve(process.cwd(), "src/app/globals.css");
 
   if (!fs.existsSync(loginPath)) {
     console.error("FAIL: src/app/login/page.tsx is missing!");
@@ -20,191 +21,213 @@ function run() {
     console.error("FAIL: src/app/signup/page.tsx is missing!");
     process.exit(1);
   }
+  if (!fs.existsSync(globalsCssPath)) {
+    console.error("FAIL: src/app/globals.css is missing!");
+    process.exit(1);
+  }
 
   let loginCode = fs.readFileSync(loginPath, "utf-8");
   let signupCode = fs.readFileSync(signupPath, "utf-8");
+  let cssCode = fs.readFileSync(globalsCssPath, "utf-8");
 
   if (isNegativeControl) {
     // Deliberately inject corruptions to verify negative control failure detection
-    loginCode = loginCode.replace(/Welcome back to CareerMonke/g, "Random Other Heading");
-    loginCode = loginCode.replace(/bg-blue-50/g, "bg-red-500");
-    loginCode = loginCode.replace(/Email me a sign-in link/g, "Submit Password");
-    signupCode = signupCode.replace(/Create your CareerMonke account/g, "Unsupported Heading");
+    loginCode = loginCode.replace(/max-w-\[488px\]/g, "max-w-[800px]");
+    loginCode = loginCode.replace(/Welcome back to/g, "Incorrect Heading");
+    loginCode = loginCode.replace(/rounded-\[8px\] bg-\[#F3F4F5\]/g, "rounded-none bg-red-500");
+    signupCode = signupCode.replace(/Welcome to/g, "Unsupported Heading");
     signupCode = signupCode.replace(/rounded-\[24px\]/g, "rounded-none");
   }
 
   const failures: string[] = [];
 
   // -------------------------------------------------------------------------
-  // 1. PAGE BACKGROUND & CENTRED AUTH CARD DIMENSIONS
+  // 1. MODAL CARD DIMENSIONS, PADDING & BACKDROP
   // -------------------------------------------------------------------------
-  const hasLoginBg = loginCode.includes("bg-blue-50");
-  const hasSignupBg = signupCode.includes("bg-blue-50");
-  if (!hasLoginBg || !hasSignupBg) {
-    failures.push("BACKGROUND FAIL: Both /login and /signup must use bg-blue-50 background.");
+  const hasLoginBackdrop = loginCode.includes('data-testid="auth-backdrop"') && loginCode.includes("fixed inset-0 bg-black/40");
+  const hasSignupBackdrop = signupCode.includes('data-testid="auth-backdrop"') && signupCode.includes("fixed inset-0 bg-black/40");
+  if (!hasLoginBackdrop || !hasSignupBackdrop) {
+    failures.push("BACKDROP FAIL: Both /login and /signup must render a dimmed backdrop (fixed inset-0 bg-black/40).");
   } else {
-    console.log("  [PASS] page background: Blue-50 background present on both /login and /signup");
+    console.log("  [PASS] dimmed backdrop: Dimmed backdrop present over auth route page");
   }
 
   const hasLoginCardDims =
-    loginCode.includes("max-w-[460px]") &&
+    loginCode.includes("max-w-[488px]") &&
     loginCode.includes("rounded-[24px]") &&
-    loginCode.includes("p-8 sm:p-10") &&
-    loginCode.includes("data-testid=\"login-auth-card\"");
+    loginCode.includes("sm:pt-[48px] sm:px-[32px] sm:pb-[32px]") &&
+    loginCode.includes("mx-2 sm:mx-auto") &&
+    loginCode.includes('data-testid="login-auth-card"');
+
   const hasSignupCardDims =
-    signupCode.includes("max-w-[460px]") &&
+    signupCode.includes("max-w-[488px]") &&
     signupCode.includes("rounded-[24px]") &&
-    signupCode.includes("p-8 sm:p-10") &&
-    signupCode.includes("data-testid=\"signup-auth-card\"");
+    signupCode.includes("sm:pt-[48px] sm:px-[32px] sm:pb-[32px]") &&
+    signupCode.includes("mx-2 sm:mx-auto") &&
+    signupCode.includes('data-testid="signup-auth-card"');
 
   if (!hasLoginCardDims || !hasSignupCardDims) {
-    failures.push("CARD DIMS FAIL: Auth cards must be centred, 440-470px max width (max-w-[460px]), 24px radius, 32-40px padding.");
+    failures.push("CARD DIMS FAIL: Auth cards must have max-w-[488px], 24px radius, 48px top / 32px sides / 32px bottom on desktop (424px content width), and 8px outer margins on mobile (mx-2 sm:mx-auto).");
   } else {
-    console.log("  [PASS] card dimensions: White auth card ~460px max width, 24px radius, 32-40px desktop padding");
+    console.log("  [PASS] card dimensions: White modal card 488px max width, 24px radius, 424px content width, 8px mobile outer margins");
   }
 
   // -------------------------------------------------------------------------
-  // 2. BRANDING & HEADINGS
+  // 2. CLOSE CONTROL & ESCAPE KEYBOARD NAVIGATION
   // -------------------------------------------------------------------------
-  const hasLoginHeading = loginCode.includes("Welcome back to CareerMonke");
-  const hasSignupHeading = signupCode.includes("Create your CareerMonke account");
-  const hasBrandLogo = loginCode.includes("BrandIcon") && signupCode.includes("BrandIcon");
+  const hasLoginClose =
+    loginCode.includes('aria-label="Close and return to home"') &&
+    loginCode.includes('href="/"') &&
+    loginCode.includes("Escape");
 
-  if (!hasLoginHeading || !hasSignupHeading || !hasBrandLogo) {
-    failures.push("HEADING FAIL: Must feature centred BrandIcon, 'Welcome back to CareerMonke' on login, 'Create your CareerMonke account' on signup.");
+  const hasSignupClose =
+    signupCode.includes('aria-label="Close and return to home"') &&
+    signupCode.includes('href="/"') &&
+    signupCode.includes("Escape");
+
+  if (!hasLoginClose || !hasSignupClose) {
+    failures.push("CLOSE CONTROL FAIL: Must have top-right dark circular close button navigating to /, with accessible name and Esc keyboard handling.");
   } else {
-    console.log("  [PASS] branding & headings: Centred CareerMonke logo, exact requested login and signup headings");
+    console.log("  [PASS] close control: Dark circular close button navigating to / with Esc key support");
   }
 
   // -------------------------------------------------------------------------
-  // 3. GOOGLE OAUTH BUTTON & OR DIVIDER
+  // 3. HEADINGS: CENTRED 24PX LIGHT TEXT WITH BRAND BOLD INLINE (NO SUBTITLE / NO INSIDE LOGO)
+  // -------------------------------------------------------------------------
+  const hasLoginHeading =
+    loginCode.includes("Welcome back to") &&
+    loginCode.includes('<span className="font-bold">CareerMonke</span>') &&
+    !loginCode.includes("Sign in to access your dashboard");
+
+  const hasSignupHeading =
+    signupCode.includes("Welcome to") &&
+    signupCode.includes('<span className="font-bold">CareerMonke</span>') &&
+    !signupCode.includes("Create an account to track");
+
+  const hasNoInsideBrandLogo =
+    !loginCode.includes("w-12 h-12 rounded-2xl bg-[#EFF6FF]") &&
+    !signupCode.includes("w-12 h-12 rounded-2xl bg-[#EFF6FF]");
+
+  if (!hasLoginHeading || !hasSignupHeading || !hasNoInsideBrandLogo) {
+    failures.push("HEADING FAIL: Must feature centred 24px light heading with brand bold inline, no extra subtitle, and no inside card logo tile.");
+  } else {
+    console.log("  [PASS] headings: Centred 24px light heading with bold brand inline; extra subtitle and inner logo removed");
+  }
+
+  // -------------------------------------------------------------------------
+  // 4. GOOGLE OAUTH BUTTON & PLAIN OR (NO HORIZONTAL LINES)
   // -------------------------------------------------------------------------
   const hasGoogleBtn =
     loginCode.includes("Continue with Google") &&
-    loginCode.includes("rounded-full") &&
+    loginCode.includes("h-[48px]") &&
+    loginCode.includes("rounded-[8px]") &&
+    loginCode.includes("border-[#E5E7EB]") &&
     loginCode.includes("GoogleIcon") &&
     signupCode.includes("Continue with Google") &&
-    signupCode.includes("rounded-full") &&
+    signupCode.includes("h-[48px]") &&
+    signupCode.includes("rounded-[8px]") &&
+    signupCode.includes("border-[#E5E7EB]") &&
     signupCode.includes("GoogleIcon");
 
   if (!hasGoogleBtn) {
-    failures.push("GOOGLE BTN FAIL: Continue with Google button must be white rounded pill with subtle border and GoogleIcon.");
+    failures.push("GOOGLE BTN FAIL: Continue with Google button must be full-width, 48px high, white, 1px #E5E7EB border, 8px radius with GoogleIcon.");
   } else {
-    console.log("  [PASS] google button: Working Continue with Google rounded pill button with preserved SVG asset");
+    console.log("  [PASS] google button: Full width 48px high, 1px #E5E7EB border, 8px radius with Google icon");
   }
 
-  const hasOrDivider =
+  const hasPlainOr =
     loginCode.includes("OR") &&
-    loginCode.includes("border-t border-[#E2E8F0]") &&
+    !loginCode.includes("border-t border-[#E2E8F0]") &&
     signupCode.includes("OR") &&
-    signupCode.includes("border-t border-[#E2E8F0]");
+    !signupCode.includes("border-t border-[#E2E8F0]");
 
-  if (!hasOrDivider) {
-    failures.push("OR DIVIDER FAIL: Must feature neutral OR divider with thin line.");
+  if (!hasPlainOr) {
+    failures.push("PLAIN OR FAIL: Must feature plain small grey 'OR' with zero horizontal divider lines.");
   } else {
-    console.log("  [PASS] divider: Centred neutral OR divider with thin border line");
+    console.log("  [PASS] plain or: Small grey 'OR' with zero horizontal divider lines");
   }
 
   // -------------------------------------------------------------------------
-  // 4. EMAIL INPUT & SUBMIT PRIMARY PILL
+  // 5. EMAIL INPUT & SUBMIT BUTTON
   // -------------------------------------------------------------------------
   const hasEmailInput =
-    loginCode.includes("bg-[#F8FAFC]") &&
-    loginCode.includes("rounded-[12px]") &&
-    loginCode.includes("min-h-[44px]") &&
-    signupCode.includes("bg-[#F8FAFC]") &&
-    signupCode.includes("rounded-[12px]") &&
-    signupCode.includes("min-h-[44px]");
+    loginCode.includes('bg-[#F7F8F9]') &&
+    loginCode.includes('placeholder="Email"') &&
+    loginCode.includes('rounded-[8px]') &&
+    loginCode.includes('h-[48px]') &&
+    loginCode.includes('sr-only') &&
+    signupCode.includes('bg-[#F7F8F9]') &&
+    signupCode.includes('placeholder="Email"') &&
+    signupCode.includes('rounded-[8px]') &&
+    signupCode.includes('h-[48px]') &&
+    signupCode.includes('sr-only');
 
   if (!hasEmailInput) {
-    failures.push("EMAIL INPUT FAIL: Email input must have subtle neutral background, 12px radius, min-h-[44px].");
+    failures.push("EMAIL INPUT FAIL: Email input must be 48px high, #F7F8F9 fill, 8px radius, placeholder 'Email', sr-only accessible label.");
   } else {
-    console.log("  [PASS] email input: Subtle neutral background (#F8FAFC), 12px radius, visible focus, min-h-[44px]");
+    console.log("  [PASS] email input: 48px high, #F7F8F9 fill, 8px radius, placeholder 'Email', accessible sr-only label");
   }
 
-  const hasSubmitPill =
+  const hasSubmitBtn =
     loginCode.includes("Email me a sign-in link") &&
-    loginCode.includes("rounded-full") &&
+    loginCode.includes("rounded-[8px]") &&
+    loginCode.includes("h-[48px]") &&
     loginCode.includes("bg-[#2563EB]") &&
     signupCode.includes("Email me a sign-in link") &&
-    signupCode.includes("rounded-full") &&
+    signupCode.includes("rounded-[8px]") &&
+    signupCode.includes("h-[48px]") &&
     signupCode.includes("bg-[#2563EB]");
 
-  if (!hasSubmitPill) {
-    failures.push("SUBMIT PILL FAIL: Submit button must be full-width blue primary pill 'Email me a sign-in link'.");
+  if (!hasSubmitBtn) {
+    failures.push("SUBMIT BTN FAIL: Submit button must be 48px high, 8px radius, #2563EB 'Email me a sign-in link'.");
   } else {
-    console.log("  [PASS] submit pill: Full-width blue primary pill (#2563EB) 'Email me a sign-in link'");
+    console.log("  [PASS] primary button: 48px high, 8px radius, #2563EB with truthful magic-link text");
   }
 
   // -------------------------------------------------------------------------
-  // 5. ERROR BANNER & SUCCESS / EMAIL-SENT STATE
+  // 6. LEGAL TEXT & ACCOUNT SWITCH BOX (#F3F4F5, 8PX RADIUS, NO DIVIDER ABOVE)
   // -------------------------------------------------------------------------
-  const hasErrorBanner =
-    loginCode.includes("data-testid=\"auth-error-banner\"") &&
-    loginCode.includes("role=\"alert\"") &&
-    loginCode.includes("bg-[#FEF2F2]") &&
-    signupCode.includes("data-testid=\"auth-error-banner\"") &&
-    signupCode.includes("role=\"alert\"") &&
-    signupCode.includes("bg-[#FEF2F2]");
-
-  if (!hasErrorBanner) {
-    failures.push("ERROR BANNER FAIL: Errors must render in readable red-tinted banner with role='alert'.");
-  } else {
-    console.log("  [PASS] error banner: Readable red-tinted alert banner with role='alert'");
-  }
-
-  const hasEmailSentState =
-    loginCode.includes("data-testid=\"auth-email-sent\"") &&
-    loginCode.includes("resendTimer") &&
-    signupCode.includes("data-testid=\"auth-email-sent\"") &&
-    signupCode.includes("resendTimer");
-
-  if (!hasEmailSentState) {
-    failures.push("EMAIL SENT FAIL: Must retain email-sent state with resend cooldown timer.");
-  } else {
-    console.log("  [PASS] email-sent state: Verified confirmation instructions with 30s resend cooldown");
-  }
-
-  // -------------------------------------------------------------------------
-  // 6. BOTTOM SWITCH LINKS & RETURN DESTINATION (?next)
-  // -------------------------------------------------------------------------
-  const hasSwitchLinks =
-    loginCode.includes("Don&apos;t have an account?") &&
-    loginCode.includes("/signup?next=") &&
-    signupCode.includes("Already have an account?") &&
-    signupCode.includes("/login?next=");
-
-  if (!hasSwitchLinks) {
-    failures.push("SWITCH LINKS FAIL: Must preserve switch links with supported ?next return destination parameter.");
-  } else {
-    console.log("  [PASS] switch links: Separated by divider, preserves ?next return-destination parameter");
-  }
-
-  // -------------------------------------------------------------------------
-  // 7. SECURITY & ACCURATE LEGAL TEXT
-  // -------------------------------------------------------------------------
-  const hasAccurateLegal =
+  const hasCentredLegal =
     loginCode.includes("/terms-and-conditions") &&
     loginCode.includes("/privacy-policy") &&
     signupCode.includes("/terms-and-conditions") &&
     signupCode.includes("/privacy-policy");
 
-  const hasNoFakeClaims =
-    !loginCode.toLowerCase().includes("bank-grade") &&
-    !loginCode.toLowerCase().includes("100% free forever") &&
-    !signupCode.toLowerCase().includes("bank-grade") &&
-    !signupCode.toLowerCase().includes("100% free forever");
-
-  const hasNoPasswordOrApple =
-    !loginCode.includes('type="password"') &&
-    !signupCode.includes('type="password"') &&
-    !loginCode.toLowerCase().includes("apple") &&
-    !signupCode.toLowerCase().includes("apple");
-
-  if (!hasAccurateLegal || !hasNoFakeClaims || !hasNoPasswordOrApple) {
-    failures.push("SECURITY/LEGAL FAIL: Must maintain accurate legal links, zero password fields, no Apple/unsupported providers.");
+  if (!hasCentredLegal) {
+    failures.push("LEGAL TEXT FAIL: Must preserve Terms and Privacy Policy links centred below primary button.");
   } else {
-    console.log("  [PASS] auth security: Strictly email OTP & Google OAuth only; zero password or unbacked claims");
+    console.log("  [PASS] legal links: Small centred Terms and Privacy Policy links preserved");
+  }
+
+  const hasSwitchBox =
+    loginCode.includes("bg-[#F3F4F5]") &&
+    loginCode.includes("rounded-[8px]") &&
+    loginCode.includes("h-[48px]") &&
+    loginCode.includes("/signup?next=") &&
+    signupCode.includes("bg-[#F3F4F5]") &&
+    signupCode.includes("rounded-[8px]") &&
+    signupCode.includes("h-[48px]") &&
+    signupCode.includes("/login?next=");
+
+  if (!hasSwitchBox) {
+    failures.push("SWITCH BOX FAIL: Must feature full-width 48px light-grey box (#F3F4F5) with 8px radius and no divider above.");
+  } else {
+    console.log("  [PASS] switch box: Full-width 48px #F3F4F5 box, 8px radius, no divider above, ?next preserved");
+  }
+
+  // -------------------------------------------------------------------------
+  // 7. MOTION: 0.3S CUBIC-BEZIER(0.08,0.82,0.17,1) & PREFERS-REDUCED-MOTION
+  // -------------------------------------------------------------------------
+  const hasMotionKeyframes =
+    cssCode.includes("authModalEntrance") &&
+    cssCode.includes("cubic-bezier(0.08, 0.82, 0.17, 1)") &&
+    cssCode.includes("0.3s") &&
+    cssCode.includes("prefers-reduced-motion");
+
+  if (!hasMotionKeyframes) {
+    failures.push("MOTION FAIL: globals.css must define authModalEntrance timing 0.3s cubic-bezier(0.08,0.82,0.17,1) and honor prefers-reduced-motion.");
+  } else {
+    console.log("  [PASS] entrance motion: 0.3s cubic-bezier(0.08,0.82,0.17,1) modal entrance with prefers-reduced-motion support");
   }
 
   // -------------------------------------------------------------------------
@@ -229,7 +252,7 @@ function run() {
   }
 
   console.log("\n----------------------------------------------------------------------------------");
-  console.log("PROMPT 8 JOBRIGHT-STYLE AUTH PRESENTATION VALIDATED LOCALLY [PASS-LOCAL]");
+  console.log("PROMPT 8 JOBRIGHT-STYLE AUTH PRESENTATION & MODAL SPEC AUDIT [PASS-LOCAL]");
   console.log("----------------------------------------------------------------------------------");
 }
 

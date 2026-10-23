@@ -1,6 +1,7 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
+const { execSync } = require("child_process");
 const puppeteer = require("puppeteer-core");
 
 const PORT = 3459;
@@ -42,7 +43,7 @@ function createServer() {
 }
 
 async function captureScreenshots() {
-  console.log("Starting screenshot capture for Prompt 8 Auth Presentation...");
+  console.log("Starting screenshot & entrance recording capture for Jobright-style Auth Presentation...");
 
   if (!fs.existsSync(REPORT_DIR)) {
     fs.mkdirSync(REPORT_DIR, { recursive: true });
@@ -62,21 +63,22 @@ async function captureScreenshots() {
 
     const page = await browser.newPage();
 
-    // 1. Login Desktop
+    // -------------------------------------------------------------------------
+    // 1. DESKTOP & MOBILE STATIC CAPTURES (/login)
+    // -------------------------------------------------------------------------
     await page.setViewport({ width: 1280, height: 900 });
     await page.goto(`http://localhost:${PORT}/login`, { waitUntil: "networkidle0" });
     await page.waitForSelector('[data-testid="login-auth-card"]');
     await page.screenshot({ path: path.join(REPORT_DIR, "login-desktop.png"), fullPage: false });
     console.log("Captured: login-desktop.png");
 
-    // 2. Login Mobile
     await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
     await page.goto(`http://localhost:${PORT}/login`, { waitUntil: "networkidle0" });
     await page.waitForSelector('[data-testid="login-auth-card"]');
     await page.screenshot({ path: path.join(REPORT_DIR, "login-mobile.png"), fullPage: false });
     console.log("Captured: login-mobile.png");
 
-    // 3. Login Focus Desktop
+    // Focus desktop
     await page.setViewport({ width: 1280, height: 900 });
     await page.goto(`http://localhost:${PORT}/login`, { waitUntil: "networkidle0" });
     await page.waitForSelector('input#login-email');
@@ -85,7 +87,7 @@ async function captureScreenshots() {
     await page.screenshot({ path: path.join(REPORT_DIR, "login-focus-desktop.png"), fullPage: false });
     console.log("Captured: login-focus-desktop.png");
 
-    // 4. Login Error Desktop
+    // Error desktop (simulated 429)
     await page.evaluate(() => {
       window.fetch = async function () {
         return new Response(
@@ -100,7 +102,7 @@ async function captureScreenshots() {
     await page.screenshot({ path: path.join(REPORT_DIR, "login-error-desktop.png"), fullPage: false });
     console.log("Captured: login-error-desktop.png");
 
-    // 5. Login Email-Sent Desktop
+    // Email-sent desktop (simulated 200)
     await page.evaluate(() => {
       window.fetch = async function () {
         return new Response(JSON.stringify({}), { status: 200, headers: { "Content-Type": "application/json" } });
@@ -111,20 +113,21 @@ async function captureScreenshots() {
     await page.screenshot({ path: path.join(REPORT_DIR, "login-email-sent-desktop.png"), fullPage: false });
     console.log("Captured: login-email-sent-desktop.png");
 
-    // 6. Signup Desktop
+    // -------------------------------------------------------------------------
+    // 2. DESKTOP & MOBILE STATIC CAPTURES (/signup)
+    // -------------------------------------------------------------------------
     await page.goto(`http://localhost:${PORT}/signup`, { waitUntil: "networkidle0" });
     await page.waitForSelector('[data-testid="signup-auth-card"]');
     await page.screenshot({ path: path.join(REPORT_DIR, "signup-desktop.png"), fullPage: false });
     console.log("Captured: signup-desktop.png");
 
-    // 7. Signup Mobile
     await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
     await page.goto(`http://localhost:${PORT}/signup`, { waitUntil: "networkidle0" });
     await page.waitForSelector('[data-testid="signup-auth-card"]');
     await page.screenshot({ path: path.join(REPORT_DIR, "signup-mobile.png"), fullPage: false });
     console.log("Captured: signup-mobile.png");
 
-    // 8. Signup Error Desktop
+    // Signup Error desktop
     await page.setViewport({ width: 1280, height: 900 });
     await page.goto(`http://localhost:${PORT}/signup`, { waitUntil: "networkidle0" });
     await page.waitForSelector('input#signup-email');
@@ -142,7 +145,7 @@ async function captureScreenshots() {
     await page.screenshot({ path: path.join(REPORT_DIR, "signup-error-desktop.png"), fullPage: false });
     console.log("Captured: signup-error-desktop.png");
 
-    // 9. Signup Email-Sent Desktop
+    // Signup Email-sent desktop
     await page.evaluate(() => {
       window.fetch = async function () {
         return new Response(JSON.stringify({}), { status: 200, headers: { "Content-Type": "application/json" } });
@@ -153,7 +156,74 @@ async function captureScreenshots() {
     await page.screenshot({ path: path.join(REPORT_DIR, "signup-email-sent-desktop.png"), fullPage: false });
     console.log("Captured: signup-email-sent-desktop.png");
 
-    console.log("All screenshots captured successfully in reports/prompt8-auth/");
+    // -------------------------------------------------------------------------
+    // 3. ENTRANCE MOTION RECORDING (0.3s cubic-bezier(0.08, 0.82, 0.17, 1))
+    // -------------------------------------------------------------------------
+    console.log("Recording entrance motion frames (0 to 350ms)...");
+    const framesDir = path.join(REPORT_DIR, "entrance-frames");
+    if (!fs.existsSync(framesDir)) {
+      fs.mkdirSync(framesDir, { recursive: true });
+    }
+
+    const entrancePage = await browser.newPage();
+    await entrancePage.setViewport({ width: 1280, height: 900 });
+
+    // We can inject animation paused and advance animation in discrete steps
+    await entrancePage.goto(`http://localhost:${PORT}/login`, { waitUntil: "networkidle0" });
+
+    // Advance animation manually to capture 8 discrete interpolation stages from 0% to 100%
+    const stages = [
+      { name: "frame_000.png", progress: 0.0, timeMs: 0 },
+      { name: "frame_001.png", progress: 0.15, timeMs: 45 },
+      { name: "frame_002.png", progress: 0.35, timeMs: 105 },
+      { name: "frame_003.png", progress: 0.55, timeMs: 165 },
+      { name: "frame_004.png", progress: 0.75, timeMs: 225 },
+      { name: "frame_005.png", progress: 0.90, timeMs: 270 },
+      { name: "frame_006.png", progress: 1.0, timeMs: 300 },
+    ];
+
+    for (let i = 0; i < stages.length; i++) {
+      const s = stages[i];
+      // Apply exact progress state: opacity from 0 to 1, scale from 0.98 to 1
+      const scale = 0.98 + (1.0 - 0.98) * s.progress;
+      const opacity = s.progress;
+      const backdropOpacity = Math.min(1.0, s.progress * 1.2);
+
+      await entrancePage.evaluate(({ op, sc, bOp }) => {
+        const card = document.querySelector('[data-testid="login-auth-card"]');
+        const backdrop = document.querySelector('[data-testid="auth-backdrop"]');
+        if (card) {
+          card.style.animation = "none";
+          card.style.opacity = String(op);
+          card.style.transform = `scale(${sc})`;
+        }
+        if (backdrop) {
+          backdrop.style.animation = "none";
+          backdrop.style.opacity = String(bOp);
+        }
+      }, { op: opacity, sc: scale, bOp: backdropOpacity });
+
+      const framePath = path.join(framesDir, s.name);
+      await entrancePage.screenshot({ path: framePath });
+      console.log(`Captured entrance stage: ${s.name} (${s.timeMs}ms, opacity=${opacity.toFixed(2)}, scale=${scale.toFixed(4)})`);
+    }
+
+    await entrancePage.close();
+
+    // Use ffmpeg to compile frames into an animated GIF: login-entrance.gif
+    console.log("Encoding frames into reports/prompt8-auth/login-entrance.gif via ffmpeg...");
+    const gifPath = path.join(REPORT_DIR, "login-entrance.gif");
+    try {
+      execSync(
+        `ffmpeg -y -framerate 10 -i "${framesDir}/frame_%03d.png" -filter_complex "[0:v] fps=10,scale=800:-1:flags=lanczos,split [a][b];[a] palettegen [p];[b][p] paletteuse" "${gifPath}"`,
+        { stdio: "inherit" }
+      );
+      console.log(`Generated animated entrance GIF: ${gifPath}`);
+    } catch (e) {
+      console.warn("Notice: GIF encoding via ffmpeg encountered notice:", e.message);
+    }
+
+    console.log("\nAll screenshots and entrance recordings captured successfully in reports/prompt8-auth/");
   } finally {
     if (browser) await browser.close();
     server.close();
