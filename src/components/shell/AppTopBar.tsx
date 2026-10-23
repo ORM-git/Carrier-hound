@@ -113,6 +113,13 @@ export default function AppTopBar({
               {pageLabel}
             </h1>
 
+            {/* Breadcrumb separator between Page Label and Tabs */}
+            {tabs && tabs.length > 0 && (
+              <span className="text-slate-400 font-semibold text-lg hidden sm:inline select-none leading-none">
+                ›
+              </span>
+            )}
+
             {/* Optional Tabs (e.g. Recommended | Saved | Applied | External) */}
             {tabs && tabs.length > 0 && (
               <div className="hidden sm:flex items-center gap-1 sm:gap-2 ml-1 sm:ml-3 overflow-x-auto no-scrollbar">
@@ -162,6 +169,19 @@ export default function AppTopBar({
           {/* FAR RIGHT: Avatar, Full Name bold 13px, Plan Pill Free/Pro          */}
           {/* =================================================================== */}
           <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
+            {/* Promo pill matching signed-in reference */}
+            {!isPro && (
+              <Link
+                href="/pricing"
+                aria-label="Upgrade to Pro"
+                className="hidden xl:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 text-xs font-bold text-[#1E3A8A] hover:border-blue-300 transition-colors shadow-2xs shrink-0"
+              >
+                <span className="w-4 h-4 rounded-full bg-[#2563EB] text-white flex items-center justify-center text-[10px]">⚡</span>
+                <span>Pro: Direct ATS & AI Tailor</span>
+                <span className="text-[#2563EB] font-bold">›</span>
+              </Link>
+            )}
+
             {/* Mobile search toggle if search is enabled */}
             {onSearchChange && (
               <button

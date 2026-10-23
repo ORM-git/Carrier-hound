@@ -245,6 +245,48 @@ function SettingsPageInner() {
           </p>
         </div>
 
+        {/* Signed-in Account Identity Card */}
+        {user && (
+          <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="space-y-1.5">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                Signed-in Account
+              </span>
+              <div className="text-sm sm:text-base font-bold text-slate-900 flex items-center gap-2">
+                <span>{user.email || "Authenticated User"}</span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  Verified
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 pt-1 text-xs text-slate-600">
+                <span className="text-slate-500">Auth Method:</span>
+                {user.app_metadata?.providers?.includes("google") ? (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-800 text-xs font-semibold border border-slate-200">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                    Google OAuth
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-800 text-xs font-semibold border border-blue-200">
+                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                    Email Magic Link (Passwordless)
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={async () => {
+                await signOutUser();
+                router.push("/");
+              }}
+              className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition cursor-pointer min-h-[44px] shrink-0"
+            >
+              <span>Sign Out</span>
+            </button>
+          </div>
+        )}
+
         {/* Tab Navigation */}
         <div className="flex flex-wrap sm:flex-nowrap items-center gap-1.5 sm:gap-2 border-b border-slate-200 overflow-x-auto pb-px">
           {[
