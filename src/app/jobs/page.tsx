@@ -19,6 +19,7 @@ import { getProAccessStatus } from "@/lib/billing/subscription";
 import GuideHeader from "@/components/GuideHeader";
 import Footer from "@/components/Footer";
 import AppIconRail from "@/components/shell/AppIconRail";
+import { useSidebarMode } from "@/lib/sidebar";
 import AppTopBar, { TopBarTab } from "@/components/shell/AppTopBar";
 import JobDetailView from "@/components/jobs/JobDetailView";
 import { computeFitDiagnostics, FitDiagnosticsResult, getDiagnosticsSummary } from "@/lib/matcher/scoring";
@@ -280,6 +281,7 @@ function CircularMatchRing({
 }
 
 function JobsPageInner() {
+  const { isExpanded } = useSidebarMode();
   const router = useRouter();
   const shouldReduceMotion = useReducedMotion();
 
@@ -769,7 +771,7 @@ function JobsPageInner() {
       {user && <AppIconRail />}
 
       {/* Main Content Area (offset by 72px on desktop when user is logged in) */}
-      <div className={`flex-1 ${user ? "md:pl-[72px]" : ""} flex flex-col min-w-0 ${user ? "pb-16 md:pb-0" : ""}`}>
+      <div className={`flex-1 ${user ? (isExpanded ? "md:pl-[240px]" : "md:pl-[72px]") : ""} flex flex-col min-w-0 ${user ? "pb-6 md:pb-0" : ""} transition-[padding] duration-300 ease-[cubic-bezier(0.2,0,0,1)]`}>
         {/* Top bar for logged-in user: 56px, white, 1px bottom border */}
         {user && (
           <AppTopBar

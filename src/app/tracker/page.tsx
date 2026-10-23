@@ -33,6 +33,7 @@ import {
 import BrandIcon from "@/components/BrandIcon";
 import Footer from "@/components/Footer";
 import AppIconRail from "@/components/shell/AppIconRail";
+import { useSidebarMode } from "@/lib/sidebar";
 import AppTopBar from "@/components/shell/AppTopBar";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -61,6 +62,7 @@ import { getProAccessStatus } from "@/lib/billing/subscription";
 import type { User } from "@supabase/supabase-js";
 
 export default function TrackerPage() {
+  const { isExpanded } = useSidebarMode();
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [applications, setApplications] = useState<TrackedApplication[]>([]);
@@ -288,7 +290,7 @@ export default function TrackerPage() {
     return (
       <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col font-sans">
         <AppIconRail />
-        <div className="flex-1 md:pl-[72px] flex flex-col min-w-0 pb-16 md:pb-0">
+        <div className={`flex-1 ${isExpanded ? "md:pl-[240px]" : "md:pl-[72px]"} flex flex-col min-w-0 pb-6 md:pb-0 transition-[padding] duration-300 ease-[cubic-bezier(0.2,0,0,1)]`}>
           <AppTopBar pageLabel="TRACKER" user={user} isPro={isPro} />
           <main className="flex-1 max-w-[1400px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-6 space-y-4">
             <div className="flex items-center justify-between">
@@ -315,7 +317,7 @@ export default function TrackerPage() {
     return (
       <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col justify-between font-sans">
         <AppIconRail />
-        <div className="flex-1 md:pl-[72px] flex flex-col min-w-0 pb-16 md:pb-0">
+        <div className={`flex-1 ${isExpanded ? "md:pl-[240px]" : "md:pl-[72px]"} flex flex-col min-w-0 pb-6 md:pb-0 transition-[padding] duration-300 ease-[cubic-bezier(0.2,0,0,1)]`}>
           <AppTopBar pageLabel="TRACKER" user={user} isPro={isPro} />
           <main className="flex-1 max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
             <ProUpgradeScreen
@@ -335,7 +337,7 @@ export default function TrackerPage() {
       <AppIconRail />
 
       {/* Main Content Area (offset by 72px on desktop) */}
-      <div className="flex-1 md:pl-[72px] flex flex-col min-w-0 pb-16 md:pb-0">
+      <div className={`flex-1 ${isExpanded ? "md:pl-[240px]" : "md:pl-[72px]"} flex flex-col min-w-0 pb-6 md:pb-0 transition-[padding] duration-300 ease-[cubic-bezier(0.2,0,0,1)]`}>
         <AppTopBar pageLabel="TRACKER" user={user} isPro={isPro} />
         <main
           id="main-content"

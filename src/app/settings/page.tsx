@@ -4,6 +4,7 @@ import React, { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import GuideHeader from "@/components/GuideHeader";
 import AppIconRail from "@/components/shell/AppIconRail";
+import { useSidebarMode } from "@/lib/sidebar";
 import AppTopBar from "@/components/shell/AppTopBar";
 import Footer from "@/components/Footer";
 import { getAuthUser, getUserPreferences, saveUserPreferences, signOutUser } from "@/lib/auth/session";
@@ -31,6 +32,7 @@ import {
 import { toast } from "react-toastify";
 
 function SettingsPageInner() {
+  const { isExpanded } = useSidebarMode();
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialTab = searchParams.get("tab") || "preferences";
@@ -206,7 +208,7 @@ function SettingsPageInner() {
     return (
       <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col font-sans">
         <AppIconRail />
-        <div className="flex-1 md:pl-[72px] flex flex-col min-w-0 pb-16 md:pb-0">
+        <div className={`flex-1 ${isExpanded ? "md:pl-[240px]" : "md:pl-[72px]"} flex flex-col min-w-0 pb-6 md:pb-0 transition-[padding] duration-300 ease-[cubic-bezier(0.2,0,0,1)]`}>
           <AppTopBar
             pageLabel={activeTab === "preferences" ? "PROFILE" : "SETTINGS"}
             user={user}
@@ -226,7 +228,7 @@ function SettingsPageInner() {
     <div className="min-h-screen bg-[#F8FAFC] text-[#09090B] flex flex-col font-sans">
       <AppIconRail />
 
-      <div className="flex-1 md:pl-[72px] flex flex-col min-w-0 pb-16 md:pb-0">
+      <div className={`flex-1 ${isExpanded ? "md:pl-[240px]" : "md:pl-[72px]"} flex flex-col min-w-0 pb-6 md:pb-0 transition-[padding] duration-300 ease-[cubic-bezier(0.2,0,0,1)]`}>
         <AppTopBar
           pageLabel={activeTab === "preferences" ? "PROFILE" : "SETTINGS"}
           user={user}

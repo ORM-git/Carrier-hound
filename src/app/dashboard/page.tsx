@@ -4,8 +4,10 @@ import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, useReducedMotion } from "motion/react";
-import GuideHeader from "@/components/GuideHeader";
-import Footer from "@/components/Footer";
+import AppIconRail from "@/components/shell/AppIconRail";
+import AppTopBar from "@/components/shell/AppTopBar";
+import LoggedInAppShell from "@/components/shell/LoggedInAppShell";
+import { useSidebarMode } from "@/lib/sidebar";
 import ProUpgradeScreen from "@/components/billing/ProUpgradeScreen";
 import ProOnboardingCard from "@/components/onboarding/ProOnboardingCard";
 import ResumeUploadAndConfirm from "@/components/resume/ResumeUploadAndConfirm";
@@ -49,13 +51,16 @@ const STAGE_TONE: Record<ApplicationStage, BadgeTone> = {
  * cards, step bar and step content. Prevents layout shift while auth/entitlement load.
  */
 function DashboardSkeleton() {
+  const { isExpanded } = useSidebarMode();
   return (
-    <div className="min-h-screen bg-surface-subtle text-ink flex flex-col">
-      <GuideHeader />
-      <main
-        id="main-content"
-        className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-tk-3 sm:py-tk-4"
-      >
+    <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col font-sans">
+      <AppIconRail />
+      <div className={`flex-1 ${isExpanded ? "md:pl-[240px]" : "md:pl-[72px]"} flex flex-col min-w-0 pb-6 md:pb-0 transition-[padding] duration-300 ease-[cubic-bezier(0.2,0,0,1)]`}>
+        <AppTopBar pageLabel="DASHBOARD" />
+        <main
+          id="main-content"
+          className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-tk-3 sm:py-tk-4 min-w-0"
+        >
         <div
           role="status"
           aria-label="Loading your account"
@@ -127,8 +132,8 @@ function DashboardSkeleton() {
             <Skeleton className="h-24 w-full rounded-tk-lg" />
           </Card>
         </div>
-      </main>
-      <Footer />
+        </main>
+      </div>
     </div>
   );
 }
@@ -195,16 +200,14 @@ export default function DashboardPage() {
   // TIER 2: Signed-in but NOT Pro (Definitively confirmed by server)
   if (!isPro) {
     return (
-      <div className="min-h-screen bg-surface-subtle text-ink flex flex-col">
-        <GuideHeader />
-        <main id="main-content" className="flex-1 max-w-5xl w-full mx-auto px-4 py-tk-4">
+      <LoggedInAppShell pageLabel="DASHBOARD" user={user} isPro={false}>
+        <div className="max-w-5xl w-full mx-auto px-4 py-tk-4">
           <ProUpgradeScreen
             title="Unlock CareerMonke Pro"
             subtitle="Access full job details, compatibility scores, and the guided Top 10 job-fit flow."
           />
-        </main>
-        <Footer />
-      </div>
+        </div>
+      </LoggedInAppShell>
     );
   }
 
@@ -298,13 +301,8 @@ export default function DashboardPage() {
 
   // TIER 3: PRO USER (Guided Pro Flow)
   return (
-    <div className="min-h-screen bg-surface-subtle text-ink flex flex-col font-sans">
-      <GuideHeader />
-
-      <main
-        id="main-content"
-        className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-tk-3 sm:py-tk-4"
-      >
+    <LoggedInAppShell pageLabel="DASHBOARD" user={user} isPro={true}>
+      <div className="max-w-5xl w-full mx-auto px-4 sm:px-6 py-tk-3 sm:py-tk-4">
         <motion.div {...entrance} className="space-y-tk-3">
           {/* ================================================================= */}
           {/* GREETING HEADER + ONE PRIMARY CTA                                 */}
@@ -601,9 +599,7 @@ export default function DashboardPage() {
             </Card>
           )}
         </motion.div>
-      </main>
-
-      <Footer />
-    </div>
+      </div>
+    </LoggedInAppShell>
   );
 }

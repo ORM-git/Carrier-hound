@@ -7,6 +7,7 @@ import { motion, useReducedMotion } from "framer-motion";
 import { toast } from "react-toastify";
 import GuideHeader from "@/components/GuideHeader";
 import AppIconRail from "@/components/shell/AppIconRail";
+import { useSidebarMode } from "@/lib/sidebar";
 import AppTopBar from "@/components/shell/AppTopBar";
 import type { User } from "@supabase/supabase-js";
 import Footer from "@/components/Footer";
@@ -40,10 +41,11 @@ import {
 } from "lucide-react";
 
 function ResumeSkeleton({ user, isPro }: { user?: User | null; isPro?: boolean }) {
+  const { isExpanded } = useSidebarMode();
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col font-sans">
       <AppIconRail />
-      <div className="flex-1 md:pl-[72px] flex flex-col min-w-0 pb-16 md:pb-0">
+      <div className={`flex-1 ${isExpanded ? "md:pl-[240px]" : "md:pl-[72px]"} flex flex-col min-w-0 pb-6 md:pb-0 transition-[padding] duration-300 ease-[cubic-bezier(0.2,0,0,1)]`}>
         <AppTopBar pageLabel="RESUME" user={user} isPro={isPro} />
         <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-tk-3 sm:py-tk-4 space-y-tk-3">
         {/* Header Ribbon Skeleton */}
@@ -81,6 +83,7 @@ function ResumeSkeleton({ user, isPro }: { user?: User | null; isPro?: boolean }
 }
 
 export default function ResumePage() {
+  const { isExpanded } = useSidebarMode();
   const router = useRouter();
   const shouldReduceMotion = useReducedMotion();
 
@@ -176,7 +179,7 @@ export default function ResumePage() {
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col font-sans">
       <AppIconRail />
 
-      <div className="flex-1 md:pl-[72px] flex flex-col min-w-0 pb-16 md:pb-0">
+      <div className={`flex-1 ${isExpanded ? "md:pl-[240px]" : "md:pl-[72px]"} flex flex-col min-w-0 pb-6 md:pb-0 transition-[padding] duration-300 ease-[cubic-bezier(0.2,0,0,1)]`}>
         <AppTopBar pageLabel="RESUME" user={user} isPro={isPro} />
 
         <main

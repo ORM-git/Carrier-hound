@@ -218,6 +218,80 @@ All visual artifacts captured and stored in `reports/prompt8-auth/`:
 1. [`src/app/login/page.tsx`](file:///d:/Carrer-hound/src/app/login/page.tsx): Updated to modal layout, 488px max-width, 24px radius, 48px/32px/32px padding, dimmed backdrop, dark circular close button, 24px light heading with brand bold inline, 48px Google button (8px radius), plain OR, 48px email input, 48px `#2563EB` primary button, small centred legal text, and 48px `#F3F4F5` switch box.
 2. [`src/app/signup/page.tsx`](file:///d:/Carrer-hound/src/app/signup/page.tsx): Same layout and token corrections with heading `"Welcome to CareerMonke"`.
 3. [`src/app/globals.css`](file:///d:/Carrer-hound/src/app/globals.css): Added `@keyframes authModalEntrance` (0.3s cubic-bezier(0.08, 0.82, 0.17, 1)) and `.animate-auth-modal` / `.animate-auth-backdrop`.
-4. [`scripts/test-auth-presentation.ts`](file:///d:/Carrer-hound/scripts/test-auth-presentation.ts): Updated static audit and negative control assertions for modal dimensions, 424px content width, 8px mobile margins, plain OR, input/button heights, and motion definitions.
-5. [`scripts/test-auth-browser.cjs`](file:///d:/Carrer-hound/scripts/test-auth-browser.cjs): Updated headless Puppeteer test suite to measure card geometry, backdrop z-index, close button, Esc key navigation, input focus, mocked error/sent states, ?next preservation, and 390px mobile viewport margins.
-6. [`scripts/capture-auth-screenshots.cjs`](file:///d:/Carrer-hound/scripts/capture-auth-screenshots.cjs): Enhanced screenshot and entrance motion recording generator with ffmpeg GIF compilation.
+4. [`src/lib/sidebar.ts`](file:///d:/Carrer-hound/src/lib/sidebar.ts): Created reactive persistent sidebar mode controller (`useSidebarMode`, `getStoredSidebarExpanded`, `setStoredSidebarExpanded`, `careermonke_sidebar_expanded`).
+5. [`src/components/shell/AppIconRail.tsx`](file:///d:/Carrer-hound/src/components/shell/AppIconRail.tsx): Implemented dual-mode desktop sidebar (72px narrow rail and 240px expanded sidebar), accessible expand/collapse toggle controls, coaching-style blue hover highlight (`hover:bg-[#F0F7FF]`, `hover:text-[#2563EB]`), equivalent keyboard focus states, and fixed bottom settings.
+6. [`src/components/shell/AppTopBar.tsx`](file:///d:/Carrer-hound/src/components/shell/AppTopBar.tsx): Integrated mobile hamburger button and slide-in navigation drawer with 44px touch targets, dimmed backdrop, and Escape listener.
+7. [`src/components/shell/LoggedInAppShell.tsx`](file:///d:/Carrer-hound/src/components/shell/LoggedInAppShell.tsx): Dynamic content padding reflow (`md:pl-[72px]` vs `md:pl-[240px]`) via `useSidebarMode()`.
+8. [`src/app/dashboard/page.tsx`](file:///d:/Carrer-hound/src/app/dashboard/page.tsx), [`src/app/jobs/page.tsx`](file:///d:/Carrer-hound/src/app/jobs/page.tsx), [`src/app/resume/page.tsx`](file:///d:/Carrer-hound/src/app/resume/page.tsx), [`src/app/tracker/page.tsx`](file:///d:/Carrer-hound/src/app/tracker/page.tsx), [`src/app/settings/page.tsx`](file:///d:/Carrer-hound/src/app/settings/page.tsx): Wired dynamic content padding reflow without overlap.
+9. [`scripts/test-loggedin-shell.ts`](file:///d:/Carrer-hound/scripts/test-loggedin-shell.ts): Updated audit suite and negative control for dual-mode sidebar, 56x56px narrow geometry, coaching hover highlight, and content reflow.
+10. [`scripts/capture-sidebar-screenshots.cjs`](file:///d:/Carrer-hound/scripts/capture-sidebar-screenshots.cjs): Puppeteer automated screenshot generator capturing narrow mode, expanded mode, hover state, focus state, and mobile hamburger drawer.
+
+---
+
+## 7. Primary Navigation & Dual-Mode Desktop Sidebar Architecture
+
+### 7.1. Mode Specifications
+| Property | Narrow Mode (Icon Rail) | Expanded Mode (Sidebar) |
+| :--- | :--- | :--- |
+| **Width** | Fixed 72px (`w-[72px]`) | Fixed 240px (`w-[240px]`) |
+| **Side Inset** | 8px (`px-2`) | 12px (`px-3`) |
+| **Item Footprint** | 56x56px icon-over-label (`w-[56px] h-[56px]`) | Full-width 46px row (`w-full h-[46px]`) |
+| **Vertical Pitch** | 64px (56px item + 8px gap via `gap-2`) | 52px (46px item + 6px gap via `gap-1.5`) |
+| **Icon Sizing** | 24px line icon (`w-6 h-6 stroke-[1.75]`) | 20px line icon (`w-5 h-5 stroke-[1.75]`) |
+| **Label Typography** | 11px medium (`text-[11px] font-medium leading-none mt-1`) | 14px regular/bold (`text-[14px] leading-none`) |
+| **Header Layout** | Centred logo mark + Expand button below (`ChevronRight`) | Logo mark + "CareerMonke" text + Collapse button (`ChevronLeft`) |
+| **Toggle Control** | `aria-label="Expand sidebar"`, `aria-expanded={false}` | `aria-label="Collapse sidebar"`, `aria-expanded={true}` |
+| **Footer Action** | Fixed 56x56px Settings gear icon link | Fixed full-width row Settings link with 20px icon and 14px label |
+
+### 7.2. Coaching-Style Hover & Focus Treatment
+- **Inactive Hover State**:
+  - Background: Soft light-blue tint `#F0F7FF` (`hover:bg-[#F0F7FF]`).
+  - Text & Icon: Vibrant CareerMonke blue `#2563EB` (`hover:text-[#2563EB]`).
+  - Border / Ring: Subtle blue accent ring `ring-1 ring-[#BFDBFE]/60` (narrow) and left accent highlight `hover:border-[#93C5FD]` (expanded).
+- **Persistent Active-Route State**:
+  - Maintained distinctly from temporary hover.
+  - Background: `#EFF6FF` with `aria-current="page"`.
+  - Text: Bold `#2563EB`.
+  - Indicator: Solid `#2563EB` left border in expanded mode.
+  - Hover on active item: subtly deeper `#DBEAFE`.
+- **Keyboard Focus State**:
+  - Enforces equivalent WCAG 2.1 focus indicators: `focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] focus-visible:ring-offset-2`.
+
+### 7.3. Mode Persistence Across Navigation
+- User's selected mode (narrow vs expanded) is persisted in `localStorage` under `careermonke_sidebar_expanded`.
+- Synchronized reactively across components via the `careermonke_sidebar_mode_changed` custom event and `useSidebarMode()` hook.
+- Page transitions smoothly preserve the active sidebar mode without layout jump.
+
+### 7.4. Content Reflow Without Overlap
+- All logged-in application pages dynamically adjust left padding:
+  - Narrow mode: `md:pl-[72px]`
+  - Expanded mode: `md:pl-[240px]`
+  - Transition: `transition-[padding] duration-300 ease-[cubic-bezier(0.2,0,0,1)]` matching sidebar width transition `transition-[width] duration-300`.
+- Verified zero horizontal overflow, clipping, or content overlap across all viewports.
+
+### 7.5. Mobile Hamburger Navigation
+- Desktop sidebar hidden on mobile (`hidden md:flex`).
+- Sticky top bar (`AppTopBar`) features a mobile hamburger button (`Menu`, min 44x44px target) with `aria-label="Open navigation menu"`.
+- Clicking opens a slide-over navigation drawer from the left:
+  - 0.3s cubic-bezier entrance motion (`ease-[cubic-bezier(0.2,0,0,1)]`).
+  - Dimmed backdrop (`bg-[#0F172A]/60`).
+  - Header with Brand mark, "CareerMonke" title, and Close button (`X`).
+  - Navigation links to Dashboard, Jobs, Resume, Tracker, Profile, Radar, and Settings with min 44px tap targets (`min-h-[44px]`).
+  - User profile summary with circular avatar, display name, email, and Free/Pro tier badge.
+  - Sign Out button calling `signOutUser()`.
+  - Keyboard accessible: closes on `Escape` key and returns focus to the menu trigger.
+
+---
+
+## 8. Visual Artifacts for Dual-Mode Sidebar
+
+All visual artifacts captured and stored in `reports/prompt8-auth/`:
+
+### 8.1. Desktop Views:
+- **Narrow Mode (72px Rail)**: [sidebar-narrow-desktop.png](file:///d:/Carrer-hound/reports/prompt8-auth/sidebar-narrow-desktop.png)
+- **Expanded Mode (240px Sidebar)**: [sidebar-expanded-desktop.png](file:///d:/Carrer-hound/reports/prompt8-auth/sidebar-expanded-desktop.png)
+- **Coaching-Style Hover Highlight**: [sidebar-hover-highlight.png](file:///d:/Carrer-hound/reports/prompt8-auth/sidebar-hover-highlight.png)
+- **Keyboard Focus State**: [sidebar-keyboard-focus.png](file:///d:/Carrer-hound/reports/prompt8-auth/sidebar-keyboard-focus.png)
+
+### 8.2. Mobile View:
+- **Mobile Hamburger Navigation Drawer (390px)**: [mobile-nav-drawer.png](file:///d:/Carrer-hound/reports/prompt8-auth/mobile-nav-drawer.png)
