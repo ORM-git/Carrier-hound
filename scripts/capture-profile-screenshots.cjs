@@ -63,7 +63,7 @@ async function capture() {
     page.on('pageerror', err => console.log('PAGE ERROR:', err.message));
 
     const sampleUser = {
-      id: "usr-sample-123",
+      id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
       email: "alex.morgan@example.com",
       user_metadata: { full_name: "Alex Morgan" },
       aud: "authenticated",
@@ -194,6 +194,20 @@ async function capture() {
       fullPage: false,
     });
     console.log("  Saved profile-desktop.png");
+
+    // 1b. Scroll-Spy & Active Tab Verification Screenshot
+    console.log("Capturing Scroll-Spy Active Tab Screenshot...");
+    await page.evaluate(() => {
+      const tabs = Array.from(document.querySelectorAll('button[role="tab"]'));
+      const expTab = tabs.find(t => t.textContent.trim().includes("Work Experience"));
+      if (expTab) expTab.click();
+    });
+    await new Promise((r) => setTimeout(r, 1200));
+    await page.screenshot({
+      path: path.join(REPORTS_DIR, "profile-scrollspy.png"),
+      fullPage: false,
+    });
+    console.log("  Saved profile-scrollspy.png");
 
     // 2. Open Personal Drawer on Desktop
     console.log("Capturing Desktop Personal Drawer...");

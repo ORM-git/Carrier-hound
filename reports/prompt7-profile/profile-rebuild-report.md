@@ -1,4 +1,4 @@
-# Jobright-Style Profile Page & Edit Drawers Rebuild Report (Prompt 7)
+# Jobright-Style Profile Page & Edit Drawers Rebuild Report (Prompt 7 Follow-Up)
 
 ## 1. Overview & Architecture Inspection
 
@@ -20,66 +20,64 @@
 
 ---
 
-## 2. Rebuilt Components & Pages
+## 2. Rebuilt Components & Specifications (Prompt 7 Follow-Up)
 
-### 1. `src/app/profile/page.tsx`
-- **Shell**: Wrapped in `LoggedInAppShell` with `pageLabel="PROFILE"`.
-- **Layout**: Centred 2-column grid (`max-w-6xl mx-auto px-4 sm:px-6 py-6 md:py-8 grid grid-cols-1 lg:grid-cols-12 gap-6`), collapsing to single-column on mobile screens.
-- **Section Tabs**: Supported sections (**Personal**, **Education**, **Work Experience**, **Skills**). Underlined active tab (`after:h-[2px] after:bg-[#0F172A]`), 14px font, minimum 44px touch targets. Clicking a tab updates state and smoothly scrolls to the section card. Zero unsupported sections.
-- **Header Card**:
-  - Full name in bold 20-24px `#0F172A`.
-  - User avatar with initial on `#2563EB`.
-  - Working edit pencil button (`data-testid="edit-header-btn"`) opening the Personal edit drawer.
-  - Contact chips conditioned strictly on actual stored, non-empty values (`candidate.email`, `candidate.phone`, `candidate.location`).
-  - Zero invented privacy claims.
-- **Section Cards**:
-  - White surfaces, 16px radius (`rounded-2xl`), 1px `#E2E8F0` border, 20-24px padding.
-  - **Personal**: Summary or honest empty state ("No professional summary provided yet.") with "+ Add summary" action.
-  - **Work Experience**: Timeline treatment with vertical `#E2E8F0` line, circular `#2563EB` dot nodes, bold role titles, company names, dates, locations, and achievements. Honest empty state when empty.
-  - **Education**: Timeline treatment with vertical `#E2E8F0` line, circular `#2563EB` dot nodes, degree, institution, year, and field of study. Honest empty state when empty.
-  - **Skills**: Wrapped chips with `#EFF6FF` background, `#1D4ED8` text, `#BFDBFE` border. Honest empty state when empty.
-- **Right Rail**:
-  - **Profile Strength Card**: Real completion percentage calculated dynamically across Personal, Experience, Education, and Skills. If incomplete, renders an alert banner and actionable checklist where clicking "Add" opens that specific section's edit drawer. If complete, renders a 100% green check state.
-  - **Quick Links Card**: Strictly routes to existing internal pages: `/resume`, `/tracker`, `/jobs`, `/settings`. Zero external referrals, zero autofill extensions.
+### 1. `src/components/profile/ProfileDrawers.tsx`
+- **Drawer Dimensions**: Desktop width explicitly set to 808px (`md:w-[808px]`), capped to viewport width (`max-w-full`). Full-screen on mobile (`w-full`, `inset-0`).
+- **Slide Transition**: 300ms transition (`duration-300 ease-out`).
+- **Header UPDATE Action**:
+  - Primary blue `UPDATE` button (`data-testid="drawer-header-update-btn"`) situated directly in the drawer header beside the section title and close control.
+  - Styled with `#2563EB`, hover `#1D4ED8`, active `#1E40AF`, min-h-[44px] touch target.
+  - Connected to form submission and section-specific validation.
+  - Pending-save loader (`Loader2` spinner with `disabled` protection).
+  - Preserves draft edits on failed save, displays inline error banner (`[data-testid="drawer-error-alert"]`), and never emits success toast on failure.
+  - Cancel button, X button, Escape key, or backdrop click strictly discards unsaved draft edits and restores persisted profile values upon re-opening.
+- **Accessibility & Focus Trap**:
+  - Keyboard navigation locks focus inside drawer on `Tab` / `Shift+Tab`.
+  - Escape key dismisses drawer.
+  - Focus returns cleanly to triggering opener element upon closure.
+  - Body overflow locked (`document.body.style.overflow = "hidden"`).
 
-### 2. `src/components/profile/ProfileDrawers.tsx`
-- Full-height slide-over modal drawer (`fixed inset-0 sm:inset-y-0 sm:left-auto sm:right-0 sm:w-[500px] md:w-[560px]`).
-- Full-screen on mobile viewports (`inset-0`).
-- **Focus Trap**: Traps keyboard focus between interactive elements on `Tab` and `Shift+Tab`.
-- **Keyboard Dismissal**: Closes drawer on `Escape` key press.
-- **Focus Restoration**: Restores focus to the triggering edit pencil button upon closure.
-- **Background Interaction Lock**: Locks body scroll (`document.body.style.overflow = "hidden"`) and overlays `#0F172A]/60` backdrop.
-- **Draft Isolation**: Unsaved changes exist in draft state. Clicking Cancel, X, Esc, or backdrop discards unsaved edits; reopening re-initializes from persisted profile data.
-- **Validation**: Client-side validation for required name on Personal, degree/institution on Education, and role/company on Experience.
-- **Touch Targets**: All interactive buttons, inputs, and close triggers have at least 44px min-height/width (`min-h-[44px]`).
-
-### 3. `src/components/shell/AppIconRail.tsx`
-- Updated Profile nav item to route to `/profile` with active state matching `p === "/profile"`.
-- Settings gear continues routing to `/settings`.
+### 2. `src/app/profile/page.tsx`
+- **Sticky Tabs with Real Scroll-Spy**:
+  - Sticky tabs header (`sticky top-14 z-20 bg-[#F8FAFC]/95`) featuring supported sections: Personal, Education, Work Experience, Skills.
+  - Active tab underlined (`after:h-[2px] after:bg-[#0F172A]`) with min-h-[44px] touch target.
+  - Click-to-scroll smoothly animates page to corresponding section.
+  - Real `scroll` listener tracks bounding rectangles of sections and automatically updates active tab to the visible section.
+  - Smooth-scroll debounce (`isSmoothScrollingRef` with 800ms timer) prevents tab flicker during transit.
+- **Timeline Styling**:
+  - Vertical timeline track updated to `#BFDBFE` (`before:bg-[#BFDBFE]`).
+  - Circular dot node updated to `#2563EB` (`bg-[#2563EB]`).
+- **Section Order**: Personal, Education, Work Experience, Skills aligned directly with tab order.
+- **Header & Section Cards**: White surfaces (`bg-white`), 16px radius (`rounded-2xl`), 1px `#E2E8F0` border.
+- **Right Rail**: Profile strength completion derived from real data; quick links to existing pages only (`/resume`, `/tracker`, `/jobs`, `/settings`).
 
 ---
 
 ## 3. Verification & Test Evidence
 
-### 1. TypeScript & Static Build
+### 1. TypeScript & Production Build
 - `npx tsc --noEmit`: **0 errors** (exit code 0).
-- `npm run build`: **40 static pages exported successfully**, including `○ /profile` (14.8 kB).
+- `npm run build`: **40 static pages exported successfully**, including `○ /profile` (15.1 kB).
 
-### 2. Dedicated Profile Rebuild Test Suite (`scripts/test-profile-rebuild.ts`)
+### 2. Static Audit Suite (`scripts/test-profile-rebuild.ts`)
 - **Normal Validation**:
   ```text
   [PASS] shell integration: LoggedInAppShell integrated with pageLabel='PROFILE'
   [PASS] responsive grid: Centred 2-column layout (col-span-8 / col-span-4) on desktop, single-column on mobile
   [PASS] section tabs: Personal, Education, Work Experience, and Skills tabs present
   [PASS] tab visual styling: Active tab underlined with touch target min-h-[44px]
+  [PASS] scroll-spy: Real scroll-spy tracking active section with scroll-flicker debounce
   [PASS] header card: Full name, initial avatar, and working edit pencil present
   [PASS] contact chips: Strictly conditioned on actual stored candidate fields (email, phone, location)
   [PASS] privacy purity: Zero invented privacy claims in header card
   [PASS] card surfaces: White background, 16px radius (rounded-2xl), 1px #E2E8F0 border
-  [PASS] timeline treatment: Vertical left track #E2E8F0 with circular dot node for experience and education
+  [PASS] timeline treatment: Vertical left track #BFDBFE with circular dot node #2563EB for experience and education
   [PASS] skills treatment: Wrapped chips with #EFF6FF background and #1D4ED8 text
   [PASS] empty states: Honest empty states rendered for empty sections with direct add actions
   [PASS] drawer component: Full-height slide-over dialog rendered with backdrop
+  [PASS] drawer dimensions: 808px desktop drawer (md:w-[808px]), full-screen mobile (w-full), 300ms transition
+  [PASS] drawer header update: Primary blue UPDATE action situated in drawer header beside title
   [PASS] draft state isolation: Edits are held in draft state and discarded on cancel/X/Esc
   [PASS] drawer validation: Validates required name, email format, and item fields
   [PASS] save error handling: Rejection keeps drawer open, preserves draft edits, and shows inline error alert
@@ -91,25 +89,93 @@
   [PASS] profile strength: Real completion percentage derived from stored sections with direct drawer action triggers
   [PASS] quick links: Strictly links to existing routes (/resume, /tracker, /jobs, /settings) with zero unbacked tools
   [PASS] rail navigation: AppIconRail Profile item routes directly to /profile
+  PROMPT 7 JOBRIGHT-STYLE PROFILE REBUILD VALIDATED LOCALLY [PASS-LOCAL]
   ```
 - **Negative Control**:
-  `npx tsx scripts/test-profile-rebuild.ts --negative-control`
+  `npx tsx scripts/test-profile-rebuild.ts --negative-control`:
   ```text
-  NEGATIVE CONTROL PASSED: Deliberately injected corruptions caught 6 errors.
+  NEGATIVE CONTROL PASSED: Deliberately injected corruptions caught 10 errors.
   ```
 
-### 3. Suite Runner Integration
-- `scripts/suite-runner.ts`: **47 passed, 0 failed, 0 blocked/skipped**.
+### 3. Automated Browser Checks (`scripts/test-profile-browser.cjs`)
+Puppeteer-driven browser validation verifying live DOM rendering and interactions against isolated mocks:
+```text
+[PASS] Mock static server listening on http://localhost:3457
+[PASS] Page initialized: Profile loaded on desktop viewport 1280x900
+[INFO] Initial input#field-name value when drawer opened: "Alex Morgan"
+[PASS] Desktop drawer width verified: 808px
+[PASS] Header UPDATE action present with text: "UPDATE"
+[INFO] Value after clearing: ""
+[PASS] Header UPDATE validation triggered: "Full Name is required."
+[PASS] Simulated save failure correctly caught: Draft preserved & error banner displayed
+[PASS] Escape key dismissed drawer cleanly
+[PASS] Draft discarded on cancel: Restored original 'Alex Morgan'
+[PASS] Mobile drawer verified full-screen: 390px
+[PASS] Initial active tab is: "Personal"
+[PASS] Click-to-scroll activated tab: "Skills"
+[PASS] Scroll-spy automatically tracked visible section back to: "Personal"
+ALL BROWSER INTERACTION & SCROLL-SPY CHECKS PASSED LOCALLY [PASS-LOCAL]
+```
+
+### 4. Offline Suite Runner Resolution & Honest Audit
+- **Root Cause of Previous "47 passed / 0 skipped" Claim**:
+  - `scripts/suite-runner.ts` lines 7-10 automatically executes `dotenv.config({ path: envLocalPath })` if `.env.local` exists on disk.
+  - When `.env.local` was present in the root directory, `hasSupabaseCredentials()` returned `true` (reading credentials from `.env.local`), thereby executing live DB suites against Supabase.
+- **Strictly Offline Run with Credentials Absent**:
+  - Executed with `.env.local` temporarily relocated:
+  ```text
+  ================================================================================
+  CAREERMONKE TEST SUITE RUNNER (Supabase credentials detected: NO — running offline suites)
+  ================================================================================
+  ⏸️  [BLOCKED] scripts/test-enhanced-scoring.ts — Skipped (SUPABASE credentials not set in environment)
+  ⏸️  [BLOCKED] scripts/test-senior-scoring.ts — Skipped (SUPABASE credentials not set in environment)
+  ✅ [PASS]    scripts/test-trust-acceptance.ts (9.03s)
+  ✅ [PASS]    scripts/test-salary-parser.ts (8.52s)
+  ✅ [PASS]    scripts/test-ingestion-safety.ts (8.59s)
+  ✅ [PASS]    scripts/test-ingest-regressions.ts (8.46s)
+  ✅ [PASS]    scripts/verify-careerops-port.ts (8.56s)
+  ✅ [PASS]    scripts/daily-digest-cron.ts --dry (9.15s)
+  ✅ [PASS]    scripts/test-scrape.mjs (2.63s)
+  ✅ [PASS]    scripts/test-insert.ts (9.33s)
+  ✅ [PASS]    scripts/test-admin-analytics-reads.ts (18.71s)
+  ✅ [PASS]    scripts/test-radar-concurrency.ts (9.35s)
+  ✅ [PASS]    scripts/test-account-delete-parallel.ts (10.43s)
+  ✅ [PASS]    scripts/test-rate-limits.ts (8.77s)
+  ✅ [PASS]    scripts/test-worldwide-view.ts (34.87s)
+  ✅ [PASS]    scripts/test-domain-resolution.ts (9.57s)
+  ✅ [PASS]    scripts/test-env-guards.ts (9.04s)
+  ✅ [PASS]    scripts/test-sentry-config.ts (8.63s)
+  ✅ [PASS]    scripts/test-no-hardcoded-stats.ts (11.09s)
+  ✅ [PASS]    scripts/test-cookie-notice.ts (8.66s)
+  ✅ [PASS]    scripts/test-admin-audit-log.ts (9.23s)
+  ✅ [PASS]    scripts/test-xss-csp-ai-uploads.ts (9.30s)
+  ✅ [PASS]    scripts/test-design-tokens.ts (9.31s)
+  ✅ [PASS]    scripts/test-redesign-jobs-page.ts (9.50s)
+  ✅ [PASS]    scripts/test-jobs-match-percentage.ts (9.22s)
+  ✅ [PASS]    scripts/test-public-shell.ts (9.46s)
+  ✅ [PASS]    scripts/test-loggedin-shell.ts (9.24s)
+  ✅ [PASS]    scripts/test-jobs-list-detail.ts (9.07s)
+  ✅ [PASS]    scripts/test-card-hover-match.ts (9.17s)
+  ✅ [PASS]    scripts/test-razorpay-billing.ts (8.96s)
+  ✅ [PASS]    scripts/test-profile-rebuild.ts (8.74s)
+  ⏸️  [BLOCKED] 16 remaining DB suites skipped cleanly
+  ================================================================================
+  SUMMARY: 29 passed, 0 failed, 18 blocked/skipped
+  ================================================================================
+  ```
+  - Exact count reported: **29 passed, 0 failed, 18 blocked/skipped**.
+  - `.env.local` restored immediately after execution.
 
 ---
 
-## 4. Visual Comparison & Limitations Reporting
+## 4. Visual Comparison & Reference Limitations
 
-- **Reference Limitation Notice**: The original Jobright live reference assets were not stored in this repository; layout proportions, tab navigation, timeline treatment, and drawer mechanics were implemented using the captured specifications from Prompts 1-6. Exact fidelity cannot be claimed solely through code assertions; visual comparison is based on the captured layout and screenshot artifacts.
+- **Reference Limitation Notice**: The original Jobright live design files/assets are not stored in this repository; layout proportions, tab navigation, 808px drawer width, `#BFDBFE` timeline treatment, and header UPDATE button interactions were implemented using the captured specifications from Prompts 1-6 and Prompt 7 reference prompts. Visual comparison is based on the captured layout and screenshot artifacts.
 - **Captured Artifacts** (in `reports/prompt7-profile/`):
   1. `profile-before.png`: Baseline navigation view prior to dedicated profile page.
-  2. `profile-desktop.png`: Centred 2-column desktop view with header card, section cards, timeline treatment, and right rail.
-  3. `profile-drawer-personal.png`: Desktop slide-over drawer editing Personal Information with focus trapped.
-  4. `profile-drawer-experience.png`: Desktop slide-over drawer editing Work Experience with multi-entry management.
-  5. `profile-mobile.png`: Single-column mobile view with bottom tab bar.
-  6. `profile-drawer-mobile.png`: Full-screen mobile edit drawer.
+  2. `profile-desktop.png`: Centred 2-column desktop view showing timeline track `#BFDBFE` and dots `#2563EB`.
+  3. `profile-scrollspy.png`: Desktop view after scrolling showing active tab underline tracking visible section.
+  4. `profile-drawer-personal.png`: Desktop 808px slide-over drawer showing header UPDATE button, focus trap, and section fields.
+  5. `profile-drawer-experience.png`: Desktop 808px drawer editing Work Experience with multi-entry management.
+  6. `profile-mobile.png`: Single-column mobile view.
+  7. `profile-drawer-mobile.png`: Full-screen mobile edit drawer showing header UPDATE button.

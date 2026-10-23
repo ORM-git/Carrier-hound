@@ -30,8 +30,12 @@ function run() {
     // Inject corruptions to verify negative control triggers non-zero exit
     profileCode = profileCode.replace(/pageLabel="PROFILE"/g, 'pageLabel="DASHBOARD"');
     profileCode = profileCode.replace(/Personal/g, "UnsupportedCustomSection");
+    profileCode = profileCode.replace(/#BFDBFE/g, "#111111");
+    profileCode = profileCode.replace(/isSmoothScrollingRef/g, "noSmoothScrollRef");
     drawersCode = drawersCode.replace(/min-h-\[44px\]/g, "min-h-[20px]");
     drawersCode = drawersCode.replace(/Escape/g, "F12");
+    drawersCode = drawersCode.replace(/md:w-\[808px\]/g, "md:w-[400px]");
+    drawersCode = drawersCode.replace(/drawer-header-update-btn/g, "missing-update-btn");
     iconRailCode = iconRailCode.replace(/href: "\/profile"/g, 'href: "/unsupported"');
   }
 
@@ -59,7 +63,7 @@ function run() {
   }
 
   // -------------------------------------------------------------------------
-  // 2. SECTION TABS
+  // 2. SECTION TABS & SCROLL-SPY
   // -------------------------------------------------------------------------
   const hasPersonalTab = profileCode.includes('"Personal"') || profileCode.includes('label: "Personal"');
   const hasEducationTab = profileCode.includes('"Education"') || profileCode.includes('label: "Education"');
@@ -78,6 +82,16 @@ function run() {
     failures.push("TABS FAIL: Active section tab must be underlined.");
   } else {
     console.log("  [PASS] tab visual styling: Active tab underlined with touch target min-h-[44px]");
+  }
+
+  const hasScrollSpy =
+    profileCode.includes("isSmoothScrollingRef") &&
+    profileCode.includes("handleScroll") &&
+    profileCode.includes('window.addEventListener("scroll"');
+  if (!hasScrollSpy) {
+    failures.push("TABS FAIL: Tabs must feature scroll-spy with smooth-scroll flicker prevention.");
+  } else {
+    console.log("  [PASS] scroll-spy: Real scroll-spy tracking active section with scroll-flicker debounce");
   }
 
   // -------------------------------------------------------------------------
@@ -117,7 +131,10 @@ function run() {
   // 4. WHITE SECTION CARDS & TIMELINE & EMPTY STATES
   // -------------------------------------------------------------------------
   const hasRoundedCards = profileCode.includes("rounded-2xl") && profileCode.includes("border-[#E2E8F0]");
-  const hasTimelineTreatment = profileCode.includes("before:w-[2px]") && profileCode.includes("before:bg-[#E2E8F0]");
+  const hasTimelineTreatment =
+    profileCode.includes("before:w-[2px]") &&
+    profileCode.includes("before:bg-[#BFDBFE]") &&
+    profileCode.includes("bg-[#2563EB]");
   const hasWrappedSkills = profileCode.includes("flex-wrap") && profileCode.includes("bg-[#EFF6FF]") && profileCode.includes("text-[#1D4ED8]");
 
   if (!hasRoundedCards) {
@@ -127,9 +144,9 @@ function run() {
   }
 
   if (!hasTimelineTreatment) {
-    failures.push("TIMELINE FAIL: Work experience and education entries must use timeline vertical line treatment.");
+    failures.push("TIMELINE FAIL: Work experience and education entries must use timeline vertical line #BFDBFE and dots #2563EB.");
   } else {
-    console.log("  [PASS] timeline treatment: Vertical left track #E2E8F0 with circular dot node for experience and education");
+    console.log("  [PASS] timeline treatment: Vertical left track #BFDBFE with circular dot node #2563EB for experience and education");
   }
 
   if (!hasWrappedSkills) {
@@ -149,9 +166,17 @@ function run() {
   }
 
   // -------------------------------------------------------------------------
-  // 5. EDIT DRAWERS (STATE, VALIDATION & SAFE REJECTION)
+  // 5. EDIT DRAWERS (DIMENSIONS, HEADER UPDATE, STATE, VALIDATION & SAFE REJECTION)
   // -------------------------------------------------------------------------
   const hasDrawerComponent = drawersCode.includes("ProfileDrawers") && drawersCode.includes("role=\"dialog\"");
+  const hasDrawerDimensions =
+    drawersCode.includes("md:w-[808px]") &&
+    drawersCode.includes("w-full") &&
+    drawersCode.includes("duration-300");
+  const hasHeaderUpdate =
+    drawersCode.includes("drawer-header-update-btn") &&
+    drawersCode.includes("bg-[#2563EB]") &&
+    drawersCode.includes("UPDATE");
   const hasDiscardDraft = drawersCode.includes("createInitialDraft") && drawersCode.includes("onClose");
   const hasValidation =
     drawersCode.includes("Full Name is required.") &&
@@ -165,6 +190,18 @@ function run() {
     failures.push("DRAWER FAIL: Full-height slide-over drawer modal component must be present.");
   } else {
     console.log("  [PASS] drawer component: Full-height slide-over dialog rendered with backdrop");
+  }
+
+  if (!hasDrawerDimensions) {
+    failures.push("DRAWER FAIL: Drawer must be 808px on desktop (capped to viewport), full-screen on mobile, with 300ms transition.");
+  } else {
+    console.log("  [PASS] drawer dimensions: 808px desktop drawer (md:w-[808px]), full-screen mobile (w-full), 300ms transition");
+  }
+
+  if (!hasHeaderUpdate) {
+    failures.push("DRAWER FAIL: Drawer header must feature primary blue UPDATE button (drawer-header-update-btn).");
+  } else {
+    console.log("  [PASS] drawer header update: Primary blue UPDATE action situated in drawer header beside title");
   }
 
   if (!hasDiscardDraft) {

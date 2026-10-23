@@ -241,8 +241,8 @@ export default function ProfileDrawers({
   // -------------------------------------------------------------------------
   // Save Handler with Validation and Safe Rollback on Rejection
   // -------------------------------------------------------------------------
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSave = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     setError(null);
 
     // Section-specific validation
@@ -307,29 +307,44 @@ export default function ProfileDrawers({
         onClick={onClose}
         aria-hidden="true"
         data-testid="profile-drawer-backdrop"
-        className="fixed inset-0 bg-[#0F172A]/60 backdrop-blur-[2px] transition-opacity cursor-pointer animate-in fade-in duration-200"
+        className="fixed inset-0 bg-[#0F172A]/60 backdrop-blur-[2px] transition-opacity cursor-pointer animate-in fade-in duration-300"
       />
 
-      {/* Drawer Container (Full-screen on mobile, 500-560px on sm+) */}
+      {/* Drawer Container (808px on desktop, capped to viewport, full-screen on mobile, 300ms transition) */}
       <div
         ref={drawerRef}
         tabIndex={-1}
-        className="relative z-10 w-full sm:w-[500px] md:w-[560px] h-full bg-white shadow-2xl flex flex-col focus:outline-none animate-in slide-in-from-right duration-200"
+        className="relative z-10 w-full md:w-[808px] max-w-full h-full bg-white shadow-2xl flex flex-col focus:outline-none animate-in slide-in-from-right duration-300 ease-out"
       >
-        {/* Drawer Header */}
-        <header className="h-16 px-6 border-b border-[#E2E8F0] flex items-center justify-between bg-white shrink-0">
-          <h2 id="drawer-title" className="text-[18px] font-bold text-[#0F172A]">
+        {/* Drawer Header with Section Title, primary blue UPDATE button, and Close button */}
+        <header className="h-16 px-6 border-b border-[#E2E8F0] flex items-center justify-between gap-4 bg-white shrink-0">
+          <h2 id="drawer-title" className="text-[18px] font-bold text-[#0F172A] truncate">
             {sectionTitles[section]}
           </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close drawer"
-            data-testid="drawer-close-btn"
-            className="w-11 h-11 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full text-[#64748B] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
-          >
-            <X className="w-5 h-5 stroke-[2]" />
-          </button>
+          <div className="flex items-center gap-2.5 shrink-0">
+            {/* Primary Blue UPDATE Action */}
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saving}
+              data-testid="drawer-header-update-btn"
+              className="h-10 min-h-[44px] px-5 rounded-full text-[13px] font-semibold bg-[#2563EB] text-white hover:bg-[#1D4ED8] active:bg-[#1E40AF] disabled:opacity-60 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] focus-visible:ring-offset-1 inline-flex items-center gap-2 cursor-pointer shadow-xs"
+            >
+              {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              <span>{saving ? "Saving..." : "UPDATE"}</span>
+            </button>
+
+            {/* Close X Button */}
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close drawer"
+              data-testid="drawer-close-btn"
+              className="w-11 h-11 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full text-[#64748B] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
+            >
+              <X className="w-5 h-5 stroke-[2]" />
+            </button>
+          </div>
         </header>
 
         {/* Drawer Scrollable Body */}
@@ -754,26 +769,17 @@ export default function ProfileDrawers({
           )}
         </form>
 
-        {/* Drawer Footer Actions */}
-        <footer className="h-20 px-6 border-t border-[#E2E8F0] bg-white flex items-center justify-end gap-3 shrink-0">
+        {/* Drawer Footer Actions (Cancel discards unsaved edits) */}
+        <footer className="h-16 px-6 border-t border-[#E2E8F0] bg-[#F8FAFC] flex items-center justify-between gap-3 shrink-0">
+          <span className="text-xs text-[#64748B]">Cancel discards unsaved changes.</span>
           <button
             type="button"
             onClick={onClose}
             disabled={saving}
             data-testid="drawer-cancel-btn"
-            className="h-10 min-h-[44px] px-5 rounded-full text-[14px] font-medium bg-[#F1F5F9] text-[#0F172A] hover:bg-[#E2E8F0] transition-colors cursor-pointer disabled:opacity-50"
+            className="h-10 min-h-[44px] px-5 rounded-full text-[14px] font-medium bg-white border border-[#CBD5E1] text-[#0F172A] hover:bg-[#F1F5F9] transition-colors cursor-pointer disabled:opacity-50"
           >
             Cancel
-          </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving}
-            data-testid="drawer-save-btn"
-            className="h-10 min-h-[44px] px-6 rounded-full text-[14px] font-medium bg-[#2563EB] text-white hover:bg-[#1D4ED8] active:bg-[#1E40AF] disabled:opacity-60 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] focus-visible:ring-offset-1 inline-flex items-center gap-2 cursor-pointer"
-          >
-            {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-            <span>{saving ? "Saving..." : "Save changes"}</span>
           </button>
         </footer>
       </div>

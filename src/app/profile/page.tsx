@@ -38,8 +38,10 @@ export default function ProfilePage() {
   const [isPro, setIsPro] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  // Active section tab
+  // Active section tab & scroll spy state
   const [activeTab, setActiveTab] = useState<ProfileSection>("personal");
+  const isSmoothScrollingRef = useRef(false);
+  const scrollTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Drawer state
   const [activeDrawer, setActiveDrawer] = useState<ProfileSection | null>(null);
@@ -113,6 +115,54 @@ export default function ProfilePage() {
     };
   }, [router, loadProfileData]);
 
+  // Click-to-scroll with flicker prevention during transit
+  const handleTabClick = (section: ProfileSection) => {
+    setActiveTab(section);
+    isSmoothScrollingRef.current = true;
+    if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
+
+    const el = document.getElementById(`section-${section}`);
+    if (el) {
+      // Offset accounting for sticky top bar (56px) + sticky tab header (~52px)
+      const yOffset = -120;
+      const y = el.getBoundingClientRect().top + window.pageYOffset + yOffset;
+      window.scrollTo({ top: Math.max(0, y), behavior: "smooth" });
+    }
+
+    scrollTimerRef.current = setTimeout(() => {
+      isSmoothScrollingRef.current = false;
+    }, 800);
+  };
+
+  // Scroll spy: updates activeTab as user scrolls through sections
+  useEffect(() => {
+    const handleScroll = () => {
+      if (isSmoothScrollingRef.current) return;
+
+      const sections: ProfileSection[] = ["personal", "education", "experience", "skills"];
+      const offset = 140; // Detection trigger offset near top
+      let currentSection: ProfileSection = "personal";
+
+      for (const sectionId of sections) {
+        const el = document.getElementById(`section-${sectionId}`);
+        if (el) {
+          const rect = el.getBoundingClientRect();
+          if (rect.top <= offset) {
+            currentSection = sectionId;
+          }
+        }
+      }
+
+      setActiveTab((prev) => (prev === currentSection ? prev : currentSection));
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+      if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
+    };
+  }, []);
+
   // Drawer open handler (captures opener button for accessibility focus return)
   const handleOpenDrawer = (section: ProfileSection, e?: React.MouseEvent<HTMLElement>) => {
     if (e && e.currentTarget) {
@@ -129,18 +179,12 @@ export default function ProfilePage() {
 
   // Profile save action
   const handleSaveProfile = async (updated: CandidateProfile) => {
+    if (typeof window !== "undefined" && (window as any).__MOCK_PROFILE_SAVE_ERROR__) {
+      throw new Error((window as any).__MOCK_PROFILE_SAVE_ERROR__);
+    }
     await saveConfirmedCandidateProfile(updated);
     setCandidate(updated);
     toast.success("Profile saved successfully.");
-  };
-
-  // Scroll to section when tab clicked
-  const handleTabClick = (section: ProfileSection) => {
-    setActiveTab(section);
-    const el = document.getElementById(`section-${section}`);
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
   };
 
   // Compute real profile completion statistics
@@ -154,8 +198,8 @@ export default function ProfilePage() {
 
   const completionChecks = [
     { id: "personal" as ProfileSection, label: "Personal details & headline", done: hasPersonal },
-    { id: "experience" as ProfileSection, label: "Work experience", done: hasExperience },
     { id: "education" as ProfileSection, label: "Education & degrees", done: hasEducation },
+    { id: "experience" as ProfileSection, label: "Work experience", done: hasExperience },
     { id: "skills" as ProfileSection, label: "Core skills (3+ required)", done: hasSkills },
   ];
 
@@ -179,37 +223,46 @@ export default function ProfilePage() {
     >
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 md:py-8 space-y-6">
         {/* ================================================================= */}
-        {/* 1. SECTION TABS                                                  */}
+        {/* 1. STICKY SECTION TABS WITH SCROLL-SPY                            */}
         {/* ================================================================= */}
-        <nav
-          aria-label="Profile Sections"
-          className="flex items-center gap-2 sm:gap-4 border-b border-[#E2E8F0] overflow-x-auto no-scrollbar"
-        >
-          {(
-            [
-              { id: "personal", label: "Personal" },
-              { id: "education", label: "Education" },
-              { id: "experience", label: "Work Experience" },
-              { id: "skills", label: "Skills" },
-            ] as const
-          ).map((tab) => {
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => handleTabClick(tab.id)}
-                className={`relative h-12 min-h-[44px] px-3 sm:px-4 text-[14px] transition-colors whitespace-nowrap cursor-pointer ${
-                  isActive
-                    ? "font-bold text-[#0F172A] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:bg-[#0F172A]"
-                    : "font-medium text-[#64748B] hover:text-[#0F172A]"
-                }`}
-              >
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
-        </nav>
+        <div className="sticky top-14 z-20 bg-[#F8FAFC]/95 backdrop-blur-xs pt-1 border-b border-[#E2E8F0]">
+          <nav
+            role="tablist"
+            aria-label="Profile Sections"
+            data-testid="profile-section-tabs"
+            className="flex items-center gap-2 sm:gap-4 overflow-x-auto no-scrollbar"
+          >
+            {(
+              [
+                { id: "personal", label: "Personal" },
+                { id: "education", label: "Education" },
+                { id: "experience", label: "Work Experience" },
+                { id: "skills", label: "Skills" },
+              ] as const
+            ).map((tab) => {
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={isActive}
+                  aria-controls={`section-${tab.id}`}
+                  onClick={() => handleTabClick(tab.id)}
+                  data-testid={`profile-tab-${tab.id}`}
+                  data-active={isActive ? "true" : "false"}
+                  className={`relative h-12 min-h-[44px] px-3 sm:px-4 text-[14px] transition-colors whitespace-nowrap cursor-pointer ${
+                    isActive
+                      ? "font-bold text-[#0F172A] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:bg-[#0F172A]"
+                      : "font-medium text-[#64748B] hover:text-[#0F172A]"
+                  }`}
+                >
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+        </div>
 
         {/* ================================================================= */}
         {/* 2. MAIN 2-COLUMN LAYOUT (DESKTOP) / 1-COLUMN (MOBILE)             */}
@@ -290,7 +343,7 @@ export default function ProfilePage() {
               id="section-personal"
               aria-label="Personal Information"
               data-testid="profile-section-personal"
-              className="bg-white rounded-2xl border border-[#E2E8F0] p-6 space-y-4 shadow-none"
+              className="bg-white rounded-2xl border border-[#E2E8F0] p-6 space-y-4 shadow-none scroll-mt-32"
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -327,13 +380,78 @@ export default function ProfilePage() {
             </section>
 
             {/* ------------------------------------------------------------- */}
-            {/* SECTION: WORK EXPERIENCE                                      */}
+            {/* SECTION: EDUCATION (Timeline track #BFDBFE, dots #2563EB)     */}
+            {/* ------------------------------------------------------------- */}
+            <section
+              id="section-education"
+              aria-label="Education"
+              data-testid="profile-section-education"
+              className="bg-white rounded-2xl border border-[#E2E8F0] p-6 space-y-4 shadow-none scroll-mt-32"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <GraduationCap className="w-5 h-5 text-[#2563EB]" />
+                  <h3 className="text-[16px] font-bold text-[#0F172A]">
+                    Education
+                    {candidate?.education?.length ? ` (${candidate.education.length})` : ""}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={(e) => handleOpenDrawer("education", e)}
+                  aria-label="Edit education"
+                  className="w-11 h-11 min-h-[44px] min-w-[44px] rounded-xl hover:bg-[#F1F5F9] text-[#64748B] hover:text-[#2563EB] flex items-center justify-center transition-colors cursor-pointer"
+                >
+                  <Pencil className="w-4 h-4" />
+                </button>
+              </div>
+
+              {candidate?.education && candidate.education.length > 0 ? (
+                <div className="relative pl-6 space-y-5 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-[2px] before:bg-[#BFDBFE]">
+                  {candidate.education.map((edu, idx) => (
+                    <div key={edu.id || `edu-${idx}`} className="relative space-y-1">
+                      {/* Timeline dot #2563EB */}
+                      <span className="absolute -left-[27px] top-1.5 w-3 h-3 rounded-full bg-[#2563EB] border-2 border-white ring-2 ring-[#EFF6FF]" />
+
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                        <h4 className="text-[15px] font-bold text-[#0F172A]">
+                          {edu.degree || "Degree"}
+                        </h4>
+                        {edu.year && (
+                          <span className="text-xs text-[#94A3B8] font-medium">{edu.year}</span>
+                        )}
+                      </div>
+
+                      <p className="text-[13px] text-[#475569] font-medium">
+                        {edu.institution}
+                        {edu.fieldOfStudy ? ` • ${edu.fieldOfStudy}` : ""}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-4 rounded-xl border border-dashed border-[#CBD5E1] bg-[#F8FAFC] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <p className="text-xs text-[#64748B]">No education listed yet.</p>
+                  <button
+                    type="button"
+                    onClick={(e) => handleOpenDrawer("education", e)}
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#2563EB] hover:text-[#1D4ED8] cursor-pointer min-h-[44px]"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Add education</span>
+                  </button>
+                </div>
+              )}
+            </section>
+
+            {/* ------------------------------------------------------------- */}
+            {/* SECTION: WORK EXPERIENCE (Timeline track #BFDBFE, dots #2563EB) */}
             {/* ------------------------------------------------------------- */}
             <section
               id="section-experience"
               aria-label="Work Experience"
               data-testid="profile-section-experience"
-              className="bg-white rounded-2xl border border-[#E2E8F0] p-6 space-y-4 shadow-none"
+              className="bg-white rounded-2xl border border-[#E2E8F0] p-6 space-y-4 shadow-none scroll-mt-32"
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -354,10 +472,10 @@ export default function ProfilePage() {
               </div>
 
               {candidate?.experience && candidate.experience.length > 0 ? (
-                <div className="relative pl-6 space-y-6 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-[2px] before:bg-[#E2E8F0]">
+                <div className="relative pl-6 space-y-6 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-[2px] before:bg-[#BFDBFE]">
                   {candidate.experience.map((exp, idx) => (
                     <div key={exp.id || `exp-${idx}`} className="relative space-y-1.5">
-                      {/* Timeline dot */}
+                      {/* Timeline dot #2563EB */}
                       <span className="absolute -left-[27px] top-1.5 w-3 h-3 rounded-full bg-[#2563EB] border-2 border-white ring-2 ring-[#EFF6FF]" />
 
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
@@ -408,78 +526,13 @@ export default function ProfilePage() {
             </section>
 
             {/* ------------------------------------------------------------- */}
-            {/* SECTION: EDUCATION                                            */}
-            {/* ------------------------------------------------------------- */}
-            <section
-              id="section-education"
-              aria-label="Education"
-              data-testid="profile-section-education"
-              className="bg-white rounded-2xl border border-[#E2E8F0] p-6 space-y-4 shadow-none"
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <GraduationCap className="w-5 h-5 text-[#2563EB]" />
-                  <h3 className="text-[16px] font-bold text-[#0F172A]">
-                    Education
-                    {candidate?.education?.length ? ` (${candidate.education.length})` : ""}
-                  </h3>
-                </div>
-                <button
-                  type="button"
-                  onClick={(e) => handleOpenDrawer("education", e)}
-                  aria-label="Edit education"
-                  className="w-11 h-11 min-h-[44px] min-w-[44px] rounded-xl hover:bg-[#F1F5F9] text-[#64748B] hover:text-[#2563EB] flex items-center justify-center transition-colors cursor-pointer"
-                >
-                  <Pencil className="w-4 h-4" />
-                </button>
-              </div>
-
-              {candidate?.education && candidate.education.length > 0 ? (
-                <div className="relative pl-6 space-y-5 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-[2px] before:bg-[#E2E8F0]">
-                  {candidate.education.map((edu, idx) => (
-                    <div key={edu.id || `edu-${idx}`} className="relative space-y-1">
-                      {/* Timeline dot */}
-                      <span className="absolute -left-[27px] top-1.5 w-3 h-3 rounded-full bg-[#2563EB] border-2 border-white ring-2 ring-[#EFF6FF]" />
-
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                        <h4 className="text-[15px] font-bold text-[#0F172A]">
-                          {edu.degree || "Degree"}
-                        </h4>
-                        {edu.year && (
-                          <span className="text-xs text-[#94A3B8] font-medium">{edu.year}</span>
-                        )}
-                      </div>
-
-                      <p className="text-[13px] text-[#475569] font-medium">
-                        {edu.institution}
-                        {edu.fieldOfStudy ? ` • ${edu.fieldOfStudy}` : ""}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="p-4 rounded-xl border border-dashed border-[#CBD5E1] bg-[#F8FAFC] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <p className="text-xs text-[#64748B]">No education listed yet.</p>
-                  <button
-                    type="button"
-                    onClick={(e) => handleOpenDrawer("education", e)}
-                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#2563EB] hover:text-[#1D4ED8] cursor-pointer min-h-[44px]"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Add education</span>
-                  </button>
-                </div>
-              )}
-            </section>
-
-            {/* ------------------------------------------------------------- */}
             {/* SECTION: SKILLS                                               */}
             {/* ------------------------------------------------------------- */}
             <section
               id="section-skills"
               aria-label="Skills"
               data-testid="profile-section-skills"
-              className="bg-white rounded-2xl border border-[#E2E8F0] p-6 space-y-4 shadow-none"
+              className="bg-white rounded-2xl border border-[#E2E8F0] p-6 space-y-4 shadow-none scroll-mt-32"
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
