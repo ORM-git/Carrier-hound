@@ -14,32 +14,16 @@ import {
   Trash2,
   FileText,
   Clock,
-  CheckCircle2,
   AlertCircle,
   X,
   ChevronDown,
   Sparkles,
-  ArrowRight,
-  MapPin,
-  DollarSign,
-  Briefcase,
-  Globe,
-  User as UserIcon,
-  CheckSquare,
-  BookOpen,
-  MessageSquare,
-  Settings,
 } from "lucide-react";
-import BrandIcon from "@/components/BrandIcon";
 import Footer from "@/components/Footer";
 import AppIconRail from "@/components/shell/AppIconRail";
-import { useSidebarMode } from "@/lib/sidebar";
 import AppTopBar from "@/components/shell/AppTopBar";
-import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button, buttonClasses } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { cnTokens } from "@/components/ui/cn-tokens";
+import LoggedInAppShell from "@/components/shell/LoggedInAppShell";
+import CompanyLogo from "@/components/CompanyLogo";
 import {
   TrackedApplication,
   ApplicationStage,
@@ -62,7 +46,6 @@ import { getProAccessStatus } from "@/lib/billing/subscription";
 import type { User } from "@supabase/supabase-js";
 
 export default function TrackerPage() {
-  const { isExpanded } = useSidebarMode();
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [applications, setApplications] = useState<TrackedApplication[]>([]);
@@ -101,16 +84,17 @@ export default function TrackerPage() {
     setIsLoading(true);
     setLoadError(null);
     try {
-      const [subRes, apps] = await Promise.all([
+      const [proRes, apps, todayDigest] = await Promise.all([
         getProAccessStatus(userId),
         getTrackedApplications(userId),
+        getTodayDigest(userId),
       ]);
-      setIsPro(subRes.isPro);
-      setIsProDefinitive(Boolean(subRes.isDefinitive));
+      setIsPro(proRes.isPro);
+      setIsProDefinitive(Boolean(proRes.isDefinitive));
       setApplications(apps);
+      setDigest(todayDigest);
     } catch (err: any) {
-      console.error("Failed to load tracked applications", err);
-      setLoadError(err?.message || "Could not retrieve saved applications. Please try again.");
+      setLoadError(err?.message || "Failed to load tracked applications.");
     } finally {
       setIsLoading(false);
     }
@@ -124,70 +108,28 @@ export default function TrackerPage() {
       }
       setUser(u);
       loadData(u.id);
-      getTodayDigest().then((d) => setDigest(d));
     });
 
     const handleUpdate = () => {
       getAuthUser().then((u) => {
-        if (u) loadData(u.id);
+        if (u) {
+          setUser(u);
+          loadData(u.id);
+        }
       });
     };
-
     window.addEventListener("careermonke_tracker_updated", handleUpdate);
-    return () => {
-      window.removeEventListener("careermonke_tracker_updated", handleUpdate);
-    };
+    return () => window.removeEventListener("careermonke_tracker_updated", handleUpdate);
   }, [router]);
 
-  const handleAddDigestToPipeline = async (item: DigestMatchItem) => {
-    await addApplicationToTracker({
-      jobId: item.jobId,
-      company: item.company,
-      title: item.title,
-      location: item.location,
-      salaryText: item.salaryText,
-      applyUrl: item.applyUrl,
-      stage: "saved",
-      notes: `Matched by Daily Cron with ${item.score}% score. Matched skills: ${item.matchedSkills.join(", ")}`,
-    });
-    loadData(user?.id);
-  };
-
-  const handleRefreshScan = async () => {
-    setIsScanningDigest(true);
-    try {
-      const d = await getTodayDigest();
-      setDigest(d);
-      setShowDigest(true);
-      toast.success(`AI Scan complete! Found ${d.matches.length} matched roles.`);
-    } catch (e) {
-      toast.error("Could not complete scan.");
-    } finally {
-      setIsScanningDigest(false);
-    }
-  };
-
-  // Filtered applications
-  const filteredApps = applications.filter((app) => {
-    const q = searchQuery.toLowerCase();
-    return (
-      app.company.toLowerCase().includes(q) ||
-      app.title.toLowerCase().includes(q) ||
-      (app.location && app.location.toLowerCase().includes(q)) ||
-      (app.notes && app.notes.toLowerCase().includes(q))
-    );
-  });
-
-  // Drag and Drop handlers
+  // Drag and drop handlers
   const handleDragStart = (e: React.DragEvent, id: string) => {
-    setDraggedAppId(id);
     e.dataTransfer.setData("text/plain", id);
-    e.dataTransfer.effectAllowed = "move";
+    setDraggedAppId(id);
   };
 
   const handleDragOver = (e: React.DragEvent, stage: ApplicationStage) => {
     e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
     if (dropTargetStage !== stage) {
       setDropTargetStage(stage);
     }
@@ -202,21 +144,52 @@ export default function TrackerPage() {
   const handleDrop = async (e: React.DragEvent, targetStage: ApplicationStage) => {
     e.preventDefault();
     setDropTargetStage(null);
-    const id = draggedAppId || e.dataTransfer.getData("text/plain");
-    if (!id) return;
-
+    const appId = e.dataTransfer.getData("text/plain") || draggedAppId;
     setDraggedAppId(null);
-    await updateApplicationStage(id, targetStage);
-    loadData(user?.id);
+    if (!appId) return;
+
+    const app = applications.find((a) => a.id === appId);
+    if (!app || app.stage === targetStage) return;
+
+    // Optimistic Update
+    setApplications((prev) =>
+      prev.map((a) => (a.id === appId ? { ...a, stage: targetStage, updatedAt: new Date().toISOString() } : a))
+    );
+
+    try {
+      await updateApplicationStage(appId, targetStage);
+      toast.success(`Moved to ${targetStage}`);
+    } catch {
+      toast.error("Failed to update stage. Reverting...");
+      loadData(user?.id);
+    }
   };
 
-  // Quick stage changer for mobile or touch
-  const handleStageSelect = async (id: string, stage: ApplicationStage) => {
-    await updateApplicationStage(id, stage);
-    loadData(user?.id);
+  const handleStageSelect = async (appId: string, stage: ApplicationStage) => {
+    setApplications((prev) =>
+      prev.map((a) => (a.id === appId ? { ...a, stage, updatedAt: new Date().toISOString() } : a))
+    );
+    try {
+      await updateApplicationStage(appId, stage);
+      toast.success(`Moved to ${stage}`);
+    } catch {
+      toast.error("Failed to update stage.");
+      loadData(user?.id);
+    }
   };
 
-  // Notes management
+  const handleDelete = async (id: string) => {
+    if (!window.confirm("Remove this application from tracker?")) return;
+    setApplications((prev) => prev.filter((a) => a.id !== id));
+    try {
+      await deleteApplicationFromTracker(id);
+      toast.info("Application removed");
+    } catch {
+      toast.error("Failed to delete application.");
+      loadData(user?.id);
+    }
+  };
+
   const handleOpenNotes = (app: TrackedApplication) => {
     setActiveNotesApp(app);
     setNotesDraft(app.notes || "");
@@ -224,197 +197,245 @@ export default function TrackerPage() {
 
   const handleSaveNotes = async () => {
     if (!activeNotesApp) return;
-    await updateApplicationNotes(activeNotesApp.id, notesDraft);
-    setActiveNotesApp(null);
-    loadData(user?.id);
-  };
+    const appId = activeNotesApp.id;
+    const newNotesVal = notesDraft.trim();
 
-  const handleDelete = async (id: string) => {
-    if (confirm("Remove this job application from tracker?")) {
-      await deleteApplicationFromTracker(id);
+    setApplications((prev) =>
+      prev.map((a) => (a.id === appId ? { ...a, notes: newNotesVal, updatedAt: new Date().toISOString() } : a))
+    );
+    setActiveNotesApp(null);
+
+    try {
+      await updateApplicationNotes(appId, newNotesVal);
+      toast.success("Notes saved");
+    } catch {
+      toast.error("Failed to save notes.");
       loadData(user?.id);
     }
   };
 
-  // Add new application with inline validation
   const handleCreateApplication = async (e: React.FormEvent) => {
     e.preventDefault();
     const errors: { title?: string; company?: string } = {};
-    if (!newCompany.trim()) {
-      errors.company = "Company name is required.";
-    }
-    if (!newTitle.trim()) {
-      errors.title = "Job title is required.";
-    }
+    if (!newTitle.trim()) errors.title = "Job title is required.";
+    if (!newCompany.trim()) errors.company = "Company name is required.";
 
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors);
       return;
     }
 
-    setFormErrors({});
+    try {
+      const added = await addApplicationToTracker({
+        title: newTitle.trim(),
+        company: newCompany.trim(),
+        location: newLocation.trim() || undefined,
+        salaryText: newSalary.trim() || undefined,
+        applyUrl: newApplyUrl.trim() || undefined,
+        stage: newStage,
+        notes: newNotes.trim() || undefined,
+      });
 
-    await addApplicationToTracker({
-      company: newCompany.trim(),
-      title: newTitle.trim(),
-      location: newLocation.trim() || undefined,
-      salaryText: newSalary.trim() || undefined,
-      applyUrl: newApplyUrl.trim() || undefined,
-      stage: newStage,
-      notes: newNotes.trim() || undefined,
-      appliedAt: newStage === "applied" ? new Date().toISOString() : undefined,
-    });
-
-    // Reset form
-    setNewTitle("");
-    setNewCompany("");
-    setNewLocation("");
-    setNewSalary("");
-    setNewApplyUrl("");
-    setNewStage("saved");
-    setNewNotes("");
-    setIsAddModalOpen(false);
-    loadData(user?.id);
+      setApplications((prev) => [added, ...prev]);
+      setIsAddModalOpen(false);
+      setNewTitle("");
+      setNewCompany("");
+      setNewLocation("");
+      setNewSalary("");
+      setNewApplyUrl("");
+      setNewNotes("");
+      setNewStage("saved");
+      setFormErrors({});
+      toast.success("Application tracked!");
+    } catch {
+      toast.error("Failed to add application.");
+    }
   };
 
-  const stageCounts = KANBAN_STAGES.reduce<Record<ApplicationStage, number>>(
-    (acc, stage) => {
-      acc[stage.id] = applications.filter((a) => a.stage === stage.id).length;
-      return acc;
-    },
-    { saved: 0, applied: 0, interview: 0, offer: 0, rejected: 0 }
-  );
+  const handleAddDigestToPipeline = async (item: DigestMatchItem) => {
+    try {
+      const added = await addApplicationToTracker({
+        jobId: item.jobId,
+        title: item.title,
+        company: item.company,
+        location: item.location,
+        applyUrl: item.applyUrl,
+        stage: "saved",
+        notes: `AI Match (${item.score}%): Evidenced skills: ${item.matchedSkills.join(", ")}`,
+      });
+      setApplications((prev) => [added, ...prev]);
+      toast.success(`Added "${item.title}" to Saved!`);
+    } catch {
+      toast.error("Failed to add digest role.");
+    }
+  };
 
-  // Loading skeleton matching the shell
+  const handleRefreshScan = async () => {
+    setIsScanningDigest(true);
+    try {
+      const res = await fetch("/api/ai?action=digest_scan", { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.matches) {
+          setDigest({
+            digestDate: new Date().toISOString().split("T")[0],
+            matches: data.matches,
+            isQueuedByCron: false,
+          });
+          setShowDigest(true);
+          toast.success("AI pipeline scan complete!");
+        }
+      } else {
+        toast.info("Pipeline up to date.");
+      }
+    } catch {
+      toast.info("Automated daily scan is running in background.");
+    } finally {
+      setIsScanningDigest(false);
+    }
+  };
+
+  const filteredApps = applications.filter((app) => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      app.title.toLowerCase().includes(q) ||
+      app.company.toLowerCase().includes(q) ||
+      (app.location && app.location.toLowerCase().includes(q)) ||
+      (app.notes && app.notes.toLowerCase().includes(q))
+    );
+  });
+
+  const stageCounts = {
+    saved: applications.filter((a) => a.stage === "saved").length,
+    applied: applications.filter((a) => a.stage === "applied").length,
+    interview: applications.filter((a) => a.stage === "interview").length,
+    offer: applications.filter((a) => a.stage === "offer").length,
+    rejected: applications.filter((a) => a.stage === "rejected").length,
+  };
+
   if (isLoading || (!isPro && !isProDefinitive)) {
     return (
-      <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col font-sans">
-        <AppIconRail />
-        <div className={`flex-1 ${isExpanded ? "md:pl-[240px]" : "md:pl-[72px]"} flex flex-col min-w-0 pb-6 md:pb-0 transition-[padding] duration-300 ease-[cubic-bezier(0.2,0,0,1)]`}>
-          <AppTopBar pageLabel="TRACKER" user={user} isPro={isPro} />
-          <main className="flex-1 max-w-[1400px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <Skeleton className="h-8 w-64 rounded-tk-md" />
-              <Skeleton className="h-11 w-36 rounded-tk-lg" />
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
-              {[0, 1, 2, 3, 4].map((i) => (
-                <Card key={i} variant="surface" className="min-h-[420px] p-3 space-y-3">
-                  <Skeleton className="h-5 w-24 rounded-tk-md" />
-                  <Skeleton className="h-28 w-full rounded-tk-lg" />
-                  <Skeleton className="h-28 w-full rounded-tk-lg" />
-                </Card>
-              ))}
-            </div>
-          </main>
+      <LoggedInAppShell pageLabel="TRACKER" user={user} isPro={isPro}>
+        <div className="max-w-[1400px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+          <div className="h-8 w-64 bg-[#E2E8F0] animate-pulse rounded-full" />
+          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
+            {[0, 1, 2, 3, 4].map((i) => (
+              <div key={i} className="min-h-[420px] p-3 rounded-[16px] bg-[#F1F5F9] border border-[#E2E8F0] space-y-3">
+                <div className="h-5 w-24 bg-[#E2E8F0] rounded-full animate-pulse" />
+                <div className="h-28 w-full bg-white rounded-[12px] ring-1 ring-[#E2E8F0] animate-pulse" />
+                <div className="h-28 w-full bg-white rounded-[12px] ring-1 ring-[#E2E8F0] animate-pulse" />
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
+      </LoggedInAppShell>
     );
   }
 
   // Definitively non-Pro
   if (!isPro) {
     return (
-      <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col justify-between font-sans">
-        <AppIconRail />
-        <div className={`flex-1 ${isExpanded ? "md:pl-[240px]" : "md:pl-[72px]"} flex flex-col min-w-0 pb-6 md:pb-0 transition-[padding] duration-300 ease-[cubic-bezier(0.2,0,0,1)]`}>
-          <AppTopBar pageLabel="TRACKER" user={user} isPro={isPro} />
-          <main className="flex-1 max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
-            <ProUpgradeScreen
-              title="Unlock Application Tracker"
-              subtitle="Upgrade to CareerMonke Pro to save jobs, track interview stages, and manage your pipeline."
-            />
-          </main>
-          <Footer />
+      <LoggedInAppShell pageLabel="TRACKER" user={user} isPro={false}>
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
+          <ProUpgradeScreen
+            title="Unlock Application Tracker"
+            subtitle="Upgrade to CareerMonke Pro to save jobs, track interview stages, and manage your pipeline."
+          />
         </div>
-      </div>
+        <Footer />
+      </LoggedInAppShell>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col font-sans">
-      {/* Left Icon Rail (fixed 72px desktop, bottom tab bar mobile) */}
-      <AppIconRail />
-
-      {/* Main Content Area (offset by 72px on desktop) */}
-      <div className={`flex-1 ${isExpanded ? "md:pl-[240px]" : "md:pl-[72px]"} flex flex-col min-w-0 pb-6 md:pb-0 transition-[padding] duration-300 ease-[cubic-bezier(0.2,0,0,1)]`}>
-        <AppTopBar pageLabel="TRACKER" user={user} isPro={isPro} />
-        <main
-          id="main-content"
-          className="flex-1 max-w-[1400px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-6 space-y-4 pb-24 lg:pb-12"
-        >
-          {/* Top Control Bar */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-line pb-4">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-tk-full bg-brand-600 animate-pulse" />
-                <h1 className="text-[18px] font-bold uppercase tracking-wider text-ink">
-                  Application Pipeline Tracker
-                </h1>
-              </div>
-              <p className="text-xs sm:text-sm text-ink-muted mt-1">
-                Organize, track, and manage your job applications across every hiring round.
-              </p>
+    <LoggedInAppShell
+      pageLabel="TRACKER"
+      user={user}
+      isPro={isPro}
+      mainClassName="flex-1 max-w-[1400px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-6 space-y-5 pb-24 lg:pb-12"
+    >
+          {/* Top row above the board: segmented control, search input pill, primary blue Add button */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3.5">
+            {/* Segmented control for views (Board / List) */}
+            <div className="inline-flex items-center p-1 rounded-full bg-[#F1F5F9] border border-[#E2E8F0] shrink-0 self-start sm:self-auto">
+              <button
+                type="button"
+                onClick={() => setViewMode("kanban")}
+                className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-[12px] font-bold transition-all min-h-[36px] cursor-pointer ${
+                  viewMode === "kanban"
+                    ? "bg-white text-[#0F172A] shadow-sm ring-1 ring-[#E2E8F0]"
+                    : "text-[#475569] hover:text-[#0F172A]"
+                }`}
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+                <span>Board</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("list")}
+                className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-[12px] font-bold transition-all min-h-[36px] cursor-pointer ${
+                  viewMode === "list"
+                    ? "bg-white text-[#0F172A] shadow-sm ring-1 ring-[#E2E8F0]"
+                    : "text-[#475569] hover:text-[#0F172A]"
+                }`}
+              >
+                <List className="w-3.5 h-3.5" />
+                <span>List</span>
+              </button>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2.5">
-              {/* View Mode Toggle */}
-              <div className="bg-surface-muted p-1 rounded-tk-xl border border-line flex items-center gap-1 min-h-[44px]">
-                <button
-                  type="button"
-                  onClick={() => setViewMode("kanban")}
-                  className={`flex items-center gap-1.5 px-3.5 py-2 rounded-tk-lg text-xs font-bold transition cursor-pointer min-h-[36px] ${
-                    viewMode === "kanban"
-                      ? "bg-surface text-ink shadow-tk-xs border border-line"
-                      : "text-ink-muted hover:text-ink"
-                  }`}
-                >
-                  <LayoutGrid className="w-4 h-4" />
-                  <span>Kanban</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode("list")}
-                  className={`flex items-center gap-1.5 px-3.5 py-2 rounded-tk-lg text-xs font-bold transition cursor-pointer min-h-[36px] ${
-                    viewMode === "list"
-                      ? "bg-surface text-ink shadow-tk-xs border border-line"
-                      : "text-ink-muted hover:text-ink"
-                  }`}
-                >
-                  <List className="w-4 h-4" />
-                  <span>List</span>
-                </button>
+            {/* Middle & Right: Search input pill like top bar & Primary blue Add button */}
+            <div className="flex flex-1 sm:justify-end items-center gap-2.5">
+              <div className="relative flex-1 max-w-sm">
+                <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
+                <input
+                  type="text"
+                  aria-label="Search by company, role, or notes"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search by title or company..."
+                  className="w-full text-[13px] pl-9 pr-8 py-2 min-h-[40px] rounded-full border border-[#E2E8F0] bg-[#F1F5F9] focus:bg-white text-[#0F172A] placeholder-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#93C5FD] transition-colors"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#94A3B8] hover:text-[#0F172A] text-xs"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
 
-              {/* Add Application Button */}
               <button
                 type="button"
                 onClick={() => setIsAddModalOpen(true)}
-                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-tk-xl text-xs sm:text-sm font-bold bg-brand-600 hover:bg-brand-700 text-ink-inverse shadow-tk-xs transition cursor-pointer min-h-[44px]"
+                className="inline-flex items-center gap-1.5 px-5 py-2 min-h-[40px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-[13px] font-bold shadow-none transition focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1 cursor-pointer shrink-0"
               >
                 <Plus className="w-4 h-4" />
-                <span>+ Add Application</span>
+                <span>Add application</span>
               </button>
             </div>
           </div>
 
           {/* Daily Automated Digest Banner */}
-          <div className="bg-surface rounded-tk-2xl border border-line p-4 sm:p-5 shadow-tk-xs space-y-3">
+          <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-4 sm:p-5 shadow-none space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-tk-xl bg-brand-600 text-ink-inverse flex items-center justify-center shadow-tk-xs shrink-0">
-                  <Sparkles className="w-5 h-5 text-yellow-300" />
+                <div className="w-10 h-10 rounded-[12px] bg-[#EFF6FF] border border-[#BFDBFE] text-[#2563EB] flex items-center justify-center shrink-0">
+                  <Sparkles className="w-5 h-5 text-[#2563EB]" />
                 </div>
                 <div>
-                  <h3 className="text-sm sm:text-base font-bold text-ink flex items-center gap-2">
+                  <h3 className="text-[14px] sm:text-[15px] font-bold text-[#0F172A] flex items-center gap-2">
                     <span>Daily AI Matching Digest</span>
                     {digest && digest.matches.length > 0 && (
-                      <span className="text-xs font-bold px-2 py-0.5 rounded-tk-full bg-brand-50 text-brand-700 border border-brand-200">
+                      <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-[#EFF6FF] text-[#1D4ED8] border border-[#BFDBFE]">
                         {digest.matches.length} Top Roles
                       </span>
                     )}
                   </h3>
-                  <p className="text-xs text-ink-muted">
+                  <p className="text-[12px] text-[#475569]">
                     {digest?.isQueuedByCron
                       ? "Queued by Daily Automated Cron scan against confirmed profile skills."
                       : "Automated scan evaluates verified tech listings against your confirmed resume."}
@@ -427,17 +448,17 @@ export default function TrackerPage() {
                   type="button"
                   onClick={handleRefreshScan}
                   disabled={isScanningDigest}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 min-h-[44px] rounded-tk-xl bg-brand-600 hover:bg-brand-700 text-ink-inverse text-xs font-bold transition shadow-tk-xs cursor-pointer disabled:opacity-60"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 min-h-[40px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-[12px] font-bold transition shadow-none cursor-pointer disabled:opacity-60"
                 >
                   <Sparkles className={`w-3.5 h-3.5 ${isScanningDigest ? "animate-spin" : ""}`} />
-                  <span>{isScanningDigest ? "Scanning..." : "⚡ Run AI Scan"}</span>
+                  <span>{isScanningDigest ? "Scanning..." : "Run AI Scan"}</span>
                 </button>
 
                 {digest && digest.matches.length > 0 && (
                   <button
                     type="button"
                     onClick={() => setShowDigest(!showDigest)}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 min-h-[44px] rounded-tk-xl bg-surface border border-line text-ink hover:bg-surface-muted text-xs font-bold transition shadow-tk-xs cursor-pointer"
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 min-h-[40px] rounded-full bg-[#F1F5F9] border border-[#E2E8F0] text-[#0F172A] hover:bg-[#E2E8F0] text-[12px] font-semibold transition cursor-pointer"
                   >
                     <span>{showDigest ? "Hide Digest" : "Show Digest"}</span>
                     <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showDigest ? "rotate-180" : ""}`} />
@@ -447,24 +468,24 @@ export default function TrackerPage() {
             </div>
 
             {showDigest && digest && digest.matches.length > 0 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-3 border-t border-line animate-fadeIn">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-3 border-t border-[#E2E8F0] animate-fadeIn">
                 {digest.matches.map((item) => (
                   <div
                     key={item.jobId}
-                    className="bg-surface-subtle rounded-tk-xl p-3.5 border border-line shadow-tk-xs space-y-2 flex flex-col justify-between"
+                    className="bg-[#F8FAFC] rounded-[12px] p-3.5 border border-[#E2E8F0] space-y-2 flex flex-col justify-between"
                   >
                     <div>
                       <div className="flex items-start justify-between gap-1.5">
-                        <span className="font-bold text-xs text-ink line-clamp-1">{item.title}</span>
-                        <span className="text-xs font-bold px-1.5 py-0.5 rounded-tk-md bg-success-50 text-success-700 border border-success-200 shrink-0">
+                        <span className="font-bold text-[13px] text-[#0F172A] line-clamp-1">{item.title}</span>
+                        <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-[#DCFCE7] text-[#16A34A] shrink-0">
                           {item.score}% Match
                         </span>
                       </div>
-                      <div className="text-xs text-ink-muted font-medium">{item.company} • {item.location}</div>
+                      <div className="text-[12px] text-[#475569] font-medium">{item.company} • {item.location}</div>
                       {item.matchedSkills.length > 0 && (
                         <div className="flex flex-wrap gap-1 mt-1.5">
                           {item.matchedSkills.slice(0, 3).map((s) => (
-                            <span key={s} className="text-xs bg-surface text-ink-muted px-1.5 py-0.5 rounded-tk-md border border-line">
+                            <span key={s} className="text-[11px] bg-white text-[#475569] px-2 py-0.5 rounded-full border border-[#E2E8F0]">
                               {s}
                             </span>
                           ))}
@@ -472,11 +493,11 @@ export default function TrackerPage() {
                       )}
                     </div>
 
-                    <div className="pt-2 border-t border-line flex items-center justify-between gap-2 min-h-[40px]">
+                    <div className="pt-2 border-t border-[#E2E8F0] flex items-center justify-between gap-2 min-h-[36px]">
                       <button
                         type="button"
                         onClick={() => handleAddDigestToPipeline(item)}
-                        className="text-xs font-bold text-brand-600 hover:text-brand-800 flex items-center gap-1 cursor-pointer min-h-[40px]"
+                        className="text-[12px] font-bold text-[#2563EB] hover:text-[#1D4ED8] flex items-center gap-1 cursor-pointer"
                       >
                         <Plus className="w-3.5 h-3.5" />
                         <span>Add to Saved</span>
@@ -487,7 +508,7 @@ export default function TrackerPage() {
                           href={sanitizeExternalUrl(item.applyUrl)!}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-xs text-ink-muted hover:text-ink flex items-center gap-0.5 min-h-[40px]"
+                          className="text-[12px] text-[#475569] hover:text-[#0F172A] flex items-center gap-0.5"
                         >
                           <span>Apply</span>
                           <ExternalLink className="w-3 h-3" />
@@ -498,63 +519,29 @@ export default function TrackerPage() {
                 ))}
               </div>
             ) : showDigest ? (
-              <div className="pt-3 pb-1 border-t border-line text-center">
-                <p className="text-xs text-ink-muted">
-                  No matching roles generated yet for today. Click <strong className="text-ink">&quot;⚡ Run AI Scan&quot;</strong> above to scan unindexed listings against your resume!
+              <div className="pt-3 pb-1 border-t border-[#E2E8F0] text-center">
+                <p className="text-[12px] text-[#475569]">
+                  No matching roles generated yet for today. Click <strong className="text-[#0F172A]">&quot;Run AI Scan&quot;</strong> above to scan unindexed listings against your resume!
                 </p>
               </div>
             ) : null}
           </div>
 
-          {/* Search & Statistics Ribbon */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="relative flex-1 max-w-md">
-              <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-subtle" />
-              <input
-                type="text"
-                aria-label="Search by company, role, or notes"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search by company, role, or notes..."
-                className="w-full text-xs sm:text-sm pl-10 pr-4 py-2.5 min-h-[44px] rounded-tk-xl border border-line bg-surface focus:outline-brand-600 shadow-tk-xs text-ink"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery("")}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-subtle hover:text-ink text-xs min-h-[32px] px-2"
-                >
-                  Clear
-                </button>
-              )}
-            </div>
-
-            <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 text-xs text-ink-muted">
-              <span className="font-semibold text-ink-subtle shrink-0">Total: {applications.length}</span>
-              <span className="text-line-strong">•</span>
-              <span className="shrink-0">{stageCounts.applied} Applied</span>
-              <span className="text-line-strong">•</span>
-              <span className="shrink-0 font-medium text-warning-700">{stageCounts.interview} Interview</span>
-              <span className="text-line-strong">•</span>
-              <span className="shrink-0 font-medium text-success-700">{stageCounts.offer} Offer</span>
-            </div>
-          </div>
-
           {/* Error State with Retry */}
           {loadError ? (
-            <div className="bg-surface border border-danger-200 rounded-tk-2xl p-8 sm:p-12 text-center space-y-4 max-w-xl mx-auto shadow-tk-xs">
-              <div className="w-12 h-12 rounded-tk-2xl bg-danger-50 text-danger-600 mx-auto flex items-center justify-center">
+            <div className="bg-white border border-[#FEE2E2] rounded-[16px] p-8 sm:p-12 text-center space-y-4 max-w-xl mx-auto shadow-none">
+              <div className="w-12 h-12 rounded-full bg-[#FEE2E2] text-[#DC2626] mx-auto flex items-center justify-center">
                 <AlertCircle className="w-6 h-6" />
               </div>
               <div className="space-y-1">
-                <h3 className="text-lg font-bold text-ink">Unable to Load Tracker Pipeline</h3>
-                <p className="text-xs sm:text-sm text-ink-muted">{loadError}</p>
+                <h3 className="text-lg font-bold text-[#0F172A]">Unable to Load Tracker Pipeline</h3>
+                <p className="text-xs sm:text-sm text-[#475569]">{loadError}</p>
               </div>
               <div className="pt-2">
                 <button
                   type="button"
                   onClick={() => loadData(user?.id)}
-                  className="inline-flex items-center justify-center gap-2 px-5 py-2.5 min-h-[44px] rounded-tk-xl bg-brand-600 hover:bg-brand-700 text-ink-inverse font-bold text-xs shadow-tk-xs transition cursor-pointer"
+                  className="inline-flex items-center justify-center gap-2 px-5 py-2.5 min-h-[44px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-xs transition cursor-pointer"
                 >
                   <span>Retry Connection</span>
                 </button>
@@ -562,7 +549,11 @@ export default function TrackerPage() {
             </div>
           ) : viewMode === "kanban" ? (
             /* View Mode 1: KANBAN BOARD */
-            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 items-start">
+            /* Mobile: columns become a horizontal snap-scroll row */
+            <div
+              data-testid="tracker-board"
+              className="flex overflow-x-auto snap-x snap-mandatory gap-3.5 pb-4 -mx-4 px-4 sm:mx-0 sm:px-0 sm:grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 sm:gap-4 sm:overflow-visible items-start"
+            >
               {KANBAN_STAGES.map((col) => {
                 const colApps = filteredApps.filter((a) => a.stage === col.id);
                 const isDropTarget = dropTargetStage === col.id;
@@ -570,24 +561,22 @@ export default function TrackerPage() {
                 return (
                   <div
                     key={col.id}
+                    data-testid={`tracker-column-${col.id}`}
                     onDragOver={(e) => handleDragOver(e, col.id)}
                     onDragLeave={() => handleDragLeave(col.id)}
                     onDrop={(e) => handleDrop(e, col.id)}
-                    className={`bg-surface-subtle rounded-tk-2xl p-3 border transition-colors min-h-[500px] flex flex-col ${
+                    className={`bg-[#F1F5F9] rounded-[16px] p-3 transition-colors min-h-[520px] flex flex-col shrink-0 min-w-[280px] w-[82vw] max-w-[320px] snap-center sm:min-w-0 sm:w-auto sm:max-w-none ${
                       isDropTarget
-                        ? "border-brand-500 bg-brand-50/50 ring-2 ring-brand-300"
-                        : "border-line"
+                        ? "ring-2 ring-[#2563EB] bg-[#EFF6FF]"
+                        : "border border-transparent"
                     }`}
                   >
                     {/* Column Header */}
-                    <div className="flex items-center justify-between pb-3 px-1 border-b border-line mb-3">
-                      <div className="flex items-center gap-2">
-                        <span className={`w-2.5 h-2.5 rounded-tk-full ${col.badgeColor}`} />
-                        <span className="text-xs font-bold text-ink uppercase tracking-wider">
-                          {col.label}
-                        </span>
-                      </div>
-                      <span className="text-xs font-bold px-2 py-0.5 rounded-tk-full bg-surface text-ink-muted border border-line shadow-tk-xs">
+                    <div className="flex items-center justify-between pb-2.5 px-1 border-b border-[#E2E8F0] mb-3">
+                      <span className="text-[14px] font-bold text-[#0F172A]">
+                        {col.label}
+                      </span>
+                      <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-[#0F172A] text-white">
                         {colApps.length}
                       </span>
                     </div>
@@ -595,39 +584,59 @@ export default function TrackerPage() {
                     {/* Cards List */}
                     <div className="space-y-3 flex-1 overflow-y-auto">
                       {colApps.length === 0 ? (
-                        <div className="h-32 border-2 border-dashed border-line rounded-tk-xl flex items-center justify-center p-4 text-center">
-                          <span className="text-xs text-ink-subtle font-medium">
+                        /* Empty column: dashed #CBD5E1 border, one muted line of existing wording */
+                        <div className="h-32 border-2 border-dashed border-[#CBD5E1] rounded-[12px] flex items-center justify-center p-4 text-center">
+                          <span className="text-[12px] text-[#94A3B8] font-medium">
                             Drop applications here
                           </span>
                         </div>
                       ) : (
-                        colApps.map((app) => (
-                          <div
-                            key={app.id}
-                            draggable
-                            onDragStart={(e) => handleDragStart(e, app.id)}
-                            className="bg-surface rounded-tk-xl p-3.5 border border-line shadow-tk-xs hover:shadow-tk-md transition-all cursor-grab active:cursor-grabbing space-y-2.5 group"
-                          >
-                            {/* Role & Company */}
-                            <div>
-                              <div className="flex items-start justify-between gap-1.5">
-                                <h4 className="text-xs sm:text-sm font-bold text-ink group-hover:text-brand-600 transition-colors line-clamp-2">
-                                  {app.title}
-                                </h4>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDelete(app.id)}
-                                  className="text-ink-subtle hover:text-danger-600 transition p-1 cursor-pointer shrink-0 min-h-[32px] min-w-[32px] flex items-center justify-center"
-                                  title="Remove application"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                              <div className="flex items-center justify-between gap-1.5 mt-1">
-                                <div className="flex items-center gap-1.5 text-xs text-ink-muted font-medium truncate">
-                                  <Building className="w-3.5 h-3.5 text-ink-subtle shrink-0" />
-                                  <span className="truncate">{app.company}</span>
+                        colApps.map((app) => {
+                          const isDragging = draggedAppId === app.id;
+                          return (
+                            <div
+                              key={app.id}
+                              data-testid="tracker-card"
+                              draggable
+                              onDragStart={(e) => handleDragStart(e, app.id)}
+                              onDragEnd={() => setDraggedAppId(null)}
+                              className={`bg-white rounded-[12px] p-3.5 space-y-2.5 group transition-all duration-200 select-none ${
+                                isDragging
+                                  ? "ring-2 ring-[#93C5FD] shadow-[0_8px_20px_rgba(15,23,42,0.12)] opacity-80 cursor-grabbing"
+                                  : "ring-1 ring-[#E2E8F0] shadow-none hover:ring-[#93C5FD] cursor-grab"
+                              }`}
+                            >
+                              {/* Header: 32px company logo, bold 14px title, 13px #475569 company */}
+                              <div className="flex items-start gap-2.5">
+                                <CompanyLogo
+                                  company={app.company}
+                                  applyUrl={app.applyUrl}
+                                  className="w-8 h-8 rounded-lg shrink-0 object-contain p-0.5 border border-[#E2E8F0] bg-white"
+                                />
+
+                                <div className="min-w-0 flex-1 space-y-0.5">
+                                  <div className="flex items-start justify-between gap-1.5">
+                                    <h4 className="text-[14px] font-bold text-[#0F172A] leading-snug line-clamp-2">
+                                      {app.title}
+                                    </h4>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDelete(app.id)}
+                                      className="text-[#94A3B8] hover:text-[#DC2626] transition p-1 cursor-pointer shrink-0 min-h-[28px] min-w-[28px] flex items-center justify-center"
+                                      title="Remove application"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+
+                                  <div className="text-[13px] text-[#475569] truncate">
+                                    {app.company}
+                                  </div>
                                 </div>
+                              </div>
+
+                              {/* Match Score Badge & Location/Salary Chips */}
+                              <div className="flex flex-wrap items-center gap-1.5">
                                 <MatchScoreBadge
                                   job={{
                                     id: app.id,
@@ -639,87 +648,80 @@ export default function TrackerPage() {
                                   }}
                                   size="xs"
                                 />
-                              </div>
-                            </div>
-
-                            {/* Meta: Location or Salary */}
-                            {(app.location || app.salaryText) && (
-                              <div className="space-y-1 text-xs text-ink-muted">
                                 {app.location && (
-                                  <div className="flex items-center gap-1 truncate">
-                                    <MapPin className="w-3 h-3 text-ink-subtle shrink-0" />
-                                    <span className="truncate">{app.location}</span>
-                                  </div>
+                                  <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-[#F1F5F9] text-[#475569] truncate max-w-[140px]">
+                                    {app.location}
+                                  </span>
                                 )}
                                 {app.salaryText && (
-                                  <div className="flex items-center gap-1 text-success-700 font-medium truncate">
-                                    <DollarSign className="w-3 h-3 shrink-0" />
-                                    <span className="truncate">{app.salaryText}</span>
-                                  </div>
+                                  <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-[#DCFCE7] text-[#16A34A] truncate max-w-[140px]">
+                                    {app.salaryText}
+                                  </span>
                                 )}
                               </div>
-                            )}
 
-                            {/* Applied Date if set */}
-                            {app.appliedAt && (
-                              <div className="flex items-center gap-1 text-xs text-ink-subtle">
-                                <Calendar className="w-3 h-3" />
-                                <span>Applied: {new Date(app.appliedAt).toLocaleDateString()}</span>
+                              {/* Applied/updated date 12px #94A3B8 */}
+                              <div className="text-[12px] text-[#94A3B8] flex items-center gap-1">
+                                <Clock className="w-3 h-3 shrink-0" />
+                                <span>
+                                  {app.appliedAt
+                                    ? `Applied ${new Date(app.appliedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
+                                    : `Updated ${new Date(app.updatedAt || app.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`}
+                                </span>
                               </div>
-                            )}
 
-                            {/* Notes Preview if available */}
-                            {app.notes && (
-                              <div
-                                onClick={() => handleOpenNotes(app)}
-                                className="p-2 bg-surface-muted rounded-tk-lg border border-line text-xs text-ink-muted line-clamp-2 cursor-pointer hover:bg-surface transition"
-                                title="Click to edit notes"
-                              >
-                                <span className="font-semibold text-ink mr-1">Note:</span>
-                                {app.notes}
-                              </div>
-                            )}
-
-                            {/* Actions Bottom Bar */}
-                            <div className="pt-2 border-t border-line flex items-center justify-between gap-2 min-h-[44px]">
-                              {/* Stage Selector Dropdown */}
-                              <select
-                                value={app.stage}
-                                onChange={(e) => handleStageSelect(app.id, e.target.value as ApplicationStage)}
-                                className="text-xs font-semibold py-1.5 px-2 rounded-tk-lg border border-line bg-surface text-ink focus:outline-brand-600 cursor-pointer min-h-[36px]"
-                              >
-                                {KANBAN_STAGES.map((s) => (
-                                  <option key={s.id} value={s.id}>
-                                    Move to: {s.label}
-                                  </option>
-                                ))}
-                              </select>
-
-                              <div className="flex items-center gap-1">
-                                <button
-                                  type="button"
+                              {/* Notes UI: keep as is, restyled with same tokens */}
+                              {app.notes && (
+                                <div
                                   onClick={() => handleOpenNotes(app)}
-                                  className="p-1.5 text-ink-subtle hover:text-brand-600 transition cursor-pointer min-h-[36px] min-w-[36px] flex items-center justify-center"
-                                  title="Add/Edit Notes"
+                                  className="p-2 bg-[#F8FAFC] rounded-[8px] border border-[#E2E8F0] text-[12px] text-[#475569] line-clamp-2 cursor-pointer hover:bg-white hover:border-[#93C5FD] transition"
+                                  title="Click to edit notes"
                                 >
-                                  <FileText className="w-4 h-4" />
-                                </button>
+                                  <span className="font-semibold text-[#0F172A] mr-1">Note:</span>
+                                  {app.notes}
+                                </div>
+                              )}
 
-                                {sanitizeExternalUrl(app.applyUrl) && (
-                                  <a
-                                    href={sanitizeExternalUrl(app.applyUrl)!}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="p-1.5 text-ink-subtle hover:text-brand-600 transition min-h-[36px] min-w-[36px] flex items-center justify-center"
-                                    title="Open Official Job Page"
+                              {/* Actions Bottom Bar */}
+                              <div className="pt-2 border-t border-[#E2E8F0] flex items-center justify-between gap-2 min-h-[36px]">
+                                <select
+                                  value={app.stage}
+                                  onChange={(e) => handleStageSelect(app.id, e.target.value as ApplicationStage)}
+                                  className="text-[11px] font-medium py-1 px-2 rounded-full border border-[#CBD5E1] bg-[#F8FAFC] text-[#0F172A] focus:outline-none focus:ring-1 focus:ring-[#93C5FD] cursor-pointer"
+                                >
+                                  {KANBAN_STAGES.map((s) => (
+                                    <option key={s.id} value={s.id}>
+                                      Move: {s.label}
+                                    </option>
+                                  ))}
+                                </select>
+
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenNotes(app)}
+                                    className="p-1.5 text-[#94A3B8] hover:text-[#2563EB] transition cursor-pointer min-h-[32px] min-w-[32px] flex items-center justify-center rounded-full hover:bg-[#EFF6FF]"
+                                    title="Add/Edit Notes"
                                   >
-                                    <ExternalLink className="w-4 h-4" />
-                                  </a>
-                                )}
+                                    <FileText className="w-3.5 h-3.5" />
+                                  </button>
+
+                                  {sanitizeExternalUrl(app.applyUrl) && (
+                                    <a
+                                      href={sanitizeExternalUrl(app.applyUrl)!}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="p-1.5 text-[#94A3B8] hover:text-[#2563EB] transition min-h-[32px] min-w-[32px] flex items-center justify-center rounded-full hover:bg-[#EFF6FF]"
+                                      title="Open Official Job Page"
+                                    >
+                                      <ExternalLink className="w-3.5 h-3.5" />
+                                    </a>
+                                  )}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        ))
+                          );
+                        })
                       )}
                     </div>
                   </div>
@@ -728,10 +730,10 @@ export default function TrackerPage() {
             </div>
           ) : (
             /* View Mode 2: LIST / TABLE VIEW */
-            <div className="bg-surface rounded-tk-2xl border border-line overflow-hidden shadow-tk-xs">
+            <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] overflow-hidden shadow-none">
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs sm:text-sm">
-                  <thead className="bg-surface-muted border-b border-line text-ink-muted font-semibold uppercase text-xs tracking-wider">
+                  <thead className="bg-[#F8FAFC] border-b border-[#E2E8F0] text-[#475569] font-semibold uppercase text-[11px] tracking-wider">
                     <tr>
                       <th className="py-3 px-4">Company & Role</th>
                       <th className="py-3 px-4">Stage</th>
@@ -741,19 +743,19 @@ export default function TrackerPage() {
                       <th className="py-3 px-4 text-right">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-line">
+                  <tbody className="divide-y divide-[#E2E8F0]">
                     {filteredApps.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="py-8 text-center text-ink-subtle">
-                          No applications tracked yet. Click "Add Application" to add one.
+                        <td colSpan={6} className="py-8 text-center text-[#94A3B8]">
+                          No applications tracked yet. Click "Add application" to add one.
                         </td>
                       </tr>
                     ) : (
                       filteredApps.map((app) => (
-                        <tr key={app.id} className="hover:bg-surface-muted/60 transition-colors">
+                        <tr key={app.id} className="hover:bg-[#F8FAFC] transition-colors">
                           <td className="py-3.5 px-4">
                             <div className="flex items-center gap-2">
-                              <span className="font-bold text-ink">{app.title}</span>
+                              <span className="font-bold text-[#0F172A]">{app.title}</span>
                               <MatchScoreBadge
                                 job={{
                                   id: app.id,
@@ -766,8 +768,8 @@ export default function TrackerPage() {
                                 size="xs"
                               />
                             </div>
-                            <div className="text-xs text-ink-muted flex items-center gap-1 mt-0.5">
-                              <Building className="w-3 h-3" />
+                            <div className="text-xs text-[#475569] flex items-center gap-1 mt-0.5">
+                              <Building className="w-3 h-3 text-[#94A3B8]" />
                               <span>{app.company}</span>
                             </div>
                           </td>
@@ -775,7 +777,7 @@ export default function TrackerPage() {
                             <select
                               value={app.stage}
                               onChange={(e) => handleStageSelect(app.id, e.target.value as ApplicationStage)}
-                              className="text-xs font-semibold py-1.5 px-2 rounded-tk-lg border border-line bg-surface text-ink cursor-pointer min-h-[36px]"
+                              className="text-xs font-semibold py-1.5 px-2.5 rounded-full border border-[#E2E8F0] bg-white text-[#0F172A] cursor-pointer min-h-[36px]"
                             >
                               {KANBAN_STAGES.map((s) => (
                                 <option key={s.id} value={s.id}>
@@ -784,24 +786,24 @@ export default function TrackerPage() {
                               ))}
                             </select>
                           </td>
-                          <td className="py-3.5 px-4 hidden sm:table-cell text-xs text-ink-muted">
+                          <td className="py-3.5 px-4 hidden sm:table-cell text-xs text-[#475569]">
                             <div>{app.location || "Remote"}</div>
                             {app.salaryText && (
-                              <div className="text-success-700 font-medium text-xs">
+                              <div className="text-[#16A34A] font-medium text-xs">
                                 {app.salaryText}
                               </div>
                             )}
                           </td>
-                          <td className="py-3.5 px-4 hidden md:table-cell text-xs text-ink-muted">
+                          <td className="py-3.5 px-4 hidden md:table-cell text-xs text-[#475569]">
                             {app.appliedAt ? new Date(app.appliedAt).toLocaleDateString() : "—"}
                           </td>
                           <td className="py-3.5 px-4">
                             <button
                               type="button"
                               onClick={() => handleOpenNotes(app)}
-                              className="text-xs text-ink-muted hover:text-brand-600 flex items-center gap-1 cursor-pointer max-w-[150px] truncate min-h-[36px]"
+                              className="text-xs text-[#475569] hover:text-[#2563EB] flex items-center gap-1 cursor-pointer max-w-[150px] truncate min-h-[36px]"
                             >
-                              <FileText className="w-3.5 h-3.5 shrink-0 text-ink-subtle" />
+                              <FileText className="w-3.5 h-3.5 shrink-0 text-[#94A3B8]" />
                               <span className="truncate">{app.notes || "Add notes..."}</span>
                             </button>
                           </td>
@@ -812,7 +814,7 @@ export default function TrackerPage() {
                                   href={sanitizeExternalUrl(app.applyUrl)!}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="p-1.5 text-ink-subtle hover:text-brand-600 transition min-h-[36px] min-w-[36px] flex items-center justify-center"
+                                  className="p-1.5 text-[#94A3B8] hover:text-[#2563EB] transition min-h-[36px] min-w-[36px] flex items-center justify-center rounded-full hover:bg-[#F1F5F9]"
                                   title="Open Link"
                                 >
                                   <ExternalLink className="w-4 h-4" />
@@ -821,7 +823,7 @@ export default function TrackerPage() {
                               <button
                                 type="button"
                                 onClick={() => handleDelete(app.id)}
-                                className="p-1.5 text-ink-subtle hover:text-danger-600 transition cursor-pointer min-h-[36px] min-w-[36px] flex items-center justify-center"
+                                className="p-1.5 text-[#94A3B8] hover:text-[#DC2626] transition cursor-pointer min-h-[36px] min-w-[36px] flex items-center justify-center rounded-full hover:bg-[#FEE2E2]"
                                 title="Delete"
                               >
                                 <Trash2 className="w-4 h-4" />
@@ -839,13 +841,13 @@ export default function TrackerPage() {
 
           {/* Empty State Banner if no applications */}
           {applications.length === 0 && (
-            <div className="bg-surface rounded-tk-2xl p-8 sm:p-12 text-center border border-line space-y-4 max-w-xl mx-auto shadow-tk-xs">
-              <div className="w-12 h-12 rounded-tk-2xl bg-brand-50 text-brand-600 mx-auto flex items-center justify-center shadow-tk-xs">
+            <div className="bg-white rounded-[16px] p-8 sm:p-12 text-center ring-1 ring-[#E2E8F0] space-y-4 max-w-xl mx-auto shadow-none">
+              <div className="w-12 h-12 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#2563EB] mx-auto flex items-center justify-center">
                 <Sparkles className="w-6 h-6" />
               </div>
               <div className="space-y-1">
-                <h3 className="text-lg font-bold text-ink">Your application pipeline is empty</h3>
-                <p className="text-xs sm:text-sm text-ink-muted">
+                <h3 className="text-lg font-bold text-[#0F172A]">Your application pipeline is empty</h3>
+                <p className="text-xs sm:text-sm text-[#475569]">
                   Track jobs from the 3D Radar or Job Directory, or click below to manually add an application.
                 </p>
               </div>
@@ -853,39 +855,34 @@ export default function TrackerPage() {
                 <button
                   type="button"
                   onClick={() => setIsAddModalOpen(true)}
-                  className="w-full sm:w-auto px-5 py-2.5 min-h-[44px] rounded-tk-xl bg-brand-600 text-ink-inverse font-bold text-xs shadow-tk-xs hover:bg-brand-700 transition cursor-pointer"
+                  className="w-full sm:w-auto px-5 py-2.5 min-h-[44px] rounded-full bg-[#2563EB] text-white font-bold text-xs shadow-none hover:bg-[#1D4ED8] transition cursor-pointer"
                 >
                   Track First Application
                 </button>
                 <Link
                   href="/jobs"
-                  className="w-full sm:w-auto px-5 py-2.5 min-h-[44px] rounded-tk-xl border border-line font-bold text-xs text-ink hover:bg-surface-muted transition flex items-center justify-center"
+                  className="w-full sm:w-auto px-5 py-2.5 min-h-[44px] rounded-full bg-[#F1F5F9] border border-[#E2E8F0] font-bold text-xs text-[#0F172A] hover:bg-[#E2E8F0] transition flex items-center justify-center"
                 >
                   Browse Tech Jobs
                 </Link>
               </div>
             </div>
           )}
-        </main>
 
-        <Footer />
-      </div>
-
-{/* Mobile bottom navigation handled by AppIconRail */}
+      <Footer />
 
       {/* MODAL 1: ADD APPLICATION */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/50 backdrop-blur-xs p-4 animate-fadeIn">
-          <div className="bg-surface rounded-tk-2xl shadow-tk-xl border border-line w-full max-w-md p-6 space-y-5 animate-scaleUp text-ink">
-            <div className="flex items-center justify-between border-b border-line pb-3">
-              <h3 className="text-lg font-bold text-ink flex items-center gap-2">
-                <Briefcase className="w-4 h-4 text-brand-600" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(15,23,42,0.6)] backdrop-blur-xs p-4 animate-fadeIn">
+          <div className="bg-white rounded-[20px] ring-1 ring-[#E2E8F0] shadow-[0_16px_48px_rgba(15,23,42,0.18)] w-full max-w-md p-6 space-y-4 text-[#0F172A]">
+            <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
+              <h3 className="text-[16px] font-bold text-[#0F172A] flex items-center gap-2">
                 <span>Track Job Application</span>
               </h3>
               <button
                 type="button"
                 onClick={() => setIsAddModalOpen(false)}
-                className="text-ink-subtle hover:text-ink p-1 min-h-[36px] min-w-[36px] flex items-center justify-center"
+                className="text-[#94A3B8] hover:text-[#0F172A] p-1 min-h-[36px] min-w-[36px] flex items-center justify-center"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -893,7 +890,7 @@ export default function TrackerPage() {
 
             <form onSubmit={handleCreateApplication} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-ink mb-1">Company Name *</label>
+                <label className="block text-xs font-semibold text-[#0F172A] mb-1">Company Name *</label>
                 <input
                   type="text"
                   name="company"
@@ -903,19 +900,19 @@ export default function TrackerPage() {
                     if (formErrors.company) setFormErrors((prev) => ({ ...prev, company: undefined }));
                   }}
                   placeholder="e.g. Stripe, Airbnb, Datadog"
-                  className={`w-full text-xs sm:text-sm px-3.5 py-2.5 min-h-[44px] rounded-tk-xl border transition-colors bg-surface text-ink ${
+                  className={`w-full text-xs sm:text-sm px-3.5 py-2.5 min-h-[44px] rounded-[12px] border transition-colors bg-[#F8FAFC] focus:bg-white text-[#0F172A] ${
                     formErrors.company
-                      ? "border-danger-500 focus:ring-2 focus:ring-danger-500 focus:outline-none"
-                      : "border-line focus:outline-brand-600"
+                      ? "border-[#DC2626] focus:ring-2 focus:ring-[#DC2626] focus:outline-none"
+                      : "border-[#CBD5E1] focus:ring-2 focus:ring-[#93C5FD] focus:outline-none"
                   }`}
                 />
                 {formErrors.company && (
-                  <p className="text-xs text-danger-600 font-medium mt-1">{formErrors.company}</p>
+                  <p className="text-xs text-[#DC2626] font-medium mt-1">{formErrors.company}</p>
                 )}
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-ink mb-1">Job Title *</label>
+                <label className="block text-xs font-semibold text-[#0F172A] mb-1">Job Title *</label>
                 <input
                   type="text"
                   name="title"
@@ -925,47 +922,47 @@ export default function TrackerPage() {
                     if (formErrors.title) setFormErrors((prev) => ({ ...prev, title: undefined }));
                   }}
                   placeholder="e.g. Senior Full-Stack Engineer"
-                  className={`w-full text-xs sm:text-sm px-3.5 py-2.5 min-h-[44px] rounded-tk-xl border transition-colors bg-surface text-ink ${
+                  className={`w-full text-xs sm:text-sm px-3.5 py-2.5 min-h-[44px] rounded-[12px] border transition-colors bg-[#F8FAFC] focus:bg-white text-[#0F172A] ${
                     formErrors.title
-                      ? "border-danger-500 focus:ring-2 focus:ring-danger-500 focus:outline-none"
-                      : "border-line focus:outline-brand-600"
+                      ? "border-[#DC2626] focus:ring-2 focus:ring-[#DC2626] focus:outline-none"
+                      : "border-[#CBD5E1] focus:ring-2 focus:ring-[#93C5FD] focus:outline-none"
                   }`}
                 />
                 {formErrors.title && (
-                  <p className="text-xs text-danger-600 font-medium mt-1">{formErrors.title}</p>
+                  <p className="text-xs text-[#DC2626] font-medium mt-1">{formErrors.title}</p>
                 )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-ink mb-1">Location</label>
+                  <label className="block text-xs font-semibold text-[#0F172A] mb-1">Location</label>
                   <input
                     type="text"
                     value={newLocation}
                     onChange={(e) => setNewLocation(e.target.value)}
                     placeholder="Remote / City"
-                    className="w-full text-xs px-3.5 py-2.5 min-h-[44px] rounded-tk-xl border border-line bg-surface text-ink focus:outline-brand-600"
+                    className="w-full text-xs px-3.5 py-2.5 min-h-[44px] rounded-[12px] border border-[#CBD5E1] bg-[#F8FAFC] focus:bg-white text-[#0F172A] focus:ring-2 focus:ring-[#93C5FD] focus:outline-none"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-ink mb-1">Salary Band</label>
+                  <label className="block text-xs font-semibold text-[#0F172A] mb-1">Salary Band</label>
                   <input
                     type="text"
                     value={newSalary}
                     onChange={(e) => setNewSalary(e.target.value)}
                     placeholder="e.g. $140k - $170k"
-                    className="w-full text-xs px-3.5 py-2.5 min-h-[44px] rounded-tk-xl border border-line bg-surface text-ink focus:outline-brand-600"
+                    className="w-full text-xs px-3.5 py-2.5 min-h-[44px] rounded-[12px] border border-[#CBD5E1] bg-[#F8FAFC] focus:bg-white text-[#0F172A] focus:ring-2 focus:ring-[#93C5FD] focus:outline-none"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-ink mb-1">Initial Stage</label>
+                  <label className="block text-xs font-semibold text-[#0F172A] mb-1">Initial Stage</label>
                   <select
                     value={newStage}
                     onChange={(e) => setNewStage(e.target.value as ApplicationStage)}
-                    className="w-full text-xs px-3.5 py-2.5 min-h-[44px] rounded-tk-xl border border-line bg-surface text-ink focus:outline-brand-600 cursor-pointer"
+                    className="w-full text-xs px-3.5 py-2.5 min-h-[44px] rounded-[12px] border border-[#CBD5E1] bg-[#F8FAFC] text-[#0F172A] focus:ring-2 focus:ring-[#93C5FD] focus:outline-none cursor-pointer"
                   >
                     {KANBAN_STAGES.map((s) => (
                       <option key={s.id} value={s.id}>
@@ -975,25 +972,25 @@ export default function TrackerPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-ink mb-1">Job Link (URL)</label>
+                  <label className="block text-xs font-semibold text-[#0F172A] mb-1">Job Link (URL)</label>
                   <input
                     type="url"
                     value={newApplyUrl}
                     onChange={(e) => setNewApplyUrl(e.target.value)}
                     placeholder="https://..."
-                    className="w-full text-xs px-3.5 py-2.5 min-h-[44px] rounded-tk-xl border border-line bg-surface text-ink focus:outline-brand-600"
+                    className="w-full text-xs px-3.5 py-2.5 min-h-[44px] rounded-[12px] border border-[#CBD5E1] bg-[#F8FAFC] focus:bg-white text-[#0F172A] focus:ring-2 focus:ring-[#93C5FD] focus:outline-none"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-ink mb-1">Notes</label>
+                <label className="block text-xs font-semibold text-[#0F172A] mb-1">Notes</label>
                 <textarea
                   rows={2}
                   value={newNotes}
                   onChange={(e) => setNewNotes(e.target.value)}
                   placeholder="Recruiter contact, interview round info..."
-                  className="w-full text-xs p-3 rounded-tk-xl border border-line bg-surface text-ink focus:outline-brand-600 resize-none"
+                  className="w-full text-xs p-3 rounded-[12px] border border-[#CBD5E1] bg-[#F8FAFC] focus:bg-white text-[#0F172A] focus:ring-2 focus:ring-[#93C5FD] focus:outline-none resize-none"
                 />
               </div>
 
@@ -1001,13 +998,13 @@ export default function TrackerPage() {
                 <button
                   type="button"
                   onClick={() => setIsAddModalOpen(false)}
-                  className="px-4 py-2.5 min-h-[44px] text-xs font-bold text-ink-muted hover:bg-surface-muted rounded-tk-xl transition-all duration-150 cursor-pointer"
+                  className="px-4 py-2 min-h-[40px] text-xs font-semibold text-[#0F172A] bg-[#F1F5F9] hover:bg-[#E2E8F0] rounded-full transition cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2.5 min-h-[44px] text-xs font-bold bg-brand-600 text-ink-inverse hover:bg-brand-700 rounded-tk-xl shadow-tk-xs transition-all duration-150 cursor-pointer"
+                  className="px-5 py-2 min-h-[40px] text-xs font-bold bg-[#2563EB] text-white hover:bg-[#1D4ED8] rounded-full shadow-none transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#93C5FD]"
                 >
                   Save Application
                 </button>
@@ -1019,26 +1016,26 @@ export default function TrackerPage() {
 
       {/* MODAL 2: NOTES EDITOR */}
       {activeNotesApp && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/50 backdrop-blur-xs p-4 animate-fadeIn">
-          <div className="bg-surface rounded-tk-2xl shadow-tk-xl border border-line w-full max-w-md p-6 space-y-4 animate-scaleUp text-ink">
-            <div className="flex items-center justify-between border-b border-line pb-3">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(15,23,42,0.6)] backdrop-blur-xs p-4 animate-fadeIn">
+          <div className="bg-white rounded-[20px] ring-1 ring-[#E2E8F0] shadow-[0_16px_48px_rgba(15,23,42,0.18)] w-full max-w-md p-6 space-y-4 text-[#0F172A]">
+            <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
               <div>
-                <h3 className="text-base font-bold text-ink">
+                <h3 className="text-base font-bold text-[#0F172A]">
                   {activeNotesApp.company} Notes
                 </h3>
-                <p className="text-xs text-ink-muted">{activeNotesApp.title}</p>
+                <p className="text-xs text-[#475569]">{activeNotesApp.title}</p>
               </div>
               <button
                 type="button"
                 onClick={() => setActiveNotesApp(null)}
-                className="text-ink-subtle hover:text-ink p-1 min-h-[36px] min-w-[36px] flex items-center justify-center"
+                className="text-[#94A3B8] hover:text-[#0F172A] p-1 min-h-[36px] min-w-[36px] flex items-center justify-center"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <div className="space-y-2">
-              <label className="block text-xs font-medium text-ink-muted">
+              <label className="block text-xs font-medium text-[#475569]">
                 Round notes, interviewer names, follow-up dates:
               </label>
               <textarea
@@ -1046,7 +1043,7 @@ export default function TrackerPage() {
                 value={notesDraft}
                 onChange={(e) => setNotesDraft(e.target.value)}
                 placeholder="e.g. Chat with hiring manager scheduled for Thursday 2pm. Mentioned Go and Kubernetes architecture..."
-                className="w-full text-xs sm:text-sm p-3 rounded-tk-xl border border-line bg-surface text-ink focus:outline-brand-600 resize-none"
+                className="w-full text-xs sm:text-sm p-3 rounded-[12px] border border-[#CBD5E1] bg-[#F8FAFC] focus:bg-white text-[#0F172A] focus:ring-2 focus:ring-[#93C5FD] focus:outline-none resize-none"
               />
             </div>
 
@@ -1054,14 +1051,14 @@ export default function TrackerPage() {
               <button
                 type="button"
                 onClick={() => setActiveNotesApp(null)}
-                className="px-4 py-2.5 min-h-[44px] text-xs font-bold text-ink-muted hover:bg-surface-muted rounded-tk-xl"
+                className="px-4 py-2 min-h-[40px] text-xs font-semibold text-[#0F172A] bg-[#F1F5F9] hover:bg-[#E2E8F0] rounded-full transition"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleSaveNotes}
-                className="px-5 py-2.5 min-h-[44px] text-xs font-bold bg-brand-600 text-ink-inverse hover:bg-brand-700 rounded-tk-xl shadow-tk-xs"
+                className="px-5 py-2 min-h-[40px] text-xs font-bold bg-[#2563EB] text-white hover:bg-[#1D4ED8] rounded-full shadow-none transition focus:outline-none focus:ring-2 focus:ring-[#93C5FD]"
               >
                 Save Notes
               </button>
@@ -1069,6 +1066,6 @@ export default function TrackerPage() {
           </div>
         </div>
       )}
-    </div>
+    </LoggedInAppShell>
   );
 }

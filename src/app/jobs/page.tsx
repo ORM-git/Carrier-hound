@@ -627,6 +627,16 @@ function JobsPageInner() {
 
   const displayedJobs = filteredJobs;
 
+  // Memoize per-card fit diagnostics keyed by confirmed resume facts and job.id
+  const confirmedResumeKey = candidate?.confirmedAt || "";
+  const cardDiagnosticsMap = useMemo(() => {
+    const map = new Map<string, FitDiagnosticsResult | null>();
+    for (const job of displayedJobs) {
+      map.set(job.id, getJobDiagnostics(job, candidate));
+    }
+    return map;
+  }, [displayedJobs, candidate?.confirmedAt, confirmedResumeKey]);
+
   const handleResetFilters = () => {
     setSearch("");
     setSelectedCategory("");
@@ -787,7 +797,7 @@ function JobsPageInner() {
     },
     {
       id: "liked",
-      label: "Saved",
+      label: "Liked",
       count: savedJobIds.length,
       active: activeTab === "liked",
       onClick: () => {
@@ -1533,7 +1543,7 @@ function JobsPageInner() {
                       {displayedJobs.map((job, index) => {
                         const isSaved = savedJobIds.includes(job.id);
                         const staggerDelay = Math.min(index * 0.03, 0.3);
-                        const diagnostics = getJobDiagnostics(job, candidate);
+                        const diagnostics = cardDiagnosticsMap.get(job.id) ?? getJobDiagnostics(job, candidate);
                         const matchScore = getJobMatchScore(job, candidate);
                         const matchLabel =
                           matchScore !== null

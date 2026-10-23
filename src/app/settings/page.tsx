@@ -6,6 +6,7 @@ import GuideHeader from "@/components/GuideHeader";
 import AppIconRail from "@/components/shell/AppIconRail";
 import { useSidebarMode } from "@/lib/sidebar";
 import AppTopBar from "@/components/shell/AppTopBar";
+import LoggedInAppShell from "@/components/shell/LoggedInAppShell";
 import Footer from "@/components/Footer";
 import { getAuthUser, getUserPreferences, saveUserPreferences, signOutUser } from "@/lib/auth/session";
 import { UserPreferences } from "@/lib/auth/types";
@@ -206,36 +207,19 @@ function SettingsPageInner() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col font-sans">
-        <AppIconRail />
-        <div className={`flex-1 ${isExpanded ? "md:pl-[240px]" : "md:pl-[72px]"} flex flex-col min-w-0 pb-6 md:pb-0 transition-[padding] duration-300 ease-[cubic-bezier(0.2,0,0,1)]`}>
-          <AppTopBar
-            pageLabel={activeTab === "preferences" ? "PROFILE" : "SETTINGS"}
-            user={user}
-            isPro={false}
-          />
-          <div className="flex-1 flex items-center justify-center">
-            <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-          </div>
+      <LoggedInAppShell pageLabel="SETTINGS" user={user} isPro={false}>
+        <div className="flex-1 flex items-center justify-center min-h-[60vh]">
+          <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
         </div>
-      </div>
+      </LoggedInAppShell>
     );
   }
 
   const isPro = subscription?.status === "active";
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-[#09090B] flex flex-col font-sans">
-      <AppIconRail />
-
-      <div className={`flex-1 ${isExpanded ? "md:pl-[240px]" : "md:pl-[72px]"} flex flex-col min-w-0 pb-6 md:pb-0 transition-[padding] duration-300 ease-[cubic-bezier(0.2,0,0,1)]`}>
-        <AppTopBar
-          pageLabel={activeTab === "preferences" ? "PROFILE" : "SETTINGS"}
-          user={user}
-          isPro={isPro}
-        />
-
-        <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-12 space-y-8">
+    <LoggedInAppShell pageLabel="SETTINGS" user={user} isPro={isPro}>
+      <div className="max-w-5xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-12 space-y-8">
         <div>
           <h1 className="text-[18px] font-bold uppercase tracking-wider text-[#0F172A]">
             Account & Settings
@@ -631,10 +615,9 @@ function SettingsPageInner() {
             </div>
           </div>
         )}
-      </main>
+      </div>
 
       <Footer />
-      </div>
 
       <PaywallModal
         open={isPaywallOpen}
@@ -642,7 +625,7 @@ function SettingsPageInner() {
         user={user}
         featureTitle="Upgrade to CareerMonke Pro"
       />
-    </div>
+    </LoggedInAppShell>
   );
 }
 

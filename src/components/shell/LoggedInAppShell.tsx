@@ -14,6 +14,7 @@ interface LoggedInAppShellProps {
   searchPlaceholder?: string;
   user?: User | null;
   isPro?: boolean;
+  mainClassName?: string;
   children: React.ReactNode;
 }
 
@@ -25,6 +26,7 @@ export default function LoggedInAppShell({
   searchPlaceholder,
   user,
   isPro,
+  mainClassName,
   children,
 }: LoggedInAppShellProps) {
   const { isExpanded } = useSidebarMode();
@@ -49,7 +51,7 @@ export default function LoggedInAppShell({
           user={user}
           isPro={isPro}
         />
-        <main id="main-content" className="flex-1 min-w-0">
+        <main id="main-content" className={mainClassName || "flex-1 min-w-0"}>
           {children}
         </main>
       </div>

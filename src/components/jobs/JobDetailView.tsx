@@ -8,6 +8,7 @@ import { computeFitDiagnostics, FitDiagnosticsResult } from "@/lib/matcher/scori
 import { stripHtmlAndExecutableMarkup } from "@/lib/security/xss";
 import { getSiteUrl } from "@/lib/siteUrl";
 import CompanyLogo from "@/components/CompanyLogo";
+import { useCookieNoticeHeight } from "@/components/CookieNotice";
 import type { User } from "@supabase/supabase-js";
 import {
   ArrowLeft,
@@ -162,6 +163,7 @@ export default function JobDetailView({
   onBack,
 }: JobDetailViewProps) {
   const hasConfirmedResume = Boolean(candidate && candidate.confirmedAt);
+  const cookieNoticeHeight = useCookieNoticeHeight();
 
   const [shareStatus, setShareStatus] = useState<"idle" | "success" | "error">("idle");
   const [shareErrorMsg, setShareErrorMsg] = useState<string>("");
@@ -580,7 +582,8 @@ export default function JobDetailView({
       <div
         role="region"
         aria-label="Quick apply bar"
-        className={`md:hidden fixed ${user ? "bottom-16" : "bottom-0"} inset-x-0 z-30 bg-white/95 backdrop-blur-md border-t border-[#E2E8F0] p-4 flex items-center justify-between gap-3 shadow-lg`}
+        style={{ bottom: user ? `calc(${cookieNoticeHeight}px + 4rem)` : `${cookieNoticeHeight}px` }}
+        className="md:hidden fixed inset-x-0 z-30 bg-white/95 backdrop-blur-md border-t border-[#E2E8F0] p-4 flex items-center justify-between gap-3 shadow-lg transition-[bottom] duration-200"
       >
         <div className="flex items-center gap-2 min-w-0">
           <button
