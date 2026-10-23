@@ -474,15 +474,28 @@ export default function AdminUsersPage() {
         {/* Server Pagination Controls */}
         <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600">
           <div>
-            Showing{" "}
-            <span className="font-semibold text-slate-900">
-              {pagination.total > 0 ? (pagination.page - 1) * pagination.pageSize + 1 : 0}
-            </span>{" "}
-            to{" "}
-            <span className="font-semibold text-slate-900">
-              {Math.min(pagination.page * pagination.pageSize, pagination.total)}
-            </span>{" "}
-            of <span className="font-semibold text-slate-900">{pagination.total}</span> users
+            {searchQuery.trim() ? (
+              <span>
+                Page Results:{" "}
+                <span className="font-semibold text-slate-900">
+                  {filteredUsers.length} matching on this page
+                </span>{" "}
+                <span className="text-slate-400">|</span> Registered Accounts:{" "}
+                <span className="font-semibold text-slate-900">{pagination.total} total</span>
+              </span>
+            ) : (
+              <span>
+                Showing{" "}
+                <span className="font-semibold text-slate-900">
+                  {pagination.total > 0 ? (pagination.page - 1) * pagination.pageSize + 1 : 0}
+                </span>{" "}
+                to{" "}
+                <span className="font-semibold text-slate-900">
+                  {Math.min(pagination.page * pagination.pageSize, pagination.total)}
+                </span>{" "}
+                of <span className="font-semibold text-slate-900">{pagination.total}</span> users
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <button

@@ -599,7 +599,7 @@ export async function getPaginatedUsersManagementList(options: {
         hasPrevPage,
       },
       searchNotice: query
-        ? 'Global email search across unindexed auth users requires an elevated Postgres RPC function (locked in phase A1b). Search is currently applied to the requested server page.'
+        ? 'Email search filters users on the current page. Global search across all accounts requires server-side index configuration.'
         : null,
     };
   }
@@ -642,24 +642,30 @@ export async function getPaginatedUsersManagementList(options: {
     }
   } catch (_) {}
 
-  // C. Page views count for page user IDs only
+  // C. Page views count via bounded count-only queries (0 row data downloaded, head: true)
+  // Direct multi-user aggregate grouping (GROUP BY user_id) in a single request requires an elevated
+  // PostgreSQL RPC function or view (locked in Phase A1c). Bounded count-only queries prevent row downloading.
   const userViewsCount = new Map<string, number>();
-  try {
-    const { data: viewsData } = await admin
-      .from('page_views')
-      .select('user_id')
-      .in('user_id', pageUserIds);
+  const BATCH_SIZE = 5;
+  for (let i = 0; i < pageUserIds.length; i += BATCH_SIZE) {
+    const batch = pageUserIds.slice(i, i + BATCH_SIZE);
+    await Promise.all(
+      batch.map(async (uid: string) => {
+        try {
+          const { count, error } = await admin
+            .from('page_views')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', uid);
 
-    if (Array.isArray(viewsData)) {
-      for (const row of viewsData) {
-        if (row.user_id) {
-          userViewsCount.set(row.user_id, (userViewsCount.get(row.user_id) || 0) + 1);
-        }
-      }
-    }
-  } catch (_) {}
+          if (!error && typeof count === 'number') {
+            userViewsCount.set(uid, count);
+          }
+        } catch (_) {}
+      })
+    );
+  }
 
-  // In-memory views buffer count for page user IDs
+  // Supplement with in-memory fallback views buffer count for page user IDs
   for (const row of inMemoryViews) {
     if (row.user_id && pageUserIds.includes(row.user_id)) {
       userViewsCount.set(row.user_id, (userViewsCount.get(row.user_id) || 0) + 1);
@@ -672,7 +678,7 @@ export async function getPaginatedUsersManagementList(options: {
   if (query) {
     filteredUsers = rawUsers.filter((u: any) => (u.email || '').toLowerCase().includes(query));
     searchNotice =
-      'Global email search across unindexed auth users requires an elevated Postgres RPC function (locked in phase A1b). Search is currently applied to the requested server page.';
+      'Email search filters users on the current page. Global search across all accounts requires server-side index configuration.';
   }
 
   const userItems: UserManagementItem[] = filteredUsers.map((u: any) => {

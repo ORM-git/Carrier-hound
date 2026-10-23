@@ -1,641 +1,655 @@
 const fs = require("fs");
 const path = require("path");
 const http = require("http");
+const crypto = require("crypto");
 const puppeteer = require("puppeteer-core");
+const ssr = require("@supabase/ssr");
 
 const CHROME_PATH = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
+const OUT_DIR = path.resolve(__dirname, "..", "out");
 const REPORT_DIR = path.resolve(__dirname, "..", "reports", "admin-a1");
-const CSS_DIR = path.resolve(__dirname, "..", "out", "_next", "static", "css");
 
 if (!fs.existsSync(REPORT_DIR)) {
   fs.mkdirSync(REPORT_DIR, { recursive: true });
 }
 
-// Find all compiled Tailwind CSS files
-const cssFiles = fs.readdirSync(CSS_DIR).filter((f) => f.endsWith(".css"));
-const cssLinks = cssFiles
-  .map((f) => `<link rel="stylesheet" href="/_next/static/css/${f}">`)
-  .join("\n");
+// MIME types for static export serving
+const MIME_TYPES = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "application/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".svg": "image/svg+xml",
+  ".ico": "image/x-icon",
+  ".txt": "text/plain; charset=utf-8",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+};
 
-function getShellHtml(title, activeNav, bodyContent) {
-  return `<!DOCTYPE html>
-<html lang="en" class="scroll-smooth">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>${title} — CareerMonke Admin</title>
-  ${cssLinks}
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-  </style>
-</head>
-<body class="font-sans antialiased text-[#09090B] bg-[#F8FAFC] min-h-screen flex flex-col selection:bg-blue-100 selection:text-blue-900 overflow-x-hidden w-full max-w-full">
-  <div id="main-content" class="flex-1 flex flex-col">
-    <!-- Admin Top Navigation Header -->
-    <header class="sticky top-0 z-40 bg-white border-b border-slate-200 shadow-sm">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-        <div class="flex items-center space-x-8">
-          <div class="flex items-center space-x-3">
-            <span class="font-extrabold text-lg tracking-tight text-slate-900">CareerMonke</span>
-            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-700 uppercase tracking-wider">
-              <svg class="w-3 h-3 text-red-600 inline" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-              Admin
-            </span>
-          </div>
+// Fixtures for authentic React admin UI rendering
+const VALID_JWT = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDEiLCJlbWFpbCI6Inhic3VyeWFrYW50QGdtYWlsLmNvbSIsInJvbGUiOiJhdXRoZW50aWNhdGVkIiwiZXhwIjoyMTA2MzI1NDEzfQ.c2lnbmF0dXJl";
 
-          <nav class="flex space-x-1" aria-label="Admin Navigation">
-            <a href="/admin" class="inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${activeNav === "analytics" ? "bg-slate-100 text-slate-900 font-semibold" : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"}">
-              <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 16v-4m5 4V8m5 8v-6"/></svg>
-              Analytics
-            </a>
-            <a href="/admin/users" class="inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${activeNav === "users" ? "bg-slate-100 text-slate-900 font-semibold" : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"}">
-              <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-              Users
-            </a>
-            <a href="/admin/audit-log" class="inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${activeNav === "audit-log" ? "bg-slate-100 text-slate-900 font-semibold" : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"}">
-              <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path stroke-linecap="round" stroke-linejoin="round" d="M14 2v6h6"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>
-              Audit Log
-            </a>
-          </nav>
-        </div>
+const MOCK_ADMIN_SESSION = {
+  access_token: VALID_JWT,
+  token_type: "bearer",
+  expires_in: 3600,
+  expires_at: 2106325413,
+  refresh_token: "mock-admin-refresh-token",
+  user: {
+    id: "00000000-0000-0000-0000-000000000001",
+    aud: "authenticated",
+    role: "authenticated",
+    email: "xbsuryakant@gmail.com",
+    app_metadata: { provider: "email" },
+    user_metadata: { role: "admin" },
+    created_at: "2026-01-01T00:00:00.000Z",
+  },
+};
 
-        <div class="flex items-center space-x-4">
-          <div class="hidden md:flex flex-col text-right">
-            <span class="text-xs font-semibold text-slate-900">xbsuryakant@gmail.com</span>
-            <span class="text-[10px] text-emerald-600 font-mono font-medium">Verified Admin</span>
-          </div>
-          <a href="/" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 transition-colors shadow-sm">
-            <span>Exit to Site</span>
-            <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-          </a>
-        </div>
-      </div>
-    </header>
+const FIXTURE_USERS = [
+  {
+    id: "00000000-0000-0000-0000-000000000001",
+    email: "xbsuryakant@gmail.com",
+    isPro: true,
+    plan: "pro",
+    createdAt: "2026-01-10T12:00:00.000Z",
+    lastSignInAt: "2026-04-11T09:30:00.000Z",
+    isBlocked: false,
+    blockReason: null,
+    totalViews: 215,
+  },
+  {
+    id: "00000000-0000-0000-0000-000000000002",
+    email: "alex.chen@example.com",
+    isPro: true,
+    plan: "pro",
+    createdAt: "2026-02-14T10:15:00.000Z",
+    lastSignInAt: "2026-04-10T14:22:00.000Z",
+    isBlocked: false,
+    blockReason: null,
+    totalViews: 142,
+  },
+  {
+    id: "00000000-0000-0000-0000-000000000003",
+    email: "sarah.connor@example.com",
+    isPro: false,
+    plan: "free",
+    createdAt: "2026-03-01T08:00:00.000Z",
+    lastSignInAt: "2026-04-09T18:40:00.000Z",
+    isBlocked: true,
+    blockReason: "Automated scraping pattern detected",
+    totalViews: 89,
+  },
+  {
+    id: "00000000-0000-0000-0000-000000000004",
+    email: "dev.marcus@example.com",
+    isPro: false,
+    plan: "free",
+    createdAt: "2026-03-15T16:20:00.000Z",
+    lastSignInAt: "2026-04-11T08:05:00.000Z",
+    isBlocked: false,
+    blockReason: null,
+    totalViews: 45,
+  },
+];
 
-    <!-- Main Admin Content Container -->
-    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      ${bodyContent}
-    </main>
+const FIXTURE_USER_ACTIVITY = {
+  ok: true,
+  userId: "00000000-0000-0000-0000-000000000002",
+  userEmail: "alex.chen@example.com",
+  summary: {
+    views24h: 14,
+    views7d: 52,
+    totalRecordedViews: 142,
+  },
+  activity: [
+    {
+      id: "pv-01",
+      user_id: "00000000-0000-0000-0000-000000000002",
+      path: "/jobs",
+      page_title: "Remote Engineering Roles | CareerMonke",
+      created_at: "2026-04-11T09:12:00.000Z",
+    },
+    {
+      id: "pv-02",
+      user_id: "00000000-0000-0000-0000-000000000002",
+      path: "/remote/hidden-job-market-guide",
+      page_title: "Hidden Job Market Guide | CareerMonke",
+      created_at: "2026-04-11T08:45:00.000Z",
+    },
+    {
+      id: "pv-03",
+      user_id: "00000000-0000-0000-0000-000000000002",
+      path: "/dashboard",
+      page_title: "Candidate Dashboard | CareerMonke",
+      created_at: "2026-04-10T14:22:00.000Z",
+    },
+    {
+      id: "pv-04",
+      user_id: "00000000-0000-0000-0000-000000000002",
+      path: "/pricing",
+      page_title: "Pro Membership Plans | CareerMonke",
+      created_at: "2026-04-09T17:30:00.000Z",
+    },
+  ],
+};
 
-    <!-- Admin Footer -->
-    <footer class="border-t border-slate-200 bg-white py-4 text-center text-xs text-slate-500">
-      CareerMonke Internal Admin Console • Restricted to xbsuryakant@gmail.com
-    </footer>
-  </div>
-</body>
-</html>`;
+const FIXTURE_AUDIT_LOGS = [
+  {
+    id: "audit-001",
+    actor_id: "00000000-0000-0000-0000-000000000001",
+    actor_email: "xbsuryakant@gmail.com",
+    action: "user.block",
+    target_type: "user",
+    target_id: "00000000-0000-0000-0000-000000000003",
+    details: {
+      reason: "Automated scraping pattern detected",
+      target_email: "sarah.connor@example.com",
+    },
+    ip_address: "127.0.0.1",
+    created_at: "2026-04-10T16:30:00.000Z",
+  },
+  {
+    id: "audit-002",
+    actor_id: "00000000-0000-0000-0000-000000000001",
+    actor_email: "xbsuryakant@gmail.com",
+    action: "user.unblock",
+    target_type: "user",
+    target_id: "00000000-0000-0000-0000-000000000004",
+    details: {
+      reason: "Manual verification confirmed legitimate candidate account",
+      target_email: "dev.marcus@example.com",
+    },
+    ip_address: "127.0.0.1",
+    created_at: "2026-04-09T11:20:00.000Z",
+  },
+];
+
+function startStaticServer(port = 4195) {
+  return new Promise((resolve, reject) => {
+    const server = http.createServer((req, res) => {
+      let reqPath = req.url.split("?")[0];
+      if (reqPath === "/") reqPath = "/index.html";
+
+      let filePath = path.join(OUT_DIR, reqPath);
+
+      if (!fs.existsSync(filePath) && fs.existsSync(`${filePath}.html`)) {
+        filePath = `${filePath}.html`;
+      } else if (fs.existsSync(filePath) && fs.statSync(filePath).isDirectory()) {
+        const indexHtml = path.join(filePath, "index.html");
+        if (fs.existsSync(indexHtml)) filePath = indexHtml;
+      }
+
+      if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+        const ext = path.extname(filePath);
+        res.writeHead(200, { "Content-Type": MIME_TYPES[ext] || "application/octet-stream" });
+        fs.createReadStream(filePath).pipe(res);
+      } else {
+        res.writeHead(404, { "Content-Type": "text/plain" });
+        res.end(`Not found: ${reqPath}`);
+      }
+    });
+
+    server.listen(port, "localhost", () => resolve(server));
+    server.on("error", reject);
+  });
 }
 
-// 1. Users Page Content (with Server Pagination & Search Notice)
-const usersPageBody = `
-<div class="space-y-6">
-  <!-- Header -->
-  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-slate-200">
-    <div>
-      <h1 class="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-        <svg class="w-6 h-6 text-slate-700 inline" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-        User Management
-      </h1>
-      <p class="text-sm text-slate-500 mt-1">
-        Search, review user activity, inspect Pro subscriptions, and manage block lists.
-      </p>
-    </div>
-    <div class="flex items-center gap-2 self-start sm:self-auto">
-      <button class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors shadow-sm">
-        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
-        <span>Refresh Users</span>
-      </button>
-    </div>
-  </div>
-
-  <!-- Controls: Search and Filters -->
-  <div class="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
-    <!-- Search Bar -->
-    <div class="relative flex-1 max-w-md">
-      <svg class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-      <input type="text" placeholder="Search users by email address..." value="alex" class="w-full pl-9 pr-20 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-900 placeholder-slate-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
-      <button class="absolute right-1.5 top-1/2 -translate-y-1/2 px-2.5 py-1 text-xs font-semibold bg-slate-900 text-white rounded-md hover:bg-slate-800">
-        Search
-      </button>
-    </div>
-
-    <!-- Filter Pills -->
-    <div class="inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm self-start">
-      <button class="px-3 py-1.5 text-xs font-semibold rounded-md transition-colors bg-slate-900 text-white">All (120)</button>
-      <button class="px-3 py-1.5 text-xs font-semibold rounded-md transition-colors text-slate-600 hover:text-slate-900">Pro (40)</button>
-      <button class="px-3 py-1.5 text-xs font-semibold rounded-md transition-colors text-slate-600 hover:text-slate-900">Free (80)</button>
-      <button class="px-3 py-1.5 text-xs font-semibold rounded-md transition-colors text-slate-600 hover:text-slate-900">Blocked (3)</button>
-    </div>
-  </div>
-
-  <!-- Search Notice Banner -->
-  <div class="p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800 flex items-center gap-2 shadow-sm">
-    <svg class="w-4 h-4 text-amber-600 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-    <span>Global email search across unindexed auth users requires an elevated Postgres RPC function (locked in phase A1b). Search is currently applied to the requested server page.</span>
-  </div>
-
-  <!-- Users Table -->
-  <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-    <div class="overflow-x-auto">
-      <table class="w-full text-left text-sm">
-        <thead class="bg-slate-50 text-xs font-semibold text-slate-500 uppercase border-b border-slate-200">
-          <tr>
-            <th scope="col" class="px-5 py-3.5">User Email</th>
-            <th scope="col" class="px-5 py-3.5">Signup Date</th>
-            <th scope="col" class="px-5 py-3.5">Plan</th>
-            <th scope="col" class="px-5 py-3.5">Last Active</th>
-            <th scope="col" class="px-5 py-3.5 text-center">Page Views</th>
-            <th scope="col" class="px-5 py-3.5">Status</th>
-            <th scope="col" class="px-5 py-3.5 text-right">Moderation</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-slate-200">
-          <!-- Row 1: Admin User -->
-          <tr class="hover:bg-slate-50/75 transition-colors">
-            <td class="px-5 py-3.5">
-              <div class="font-semibold text-slate-900 flex items-center gap-2">
-                <span>xbsuryakant@gmail.com</span>
-                <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 uppercase">Admin</span>
-              </div>
-              <div class="text-xs text-slate-400 font-mono mt-0.5">00000000-0000-0000-0000-000000000001</div>
-            </td>
-            <td class="px-5 py-3.5 text-xs text-slate-600">Sep 1, 2026</td>
-            <td class="px-5 py-3.5">
-              <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200">
-                <svg class="w-3 h-3 text-amber-600" fill="currentColor" viewBox="0 0 24 24"><path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14v2H5v-2z"/></svg>
-                Pro
-              </span>
-            </td>
-            <td class="px-5 py-3.5 text-xs text-slate-600">Oct 23, 2026</td>
-            <td class="px-5 py-3.5 text-center">
-              <button class="inline-flex items-center gap-1.5 text-xs font-mono font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded-md transition-colors" title="Click to view visited pages">
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
-                <span>84 views</span>
-              </button>
-            </td>
-            <td class="px-5 py-3.5">
-              <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                Active
-              </span>
-            </td>
-            <td class="px-5 py-3.5 text-right">
-              <button disabled class="inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium bg-slate-100 text-slate-400 cursor-not-allowed" title="Admin account cannot be blocked">
-                <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></svg>
-                <span>Admin Protected</span>
-              </button>
-            </td>
-          </tr>
-
-          <!-- Row 2: Pro Active User -->
-          <tr class="hover:bg-slate-50/75 transition-colors">
-            <td class="px-5 py-3.5">
-              <div class="font-semibold text-slate-900">candidate.alex@careermonke.test</div>
-              <div class="text-xs text-slate-400 font-mono mt-0.5">00000000-0000-0000-0000-000000000002</div>
-            </td>
-            <td class="px-5 py-3.5 text-xs text-slate-600">Oct 15, 2026</td>
-            <td class="px-5 py-3.5">
-              <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200">
-                <svg class="w-3 h-3 text-amber-600" fill="currentColor" viewBox="0 0 24 24"><path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14v2H5v-2z"/></svg>
-                Pro
-              </span>
-            </td>
-            <td class="px-5 py-3.5 text-xs text-slate-600">Oct 23, 2026</td>
-            <td class="px-5 py-3.5 text-center">
-              <button class="inline-flex items-center gap-1.5 text-xs font-mono font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded-md transition-colors" title="Click to view visited pages">
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
-                <span>32 views</span>
-              </button>
-            </td>
-            <td class="px-5 py-3.5">
-              <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                Active
-              </span>
-            </td>
-            <td class="px-5 py-3.5 text-right">
-              <button class="inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 transition-colors">
-                <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></svg>
-                <span>Block Account</span>
-              </button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <!-- Server Pagination Controls -->
-    <div class="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600">
-      <div>
-        Showing <span class="font-semibold text-slate-900">1</span> to <span class="font-semibold text-slate-900">25</span> of <span class="font-semibold text-slate-900">120</span> users
-      </div>
-      <div class="flex items-center gap-2">
-        <button disabled class="inline-flex items-center gap-1 px-3 py-1.5 rounded border border-slate-200 bg-white font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm transition-colors">
-          <svg class="w-3.5 h-3.5 inline" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m15 18-6-6 6-6"/></svg>
-          <span>Previous</span>
-        </button>
-        <span class="font-semibold text-slate-900 px-2">
-          Page 1 of 5
-        </span>
-        <button class="inline-flex items-center gap-1 px-3 py-1.5 rounded border border-slate-200 bg-white font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm transition-colors">
-          <span>Next</span>
-          <svg class="w-3.5 h-3.5 inline" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m9 18 6-6-6-6"/></svg>
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
-`;
-
-// 2. User Activity Modal Content
-const userActivityModalHtml = `
-<div class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-  <div class="bg-white rounded-2xl max-w-2xl w-full shadow-2xl border border-slate-200 overflow-hidden transform transition-all">
-    <div class="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/50">
-      <div class="flex items-center space-x-3">
-        <div class="p-2 bg-blue-100 text-blue-700 rounded-lg">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
-        </div>
-        <div>
-          <h3 class="text-base font-bold text-slate-900">User Activity Journey</h3>
-          <p class="text-xs text-slate-500 font-mono mt-0.5">candidate.alex@careermonke.test</p>
-        </div>
-      </div>
-      <button class="text-slate-400 hover:text-slate-600 transition-colors p-1">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
-      </button>
-    </div>
-
-    <div class="p-6 space-y-6">
-      <div class="grid grid-cols-3 gap-4">
-        <div class="p-3.5 bg-slate-50 rounded-xl border border-slate-200">
-          <div class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Past 24 Hours</div>
-          <div class="text-xl font-extrabold text-slate-900 mt-1">12 views</div>
-        </div>
-        <div class="p-3.5 bg-slate-50 rounded-xl border border-slate-200">
-          <div class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Past 7 Days</div>
-          <div class="text-xl font-extrabold text-slate-900 mt-1">32 views</div>
-        </div>
-        <div class="p-3.5 bg-slate-50 rounded-xl border border-slate-200">
-          <div class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total Recorded</div>
-          <div class="text-xl font-extrabold text-slate-900 mt-1">84 views</div>
-        </div>
-      </div>
-
-      <div class="rounded-xl border border-amber-200 bg-amber-50/70 p-3.5 flex items-start gap-3">
-        <svg class="w-4 h-4 text-amber-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-        <div class="text-xs text-amber-900 space-y-1">
-          <div class="font-semibold text-amber-950">Telemetry Scope Notice</div>
-          <p>Page views reflect navigations recorded in <code class="font-mono text-[11px] bg-amber-100 px-1 py-0.5 rounded">page_views</code>. Unindexed search terms, apply button outbound clicks, and direct AI generation calls are not yet collected as discrete events in the current schema.</p>
-        </div>
-      </div>
-    </div>
-
-    <div class="px-6 py-3.5 border-t border-slate-200 bg-slate-50 flex items-center justify-end">
-      <button class="px-4 py-2 bg-slate-900 text-white rounded-lg text-xs font-semibold hover:bg-slate-800 transition-colors">
-        Close
-      </button>
-    </div>
-  </div>
-</div>
-`;
-
-// Helper: Audit Log Page Generator
-function getAuditLogBody({ state = "normal", errorText = null }) {
-  return `
-<div class="space-y-6">
-  <!-- Header -->
-  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-slate-200">
-    <div>
-      <div class="flex items-center gap-2">
-        <h1 class="text-2xl font-bold text-slate-900 tracking-tight">Administrative Audit Log</h1>
-        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
-          <svg class="w-3 h-3 text-slate-500 inline" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-          Append-Only
-        </span>
-      </div>
-      <p class="text-sm text-slate-500 mt-1">
-        Chronological log of administrative actions, user moderations, and privileged operations.
-      </p>
-    </div>
-    <div class="flex items-center gap-2 self-start sm:self-auto">
-      <button class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors shadow-sm">
-        <svg class="w-3.5 h-3.5 ${state === "loading" ? "animate-spin" : ""}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
-        <span>Refresh</span>
-      </button>
-    </div>
-  </div>
-
-  <!-- Database Immutability & Protection Disclosure (Truthful text) -->
-  <div class="p-4 rounded-xl bg-slate-50 border border-slate-200 shadow-sm flex items-start gap-3">
-    <div class="p-2 bg-blue-100 text-blue-700 rounded-lg shrink-0 mt-0.5">
-      <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-    </div>
-    <div class="text-xs text-slate-600 space-y-1">
-      <div class="font-semibold text-slate-900">Database-Level Immutability Protection</div>
-      <p class="leading-relaxed">
-        Audit entries are designed as append-only via the PostgreSQL database trigger <code class="font-mono text-[11px] bg-slate-200/80 px-1 py-0.5 rounded text-slate-800">tr_prevent_admin_audit_log_mutation</code> defined in migration scripts to block <code class="font-mono text-[11px] bg-slate-200/80 px-1 py-0.5 rounded text-slate-800">UPDATE</code> and <code class="font-mono text-[11px] bg-slate-200/80 px-1 py-0.5 rounded text-slate-800">DELETE</code> operations. Live enforcement in production is pending database verification. This viewer provides read-only inspection with zero mutation controls.
-      </p>
-    </div>
-  </div>
-
-  ${
-    errorText
-      ? `
-  <!-- Retryable Error Banner -->
-  <div class="rounded-lg bg-red-50 p-4 border border-red-200 text-sm text-red-700 flex items-center justify-between shadow-sm">
-    <div class="flex items-center gap-2">
-      <svg class="w-5 h-5 text-red-600 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></svg>
-      <span>${errorText}</span>
-    </div>
-    <button class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors shadow-sm">
-      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
-      <span>Retry</span>
-    </button>
-  </div>`
-      : ""
-  }
-
-  <!-- Action Filters -->
-  <div class="flex items-center justify-between gap-4">
-    <div class="inline-flex items-center gap-2">
-      <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-      <div class="inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
-        <button class="px-3 py-1.5 text-xs font-semibold rounded-md transition-colors bg-slate-900 text-white">All Actions</button>
-        <button class="px-3 py-1.5 text-xs font-semibold rounded-md transition-colors text-slate-600 hover:text-slate-900">Blocks</button>
-        <button class="px-3 py-1.5 text-xs font-semibold rounded-md transition-colors text-slate-600 hover:text-slate-900">Unblocks</button>
-      </div>
-    </div>
-    <div class="text-xs text-slate-500 font-medium">
-      ${state === "normal" ? "2 total logged events" : "0 logged events"}
-    </div>
-  </div>
-
-  <!-- Audit Log Table -->
-  <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-    <div class="overflow-x-auto">
-      <table class="w-full text-left text-sm">
-        <thead class="bg-slate-50 text-xs font-semibold text-slate-500 uppercase border-b border-slate-200">
-          <tr>
-            <th scope="col" class="px-5 py-3.5">Timestamp</th>
-            <th scope="col" class="px-5 py-3.5">Actor</th>
-            <th scope="col" class="px-5 py-3.5">Action</th>
-            <th scope="col" class="px-5 py-3.5">Target</th>
-            <th scope="col" class="px-5 py-3.5">Reason / Details</th>
-            <th scope="col" class="px-5 py-3.5 font-mono text-[11px]">Client IP Hash</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-slate-200 font-sans">
-          ${
-            state === "loading"
-              ? `
-          <tr>
-            <td colSpan="6" class="px-5 py-12 text-center text-slate-400 text-sm">
-              <div class="flex items-center justify-center gap-2">
-                <svg class="w-4 h-4 animate-spin text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
-                <span>Loading audit trail...</span>
-              </div>
-            </td>
-          </tr>`
-              : state === "empty"
-              ? `
-          <tr>
-            <td colSpan="6" class="px-5 py-12 text-center text-slate-400 text-sm">
-              No audit records found matching criteria.
-            </td>
-          </tr>`
-              : state === "error"
-              ? `
-          <tr>
-            <td colSpan="6" class="px-5 py-12 text-center text-slate-500 text-sm">
-              <div class="flex flex-col items-center justify-center gap-2">
-                <p class="text-red-600 font-medium">Failed to retrieve audit logs from database</p>
-                <button class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-slate-900 text-white rounded-md hover:bg-slate-800 transition-colors shadow-sm">
-                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
-                  <span>Retry</span>
-                </button>
-              </div>
-            </td>
-          </tr>`
-              : `
-          <!-- Log 1: User Block -->
-          <tr class="hover:bg-slate-50/75 transition-colors">
-            <td class="px-5 py-3.5 text-xs text-slate-600 whitespace-nowrap">
-              <div class="font-medium text-slate-900">Oct 23, 2026</div>
-              <div class="text-[11px] text-slate-400 font-mono">19:40:00 UTC</div>
-            </td>
-            <td class="px-5 py-3.5">
-              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono font-medium bg-slate-100 text-slate-800">
-                00000000...0001
-              </span>
-            </td>
-            <td class="px-5 py-3.5">
-              <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold border bg-red-50 text-red-700 border-red-200">
-                <svg class="w-3 h-3 text-red-600 inline" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></svg>
-                user.block
-              </span>
-            </td>
-            <td class="px-5 py-3.5">
-              <div class="font-medium text-slate-900 text-xs">bad-actor-001</div>
-              <div class="text-[10px] text-slate-400 font-mono">user</div>
-            </td>
-            <td class="px-5 py-3.5 text-xs text-slate-600 max-w-xs">
-              <span class="text-slate-900 font-medium">Terms of service violation</span>
-            </td>
-            <td class="px-5 py-3.5 text-xs font-mono text-slate-500">
-              <span title="abcdef1234567890abcdef1234567890">abcdef12...</span>
-            </td>
-          </tr>
-
-          <!-- Log 2: User Unblock -->
-          <tr class="hover:bg-slate-50/75 transition-colors">
-            <td class="px-5 py-3.5 text-xs text-slate-600 whitespace-nowrap">
-              <div class="font-medium text-slate-900">Oct 23, 2026</div>
-              <div class="text-[11px] text-slate-400 font-mono">18:15:00 UTC</div>
-            </td>
-            <td class="px-5 py-3.5">
-              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono font-medium bg-slate-100 text-slate-800">
-                00000000...0001
-              </span>
-            </td>
-            <td class="px-5 py-3.5">
-              <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold border bg-emerald-50 text-emerald-700 border-emerald-200">
-                <svg class="w-3 h-3 text-emerald-600 inline" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 11 12 14 22 4"/></svg>
-                user.unblock
-              </span>
-            </td>
-            <td class="px-5 py-3.5">
-              <div class="font-medium text-slate-900 text-xs">reinstated-002</div>
-              <div class="text-[10px] text-slate-400 font-mono">user</div>
-            </td>
-            <td class="px-5 py-3.5 text-xs text-slate-600 max-w-xs">
-              <span class="text-slate-900 font-medium">Appeal reviewed and approved</span>
-            </td>
-            <td class="px-5 py-3.5 text-xs font-mono text-slate-500">
-              <span title="1234567890abcdef1234567890abcdef">12345678...</span>
-            </td>
-          </tr>`
-          }
-        </tbody>
-      </table>
-    </div>
-
-    <!-- Pagination Footer -->
-    <div class="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600">
-      <div>
-        ${
-          state === "normal"
-            ? `Showing <span class="font-semibold text-slate-900">1</span> to <span class="font-semibold text-slate-900">2</span> of <span class="font-semibold text-slate-900">2</span> entries`
-            : `Showing <span class="font-semibold text-slate-900">0</span> entries`
-        }
-      </div>
-      <div class="flex items-center gap-2">
-        <span class="font-medium text-slate-700">Page 1 of 1</span>
-        <div class="inline-flex rounded-md shadow-sm">
-          <button disabled class="px-2.5 py-1 text-xs font-medium rounded-l-md border border-slate-200 bg-white text-slate-300 cursor-not-allowed">
-            <svg class="w-3.5 h-3.5 inline" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m15 18-6-6 6-6"/></svg>
-            Previous
-          </button>
-          <button disabled class="px-2.5 py-1 text-xs font-medium rounded-r-md border border-l-0 border-slate-200 bg-white text-slate-300 cursor-not-allowed">
-            Next
-            <svg class="w-3.5 h-3.5 inline" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m9 18 6-6-6-6"/></svg>
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>`;
+function computeFileHash(filePath) {
+  const content = fs.readFileSync(filePath);
+  return crypto.createHash("sha256").update(content).digest("hex");
 }
 
-// Start local static server to serve CSS and preview pages
-const server = http.createServer((req, res) => {
-  const urlPath = req.url.split("?")[0];
-  if (urlPath.startsWith("/_next/static/css/")) {
-    const filename = path.basename(urlPath);
-    const filePath = path.join(CSS_DIR, filename);
-    if (fs.existsSync(filePath)) {
-      res.writeHead(200, { "Content-Type": "text/css" });
-      return fs.createReadStream(filePath).pipe(res);
-    }
-  }
+async function captureAllScreenshots() {
+  console.log("================================================================================");
+  console.log("ACTUAL COMPILED REACT APP SCREENSHOT HARNESS (PUPPETEER E2E VERIFICATION)");
+  console.log("================================================================================\n");
 
-  if (urlPath === "/preview/users") {
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-    return res.end(getShellHtml("User Management", "users", usersPageBody));
-  }
+  const PORT = 4195;
+  const server = await startStaticServer(PORT);
+  console.log(`✅ Static server running at http://localhost:${PORT} serving compiled out/ static export\n`);
 
-  if (urlPath === "/preview/users-modal") {
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-    return res.end(getShellHtml("User Management", "users", userActivityModalHtml));
-  }
-
-  if (urlPath === "/preview/audit-log") {
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-    return res.end(getShellHtml("Administrative Audit Log", "audit-log", getAuditLogBody({ state: "normal" })));
-  }
-
-  if (urlPath === "/preview/audit-log-loading") {
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-    return res.end(getShellHtml("Administrative Audit Log", "audit-log", getAuditLogBody({ state: "loading" })));
-  }
-
-  if (urlPath === "/preview/audit-log-empty") {
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-    return res.end(getShellHtml("Administrative Audit Log", "audit-log", getAuditLogBody({ state: "empty" })));
-  }
-
-  if (urlPath === "/preview/audit-log-error") {
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-    return res.end(
-      getShellHtml(
-        "Administrative Audit Log",
-        "audit-log",
-        getAuditLogBody({ state: "error", errorText: "Failed to retrieve audit logs from database" })
-      )
-    );
-  }
-
-  res.writeHead(404);
-  res.end("Not Found");
-});
-
-server.listen(3849, async () => {
-  console.log("Screenshot preview server listening on port 3849...");
   const browser = await puppeteer.launch({
     executablePath: CHROME_PATH,
     headless: "new",
-    args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-gpu",
+      "--disable-extensions",
+    ],
   });
 
+  const capturedManifest = [];
+
   try {
-    const pages = await browser.pages();
-    const page = pages.length > 0 ? pages[0] : await browser.newPage();
+    const viewports = [
+      { name: "desktop", width: 1280, height: 800 },
+      { name: "mobile-390px", width: 390, height: 844 },
+    ];
 
-    // 1. Desktop Users Page (1280x800)
-    await page.setViewport({ width: 1280, height: 800, deviceScaleFactor: 2 });
-    await page.goto("http://localhost:3849/preview/users", { waitUntil: "load" });
-    const desktopUsersPath = path.join(REPORT_DIR, "admin-users-desktop.png");
-    await page.screenshot({ path: desktopUsersPath, fullPage: true });
-    console.log(`Saved screenshot: ${desktopUsersPath}`);
+    // Helper to configure a clean authenticated page
+    const createAuthenticatedPage = async (vp, apiConfig) => {
+      const page = await browser.newPage();
+      await page.setViewport({ width: vp.width, height: vp.height });
 
-    // 2. Desktop User Activity Modal (1280x800)
-    await page.goto("http://localhost:3849/preview/users-modal", { waitUntil: "load" });
-    const desktopModalPath = path.join(REPORT_DIR, "admin-users-activity-modal-desktop.png");
-    await page.screenshot({ path: desktopModalPath });
-    console.log(`Saved screenshot: ${desktopModalPath}`);
+      // Request interception with strict default deny
+      await page.setRequestInterception(true);
+      page.on("request", (req) => {
+        const urlStr = req.url();
 
-    // 3. Desktop Audit Log - Normal (1280x800)
-    await page.goto("http://localhost:3849/preview/audit-log", { waitUntil: "load" });
-    const desktopAuditPath = path.join(REPORT_DIR, "admin-audit-log-desktop.png");
-    await page.screenshot({ path: desktopAuditPath, fullPage: true });
-    console.log(`Saved screenshot: ${desktopAuditPath}`);
+        // 1. Supabase Auth session endpoint
+        if (urlStr.includes("/auth/v1/user")) {
+          req.respond({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify(MOCK_ADMIN_SESSION.user),
+          });
+          return;
+        }
 
-    // 4. Desktop Audit Log - Loading (1280x800)
-    await page.goto("http://localhost:3849/preview/audit-log-loading", { waitUntil: "load" });
-    const desktopAuditLoadingPath = path.join(REPORT_DIR, "admin-audit-log-loading-desktop.png");
-    await page.screenshot({ path: desktopAuditLoadingPath, fullPage: true });
-    console.log(`Saved screenshot: ${desktopAuditLoadingPath}`);
+        // 2. Users Activity endpoint
+        if (urlStr.includes("/api/admin/users/activity")) {
+          req.respond({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify(FIXTURE_USER_ACTIVITY),
+          });
+          return;
+        }
 
-    // 5. Desktop Audit Log - Empty (1280x800)
-    await page.goto("http://localhost:3849/preview/audit-log-empty", { waitUntil: "load" });
-    const desktopAuditEmptyPath = path.join(REPORT_DIR, "admin-audit-log-empty-desktop.png");
-    await page.screenshot({ path: desktopAuditEmptyPath, fullPage: true });
-    console.log(`Saved screenshot: ${desktopAuditEmptyPath}`);
+        // 3. Admin Users endpoint
+        if (urlStr.includes("/api/admin/users")) {
+          if (apiConfig.usersState === "loading") {
+            // Keep pending to render loading skeleton
+            return;
+          }
+          if (apiConfig.usersState === "error") {
+            req.respond({
+              status: 500,
+              contentType: "application/json",
+              body: JSON.stringify({ ok: false, error: "Database connection failed. Please retry." }),
+            });
+            return;
+          }
+          if (apiConfig.usersState === "empty") {
+            req.respond({
+              status: 200,
+              contentType: "application/json",
+              body: JSON.stringify({
+                ok: true,
+                users: [],
+                pagination: { page: 1, pageSize: 25, total: 0, totalPages: 1, hasNextPage: false, hasPrevPage: false },
+                searchNotice: null,
+              }),
+            });
+            return;
+          }
+          if (apiConfig.usersState === "search") {
+            req.respond({
+              status: 200,
+              contentType: "application/json",
+              body: JSON.stringify({
+                ok: true,
+                users: [FIXTURE_USERS[1]], // alex.chen only
+                pagination: { page: 1, pageSize: 25, total: 4, totalPages: 1, hasNextPage: false, hasPrevPage: false },
+                searchNotice: "Email search filters users on the current page. Global search across all accounts requires server-side index configuration.",
+              }),
+            });
+            return;
+          }
+          // Normal state
+          req.respond({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify({
+              ok: true,
+              users: FIXTURE_USERS,
+              pagination: { page: 1, pageSize: 25, total: 4, totalPages: 1, hasNextPage: false, hasPrevPage: false },
+              searchNotice: null,
+            }),
+          });
+          return;
+        }
 
-    // 6. Desktop Audit Log - Error (1280x800)
-    await page.goto("http://localhost:3849/preview/audit-log-error", { waitUntil: "load" });
-    const desktopAuditErrorPath = path.join(REPORT_DIR, "admin-audit-log-error-desktop.png");
-    await page.screenshot({ path: desktopAuditErrorPath, fullPage: true });
-    console.log(`Saved screenshot: ${desktopAuditErrorPath}`);
+        // 4. Admin Audit Log endpoint
+        if (urlStr.includes("/api/admin/audit-log")) {
+          if (apiConfig.auditState === "loading") {
+            return;
+          }
+          if (apiConfig.auditState === "error") {
+            req.respond({
+              status: 500,
+              contentType: "application/json",
+              body: JSON.stringify({ ok: false, error: "Database error reading audit log: relation admin_audit_log does not exist" }),
+            });
+            return;
+          }
+          if (apiConfig.auditState === "empty") {
+            req.respond({
+              status: 200,
+              contentType: "application/json",
+              body: JSON.stringify({
+                ok: true,
+                entries: [],
+                total: 0,
+                totalPages: 1,
+              }),
+            });
+            return;
+          }
+          // Normal state
+          req.respond({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify({
+              ok: true,
+              entries: FIXTURE_AUDIT_LOGS,
+              total: FIXTURE_AUDIT_LOGS.length,
+              totalPages: 1,
+            }),
+          });
+          return;
+        }
 
-    // 7. Mobile 390px Users Page (390x844)
-    await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
-    await page.goto("http://localhost:3849/preview/users", { waitUntil: "load" });
-    const mobileUsersPath = path.join(REPORT_DIR, "admin-users-mobile-390px.png");
-    await page.screenshot({ path: mobileUsersPath, fullPage: true });
-    console.log(`Saved screenshot: ${mobileUsersPath}`);
+        // 5. Allow local static assets
+        if (urlStr.startsWith(`http://localhost:${PORT}/`)) {
+          req.continue();
+          return;
+        }
 
-    // 8. Mobile 390px User Activity Modal (390x844)
-    await page.goto("http://localhost:3849/preview/users-modal", { waitUntil: "load" });
-    const mobileModalPath = path.join(REPORT_DIR, "admin-users-activity-modal-mobile-390px.png");
-    await page.screenshot({ path: mobileModalPath });
-    console.log(`Saved screenshot: ${mobileModalPath}`);
+        // Strict Default-Deny on any unexpected external traffic
+        req.abort();
+      });
 
-    // 9. Mobile 390px Audit Log - Normal (390x844)
-    await page.goto("http://localhost:3849/preview/audit-log", { waitUntil: "load" });
-    const mobileAuditPath = path.join(REPORT_DIR, "admin-audit-log-mobile-390px.png");
-    await page.screenshot({ path: mobileAuditPath, fullPage: true });
-    console.log(`Saved screenshot: ${mobileAuditPath}`);
+      // Navigate to root to set session cookies and local storage on localhost origin
+      await page.goto(`http://localhost:${PORT}/`, { waitUntil: "domcontentloaded" });
 
-    // 10. Mobile 390px Audit Log - Error (390x844)
-    await page.goto("http://localhost:3849/preview/audit-log-error", { waitUntil: "load" });
-    const mobileAuditErrorPath = path.join(REPORT_DIR, "admin-audit-log-error-mobile-390px.png");
-    await page.screenshot({ path: mobileAuditErrorPath, fullPage: true });
-    console.log(`Saved screenshot: ${mobileAuditErrorPath}`);
+      const cookieName = "sb-szakevhxhwpeskidvtfs-auth-token";
+      const rawStr = JSON.stringify(MOCK_ADMIN_SESSION);
+      const cookieVal = "base64-" + ssr.stringToBase64URL(rawStr);
+      const chunks = ssr.createChunks(cookieName, cookieVal);
+      const cookies = chunks.map((c) => ({
+        name: c.name,
+        value: c.value,
+        domain: "localhost",
+        path: "/",
+        httpOnly: false,
+        secure: false,
+        sameSite: "Lax",
+      }));
+      await page.setCookie(...cookies);
 
-    console.log("All 10 mock screenshots captured successfully in reports/admin-a1/!");
+      await page.evaluate((sess) => {
+        localStorage.setItem("careermonke_user_email", sess.user.email);
+        localStorage.setItem("careermonke_pro_active", "true");
+        localStorage.setItem("sb-szakevhxhwpeskidvtfs-auth-token", JSON.stringify(sess));
+      }, MOCK_ADMIN_SESSION);
+
+      return page;
+    };
+
+    // -------------------------------------------------------------------------
+    // 1. /admin/users SCREENSHOTS
+    // -------------------------------------------------------------------------
+    console.log("--- CAPTURING ACTUAL REACT APP /admin/users ---");
+
+    // A. Normal State (Desktop & Mobile)
+    for (const vp of viewports) {
+      const page = await createAuthenticatedPage(vp, { usersState: "normal" });
+      await page.goto(`http://localhost:${PORT}/admin/users`, { waitUntil: "networkidle0" });
+
+      const fileName = `admin-users-${vp.name}.png`;
+      const outPath = path.join(REPORT_DIR, fileName);
+      await page.screenshot({ path: outPath, fullPage: true });
+      await page.close();
+
+      capturedManifest.push({
+        route: "/admin/users",
+        fixture: "normal (4 fixture users, active/blocked/pro status, server pagination)",
+        viewport: vp.name,
+        dimensions: `${vp.width}x${vp.height}`,
+        file: fileName,
+        path: outPath,
+      });
+      console.log(`📸 Captured: ${fileName}`);
+    }
+
+    // B. Search Active State (Desktop) - Proving honest page-local notice and separate counts
+    {
+      const page = await createAuthenticatedPage(viewports[0], { usersState: "search" });
+      await page.goto(`http://localhost:${PORT}/admin/users?q=alex`, { waitUntil: "networkidle0" });
+
+      const fileName = `admin-users-search-desktop.png`;
+      const outPath = path.join(REPORT_DIR, fileName);
+      await page.screenshot({ path: outPath, fullPage: true });
+      await page.close();
+
+      capturedManifest.push({
+        route: "/admin/users?q=alex",
+        fixture: "search (1 matching on this page, honest page-local banner, 4 registered accounts total)",
+        viewport: "desktop",
+        dimensions: "1280x800",
+        file: fileName,
+        path: outPath,
+      });
+      console.log(`📸 Captured: ${fileName}`);
+    }
+
+    // C. Activity Modal (Desktop & Mobile)
+    for (const vp of viewports) {
+      const page = await createAuthenticatedPage(vp, { usersState: "normal" });
+      await page.goto(`http://localhost:${PORT}/admin/users`, { waitUntil: "networkidle0" });
+
+      // Click on activity button of second user (alex.chen)
+      const buttons = await page.$$("button[title='Click to view visited pages']");
+      if (buttons.length > 1) {
+        await buttons[1].click();
+        await new Promise((r) => setTimeout(r, 600)); // wait for modal animation
+      }
+
+      const fileName = `admin-users-activity-modal-${vp.name}.png`;
+      const outPath = path.join(REPORT_DIR, fileName);
+      await page.screenshot({ path: outPath, fullPage: true });
+      await page.close();
+
+      capturedManifest.push({
+        route: "/admin/users (Activity Modal)",
+        fixture: "activity (24h/7d metrics + visited pages timeline)",
+        viewport: vp.name,
+        dimensions: `${vp.width}x${vp.height}`,
+        file: fileName,
+        path: outPath,
+      });
+      console.log(`📸 Captured: ${fileName}`);
+    }
+
+    // D. Loading State (Desktop & Mobile)
+    for (const vp of viewports) {
+      const page = await createAuthenticatedPage(vp, { usersState: "loading" });
+      await page.goto(`http://localhost:${PORT}/admin/users`, { waitUntil: "domcontentloaded" });
+      await new Promise((r) => setTimeout(r, 200));
+
+      const fileName = `admin-users-loading-${vp.name}.png`;
+      const outPath = path.join(REPORT_DIR, fileName);
+      await page.screenshot({ path: outPath, fullPage: true });
+      await page.close();
+
+      capturedManifest.push({
+        route: "/admin/users",
+        fixture: "loading skeleton state",
+        viewport: vp.name,
+        dimensions: `${vp.width}x${vp.height}`,
+        file: fileName,
+        path: outPath,
+      });
+      console.log(`📸 Captured: ${fileName}`);
+    }
+
+    // E. Empty State (Desktop & Mobile)
+    for (const vp of viewports) {
+      const page = await createAuthenticatedPage(vp, { usersState: "empty" });
+      await page.goto(`http://localhost:${PORT}/admin/users`, { waitUntil: "networkidle0" });
+
+      const fileName = `admin-users-empty-${vp.name}.png`;
+      const outPath = path.join(REPORT_DIR, fileName);
+      await page.screenshot({ path: outPath, fullPage: true });
+      await page.close();
+
+      capturedManifest.push({
+        route: "/admin/users",
+        fixture: "empty user table",
+        viewport: vp.name,
+        dimensions: `${vp.width}x${vp.height}`,
+        file: fileName,
+        path: outPath,
+      });
+      console.log(`📸 Captured: ${fileName}`);
+    }
+
+    // F. Error State (Desktop & Mobile)
+    for (const vp of viewports) {
+      const page = await createAuthenticatedPage(vp, { usersState: "error" });
+      await page.goto(`http://localhost:${PORT}/admin/users`, { waitUntil: "networkidle0" });
+
+      const fileName = `admin-users-error-${vp.name}.png`;
+      const outPath = path.join(REPORT_DIR, fileName);
+      await page.screenshot({ path: outPath, fullPage: true });
+      await page.close();
+
+      capturedManifest.push({
+        route: "/admin/users",
+        fixture: "error state (feedback banner with retry/dismiss)",
+        viewport: vp.name,
+        dimensions: `${vp.width}x${vp.height}`,
+        file: fileName,
+        path: outPath,
+      });
+      console.log(`📸 Captured: ${fileName}`);
+    }
+
+    // -------------------------------------------------------------------------
+    // 2. /admin/audit-log SCREENSHOTS
+    // -------------------------------------------------------------------------
+    console.log("\n--- CAPTURING ACTUAL REACT APP /admin/audit-log ---");
+
+    // A. Normal State (Desktop & Mobile)
+    for (const vp of viewports) {
+      const page = await createAuthenticatedPage(vp, { auditState: "normal" });
+      await page.goto(`http://localhost:${PORT}/admin/audit-log`, { waitUntil: "networkidle0" });
+
+      const fileName = `admin-audit-log-${vp.name}.png`;
+      const outPath = path.join(REPORT_DIR, fileName);
+      await page.screenshot({ path: outPath, fullPage: true });
+      await page.close();
+
+      capturedManifest.push({
+        route: "/admin/audit-log",
+        fixture: "normal (user.block & user.unblock entries + pending immutability disclosure)",
+        viewport: vp.name,
+        dimensions: `${vp.width}x${vp.height}`,
+        file: fileName,
+        path: outPath,
+      });
+      console.log(`📸 Captured: ${fileName}`);
+    }
+
+    // B. Loading State (Desktop & Mobile)
+    for (const vp of viewports) {
+      const page = await createAuthenticatedPage(vp, { auditState: "loading" });
+      await page.goto(`http://localhost:${PORT}/admin/audit-log`, { waitUntil: "domcontentloaded" });
+      await new Promise((r) => setTimeout(r, 200));
+
+      const fileName = `admin-audit-log-loading-${vp.name}.png`;
+      const outPath = path.join(REPORT_DIR, fileName);
+      await page.screenshot({ path: outPath, fullPage: true });
+      await page.close();
+
+      capturedManifest.push({
+        route: "/admin/audit-log",
+        fixture: "loading skeleton state",
+        viewport: vp.name,
+        dimensions: `${vp.width}x${vp.height}`,
+        file: fileName,
+        path: outPath,
+      });
+      console.log(`📸 Captured: ${fileName}`);
+    }
+
+    // C. Empty State (Desktop & Mobile)
+    for (const vp of viewports) {
+      const page = await createAuthenticatedPage(vp, { auditState: "empty" });
+      await page.goto(`http://localhost:${PORT}/admin/audit-log`, { waitUntil: "networkidle0" });
+
+      const fileName = `admin-audit-log-empty-${vp.name}.png`;
+      const outPath = path.join(REPORT_DIR, fileName);
+      await page.screenshot({ path: outPath, fullPage: true });
+      await page.close();
+
+      capturedManifest.push({
+        route: "/admin/audit-log",
+        fixture: "empty audit log state",
+        viewport: vp.name,
+        dimensions: `${vp.width}x${vp.height}`,
+        file: fileName,
+        path: outPath,
+      });
+      console.log(`📸 Captured: ${fileName}`);
+    }
+
+    // D. Error State with Retry Button (Desktop & Mobile)
+    for (const vp of viewports) {
+      const page = await createAuthenticatedPage(vp, { auditState: "error" });
+      await page.goto(`http://localhost:${PORT}/admin/audit-log`, { waitUntil: "networkidle0" });
+
+      const fileName = `admin-audit-log-error-${vp.name}.png`;
+      const outPath = path.join(REPORT_DIR, fileName);
+      await page.screenshot({ path: outPath, fullPage: true });
+      await page.close();
+
+      capturedManifest.push({
+        route: "/admin/audit-log",
+        fixture: "error state with retry button (HTTP 500 simulated)",
+        viewport: vp.name,
+        dimensions: `${vp.width}x${vp.height}`,
+        file: fileName,
+        path: outPath,
+      });
+      console.log(`📸 Captured: ${fileName}`);
+    }
+
   } finally {
     await browser.close();
     server.close();
   }
+
+  // -------------------------------------------------------------------------
+  // Print verification manifest table
+  // -------------------------------------------------------------------------
+  console.log("\n================================================================================");
+  console.log("SCREENSHOT MANIFEST & INTEGRITY TABLE (ACTUAL COMPILED REACT APP)");
+  console.log("================================================================================");
+  console.table(
+    capturedManifest.map((item) => {
+      const stat = fs.statSync(item.path);
+      const sha256 = computeFileHash(item.path);
+      return {
+        File: item.file,
+        Route: item.route,
+        Viewport: item.dimensions,
+        Bytes: stat.size,
+        "SHA-256": `${sha256.substring(0, 16)}...`,
+      };
+    })
+  );
+
+  console.log("🎉 ALL ACTUAL REACT APP SCREENSHOTS CAPTURED SUCCESSFULLY (PASS-LOCAL)!");
+}
+
+captureAllScreenshots().catch((err) => {
+  console.error("Screenshot capture failed:", err);
+  process.exit(1);
 });
