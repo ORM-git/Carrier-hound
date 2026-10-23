@@ -1,4 +1,4 @@
-import { getSupabaseAdmin } from "./auth";
+import { getSupabaseAdmin, ADMIN_EMAIL } from "./auth";
 
 export interface PageViewPayload {
   path: string;
@@ -593,6 +593,10 @@ export async function setUserBlockStatus(
     const { data: { user }, error: fetchError } = await admin.auth.admin.getUserById(userId);
     if (fetchError || !user) {
       return { success: false, isBlocked: false, error: "User not found" };
+    }
+
+    if (shouldBlock && user.email && user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
+      return { success: false, isBlocked: false, error: "Admin account cannot be blocked" };
     }
 
     if (shouldBlock) {

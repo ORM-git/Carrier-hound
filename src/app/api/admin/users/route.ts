@@ -20,8 +20,9 @@ export async function GET(req: Request) {
     const users = await getUsersManagementList(q);
     return NextResponse.json({ ok: true, users });
   } catch (err: any) {
+    console.error("[Admin API /users] Error:", err?.message || err);
     return NextResponse.json(
-      { error: err?.message || "Failed to retrieve users list" },
+      { error: "Failed to retrieve users list" },
       { status: 500 }
     );
   }

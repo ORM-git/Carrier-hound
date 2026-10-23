@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { verifyAdminSession } from "@/lib/admin/auth";
 import { setUserBlockStatus } from "@/lib/admin/analytics";
 import { logAdminAction } from "@/lib/admin/auditLog";
+import { ADMIN_EMAIL } from "@/lib/admin/constants";
 
 export const runtime = "edge";
 
@@ -32,8 +33,11 @@ export async function POST(req: Request) {
       );
     }
 
-    // Safety guard: Cannot block the admin himself!
-    if (auth.user?.id === userId || auth.user?.email === "xbsuryakant@gmail.com" && userId === auth.user.id) {
+    // Safety guard: Admin cannot block themselves
+    if (
+      auth.user?.id === userId ||
+      (auth.user?.email && auth.user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase() && auth.user.id === userId)
+    ) {
       return NextResponse.json(
         { error: "Admin cannot block themselves." },
         { status: 400 }
@@ -44,9 +48,10 @@ export async function POST(req: Request) {
     const result = await setUserBlockStatus(userId, shouldBlock, reason);
 
     if (!result.success) {
+      const isClientError = result.error === "Admin account cannot be blocked" || result.error === "User not found";
       return NextResponse.json(
         { error: result.error || "Failed to update user block status" },
-        { status: 500 }
+        { status: isClientError ? 400 : 500 }
       );
     }
 
@@ -69,8 +74,9 @@ export async function POST(req: Request) {
         : "User successfully unblocked. Access restored.",
     });
   } catch (err: any) {
+    console.error("[Admin API /users/block] Error:", err?.message || err);
     return NextResponse.json(
-      { error: err?.message || "Internal server error" },
+      { error: "Internal server error" },
       { status: 500 }
     );
   }
