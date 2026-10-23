@@ -137,19 +137,29 @@ export default function AdminAuditLogPage() {
         <div className="text-xs text-slate-600 space-y-1">
           <div className="font-semibold text-slate-900">Database-Level Immutability Protection</div>
           <p className="leading-relaxed">
-            Audit entries are enforced as strictly append-only via the PostgreSQL database trigger{" "}
+            Audit entries are designed as append-only via the PostgreSQL database trigger{" "}
             <code className="font-mono text-[11px] bg-slate-200/80 px-1 py-0.5 rounded text-slate-800">
               tr_prevent_admin_audit_log_mutation
-            </code>
-            . All <code className="font-mono text-[11px] bg-slate-200/80 px-1 py-0.5 rounded text-slate-800">UPDATE</code> and{" "}
-            <code className="font-mono text-[11px] bg-slate-200/80 px-1 py-0.5 rounded text-slate-800">DELETE</code> operations are blocked at the database engine level, preventing record tampering even under service role privileges. This viewer provides read-only inspection with zero mutation controls.
+            </code>{" "}
+            defined in migration scripts to block <code className="font-mono text-[11px] bg-slate-200/80 px-1 py-0.5 rounded text-slate-800">UPDATE</code> and{" "}
+            <code className="font-mono text-[11px] bg-slate-200/80 px-1 py-0.5 rounded text-slate-800">DELETE</code> operations. Live enforcement in production is pending database verification. This viewer provides read-only inspection with zero mutation controls.
           </p>
         </div>
       </div>
 
       {error && (
-        <div className="rounded-lg bg-red-50 p-4 border border-red-200 text-sm text-red-700">
-          {error}
+        <div className="rounded-lg bg-red-50 p-4 border border-red-200 text-sm text-red-700 flex items-center justify-between shadow-sm">
+          <div className="flex items-center gap-2">
+            <ShieldAlert className="w-5 h-5 text-red-600 shrink-0" />
+            <span>{error}</span>
+          </div>
+          <button
+            onClick={() => fetchAuditLogs(page, actionFilter)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors shadow-sm"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>Retry</span>
+          </button>
         </div>
       )}
 
@@ -209,6 +219,21 @@ export default function AdminAuditLogPage() {
                 <tr>
                   <td colSpan={6} className="px-5 py-12 text-center text-slate-400 text-sm">
                     Loading audit trail...
+                  </td>
+                </tr>
+              ) : error ? (
+                <tr>
+                  <td colSpan={6} className="px-5 py-12 text-center text-slate-500 text-sm">
+                    <div className="flex flex-col items-center justify-center gap-2">
+                      <p className="text-red-600 font-medium">{error}</p>
+                      <button
+                        onClick={() => fetchAuditLogs(page, actionFilter)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-slate-900 text-white rounded-md hover:bg-slate-800 transition-colors shadow-sm"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>Retry</span>
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ) : entries.length === 0 ? (

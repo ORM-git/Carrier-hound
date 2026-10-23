@@ -258,13 +258,7 @@ export async function fetchAdminAuditLogs(options?: {
 
     if (error) {
       console.warn("[AdminAuditLog] Error reading admin_audit_log:", error.message);
-      return {
-        entries: [],
-        total: 0,
-        page,
-        pageSize,
-        totalPages: 1,
-      };
+      throw new Error(`Database error reading audit log: ${error.message}`);
     }
 
     const total = count ?? (data?.length || 0);
@@ -279,12 +273,6 @@ export async function fetchAdminAuditLogs(options?: {
     };
   } catch (err: any) {
     console.warn("[AdminAuditLog] Exception reading audit logs:", err?.message || err);
-    return {
-      entries: [],
-      total: 0,
-      page,
-      pageSize,
-      totalPages: 1,
-    };
+    throw err;
   }
 }

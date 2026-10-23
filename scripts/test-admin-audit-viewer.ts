@@ -15,6 +15,8 @@ import { GET as adminAuditLogGet } from "../src/app/api/admin/audit-log/route";
 import { fetchAdminAuditLogs } from "../src/lib/admin/auditLog";
 import { ADMIN_EMAIL } from "../src/lib/admin/constants";
 
+let simulateDbError = false;
+
 // Mock global fetch for audit log route
 const originalFetch = global.fetch;
 global.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
@@ -39,6 +41,10 @@ global.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
   }
 
   if (urlStr.includes("/rest/v1/admin_audit_log")) {
+    if (simulateDbError) {
+      return new Response(JSON.stringify({ message: "relation admin_audit_log does not exist" }), { status: 500 });
+    }
+
     const mockLogs = [
       {
         id: "log-001",
@@ -101,26 +107,47 @@ async function runAuditViewerTests() {
   passes++;
   console.log("✅ [PASS-LOCAL] Authenticated admin successfully retrieved paginated audit records");
 
-  // 3. Helper fetchAdminAuditLogs resilience (safe on error or missing DB)
+  // 3. Helper fetchAdminAuditLogs resilience
   const helperResult = await fetchAdminAuditLogs({ page: 1, pageSize: 10 });
   assert.equal(typeof helperResult.total, "number");
   assert.equal(Array.isArray(helperResult.entries), true);
   passes++;
   console.log("✅ [PASS-LOCAL] fetchAdminAuditLogs helper returned structured paginated result safely");
 
-  // 4. Bounded pagination parameter clamping (page must be >= 1, pageSize capped at 100)
-  const reqCapped = new Request("http://localhost:3000/api/admin/audit-log?page=-5&pageSize=500", {
+  // 4. Malformed pagination parameters rejected with HTTP 400
+  const reqInvalidPage = new Request("http://localhost:3000/api/admin/audit-log?page=-5", {
     headers: { Authorization: "Bearer mock-token-admin" },
   });
-  const resCapped = await adminAuditLogGet(reqCapped);
-  assert.equal(resCapped.status, 200);
-  const dataCapped = await resCapped.json();
-  assert.equal(dataCapped.page, 1, "Negative page should clamp to 1");
-  assert.equal(dataCapped.pageSize, 20, "Oversized pageSize (> 100) falls back to default 20");
-  passes++;
-  console.log("✅ [PASS-LOCAL] Page and pageSize bounds sanitized and clamped correctly");
+  const resInvalidPage = await adminAuditLogGet(reqInvalidPage);
+  assert.equal(resInvalidPage.status, 400, "Negative page must return 400");
+  const dataInvalidPage = await resInvalidPage.json();
+  assert.equal(dataInvalidPage.ok, false);
 
-  // 5. Negative Control Check: proving non-zero exit on invalid condition
+  const reqInvalidPageSize = new Request("http://localhost:3000/api/admin/audit-log?pageSize=500", {
+    headers: { Authorization: "Bearer mock-token-admin" },
+  });
+  const resInvalidPageSize = await adminAuditLogGet(reqInvalidPageSize);
+  assert.equal(resInvalidPageSize.status, 400, "Oversized pageSize (> 100) must return 400");
+  const dataInvalidSize = await resInvalidPageSize.json();
+  assert.equal(dataInvalidSize.ok, false);
+  passes++;
+  console.log("✅ [PASS-LOCAL] Malformed pagination parameters correctly rejected with HTTP 400");
+
+  // 5. Backend DB Failure returns HTTP 500, NOT an empty list (Fix 3 verification)
+  simulateDbError = true;
+  const reqDbError = new Request("http://localhost:3000/api/admin/audit-log?page=1&pageSize=20", {
+    headers: { Authorization: "Bearer mock-token-admin" },
+  });
+  const resDbError = await adminAuditLogGet(reqDbError);
+  assert.equal(resDbError.status, 500, "Database failure must return HTTP 500, not 200 with empty entries");
+  const dataDbError = await resDbError.json();
+  assert.equal(dataDbError.ok, false);
+  assert.equal(dataDbError.error, "Failed to retrieve audit logs from database");
+  simulateDbError = false;
+  passes++;
+  console.log("✅ [PASS-LOCAL] Backend DB failure returns HTTP 500 instead of false empty list");
+
+  // 6. Negative Control Check: proving non-zero exit on invalid condition
   if (process.env.RUN_NEGATIVE_CONTROL === "true") {
     console.log("Running intentional negative control...");
     assert.equal(resNoAuth.status, 200, "Negative control intended failure");

@@ -27,6 +27,22 @@ export default function AdminUsersPage() {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [filter, setFilter] = useState<"all" | "pro" | "free" | "blocked">("all");
   const [page, setPage] = useState<number>(1);
+  const [pagination, setPagination] = useState<{
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+    hasNextPage: boolean;
+    hasPrevPage: boolean;
+  }>({
+    page: 1,
+    pageSize: USERS_PER_PAGE,
+    total: 0,
+    totalPages: 1,
+    hasNextPage: false,
+    hasPrevPage: false,
+  });
+  const [searchNotice, setSearchNotice] = useState<string | null>(null);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [feedbackMsg, setFeedbackMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
@@ -74,41 +90,48 @@ export default function AdminUsersPage() {
     return {};
   };
 
-  const fetchUsers = async (q: string = "") => {
+  const fetchUsers = async (targetPage: number = 1, q: string = searchQuery) => {
     setLoading(true);
+    setFeedbackMsg(null);
     try {
       const authHeader = await getAuthHeader();
-      const res = await fetch(`/api/admin/users?q=${encodeURIComponent(q)}`, {
-        headers: authHeader,
-      });
+      const res = await fetch(
+        `/api/admin/users?page=${targetPage}&pageSize=${USERS_PER_PAGE}&q=${encodeURIComponent(q)}`,
+        { headers: authHeader }
+      );
       const data = await res.json();
       if (data.ok && Array.isArray(data.users)) {
         setUsers(data.users);
-        setPage(1);
+        if (data.pagination) {
+          setPagination(data.pagination);
+        }
+        setSearchNotice(data.searchNotice || null);
+        setPage(targetPage);
+      } else {
+        throw new Error(data.error || "Failed to load users");
       }
-    } catch (_) {
-      setFeedbackMsg({ type: "error", text: "Failed to load users list." });
+    } catch (err: any) {
+      setFeedbackMsg({ type: "error", text: err?.message || "Failed to load users list." });
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
+    let initialQuery = "";
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
-      const q = params.get("q") || "";
-      if (q) {
-        setSearchQuery(q);
-        fetchUsers(q);
-        return;
+      initialQuery = params.get("q") || "";
+      if (initialQuery) {
+        setSearchQuery(initialQuery);
       }
     }
-    fetchUsers();
+    fetchUsers(1, initialQuery);
   }, []);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    fetchUsers(searchQuery);
+    fetchUsers(1, searchQuery);
   };
 
   const openActivity = async (user: UserManagementItem) => {
@@ -180,12 +203,8 @@ export default function AdminUsersPage() {
     return true;
   });
 
-  // Bounded pagination logic
-  const totalFiltered = filteredUsers.length;
-  const totalPages = Math.max(1, Math.ceil(totalFiltered / USERS_PER_PAGE));
-  const safePage = Math.min(Math.max(1, page), totalPages);
-  const startIdx = (safePage - 1) * USERS_PER_PAGE;
-  const paginatedUsers = filteredUsers.slice(startIdx, startIdx + USERS_PER_PAGE);
+  // Server-paginated users for current view
+  const paginatedUsers = filteredUsers;
 
   return (
     <div className="space-y-6">
@@ -201,7 +220,7 @@ export default function AdminUsersPage() {
         </div>
 
         <button
-          onClick={() => fetchUsers(searchQuery)}
+          onClick={() => fetchUsers(page, searchQuery)}
           disabled={loading}
           className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-50 shadow-sm self-start sm:self-auto"
         >
@@ -301,6 +320,13 @@ export default function AdminUsersPage() {
         </div>
       </div>
 
+      {searchNotice && (
+        <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800 flex items-center gap-2 shadow-sm">
+          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+          <span>{searchNotice}</span>
+        </div>
+      )}
+
       {/* Users Table */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
@@ -325,8 +351,18 @@ export default function AdminUsersPage() {
                 </tr>
               ) : filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-5 py-12 text-center text-slate-400 text-sm">
-                    No users matching criteria.
+                  <td colSpan={7} className="px-5 py-12 text-center text-slate-500 text-sm">
+                    <div className="flex flex-col items-center justify-center gap-2">
+                      <p>No users matching criteria on this page.</p>
+                      {feedbackMsg?.type === "error" && (
+                        <button
+                          onClick={() => fetchUsers(page, searchQuery)}
+                          className="px-3 py-1 bg-slate-900 text-white rounded text-xs hover:bg-slate-800 transition-colors"
+                        >
+                          Retry
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ) : (
@@ -435,39 +471,43 @@ export default function AdminUsersPage() {
           </table>
         </div>
 
-        {/* Bounded Pagination Controls */}
-        {totalFiltered > 0 && (
-          <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600">
-            <div>
-              Showing <span className="font-semibold text-slate-900">{startIdx + 1}</span> to{" "}
-              <span className="font-semibold text-slate-900">{Math.min(startIdx + USERS_PER_PAGE, totalFiltered)}</span> of{" "}
-              <span className="font-semibold text-slate-900">{totalFiltered}</span> users
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={safePage <= 1}
-                className="inline-flex items-center gap-1 px-3 py-1.5 rounded border border-slate-200 bg-white font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm transition-colors"
-                aria-label="Previous page"
-              >
-                <ChevronLeft className="w-3.5 h-3.5" />
-                <span>Previous</span>
-              </button>
-              <span className="font-semibold text-slate-900 px-2">
-                Page {safePage} of {totalPages}
-              </span>
-              <button
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={safePage >= totalPages}
-                className="inline-flex items-center gap-1 px-3 py-1.5 rounded border border-slate-200 bg-white font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm transition-colors"
-                aria-label="Next page"
-              >
-                <span>Next</span>
-                <ChevronRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
+        {/* Server Pagination Controls */}
+        <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600">
+          <div>
+            Showing{" "}
+            <span className="font-semibold text-slate-900">
+              {pagination.total > 0 ? (pagination.page - 1) * pagination.pageSize + 1 : 0}
+            </span>{" "}
+            to{" "}
+            <span className="font-semibold text-slate-900">
+              {Math.min(pagination.page * pagination.pageSize, pagination.total)}
+            </span>{" "}
+            of <span className="font-semibold text-slate-900">{pagination.total}</span> users
           </div>
-        )}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => fetchUsers(pagination.page - 1, searchQuery)}
+              disabled={!pagination.hasPrevPage || loading}
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded border border-slate-200 bg-white font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm transition-colors"
+              aria-label="Previous page"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+              <span>Previous</span>
+            </button>
+            <span className="font-semibold text-slate-900 px-2">
+              Page {pagination.page} of {pagination.totalPages}
+            </span>
+            <button
+              onClick={() => fetchUsers(pagination.page + 1, searchQuery)}
+              disabled={!pagination.hasNextPage || loading}
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded border border-slate-200 bg-white font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm transition-colors"
+              aria-label="Next page"
+            >
+              <span>Next</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* User Activity Modal */}
