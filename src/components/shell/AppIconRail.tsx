@@ -43,9 +43,9 @@ const NAV_ITEMS: NavItem[] = [
   {
     id: "profile",
     label: "Profile",
-    href: "/settings?tab=preferences",
+    href: "/profile",
     icon: UserIcon,
-    isActive: (p) => p === "/settings",
+    isActive: (p) => p === "/profile",
   },
   {
     id: "tracker",
