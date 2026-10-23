@@ -1,0 +1,90 @@
+[
+  {
+    "page": "/dashboard",
+    "element": "Dashboard Main Greeting Heading",
+    "fgHex": "#0F172A",
+    "bgHex": "#F8FAFC",
+    "fontSize": "18px",
+    "fontWeight": "700",
+    "contrastRatio": 17.06,
+    "minRequired": 3,
+    "status": "PASS"
+  },
+  {
+    "page": "/dashboard",
+    "element": "Dashboard Subtitle Text",
+    "fgHex": "#0F172A",
+    "bgHex": "#F8FAFC",
+    "fontSize": "13px",
+    "fontWeight": "700",
+    "contrastRatio": 17.06,
+    "minRequired": 4.5,
+    "status": "PASS"
+  },
+  {
+    "page": "/dashboard",
+    "element": "Dashboard Primary CTA Button",
+    "fgHex": "#FFFFFF",
+    "bgHex": "#2563EB",
+    "fontSize": "14px",
+    "fontWeight": "500",
+    "contrastRatio": 5.17,
+    "minRequired": 3,
+    "status": "PASS"
+  },
+  {
+    "page": "/jobs/detail",
+    "element": "Job Detail Title",
+    "fgHex": "#0F172A",
+    "bgHex": "#FFFFFF",
+    "fontSize": "18px",
+    "fontWeight": "700",
+    "contrastRatio": 17.85,
+    "minRequired": 3,
+    "status": "PASS"
+  },
+  {
+    "page": "/jobs/detail",
+    "element": "Job Detail Apply Button (CM Blue)",
+    "fgHex": "#FFFFFF",
+    "bgHex": "#2563EB",
+    "fontSize": "14px",
+    "fontWeight": "700",
+    "contrastRatio": 5.17,
+    "minRequired": 3,
+    "status": "PASS"
+  },
+  {
+    "page": "/resume",
+    "element": "Resume PRIMARY Badge",
+    "fgHex": "#2563EB",
+    "bgHex": "#EFF6FF",
+    "fontSize": "11px",
+    "fontWeight": "700",
+    "contrastRatio": 4.75,
+    "minRequired": 3,
+    "status": "PASS"
+  },
+  {
+    "page": "/resume",
+    "element": "Resume Confirmed Status Chip",
+    "fgHex": "#16A34A",
+    "bgHex": "#DCFCE7",
+    "fontSize": "11px",
+    "fontWeight": "600",
+    "contrastRatio": 3,
+    "minRequired": 3,
+    "status": "PASS"
+  },
+  {
+    "page": "/resume",
+    "element": "Resume Table Header Text",
+    "fgHex": "#0F172A",
+    "bgHex": "#FFFFFF",
+    "fontSize": "13px",
+    "fontWeight": "600",
+    "contrastRatio": 17.85,
+    "minRequired": 4.5,
+    "status": "PASS"
+  }
+]

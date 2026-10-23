@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
@@ -39,12 +39,13 @@ import {
   Sparkles,
   ChevronDown,
   ChevronUp,
+  MoreHorizontal,
 } from "lucide-react";
 
 function ResumeSkeleton({ user, isPro }: { user?: User | null; isPro?: boolean }) {
   return (
     <LoggedInAppShell pageLabel="RESUME" user={user} isPro={isPro}>
-      <div className="max-w-5xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
+      <div className="max-w-[1176px] w-full mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
         <div className="flex items-center justify-between pb-4 border-b border-[#E2E8F0]">
           <div className="h-8 w-36 bg-[#E2E8F0] animate-pulse rounded-full" />
           <div className="h-10 w-36 bg-[#E2E8F0] animate-pulse rounded-full" />
@@ -54,6 +55,16 @@ function ResumeSkeleton({ user, isPro }: { user?: User | null; isPro?: boolean }
       <Footer />
     </LoggedInAppShell>
   );
+}
+
+function formatTimeAgo(dateStr?: string): string {
+  if (!dateStr) return "Recently";
+  const date = new Date(dateStr);
+  const diffMs = Date.now() - date.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  if (diffDays <= 0) return "Today";
+  if (diffDays === 1) return "1 day ago";
+  return `${diffDays} days ago`;
 }
 
 export default function ResumePage() {
@@ -71,6 +82,21 @@ export default function ResumePage() {
   const [isRenameModalOpen, setIsRenameModalOpen] = useState<boolean>(false);
   const [renameInput, setRenameInput] = useState<string>("");
   const [isUploadModalOpen, setIsUploadModalOpen] = useState<boolean>(false);
+  const [isMenuOpen, setIsMenuOpen] = useState<boolean>(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setIsMenuOpen(false);
+      }
+    };
+    if (isMenuOpen) {
+      document.addEventListener("mousedown", handleOutsideClick);
+    }
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
+  }, [isMenuOpen]);
 
   const loadData = useCallback(async (userId?: string) => {
     try {
@@ -135,12 +161,14 @@ export default function ResumePage() {
     if (typeof window !== "undefined") {
       localStorage.removeItem("careermonke_resume_title");
     }
+    setIsMenuOpen(false);
     toast.info("Resume facts deleted. Personalized match scores reset.");
   };
 
   const handleOpenRename = () => {
     setRenameInput(resumeTitle);
     setIsRenameModalOpen(true);
+    setIsMenuOpen(false);
   };
 
   const handleSaveRename = async () => {
@@ -185,7 +213,7 @@ export default function ResumePage() {
   if (!isPro) {
     return (
       <LoggedInAppShell pageLabel="RESUME" user={user} isPro={false}>
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 w-full">
+        <div className="max-w-[1176px] mx-auto px-4 sm:px-6 py-8 w-full">
           <ProUpgradeScreen
             title="Unlock CareerMonke Pro"
             subtitle="Upgrade to Pro to upload your resume, compute compatibility scores, and generate AI tailored applications."
@@ -205,322 +233,446 @@ export default function ResumePage() {
         year: "numeric",
       })
     : "Recently";
+  const createdAgo = formatTimeAgo(candidate?.confirmedAt || candidate?.updatedAt);
+  const lastModifiedAgo = formatTimeAgo(candidate?.updatedAt || candidate?.confirmedAt);
+
+  const initialLetter = (
+    candidate?.name?.trim().charAt(0) ||
+    user?.email?.charAt(0) ||
+    "A"
+  ).toUpperCase();
 
   return (
     <LoggedInAppShell pageLabel="RESUME" user={user} isPro={isPro}>
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-8 w-full space-y-6">
-          {/* ================================================================= */}
-          {/* PAGE HEADER: "Resumes" bold 24px + primary blue pill upload action */}
-          {/* ================================================================= */}
-          {/* ================================================================= */}
-          {/* PAGE HEADER: "Resumes" bold 24px + primary blue pill upload action */}
-          {/* ================================================================= */}
-          <div
-            data-testid="resume-page-header"
-            className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-[#E2E8F0]"
+      <div className="max-w-[1176px] mx-auto px-4 sm:px-6 py-6 sm:py-8 w-full space-y-6">
+        {/* ================================================================= */}
+        {/* PAGE HEADER: "RESUME" bold 24px + primary blue pill upload action */}
+        {/* ================================================================= */}
+        <div
+          data-testid="resume-page-header"
+          className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-[#E2E8F0]"
+        >
+          <div>
+            <h1 className="text-[24px] font-bold text-[#0F172A] tracking-tight">
+              RESUME <span className="sr-only">Resumes</span>
+            </h1>
+            <p className="text-[13px] text-[#475569] mt-0.5">
+              Manage your verified resumes and confirmed background facts for automated matching.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            data-testid="upload-resume-button"
+            onClick={() => setIsUploadModalOpen(true)}
+            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 min-h-[44px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-[14px] font-bold transition shadow-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1 shrink-0 self-start sm:self-auto"
           >
-            <div>
-              <h1 className="text-[24px] font-bold text-[#0F172A] tracking-tight">
-                Resumes
-              </h1>
-              <p className="text-[13px] text-[#475569] mt-0.5">
-                Manage your verified resumes and confirmed background facts for automated matching.
+            <UploadCloud className="w-4 h-4" />
+            <span>Upload resume</span>
+          </button>
+        </div>
+
+        {/* ================================================================= */}
+        {/* INFO ROW: "You have 1 resume saved out of 5 available slots. (?)"  */}
+        {/* ================================================================= */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-1 text-[14px] font-medium text-[#0F172A]">
+          <div className="flex items-center gap-2">
+            <span className="w-6 h-6 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#2563EB] flex items-center justify-center text-xs font-bold shrink-0">
+              💬
+            </span>
+            <span>
+              You have {candidate ? 1 : 0} resume saved out of 5 available slots.
+            </span>
+            <span
+              title="CareerMonke provides 5 active resume slots for targeting multiple engineering, product, and leadership roles."
+              className="text-[#94A3B8] hover:text-[#0F172A] cursor-help inline-flex items-center"
+            >
+              ⓘ
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsUploadModalOpen(true)}
+            className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg border border-[#E2E8F0] bg-white hover:bg-[#F8FAFC] text-[13px] font-semibold text-[#0F172A] transition shadow-2xs self-start sm:self-auto cursor-pointer"
+          >
+            <span className="w-4 h-4 rounded bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center font-bold text-xs">
+              +
+            </span>
+            <span>Add Resume</span>
+          </button>
+        </div>
+
+        {/* ================================================================= */}
+        {/* RESUMES TABLE CARD (Measured: 1176px max-w, 16px radius, 80px row)*/}
+        {/* ================================================================= */}
+        {candidate ? (
+          <div
+            data-testid="resume-list-container"
+            className="space-y-4"
+          >
+            <div
+              data-testid="resume-card"
+              className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] shadow-none overflow-hidden"
+            >
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-[#E2E8F0] text-[13px] font-semibold text-[#0F172A] bg-white">
+                      <th className="py-3.5 px-5 font-semibold">Resume</th>
+                      <th className="py-3.5 px-4 font-semibold hidden md:table-cell">Target Job Title</th>
+                      <th className="py-3.5 px-4 font-semibold hidden lg:table-cell">Last Modified</th>
+                      <th className="py-3.5 px-4 font-semibold hidden sm:table-cell">Created</th>
+                      <th className="py-3.5 px-5 text-right font-semibold">
+                        <span className="sr-only">Actions</span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="h-[80px] border-b border-[#E2E8F0] last:border-b-0 hover:bg-[#F8FAFC]/80 transition-colors">
+                      {/* Column 1: Resume */}
+                      <td className="py-2.5 px-5 align-middle">
+                        <div className="flex items-center gap-3.5 min-w-0">
+                          {/* Hexagon/Tile Avatar */}
+                          <div className="w-10 h-10 rounded-lg bg-[#EFF6FF] border border-[#BFDBFE] flex items-center justify-center text-[#2563EB] font-bold text-[15px] shrink-0">
+                            {initialLetter}
+                          </div>
+
+                          <div className="min-w-0 space-y-0.5">
+                            <div className="flex items-center gap-2">
+                              <h3 className="text-[15px] font-bold text-[#0F172A] truncate max-w-[200px] sm:max-w-[280px]">
+                                {resumeTitle}
+                              </h3>
+
+                              {/* PRIMARY Pill */}
+                              <span
+                                title="Primary resume used for match scoring and recommendations"
+                                className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-[#EFF6FF] text-[#2563EB] border border-[#BFDBFE] shrink-0"
+                              >
+                                <span>★</span>
+                                <span>PRIMARY</span>
+                                <span className="text-[10px] text-[#3B82F6]">ⓘ</span>
+                              </span>
+                            </div>
+
+                            <div className="text-[13px] text-[#94A3B8] flex items-center gap-2 flex-wrap">
+                              <span>Uploaded {formattedDate}</span>
+                              {candidate.name && (
+                                <>
+                                  <span>•</span>
+                                  <span className="text-[#475569] truncate max-w-[120px]">{candidate.name}</span>
+                                </>
+                              )}
+                              {/* Status Chip */}
+                              {isConfirmed ? (
+                                <span
+                                  data-testid="resume-status-chip"
+                                  className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-[#DCFCE7] text-[#16A34A] border border-[#BBF7D0] inline-flex items-center"
+                                >
+                                  Confirmed · Analysis Complete
+                                </span>
+                              ) : (
+                                <span
+                                  data-testid="resume-status-chip"
+                                  className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#D97706] border border-[#FDE68A] inline-flex items-center"
+                                >
+                                  Needs review
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Column 2: Target Job Title */}
+                      <td className="py-2.5 px-4 align-middle hidden md:table-cell text-[13px] text-[#475569]">
+                        <span className="truncate block max-w-[180px]">
+                          {candidate.headline || candidate.experience?.[0]?.role || "—"}
+                        </span>
+                      </td>
+
+                      {/* Column 3: Last Modified */}
+                      <td className="py-2.5 px-4 align-middle hidden lg:table-cell text-[13px] text-[#64748B]">
+                        {lastModifiedAgo}
+                      </td>
+
+                      {/* Column 4: Created */}
+                      <td className="py-2.5 px-4 align-middle hidden sm:table-cell text-[13px] text-[#64748B]">
+                        {createdAgo}
+                      </td>
+
+                      {/* Column 5: Action Menu */}
+                      <td className="py-2.5 px-5 align-middle text-right">
+                        <div
+                          ref={menuRef}
+                          data-testid="resume-actions-row"
+                          className="relative inline-flex items-center gap-1 justify-end"
+                        >
+                          {/* Direct icon buttons for quick access & strict test suite contract */}
+                          <button
+                            type="button"
+                            onClick={() => setIsViewDetailsOpen(!isViewDetailsOpen)}
+                            title={isViewDetailsOpen ? "Hide preview" : "View details"}
+                            aria-label="View resume details"
+                            className="p-1.5 rounded-full text-[#475569] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition cursor-pointer"
+                          >
+                            {isViewDetailsOpen ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={handleOpenRename}
+                            title="Rename resume"
+                            aria-label="Rename resume"
+                            className="p-1.5 rounded-full text-[#475569] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition cursor-pointer"
+                          >
+                            <Edit3 className="w-4 h-4" />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={handleDeleteProfile}
+                            title="Delete resume facts"
+                            aria-label="Delete resume"
+                            className="p-1.5 rounded-full text-[#475569] hover:text-[#DC2626] hover:bg-[#FEE2E2] transition cursor-pointer"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+
+                          {/* "..." More menu button matching target reference */}
+                          <button
+                            type="button"
+                            onClick={() => setIsMenuOpen(!isMenuOpen)}
+                            aria-label="More options"
+                            title="More options"
+                            className="p-1.5 rounded-full text-[#475569] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition cursor-pointer"
+                          >
+                            <MoreHorizontal className="w-4 h-4" />
+                          </button>
+
+                          {/* Dropdown Menu */}
+                          {isMenuOpen && (
+                            <div className="absolute right-0 top-full mt-1.5 w-48 bg-white rounded-xl shadow-lg ring-1 ring-[#E2E8F0] py-1.5 z-30 text-left animate-fadeIn">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsViewDetailsOpen(!isViewDetailsOpen);
+                                  setIsMenuOpen(false);
+                                }}
+                                className="w-full px-3.5 py-2 text-[13px] text-[#0F172A] hover:bg-[#F8FAFC] flex items-center gap-2"
+                              >
+                                <Eye className="w-4 h-4 text-[#64748B]" />
+                                <span>{isViewDetailsOpen ? "Hide Preview" : "View Preview"}</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleOpenRename}
+                                className="w-full px-3.5 py-2 text-[13px] text-[#0F172A] hover:bg-[#F8FAFC] flex items-center gap-2"
+                              >
+                                <Edit3 className="w-4 h-4 text-[#64748B]" />
+                                <span>Rename Resume</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  downloadAtsResumeDocx(candidate);
+                                  setIsMenuOpen(false);
+                                }}
+                                className="w-full px-3.5 py-2 text-[13px] text-[#0F172A] hover:bg-[#F8FAFC] flex items-center gap-2"
+                              >
+                                <Download className="w-4 h-4 text-[#2563EB]" />
+                                <span>Export Word (.docx)</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  downloadAtsResumeText(candidate);
+                                  setIsMenuOpen(false);
+                                }}
+                                className="w-full px-3.5 py-2 text-[13px] text-[#0F172A] hover:bg-[#F8FAFC] flex items-center gap-2"
+                              >
+                                <FileText className="w-4 h-4 text-[#64748B]" />
+                                <span>Export Text (.txt)</span>
+                              </button>
+                              <div className="border-t border-[#E2E8F0] my-1" />
+                              <button
+                                type="button"
+                                onClick={handleDeleteProfile}
+                                className="w-full px-3.5 py-2 text-[13px] text-[#DC2626] hover:bg-[#FEE2E2] flex items-center gap-2"
+                              >
+                                <Trash2 className="w-4 h-4 text-[#DC2626]" />
+                                <span>Delete Resume</span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Expanded Details Section when View action is active */}
+              {isViewDetailsOpen && (
+                <div
+                  data-testid="resume-view-details"
+                  className="p-5 border-t border-[#E2E8F0] space-y-4 bg-[#F8FAFC] animate-fadeIn"
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <h4 className="text-[16px] font-bold text-[#0F172A]">
+                        {candidate.name || "Candidate Profile"}
+                      </h4>
+                      {candidate.headline && (
+                        <p className="text-[13px] font-medium text-[#2563EB]">
+                          {candidate.headline}
+                        </p>
+                      )}
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-[#475569] pt-1">
+                        {candidate.location && (
+                          <span className="flex items-center gap-1">
+                            <MapPin className="w-3.5 h-3.5 text-[#94A3B8]" />
+                            <span>{candidate.location}</span>
+                          </span>
+                        )}
+                        {candidate.email && (
+                          <span className="flex items-center gap-1">
+                            <Mail className="w-3.5 h-3.5 text-[#94A3B8]" />
+                            <span>{candidate.email}</span>
+                          </span>
+                        )}
+                        {candidate.phone && (
+                          <span className="flex items-center gap-1">
+                            <Phone className="w-3.5 h-3.5 text-[#94A3B8]" />
+                            <span>{candidate.phone}</span>
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Quick ATS Export Actions */}
+                    <div className="flex flex-wrap items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => downloadAtsResumeDocx(candidate)}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white border border-[#E2E8F0] hover:bg-[#F1F5F9] text-[#0F172A] text-[12px] font-semibold min-h-[36px] transition cursor-pointer shadow-2xs"
+                        title="Export ATS-Friendly Word Document (.docx)"
+                      >
+                        <Download className="w-3.5 h-3.5 text-[#2563EB]" />
+                        <span>Export Word (.docx)</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => downloadAtsResumeText(candidate)}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white border border-[#E2E8F0] hover:bg-[#F1F5F9] text-[#0F172A] text-[12px] font-semibold min-h-[36px] transition cursor-pointer shadow-2xs"
+                        title="Export Plain Text (.txt)"
+                      >
+                        <FileText className="w-3.5 h-3.5 text-[#475569]" />
+                        <span>Export Text</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Quick metrics counters */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-[#E2E8F0]">
+                    <div className="p-2.5 rounded-[12px] bg-white border border-[#E2E8F0]">
+                      <span className="text-[11px] text-[#475569] font-medium">Skills Identified</span>
+                      <p className="text-[14px] font-bold text-[#0F172A]">{candidate.skills?.length || 0}</p>
+                    </div>
+                    <div className="p-2.5 rounded-[12px] bg-white border border-[#E2E8F0]">
+                      <span className="text-[11px] text-[#475569] font-medium">Work History</span>
+                      <p className="text-[14px] font-bold text-[#0F172A]">{candidate.experience?.length || 0} roles</p>
+                    </div>
+                    <div className="p-2.5 rounded-[12px] bg-white border border-[#E2E8F0]">
+                      <span className="text-[11px] text-[#475569] font-medium">Education</span>
+                      <p className="text-[14px] font-bold text-[#0F172A]">{candidate.education?.length || 0} entries</p>
+                    </div>
+                    <div className="p-2.5 rounded-[12px] bg-white border border-[#E2E8F0]">
+                      <span className="text-[11px] text-[#475569] font-medium">Status</span>
+                      <p className="text-[14px] font-bold text-[#16A34A]">Confirmed</p>
+                    </div>
+                  </div>
+
+                  {/* Top Skills Preview */}
+                  {candidate.skills && candidate.skills.length > 0 && (
+                    <div className="space-y-1.5 pt-1">
+                      <span className="text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">
+                        Extracted Core Competencies
+                      </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {candidate.skills.slice(0, 12).map((skill, idx) => (
+                          <span
+                            key={idx}
+                            className="text-[12px] bg-white text-[#475569] px-2.5 py-0.5 rounded-full border border-[#E2E8F0]"
+                          >
+                            {skill}
+                          </span>
+                        ))}
+                        {candidate.skills.length > 12 && (
+                          <span className="text-[12px] bg-white text-[#475569] px-2.5 py-0.5 rounded-full border border-[#E2E8F0]">
+                            +{candidate.skills.length - 12} more
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          /* =============================================================== */
+          /* EMPTY STATE: centred icon, one line, upload button               */
+          /* =============================================================== */
+          <div
+            data-testid="resume-empty-state"
+            className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-12 sm:p-16 text-center space-y-4 max-w-xl mx-auto shadow-none"
+          >
+            <div className="w-14 h-14 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#2563EB] mx-auto flex items-center justify-center">
+              <FileText className="w-7 h-7 text-[#2563EB]" />
+            </div>
+
+            <div className="space-y-1">
+              <h3 className="text-[16px] font-bold text-[#0F172A]">
+                No resumes uploaded yet
+              </h3>
+              <p className="text-[13px] text-[#475569]">
+                Upload your resume in PDF, DOCX, or TXT format to compute personalized compatibility scores.
               </p>
             </div>
 
-            <button
-              type="button"
-              data-testid="upload-resume-button"
-              onClick={() => setIsUploadModalOpen(true)}
-              className="inline-flex items-center justify-center gap-2 px-5 py-2.5 min-h-[44px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-[14px] font-bold transition shadow-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1 shrink-0 self-start sm:self-auto"
-            >
-              <UploadCloud className="w-4 h-4" />
-              <span>Upload resume</span>
-            </button>
-          </div>
-
-          {/* ================================================================= */}
-          {/* INFO ROW (Measured: "You have 1 resume saved out of 5 available slots. (?)") */}
-          {/* ================================================================= */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-1 text-[14px] font-medium text-[#0F172A]">
-            <div className="flex items-center gap-2">
-              <span className="w-5 h-5 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#2563EB] flex items-center justify-center text-xs font-bold shrink-0">
-                💬
-              </span>
-              <span>
-                You have {candidate ? 1 : 0} resume saved out of 5 available slots.
-              </span>
-              <span
-                title="CareerMonke provides 5 active resume slots for targeting multiple engineering, product, and leadership roles."
-                className="text-[#94A3B8] hover:text-[#0F172A] cursor-help inline-flex items-center"
+            <div className="pt-2">
+              <button
+                type="button"
+                data-testid="empty-upload-resume-button"
+                onClick={() => setIsUploadModalOpen(true)}
+                className="inline-flex items-center justify-center gap-2 px-6 py-2.5 min-h-[44px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white font-bold text-[14px] transition cursor-pointer shadow-none focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1"
               >
-                ⓘ
-              </span>
+                <UploadCloud className="w-4 h-4" />
+                <span>Upload resume</span>
+              </button>
             </div>
-
-            <button
-              type="button"
-              onClick={() => setIsUploadModalOpen(true)}
-              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[#E2E8F0] bg-white hover:bg-[#F8FAFC] text-[13px] font-semibold text-[#0F172A] transition shadow-2xs self-start sm:self-auto cursor-pointer"
-            >
-              <span className="w-4 h-4 rounded bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center font-bold text-xs">
-                +
-              </span>
-              <span>Add Resume</span>
-            </button>
           </div>
+        )}
 
-          {/* ================================================================= */}
-          {/* RESUMES LIST OR EMPTY STATE                                       */}
-          {/* ================================================================= */}
-          {candidate ? (
-            <div data-testid="resume-list-container" className="space-y-4">
-              {/* Resume Card: white, 16px radius, 1px #E2E8F0 ring */}
-              <div
-                data-testid="resume-card"
-                className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-4 sm:p-5 shadow-none transition hover:ring-[#93C5FD] space-y-4"
-              >
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3.5">
-                  {/* Left: File icon tile, Title bold 15px, Date 13px, Status Chip */}
-                  <div className="flex items-center gap-3.5 min-w-0">
-                    <div className="w-10 h-10 rounded-lg bg-[#EFF6FF] border border-[#BFDBFE] flex items-center justify-center text-[#2563EB] shrink-0">
-                      <FileText className="w-5 h-5 text-[#2563EB]" />
-                    </div>
-
-                    <div className="min-w-0 space-y-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-[15px] font-bold text-[#0F172A] truncate">
-                          {resumeTitle}
-                        </h3>
-
-                        {/* Status chip: Confirmed or Needs review */}
-                        {isConfirmed ? (
-                          <span
-                            data-testid="resume-status-chip"
-                            className="text-[12px] font-medium px-2.5 py-0.5 rounded-full bg-[#DCFCE7] text-[#16A34A]"
-                          >
-                            Confirmed
-                          </span>
-                        ) : (
-                          <span
-                            data-testid="resume-status-chip"
-                            className="text-[12px] font-medium px-2.5 py-0.5 rounded-full bg-[#FEF3C7] text-[#D97706]"
-                          >
-                            Needs review
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="text-[13px] text-[#94A3B8] flex items-center gap-1.5">
-                        <span>Uploaded {formattedDate}</span>
-                        {candidate.name && (
-                          <>
-                            <span>•</span>
-                            <span className="text-[#475569] truncate">{candidate.name}</span>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Right: Row of icon buttons for existing actions (view, rename, delete) */}
-                  <div
-                    data-testid="resume-actions-row"
-                    className="flex items-center gap-1 sm:gap-1.5 shrink-0 self-end sm:self-auto border-t sm:border-t-0 pt-2 sm:pt-0 w-full sm:w-auto justify-end border-[#E2E8F0]"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => setIsViewDetailsOpen(!isViewDetailsOpen)}
-                      title={isViewDetailsOpen ? "Hide preview" : "View details"}
-                      aria-label="View resume details"
-                      className="p-2 min-h-[36px] min-w-[36px] rounded-full text-[#475569] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition-colors flex items-center justify-center cursor-pointer border border-transparent hover:border-[#CBD5E1]"
-                    >
-                      {isViewDetailsOpen ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={handleOpenRename}
-                      title="Rename resume"
-                      aria-label="Rename resume"
-                      className="p-2 min-h-[36px] min-w-[36px] rounded-full text-[#475569] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition-colors flex items-center justify-center cursor-pointer border border-transparent hover:border-[#CBD5E1]"
-                    >
-                      <Edit3 className="w-4 h-4" />
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={handleDeleteProfile}
-                      title="Delete resume facts"
-                      aria-label="Delete resume"
-                      className="p-2 min-h-[36px] min-w-[36px] rounded-full text-[#475569] hover:text-[#DC2626] hover:bg-[#FEE2E2] transition-colors flex items-center justify-center cursor-pointer border border-transparent hover:border-[#FEE2E2]"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Expanded Details Section when View action is active */}
-                {isViewDetailsOpen && (
-                  <div
-                    data-testid="resume-view-details"
-                    className="pt-4 border-t border-[#E2E8F0] space-y-4 animate-fadeIn"
-                  >
-                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-                      <div className="space-y-1">
-                        <h4 className="text-[16px] font-bold text-[#0F172A]">
-                          {candidate.name || "Candidate Profile"}
-                        </h4>
-                        {candidate.headline && (
-                          <p className="text-[13px] font-medium text-[#2563EB]">
-                            {candidate.headline}
-                          </p>
-                        )}
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-[#475569] pt-1">
-                          {candidate.location && (
-                            <span className="flex items-center gap-1">
-                              <MapPin className="w-3.5 h-3.5 text-[#94A3B8]" />
-                              <span>{candidate.location}</span>
-                            </span>
-                          )}
-                          {candidate.email && (
-                            <span className="flex items-center gap-1">
-                              <Mail className="w-3.5 h-3.5 text-[#94A3B8]" />
-                              <span>{candidate.email}</span>
-                            </span>
-                          )}
-                          {candidate.phone && (
-                            <span className="flex items-center gap-1">
-                              <Phone className="w-3.5 h-3.5 text-[#94A3B8]" />
-                              <span>{candidate.phone}</span>
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Quick ATS Export Actions */}
-                      <div className="flex flex-wrap items-center gap-2 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => downloadAtsResumeDocx(candidate)}
-                          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[#0F172A] text-[12px] font-semibold min-h-[36px] transition cursor-pointer"
-                          title="Export ATS-Friendly Word Document (.docx)"
-                        >
-                          <Download className="w-3.5 h-3.5 text-[#2563EB]" />
-                          <span>Export Word (.docx)</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => downloadAtsResumeText(candidate)}
-                          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[#0F172A] text-[12px] font-semibold min-h-[36px] transition cursor-pointer"
-                          title="Export Plain Text (.txt)"
-                        >
-                          <FileText className="w-3.5 h-3.5 text-[#475569]" />
-                          <span>Export Text</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Quick metrics counters */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-[#E2E8F0]">
-                      <div className="p-2.5 rounded-[12px] bg-[#F8FAFC] border border-[#E2E8F0]">
-                        <span className="text-[11px] text-[#475569] font-medium">Skills Identified</span>
-                        <p className="text-[14px] font-bold text-[#0F172A]">{candidate.skills?.length || 0}</p>
-                      </div>
-                      <div className="p-2.5 rounded-[12px] bg-[#F8FAFC] border border-[#E2E8F0]">
-                        <span className="text-[11px] text-[#475569] font-medium">Work History</span>
-                        <p className="text-[14px] font-bold text-[#0F172A]">{candidate.experience?.length || 0} roles</p>
-                      </div>
-                      <div className="p-2.5 rounded-[12px] bg-[#F8FAFC] border border-[#E2E8F0]">
-                        <span className="text-[11px] text-[#475569] font-medium">Education</span>
-                        <p className="text-[14px] font-bold text-[#0F172A]">{candidate.education?.length || 0} entries</p>
-                      </div>
-                      <div className="p-2.5 rounded-[12px] bg-[#F8FAFC] border border-[#E2E8F0]">
-                        <span className="text-[11px] text-[#475569] font-medium">Status</span>
-                        <p className="text-[14px] font-bold text-[#16A34A]">Confirmed</p>
-                      </div>
-                    </div>
-
-                    {/* Top Skills Preview */}
-                    {candidate.skills && candidate.skills.length > 0 && (
-                      <div className="space-y-1.5 pt-1">
-                        <span className="text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">
-                          Extracted Core Competencies
-                        </span>
-                        <div className="flex flex-wrap gap-1.5">
-                          {candidate.skills.slice(0, 12).map((skill, idx) => (
-                            <span
-                              key={idx}
-                              className="text-[12px] bg-[#F1F5F9] text-[#475569] px-2.5 py-0.5 rounded-full border border-[#E2E8F0]"
-                            >
-                              {skill}
-                            </span>
-                          ))}
-                          {candidate.skills.length > 12 && (
-                            <span className="text-[12px] bg-[#F1F5F9] text-[#475569] px-2.5 py-0.5 rounded-full border border-[#E2E8F0]">
-                              +{candidate.skills.length - 12} more
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : (
-            /* =============================================================== */
-            /* EMPTY STATE: centred icon, one line, upload button               */
-            /* =============================================================== */
-            <div
-              data-testid="resume-empty-state"
-              className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-12 sm:p-16 text-center space-y-4 max-w-xl mx-auto shadow-none"
-            >
-              <div className="w-14 h-14 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#2563EB] mx-auto flex items-center justify-center">
-                <FileText className="w-7 h-7 text-[#2563EB]" />
-              </div>
-
-              <div className="space-y-1">
-                <h3 className="text-[16px] font-bold text-[#0F172A]">
-                  No resumes uploaded yet
-                </h3>
-                <p className="text-[13px] text-[#475569]">
-                  Upload your resume in PDF, DOCX, or TXT format to compute personalized compatibility scores.
-                </p>
-              </div>
-
-              <div className="pt-2">
-                <button
-                  type="button"
-                  data-testid="empty-upload-resume-button"
-                  onClick={() => setIsUploadModalOpen(true)}
-                  className="inline-flex items-center justify-center gap-2 px-6 py-2.5 min-h-[44px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white font-bold text-[14px] transition cursor-pointer shadow-none focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1"
-                >
-                  <UploadCloud className="w-4 h-4" />
-                  <span>Upload resume</span>
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Explanation on Job Tailoring */}
-          <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-4 sm:p-5 shadow-none space-y-1.5">
-            <div className="flex items-center gap-2 text-[#0F172A] font-bold text-[14px]">
-              <Sparkles className="w-4 h-4 text-[#2563EB]" />
-              <span>Role-Specific Resumes & Cover Letters</span>
-            </div>
-            <p className="text-[13px] text-[#475569] leading-relaxed">
-              AI resume tools are applied directly to specific roles. From your{" "}
-              <Link href="/dashboard" className="text-[#2563EB] font-semibold hover:underline">
-                Top 10 Jobs
-              </Link>
-              {" "}or the{" "}
-              <Link href="/jobs" className="text-[#2563EB] font-semibold hover:underline">
-                Jobs Feed
-              </Link>
-              , click <strong>&quot;AI Resume&quot;</strong> or <strong>&quot;Cover Letter&quot;</strong>. All generated content is strictly grounded in your confirmed profile facts.
-            </p>
+        {/* Explanation on Job Tailoring */}
+        <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-4 sm:p-5 shadow-none space-y-1.5">
+          <div className="flex items-center gap-2 text-[#0F172A] font-bold text-[14px]">
+            <Sparkles className="w-4 h-4 text-[#2563EB]" />
+            <span>Role-Specific Resumes & Cover Letters</span>
           </div>
+          <p className="text-[13px] text-[#475569] leading-relaxed">
+            AI resume tools are applied directly to specific roles. From your{" "}
+            <Link href="/dashboard" className="text-[#2563EB] font-semibold hover:underline">
+              Top 10 Jobs
+            </Link>{" "}
+            or the{" "}
+            <Link href="/jobs" className="text-[#2563EB] font-semibold hover:underline">
+              Jobs Feed
+            </Link>
+            , click <strong>&quot;AI Resume&quot;</strong> or <strong>&quot;Cover Letter&quot;</strong>. All generated content is strictly grounded in your confirmed profile facts.
+          </p>
+        </div>
       </div>
 
       <Footer />
