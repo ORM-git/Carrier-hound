@@ -6,6 +6,8 @@
  * Fails safely and NEVER throws into the caller request.
  */
 
+import { getSupabaseAdmin } from "./auth";
+
 export interface LogAdminActionOptions {
   adminUserId: string;
   action: string;
@@ -202,5 +204,87 @@ export async function logAdminAction(options: LogAdminActionOptions): Promise<bo
       err?.name === "AbortError" ? "Request timed out after 2s" : err?.message || "Unknown error"
     );
     return false;
+  }
+}
+
+
+export interface AdminAuditLogEntry {
+  id: string;
+  created_at: string;
+  admin_user_id: string;
+  action: string;
+  target_type?: string | null;
+  target_id?: string | null;
+  metadata?: Record<string, any> | null;
+  ip_hash?: string | null;
+}
+
+export interface FetchAuditLogsResult {
+  entries: AdminAuditLogEntry[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+/**
+ * Reads paginated audit log entries using Supabase admin service role.
+ * Safe fallback on errors or missing tables.
+ */
+export async function fetchAdminAuditLogs(options?: {
+  page?: number;
+  pageSize?: number;
+  action?: string;
+}): Promise<FetchAuditLogsResult> {
+  const page = Math.max(1, options?.page || 1);
+  const pageSize = Math.min(100, Math.max(1, options?.pageSize || 20));
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  try {
+    const admin = getSupabaseAdmin();
+    let query = admin
+      .from("admin_audit_log")
+      .select("id, created_at, admin_user_id, action, target_type, target_id, metadata, ip_hash", {
+        count: "exact",
+      })
+      .order("created_at", { ascending: false });
+
+    if (options?.action && options.action !== "all") {
+      query = query.eq("action", options.action);
+    }
+
+    const { data, count, error } = await query.range(from, to);
+
+    if (error) {
+      console.warn("[AdminAuditLog] Error reading admin_audit_log:", error.message);
+      return {
+        entries: [],
+        total: 0,
+        page,
+        pageSize,
+        totalPages: 1,
+      };
+    }
+
+    const total = count ?? (data?.length || 0);
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+    return {
+      entries: (data || []) as AdminAuditLogEntry[],
+      total,
+      page,
+      pageSize,
+      totalPages,
+    };
+  } catch (err: any) {
+    console.warn("[AdminAuditLog] Exception reading audit logs:", err?.message || err);
+    return {
+      entries: [],
+      total: 0,
+      page,
+      pageSize,
+      totalPages: 1,
+    };
   }
 }
