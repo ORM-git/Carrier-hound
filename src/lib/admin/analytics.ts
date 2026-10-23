@@ -595,7 +595,7 @@ export async function setUserBlockStatus(
       return { success: false, isBlocked: false, error: "User not found" };
     }
 
-    if (shouldBlock && user.email && user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
+    if (shouldBlock && user.email && ADMIN_EMAIL && user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
       return { success: false, isBlocked: false, error: "Admin account cannot be blocked" };
     }
 
