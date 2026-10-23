@@ -12,6 +12,8 @@
 
 In response to the mobile follow-up review for PR #76, the mobile authentication presentation on `/login` and `/signup` was corrected to match the verified Jobright 390px reference layout specifications as a **bottom-anchored drawer**, while strictly preserving CareerMonke's branding, primary blue (`#2563EB`, hover `#1D4ED8`), working Supabase authentication contracts, existing desktop modal geometry, and the dual-mode primary navigation sidebar work (commit `82aad73`).
 
+Additionally, the mobile navigation stacking order was fortified: both the mobile navigation backdrop (`z-[60]`) and drawer (`z-[61]`) were raised strictly above the root `CookieNotice` (`z-50`), ensuring the candidate account row and Sign Out button are 100% visible, hit-tested, and interactive on mobile at both 390x844 and 390x600 without modifying cookie-consent behavior.
+
 ### Key Specifications & Corrections:
 1. **Mobile Bottom-Anchored Drawer (390px Viewport)**:
    - Full viewport width (`w-full left-0 right-0`), anchored to the bottom of the viewport (`fixed bottom-0` on mobile, `sm:relative sm:bottom-auto`), with zero side margins (`m-0 sm:mx-auto`).
@@ -32,6 +34,11 @@ In response to the mobile follow-up review for PR #76, the mobile authentication
    - Mobile: 0.3s `translateY(100%)` to `translateY(0)` slide-up drawer entrance (`authDrawerEntranceMobile`).
    - Desktop: 0.3s `scale(0.98)` to `scale(1)` modal scale entrance (`authModalEntrance`).
    - Both use easing `cubic-bezier(0.08, 0.82, 0.17, 1)` and honor `prefers-reduced-motion`.
+6. **Mobile Navigation Drawer & CookieNotice Stacking Context**:
+   - Mobile nav backdrop raised to `z-[60]` (above `CookieNotice` `z-50`).
+   - Mobile nav drawer raised to `z-[61]` (above backdrop `z-[60]` and `CookieNotice` `z-50`).
+   - Drawer container equipped with `overflow-y-auto overscroll-contain` and drawer footer has `shrink-0` to guarantee user profile and Sign Out button remain reachable on short screens (390x600).
+   - Close button and Escape key dismiss drawer and return focus to hamburger trigger button.
 
 ---
 
@@ -48,6 +55,7 @@ In response to the mobile follow-up review for PR #76, the mobile authentication
 | **Entrance Motion** | Scale `0.98` -> `1.0` (0.3s cubic-bezier(0.08, 0.82, 0.17, 1)) | Slide-up `translateY(100%)` -> `translateY(0)` (0.3s) |
 | **Vertical Scroll** | `max-h-[calc(100vh-32px)] overflow-y-auto` | `max-h-[92vh] overflow-y-auto` (responsive on short screens) |
 | **Horizontal Overflow** | Zero overflow (`scrollWidth === clientWidth`) | Zero overflow (`scrollWidth === clientWidth === 390px`) |
+| **Nav Drawer Stacking** | Desktop rail in normal layout (`hidden md:flex`) | Backdrop `z-[60]`, Drawer `z-[61]` above CookieNotice (`z-50`) |
 
 ---
 
@@ -83,70 +91,69 @@ PROMPT 8 JOBRIGHT-STYLE AUTH PRESENTATION & MODAL SPEC AUDIT [PASS-LOCAL]
 ----------------------------------------------------------------------------------
 ```
 
-**Negative Control Validation**:
+### 3.3. Logged-In App Shell Audit (`scripts/test-loggedin-shell.ts`)
 ```text
 ==================================================================================
-     PROMPT 8 AUDIT — JOBRIGHT-STYLE AUTH PRESENTATION & MODAL SPEC AUDIT         
+            PROMPT 8 REBUILD — LOGGED-IN APP SHELL AUDIT SUITE                   
 ==================================================================================
-Mode: NEGATIVE CONTROL (Expect Failure)
+Mode: NORMAL VALIDATION
 
-  [PASS] dimmed backdrop: Dimmed backdrop present over auth route page
-  [PASS] close control: Dark circular close button navigating to / with Esc key support
-  [PASS] google button: Full width 48px high, 1px #E5E7EB border, 8px radius with Google icon
-  [PASS] plain or: Small grey 'OR' with zero horizontal divider lines
-  [PASS] email input: 48px high, #F7F8F9 fill, 8px radius, placeholder 'Email', accessible sr-only label
-  [PASS] primary button: 48px high, 8px radius, #2563EB with truthful magic-link text
-  [PASS] legal links: Terms and Privacy Policy links preserved with valid destinations
-  [PASS] entrance motion: 0.3s cubic-bezier(0.08,0.82,0.17,1) mobile drawer slide-up & desktop modal scale entrance with prefers-reduced-motion
+  [PASS] dual-mode dimensions: narrow 72px (w-[72px]) and expanded 240px (w-[240px]) desktop modes supported
+  [PASS] rail branding: small CareerMonke logo mark at top
+  [PASS] rail nav items: Dashboard, Jobs, Resume, Profile, Tracker, Radar present
+  [PASS] rail item sizing: 24px line icons over 11px labels in narrow mode
+  [PASS] rail geometry: 56x56px footprint, 8px inset, 64px pitch verified
+  [PASS] sidebar toggle & persistence: accessible expand/collapse control with localStorage persistence
+  [PASS] rail bottom: fixed Settings item at the bottom of the sidebar
+  [PASS] coaching-style hover: soft light-blue background (#F0F7FF) and blue text (#2563EB) on hover
+  [PASS] persistent active route: distinct active route state with #EFF6FF background and aria-current
+  [PASS] keyboard focus: accessible WCAG 2.1 focus indicators on all nav items
+  [PASS] top bar shell: 56px height (h-14), white background, 1px bottom border #E2E8F0
+  [PASS] top bar cleanup: duplicated desktop primary nav links removed from top bar
+  [PASS] top bar account controls: avatar initial, bold 13px name, Free/Pro plan pill verified
+  [PASS] top bar search: fully-rounded search input present
+  [PASS] dynamic content reflow: content smoothly reflows without clipping or overlap based on chosen sidebar mode
+  [PASS] mobile responsiveness & stacking: desktop rail hidden on mobile; drawer has >=44px targets, backdrop z-[60] & drawer z-[61] above CookieNotice
+  [PASS] legacy cleanup: zero 220px sidebar references across all pages
+  [PASS] shell adoption: AppIconRail and AppTopBar integrated across /dashboard, /jobs, /tracker, /resume, /settings
+  [PASS] brand & feature purity: zero Jobright copy, mascots, or coaching/agent/autofill pills
+  [PASS] tab counts: zero hardcoded "24+" count literal; External tab badge derives dynamically and hides when 0/loading
+  [PASS] applied tab list: filters live jobs by tracker applied jobIds to match badge count
+  [PASS] tab buttons: min-h-[44px] touch target enforced across desktop and mobile tabs
 
-==================================================================================
-NEGATIVE CONTROL PASSED: Deliberately injected corruptions caught 5 errors.
-==================================================================================
+----------------------------------------------------------------------------------
+PROMPT 8 LOGGED-IN APP SHELL & DUAL-MODE SIDEBAR VALIDATED LOCALLY [PASS-LOCAL]
+----------------------------------------------------------------------------------
 ```
 
-### 3.3. Automated Puppeteer Browser Checks (`scripts/test-auth-browser.cjs`)
+**Negative Control Validation**: Detected 13 deliberate corruptions including `z-[60]` and `z-[61]` verification (`exit code 1`).
+
+### 3.4. Mobile Navigation Drawer & CookieNotice Stacking Checks (`scripts/test-mobile-nav-stacking.cjs`)
 ```text
 ==================================================================================
-     AUTOMATED BROWSER CHECKS: JOBRIGHT-STYLE AUTH PRESENTATION & MODAL SPEC      
+     AUTOMATED BROWSER CHECKS: MOBILE NAV DRAWER & COOKIENOTICE STACKING          
 ==================================================================================
 
-[PASS] Mock static server listening on http://localhost:3458
-  [PASS] Desktop modal card: width 488px, content width 424px, radius 24px
-  [PASS] Desktop padding: top 48px, sides 32px/32px, bottom 32px
-  [PASS] Dimmed backdrop active (z-index: 40) behind card controls (z-index: 50)
-  [PASS] Login heading verified: "Welcome back to CareerMonke" with inline brand bold (weight 700)
-  [PASS] Google button verified: 48px height, 8px radius
-  [PASS] Plain small grey 'OR' verified with no horizontal divider lines
-  [PASS] Email input verified: 48px height, 8px radius, placeholder 'Email'
-  [PASS] Desktop switch box verified: 48px height, 8px radius, #F3F4F5 grey fill
-  [PASS] Close button verified with accessible name and href="/"
-  [PASS] Escape key triggered navigation to "/"
-  [PASS] Invalid email validation banner displayed: "Please enter a valid email address."
-  [PASS] Simulated auth error banner verified: "Rate limit exceeded. Please wait 60 seconds."
-  [PASS] Email-sent state rendered with candidate email address and 30s cooldown timer
-  [PASS] 'Use a different email' reset the view back to the input form
-  [PASS] Return destination ?next preserved from login to signup: "/signup?next=%2Ftracker"
-  [PASS] Signup heading verified: "Welcome to CareerMonke"
-  [PASS] Signup to login switch link preserved: "/login?next=%2Fjobs"
-  [PASS] Desktop signup layout verified: Terms/Privacy line is above the switch box
-  [PASS] Mobile bottom-anchored drawer: full width 390px, 0 side margins (left=0px), bottom-anchored (bottom=844px)
-  [PASS] Mobile corner radii: 20px top corners (20px), square bottom corners (0px)
-  [PASS] Mobile account switch box: white background with 1px #E5E7EB border
-  [PASS] Mobile close control: visible and accessible
-  [PASS] Zero horizontal overflow confirmed (scrollWidth=390, clientWidth=390)
-  [PASS] Mobile signup layout verified: Terms/Privacy line is positioned BELOW the account switch box with valid destinations
-  [PASS] Short screen (390x600) vertical scroll verified: card height 461px, overflow-y: auto
+[PASS] Mock static server listening on http://localhost:3466
+TEST 1: Mobile 390x844 Viewport Stacking & Interaction...
+  [PASS] Root CookieNotice active at bottom (z-index: 50, height: 102px)
+  [PASS] Stacking order confirmed: Drawer (z-61) > Backdrop (z-60) > CookieNotice (z-50)
+  [PASS] Element hit test on Sign Out button: hit verified (not occluded by CookieNotice)
+  [SAVED] reports/prompt8-auth/mobile-drawer-stacking-390x844.png
+  [PASS] Sign Out button interactive click verified with mocked handler
+  [PASS] Close button closed drawer and returned focus to hamburger trigger
+  [PASS] Escape key closed drawer and returned focus to hamburger trigger
+
+TEST 2: Short Mobile 390x600 Viewport Stacking & Scroll Reachability...
+  [PASS] Short screen (390x600): drawer height 600px matches viewport
+  [PASS] Drawer overflow-y: auto
+  [PASS] Footer Sign Out button reachable at bottom: 580px <= 600px
+  [SAVED] reports/prompt8-auth/mobile-drawer-stacking-390x600.png
+  [SAVED] reports/prompt8-auth/mobile-drawer-footer-reachable.png
 
 ==================================================================================
-  ALL JOBRIGHT-STYLE AUTH PRESENTATION BROWSER CHECKS PASSED [PASS-LOCAL]         
+  ALL MOBILE NAVIGATION DRAWER & COOKIENOTICE STACKING CHECKS PASSED [PASS-LOCAL] 
 ==================================================================================
-```
-
-### 3.4. Full Central Suite Runner (`scripts/suite-runner.ts`)
-```text
-================================================================================
-SUMMARY: 48 passed, 0 failed, 0 blocked/skipped
-================================================================================
 ```
 
 ---
@@ -155,39 +162,32 @@ SUMMARY: 48 passed, 0 failed, 0 blocked/skipped
 
 All visual artifacts captured and stored in `reports/prompt8-auth/`:
 
-### 4.1. Motion Recordings:
-- **Desktop Entrance GIF**: [login-entrance.gif](file:///d:/Carrer-hound/reports/prompt8-auth/login-entrance.gif) (Scale 0.98 -> 1.0 at 10 fps).
-- **Mobile Drawer Entrance GIF**: [mobile-drawer-entrance.gif](file:///d:/Carrer-hound/reports/prompt8-auth/mobile-drawer-entrance.gif) (Slide-up `translateY(100%)` -> `0%` at 10 fps).
+### 4.1. Mobile Navigation & Stacking Captures:
+- **Mobile Drawer Stacking at 390x844**: [mobile-drawer-stacking-390x844.png](file:///d:/Carrer-hound/reports/prompt8-auth/mobile-drawer-stacking-390x844.png) (Drawer z-[61] and backdrop z-[60] overlay cleanly above CookieNotice z-50; account row and Sign Out button fully interactive).
+- **Mobile Drawer Stacking at 390x600**: [mobile-drawer-stacking-390x600.png](file:///d:/Carrer-hound/reports/prompt8-auth/mobile-drawer-stacking-390x600.png) (Short screen view confirming scrolling and visible footer).
+- **Footer Reachability Proof**: [mobile-drawer-footer-reachable.png](file:///d:/Carrer-hound/reports/prompt8-auth/mobile-drawer-footer-reachable.png) (Sign Out button and profile row unoccluded by CookieNotice).
+- **Mobile Hamburger Drawer**: [mobile-nav-drawer.png](file:///d:/Carrer-hound/reports/prompt8-auth/mobile-nav-drawer.png).
 
-### 4.2. Mobile Captures (390px Viewport):
+### 4.2. Auth Bottom Drawer & Motion:
 - **Mobile Login Drawer (390x844)**: [login-mobile.png](file:///d:/Carrer-hound/reports/prompt8-auth/login-mobile.png) (Bottom-anchored drawer, 20px top radii, square bottom, white switch box with 1px border).
 - **Mobile Signup Drawer (390x844)**: [signup-mobile.png](file:///d:/Carrer-hound/reports/prompt8-auth/signup-mobile.png) (Terms and Privacy Policy line placed below the white switch box).
 - **Short Screen Mobile View (390x600)**: [login-mobile-short.png](file:///d:/Carrer-hound/reports/prompt8-auth/login-mobile-short.png) (Vertical scroll with safe-area spacing and visible close control).
+- **Mobile Drawer Entrance Motion**: [mobile-drawer-entrance.gif](file:///d:/Carrer-hound/reports/prompt8-auth/mobile-drawer-entrance.gif) (Slide-up `translateY(100%)` -> `0%` at 10 fps).
 
 ### 4.3. Desktop Captures (1280x900):
 - **Desktop Login Modal**: [login-desktop.png](file:///d:/Carrer-hound/reports/prompt8-auth/login-desktop.png) (Centred 488px card, 24px radius, filled `#F3F4F5` switch box).
 - **Desktop Signup Modal**: [signup-desktop.png](file:///d:/Carrer-hound/reports/prompt8-auth/signup-desktop.png) (Terms line above the switch box).
-- **Email Focus State**: [login-focus-desktop.png](file:///d:/Carrer-hound/reports/prompt8-auth/login-focus-desktop.png).
-- **Error State (Simulated 429)**: [login-error-desktop.png](file:///d:/Carrer-hound/reports/prompt8-auth/login-error-desktop.png).
-- **Email Sent State (30s Cooldown)**: [login-email-sent-desktop.png](file:///d:/Carrer-hound/reports/prompt8-auth/login-email-sent-desktop.png).
-- **Signup Error State**: [signup-error-desktop.png](file:///d:/Carrer-hound/reports/prompt8-auth/signup-error-desktop.png).
-- **Signup Email Sent State**: [signup-email-sent-desktop.png](file:///d:/Carrer-hound/reports/prompt8-auth/signup-email-sent-desktop.png).
-
-### 4.4. Primary Navigation Dual-Mode Sidebar (Preserved from Commit `82aad73`):
 - **Narrow Mode (72px Rail)**: [sidebar-narrow-desktop.png](file:///d:/Carrer-hound/reports/prompt8-auth/sidebar-narrow-desktop.png).
 - **Expanded Mode (240px Sidebar)**: [sidebar-expanded-desktop.png](file:///d:/Carrer-hound/reports/prompt8-auth/sidebar-expanded-desktop.png).
 - **Coaching Hover Highlight**: [sidebar-hover-highlight.png](file:///d:/Carrer-hound/reports/prompt8-auth/sidebar-hover-highlight.png).
 - **Keyboard Focus State**: [sidebar-keyboard-focus.png](file:///d:/Carrer-hound/reports/prompt8-auth/sidebar-keyboard-focus.png).
-- **Mobile Hamburger Drawer**: [mobile-nav-drawer.png](file:///d:/Carrer-hound/reports/prompt8-auth/mobile-nav-drawer.png).
 
 ---
 
 ## 5. Changed Files Summary
 
-1. [`src/app/login/page.tsx`](file:///d:/Carrer-hound/src/app/login/page.tsx): Responsive mobile bottom drawer (`fixed bottom-0 left-0 right-0 sm:relative sm:bottom-auto`), 20px top radii, square bottom corners, mobile white switch box with 1px `#E5E7EB` border.
-2. [`src/app/signup/page.tsx`](file:///d:/Carrer-hound/src/app/signup/page.tsx): Same mobile bottom drawer geometry, mobile white switch box, and Terms/Privacy line placed below switch box on mobile (`sm:hidden`) while staying above switch box on desktop (`hidden sm:block`).
-3. [`src/app/globals.css`](file:///d:/Carrer-hound/src/app/globals.css): Added `@keyframes authDrawerEntranceMobile` (translateY 100% to 0%) for mobile drawer entrance and responsive `@media (min-width: 640px)` switch to `@keyframes authModalEntrance`.
-4. [`scripts/test-auth-presentation.ts`](file:///d:/Carrer-hound/scripts/test-auth-presentation.ts): Updated assertions and negative control for mobile bottom drawer, corner radii, mobile switch box border, and signup terms placement.
-5. [`scripts/test-auth-browser.cjs`](file:///d:/Carrer-hound/scripts/test-auth-browser.cjs): Added browser checks for mobile drawer bottom anchoring (`rect.bottom === 844`), full width (390px, left=0), 20px top / 0px bottom radii, white switch box, mobile terms below switch box, short screen scroll (390x600), and unchanged desktop card/switch box layout.
-6. [`scripts/capture-auth-screenshots.cjs`](file:///d:/Carrer-hound/scripts/capture-auth-screenshots.cjs): Enhanced to capture mobile bottom drawer screenshots, short screen check, and mobile slide-up entrance animation GIF (`mobile-drawer-entrance.gif`).
-7. [`reports/prompt8-auth/auth-presentation-report.md`](file:///d:/Carrer-hound/reports/prompt8-auth/auth-presentation-report.md): Updated audit and verification documentation.
+1. [`src/components/shell/AppTopBar.tsx`](file:///d:/Carrer-hound/src/components/shell/AppTopBar.tsx): Raised mobile navigation backdrop to `z-[60]` and drawer to `z-[61]` above root `CookieNotice` (`z-50`). Added `overflow-y-auto overscroll-contain` on drawer and `shrink-0` on footer for short screen scroll reachability.
+2. [`scripts/test-loggedin-shell.ts`](file:///d:/Carrer-hound/scripts/test-loggedin-shell.ts): Added assertions for `z-[60]` backdrop and `z-[61]` drawer with negative control coverage.
+3. [`scripts/test-mobile-nav-stacking.cjs`](file:///d:/Carrer-hound/scripts/test-mobile-nav-stacking.cjs): Created automated browser test suite verifying drawer stacking above CookieNotice, hit testing on Sign Out button, interactive click with mocked handler, close button, Escape key, focus return, and 390x600 short screen reachability.
+4. [`scripts/capture-sidebar-screenshots.cjs`](file:///d:/Carrer-hound/scripts/capture-sidebar-screenshots.cjs): Updated screenshot capture runner.
+5. [`reports/prompt8-auth/auth-presentation-report.md`](file:///d:/Carrer-hound/reports/prompt8-auth/auth-presentation-report.md): Updated audit and verification documentation.

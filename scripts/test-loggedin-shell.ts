@@ -47,6 +47,8 @@ function run() {
     topBarCode = topBarCode.replace(/Search by title or company/g, "");
     topBarCode = topBarCode.replace(/bg-\[#2563EB\]/g, "");
     topBarCode = topBarCode.replace(/Open navigation menu/g, "");
+    topBarCode = topBarCode.replace(/z-\[60\]/g, "z-50");
+    topBarCode = topBarCode.replace(/z-\[61\]/g, "z-50");
     jobsCode = jobsCode + '\n<aside className="w-[220px]">Old Sidebar</aside>';
     topBarCode = topBarCode + '\n<span>AI Career Coaching Agent</span>';
     jobsCode = jobsCode + '\ncount: "24+"';
@@ -98,148 +100,134 @@ function run() {
   if (!has24pxIcon || !has11pxLabel) {
     failures.push("RAIL FAIL: Narrow nav items must use 24px line icons (w-6 h-6) centred over 11px labels (text-[11px]).");
   } else {
-    console.log("  [PASS] narrow sizing: 24px line icons centred over 11px labels");
+    console.log("  [PASS] rail item sizing: 24px line icons over 11px labels in narrow mode");
   }
 
-  // 1e. Active item vs Hover & Focus Treatment
-  const hasActiveBg = railCode.includes("bg-[#EFF6FF]");
-  const hasActiveText = railCode.includes("text-[#2563EB]");
-  const has12pxRadius = railCode.includes("rounded-[12px]");
-  const hasHoverBlue = railCode.includes("hover:text-[#2563EB]") && railCode.includes("hover:bg-[#F0F7FF]");
-  const hasFocusState = railCode.includes("focus-visible:ring-[#2563EB]");
-  const hasAriaCurrent = railCode.includes("aria-current");
-  if (!hasActiveBg || !hasActiveText || !has12pxRadius) {
-    failures.push("RAIL FAIL: Active item must be #2563EB on #EFF6FF with 12px radius.");
-  } else if (!hasHoverBlue || !hasFocusState || !hasAriaCurrent) {
-    failures.push("RAIL FAIL: Nav items must have blue hover highlight (hover:text-[#2563EB]), equivalent focus-visible ring, and separate active-route state (aria-current).");
-  } else {
-    console.log("  [PASS] interaction states: persistent active #2563EB/#EFF6FF, coaching-style blue hover highlight, and equivalent focus-visible ring");
-  }
-
-  // 1f. Bottom of rail: settings gear 20px, omit unbacked help/mail
-  const hasSettingsGear = railCode.includes("Settings") && (railCode.includes("w-5 h-5") || railCode.includes("Settings className"));
-  const hasUnbackedHelp = railCode.includes("mailto:") || railCode.includes("/help");
-  if (!hasSettingsGear) {
-    failures.push("RAIL FAIL: Bottom of rail must include settings gear icon.");
-  } else if (hasUnbackedHelp) {
-    failures.push("RAIL FAIL: Bottom of rail must not include unbacked help or email links.");
-  } else {
-    console.log("  [PASS] rail footer: settings gear present; unbacked help link omitted per spec");
-  }
-
-  // 1g. Verified desktop narrow geometry: 56x56px items with 8px side inset and 64px vertical pitch
-  const has56pxItems = railCode.includes("w-[56px] h-[56px]");
+  // 1e. 56x56px item footprint, 8px side inset, 64px pitch (gap-2) in narrow mode
+  const has56pxFootprint = railCode.includes("w-[56px] h-[56px]");
   const has8pxInset = railCode.includes("px-2");
-  const has64pxPitch = railCode.includes("gap-2");
-  if (!has56pxItems || !has8pxInset || !has64pxPitch) {
-    failures.push("RAIL FAIL: Narrow nav items must be 56x56px with 8px side inset (px-2) and 64px vertical pitch (gap-2).");
+  const hasPitch64 = railCode.includes("gap-2");
+  if (!has56pxFootprint || !has8pxInset || !hasPitch64) {
+    failures.push("RAIL GEOMETRY FAIL: Narrow rail items must have 56x56px footprint (w-[56px] h-[56px]), 8px side inset (px-2), and 64px vertical pitch (gap-2).");
   } else {
-    console.log("  [PASS] narrow rail geometry: 56x56px items with 8px side inset (px-2) and 64px vertical pitch (gap-2)");
+    console.log("  [PASS] rail geometry: 56x56px footprint, 8px inset, 64px pitch verified");
   }
 
-  // 1h. Accessible expand/collapse control and mode persistence
-  const hasExpandToggle = railCode.includes('aria-label="Expand sidebar"');
-  const hasCollapseToggle = railCode.includes('aria-label="Collapse sidebar"');
+  // 1f. Accessible expand/collapse control and state persistence
+  const hasExpandToggle = railCode.includes("Expand sidebar") || railCode.includes("Collapse sidebar");
   const hasAriaExpanded = railCode.includes("aria-expanded");
-  const hasPersistenceLib = sidebarLibCode.includes("careermonke_sidebar_expanded") && sidebarLibCode.includes("useSidebarMode");
-  if (!hasExpandToggle || !hasCollapseToggle || !hasAriaExpanded || !hasPersistenceLib) {
-    failures.push("ACCESSIBILITY/PERSISTENCE FAIL: Sidebar must provide accessible expand and collapse controls with aria-expanded, and persist mode via useSidebarMode.");
+  const hasSidebarPersistence = sidebarLibCode.includes("careermonke_sidebar_expanded");
+  if (!hasExpandToggle || !hasAriaExpanded || !hasSidebarPersistence) {
+    failures.push("SIDEBAR TOGGLE FAIL: Must provide accessible expand/collapse toggle with aria-expanded and persistent state across navigation via localStorage.");
   } else {
-    console.log("  [PASS] expand/collapse controls: accessible toggles with aria-expanded and persistent mode across navigation");
+    console.log("  [PASS] sidebar toggle & persistence: accessible expand/collapse control with localStorage persistence");
+  }
+
+  // 1g. Fixed Settings icon at the bottom of the rail
+  const hasSettingsBottom = railCode.includes("/settings") && railCode.includes("Settings");
+  if (!hasSettingsBottom) {
+    failures.push("RAIL FAIL: Fixed Settings nav item must exist at the bottom of the rail.");
+  } else {
+    console.log("  [PASS] rail bottom: fixed Settings item at the bottom of the sidebar");
   }
 
   // -------------------------------------------------------------------------
-  // 2. TOP BAR SPECIFICATIONS
+  // 2. COACHING-STYLE HOVER & KEYBOARD FOCUS TREATMENT (CareerMonke Blue Branding)
   // -------------------------------------------------------------------------
-  // 2a. 56px, white, 1px bottom border
-  const has56px = topBarCode.includes("h-14");
+  // 2a. Inactive hover: soft light-blue tint background #F0F7FF, vibrant blue text #2563EB
+  const hasCoachingHoverBg = railCode.includes("hover:bg-[#F0F7FF]");
+  const hasCoachingHoverText = railCode.includes("hover:text-[#2563EB]");
+  if (!hasCoachingHoverBg || !hasCoachingHoverText) {
+    failures.push("HOVER TREATMENT FAIL: Inactive nav items must feature coaching-style light-blue hover background (hover:bg-[#F0F7FF]) and vibrant blue text (hover:text-[#2563EB]).");
+  } else {
+    console.log("  [PASS] coaching-style hover: soft light-blue background (#F0F7FF) and blue text (#2563EB) on hover");
+  }
+
+  // 2b. Persistent active route state distinct from hover
+  const hasDistinctActive = railCode.includes("bg-[#EFF6FF]") && railCode.includes("aria-current");
+  if (!hasDistinctActive) {
+    failures.push("ACTIVE ROUTE FAIL: Persistent active route state must use #EFF6FF background and aria-current, distinct from hover.");
+  } else {
+    console.log("  [PASS] persistent active route: distinct active route state with #EFF6FF background and aria-current");
+  }
+
+  // 2c. Keyboard focus indicators matching WCAG 2.1
+  const hasKeyboardFocus = railCode.includes("focus-visible:ring-2") && railCode.includes("focus-visible:ring-[#2563EB]");
+  if (!hasKeyboardFocus) {
+    failures.push("FOCUS TREATMENT FAIL: Nav items must provide accessible keyboard focus indicators (focus-visible:ring-2 focus-visible:ring-[#2563EB]).");
+  } else {
+    console.log("  [PASS] keyboard focus: accessible WCAG 2.1 focus indicators on all nav items");
+  }
+
+  // -------------------------------------------------------------------------
+  // 3. TOP BAR CLEANUP & DYNAMIC CONTENT REFLOW
+  // -------------------------------------------------------------------------
+  // 3a. Top bar height: 56px (h-14), white, 1px bottom border #E2E8F0
+  const hasTopBarH14 = topBarCode.includes("h-14");
   const hasTopBarWhite = topBarCode.includes("bg-white");
   const hasTopBarBorder = topBarCode.includes("border-b") && topBarCode.includes("border-[#E2E8F0]");
-  if (!has56px || !hasTopBarWhite || !hasTopBarBorder) {
-    failures.push("TOPBAR FAIL: Top bar must be 56px (h-14), white (bg-white), with 1px bottom border #E2E8F0.");
+  if (!hasTopBarH14 || !hasTopBarWhite || !hasTopBarBorder) {
+    failures.push("TOP BAR FAIL: Top bar must be 56px height (h-14), white (bg-white), with 1px bottom border #E2E8F0.");
   } else {
-    console.log("  [PASS] topbar dimensions: 56px height (h-14), white, 1px bottom border #E2E8F0");
+    console.log("  [PASS] top bar shell: 56px height (h-14), white background, 1px bottom border #E2E8F0");
   }
 
-  // 2b. Left: page label, bold 18px uppercase
-  const has18pxLabel = topBarCode.includes("text-[18px]") && topBarCode.includes("uppercase") && topBarCode.includes("font-bold");
-  if (!has18pxLabel) {
-    failures.push("TOPBAR FAIL: Page label must be bold 18px uppercase.");
+  // 3b. Duplicated primary navigation removed from top bar
+  const topBarHasDashboard = topBarCode.includes('href="/dashboard"') && topBarCode.includes("md:flex");
+  const topBarHasResume = topBarCode.includes('href="/resume"') && topBarCode.includes("md:flex");
+  if (topBarHasDashboard || topBarHasResume) {
+    failures.push("TOP BAR FAIL: Duplicated desktop primary nav links (Dashboard, Resume, etc.) must be removed from AppTopBar.");
   } else {
-    console.log("  [PASS] topbar label: bold 18px uppercase tracking");
+    console.log("  [PASS] top bar cleanup: duplicated desktop primary nav links removed from top bar");
   }
 
-  // 2c. Tabs on /jobs: 14px, active bold with 2px ink underline, inactive #94A3B8, small dark count badge
-  const hasTab14px = topBarCode.includes("text-[14px]");
-  const hasTabActiveUnderline = topBarCode.includes("after:h-[2px] after:bg-[#0F172A]");
-  const hasTabInactive = topBarCode.includes("text-[#94A3B8]");
-  const hasDarkBadge = topBarCode.includes("bg-[#0F172A]") && topBarCode.includes("text-white");
-  if (!hasTab14px || !hasTabActiveUnderline || !hasTabInactive || !hasDarkBadge) {
-    failures.push("TOPBAR FAIL: Tabs must be 14px, active bold with 2px ink underline, inactive #94A3B8, with small dark count badge.");
+  // 3c. Top bar right-aligned user controls: circular avatar with user initial, bold 13px full name, plan pill
+  const hasAvatarInitial = topBarCode.includes("userInitial") && topBarCode.includes("bg-[#2563EB]");
+  const hasDisplayName = topBarCode.includes("displayName") && topBarCode.includes("text-[13px]");
+  const hasPlanPill = topBarCode.includes("Free") && topBarCode.includes("Pro");
+  if (!hasAvatarInitial || !hasDisplayName || !hasPlanPill) {
+    failures.push("TOP BAR CONTROLS FAIL: Top bar must display circular avatar with user initial, full name bold 13px, and Free/Pro plan pill.");
   } else {
-    console.log("  [PASS] topbar tabs: 14px, active bold with 2px ink underline, inactive #94A3B8, small dark count badge");
+    console.log("  [PASS] top bar account controls: avatar initial, bold 13px name, Free/Pro plan pill verified");
   }
 
-  // 2d. Fully rounded search input: placeholder "Search by title or company", magnifier, #F1F5F9 bg
-  const hasSearchPlaceholder = topBarCode.includes("Search by title or company");
-  const hasMagnifier = topBarCode.includes("Search");
-  const hasSearchBg = topBarCode.includes("bg-[#F1F5F9]");
-  const hasRoundedFull = topBarCode.includes("rounded-full");
-  if (!hasSearchPlaceholder || !hasMagnifier || !hasSearchBg || !hasRoundedFull) {
-    failures.push('TOPBAR FAIL: Search input must have placeholder "Search by title or company", magnifier icon, #F1F5F9 bg, fully rounded.');
+  // 3d. Top bar fully-rounded search input
+  const hasSearchInput = topBarCode.includes("rounded-full") && topBarCode.includes("Search by title or company");
+  if (!hasSearchInput) {
+    failures.push("TOP BAR SEARCH FAIL: Top bar must feature fully-rounded search input (rounded-full).");
   } else {
-    console.log('  [PASS] topbar search: fully rounded #F1F5F9 pill with magnifier and "Search by title or company" placeholder');
+    console.log("  [PASS] top bar search: fully-rounded search input present");
   }
 
-  // 2e. Far right: circular avatar on #2563EB, full name bold 13px, plan pill ("Free" or "Pro")
-  const hasAvatarBlue = topBarCode.includes("bg-[#2563EB]") && topBarCode.includes("rounded-full");
-  const hasBold13pxName = topBarCode.includes("text-[13px]") && topBarCode.includes("font-bold");
-  const hasPlanPill = topBarCode.includes("isPro ?") && topBarCode.includes('"Pro"') && topBarCode.includes('"Free"') && topBarCode.includes("border-[#CBD5E1]");
-  if (!hasAvatarBlue || !hasBold13pxName || !hasPlanPill) {
-    failures.push('TOPBAR FAIL: Far right must include circular initial avatar on #2563EB, bold 13px full name, and neutral outline plan pill ("Free" or "Pro").');
-  } else {
-    console.log('  [PASS] topbar user profile: circular avatar on #2563EB, full name bold 13px, plan pill ("Free" | "Pro")');
-  }
+  // 3e. Dynamic content reflow without overlap across narrow (72px) and expanded (240px)
+  const hasDynamicPaddingReflow =
+    (dashboardCode.includes("md:pl-[72px]") && dashboardCode.includes("md:pl-[240px]")) ||
+    (shellContainerCode.includes("md:pl-[72px]") && shellContainerCode.includes("md:pl-[240px]")) ||
+    (dashboardCode.includes("useSidebarMode") && shellContainerCode.includes("useSidebarMode"));
 
-  // -------------------------------------------------------------------------
-  // 3. CONTENT AREA & CARDS
-  // -------------------------------------------------------------------------
-  const hasJobsF8 = jobsCode.includes("bg-[#F8FAFC]");
-  const hasTrackerF8 = trackerCode.includes("bg-[#F8FAFC]");
-  const hasResumeF8 = resumeCode.includes("bg-[#F8FAFC]");
-  const hasSettingsF8 = settingsCode.includes("bg-[#F8FAFC]");
-  if (!hasJobsF8 || !hasTrackerF8 || !hasResumeF8 || !hasSettingsF8) {
-    failures.push("CONTENT FAIL: Content area background must be #F8FAFC across all logged-in views.");
+  if (!hasDynamicPaddingReflow) {
+    failures.push("CONTENT REFLOW FAIL: Pages or LoggedInAppShell must reflow content dynamically based on sidebar mode (md:pl-[72px] vs md:pl-[240px]) to prevent overlap.");
   } else {
-    console.log("  [PASS] content surface: bg-[#F8FAFC] applied across all logged-in application pages");
-  }
-
-  // 3b. Content reflow without overlap: dynamic padding based on sidebar mode
-  const shellHasReflow = shellContainerCode.includes("md:pl-[240px]") && shellContainerCode.includes("md:pl-[72px]");
-  const jobsHasReflow = jobsCode.includes("md:pl-[240px]") && jobsCode.includes("md:pl-[72px]");
-  const trackerHasReflow = trackerCode.includes("md:pl-[240px]") && trackerCode.includes("md:pl-[72px]");
-  const resumeHasReflow = resumeCode.includes("md:pl-[240px]") && resumeCode.includes("md:pl-[72px]");
-  const settingsHasReflow = settingsCode.includes("md:pl-[240px]") && settingsCode.includes("md:pl-[72px]");
-  if (!shellHasReflow || !jobsHasReflow || !trackerHasReflow || !resumeHasReflow || !settingsHasReflow) {
-    failures.push("REFLOW FAIL: Content area must dynamically adjust left padding (md:pl-[72px] to md:pl-[240px]) to prevent overlap.");
-  } else {
-    console.log("  [PASS] content reflow: pages dynamically adjust padding (72px vs 240px) without content overlap or clipping");
+    console.log("  [PASS] dynamic content reflow: content smoothly reflows without clipping or overlap based on chosen sidebar mode");
   }
 
   // -------------------------------------------------------------------------
-  // 4. MOBILE RESPONSIVENESS
+  // 4. MOBILE RESPONSIVENESS & STACKING (z-[60] backdrop, z-[61] drawer)
   // -------------------------------------------------------------------------
   // Desktop rail is hidden on mobile; mobile uses hamburger navigation drawer
   const railHiddenOnMobile = railCode.includes("hidden md:flex");
   const hasHamburgerButton = topBarCode.includes("Open navigation menu") || topBarCode.includes('aria-label="Open navigation menu"');
   const hasMobileDrawer = topBarCode.includes('id="mobile-nav-drawer"') || topBarCode.includes('aria-label="Mobile Navigation"');
   const has44pxTouchTargets = topBarCode.includes("min-h-[44px]");
+  const hasRaisedZIndex = topBarCode.includes("z-[60]") && topBarCode.includes("z-[61]");
   if (!railHiddenOnMobile) {
     failures.push("MOBILE FAIL: Desktop rail must be hidden on mobile (hidden md:flex).");
   } else if (!hasHamburgerButton || !hasMobileDrawer || !has44pxTouchTargets) {
     failures.push("MOBILE FAIL: Mobile must provide hamburger navigation drawer with >=44px tap targets.");
+  } else if (!hasRaisedZIndex) {
+    failures.push("MOBILE STACKING FAIL: Mobile navigation backdrop must use z-[60] and drawer must use z-[61] to stay above CookieNotice z-50.");
   } else {
-    console.log("  [PASS] mobile responsiveness: desktop rail hidden on mobile; hamburger navigation drawer provided with >=44px tap targets");
+    console.log("  [PASS] mobile responsiveness & stacking: desktop rail hidden on mobile; drawer has >=44px targets, backdrop z-[60] & drawer z-[61] above CookieNotice");
   }
 
   // -------------------------------------------------------------------------

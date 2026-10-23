@@ -217,29 +217,29 @@ export default function AppTopBar({
       {/* =================================================================== */}
       {/* MOBILE FULL-HEIGHT DRAWER (0.3s cubic-bezier slide-in from left)    */}
       {/* =================================================================== */}
-      {/* Backdrop */}
+      {/* Backdrop: raised to z-[60] above CookieNotice z-50 */}
       <div
         role="presentation"
         onClick={() => {
           setDrawerOpen(false);
           menuButtonRef.current?.focus();
         }}
-        className={`fixed inset-0 bg-[#0F172A]/60 z-50 transition-opacity duration-300 md:hidden ${
+        className={`fixed inset-0 bg-[#0F172A]/60 z-[60] transition-opacity duration-300 md:hidden ${
           drawerOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
         }`}
       />
 
-      {/* Drawer */}
+      {/* Drawer: raised to z-[61] above backdrop z-[60] and CookieNotice z-50; scrollable on short screens */}
       <div
         id="mobile-nav-drawer"
         role="dialog"
         aria-label="Mobile Navigation"
         aria-modal="true"
-        className={`fixed inset-y-0 left-0 z-50 w-full max-w-[280px] bg-white h-full shadow-2xl flex flex-col justify-between p-5 transition-transform duration-300 ease-[cubic-bezier(0.2,0,0,1)] md:hidden ${
+        className={`fixed inset-y-0 left-0 z-[61] w-full max-w-[280px] bg-white h-full shadow-2xl flex flex-col justify-between p-5 transition-transform duration-300 ease-[cubic-bezier(0.2,0,0,1)] md:hidden overflow-y-auto overscroll-contain ${
           drawerOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className="space-y-4">
+        <div className="space-y-4 min-h-0">
           {/* Header: Brand Logo + Close */}
           <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
             <Link
@@ -305,8 +305,8 @@ export default function AppTopBar({
           </nav>
         </div>
 
-        {/* Drawer Footer: User Profile & Sign Out */}
-        <div className="pt-3 border-t border-[#E2E8F0] space-y-3">
+        {/* Drawer Footer: User Profile & Sign Out (shrink-0 ensures always fully reachable) */}
+        <div className="pt-3 border-t border-[#E2E8F0] space-y-3 shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-full bg-[#2563EB] text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs">
               {userInitial}
