@@ -97,14 +97,6 @@ export interface AiServiceDeps {
   callGroq?: (payload: any) => Promise<any>;
 }
 
-export function _setAiTestMockDeps(mockDeps: AiServiceDeps | null) {
-  (globalThis as any).__CAREERMONKE_AI_TEST_MOCKS__ = mockDeps;
-}
-
-export function _getAiTestMockDeps(): AiServiceDeps | null {
-  return (globalThis as any).__CAREERMONKE_AI_TEST_MOCKS__ || null;
-}
-
 export interface AiCoreResponse {
   statusCode: number;
   body: any;
@@ -119,13 +111,14 @@ export async function executeAiCore(
   clientIp: string,
   authHeader: string | null | undefined,
   body: any,
-  deps: AiServiceDeps = {}
+  deps: AiServiceDeps = {},
+  ipRateLimitPrefix: string = "ai:ip:"
 ): Promise<AiCoreResponse> {
-  const activeDeps: AiServiceDeps = { ...(_getAiTestMockDeps() || {}), ...deps };
+  const activeDeps: AiServiceDeps = deps;
   try {
     // 0. Per-IP Rate Limiting (shared Supabase store, memory fallback)
     const ipLimit = await checkSharedRateLimit(
-      `ai:ip:${clientIp}`,
+      `${ipRateLimitPrefix}${clientIp}`,
       AI_RATE_LIMIT.ipMaxRequests,
       AI_RATE_LIMIT.ipWindowMs / 1000,
       () =>
@@ -427,7 +420,7 @@ export async function handleAiRequest(req: Request, deps: AiServiceDeps = {}): P
   const clientIp = getClientIpFromRequest(req);
   const authHeader = req.headers.get("authorization") || req.headers.get("Authorization");
   const body = await req.json().catch(() => ({}));
-  const res = await executeAiCore(clientIp, authHeader, body, deps);
+  const res = await executeAiCore(clientIp, authHeader, body, deps, "ai:ip:");
   return NextResponse.json(res.body, {
     status: res.statusCode,
     headers: res.headers,
@@ -470,7 +463,7 @@ export async function handleNetlifyAiRequest(
     };
   }
 
-  const res = await executeAiCore(clientIp, authHeader, body, deps);
+  const res = await executeAiCore(clientIp, authHeader, body, deps, "ip:");
   return {
     statusCode: res.statusCode,
     headers: { ...baseHeaders, ...(res.headers || {}) },

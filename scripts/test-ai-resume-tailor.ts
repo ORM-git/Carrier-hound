@@ -67,7 +67,6 @@ import { CandidateProfile } from "../src/lib/resume/types";
 import {
   handleAiRequest,
   handleNetlifyAiRequest,
-  _setAiTestMockDeps,
   _resetAiRateLimitStore,
 } from "../src/lib/ai/serviceHandler";
 import {
@@ -987,8 +986,8 @@ async function runAllTests() {
     "Netlify handler strictly ignores platform context argument (cannot override auth or entitlements)"
   );
 
-  // 7D. Production Wrapper Entrypoint Verification (apiAiPost & netlifyAiHandler)
-  console.log("\n--- 7D. PRODUCTION WRAPPER ENTRYPOINTS WITH MODULE BOUNDARY MOCKS ---");
+  // 7D. Internal Factory Core Verification (handleAiRequest & handleNetlifyAiRequest with explicit deps)
+  console.log("\n--- 7D. INTERNAL FACTORY CORE VERIFICATION WITH INJECTABLE DEPS ---");
 
   const validProductionAuthToken = "Bearer prod_test_token_123";
   const validUserPayload = { id: "user_prod_test", email: "pro@example.com" };
@@ -1027,28 +1026,18 @@ async function runAllTests() {
     },
   });
 
-  // 1. Quota Exhaustion (429 status, Retry-After: 86400, zero provider calls)
-  // 1A. Next.js wrapper
+  // 1. Quota Exhaustion via Factory (429 status, Retry-After: 86400, zero provider calls)
+  // 1A. Next.js factory
   _resetAiRateLimitStore();
   let providerCallsNextQuota = 0;
-  _setAiTestMockDeps({
-    getSupabaseAdmin: setupMockSupabase({
-      count: 30,
-      total_tokens: 5000,
-    }),
-    getServerEntitlement: async () => ({
-      isPro: true,
-      tier: "pro",
-      status: "active",
-      expiresAt: null,
-      cachedAt: 0,
-      cancelAtPeriodEnd: false,
-    }),
+  const nextQuotaFactoryDeps = {
+    getSupabaseAdmin: setupMockSupabase({ count: 30, total_tokens: 5000 }),
+    getServerEntitlement: async () => ({ isPro: true, tier: "pro" as const, status: "active" as const, expiresAt: null, cachedAt: 0, cancelAtPeriodEnd: false }),
     callGroq: async () => {
       providerCallsNextQuota++;
       return { choices: [{ message: { content: "{}" } }] };
     },
-  });
+  };
 
   const nextQuotaReq = new Request("http://localhost:3000/api/ai", {
     method: "POST",
@@ -1062,38 +1051,28 @@ async function runAllTests() {
       params: { candidate: testCandidate, job: testJob },
     }),
   });
-  const nextQuotaRes = await apiAiPost(nextQuotaReq);
-  assert(nextQuotaRes.status === 429, "Next wrapper: Quota exhaustion returns established 429 status");
-  assert(nextQuotaRes.headers.get("retry-after") === "86400", "Next wrapper: Quota exhaustion sets Retry-After: 86400 header");
+  const nextQuotaRes = await handleAiRequest(nextQuotaReq, nextQuotaFactoryDeps);
+  assert(nextQuotaRes.status === 429, "Next factory: Quota exhaustion returns established 429 status");
+  assert(nextQuotaRes.headers.get("retry-after") === "86400", "Next factory: Quota exhaustion sets Retry-After: 86400 header");
   const nextQuotaBody = await nextQuotaRes.json();
   assert(
     nextQuotaBody.error.includes("Daily AI usage quota exceeded for operation 'resume_tailor' (30/30)"),
-    "Next wrapper: Quota exhaustion returns established error message"
+    "Next factory: Quota exhaustion returns established error message"
   );
-  assert(nextQuotaBody.currentCount === 30 && nextQuotaBody.limit === 30, "Next wrapper: Quota exhaustion returns currentCount and limit");
-  assert(providerCallsNextQuota === 0, "Next wrapper: Quota exhaustion results in zero provider calls");
+  assert(nextQuotaBody.currentCount === 30 && nextQuotaBody.limit === 30, "Next factory: Quota exhaustion returns currentCount and limit");
+  assert(providerCallsNextQuota === 0, "Next factory: Quota exhaustion results in zero provider calls");
 
-  // 1B. Netlify wrapper
+  // 1B. Netlify factory
   _resetAiRateLimitStore();
   let providerCallsNetlifyQuota = 0;
-  _setAiTestMockDeps({
-    getSupabaseAdmin: setupMockSupabase({
-      count: 30,
-      total_tokens: 5000,
-    }),
-    getServerEntitlement: async () => ({
-      isPro: true,
-      tier: "pro",
-      status: "active",
-      expiresAt: null,
-      cachedAt: 0,
-      cancelAtPeriodEnd: false,
-    }),
+  const netlifyQuotaFactoryDeps = {
+    getSupabaseAdmin: setupMockSupabase({ count: 30, total_tokens: 5000 }),
+    getServerEntitlement: async () => ({ isPro: true, tier: "pro" as const, status: "active" as const, expiresAt: null, cachedAt: 0, cancelAtPeriodEnd: false }),
     callGroq: async () => {
       providerCallsNetlifyQuota++;
       return { choices: [{ message: { content: "{}" } }] };
     },
-  });
+  };
 
   const netlifyQuotaEvent = {
     httpMethod: "POST",
@@ -1106,18 +1085,18 @@ async function runAllTests() {
       params: { candidate: testCandidate, job: testJob },
     }),
   };
-  const netlifyQuotaRes = await netlifyAiHandler(netlifyQuotaEvent);
-  assert(netlifyQuotaRes.statusCode === 429, "Netlify wrapper: Quota exhaustion returns established 429 status");
-  assert(netlifyQuotaRes.headers["Retry-After"] === "86400", "Netlify wrapper: Quota exhaustion sets Retry-After: 86400 header");
+  const netlifyQuotaRes = await handleNetlifyAiRequest(netlifyQuotaEvent, netlifyQuotaFactoryDeps);
+  assert(netlifyQuotaRes.statusCode === 429, "Netlify factory: Quota exhaustion returns established 429 status");
+  assert(netlifyQuotaRes.headers["Retry-After"] === "86400", "Netlify factory: Quota exhaustion sets Retry-After: 86400 header");
   const netlifyQuotaBody = JSON.parse(netlifyQuotaRes.body);
   assert(
     netlifyQuotaBody.error.includes("Daily AI usage quota exceeded for operation 'resume_tailor' (30/30)"),
-    "Netlify wrapper: Quota exhaustion returns established error message"
+    "Netlify factory: Quota exhaustion returns established error message"
   );
-  assert(netlifyQuotaBody.currentCount === 30 && netlifyQuotaBody.limit === 30, "Netlify wrapper: Quota exhaustion returns currentCount and limit");
-  assert(providerCallsNetlifyQuota === 0, "Netlify wrapper: Quota exhaustion results in zero provider calls");
+  assert(netlifyQuotaBody.currentCount === 30 && netlifyQuotaBody.limit === 30, "Netlify factory: Quota exhaustion returns currentCount and limit");
+  assert(providerCallsNetlifyQuota === 0, "Netlify factory: Quota exhaustion results in zero provider calls");
 
-  // 2. Oversized Candidate Input (400 rejection status and body, zero provider calls, zero quota consumption)
+  // 2. Oversized Candidate Input via Factory (400 rejection status and body, zero provider calls, zero quota consumption)
   const oversizedCandidate: CandidateProfile = {
     ...testCandidate,
     experience: Array.from({ length: 40 }).map((_, i) => ({
@@ -1134,28 +1113,18 @@ async function runAllTests() {
     })),
   };
 
-  // 2A. Next.js wrapper
+  // 2A. Next.js factory
   _resetAiRateLimitStore();
   let quotaConsumedNextOversized = 0;
   let providerCallsNextOversized = 0;
-  _setAiTestMockDeps({
-    getSupabaseAdmin: setupMockSupabase({
-      count: 0,
-      total_tokens: 0,
-    }, () => { quotaConsumedNextOversized++; }),
-    getServerEntitlement: async () => ({
-      isPro: true,
-      tier: "pro",
-      status: "active",
-      expiresAt: null,
-      cachedAt: 0,
-      cancelAtPeriodEnd: false,
-    }),
+  const nextOversizedFactoryDeps = {
+    getSupabaseAdmin: setupMockSupabase({ count: 0, total_tokens: 0 }, () => { quotaConsumedNextOversized++; }),
+    getServerEntitlement: async () => ({ isPro: true, tier: "pro" as const, status: "active" as const, expiresAt: null, cachedAt: 0, cancelAtPeriodEnd: false }),
     callGroq: async () => {
       providerCallsNextOversized++;
       return { choices: [{ message: { content: "{}" } }] };
     },
-  });
+  };
 
   const nextOversizedReq = new Request("http://localhost:3000/api/ai", {
     method: "POST",
@@ -1169,38 +1138,28 @@ async function runAllTests() {
       params: { candidate: oversizedCandidate, job: testJob },
     }),
   });
-  const nextOversizedRes = await apiAiPost(nextOversizedReq);
-  assert(nextOversizedRes.status === 400, "Next wrapper: Oversized input returns established 400 status");
+  const nextOversizedRes = await handleAiRequest(nextOversizedReq, nextOversizedFactoryDeps);
+  assert(nextOversizedRes.status === 400, "Next factory: Oversized input returns established 400 status");
   const nextOversizedBody = await nextOversizedRes.json();
   assert(
     nextOversizedBody.error.includes("Payload exceeds maximum allowed token limit for operation 'resume_tailor'"),
-    "Next wrapper: Oversized input returns established token limit error"
+    "Next factory: Oversized input returns established token limit error"
   );
-  assert(providerCallsNextOversized === 0, "Next wrapper: Oversized input results in zero provider calls");
-  assert(quotaConsumedNextOversized === 0, "Next wrapper: Oversized input results in zero quota consumption");
+  assert(providerCallsNextOversized === 0, "Next factory: Oversized input results in zero provider calls");
+  assert(quotaConsumedNextOversized === 0, "Next factory: Oversized input results in zero quota consumption");
 
-  // 2B. Netlify wrapper
+  // 2B. Netlify factory
   _resetAiRateLimitStore();
   let quotaConsumedNetlifyOversized = 0;
   let providerCallsNetlifyOversized = 0;
-  _setAiTestMockDeps({
-    getSupabaseAdmin: setupMockSupabase({
-      count: 0,
-      total_tokens: 0,
-    }, () => { quotaConsumedNetlifyOversized++; }),
-    getServerEntitlement: async () => ({
-      isPro: true,
-      tier: "pro",
-      status: "active",
-      expiresAt: null,
-      cachedAt: 0,
-      cancelAtPeriodEnd: false,
-    }),
+  const netlifyOversizedFactoryDeps = {
+    getSupabaseAdmin: setupMockSupabase({ count: 0, total_tokens: 0 }, () => { quotaConsumedNetlifyOversized++; }),
+    getServerEntitlement: async () => ({ isPro: true, tier: "pro" as const, status: "active" as const, expiresAt: null, cachedAt: 0, cancelAtPeriodEnd: false }),
     callGroq: async () => {
       providerCallsNetlifyOversized++;
       return { choices: [{ message: { content: "{}" } }] };
     },
-  });
+  };
 
   const netlifyOversizedEvent = {
     httpMethod: "POST",
@@ -1213,18 +1172,17 @@ async function runAllTests() {
       params: { candidate: oversizedCandidate, job: testJob },
     }),
   };
-  const netlifyOversizedRes = await netlifyAiHandler(netlifyOversizedEvent);
-  assert(netlifyOversizedRes.statusCode === 400, "Netlify wrapper: Oversized input returns established 400 status");
+  const netlifyOversizedRes = await handleNetlifyAiRequest(netlifyOversizedEvent, netlifyOversizedFactoryDeps);
+  assert(netlifyOversizedRes.statusCode === 400, "Netlify factory: Oversized input returns established 400 status");
   const netlifyOversizedBody = JSON.parse(netlifyOversizedRes.body);
   assert(
     netlifyOversizedBody.error.includes("Payload exceeds maximum allowed token limit for operation 'resume_tailor'"),
-    "Netlify wrapper: Oversized input returns established token limit error"
+    "Netlify factory: Oversized input returns established token limit error"
   );
-  assert(providerCallsNetlifyOversized === 0, "Netlify wrapper: Oversized input results in zero provider calls");
-  assert(quotaConsumedNetlifyOversized === 0, "Netlify wrapper: Oversized input results in zero quota consumption");
+  assert(providerCallsNetlifyOversized === 0, "Netlify factory: Oversized input results in zero provider calls");
+  assert(quotaConsumedNetlifyOversized === 0, "Netlify factory: Oversized input results in zero quota consumption");
 
-  // 3. Output Validation Failure (502 status, quota refunded exactly once)
-  // Fabricated output introduces unevidenced skill 'PostgreSQL' when candidate only has 'SQL'
+  // 3. Output Validation Failure via Factory (502 status, quota refunded exactly once)
   const hallucinatedOutputJson = JSON.stringify({
     tailoredSummary: "Staff Frontend Engineer offering verified expertise in PostgreSQL and React.",
     highlightedSkills: ["React", "PostgreSQL"],
@@ -1241,26 +1199,14 @@ async function runAllTests() {
     },
   });
 
-  // 3A. Next.js wrapper
+  // 3A. Next.js factory
   _resetAiRateLimitStore();
   let refundCountNext = 0;
-  _setAiTestMockDeps({
-    getSupabaseAdmin: setupMockSupabase(
-      { count: 5, total_tokens: 500 },
-      () => { refundCountNext++; }
-    ),
-    getServerEntitlement: async () => ({
-      isPro: true,
-      tier: "pro",
-      status: "active",
-      expiresAt: null,
-      cachedAt: 0,
-      cancelAtPeriodEnd: false,
-    }),
-    callGroq: async () => ({
-      choices: [{ message: { content: hallucinatedOutputJson } }],
-    }),
-  });
+  const nextValFailFactoryDeps = {
+    getSupabaseAdmin: setupMockSupabase({ count: 5, total_tokens: 500 }, () => { refundCountNext++; }),
+    getServerEntitlement: async () => ({ isPro: true, tier: "pro" as const, status: "active" as const, expiresAt: null, cachedAt: 0, cancelAtPeriodEnd: false }),
+    callGroq: async () => ({ choices: [{ message: { content: hallucinatedOutputJson } }] }),
+  };
 
   const nextValFailReq = new Request("http://localhost:3000/api/ai", {
     method: "POST",
@@ -1274,35 +1220,23 @@ async function runAllTests() {
       params: { candidate: testCandidate, job: testJob },
     }),
   });
-  const nextValFailRes = await apiAiPost(nextValFailReq);
-  assert(nextValFailRes.status === 502, "Next wrapper: Output validation failure returns 502 status");
+  const nextValFailRes = await handleAiRequest(nextValFailReq, nextValFailFactoryDeps);
+  assert(nextValFailRes.status === 502, "Next factory: Output validation failure returns 502 status");
   const nextValFailBody = await nextValFailRes.json();
   assert(
     typeof nextValFailBody.error === "string" && (nextValFailBody.error.includes("unevidenced skill") || nextValFailBody.error.includes("not a verified skill")),
-    "Next wrapper: Output validation failure returns unevidenced skill error"
+    "Next factory: Output validation failure returns unevidenced skill error"
   );
-  assert(refundCountNext === 1, "Next wrapper: Quota is refunded exactly once on output validation failure");
+  assert(refundCountNext === 1, "Next factory: Quota is refunded exactly once on output validation failure");
 
-  // 3B. Netlify wrapper
+  // 3B. Netlify factory
   _resetAiRateLimitStore();
   let refundCountNetlify = 0;
-  _setAiTestMockDeps({
-    getSupabaseAdmin: setupMockSupabase(
-      { count: 5, total_tokens: 500 },
-      () => { refundCountNetlify++; }
-    ),
-    getServerEntitlement: async () => ({
-      isPro: true,
-      tier: "pro",
-      status: "active",
-      expiresAt: null,
-      cachedAt: 0,
-      cancelAtPeriodEnd: false,
-    }),
-    callGroq: async () => ({
-      choices: [{ message: { content: hallucinatedOutputJson } }],
-    }),
-  });
+  const netlifyValFailFactoryDeps = {
+    getSupabaseAdmin: setupMockSupabase({ count: 5, total_tokens: 500 }, () => { refundCountNetlify++; }),
+    getServerEntitlement: async () => ({ isPro: true, tier: "pro" as const, status: "active" as const, expiresAt: null, cachedAt: 0, cancelAtPeriodEnd: false }),
+    callGroq: async () => ({ choices: [{ message: { content: hallucinatedOutputJson } }] }),
+  };
 
   const netlifyValFailEvent = {
     httpMethod: "POST",
@@ -1315,18 +1249,325 @@ async function runAllTests() {
       params: { candidate: testCandidate, job: testJob },
     }),
   };
-  const netlifyValFailRes = await netlifyAiHandler(netlifyValFailEvent);
-  assert(netlifyValFailRes.statusCode === 502, "Netlify wrapper: Output validation failure returns 502 status");
+  const netlifyValFailRes = await handleNetlifyAiRequest(netlifyValFailEvent, netlifyValFailFactoryDeps);
+  assert(netlifyValFailRes.statusCode === 502, "Netlify factory: Output validation failure returns 502 status");
   const netlifyValFailBody = JSON.parse(netlifyValFailRes.body);
   assert(
     typeof netlifyValFailBody.error === "string" && (netlifyValFailBody.error.includes("unevidenced skill") || netlifyValFailBody.error.includes("not a verified skill")),
-    "Netlify wrapper: Output validation failure returns unevidenced skill error"
+    "Netlify factory: Output validation failure returns unevidenced skill error"
   );
-  assert(refundCountNetlify === 1, "Netlify wrapper: Quota is refunded exactly once on output validation failure");
+  assert(refundCountNetlify === 1, "Netlify factory: Quota is refunded exactly once on output validation failure");
 
-  // Clean teardown of test mocks and stores
-  _setAiTestMockDeps(null);
-  _resetAiRateLimitStore();
+  // -------------------------------------------------------------
+  // 7E. Actual Production Wrapper Entrypoint Verification
+  // Tests apiAiPost(req) and netlifyAiHandler(event) directly with zero test hooks or injected deps
+  // Uses in-memory transport fixture installed on globalThis.fetch before calls, denying all unmatched network
+  // -------------------------------------------------------------
+  console.log("\n--- 7E. ACTUAL PRODUCTION WRAPPER ENTRYPOINTS WITH IN-MEMORY TRANSPORT FIXTURE ---");
+
+  const origFetchGlobal = globalThis.fetch;
+  const origEnvUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const origEnvKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const origEnvGroq = process.env.GROQ_API_KEY;
+
+  // Set synthetic test configuration (never real secrets)
+  process.env.NEXT_PUBLIC_SUPABASE_URL = "https://szakevhxhwpeskidvtfs.supabase.co";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "synthetic_test_service_key_offline_only";
+  process.env.GROQ_API_KEY = "synthetic_test_groq_key_offline_only";
+
+  type MockTransportRoute = {
+    quotaRow: { count: number; total_tokens: number } | null;
+    groqResponseContent: string;
+    onProviderCall?: () => void;
+    onQuotaRefund?: () => void;
+  };
+
+  let activeTransportState: MockTransportRoute = {
+    quotaRow: { count: 30, total_tokens: 5000 },
+    groqResponseContent: "{}",
+  };
+
+  globalThis.fetch = async function mockOfflineTransportFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    const method = (init?.method || "GET").toUpperCase();
+
+    // 1. Auth endpoint: /auth/v1/user
+    if (url.includes("/auth/v1/user")) {
+      const authHeader = (init?.headers as any)?.Authorization || (init?.headers as any)?.authorization;
+      if (authHeader === validProductionAuthToken) {
+        return new Response(JSON.stringify({
+          id: "user_prod_test",
+          aud: "authenticated",
+          role: "authenticated",
+          email: "pro@example.com",
+          email_confirmed_at: "2024-01-01T00:00:00Z",
+          app_metadata: { provider: "email", providers: ["email"] },
+          user_metadata: {},
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response(JSON.stringify({ message: "Invalid session token" }), { status: 401, headers: { "Content-Type": "application/json" } });
+    }
+
+    // 2. Subscriptions endpoint: /rest/v1/subscriptions
+    if (url.includes("/rest/v1/subscriptions")) {
+      return new Response(JSON.stringify({
+        id: "sub_mock_active",
+        user_id: "user_prod_test",
+        status: "active",
+        plan_id: "price_pro_monthly",
+        current_period_end: new Date(Date.now() + 864000000).toISOString(),
+        created_at: new Date().toISOString(),
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+
+    // 3. Blocked users endpoint: /rest/v1/blocked_users
+    if (url.includes("/rest/v1/blocked_users")) {
+      return new Response(JSON.stringify(null), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+
+    // 4. Rate limit RPC endpoint: /rest/v1/rpc/check_rate_limit
+    if (url.includes("/rest/v1/rpc/check_rate_limit")) {
+      return new Response(JSON.stringify({ allowed: true, retry_after: 0, current_count: 1 }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+
+    // 5. AI usage quotas endpoint: /rest/v1/ai_usage_quotas
+    if (url.includes("/rest/v1/ai_usage_quotas")) {
+      if (method === "GET") {
+        return new Response(JSON.stringify(activeTransportState.quotaRow), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (method === "PATCH") {
+        try {
+          const parsedBody = JSON.parse(String(init?.body || "{}"));
+          if (activeTransportState.quotaRow && typeof parsedBody.count === "number" && parsedBody.count < activeTransportState.quotaRow.count) {
+            activeTransportState.onQuotaRefund?.();
+          }
+        } catch {
+          // ignore parse error
+        }
+        return new Response(JSON.stringify({}), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (method === "POST") {
+        return new Response(JSON.stringify({}), { status: 201, headers: { "Content-Type": "application/json" } });
+      }
+    }
+
+    // 6. Upstream Groq chat completions endpoint
+    if (url.includes("api.groq.com/openai/v1/chat/completions")) {
+      activeTransportState.onProviderCall?.();
+      return new Response(JSON.stringify({
+        id: "chatcmpl-test",
+        object: "chat.completion",
+        created: 1700000000,
+        model: "openai/gpt-oss-120b",
+        choices: [
+          {
+            index: 0,
+            message: { role: "assistant", content: activeTransportState.groqResponseContent },
+            finish_reason: "stop",
+          },
+        ],
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+
+    // Strict containment: Deny all unmatched traffic; NEVER call original fetch or external network
+    const deniedHost = new URL(url).hostname;
+    const err: any = new Error(`[NETWORK DENIED] External fetch blocked to '${deniedHost}' in offline transport fixture`);
+    err.code = "ENETWORK_DENIED";
+    throw err;
+  };
+
+  try {
+    // 1. Quota Exhaustion on Actual Wrappers
+    // 1A. Next.js wrapper POST(req)
+    _resetAiRateLimitStore();
+    let wrapperProviderCallsNextQuota = 0;
+    activeTransportState = {
+      quotaRow: { count: 30, total_tokens: 5000 },
+      groqResponseContent: "{}",
+      onProviderCall: () => { wrapperProviderCallsNextQuota++; },
+    };
+
+    const nextQuotaWrapperReq = new Request("http://localhost:3000/api/ai", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: validProductionAuthToken,
+        "cf-connecting-ip": "192.168.1.20",
+      },
+      body: JSON.stringify({
+        operation: "resume_tailor",
+        params: { candidate: testCandidate, job: testJob },
+      }),
+    });
+    const nextQuotaWrapperRes = await apiAiPost(nextQuotaWrapperReq);
+    assert(nextQuotaWrapperRes.status === 429, "Next wrapper: Quota exhaustion returns established 429 status");
+    assert(nextQuotaWrapperRes.headers.get("retry-after") === "86400", "Next wrapper: Quota exhaustion sets Retry-After: 86400 header");
+    const nextQuotaWrapperBody = await nextQuotaWrapperRes.json();
+    assert(
+      nextQuotaWrapperBody.error.includes("Daily AI usage quota exceeded for operation 'resume_tailor' (30/30)"),
+      "Next wrapper: Quota exhaustion returns established error message"
+    );
+    assert(nextQuotaWrapperBody.currentCount === 30 && nextQuotaWrapperBody.limit === 30, "Next wrapper: Quota exhaustion returns currentCount and limit");
+    assert(wrapperProviderCallsNextQuota === 0, "Next wrapper: Quota exhaustion results in zero provider calls");
+
+    // 1B. Netlify wrapper handler(event)
+    _resetAiRateLimitStore();
+    let wrapperProviderCallsNetlifyQuota = 0;
+    activeTransportState = {
+      quotaRow: { count: 30, total_tokens: 5000 },
+      groqResponseContent: "{}",
+      onProviderCall: () => { wrapperProviderCallsNetlifyQuota++; },
+    };
+
+    const netlifyQuotaWrapperEvent = {
+      httpMethod: "POST",
+      headers: {
+        authorization: validProductionAuthToken,
+        "client-ip": "192.168.1.21",
+      },
+      body: JSON.stringify({
+        operation: "resume_tailor",
+        params: { candidate: testCandidate, job: testJob },
+      }),
+    };
+    const netlifyQuotaWrapperRes = await netlifyAiHandler(netlifyQuotaWrapperEvent);
+    assert(netlifyQuotaWrapperRes.statusCode === 429, "Netlify wrapper: Quota exhaustion returns established 429 status");
+    assert(netlifyQuotaWrapperRes.headers["Retry-After"] === "86400", "Netlify wrapper: Quota exhaustion sets Retry-After: 86400 header");
+    const netlifyQuotaWrapperBody = JSON.parse(netlifyQuotaWrapperRes.body);
+    assert(
+      netlifyQuotaWrapperBody.error.includes("Daily AI usage quota exceeded for operation 'resume_tailor' (30/30)"),
+      "Netlify wrapper: Quota exhaustion returns established error message"
+    );
+    assert(netlifyQuotaWrapperBody.currentCount === 30 && netlifyQuotaWrapperBody.limit === 30, "Netlify wrapper: Quota exhaustion returns currentCount and limit");
+    assert(wrapperProviderCallsNetlifyQuota === 0, "Netlify wrapper: Quota exhaustion results in zero provider calls");
+
+    // 2. Oversized Candidate Input on Actual Wrappers
+    // 2A. Next.js wrapper POST(req)
+    _resetAiRateLimitStore();
+    let wrapperProviderCallsNextOversized = 0;
+    activeTransportState = {
+      quotaRow: { count: 0, total_tokens: 0 },
+      groqResponseContent: "{}",
+      onProviderCall: () => { wrapperProviderCallsNextOversized++; },
+    };
+
+    const nextOversizedWrapperReq = new Request("http://localhost:3000/api/ai", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: validProductionAuthToken,
+        "cf-connecting-ip": "192.168.1.22",
+      },
+      body: JSON.stringify({
+        operation: "resume_tailor",
+        params: { candidate: oversizedCandidate, job: testJob },
+      }),
+    });
+    const nextOversizedWrapperRes = await apiAiPost(nextOversizedWrapperReq);
+    assert(nextOversizedWrapperRes.status === 400, "Next wrapper: Oversized input returns established 400 status");
+    const nextOversizedWrapperBody = await nextOversizedWrapperRes.json();
+    assert(
+      nextOversizedWrapperBody.error.includes("Payload exceeds maximum allowed token limit for operation 'resume_tailor'"),
+      "Next wrapper: Oversized input returns established token limit error"
+    );
+    assert(wrapperProviderCallsNextOversized === 0, "Next wrapper: Oversized input results in zero provider calls");
+
+    // 2B. Netlify wrapper handler(event)
+    _resetAiRateLimitStore();
+    let wrapperProviderCallsNetlifyOversized = 0;
+    activeTransportState = {
+      quotaRow: { count: 0, total_tokens: 0 },
+      groqResponseContent: "{}",
+      onProviderCall: () => { wrapperProviderCallsNetlifyOversized++; },
+    };
+
+    const netlifyOversizedWrapperEvent = {
+      httpMethod: "POST",
+      headers: {
+        authorization: validProductionAuthToken,
+        "client-ip": "192.168.1.23",
+      },
+      body: JSON.stringify({
+        operation: "resume_tailor",
+        params: { candidate: oversizedCandidate, job: testJob },
+      }),
+    };
+    const netlifyOversizedWrapperRes = await netlifyAiHandler(netlifyOversizedWrapperEvent);
+    assert(netlifyOversizedWrapperRes.statusCode === 400, "Netlify wrapper: Oversized input returns established 400 status");
+    const netlifyOversizedWrapperBody = JSON.parse(netlifyOversizedWrapperRes.body);
+    assert(
+      netlifyOversizedWrapperBody.error.includes("Payload exceeds maximum allowed token limit for operation 'resume_tailor'"),
+      "Netlify wrapper: Oversized input returns established token limit error"
+    );
+    assert(wrapperProviderCallsNetlifyOversized === 0, "Netlify wrapper: Oversized input results in zero provider calls");
+
+    // 3. Output Validation Failure on Actual Wrappers (502 status, quota refunded exactly once)
+    // 3A. Next.js wrapper POST(req)
+    _resetAiRateLimitStore();
+    let wrapperRefundCountNext = 0;
+    activeTransportState = {
+      quotaRow: { count: 5, total_tokens: 500 },
+      groqResponseContent: hallucinatedOutputJson,
+      onQuotaRefund: () => { wrapperRefundCountNext++; },
+    };
+
+    const nextValFailWrapperReq = new Request("http://localhost:3000/api/ai", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: validProductionAuthToken,
+        "cf-connecting-ip": "192.168.1.24",
+      },
+      body: JSON.stringify({
+        operation: "resume_tailor",
+        params: { candidate: testCandidate, job: testJob },
+      }),
+    });
+    const nextValFailWrapperRes = await apiAiPost(nextValFailWrapperReq);
+    assert(nextValFailWrapperRes.status === 502, "Next wrapper: Output validation failure returns 502 status");
+    const nextValFailWrapperBody = await nextValFailWrapperRes.json();
+    assert(
+      typeof nextValFailWrapperBody.error === "string" && (nextValFailWrapperBody.error.includes("unevidenced skill") || nextValFailWrapperBody.error.includes("not a verified skill")),
+      "Next wrapper: Output validation failure returns unevidenced skill error"
+    );
+    assert(wrapperRefundCountNext === 1, "Next wrapper: Quota is refunded exactly once on output validation failure");
+
+    // 3B. Netlify wrapper handler(event)
+    _resetAiRateLimitStore();
+    let wrapperRefundCountNetlify = 0;
+    activeTransportState = {
+      quotaRow: { count: 5, total_tokens: 500 },
+      groqResponseContent: hallucinatedOutputJson,
+      onQuotaRefund: () => { wrapperRefundCountNetlify++; },
+    };
+
+    const netlifyValFailWrapperEvent = {
+      httpMethod: "POST",
+      headers: {
+        authorization: validProductionAuthToken,
+        "client-ip": "192.168.1.25",
+      },
+      body: JSON.stringify({
+        operation: "resume_tailor",
+        params: { candidate: testCandidate, job: testJob },
+      }),
+    };
+    const netlifyValFailWrapperRes = await netlifyAiHandler(netlifyValFailWrapperEvent);
+    assert(netlifyValFailWrapperRes.statusCode === 502, "Netlify wrapper: Output validation failure returns 502 status");
+    const netlifyValFailWrapperBody = JSON.parse(netlifyValFailWrapperRes.body);
+    assert(
+      typeof netlifyValFailWrapperBody.error === "string" && (netlifyValFailWrapperBody.error.includes("unevidenced skill") || netlifyValFailWrapperBody.error.includes("not a verified skill")),
+      "Netlify wrapper: Output validation failure returns unevidenced skill error"
+    );
+    assert(wrapperRefundCountNetlify === 1, "Netlify wrapper: Quota is refunded exactly once on output validation failure");
+  } finally {
+    // Clean teardown: restore original fetch and environment variables
+    globalThis.fetch = origFetchGlobal;
+    process.env.NEXT_PUBLIC_SUPABASE_URL = origEnvUrl;
+    process.env.SUPABASE_SERVICE_ROLE_KEY = origEnvKey;
+    process.env.GROQ_API_KEY = origEnvGroq;
+    _resetAiRateLimitStore();
+  }
 
   // -------------------------------------------------------------
   // TEST 8: Export Integrity & Offline Containment
