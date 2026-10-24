@@ -33,6 +33,7 @@ let lastAuditWritePayload: any = null;
 let simulateAuthFailure = false;
 let simulateAuditLogDbFailure = false;
 let simulateAuditWriteFailure = false;
+let failingCountUserId: string | null = null;
 let lastRequestedAuthParams: any = null;
 
 // Intercept network boundary and deny unexpected external traffic
@@ -212,6 +213,15 @@ global.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
     if (method === "HEAD") {
       const url = new URL(urlStr);
       const userFilter = url.searchParams.get("user_id");
+
+      // Check simulated count query failure for specific user
+      if (failingCountUserId && userFilter && userFilter.includes(failingCountUserId)) {
+        return new Response(JSON.stringify({ message: "PGRST_MOCK_TIMEOUT: DB count query timeout" }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
       let count = 4;
       if (userFilter && userFilter.includes(HEAVY_USER_ID)) {
         count = 5000; // Heavy user fixture
@@ -547,6 +557,70 @@ async function runHandlerTests() {
   assert.equal(JSON.stringify(auditFailBody).includes("mock-service-role-key-secret-12345"), false, "No secrets leaked");
   simulateAuditLogDbFailure = false;
   recordPass("/api/admin/audit-log returns HTTP 500 instead of empty list on DB failure (Fix 3 verified)");
+
+  // ---------------------------------------------------------------------------
+  // 10. PARTIAL COUNT FAILURE RESILIENCE (FAILED COUNTS ARE EXPLICITLY NULL/UNAVAILABLE)
+  // ---------------------------------------------------------------------------
+  console.log("\n--- 10. PARTIAL COUNT FAILURE: EXPLICIT NULL/UNAVAILABLE STATE (FIX 1) ---");
+  const failedTargetUserId = "00000000-0000-0000-0000-000000000003";
+  failingCountUserId = failedTargetUserId;
+  pageViewsRowsDownloaded = 0;
+
+  const resPartialFail = await adminUsersGet(new Request("http://localhost:3000/api/admin/users?page=1&pageSize=25", { headers: adminHeaders }));
+  assert.equal(resPartialFail.status, 200, "Users route must return 200 even if individual user count query fails");
+  const partialFailData = await resPartialFail.json();
+  assert.equal(partialFailData.ok, true);
+  assert.equal(Array.isArray(partialFailData.users), true);
+
+  const failedUserItem = partialFailData.users.find((u: any) => u.id === failedTargetUserId);
+  assert.ok(failedUserItem, "Failed-count user is still retained in list and not omitted");
+  assert.equal(failedUserItem.totalViews, null, "Failed-count user has totalViews explicitly set to null (never 0)");
+
+  const successfulUserItem = partialFailData.users.find((u: any) => u.id !== failedTargetUserId);
+  assert.ok(successfulUserItem, "Successful user found on same page");
+  assert.equal(typeof successfulUserItem.totalViews, "number", "Successful user has numeric totalViews count");
+  assert.equal(successfulUserItem.totalViews, 4, "Successful user has accurate count from head-only query");
+
+  assert.equal(pageViewsRowsDownloaded, 0, "Zero row records downloaded across network during partial failure");
+  assert.equal(
+    JSON.stringify(partialFailData).includes("PGRST_MOCK_TIMEOUT"),
+    false,
+    "No raw backend error or internal database error message exposed in client response"
+  );
+  failingCountUserId = null;
+  recordPass("Proved partial count failure sets explicit null without dropping user, exposing error, or downloading rows");
+
+  // ---------------------------------------------------------------------------
+  // 11. STATE DIFFERENTIATION: POPULATED, EMPTY, AND ERROR STATES (FIX 3)
+  // ---------------------------------------------------------------------------
+  console.log("\n--- 11. STATE DIFFERENTIATION: POPULATED, EMPTY, AND ERROR STATES (FIX 3) ---");
+  // A. Populated State
+  const resPopulated = await adminUsersGet(new Request("http://localhost:3000/api/admin/users?page=1&pageSize=10", { headers: adminHeaders }));
+  assert.equal(resPopulated.status, 200);
+  const popData = await resPopulated.json();
+  assert.equal(popData.ok, true);
+  assert.equal(popData.users.length, 10);
+  assert.equal(popData.pagination.total, 120);
+  recordPass("Populated state: Returns HTTP 200 with 10 users and accurate total metadata");
+
+  // B. Genuine Empty Search State
+  const resEmptySearch = await adminUsersGet(new Request("http://localhost:3000/api/admin/users?q=nonexistent_query_xyz_12345", { headers: adminHeaders }));
+  assert.equal(resEmptySearch.status, 200);
+  const emptySearchData = await resEmptySearch.json();
+  assert.equal(emptySearchData.ok, true);
+  assert.equal(emptySearchData.users.length, 0, "Empty search returns empty user list");
+  assert.ok(emptySearchData.searchNotice, "Search notice present for empty search");
+  recordPass("Empty search state: Returns HTTP 200 with empty list and search disclosure");
+
+  // C. Hard Backend Error State
+  simulateAuthFailure = true;
+  const resHardError = await adminUsersGet(new Request("http://localhost:3000/api/admin/users", { headers: adminHeaders }));
+  assert.equal(resHardError.status, 500);
+  const hardErrorData = await resHardError.json();
+  assert.equal(hardErrorData.ok, false);
+  assert.equal(hardErrorData.error, "Failed to retrieve users list");
+  simulateAuthFailure = false;
+  recordPass("Hard error state: Returns HTTP 500 and distinct non-empty error payload");
 
   console.log(`\n================================================================================`);
   console.log(`🎉 ALL ${passes} HANDLER VERIFICATION CHECKS PASSED (PASS-LOCAL)`);

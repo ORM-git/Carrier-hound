@@ -272,51 +272,53 @@ export default function AdminUsersPage() {
         </form>
 
         {/* Filter Pills */}
-        <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm self-start">
-          <button
-            onClick={() => {
-              setFilter("all");
-              setPage(1);
-            }}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
-              filter === "all" ? "bg-slate-900 text-white" : "text-slate-600 hover:text-slate-900"
-            }`}
-          >
-            All ({users.length})
-          </button>
-          <button
-            onClick={() => {
-              setFilter("pro");
-              setPage(1);
-            }}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
-              filter === "pro" ? "bg-slate-900 text-white" : "text-slate-600 hover:text-slate-900"
-            }`}
-          >
-            Pro ({users.filter((u) => u.isPro).length})
-          </button>
-          <button
-            onClick={() => {
-              setFilter("free");
-              setPage(1);
-            }}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
-              filter === "free" ? "bg-slate-900 text-white" : "text-slate-600 hover:text-slate-900"
-            }`}
-          >
-            Free ({users.filter((u) => !u.isPro).length})
-          </button>
-          <button
-            onClick={() => {
-              setFilter("blocked");
-              setPage(1);
-            }}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
-              filter === "blocked" ? "bg-slate-900 text-white" : "text-slate-600 hover:text-slate-900"
-            }`}
-          >
-            Blocked ({users.filter((u) => u.isBlocked).length})
-          </button>
+        <div className="flex items-center overflow-x-auto max-w-full pb-1 sm:pb-0 scrollbar-none">
+          <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm shrink-0">
+            <button
+              onClick={() => {
+                setFilter("all");
+                setPage(1);
+              }}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                filter === "all" ? "bg-slate-900 text-white" : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              All ({loading ? "..." : users.length})
+            </button>
+            <button
+              onClick={() => {
+                setFilter("pro");
+                setPage(1);
+              }}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                filter === "pro" ? "bg-slate-900 text-white" : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              Pro ({loading ? "..." : users.filter((u) => u.isPro).length})
+            </button>
+            <button
+              onClick={() => {
+                setFilter("free");
+                setPage(1);
+              }}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                filter === "free" ? "bg-slate-900 text-white" : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              Free ({loading ? "..." : users.filter((u) => !u.isPro).length})
+            </button>
+            <button
+              onClick={() => {
+                setFilter("blocked");
+                setPage(1);
+              }}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                filter === "blocked" ? "bg-slate-900 text-white" : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              Blocked ({loading ? "..." : users.filter((u) => u.isBlocked).length})
+            </button>
+          </div>
         </div>
       </div>
 
@@ -327,9 +329,181 @@ export default function AdminUsersPage() {
         </div>
       )}
 
-      {/* Users Table */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+      {/* Users Display Container */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden w-full">
+        {/* Mobile View: Responsive User Cards */}
+        <div className="block md:hidden divide-y divide-slate-100">
+          {loading ? (
+            Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="p-4 space-y-3 animate-pulse">
+                <div className="flex justify-between items-start">
+                  <div className="space-y-1.5 flex-1">
+                    <div className="h-4 bg-slate-200 rounded w-3/4"></div>
+                    <div className="h-3 bg-slate-100 rounded w-1/2"></div>
+                  </div>
+                  <div className="h-5 bg-slate-200 rounded-full w-14"></div>
+                </div>
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <div className="h-4 bg-slate-100 rounded"></div>
+                  <div className="h-4 bg-slate-100 rounded"></div>
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <div className="h-9 bg-slate-100 rounded flex-1"></div>
+                  <div className="h-9 bg-slate-100 rounded w-24"></div>
+                </div>
+              </div>
+            ))
+          ) : filteredUsers.length === 0 ? (
+            <div className="p-8 text-center text-slate-500 text-sm">
+              <div className="flex flex-col items-center justify-center gap-2">
+                <p>No users matching criteria on this page.</p>
+                {feedbackMsg?.type === "error" && (
+                  <button
+                    onClick={() => fetchUsers(page, searchQuery)}
+                    className="mt-2 px-3 py-1.5 bg-slate-900 text-white rounded text-xs hover:bg-slate-800 transition-colors"
+                  >
+                    Retry
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : (
+            paginatedUsers.map((user) => {
+              const isAdminUser = user.email === "xbsuryakant@gmail.com";
+              const isProcessing = actionLoadingId === user.id;
+
+              return (
+                <div key={user.id} className="p-4 space-y-3 text-sm">
+                  {/* Top line: Email + Admin, Plan & Status */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="font-semibold text-slate-900 flex items-center gap-1.5 flex-wrap">
+                        <span className="truncate max-w-[200px]" title={user.email}>{user.email}</span>
+                        {isAdminUser && (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 uppercase shrink-0">
+                            Admin
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-slate-400 font-mono truncate mt-0.5" title={user.id}>
+                        {user.id}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {user.isPro ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+                          <Crown className="w-2.5 h-2.5 text-amber-600" />
+                          Pro
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 text-slate-700">
+                          Free
+                        </span>
+                      )}
+
+                      {user.isBlocked ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-100 text-red-700 border border-red-200">
+                          <Ban className="w-2.5 h-2.5" />
+                          Blocked
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          <CheckCircle2 className="w-2.5 h-2.5 text-emerald-500" />
+                          Active
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Dates Grid */}
+                  <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                    <div>
+                      <span className="block text-[10px] font-medium text-slate-400 uppercase">Signed Up</span>
+                      <span className="font-medium text-slate-700">
+                        {user.createdAt ? (
+                          new Date(user.createdAt).toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                          })
+                        ) : (
+                          <span className="text-slate-400 italic">Unavailable</span>
+                        )}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="block text-[10px] font-medium text-slate-400 uppercase">Last Active</span>
+                      <span className="font-medium text-slate-700">
+                        {user.lastSignInAt ? (
+                          new Date(user.lastSignInAt).toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                          })
+                        ) : (
+                          <span className="text-slate-400 italic">Unavailable</span>
+                        )}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Action Row: Page Views & Moderation */}
+                  <div className="flex items-center gap-2 pt-1">
+                    {typeof user.totalViews === "number" ? (
+                      <button
+                        onClick={() => openActivity(user)}
+                        className="flex-1 inline-flex items-center justify-center gap-1.5 min-h-[36px] text-xs font-mono font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-3 py-1.5 rounded-lg transition-colors"
+                        title="Click to view visited pages"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>{user.totalViews} views</span>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => openActivity(user)}
+                        className="flex-1 inline-flex items-center justify-center gap-1.5 min-h-[36px] text-xs font-mono font-medium text-slate-500 bg-slate-100 hover:bg-slate-200 border border-slate-200 px-3 py-1.5 rounded-lg transition-colors"
+                        title="Page count unavailable. Click to view activity."
+                      >
+                        <Eye className="w-3.5 h-3.5 text-slate-400" />
+                        <span>Unavailable</span>
+                      </button>
+                    )}
+
+                    <div className="shrink-0">
+                      {isAdminUser ? (
+                        <span className="inline-flex items-center justify-center min-h-[36px] px-3 text-xs text-slate-400 italic bg-slate-100 rounded-lg">
+                          Protected
+                        </span>
+                      ) : user.isBlocked ? (
+                        <button
+                          onClick={() => handleBlockAction(user, "unblock")}
+                          disabled={isProcessing}
+                          className="inline-flex items-center justify-center gap-1 min-h-[36px] text-xs font-semibold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+                        >
+                          <ShieldCheck className="w-3.5 h-3.5" />
+                          <span>{isProcessing ? "Updating..." : "Unblock"}</span>
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => setBlockingUser(user)}
+                          disabled={isProcessing}
+                          className="inline-flex items-center justify-center gap-1 min-h-[36px] text-xs font-semibold text-red-700 hover:text-red-800 bg-red-50 hover:bg-red-100 border border-red-200 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+                        >
+                          <ShieldAlert className="w-3.5 h-3.5" />
+                          <span>{isProcessing ? "Updating..." : "Block"}</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Desktop View: Full 7-Column Table */}
+        <div className="hidden md:block overflow-x-auto w-full">
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 text-xs font-semibold text-slate-500 uppercase border-b border-slate-200">
               <tr>
@@ -344,11 +518,20 @@ export default function AdminUsersPage() {
             </thead>
             <tbody className="divide-y divide-slate-200">
               {loading ? (
-                <tr>
-                  <td colSpan={7} className="px-5 py-12 text-center text-slate-400 text-sm">
-                    Loading users...
-                  </td>
-                </tr>
+                Array.from({ length: 5 }).map((_, i) => (
+                  <tr key={i} className="animate-pulse">
+                    <td className="px-5 py-4">
+                      <div className="h-4 bg-slate-200 rounded w-48 mb-2"></div>
+                      <div className="h-3 bg-slate-100 rounded w-32"></div>
+                    </td>
+                    <td className="px-5 py-4"><div className="h-4 bg-slate-100 rounded w-20"></div></td>
+                    <td className="px-5 py-4"><div className="h-5 bg-slate-100 rounded-full w-14"></div></td>
+                    <td className="px-5 py-4"><div className="h-4 bg-slate-100 rounded w-20"></div></td>
+                    <td className="px-5 py-4 text-center"><div className="h-6 bg-slate-100 rounded w-16 mx-auto"></div></td>
+                    <td className="px-5 py-4"><div className="h-5 bg-slate-100 rounded-full w-16"></div></td>
+                    <td className="px-5 py-4 text-right"><div className="h-7 bg-slate-100 rounded w-16 ml-auto"></div></td>
+                  </tr>
+                ))
               ) : filteredUsers.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-5 py-12 text-center text-slate-500 text-sm">
@@ -418,14 +601,25 @@ export default function AdminUsersPage() {
                         )}
                       </td>
                       <td className="px-5 py-3.5 text-center">
-                        <button
-                          onClick={() => openActivity(user)}
-                          className="inline-flex items-center gap-1.5 text-xs font-mono font-semibold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded-md transition-colors"
-                          title="Click to view visited pages"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                          <span>{user.totalViews} views</span>
-                        </button>
+                        {typeof user.totalViews === "number" ? (
+                          <button
+                            onClick={() => openActivity(user)}
+                            className="inline-flex items-center gap-1.5 text-xs font-mono font-semibold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded-md transition-colors"
+                            title="Click to view visited pages"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>{user.totalViews} views</span>
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => openActivity(user)}
+                            className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-slate-500 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded-md transition-colors"
+                            title="Page count unavailable. Click to view activity."
+                          >
+                            <Eye className="w-3.5 h-3.5 text-slate-400" />
+                            <span>Unavailable</span>
+                          </button>
+                        )}
                       </td>
                       <td className="px-5 py-3.5">
                         {user.isBlocked ? (
@@ -472,9 +666,13 @@ export default function AdminUsersPage() {
         </div>
 
         {/* Server Pagination Controls */}
-        <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600">
+        <div className="px-4 sm:px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600">
           <div>
-            {searchQuery.trim() ? (
+            {loading ? (
+              <span className="text-slate-400 italic">Loading users...</span>
+            ) : feedbackMsg?.type === "error" && users.length === 0 ? (
+              <span className="text-red-600 font-medium">Failed to load users</span>
+            ) : searchQuery.trim() ? (
               <span>
                 Page Results:{" "}
                 <span className="font-semibold text-slate-900">
@@ -483,6 +681,8 @@ export default function AdminUsersPage() {
                 <span className="text-slate-400">|</span> Registered Accounts:{" "}
                 <span className="font-semibold text-slate-900">{pagination.total} total</span>
               </span>
+            ) : pagination.total === 0 ? (
+              <span className="text-slate-500">No registered users</span>
             ) : (
               <span>
                 Showing{" "}
@@ -501,19 +701,19 @@ export default function AdminUsersPage() {
             <button
               onClick={() => fetchUsers(pagination.page - 1, searchQuery)}
               disabled={!pagination.hasPrevPage || loading}
-              className="inline-flex items-center gap-1 px-3 py-1.5 rounded border border-slate-200 bg-white font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm transition-colors"
+              className="inline-flex items-center gap-1 min-h-[36px] sm:min-h-0 px-3 py-1.5 rounded border border-slate-200 bg-white font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm transition-colors"
               aria-label="Previous page"
             >
               <ChevronLeft className="w-3.5 h-3.5" />
               <span>Previous</span>
             </button>
             <span className="font-semibold text-slate-900 px-2">
-              Page {pagination.page} of {pagination.totalPages}
+              Page {loading ? "..." : pagination.page} of {loading ? "..." : pagination.totalPages}
             </span>
             <button
               onClick={() => fetchUsers(pagination.page + 1, searchQuery)}
               disabled={!pagination.hasNextPage || loading}
-              className="inline-flex items-center gap-1 px-3 py-1.5 rounded border border-slate-200 bg-white font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm transition-colors"
+              className="inline-flex items-center gap-1 min-h-[36px] sm:min-h-0 px-3 py-1.5 rounded border border-slate-200 bg-white font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm transition-colors"
               aria-label="Next page"
             >
               <span>Next</span>
@@ -569,8 +769,14 @@ export default function AdminUsersPage() {
                 <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
                   <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">All-Time</div>
                   <div className="text-lg font-bold text-slate-900 mt-1">
-                    {selectedUser.totalViews}{" "}
-                    <span className="text-xs font-normal text-slate-500">views</span>
+                    {typeof selectedUser.totalViews === "number" ? (
+                      <>
+                        {selectedUser.totalViews}{" "}
+                        <span className="text-xs font-normal text-slate-500">views</span>
+                      </>
+                    ) : (
+                      <span className="text-sm font-normal text-slate-400 italic">Unavailable</span>
+                    )}
                   </div>
                 </div>
                 <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">

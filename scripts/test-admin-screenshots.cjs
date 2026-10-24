@@ -80,7 +80,7 @@ const FIXTURE_USERS = [
     lastSignInAt: "2026-04-09T18:40:00.000Z",
     isBlocked: true,
     blockReason: "Automated scraping pattern detected",
-    totalViews: 89,
+    totalViews: null, // FIX 1: Explicit null / Unavailable for failed count query!
   },
   {
     id: "00000000-0000-0000-0000-000000000004",
@@ -418,12 +418,12 @@ async function captureAllScreenshots() {
       console.log(`📸 Captured: ${fileName}`);
     }
 
-    // B. Search Active State (Desktop) - Proving honest page-local notice and separate counts
-    {
-      const page = await createAuthenticatedPage(viewports[0], { usersState: "search" });
+    // B. Search Active State (Desktop & Mobile) - Proving honest page-local notice and separate counts
+    for (const vp of viewports) {
+      const page = await createAuthenticatedPage(vp, { usersState: "search" });
       await page.goto(`http://localhost:${PORT}/admin/users?q=alex`, { waitUntil: "networkidle0" });
 
-      const fileName = `admin-users-search-desktop.png`;
+      const fileName = `admin-users-search-${vp.name}.png`;
       const outPath = path.join(REPORT_DIR, fileName);
       await page.screenshot({ path: outPath, fullPage: true });
       await page.close();
@@ -431,8 +431,44 @@ async function captureAllScreenshots() {
       capturedManifest.push({
         route: "/admin/users?q=alex",
         fixture: "search (1 matching on this page, honest page-local banner, 4 registered accounts total)",
-        viewport: "desktop",
-        dimensions: "1280x800",
+        viewport: vp.name,
+        dimensions: `${vp.width}x${vp.height}`,
+        file: fileName,
+        path: outPath,
+      });
+      console.log(`📸 Captured: ${fileName}`);
+    }
+
+    // B2. Block Confirmation Modal (Mobile-390px) - Proving accessible action confirmation controls
+    {
+      const vp = viewports[1]; // mobile-390px
+      const page = await createAuthenticatedPage(vp, { usersState: "normal" });
+      await page.goto(`http://localhost:${PORT}/admin/users`, { waitUntil: "networkidle0" });
+
+      // Find and click visible Block button on an active non-admin user
+      const blockButtons = await page.$$("button");
+      for (const btn of blockButtons) {
+        const box = await btn.boundingBox().catch(() => null);
+        if (box && box.width > 0 && box.height > 0) {
+          const text = await page.evaluate((el) => el.innerText, btn);
+          if (text && text.trim() === "Block") {
+            await page.evaluate((el) => el.click(), btn);
+            await new Promise((r) => setTimeout(r, 600));
+            break;
+          }
+        }
+      }
+
+      const fileName = `admin-users-block-modal-${vp.name}.png`;
+      const outPath = path.join(REPORT_DIR, fileName);
+      await page.screenshot({ path: outPath, fullPage: true });
+      await page.close();
+
+      capturedManifest.push({
+        route: "/admin/users (Block Confirmation Modal)",
+        fixture: "moderation confirmation dialog on mobile",
+        viewport: vp.name,
+        dimensions: `${vp.width}x${vp.height}`,
         file: fileName,
         path: outPath,
       });
@@ -444,11 +480,30 @@ async function captureAllScreenshots() {
       const page = await createAuthenticatedPage(vp, { usersState: "normal" });
       await page.goto(`http://localhost:${PORT}/admin/users`, { waitUntil: "networkidle0" });
 
-      // Click on activity button of second user (alex.chen)
+      // Click on visible activity button of second user (alex.chen)
       const buttons = await page.$$("button[title='Click to view visited pages']");
-      if (buttons.length > 1) {
-        await buttons[1].click();
-        await new Promise((r) => setTimeout(r, 600)); // wait for modal animation
+      let clicked = false;
+      for (const btn of buttons) {
+        const box = await btn.boundingBox().catch(() => null);
+        if (box && box.width > 0 && box.height > 0) {
+          const text = await page.evaluate((el) => el.innerText, btn);
+          if (text && text.includes("142 views")) {
+            await page.evaluate((el) => el.click(), btn);
+            await new Promise((r) => setTimeout(r, 600)); // wait for modal animation
+            clicked = true;
+            break;
+          }
+        }
+      }
+      if (!clicked && buttons.length > 0) {
+        for (const btn of buttons) {
+          const box = await btn.boundingBox().catch(() => null);
+          if (box && box.width > 0 && box.height > 0) {
+            await page.evaluate((el) => el.click(), btn);
+            await new Promise((r) => setTimeout(r, 600));
+            break;
+          }
+        }
       }
 
       const fileName = `admin-users-activity-modal-${vp.name}.png`;

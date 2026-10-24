@@ -164,10 +164,10 @@ export default function AdminAuditLogPage() {
       )}
 
       {/* Filter Bar */}
-      <div className="flex items-center justify-between gap-4">
-        <div className="inline-flex items-center gap-2">
-          <Filter className="w-4 h-4 text-slate-400" />
-          <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="inline-flex items-center gap-2 overflow-x-auto max-w-full pb-1 sm:pb-0">
+          <Filter className="w-4 h-4 text-slate-400 shrink-0" />
+          <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm shrink-0">
             <button
               onClick={() => handleActionFilterChange("all")}
               className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
@@ -202,8 +202,12 @@ export default function AdminAuditLogPage() {
 
       {/* Audit Log Table */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
+        {/* Mobile scroll cue */}
+        <div className="sm:hidden text-[11px] text-slate-500 bg-slate-50 px-3 py-1.5 border-b border-slate-200 flex items-center justify-between">
+          <span>← Swipe horizontally to inspect actor, reason &amp; IP hash →</span>
+        </div>
+        <div className="overflow-x-auto w-full scrollbar-thin">
+          <table className="w-full text-left text-sm min-w-[640px]">
             <thead className="bg-slate-50 text-xs font-semibold text-slate-500 uppercase border-b border-slate-200">
               <tr>
                 <th scope="col" className="px-5 py-3.5">Timestamp</th>

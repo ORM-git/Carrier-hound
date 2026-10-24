@@ -53,7 +53,7 @@ export interface UserManagementItem {
   lastSignInAt?: string;
   isPro: boolean;
   isBlocked: boolean;
-  totalViews: number;
+  totalViews: number | null;
   blockedAt?: string;
   blockedReason?: string;
 }
@@ -645,7 +645,9 @@ export async function getPaginatedUsersManagementList(options: {
   // C. Page views count via bounded count-only queries (0 row data downloaded, head: true)
   // Direct multi-user aggregate grouping (GROUP BY user_id) in a single request requires an elevated
   // PostgreSQL RPC function or view (locked in Phase A1c). Bounded count-only queries prevent row downloading.
-  const userViewsCount = new Map<string, number>();
+  // When a count query fails or errors for an individual user, totalViews is explicitly set to null
+  // (rendered as "Unavailable" / "—" in UI) rather than falsely reporting 0. True successful zeroes remain 0.
+  const userViewsCount = new Map<string, number | null>();
   const BATCH_SIZE = 5;
   for (let i = 0; i < pageUserIds.length; i += BATCH_SIZE) {
     const batch = pageUserIds.slice(i, i + BATCH_SIZE);
@@ -657,18 +659,25 @@ export async function getPaginatedUsersManagementList(options: {
             .select('*', { count: 'exact', head: true })
             .eq('user_id', uid);
 
-          if (!error && typeof count === 'number') {
+          if (error || typeof count !== 'number') {
+            userViewsCount.set(uid, null);
+          } else {
             userViewsCount.set(uid, count);
           }
-        } catch (_) {}
+        } catch (_) {
+          userViewsCount.set(uid, null);
+        }
       })
     );
   }
 
-  // Supplement with in-memory fallback views buffer count for page user IDs
+  // Supplement with in-memory fallback views buffer count for page user IDs only if count query succeeded
   for (const row of inMemoryViews) {
     if (row.user_id && pageUserIds.includes(row.user_id)) {
-      userViewsCount.set(row.user_id, (userViewsCount.get(row.user_id) || 0) + 1);
+      const current = userViewsCount.get(row.user_id);
+      if (typeof current === 'number') {
+        userViewsCount.set(row.user_id, current + 1);
+      }
     }
   }
 
@@ -689,6 +698,8 @@ export async function getPaginatedUsersManagementList(options: {
       u.user_metadata?.is_blocked === true ||
       Boolean(blockedRecord);
 
+    const totalViews = userViewsCount.has(u.id) ? userViewsCount.get(u.id)! : null;
+
     return {
       id: u.id,
       email: u.email || 'anonymous',
@@ -696,7 +707,7 @@ export async function getPaginatedUsersManagementList(options: {
       lastSignInAt: u.last_sign_in_at,
       isPro,
       isBlocked,
-      totalViews: userViewsCount.get(u.id) || 0,
+      totalViews,
       blockedAt: blockedRecord?.blockedAt || u.user_metadata?.blocked_at,
       blockedReason: blockedRecord?.reason || u.user_metadata?.blocked_reason,
     };
