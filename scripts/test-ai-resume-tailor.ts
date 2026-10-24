@@ -251,6 +251,20 @@ async function runAllTests() {
   console.log("================================================================================\n");
 
   // -------------------------------------------------------------
+  // PRE-FLIGHT: Offline Containment Verification
+  // -------------------------------------------------------------
+  console.log("--- 0. PRE-FLIGHT OFFLINE CONTAINMENT PROOF ---");
+  let externalNetworkBlocked = false;
+  try {
+    await fetch("https://api.groq.com/openai/v1/models");
+  } catch (err: any) {
+    if (err && (err.code === "ENETWORK_DENIED" || String(err.message).includes("NETWORK DENIED"))) {
+      externalNetworkBlocked = true;
+    }
+  }
+  assert(externalNetworkBlocked, "Preloaded deny-network guard is active before application operations (denies external traffic)");
+
+  // -------------------------------------------------------------
   // TEST 1: Numeric Fact Extraction & Exact Matching
   // -------------------------------------------------------------
   console.log("--- 1. NUMERIC FACT EXTRACTION & MATCHING ---");
@@ -1278,14 +1292,18 @@ async function runAllTests() {
   type MockTransportRoute = {
     quotaRow: { count: number; total_tokens: number } | null;
     groqResponseContent: string;
+    debugFetch?: boolean;
     onProviderCall?: () => void;
     onQuotaRefund?: () => void;
+    onQuotaIncrement?: () => void;
   };
 
   let activeTransportState: MockTransportRoute = {
     quotaRow: { count: 30, total_tokens: 5000 },
     groqResponseContent: "{}",
   };
+
+  let lastIpRateLimitKey: string | null = null;
 
   globalThis.fetch = async function mockOfflineTransportFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -1326,7 +1344,16 @@ async function runAllTests() {
     }
 
     // 4. Rate limit RPC endpoint: /rest/v1/rpc/check_rate_limit
-    if (url.includes("/rest/v1/rpc/check_rate_limit")) {
+    if (url.includes("rpc") || url.includes("check_rate_limit")) {
+      try {
+        const bodyObj = typeof init?.body === "string" ? JSON.parse(init.body) : init?.body;
+        if (bodyObj && bodyObj.p_key) {
+          const keyStr = String(bodyObj.p_key);
+          if (keyStr.includes(":ip:") || keyStr.startsWith("ip:")) {
+            lastIpRateLimitKey = keyStr;
+          }
+        }
+      } catch (e) {}
       return new Response(JSON.stringify({ allowed: true, retry_after: 0, current_count: 1 }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
 
@@ -1338,8 +1365,12 @@ async function runAllTests() {
       if (method === "PATCH") {
         try {
           const parsedBody = JSON.parse(String(init?.body || "{}"));
-          if (activeTransportState.quotaRow && typeof parsedBody.count === "number" && parsedBody.count < activeTransportState.quotaRow.count) {
-            activeTransportState.onQuotaRefund?.();
+          if (activeTransportState.quotaRow && typeof parsedBody.count === "number") {
+            if (parsedBody.count < activeTransportState.quotaRow.count) {
+              activeTransportState.onQuotaRefund?.();
+            } else if (parsedBody.count > activeTransportState.quotaRow.count) {
+              activeTransportState.onQuotaIncrement?.();
+            }
           }
         } catch {
           // ignore parse error
@@ -1347,6 +1378,7 @@ async function runAllTests() {
         return new Response(JSON.stringify({}), { status: 200, headers: { "Content-Type": "application/json" } });
       }
       if (method === "POST") {
+        activeTransportState.onQuotaIncrement?.();
         return new Response(JSON.stringify({}), { status: 201, headers: { "Content-Type": "application/json" } });
       }
     }
@@ -1560,6 +1592,88 @@ async function runAllTests() {
       "Netlify wrapper: Output validation failure returns unevidenced skill error"
     );
     assert(wrapperRefundCountNetlify === 1, "Netlify wrapper: Quota is refunded exactly once on output validation failure");
+
+    // 4. Successful 200 Response on Actual Wrappers
+    // 4A. Next.js wrapper POST(req)
+    _resetAiRateLimitStore();
+    let wrapperProviderCallsNextSuccess = 0;
+    let wrapperQuotaConsumedNextSuccess = 0;
+    lastIpRateLimitKey = null;
+    activeTransportState = {
+      quotaRow: { count: 5, total_tokens: 500 },
+      groqResponseContent: JSON.stringify(validDraft),
+      onProviderCall: () => { wrapperProviderCallsNextSuccess++; },
+      onQuotaIncrement: () => { wrapperQuotaConsumedNextSuccess++; },
+    };
+
+    const nextSuccessWrapperReq = new Request("http://localhost:3000/api/ai", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: validProductionAuthToken,
+        "cf-connecting-ip": "192.168.1.30",
+      },
+      body: JSON.stringify({
+        operation: "resume_tailor",
+        params: { candidate: testCandidate, job: testJob },
+      }),
+    });
+    const nextSuccessWrapperRes = await apiAiPost(nextSuccessWrapperReq);
+    assert(nextSuccessWrapperRes.status === 200, "Next wrapper: Valid request returns 200 status");
+    const nextSuccessWrapperBody = await nextSuccessWrapperRes.json();
+    assert(nextSuccessWrapperBody.success === true, "Next wrapper: 200 response contains success: true");
+    assert(nextSuccessWrapperBody.operation === "resume_tailor", "Next wrapper: 200 response contains operation: resume_tailor");
+    assert(nextSuccessWrapperBody.model === "openai/gpt-oss-120b", "Next wrapper: 200 response preserves model name");
+    assert(nextSuccessWrapperBody.jobDescriptionShortened === false, "Next wrapper: 200 response includes jobDescriptionShortened");
+    assert(typeof nextSuccessWrapperBody.result === "object" && nextSuccessWrapperBody.result !== null, "Next wrapper: 200 response includes parsed result object");
+    assert(nextSuccessWrapperBody.result.tailoredSummary === validDraft.tailoredSummary, "Next wrapper: 200 response contains accepted tailored summary");
+    assert(Array.isArray(nextSuccessWrapperBody.result.highlightedSkills) && nextSuccessWrapperBody.result.highlightedSkills.length === 3, "Next wrapper: 200 response contains accepted highlighted skills");
+    assert(Array.isArray(nextSuccessWrapperBody.result.tailoredBullets["exp-1"]) && nextSuccessWrapperBody.result.tailoredBullets["exp-1"].length === 3, "Next wrapper: 200 response contains accepted tailored bullets for exp-1");
+    assert(typeof nextSuccessWrapperBody.content === "string" && nextSuccessWrapperBody.content.includes(validDraft.tailoredSummary), "Next wrapper: 200 response contains sanitized content string");
+    assert(typeof nextSuccessWrapperBody.text === "string" && nextSuccessWrapperBody.text.includes(validDraft.tailoredSummary), "Next wrapper: 200 response contains sanitized text string");
+    assert(wrapperProviderCallsNextSuccess === 1, "Next wrapper: Groq provider called exactly once");
+    assert(wrapperQuotaConsumedNextSuccess === 1, "Next wrapper: quota consumed exactly once on success");
+    assert(lastIpRateLimitKey === "ai:ip:192.168.1.30", "Next wrapper: pins rate-limit key to 'ai:ip:<ip>'");
+
+    // 4B. Netlify wrapper handler(event)
+    _resetAiRateLimitStore();
+    let wrapperProviderCallsNetlifySuccess = 0;
+    let wrapperQuotaConsumedNetlifySuccess = 0;
+    lastIpRateLimitKey = null;
+    activeTransportState = {
+      quotaRow: { count: 8, total_tokens: 800 },
+      groqResponseContent: JSON.stringify(validDraft),
+      onProviderCall: () => { wrapperProviderCallsNetlifySuccess++; },
+      onQuotaIncrement: () => { wrapperQuotaConsumedNetlifySuccess++; },
+    };
+
+    const netlifySuccessWrapperEvent = {
+      httpMethod: "POST",
+      headers: {
+        authorization: validProductionAuthToken,
+        "client-ip": "192.168.1.31",
+      },
+      body: JSON.stringify({
+        operation: "resume_tailor",
+        params: { candidate: testCandidate, job: testJob },
+      }),
+    };
+    const netlifySuccessWrapperRes = await netlifyAiHandler(netlifySuccessWrapperEvent);
+    assert(netlifySuccessWrapperRes.statusCode === 200, "Netlify wrapper: Valid request returns 200 status");
+    const netlifySuccessWrapperBody = JSON.parse(netlifySuccessWrapperRes.body);
+    assert(netlifySuccessWrapperBody.success === true, "Netlify wrapper: 200 response contains success: true");
+    assert(netlifySuccessWrapperBody.operation === "resume_tailor", "Netlify wrapper: 200 response contains operation: resume_tailor");
+    assert(netlifySuccessWrapperBody.model === "openai/gpt-oss-120b", "Netlify wrapper: 200 response preserves model name");
+    assert(netlifySuccessWrapperBody.jobDescriptionShortened === false, "Netlify wrapper: 200 response includes jobDescriptionShortened");
+    assert(typeof netlifySuccessWrapperBody.result === "object" && netlifySuccessWrapperBody.result !== null, "Netlify wrapper: 200 response includes parsed result object");
+    assert(netlifySuccessWrapperBody.result.tailoredSummary === validDraft.tailoredSummary, "Netlify wrapper: 200 response contains accepted tailored summary");
+    assert(Array.isArray(netlifySuccessWrapperBody.result.highlightedSkills) && netlifySuccessWrapperBody.result.highlightedSkills.length === 3, "Netlify wrapper: 200 response contains accepted highlighted skills");
+    assert(Array.isArray(netlifySuccessWrapperBody.result.tailoredBullets["exp-1"]) && netlifySuccessWrapperBody.result.tailoredBullets["exp-1"].length === 3, "Netlify wrapper: 200 response contains accepted tailored bullets for exp-1");
+    assert(typeof netlifySuccessWrapperBody.content === "string" && netlifySuccessWrapperBody.content.includes(validDraft.tailoredSummary), "Netlify wrapper: 200 response contains sanitized content string");
+    assert(typeof netlifySuccessWrapperBody.text === "string" && netlifySuccessWrapperBody.text.includes(validDraft.tailoredSummary), "Netlify wrapper: 200 response contains sanitized text string");
+    assert(wrapperProviderCallsNetlifySuccess === 1, "Netlify wrapper: Groq provider called exactly once");
+    assert(wrapperQuotaConsumedNetlifySuccess === 1, "Netlify wrapper: quota consumed exactly once on success");
+    assert(lastIpRateLimitKey === "ip:192.168.1.31", "Netlify wrapper: pins rate-limit key to 'ip:<ip>'");
   } finally {
     // Clean teardown: restore original fetch and environment variables
     globalThis.fetch = origFetchGlobal;
