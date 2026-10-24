@@ -171,7 +171,7 @@ export default function TailorResumeModal({
       jobTitle: job.title,
       company: job.company,
       tailoredCandidate: appliedCandidate,
-      atsScore: Math.max(85, recomputedAts.score),
+      atsScore: Math.max(0, Math.min(100, Math.round(recomputedAts.score))),
       scoringResult: recomputedAts,
       revisionAttempts: tailoredResult.revisionAttempts,
       tailoredAt: new Date().toISOString(),
@@ -247,7 +247,7 @@ export default function TailorResumeModal({
           <div className="pr-8 space-y-1">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                <Sparkles className="w-3.5 h-3.5" /> ATS Score: {atsScore}/100
+                <Sparkles className="w-3.5 h-3.5" /> ATS keyword match estimate: {atsScore}/100
               </span>
               {tailoredResult.tailoringSource === "ai" ? (
                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-purple-500/30 text-purple-200 border border-purple-400/40">
@@ -270,7 +270,6 @@ export default function TailorResumeModal({
                   Rules-based
                 </span>
               )}
-              <span className="text-xs text-emerald-400 font-semibold">85+ Target Guaranteed</span>
               <span className="text-xs text-slate-400 font-mono hidden sm:inline">• Profile Grounded</span>
             </div>
             <h2 className="text-lg sm:text-xl font-bold text-white line-clamp-1">{job.title}</h2>
@@ -301,13 +300,13 @@ export default function TailorResumeModal({
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-bold text-white">Target ATS Match Achieved</span>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-400 text-slate-950 uppercase tracking-wider">
-                      {atsScore >= 85 ? "85+ Pass" : "Optimized"}
+                    <span className="text-sm font-bold text-white">ATS Keyword Match Estimate</span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-slate-800 text-emerald-300 border border-emerald-500/40 uppercase tracking-wider">
+                      {atsScore}/100
                     </span>
                   </div>
                   <p className="text-xs text-slate-300">
-                    Tailored specifically for {job.company}&apos;s {job.title} ({tailoredResult.revisionAttempts > 1 ? `Optimized in pass ${tailoredResult.revisionAttempts} of 3` : "Passed in pass 1"}).
+                    Estimated keyword overlap with {job.company}&apos;s {job.title} listing ({matchedKeywords.length} matched, {missingKeywords.length} missing). Automated estimate; does not evaluate candidate quality, hiring probability, or factual truth.
                   </p>
                 </div>
               </div>
@@ -349,7 +348,7 @@ export default function TailorResumeModal({
                     <span>Generate AI-tailored version</span>
                   </div>
                   <p className="text-[11px] text-slate-600 mt-0.5">
-                    Rewrite summary and bullets to align with target role with zero fabrication. Uses 1 of your 30 daily tailoring allowance.
+                    Currently using deterministic rules and templates based on your verified resume. Click to generate an AI rewrite aligned with target role criteria (uses 1 of your 30 daily tailoring allowance).
                   </p>
                 </div>
                 <button
@@ -399,7 +398,9 @@ export default function TailorResumeModal({
                     <Sparkles className="w-4 h-4 text-indigo-600 shrink-0" />
                     <div>
                       <span className="text-sm font-bold text-slate-900 block">AI Draft Awaiting Review</span>
-                      <span className="text-[11px] text-slate-500">Compare original vs rewritten text before accepting into active resume.</span>
+                      <span className="text-[11px] text-slate-600">
+                        AI models can overstate experience. Carefully review each rewritten line below before deciding to accept.
+                      </span>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -423,7 +424,7 @@ export default function TailorResumeModal({
 
                 {pendingAiDraft.jobDescriptionShortened && (
                   <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-[11px] text-amber-800">
-                    Note: Target job description was trimmed slightly to respect the 4,000 token AI safety limit. Core role requirements were retained.
+                    Warning: Target job description was shortened to fit token limits. Core role criteria were retained.
                   </div>
                 )}
 
@@ -489,6 +490,7 @@ export default function TailorResumeModal({
                     <span className="text-[11px] text-purple-700 block">
                       Active in preview and export downloads (.pdf, .docx, .txt).
                       {tailoredResult.modelIdentity ? ` Model: ${tailoredResult.modelIdentity}.` : ""}
+                      {" "}AI can overstate experience; please confirm all claims reflect your actual background.
                     </span>
                   </div>
                 </div>
@@ -510,17 +512,26 @@ export default function TailorResumeModal({
                 </div>
               </div>
             )}
+            {tailoredResult.jobDescriptionShortened && aiStatus !== "reviewing" && (
+              <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-[11px] text-amber-800">
+                Warning: Target job description was shortened to fit token limits. Core role criteria were retained.
+              </div>
+            )}
           </div>
 
           {/* Explanation Banner */}
           <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700 leading-relaxed flex items-start gap-3">
-            <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+            <ShieldCheck className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
             <div className="space-y-0.5">
               <p className="font-bold text-slate-900">
-                Grounded 100% in your verified resume facts
+                {tailoredResult.tailoringSource === "ai" || aiStatus === "reviewing"
+                  ? "AI Tailoring Advisory & Verification"
+                  : "Deterministic Rules-Based Resume Alignment"}
               </p>
               <p className="text-slate-600">
-                ATS tailoring reorganizes verified skills and re-prioritizes real project highlights to align with <strong>{job.company}</strong>&apos;s job criteria. No unverified facts are fabricated.
+                {tailoredResult.tailoringSource === "ai" || aiStatus === "reviewing"
+                  ? "AI models can overstate experience and introduce subtle inaccuracies. Each line needs candidate review before submitting. The ATS score is an estimate of keyword overlap and does not prove candidate quality, hiring probability, or factual truth."
+                  : `This version uses your existing resume content organized with deterministic rules and templates based on your verified background, not AI writing. The score estimates keyword overlap with ${job.company}'s listing and does not guarantee interviews or employment.`}
               </p>
             </div>
           </div>

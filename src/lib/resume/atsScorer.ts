@@ -429,7 +429,7 @@ export function computeJobAtsScore(
   // Weighted composition
   const totalScore = Math.min(
     100,
-    Math.max(10, Math.round(keywordScore * 0.60 + skillsScore * 0.25 + titleScore * 0.15))
+    Math.max(0, Math.round(keywordScore * 0.60 + skillsScore * 0.25 + titleScore * 0.15))
   );
 
   return {
@@ -545,8 +545,8 @@ function generateRoleSummary(
 }
 
 /**
- * Tailors a candidate profile specifically to a target job with an iterative 3-pass revision loop.
- * Guarantees a target ATS score of 85+ while strictly preserving factual integrity (zero hallucinations).
+ * Tailors a candidate profile specifically to a target job with an iterative revision loop.
+ * Computes an honest ATS alignment score bounded 0-100 without artificial score floors.
  */
 export function tailorProfileForJobWithAts(
   baseProfile: CandidateProfile,
@@ -654,25 +654,8 @@ export function tailorProfileForJobWithAts(
     }
   }
 
-  // -------------------------------------------------------------
-  // PASS 3: Deep Alignment Pass (if still below 85)
-  // -------------------------------------------------------------
-  if (scoring.score < 85) {
-    attempts = 3;
-    const missingPills = scoring.missingKeywords.slice(0, 3);
-    currentSummary = `High-impact ${job.title} offering deep capabilities in ${prioritizedSkills.slice(0, 5).join(", ")}${missingPills.length > 0 ? `, with practical focus on ${missingPills.join(", ")}` : ""}. Built for fast execution, rigorous quality standards, and immediate contribution to ${job.company}.`;
-
-    currentCandidate = {
-      ...currentCandidate,
-      headline: `${job.title} • ${prioritizedSkills.slice(0, 3).join(" • ")}`,
-      summary: currentSummary,
-      skills: prioritizedSkills,
-    };
-
-    scoring = computeJobAtsScore(currentCandidate, job);
-  }
-
-  const finalAtsScore = Math.max(85, scoring.score);
+  // Final ATS score is the honest computed score, bounded strictly 0 to 100
+  const finalAtsScore = Math.max(0, Math.min(100, Math.round(scoring.score)));
   scoring.score = finalAtsScore;
 
   const sourceHash = computeResumeSourceHash(baseProfile, job, "1.0");

@@ -68,7 +68,13 @@ function checkRateLimit(
   return { allowed: true, retryAfter: 0, currentCount: bucket.count };
 }
 
-export async function POST(req: Request) {
+export interface AiRouteDeps {
+  getSupabaseAdmin?: () => any;
+  getServerEntitlement?: typeof getServerEntitlement;
+  callGroq?: (payload: any) => Promise<any>;
+}
+
+export async function POST(req: Request, deps: AiRouteDeps = {}) {
   try {
     // 0. Per-IP Rate Limiting (shared Supabase store, memory fallback)
     const clientIp = getClientIpFromRequest(req);
@@ -118,20 +124,24 @@ export async function POST(req: Request) {
       process.env.SUPABASE_SERVICE_KEY ||
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-    const missingSupabase = checkRequiredEnv(
-      {
-        NEXT_PUBLIC_SUPABASE_URL: supabaseUrl,
-        SUPABASE_SERVICE_ROLE_KEY: serviceKey,
-      },
-      "API /ai"
-    );
-    if (missingSupabase) {
-      return NextResponse.json(missingSupabase, { status: 500 });
+    if (!deps.getSupabaseAdmin) {
+      const missingSupabase = checkRequiredEnv(
+        {
+          NEXT_PUBLIC_SUPABASE_URL: supabaseUrl,
+          SUPABASE_SERVICE_ROLE_KEY: serviceKey,
+        },
+        "API /ai"
+      );
+      if (missingSupabase) {
+        return NextResponse.json(missingSupabase, { status: 500 });
+      }
     }
 
-    const supabaseAdmin = createClient(supabaseUrl, serviceKey!, {
-      auth: { persistSession: false },
-    });
+    const supabaseAdmin = deps.getSupabaseAdmin
+      ? deps.getSupabaseAdmin()
+      : createClient(supabaseUrl, serviceKey!, {
+          auth: { persistSession: false },
+        });
 
     const {
       data: { user },
@@ -183,7 +193,9 @@ export async function POST(req: Request) {
     }
 
     // 2. Server-side Pro Entitlement check (Single Source of Truth)
-    const entitlement = await getServerEntitlement(user.id);
+    const entitlement = deps.getServerEntitlement
+      ? await deps.getServerEntitlement(user.id)
+      : await getServerEntitlement(user.id);
     if (!entitlement.isPro) {
       return NextResponse.json(
         {
@@ -255,65 +267,77 @@ export async function POST(req: Request) {
       );
     }
 
-    // 5. Server-Side Groq API Key Check
-    const groqApiKey = process.env.GROQ_API_KEY;
-    if (!groqApiKey || !groqApiKey.trim()) {
-      console.error("[API /ai] Missing required environment variable: GROQ_API_KEY");
-      await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
-      return NextResponse.json(
-        {
-          error: "Missing required environment variable: GROQ_API_KEY",
-          missingVariable: "GROQ_API_KEY",
-        },
-        { status: 500 }
-      );
-    }
-
-    // 6. Upstream Groq Call with Enforced Model, Tokens, & Server Prompts
-    let groqResponse: Response;
-    try {
-      groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${groqApiKey}`,
-        },
-        body: JSON.stringify({
-          model: payload.model,
-          messages: payload.messages,
-          max_tokens: payload.maxOutputTokens,
-          temperature: payload.temperature,
-          ...(payload.jsonMode ? { response_format: { type: "json_object" } } : {}),
-        }),
-      });
-    } catch (fetchErr) {
-      console.warn("[AI Route Handler] Network error calling upstream provider:", fetchErr);
-      await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
-      return NextResponse.json(
-        { error: "AI service request failed or timed out. Please try again." },
-        { status: 502 }
-      );
-    }
-
-    if (!groqResponse.ok) {
-      console.warn(`[AI Route Handler] Upstream provider returned status ${groqResponse.status}`);
-      await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
-      return NextResponse.json(
-        { error: "AI service generation failed. Please try again." },
-        { status: 502 }
-      );
-    }
-
+    // 5. Server-Side Groq API Key Check & Upstream Groq Call
     let groqData: any;
-    try {
-      groqData = await groqResponse.json();
-    } catch (parseErr) {
-      console.warn("[AI Route Handler] Failed to parse upstream provider JSON:", parseErr);
-      await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
-      return NextResponse.json(
-        { error: "AI service returned an invalid response. Please try again." },
-        { status: 502 }
-      );
+    if (deps.callGroq) {
+      try {
+        groqData = await deps.callGroq(payload);
+      } catch (mockErr: any) {
+        console.warn("[AI Route Handler] Error calling mock Groq provider:", mockErr);
+        await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
+        return NextResponse.json(
+          { error: mockErr?.message || "AI service request failed or timed out. Please try again." },
+          { status: 502 }
+        );
+      }
+    } else {
+      const groqApiKey = process.env.GROQ_API_KEY;
+      if (!groqApiKey || !groqApiKey.trim()) {
+        console.error("[API /ai] Missing required environment variable: GROQ_API_KEY");
+        await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
+        return NextResponse.json(
+          {
+            error: "Missing required environment variable: GROQ_API_KEY",
+            missingVariable: "GROQ_API_KEY",
+          },
+          { status: 500 }
+        );
+      }
+
+      let groqResponse: Response;
+      try {
+        groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${groqApiKey}`,
+          },
+          body: JSON.stringify({
+            model: payload.model,
+            messages: payload.messages,
+            max_tokens: payload.maxOutputTokens,
+            temperature: payload.temperature,
+            ...(payload.jsonMode ? { response_format: { type: "json_object" } } : {}),
+          }),
+        });
+      } catch (fetchErr) {
+        console.warn("[AI Route Handler] Network error calling upstream provider:", fetchErr);
+        await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
+        return NextResponse.json(
+          { error: "AI service request failed or timed out. Please try again." },
+          { status: 502 }
+        );
+      }
+
+      if (!groqResponse.ok) {
+        console.warn(`[AI Route Handler] Upstream provider returned status ${groqResponse.status}`);
+        await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
+        return NextResponse.json(
+          { error: "AI service generation failed. Please try again." },
+          { status: 502 }
+        );
+      }
+
+      try {
+        groqData = await groqResponse.json();
+      } catch (parseErr) {
+        console.warn("[AI Route Handler] Failed to parse upstream provider JSON:", parseErr);
+        await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
+        return NextResponse.json(
+          { error: "AI service returned an invalid response. Please try again." },
+          { status: 502 }
+        );
+      }
     }
 
     const content = groqData?.choices?.[0]?.message?.content;

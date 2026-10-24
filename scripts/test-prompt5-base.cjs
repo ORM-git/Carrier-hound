@@ -196,7 +196,6 @@ async function setupPageMocks(page, options = {}) {
       url.includes("/user_preferences") ||
       url.includes("/jobs") ||
       url.includes("/api/account/delete") ||
-      url.includes("/api/ai") ||
       url.includes("/api/radar") ||
       url.includes("/api/stats") ||
       url.includes("/api/jobs/top10") ||
@@ -217,28 +216,6 @@ async function setupPageMocks(page, options = {}) {
           "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
           "Access-Control-Allow-Headers": "*",
         },
-      });
-      return;
-    }
-
-    if (url.includes("/api/ai")) {
-      req.respond({
-        status: 200,
-        headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" },
-        body: JSON.stringify({
-          success: true,
-          model: "llama-3.3-70b-versatile",
-          jobDescriptionShortened: false,
-          result: {
-            tailoredSummary: "Staff Software Engineer with deep expertise in distributed backend architecture, multi-region database replication, and high-performance cloud infrastructure.",
-            highlightedSkills: ["TypeScript", "Next.js", "React", "PostgreSQL", "Docker", "Kubernetes"],
-            tailoredBullets: {
-              "exp_1": [
-                "Architected multi-region database replication serving 50M daily transactions with high reliability.",
-              ],
-            },
-          },
-        }),
       });
       return;
     }
