@@ -29,6 +29,7 @@ import { toast } from "react-toastify";
 import { useLiveStats } from "@/lib/api/stats";
 
 interface TopTenCompatibleJobsProps {
+  userId?: string | null;
   candidate: CandidateProfile;
   isPro: boolean;
 }
@@ -41,6 +42,7 @@ interface RankedJobItem {
 export default function TopTenCompatibleJobs({
   candidate,
   isPro,
+  userId,
 }: TopTenCompatibleJobsProps) {
   const { totalJobs } = useLiveStats();
   const [loading, setLoading] = useState(true);
@@ -299,6 +301,7 @@ export default function TopTenCompatibleJobs({
       {/* Modals */}
       {activeTailorJob && (
         <TailorResumeModal
+          userId={userId ?? null}
           open={Boolean(activeTailorJob)}
           onOpenChange={(open) => !open && setActiveTailorJob(null)}
           candidate={candidate}
@@ -321,6 +324,7 @@ export default function TopTenCompatibleJobs({
 
       {activeCoverLetterJob && (
         <CoverLetterModal
+          userId={userId ?? null}
           open={Boolean(activeCoverLetterJob)}
           onOpenChange={(open) => !open && setActiveCoverLetterJob(null)}
           candidate={candidate}

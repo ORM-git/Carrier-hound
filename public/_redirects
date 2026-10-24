@@ -1,7 +1,10 @@
 /api/simulate-checkout /.netlify/functions/simulate-checkout 200!
 /api/ai /.netlify/functions/ai 200!
 /api/jobs/pro /.netlify/functions/jobs-pro 200!
-/job-search /job-search/all 301!
-/paywall /job-search/all 301!
+/job-search /jobs 301!
+/job-search/all /jobs 301!
+/paywall /jobs 301!
+/applications /tracker 301!
+/privacy /privacy-policy 301!
 /jobs/* /jobs/detail 200
 /* /404.html 404

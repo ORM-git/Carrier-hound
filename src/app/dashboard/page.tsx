@@ -569,7 +569,7 @@ export default function DashboardPage() {
 
           {/* STEP 3 & 4: TOP 10 JOBS WITH COMPATIBLE SCORE & PER-JOB AI ACTIONS */}
           {activeStep === "matches" && candidate && (
-            <TopTenCompatibleJobs candidate={candidate} isPro={isPro} />
+            <TopTenCompatibleJobs candidate={candidate} isPro={isPro} userId={user?.id || null} />
           )}
 
           {/* Fallback prompt if step is matches but resume is not uploaded */}

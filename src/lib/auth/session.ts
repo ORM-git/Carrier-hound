@@ -1,6 +1,7 @@
 import { createClient } from "../supabase/client";
 import { UserPreferences, DEFAULT_USER_PREFERENCES } from "./types";
 import { clearCandidateProfileMemoryCache } from "../resume/storage";
+import { clearTrackerMemoryState } from "../tracker/storage";
 import type { User } from "@supabase/supabase-js";
 
 const PREFS_STORAGE_KEY = "careermonke_preferences";
@@ -200,7 +201,8 @@ export async function signOutUser(): Promise<void> {
     localStorage.removeItem(PREFS_STORAGE_KEY);
     localStorage.removeItem(CANDIDATE_PROFILE_KEY);
 
-    // Purge any candidate profile or preferences keys
+    // Purge candidate profile and preferences keys; user-scoped offline work (applications, tailored assets)
+    // is preserved under its owner-scoped key and strictly isolated from subsequent users.
     const toRemove: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
@@ -216,9 +218,11 @@ export async function signOutUser(): Promise<void> {
 
     document.cookie = `${USER_EMAIL_KEY}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
     clearCandidateProfileMemoryCache();
+    clearTrackerMemoryState();
     window.dispatchEvent(new Event("careermonke_auth_updated"));
     window.dispatchEvent(new Event("careermonke_pro_updated"));
     window.dispatchEvent(new Event("careermonke_profile_updated"));
     window.dispatchEvent(new Event("careermonke_preferences_updated"));
+    window.dispatchEvent(new Event("careermonke_tracker_updated"));
   }
 }

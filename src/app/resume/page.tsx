@@ -7,7 +7,6 @@ import { toast } from "react-toastify";
 import AppIconRail from "@/components/shell/AppIconRail";
 import AppTopBar from "@/components/shell/AppTopBar";
 import LoggedInAppShell from "@/components/shell/LoggedInAppShell";
-import Footer from "@/components/Footer";
 import ProUpgradeScreen from "@/components/billing/ProUpgradeScreen";
 import ResumeUploadAndConfirm from "@/components/resume/ResumeUploadAndConfirm";
 import {
@@ -52,8 +51,7 @@ function ResumeSkeleton({ user, isPro }: { user?: User | null; isPro?: boolean }
         </div>
         <div className="h-28 w-full bg-white rounded-[16px] ring-1 ring-[#E2E8F0] animate-pulse" />
       </div>
-      <Footer />
-    </LoggedInAppShell>
+          </LoggedInAppShell>
   );
 }
 
@@ -219,8 +217,7 @@ export default function ResumePage() {
             subtitle="Upgrade to Pro to upload your resume, compute compatibility scores, and generate AI tailored applications."
           />
         </div>
-        <Footer />
-      </LoggedInAppShell>
+              </LoggedInAppShell>
     );
   }
 
@@ -670,8 +667,7 @@ export default function ResumePage() {
         </div>
       </div>
 
-      <Footer />
-
+      
       {/* =================================================================== */}
       {/* RENAME RESUME MODAL                                                 */}
       {/* =================================================================== */}

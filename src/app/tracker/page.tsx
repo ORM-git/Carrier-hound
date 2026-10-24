@@ -19,7 +19,6 @@ import {
   ChevronDown,
   Sparkles,
 } from "lucide-react";
-import Footer from "@/components/Footer";
 import AppIconRail from "@/components/shell/AppIconRail";
 import AppTopBar from "@/components/shell/AppTopBar";
 import LoggedInAppShell from "@/components/shell/LoggedInAppShell";
@@ -343,8 +342,7 @@ export default function TrackerPage() {
             subtitle="Upgrade to CareerMonke Pro to save jobs, track interview stages, and manage your pipeline."
           />
         </div>
-        <Footer />
-      </LoggedInAppShell>
+              </LoggedInAppShell>
     );
   }
 
@@ -565,7 +563,7 @@ export default function TrackerPage() {
                     onDragOver={(e) => handleDragOver(e, col.id)}
                     onDragLeave={() => handleDragLeave(col.id)}
                     onDrop={(e) => handleDrop(e, col.id)}
-                    className={`bg-[#F1F5F9] rounded-[16px] p-3 transition-colors min-h-[520px] flex flex-col shrink-0 min-w-[280px] w-[82vw] max-w-[320px] snap-center sm:min-w-0 sm:w-auto sm:max-w-none ${
+                    className={`bg-[#F1F5F9] rounded-[16px] p-3 transition-colors min-h-[220px] sm:min-h-[260px] flex flex-col shrink-0 min-w-[280px] w-[82vw] max-w-[320px] snap-center sm:min-w-0 sm:w-auto sm:max-w-none ${
                       isDropTarget
                         ? "ring-2 ring-[#2563EB] bg-[#EFF6FF]"
                         : "border border-transparent"
@@ -869,8 +867,7 @@ export default function TrackerPage() {
             </div>
           )}
 
-      <Footer />
-
+      
       {/* MODAL 1: ADD APPLICATION */}
       {isAddModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(15,23,42,0.6)] backdrop-blur-xs p-4 animate-fadeIn">

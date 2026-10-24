@@ -209,7 +209,7 @@ function run() {
     /jobright/i,
     /coaching/i,
     /\bagent\b/i,
-    /interview/i,
+    /interview (?:prep|coaching|copilot|autofill)/i,
     /autofill/i,
     /referral/i,
     /upsell/i,

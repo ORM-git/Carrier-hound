@@ -76,6 +76,18 @@
   force = true
 
 [[redirects]]
+  from = "/applications"
+  to = "/tracker"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/privacy"
+  to = "/privacy-policy"
+  status = 301
+  force = true
+
+[[redirects]]
   from = "/jobs/detail"
   to = "/jobs/detail.html"
   status = 200

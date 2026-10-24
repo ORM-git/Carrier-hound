@@ -11,7 +11,6 @@ import { getCandidateProfile, saveConfirmedCandidateProfile } from "@/lib/resume
 import { CandidateProfile } from "@/lib/resume/types";
 import { getAuthUser } from "@/lib/auth/session";
 import { getProAccessStatus } from "@/lib/billing/subscription";
-import Footer from "@/components/Footer";
 import {
   User as UserIcon,
   Pencil,
@@ -718,7 +717,6 @@ export default function ProfilePage() {
         onSave={handleSaveProfile}
       />
 
-      <Footer />
-    </LoggedInAppShell>
+          </LoggedInAppShell>
   );
 }

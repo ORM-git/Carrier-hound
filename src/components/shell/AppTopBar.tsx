@@ -91,7 +91,7 @@ export default function AppTopBar({
         data-testid="app-top-bar"
         className="sticky top-0 z-30 h-14 bg-white border-b border-[#E2E8F0] w-full"
       >
-        <div className="h-full px-4 sm:px-6 flex items-center justify-between gap-3 sm:gap-4">
+        <div className="h-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-3 sm:gap-4">
           {/* =================================================================== */}
           {/* LEFT: Mobile Hamburger + Page Label + Tabs (on /jobs)               */}
           {/* =================================================================== */}
@@ -116,7 +116,7 @@ export default function AppTopBar({
 
             {/* Breadcrumb separator between Page Label and Tabs */}
             {tabs && tabs.length > 0 && (
-              <span className="text-slate-400 font-semibold text-lg hidden sm:inline select-none leading-none">
+              <span className="text-[#475569] font-semibold text-lg hidden sm:inline select-none leading-none">
                 ›
               </span>
             )}
@@ -129,7 +129,7 @@ export default function AppTopBar({
                     key={tab.id}
                     type="button"
                     onClick={tab.onClick}
-                    className={`relative h-14 min-h-[44px] inline-flex items-center gap-1.5 px-2.5 sm:px-3 text-[14px] cursor-pointer whitespace-nowrap transition-colors duration-200 ${
+                    className={`relative h-14 min-h-[44px] inline-flex items-center gap-1.5 px-2.5 sm:px-3 text-[14px] cursor-pointer whitespace-nowrap transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
                       tab.active
                         ? "font-bold text-[#0F172A] after:absolute after:bottom-0 after:left-2 after:right-2 after:h-[2px] after:bg-[#0F172A]"
                         : "font-medium text-[#475569] hover:text-[#0F172A]"
@@ -153,15 +153,25 @@ export default function AppTopBar({
           {onSearchChange && (
             <div className="flex-1 max-w-xs sm:max-w-sm hidden md:block mx-2">
               <div className="relative">
-                <Search className="w-4 h-4 text-[#94A3B8] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <Search className="w-4 h-4 text-[#475569] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type="text"
                   aria-label="Search by job title, company, or keyword"
                   value={searchValue || ""}
                   onChange={(e) => onSearchChange(e.target.value)}
                   placeholder={searchPlaceholder}
-                  className="w-full h-9 pl-9 pr-3 rounded-full bg-[#F1F5F9] text-[13px] text-[#0F172A] placeholder-[#475569] border border-transparent focus:border-[#93C5FD] focus:bg-white focus:outline-none transition-all duration-200"
+                  className="w-full h-9 pl-9 pr-8 rounded-full bg-[#F1F5F9] text-[13px] text-[#0F172A] placeholder-[#475569] border border-transparent focus:border-[#93C5FD] focus:bg-white focus:outline-none transition-all duration-200"
                 />
+                {searchValue && (
+                  <button
+                    type="button"
+                    onClick={() => onSearchChange("")}
+                    aria-label="Clear search text"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-[#475569] hover:text-[#0F172A] p-0.5 rounded-full hover:bg-slate-200 transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
             </div>
           )}
@@ -189,7 +199,7 @@ export default function AppTopBar({
                 type="button"
                 onClick={() => setMobileSearchOpen(!mobileSearchOpen)}
                 aria-label="Toggle search input"
-                className="md:hidden w-8 h-8 rounded-full flex items-center justify-center text-[#64748B] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition-colors"
+                className="md:hidden w-10 h-10 min-h-[44px] min-w-[44px] rounded-full flex items-center justify-center text-[#475569] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
               >
                 <Search className="w-4 h-4" />
               </button>
@@ -203,7 +213,7 @@ export default function AppTopBar({
                 aria-label="User avatar menu"
                 aria-haspopup="true"
                 aria-expanded={avatarMenuOpen}
-                className="flex items-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] rounded-full cursor-pointer"
+                className="flex items-center justify-center gap-2 min-h-[44px] min-w-[44px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] rounded-full cursor-pointer"
               >
                 <div className="w-8 h-8 rounded-full bg-[#2563EB] text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs">
                   {userInitial}
@@ -211,7 +221,7 @@ export default function AppTopBar({
                 <span className="font-bold text-[13px] text-[#0F172A] hidden lg:inline truncate max-w-[120px]">
                   {displayName}
                 </span>
-                <ChevronDown className={`w-3 h-3 text-[#64748B] hidden sm:inline transition-transform ${avatarMenuOpen ? "rotate-180" : ""}`} />
+                <ChevronDown className={`w-3 h-3 text-[#475569] hidden sm:inline transition-transform ${avatarMenuOpen ? "rotate-180" : ""}`} />
               </button>
 
               {avatarMenuOpen && (
@@ -222,9 +232,9 @@ export default function AppTopBar({
                     className="absolute right-0 top-full mt-2 w-56 bg-white border border-[#E2E8F0] rounded-xl shadow-xl z-50 overflow-hidden text-left py-1.5 animate-fadeIn"
                   >
                     <div className="px-4 py-2.5 border-b border-[#F1F5F9]">
-                      <p className="text-[11px] font-semibold text-[#64748B] uppercase tracking-wider">Signed in as</p>
+                      <p className="text-[11px] font-semibold text-[#475569] uppercase tracking-wider">Signed in as</p>
                       <p className="text-[13px] font-bold text-[#0F172A] truncate mt-0.5">{displayName}</p>
-                      <p className="text-[11px] text-[#64748B] truncate">{user?.email}</p>
+                      <p className="text-[11px] text-[#475569] truncate">{user?.email}</p>
                     </div>
 
                     <div className="p-1 space-y-0.5">
@@ -233,7 +243,7 @@ export default function AppTopBar({
                         onClick={() => setAvatarMenuOpen(false)}
                         className="flex items-center gap-2.5 px-3 py-2 text-[13px] text-[#0F172A] hover:bg-[#EFF6FF] hover:text-[#2563EB] rounded-lg transition-colors font-medium"
                       >
-                        <UserIcon className="w-4 h-4 text-[#64748B]" />
+                        <UserIcon className="w-4 h-4 text-[#475569]" />
                         <span>Profile</span>
                       </Link>
                       <Link
@@ -241,7 +251,7 @@ export default function AppTopBar({
                         onClick={() => setAvatarMenuOpen(false)}
                         className="flex items-center gap-2.5 px-3 py-2 text-[13px] text-[#0F172A] hover:bg-[#EFF6FF] hover:text-[#2563EB] rounded-lg transition-colors font-medium"
                       >
-                        <Settings className="w-4 h-4 text-[#64748B]" />
+                        <Settings className="w-4 h-4 text-[#475569]" />
                         <span>Settings</span>
                       </Link>
                       <div className="my-1 border-t border-[#F1F5F9]" />
@@ -274,7 +284,7 @@ export default function AppTopBar({
         {onSearchChange && mobileSearchOpen && (
           <div className="md:hidden px-4 py-2 bg-white border-b border-[#E2E8F0]">
             <div className="relative">
-              <Search className="w-4 h-4 text-[#94A3B8] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <Search className="w-4 h-4 text-[#475569] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
                 autoFocus
@@ -282,8 +292,18 @@ export default function AppTopBar({
                 value={searchValue || ""}
                 onChange={(e) => onSearchChange(e.target.value)}
                 placeholder={searchPlaceholder}
-                className="w-full h-9 pl-9 pr-3 rounded-full bg-[#F1F5F9] text-[13px] text-[#0F172A] placeholder-[#475569] border border-transparent focus:border-[#93C5FD] focus:bg-white focus:outline-none transition-all duration-200"
+                className="w-full h-11 pl-10 pr-12 rounded-full bg-[#F1F5F9] text-[13px] text-[#0F172A] placeholder-[#475569] border border-transparent focus:border-[#93C5FD] focus:bg-white focus:outline-none transition-all duration-200"
               />
+              {searchValue && (
+                <button
+                  type="button"
+                  onClick={() => onSearchChange("")}
+                  aria-label="Clear search text"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 w-11 h-11 min-w-[44px] min-h-[44px] flex items-center justify-center text-[#475569] hover:text-[#0F172A] rounded-full hover:bg-slate-200/60 transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -310,8 +330,10 @@ export default function AppTopBar({
         role="dialog"
         aria-label="Mobile Navigation"
         aria-modal="true"
+        aria-hidden={!drawerOpen}
+        inert={!drawerOpen}
         className={`fixed inset-y-0 left-0 z-[61] w-full max-w-[280px] bg-white h-full shadow-2xl flex flex-col justify-between p-5 transition-transform duration-300 ease-[cubic-bezier(0.2,0,0,1)] md:hidden overflow-y-auto overscroll-contain ${
-          drawerOpen ? "translate-x-0" : "-translate-x-full"
+          drawerOpen ? "translate-x-0" : "-translate-x-full invisible pointer-events-none"
         }`}
       >
         <div className="space-y-4 min-h-0">
@@ -320,7 +342,7 @@ export default function AppTopBar({
             <Link
               href="/dashboard"
               onClick={() => setDrawerOpen(false)}
-              className="flex items-center gap-2"
+              className="flex items-center gap-2 min-h-[44px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
             >
               <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center p-0.5 border border-[#E2E8F0] shadow-xs">
                 <BrandIcon className="w-6 h-6" />
@@ -390,7 +412,7 @@ export default function AppTopBar({
               <p className="text-[13px] font-bold text-[#0F172A] truncate">
                 {displayName}
               </p>
-              <p className="text-[11px] text-[#64748B] truncate">
+              <p className="text-[11px] text-[#475569] truncate">
                 {user?.email || "Signed in"}
               </p>
             </div>

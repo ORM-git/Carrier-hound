@@ -24,6 +24,7 @@ export interface LiveJob {
   description?: string;
   skills?: string[];
   postedAt?: string;
+trackerNotes?: string;
 }
 
 export interface GetJobsOptions {

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   X,
   Copy,
@@ -31,6 +31,7 @@ import {
   saveCachedTailoredResume,
   getTailoredResumeAsync,
 } from "@/lib/resume/storage";
+import { createClient } from "@/lib/supabase/client";
 import { downloadAtsResumePdf } from "@/lib/resume/atsPdfGenerator";
 import {
   downloadAtsResumeDocx,
@@ -53,6 +54,7 @@ interface TailorResumeModalProps {
     description?: string;
   };
   onOpenCoverLetter?: () => void;
+  userId?: string | null;
 }
 
 type AiTailoringStatus = "rules" | "generating" | "reviewing" | "accepted" | "failed";
@@ -63,21 +65,79 @@ export default function TailorResumeModal({
   candidate,
   job,
   onOpenCoverLetter,
+  userId,
 }: TailorResumeModalProps) {
   const [copied, setCopied] = useState(false);
   const [showFullPreview, setShowFullPreview] = useState(false);
 
   const jobId = job.id || `${(job.company || "").replace(/\s+/g, "-")}_${(job.title || "").replace(/\s+/g, "-")}`;
 
+  const [activeOwnerId, setActiveOwnerId] = useState<string | null>(
+    userId === "guest" ? "guest" : null
+  );
+  const activeOwnerIdRef = useRef<string | null>(
+    userId === "guest" ? "guest" : null
+  );
+  const authGenerationRef = useRef<number>(0);
+
+  const getVerifiedSessionUserId = async (): Promise<string | null> => {
+    try {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      return session?.user?.id ?? null;
+    } catch {
+      return null;
+    }
+  };
+
+  useEffect(() => {
+    let isMounted = true;
+    const syncOwner = async () => {
+      authGenerationRef.current++;
+      const sessionUserId = await getVerifiedSessionUserId();
+      // Verified session user strictly determines owner.
+      // A null/failed session must NEVER resurrect an old prop identity.
+      const resolved = sessionUserId ?? (userId === "guest" ? "guest" : null);
+      if (isMounted) {
+        setActiveOwnerId(resolved);
+        activeOwnerIdRef.current = resolved;
+        setPendingAiDraft(null);
+      }
+    };
+    syncOwner();
+    const handleAuth = () => syncOwner();
+    window.addEventListener("careermonke_auth_updated", handleAuth);
+
+    let authListener: { unsubscribe: () => void } | null = null;
+    try {
+      const supabase = createClient();
+      const { data } = supabase.auth.onAuthStateChange(() => {
+        syncOwner();
+      });
+      authListener = data.subscription;
+    } catch {}
+
+    return () => {
+      isMounted = false;
+      window.removeEventListener("careermonke_auth_updated", handleAuth);
+      authListener?.unsubscribe();
+    };
+  }, [userId]);
+
   const [tailoredResult, setTailoredResult] = useState<TailoredJobResumeResult>(() => {
-    const cached = getCachedTailoredResume(jobId);
-    if (cached) return cached;
+    if (userId === "guest") {
+      const cached = getCachedTailoredResume(jobId, undefined, "guest");
+      if (cached) return cached;
+    }
     return tailorProfileForJobWithAts(candidate, job);
   });
 
   const [aiStatus, setAiStatus] = useState<AiTailoringStatus>(() => {
-    const cached = getCachedTailoredResume(jobId);
-    return cached?.tailoringSource === "ai" ? "accepted" : "rules";
+    if (userId === "guest") {
+      const cached = getCachedTailoredResume(jobId, undefined, "guest");
+      return cached?.tailoringSource === "ai" ? "accepted" : "rules";
+    }
+    return "rules";
   });
   const [aiError, setAiError] = useState<string | null>(null);
   const [pendingAiDraft, setPendingAiDraft] = useState<{
@@ -86,37 +146,49 @@ export default function TailorResumeModal({
     tailoredBullets: Record<string, string[]>;
     modelIdentity?: string;
     jobDescriptionShortened?: boolean;
+    capturedOwnerId?: string | null;
+    capturedGen?: number;
   } | null>(null);
 
   useEffect(() => {
     if (open && candidate && job) {
+      const currentOwner = activeOwnerId;
+      // For authenticated work, stop safely when no owner is verified: reset to rules-based
+      if (!currentOwner) {
+        setTailoredResult(tailorProfileForJobWithAts(candidate, job));
+        setAiStatus("rules");
+        return;
+      }
+
       const expectedHash = computeResumeSourceHash(candidate, job, "1.0");
-      const cached = getCachedTailoredResume(jobId, expectedHash);
+      const cached = getCachedTailoredResume(jobId, expectedHash, currentOwner);
       if (cached && cached.jobId === jobId) {
         setTailoredResult(cached);
         setAiStatus(cached.tailoringSource === "ai" ? "accepted" : "rules");
       } else {
-        getTailoredResumeAsync(jobId, expectedHash)
+        getTailoredResumeAsync(jobId, expectedHash, currentOwner)
           .then((remote) => {
+            if (activeOwnerIdRef.current !== currentOwner) return;
             if (remote && remote.jobId === jobId) {
               setTailoredResult(remote);
               setAiStatus(remote.tailoringSource === "ai" ? "accepted" : "rules");
             } else {
               const fresh = tailorProfileForJobWithAts(candidate, job);
-              saveCachedTailoredResume(jobId, fresh);
+              saveCachedTailoredResume(jobId, fresh, currentOwner);
               setTailoredResult(fresh);
               setAiStatus("rules");
             }
           })
           .catch(() => {
+            if (activeOwnerIdRef.current !== currentOwner) return;
             const fresh = tailorProfileForJobWithAts(candidate, job);
-            saveCachedTailoredResume(jobId, fresh);
+            saveCachedTailoredResume(jobId, fresh, currentOwner);
             setTailoredResult(fresh);
             setAiStatus("rules");
           });
       }
     }
-  }, [open, jobId, candidate, job]);
+  }, [open, jobId, candidate, job, activeOwnerId]);
 
   const tailoredCandidate = tailoredResult.tailoredCandidate;
   const atsScore = tailoredResult.atsScore;
@@ -131,11 +203,37 @@ export default function TailorResumeModal({
   if (!open) return null;
 
   const handleGenerateAi = async () => {
+    const currentGen = ++authGenerationRef.current;
+    const initialSessionUser = await getVerifiedSessionUserId();
+    const capturedOwner = initialSessionUser ?? (userId === "guest" ? "guest" : null);
+
+    // Stop safely when no owner is verified: do not generate or read/write cache
+    if (!capturedOwner) {
+      toast.error("Please sign in to generate tailored resume.");
+      setAiStatus("rules");
+      return;
+    }
+
+    activeOwnerIdRef.current = capturedOwner;
     setAiStatus("generating");
     setAiError(null);
 
     try {
       const res = await generateAiTailoredResume(candidate, job);
+
+      const liveSessionUserId = await getVerifiedSessionUserId();
+      const liveExpectedOwner = liveSessionUserId ?? (userId === "guest" ? "guest" : null);
+
+      if (
+        currentGen !== authGenerationRef.current ||
+        capturedOwner !== liveExpectedOwner ||
+        capturedOwner !== activeOwnerIdRef.current
+      ) {
+        console.warn("Auth changed during AI resume generation; discarding result to prevent cross-account contamination.");
+        setAiStatus("rules");
+        return;
+      }
+
       if (!res.success || !res.draft) {
         setAiStatus("failed");
         const msg = res.error || "AI generation failed. Retaining verified rules-based resume.";
@@ -148,6 +246,8 @@ export default function TailorResumeModal({
         ...res.draft,
         modelIdentity: res.model,
         jobDescriptionShortened: res.jobDescriptionShortened,
+        capturedOwnerId: capturedOwner,
+        capturedGen: currentGen,
       });
       setAiStatus("reviewing");
       toast.info("AI draft generated! Review changes before accepting.");
@@ -159,8 +259,24 @@ export default function TailorResumeModal({
     }
   };
 
-  const handleAcceptAi = () => {
+  const handleAcceptAi = async () => {
     if (!pendingAiDraft) return;
+
+    const liveSessionUserId = await getVerifiedSessionUserId();
+    const liveExpectedOwner = liveSessionUserId ?? (userId === "guest" ? "guest" : null);
+
+    if (
+      !liveExpectedOwner ||
+      (pendingAiDraft.capturedGen !== undefined && pendingAiDraft.capturedGen !== authGenerationRef.current) ||
+      pendingAiDraft.capturedOwnerId !== liveExpectedOwner ||
+      pendingAiDraft.capturedOwnerId !== activeOwnerIdRef.current
+    ) {
+      console.warn("Owner or generation changed before accepting draft; rejecting.");
+      setPendingAiDraft(null);
+      setAiStatus("rules");
+      toast.error("Session changed; unable to save draft.");
+      return;
+    }
 
     const appliedCandidate = applyAcceptedAiDraft(candidate, pendingAiDraft);
     const recomputedAts = computeJobAtsScore(appliedCandidate, job);
@@ -183,7 +299,7 @@ export default function TailorResumeModal({
       aiDraft: pendingAiDraft,
     };
 
-    saveCachedTailoredResume(jobId, acceptedResult);
+    saveCachedTailoredResume(jobId, acceptedResult, liveExpectedOwner);
     setTailoredResult(acceptedResult);
     setAiStatus("accepted");
     setPendingAiDraft(null);
@@ -195,31 +311,47 @@ export default function TailorResumeModal({
     setAiStatus("rules");
     if (tailoredResult.tailoringSource === "ai") {
       const rulesResult = tailorProfileForJobWithAts(candidate, job);
-      saveCachedTailoredResume(jobId, rulesResult);
+      if (activeOwnerId) {
+        saveCachedTailoredResume(jobId, rulesResult, activeOwnerId);
+      }
       setTailoredResult(rulesResult);
     }
     toast.info("Retained verified rules-based resume.");
   };
 
-  const handleDownloadPdf = () => {
+  const verifyExportAllowed = async (): Promise<boolean> => {
+    if (userId === "guest") return true;
+    const liveSessionUser = await getVerifiedSessionUserId();
+    if (!liveSessionUser || liveSessionUser !== activeOwnerIdRef.current) {
+      toast.error("Please sign in with your active account to export tailored documents.");
+      return false;
+    }
+    return true;
+  };
+
+  const handleDownloadPdf = async () => {
+    if (!(await verifyExportAllowed())) return;
     const filename = `${(candidate.name || "Resume").replace(/\s+/g, "_")}_Tailored_${(job.company || "Company").replace(/\s+/g, "_")}_${(job.title || "Role").replace(/\s+/g, "_")}_ATS.pdf`;
     downloadAtsResumePdf(tailoredCandidate, filename);
     toast.success(`Downloaded ATS PDF tailored for ${job.company}!`);
   };
 
-  const handleDownloadDocx = () => {
+  const handleDownloadDocx = async () => {
+    if (!(await verifyExportAllowed())) return;
     const filename = `${(candidate.name || "Resume").replace(/\s+/g, "_")}_Tailored_${(job.company || "Company").replace(/\s+/g, "_")}_${(job.title || "Role").replace(/\s+/g, "_")}_ATS.docx`;
     downloadAtsResumeDocx(tailoredCandidate, filename);
     toast.success(`Downloaded ATS Word document tailored for ${job.company}!`);
   };
 
-  const handleDownloadTxt = () => {
+  const handleDownloadTxt = async () => {
+    if (!(await verifyExportAllowed())) return;
     const filename = `${(candidate.name || "Resume").replace(/\s+/g, "_")}_Tailored_${(job.company || "Company").replace(/\s+/g, "_")}_${(job.title || "Role").replace(/\s+/g, "_")}_ATS.txt`;
     downloadAtsResumeText(tailoredCandidate, filename);
     toast.success("Downloaded plain text ATS resume!");
   };
 
-  const handleCopy = () => {
+  const handleCopy = async () => {
+    if (!(await verifyExportAllowed())) return;
     navigator.clipboard.writeText(resumeText);
     setCopied(true);
     toast.success("Tailored resume copied to clipboard!");
@@ -228,7 +360,7 @@ export default function TailorResumeModal({
 
   const handleRerun = () => {
     const fresh = tailorProfileForJobWithAts(candidate, job);
-    saveCachedTailoredResume(jobId, fresh);
+    saveCachedTailoredResume(jobId, fresh, activeOwnerId);
     setTailoredResult(fresh);
     setAiStatus("rules");
     setPendingAiDraft(null);

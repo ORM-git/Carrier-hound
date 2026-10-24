@@ -116,9 +116,15 @@ const samplePreferences = {
   updatedAt: new Date().toISOString(),
 };
 
+const JOB_1_UUID = "11111111-1111-4111-8111-111111111111";
+const JOB_2_UUID = "22222222-2222-4222-8222-222222222222";
+const JOB_3_UUID = "33333333-3333-4333-8333-333333333333";
+const APP_1_UUID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+
 const mockJobs = [
   {
-    id: "mock_job_1",
+    id: JOB_1_UUID,
+    legacy_id: "mock_job_1",
     source: "greenhouse",
     source_job_id: "gh_101",
     title: "Senior Full Stack Engineer",
@@ -136,7 +142,8 @@ const mockJobs = [
     is_active: true,
   },
   {
-    id: "mock_job_2",
+    id: JOB_2_UUID,
+    legacy_id: "mock_job_2",
     source: "lever",
     source_job_id: "lev_202",
     title: "Staff Distributed Systems Engineer",
@@ -149,6 +156,25 @@ const mockJobs = [
     requirements: "PostgreSQL, Go, Rust, and distributed consensus.",
     apply_url: "https://example.com/apply/supabase-staff-dist-sys",
     tags: ["PostgreSQL", "Go", "Distributed Systems"],
+    date: new Date().toISOString(),
+    postedAt: new Date().toISOString(),
+    is_active: true,
+  },
+  {
+    id: JOB_3_UUID,
+    legacy_id: "mock_job_3",
+    source: "greenhouse",
+    source_job_id: "gh_103",
+    title: "Senior Full Stack Engineer",
+    company: "Vercel",
+    location: "Remote - EMEA",
+    salary: "$165,000 - $195,000",
+    salary_text: "$165,000 - $195,000",
+    type: "Full-time",
+    description: "Vercel EMEA team is looking for a Senior Full Stack Engineer with Next.js expertise.",
+    requirements: "5+ years TypeScript, React, Next.js.",
+    apply_url: "https://example.com/apply/vercel-emea-fullstack",
+    tags: ["React", "TypeScript", "Next.js"],
     date: new Date().toISOString(),
     postedAt: new Date().toISOString(),
     is_active: true,
@@ -174,7 +200,29 @@ const mockDbJobs = mockJobs.map((j) => ({
 }));
 
 async function setupPageMocks(page, options = {}) {
-  const { isSigned = true, isPro = true, cookieNotice = false } = options;
+  const { isSigned = true, isPro = true, cookieNotice = false, initialApplications } = options;
+
+  // Isolated per-page record store modeling real record IDs, user/job matching, notes, and stages
+  const applicationsStore = (initialApplications
+    ? initialApplications
+    : [
+        {
+          id: APP_1_UUID,
+          job_id: JOB_1_UUID,
+          title: "Senior Full Stack Engineer",
+          company: "Vercel",
+          stage: "saved",
+          notes: "Follow up next week",
+          location: "Remote",
+          salary_text: "$165k - $195k",
+          applied_at: null,
+          created_at: new Date(Date.now() - 86400000).toISOString(),
+          updated_at: new Date(Date.now() - 86400000).toISOString(),
+        },
+      ]
+  ).map((r) => ({ ...r }));
+
+  page._testApplicationsStore = applicationsStore;
 
   await page.setRequestInterception(true);
   page.on("request", (req) => {
@@ -368,24 +416,105 @@ async function setupPageMocks(page, options = {}) {
     }
 
     if (url.includes("/tracker") || url.includes("/applications")) {
+      if (req.method() === "POST") {
+        let rawParsed = {};
+        try {
+          rawParsed = JSON.parse(req.postData() || "{}");
+        } catch {}
+        const parsed = Array.isArray(rawParsed) ? (rawParsed[0] || {}) : rawParsed;
+
+        // Match existing record: when both have job_id, match by job_id only; never merge different known IDs
+        const existingIdx = applicationsStore.findIndex((a) => {
+          if (parsed.id && a.id === parsed.id) return true;
+          const aJobId = (a.job_id || a.jobId || "").trim();
+          const pJobId = (parsed.job_id || parsed.jobId || "").trim();
+          if (aJobId && pJobId) {
+            return aJobId === pJobId;
+          }
+          if (a.company && parsed.company && a.title && parsed.title) {
+            return (
+              a.company.trim().toLowerCase() === parsed.company.trim().toLowerCase() &&
+              a.title.trim().toLowerCase() === parsed.title.trim().toLowerCase()
+            );
+          }
+          return false;
+        });
+
+        let savedRecord;
+        if (existingIdx >= 0) {
+          applicationsStore[existingIdx] = {
+            ...applicationsStore[existingIdx],
+            ...parsed,
+            job_id: applicationsStore[existingIdx].job_id || parsed.job_id,
+            // Preserve existing notes if not explicitly provided
+            notes:
+              parsed.notes !== undefined && parsed.notes !== null
+                ? parsed.notes
+                : applicationsStore[existingIdx].notes,
+            updated_at: new Date().toISOString(),
+          };
+          savedRecord = applicationsStore[existingIdx];
+        } else {
+          savedRecord = {
+            id: parsed.id || "11111111-2222-4333-8444-555555555555",
+            job_id: parsed.job_id || JOB_1_UUID,
+            title: parsed.title || "Job Title",
+            company: parsed.company || "Company",
+            stage: parsed.stage || "saved",
+            notes: parsed.notes || "",
+            location: parsed.location || "Remote",
+            salary_text: parsed.salary_text || null,
+            apply_url: parsed.apply_url || null,
+            applied_at: parsed.applied_at || (parsed.stage === "applied" ? new Date().toISOString() : null),
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          };
+          applicationsStore.push(savedRecord);
+        }
+
+        req.respond({
+          status: 200,
+          headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" },
+          body: JSON.stringify([savedRecord]),
+        });
+        return;
+      }
+
+      if (req.method() === "PATCH") {
+        let rawParsed = {};
+        try {
+          rawParsed = JSON.parse(req.postData() || "{}");
+        } catch {}
+        const parsed = Array.isArray(rawParsed) ? (rawParsed[0] || {}) : rawParsed;
+
+        // Match target by query parameter or body id
+        const idMatch = url.match(/[?&]id=eq\.([a-zA-Z0-9_-]+)/);
+        const targetId = idMatch ? idMatch[1] : parsed.id;
+
+        const target = targetId
+          ? applicationsStore.find((a) => a.id === targetId)
+          : applicationsStore[0];
+
+        if (target) {
+          if (parsed.stage) target.stage = parsed.stage;
+          if (parsed.applied_at !== undefined) target.applied_at = parsed.applied_at;
+          if (parsed.notes !== undefined) target.notes = parsed.notes;
+          target.updated_at = new Date().toISOString();
+        }
+
+        req.respond({
+          status: 200,
+          headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" },
+          body: JSON.stringify(target ? [target] : []),
+        });
+        return;
+      }
+
+      // GET
       req.respond({
         status: 200,
         headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" },
-        body: isSigned
-          ? JSON.stringify([
-              {
-                id: "app_1",
-                title: "Senior Full Stack Engineer",
-                company: "Vercel",
-                stage: "saved",
-                location: "Remote",
-                salary_text: "$165k - $195k",
-                applied_at: null,
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-              },
-            ])
-          : JSON.stringify([]),
+        body: isSigned ? JSON.stringify(applicationsStore) : JSON.stringify([]),
       });
       return;
     }
@@ -436,7 +565,7 @@ async function setupPageMocks(page, options = {}) {
 
     if (url.includes("/rest/v1/jobs") || url.includes("jobs_public")) {
       const isSingle = (req.headers()["accept"] || "").includes("vnd.pgrst.object+json");
-      const matched = mockDbJobs.find((j) => url.includes(j.id)) || mockDbJobs[0];
+      const matched = mockDbJobs.find((j) => url.includes(j.id) || (j.legacy_id && url.includes(j.legacy_id))) || mockDbJobs[0];
       req.respond({
         status: 200,
         headers: {
@@ -449,7 +578,7 @@ async function setupPageMocks(page, options = {}) {
     }
 
     if (url.includes("/api/jobs/pro")) {
-      const matched = mockJobs.find((j) => url.includes(j.id)) || mockJobs[0];
+      const matched = mockJobs.find((j) => url.includes(j.id) || (j.legacy_id && url.includes(j.legacy_id))) || mockJobs[0];
       req.respond({
         status: 200,
         headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" },
@@ -540,10 +669,38 @@ async function setupPageMocks(page, options = {}) {
     });
 
     await page.evaluateOnNewDocument(
-      ({ profile, cookieNotice }) => {
+      ({ profile, cookieNotice, initialApps }) => {
         try {
-          localStorage.setItem("careermonke_candidate_profile", JSON.stringify(profile));
-          localStorage.setItem("careermonke_user_email", "alex.candidate@careermonke.com");
+          const isReload =
+            Boolean(window.performance && window.performance.getEntriesByType && window.performance.getEntriesByType("navigation")[0]?.type === "reload") ||
+            sessionStorage.getItem("__test_page_initialized") === "true";
+
+          if (!isReload) {
+            sessionStorage.setItem("__test_page_initialized", "true");
+            localStorage.clear();
+            localStorage.setItem("careermonke_candidate_profile", JSON.stringify(profile));
+            localStorage.setItem("careermonke_user_email", "alex.candidate@careermonke.com");
+            if (initialApps && initialApps.length > 0) {
+              const scopedPayload = JSON.stringify(
+                initialApps.map((a) => ({
+                  id: a.id,
+                  jobId: a.job_id || a.jobId,
+                  title: a.title,
+                  company: a.company,
+                  stage: a.stage,
+                  notes: a.notes,
+                  location: a.location,
+                  salaryText: a.salary_text || a.salaryText,
+                  appliedAt: a.applied_at || a.appliedAt,
+                  createdAt: a.created_at || a.createdAt,
+                  updatedAt: a.updated_at || a.updatedAt,
+                }))
+              );
+              localStorage.setItem("careermonke_applications_usr_mock_123", scopedPayload);
+            } else {
+              localStorage.removeItem("careermonke_applications_usr_mock_123");
+            }
+          }
           localStorage.setItem(
             "careermonke_preferences",
             JSON.stringify({
@@ -568,7 +725,7 @@ async function setupPageMocks(page, options = {}) {
           }
         } catch {}
       },
-      { profile: sampleProfile, cookieNotice }
+      { profile: sampleProfile, cookieNotice, initialApps: applicationsStore }
     );
   } else {
     // Guest / unauthenticated state: clear cookies and local storage
