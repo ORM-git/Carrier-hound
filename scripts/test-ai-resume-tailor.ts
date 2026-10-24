@@ -64,7 +64,18 @@ import {
 } from "../src/lib/resume/storage";
 import { downloadAtsResumePdf } from "../src/lib/resume/atsPdfGenerator";
 import { CandidateProfile } from "../src/lib/resume/types";
-import { handleAiRequest, handleNetlifyAiRequest } from "../src/lib/ai/serviceHandler";
+import {
+  handleAiRequest,
+  handleNetlifyAiRequest,
+  _setAiTestMockDeps,
+  _resetAiRateLimitStore,
+} from "../src/lib/ai/serviceHandler";
+import {
+  normalizeSkillToTokens,
+  doesSkillMatch,
+  GENUINE_SKILL_ALIASES,
+  areSkillsGenuineMatch,
+} from "../src/lib/matcher/scoring";
 import { POST as apiAiPost } from "../src/app/api/ai/route";
 import { handler as netlifyAiHandler } from "../netlify/functions/ai";
 
@@ -403,6 +414,146 @@ async function runAllTests() {
   const unevidencedSummaryNumberCheck = validateTailoredResumeOutput(unevidencedSummaryNumberDraft, testCandidate, testJob);
   assert(unevidencedSummaryNumberCheck.ok === false && unevidencedSummaryNumberCheck.error.includes("summary introduces unevidenced numeric metric"), "Summary introducing unevidenced numeric claim (10+ years) is rejected");
 
+  // 2H. Exact Skill Evidence & Directional Matching (React != React Native, Java != JavaScript, SQL != PostgreSQL)
+  console.log("  -> 2H. EXACT SKILL EVIDENCE & DIRECTIONAL MATCHING");
+  // Negative scoring controls:
+  const candReactTokens = [normalizeSkillToTokens("React")];
+  const candReactNativeTokens = [normalizeSkillToTokens("React Native")];
+  const candJavaTokens = [normalizeSkillToTokens("Java")];
+  const candJsTokens = [normalizeSkillToTokens("JavaScript")];
+  const candSqlTokens = [normalizeSkillToTokens("SQL")];
+  const candPgTokens = [normalizeSkillToTokens("PostgreSQL")];
+
+  assert(doesSkillMatch("React Native", candReactTokens).matched === false, "Scoring: React candidate does NOT match React Native requirement");
+  assert(doesSkillMatch("React", candReactNativeTokens).matched === false, "Scoring: React Native candidate does NOT match React requirement");
+  assert(doesSkillMatch("JavaScript", candJavaTokens).matched === false, "Scoring: Java candidate does NOT match JavaScript requirement");
+  assert(doesSkillMatch("Java", candJsTokens).matched === false, "Scoring: JavaScript candidate does NOT match Java requirement");
+  assert(doesSkillMatch("PostgreSQL", candSqlTokens).matched === false, "Scoring: SQL-only candidate does NOT match PostgreSQL requirement");
+  assert(doesSkillMatch("SQL", candPgTokens).matched === false, "Scoring: PostgreSQL-only candidate does NOT match general SQL requirement");
+
+  // Positive scoring controls (case variants & genuine aliases):
+  const candLowerReact = [normalizeSkillToTokens("react")];
+  const candAliasReactJs = [normalizeSkillToTokens("React.js")];
+  const candAliasK8s = [normalizeSkillToTokens("k8s")];
+  const candAliasNode = [normalizeSkillToTokens("node")];
+  assert(doesSkillMatch("React", candLowerReact).matched === true, "Scoring: lowercase 'react' matches 'React' requirement (case variant)");
+  assert(doesSkillMatch("React", candAliasReactJs).matched === true, "Scoring: 'React.js' matches 'React' requirement (genuine alias)");
+  assert(doesSkillMatch("Kubernetes", candAliasK8s).matched === true, "Scoring: 'k8s' matches 'Kubernetes' requirement (genuine alias)");
+  assert(doesSkillMatch("Node.js", candAliasNode).matched === true, "Scoring: 'node' matches 'Node.js' requirement (genuine alias)");
+
+  // Output validation negative controls (cross-skill hallucinations rejected):
+  const makeSkillCandidate = (skills: string[]): CandidateProfile => ({
+    name: "Skill Test Candidate",
+    email: "skill@example.com",
+    headline: "Engineer",
+    summary: `Software engineer experienced in ${skills.join(", ")}.`,
+    skills,
+    experience: [
+      {
+        id: "exp-skill-1",
+        company: "Tech Co",
+        role: "Developer",
+        startDate: "2020",
+        endDate: "Present",
+        bullets: [`Worked on services utilizing ${skills.join(", ")} for 100 users.`],
+        needsReview: false,
+      },
+    ],
+    education: [],
+    certifications: [],
+  });
+
+  const baseJobForSkill: any = {
+    id: "job-skill",
+    title: "Software Engineer",
+    company: "Target Corp",
+    description: "Looking for engineer skilled in React, React Native, Java, JavaScript, SQL, PostgreSQL.",
+  };
+
+  // 1. Candidate with only SQL -> output introduces PostgreSQL
+  const candSqlOnly = makeSkillCandidate(["SQL"]);
+  const draftWithPg = {
+    tailoredSummary: "Software engineer experienced in SQL and PostgreSQL.",
+    highlightedSkills: ["SQL"],
+    tailoredBullets: {
+      "exp-skill-1": ["Worked on services utilizing SQL and PostgreSQL for 100 users."],
+    },
+  };
+  const checkSqlPg = validateTailoredResumeOutput(draftWithPg, candSqlOnly, baseJobForSkill);
+  assert(checkSqlPg.ok === false && (checkSqlPg.error.includes("unevidenced") || checkSqlPg.error.includes("not a verified skill")), "Output Validation: Candidate with only SQL fails when output introduces PostgreSQL");
+
+  // 2. Candidate with only PostgreSQL -> output introduces SQL
+  const candPgOnly = makeSkillCandidate(["PostgreSQL"]);
+  const draftWithSql = {
+    tailoredSummary: "Software engineer experienced in PostgreSQL and SQL.",
+    highlightedSkills: ["PostgreSQL"],
+    tailoredBullets: {
+      "exp-skill-1": ["Worked on services utilizing PostgreSQL and SQL for 100 users."],
+    },
+  };
+  const checkPgSql = validateTailoredResumeOutput(draftWithSql, candPgOnly, baseJobForSkill);
+  assert(checkPgSql.ok === false && (checkPgSql.error.includes("unevidenced") || checkPgSql.error.includes("not a verified skill")), "Output Validation: Candidate with only PostgreSQL fails when output introduces SQL");
+
+  // 3. Candidate with only React -> output introduces React Native
+  const candReactOnly = makeSkillCandidate(["React"]);
+  const draftWithReactNative = {
+    tailoredSummary: "Software engineer experienced in React and React Native.",
+    highlightedSkills: ["React"],
+    tailoredBullets: {
+      "exp-skill-1": ["Worked on services utilizing React and React Native for 100 users."],
+    },
+  };
+  const checkReactRn = validateTailoredResumeOutput(draftWithReactNative, candReactOnly, baseJobForSkill);
+  assert(checkReactRn.ok === false && (checkReactRn.error.includes("unevidenced") || checkReactRn.error.includes("not a verified skill")), "Output Validation: Candidate with only React fails when output introduces React Native");
+
+  // 4. Candidate with only React Native -> output introduces React
+  const candRnOnly = makeSkillCandidate(["React Native"]);
+  const draftWithReact = {
+    tailoredSummary: "Software engineer experienced in React Native and React.",
+    highlightedSkills: ["React Native"],
+    tailoredBullets: {
+      "exp-skill-1": ["Worked on services utilizing React Native and React for 100 users."],
+    },
+  };
+  const checkRnReact = validateTailoredResumeOutput(draftWithReact, candRnOnly, baseJobForSkill);
+  assert(checkRnReact.ok === false && (checkRnReact.error.includes("unevidenced") || checkRnReact.error.includes("not a verified skill")), "Output Validation: Candidate with only React Native fails when output introduces React");
+
+  // 5. Candidate with only Java -> output introduces JavaScript
+  const candJavaOnly = makeSkillCandidate(["Java"]);
+  const draftWithJs = {
+    tailoredSummary: "Software engineer experienced in Java and JavaScript.",
+    highlightedSkills: ["Java"],
+    tailoredBullets: {
+      "exp-skill-1": ["Worked on services utilizing Java and JavaScript for 100 users."],
+    },
+  };
+  const checkJavaJs = validateTailoredResumeOutput(draftWithJs, candJavaOnly, baseJobForSkill);
+  assert(checkJavaJs.ok === false && (checkJavaJs.error.includes("unevidenced") || checkJavaJs.error.includes("not a verified skill")), "Output Validation: Candidate with only Java fails when output introduces JavaScript");
+
+  // 6. Candidate with only JavaScript -> output introduces Java
+  const candJsOnly = makeSkillCandidate(["JavaScript"]);
+  const draftWithJava = {
+    tailoredSummary: "Software engineer experienced in JavaScript and Java.",
+    highlightedSkills: ["JavaScript"],
+    tailoredBullets: {
+      "exp-skill-1": ["Worked on services utilizing JavaScript and Java for 100 users."],
+    },
+  };
+  const checkJsJava = validateTailoredResumeOutput(draftWithJava, candJsOnly, baseJobForSkill);
+  assert(checkJsJava.ok === false && (checkJsJava.error.includes("unevidenced") || checkJsJava.error.includes("not a verified skill")), "Output Validation: Candidate with only JavaScript fails when output introduces Java");
+
+  // 7. Output validation positive controls:
+  const candWithAliases = makeSkillCandidate(["React.js", "k8s"]);
+  const draftAliasesValid = {
+    tailoredSummary: "Software engineer experienced in React and Kubernetes.",
+    highlightedSkills: ["React", "Kubernetes"],
+    tailoredBullets: {
+      "exp-skill-1": ["Worked on services utilizing React and Kubernetes for 100 users."],
+    },
+  };
+  const checkAliases = validateTailoredResumeOutput(draftAliasesValid, candWithAliases, baseJobForSkill);
+  assert(checkAliases.ok === true, "Output Validation: Genuine aliases ('React.js' -> 'React', 'k8s' -> 'Kubernetes') are correctly accepted");
+
   // -------------------------------------------------------------
   // TEST 3: Truthful ATS Scoring (No 85 Floor & Weak Match Fixture)
   // -------------------------------------------------------------
@@ -476,16 +627,24 @@ async function runAllTests() {
   const juniorBreakdown = juniorResult.scoringResult.breakdown;
   assert(juniorBreakdown.titleScore === 0, "Junior regression: titleScore is 0 (0/4 matched title words: 'senior', 'full', 'stack', 'engineer')");
   assert(
-    juniorBreakdown.skillsScore === 17,
-    `Junior regression: skillsScore is 17 (1/6 matched skills: SQL aliased to PostgreSQL via SKILL_ALIASES: ${juniorBreakdown.skillsScore})`
+    juniorBreakdown.skillsScore === 0,
+    `Junior regression: skillsScore is 0 (0/6 matched skills: SQL does not match PostgreSQL requirement: ${juniorBreakdown.skillsScore})`
+  );
+  assert(
+    juniorBreakdown.keywordScore === 5,
+    `Junior regression: keywordScore is 5 (incidental keyword match: ${juniorBreakdown.keywordScore})`
   );
   const expectedJuniorWeighted = Math.min(
     100,
     Math.max(0, Math.round(juniorBreakdown.keywordScore * 0.60 + juniorBreakdown.skillsScore * 0.25 + juniorBreakdown.titleScore * 0.15))
   );
   assert(
-    juniorResult.atsScore === expectedJuniorWeighted,
-    `Junior regression: final score (${juniorResult.atsScore}) equals rounded weighted total (${expectedJuniorWeighted})`
+    expectedJuniorWeighted === 3,
+    `Junior regression: exact rounded weighted total is 3 (5 * 0.60 = 3.0 -> rounded 3)`
+  );
+  assert(
+    juniorResult.atsScore === 3,
+    `Junior regression: final atsScore is exactly 3/100 (${juniorResult.atsScore})`
   );
   assert(juniorResult.atsScore < 85, `Junior regression: final score is truthful and un-padded (${juniorResult.atsScore}/100 < 85)`);
 
@@ -827,6 +986,347 @@ async function runAllTests() {
     netlifyContextRes.statusCode === 401 || netlifyContextRes.statusCode === 500,
     "Netlify handler strictly ignores platform context argument (cannot override auth or entitlements)"
   );
+
+  // 7D. Production Wrapper Entrypoint Verification (apiAiPost & netlifyAiHandler)
+  console.log("\n--- 7D. PRODUCTION WRAPPER ENTRYPOINTS WITH MODULE BOUNDARY MOCKS ---");
+
+  const validProductionAuthToken = "Bearer prod_test_token_123";
+  const validUserPayload = { id: "user_prod_test", email: "pro@example.com" };
+
+  const createMockQueryBuilder = (rowQuota: any, onRefund?: () => void) => {
+    const builder: any = {
+      select: () => builder,
+      eq: () => builder,
+      order: () => builder,
+      limit: () => builder,
+      insert: async () => ({ error: null }),
+      update: (payload?: any) => {
+        if (onRefund && payload && typeof payload.count === "number" && rowQuota && payload.count < rowQuota.count) {
+          onRefund();
+        }
+        return builder;
+      },
+      maybeSingle: async () => ({ data: rowQuota, error: null }),
+      single: async () => ({ data: rowQuota, error: null }),
+    };
+    return builder;
+  };
+
+  const setupMockSupabase = (quotaRow: any, onRefund?: () => void) => () => ({
+    auth: {
+      getUser: async (token: string) => ({
+        data: { user: validUserPayload },
+        error: null,
+      }),
+    },
+    from: (table: string) => {
+      if (table === "ai_usage_quotas") {
+        return createMockQueryBuilder(quotaRow, onRefund);
+      }
+      return createMockQueryBuilder(null);
+    },
+  });
+
+  // 1. Quota Exhaustion (429 status, Retry-After: 86400, zero provider calls)
+  // 1A. Next.js wrapper
+  _resetAiRateLimitStore();
+  let providerCallsNextQuota = 0;
+  _setAiTestMockDeps({
+    getSupabaseAdmin: setupMockSupabase({
+      count: 30,
+      total_tokens: 5000,
+    }),
+    getServerEntitlement: async () => ({
+      isPro: true,
+      tier: "pro",
+      status: "active",
+      expiresAt: null,
+      cachedAt: 0,
+      cancelAtPeriodEnd: false,
+    }),
+    callGroq: async () => {
+      providerCallsNextQuota++;
+      return { choices: [{ message: { content: "{}" } }] };
+    },
+  });
+
+  const nextQuotaReq = new Request("http://localhost:3000/api/ai", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: validProductionAuthToken,
+      "cf-connecting-ip": "192.168.1.10",
+    },
+    body: JSON.stringify({
+      operation: "resume_tailor",
+      params: { candidate: testCandidate, job: testJob },
+    }),
+  });
+  const nextQuotaRes = await apiAiPost(nextQuotaReq);
+  assert(nextQuotaRes.status === 429, "Next wrapper: Quota exhaustion returns established 429 status");
+  assert(nextQuotaRes.headers.get("retry-after") === "86400", "Next wrapper: Quota exhaustion sets Retry-After: 86400 header");
+  const nextQuotaBody = await nextQuotaRes.json();
+  assert(
+    nextQuotaBody.error.includes("Daily AI usage quota exceeded for operation 'resume_tailor' (30/30)"),
+    "Next wrapper: Quota exhaustion returns established error message"
+  );
+  assert(nextQuotaBody.currentCount === 30 && nextQuotaBody.limit === 30, "Next wrapper: Quota exhaustion returns currentCount and limit");
+  assert(providerCallsNextQuota === 0, "Next wrapper: Quota exhaustion results in zero provider calls");
+
+  // 1B. Netlify wrapper
+  _resetAiRateLimitStore();
+  let providerCallsNetlifyQuota = 0;
+  _setAiTestMockDeps({
+    getSupabaseAdmin: setupMockSupabase({
+      count: 30,
+      total_tokens: 5000,
+    }),
+    getServerEntitlement: async () => ({
+      isPro: true,
+      tier: "pro",
+      status: "active",
+      expiresAt: null,
+      cachedAt: 0,
+      cancelAtPeriodEnd: false,
+    }),
+    callGroq: async () => {
+      providerCallsNetlifyQuota++;
+      return { choices: [{ message: { content: "{}" } }] };
+    },
+  });
+
+  const netlifyQuotaEvent = {
+    httpMethod: "POST",
+    headers: {
+      authorization: validProductionAuthToken,
+      "client-ip": "192.168.1.11",
+    },
+    body: JSON.stringify({
+      operation: "resume_tailor",
+      params: { candidate: testCandidate, job: testJob },
+    }),
+  };
+  const netlifyQuotaRes = await netlifyAiHandler(netlifyQuotaEvent);
+  assert(netlifyQuotaRes.statusCode === 429, "Netlify wrapper: Quota exhaustion returns established 429 status");
+  assert(netlifyQuotaRes.headers["Retry-After"] === "86400", "Netlify wrapper: Quota exhaustion sets Retry-After: 86400 header");
+  const netlifyQuotaBody = JSON.parse(netlifyQuotaRes.body);
+  assert(
+    netlifyQuotaBody.error.includes("Daily AI usage quota exceeded for operation 'resume_tailor' (30/30)"),
+    "Netlify wrapper: Quota exhaustion returns established error message"
+  );
+  assert(netlifyQuotaBody.currentCount === 30 && netlifyQuotaBody.limit === 30, "Netlify wrapper: Quota exhaustion returns currentCount and limit");
+  assert(providerCallsNetlifyQuota === 0, "Netlify wrapper: Quota exhaustion results in zero provider calls");
+
+  // 2. Oversized Candidate Input (400 rejection status and body, zero provider calls, zero quota consumption)
+  const oversizedCandidate: CandidateProfile = {
+    ...testCandidate,
+    experience: Array.from({ length: 40 }).map((_, i) => ({
+      id: `exp-large-${i}`,
+      company: `Company ${i}`,
+      role: `Senior Software Engineer ${i}`,
+      startDate: "2010",
+      endDate: "2020",
+      bullets: [
+        "Architected and deployed high-performance distributed microservices handling billions of transactions per day. ".repeat(6),
+        "Mentored and guided cross-functional teams of engineers across multiple distributed offices worldwide. ".repeat(6),
+      ],
+      needsReview: false,
+    })),
+  };
+
+  // 2A. Next.js wrapper
+  _resetAiRateLimitStore();
+  let quotaConsumedNextOversized = 0;
+  let providerCallsNextOversized = 0;
+  _setAiTestMockDeps({
+    getSupabaseAdmin: setupMockSupabase({
+      count: 0,
+      total_tokens: 0,
+    }, () => { quotaConsumedNextOversized++; }),
+    getServerEntitlement: async () => ({
+      isPro: true,
+      tier: "pro",
+      status: "active",
+      expiresAt: null,
+      cachedAt: 0,
+      cancelAtPeriodEnd: false,
+    }),
+    callGroq: async () => {
+      providerCallsNextOversized++;
+      return { choices: [{ message: { content: "{}" } }] };
+    },
+  });
+
+  const nextOversizedReq = new Request("http://localhost:3000/api/ai", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: validProductionAuthToken,
+      "cf-connecting-ip": "192.168.1.12",
+    },
+    body: JSON.stringify({
+      operation: "resume_tailor",
+      params: { candidate: oversizedCandidate, job: testJob },
+    }),
+  });
+  const nextOversizedRes = await apiAiPost(nextOversizedReq);
+  assert(nextOversizedRes.status === 400, "Next wrapper: Oversized input returns established 400 status");
+  const nextOversizedBody = await nextOversizedRes.json();
+  assert(
+    nextOversizedBody.error.includes("Payload exceeds maximum allowed token limit for operation 'resume_tailor'"),
+    "Next wrapper: Oversized input returns established token limit error"
+  );
+  assert(providerCallsNextOversized === 0, "Next wrapper: Oversized input results in zero provider calls");
+  assert(quotaConsumedNextOversized === 0, "Next wrapper: Oversized input results in zero quota consumption");
+
+  // 2B. Netlify wrapper
+  _resetAiRateLimitStore();
+  let quotaConsumedNetlifyOversized = 0;
+  let providerCallsNetlifyOversized = 0;
+  _setAiTestMockDeps({
+    getSupabaseAdmin: setupMockSupabase({
+      count: 0,
+      total_tokens: 0,
+    }, () => { quotaConsumedNetlifyOversized++; }),
+    getServerEntitlement: async () => ({
+      isPro: true,
+      tier: "pro",
+      status: "active",
+      expiresAt: null,
+      cachedAt: 0,
+      cancelAtPeriodEnd: false,
+    }),
+    callGroq: async () => {
+      providerCallsNetlifyOversized++;
+      return { choices: [{ message: { content: "{}" } }] };
+    },
+  });
+
+  const netlifyOversizedEvent = {
+    httpMethod: "POST",
+    headers: {
+      authorization: validProductionAuthToken,
+      "client-ip": "192.168.1.13",
+    },
+    body: JSON.stringify({
+      operation: "resume_tailor",
+      params: { candidate: oversizedCandidate, job: testJob },
+    }),
+  };
+  const netlifyOversizedRes = await netlifyAiHandler(netlifyOversizedEvent);
+  assert(netlifyOversizedRes.statusCode === 400, "Netlify wrapper: Oversized input returns established 400 status");
+  const netlifyOversizedBody = JSON.parse(netlifyOversizedRes.body);
+  assert(
+    netlifyOversizedBody.error.includes("Payload exceeds maximum allowed token limit for operation 'resume_tailor'"),
+    "Netlify wrapper: Oversized input returns established token limit error"
+  );
+  assert(providerCallsNetlifyOversized === 0, "Netlify wrapper: Oversized input results in zero provider calls");
+  assert(quotaConsumedNetlifyOversized === 0, "Netlify wrapper: Oversized input results in zero quota consumption");
+
+  // 3. Output Validation Failure (502 status, quota refunded exactly once)
+  // Fabricated output introduces unevidenced skill 'PostgreSQL' when candidate only has 'SQL'
+  const hallucinatedOutputJson = JSON.stringify({
+    tailoredSummary: "Staff Frontend Engineer offering verified expertise in PostgreSQL and React.",
+    highlightedSkills: ["React", "PostgreSQL"],
+    tailoredBullets: {
+      "exp-1": [
+        "Architected scalable web apps using React and TypeScript, boosting load speed by 35%.",
+        "Managed a team of 4 engineers and improved release frequency from monthly to weekly.",
+        "Reduced client bundle size by 120KB using code splitting and lazy loading.",
+      ],
+      "exp-2": [
+        "Built responsive user interfaces with React and Redux for 50,000 active users.",
+        "Authored 80+ unit tests with Jest, achieving 90% code coverage.",
+      ],
+    },
+  });
+
+  // 3A. Next.js wrapper
+  _resetAiRateLimitStore();
+  let refundCountNext = 0;
+  _setAiTestMockDeps({
+    getSupabaseAdmin: setupMockSupabase(
+      { count: 5, total_tokens: 500 },
+      () => { refundCountNext++; }
+    ),
+    getServerEntitlement: async () => ({
+      isPro: true,
+      tier: "pro",
+      status: "active",
+      expiresAt: null,
+      cachedAt: 0,
+      cancelAtPeriodEnd: false,
+    }),
+    callGroq: async () => ({
+      choices: [{ message: { content: hallucinatedOutputJson } }],
+    }),
+  });
+
+  const nextValFailReq = new Request("http://localhost:3000/api/ai", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: validProductionAuthToken,
+      "cf-connecting-ip": "192.168.1.14",
+    },
+    body: JSON.stringify({
+      operation: "resume_tailor",
+      params: { candidate: testCandidate, job: testJob },
+    }),
+  });
+  const nextValFailRes = await apiAiPost(nextValFailReq);
+  assert(nextValFailRes.status === 502, "Next wrapper: Output validation failure returns 502 status");
+  const nextValFailBody = await nextValFailRes.json();
+  assert(
+    typeof nextValFailBody.error === "string" && (nextValFailBody.error.includes("unevidenced skill") || nextValFailBody.error.includes("not a verified skill")),
+    "Next wrapper: Output validation failure returns unevidenced skill error"
+  );
+  assert(refundCountNext === 1, "Next wrapper: Quota is refunded exactly once on output validation failure");
+
+  // 3B. Netlify wrapper
+  _resetAiRateLimitStore();
+  let refundCountNetlify = 0;
+  _setAiTestMockDeps({
+    getSupabaseAdmin: setupMockSupabase(
+      { count: 5, total_tokens: 500 },
+      () => { refundCountNetlify++; }
+    ),
+    getServerEntitlement: async () => ({
+      isPro: true,
+      tier: "pro",
+      status: "active",
+      expiresAt: null,
+      cachedAt: 0,
+      cancelAtPeriodEnd: false,
+    }),
+    callGroq: async () => ({
+      choices: [{ message: { content: hallucinatedOutputJson } }],
+    }),
+  });
+
+  const netlifyValFailEvent = {
+    httpMethod: "POST",
+    headers: {
+      authorization: validProductionAuthToken,
+      "client-ip": "192.168.1.15",
+    },
+    body: JSON.stringify({
+      operation: "resume_tailor",
+      params: { candidate: testCandidate, job: testJob },
+    }),
+  };
+  const netlifyValFailRes = await netlifyAiHandler(netlifyValFailEvent);
+  assert(netlifyValFailRes.statusCode === 502, "Netlify wrapper: Output validation failure returns 502 status");
+  const netlifyValFailBody = JSON.parse(netlifyValFailRes.body);
+  assert(
+    typeof netlifyValFailBody.error === "string" && (netlifyValFailBody.error.includes("unevidenced skill") || netlifyValFailBody.error.includes("not a verified skill")),
+    "Netlify wrapper: Output validation failure returns unevidenced skill error"
+  );
+  assert(refundCountNetlify === 1, "Netlify wrapper: Quota is refunded exactly once on output validation failure");
+
+  // Clean teardown of test mocks and stores
+  _setAiTestMockDeps(null);
+  _resetAiRateLimitStore();
 
   // -------------------------------------------------------------
   // TEST 8: Export Integrity & Offline Containment

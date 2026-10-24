@@ -21,13 +21,19 @@ export interface FitDiagnosticsResult {
 }
 
 /**
- * Standard tech skill alias mapping for bidirectional normalization
+ * Genuine tech skill alias mapping with explicit canonical boundaries.
+ * Distinct technologies are strictly segregated (React != React Native, Java != JavaScript, SQL != PostgreSQL).
  */
-const SKILL_ALIASES: Record<string, string[]> = {
-  sql: ["sql", "mysql", "postgresql", "postgres", "sqlite", "pl/sql", "tsql", "t-sql", "mariadb"],
+export const GENUINE_SKILL_ALIASES: Record<string, string[]> = {
+  react: ["react", "react.js", "reactjs"],
+  "react native": ["react native", "react-native", "reactnative"],
   javascript: ["javascript", "js", "es6", "es6+", "ecmascript"],
+  java: ["java", "core java"],
   typescript: ["typescript", "ts"],
-  react: ["react", "react.js", "reactjs", "react-native", "react native"],
+  sql: ["sql"],
+  postgresql: ["postgresql", "postgres", "pg"],
+  mysql: ["mysql"],
+  sqlite: ["sqlite", "sqlite3"],
   "node.js": ["node.js", "nodejs", "node"],
   vue: ["vue", "vue.js", "vuejs"],
   python: ["python", "python3", "py"],
@@ -38,15 +44,47 @@ const SKILL_ALIASES: Record<string, string[]> = {
   azure: ["azure", "microsoft azure"],
   "c#": ["c#", "csharp", ".net", "dotnet", "asp.net"],
   "c++": ["c++", "cpp"],
-  docker: ["docker", "containerization", "containers"],
-  "ci/cd": ["ci/cd", "ci", "cd", "continuous integration", "continuous delivery", "github actions", "gitlab ci"],
+  docker: ["docker"],
+  "ci/cd": ["ci/cd", "continuous integration", "continuous delivery"],
   graphql: ["graphql", "gql"],
   "rest api": ["rest api", "rest", "restful", "restful api", "restful apis"],
   mongodb: ["mongodb", "mongo"],
   redis: ["redis"],
   html: ["html", "html5"],
-  css: ["css", "css3", "tailwind", "tailwind css", "sass", "scss"],
+  css: ["css", "css3"],
+  tailwind: ["tailwind", "tailwind css", "tailwindcss"],
+  sass: ["sass", "scss"],
 };
+
+export function getCanonicalSkillId(skill: string): string | null {
+  const clean = skill.trim().toLowerCase();
+  if (!clean) return null;
+  if (GENUINE_SKILL_ALIASES[clean]) return clean;
+  for (const [key, aliases] of Object.entries(GENUINE_SKILL_ALIASES)) {
+    if (aliases.includes(clean)) return key;
+  }
+  const noPunct = clean.replace(/[-_.]/g, " ").replace(/\s+/g, " ").trim();
+  if (GENUINE_SKILL_ALIASES[noPunct]) return noPunct;
+  for (const [key, aliases] of Object.entries(GENUINE_SKILL_ALIASES)) {
+    if (aliases.some((a) => a.replace(/[-_.]/g, " ").replace(/\s+/g, " ").trim() === noPunct)) {
+      return key;
+    }
+  }
+  return null;
+}
+
+export function areSkillsGenuineMatch(skillA: string, skillB: string): boolean {
+  const aClean = skillA.trim().toLowerCase();
+  const bClean = skillB.trim().toLowerCase();
+  if (aClean === bClean) return true;
+
+  const aCanon = getCanonicalSkillId(aClean);
+  const bCanon = getCanonicalSkillId(bClean);
+  if (aCanon && bCanon) {
+    return aCanon === bCanon;
+  }
+  return false;
+}
 
 /**
  * Normalizes a skill string into its canonical alias tokens and sub-tokens.
@@ -57,9 +95,17 @@ export function normalizeSkillToTokens(skill: string): { original: string; token
   const clean = skill.trim().toLowerCase();
   if (!clean) return { original: skill, tokens };
 
-  tokens.add(clean);
+  // 1. Direct canonical check on the full skill string
+  const canonicalFull = getCanonicalSkillId(clean);
+  if (canonicalFull) {
+    tokens.add(canonicalFull);
+    const aliases = GENUINE_SKILL_ALIASES[canonicalFull] || [];
+    aliases.forEach((a) => tokens.add(a));
+    return { original: skill, tokens };
+  }
 
-  // Split on parentheses, slashes, commas, semicolons, plus signs
+  // 2. If not a single known canonical skill, split on composite delimiters: parentheses, slashes, commas, semicolons, " and "
+  tokens.add(clean);
   const parts = clean
     .split(/[\(\),\/;+]|\s+and\s+/i)
     .map((p) => p.trim())
@@ -67,26 +113,14 @@ export function normalizeSkillToTokens(skill: string): { original: string; token
 
   for (const part of parts) {
     tokens.add(part);
-    const alphanumeric = part.replace(/[\s\-_.]/g, "");
-    if (alphanumeric) tokens.add(alphanumeric);
-
-    // Check alias maps
-    for (const [key, aliases] of Object.entries(SKILL_ALIASES)) {
-      if (aliases.includes(part) || aliases.includes(alphanumeric) || key === part) {
-        tokens.add(key);
-        aliases.forEach((a) => tokens.add(a));
-      }
-    }
-  }
-
-  // Word-boundary scan for aliases
-  for (const [key, aliases] of Object.entries(SKILL_ALIASES)) {
-    for (const alias of aliases) {
-      const regex = new RegExp(`\\b${alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
-      if (regex.test(clean)) {
-        tokens.add(key);
-        tokens.add(alias);
-      }
+    const partCanon = getCanonicalSkillId(part);
+    if (partCanon) {
+      tokens.add(partCanon);
+      const aliases = GENUINE_SKILL_ALIASES[partCanon] || [];
+      aliases.forEach((a) => tokens.add(a));
+    } else {
+      const alphanumeric = part.replace(/[\s\-_.]/g, "");
+      if (alphanumeric) tokens.add(alphanumeric);
     }
   }
 
@@ -95,6 +129,7 @@ export function normalizeSkillToTokens(skill: string): { original: string; token
 
 /**
  * Computes whether a candidate skill matches a job required skill using canonical tokens.
+ * Direct symmetric substring matching is explicitly prohibited to prevent false equivalences.
  */
 export function doesSkillMatch(
   jobReqSkill: string,
@@ -108,13 +143,6 @@ export function doesSkillMatch(
       if (cand.tokens.has(reqToken)) {
         return { matched: true, candidateEvidence: cand.original };
       }
-    }
-
-    // Direct substring/word boundary check
-    const reqClean = jobReqSkill.toLowerCase();
-    const candClean = cand.original.toLowerCase();
-    if (candClean.includes(reqClean) || reqClean.includes(candClean)) {
-      return { matched: true, candidateEvidence: cand.original };
     }
   }
 

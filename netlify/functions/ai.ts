@@ -14,6 +14,8 @@ export async function handler(event: any, context?: any) {
   return handleNetlifyAiRequest(event);
 }
 
+export { handler as netlifyAiHandler };
+
 export function getClientIp(event: any): string {
   return getNetlifyClientIp(event);
 }

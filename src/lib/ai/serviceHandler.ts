@@ -97,6 +97,14 @@ export interface AiServiceDeps {
   callGroq?: (payload: any) => Promise<any>;
 }
 
+export function _setAiTestMockDeps(mockDeps: AiServiceDeps | null) {
+  (globalThis as any).__CAREERMONKE_AI_TEST_MOCKS__ = mockDeps;
+}
+
+export function _getAiTestMockDeps(): AiServiceDeps | null {
+  return (globalThis as any).__CAREERMONKE_AI_TEST_MOCKS__ || null;
+}
+
 export interface AiCoreResponse {
   statusCode: number;
   body: any;
@@ -113,6 +121,7 @@ export async function executeAiCore(
   body: any,
   deps: AiServiceDeps = {}
 ): Promise<AiCoreResponse> {
+  const activeDeps: AiServiceDeps = { ...(_getAiTestMockDeps() || {}), ...deps };
   try {
     // 0. Per-IP Rate Limiting (shared Supabase store, memory fallback)
     const ipLimit = await checkSharedRateLimit(
@@ -158,7 +167,7 @@ export async function executeAiCore(
       process.env.SUPABASE_SERVICE_KEY ||
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-    if (!deps.getSupabaseAdmin) {
+    if (!activeDeps.getSupabaseAdmin) {
       const missingSupabase = checkRequiredEnv(
         {
           NEXT_PUBLIC_SUPABASE_URL: supabaseUrl,
@@ -174,8 +183,8 @@ export async function executeAiCore(
       }
     }
 
-    const supabaseAdmin = deps.getSupabaseAdmin
-      ? deps.getSupabaseAdmin()
+    const supabaseAdmin = activeDeps.getSupabaseAdmin
+      ? activeDeps.getSupabaseAdmin()
       : createClient(supabaseUrl, serviceKey!, {
           auth: { persistSession: false },
         });
@@ -228,8 +237,8 @@ export async function executeAiCore(
     }
 
     // 2. Server-side Pro Entitlement check (Single Source of Truth)
-    const entitlement = deps.getServerEntitlement
-      ? await deps.getServerEntitlement(user.id)
+    const entitlement = activeDeps.getServerEntitlement
+      ? await activeDeps.getServerEntitlement(user.id)
       : await getServerEntitlement(user.id);
     if (!entitlement.isPro) {
       return {
@@ -301,9 +310,9 @@ export async function executeAiCore(
 
     // 5. Server-Side Groq API Key Check & Upstream Groq Call
     let groqData: any;
-    if (deps.callGroq) {
+    if (activeDeps.callGroq) {
       try {
-        groqData = await deps.callGroq(payload);
+        groqData = await activeDeps.callGroq(payload);
       } catch (mockErr: any) {
         console.warn("[AI Service] Error calling mock Groq provider:", mockErr);
         await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);

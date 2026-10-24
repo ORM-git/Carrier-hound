@@ -1,6 +1,11 @@
 import { SupabaseClient } from "@supabase/supabase-js";
 import { CandidateProfile } from "../resume/types";
 import { SKILLS_TAXONOMY } from "../resume/parser";
+import {
+  GENUINE_SKILL_ALIASES,
+  getCanonicalSkillId,
+  areSkillsGenuineMatch,
+} from "../matcher/scoring";
 import { stripControlChars, stripHtmlAndExecutableMarkup } from "../security/xss";
 
 export type AllowedAiOperation =
@@ -487,19 +492,24 @@ export const KNOWN_TECH_KEYWORDS = new Set([
 
 /**
  * Combined canonical dictionary of identifiable tools, platforms, skills, and credentials.
- * Includes both KNOWN_TECH_KEYWORDS and the broader SKILLS_TAXONOMY cross-domain catalog.
+ * Includes both KNOWN_TECH_KEYWORDS, the broader SKILLS_TAXONOMY, and GENUINE_SKILL_ALIASES catalog.
+ * Sorted longest-first to ensure multi-word phrases (e.g. 'react native') are checked before substrings ('react').
  */
 export const ALL_CANONICAL_TOOLS_AND_SKILLS: string[] = Array.from(
   new Set([
     ...SKILLS_TAXONOMY.map((s) => s.toLowerCase().trim()),
     ...Array.from(KNOWN_TECH_KEYWORDS).map((s) => s.toLowerCase().trim()),
+    ...Object.keys(GENUINE_SKILL_ALIASES),
+    ...Object.values(GENUINE_SKILL_ALIASES).flat(),
     // High-frequency identifiable engineering credentials and modern tools
     "aws certified", "pmp", "cpa", "cissp", "certified kubernetes administrator",
     "cka", "ckad", "scrum master", "csm", "solidity", "tableau", "power bi",
     "dbt", "spark", "airflow", "kafka", "pandas", "numpy", "pytorch", "tensorflow",
     "fastapi", "django", "flask", "nestjs", "spring boot"
   ])
-).filter((s) => s.length > 1);
+)
+  .filter((s) => s.length > 1)
+  .sort((a, b) => b.length - a.length);
 
 /**
  * LIMITATIONS AND SENSITIVITY NOTE:
@@ -567,6 +577,7 @@ export function extractCandidateTerms(candidate: CandidateProfile): Set<string> 
 /**
  * Checks whether an identifiable tool or skill is evidenced anywhere in the candidate's profile.
  * Note: Words appearing only in the target job description or job title are NOT evidence.
+ * Strict canonical matching and boundary checking are enforced (no symmetric substring matching).
  */
 export function isSkillEvidencedInCandidate(
   skill: string,
@@ -575,29 +586,21 @@ export function isSkillEvidencedInCandidate(
 ): boolean {
   const sLower = skill.toLowerCase().trim();
   if (!sLower) return true;
-  if (candidateTerms.has(sLower)) return true;
 
-  // Check candidate explicit skills
-  if ((candidate.skills || []).some((cs) => {
-    const cLower = cs.toLowerCase().trim();
-    return cLower === sLower || cLower.includes(sLower) || sLower.includes(cLower);
-  })) {
+  // 1. Check candidate explicit skills using genuine canonical match (not substring!)
+  if ((candidate.skills || []).some((cs) => areSkillsGenuineMatch(cs, sLower))) {
     return true;
   }
 
-  // Check certifications
-  if ((candidate.certifications || []).some((cert) => {
-    const cLower = cert.toLowerCase().trim();
-    return cLower === sLower || cLower.includes(sLower);
-  })) {
+  // 2. Check candidate certifications using genuine canonical match
+  if ((candidate.certifications || []).some((cert) => areSkillsGenuineMatch(cert, sLower))) {
     return true;
   }
 
-  // Check full candidate text with boundary checking
+  // 3. Check full candidate text with strict boundary checking and disambiguation
   const allCandidateText = [
     candidate.headline,
     candidate.summary,
-    ...(candidate.skills || []),
     ...(candidate.certifications || []),
     ...(candidate.education || []).map((ed) => `${ed.degree} ${ed.institution}`),
     ...(candidate.experience || []).flatMap((e) => [e.company, e.role, ...(e.bullets || [])]),
@@ -606,9 +609,30 @@ export function isSkillEvidencedInCandidate(
     .join(" ")
     .toLowerCase();
 
-  const escaped = sLower.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const regex = new RegExp(`(^|[^a-z0-9+#.-])${escaped}([^a-z0-9+#.-]|$)`, "i");
-  return regex.test(allCandidateText);
+  const canon = getCanonicalSkillId(sLower);
+  const aliasesToCheck = canon && GENUINE_SKILL_ALIASES[canon]
+    ? GENUINE_SKILL_ALIASES[canon]
+    : [sLower];
+
+  for (const alias of aliasesToCheck) {
+    const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const regex = new RegExp(`(^|[^a-z0-9+#])${escaped}([^a-z0-9+#]|$)`, "i");
+    if (regex.test(allCandidateText)) {
+      if (canon === "react") {
+        // Disambiguate "react" from "react native":
+        const textWithoutReactNative = allCandidateText.replace(/react[\s\-_]?native/gi, " ");
+        if (regex.test(textWithoutReactNative)) return true;
+      } else if (canon === "java") {
+        // Disambiguate "java" from "javascript":
+        const textWithoutJs = allCandidateText.replace(/java[\s\-_]?script/gi, " ");
+        if (regex.test(textWithoutJs)) return true;
+      } else {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 /**
@@ -625,8 +649,19 @@ export function findUnevidencedToolOrSkill(
 
   for (const skill of ALL_CANONICAL_TOOLS_AND_SKILLS) {
     const escaped = skill.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const regex = new RegExp(`(^|[^a-z0-9+#.-])${escaped}([^a-z0-9+#.-]|$)`, "i");
+    const regex = new RegExp(`(^|[^a-z0-9+#])${escaped}([^a-z0-9+#]|$)`, "i");
     if (regex.test(lowerText)) {
+      if (skill === "react") {
+        const textWithoutReactNative = lowerText.replace(/react[\s\-_]?native/gi, " ");
+        if (!regex.test(textWithoutReactNative)) {
+          continue; // "react" only appeared as part of "react native"
+        }
+      } else if (skill === "java") {
+        const textWithoutJs = lowerText.replace(/java[\s\-_]?script/gi, " ");
+        if (!regex.test(textWithoutJs)) {
+          continue; // "java" only appeared as part of "javascript"
+        }
+      }
       if (!isSkillEvidencedInCandidate(skill, candidate, candidateTerms)) {
         return skill;
       }
@@ -699,24 +734,19 @@ export function validateTailoredResumeOutput(
     return { ok: false, error: "AI output rejected: 'highlightedSkills' must be an array." };
   }
 
-  const candidateSkillsMap = new Map<string, string>();
-  (candidate.skills || []).forEach((s) => {
-    if (typeof s === "string" && s.trim()) {
-      candidateSkillsMap.set(s.toLowerCase().trim(), s.trim());
-    }
-  });
-
+  const candidateSkillsList = (candidate.skills || []).map((s) => s.trim()).filter(Boolean);
   const validHighlightedSkills: string[] = [];
   for (const s of parsed.highlightedSkills) {
     if (typeof s !== "string" || !s.trim()) continue;
     const sLower = s.toLowerCase().trim();
-    if (!candidateSkillsMap.has(sLower)) {
+    const matchedSkill = candidateSkillsList.find((cs) => areSkillsGenuineMatch(cs, sLower));
+    if (!matchedSkill) {
       return {
         ok: false,
         error: `AI output rejected: highlighted skill '${s}' is not a verified skill in candidate profile.`,
       };
     }
-    validHighlightedSkills.push(candidateSkillsMap.get(sLower)!);
+    validHighlightedSkills.push(s.trim());
   }
 
   // 3. Validate tailoredBullets
@@ -793,7 +823,7 @@ export function validateTailoredResumeOutput(
           const sourceExpCompLower = sourceExp.company ? sourceExp.company.toLowerCase().trim() : "";
           if (otherCompLower !== sourceExpCompLower) {
             const compEscaped = otherCompLower.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-            const compRegex = new RegExp(`(^|[^a-z0-9+#.-])${compEscaped}([^a-z0-9+#.-]|$)`, "i");
+            const compRegex = new RegExp(`(^|[^a-z0-9+#])${compEscaped}([^a-z0-9+#]|$)`, "i");
             if (compRegex.test(bulletText) && !compRegex.test(sourceBullet)) {
               return {
                 ok: false,
