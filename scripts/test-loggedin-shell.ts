@@ -52,7 +52,7 @@ function run() {
     jobsCode = jobsCode + '\n<aside className="w-[220px]">Old Sidebar</aside>';
     topBarCode = topBarCode + '\n<span>AI Career Coaching Agent</span>';
     jobsCode = jobsCode + '\ncount: "24+"';
-    jobsCode = jobsCode.replace(/appliedJobIds\.includes\(job\.id\)/g, "true ? [] : false");
+    jobsCode = jobsCode.replace(/appliedApps/g, "[] as any");
     jobsCode = jobsCode.replace(/min-h-\[44px\]/g, "min-h-[30px]");
     topBarCode = topBarCode.replace(/min-h-\[44px\]/g, "min-h-[30px]");
   }
@@ -233,10 +233,11 @@ function run() {
   // -------------------------------------------------------------------------
   // 5. PURITY & 220PX SIDEBAR ELIMINATION
   // -------------------------------------------------------------------------
-  // 5a. Zero legacy 220px sidebars anywhere in the codebase
+  // 5a. Zero legacy 220px sidebars anywhere in the codebase (distinguishing sidebar width from column height/truncation)
   const allCodes = [dashboardCode, jobsCode, trackerCode, resumeCode, settingsCode, railCode, topBarCode, shellContainerCode];
-  const has220px = allCodes.some((c) => c.includes("220px"));
-  if (has220px) {
+  const legacySidebarPattern = /(?:aside|sidebar|nav)[^>]*220px|w-\[220px\]/i;
+  const has220pxSidebar = allCodes.some((c) => legacySidebarPattern.test(c));
+  if (has220pxSidebar) {
     failures.push("LEGACY FAIL: Found lingering '220px' sidebar references in application pages.");
   } else {
     console.log("  [PASS] legacy cleanup: zero 220px sidebar references across all pages");
@@ -299,14 +300,20 @@ function run() {
     console.log('  [PASS] tab counts: zero hardcoded "24+" count literal; External tab badge derives dynamically and hides when 0/loading');
   }
 
-  // 6b. Applied tab list derives from tracker data (not hardcoded empty array)
-  const hasAppliedFilter = jobsCode.includes('appliedJobIds.includes(job.id)');
+  // 6b. Applied & Saved tabs derive from tracker data with out-of-page resolution
+  const hasTrackerDerivedApplied =
+    jobsCode.includes("appliedApps") &&
+    jobsCode.includes("trackedAppToLiveJob") &&
+    jobsCode.includes("appliedCount");
+  const hasOutOfPageResolution =
+    jobsCode.includes("missingJobIds") &&
+    jobsCode.includes("getLiveJobById");
   const hasHardcodedEmptyApplied = /activeTab\s*===\s*["']applied["']\s*\)\s*\{\s*result\s*=\s*\[\]/.test(jobsCode);
 
-  if (!hasAppliedFilter || hasHardcodedEmptyApplied) {
-    failures.push('APPLIED TAB FAIL: Applied tab must filter live jobs by applied tracker application jobIds, not result = [].');
+  if (!hasTrackerDerivedApplied || !hasOutOfPageResolution || hasHardcodedEmptyApplied) {
+    failures.push('APPLIED TAB FAIL: Applied tab must derive live jobs from tracker applications and resolve out-of-page jobIds, not result = [].');
   } else {
-    console.log("  [PASS] applied tab list: filters live jobs by tracker applied jobIds to match badge count");
+    console.log("  [PASS] applied & saved tab list: derives from tracker applications and resolves jobs outside the first page");
   }
 
   // 6c. Tab buttons: min-h-[44px] touch target

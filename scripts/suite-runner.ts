@@ -68,6 +68,8 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-profile-rebuild.ts", command: "npx tsx scripts/test-profile-rebuild.ts", classification: "offline" },
   { name: "scripts/test-auth-presentation.ts", command: "npx tsx scripts/test-auth-presentation.ts", classification: "offline" },
   { name: "scripts/test-tracker-resume-rebuild.ts", command: "npx tsx scripts/test-tracker-resume-rebuild.ts", classification: "offline" },
+  { name: "scripts/test-tracker-isolation.ts", command: "npx tsx scripts/test-tracker-isolation.ts", classification: "offline" },
+  { name: "scripts/test-url-state-assertions.ts", command: "npx tsx scripts/test-url-state-assertions.ts", classification: "offline" },
 
   // DB-capable suites: read operations (BLOCKED by default unless authorized on test project)
   { name: "scripts/test-enhanced-scoring.ts", command: "npx tsx scripts/test-enhanced-scoring.ts", classification: "db-read", requiresSupabase: true },

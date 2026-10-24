@@ -16,9 +16,37 @@ import puppeteer from "puppeteer-core";
 // @ts-ignore
 const { createServer, setupPageMocks } = require("./test-prompt5-base.cjs");
 
+function getChromePath(): string {
+  if (process.env.CHROME_BIN) return process.env.CHROME_BIN;
+  if (process.env.PUPPETEER_EXECUTABLE_PATH) return process.env.PUPPETEER_EXECUTABLE_PATH;
+  if (process.platform === "win32") {
+    return "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
+  }
+  const linuxPaths = [
+    "/usr/bin/google-chrome",
+    "/usr/bin/google-chrome-stable",
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+  ];
+  for (const lp of linuxPaths) {
+    if (fs.existsSync(lp)) return lp;
+  }
+  return "/usr/bin/google-chrome";
+}
+
+function getStaticDir(): string {
+  const outDir = path.resolve(process.cwd(), "out");
+  if (fs.existsSync(outDir) && fs.existsSync(path.join(outDir, "jobs.html"))) {
+    return outDir;
+  }
+  const cfDir = path.resolve(process.cwd(), ".vercel/output/static");
+  if (fs.existsSync(cfDir)) {
+    return cfDir;
+  }
+  return outDir;
+}
+
 const PORT = 3599;
-const OUT_DIR = path.resolve(process.cwd(), "out");
-const CHROME_PATH = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
 
 const MIME_TYPES: Record<string, string> = {
   ".html": "text/html",
@@ -40,7 +68,7 @@ function createStaticServer() {
       cleanUrl = cleanUrl + ".html";
     }
 
-    const filePath = path.join(OUT_DIR, cleanUrl);
+    const filePath = path.join(getStaticDir(), cleanUrl);
 
     if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
       const ext = path.extname(filePath).toLowerCase();
@@ -253,9 +281,10 @@ async function runSuite() {
 
   // Test 5: [REAL BROWSER] Real Browser History Navigation (Back / Forward / Reload)
   console.log("Test 5: [REAL BROWSER] Executing real browser Back / Forward / Reload navigation...");
-  const server = createServer();
+  const server = createStaticServer();
   await new Promise<void>((resolve) => server.listen(PORT, resolve));
 
+  const CHROME_PATH = getChromePath();
   const browser = await puppeteer.launch({
     executablePath: CHROME_PATH,
     headless: "new",
