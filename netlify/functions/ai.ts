@@ -300,7 +300,7 @@ export async function handler(event: any, deps: AiHandlerDeps = {}) {
     if (deps.callGroq) {
       const simulatedText = await deps.callGroq(payload);
       if (simulatedText !== "Simulated AI generated output") {
-        const validatedSim = validateAndSanitizeAiOutput(config.operation, String(simulatedText || ""));
+        const validatedSim = validateAndSanitizeAiOutput(config.operation, String(simulatedText || ""), params);
         if (!validatedSim.ok) {
           await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
           return {
@@ -318,6 +318,7 @@ export async function handler(event: any, deps: AiHandlerDeps = {}) {
             result: validatedSim.parsedJson ?? validatedSim.sanitizedText,
             operation: config.operation,
             model: payload.model,
+            jobDescriptionShortened: payload.metadata?.jobDescriptionShortened ?? false,
           }),
         };
       }
@@ -398,7 +399,7 @@ export async function handler(event: any, deps: AiHandlerDeps = {}) {
     }
 
     const content = groqData?.choices?.[0]?.message?.content || "";
-    const validated = validateAndSanitizeAiOutput(config.operation, content);
+    const validated = validateAndSanitizeAiOutput(config.operation, content, params);
     if (!validated.ok) {
       await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
       return {
@@ -417,6 +418,7 @@ export async function handler(event: any, deps: AiHandlerDeps = {}) {
         result: validated.parsedJson ?? validated.sanitizedText,
         operation: config.operation,
         model: payload.model,
+        jobDescriptionShortened: payload.metadata?.jobDescriptionShortened ?? false,
       }),
     };
   } catch (error) {

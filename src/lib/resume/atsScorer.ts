@@ -26,6 +26,121 @@ export interface TailoredJobResumeResult {
   scoringResult: AtsScoringResult;
   revisionAttempts: number;
   tailoredAt: string;
+  tailoringSource?: "rules" | "ai";
+  sourceHash?: string;
+  operationVersion?: string;
+  modelIdentity?: string;
+  jobDescriptionShortened?: boolean;
+  aiDraft?: {
+    tailoredSummary: string;
+    highlightedSkills: string[];
+    tailoredBullets: Record<string, string[]>;
+  };
+}
+
+/**
+ * Computes a deterministic 64-bit FNV-1a hash over candidate facts + job info + version.
+ * Used for cache invalidation when candidate facts, target job, or algorithm version change.
+ */
+export function computeResumeSourceHash(
+  candidate: CandidateProfile,
+  job: { id?: string; title: string; company: string; description?: string },
+  operationVersion = "1.0"
+): string {
+  const normalizedCandidate = {
+    name: candidate.name || "",
+    summary: candidate.summary || "",
+    skills: (candidate.skills || []).slice().sort(),
+    experience: (candidate.experience || []).map((e) => ({
+      id: e?.id || "",
+      company: e?.company || "",
+      role: e?.role || "",
+      startDate: e?.startDate || "",
+      endDate: e?.endDate || "",
+      bullets: e?.bullets || [],
+    })),
+    education: (candidate.education || []).map((ed) => ({
+      degree: ed?.degree || "",
+      institution: ed?.institution || "",
+      year: ed?.year || "",
+    })),
+    certifications: (candidate.certifications || []).slice().sort(),
+  };
+
+  const normalizedJob = {
+    id: job.id || "",
+    title: job.title || "",
+    company: job.company || "",
+    description: job.description || "",
+  };
+
+  const payloadString = JSON.stringify({
+    version: operationVersion,
+    candidate: normalizedCandidate,
+    job: normalizedJob,
+  });
+
+  let h1 = 0x811c9dc5;
+  let h2 = 0xcbf29ce4;
+  for (let i = 0; i < payloadString.length; i++) {
+    const code = payloadString.charCodeAt(i);
+    h1 = Math.imul(h1 ^ code, 0x01000193);
+    h2 = Math.imul(h2 ^ code, 0x01000193);
+  }
+  const hex1 = (h1 >>> 0).toString(16).padStart(8, "0");
+  const hex2 = (h2 >>> 0).toString(16).padStart(8, "0");
+  return `${hex1}${hex2}`;
+}
+
+/**
+ * Applies an accepted AI draft to a candidate profile:
+ * - Rewrites summary with tailoredSummary.
+ * - Prioritizes highlightedSkills at the front, keeping other verified skills.
+ * - Rewrites experience bullets for matching IDs only.
+ * - STRICTLY preserves all immutable facts: name, contact, company, role, dates, education, certifications.
+ */
+export function applyAcceptedAiDraft(
+  candidate: CandidateProfile,
+  aiDraft: {
+    tailoredSummary: string;
+    highlightedSkills: string[];
+    tailoredBullets: Record<string, string[]>;
+  }
+): CandidateProfile {
+  const highlightedSet = new Set(aiDraft.highlightedSkills.map((s) => s.toLowerCase()));
+  const prioritizedSkills: string[] = [...aiDraft.highlightedSkills];
+  for (const skill of candidate.skills || []) {
+    if (!highlightedSet.has(skill.toLowerCase())) {
+      prioritizedSkills.push(skill);
+    }
+  }
+
+  const updatedExperience = (candidate.experience || []).map((exp, idx) => {
+    const expId = exp.id || `exp-${idx + 1}`;
+    if (aiDraft.tailoredBullets[expId] && Array.isArray(aiDraft.tailoredBullets[expId])) {
+      return {
+        ...exp,
+        bullets: aiDraft.tailoredBullets[expId],
+      };
+    }
+    return exp;
+  });
+
+  return {
+    ...candidate,
+    summary: aiDraft.tailoredSummary,
+    skills: prioritizedSkills,
+    experience: updatedExperience,
+    // Explicit immutable preservation
+    name: candidate.name,
+    headline: candidate.headline,
+    email: candidate.email,
+    phone: candidate.phone,
+    location: candidate.location,
+    education: candidate.education,
+    certifications: candidate.certifications,
+    updatedAt: new Date().toISOString(),
+  };
 }
 
 const COMMON_STOP_WORDS = new Set([
@@ -560,6 +675,8 @@ export function tailorProfileForJobWithAts(
   const finalAtsScore = Math.max(85, scoring.score);
   scoring.score = finalAtsScore;
 
+  const sourceHash = computeResumeSourceHash(baseProfile, job, "1.0");
+
   return {
     jobId,
     jobTitle: job.title,
@@ -569,5 +686,9 @@ export function tailorProfileForJobWithAts(
     scoringResult: scoring,
     revisionAttempts: attempts,
     tailoredAt: new Date().toISOString(),
+    tailoringSource: "rules",
+    sourceHash,
+    operationVersion: "1.0",
+    jobDescriptionShortened: false,
   };
 }

@@ -325,7 +325,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const validated = validateAndSanitizeAiOutput(config.operation, content);
+    const validated = validateAndSanitizeAiOutput(config.operation, content, params);
     if (!validated.ok) {
       await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
       return NextResponse.json({ error: validated.error }, { status: 502 });
@@ -338,6 +338,7 @@ export async function POST(req: Request) {
       text: validated.sanitizedText,
       operation: config.operation,
       model: payload.model,
+      jobDescriptionShortened: payload.metadata?.jobDescriptionShortened ?? false,
     });
   } catch (err: any) {
     console.error("[AI Route Handler] Unhandled error:", err);

@@ -184,3 +184,116 @@ export async function generateGroqTailoredCoverLetter(
     isValidated: true,
   };
 }
+
+export interface TailorResumeAiResponse {
+  success: boolean;
+  draft?: {
+    tailoredSummary: string;
+    highlightedSkills: string[];
+    tailoredBullets: Record<string, string[]>;
+  };
+  model?: string;
+  jobDescriptionShortened?: boolean;
+  error?: string;
+}
+
+/**
+ * Connects genuine AI resume tailoring via server-side /api/ai.
+ * Strictly checks session, calls operation 'resume_tailor', validates zero-fabrication grounding,
+ * and returns the structured draft for user review.
+ */
+export async function generateAiTailoredResume(
+  candidate: CandidateProfile,
+  job: {
+    id?: string;
+    title: string;
+    company: string;
+    location?: string;
+    category?: string;
+    skills?: string[];
+    description?: string;
+  }
+): Promise<TailorResumeAiResponse> {
+  try {
+    const supabase = createClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+
+    if (!token) {
+      return {
+        success: false,
+        error: "Authentication required to generate AI tailored resume.",
+      };
+    }
+
+    const response = await fetch("/api/ai", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        operation: "resume_tailor",
+        params: {
+          candidate,
+          job,
+        },
+      }),
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      return {
+        success: false,
+        error: data.error || `AI generation failed (HTTP ${response.status}).`,
+      };
+    }
+
+    let parsedDraft = data.result;
+    if (!parsedDraft && typeof data.content === "string") {
+      try {
+        parsedDraft = JSON.parse(data.content);
+      } catch (err) {}
+    }
+
+    if (!parsedDraft || typeof parsedDraft !== "object") {
+      return {
+        success: false,
+        error: "AI service returned invalid draft structure.",
+      };
+    }
+
+    const validation = validateAndSanitizeAiOutput(
+      "resume_tailor",
+      JSON.stringify(parsedDraft),
+      { candidate, job }
+    );
+
+    if (!validation.ok) {
+      return {
+        success: false,
+        error: validation.error,
+      };
+    }
+
+    if (!validation.parsedJson) {
+      return {
+        success: false,
+        error: "Generated draft failed grounding validation.",
+      };
+    }
+
+    return {
+      success: true,
+      draft: validation.parsedJson,
+      model: data.model,
+      jobDescriptionShortened: Boolean(data.jobDescriptionShortened),
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err?.message || "Failed to reach AI service.",
+    };
+  }
+}

@@ -278,12 +278,26 @@ const TAILORED_COVER_LETTER_PREFIX = "careermonke_tailored_cover_letter_";
 /**
  * Gets cached job-specific tailored resume from localStorage (synchronous).
  */
-export function getCachedTailoredResume(jobId: string): TailoredJobResumeResult | null {
+export function getCachedTailoredResume(
+  jobId: string,
+  expectedHash?: string
+): TailoredJobResumeResult | null {
   if (typeof window === "undefined" || !jobId) return null;
   try {
     const raw = localStorage.getItem(`${TAILORED_RESUME_PREFIX}${jobId}`);
     if (raw) {
-      return JSON.parse(raw);
+      const parsed = JSON.parse(raw) as TailoredJobResumeResult;
+      if (parsed.tailoringSource === "ai") {
+        if (expectedHash && parsed.sourceHash && parsed.sourceHash !== expectedHash) {
+          localStorage.removeItem(`${TAILORED_RESUME_PREFIX}${jobId}`);
+          return null;
+        }
+        if (parsed.operationVersion && parsed.operationVersion !== "1.0") {
+          localStorage.removeItem(`${TAILORED_RESUME_PREFIX}${jobId}`);
+          return null;
+        }
+      }
+      return parsed;
     }
   } catch (e) {
     console.warn(`Could not read cached tailored resume for ${jobId}`, e);
@@ -341,9 +355,10 @@ export async function saveTailoredResumeToSupabase(
  * Fetches tailored resume from Supabase if not found locally.
  */
 export async function getTailoredResumeAsync(
-  jobId: string
+  jobId: string,
+  expectedHash?: string
 ): Promise<TailoredJobResumeResult | null> {
-  const local = getCachedTailoredResume(jobId);
+  const local = getCachedTailoredResume(jobId, expectedHash);
   if (local) return local;
 
   try {
@@ -360,6 +375,14 @@ export async function getTailoredResumeAsync(
 
     if (!error && data?.tailored_data) {
       const parsed = data.tailored_data as TailoredJobResumeResult;
+      if (parsed.tailoringSource === "ai") {
+        if (expectedHash && parsed.sourceHash && parsed.sourceHash !== expectedHash) {
+          return null;
+        }
+        if (parsed.operationVersion && parsed.operationVersion !== "1.0") {
+          return null;
+        }
+      }
       if (typeof window !== "undefined") {
         localStorage.setItem(`${TAILORED_RESUME_PREFIX}${jobId}`, JSON.stringify(parsed));
       }
