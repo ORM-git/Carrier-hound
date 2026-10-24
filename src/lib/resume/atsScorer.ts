@@ -412,15 +412,34 @@ export function computeJobAtsScore(
     : 1;
   const skillsScore = Math.min(100, Math.round(skillsCoverageRate * 100));
 
-  // 3. Title & Summary Alignment (~15% weight)
+  // 3. Title & Role Alignment (~15% weight)
+  // Role alignment must compare candidate's source headline and actual experience roles against target title words
   const titleWords = (job.title || "")
     .toLowerCase()
     .replace(/[^\w\s]/g, " ")
     .split(/\s+/)
     .filter((w) => w.length > 2 && !COMMON_STOP_WORDS.has(w));
 
-  const headerSummaryText = `${candidate.headline || ""} ${candidate.summary || ""}`.toLowerCase();
-  const matchedTitleWords = titleWords.filter((w) => headerSummaryText.includes(w));
+  const candidateRoleText = [
+    candidate.headline || "",
+    ...(candidate.experience || []).map((e) => e.role || ""),
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  const candidateRoleWords = new Set(
+    candidateRoleText
+      .replace(/[^\w\s]/g, " ")
+      .split(/\s+/)
+      .filter((w) => w.length > 0)
+  );
+
+  const matchedTitleWords = titleWords.filter(
+    (w) =>
+      candidateRoleWords.has(w) ||
+      (w === "full" && candidateRoleWords.has("fullstack")) ||
+      (w === "stack" && candidateRoleWords.has("fullstack"))
+  );
   const titleAlignmentRate = titleWords.length > 0
     ? matchedTitleWords.length / titleWords.length
     : 1;
@@ -519,31 +538,6 @@ function scoreBulletForDomain(bullet: string, domain: JobDomain): number {
   return score;
 }
 
-function generateRoleSummary(
-  job: { title: string; company: string },
-  domain: JobDomain,
-  topSkills: string[]
-): string {
-  const skillsPhrase = topSkills.slice(0, 4).join(", ");
-
-  if (domain === "ai_ml") {
-    return `High-impact ${job.title} with proven expertise in ${skillsPhrase}. Strong background in scalable platform architecture, distributed execution, and low-latency API orchestration. Targeted to deliver immediate engineering impact for ${job.company}'s AI platform and systems initiatives.`;
-  }
-  if (domain === "backend") {
-    return `High-impact ${job.title} with proven expertise in ${skillsPhrase}. Strong background in high-throughput backend services, fault-tolerant transaction pipelines, and sub-50ms API performance. Targeted to scale ${job.company}'s backend infrastructure and critical service operations.`;
-  }
-  if (domain === "frontend") {
-    return `High-impact ${job.title} with proven expertise in ${skillsPhrase}. Strong background in modern frontend architecture, critical rendering path optimization, and responsive design systems. Targeted to build performant, accessible web interfaces for ${job.company}.`;
-  }
-  if (domain === "devops_cloud") {
-    return `High-impact ${job.title} with proven expertise in ${skillsPhrase}. Strong background in cloud infrastructure, automated deployment pipelines, and high-availability systems. Targeted to elevate reliability and deployment velocity for ${job.company}.`;
-  }
-  if (domain === "data") {
-    return `High-impact ${job.title} with proven expertise in ${skillsPhrase}. Strong background in resilient data processing, relational query optimization, and structured pipelines. Targeted to deliver robust data services for ${job.company}.`;
-  }
-  return `High-impact ${job.title} with proven expertise in ${skillsPhrase}. Strong background in scalable full-stack architecture, clean code standards, and cross-functional execution. Targeted to drive measurable results for ${job.company}.`;
-}
-
 /**
  * Tailors a candidate profile specifically to a target job with an iterative revision loop.
  * Computes an honest ATS alignment score bounded 0-100 without artificial score floors.
@@ -575,49 +569,33 @@ export function tailorProfileForJobWithAts(
     return verifiedSkills.indexOf(a) - verifiedSkills.indexOf(b);
   });
 
-  const topRoleSkills = prioritizedSkills.slice(0, 3);
-
-  // 2. Domain-adaptive experience bullet prioritization & natural tailoring
-  const currentExperience = (baseProfile.experience || []).map((exp, expIdx) => {
+  // 2. Domain-adaptive experience bullet prioritization
+  // Sort bullets by relevance to target domain without modifying text or manufacturing qualifications
+  const currentExperience = (baseProfile.experience || []).map((exp) => {
     const rawBullets = exp.bullets || [];
     if (rawBullets.length === 0) return exp;
 
-    // Sort bullets by relevance to this target role's domain
     const sortedBullets = [...rawBullets].sort((a, b) => {
       const diff = scoreBulletForDomain(b, domain) - scoreBulletForDomain(a, domain);
       if (diff !== 0) return diff;
       return rawBullets.indexOf(a) - rawBullets.indexOf(b);
     });
 
-    // Subtly re-frame the lead bullet for the primary role context without inventing facts
-    const tailoredBullets = sortedBullets.map((bullet, bIdx) => {
-      if (expIdx === 0 && bIdx === 0) {
-        if (domain === "backend" && !bullet.toLowerCase().includes("backend")) {
-          return `${bullet.replace(/\.$/, "")}, maintaining resilient backend performance standards.`;
-        }
-        if (domain === "ai_ml" && !bullet.toLowerCase().includes("platform")) {
-          return `${bullet.replace(/\.$/, "")}, supporting scalable high-throughput execution.`;
-        }
-        if (domain === "frontend" && !bullet.toLowerCase().includes("frontend")) {
-          return `${bullet.replace(/\.$/, "")}, enhancing responsive client-facing delivery.`;
-        }
-      }
-      return bullet;
-    });
-
     return {
       ...exp,
-      bullets: tailoredBullets,
+      bullets: sortedBullets,
     };
   });
 
-  // -------------------------------------------------------------
-  // PASS 1: Base Job-Specific Tailoring
-  // -------------------------------------------------------------
-  let currentHeadline = `${job.title} • ${topRoleSkills.join(" • ")}`;
-  let currentSummary = generateRoleSummary(job, domain, prioritizedSkills);
+  // 3. Factual Profile Presentation
+  // Preserve source headline, actual roles, employers, dates, seniority and numeric facts.
+  // Never manufacture candidate qualifications or copy target job title/company into candidate facts.
+  const currentHeadline =
+    baseProfile.headline ||
+    (baseProfile.experience?.[0]?.role ? baseProfile.experience[0].role : "Candidate Profile");
+  const currentSummary = baseProfile.summary || "";
 
-  let currentCandidate: CandidateProfile = {
+  const currentCandidate: CandidateProfile = {
     ...baseProfile,
     headline: currentHeadline,
     summary: currentSummary,
@@ -625,34 +603,8 @@ export function tailorProfileForJobWithAts(
     experience: currentExperience,
   };
 
-  let scoring = computeJobAtsScore(currentCandidate, job);
-  let attempts = 1;
-
-  // -------------------------------------------------------------
-  // PASS 2: Integrate Missing Keywords backed by verified skills
-  // -------------------------------------------------------------
-  if (scoring.score < 85) {
-    attempts = 2;
-    const missing = scoring.missingKeywords;
-
-    const integrableKeywords = missing.filter((kw) => {
-      const lower = kw.toLowerCase();
-      return (
-        ["rest", "api", "cloud", "agile", "testing", "database", "git", "ci/cd", "performance", "scalability", "architecture", "data modeling", "security", "docker", "microservices"].includes(lower) ||
-        prioritizedSkills.some((ps) => ps.toLowerCase().includes(lower) || lower.includes(ps.toLowerCase()))
-      );
-    });
-
-    const integrationPhrases = integrableKeywords.slice(0, 3);
-    if (integrationPhrases.length > 0) {
-      currentSummary = `${generateRoleSummary(job, domain, prioritizedSkills)} Verifiable strengths in ${integrationPhrases.join(", ")}.`;
-      currentCandidate = {
-        ...currentCandidate,
-        summary: currentSummary,
-      };
-      scoring = computeJobAtsScore(currentCandidate, job);
-    }
-  }
+  const scoring = computeJobAtsScore(currentCandidate, job);
+  const attempts = 1;
 
   // Final ATS score is the honest computed score, bounded strictly 0 to 100
   const finalAtsScore = Math.max(0, Math.min(100, Math.round(scoring.score)));

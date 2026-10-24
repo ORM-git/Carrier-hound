@@ -64,8 +64,30 @@ import {
 } from "../src/lib/resume/storage";
 import { downloadAtsResumePdf } from "../src/lib/resume/atsPdfGenerator";
 import { CandidateProfile } from "../src/lib/resume/types";
+import { handleAiRequest, handleNetlifyAiRequest } from "../src/lib/ai/serviceHandler";
 import { POST as apiAiPost } from "../src/app/api/ai/route";
 import { handler as netlifyAiHandler } from "../netlify/functions/ai";
+
+/**
+ * Extracts uncompressed (STORED) entries from a standard ZIP buffer by reading local file headers.
+ */
+function parseUncompressedZipEntries(buffer: Buffer): Map<string, string> {
+  const entries = new Map<string, string>();
+  let offset = 0;
+  while (offset + 30 <= buffer.length) {
+    const signature = buffer.readUInt32LE(offset);
+    if (signature !== 0x04034b50) break; // Local file header signature PK\x03\x04
+    const compressedSize = buffer.readUInt32LE(offset + 18);
+    const nameLength = buffer.readUInt16LE(offset + 26);
+    const extraLength = buffer.readUInt16LE(offset + 28);
+    const name = buffer.toString("utf-8", offset + 30, offset + 30 + nameLength);
+    const dataOffset = offset + 30 + nameLength + extraLength;
+    const data = buffer.toString("utf-8", dataOffset, dataOffset + compressedSize);
+    entries.set(name, data);
+    offset = dataOffset + compressedSize;
+  }
+  return entries;
+}
 
 let passedCount = 0;
 let failedCount = 0;
@@ -158,6 +180,54 @@ const weakCandidate: CandidateProfile = {
       startDate: "2023",
       endDate: "Present",
       bullets: ["Queried SQL inventory tables and updated weekly Excel reports for 3 departments."],
+      needsReview: false,
+    },
+  ],
+  education: [],
+  certifications: [],
+};
+
+// Fixtures for prompt T1d regressions:
+const seniorFullStackJob = {
+  id: "job-senior-fullstack",
+  title: "Senior Full Stack Engineer",
+  company: "CloudScale Inc",
+  location: "Remote",
+  category: "fullstack",
+  skills: ["React", "TypeScript", "Node.js", "PostgreSQL", "GraphQL", "AWS"],
+  description: "CloudScale is seeking a Senior Full Stack Engineer to lead web application development using React, TypeScript, Node.js, and PostgreSQL.",
+};
+
+const staffCandidate: CandidateProfile = {
+  name: "David Staff",
+  email: "david.staff@example.com",
+  phone: "+1 555-0177",
+  location: "Seattle, WA",
+  headline: "Staff Software Engineer",
+  summary: "Staff engineer with 12 years experience designing distributed backend systems and scalable database architectures.",
+  skills: ["Go", "Kubernetes", "PostgreSQL", "AWS", "Distributed Systems", "Docker", "System Design"],
+  experience: [
+    {
+      id: "exp-staff-1",
+      company: "InfraCorp",
+      role: "Staff Software Engineer",
+      startDate: "2020",
+      endDate: "Present",
+      bullets: [
+        "Architected multi-region distributed backend achieving 99.999% availability across 10 million transactions.",
+        "Led engineering initiative redesigning PostgreSQL partitioning, decreasing p99 latency by 45ms.",
+      ],
+      needsReview: false,
+    },
+    {
+      id: "exp-staff-2",
+      company: "DataFlow Labs",
+      role: "Senior Software Engineer",
+      startDate: "2016",
+      endDate: "2020",
+      bullets: [
+        "Designed microservice communication mesh in Go serving 2 million daily requests.",
+      ],
       needsReview: false,
     },
   ],
@@ -358,6 +428,76 @@ async function runAllTests() {
   const weakMatchScoreAgain = tailorProfileForJobWithAts(weakCandidate, testJob);
   assert(weakMatchResult.atsScore === weakMatchScoreAgain.atsScore, "Scoring is 100% deterministic across multiple runs");
 
+  // 3A. Regression: Staff Software Engineer vs Senior Full Stack Engineer
+  console.log("  -> Regression 3A: Staff Software Engineer vs Senior Full Stack Engineer");
+  const staffResult = tailorProfileForJobWithAts(staffCandidate, seniorFullStackJob);
+
+  assert(
+    staffResult.tailoredCandidate.headline === "Staff Software Engineer",
+    "Staff candidate headline is immutable (preserved as 'Staff Software Engineer', never overwritten by target job title)"
+  );
+  assert(
+    staffResult.tailoredCandidate.experience[0].role === "Staff Software Engineer" &&
+      staffResult.tailoredCandidate.experience[1].role === "Senior Software Engineer",
+    "Staff candidate experience roles remain immutable (no promoted claims)"
+  );
+  assert(
+    !staffResult.tailoredCandidate.summary.includes("Senior Full Stack Engineer"),
+    "Summary does not manufacture unevidenced target title 'Senior Full Stack Engineer'"
+  );
+  assert(
+    !staffResult.tailoredCandidate.summary.includes("CloudScale"),
+    "Summary does not manufacture unevidenced employer targeting 'CloudScale'"
+  );
+
+  const staffBreakdown = staffResult.scoringResult.breakdown;
+  assert(typeof staffBreakdown.keywordScore === "number", "Staff regression: keywordScore computed");
+  assert(staffBreakdown.titleScore === 50, `Staff regression: titleScore is exactly 50 (2/4 matched title words: 'senior', 'engineer' from candidate roles: ${staffBreakdown.titleScore})`);
+  assert(staffBreakdown.skillsScore === 33, `Staff regression: skillsScore is exactly 33 (2/6 matched skills: PostgreSQL, AWS: ${staffBreakdown.skillsScore})`);
+
+  const expectedStaffWeighted = Math.min(
+    100,
+    Math.max(0, Math.round(staffBreakdown.keywordScore * 0.60 + staffBreakdown.skillsScore * 0.25 + staffBreakdown.titleScore * 0.15))
+  );
+  assert(staffResult.atsScore === expectedStaffWeighted, `Staff regression: final score (${staffResult.atsScore}) equals rounded weighted total (${expectedStaffWeighted})`);
+
+  // 3B. Regression: Junior Data Analyst vs Senior Full Stack Engineer
+  console.log("  -> Regression 3B: Junior Data Analyst vs Senior Full Stack Engineer");
+  const juniorResult = tailorProfileForJobWithAts(weakCandidate, seniorFullStackJob);
+
+  assert(
+    juniorResult.tailoredCandidate.headline === "Junior Data Analyst",
+    "Junior candidate headline is immutable (preserved as 'Junior Data Analyst')"
+  );
+  assert(
+    juniorResult.tailoredCandidate.experience[0].role === "Data Clerk",
+    "Junior candidate role is immutable (preserved as 'Data Clerk')"
+  );
+  const juniorBreakdown = juniorResult.scoringResult.breakdown;
+  assert(juniorBreakdown.titleScore === 0, "Junior regression: titleScore is 0 (0/4 matched title words: 'senior', 'full', 'stack', 'engineer')");
+  assert(
+    juniorBreakdown.skillsScore === 17,
+    `Junior regression: skillsScore is 17 (1/6 matched skills: SQL aliased to PostgreSQL via SKILL_ALIASES: ${juniorBreakdown.skillsScore})`
+  );
+  const expectedJuniorWeighted = Math.min(
+    100,
+    Math.max(0, Math.round(juniorBreakdown.keywordScore * 0.60 + juniorBreakdown.skillsScore * 0.25 + juniorBreakdown.titleScore * 0.15))
+  );
+  assert(
+    juniorResult.atsScore === expectedJuniorWeighted,
+    `Junior regression: final score (${juniorResult.atsScore}) equals rounded weighted total (${expectedJuniorWeighted})`
+  );
+  assert(juniorResult.atsScore < 85, `Junior regression: final score is truthful and un-padded (${juniorResult.atsScore}/100 < 85)`);
+
+  // 3C. Reconciliation of the old "30" score case
+  console.log("  -> Reconciliation: Old '30' score case (Alex Data vs Staff Frontend Engineer)");
+  const alexVsFrontendResult = tailorProfileForJobWithAts(weakCandidate, testJob);
+  assert(alexVsFrontendResult.tailoredCandidate.headline === "Junior Data Analyst", "Alex Data headline remains 'Junior Data Analyst' (not overwritten with 'Staff Frontend Engineer')");
+  assert(alexVsFrontendResult.scoringResult.breakdown.titleScore === 0, "Alex Data titleScore is 0 (0/3 title words: 'staff', 'frontend', 'engineer' match candidate roles)");
+  assert(alexVsFrontendResult.scoringResult.breakdown.skillsScore === 0, "Alex Data skillsScore is 0 (0/5 skills match)");
+  assert(alexVsFrontendResult.atsScore <= 10, `Truthful Alex Data ATS score is ${alexVsFrontendResult.atsScore}/100 (honest score <= 10, down from inflated 30)`);
+  console.log("  [RECONCILIATION EXPLANATION] In previous turn, manual calculation (15*0.60 + 0*0.25 + 10*0.15 = 10.5) was mathematically invalid (10.5 != 30). The old generator produced 30 because it manufactured qualifications: it copied the target title into the candidate headline & summary (giving 100% title alignment = 15 pts) and injected JD keywords into the summary in Pass 2 (giving 25% keyword match = 15 pts), yielding 15 + 0 + 15 = 30. With truthful rules tailoring, title copying and keyword stuffing are eliminated, yielding an honest score <= 10.");
+
   // -------------------------------------------------------------
   // TEST 4: Token Budgeting & Job Truncation
   // -------------------------------------------------------------
@@ -541,14 +681,14 @@ async function runAllTests() {
   // -------------------------------------------------------------
   console.log("\n--- 7. ROUTE HANDLERS & SERVERLESS FUNCTIONS WITH MOCKS ---");
 
-  // 7A. Test src/app/api/ai/route.ts
+  // 7A. Test src/lib/ai/serviceHandler.ts handleAiRequest
   // 1. Missing Authorization header -> 401
   const reqNoAuth = new Request("http://localhost:3000/api/ai", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ operation: "resume_tailor", candidate: testCandidate, job: testJob }),
   });
-  const resNoAuth = await apiAiPost(reqNoAuth);
+  const resNoAuth = await handleAiRequest(reqNoAuth);
   assert(resNoAuth.status === 401, "API /ai returns 401 on missing Authorization header");
 
   // 2. Invalid session -> 401
@@ -557,7 +697,7 @@ async function runAllTests() {
     headers: { "Content-Type": "application/json", Authorization: "Bearer bad_token" },
     body: JSON.stringify({ operation: "resume_tailor", candidate: testCandidate, job: testJob }),
   });
-  const resInvalidToken = await apiAiPost(reqInvalidToken, {
+  const resInvalidToken = await handleAiRequest(reqInvalidToken, {
     getSupabaseAdmin: () => ({
       auth: { getUser: async () => ({ data: { user: null }, error: { message: "Invalid session" } }) },
     }),
@@ -570,7 +710,7 @@ async function runAllTests() {
     headers: { "Content-Type": "application/json", Authorization: "Bearer valid_token" },
     body: JSON.stringify({ operation: "resume_tailor", candidate: testCandidate, job: testJob }),
   });
-  const resNonPro = await apiAiPost(reqNonPro, {
+  const resNonPro = await handleAiRequest(reqNonPro, {
     getSupabaseAdmin: () => ({
       auth: { getUser: async () => ({ data: { user: { id: "usr_free_123" } }, error: null }) },
       from: () => ({
@@ -591,7 +731,7 @@ async function runAllTests() {
     headers: { "Content-Type": "application/json", Authorization: "Bearer valid_token" },
     body: JSON.stringify({ operation: "resume_tailor", candidate: testCandidate, job: testJob }),
   });
-  const resBlocked = await apiAiPost(reqBlocked, {
+  const resBlocked = await handleAiRequest(reqBlocked, {
     getSupabaseAdmin: () => ({
       auth: {
         getUser: async () => ({
@@ -603,17 +743,17 @@ async function runAllTests() {
   });
   assert(resBlocked.status === 403, "API /ai returns 403 on suspended/blocked user account");
 
-  // 7B. Test netlify/functions/ai.ts
+  // 7B. Test src/lib/ai/serviceHandler.ts handleNetlifyAiRequest
   // 1. Method not allowed (GET) -> 405
-  const netlifyResGet = await netlifyAiHandler({ httpMethod: "GET", headers: {} });
+  const netlifyResGet = await handleNetlifyAiRequest({ httpMethod: "GET", headers: {} });
   assert(netlifyResGet.statusCode === 405, "Netlify /ai returns 405 on non-POST method");
 
   // 2. Missing Auth -> 401
-  const netlifyResNoAuth = await netlifyAiHandler({ httpMethod: "POST", headers: {} });
+  const netlifyResNoAuth = await handleNetlifyAiRequest({ httpMethod: "POST", headers: {} });
   assert(netlifyResNoAuth.statusCode === 401, "Netlify /ai returns 401 on missing Authorization header");
 
   // 3. Non-Pro user -> 403
-  const netlifyResNonPro = await netlifyAiHandler(
+  const netlifyResNonPro = await handleNetlifyAiRequest(
     {
       httpMethod: "POST",
       headers: { authorization: "Bearer token_non_pro" },
@@ -636,7 +776,7 @@ async function runAllTests() {
   assert(netlifyResNonPro.statusCode === 403, "Netlify /ai returns 403 on non-Pro subscriber");
 
   // 4. Blocked user -> 403
-  const netlifyResBlocked = await netlifyAiHandler(
+  const netlifyResBlocked = await handleNetlifyAiRequest(
     {
       httpMethod: "POST",
       headers: { authorization: "Bearer token_blocked" },
@@ -655,6 +795,39 @@ async function runAllTests() {
   );
   assert(netlifyResBlocked.statusCode === 403, "Netlify /ai returns 403 on suspended user");
 
+  // 7C. Test Framework Context Injection Resistance
+  console.log("\n--- 7C. FRAMEWORK CONTEXT INJECTION RESISTANCE ---");
+  const fakeContextWithMocks = {
+    params: Promise.resolve({ id: "test" }),
+    getSupabaseAdmin: () => ({
+      auth: { getUser: async () => ({ data: { user: { id: "injected_user" } }, error: null }) },
+      from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) }),
+    }),
+    getServerEntitlement: async () => ({ isPro: true, tier: "pro", status: "active", expiresAt: null, cachedAt: 0, cancelAtPeriodEnd: false }),
+    callGroq: async () => ({ choices: [{ message: { content: "{\"tailoredSummary\":\"injected\"}" } }] }),
+  };
+
+  // 1. Next.js POST wrapper must NOT treat 2nd argument as test dependencies
+  const nextContextRes = await apiAiPost(reqNonPro, fakeContextWithMocks as any);
+  assert(
+    nextContextRes.status === 401 || nextContextRes.status === 500,
+    "Next POST wrapper strictly ignores framework context argument (cannot override auth or entitlements)"
+  );
+
+  // 2. Netlify handler wrapper must NOT treat 2nd argument (context) as test dependencies
+  const netlifyContextRes = await netlifyAiHandler(
+    {
+      httpMethod: "POST",
+      headers: { authorization: "Bearer fake_token" },
+      body: JSON.stringify({ operation: "resume_tailor", candidate: testCandidate, job: testJob }),
+    },
+    fakeContextWithMocks as any
+  );
+  assert(
+    netlifyContextRes.statusCode === 401 || netlifyContextRes.statusCode === 500,
+    "Netlify handler strictly ignores platform context argument (cannot override auth or entitlements)"
+  );
+
   // -------------------------------------------------------------
   // TEST 8: Export Integrity & Offline Containment
   // -------------------------------------------------------------
@@ -665,14 +838,21 @@ async function runAllTests() {
   assert(acceptedPlainText.includes(validDraft.tailoredBullets["exp-1"][0]), "Plain text export includes accepted AI rewritten bullet");
   assert(!acceptedPlainText.includes("Fabricated Tech Corp"), "Plain text export strictly excludes unaccepted/rejected text");
 
-  // 8B. Word document (.docx) export inspection
+  // 8B. Word document (.docx) export inspection via ZIP archive entry parsing
   const docxBlob = exportAtsWordDocument(acceptedCandidate);
   assert(docxBlob instanceof Blob, "Word document generated as valid OpenXML Blob");
   const docxArrayBuffer = await docxBlob.arrayBuffer();
-  const docxContent = Buffer.from(docxArrayBuffer).toString("utf-8");
-  assert(docxContent.includes(validDraft.tailoredSummary), "Word document (.docx) contains accepted AI summary text");
-  assert(docxContent.includes(validDraft.tailoredBullets["exp-1"][0]), "Word document (.docx) contains accepted AI rewritten bullet");
-  assert(!docxContent.includes("Fabricated Tech Corp"), "Word document strictly excludes unaccepted/rejected text");
+  const docxBuffer = Buffer.from(docxArrayBuffer);
+  const zipEntries = parseUncompressedZipEntries(docxBuffer);
+
+  assert(zipEntries.has("[Content_Types].xml"), "DOCX archive contains [Content_Types].xml");
+  assert(zipEntries.has("_rels/.rels"), "DOCX archive contains _rels/.rels");
+  assert(zipEntries.has("word/document.xml"), "DOCX archive contains word/document.xml");
+
+  const wordDocXml = zipEntries.get("word/document.xml") || "";
+  assert(wordDocXml.includes(validDraft.tailoredSummary), "Extracted word/document.xml contains accepted AI summary text");
+  assert(wordDocXml.includes(validDraft.tailoredBullets["exp-1"][0]), "Extracted word/document.xml contains accepted AI rewritten bullet");
+  assert(!wordDocXml.includes("Fabricated Tech Corp"), "Extracted word/document.xml strictly excludes unaccepted/rejected text");
 
   // 8C. PDF export safety check
   // In Node environment, downloadAtsResumePdf guards `if (typeof window === "undefined") return;`
@@ -685,8 +865,8 @@ async function runAllTests() {
   } catch (e) {
     pdfThrew = true;
   }
-  assert(!pdfThrew, "PDF generation method safely guards non-browser environment without throwing");
-  console.log("  [REPORT-ONLY] Full vector PDF canvas rendering exercised in browser Puppeteer capture harness.");
+  assert(!pdfThrew, "PDF generation method safely guards non-browser environment without throwing (offline smoke test)");
+  console.log("  [REPORT-ONLY] PDF content remains unverified in Node unit tests (non-throw is only an offline smoke test; actual vector rendering and visual layout require browser canvas in Puppeteer).");
   (global as any).window = prevWindow;
 
   // 8D. System prompt leakage negative control
