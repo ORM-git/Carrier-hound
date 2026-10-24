@@ -101,6 +101,21 @@ const sampleProfile = {
   updatedAt: new Date(Date.now() - 22 * 24 * 60 * 60 * 1000).toISOString(),
 };
 
+const samplePreferences = {
+  roles: ["Staff Software Engineer", "Platform Engineer"],
+  categories: ["Software Development", "DevOps & Cloud"],
+  experienceLevel: "senior",
+  employmentTypes: ["full-time"],
+  locations: ["Remote / Global"],
+  remotePreference: "remote",
+  workAuth: "Authorized",
+  minSalary: 160000,
+  salaryCurrency: "USD",
+  dailyDigestOptIn: true,
+  onboardingCompleted: true,
+  updatedAt: new Date().toISOString(),
+};
+
 const mockJobs = [
   {
     id: "mock_job_1",
@@ -140,6 +155,24 @@ const mockJobs = [
   },
 ];
 
+const mockDbJobs = mockJobs.map((j) => ({
+  id: j.id,
+  title: j.title,
+  company_name: j.company,
+  company: j.company,
+  location: j.location,
+  salary: j.salary,
+  description: j.description,
+  apply_url: j.apply_url,
+  created_at: j.postedAt,
+  posted_at: j.postedAt,
+  is_active: true,
+  status: "active",
+  verified: true,
+  remote: true,
+  category: "engineering",
+}));
+
 async function setupPageMocks(page, options = {}) {
   const { isSigned = true, isPro = true, cookieNotice = false } = options;
 
@@ -152,31 +185,35 @@ async function setupPageMocks(page, options = {}) {
       req.continue();
       return;
     }
-      // If it's a Supabase/PostgREST/Stripe API request, we intercept and mock it below.
-      // If unhandled and external, abort immediately to deny external network traffic.
-      const isKnownApi =
-        url.includes("/subscriptions") ||
-        url.includes("/candidate_profiles") ||
-        url.includes("/profiles") ||
-        url.includes("/tracker") ||
-        url.includes("/applications") ||
-        url.includes("/jobs") ||
-        url.includes("/api/account/delete") ||
-        url.includes("/api/radar") ||
-        url.includes("/daily_digests") ||
-        url.includes("/auth/v1");
+    // If it's a Supabase/PostgREST/Stripe API request, we intercept and mock it below.
+    // If unhandled and external, abort immediately to deny external network traffic.
+    const isKnownApi =
+      url.includes("/subscriptions") ||
+      url.includes("/candidate_profiles") ||
+      url.includes("/profiles") ||
+      url.includes("/tracker") ||
+      url.includes("/applications") ||
+      url.includes("/user_preferences") ||
+      url.includes("/jobs") ||
+      url.includes("/api/account/delete") ||
+      url.includes("/api/radar") ||
+      url.includes("/api/stats") ||
+      url.includes("/api/jobs/top10") ||
+      url.includes("/api/jobs/search") ||
+      url.includes("/daily_digests") ||
+      url.includes("/auth/v1");
 
-      if (!isKnownApi) {
-        req.abort("blockedbyclient");
-        return;
-      }
+    if (!isKnownApi) {
+      req.abort("blockedbyclient");
+      return;
+    }
 
     if (req.method() === "OPTIONS") {
       req.respond({
         status: 204,
         headers: {
           "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
           "Access-Control-Allow-Headers": "*",
         },
       });
@@ -184,6 +221,17 @@ async function setupPageMocks(page, options = {}) {
     }
 
     if (url.includes("/subscriptions") || url.includes("/api/billing")) {
+      if (req.method() === "PATCH") {
+        req.respond({
+          status: 200,
+          headers: {
+            "Access-Control-Allow-Origin": "*",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify([{ id: "sub_mock_active", status: "canceled", cancel_at_period_end: true }]),
+        });
+        return;
+      }
       const isObjectExpected = (req.headers()["accept"] || "").includes("vnd.pgrst.object+json");
       const subRow = {
         id: "sub_mock_active",
@@ -194,7 +242,7 @@ async function setupPageMocks(page, options = {}) {
         current_period_end: new Date(Date.now() + 30 * 86400000).toISOString(),
         created_at: new Date().toISOString(),
       };
-      const body = isPro
+      const body = (isSigned && isPro)
         ? isObjectExpected ? JSON.stringify(subRow) : JSON.stringify([subRow])
         : isObjectExpected ? "null" : JSON.stringify([]);
 
@@ -209,6 +257,36 @@ async function setupPageMocks(page, options = {}) {
       return;
     }
 
+    if (url.includes("/user_preferences")) {
+      const isObjectExpected = (req.headers()["accept"] || "").includes("vnd.pgrst.object+json");
+      const prefRow = {
+        user_id: "usr_mock_123",
+        roles: ["Staff Software Engineer", "Platform Engineer"],
+        categories: ["Software Development", "DevOps & Cloud"],
+        experience_level: "senior",
+        employment_types: ["full-time"],
+        locations: ["Remote / Global"],
+        remote_preference: "remote",
+        work_auth: "Authorized",
+        min_salary: 160000,
+        salary_currency: "USD",
+        daily_digest_opt_in: true,
+        onboarding_completed: true,
+        updated_at: new Date().toISOString(),
+      };
+      req.respond({
+        status: 200,
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Content-Type": isObjectExpected ? "application/vnd.pgrst.object+json" : "application/json",
+        },
+        body: isSigned
+          ? (isObjectExpected ? JSON.stringify(prefRow) : JSON.stringify([prefRow]))
+          : (isObjectExpected ? "null" : JSON.stringify([])),
+      });
+      return;
+    }
+
     if (url.includes("/candidate_profiles") || url.includes("/profiles")) {
       const isObjectExpected = (req.headers()["accept"] || "").includes("vnd.pgrst.object+json");
       req.respond({
@@ -217,7 +295,9 @@ async function setupPageMocks(page, options = {}) {
           "Access-Control-Allow-Origin": "*",
           "Content-Type": isObjectExpected ? "application/vnd.pgrst.object+json" : "application/json",
         },
-        body: isObjectExpected ? JSON.stringify(sampleProfile) : JSON.stringify([sampleProfile]),
+        body: isSigned
+          ? (isObjectExpected ? JSON.stringify(sampleProfile) : JSON.stringify([sampleProfile]))
+          : (isObjectExpected ? "null" : JSON.stringify([])),
       });
       return;
     }
@@ -231,11 +311,45 @@ async function setupPageMocks(page, options = {}) {
       return;
     }
 
-    if (url.includes("/auth/v1/token") || url.includes("/auth/v1/user")) {
+    if (url.includes("/auth/v1/user")) {
+      if (!isSigned) {
+        req.respond({
+          status: 401,
+          headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" },
+          body: JSON.stringify({ message: "Invalid JWT: user not authenticated", error: "unauthorized" }),
+        });
+        return;
+      }
+      req.respond({
+        status: 200,
+        headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" },
+        body: JSON.stringify(sampleSession.user),
+      });
+      return;
+    }
+
+    if (url.includes("/auth/v1/token")) {
+      if (!isSigned) {
+        req.respond({
+          status: 401,
+          headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" },
+          body: JSON.stringify({ message: "Invalid JWT: user not authenticated", error: "unauthorized" }),
+        });
+        return;
+      }
       req.respond({
         status: 200,
         headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" },
         body: JSON.stringify(sampleSession),
+      });
+      return;
+    }
+
+    if (url.includes("/auth/v1/otp")) {
+      req.respond({
+        status: 200,
+        headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" },
+        body: JSON.stringify({}),
       });
       return;
     }
@@ -257,24 +371,111 @@ async function setupPageMocks(page, options = {}) {
       req.respond({
         status: 200,
         headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" },
-        body: JSON.stringify([
-          {
-            id: "app_1",
-            title: "Senior Full Stack Engineer",
-            company: "Vercel",
-            stage: "saved",
-            location: "Remote",
-            salary_text: "$165k - $195k",
-            applied_at: null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          },
-        ]),
+        body: isSigned
+          ? JSON.stringify([
+              {
+                id: "app_1",
+                title: "Senior Full Stack Engineer",
+                company: "Vercel",
+                stage: "saved",
+                location: "Remote",
+                salary_text: "$165k - $195k",
+                applied_at: null,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              },
+            ])
+          : JSON.stringify([]),
       });
       return;
     }
 
-    if (url.includes("/jobs") || url.includes("/api/jobs")) {
+    if (url.includes("/api/stats")) {
+      req.respond({
+        status: 200,
+        headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jobsToday: 124,
+          totalJobs: 1250,
+          companiesScanned: 380,
+          updatedAt: new Date().toISOString(),
+        }),
+      });
+      return;
+    }
+
+    if (url.includes("/api/jobs/top10")) {
+      req.respond({
+        status: 200,
+        headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jobs: mockJobs.map((j) => ({
+            job: j,
+            diagnostics: {
+              score: 95,
+              scoreGrade: "high",
+              matchedSkills: ["TypeScript", "Next.js", "React"],
+              missingSkills: [],
+              inferredSignals: ["Frontend Architecture"],
+              whyYouFit: ["Strong alignment with React and Next.js stack"],
+              gaps: [],
+              jobRequiredSkills: ["TypeScript", "Next.js", "React"],
+              breakdown: {
+                skillScore: 95,
+                titleScore: 98,
+                experienceScore: 92,
+                remoteScore: 100,
+                yearsOfExperience: 6,
+              },
+            },
+          })),
+        }),
+      });
+      return;
+    }
+
+    if (url.includes("/rest/v1/jobs") || url.includes("jobs_public")) {
+      const isSingle = (req.headers()["accept"] || "").includes("vnd.pgrst.object+json");
+      const matched = mockDbJobs.find((j) => url.includes(j.id)) || mockDbJobs[0];
+      req.respond({
+        status: 200,
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Content-Type": isSingle ? "application/vnd.pgrst.object+json" : "application/json",
+        },
+        body: isSingle ? JSON.stringify(matched) : JSON.stringify(mockDbJobs),
+      });
+      return;
+    }
+
+    if (url.includes("/api/jobs/pro")) {
+      const matched = mockJobs.find((j) => url.includes(j.id)) || mockJobs[0];
+      req.respond({
+        status: 200,
+        headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" },
+        body: JSON.stringify({
+          job: {
+            id: matched.id,
+            title: matched.title,
+            company: matched.company,
+            company_name: matched.company,
+            location: matched.location,
+            salary: matched.salary,
+            salary_text: matched.salary_text,
+            description: matched.description,
+            requirements: matched.requirements,
+            apply_url: matched.apply_url,
+            is_active: true,
+            status: "active",
+            verified: true,
+            remote: true,
+          },
+        }),
+      });
+      return;
+    }
+
+    if (url.includes("/api/jobs")) {
       req.respond({
         status: 200,
         headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" },
@@ -369,6 +570,26 @@ async function setupPageMocks(page, options = {}) {
       },
       { profile: sampleProfile, cookieNotice }
     );
+  } else {
+    // Guest / unauthenticated state: clear cookies and local storage
+    try {
+      const client = await page.target().createCDPSession();
+      await client.send("Network.clearBrowserCookies");
+      await client.send("Network.clearBrowserCache");
+    } catch {}
+    const existingCookies = await page.cookies();
+    for (const c of existingCookies) {
+      await page.deleteCookie(c);
+    }
+    await page.evaluateOnNewDocument(({ cookieNotice }) => {
+      try {
+        localStorage.clear();
+        sessionStorage.clear();
+        if (!cookieNotice) {
+          localStorage.setItem("careermonke_cookie_consent", "accepted");
+        }
+      } catch {}
+    }, { cookieNotice });
   }
 }
 

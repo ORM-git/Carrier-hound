@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Search, Menu, X, LogOut, Settings } from "lucide-react";
+import { Search, Menu, X, LogOut, Settings, User as UserIcon, ChevronDown } from "lucide-react";
 import BrandIcon from "@/components/BrandIcon";
 import { NAV_ITEMS } from "./AppIconRail";
 import { signOutUser } from "@/lib/auth/session";
@@ -38,6 +38,7 @@ export default function AppTopBar({
 }: AppTopBarProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const [avatarMenuOpen, setAvatarMenuOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const pathname = usePathname() || "";
   const router = useRouter();
@@ -159,7 +160,7 @@ export default function AppTopBar({
                   value={searchValue || ""}
                   onChange={(e) => onSearchChange(e.target.value)}
                   placeholder={searchPlaceholder}
-                  className="w-full h-9 pl-9 pr-3 rounded-full bg-[#F1F5F9] text-[13px] text-[#0F172A] placeholder-[#94A3B8] border border-transparent focus:border-[#93C5FD] focus:bg-white focus:outline-none transition-all duration-200"
+                  className="w-full h-9 pl-9 pr-3 rounded-full bg-[#F1F5F9] text-[13px] text-[#0F172A] placeholder-[#475569] border border-transparent focus:border-[#93C5FD] focus:bg-white focus:outline-none transition-all duration-200"
                 />
               </div>
             </div>
@@ -194,19 +195,73 @@ export default function AppTopBar({
               </button>
             )}
 
-            {/* Circular avatar with user's initial on #2563EB + full name bold 13px */}
-            <Link
-              href="/settings"
-              aria-label="Profile and settings"
-              className="flex items-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] rounded-full"
-            >
-              <div className="w-8 h-8 rounded-full bg-[#2563EB] text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs">
-                {userInitial}
-              </div>
-              <span className="font-bold text-[13px] text-[#0F172A] hidden lg:inline truncate max-w-[120px]">
-                {displayName}
-              </span>
-            </Link>
+            {/* Circular avatar with user's initial on #2563EB + full name bold 13px + Dropdown */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setAvatarMenuOpen((prev) => !prev)}
+                aria-label="User avatar menu"
+                aria-haspopup="true"
+                aria-expanded={avatarMenuOpen}
+                className="flex items-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] rounded-full cursor-pointer"
+              >
+                <div className="w-8 h-8 rounded-full bg-[#2563EB] text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs">
+                  {userInitial}
+                </div>
+                <span className="font-bold text-[13px] text-[#0F172A] hidden lg:inline truncate max-w-[120px]">
+                  {displayName}
+                </span>
+                <ChevronDown className={`w-3 h-3 text-[#64748B] hidden sm:inline transition-transform ${avatarMenuOpen ? "rotate-180" : ""}`} />
+              </button>
+
+              {avatarMenuOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" role="presentation" onClick={() => setAvatarMenuOpen(false)} />
+                  <div
+                    data-testid="avatar-menu-dropdown"
+                    className="absolute right-0 top-full mt-2 w-56 bg-white border border-[#E2E8F0] rounded-xl shadow-xl z-50 overflow-hidden text-left py-1.5 animate-fadeIn"
+                  >
+                    <div className="px-4 py-2.5 border-b border-[#F1F5F9]">
+                      <p className="text-[11px] font-semibold text-[#64748B] uppercase tracking-wider">Signed in as</p>
+                      <p className="text-[13px] font-bold text-[#0F172A] truncate mt-0.5">{displayName}</p>
+                      <p className="text-[11px] text-[#64748B] truncate">{user?.email}</p>
+                    </div>
+
+                    <div className="p-1 space-y-0.5">
+                      <Link
+                        href="/profile"
+                        onClick={() => setAvatarMenuOpen(false)}
+                        className="flex items-center gap-2.5 px-3 py-2 text-[13px] text-[#0F172A] hover:bg-[#EFF6FF] hover:text-[#2563EB] rounded-lg transition-colors font-medium"
+                      >
+                        <UserIcon className="w-4 h-4 text-[#64748B]" />
+                        <span>Profile</span>
+                      </Link>
+                      <Link
+                        href="/settings"
+                        onClick={() => setAvatarMenuOpen(false)}
+                        className="flex items-center gap-2.5 px-3 py-2 text-[13px] text-[#0F172A] hover:bg-[#EFF6FF] hover:text-[#2563EB] rounded-lg transition-colors font-medium"
+                      >
+                        <Settings className="w-4 h-4 text-[#64748B]" />
+                        <span>Settings</span>
+                      </Link>
+                      <div className="my-1 border-t border-[#F1F5F9]" />
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          setAvatarMenuOpen(false);
+                          await signOutUser();
+                          router.push("/");
+                        }}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-[#DC2626] hover:bg-[#FEF2F2] rounded-lg transition-colors font-medium text-left cursor-pointer"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        <span>Sign Out</span>
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
 
             {/* Plan Pill ("Free" or "Pro") with neutral outline */}
             <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold border border-[#CBD5E1] text-[#475569] bg-white shadow-none shrink-0">
@@ -227,7 +282,7 @@ export default function AppTopBar({
                 value={searchValue || ""}
                 onChange={(e) => onSearchChange(e.target.value)}
                 placeholder={searchPlaceholder}
-                className="w-full h-9 pl-9 pr-3 rounded-full bg-[#F1F5F9] text-[13px] text-[#0F172A] placeholder-[#94A3B8] border border-transparent focus:border-[#93C5FD] focus:bg-white focus:outline-none transition-all duration-200"
+                className="w-full h-9 pl-9 pr-3 rounded-full bg-[#F1F5F9] text-[13px] text-[#0F172A] placeholder-[#475569] border border-transparent focus:border-[#93C5FD] focus:bg-white focus:outline-none transition-all duration-200"
               />
             </div>
           </div>

@@ -968,7 +968,7 @@ function JobsPageInner() {
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
                         placeholder="Search by job title, company, or keyword..."
-                        className="w-full text-xs sm:text-sm pl-10 pr-9 py-2.5 rounded-xl border border-[#CBD5E1] bg-white text-[#0F172A] placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1 shadow-none min-h-[44px]"
+                        className="w-full text-xs sm:text-sm pl-10 pr-9 py-2.5 rounded-xl border border-[#CBD5E1] bg-white text-[#0F172A] placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1 shadow-none min-h-[44px]"
                       />
                       {search && (
                         <button

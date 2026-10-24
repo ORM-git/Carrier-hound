@@ -253,7 +253,7 @@ export default function ResumePage() {
           className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-[#E2E8F0]"
         >
           <div>
-            <h1 className="text-[24px] font-bold text-[#0F172A] tracking-tight">
+            <h1 className="text-[24px] font-extrabold text-[#0F172A] tracking-tight">
               RESUME <span className="sr-only">Resumes</span>
             </h1>
             <p className="text-[13px] text-[#475569] mt-0.5">
@@ -271,8 +271,10 @@ export default function ResumePage() {
               💬
             </span>
             <span>
-              {candidate
+              {candidate && candidate.confirmedAt
                 ? "You have 1 verified resume active for AI tailoring and fit scoring."
+                : candidate
+                ? "Resume facts need review before AI tailoring and fit scoring are active."
                 : "No active resume. Upload a resume to ground AI tailoring and fit scoring."}
             </span>
             <span
@@ -312,11 +314,11 @@ export default function ResumePage() {
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="h-[49px] border-b border-[#E2E8F0] text-[13px] font-semibold text-[#0F172A] bg-white">
-                      <th className="py-3 px-6 font-semibold">Resume</th>
+                      <th className="py-3 px-3 sm:px-6 font-semibold">Resume</th>
                       <th className="py-3 px-4 font-semibold hidden md:table-cell">Target Job Title</th>
                       <th className="py-3 px-4 font-semibold hidden lg:table-cell">Last Modified</th>
                       <th className="py-3 px-4 font-semibold hidden sm:table-cell">Created</th>
-                      <th className="py-3 px-6 text-right font-semibold">
+                      <th className="py-3 px-3 sm:px-6 text-right font-semibold">
                         <span className="sr-only">Actions</span>
                       </th>
                     </tr>
@@ -324,23 +326,23 @@ export default function ResumePage() {
                   <tbody>
                     <tr className="h-[80px] border-b border-[#E2E8F0] last:border-b-0 hover:bg-[#F8FAFC]/80 transition-colors">
                       {/* Column 1: Resume */}
-                      <td className="py-2.5 px-6 align-middle">
-                        <div className="flex items-center gap-3.5 min-w-0">
+                      <td className="py-2.5 px-3 sm:px-6 align-middle">
+                        <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
                           {/* Hexagon/Tile Avatar */}
-                          <div className="w-10 h-10 rounded-lg bg-[#EFF6FF] border border-[#BFDBFE] flex items-center justify-center text-[#2563EB] font-bold text-[15px] shrink-0">
+                          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-[#EFF6FF] border border-[#BFDBFE] flex items-center justify-center text-[#2563EB] font-bold text-[14px] sm:text-[15px] shrink-0">
                             {initialLetter}
                           </div>
 
                           <div className="min-w-0 space-y-0.5">
-                            <div className="flex items-center gap-2">
-                              <h3 className="text-[15px] font-bold text-[#0F172A] truncate max-w-[200px] sm:max-w-[280px]">
+                            <div className="flex flex-wrap sm:flex-nowrap items-center gap-1.5 sm:gap-2">
+                              <h3 className="text-[14px] sm:text-[15px] font-bold text-[#0F172A] truncate max-w-[130px] sm:max-w-[280px]">
                                 {resumeTitle}
                               </h3>
 
                               {/* PRIMARY Pill */}
                               <span
                                 title="Primary resume used for match scoring and recommendations"
-                                className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-[#EFF6FF] text-[#2563EB] border border-[#BFDBFE] shrink-0"
+                                className="inline-flex items-center gap-0.5 sm:gap-1 text-[10px] sm:text-[11px] font-bold px-1.5 sm:px-2 py-0.5 rounded-full bg-[#EFF6FF] text-[#2563EB] border border-[#BFDBFE] shrink-0 whitespace-nowrap"
                               >
                                 <span>★</span>
                                 <span>PRIMARY</span>
@@ -395,11 +397,11 @@ export default function ResumePage() {
                       </td>
 
                       {/* Column 5: Action Menu */}
-                      <td className="py-2.5 px-6 align-middle text-right">
+                      <td className="py-2.5 px-3 sm:px-6 align-middle text-right">
                         <div
                           ref={menuRef}
                           data-testid="resume-actions-row"
-                          className="relative inline-flex items-center gap-1 justify-end"
+                          className="relative inline-flex items-center gap-0.5 sm:gap-1 justify-end"
                         >
                           {/* Direct icon buttons for quick access & strict test suite contract */}
                           <button

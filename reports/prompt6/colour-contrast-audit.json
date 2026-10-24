@@ -1,0 +1,101 @@
+[
+  {
+    "element": "Resume Status Chip (Confirmed)",
+    "page": "/resume",
+    "fontSize": "11px",
+    "fontWeight": "600",
+    "foreground": "rgb(22, 101, 52)",
+    "background": "rgb(220, 252, 231)",
+    "ratio": 6.49,
+    "required": 4.5,
+    "verdict": "PASS"
+  },
+  {
+    "element": "Dashboard Greeting Heading",
+    "page": "/dashboard",
+    "fontSize": "18px",
+    "fontWeight": "700",
+    "foreground": "rgb(15, 23, 42)",
+    "background": "rgb(255, 255, 255)",
+    "ratio": 17.85,
+    "required": 3,
+    "verdict": "PASS"
+  },
+  {
+    "element": "Dashboard Subtitle Text",
+    "page": "/dashboard",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "foreground": "rgb(71, 85, 105)",
+    "background": "rgb(248, 250, 252)",
+    "ratio": 7.24,
+    "required": 4.5,
+    "verdict": "PASS"
+  },
+  {
+    "element": "Search Bar Placeholder Text",
+    "page": "/jobs",
+    "fontSize": "13px",
+    "fontWeight": "400",
+    "foreground": "rgb(71, 85, 105)",
+    "background": "rgb(241, 245, 249)",
+    "ratio": 6.92,
+    "required": 4.5,
+    "verdict": "PASS"
+  },
+  {
+    "element": "TopBar Search Placeholder Text",
+    "page": "/jobs",
+    "fontSize": "13px",
+    "fontWeight": "400",
+    "foreground": "rgb(71, 85, 105)",
+    "background": "rgb(241, 245, 249)",
+    "ratio": 6.92,
+    "required": 4.5,
+    "verdict": "PASS"
+  },
+  {
+    "element": "Top 10 Jobs Matched Skills Label",
+    "page": "/dashboard",
+    "fontSize": "12px",
+    "fontWeight": "500",
+    "foreground": "rgb(100, 116, 139)",
+    "background": "rgb(248, 250, 252)",
+    "ratio": 4.55,
+    "required": 4.5,
+    "verdict": "PASS"
+  },
+  {
+    "element": "Resume Card Info Text (Uploaded date)",
+    "page": "/resume",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "foreground": "rgb(100, 116, 139)",
+    "background": "rgb(255, 255, 255)",
+    "ratio": 4.76,
+    "required": 4.5,
+    "verdict": "PASS"
+  },
+  {
+    "element": "Resume Page Subtitle Text",
+    "page": "/resume",
+    "fontSize": "11px",
+    "fontWeight": "600",
+    "foreground": "rgb(71, 85, 105)",
+    "background": "rgb(255, 255, 255)",
+    "ratio": 7.58,
+    "required": 4.5,
+    "verdict": "PASS"
+  },
+  {
+    "element": "Radar HUD Remote Button (Active)",
+    "page": "/radar",
+    "fontSize": "12px",
+    "fontWeight": "600",
+    "foreground": "rgb(255, 255, 255)",
+    "background": "rgb(37, 99, 235)",
+    "ratio": 5.17,
+    "required": 4.5,
+    "verdict": "PASS"
+  }
+]

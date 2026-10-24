@@ -220,9 +220,9 @@ export default function TopTenCompatibleJobs({
                     </div>
 
                     {/* Matched Skills Chips */}
-                    {diagnostics.matchedSkills.length > 0 && (
+                    {Array.isArray(diagnostics?.matchedSkills) && diagnostics.matchedSkills.length > 0 && (
                       <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                        <span className="text-[11px] text-slate-400 font-medium mr-0.5">
+                        <span className="text-[11px] text-slate-500 font-medium mr-0.5">
                           Matched:
                         </span>
                         {diagnostics.matchedSkills.slice(0, 4).map((s) => (
@@ -234,7 +234,7 @@ export default function TopTenCompatibleJobs({
                           </span>
                         ))}
                         {diagnostics.matchedSkills.length > 4 && (
-                          <span className="text-[11px] text-slate-400">
+                          <span className="text-[11px] text-slate-500">
                             +{diagnostics.matchedSkills.length - 4} more
                           </span>
                         )}
