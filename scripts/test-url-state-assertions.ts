@@ -679,16 +679,26 @@ async function runSuite() {
         try { req.abort("blockedbyclient"); } catch {}
       });
 
-      const cookieChunks = ssr.createChunks(
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://szakevhxhwpeskidvtfs.supabase.co";
+      const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase/)?.[1] || "szakevhxhwpeskidvtfs";
+      const tokenKeys = Array.from(new Set([
+        `sb-${projectRef}-auth-token`,
         "sb-szakevhxhwpeskidvtfs-auth-token",
-        "base64-" + ssr.stringToBase64URL(JSON.stringify(sampleSessionA))
-      );
-      for (const c of cookieChunks) {
-        await modalPage.setCookie({ name: c.name, value: c.value, domain: "localhost", path: "/" });
+        "sb-placeholder-auth-token",
+      ]));
+
+      for (const tKey of tokenKeys) {
+        const cookieChunks = ssr.createChunks(
+          tKey,
+          "base64-" + ssr.stringToBase64URL(JSON.stringify(sampleSessionA))
+        );
+        for (const c of cookieChunks) {
+          await modalPage.setCookie({ name: c.name, value: c.value, domain: "localhost", path: "/" });
+        }
       }
       await modalPage.setCookie({ name: "careermonke_user_email", value: "alex.candidate@careermonke.com", domain: "localhost", path: "/" });
 
-      await modalPage.evaluateOnNewDocument(({ profile, session }) => {
+      await modalPage.evaluateOnNewDocument(({ profile, session, keys }) => {
         localStorage.setItem("careermonke_cookie_consent", "accepted");
         localStorage.setItem("careermonke_candidate_profile", JSON.stringify(profile));
         localStorage.setItem("careermonke_preferences", JSON.stringify({
@@ -706,9 +716,11 @@ async function runSuite() {
           updatedAt: new Date().toISOString(),
         }));
         localStorage.setItem("careermonke_user_email", "alex.candidate@careermonke.com");
-        localStorage.setItem("sb-szakevhxhwpeskidvtfs-auth-token", JSON.stringify(session));
+        for (const k of keys) {
+          localStorage.setItem(k, JSON.stringify(session));
+        }
         localStorage.setItem("careermonke_auth_user", JSON.stringify({ id: session.user.id }));
-      }, { profile: sampleProfileA, session: sampleSessionA });
+      }, { profile: sampleProfileA, session: sampleSessionA, keys: tokenKeys });
 
       await modalPage.goto(`http://localhost:${PORT}/dashboard`, { waitUntil: "networkidle0" });
       await new Promise((r) => setTimeout(r, 1500));
@@ -744,11 +756,13 @@ async function runSuite() {
       );
 
       // Trigger logout while request is held
-      await modalPage.evaluate(() => {
-        localStorage.removeItem("sb-szakevhxhwpeskidvtfs-auth-token");
+      await modalPage.evaluate((keys: string[]) => {
+        for (const k of keys) {
+          localStorage.removeItem(k);
+        }
         localStorage.removeItem("careermonke_auth_user");
         window.dispatchEvent(new Event("careermonke_auth_updated"));
-      });
+      }, tokenKeys);
 
       await new Promise((r) => setTimeout(r, 500));
 
