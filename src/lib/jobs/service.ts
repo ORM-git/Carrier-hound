@@ -190,6 +190,41 @@ const PUBLIC_SELECT_COLUMNS =
   "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at";
 
 /**
+ * Authorized read-only query to fetch distinct country_code values from active public jobs.
+ * Queries `jobs_public` view (PostgREST read-only). Safe error handling returns empty array on failure.
+ * No schema or data writes.
+ */
+export async function fetchLiveActiveJobCountryCodes(
+  supabase?: ReturnType<typeof createClient>
+): Promise<string[]> {
+  try {
+    const client = supabase || createClient();
+    const { data, error } = await client
+      .from("jobs_public")
+      .select("country_code")
+      .eq("status", "active")
+      .not("country_code", "is", null)
+      .limit(100);
+
+    if (error || !data || !Array.isArray(data)) {
+      return [];
+    }
+
+    const set = new Set<string>();
+    data.forEach((row: any) => {
+      const code = (row.country_code || "").trim().toUpperCase();
+      if (code && code.length === 2) {
+        set.add(code);
+      }
+    });
+
+    return Array.from(set).sort();
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Fetches live active jobs from Supabase with strict server/payload-level Pro gating.
  * When isPro is false, gated fields (company, salary, apply_url, description, skills)
  * are NEVER queried or included in the network response.

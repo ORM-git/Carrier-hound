@@ -358,10 +358,12 @@ export interface SupportedCountryOption {
 }
 
 /**
- * ISO 2-letter country codes actively populated and indexed in the active jobs database
- * (ref: `CREATE INDEX jobs_country_code_idx ON public.jobs (country_code) WHERE status = 'active'`).
+ * Historical static country code reference list from 20261001 database backfill.
+ * NOTE: This is a static reference, NOT live active-job data.
+ * For live country options, use `deriveCountryOptionsFromActiveJobs(activeCodes)` with
+ * active-job records queried from `jobs_public` or active job search results.
  */
-export const ACTIVE_JOB_COUNTRY_CODES: readonly string[] = [
+export const STATIC_TAXONOMY_COUNTRY_CODES: readonly string[] = [
   "US", // United States
   "GB", // United Kingdom
   "CA", // Canada
@@ -382,22 +384,26 @@ export const ACTIVE_JOB_COUNTRY_CODES: readonly string[] = [
 ] as const;
 
 /**
- * Derives user-facing country filter options directly from active-job country_code data,
- * resolving labels against verified centroid geography.
+ * Derives user-facing country filter options from an active-job country_code array.
+ * Safe empty/error handling: If activeCodes is empty or undefined, returns only Worldwide.
+ * Never claims static codes are live data.
  */
 export function deriveCountryOptionsFromActiveJobs(
   activeCodes?: readonly string[] | string[]
 ): SupportedCountryOption[] {
-  const codesToUse =
-    activeCodes && activeCodes.length > 0
-      ? Array.from(new Set(activeCodes.map((c) => c.toUpperCase().trim())))
-      : ACTIVE_JOB_COUNTRY_CODES;
-
   const options: SupportedCountryOption[] = [
     { code: "", label: "All Locations (Worldwide)", shortLabel: "Worldwide" },
   ];
 
-  for (const code of codesToUse) {
+  if (!activeCodes || activeCodes.length === 0) {
+    return options;
+  }
+
+  const distinctCodes = Array.from(
+    new Set(activeCodes.map((c) => (c || "").toUpperCase().trim()).filter((c) => c.length === 2))
+  ).sort();
+
+  for (const code of distinctCodes) {
     const meta = COUNTRY_CENTROIDS[code];
     if (meta) {
       options.push({
@@ -411,7 +417,7 @@ export function deriveCountryOptionsFromActiveJobs(
   return options;
 }
 
-// Derived from active-job country_code dataset
+// Default fallback options when no active jobs are loaded
 export const SUPPORTED_COUNTRY_OPTIONS: SupportedCountryOption[] = deriveCountryOptionsFromActiveJobs();
 
 /**

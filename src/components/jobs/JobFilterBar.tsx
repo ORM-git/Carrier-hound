@@ -21,6 +21,8 @@ import {
   Sparkles,
 } from "lucide-react";
 
+import { SupportedCountryOption, SUPPORTED_COUNTRY_OPTIONS } from "@/lib/geo/cities";
+
 export interface JobFilterValues {
   countryCode?: string; // ISO 2-letter country code (US, GB, CA, DE, IN)
   location: string; // City or area text search
@@ -47,6 +49,7 @@ interface JobFilterBarProps {
   mobileFiltersTriggerRef: React.Ref<HTMLButtonElement>;
   allFiltersTriggerRef?: React.Ref<HTMLButtonElement>;
   hasConfirmedResume: boolean;
+  countryOptions?: SupportedCountryOption[];
 }
 
 // Format multi-select label with (+N) extra count
@@ -71,7 +74,10 @@ export default function JobFilterBar({
   mobileFiltersTriggerRef,
   allFiltersTriggerRef,
   hasConfirmedResume,
+  countryOptions,
 }: JobFilterBarProps) {
+  const availableCountries = countryOptions && countryOptions.length > 0 ? countryOptions : SUPPORTED_COUNTRY_OPTIONS;
+
   // Popover state
   const [activePopover, setActivePopover] = useState<string | null>(null);
   const [draftFilters, setDraftFilters] = useState<JobFilterValues>(filters);
@@ -300,14 +306,7 @@ export default function JobFilterBar({
                   {/* Real Country Selection (Filtering genuine country_code column) */}
                   <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
                     <span className="text-[11px] font-semibold text-[#64748B] block mb-1">Country (Filters country_code):</span>
-                    {[
-                      { code: "", label: "Worldwide (All Countries)" },
-                      { code: "US", label: "United States (US)" },
-                      { code: "GB", label: "United Kingdom (GB)" },
-                      { code: "CA", label: "Canada (CA)" },
-                      { code: "DE", label: "Germany (DE)" },
-                      { code: "IN", label: "India (IN)" },
-                    ].map((c) => (
+                    {availableCountries.map((c) => (
                       <label
                         key={c.code || "all"}
                         className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg cursor-pointer transition text-[13px] ${

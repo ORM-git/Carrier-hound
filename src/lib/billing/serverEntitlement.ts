@@ -6,13 +6,23 @@ export interface ServerEntitlementOptions {
   launchPass?: string | null;
   env?: Record<string, any>;
   headers?: Headers | Record<string, any> | null;
+  supabaseClient?: any;
+}
+
+async function computeSha256Hex(str: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const buffer = await globalThis.crypto.subtle.digest("SHA-256", encoder.encode(str));
+  return Array.from(new Uint8Array(buffer))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 /**
  * Shared server-side helper: The SINGLE source of truth for Pro entitlement.
- * Reads server-managed Supabase `subscriptions` table and validates server-signed launch passes.
- * Strictly ignores user_metadata, localStorage, query params, or any client-editable fields.
- * Fails closed to tier="none" on any missing credentials, error, or unverified state.
+ * 
+ * 1. Checks server-managed Supabase `subscriptions` table for active/trialing/grace-period paid subscribers.
+ * 2. If no paid subscription, verifies server-signed launch passes AND requires server-side registry confirmation.
+ * 3. Fails closed to tier="none" on any missing credentials, unverified state, or missing server registry.
  */
 export async function getServerEntitlement(
   userId: string,
@@ -34,6 +44,8 @@ export async function getServerEntitlement(
     return freeDefault;
   }
 
+  let supabaseAdmin: any = options?.supabaseClient || null;
+
   try {
     const supabaseUrl =
       options?.env?.NEXT_PUBLIC_SUPABASE_URL ||
@@ -47,11 +59,13 @@ export async function getServerEntitlement(
       process.env.SUPABASE_SERVICE_ROLE_KEY ||
       process.env.SUPABASE_SERVICE_KEY;
 
-    if (supabaseUrl && serviceRoleKey) {
-      const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
+    if (!supabaseAdmin && supabaseUrl && serviceRoleKey) {
+      supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
         auth: { persistSession: false },
       });
+    }
 
+    if (supabaseAdmin) {
       const { data: sub, error } = await supabaseAdmin
         .from("subscriptions")
         .select("*")
@@ -124,6 +138,9 @@ export async function getServerEntitlement(
   }
 
   // 3. Fallback to server-signed launch pass verification (No customer payments mode)
+  // CRITICAL SECURITY CONTROL:
+  // Stateless signed tokens alone do NOT grant access without server-side registry confirmation.
+  // Missing registry schema or missing grant record fails closed to freeDefault.
   try {
     let launchPass = options?.launchPass;
     if (!launchPass && options?.headers) {
@@ -148,6 +165,36 @@ export async function getServerEntitlement(
     if (launchPass) {
       const passResult = await verifyLaunchPass(launchPass, userId, options?.env);
       if (passResult.valid && passResult.tier) {
+        // Server-Side Registry Validation:
+        // A proposed SQL file is not deployed protection. Verify token hash against public.launch_passes.
+        let registryConfirmed = false;
+        if (supabaseAdmin) {
+          try {
+            const tokenHash = await computeSha256Hex(launchPass);
+            const { data: regEntry, error: regError } = await supabaseAdmin
+              .from("launch_passes")
+              .select("id, revoked_at, expires_at")
+              .eq("token_hash", tokenHash)
+              .eq("user_id", userId)
+              .maybeSingle();
+
+            if (!regError && regEntry && !regEntry.revoked_at) {
+              const expTime = new Date(regEntry.expires_at).getTime();
+              if (Date.now() <= expTime) {
+                registryConfirmed = true;
+              }
+            }
+          } catch {
+            registryConfirmed = false;
+          }
+        }
+
+        // When registry is missing/unmigrated or token is not confirmed in the registry:
+        // Fail closed. Stateless tokens must not bypass the server registry.
+        if (!registryConfirmed) {
+          return freeDefault;
+        }
+
         const tier = passResult.tier;
         return {
           tier,
@@ -155,7 +202,7 @@ export async function getServerEntitlement(
           canAccessScores: tier === "ai",
           canAccessAi: tier === "ai",
           isPro: true,
-          status: "none", // Separate from paid subscription: explicitly not a paid subscription
+          status: "none", // Separate from paid subscription
           accessSource: "launch_pass",
           planName: tier === "ai" ? "Launch Access (AI Tier)" : "Launch Access (Listings Tier)",
           inGracePeriod: false,

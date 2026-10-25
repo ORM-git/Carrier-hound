@@ -5,7 +5,8 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, useReducedMotion, AnimatePresence } from "motion/react";
-import { getLiveJobs, getLiveJobById, LiveJob } from "@/lib/jobs/service";
+import { getLiveJobs, getLiveJobById, LiveJob, fetchLiveActiveJobCountryCodes } from "@/lib/jobs/service";
+import { deriveCountryOptionsFromActiveJobs, SupportedCountryOption } from "@/lib/geo/cities";
 import { getAuthUser, getUserPreferences } from "@/lib/auth/session";
 import { getCandidateProfile } from "@/lib/resume/storage";
 import { CandidateProfile } from "@/lib/resume/types";
@@ -453,6 +454,29 @@ function JobsPageInner() {
   const [totalCount, setTotalCount] = useState<number>(0);
   const [loadingJobs, setLoadingJobs] = useState<boolean>(true);
   const lastQueryKeyRef = useRef<string>("");
+
+  // Live active country codes derived from database and visible jobs
+  const [activeJobCountryCodes, setActiveJobCountryCodes] = useState<string[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchLiveActiveJobCountryCodes().then((codes) => {
+      if (!cancelled && codes && codes.length > 0) {
+        setActiveJobCountryCodes(codes);
+      }
+    }).catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const dynamicCountryOptions = useMemo<SupportedCountryOption[]>(() => {
+    const liveCodes = liveJobs
+      .map((j) => (j.country || (j as any).country_code))
+      .filter((c) => typeof c === "string" && c.trim().length === 2);
+    const combined = Array.from(new Set([...activeJobCountryCodes, ...liveCodes, ...(selectedCountryCode ? [selectedCountryCode] : [])]));
+    return deriveCountryOptionsFromActiveJobs(combined);
+  }, [liveJobs, activeJobCountryCodes, selectedCountryCode]);
 
   // Static export safe: Read URL query parameters client-side via window.location.search
   useEffect(() => {
@@ -1573,6 +1597,7 @@ function JobsPageInner() {
                   mobileFiltersTriggerRef={filtersTriggerRef}
                   allFiltersTriggerRef={allFiltersTriggerRef}
                   hasConfirmedResume={hasConfirmedResume}
+                  countryOptions={dynamicCountryOptions}
                 />
 
                 <AllFiltersDrawer
@@ -1586,6 +1611,7 @@ function JobsPageInner() {
                   onResetAll={handleResetFilters}
                   activeCount={activeFiltersCount}
                   triggerRef={allFiltersTriggerRef}
+                  countryOptions={dynamicCountryOptions}
                 />
 
                 <MobileFilterSheet
@@ -1600,6 +1626,7 @@ function JobsPageInner() {
                   activeCount={activeFiltersCount}
                   hiddenCount={hiddenJobIds.length}
                   triggerRef={filtersTriggerRef}
+                  countryOptions={dynamicCountryOptions}
                 />
               </div>
 

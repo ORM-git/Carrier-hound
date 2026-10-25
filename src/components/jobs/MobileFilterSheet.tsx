@@ -12,7 +12,7 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 import { JobFilterValues } from "./JobFilterBar";
-import { SUPPORTED_COUNTRY_OPTIONS } from "@/lib/geo/cities";
+import { SupportedCountryOption, SUPPORTED_COUNTRY_OPTIONS } from "@/lib/geo/cities";
 
 interface MobileFilterSheetProps {
   isOpen: boolean;
@@ -23,6 +23,7 @@ interface MobileFilterSheetProps {
   activeCount: number;
   hiddenCount: number;
   triggerRef?: React.RefObject<HTMLButtonElement | null>;
+  countryOptions?: SupportedCountryOption[];
 }
 
 export default function MobileFilterSheet({
@@ -34,7 +35,9 @@ export default function MobileFilterSheet({
   activeCount,
   hiddenCount,
   triggerRef,
+  countryOptions,
 }: MobileFilterSheetProps) {
+  const availableCountries = countryOptions && countryOptions.length > 0 ? countryOptions : SUPPORTED_COUNTRY_OPTIONS;
   const [draft, setDraft] = useState<JobFilterValues>(filters);
   const [basicExpanded, setBasicExpanded] = useState(true);
 
@@ -427,7 +430,7 @@ export default function MobileFilterSheet({
                   <label className="text-xs font-bold text-[#0F172A] block">Country (Indexed Filter)</label>
                   <p className="text-[11px] text-[#64748B]">Direct database country filter</p>
                   <div className="grid grid-cols-3 gap-2">
-                    {SUPPORTED_COUNTRY_OPTIONS.map((item) => (
+                    {availableCountries.map((item) => (
                       <button
                         key={item.code || "worldwide"}
                         type="button"

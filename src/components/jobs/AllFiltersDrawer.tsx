@@ -18,7 +18,7 @@ import {
   Building,
 } from "lucide-react";
 import { JobFilterValues } from "./JobFilterBar";
-import { SUPPORTED_COUNTRY_OPTIONS } from "@/lib/geo/cities";
+import { SupportedCountryOption, SUPPORTED_COUNTRY_OPTIONS } from "@/lib/geo/cities";
 
 interface AllFiltersDrawerProps {
   isOpen: boolean;
@@ -28,6 +28,7 @@ interface AllFiltersDrawerProps {
   onResetAll: () => void;
   activeCount: number;
   triggerRef?: React.RefObject<HTMLButtonElement | null>;
+  countryOptions?: SupportedCountryOption[];
 }
 
 export default function AllFiltersDrawer({
@@ -38,7 +39,9 @@ export default function AllFiltersDrawer({
   onResetAll,
   activeCount,
   triggerRef,
+  countryOptions,
 }: AllFiltersDrawerProps) {
+  const availableCountries = countryOptions && countryOptions.length > 0 ? countryOptions : SUPPORTED_COUNTRY_OPTIONS;
   const [draft, setDraft] = useState<JobFilterValues>(filters);
   const [activeSection, setActiveSection] = useState<"basic" | "preferences">("basic");
   const drawerRef = useRef<HTMLDivElement | null>(null);
@@ -508,7 +511,7 @@ export default function AllFiltersDrawer({
                   <label className="text-[13px] font-bold text-[#0F172A] block">Country (Indexed Filter)</label>
                   <p className="text-[11px] text-[#64748B]">Filters database directly by ISO country code</p>
                   <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-                    {SUPPORTED_COUNTRY_OPTIONS.map((item) => (
+                    {availableCountries.map((item) => (
                       <button
                         key={item.code || "worldwide"}
                         type="button"
