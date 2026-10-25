@@ -291,12 +291,10 @@ export async function getProAccessStatus(userId?: string): Promise<ProAccessStat
         if (!resultStatus.isPro && typeof window !== "undefined") {
           try {
             const { data: { session } } = await supabase.auth.getSession();
-            const launchToken = sessionStorage.getItem("cm_launch_pass");
             if (session?.access_token) {
               const statusRes = await fetch("/api/billing/status", {
                 headers: {
                   Authorization: `Bearer ${session.access_token}`,
-                  ...(launchToken ? { "x-cm-launch-pass": launchToken } : {}),
                 },
               });
               if (statusRes.ok) {
@@ -308,8 +306,9 @@ export async function getProAccessStatus(userId?: string): Promise<ProAccessStat
                     canAccessScores: Boolean(s.canAccessScores),
                     canAccessAi: Boolean(s.canAccessAi),
                     isPro: true,
-                    status: s.status || "active",
-                    planName: s.planName || (s.tier === "ai" ? "Launch AI Pass" : "Launch Listings Pass"),
+                    status: s.status || "none",
+                    accessSource: s.accessSource || "launch_access",
+                    planName: s.planName || (s.tier === "ai" ? "Launch Access (AI Tier)" : "Launch Access (Listings Tier)"),
                     inGracePeriod: false,
                     expirationDate: s.expirationDate,
                     isLoading: false,
@@ -470,9 +469,6 @@ export async function activateLaunchTier(tier: "listings" | "ai"): Promise<ProAc
   invalidateProAccessCache();
 
   if (typeof window !== "undefined") {
-    try {
-      sessionStorage.setItem("cm_launch_pass", data.token);
-    } catch {}
     window.dispatchEvent(new Event("careermonke_pro_updated"));
     window.dispatchEvent(new Event("careermonke_auth_updated"));
   }
@@ -483,10 +479,10 @@ export async function activateLaunchTier(tier: "listings" | "ai"): Promise<ProAc
     canAccessScores: Boolean(data.canAccessScores),
     canAccessAi: Boolean(data.canAccessAi),
     isPro: true,
-    status: "active",
-    planName: data.planName,
+    status: "none",
+    accessSource: "launch_access",
+    planName: data.planName || (data.tier === "ai" ? "Launch Access (AI Tier)" : "Launch Access (Listings Tier)"),
     inGracePeriod: false,
-    expirationDate: data.expiresAt,
     isLoading: false,
     isDefinitive: true,
   };

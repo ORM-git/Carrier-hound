@@ -1,6 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
 import { ProAccessStatus, PLAN_DOMESTIC, PLAN_INTERNATIONAL, UserTier } from "./types";
-import { verifyLaunchPass } from "./launchPass";
 
 export interface ServerEntitlementOptions {
   launchPass?: string | null;
@@ -9,20 +8,17 @@ export interface ServerEntitlementOptions {
   supabaseClient?: any;
 }
 
-async function computeSha256Hex(str: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const buffer = await globalThis.crypto.subtle.digest("SHA-256", encoder.encode(str));
-  return Array.from(new Uint8Array(buffer))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
 /**
  * Shared server-side helper: The SINGLE source of truth for Pro entitlement.
  * 
  * 1. Checks server-managed Supabase `subscriptions` table for active/trialing/grace-period paid subscribers.
- * 2. If no paid subscription, verifies server-signed launch passes AND requires server-side registry confirmation.
- * 3. Fails closed to tier="none" on any missing credentials, unverified state, or missing server registry.
+ *    Existing paid subscribers retain their full rights completely unchanged.
+ * 2. Otherwise verifies simple server-backed launch access:
+ *    - Server launch policy must be explicitly enabled (launch_policy.is_enabled = true).
+ *    - User must have a valid server-stored selection (user_launch_access.tier IN ('listings', 'ai')).
+ *    - User must NOT be revoked for abuse (user_launch_access.revoked_at IS NULL).
+ * 3. Fails closed to tier="none" on any missing credentials, unverified state, lookup error, or missing policy.
+ * 4. Old signed-pass path is superseded and disabled. No client flags or forgeable tokens can grant access.
  */
 export async function getServerEntitlement(
   userId: string,
@@ -66,7 +62,8 @@ export async function getServerEntitlement(
     }
 
     if (supabaseAdmin) {
-      const { data: sub, error } = await supabaseAdmin
+      // 1. Existing Paid Subscriptions Check (Highest Precedence)
+      const { data: sub, error: subError } = await supabaseAdmin
         .from("subscriptions")
         .select("*")
         .eq("user_id", userId)
@@ -74,7 +71,7 @@ export async function getServerEntitlement(
         .limit(1)
         .maybeSingle();
 
-      if (!error && sub) {
+      if (!subError && sub) {
         const now = new Date();
         const periodEnd = sub.current_period_end ? new Date(sub.current_period_end) : null;
         const graceEnd = sub.grace_period_end ? new Date(sub.grace_period_end) : null;
@@ -82,7 +79,7 @@ export async function getServerEntitlement(
         const isListingsOnly = Boolean(sub.plan_id && sub.plan_id.includes("listings"));
         const tier: UserTier = isListingsOnly ? "listings" : "ai";
 
-        // 1. In Grace Period check (7 days past expiration)
+        // Grace Period check (7 days past expiration)
         if (sub.status === "in_grace_period" && graceEnd) {
           const diffMs = graceEnd.getTime() - now.getTime();
           const daysLeft = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
@@ -109,7 +106,7 @@ export async function getServerEntitlement(
           }
         }
 
-        // 2. Active or Trialing subscription check
+        // Active or Trialing subscription check
         if (sub.status === "active" || sub.status === "trialing") {
           if (!periodEnd || periodEnd > now) {
             return {
@@ -132,93 +129,59 @@ export async function getServerEntitlement(
           }
         }
       }
-    }
-  } catch (err) {
-    console.error("[getServerEntitlement] Unexpected error checking subscription DB:", err);
-  }
 
-  // 3. Fallback to server-signed launch pass verification (No customer payments mode)
-  // CRITICAL SECURITY CONTROL:
-  // Stateless signed tokens alone do NOT grant access without server-side registry confirmation.
-  // Missing registry schema or missing grant record fails closed to freeDefault.
-  try {
-    let launchPass = options?.launchPass;
-    if (!launchPass && options?.headers) {
-      if (typeof (options.headers as Headers).get === "function") {
-        launchPass = (options.headers as Headers).get("x-cm-launch-pass");
-        if (!launchPass) {
-          const cookieHeader = (options.headers as Headers).get("cookie") || "";
-          const match = cookieHeader.match(/cm_launch_pass=([^;]+)/);
-          if (match) launchPass = decodeURIComponent(match[1].trim());
-        }
-      } else {
-        const h = options.headers as Record<string, string>;
-        launchPass = h["x-cm-launch-pass"] || h["X-CM-LAUNCH-PASS"];
-        if (!launchPass && (h["cookie"] || h["Cookie"])) {
-          const cookieHeader = h["cookie"] || h["Cookie"] || "";
-          const match = cookieHeader.match(/cm_launch_pass=([^;]+)/);
-          if (match) launchPass = decodeURIComponent(match[1].trim());
-        }
-      }
-    }
+      // 2. Server-Backed Launch Access Check (Customer Payments OFF Mode)
+      // Requires:
+      // a) Server-controlled launch policy is active (launch_policy.is_enabled = true)
+      // b) Valid server-stored selection (user_launch_access for this user)
+      // c) No server-side abuse revocation (revoked_at IS NULL)
+      try {
+        const { data: policy, error: policyError } = await supabaseAdmin
+          .from("launch_policy")
+          .select("is_enabled, allow_ai, allow_listings")
+          .limit(1)
+          .maybeSingle();
 
-    if (launchPass) {
-      const passResult = await verifyLaunchPass(launchPass, userId, options?.env);
-      if (passResult.valid && passResult.tier) {
-        // Server-Side Registry Validation:
-        // A proposed SQL file is not deployed protection. Verify token hash against public.launch_passes.
-        let authoritativeRegistryEntry: { id: string; tier: "listings" | "ai"; expires_at: string } | null = null;
-        if (supabaseAdmin) {
-          try {
-            const tokenHash = await computeSha256Hex(launchPass);
-            const { data: regEntry, error: regError } = await supabaseAdmin
-              .from("launch_passes")
-              .select("id, tier, revoked_at, expires_at")
-              .eq("token_hash", tokenHash)
-              .eq("user_id", userId)
-              .maybeSingle();
+        if (!policyError && policy && policy.is_enabled) {
+          const { data: userAccess, error: accessError } = await supabaseAdmin
+            .from("user_launch_access")
+            .select("id, tier, revoked_at")
+            .eq("user_id", userId)
+            .maybeSingle();
 
-            if (!regError && regEntry && !regEntry.revoked_at) {
-              const expTime = new Date(regEntry.expires_at).getTime();
-              if (Date.now() <= expTime) {
-                const regTier = regEntry.tier === "ai" ? "ai" : "listings";
-                authoritativeRegistryEntry = {
-                  id: regEntry.id,
-                  tier: regTier,
-                  expires_at: regEntry.expires_at,
-                };
-              }
+          if (!accessError && userAccess && !userAccess.revoked_at) {
+            const rawTier = userAccess.tier;
+            if (rawTier === "ai" || rawTier === "listings") {
+              const tier: UserTier =
+                rawTier === "ai" && policy.allow_ai !== false ? "ai" : "listings";
+
+              return {
+                tier,
+                canAccessListings: true,
+                canAccessScores: tier === "ai",
+                canAccessAi: tier === "ai",
+                isPro: true,
+                status: "none", // Explicitly not a paid subscription
+                accessSource: "launch_access",
+                planName:
+                  tier === "ai"
+                    ? "Launch Access (AI Tier)"
+                    : "Launch Access (Listings Tier)",
+                inGracePeriod: false,
+              };
             }
-          } catch {
-            authoritativeRegistryEntry = null;
           }
         }
-
-        // When registry is missing/unmigrated or token is not confirmed in the registry:
-        // Fail closed. Stateless tokens must not bypass the server registry.
-        if (!authoritativeRegistryEntry) {
-          return freeDefault;
-        }
-
-        // The database registry entry is strictly AUTHORITATIVE for tier and expiration
-        const tier = authoritativeRegistryEntry.tier;
-        return {
-          tier,
-          canAccessListings: true,
-          canAccessScores: tier === "ai",
-          canAccessAi: tier === "ai",
-          isPro: true,
-          status: "none", // Separate from paid subscription
-          accessSource: "launch_pass",
-          planName: tier === "ai" ? "Launch Access (AI Tier)" : "Launch Access (Listings Tier)",
-          inGracePeriod: false,
-          expirationDate: authoritativeRegistryEntry.expires_at,
-        };
+      } catch (launchAccessErr) {
+        // Table unmigrated, lookup error, or policy absent: strictly fails closed
+        console.warn("[getServerEntitlement] Launch policy lookup error:", launchAccessErr);
       }
     }
-  } catch (passErr) {
-    console.error("[getServerEntitlement] Error checking launch pass:", passErr);
+  } catch (err) {
+    console.error("[getServerEntitlement] Unexpected error checking entitlement:", err);
   }
 
+  // 3. Fallback: Old signed-pass path is SUPERSEDED and DISABLED.
+  // Stateless tokens alone cannot bypass the server database or upgrade access.
   return freeDefault;
 }

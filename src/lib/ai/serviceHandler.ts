@@ -7,6 +7,8 @@ import {
   buildOperationPayload,
   checkAndIncrementAiQuota,
   refundAiQuota,
+  checkAndIncrementGlobalAiQuota,
+  refundGlobalAiQuota,
   OPERATION_CONFIGS,
   validateAndSanitizeAiOutput,
 } from "@/lib/ai/security";
@@ -366,6 +368,30 @@ export async function executeAiCore(
       };
     }
 
+    // 4b. Global AI Cost / Capacity Guard (MAX_GLOBAL_DAILY_AI_REQUESTS)
+    // Does NOT invent a budget or block requests when unset.
+    const globalQuota = await checkAndIncrementGlobalAiQuota(
+      supabaseAdmin,
+      payload.estimatedInputTokens,
+      activeDeps.env
+    );
+
+    if (!globalQuota.allowed) {
+      await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
+      return {
+        statusCode: 429,
+        body: {
+          error: `Daily global AI capacity reached (${globalQuota.currentCount}/${globalQuota.limit}). Capacity is guarded by owner configuration.`,
+          code: "GLOBAL_AI_CAPACITY_REACHED",
+          currentCount: globalQuota.currentCount,
+          limit: globalQuota.limit,
+        },
+        headers: {
+          "Retry-After": "86400",
+        },
+      };
+    }
+
     // 5. Server-Side Groq API Key Check & Upstream Groq Call
     let groqData: any;
     if (activeDeps.callGroq) {
@@ -374,6 +400,7 @@ export async function executeAiCore(
       } catch (mockErr: any) {
         console.warn("[AI Service] Error calling mock Groq provider:", mockErr);
         await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
+        await refundGlobalAiQuota(supabaseAdmin, payload.estimatedInputTokens);
         return {
           statusCode: 502,
           body: { error: mockErr?.message || "AI service request failed or timed out. Please try again." },
@@ -384,6 +411,7 @@ export async function executeAiCore(
       if (!groqApiKey || !groqApiKey.trim()) {
         console.error("[AI Service] Missing required environment variable: GROQ_API_KEY");
         await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
+        await refundGlobalAiQuota(supabaseAdmin, payload.estimatedInputTokens);
         return {
           statusCode: 500,
           body: {
@@ -412,6 +440,7 @@ export async function executeAiCore(
       } catch (fetchErr) {
         console.warn("[AI Service] Network error calling upstream provider:", fetchErr);
         await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
+        await refundGlobalAiQuota(supabaseAdmin, payload.estimatedInputTokens);
         return {
           statusCode: 502,
           body: { error: "AI service request failed or timed out. Please try again." },
@@ -421,6 +450,7 @@ export async function executeAiCore(
       if (!groqResponse.ok) {
         console.warn(`[AI Service] Upstream provider returned status ${groqResponse.status}`);
         await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
+        await refundGlobalAiQuota(supabaseAdmin, payload.estimatedInputTokens);
         return {
           statusCode: 502,
           body: { error: "AI service generation failed. Please try again." },
@@ -432,6 +462,7 @@ export async function executeAiCore(
       } catch (parseErr) {
         console.warn("[AI Service] Failed to parse upstream provider JSON:", parseErr);
         await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
+        await refundGlobalAiQuota(supabaseAdmin, payload.estimatedInputTokens);
         return {
           statusCode: 502,
           body: { error: "AI service returned an invalid response. Please try again." },
@@ -445,6 +476,7 @@ export async function executeAiCore(
         : groqData?.choices?.[0]?.message?.content;
     if (!content) {
       await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
+      await refundGlobalAiQuota(supabaseAdmin, payload.estimatedInputTokens);
       return {
         statusCode: 502,
         body: { error: "AI service returned an empty generation." },
@@ -469,6 +501,7 @@ export async function executeAiCore(
     const validated = validateAndSanitizeAiOutput(config.operation, content, params);
     if (!validated.ok) {
       await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
+      await refundGlobalAiQuota(supabaseAdmin, payload.estimatedInputTokens);
       return {
         statusCode: 502,
         body: { error: validated.error },

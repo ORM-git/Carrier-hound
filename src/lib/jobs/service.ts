@@ -5,6 +5,7 @@ import { computeFitDiagnostics, FitDiagnosticsResult } from "../matcher/scoring"
 import { formatSalary } from "@/lib/salary/parser";
 import type { UserPreferences } from "@/lib/auth/types";
 import { sanitizeExternalUrl, stripHtmlAndExecutableMarkup } from "@/lib/security/xss";
+import { COMMON_ACTIVE_COUNTRIES } from "../geo/cities";
 
 export interface LiveJob {
   id: string;
@@ -190,53 +191,37 @@ const PUBLIC_SELECT_COLUMNS =
   "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at";
 
 /**
- * Authorized read-only query to fetch distinct country_code values from active public jobs.
- * Queries `jobs_public` view (PostgREST read-only). Safe error handling returns empty array on failure.
- * No schema or data writes.
+ * Reads distinct country_code values for active jobs.
+ * Attempts to query the server-aggregated `active_job_country_counts` view if present.
+ * Fails safely to the honestly labelled `COMMON_ACTIVE_COUNTRIES` fallback without
+ * performing expensive or capped multi-page table scans across visitor sessions.
  */
 export async function fetchLiveActiveJobCountryCodes(
   supabase?: ReturnType<typeof createClient>
 ): Promise<string[]> {
   try {
     const client = supabase || createClient();
-    const set = new Set<string>();
-    const pageSize = 1000;
-    let from = 0;
-    let hasMore = true;
-    const maxPages = 15; // Complete coverage across up to 15,000 active jobs
-    let pageCount = 0;
+    const { data, error } = await client
+      .from("active_job_country_counts")
+      .select("country_code");
 
-    while (hasMore && pageCount < maxPages) {
-      const { data, error } = await client
-        .from("jobs_public")
-        .select("country_code")
-        .eq("status", "active")
-        .not("country_code", "is", null)
-        .range(from, from + pageSize - 1);
-
-      if (error || !data || !Array.isArray(data) || data.length === 0) {
-        break;
-      }
-
+    if (!error && Array.isArray(data) && data.length > 0) {
+      const set = new Set<string>();
       for (const row of data) {
         const code = (row.country_code || "").trim().toUpperCase();
         if (code && code.length === 2) {
           set.add(code);
         }
       }
-
-      if (data.length < pageSize) {
-        hasMore = false;
-      } else {
-        from += pageSize;
-        pageCount++;
+      if (set.size > 0) {
+        return Array.from(set).sort();
       }
     }
-
-    return Array.from(set).sort();
   } catch {
-    return [];
+    // Fall back to honestly labelled COMMON_ACTIVE_COUNTRIES
   }
+
+  return Array.from(COMMON_ACTIVE_COUNTRIES);
 }
 
 /**

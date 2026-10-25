@@ -384,8 +384,17 @@ export const STATIC_TAXONOMY_COUNTRY_CODES: readonly string[] = [
 ] as const;
 
 /**
+ * Honestly labelled fallback list of common active job countries.
+ * Used when a live server aggregate is unavailable, avoiding expensive multi-page client table scans.
+ * Matches historical active volume across remote/tech postings.
+ */
+export const COMMON_ACTIVE_COUNTRIES: readonly string[] = STATIC_TAXONOMY_COUNTRY_CODES;
+
+/**
  * Derives user-facing country filter options from an active-job country_code array.
- * Safe empty/error handling: If activeCodes is empty or undefined, returns only Worldwide.
+ * Safe empty/error handling:
+ * - If activeCodes is explicitly an empty array `[]`, returns only Worldwide.
+ * - If activeCodes is undefined, uses the honestly labelled `COMMON_ACTIVE_COUNTRIES` fallback.
  * Never claims static codes are live data.
  */
 export function deriveCountryOptionsFromActiveJobs(
@@ -395,12 +404,15 @@ export function deriveCountryOptionsFromActiveJobs(
     { code: "", label: "All Locations (Worldwide)", shortLabel: "Worldwide" },
   ];
 
-  if (!activeCodes || activeCodes.length === 0) {
+  // If explicitly passed empty array, return only Worldwide
+  if (activeCodes !== undefined && activeCodes.length === 0) {
     return options;
   }
 
+  const sourceCodes = activeCodes && activeCodes.length > 0 ? activeCodes : COMMON_ACTIVE_COUNTRIES;
+
   const distinctCodes = Array.from(
-    new Set(activeCodes.map((c) => (c || "").toUpperCase().trim()).filter((c) => c.length === 2))
+    new Set(sourceCodes.map((c) => (c || "").toUpperCase().trim()).filter((c) => c.length === 2))
   ).sort();
 
   for (const code of distinctCodes) {

@@ -131,18 +131,18 @@ export default function PricingPage() {
         <div className="text-center max-w-2xl mx-auto space-y-3">
           <div className="inline-flex items-center gap-2">
             <Badge tone="brand" size="md" dot>
-              Launch Testing Mode
+              Launch Access
             </Badge>
-            <Badge tone="warning" size="md">
-              Payments Disabled
+            <Badge tone="neutral" size="md">
+              Payments Pending
             </Badge>
           </div>
 
           <h1 className="text-3xl sm:text-4xl font-black tracking-tight text-[#0F172A]">
-            Two Real Access Tiers, Zero Customer Charge
+            Two Real Access Tiers, Free During Launch
           </h1>
           <p className="text-sm sm:text-base text-[#475569] leading-relaxed">
-            Customer payments are currently paused during launch validation. Select your access tier below to receive a server-signed pass instantly.
+            Every signed-in user can choose Listings or AI and use actual features free for now. Customer payments will be enabled in a future release.
           </p>
         </div>
 
@@ -151,10 +151,10 @@ export default function PricingPage() {
           <ShieldCheck className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
           <div className="space-y-1">
             <p className="font-semibold text-blue-900">
-              Honest Launch Access Policy
+              Launch Access Status
             </p>
             <p className="text-blue-800 leading-relaxed">
-              We do not take mock credit cards or create fake payment records. Tiers are cryptographically verified by the server without modifying production database rows.
+              Tier selection is free during launch. Self-service tier selection is currently pending database policy deployment; existing paid subscribers retain their full access unchanged.
             </p>
           </div>
         </div>
@@ -391,7 +391,7 @@ export default function PricingPage() {
                   </li>
                   <li className="flex items-start gap-2.5 text-[#0F172A]">
                     <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                    <span>Real-time Candidate Match Scores & 80px percentage rings</span>
+                    <span>Real-time Candidate Match Scores & 80px percentage rings (50/day)</span>
                   </li>
                   <li className="flex items-start gap-2.5 text-[#0F172A]">
                     <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
@@ -403,11 +403,11 @@ export default function PricingPage() {
                   </li>
                   <li className="flex items-start gap-2.5 text-[#0F172A]">
                     <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                    <span>AI Resume Tailoring for specific positions (30/day limit)</span>
+                    <span>AI Resume Tailoring (30/day) & extraction (20/day)</span>
                   </li>
                   <li className="flex items-start gap-2.5 text-[#0F172A]">
                     <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                    <span>AI Cover Letter Generator & fit analysis</span>
+                    <span>AI Cover Letter Generator (30/day limit)</span>
                   </li>
                 </ul>
               </div>
