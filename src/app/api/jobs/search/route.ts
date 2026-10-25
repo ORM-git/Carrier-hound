@@ -52,6 +52,8 @@ export async function GET(req: Request) {
     const locationParam = searchParams.get("location") || "";
     const levelParam = searchParams.get("level") || "";
     const jobTypeParam = searchParams.get("jobType") || "";
+    const dateParam = searchParams.get("datePosted") || searchParams.get("date") || "";
+    const workModelParam = searchParams.get("workModel") || "";
     const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
     const pageSize = Math.min(100, Math.max(1, parseInt(searchParams.get("pageSize") || "50", 10)));
 
@@ -181,6 +183,35 @@ export async function GET(req: Request) {
           .not("title", "ilike", "%lead%")
           .not("title", "ilike", "%junior%")
           .not("title", "ilike", "%entry%")
+      }
+    }
+
+    if (workModelParam && workModelParam.trim() && workModelParam.toLowerCase() !== "all") {
+      const wmTokens = workModelParam.toLowerCase().split(",").map((s) => s.trim()).filter(Boolean);
+      const orParts: string[] = [];
+      for (const wm of wmTokens) {
+        if (wm === "remote") orParts.push("remote.eq.true", "location.ilike.%remote%");
+        else if (wm === "hybrid") orParts.push("location.ilike.%hybrid%", "remote_scope.eq.hybrid");
+        else if (wm === "onsite") orParts.push("remote.eq.false", "location.ilike.%onsite%");
+      }
+      if (orParts.length > 0) {
+        query = query.or(orParts.join(","));
+      }
+    }
+
+    if (dateParam && dateParam.trim() && dateParam.toLowerCase() !== "all") {
+      const dp = dateParam.trim().toLowerCase();
+      const ms =
+        dp === "24h" || dp.includes("24")
+          ? 24 * 60 * 60 * 1000
+          : dp === "7d" || dp.includes("week")
+          ? 7 * 24 * 60 * 60 * 1000
+          : dp === "30d" || dp.includes("month")
+          ? 30 * 24 * 60 * 60 * 1000
+          : 0;
+      if (ms > 0) {
+        const cutoff = new Date(Date.now() - ms).toISOString();
+        query = query.gte("posted_at", cutoff);
       }
     }
 

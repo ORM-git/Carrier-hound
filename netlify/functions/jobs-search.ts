@@ -167,6 +167,11 @@ export function createHandler(deps: JobsSearchDeps = {}) {
     const rawQuery = params.q || params.search || "";
     const category = params.category || "";
     const remoteOnly = params.remoteOnly === "true";
+    const locationParam = params.location || "";
+    const levelParam = params.level || "";
+    const jobTypeParam = params.jobType || "";
+    const dateParam = params.datePosted || params.date || "";
+    const workModelParam = params.workModel || "";
     const page = Math.max(1, parseInt(params.page || "1", 10));
     const pageSize = Math.min(100, Math.max(1, parseInt(params.pageSize || "50", 10)));
 
@@ -245,6 +250,79 @@ export function createHandler(deps: JobsSearchDeps = {}) {
 
     if (remoteOnly) {
       query = query.eq("remote", true);
+    }
+
+    if (locationParam && locationParam.trim() && locationParam.toLowerCase() !== "all") {
+      const loc = sanitizeSearchQuery(locationParam);
+      if (loc.toLowerCase() === "remote") {
+        query = query.or("remote.eq.true,location.ilike.%remote%");
+      } else if (loc) {
+        query = query.ilike("location", "%" + loc + "%");
+      }
+    }
+
+    if (jobTypeParam && jobTypeParam.trim() && jobTypeParam.toLowerCase() !== "all") {
+      const jt = jobTypeParam.trim().toLowerCase();
+      if (jt.includes("full")) {
+        query = query.or("job_type.ilike.%full%,job_type.eq.full-time,job_type.eq.full_time");
+      } else if (jt.includes("contract")) {
+        query = query.or("job_type.ilike.%contract%,job_type.eq.contractor");
+      } else if (jt.includes("part")) {
+        query = query.ilike("job_type", "%part%");
+      } else if (jt.includes("intern")) {
+        query = query.or("job_type.ilike.%intern%,job_type.eq.internship");
+      } else {
+        query = query.ilike("job_type", "%" + sanitizeSearchQuery(jobTypeParam) + "%");
+      }
+    }
+
+    if (levelParam && levelParam.trim() && levelParam.toLowerCase() !== "all") {
+      const lvl = levelParam.trim().toLowerCase();
+      if (lvl.includes("lead") || lvl.includes("staff")) {
+        query = query.or("title.ilike.%staff%,title.ilike.%principal%,title.ilike.%lead%");
+      } else if (lvl.includes("senior")) {
+        query = query.or("title.ilike.%senior%,title.ilike.%sr.%");
+      } else if (lvl.includes("entry") || lvl.includes("junior")) {
+        query = query.or("title.ilike.%junior%,title.ilike.%entry%,title.ilike.%associate%");
+      } else if (lvl.includes("mid")) {
+        query = query
+          .not("title", "ilike", "%senior%")
+          .not("title", "ilike", "%sr.%")
+          .not("title", "ilike", "%staff%")
+          .not("title", "ilike", "%principal%")
+          .not("title", "ilike", "%lead%")
+          .not("title", "ilike", "%junior%")
+          .not("title", "ilike", "%entry%");
+      }
+    }
+
+    if (workModelParam && workModelParam.trim() && workModelParam.toLowerCase() !== "all") {
+      const wmTokens = workModelParam.toLowerCase().split(",").map((s: string) => s.trim()).filter(Boolean);
+      const orParts: string[] = [];
+      for (const wm of wmTokens) {
+        if (wm === "remote") orParts.push("remote.eq.true", "location.ilike.%remote%");
+        else if (wm === "hybrid") orParts.push("location.ilike.%hybrid%", "remote_scope.eq.hybrid");
+        else if (wm === "onsite") orParts.push("remote.eq.false", "location.ilike.%onsite%");
+      }
+      if (orParts.length > 0) {
+        query = query.or(orParts.join(","));
+      }
+    }
+
+    if (dateParam && dateParam.trim() && dateParam.toLowerCase() !== "all") {
+      const dp = dateParam.trim().toLowerCase();
+      const ms =
+        dp === "24h" || dp.includes("24")
+          ? 24 * 60 * 60 * 1000
+          : dp === "7d" || dp.includes("week")
+          ? 7 * 24 * 60 * 60 * 1000
+          : dp === "30d" || dp.includes("month")
+          ? 30 * 24 * 60 * 60 * 1000
+          : 0;
+      if (ms > 0) {
+        const cutoff = new Date(Date.now() - ms).toISOString();
+        query = query.gte("posted_at", cutoff);
+      }
     }
 
     if (cleanQuery) {

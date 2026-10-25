@@ -40,6 +40,9 @@ export interface GetJobsOptions {
   location?: string;
   level?: string;
   jobType?: string;
+  workModel?: string;
+  datePosted?: string;
+  experience?: string;
 }
 
 export interface GetJobsResult {
@@ -205,6 +208,9 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
     location,
     level,
     jobType,
+    workModel,
+    datePosted,
+    experience,
   } = options;
 
   const from = (page - 1) * pageSize;
@@ -232,6 +238,8 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       if (location && location !== "all") params.set("location", location);
       if (level && level !== "all") params.set("level", level);
       if (jobType && jobType !== "all") params.set("jobType", jobType);
+      if (workModel && workModel !== "all") params.set("workModel", workModel);
+      if (datePosted && datePosted !== "all") params.set("datePosted", datePosted);
 
       const res = await fetch(`/api/jobs/search?${params.toString()}`, { headers });
       if (res.ok) {
@@ -331,6 +339,35 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
           .not("title", "ilike", "%lead%")
           .not("title", "ilike", "%junior%")
           .not("title", "ilike", "%entry%")
+      }
+    }
+
+    if (workModel && workModel.trim() && workModel.toLowerCase() !== "all") {
+      const wmTokens = workModel.toLowerCase().split(",").map((s) => s.trim()).filter(Boolean);
+      const orParts: string[] = [];
+      for (const wm of wmTokens) {
+        if (wm === "remote") orParts.push("remote.eq.true", "location.ilike.%remote%");
+        else if (wm === "hybrid") orParts.push("location.ilike.%hybrid%", "remote_scope.eq.hybrid");
+        else if (wm === "onsite") orParts.push("remote.eq.false", "location.ilike.%onsite%");
+      }
+      if (orParts.length > 0) {
+        query = query.or(orParts.join(","));
+      }
+    }
+
+    if (datePosted && datePosted.trim() && datePosted.toLowerCase() !== "all") {
+      const dp = datePosted.trim().toLowerCase();
+      const ms =
+        dp === "24h" || dp.includes("24")
+          ? 24 * 60 * 60 * 1000
+          : dp === "7d" || dp.includes("week")
+          ? 7 * 24 * 60 * 60 * 1000
+          : dp === "30d" || dp.includes("month")
+          ? 30 * 24 * 60 * 60 * 1000
+          : 0;
+      if (ms > 0) {
+        const cutoff = new Date(Date.now() - ms).toISOString();
+        query = query.gte("posted_at", cutoff);
       }
     }
 

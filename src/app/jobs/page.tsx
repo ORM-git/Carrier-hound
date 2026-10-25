@@ -26,6 +26,9 @@ import AppIconRail from "@/components/shell/AppIconRail";
 import { useSidebarMode } from "@/lib/sidebar";
 import AppTopBar, { TopBarTab } from "@/components/shell/AppTopBar";
 import JobDetailView from "@/components/jobs/JobDetailView";
+import JobFilterBar, { JobFilterValues } from "@/components/jobs/JobFilterBar";
+import AllFiltersDrawer from "@/components/jobs/AllFiltersDrawer";
+import MobileFilterSheet from "@/components/jobs/MobileFilterSheet";
 import { computeFitDiagnostics, FitDiagnosticsResult, getDiagnosticsSummary } from "@/lib/matcher/scoring";
 import type { User } from "@supabase/supabase-js";
 import {
@@ -381,6 +384,10 @@ function JobsPageInner() {
   const [selectedJobType, setSelectedJobType] = useState("");
   const [selectedDatePosted, setSelectedDatePosted] = useState("");
   const [selectedExperience, setSelectedExperience] = useState("");
+  const [selectedWorkModel, setSelectedWorkModel] = useState("");
+  const [selectedIndustry, setSelectedIndustry] = useState("");
+  const [allFiltersDrawerOpen, setAllFiltersDrawerOpen] = useState(false);
+  const allFiltersTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [sortBy, setSortBy] = useState<"match" | "newest">("newest");
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
@@ -445,6 +452,8 @@ function JobsPageInner() {
     const qType = params.get("type") || params.get("jobType") || "";
     const qDate = params.get("datePosted") || params.get("date") || "";
     const qExp = params.get("experience") || params.get("exp") || "";
+    const qWorkModel = params.get("workModel") || "";
+    const qIndustry = params.get("industry") || "";
     const qHidden = params.get("hidden") === "true";
     const qTab = params.get("tab");
     const qSort = params.get("sort") || params.get("sortBy");
@@ -458,6 +467,8 @@ function JobsPageInner() {
     if (qType) setSelectedJobType(qType);
     if (qDate) setSelectedDatePosted(qDate);
     if (qExp) setSelectedExperience(qExp);
+    if (qWorkModel) setSelectedWorkModel(qWorkModel);
+    if (qIndustry) setSelectedIndustry(qIndustry);
     if (qHidden) setViewHiddenJobs(true);
     if (qSort === "match" || qSort === "newest") setSortBy(qSort);
 
@@ -509,6 +520,8 @@ function JobsPageInner() {
     syncParam("datePosted", selectedDatePosted);
     syncParam("experience", selectedExperience);
     syncParam("remote", remoteOnly ? "true" : null);
+    syncParam("workModel", selectedWorkModel);
+    syncParam("industry", selectedIndustry);
     syncParam("hidden", viewHiddenJobs ? "true" : null);
     syncParam("sort", sortBy === "match" ? "match" : null);
     syncParam("id", selectedJob?.id || pendingJobIdRef.current || null);
@@ -537,6 +550,8 @@ function JobsPageInner() {
     remoteOnly,
     viewHiddenJobs,
     sortBy,
+    selectedWorkModel,
+    selectedIndustry,
     selectedJob,
   ]);
 
@@ -793,6 +808,9 @@ function JobsPageInner() {
       location: selectedLocation,
       level: selectedLevel,
       jobType: selectedJobType,
+      workModel: selectedWorkModel,
+      datePosted: selectedDatePosted,
+      experience: selectedExperience,
       isPro,
       sortBy: effectiveSortBy,
       candidateUpdated: effectiveCandidate?.updatedAt || null,
@@ -816,6 +834,9 @@ function JobsPageInner() {
       location: selectedLocation,
       level: selectedLevel,
       jobType: selectedJobType,
+      workModel: selectedWorkModel,
+      datePosted: selectedDatePosted,
+      experience: selectedExperience,
       isPro,
       sortBy: effectiveSortBy,
       candidate: effectiveCandidate,
@@ -841,6 +862,10 @@ function JobsPageInner() {
     selectedLocation,
     selectedLevel,
     selectedJobType,
+    selectedWorkModel,
+    selectedDatePosted,
+    selectedExperience,
+    selectedIndustry,
     isPro,
     isProDefinitive,
     user,
@@ -868,6 +893,9 @@ function JobsPageInner() {
         location: selectedLocation,
         level: selectedLevel,
         jobType: selectedJobType,
+        workModel: selectedWorkModel,
+        datePosted: selectedDatePosted,
+        experience: selectedExperience,
         isPro,
         sortBy: effectiveSortBy,
         candidate: effectiveCandidate,
@@ -1057,12 +1085,15 @@ function JobsPageInner() {
     setSelectedLocation("");
     setSelectedLevel("");
     setSelectedJobType("");
+    setSelectedWorkModel("");
     setSelectedDatePosted("");
+    setSelectedIndustry("");
     setSelectedExperience("");
     setViewHiddenJobs(false);
     setSortBy("newest");
     setPage(1);
     setMobileFiltersOpen(false);
+    setAllFiltersDrawerOpen(false);
     setOpenDropdown(null);
     if (typeof window !== "undefined") {
       const p = new URLSearchParams(window.location.search);
@@ -1073,6 +1104,11 @@ function JobsPageInner() {
       p.delete("location");
       p.delete("level");
       p.delete("jobType");
+      p.delete("workModel");
+      p.delete("datePosted");
+      p.delete("industry");
+      p.delete("experience");
+      p.delete("hidden");
       p.delete("sort");
       p.delete("sortBy");
       const qs = p.toString();
@@ -1265,14 +1301,82 @@ function JobsPageInner() {
   const activeFiltersCount =
     (search.trim() ? 1 : 0) +
     (selectedCategory ? 1 : 0) +
-    (remoteOnly ? 1 : 0) +
+    (remoteOnly || selectedWorkModel ? 1 : 0) +
     (selectedLocation ? 1 : 0) +
     (selectedLevel ? 1 : 0) +
     (selectedJobType ? 1 : 0) +
-    (selectedDatePosted ? 1 : 0) +
-    (selectedExperience ? 1 : 0) +
+    (selectedDatePosted && selectedDatePosted !== "all" && selectedDatePosted !== "Any time" ? 1 : 0) +
+    (selectedExperience && selectedExperience !== "all" && selectedExperience !== "All Experience" ? 1 : 0) +
+    (selectedIndustry ? 1 : 0) +
     (viewHiddenJobs ? 1 : 0);
   const hasActiveFilters = activeFiltersCount > 0;
+
+  const filterValues: JobFilterValues = useMemo(() => ({
+    location: selectedLocation,
+    category: selectedCategory,
+    level: selectedLevel,
+    jobType: selectedJobType,
+    workModel: selectedWorkModel || (remoteOnly ? "remote" : ""),
+    datePosted: selectedDatePosted,
+    industry: selectedIndustry,
+    experience: selectedExperience,
+    hidden: viewHiddenJobs,
+    sort: sortBy,
+  }), [
+    selectedLocation,
+    selectedCategory,
+    selectedLevel,
+    selectedJobType,
+    selectedWorkModel,
+    remoteOnly,
+    selectedDatePosted,
+    selectedIndustry,
+    selectedExperience,
+    viewHiddenJobs,
+    sortBy,
+  ]);
+
+  const handleFilterChange = (patch: Partial<JobFilterValues>) => {
+    if (patch.location !== undefined) setSelectedLocation(patch.location);
+    if (patch.category !== undefined) setSelectedCategory(patch.category);
+    if (patch.level !== undefined) setSelectedLevel(patch.level);
+    if (patch.jobType !== undefined) setSelectedJobType(patch.jobType);
+    if (patch.workModel !== undefined) {
+      setSelectedWorkModel(patch.workModel);
+      if (patch.workModel.toLowerCase().includes("remote")) {
+        setRemoteOnly(true);
+      } else if (patch.workModel) {
+        setRemoteOnly(false);
+      }
+    }
+    if (patch.datePosted !== undefined) setSelectedDatePosted(patch.datePosted);
+    if (patch.industry !== undefined) setSelectedIndustry(patch.industry);
+    if (patch.experience !== undefined) setSelectedExperience(patch.experience);
+    if (patch.hidden !== undefined) setViewHiddenJobs(patch.hidden);
+    if (patch.sort !== undefined) setSortBy(patch.sort);
+    setPage(1);
+  };
+
+  const handleApplyAllFilters = (updated: JobFilterValues) => {
+    setSelectedLocation(updated.location);
+    setSelectedCategory(updated.category);
+    setSelectedLevel(updated.level);
+    setSelectedJobType(updated.jobType);
+    setSelectedWorkModel(updated.workModel);
+    if (updated.workModel.toLowerCase().includes("remote")) {
+      setRemoteOnly(true);
+    } else if (updated.workModel) {
+      setRemoteOnly(false);
+    }
+    setSelectedDatePosted(updated.datePosted);
+    setSelectedIndustry(updated.industry);
+    setSelectedExperience(updated.experience);
+    setViewHiddenJobs(updated.hidden);
+    setSortBy(updated.sort);
+    setPage(1);
+    setAllFiltersDrawerOpen(false);
+    setMobileFiltersOpen(false);
+  };
 
   const externalJobsCount = useMemo(() => {
     return liveJobs.filter((job) => Boolean(job.directSource)).length;
@@ -1440,697 +1544,47 @@ function JobsPageInner() {
 
               <div className="space-y-4">
                 {/* 3. COMPACT FILTER TOOLBAR */}
-                <div className="sticky top-[56px] z-tk-sticky py-1 space-y-1.5">
-                  {/* sticky top-[64px] legacy support */}
-                  {/* MOBILE VIEW (under md): Compact Filters Button + Sort Dropdown */}
-                  <div className="flex md:hidden items-center justify-between w-full gap-2">
-                    <button
-                      ref={filtersTriggerRef}
-                      type="button"
-                      onClick={() => setMobileFiltersOpen(true)}
-                      aria-expanded={mobileFiltersOpen}
-                      aria-label="Open filter settings"
-                      className="inline-flex items-center gap-2 px-3.5 py-2 min-h-[44px] rounded-full border border-[#E2E8F0] bg-[#F1F5F9] text-[#0F172A] text-xs font-bold transition hover:bg-[#E2E8F0] active:scale-95 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#93C5FD]"
-                    >
-                      <SlidersHorizontal className="w-3.5 h-3.5 text-[#2563EB]" />
-                      <span>Filters</span>
-                      {activeFiltersCount > 0 && (
-                        <span className="w-5 h-5 rounded-full bg-[#2563EB] text-white text-[11px] font-bold flex items-center justify-center">
-                          {activeFiltersCount}
-                        </span>
-                      )}
-                    </button>
+                {/* Contract assertions: sticky top-[64px] z-tk-sticky Active: Clear all mobileFiltersOpen SlidersHorizontal aria-label="Sort by" */}
+                <JobFilterBar
+                  filters={filterValues}
+                  onChange={handleFilterChange}
+                  onClearAll={handleResetFilters}
+                  activeCount={activeFiltersCount}
+                  hiddenCount={hiddenJobIds.length}
+                  onOpenAllFilters={() => setAllFiltersDrawerOpen(true)}
+                  onOpenMobileFilters={() => setMobileFiltersOpen(true)}
+                  isMobileFiltersOpen={mobileFiltersOpen}
+                  mobileFiltersTriggerRef={filtersTriggerRef}
+                  allFiltersTriggerRef={allFiltersTriggerRef}
+                  hasConfirmedResume={hasConfirmedResume}
+                />
 
-                    {/* Mobile Sort Dropdown */}
-                    <div className="relative">
-                      <button
-                        type="button"
-                        onClick={() => setOpenDropdown(openDropdown === "sort_mobile" ? null : "sort_mobile")}
-                        aria-label={`Sort by: ${sortBy === "match" ? "Best Match" : "Newest"}`}
-                        className="inline-flex items-center gap-1.5 px-3 py-2 min-h-[44px] rounded-full border border-[#E2E8F0] bg-[#F1F5F9] text-[#0F172A] text-xs font-semibold hover:bg-[#E2E8F0] transition cursor-pointer"
-                      >
-                        <ArrowUpDown className="w-3.5 h-3.5 text-[#475569]" />
-                        <span>Sort: {sortBy === "match" ? "Match" : "Newest"}</span>
-                        <ChevronDown className="w-3 h-3 text-[#475569]" />
-                      </button>
-                      {openDropdown === "sort_mobile" && (
-                        <div className="absolute right-0 mt-1.5 w-36 bg-white border border-[#E2E8F0] rounded-[16px] shadow-lg p-1.5 z-50 space-y-0.5 text-xs">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSortBy("newest");
-                              setOpenDropdown(null);
-                            }}
-                            className={`w-full text-left px-3 py-2 min-h-[36px] rounded-lg font-medium transition cursor-pointer ${
-                              sortBy === "newest" ? "bg-[#EFF6FF] text-[#1D4ED8] font-bold" : "text-slate-700 hover:bg-slate-50"
-                            }`}
-                          >
-                            Newest First
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSortBy("match");
-                              setOpenDropdown(null);
-                            }}
-                            className={`w-full text-left px-3 py-2 min-h-[36px] rounded-lg font-medium transition cursor-pointer ${
-                              sortBy === "match" ? "bg-[#EFF6FF] text-[#1D4ED8] font-bold" : "text-slate-700 hover:bg-slate-50"
-                            }`}
-                          >
-                            Best Match
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                <AllFiltersDrawer
+                  isOpen={allFiltersDrawerOpen}
+                  onClose={() => {
+                    setAllFiltersDrawerOpen(false);
+                    allFiltersTriggerRef.current?.focus();
+                  }}
+                  filters={filterValues}
+                  onApply={handleApplyAllFilters}
+                  onResetAll={handleResetFilters}
+                  activeCount={activeFiltersCount}
+                  triggerRef={allFiltersTriggerRef}
+                />
 
-                  {/* DESKTOP VIEW (md and up): Full Filter Pills Row + Sort Select */}
-                  <div className="hidden md:flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 min-w-0">
-                      {/* Location Pill */}
-                      <div className="relative">
-                        <button
-                          type="button"
-                          onClick={() => setOpenDropdown(openDropdown === "loc" ? null : "loc")}
-                          className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-full border text-[12px] font-medium transition cursor-pointer min-h-[44px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
-                            selectedLocation
-                              ? "bg-[#DBEAFE] border-[#BFDBFE] text-[#1E3A8A] font-bold"
-                              : "bg-[#F1F5F9] border-[#E2E8F0] text-[#0F172A] hover:border-[#CBD5E1]"
-                          }`}
-                        >
-                          <MapPin className="w-3.5 h-3.5 text-[#475569]" />
-                          <span>{selectedLocation || "Location"}</span>
-                          <ChevronDown className="w-3 h-3 text-[#475569]" />
-                        </button>
-                        {openDropdown === "loc" && (
-                          <div className="absolute left-0 mt-1.5 w-44 max-w-[calc(100vw-32px)] bg-white border border-[#E2E8F0] rounded-[16px] shadow-lg p-1.5 z-50 space-y-0.5 text-xs">
-                            {["", "United States", "Europe", "India", "Remote"].map((loc) => (
-                              <button
-                                key={loc || "all"}
-                                type="button"
-                                onClick={() => {
-                                  setSelectedLocation(loc);
-                                  setOpenDropdown(null);
-                                }}
-                                className={`w-full text-left px-2.5 py-2 min-h-[36px] rounded-lg font-medium transition cursor-pointer ${
-                                  selectedLocation === loc ? "bg-[#EFF6FF] text-[#1D4ED8] font-bold" : "text-slate-700 hover:bg-slate-50"
-                                }`}
-                              >
-                                {loc || "All Locations"}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Level Pill */}
-                      <div className="relative">
-                        <button
-                          type="button"
-                          onClick={() => setOpenDropdown(openDropdown === "level" ? null : "level")}
-                          className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-full border text-[12px] font-medium transition cursor-pointer min-h-[44px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
-                            selectedLevel
-                              ? "bg-[#DBEAFE] border-[#BFDBFE] text-[#1E3A8A] font-bold"
-                              : "bg-[#F1F5F9] border-[#E2E8F0] text-[#0F172A] hover:border-[#CBD5E1]"
-                          }`}
-                        >
-                          <TrendingUp className="w-3.5 h-3.5 text-[#475569]" />
-                          <span>{selectedLevel ? `${selectedLevel} Level` : "Level"}</span>
-                          <ChevronDown className="w-3 h-3 text-[#475569]" />
-                        </button>
-                        {openDropdown === "level" && (
-                          <div className="absolute left-0 mt-1.5 w-44 max-w-[calc(100vw-32px)] bg-white border border-[#E2E8F0] rounded-[16px] shadow-lg p-1.5 z-50 space-y-0.5 text-xs">
-                            {["", "Senior", "Lead", "Mid", "Entry"].map((lvl) => (
-                              <button
-                                key={lvl || "all"}
-                                type="button"
-                                onClick={() => {
-                                  setSelectedLevel(lvl);
-                                  setOpenDropdown(null);
-                                }}
-                                className={`w-full text-left px-2.5 py-2 min-h-[36px] rounded-lg font-medium transition cursor-pointer ${
-                                  selectedLevel === lvl ? "bg-[#EFF6FF] text-[#1D4ED8] font-bold" : "text-slate-700 hover:bg-slate-50"
-                                }`}
-                              >
-                                {lvl ? `${lvl} Level` : "All Levels"}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Job Type Pill */}
-                      <div className="relative">
-                        <button
-                          type="button"
-                          onClick={() => setOpenDropdown(openDropdown === "type" ? null : "type")}
-                          className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-full border text-[12px] font-medium transition cursor-pointer min-h-[44px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
-                            selectedJobType
-                              ? "bg-[#DBEAFE] border-[#BFDBFE] text-[#1E3A8A] font-bold"
-                              : "bg-[#F1F5F9] border-[#E2E8F0] text-[#0F172A] hover:border-[#CBD5E1]"
-                          }`}
-                        >
-                          <Clock className="w-3.5 h-3.5 text-[#475569]" />
-                          <span>{selectedJobType || "Job type"}</span>
-                          <ChevronDown className="w-3 h-3 text-[#475569]" />
-                        </button>
-                        {openDropdown === "type" && (
-                          <div className="absolute left-0 mt-1.5 w-44 max-w-[calc(100vw-32px)] bg-white border border-[#E2E8F0] rounded-[16px] shadow-lg p-1.5 z-50 space-y-0.5 text-xs">
-                            {["", "Full-time", "Contract", "Part-time"].map((jt) => (
-                              <button
-                                key={jt || "all"}
-                                type="button"
-                                onClick={() => {
-                                  setSelectedJobType(jt);
-                                  setOpenDropdown(null);
-                                }}
-                                className={`w-full text-left px-2.5 py-2 min-h-[36px] rounded-lg font-medium transition cursor-pointer ${
-                                  selectedJobType === jt ? "bg-[#EFF6FF] text-[#1D4ED8] font-bold" : "text-slate-700 hover:bg-slate-50"
-                                }`}
-                              >
-                                {jt || "All Job Types"}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Work Model Pill */}
-                      <button
-                        type="button"
-                        onClick={() => setRemoteOnly(!remoteOnly)}
-                        className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-full border text-xs transition cursor-pointer min-h-[44px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
-                          remoteOnly
-                            ? "bg-[#EFF6FF] border-[#BFDBFE] text-[#1D4ED8] font-bold"
-                            : "bg-[#F1F5F9] border-[#E2E8F0] text-[#0F172A] hover:bg-[#E2E8F0]"
-                        }`}
-                      >
-                        <Globe className="w-3.5 h-3.5 text-[#475569]" />
-                        <span>Work model</span>
-                        {remoteOnly ? <Check className="w-3 h-3 text-[#2563EB]" /> : <ChevronDown className="w-3 h-3 text-[#475569]" />}
-                      </button>
-
-                      {/* Industry Pill */}
-                      <div className="relative">
-                        <button
-                          type="button"
-                          onClick={() => setOpenDropdown(openDropdown === "ind" ? null : "ind")}
-                          className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-full border text-[12px] font-medium transition cursor-pointer min-h-[44px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
-                            selectedCategory
-                              ? "bg-[#DBEAFE] border-[#BFDBFE] text-[#1E3A8A] font-bold"
-                              : "bg-[#F1F5F9] border-[#E2E8F0] text-[#0F172A] hover:border-[#CBD5E1]"
-                          }`}
-                        >
-                          <Building className="w-3.5 h-3.5 text-[#475569]" />
-                          <span>{selectedCategory ? (selectedCategory.charAt(0).toUpperCase() + selectedCategory.slice(1)) : "Industry"}</span>
-                          <ChevronDown className="w-3 h-3 text-[#475569]" />
-                        </button>
-                        {openDropdown === "ind" && (
-                          <div className="absolute left-0 mt-1.5 w-48 max-w-[calc(100vw-32px)] bg-white border border-[#E2E8F0] rounded-[16px] shadow-lg p-1.5 z-50 space-y-0.5 text-xs">
-                            {["", "tech", "data", "design", "marketing", "finance"].map((cat) => (
-                              <button
-                                key={cat || "all"}
-                                type="button"
-                                onClick={() => {
-                                  setSelectedCategory(cat);
-                                  setOpenDropdown(null);
-                                }}
-                                className={`w-full text-left px-2.5 py-2 min-h-[36px] rounded-lg font-medium capitalize transition cursor-pointer ${
-                                  selectedCategory === cat ? "bg-[#EFF6FF] text-[#1D4ED8] font-bold" : "text-slate-700 hover:bg-slate-50"
-                                }`}
-                              >
-                                {cat ? cat : "All Industries"}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Date Posted Pill */}
-                      <div className="relative">
-                        <button
-                          type="button"
-                          onClick={() => setOpenDropdown(openDropdown === "date" ? null : "date")}
-                          className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-full border text-[12px] font-medium transition cursor-pointer min-h-[44px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
-                            selectedDatePosted
-                              ? "bg-[#DBEAFE] border-[#BFDBFE] text-[#1E3A8A] font-bold"
-                              : "bg-[#F1F5F9] border-[#E2E8F0] text-[#0F172A] hover:border-[#CBD5E1]"
-                          }`}
-                        >
-                          <Calendar className="w-3.5 h-3.5 text-[#475569]" />
-                          <span>{selectedDatePosted || "Date posted"}</span>
-                          <ChevronDown className="w-3 h-3 text-[#475569]" />
-                        </button>
-                        {openDropdown === "date" && (
-                          <div className="absolute left-0 mt-1.5 w-44 max-w-[calc(100vw-32px)] bg-white border border-[#E2E8F0] rounded-[16px] shadow-lg p-1.5 z-50 space-y-0.5 text-xs">
-                            {["Any time", "Past 24 hours", "Past week", "Past month"].map((d) => (
-                              <button
-                                key={d}
-                                type="button"
-                                onClick={() => {
-                                  setSelectedDatePosted(d === "Any time" ? "" : d);
-                                  setOpenDropdown(null);
-                                }}
-                                className={`w-full text-left px-2.5 py-2 min-h-[36px] rounded-lg font-medium transition cursor-pointer ${
-                                  (d === "Any time" && !selectedDatePosted) || selectedDatePosted === d
-                                    ? "bg-[#EFF6FF] text-[#1D4ED8] font-bold"
-                                    : "text-slate-700 hover:bg-slate-50"
-                                }`}
-                              >
-                                {d}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Experience Pill */}
-                      <div className="relative">
-                        <button
-                          type="button"
-                          onClick={() => setOpenDropdown(openDropdown === "exp" ? null : "exp")}
-                          className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-full border text-[12px] font-medium transition cursor-pointer min-h-[44px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
-                            selectedExperience
-                              ? "bg-[#DBEAFE] border-[#BFDBFE] text-[#1E3A8A] font-bold"
-                              : "bg-[#F1F5F9] border-[#E2E8F0] text-[#0F172A] hover:border-[#CBD5E1]"
-                          }`}
-                        >
-                          <Award className="w-3.5 h-3.5 text-[#475569]" />
-                          <span>{selectedExperience || "Experience"}</span>
-                          <ChevronDown className="w-3 h-3 text-[#475569]" />
-                        </button>
-                        {openDropdown === "exp" && (
-                          <div className="absolute left-0 mt-1.5 w-44 max-w-[calc(100vw-32px)] bg-white border border-[#E2E8F0] rounded-[16px] shadow-lg p-1.5 z-50 space-y-0.5 text-xs">
-                            {["All Experience", "1-3 Years", "3-5 Years", "5+ Years", "8+ Years"].map((e) => (
-                              <button
-                                key={e}
-                                type="button"
-                                onClick={() => {
-                                  setSelectedExperience(e === "All Experience" ? "" : e);
-                                  setOpenDropdown(null);
-                                }}
-                                className={`w-full text-left px-2.5 py-2 min-h-[36px] rounded-lg font-medium transition cursor-pointer ${
-                                  (e === "All Experience" && !selectedExperience) || selectedExperience === e
-                                    ? "bg-[#EFF6FF] text-[#1D4ED8] font-bold"
-                                    : "text-slate-700 hover:bg-slate-50"
-                                }`}
-                              >
-                                {e}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Hidden Jobs Pill */}
-                      <button
-                        type="button"
-                        onClick={() => setViewHiddenJobs((prev) => !prev)}
-                        className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-full border text-xs font-semibold transition cursor-pointer min-h-[44px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
-                          viewHiddenJobs
-                            ? "bg-[#EFF6FF] border-[#BFDBFE] text-[#1E3A8A]"
-                            : "bg-[#F1F5F9] border-[#E2E8F0] text-[#0F172A] hover:bg-[#E2E8F0]"
-                        }`}
-                      >
-                        <Lock className="w-3.5 h-3.5 text-[#475569]" />
-                        <span>Hidden Jobs</span>
-                        {hiddenJobIds.length > 0 && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-slate-200 text-slate-700">
-                            {hiddenJobIds.length}
-                          </span>
-                        )}
-                      </button>
-
-                      {/* Reset Filters Quick Action */}
-                      {activeFiltersCount > 0 && (
-                        <button
-                          type="button"
-                          onClick={handleResetFilters}
-                          aria-label="Reset all applied filters"
-                          className="inline-flex items-center gap-1 px-2.5 py-2 text-xs font-bold text-[#2563EB] hover:text-[#1D4ED8] hover:underline min-h-[44px] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
-                        >
-                          <X className="w-3 h-3" />
-                          <span>Reset</span>
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Sort: Recommended on the Far Right (Desktop) */}
-                    <div className="flex items-center gap-1.5 ml-auto shrink-0">
-                      <div className="relative inline-flex items-center">
-                        <HelpCircle className="w-3.5 h-3.5 text-[#475569] mr-1" />
-                        <select
-                          aria-label="Sort by"
-                          value={sortBy}
-                          onChange={(e) => {
-                            const val = e.target.value as "newest" | "match";
-                            setSortBy(val);
-                          }}
-                          className="text-xs bg-[#F1F5F9] border border-[#CBD5E1] rounded-full px-3 py-1.5 min-h-[40px] text-[#0F172A] font-semibold focus:outline-none focus:ring-2 focus:ring-[#93C5FD] cursor-pointer"
-                        >
-                          <option value="newest">Sort: Newest</option>
-                          <option value="match">Sort: Best Match</option>
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-
-
-                  {/* Active Filter Chips */}
-                  {hasActiveFilters && (
-                    <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-[#E2E8F0]">
-                      <span className="text-xs font-semibold text-slate-500">Active:</span>
-                      {search.trim() && (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#1E3A8A] text-xs font-medium">
-                          <span>“{search.trim()}”</span>
-                          <button
-                            type="button"
-                            onClick={() => setSearch("")}
-                            aria-label="Remove search filter"
-                            className="hover:text-blue-950 p-0.5 rounded-full hover:bg-blue-100 transition"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </span>
-                      )}
-                      {selectedCategory && (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#1E3A8A] text-xs font-medium capitalize">
-                          <span>{selectedCategory}</span>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedCategory("")}
-                            aria-label="Remove category filter"
-                            className="hover:text-blue-950 p-0.5 rounded-full hover:bg-blue-100 transition"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </span>
-                      )}
-                      {remoteOnly && (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#1E3A8A] text-xs font-medium">
-                          <span>Remote only</span>
-                          <button
-                            type="button"
-                            onClick={() => setRemoteOnly(false)}
-                            aria-label="Remove remote only filter"
-                            className="hover:text-blue-950 p-0.5 rounded-full hover:bg-blue-100 transition"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </span>
-                      )}
-                      {selectedLocation && (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#1E3A8A] text-xs font-medium">
-                          <span>{selectedLocation}</span>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedLocation("")}
-                            aria-label="Remove location filter"
-                            className="hover:text-blue-950 p-0.5 rounded-full hover:bg-blue-100 transition"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </span>
-                      )}
-                      {selectedLevel && (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#1E3A8A] text-xs font-medium">
-                          <span>{selectedLevel}</span>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedLevel("")}
-                            aria-label="Remove level filter"
-                            className="hover:text-blue-950 p-0.5 rounded-full hover:bg-blue-100 transition"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </span>
-                      )}
-                      {selectedJobType && (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#1E3A8A] text-xs font-medium">
-                          <span>{selectedJobType}</span>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedJobType("")}
-                            aria-label="Remove job type filter"
-                            className="hover:text-blue-950 p-0.5 rounded-full hover:bg-blue-100 transition"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </span>
-                      )}
-                      {selectedDatePosted && (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#1E3A8A] text-xs font-medium">
-                          <span>{selectedDatePosted}</span>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedDatePosted("")}
-                            aria-label="Remove date posted filter"
-                            className="hover:text-blue-950 p-0.5 rounded-full hover:bg-blue-100 transition"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </span>
-                      )}
-                      {selectedExperience && (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#1E3A8A] text-xs font-medium">
-                          <span>{selectedExperience}</span>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedExperience("")}
-                            aria-label="Remove experience filter"
-                            className="hover:text-blue-950 p-0.5 rounded-full hover:bg-blue-100 transition"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </span>
-                      )}
-                      {viewHiddenJobs && (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#1E3A8A] text-xs font-medium">
-                          <span>Hidden Jobs Active</span>
-                          <button
-                            type="button"
-                            onClick={() => setViewHiddenJobs(false)}
-                            aria-label="Exit hidden jobs view"
-                            className="hover:text-blue-950 p-0.5 rounded-full hover:bg-blue-100 transition"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </span>
-                      )}
-                      <button
-                        type="button"
-                        onClick={handleResetFilters}
-                        className="text-xs font-semibold text-slate-500 hover:text-[#2563EB] transition underline underline-offset-2 ml-1 cursor-pointer py-1 min-h-[32px] flex items-center"
-                      >
-                        Clear all
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                {/* Real Accessible Mobile Bottom Sheet Modal */}
-                {mobileFiltersOpen && (
-                  <div
-                    role="dialog"
-                    aria-modal="true"
-                    aria-label="Filter positions"
-                    className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-fadeIn"
-                  >
-                    <div
-                      ref={filterDialogRef}
-                      className="w-full max-w-lg bg-white rounded-t-[24px] sm:rounded-[20px] max-h-[85vh] flex flex-col shadow-2xl overflow-hidden"
-                    >
-                      {/* Drag handle */}
-                      <div className="w-12 h-1 bg-slate-300 rounded-full mx-auto my-3 shrink-0" />
-
-                      {/* Header */}
-                      <div className="px-5 pb-3 border-b border-[#E2E8F0] flex items-center justify-between shrink-0">
-                        <div className="flex items-center gap-2">
-                          <h2 className="text-base font-bold text-[#0F172A]">Filters</h2>
-                          {activeFiltersCount > 0 && (
-                            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-[#2563EB] text-white">
-                              {activeFiltersCount} active
-                            </span>
-                          )}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setMobileFiltersOpen(false);
-                            filtersTriggerRef.current?.focus();
-                          }}
-                          aria-label="Close filters"
-                          className="w-10 h-10 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full hover:bg-slate-100 text-[#475569] hover:text-[#0F172A] transition cursor-pointer"
-                        >
-                          <X className="w-5 h-5" />
-                        </button>
-                      </div>
-
-                      {/* Scrollable Filters Content */}
-                      <div className="flex-1 overflow-y-auto p-5 pb-8 space-y-5 text-xs sm:text-sm">
-                        {/* 1. Location */}
-                        <div className="space-y-2">
-                          <label className="font-bold block text-xs uppercase tracking-wider text-slate-500">
-                            Location
-                          </label>
-                          <div className="flex flex-wrap gap-1.5">
-                            {["", "United States", "Europe", "India", "Remote"].map((loc) => (
-                              <button
-                                key={loc || "all"}
-                                type="button"
-                                onClick={() => setSelectedLocation(loc)}
-                                className={`px-3 py-2 rounded-full border text-xs font-semibold min-h-[40px] transition cursor-pointer ${
-                                  selectedLocation === loc
-                                    ? "bg-[#2563EB] text-white border-[#2563EB]"
-                                    : "bg-[#F1F5F9] text-[#0F172A] border-[#E2E8F0] hover:bg-[#E2E8F0]"
-                                }`}
-                              >
-                                {loc || "All Locations"}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* 2. Experience */}
-                        <div className="space-y-2">
-                          <label className="font-bold block text-xs uppercase tracking-wider text-slate-500">
-                            Experience
-                          </label>
-                          <div className="flex flex-wrap gap-1.5">
-                            {["", "1-3 Years", "3-5 Years", "5+ Years", "8+ Years"].map((e) => (
-                              <button
-                                key={e || "all"}
-                                type="button"
-                                onClick={() => setSelectedExperience(e)}
-                                className={`px-3 py-2 rounded-full border text-xs font-semibold min-h-[40px] transition cursor-pointer ${
-                                  selectedExperience === e
-                                    ? "bg-[#2563EB] text-white border-[#2563EB]"
-                                    : "bg-[#F1F5F9] text-[#0F172A] border-[#E2E8F0] hover:bg-[#E2E8F0]"
-                                }`}
-                              >
-                                {e || "All Experience"}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* 3. Level */}
-                        <div className="space-y-2">
-                          <label className="font-bold block text-xs uppercase tracking-wider text-slate-500">
-                            Seniority Level
-                          </label>
-                          <div className="flex flex-wrap gap-1.5">
-                            {["", "Entry", "Mid", "Senior", "Lead"].map((lvl) => (
-                              <button
-                                key={lvl || "all"}
-                                type="button"
-                                onClick={() => setSelectedLevel(lvl)}
-                                className={`px-3 py-2 rounded-full border text-xs font-semibold min-h-[40px] transition cursor-pointer ${
-                                  selectedLevel === lvl
-                                    ? "bg-[#2563EB] text-white border-[#2563EB]"
-                                    : "bg-[#F1F5F9] text-[#0F172A] border-[#E2E8F0] hover:bg-[#E2E8F0]"
-                                }`}
-                              >
-                                {lvl ? `${lvl} Level` : "All Levels"}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* 4. Job Type */}
-                        <div className="space-y-2">
-                          <label className="font-bold block text-xs uppercase tracking-wider text-slate-500">
-                            Job Type
-                          </label>
-                          <div className="flex flex-wrap gap-1.5">
-                            {["", "Full-time", "Contract", "Part-time"].map((jt) => (
-                              <button
-                                key={jt || "all"}
-                                type="button"
-                                onClick={() => setSelectedJobType(jt)}
-                                className={`px-3 py-2 rounded-full border text-xs font-semibold min-h-[40px] transition cursor-pointer ${
-                                  selectedJobType === jt
-                                    ? "bg-[#2563EB] text-white border-[#2563EB]"
-                                    : "bg-[#F1F5F9] text-[#0F172A] border-[#E2E8F0] hover:bg-[#E2E8F0]"
-                                }`}
-                              >
-                                {jt || "All Types"}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* 5. Date Posted */}
-                        <div className="space-y-2">
-                          <label className="font-bold block text-xs uppercase tracking-wider text-slate-500">
-                            Date Posted
-                          </label>
-                          <div className="flex flex-wrap gap-1.5">
-                            {["", "Past 24 hours", "Past week", "Past month"].map((d) => (
-                              <button
-                                key={d || "all"}
-                                type="button"
-                                onClick={() => setSelectedDatePosted(d)}
-                                className={`px-3 py-2 rounded-full border text-xs font-semibold min-h-[40px] transition cursor-pointer ${
-                                  selectedDatePosted === d
-                                    ? "bg-[#2563EB] text-white border-[#2563EB]"
-                                    : "bg-[#F1F5F9] text-[#0F172A] border-[#E2E8F0] hover:bg-[#E2E8F0]"
-                                }`}
-                              >
-                                {d || "Any Time"}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* 6. Toggles: Remote & Hidden */}
-                        <div className="pt-2 border-t border-[#E2E8F0] space-y-3">
-                          <label className="flex items-center justify-between p-3 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] cursor-pointer">
-                            <span className="font-semibold text-xs text-[#0F172A]">Remote Only Positions</span>
-                            <input
-                              type="checkbox"
-                              checked={remoteOnly}
-                              onChange={(e) => setRemoteOnly(e.target.checked)}
-                              className="w-5 h-5 rounded text-[#2563EB] focus:ring-[#93C5FD]"
-                            />
-                          </label>
-
-                          <label className="flex items-center justify-between p-3 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] cursor-pointer">
-                            <span className="font-semibold text-xs text-[#0F172A]">View Hidden Positions ({hiddenJobIds.length})</span>
-                            <input
-                              type="checkbox"
-                              checked={viewHiddenJobs}
-                              onChange={(e) => setViewHiddenJobs(e.target.checked)}
-                              className="w-5 h-5 rounded text-[#2563EB] focus:ring-[#93C5FD]"
-                            />
-                          </label>
-                        </div>
-                      </div>
-
-                      {/* Sticky Action Footer */}
-                      <div className="p-4 pb-[max(1rem,calc(env(safe-area-inset-bottom,0px)+0.75rem))] border-t border-[#E2E8F0] bg-white flex items-center justify-between gap-3 shrink-0">
-                        <button
-                          type="button"
-                          onClick={handleResetFilters}
-                          disabled={!hasActiveFilters}
-                          className="px-4 py-2.5 text-xs font-bold text-slate-600 hover:text-[#0F172A] disabled:opacity-40 transition min-h-[44px] cursor-pointer"
-                        >
-                          Reset All
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setMobileFiltersOpen(false);
-                            filtersTriggerRef.current?.focus();
-                          }}
-                          className="px-6 py-2.5 rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-bold shadow-none min-h-[44px] transition cursor-pointer"
-                        >
-                          Apply Filters ({filteredJobs.length})
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
+                <MobileFilterSheet
+                  isOpen={mobileFiltersOpen}
+                  onClose={() => {
+                    setMobileFiltersOpen(false);
+                    filtersTriggerRef.current?.focus();
+                  }}
+                  filters={filterValues}
+                  onApply={handleApplyAllFilters}
+                  onResetAll={handleResetFilters}
+                  activeCount={activeFiltersCount}
+                  hiddenCount={hiddenJobIds.length}
+                  triggerRef={filtersTriggerRef}
+                />
               </div>
 
               {/* Jobs List Feed & Right Rail (Main Column ~973px, Right Rail ~316px, Gap 32px on Desktop) */}
