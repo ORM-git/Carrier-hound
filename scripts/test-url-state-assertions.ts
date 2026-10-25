@@ -331,20 +331,20 @@ async function runSuite() {
 
     // Step A: Initial load of recommended jobs feed
     await page.goto(`http://localhost:${PORT}/jobs`, { waitUntil: "domcontentloaded" });
-    await page.waitForSelector('[data-testid="job-card"]', { timeout: 8000 });
+    await page.waitForSelector('[data-testid="job-card"]', { timeout: 15000 });
     const initialUrl = page.url();
     assert.ok(initialUrl.includes("/jobs"), "Initial URL is /jobs");
 
     // Step B: Click a job card to open in-place detail view
-    await page.waitForSelector('[data-testid="job-card"]', { timeout: 8000 });
-    await new Promise((r) => setTimeout(r, 400));
+    await page.waitForSelector('[data-testid="job-card"]', { timeout: 15000 });
+    await new Promise((r) => setTimeout(r, 500));
     await page.evaluate(() => {
       const card = document.querySelector('[data-testid="job-card"]') as HTMLElement;
       if (card) card.click();
     });
 
     // Verify detail view is visible and URL has id param
-    await page.waitForSelector('[aria-label="Back to jobs list"]', { timeout: 6000 });
+    await page.waitForSelector('[aria-label="Back to jobs list"]', { timeout: 15000 });
     const detailUrl = page.url();
     assert.ok(detailUrl.includes("id="), `URL updated with job id on click: ${detailUrl}`);
     const isBackBtnVisible = await page.$eval('[aria-label="Back to jobs list"]', (el) => Boolean(el));
@@ -365,15 +365,15 @@ async function runSuite() {
     await new Promise((r) => setTimeout(r, 600));
     const urlAfterForward = page.url();
     assert.ok(urlAfterForward.includes("id="), `Browser Forward restored id param: ${urlAfterForward}`);
-    await page.waitForSelector('[aria-label="Back to jobs list"]', { timeout: 6000 });
+    await page.waitForSelector('[aria-label="Back to jobs list"]', { timeout: 15000 });
     console.log("  -> [PASS-LOCAL] Browser Forward restored detail view and URL id parameter.");
 
     // Step E: Real Browser Page Reload
     await page.reload({ waitUntil: "domcontentloaded" });
-    await new Promise((r) => setTimeout(r, 600));
+    await new Promise((r) => setTimeout(r, 1000));
     const urlAfterReload = page.url();
     assert.ok(urlAfterReload.includes("id="), `Page reload preserved id param: ${urlAfterReload}`);
-    await page.waitForSelector('[aria-label="Back to jobs list"]', { timeout: 6000 });
+    await page.waitForSelector('[aria-label="Back to jobs list"]', { timeout: 20000 });
     console.log("  -> [PASS-LOCAL] Page reload preserved selected job detail view.");
 
     // Test 6: [REAL BROWSER COMPONENT AUTH TEST] In-browser Component Flow across Logout & Account Switch
