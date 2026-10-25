@@ -129,6 +129,31 @@ export function getRuntimeEnv(key: string, envOverrides?: Record<string, any>): 
   return undefined;
 }
 
+export function getSupabaseAdminClient(envOverrides?: Record<string, any>) {
+  const supabaseUrl =
+    getRuntimeEnv("NEXT_PUBLIC_SUPABASE_URL", envOverrides) ||
+    getRuntimeEnv("SUPABASE_URL", envOverrides) ||
+    "https://szakevhxhwpeskidvtfs.supabase.co";
+  const serviceKey =
+    getRuntimeEnv("SUPABASE_SERVICE_ROLE_KEY", envOverrides) ||
+    getRuntimeEnv("SUPABASE_SERVICE_KEY", envOverrides);
+
+  const missing = checkRequiredEnv(
+    {
+      NEXT_PUBLIC_SUPABASE_URL: supabaseUrl,
+      SUPABASE_SERVICE_ROLE_KEY: serviceKey,
+    },
+    "Supabase Admin Client"
+  );
+  if (missing) {
+    throw new Error(JSON.stringify(missing));
+  }
+
+  return createClient(supabaseUrl, serviceKey!, {
+    auth: { persistSession: false },
+  });
+}
+
 export interface AiCoreResponse {
   statusCode: number;
   body: any;

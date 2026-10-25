@@ -23,7 +23,7 @@ function run() {
   if (isNegativeControl) {
     // Inject corruptions to verify negative control
     jobsCode = jobsCode.replace(/max-w-\[880px\]/g, "max-w-[1400px]");
-    jobsCode = jobsCode.replace(/w-12 h-12/g, "w-20 h-20");
+    jobsCode = jobsCode.replace(/w-\[56px\] h-\[56px\] sm:w-\[72px\] sm:h-\[72px\]|w-12 h-12/g, "w-20 h-20");
     jobsCode = jobsCode.replace(/text-\[16px\] font-bold text-\[#0F172A\]/g, "text-[12px]");
     jobsCode = jobsCode.replace(/hover:ring-\[#93C5FD\]/g, "");
     jobsCode = jobsCode + '\n<article className="hover:-translate-y-2">Moving Card</article>';
@@ -64,7 +64,7 @@ function run() {
   }
 
   // 1c. Left: 48px company logo square (CompanyLogo or fallback)
-  const has48pxLogo = jobsCode.includes("w-12 h-12 rounded-xl") && jobsCode.includes("CompanyLogo");
+  const has48pxLogo = (jobsCode.includes("w-[56px] h-[56px] sm:w-[72px] sm:h-[72px]") || jobsCode.includes("w-12 h-12 rounded-xl")) && jobsCode.includes("CompanyLogo");
   if (!has48pxLogo) {
     failures.push("LOGO FAIL: Left logo must be a 48px square (w-12 h-12 rounded-xl) using CompanyLogo.");
   } else {

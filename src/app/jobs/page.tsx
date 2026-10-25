@@ -31,6 +31,7 @@ import type { User } from "@supabase/supabase-js";
 import {
   Search,
   MapPin,
+  Laptop,
   Building,
   RotateCcw,
   Globe,
@@ -282,6 +283,29 @@ function getMatchPanelGradient(score: number): string {
   return "bg-gradient-to-br from-[#0F172A] to-[#334155]";
 }
 
+function parseJobLocation(locationStr?: string | null): { primary: string; extraCount: number; all: string[] } {
+  if (!locationStr || !locationStr.trim()) {
+    return { primary: "Location unlisted", extraCount: 0, all: [] };
+  }
+  const raw = locationStr.trim();
+  let parts: string[] = [];
+  if (raw.includes(";")) {
+    parts = raw.split(";").map((p) => p.trim()).filter(Boolean);
+  } else if (raw.includes(" | ")) {
+    parts = raw.split(" | ").map((p) => p.trim()).filter(Boolean);
+  } else if (raw.includes(" / ")) {
+    parts = raw.split(" / ").map((p) => p.trim()).filter(Boolean);
+  } else {
+    parts = [raw];
+  }
+
+  return {
+    primary: parts[0] || raw,
+    extraCount: Math.max(0, parts.length - 1),
+    all: parts,
+  };
+}
+
 function CircularMatchRing({
   score,
   size = 56,
@@ -296,6 +320,7 @@ function CircularMatchRing({
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (score / 100) * circumference;
+  const textClass = size >= 75 ? "text-2xl font-black" : size >= 50 ? "text-[16px] font-bold" : "text-[13px] font-bold";
 
   return (
     <div
@@ -315,7 +340,7 @@ function CircularMatchRing({
           cx={size / 2}
           cy={size / 2}
           r={radius}
-          stroke="#38BDF8"
+          stroke="#2DD4BF"
           strokeWidth={strokeWidth}
           strokeDasharray={circumference}
           strokeDashoffset={offset}
@@ -324,8 +349,8 @@ function CircularMatchRing({
           className="transition-all duration-300 ease-out"
         />
       </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-[15px] font-bold text-white leading-none tracking-tight">
+      <div className="absolute inset-0 flex items-center justify-center">
+        <span className={`${textClass} text-white leading-none tracking-tight`}>
           {score}%
         </span>
       </div>
@@ -2289,6 +2314,8 @@ function JobsPageInner() {
                             : "";
                         const cardZeroSkills = Boolean(diagnostics && diagnostics.matchedSkills && diagnostics.matchedSkills.length === 0);
                         const isRecent = Boolean(job.postedAt && isPostedUnder24Hours(job.postedAt));
+                        const locInfo = parseJobLocation(job.location);
+                        const jobLevel = inferJobLevel(job.title);
 
                         return (
                           <motion.article
@@ -2490,18 +2517,17 @@ function JobsPageInner() {
                                 </div>
                               </div>
 
-                              {/* Right: Fit Match panel from PR #68, unchanged (hidden on mobile, sm:flex) */}
+                              {/* Right: Desktop Match Panel (roughly 180px wide, dark gradient, ~80px ring, full card height) */}
                               {matchScore !== null ? (
-                                <div className="hidden sm:flex flex-col items-center justify-between p-3.5 rounded-[16px] bg-[#0B1528] text-white w-44 shrink-0 text-center border border-[#1E293B] shadow-none min-h-[160px]">
-                                  <CircularMatchRing
-                                    score={matchScore}
-                                    size={56}
-                                    strokeWidth={4.5}
-                                    isPro={isPro}
-                                  />
-
-                                  <div className="w-full">
-                                    <div className="text-[11px] font-bold uppercase tracking-wider text-slate-100">
+                                <div className="hidden sm:flex flex-col items-center justify-between p-4 rounded-[16px] bg-gradient-to-b from-[#09151E] via-[#0B1E28] to-[#06241D] text-white w-44 shrink-0 text-center border border-emerald-950/40 shadow-inner self-stretch min-h-[170px]">
+                                  <div className="flex flex-col items-center w-full pt-1">
+                                    <CircularMatchRing
+                                      score={matchScore}
+                                      size={80}
+                                      strokeWidth={5}
+                                      isPro={isPro}
+                                    />
+                                    <div className="text-[12px] font-bold uppercase tracking-wider text-slate-100 mt-2.5">
                                       {cardZeroSkills
                                         ? "EXPERIENCE MATCH"
                                         : matchScore >= 80
@@ -2510,28 +2536,18 @@ function JobsPageInner() {
                                         ? "GOOD MATCH"
                                         : "FAIR MATCH"}
                                     </div>
-                                    <div className="space-y-1 text-[11px] text-slate-300 pt-2 text-left w-full pl-2">
-                                      {job.postedAt ? (
-                                        <>
-                                          <div className="flex items-center gap-1.5 text-slate-300">
-                                            <span className="text-emerald-400 font-bold">✓</span>
-                                            <span className="truncate">{job.remote ? "Remote Eligible" : "Verified Direct"}</span>
-                                          </div>
-                                          <div className="flex items-center gap-1.5 text-slate-300">
-                                            <span className="text-emerald-400 font-bold">✓</span>
-                                            <span className="truncate">Verified Listing</span>
-                                          </div>
-                                          <div className="flex items-center gap-1.5 text-slate-300">
-                                            <span className="text-emerald-400 font-bold">✓</span>
-                                            <span className="truncate">Active Ingestion</span>
-                                          </div>
-                                        </>
-                                      ) : (
-                                        <div className="flex items-center gap-1.5 text-slate-300">
-                                          <span className="text-emerald-400 font-bold">✓</span>
-                                          <span className="truncate">Tracked Application</span>
-                                        </div>
-                                      )}
+                                  </div>
+
+                                  <div className="w-full pt-2 border-t border-white/10 mt-2">
+                                    <div className="space-y-1 text-[11px] text-slate-300 text-left w-full pl-2">
+                                      <div className="flex items-center gap-1.5 text-slate-300">
+                                        <span className="text-emerald-400 font-bold">✓</span>
+                                        <span className="truncate">{job.remote ? "Remote Eligible" : "Verified Direct"}</span>
+                                      </div>
+                                      <div className="flex items-center gap-1.5 text-slate-300">
+                                        <span className="text-emerald-400 font-bold">✓</span>
+                                        <span className="truncate">{job.directSource ? "Direct Feed" : "Active Ingestion"}</span>
+                                      </div>
                                     </div>
                                   </div>
                                 </div>
@@ -2539,14 +2555,19 @@ function JobsPageInner() {
                                 <Link
                                   href="/resume"
                                   onClick={(e) => e.stopPropagation()}
-                                  className="hidden sm:flex flex-col items-center justify-center p-3.5 sm:p-4 rounded-[16px] bg-[#F8FAFC] hover:bg-[#EFF6FF] border border-[#E2E8F0] hover:border-[#93C5FD] text-center w-44 shrink-0 transition-all duration-200 group/cta space-y-2.5 self-stretch focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1"
+                                  className="hidden sm:flex flex-col items-center justify-between p-4 rounded-[16px] bg-gradient-to-b from-[#09151E] via-[#0B1E28] to-[#06241D] border border-emerald-950/40 text-center w-44 shrink-0 transition-all duration-200 group/cta space-y-2.5 self-stretch focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1 text-white min-h-[170px]"
                                 >
-                                  <div className="w-9 h-9 rounded-full bg-[#EFF6FF] group-hover/cta:bg-[#DBEAFE] border border-[#BFDBFE] flex items-center justify-center transition-colors">
-                                    <Sparkles className="w-4 h-4 text-[#2563EB]" />
+                                  <div className="flex flex-col items-center justify-center flex-1 w-full space-y-2">
+                                    <div className="w-12 h-12 rounded-full bg-blue-500/10 border border-blue-400/30 flex items-center justify-center transition-colors">
+                                      <Sparkles className="w-6 h-6 text-blue-400" />
+                                    </div>
+                                    <span className="text-xs font-bold text-white uppercase tracking-wider">
+                                      Match Score
+                                    </span>
+                                    <span className="text-[11px] text-slate-300 group-hover/cta:text-blue-300 transition-colors leading-tight px-1">
+                                      Upload your resume to see your real match
+                                    </span>
                                   </div>
-                                  <span className="text-xs font-semibold text-[#0F172A] group-hover/cta:text-[#1D4ED8] transition-colors leading-snug">
-                                    Upload your resume to see your real match
-                                  </span>
                                 </Link>
                               )}
                             </div>

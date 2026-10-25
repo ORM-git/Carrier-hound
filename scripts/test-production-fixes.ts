@@ -16,7 +16,8 @@ import http from "http";
 import fs from "fs";
 import path from "path";
 import puppeteer from "puppeteer-core";
-import { getRuntimeEnv, handleAiRequest } from "../src/lib/ai/serviceHandler";
+import { getRuntimeEnv, handleAiRequest, executeAiCore, getSupabaseAdminClient } from "../src/lib/ai/serviceHandler";
+
 import { getLiveJobs, GetJobsOptions } from "../src/lib/jobs/service";
 
 const IS_NEGATIVE_CONTROL = process.argv.includes("--negative-control");
@@ -117,6 +118,100 @@ async function runSuite() {
   // Restore Cloudflare symbol and process.env
   (globalThis as any)[cfSymbol] = originalCfContext;
   if (savedGroq) process.env.GROQ_API_KEY = savedGroq;
+
+  // 1.4 Search route getSupabaseAdmin resolves context-only SUPABASE_SERVICE_ROLE_KEY
+  const savedServiceRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const savedServiceKey = process.env.SUPABASE_SERVICE_KEY;
+  delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+  delete process.env.SUPABASE_SERVICE_KEY;
+
+  let clientCreatedWithContext = false;
+  try {
+    const admin = getSupabaseAdminClient({
+      SUPABASE_SERVICE_ROLE_KEY: "context-only-service-role-key",
+      NEXT_PUBLIC_SUPABASE_URL: "https://szakevhxhwpeskidvtfs.supabase.co",
+    });
+    clientCreatedWithContext = !!admin;
+  } catch (err) {
+    clientCreatedWithContext = false;
+  }
+  assert(
+    clientCreatedWithContext,
+    "1.4 Search route getSupabaseAdmin resolves request-context-only SUPABASE_SERVICE_ROLE_KEY",
+    "Expected getSupabaseAdmin to succeed when key is provided via request context overrides"
+  );
+
+  // 1.5 Search route getSupabaseAdmin fails closed when SUPABASE_SERVICE_ROLE_KEY is missing
+  let searchMissingKeyThrew = false;
+  try {
+    getSupabaseAdminClient({});
+  } catch (err: any) {
+    searchMissingKeyThrew = Boolean(err.message && err.message.includes("SUPABASE_SERVICE_ROLE_KEY"));
+  }
+  assert(
+    searchMissingKeyThrew,
+    "1.5 Search route getSupabaseAdmin fails closed when SUPABASE_SERVICE_ROLE_KEY is missing everywhere",
+    "Expected getSupabaseAdmin to throw missing required environment variable error"
+  );
+
+  if (savedServiceRole) process.env.SUPABASE_SERVICE_ROLE_KEY = savedServiceRole;
+  if (savedServiceKey) process.env.SUPABASE_SERVICE_KEY = savedServiceKey;
+
+  // 1.6 AI route executeAiCore resolves context-only GROQ_API_KEY via deps.env
+  const savedGroqKey = process.env.GROQ_API_KEY;
+  delete process.env.GROQ_API_KEY;
+
+  assert(
+    getRuntimeEnv("GROQ_API_KEY", { GROQ_API_KEY: "context-only-groq-key" }) === "context-only-groq-key",
+    "1.6 getRuntimeEnv resolves context-only GROQ_API_KEY from options.env when process.env lacks key",
+    "Expected GROQ_API_KEY to resolve from request context env"
+  );
+
+  // 1.7 AI route executeAiCore fails closed with HTTP 500 when GROQ_API_KEY is missing everywhere
+  const mockDepsMissingGroq: any = {
+    env: {
+      NEXT_PUBLIC_SUPABASE_URL: "https://szakevhxhwpeskidvtfs.supabase.co",
+      SUPABASE_SERVICE_ROLE_KEY: "mock-service-key",
+    },
+    getSupabaseAdmin: () => {
+      const mockQueryBuilder: any = {
+        select: () => mockQueryBuilder,
+        eq: () => mockQueryBuilder,
+        maybeSingle: async () => ({ data: null, error: null }),
+        insert: async () => ({ error: null }),
+        update: () => mockQueryBuilder,
+        order: () => mockQueryBuilder,
+        limit: () => mockQueryBuilder,
+      };
+      return {
+        auth: {
+          getUser: async () => ({
+            data: { user: { id: "test-user-id", email: "test@example.com" } },
+            error: null,
+          }),
+        },
+        from: () => mockQueryBuilder,
+      };
+    },
+    getServerEntitlement: async () => ({ isPro: true, status: "active" }),
+  };
+
+  const resMissingGroq = await executeAiCore(
+    "127.0.0.1",
+    "Bearer mock-valid-token",
+    { operation: "resume_extraction", rawText: "Candidate: Jane Doe, Software Engineer" },
+    mockDepsMissingGroq
+  );
+
+  assert(
+    resMissingGroq.statusCode === 500 &&
+      (JSON.stringify(resMissingGroq.body).includes("GROQ_API_KEY") ||
+       JSON.stringify(resMissingGroq.body).includes("MISSING_ENV_VARS")),
+    "1.7 AI route executeAiCore fails closed with HTTP 500 when GROQ_API_KEY is missing everywhere",
+    `Expected 500 missing GROQ_API_KEY error, got status ${resMissingGroq.statusCode}`
+  );
+
+  if (savedGroqKey) process.env.GROQ_API_KEY = savedGroqKey;
 
   // ============================================================================
   // TEST 2: Full-Dataset Filtering Before Pagination

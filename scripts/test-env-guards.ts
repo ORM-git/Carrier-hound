@@ -32,6 +32,29 @@ function assert(condition: boolean, testName: string, failureMsg: string) {
   }
 }
 
+import Module from "module";
+
+// Register Node test hook for @cloudflare/next-on-pages in unit test environment
+const originalResolve = (Module as any)._resolveFilename;
+(Module as any)._resolveFilename = function (request: string, parent: any, isMain: boolean, options: any) {
+  if (request === "@cloudflare/next-on-pages") {
+    return "virtual:@cloudflare/next-on-pages";
+  }
+  return originalResolve.call(this, request, parent, isMain, options);
+};
+
+require.cache["virtual:@cloudflare/next-on-pages"] = {
+  id: "virtual:@cloudflare/next-on-pages",
+  filename: "virtual:@cloudflare/next-on-pages",
+  loaded: true,
+  exports: {
+    getRequestContext: () => {
+      const sym = Symbol.for("__cloudflare-request-context__");
+      return (globalThis as any)[sym];
+    },
+  },
+} as any;
+
 // Preserve original environment
 const originalEnv = { ...process.env };
 

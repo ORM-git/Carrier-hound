@@ -1,37 +1,12 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
 import { formatSalary } from "@/lib/salary/parser";
-import { checkRequiredEnv } from "@/lib/api/envCheck";
-import { getRuntimeEnv } from "@/lib/ai/serviceHandler";
+import { getSupabaseAdminClient } from "@/lib/ai/serviceHandler";
+import { getRequestContext } from "@cloudflare/next-on-pages";
 
 export const runtime = "edge";
 
-function getSupabaseAdmin() {
-  const supabaseUrl =
-    getRuntimeEnv("NEXT_PUBLIC_SUPABASE_URL") ||
-    getRuntimeEnv("SUPABASE_URL") ||
-    "https://szakevhxhwpeskidvtfs.supabase.co";
-  const serviceKey =
-    getRuntimeEnv("SUPABASE_SERVICE_ROLE_KEY") ||
-    getRuntimeEnv("SUPABASE_SERVICE_KEY");
 
-
-  const missing = checkRequiredEnv(
-    {
-      NEXT_PUBLIC_SUPABASE_URL: supabaseUrl,
-      SUPABASE_SERVICE_ROLE_KEY: serviceKey,
-    },
-    "API /jobs/search"
-  );
-  if (missing) {
-    throw new Error(JSON.stringify(missing));
-  }
-
-  return createClient(supabaseUrl, serviceKey!, {
-    auth: { persistSession: false },
-  });
-}
 
 function formatDate(dateStr?: string | null): string {
   if (!dateStr) return "Recently";
@@ -80,8 +55,16 @@ export async function GET(req: Request) {
     const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
     const pageSize = Math.min(100, Math.max(1, parseInt(searchParams.get("pageSize") || "50", 10)));
 
+    let cfEnv: Record<string, any> | undefined;
+    try {
+      const ctx = getRequestContext();
+      if (ctx?.env) {
+        cfEnv = ctx.env as Record<string, any>;
+      }
+    } catch {}
+
     const cleanQuery = sanitizeSearchQuery(rawQuery);
-    const supabaseAdmin = getSupabaseAdmin();
+    const supabaseAdmin = getSupabaseAdminClient(cfEnv);
 
     // Check optional Pro entitlement via Bearer token
     let isPro = false;
