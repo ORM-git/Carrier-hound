@@ -54,6 +54,7 @@
  */
 
 import { getServerEntitlement } from "../src/lib/billing/serverEntitlement";
+import { getValidReturnUrl } from "../src/lib/auth/session";
 import { POST as activateHandler } from "../src/app/api/billing/activate/route";
 import { handleActivateRequest } from "../src/lib/billing/activate";
 import { handleAiRequest } from "../src/lib/ai/serviceHandler";
@@ -898,14 +899,17 @@ async function runTests() {
   console.log("\n--- 6. Auth-First Guards & Route Protection Verification ---");
 
   const protectedAppRoutes = [
-    { name: "/dashboard", file: "src/app/dashboard/page.tsx", expectedRedirect: "/login?next=/dashboard" },
-    { name: "/tracker", file: "src/app/tracker/page.tsx", expectedRedirect: "/login?next=" },
+    { name: "/jobs", file: "src/app/jobs/page.tsx", expectedRedirect: "router.replace(`/login?next=${encodeURIComponent(fullReturnUrl)}`)" },
+    { name: "/job-detail", file: "src/app/job-detail/page.tsx", expectedRedirect: "router.replace(`/login?next=${encodeURIComponent(fullUrl)}`)" },
+    { name: "/jobs/detail", file: "src/app/jobs/detail/page.tsx", expectedRedirect: "router.replace(`/login?next=${encodeURIComponent(fullUrl)}`)" },
+    { name: "/dashboard", file: "src/app/dashboard/page.tsx", expectedRedirect: "router.replace(`/login?next=${encodeURIComponent(fullReturnUrl)}`)" },
+    { name: "/tracker", file: "src/app/tracker/page.tsx", expectedRedirect: "router.replace(`/login?next=${encodeURIComponent(returnUrl)}`)" },
     { name: "/applications", file: "src/app/applications/page.tsx", expectedRedirect: "TrackerPage" },
-    { name: "/resume", file: "src/app/resume/page.tsx", expectedRedirect: "/login?next=/resume" },
-    { name: "/profile", file: "src/app/profile/page.tsx", expectedRedirect: "/login?next=/profile" },
-    { name: "/settings", file: "src/app/settings/page.tsx", expectedRedirect: "/login?next=/settings" },
-    { name: "/radar", file: "src/app/radar/page.tsx", expectedRedirect: "/login?next=/radar" },
-    { name: "/onboarding", file: "src/app/onboarding/page.tsx", expectedRedirect: "/login?next=" },
+    { name: "/resume", file: "src/app/resume/page.tsx", expectedRedirect: "router.replace(`/login?next=${encodeURIComponent(fullReturnUrl)}`)" },
+    { name: "/profile", file: "src/app/profile/page.tsx", expectedRedirect: "router.replace(`/login?next=${encodeURIComponent(returnUrl)}`)" },
+    { name: "/settings", file: "src/app/settings/page.tsx", expectedRedirect: "router.replace(`/login?next=${encodeURIComponent(fullReturnUrl)}`)" },
+    { name: "/radar", file: "src/app/radar/page.tsx", expectedRedirect: "router.replace(`/login?next=${encodeURIComponent(fullReturnUrl)}`)" },
+    { name: "/onboarding", file: "src/app/onboarding/page.tsx", expectedRedirect: "router.replace(`/login?next=${encodeURIComponent(returnUrl)}`)" },
     { name: "/admin", file: "src/app/admin/layout.tsx", expectedRedirect: 'window.location.replace("/")' },
   ];
 
@@ -919,16 +923,78 @@ async function runTests() {
     );
   }
 
-  // Direct link to /applications redirects to /login?next=/applications
+  // 6.2 Neutral loading state checks to guarantee zero flash of job/app content
+  const jobsSrc = fs.readFileSync(path.resolve(__dirname, "../src/app/jobs/page.tsx"), "utf8");
+  assert(
+    jobsSrc.includes("if (checkingAuth || !user) {\n    return <JobsPageFallback />;\n  }"),
+    "/jobs suppresses all job cards, search bars, and app shell before auth verification completes"
+  );
+  assert(
+    jobsSrc.includes("getLiveJobs") && jobsSrc.includes("if (checkingAuth || !user) {\n      return;\n    }"),
+    "/jobs suppresses live jobs fetch until authenticated user is confirmed"
+  );
+
+  const profileSrc = fs.readFileSync(path.resolve(__dirname, "../src/app/profile/page.tsx"), "utf8");
+  assert(
+    profileSrc.includes("if (loading || !user) {\n    return <ProfileSkeleton />;\n  }"),
+    "/profile suppresses profile content and renders neutral ProfileSkeleton while checking auth"
+  );
+
+  // 6.3 Return URL query preservation and validation
+  assert(
+    getValidReturnUrl("/jobs?q=engineer&country=US") === "/jobs?q=engineer&country=US",
+    "getValidReturnUrl preserves safe internal route with query parameters (/jobs?q=engineer&country=US)"
+  );
+  assert(
+    getValidReturnUrl("/jobs?id=abc-123&selected=true") === "/jobs?id=abc-123&selected=true",
+    "getValidReturnUrl preserves job detail query parameters"
+  );
+  assert(
+    getValidReturnUrl("/dashboard?tab=overview") === "/dashboard?tab=overview",
+    "getValidReturnUrl preserves dashboard tab query parameters"
+  );
+  assert(
+    getValidReturnUrl("https://evil.com") === "/dashboard",
+    "getValidReturnUrl rejects external absolute HTTP/HTTPS URLs"
+  );
+  assert(
+    getValidReturnUrl("//evil.com") === "/dashboard",
+    "getValidReturnUrl rejects protocol-relative URLs (//evil.com)"
+  );
+  assert(
+    getValidReturnUrl("/\\evil.com") === "/dashboard",
+    "getValidReturnUrl rejects backslash-based relative URL bypasses (/\\evil.com)"
+  );
+  assert(
+    getValidReturnUrl("/jobs\r\nHost:evil.com") === "/dashboard",
+    "getValidReturnUrl rejects CRLF injection attempts"
+  );
+  assert(
+    getValidReturnUrl("javascript:alert(1)") === "/dashboard",
+    "getValidReturnUrl rejects javascript: scheme URLs"
+  );
+  assert(
+    getValidReturnUrl(null) === "/dashboard",
+    "getValidReturnUrl falls back safely to /dashboard on null/undefined input"
+  );
+
+  // Direct link to /applications preserves query and redirects to /login?next=/applications...
   const trackerSrc = fs.readFileSync(path.resolve(__dirname, "../src/app/tracker/page.tsx"), "utf8");
   assert(
     trackerSrc.includes('window.location.pathname.startsWith("/applications")') &&
-    trackerSrc.includes('? "/applications"'),
-    "Direct link to /applications redirects correctly to /login?next=/applications"
+    trackerSrc.includes('router.replace(`/login?next=${encodeURIComponent(returnUrl)}`)'),
+    "Direct link to /applications redirects correctly to /login?next= preserving search parameters"
   );
 
-  // Public routes do NOT force login
-  const publicRoutes = ["src/app/page.tsx", "src/app/pricing/page.tsx", "src/app/login/page.tsx", "src/app/signup/page.tsx"];
+  // 6.4 Public routes do NOT force login
+  const publicRoutes = [
+    "src/app/page.tsx",
+    "src/app/pricing/page.tsx",
+    "src/app/login/page.tsx",
+    "src/app/signup/page.tsx",
+    "src/app/privacy/page.tsx",
+    "src/app/terms-and-conditions/page.tsx",
+  ];
   for (const pRoute of publicRoutes) {
     const fullPath = path.resolve(__dirname, "..", pRoute);
     assert(fs.existsSync(fullPath), `Public route exists: ${pRoute}`);

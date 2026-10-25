@@ -2,15 +2,30 @@
 
 import React, { useEffect, Suspense } from "react";
 import { useRouter } from "next/navigation";
+import { getAuthUser } from "@/lib/auth/session";
 
 function JobDetailRedirectInner() {
   const router = useRouter();
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const search = window.location.search || "";
+    let cancelled = false;
+    getAuthUser().then((user) => {
+      if (cancelled) return;
+      if (!user) {
+        const fullUrl =
+          typeof window !== "undefined"
+            ? `${window.location.pathname}${window.location.search}`
+            : "/jobs";
+        router.replace(`/login?next=${encodeURIComponent(fullUrl)}`);
+        return;
+      }
+      const search = typeof window !== "undefined" ? window.location.search || "" : "";
       router.replace(`/jobs${search}`);
-    }
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
   return (

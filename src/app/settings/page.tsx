@@ -61,7 +61,11 @@ function SettingsPageInner() {
   useEffect(() => {
     getAuthUser().then((u) => {
       if (!u) {
-        router.replace("/login?next=/settings");
+        const fullReturnUrl =
+          typeof window !== "undefined"
+            ? `${window.location.pathname}${window.location.search}`
+            : "/settings";
+        router.replace(`/login?next=${encodeURIComponent(fullReturnUrl)}`);
         return;
       }
       setUser(u);

@@ -29,6 +29,18 @@ import {
   Settings,
 } from "lucide-react";
 
+function ProfileSkeleton() {
+  return (
+    <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col font-sans">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 md:py-8 space-y-6 w-full">
+        <div className="h-8 w-48 bg-slate-200/80 rounded-lg animate-pulse" />
+        <div className="h-32 w-full bg-white rounded-xl border border-slate-200 animate-pulse" />
+        <div className="h-64 w-full bg-white rounded-xl border border-slate-200 animate-pulse" />
+      </div>
+    </div>
+  );
+}
+
 export default function ProfilePage() {
   const router = useRouter();
 
@@ -83,7 +95,11 @@ export default function ProfilePage() {
             }
           } catch {}
         }
-        router.replace("/login?next=/profile");
+        const returnUrl =
+          typeof window !== "undefined"
+            ? `${window.location.pathname}${window.location.search}`
+            : "/profile";
+        router.replace(`/login?next=${encodeURIComponent(returnUrl)}`);
         return;
       }
       setUser(u);
@@ -213,6 +229,10 @@ export default function ProfilePage() {
     (user?.email ? user.email.split("@")[0] : "Candidate");
 
   const initial = displayName.charAt(0).toUpperCase();
+
+  if (loading || !user) {
+    return <ProfileSkeleton />;
+  }
 
   return (
     <LoggedInAppShell

@@ -16,8 +16,13 @@ const CANDIDATE_PROFILE_KEY = "careermonke_candidate_profile";
 export function getValidReturnUrl(targetUrl: string | null | undefined, fallback: string = "/dashboard"): string {
   if (!targetUrl) return fallback;
   const trimmed = targetUrl.trim();
-  // Must start with '/' but not '//'
-  if (trimmed.startsWith("/") && !trimmed.startsWith("//") && !trimmed.includes("\\")) {
+  // Must start with '/' but not '//', must not contain '\', control chars, or protocol schemes
+  if (
+    trimmed.startsWith("/") &&
+    !trimmed.startsWith("//") &&
+    !trimmed.includes("\\") &&
+    !/[\r\n\t]/.test(trimmed)
+  ) {
     return trimmed;
   }
   return fallback;

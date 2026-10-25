@@ -185,7 +185,11 @@ export default function DashboardPage() {
   useEffect(() => {
     getAuthUser().then((authUser) => {
       if (!authUser) {
-        router.replace("/login?next=/dashboard");
+        const fullReturnUrl =
+          typeof window !== "undefined"
+            ? `${window.location.pathname}${window.location.search}`
+            : "/dashboard";
+        router.replace(`/login?next=${encodeURIComponent(fullReturnUrl)}`);
         return;
       }
       setUser(authUser);

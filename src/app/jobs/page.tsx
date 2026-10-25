@@ -397,6 +397,7 @@ function JobsPageInner() {
 
   // User state
   const [user, setUser] = useState<User | null>(null);
+  const [checkingAuth, setCheckingAuth] = useState(true);
 
   // Hidden jobs list persisted in localStorage
   const [hiddenJobIds, setHiddenJobIds] = useState<string[]>([]);
@@ -459,6 +460,7 @@ function JobsPageInner() {
   const [activeJobCountryCodes, setActiveJobCountryCodes] = useState<string[]>([]);
 
   useEffect(() => {
+    if (checkingAuth || !user) return;
     let cancelled = false;
     fetchLiveActiveJobCountryCodes().then((codes) => {
       if (!cancelled && codes && codes.length > 0) {
@@ -468,7 +470,7 @@ function JobsPageInner() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [checkingAuth, user]);
 
   const dynamicCountryOptions = useMemo<SupportedCountryOption[]>(() => {
     const liveCodes = liveJobs
@@ -520,7 +522,7 @@ function JobsPageInner() {
       setActiveTab("recommended");
     }
 
-    if (qId) {
+    if (qId && !checkingAuth && user) {
       pendingJobIdRef.current = qId;
       getLiveJobById(qId, isPro)
         .then((job) => {
@@ -537,6 +539,7 @@ function JobsPageInner() {
 
   // Synchronize state changes back to URL query parameters
   useEffect(() => {
+    if (checkingAuth || !user) return;
     if (!hasInitializedFromUrl.current) return;
     if (typeof window === "undefined") return;
 
@@ -745,16 +748,29 @@ function JobsPageInner() {
 
     async function loadInitialContext() {
       try {
-        const [u, proRes, cp] = await Promise.all([
-          getAuthUser(),
-          getProAccessStatus(),
-          getCandidateProfile(),
+        const u = await getAuthUser();
+        if (cancelled) return;
+
+        if (!u) {
+          const fullReturnUrl =
+            typeof window !== "undefined"
+              ? `${window.location.pathname}${window.location.search}`
+              : "/jobs";
+          router.replace(`/login?next=${encodeURIComponent(fullReturnUrl)}`);
+          return;
+        }
+
+        setUser(u);
+        setCheckingAuth(false);
+
+        const [proRes, cp] = await Promise.all([
+          getProAccessStatus(u.id),
+          getCandidateProfile(u.id),
         ]);
-        const apps = await getTrackedApplications(u?.id);
+        const apps = await getTrackedApplications(u.id);
 
         if (cancelled) return;
 
-        setUser(u);
         setProStatus(proRes);
         setIsPro(Boolean(proRes.canAccessListings));
         setIsProDefinitive(Boolean(proRes.isDefinitive));
@@ -767,13 +783,11 @@ function JobsPageInner() {
         setAppliedJobIds(appliedIds);
         setAppliedCount(appliedApps.length);
 
-        if (u) {
-          getUserPreferences(u.id).then((p) => {
-            if (!cancelled) {
-              setPreferences(p);
-            }
-          });
-        }
+        getUserPreferences(u.id).then((p) => {
+          if (!cancelled) {
+            setPreferences(p);
+          }
+        });
       } catch (err) {
         console.warn("Failed to load initial context on jobs page:", err);
       }
@@ -830,6 +844,9 @@ function JobsPageInner() {
 
   // Fetch live active jobs from Supabase whenever search, category, filters, sorting, or profile updates
   useEffect(() => {
+    if (checkingAuth || !user) {
+      return;
+    }
     if (user && !isPro && !isProDefinitive) {
       setLoadingJobs(true);
       return;
@@ -1461,6 +1478,10 @@ function JobsPageInner() {
       },
     },
   ];
+
+  if (checkingAuth || !user) {
+    return <JobsPageFallback />;
+  }
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col font-sans">

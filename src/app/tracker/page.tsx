@@ -102,11 +102,13 @@ export default function TrackerPage() {
   useEffect(() => {
     getAuthUser().then((u) => {
       if (!u) {
-        const nextPath =
+        const search = typeof window !== "undefined" ? window.location.search || "" : "";
+        const basePath =
           typeof window !== "undefined" && window.location.pathname.startsWith("/applications")
             ? "/applications"
             : "/tracker";
-        router.replace(`/login?next=${nextPath}`);
+        const returnUrl = `${basePath}${search}`;
+        router.replace(`/login?next=${encodeURIComponent(returnUrl)}`);
         return;
       }
       setUser(u);
