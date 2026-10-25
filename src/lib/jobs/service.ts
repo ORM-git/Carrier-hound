@@ -37,6 +37,9 @@ export interface GetJobsOptions {
   sortBy?: "newest" | "match";
   candidate?: CandidateProfile | null;
   preferences?: UserPreferences | null;
+  location?: string;
+  level?: string;
+  jobType?: string;
 }
 
 export interface GetJobsResult {
@@ -199,6 +202,9 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
     sortBy = "newest",
     candidate,
     preferences,
+    location,
+    level,
+    jobType,
   } = options;
 
   const from = (page - 1) * pageSize;
@@ -223,6 +229,9 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       });
       if (category && category !== "all") params.set("category", category);
       if (remoteOnly) params.set("remoteOnly", "true");
+      if (location && location !== "all") params.set("location", location);
+      if (level && level !== "all") params.set("level", level);
+      if (jobType && jobType !== "all") params.set("jobType", jobType);
 
       const res = await fetch(`/api/jobs/search?${params.toString()}`, { headers });
       if (res.ok) {
@@ -279,6 +288,50 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
 
     if (remoteOnly) {
       query = query.eq("remote", true);
+    }
+
+    if (location && location.trim() && location.toLowerCase() !== "all") {
+      const loc = location.trim().replace(/[%_(),\"'`;\\$*]/g, " ").trim();
+      if (loc.toLowerCase() === "remote") {
+        query = query.or("remote.eq.true,location.ilike.%remote%");
+      } else if (loc) {
+        query = query.ilike("location", "%" + loc + "%");
+      }
+    }
+
+    if (jobType && jobType.trim() && jobType.toLowerCase() !== "all") {
+      const jt = jobType.trim().toLowerCase();
+      if (jt.includes("full")) {
+        query = query.or("job_type.ilike.%full%,job_type.eq.full-time,job_type.eq.full_time");
+      } else if (jt.includes("contract")) {
+        query = query.or("job_type.ilike.%contract%,job_type.eq.contractor");
+      } else if (jt.includes("part")) {
+        query = query.ilike("job_type", "%part%");
+      } else if (jt.includes("intern")) {
+        query = query.or("job_type.ilike.%intern%,job_type.eq.internship");
+      } else {
+        query = query.ilike("job_type", "%" + jt + "%");
+      }
+    }
+
+    if (level && level.trim() && level.toLowerCase() !== "all") {
+      const lvl = level.trim().toLowerCase();
+      if (lvl.includes("lead") || lvl.includes("staff")) {
+        query = query.or("title.ilike.%staff%,title.ilike.%principal%,title.ilike.%lead%");
+      } else if (lvl.includes("senior")) {
+        query = query.or("title.ilike.%senior%,title.ilike.%sr.%");
+      } else if (lvl.includes("entry") || lvl.includes("junior")) {
+        query = query.or("title.ilike.%junior%,title.ilike.%entry%,title.ilike.%associate%");
+      } else if (lvl.includes("mid")) {
+        query = query
+          .not("title", "ilike", "%senior%")
+          .not("title", "ilike", "%sr.%")
+          .not("title", "ilike", "%staff%")
+          .not("title", "ilike", "%principal%")
+          .not("title", "ilike", "%lead%")
+          .not("title", "ilike", "%junior%")
+          .not("title", "ilike", "%entry%")
+      }
     }
 
     if (search && search.trim()) {

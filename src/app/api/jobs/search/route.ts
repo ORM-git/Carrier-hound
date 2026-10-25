@@ -73,6 +73,9 @@ export async function GET(req: Request) {
     const rawQuery = searchParams.get("q") || searchParams.get("search") || "";
     const category = searchParams.get("category") || "";
     const remoteOnly = searchParams.get("remoteOnly") === "true";
+    const locationParam = searchParams.get("location") || "";
+    const levelParam = searchParams.get("level") || "";
+    const jobTypeParam = searchParams.get("jobType") || "";
     const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
     const pageSize = Math.min(100, Math.max(1, parseInt(searchParams.get("pageSize") || "50", 10)));
 
@@ -136,6 +139,50 @@ export async function GET(req: Request) {
 
     if (remoteOnly) {
       query = query.eq("remote", true);
+    }
+
+    if (locationParam && locationParam.trim() && locationParam.toLowerCase() !== "all") {
+      const loc = sanitizeSearchQuery(locationParam);
+      if (loc.toLowerCase() === "remote") {
+        query = query.or("remote.eq.true,location.ilike.%remote%");
+      } else if (loc) {
+        query = query.ilike("location", "%" + loc + "%");
+      }
+    }
+
+    if (jobTypeParam && jobTypeParam.trim() && jobTypeParam.toLowerCase() !== "all") {
+      const jt = jobTypeParam.trim().toLowerCase();
+      if (jt.includes("full")) {
+        query = query.or("job_type.ilike.%full%,job_type.eq.full-time,job_type.eq.full_time");
+      } else if (jt.includes("contract")) {
+        query = query.or("job_type.ilike.%contract%,job_type.eq.contractor");
+      } else if (jt.includes("part")) {
+        query = query.ilike("job_type", "%part%");
+      } else if (jt.includes("intern")) {
+        query = query.or("job_type.ilike.%intern%,job_type.eq.internship");
+      } else {
+        query = query.ilike("job_type", "%" + sanitizeSearchQuery(jobTypeParam) + "%");
+      }
+    }
+
+    if (levelParam && levelParam.trim() && levelParam.toLowerCase() !== "all") {
+      const lvl = levelParam.trim().toLowerCase();
+      if (lvl.includes("lead") || lvl.includes("staff")) {
+        query = query.or("title.ilike.%staff%,title.ilike.%principal%,title.ilike.%lead%");
+      } else if (lvl.includes("senior")) {
+        query = query.or("title.ilike.%senior%,title.ilike.%sr.%");
+      } else if (lvl.includes("entry") || lvl.includes("junior")) {
+        query = query.or("title.ilike.%junior%,title.ilike.%entry%,title.ilike.%associate%");
+      } else if (lvl.includes("mid")) {
+        query = query
+          .not("title", "ilike", "%senior%")
+          .not("title", "ilike", "%sr.%")
+          .not("title", "ilike", "%staff%")
+          .not("title", "ilike", "%principal%")
+          .not("title", "ilike", "%lead%")
+          .not("title", "ilike", "%junior%")
+          .not("title", "ilike", "%entry%")
+      }
     }
 
     // Search query matching across title, company, location, category, description

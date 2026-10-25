@@ -788,6 +788,9 @@ function JobsPageInner() {
       category: selectedCategory,
       search,
       remoteOnly,
+      location: selectedLocation,
+      level: selectedLevel,
+      jobType: selectedJobType,
       isPro,
       sortBy: effectiveSortBy,
       candidate: effectiveCandidate,
@@ -837,6 +840,9 @@ function JobsPageInner() {
         category: selectedCategory,
         search,
         remoteOnly,
+        location: selectedLocation,
+        level: selectedLevel,
+        jobType: selectedJobType,
         isPro,
         sortBy: effectiveSortBy,
         candidate: effectiveCandidate,
@@ -2618,8 +2624,8 @@ function JobsPageInner() {
                         );
                       })}
 
-                      {/* Load More Pagination */}
-                      {liveJobs.length < totalCount && (
+                      {/* Load More Pagination: strictly scoped to tabs with active server-side pagination */}
+                      {activeTab === "recommended" && liveJobs.length < totalCount && (
                         <div className="pt-4 text-center">
                           <button
                             type="button"
