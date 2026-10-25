@@ -34,18 +34,6 @@ function getChromePath(): string {
   return "/usr/bin/google-chrome";
 }
 
-function getStaticDir(): string {
-  const outDir = path.resolve(process.cwd(), "out");
-  if (fs.existsSync(outDir) && fs.existsSync(path.join(outDir, "jobs.html"))) {
-    return outDir;
-  }
-  const cfDir = path.resolve(process.cwd(), ".vercel/output/static");
-  if (fs.existsSync(cfDir)) {
-    return cfDir;
-  }
-  return outDir;
-}
-
 const PORT = 3599;
 
 const MIME_TYPES: Record<string, string> = {
@@ -61,23 +49,68 @@ const MIME_TYPES: Record<string, string> = {
 };
 
 function createStaticServer() {
+  const rootDir = process.cwd();
+  const outDir = path.resolve(rootDir, "out");
+  const nextDir = path.resolve(rootDir, ".next");
+  const publicDir = path.resolve(rootDir, "public");
+
   return http.createServer((req, res) => {
-    let cleanUrl = req.url?.split("?")[0].split("#")[0] || "/";
-    if (cleanUrl === "/") cleanUrl = "/index.html";
+    const rawUrl = req.url || "/";
+    const [pathname] = rawUrl.split("?");
+
+    // 1. Next.js static asset request: /_next/static/...
+    if (pathname.startsWith("/_next/static/")) {
+      const relPath = pathname.replace(/^\/_next\/static\//, "");
+      const candidates = [
+        path.join(outDir, "_next", "static", relPath),
+        path.join(nextDir, "static", relPath),
+      ];
+      for (const cand of candidates) {
+        if (fs.existsSync(cand) && fs.statSync(cand).isFile()) {
+          const ext = path.extname(cand).toLowerCase();
+          res.writeHead(200, { "Content-Type": MIME_TYPES[ext] || "application/octet-stream" });
+          fs.createReadStream(cand).pipe(res);
+          return;
+        }
+      }
+      res.writeHead(404, { "Content-Type": "text/plain" });
+      res.end("Not Found");
+      return;
+    }
+
+    // 2. Public static file: e.g. /favicon.ico, /careermonke.svg
+    const publicCand = path.join(publicDir, pathname);
+    if (fs.existsSync(publicCand) && fs.statSync(publicCand).isFile()) {
+      const ext = path.extname(publicCand).toLowerCase();
+      res.writeHead(200, { "Content-Type": MIME_TYPES[ext] || "application/octet-stream" });
+      fs.createReadStream(publicCand).pipe(res);
+      return;
+    }
+
+    // 3. Page HTML resolution
+    let cleanUrl = pathname === "/" ? "/index.html" : pathname;
     if (!path.extname(cleanUrl)) {
       cleanUrl = cleanUrl + ".html";
     }
 
-    const filePath = path.join(getStaticDir(), cleanUrl);
+    const htmlCandidates = [
+      path.join(outDir, cleanUrl),
+      path.join(nextDir, "server", "app", cleanUrl),
+      path.join(nextDir, "server", "pages", cleanUrl),
+      path.join(rootDir, ".vercel", "output", "static", cleanUrl),
+    ];
 
-    if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
-      const ext = path.extname(filePath).toLowerCase();
-      res.writeHead(200, { "Content-Type": MIME_TYPES[ext] || "application/octet-stream" });
-      fs.createReadStream(filePath).pipe(res);
-    } else {
-      res.writeHead(404, { "Content-Type": "text/plain" });
-      res.end("Not Found");
+    for (const cand of htmlCandidates) {
+      if (fs.existsSync(cand) && fs.statSync(cand).isFile()) {
+        const ext = path.extname(cand).toLowerCase();
+        res.writeHead(200, { "Content-Type": MIME_TYPES[ext] || "text/html" });
+        fs.createReadStream(cand).pipe(res);
+        return;
+      }
     }
+
+    res.writeHead(404, { "Content-Type": "text/plain" });
+    res.end("Not Found: " + pathname);
   });
 }
 
@@ -297,14 +330,18 @@ async function runSuite() {
     await setupPageMocks(page, { isSigned: true, isPro: true, cookieNotice: false });
 
     // Step A: Initial load of recommended jobs feed
-    await page.goto(`http://localhost:${PORT}/jobs`, { waitUntil: "networkidle0" });
+    await page.goto(`http://localhost:${PORT}/jobs`, { waitUntil: "domcontentloaded" });
     await page.waitForSelector('[data-testid="job-card"]', { timeout: 8000 });
     const initialUrl = page.url();
     assert.ok(initialUrl.includes("/jobs"), "Initial URL is /jobs");
 
     // Step B: Click a job card to open in-place detail view
-    const firstCard = await page.waitForSelector('[data-testid="job-card"]', { timeout: 8000 });
-    await firstCard?.click();
+    await page.waitForSelector('[data-testid="job-card"]', { timeout: 8000 });
+    await new Promise((r) => setTimeout(r, 400));
+    await page.evaluate(() => {
+      const card = document.querySelector('[data-testid="job-card"]') as HTMLElement;
+      if (card) card.click();
+    });
 
     // Verify detail view is visible and URL has id param
     await page.waitForSelector('[aria-label="Back to jobs list"]', { timeout: 6000 });
@@ -332,7 +369,7 @@ async function runSuite() {
     console.log("  -> [PASS-LOCAL] Browser Forward restored detail view and URL id parameter.");
 
     // Step E: Real Browser Page Reload
-    await page.reload({ waitUntil: "networkidle0" });
+    await page.reload({ waitUntil: "domcontentloaded" });
     await new Promise((r) => setTimeout(r, 600));
     const urlAfterReload = page.url();
     assert.ok(urlAfterReload.includes("id="), `Page reload preserved id param: ${urlAfterReload}`);
