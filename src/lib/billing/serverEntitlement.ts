@@ -5,7 +5,7 @@ import { verifyLaunchPass } from "./launchPass";
 export interface ServerEntitlementOptions {
   launchPass?: string | null;
   env?: Record<string, any>;
-  headers?: Headers | Record<string, any>;
+  headers?: Headers | Record<string, any> | null;
 }
 
 /**
@@ -25,6 +25,7 @@ export async function getServerEntitlement(
     canAccessAi: false,
     isPro: false,
     status: "none",
+    accessSource: "none",
     planName: "Free Tier",
     inGracePeriod: false,
   };
@@ -80,6 +81,7 @@ export async function getServerEntitlement(
               canAccessAi: tier === "ai",
               isPro: true,
               status: "in_grace_period",
+              accessSource: "subscription",
               planName:
                 sub.plan_id === PLAN_INTERNATIONAL.id
                   ? PLAN_INTERNATIONAL.name
@@ -103,6 +105,7 @@ export async function getServerEntitlement(
               canAccessAi: tier === "ai",
               isPro: true,
               status: sub.status,
+              accessSource: "subscription",
               planName:
                 sub.plan_id === PLAN_INTERNATIONAL.id
                   ? PLAN_INTERNATIONAL.name
@@ -152,8 +155,9 @@ export async function getServerEntitlement(
           canAccessScores: tier === "ai",
           canAccessAi: tier === "ai",
           isPro: true,
-          status: "active",
-          planName: tier === "ai" ? "Launch AI Pass" : "Launch Listings Pass",
+          status: "none", // Separate from paid subscription: explicitly not a paid subscription
+          accessSource: "launch_pass",
+          planName: tier === "ai" ? "Launch Access (AI Tier)" : "Launch Access (Listings Tier)",
           inGracePeriod: false,
           expirationDate: passResult.expiresAt,
         };

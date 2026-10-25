@@ -120,6 +120,7 @@ export interface ProAccessStatus {
   canAccessAi: boolean;
   isPro: boolean;
   status: SubscriptionStatus;
+  accessSource?: "subscription" | "launch_pass" | "none";
   planName?: string;
   inGracePeriod: boolean;
   graceDaysLeft?: number;

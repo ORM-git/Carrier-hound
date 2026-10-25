@@ -9,21 +9,25 @@ export const runtime = "edge";
  * 
  * Returns the verified entitlement status for the current session.
  * Reads server-managed database subscriptions or verified server-signed launch passes.
+ * Fails closed to tier="none" on anonymous requests, missing credentials, or errors.
  */
 export async function GET(req: Request) {
+  const freeDefault = {
+    tier: "none",
+    canAccessListings: false,
+    canAccessScores: false,
+    canAccessAi: false,
+    isPro: false,
+    status: "none",
+    accessSource: "none",
+    planName: "Free Tier",
+    inGracePeriod: false,
+  };
+
   try {
     const authHeader = req.headers.get("authorization") || req.headers.get("Authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return NextResponse.json({
-        tier: "none",
-        canAccessListings: false,
-        canAccessScores: false,
-        canAccessAi: false,
-        isPro: false,
-        status: "none",
-        planName: "Free Tier",
-        inGracePeriod: false,
-      });
+      return NextResponse.json(freeDefault);
     }
 
     const token = authHeader.replace("Bearer ", "").trim();
@@ -33,8 +37,12 @@ export async function GET(req: Request) {
       "https://szakevhxhwpeskidvtfs.supabase.co";
     const anonKey =
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-      process.env.SUPABASE_ANON_KEY ||
-      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.dummy";
+      process.env.SUPABASE_ANON_KEY;
+
+    if (!anonKey) {
+      console.error("[Billing Status] Missing required environment variable: NEXT_PUBLIC_SUPABASE_ANON_KEY");
+      return NextResponse.json(freeDefault);
+    }
 
     const supabase = createClient(supabaseUrl, anonKey, {
       auth: { persistSession: false },
@@ -46,16 +54,7 @@ export async function GET(req: Request) {
     } = await supabase.auth.getUser(token);
 
     if (userError || !user) {
-      return NextResponse.json({
-        tier: "none",
-        canAccessListings: false,
-        canAccessScores: false,
-        canAccessAi: false,
-        isPro: false,
-        status: "none",
-        planName: "Free Tier",
-        inGracePeriod: false,
-      });
+      return NextResponse.json(freeDefault);
     }
 
     const launchPass = req.headers.get("x-cm-launch-pass");
@@ -67,15 +66,6 @@ export async function GET(req: Request) {
     return NextResponse.json(entitlement);
   } catch (err: any) {
     console.error("[Billing Status] Error checking status:", err);
-    return NextResponse.json({
-      tier: "none",
-      canAccessListings: false,
-      canAccessScores: false,
-      canAccessAi: false,
-      isPro: false,
-      status: "none",
-      planName: "Free Tier",
-      inGracePeriod: false,
-    });
+    return NextResponse.json(freeDefault);
   }
 }

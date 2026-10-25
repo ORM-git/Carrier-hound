@@ -169,7 +169,8 @@ export async function executeAiCore(
   authHeader: string | null | undefined,
   body: any,
   deps: AiServiceDeps = {},
-  ipRateLimitPrefix: string = "ai:ip:"
+  ipRateLimitPrefix: string = "ai:ip:",
+  requestHeaders?: Headers | Record<string, string | string[] | undefined> | null
 ): Promise<AiCoreResponse> {
   const activeDeps: AiServiceDeps = deps;
   try {
@@ -287,8 +288,8 @@ export async function executeAiCore(
 
     // 2. Server-side Pro Entitlement check (Single Source of Truth)
     const entitlement = activeDeps.getServerEntitlement
-      ? await activeDeps.getServerEntitlement(user.id, { env: activeDeps.env })
-      : await getServerEntitlement(user.id, { env: activeDeps.env });
+      ? await activeDeps.getServerEntitlement(user.id, { headers: requestHeaders || undefined, env: activeDeps.env })
+      : await getServerEntitlement(user.id, { headers: requestHeaders || undefined, env: activeDeps.env });
     const canAccessAi = Boolean(
       entitlement.canAccessAi ?? (entitlement.isPro && entitlement.tier !== "listings")
     );
@@ -502,7 +503,7 @@ export async function handleAiRequest(req: Request, deps: AiServiceDeps = {}): P
   const clientIp = getClientIpFromRequest(req);
   const authHeader = req.headers.get("authorization") || req.headers.get("Authorization");
   const body = await req.json().catch(() => ({}));
-  const res = await executeAiCore(clientIp, authHeader, body, deps, "ai:ip:");
+  const res = await executeAiCore(clientIp, authHeader, body, deps, "ai:ip:", req.headers);
   return NextResponse.json(res.body, {
     status: res.statusCode,
     headers: res.headers,
@@ -545,7 +546,7 @@ export async function handleNetlifyAiRequest(
     };
   }
 
-  const res = await executeAiCore(clientIp, authHeader, body, deps, "ip:");
+  const res = await executeAiCore(clientIp, authHeader, body, deps, "ip:", event.headers);
   return {
     statusCode: res.statusCode,
     headers: { ...baseHeaders, ...(res.headers || {}) },

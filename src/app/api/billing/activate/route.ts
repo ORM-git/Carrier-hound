@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { signLaunchPass, LAUNCH_DURATION_MS } from "@/lib/billing/launchPass";
+import { SIGNING_SECRET_ENV_NAME } from "@/lib/billing/launchPass";
 import { UserTier } from "@/lib/billing/types";
 
 export const runtime = "edge";
@@ -8,10 +8,14 @@ export const runtime = "edge";
 /**
  * POST /api/billing/activate
  * 
- * Server-backed activation endpoint for launch access with customer payments OFF.
- * Requires an authenticated user session (Bearer token).
- * Fails closed with 401 for anonymous / public callers.
- * Issues a cryptographically signed HMAC launch pass token without modifying database subscription rows.
+ * Server-backed activation endpoint for launch access.
+ * 
+ * SECURITY CONTROLS:
+ * 1. Requires an authenticated user session (Bearer JWT). Anonymous / unauthenticated callers fail closed (401).
+ * 2. Requires dedicated LAUNCH_PASS_SECRET. Missing secret fails closed (503). Zero dummy/fallback keys.
+ * 3. Enforces Owner Eligibility Policy: Self-activation is BLOCKED pending an owner-approved eligibility
+ *    policy and database registry schema. No open, unapproved, repeated grants.
+ * 4. Existing paid subscribers remain active and verified via Supabase subscriptions table.
  */
 export async function POST(req: Request) {
   try {
@@ -30,8 +34,18 @@ export async function POST(req: Request) {
       "https://szakevhxhwpeskidvtfs.supabase.co";
     const anonKey =
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-      process.env.SUPABASE_ANON_KEY ||
-      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.dummy";
+      process.env.SUPABASE_ANON_KEY;
+
+    if (!anonKey) {
+      return NextResponse.json(
+        {
+          error: "Missing required environment variable: NEXT_PUBLIC_SUPABASE_ANON_KEY",
+          missingVariable: "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+          code: "MISSING_ENV_CONFIG",
+        },
+        { status: 500 }
+      );
+    }
 
     const supabase = createClient(supabaseUrl, anonKey, {
       auth: { persistSession: false },
@@ -49,50 +63,41 @@ export async function POST(req: Request) {
       );
     }
 
-    let body: { tier?: UserTier } = {};
-    try {
-      body = await req.json();
-    } catch {
-      // default to listings
+    // Check dedicated signing secret existence (never log its value or length)
+    const signingSecret =
+      process.env[SIGNING_SECRET_ENV_NAME] ||
+      (typeof process !== "undefined" && process?.env?.[SIGNING_SECRET_ENV_NAME]);
+    if (!signingSecret) {
+      return NextResponse.json(
+        {
+          error: `Missing required launch pass signing secret: ${SIGNING_SECRET_ENV_NAME}`,
+          missingVariable: SIGNING_SECRET_ENV_NAME,
+          code: "MISSING_SIGNING_SECRET",
+        },
+        { status: 503 }
+      );
     }
 
-    const requestedTier: UserTier =
-      body.tier === "ai" ? "ai" : "listings";
-
-    // Sign a launch pass token for this authenticated user
-    const { token: launchToken, expiresAt } = await signLaunchPass(
-      user.id,
-      requestedTier,
-      LAUNCH_DURATION_MS
-    );
-
-    const response = NextResponse.json({
-      success: true,
-      tier: requestedTier,
-      token: launchToken,
-      expiresAt,
-      status: "active",
-      planName: requestedTier === "ai" ? "Launch AI Pass" : "Launch Listings Pass",
-      canAccessListings: true,
-      canAccessScores: requestedTier === "ai",
-      canAccessAi: requestedTier === "ai",
-      isPro: true,
-    });
-
-    // Set HttpOnly cookie for seamless session persistence
-    response.cookies.set("cm_launch_pass", launchToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-      maxAge: Math.floor(LAUNCH_DURATION_MS / 1000),
-    });
-
-    return response;
-  } catch (err: any) {
-    console.error("[Billing Activate] Error activating launch tier:", err);
+    // STOP UNAPPROVED OPEN GRANTS:
+    // Self-activation is blocked pending owner-approved eligibility policy and server-side registry.
+    // Unapproved audience, duration, and renewal rules are strictly prevented.
     return NextResponse.json(
-      { error: "Failed to activate launch tier", details: err?.message },
+      {
+        error:
+          "Launch access self-activation is blocked pending owner-approved eligibility policy and server registry schema.",
+        code: "ACTIVATION_BLOCKED_PENDING_POLICY",
+        status: "blocked",
+        missingPrerequisites: [
+          "OWNER_ELIGIBILITY_POLICY",
+          "LAUNCH_PASS_REGISTRY_TABLE",
+        ],
+      },
+      { status: 403 }
+    );
+  } catch (err: any) {
+    console.error("[Billing Activate] Error processing activation request:", err);
+    return NextResponse.json(
+      { error: "Failed to process activation request", details: err?.message },
       { status: 500 }
     );
   }

@@ -357,15 +357,62 @@ export interface SupportedCountryOption {
   shortLabel: string;
 }
 
-// Derived from supported geographic data registry (COUNTRY_CENTROIDS)
-export const SUPPORTED_COUNTRY_OPTIONS: SupportedCountryOption[] = [
-  { code: "", label: "All Locations (Worldwide)", shortLabel: "Worldwide" },
-  ...Object.entries(COUNTRY_CENTROIDS).map(([code, data]) => ({
-    code,
-    label: data.name,
-    shortLabel: code === "US" ? "US" : code === "GB" ? "UK" : data.name,
-  })),
-];
+/**
+ * ISO 2-letter country codes actively populated and indexed in the active jobs database
+ * (ref: `CREATE INDEX jobs_country_code_idx ON public.jobs (country_code) WHERE status = 'active'`).
+ */
+export const ACTIVE_JOB_COUNTRY_CODES: readonly string[] = [
+  "US", // United States
+  "GB", // United Kingdom
+  "CA", // Canada
+  "DE", // Germany
+  "IN", // India
+  "AU", // Australia
+  "FR", // France
+  "JP", // Japan
+  "NL", // Netherlands
+  "SG", // Singapore
+  "IE", // Ireland
+  "SE", // Sweden
+  "CH", // Switzerland
+  "ES", // Spain
+  "BR", // Brazil
+  "PL", // Poland
+  "IL", // Israel
+] as const;
+
+/**
+ * Derives user-facing country filter options directly from active-job country_code data,
+ * resolving labels against verified centroid geography.
+ */
+export function deriveCountryOptionsFromActiveJobs(
+  activeCodes?: readonly string[] | string[]
+): SupportedCountryOption[] {
+  const codesToUse =
+    activeCodes && activeCodes.length > 0
+      ? Array.from(new Set(activeCodes.map((c) => c.toUpperCase().trim())))
+      : ACTIVE_JOB_COUNTRY_CODES;
+
+  const options: SupportedCountryOption[] = [
+    { code: "", label: "All Locations (Worldwide)", shortLabel: "Worldwide" },
+  ];
+
+  for (const code of codesToUse) {
+    const meta = COUNTRY_CENTROIDS[code];
+    if (meta) {
+      options.push({
+        code,
+        label: meta.name,
+        shortLabel: code === "US" ? "US" : code === "GB" ? "UK" : meta.name,
+      });
+    }
+  }
+
+  return options;
+}
+
+// Derived from active-job country_code dataset
+export const SUPPORTED_COUNTRY_OPTIONS: SupportedCountryOption[] = deriveCountryOptionsFromActiveJobs();
 
 /**
  * Normalizes raw location string and country_code into a resolved Geo target.
