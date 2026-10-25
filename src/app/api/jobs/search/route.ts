@@ -3,18 +3,19 @@ import { createClient } from "@supabase/supabase-js";
 import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
 import { formatSalary } from "@/lib/salary/parser";
 import { checkRequiredEnv } from "@/lib/api/envCheck";
+import { getRuntimeEnv } from "@/lib/ai/serviceHandler";
 
 export const runtime = "edge";
 
 function getSupabaseAdmin() {
   const supabaseUrl =
-    process.env.NEXT_PUBLIC_SUPABASE_URL ||
-    process.env.SUPABASE_URL ||
+    getRuntimeEnv("NEXT_PUBLIC_SUPABASE_URL") ||
+    getRuntimeEnv("SUPABASE_URL") ||
     "https://szakevhxhwpeskidvtfs.supabase.co";
   const serviceKey =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.SUPABASE_SERVICE_KEY ||
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    getRuntimeEnv("SUPABASE_SERVICE_ROLE_KEY") ||
+    getRuntimeEnv("SUPABASE_SERVICE_KEY");
+
 
   const missing = checkRequiredEnv(
     {
