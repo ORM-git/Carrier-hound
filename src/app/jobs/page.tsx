@@ -1323,25 +1323,23 @@ function JobsPageInner() {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col font-sans">
-      {!user && <GuideHeader />}
+      {/* <GuideHeader /> replaced by unified AppIconRail / AppTopBar shell before and after login (!user) */}
 
-      {/* Left Icon Rail (fixed 72px wide, full height, white, #E2E8F0; bottom tab bar on mobile) */}
-      {user && <AppIconRail />}
+      {/* Left Icon Rail (fixed 72px wide narrow / 240px expanded on desktop, bottom tab bar on mobile) */}
+      <AppIconRail />
 
-      {/* Main Content Area (offset by 72px on desktop when user is logged in) */}
-      <div className={`flex-1 ${user ? (isExpanded ? "md:pl-[240px]" : "md:pl-[72px]") : ""} flex flex-col min-w-0 ${user ? "pb-6 md:pb-0" : ""} transition-[padding] duration-300 ease-[cubic-bezier(0.2,0,0,1)]`}>
-        {/* Top bar for logged-in user: 56px, white, 1px bottom border */}
-        {user && (
-          <AppTopBar
-            pageLabel="JOBS"
-            tabs={jobTabs}
-            searchValue={search}
-            onSearchChange={setSearch}
-            searchPlaceholder="Search by title or company"
-            user={user}
-            isPro={isPro}
-          />
-        )}
+      {/* Main Content Area (offset by 72px or 240px on desktop) */}
+      <div className={`flex-1 ${isExpanded ? "md:pl-[240px]" : "md:pl-[72px]"} flex flex-col min-w-0 pb-6 md:pb-0 transition-[padding] duration-300 ease-[cubic-bezier(0.2,0,0,1)]`}>
+        {/* Top bar for both guest and signed-in users: 56px, white, 1px bottom border */}
+        <AppTopBar
+          pageLabel="JOBS"
+          tabs={jobTabs}
+          searchValue={search}
+          onSearchChange={setSearch}
+          searchPlaceholder="Search by title or company"
+          user={user}
+          isPro={isPro}
+        />
         <main
           id="main-content"
           data-testid="jobs-main-content"
@@ -1371,134 +1369,26 @@ function JobsPageInner() {
             </div>
           ) : (
             <>
-              {/* Header Row: Title "JOBS" + Tabs with Count Badges + Search Box (signed-out view) */}
-              <div className="space-y-4">
-                {!user ? (
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="flex flex-wrap items-center gap-4 sm:gap-6 min-w-0 max-w-full">
-                      <h1 className="text-[18px] font-bold text-[#0F172A] tracking-wider uppercase">
-                        JOBS
-                      </h1>
-
-                      {/* Tabs: Recommended, Liked, Applied, External */}
-                      <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-200/80 border border-slate-300/70 overflow-x-auto max-w-full scrollbar-thin">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setActiveTab("recommended");
-                            setPage(1);
-                          }}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 min-h-[44px] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
-                            activeTab === "recommended"
-                              ? "bg-white text-blue-600 shadow-none ring-1 ring-[#E2E8F0]"
-                              : "text-[#334155] hover:text-[#0F172A]"
-                          }`}
-                        >
-                          <span>Recommended</span>
-                          <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-blue-100 text-blue-700">
-                            {totalCount > 0 ? totalCount.toLocaleString() : liveJobs.length}
-                          </span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setActiveTab("saved");
-                            setPage(1);
-                          }}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 min-h-[44px] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
-                            activeTab === "saved" || activeTab === "liked"
-                              ? "bg-white text-blue-600 shadow-none ring-1 ring-[#E2E8F0]"
-                              : "text-[#334155] hover:text-[#0F172A]"
-                          }`}
-                        >
-                          <span>Saved</span>
-                          <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-slate-200 text-[#334155]">
-                            {savedCount}
-                          </span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setActiveTab("applied");
-                            setPage(1);
-                          }}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 min-h-[44px] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
-                            activeTab === "applied"
-                              ? "bg-white text-blue-600 shadow-none ring-1 ring-[#E2E8F0]"
-                              : "text-[#334155] hover:text-[#0F172A]"
-                          }`}
-                        >
-                          <span>Applied</span>
-                          <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-slate-200 text-[#334155]">
-                            {appliedCount}
-                          </span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setActiveTab("external");
-                            setPage(1);
-                          }}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 min-h-[44px] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
-                            activeTab === "external"
-                              ? "bg-white text-blue-600 shadow-none ring-1 ring-[#E2E8F0]"
-                              : "text-[#334155] hover:text-[#0F172A]"
-                          }`}
-                        >
-                          <span>External</span>
-                          {!loadingJobs && externalJobsCount > 0 && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-slate-200 text-[#334155]">
-                              {externalJobsCount}
-                            </span>
-                          )}
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Search Box on the Right */}
-                    <div className="relative w-full sm:w-80">
-                      <Search className="w-4 h-4 text-[#475569] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                      <input
-                        type="text"
-                        aria-label="Search by job title, company, or keyword"
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                        placeholder="Search by job title, company, or keyword..."
-                        className="w-full text-xs sm:text-sm pl-10 pr-11 py-2.5 rounded-xl border border-[#CBD5E1] bg-white text-[#0F172A] placeholder:text-[#475569] focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1 shadow-none min-h-[44px]"
-                      />
-                      {search && (
-                        <button
-                          type="button"
-                          onClick={() => setSearch("")}
-                          aria-label="Clear search text"
-                          className="absolute right-1 top-1/2 -translate-y-1/2 text-[#475569] hover:text-[#0F172A] w-10 h-10 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full hover:bg-slate-100 transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  /* Mobile tabs for logged-in user when AppTopBar tabs are hidden */
-                  <div className="relative sm:hidden max-w-full">
-                    <div className="flex items-center gap-1 p-1 pr-8 rounded-xl bg-slate-200/80 border border-slate-300/70 overflow-x-auto no-scrollbar">
-                      {jobTabs.map((tab) => (
-                        <button
-                          key={tab.id}
-                          ref={tab.active ? activeTabRef : undefined}
-                          type="button"
-                          onClick={tab.onClick}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 min-h-[44px] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] shrink-0 ${
-                            tab.active
-                              ? "bg-white text-blue-600 shadow-none ring-1 ring-[#E2E8F0]"
-                              : "text-[#334155] hover:text-[#0F172A]"
-                          }`}
-                        >
-                          <span>{tab.label}</span>
-                          {tab.count !== undefined && (
+              {/* Header Row: Tabs with Count Badges (compact mobile view <640px) */}
+              <div className="space-y-3 sm:hidden max-w-full">
+                {/* Mobile tabs (<640px) */}
+                <div className="relative max-w-full">
+                  <div className="flex items-center gap-1 p-1 pr-8 rounded-xl bg-slate-200/80 border border-slate-300/70 overflow-x-auto scrollbar-thin">
+                    {jobTabs.map((tab) => (
+                      <button
+                        key={tab.id}
+                        ref={tab.active ? activeTabRef : undefined}
+                        type="button"
+                        onClick={tab.onClick}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 min-h-[44px] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] shrink-0 ${
+                          tab.active
+                            ? "bg-white text-blue-600 shadow-none ring-1 ring-[#E2E8F0]"
+                            : "text-[#334155] hover:text-[#0F172A]"
+                        }`}
+                      >
+                        <span>{tab.label}</span>
+                        {tab.id === "external" ? (
+                          !loadingJobs && externalJobsCount > 0 && (
                             <span
                               className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
                                 tab.active ? "bg-blue-100 text-blue-700" : "bg-slate-200 text-[#334155]"
@@ -1506,16 +1396,52 @@ function JobsPageInner() {
                             >
                               {tab.count}
                             </span>
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-slate-200 to-transparent rounded-r-xl" />
+                          )
+                        ) : (
+                          tab.count !== undefined && (
+                            <span
+                              className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                                tab.active ? "bg-blue-100 text-blue-700" : "bg-slate-200 text-[#334155]"
+                              }`}
+                            >
+                              {tab.count}
+                            </span>
+                          )
+                        )}
+                      </button>
+                    ))}
                   </div>
-                )}
+                  <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-slate-200 to-transparent rounded-r-xl" />
+                </div>
 
+                {/* Mobile search bar (<640px) */}
+                <div className="relative w-full">
+                  <Search className="w-4 h-4 text-[#475569] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    aria-label="Search by job title, company, or keyword"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search by job title, company, or keyword..."
+                    className="w-full text-xs sm:text-sm pl-10 pr-11 py-2.5 rounded-xl border border-[#CBD5E1] bg-white text-[#0F172A] placeholder:text-[#475569] focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1 shadow-none min-h-[44px]"
+                  />
+                  {search && (
+                    <button
+                      type="button"
+                      onClick={() => setSearch("")}
+                      aria-label="Clear search text"
+                      className="absolute right-1 top-1/2 -translate-y-1/2 text-[#475569] hover:text-[#0F172A] w-10 h-10 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full hover:bg-slate-100 transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-4">
                 {/* 3. COMPACT FILTER TOOLBAR */}
-                <div className={`${user ? "sticky top-[56px]" : "sticky top-[64px]"} z-tk-sticky py-1 space-y-1.5`}>
+                <div className="sticky top-[56px] z-tk-sticky py-1 space-y-1.5">
+                  {/* sticky top-[64px] legacy support */}
                   {/* MOBILE VIEW (under md): Compact Filters Button + Sort Dropdown */}
                   <div className="flex md:hidden items-center justify-between w-full gap-2">
                     <button

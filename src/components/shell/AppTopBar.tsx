@@ -177,107 +177,137 @@ export default function AppTopBar({
           )}
 
           {/* =================================================================== */}
-          {/* FAR RIGHT: Avatar, Full Name bold 13px, Plan Pill Free/Pro          */}
+          {/* FAR RIGHT: Avatar & Menu (User) OR Log In & Get Started (Guest)    */}
           {/* =================================================================== */}
-          <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
-            {/* Promo pill matching signed-in reference */}
-            {!isPro && (
-              <Link
-                href="/pricing"
-                aria-label="Upgrade to Pro"
-                className="hidden xl:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 text-xs font-bold text-[#1E3A8A] hover:border-blue-300 transition-colors shadow-2xs shrink-0"
-              >
-                <span className="w-4 h-4 rounded-full bg-[#2563EB] text-white flex items-center justify-center text-[10px]">⚡</span>
-                <span>Pro: Direct ATS & AI Tailor</span>
-                <span className="text-[#2563EB] font-bold">›</span>
-              </Link>
-            )}
-
-            {/* Mobile search toggle if search is enabled */}
-            {onSearchChange && (
-              <button
-                type="button"
-                onClick={() => setMobileSearchOpen(!mobileSearchOpen)}
-                aria-label="Toggle search input"
-                className="md:hidden w-10 h-10 min-h-[44px] min-w-[44px] rounded-full flex items-center justify-center text-[#475569] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
-              >
-                <Search className="w-4 h-4" />
-              </button>
-            )}
-
-            {/* Circular avatar with user's initial on #2563EB + full name bold 13px + Dropdown */}
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setAvatarMenuOpen((prev) => !prev)}
-                aria-label="User avatar menu"
-                aria-haspopup="true"
-                aria-expanded={avatarMenuOpen}
-                className="flex items-center justify-center gap-2 min-h-[44px] min-w-[44px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] rounded-full cursor-pointer"
-              >
-                <div className="w-8 h-8 rounded-full bg-[#2563EB] text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs">
-                  {userInitial}
-                </div>
-                <span className="font-bold text-[13px] text-[#0F172A] hidden lg:inline truncate max-w-[120px]">
-                  {displayName}
-                </span>
-                <ChevronDown className={`w-3 h-3 text-[#475569] hidden sm:inline transition-transform ${avatarMenuOpen ? "rotate-180" : ""}`} />
-              </button>
-
-              {avatarMenuOpen && (
-                <>
-                  <div className="fixed inset-0 z-40" role="presentation" onClick={() => setAvatarMenuOpen(false)} />
-                  <div
-                    data-testid="avatar-menu-dropdown"
-                    className="absolute right-0 top-full mt-2 w-56 bg-white border border-[#E2E8F0] rounded-xl shadow-xl z-50 overflow-hidden text-left py-1.5 animate-fadeIn"
-                  >
-                    <div className="px-4 py-2.5 border-b border-[#F1F5F9]">
-                      <p className="text-[11px] font-semibold text-[#475569] uppercase tracking-wider">Signed in as</p>
-                      <p className="text-[13px] font-bold text-[#0F172A] truncate mt-0.5">{displayName}</p>
-                      <p className="text-[11px] text-[#475569] truncate">{user?.email}</p>
-                    </div>
-
-                    <div className="p-1 space-y-0.5">
-                      <Link
-                        href="/profile"
-                        onClick={() => setAvatarMenuOpen(false)}
-                        className="flex items-center gap-2.5 px-3 py-2 text-[13px] text-[#0F172A] hover:bg-[#EFF6FF] hover:text-[#2563EB] rounded-lg transition-colors font-medium"
-                      >
-                        <UserIcon className="w-4 h-4 text-[#475569]" />
-                        <span>Profile</span>
-                      </Link>
-                      <Link
-                        href="/settings"
-                        onClick={() => setAvatarMenuOpen(false)}
-                        className="flex items-center gap-2.5 px-3 py-2 text-[13px] text-[#0F172A] hover:bg-[#EFF6FF] hover:text-[#2563EB] rounded-lg transition-colors font-medium"
-                      >
-                        <Settings className="w-4 h-4 text-[#475569]" />
-                        <span>Settings</span>
-                      </Link>
-                      <div className="my-1 border-t border-[#F1F5F9]" />
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          setAvatarMenuOpen(false);
-                          await signOutUser();
-                          router.push("/");
-                        }}
-                        className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-[#DC2626] hover:bg-[#FEF2F2] rounded-lg transition-colors font-medium text-left cursor-pointer"
-                      >
-                        <LogOut className="w-4 h-4" />
-                        <span>Sign Out</span>
-                      </button>
-                    </div>
-                  </div>
-                </>
+          {user ? (
+            <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
+              {/* Promo pill matching signed-in reference */}
+              {!isPro && (
+                <Link
+                  href="/pricing"
+                  aria-label="Upgrade to Pro"
+                  className="hidden xl:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 text-xs font-bold text-[#1E3A8A] hover:border-blue-300 transition-colors shadow-2xs shrink-0"
+                >
+                  <span className="w-4 h-4 rounded-full bg-[#2563EB] text-white flex items-center justify-center text-[10px]">⚡</span>
+                  <span>Pro: Direct ATS & AI Tailor</span>
+                  <span className="text-[#2563EB] font-bold">›</span>
+                </Link>
               )}
-            </div>
 
-            {/* Plan Pill ("Free" or "Pro") with neutral outline */}
-            <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold border border-[#CBD5E1] text-[#475569] bg-white shadow-none shrink-0">
-              {isPro ? "Pro" : "Free"}
-            </span>
-          </div>
+              {/* Mobile search toggle if search is enabled */}
+              {onSearchChange && (
+                <button
+                  type="button"
+                  onClick={() => setMobileSearchOpen(!mobileSearchOpen)}
+                  aria-label="Toggle search input"
+                  className="md:hidden w-10 h-10 min-h-[44px] min-w-[44px] rounded-full flex items-center justify-center text-[#475569] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
+                >
+                  <Search className="w-4 h-4" />
+                </button>
+              )}
+
+              {/* Circular avatar with user's initial on #2563EB + full name bold 13px + Dropdown */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setAvatarMenuOpen((prev) => !prev)}
+                  aria-label="User avatar menu"
+                  aria-haspopup="true"
+                  aria-expanded={avatarMenuOpen}
+                  className="flex items-center justify-center gap-2 min-h-[44px] min-w-[44px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] rounded-full cursor-pointer"
+                >
+                  <div className="w-8 h-8 rounded-full bg-[#2563EB] text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs">
+                    {userInitial}
+                  </div>
+                  <span className="font-bold text-[13px] text-[#0F172A] hidden lg:inline truncate max-w-[120px]">
+                    {displayName}
+                  </span>
+                  <ChevronDown className={`w-3 h-3 text-[#475569] hidden sm:inline transition-transform ${avatarMenuOpen ? "rotate-180" : ""}`} />
+                </button>
+
+                {avatarMenuOpen && (
+                  <>
+                    <div className="fixed inset-0 z-40" role="presentation" onClick={() => setAvatarMenuOpen(false)} />
+                    <div
+                      data-testid="avatar-menu-dropdown"
+                      className="absolute right-0 top-full mt-2 w-56 bg-white border border-[#E2E8F0] rounded-xl shadow-xl z-50 overflow-hidden text-left py-1.5 animate-fadeIn"
+                    >
+                      <div className="px-4 py-2.5 border-b border-[#F1F5F9]">
+                        <p className="text-[11px] font-semibold text-[#475569] uppercase tracking-wider">Signed in as</p>
+                        <p className="text-[13px] font-bold text-[#0F172A] truncate mt-0.5">{displayName}</p>
+                        <p className="text-[11px] text-[#475569] truncate">{user?.email}</p>
+                      </div>
+
+                      <div className="p-1 space-y-0.5">
+                        <Link
+                          href="/profile"
+                          onClick={() => setAvatarMenuOpen(false)}
+                          className="flex items-center gap-2.5 px-3 py-2 text-[13px] text-[#0F172A] hover:bg-[#EFF6FF] hover:text-[#2563EB] rounded-lg transition-colors font-medium"
+                        >
+                          <UserIcon className="w-4 h-4 text-[#475569]" />
+                          <span>Profile</span>
+                        </Link>
+                        <Link
+                          href="/settings"
+                          onClick={() => setAvatarMenuOpen(false)}
+                          className="flex items-center gap-2.5 px-3 py-2 text-[13px] text-[#0F172A] hover:bg-[#EFF6FF] hover:text-[#2563EB] rounded-lg transition-colors font-medium"
+                        >
+                          <Settings className="w-4 h-4 text-[#475569]" />
+                          <span>Settings</span>
+                        </Link>
+                        <div className="my-1 border-t border-[#F1F5F9]" />
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            setAvatarMenuOpen(false);
+                            await signOutUser();
+                            router.push("/");
+                          }}
+                          className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-[#DC2626] hover:bg-[#FEF2F2] rounded-lg transition-colors font-medium text-left cursor-pointer"
+                        >
+                          <LogOut className="w-4 h-4" />
+                          <span>Sign Out</span>
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Plan Pill ("Free" or "Pro") with neutral outline */}
+              <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold border border-[#CBD5E1] text-[#475569] bg-white shadow-none shrink-0">
+                {isPro ? "Pro" : "Free"}
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+              {/* Mobile search toggle if search is enabled */}
+              {onSearchChange && (
+                <button
+                  type="button"
+                  onClick={() => setMobileSearchOpen(!mobileSearchOpen)}
+                  aria-label="Toggle search input"
+                  className="md:hidden w-10 h-10 min-h-[44px] min-w-[44px] rounded-full flex items-center justify-center text-[#475569] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
+                >
+                  <Search className="w-4 h-4" />
+                </button>
+              )}
+
+              {/* Guest Action Buttons: Log in + Get started */}
+              <Link
+                href="/login"
+                className="inline-flex items-center justify-center h-9 px-3.5 sm:px-4 rounded-full text-[13px] font-medium text-[#0F172A] hover:bg-[#F1F5F9] transition-all duration-200 min-h-[44px] sm:min-h-[36px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
+              >
+                Log in
+              </Link>
+              <Link
+                href="/signup"
+                className="inline-flex items-center justify-center h-9 px-4 sm:px-5 rounded-full text-[13px] font-medium bg-[#2563EB] text-white hover:bg-[#1D4ED8] active:bg-[#1E40AF] transition-all duration-200 min-h-[44px] sm:min-h-[36px] shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] focus-visible:ring-offset-1"
+              >
+                Get started
+              </Link>
+            </div>
+          )}
         </div>
 
         {/* Mobile search dropdown bar when toggled */}
@@ -402,33 +432,54 @@ export default function AppTopBar({
           </nav>
         </div>
 
-        {/* Drawer Footer: User Profile & Sign Out (shrink-0 ensures always fully reachable) */}
-        <div className="pt-3 border-t border-[#E2E8F0] space-y-3 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-full bg-[#2563EB] text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs">
-              {userInitial}
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-[13px] font-bold text-[#0F172A] truncate">
-                {displayName}
-              </p>
-              <p className="text-[11px] text-[#475569] truncate">
-                {user?.email || "Signed in"}
-              </p>
-            </div>
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold border border-[#CBD5E1] text-[#475569] bg-white shrink-0">
-              {isPro ? "Pro" : "Free"}
-            </span>
-          </div>
+        {/* Drawer Footer: User Profile & Sign Out (User) OR Log In & Get Started (Guest) */}
+        <div className="pt-3 border-t border-[#E2E8F0] space-y-2 shrink-0">
+          {user ? (
+            <>
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-[#2563EB] text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs">
+                  {userInitial}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[13px] font-bold text-[#0F172A] truncate">
+                    {displayName}
+                  </p>
+                  <p className="text-[11px] text-[#475569] truncate">
+                    {user?.email || "Signed in"}
+                  </p>
+                </div>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold border border-[#CBD5E1] text-[#475569] bg-white shrink-0">
+                  {isPro ? "Pro" : "Free"}
+                </span>
+              </div>
 
-          <button
-            type="button"
-            onClick={handleSignOut}
-            className="w-full min-h-[44px] flex items-center gap-2.5 px-3 py-2 rounded-xl text-[14px] font-medium text-rose-600 hover:bg-rose-50 hover:text-rose-700 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"
-          >
-            <LogOut className="w-4 h-4" />
-            <span>Sign Out</span>
-          </button>
+              <button
+                type="button"
+                onClick={handleSignOut}
+                className="w-full min-h-[44px] flex items-center gap-2.5 px-3 py-2 rounded-xl text-[14px] font-medium text-rose-600 hover:bg-rose-50 hover:text-rose-700 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>Sign Out</span>
+              </button>
+            </>
+          ) : (
+            <div className="space-y-2">
+              <Link
+                href="/login"
+                onClick={() => setDrawerOpen(false)}
+                className="w-full min-h-[44px] rounded-full border border-[#CBD5E1] text-[#0F172A] hover:bg-[#F1F5F9] flex items-center justify-center font-medium text-[14px] transition-colors"
+              >
+                Log in
+              </Link>
+              <Link
+                href="/signup"
+                onClick={() => setDrawerOpen(false)}
+                className="w-full min-h-[44px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white flex items-center justify-center font-medium text-[14px] shadow-sm transition-colors"
+              >
+                Get started
+              </Link>
+            </div>
+          )}
         </div>
       </div>
     </>
