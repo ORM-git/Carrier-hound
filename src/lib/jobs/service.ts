@@ -199,24 +199,39 @@ export async function fetchLiveActiveJobCountryCodes(
 ): Promise<string[]> {
   try {
     const client = supabase || createClient();
-    const { data, error } = await client
-      .from("jobs_public")
-      .select("country_code")
-      .eq("status", "active")
-      .not("country_code", "is", null)
-      .limit(100);
-
-    if (error || !data || !Array.isArray(data)) {
-      return [];
-    }
-
     const set = new Set<string>();
-    data.forEach((row: any) => {
-      const code = (row.country_code || "").trim().toUpperCase();
-      if (code && code.length === 2) {
-        set.add(code);
+    const pageSize = 1000;
+    let from = 0;
+    let hasMore = true;
+    const maxPages = 15; // Complete coverage across up to 15,000 active jobs
+    let pageCount = 0;
+
+    while (hasMore && pageCount < maxPages) {
+      const { data, error } = await client
+        .from("jobs_public")
+        .select("country_code")
+        .eq("status", "active")
+        .not("country_code", "is", null)
+        .range(from, from + pageSize - 1);
+
+      if (error || !data || !Array.isArray(data) || data.length === 0) {
+        break;
       }
-    });
+
+      for (const row of data) {
+        const code = (row.country_code || "").trim().toUpperCase();
+        if (code && code.length === 2) {
+          set.add(code);
+        }
+      }
+
+      if (data.length < pageSize) {
+        hasMore = false;
+      } else {
+        from += pageSize;
+        pageCount++;
+      }
+    }
 
     return Array.from(set).sort();
   } catch {

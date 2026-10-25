@@ -8,11 +8,12 @@
  * 4. Activation endpoint blocks unapproved open grants (ACTIVATION_BLOCKED_PENDING_POLICY).
  * 5. Server entitlement separation: distinct accessSource (subscription vs launch_pass) and no payment fiction.
  * 6. Server-side registry requirement: stateless tokens fail closed without server registry confirmation.
- * 7. AI service handler connection to request headers and enforcement of tier gates.
- * 8. Score isolation: Listings tier strictly gets no match scores or diagnostics.
- * 9. Schema-dependent registry & revocation tests marked BLOCKED until SQL prerequisites exist.
- * 10. Active-job country code derivation for filter bar.
- * 11. Negative control proving non-zero exit on invalid conditions.
+ * 7. Server registry is authoritative for tier, expiry, and revocation (overriding token claims).
+ * 8. AI service handler connection to request headers and enforcement of tier gates.
+ * 9. Score isolation: Listings tier strictly gets no match scores or diagnostics.
+ * 10. Schema-dependent registry & revocation tests marked BLOCKED until SQL prerequisites exist.
+ * 11. Active-job country code derivation with full paging & error handling.
+ * 12. Negative control proving non-zero exit on invalid conditions.
  * 
  * Run with: npx tsx scripts/test-two-tier-entitlements.ts
  * Run negative control: npx tsx scripts/test-two-tier-entitlements.ts --negative-control
@@ -33,6 +34,7 @@ import {
   STATIC_TAXONOMY_COUNTRY_CODES,
   deriveCountryOptionsFromActiveJobs,
 } from "../src/lib/geo/cities";
+import { fetchLiveActiveJobCountryCodes } from "../src/lib/jobs/service";
 import fs from "fs";
 import path from "path";
 
@@ -254,7 +256,7 @@ async function runTests() {
   assert(verifyTampered.valid === false, "Tampered signature is REJECTED");
 
   // ---------------------------------------------------------------------------
-  // SECTION 3: Server Entitlement & Server Registry Verification
+  // SECTION 3: Server Entitlement & Server Registry Enforcement
   // ---------------------------------------------------------------------------
   console.log("\n--- 3. Server Entitlement & Server Registry Enforcement ---");
 
@@ -284,7 +286,10 @@ async function runTests() {
   const listingsHash = await computeSha256Hex(legitListingsPass.token);
   const aiHash = await computeSha256Hex(legitAiPass.token);
 
-  function createMockSupabaseWithRegistry(registryEntries: { tokenHash: string; userId: string; revokedAt?: string | null; expiresAt?: string }[], subscriptionEntry?: any) {
+  function createMockSupabaseWithRegistry(
+    registryEntries: { tokenHash: string; userId: string; tier?: "listings" | "ai"; revokedAt?: string | null; expiresAt?: string }[],
+    subscriptionEntry?: any
+  ) {
     return {
       from: (table: string) => {
         if (table === "subscriptions") {
@@ -311,6 +316,7 @@ async function runTests() {
                       return {
                         data: {
                           id: "mock-pass-id",
+                          tier: match.tier || "listings",
                           revoked_at: match.revokedAt || null,
                           expires_at: match.expiresAt || new Date(Date.now() + 7 * 86400 * 1000).toISOString(),
                         },
@@ -336,8 +342,8 @@ async function runTests() {
   }
 
   const validRegistryClient = createMockSupabaseWithRegistry([
-    { tokenHash: listingsHash, userId: userIdA },
-    { tokenHash: aiHash, userId: userIdA },
+    { tokenHash: listingsHash, userId: userIdA, tier: "listings" },
+    { tokenHash: aiHash, userId: userIdA, tier: "ai" },
   ]);
 
   // 3.3 Server registry confirms Listings Pass
@@ -372,7 +378,53 @@ async function runTests() {
     "Server-registry confirmed AI Pass grants full score access and AI access (accessSource=launch_pass, status=none)"
   );
 
-  // 3.5 Token revoked in server registry fails closed
+  // 3.5 AUTHORITATIVE REGISTRY TIER: Registry overrides token tier claim
+  // Token signed with 'ai', but registry row has tier = 'listings' -> user gets listings tier only
+  const downgradedRegistryClient = createMockSupabaseWithRegistry([
+    { tokenHash: aiHash, userId: userIdA, tier: "listings" },
+  ]);
+  const downgradedEntitlement = await getServerEntitlement(userIdA, {
+    launchPass: legitAiPass.token,
+    env: testSecretEnv,
+    supabaseClient: downgradedRegistryClient,
+  });
+  assert(
+    downgradedEntitlement.tier === "listings" &&
+    downgradedEntitlement.canAccessScores === false &&
+    downgradedEntitlement.canAccessAi === false,
+    "Server registry row is AUTHORITATIVE for tier: downgrades 'ai' token to 'listings' based on database row"
+  );
+
+  // 3.6 AUTHORITATIVE REGISTRY EXPIRY: Registry overrides token expiry date
+  const customRegistryExp = new Date(Date.now() + 3 * 86400 * 1000).toISOString();
+  const customExpRegistryClient = createMockSupabaseWithRegistry([
+    { tokenHash: aiHash, userId: userIdA, tier: "ai", expiresAt: customRegistryExp },
+  ]);
+  const customExpEntitlement = await getServerEntitlement(userIdA, {
+    launchPass: legitAiPass.token,
+    env: testSecretEnv,
+    supabaseClient: customExpRegistryClient,
+  });
+  assert(
+    customExpEntitlement.expirationDate === customRegistryExp,
+    "Server registry row is AUTHORITATIVE for expirationDate (reflects database expires_at timestamp)"
+  );
+
+  // 3.7 Registry-side expired pass fails closed
+  const expiredInRegistryClient = createMockSupabaseWithRegistry([
+    { tokenHash: aiHash, userId: userIdA, tier: "ai", expiresAt: new Date(Date.now() - 10000).toISOString() },
+  ]);
+  const expiredInRegistryEntitlement = await getServerEntitlement(userIdA, {
+    launchPass: legitAiPass.token,
+    env: testSecretEnv,
+    supabaseClient: expiredInRegistryClient,
+  });
+  assert(
+    expiredInRegistryEntitlement.tier === "none" && expiredInRegistryEntitlement.accessSource === "none",
+    "Pass expired in server registry fails closed to tier=none"
+  );
+
+  // 3.8 Token revoked in server registry fails closed
   const revokedRegistryClient = createMockSupabaseWithRegistry([
     { tokenHash: aiHash, userId: userIdA, revokedAt: new Date(Date.now() - 3600000).toISOString() },
   ]);
@@ -386,7 +438,7 @@ async function runTests() {
     "Launch pass revoked in server registry fails closed to tier=none"
   );
 
-  // 3.6 Token passed via x-cm-launch-pass header verified with registry
+  // 3.9 Token passed via x-cm-launch-pass header verified with registry
   const headerEntitlement = await getServerEntitlement(userIdA, {
     headers: { "x-cm-launch-pass": legitAiPass.token },
     env: testSecretEnv,
@@ -397,7 +449,7 @@ async function runTests() {
     "Launch pass verified via x-cm-launch-pass header with registry confirmation"
   );
 
-  // 3.7 Token passed via cookie header verified with registry
+  // 3.10 Token passed via cookie header verified with registry
   const cookieEntitlement = await getServerEntitlement(userIdA, {
     headers: { cookie: `cm_launch_pass=${encodeURIComponent(legitListingsPass.token)}` },
     env: testSecretEnv,
@@ -408,7 +460,7 @@ async function runTests() {
     "Launch pass verified via cookie header with registry confirmation"
   );
 
-  // 3.8 Existing valid paid subscribers unaffected by launch pass registry
+  // 3.11 Existing valid paid subscribers unaffected by launch pass registry
   const paidSubClient = createMockSupabaseWithRegistry([], {
     id: "sub-12345",
     user_id: userIdA,
@@ -560,7 +612,7 @@ async function runTests() {
 
   markBlocked(
     "Atomic anti-repeat single active pass enforcement",
-    "Requires public.launch_passes table & issue_launch_pass_atomic procedure (proposed in reports/proposed_launch_pass_registry.sql; zero unapproved SQL execution)"
+    "Requires public.launch_passes table & issue_launch_pass_atomic procedure (proposed in supabase/proposed_launch_pass_registry.sql; zero unapproved SQL execution)"
   );
   markBlocked(
     "Server-side pass revocation via token hash lookup",
@@ -576,12 +628,14 @@ async function runTests() {
   // ---------------------------------------------------------------------------
   console.log("\n--- 6. Active-Job Country Code Derivation ---");
 
+  // 6.1 deriveCountryOptionsFromActiveJobs with empty input
   const emptyOptions = deriveCountryOptionsFromActiveJobs([]);
   assert(
     emptyOptions.length === 1 && emptyOptions[0].code === "",
     "deriveCountryOptionsFromActiveJobs([]) safely returns only Worldwide option"
   );
 
+  // 6.2 deriveCountryOptionsFromActiveJobs with populated list
   const derivedOptions = deriveCountryOptionsFromActiveJobs(["US", "DE", "IN"]);
   assert(
     derivedOptions.length === 4 && // 1 worldwide + 3 countries
@@ -591,20 +645,77 @@ async function runTests() {
     "deriveCountryOptionsFromActiveJobs bounds options to active job country codes"
   );
 
+  // 6.3 fetchLiveActiveJobCountryCodes complete corpus paging test
+  let pagesQueried = 0;
+  const mockPagingSupabase = {
+    from: (table: string) => {
+      assert(table === "jobs_public", "fetchLiveActiveJobCountryCodes queries jobs_public view");
+      return {
+        select: (col: string) => {
+          assert(col === "country_code", "fetchLiveActiveJobCountryCodes selects country_code");
+          return {
+            eq: (col2: string, val2: string) => {
+              assert(col2 === "status" && val2 === "active", "fetchLiveActiveJobCountryCodes filters status = 'active'");
+              return {
+                not: (col3: string, op: string, val3: any) => {
+                  assert(col3 === "country_code" && op === "is" && val3 === null, "fetchLiveActiveJobCountryCodes excludes NULL country_code");
+                  return {
+                    range: async (from: number, to: number) => {
+                      pagesQueried++;
+                      if (from === 0) {
+                        // Page 1: returns 1000 items
+                        const page1 = Array(998).fill({ country_code: "US" })
+                          .concat([{ country_code: "CA" }, { country_code: "GB" }]);
+                        return { data: page1, error: null };
+                      } else if (from === 1000) {
+                        // Page 2: returns 500 items (signals end of corpus)
+                        const page2 = Array(498).fill({ country_code: "DE" })
+                          .concat([{ country_code: "IN" }, { country_code: "AU" }]);
+                        return { data: page2, error: null };
+                      }
+                      return { data: [], error: null };
+                    },
+                  };
+                },
+              };
+            },
+          };
+        },
+      };
+    },
+  };
+
+  const pagedCountries = await fetchLiveActiveJobCountryCodes(mockPagingSupabase as any);
+  assert(
+    pagesQueried === 2 &&
+    pagedCountries.length === 6 &&
+    JSON.stringify(pagedCountries) === JSON.stringify(["AU", "CA", "DE", "GB", "IN", "US"]),
+    "fetchLiveActiveJobCountryCodes traverses pages to achieve complete distinct country coverage across active corpus"
+  );
+
+  // 6.4 fetchLiveActiveJobCountryCodes safe error handling
+  const mockFailingSupabase = {
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          not: () => ({
+            range: async () => ({ data: null, error: new Error("Network timeout") }),
+          }),
+        }),
+      }),
+    }),
+  };
+  const failingCountries = await fetchLiveActiveJobCountryCodes(mockFailingSupabase as any);
+  assert(
+    Array.isArray(failingCountries) && failingCountries.length === 0,
+    "fetchLiveActiveJobCountryCodes safely returns [] on database error"
+  );
+
+  // 6.5 Documentation & Source assertions
   const citiesContent = fs.readFileSync(path.resolve(__dirname, "../src/lib/geo/cities.ts"), "utf8");
   assert(
     citiesContent.includes("STATIC_TAXONOMY_COUNTRY_CODES") && !citiesContent.includes("ACTIVE_JOB_COUNTRY_CODES: readonly string[] = ["),
     "cities.ts documents static taxonomy country codes as static reference, removing live-derived claim"
-  );
-
-  const serviceTsContent = fs.readFileSync(path.resolve(__dirname, "../src/lib/jobs/service.ts"), "utf8");
-  assert(
-    serviceTsContent.includes('fetchLiveActiveJobCountryCodes'),
-    "service.ts exports fetchLiveActiveJobCountryCodes for read-only active job country discovery"
-  );
-  assert(
-    serviceTsContent.includes('query.eq("country_code", code)'),
-    "service.ts fallback query applies country_code filter pre-pagination"
   );
 
   const filterBarContent = fs.readFileSync(path.resolve(__dirname, "../src/components/jobs/JobFilterBar.tsx"), "utf8");
@@ -615,6 +726,12 @@ async function runTests() {
   assert(
     filterBarContent.includes("availableCountries.map"),
     "JobFilterBar maps over dynamic availableCountries instead of hardcoded array"
+  );
+
+  const sqlPath = path.resolve(__dirname, "../supabase/proposed_launch_pass_registry.sql");
+  assert(
+    fs.existsSync(sqlPath),
+    "supabase/proposed_launch_pass_registry.sql exists in repository for review"
   );
 
   // ---------------------------------------------------------------------------

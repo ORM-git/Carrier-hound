@@ -167,13 +167,13 @@ export async function getServerEntitlement(
       if (passResult.valid && passResult.tier) {
         // Server-Side Registry Validation:
         // A proposed SQL file is not deployed protection. Verify token hash against public.launch_passes.
-        let registryConfirmed = false;
+        let authoritativeRegistryEntry: { id: string; tier: "listings" | "ai"; expires_at: string } | null = null;
         if (supabaseAdmin) {
           try {
             const tokenHash = await computeSha256Hex(launchPass);
             const { data: regEntry, error: regError } = await supabaseAdmin
               .from("launch_passes")
-              .select("id, revoked_at, expires_at")
+              .select("id, tier, revoked_at, expires_at")
               .eq("token_hash", tokenHash)
               .eq("user_id", userId)
               .maybeSingle();
@@ -181,21 +181,27 @@ export async function getServerEntitlement(
             if (!regError && regEntry && !regEntry.revoked_at) {
               const expTime = new Date(regEntry.expires_at).getTime();
               if (Date.now() <= expTime) {
-                registryConfirmed = true;
+                const regTier = regEntry.tier === "ai" ? "ai" : "listings";
+                authoritativeRegistryEntry = {
+                  id: regEntry.id,
+                  tier: regTier,
+                  expires_at: regEntry.expires_at,
+                };
               }
             }
           } catch {
-            registryConfirmed = false;
+            authoritativeRegistryEntry = null;
           }
         }
 
         // When registry is missing/unmigrated or token is not confirmed in the registry:
         // Fail closed. Stateless tokens must not bypass the server registry.
-        if (!registryConfirmed) {
+        if (!authoritativeRegistryEntry) {
           return freeDefault;
         }
 
-        const tier = passResult.tier;
+        // The database registry entry is strictly AUTHORITATIVE for tier and expiration
+        const tier = authoritativeRegistryEntry.tier;
         return {
           tier,
           canAccessListings: true,
@@ -206,7 +212,7 @@ export async function getServerEntitlement(
           accessSource: "launch_pass",
           planName: tier === "ai" ? "Launch Access (AI Tier)" : "Launch Access (Listings Tier)",
           inGracePeriod: false,
-          expirationDate: passResult.expiresAt,
+          expirationDate: authoritativeRegistryEntry.expires_at,
         };
       }
     }
