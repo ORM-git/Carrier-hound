@@ -383,6 +383,7 @@ function JobsPageInner() {
   const [selectedLevel, setSelectedLevel] = useState("");
   const [selectedJobType, setSelectedJobType] = useState("");
   const [selectedDatePosted, setSelectedDatePosted] = useState("");
+  const [selectedCountryCode, setSelectedCountryCode] = useState("");
   const [selectedExperience, setSelectedExperience] = useState("");
   const [selectedWorkModel, setSelectedWorkModel] = useState("");
   const [selectedIndustry, setSelectedIndustry] = useState("");
@@ -808,9 +809,9 @@ function JobsPageInner() {
       location: selectedLocation,
       level: selectedLevel,
       jobType: selectedJobType,
+      countryCode: selectedCountryCode,
       workModel: selectedWorkModel,
       datePosted: selectedDatePosted,
-      experience: selectedExperience,
       isPro,
       sortBy: effectiveSortBy,
       candidateUpdated: effectiveCandidate?.updatedAt || null,
@@ -862,10 +863,9 @@ function JobsPageInner() {
     selectedLocation,
     selectedLevel,
     selectedJobType,
+    selectedCountryCode,
     selectedWorkModel,
     selectedDatePosted,
-    selectedExperience,
-    selectedIndustry,
     isPro,
     isProDefinitive,
     user,
@@ -893,9 +893,9 @@ function JobsPageInner() {
         location: selectedLocation,
         level: selectedLevel,
         jobType: selectedJobType,
+        countryCode: selectedCountryCode,
         workModel: selectedWorkModel,
         datePosted: selectedDatePosted,
-        experience: selectedExperience,
         isPro,
         sortBy: effectiveSortBy,
         candidate: effectiveCandidate,
@@ -1301,28 +1301,27 @@ function JobsPageInner() {
   const activeFiltersCount =
     (search.trim() ? 1 : 0) +
     (selectedCategory ? 1 : 0) +
+    (selectedCountryCode ? 1 : 0) +
     (remoteOnly || selectedWorkModel ? 1 : 0) +
     (selectedLocation ? 1 : 0) +
     (selectedLevel ? 1 : 0) +
     (selectedJobType ? 1 : 0) +
     (selectedDatePosted && selectedDatePosted !== "all" && selectedDatePosted !== "Any time" ? 1 : 0) +
-    (selectedExperience && selectedExperience !== "all" && selectedExperience !== "All Experience" ? 1 : 0) +
-    (selectedIndustry ? 1 : 0) +
     (viewHiddenJobs ? 1 : 0);
   const hasActiveFilters = activeFiltersCount > 0;
 
   const filterValues: JobFilterValues = useMemo(() => ({
+    countryCode: selectedCountryCode,
     location: selectedLocation,
     category: selectedCategory,
     level: selectedLevel,
     jobType: selectedJobType,
     workModel: selectedWorkModel || (remoteOnly ? "remote" : ""),
     datePosted: selectedDatePosted,
-    industry: selectedIndustry,
-    experience: selectedExperience,
     hidden: viewHiddenJobs,
     sort: sortBy,
   }), [
+    selectedCountryCode,
     selectedLocation,
     selectedCategory,
     selectedLevel,
@@ -1330,13 +1329,12 @@ function JobsPageInner() {
     selectedWorkModel,
     remoteOnly,
     selectedDatePosted,
-    selectedIndustry,
-    selectedExperience,
     viewHiddenJobs,
     sortBy,
   ]);
 
   const handleFilterChange = (patch: Partial<JobFilterValues>) => {
+    if (patch.countryCode !== undefined) setSelectedCountryCode(patch.countryCode);
     if (patch.location !== undefined) setSelectedLocation(patch.location);
     if (patch.category !== undefined) setSelectedCategory(patch.category);
     if (patch.level !== undefined) setSelectedLevel(patch.level);
@@ -1350,14 +1348,13 @@ function JobsPageInner() {
       }
     }
     if (patch.datePosted !== undefined) setSelectedDatePosted(patch.datePosted);
-    if (patch.industry !== undefined) setSelectedIndustry(patch.industry);
-    if (patch.experience !== undefined) setSelectedExperience(patch.experience);
     if (patch.hidden !== undefined) setViewHiddenJobs(patch.hidden);
     if (patch.sort !== undefined) setSortBy(patch.sort);
     setPage(1);
   };
 
   const handleApplyAllFilters = (updated: JobFilterValues) => {
+    setSelectedCountryCode(updated.countryCode || "");
     setSelectedLocation(updated.location);
     setSelectedCategory(updated.category);
     setSelectedLevel(updated.level);
@@ -1369,8 +1366,6 @@ function JobsPageInner() {
       setRemoteOnly(false);
     }
     setSelectedDatePosted(updated.datePosted);
-    setSelectedIndustry(updated.industry);
-    setSelectedExperience(updated.experience);
     setViewHiddenJobs(updated.hidden);
     setSortBy(updated.sort);
     setPage(1);

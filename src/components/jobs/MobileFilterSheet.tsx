@@ -36,7 +36,7 @@ export default function MobileFilterSheet({
 }: MobileFilterSheetProps) {
   const [draft, setDraft] = useState<JobFilterValues>(filters);
   const [basicExpanded, setBasicExpanded] = useState(true);
-  const [industryExpanded, setIndustryExpanded] = useState(false);
+
   const sheetRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -112,14 +112,13 @@ export default function MobileFilterSheet({
   };
 
   const draftActiveCount = [
+    draft.countryCode,
     draft.location,
     draft.category,
     draft.level,
     draft.jobType,
     draft.workModel,
     draft.datePosted,
-    draft.industry,
-    draft.experience,
     draft.hidden,
   ].filter((v) => Boolean(v && v !== "all")).length;
 
@@ -131,6 +130,7 @@ export default function MobileFilterSheet({
 
   const handleResetDraft = () => {
     setDraft({
+      countryCode: "",
       location: "",
       category: "",
       level: "",
@@ -204,6 +204,32 @@ export default function MobileFilterSheet({
         {/* Active Chips Strip */}
         {draftActiveCount > 0 && (
           <div className="flex flex-wrap items-center gap-1.5 px-5 py-2.5 bg-[#F8FAFC] border-b border-[#E2E8F0] shrink-0 text-xs">
+            {draft.countryCode && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white border border-[#CBD5E1] text-[#0F172A] font-medium text-[11px]">
+                <span>Country: {draft.countryCode}</span>
+                <button
+                  type="button"
+                  onClick={() => setDraft((p) => ({ ...p, countryCode: "" }))}
+                  aria-label={`Remove country ${draft.countryCode}`}
+                  className="hover:text-rose-600 transition"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+            {draft.category && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white border border-[#CBD5E1] text-[#0F172A] font-medium text-[11px]">
+                <span>Category: {draft.category}</span>
+                <button
+                  type="button"
+                  onClick={() => setDraft((p) => ({ ...p, category: "" }))}
+                  aria-label={`Remove category ${draft.category}`}
+                  className="hover:text-rose-600 transition"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
             {draft.location && (
               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white border border-[#CBD5E1] text-[#0F172A] font-medium text-[11px]">
                 <span>{draft.location}</span>
@@ -344,7 +370,10 @@ export default function MobileFilterSheet({
 
                 {/* Work Model 2-column */}
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-[#0F172A] block">Work Model</label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-[#0F172A] block">Work Model</label>
+                    <span className="text-[10px] text-[#64748B] italic">Heuristic match</span>
+                  </div>
                   <div className="grid grid-cols-2 gap-2">
                     {[
                       { id: "remote", label: "Remote" },
@@ -371,39 +400,75 @@ export default function MobileFilterSheet({
                   </div>
                 </div>
 
-                {/* Location */}
+                {/* Job Category */}
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-[#0F172A] block">Location & Country</label>
+                  <label className="text-xs font-bold text-[#0F172A] block">Job Category</label>
                   <select
-                    value={draft.location.startsWith("Remote") ? "Remote" : draft.location}
-                    onChange={(e) => setDraft((p) => ({ ...p, location: e.target.value }))}
-                    aria-label="Select Country"
+                    value={draft.category}
+                    onChange={(e) => setDraft((p) => ({ ...p, category: e.target.value }))}
+                    aria-label="Select Job Category"
                     className="w-full h-11 px-3 rounded-xl border border-[#CBD5E1] bg-white text-xs font-medium text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#93C5FD] min-h-[44px]"
                   >
-                    <option value="">All Locations (Worldwide)</option>
-                    <option value="United States">United States</option>
-                    <option value="Canada">Canada</option>
-                    <option value="United Kingdom">United Kingdom</option>
-                    <option value="Europe">Europe (General)</option>
-                    <option value="India">India</option>
-                    <option value="Remote">Remote (Worldwide)</option>
+                    <option value="">All Categories</option>
+                    <option value="engineering">Engineering & Software</option>
+                    <option value="product">Product Management</option>
+                    <option value="design">Design & Creative</option>
+                    <option value="data">Data Science & Analytics</option>
+                    <option value="marketing">Marketing & Growth</option>
+                    <option value="sales">Sales & Business Development</option>
+                    <option value="operations">Operations & Support</option>
+                    <option value="finance">Finance & Accounting</option>
                   </select>
+                </div>
 
-                  <div className="relative">
-                    <Search className="w-4 h-4 text-[#94A3B8] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                    <input
-                      type="text"
-                      placeholder="Or search city..."
-                      value={draft.location}
-                      onChange={(e) => setDraft((p) => ({ ...p, location: e.target.value }))}
-                      className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-[#CBD5E1] text-xs focus:outline-none focus:ring-2 focus:ring-[#93C5FD] min-h-[44px]"
-                    />
+                {/* Country & Location */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-[#0F172A] block">Country (Indexed Filter)</label>
+                  <p className="text-[11px] text-[#64748B]">Direct database country filter</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { code: "", label: "Worldwide" },
+                      { code: "US", label: "US" },
+                      { code: "GB", label: "UK" },
+                      { code: "CA", label: "Canada" },
+                      { code: "DE", label: "Germany" },
+                      { code: "IN", label: "India" },
+                    ].map((item) => (
+                      <button
+                        key={item.code || "worldwide"}
+                        type="button"
+                        onClick={() => setDraft((p) => ({ ...p, countryCode: item.code }))}
+                        className={`py-2 px-1 text-center rounded-xl border text-xs font-semibold transition cursor-pointer min-h-[44px] ${
+                          (draft.countryCode || "") === item.code
+                            ? "bg-[#EFF6FF] border-[#BFDBFE] text-[#1D4ED8]"
+                            : "bg-[#F8FAFC] border-[#E2E8F0] text-[#0F172A]"
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="pt-1">
+                    <label className="text-xs font-semibold text-[#475569] block mb-1">City or Specific Area (Text Search)</label>
+                    <div className="relative">
+                      <Search className="w-4 h-4 text-[#94A3B8] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <input
+                        type="text"
+                        placeholder="Search city or specific area..."
+                        value={draft.location}
+                        onChange={(e) => setDraft((p) => ({ ...p, location: e.target.value }))}
+                        className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-[#CBD5E1] text-xs focus:outline-none focus:ring-2 focus:ring-[#93C5FD] min-h-[44px]"
+                      />
+                    </div>
                   </div>
                 </div>
 
                 {/* Experience Level 2-column */}
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-[#0F172A] block">Experience Level</label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-[#0F172A] block">Experience Level</label>
+                    <span className="text-[10px] text-[#64748B] italic">Heuristic match</span>
+                  </div>
                   <div className="grid grid-cols-2 gap-2">
                     {[
                       { id: "intern", label: "Intern / Grad" },
@@ -461,47 +526,7 @@ export default function MobileFilterSheet({
             )}
           </div>
 
-          {/* Section 2: Industry (Accordion) */}
-          <div className="space-y-4">
-            <button
-              type="button"
-              onClick={() => setIndustryExpanded(!industryExpanded)}
-              className="w-full flex items-center justify-between text-left py-2 border-b border-[#E2E8F0] cursor-pointer"
-            >
-              <div>
-                <h3 className="text-sm font-bold text-[#0F172A]">Industry & Vertical</h3>
-                <p className="text-[11px] text-[#64748B]">Tech, AI, Finance, Healthcare</p>
-              </div>
-              {industryExpanded ? <ChevronUp className="w-4 h-4 text-[#64748B]" /> : <ChevronDown className="w-4 h-4 text-[#64748B]" />}
-            </button>
 
-            {industryExpanded && (
-              <div className="grid grid-cols-2 gap-2 pt-1">
-                {[
-                  { id: "tech", label: "Tech" },
-                  { id: "ai", label: "AI / ML" },
-                  { id: "finance", label: "Finance" },
-                  { id: "healthcare", label: "Health" },
-                  { id: "marketing", label: "Marketing" },
-                  { id: "operations", label: "Operations" },
-                ].map((ind) => (
-                  <button
-                    key={ind.id}
-                    type="button"
-                    onClick={() => setDraft((p) => ({ ...p, industry: p.industry === ind.id ? "" : ind.id }))}
-                    className={`flex items-center justify-between p-3 rounded-xl border text-xs font-semibold transition text-left cursor-pointer min-h-[44px] ${
-                      draft.industry === ind.id
-                        ? "bg-[#EFF6FF] border-[#BFDBFE] text-[#1D4ED8]"
-                        : "bg-[#F8FAFC] border-[#E2E8F0] text-[#0F172A]"
-                    }`}
-                  >
-                    <span>{ind.label}</span>
-                    {draft.industry === ind.id && <Check className="w-3.5 h-3.5 text-[#2563EB]" />}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
 
           {/* Section 3: Hidden Positions Toggle */}
           <div className="p-4 rounded-2xl border border-[#E2E8F0] bg-[#F8FAFC] flex items-center justify-between">

@@ -168,6 +168,7 @@ export function createHandler(deps: JobsSearchDeps = {}) {
     const category = params.category || "";
     const remoteOnly = params.remoteOnly === "true";
     const locationParam = params.location || "";
+    const countryCodeParam = params.country_code || params.country || "";
     const levelParam = params.level || "";
     const jobTypeParam = params.jobType || "";
     const dateParam = params.datePosted || params.date || "";

@@ -42,6 +42,7 @@ export interface GetJobsOptions {
   jobType?: string;
   workModel?: string;
   datePosted?: string;
+  countryCode?: string;
   experience?: string;
 }
 
@@ -210,6 +211,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
     jobType,
     workModel,
     datePosted,
+    countryCode,
     experience,
   } = options;
 
@@ -240,6 +242,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       if (jobType && jobType !== "all") params.set("jobType", jobType);
       if (workModel && workModel !== "all") params.set("workModel", workModel);
       if (datePosted && datePosted !== "all") params.set("datePosted", datePosted);
+      if (countryCode && countryCode !== "all") params.set("country_code", countryCode);
 
       const res = await fetch(`/api/jobs/search?${params.toString()}`, { headers });
       if (res.ok) {

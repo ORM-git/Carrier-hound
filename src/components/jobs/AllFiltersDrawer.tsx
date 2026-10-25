@@ -39,7 +39,7 @@ export default function AllFiltersDrawer({
   triggerRef,
 }: AllFiltersDrawerProps) {
   const [draft, setDraft] = useState<JobFilterValues>(filters);
-  const [activeSection, setActiveSection] = useState<"basic" | "interest" | "preferences">("basic");
+  const [activeSection, setActiveSection] = useState<"basic" | "preferences">("basic");
   const drawerRef = useRef<HTMLDivElement | null>(null);
 
   // Initialize draft when drawer opens
@@ -118,14 +118,13 @@ export default function AllFiltersDrawer({
 
   // Compute draft active count
   const draftActiveCount = [
+    draft.countryCode,
     draft.location,
     draft.category,
     draft.level,
     draft.jobType,
     draft.workModel,
     draft.datePosted,
-    draft.industry,
-    draft.experience,
     draft.hidden,
   ].filter((v) => Boolean(v && v !== "all")).length;
 
@@ -137,6 +136,7 @@ export default function AllFiltersDrawer({
 
   const handleResetDraft = () => {
     setDraft({
+      countryCode: "",
       location: "",
       category: "",
       level: "",
@@ -213,6 +213,19 @@ export default function AllFiltersDrawer({
         {/* =================================================================== */}
         {draftActiveCount > 0 && (
           <div className="flex flex-wrap items-center gap-1.5 px-6 py-2.5 bg-[#F8FAFC] border-b border-[#E2E8F0] shrink-0">
+            {draft.countryCode && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white border border-[#CBD5E1] text-[#0F172A] text-xs font-medium">
+                <span>Country: {draft.countryCode}</span>
+                <button
+                  type="button"
+                  onClick={() => setDraft((p) => ({ ...p, countryCode: "" }))}
+                  aria-label={`Remove country ${draft.countryCode}`}
+                  className="hover:text-rose-600 transition"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
             {draft.location && (
               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white border border-[#CBD5E1] text-[#0F172A] text-xs font-medium">
                 <span>{draft.location}</span>
@@ -303,19 +316,7 @@ export default function AllFiltersDrawer({
                 </button>
               </span>
             )}
-            {draft.industry && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white border border-[#CBD5E1] text-[#0F172A] text-xs font-medium">
-                <span>{draft.industry}</span>
-                <button
-                  type="button"
-                  onClick={() => setDraft((p) => ({ ...p, industry: "" }))}
-                  aria-label="Remove industry"
-                  className="hover:text-rose-600 transition"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </span>
-            )}
+
             {draft.hidden && (
               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white border border-[#CBD5E1] text-[#0F172A] text-xs font-medium">
                 <span>Hidden Jobs</span>
@@ -356,20 +357,7 @@ export default function AllFiltersDrawer({
               </div>
             </button>
 
-            <button
-              type="button"
-              onClick={() => setActiveSection("interest")}
-              className={`w-full text-left p-3 rounded-xl transition text-[13px] font-semibold flex items-center justify-between ${
-                activeSection === "interest"
-                  ? "bg-white text-[#2563EB] shadow-2xs border border-[#E2E8F0]"
-                  : "text-[#475569] hover:bg-slate-200/50 hover:text-[#0F172A]"
-              }`}
-            >
-              <div>
-                <p className="font-bold">Areas of Interest</p>
-                <p className="text-[11px] text-[#64748B] font-normal">Industry & Role Domain</p>
-              </div>
-            </button>
+
 
             <button
               type="button"
@@ -429,7 +417,10 @@ export default function AllFiltersDrawer({
 
                 {/* Work Model: 2-column tiles */}
                 <div className="space-y-2">
-                  <label className="text-[13px] font-bold text-[#0F172A] block">Work Model</label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-[13px] font-bold text-[#0F172A] block">Work Model</label>
+                    <span className="text-[10px] text-[#64748B] italic">Heuristic match on remote flag & location</span>
+                  </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     {[
                       { id: "remote", label: "Remote anywhere" },
@@ -458,7 +449,10 @@ export default function AllFiltersDrawer({
 
                 {/* Experience Level: 2-column tiles */}
                 <div className="space-y-2">
-                  <label className="text-[13px] font-bold text-[#0F172A] block">Experience Level</label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-[13px] font-bold text-[#0F172A] block">Experience Level</label>
+                    <span className="text-[10px] text-[#64748B] italic">Heuristic match on title keywords</span>
+                  </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     {[
                       { id: "intern", label: "Intern / New Grad" },
@@ -487,30 +481,61 @@ export default function AllFiltersDrawer({
                   </div>
                 </div>
 
-                {/* Location / Geography */}
+                {/* Job Category */}
                 <div className="space-y-2">
-                  <label className="text-[13px] font-bold text-[#0F172A] block">Country / City Location</label>
-                  <div className="space-y-2">
-                    <select
-                      value={draft.location.startsWith("Remote") ? "Remote" : draft.location}
-                      onChange={(e) => setDraft((p) => ({ ...p, location: e.target.value }))}
-                      aria-label="Select Country or Region"
-                      className="w-full h-11 px-3 rounded-xl border border-[#CBD5E1] bg-white text-xs font-medium text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#93C5FD]"
-                    >
-                      <option value="">All Locations (Worldwide)</option>
-                      <option value="United States">United States</option>
-                      <option value="Canada">Canada</option>
-                      <option value="United Kingdom">United Kingdom</option>
-                      <option value="Europe">Europe (General)</option>
-                      <option value="India">India</option>
-                      <option value="Remote">Remote (Worldwide)</option>
-                    </select>
+                  <label className="text-[13px] font-bold text-[#0F172A] block">Job Category</label>
+                  <select
+                    value={draft.category}
+                    onChange={(e) => setDraft((p) => ({ ...p, category: e.target.value }))}
+                    aria-label="Select job category"
+                    className="w-full h-11 px-3 rounded-xl border border-[#CBD5E1] bg-white text-xs font-medium text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#93C5FD]"
+                  >
+                    <option value="">All Categories</option>
+                    <option value="engineering">Engineering & Software</option>
+                    <option value="product">Product Management</option>
+                    <option value="design">Design & Creative</option>
+                    <option value="data">Data Science & Analytics</option>
+                    <option value="marketing">Marketing & Growth</option>
+                    <option value="sales">Sales & Business Development</option>
+                    <option value="operations">Operations & Support</option>
+                    <option value="finance">Finance & Accounting</option>
+                  </select>
+                </div>
 
+                {/* Country & Location */}
+                <div className="space-y-2">
+                  <label className="text-[13px] font-bold text-[#0F172A] block">Country (Indexed Filter)</label>
+                  <p className="text-[11px] text-[#64748B]">Filters database directly by ISO country code</p>
+                  <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                    {[
+                      { code: "", label: "Worldwide" },
+                      { code: "US", label: "US" },
+                      { code: "GB", label: "UK" },
+                      { code: "CA", label: "Canada" },
+                      { code: "DE", label: "Germany" },
+                      { code: "IN", label: "India" },
+                    ].map((item) => (
+                      <button
+                        key={item.code || "worldwide"}
+                        type="button"
+                        onClick={() => setDraft((p) => ({ ...p, countryCode: item.code }))}
+                        className={`py-2 px-1 text-center rounded-xl border text-xs font-semibold transition cursor-pointer ${
+                          (draft.countryCode || "") === item.code
+                            ? "bg-[#EFF6FF] border-[#BFDBFE] text-[#1D4ED8]"
+                            : "bg-[#F8FAFC] border-[#E2E8F0] text-[#0F172A] hover:bg-slate-100"
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="pt-1">
+                    <label className="text-xs font-semibold text-[#475569] block mb-1">City or Specific Area (Text Search)</label>
                     <div className="relative">
                       <Search className="w-4 h-4 text-[#94A3B8] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                       <input
                         type="text"
-                        placeholder="Search city or specific area..."
+                        placeholder="e.g. San Francisco, London, Berlin..."
                         value={draft.location}
                         onChange={(e) => setDraft((p) => ({ ...p, location: e.target.value }))}
                         className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-[#CBD5E1] text-xs focus:outline-none focus:ring-2 focus:ring-[#93C5FD]"
@@ -547,40 +572,7 @@ export default function AllFiltersDrawer({
               </section>
             )}
 
-            {/* 2. AREAS OF INTEREST */}
-            {(activeSection === "interest" || typeof window !== "undefined") && (
-              <section className="space-y-4 pt-6 border-t border-[#E2E8F0]">
-                <div>
-                  <h3 className="text-base font-bold text-[#0F172A]">Areas of Interest & Industry</h3>
-                  <p className="text-xs text-[#64748B]">Filter positions across specific domain verticals</p>
-                </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  {[
-                    { id: "tech", label: "Tech & Software" },
-                    { id: "ai", label: "AI & Machine Learning" },
-                    { id: "finance", label: "Finance & Fintech" },
-                    { id: "healthcare", label: "Healthcare & Biotech" },
-                    { id: "marketing", label: "Marketing & Growth" },
-                    { id: "operations", label: "Operations & Logistics" },
-                  ].map((ind) => (
-                    <button
-                      key={ind.id}
-                      type="button"
-                      onClick={() => setDraft((p) => ({ ...p, industry: p.industry === ind.id ? "" : ind.id }))}
-                      className={`flex items-center justify-between p-3 rounded-xl border text-xs font-semibold transition text-left cursor-pointer ${
-                        draft.industry === ind.id
-                          ? "bg-[#EFF6FF] border-[#BFDBFE] text-[#1D4ED8]"
-                          : "bg-[#F8FAFC] border-[#E2E8F0] text-[#0F172A] hover:bg-slate-100"
-                      }`}
-                    >
-                      <span>{ind.label}</span>
-                      {draft.industry === ind.id && <Check className="w-4 h-4 text-[#2563EB]" />}
-                    </button>
-                  ))}
-                </div>
-              </section>
-            )}
 
             {/* 3. PREFERENCES & HIDDEN JOBS */}
             {(activeSection === "preferences" || typeof window !== "undefined") && (

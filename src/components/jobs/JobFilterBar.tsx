@@ -22,14 +22,15 @@ import {
 } from "lucide-react";
 
 export interface JobFilterValues {
-  location: string;
-  category: string; // Job Function / Role
-  level: string; // Experience Level (can be multi-select, comma-separated)
-  jobType: string; // Job Type (can be multi-select, comma-separated)
-  workModel: string; // Work Model (Remote, Hybrid, Onsite)
+  countryCode?: string; // ISO 2-letter country code (US, GB, CA, DE, IN)
+  location: string; // City or area text search
+  category: string; // Job Category
+  level: string; // Seniority Level heuristic (multi-select, comma-separated)
+  jobType: string; // Job Type (multi-select, comma-separated)
+  workModel: string; // Work Model heuristic (Remote, Hybrid, Onsite)
   datePosted: string; // Any time, 24h, 7d, 30d
-  industry: string; // Industry category
-  experience: string; // 1-3 yrs, 3-5 yrs, etc.
+  industry?: string; // GAP: unindexed in DB; omitted from active search predicates
+  experience?: string; // GAP: unindexed in DB; omitted from active search predicates
   hidden: boolean;
   sort: "match" | "newest";
 }
@@ -274,7 +275,7 @@ export default function JobFilterBar({
                     : "bg-white border-[#CBD5E1] text-[#0F172A] hover:bg-[#F8FAFC]"
                 }`}
               >
-                <span>{filters.location || "Location"}</span>
+                <span>{filters.countryCode ? `Country: ${filters.countryCode}` : (filters.location || "Location / Country")}</span>
                 <ChevronDown className="w-3.5 h-3.5 text-[#64748B]" />
               </button>
 
@@ -296,33 +297,33 @@ export default function JobFilterBar({
                     </button>
                   </div>
 
-                  {/* Preset Regions Radio List */}
+                  {/* Real Country Selection (Filtering genuine country_code column) */}
                   <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                    <span className="text-[11px] font-semibold text-[#64748B] block mb-1">Country (Filters country_code):</span>
                     {[
-                      { id: "", label: "All Locations" },
-                      { id: "United States", label: "United States" },
-                      { id: "Canada", label: "Canada" },
-                      { id: "United Kingdom", label: "United Kingdom" },
-                      { id: "Europe", label: "Europe (General)" },
-                      { id: "India", label: "India" },
-                      { id: "Remote", label: "Remote (Worldwide)" },
-                    ].map((loc) => (
+                      { code: "", label: "Worldwide (All Countries)" },
+                      { code: "US", label: "United States (US)" },
+                      { code: "GB", label: "United Kingdom (GB)" },
+                      { code: "CA", label: "Canada (CA)" },
+                      { code: "DE", label: "Germany (DE)" },
+                      { code: "IN", label: "India (IN)" },
+                    ].map((c) => (
                       <label
-                        key={loc.id || "all"}
+                        key={c.code || "all"}
                         className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg cursor-pointer transition text-[13px] ${
-                          draftFilters.location === loc.id
+                          (draftFilters.countryCode || "") === c.code
                             ? "bg-[#EFF6FF] text-[#1D4ED8] font-semibold"
                             : "text-[#334155] hover:bg-slate-50"
                         }`}
                       >
                         <input
                           type="radio"
-                          name="location_preset"
-                          checked={draftFilters.location === loc.id}
-                          onChange={() => setDraftFilters((prev) => ({ ...prev, location: loc.id }))}
+                          name="country_code_preset"
+                          checked={(draftFilters.countryCode || "") === c.code}
+                          onChange={() => setDraftFilters((prev) => ({ ...prev, countryCode: c.code }))}
                           className="w-3.5 h-3.5 text-[#2563EB] focus:ring-[#93C5FD]"
                         />
-                        <span>{loc.label}</span>
+                        <span>{c.label}</span>
                       </label>
                     ))}
                   </div>
@@ -370,14 +371,14 @@ export default function JobFilterBar({
                 type="button"
                 onClick={() => handleOpenPopover("role")}
                 aria-expanded={activePopover === "role"}
-                aria-label={`Job function filter: ${filters.category || "All"}`}
+                aria-label={`Job category filter: ${filters.category || "All"}`}
                 className={`h-8 px-3 rounded-lg border text-[13px] font-medium transition inline-flex items-center gap-1.5 cursor-pointer shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
                   filters.category
                     ? "bg-[#EFF6FF] border-[#BFDBFE] text-[#1D4ED8] font-semibold"
                     : "bg-white border-[#CBD5E1] text-[#0F172A] hover:bg-[#F8FAFC]"
                 }`}
               >
-                <span>{filters.category ? (filters.category.charAt(0).toUpperCase() + filters.category.slice(1)) : "Function"}</span>
+                <span>{filters.category ? (filters.category.charAt(0).toUpperCase() + filters.category.slice(1)) : "Category"}</span>
                 <ChevronDown className="w-3.5 h-3.5 text-[#64748B]" />
               </button>
 
@@ -385,11 +386,11 @@ export default function JobFilterBar({
                 <div
                   ref={popoverRef}
                   role="dialog"
-                  aria-label="Filter by Job Function"
+                  aria-label="Filter by Job Category"
                   className="absolute left-0 mt-1.5 w-80 max-w-[calc(100vw-32px)] bg-white border border-[#E2E8F0] rounded-2xl shadow-xl p-4 z-50 text-xs space-y-3"
                 >
                   <div className="flex items-center justify-between pb-2 border-b border-[#E2E8F0]">
-                    <span className="font-bold text-[13px] text-[#0F172A]">Job Function / Role</span>
+                    <span className="font-bold text-[13px] text-[#0F172A]">Job Category</span>
                     <button
                       type="button"
                       onClick={() => handleReset("category", "")}
@@ -489,7 +490,7 @@ export default function JobFilterBar({
                   className="absolute left-0 mt-1.5 w-64 max-w-[calc(100vw-32px)] bg-white border border-[#E2E8F0] rounded-2xl shadow-xl p-4 z-50 text-xs space-y-3"
                 >
                   <div className="flex items-center justify-between pb-2 border-b border-[#E2E8F0]">
-                    <span className="font-bold text-[13px] text-[#0F172A]">Experience Level</span>
+                    <div><span className="font-bold text-[13px] text-[#0F172A] block">Seniority Level</span><span className="text-[10px] text-[#64748B]">Heuristic match on title keywords</span></div>
                     <button
                       type="button"
                       onClick={() => handleReset("level", "")}
@@ -662,7 +663,7 @@ export default function JobFilterBar({
                   className="absolute left-0 mt-1.5 w-64 max-w-[calc(100vw-32px)] bg-white border border-[#E2E8F0] rounded-2xl shadow-xl p-4 z-50 text-xs space-y-3"
                 >
                   <div className="flex items-center justify-between pb-2 border-b border-[#E2E8F0]">
-                    <span className="font-bold text-[13px] text-[#0F172A]">Work Model</span>
+                    <div><span className="font-bold text-[13px] text-[#0F172A] block">Work Model</span><span className="text-[10px] text-[#64748B]">Heuristic match on remote flag & location</span></div>
                     <button
                       type="button"
                       onClick={() => handleReset("workModel", "")}

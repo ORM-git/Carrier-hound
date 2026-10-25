@@ -50,6 +50,7 @@ export async function GET(req: Request) {
     const category = searchParams.get("category") || "";
     const remoteOnly = searchParams.get("remoteOnly") === "true";
     const locationParam = searchParams.get("location") || "";
+    const countryCodeParam = searchParams.get("country_code") || searchParams.get("country") || "";
     const levelParam = searchParams.get("level") || "";
     const jobTypeParam = searchParams.get("jobType") || "";
     const dateParam = searchParams.get("datePosted") || searchParams.get("date") || "";
@@ -140,6 +141,13 @@ export async function GET(req: Request) {
 
     if (remoteOnly) {
       query = query.eq("remote", true);
+    }
+
+    if (countryCodeParam && countryCodeParam.trim() && countryCodeParam.toLowerCase() !== "all") {
+      const code = sanitizeSearchQuery(countryCodeParam).toUpperCase().trim();
+      if (code) {
+        query = query.eq("country_code", code);
+      }
     }
 
     if (locationParam && locationParam.trim() && locationParam.toLowerCase() !== "all") {
