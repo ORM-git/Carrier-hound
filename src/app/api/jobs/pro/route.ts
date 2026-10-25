@@ -5,31 +5,8 @@ import { formatSalary } from "@/lib/salary/parser";
 import { verifyUserNotBanned } from "@/lib/admin/auth";
 
 import { checkRequiredEnv } from "@/lib/api/envCheck";
-import { getRequestContext } from "@cloudflare/next-on-pages";
 
 export const runtime = "edge";
-
-function logPresence() {
-  let cfEnv: Record<string, any> | undefined;
-  try {
-    const ctx = getRequestContext();
-    if (ctx?.env) {
-      cfEnv = ctx.env as Record<string, any>;
-    }
-  } catch {}
-
-  const ctx_NEXT_PUBLIC_SUPABASE_URL = Boolean(cfEnv?.NEXT_PUBLIC_SUPABASE_URL);
-  const ctx_NEXT_PUBLIC_SUPABASE_ANON_KEY = Boolean(cfEnv?.NEXT_PUBLIC_SUPABASE_ANON_KEY);
-  const ctx_SUPABASE_SERVICE_ROLE_KEY = Boolean(cfEnv?.SUPABASE_SERVICE_ROLE_KEY);
-
-  const proc_NEXT_PUBLIC_SUPABASE_URL = typeof process !== "undefined" && Boolean(process.env?.NEXT_PUBLIC_SUPABASE_URL);
-  const proc_NEXT_PUBLIC_SUPABASE_ANON_KEY = typeof process !== "undefined" && Boolean(process.env?.NEXT_PUBLIC_SUPABASE_ANON_KEY);
-  const proc_SUPABASE_SERVICE_ROLE_KEY = typeof process !== "undefined" && Boolean(process.env?.SUPABASE_SERVICE_ROLE_KEY);
-
-  console.log(
-    `[Pro Route Runtime] ctx.env: NEXT_PUBLIC_SUPABASE_URL=${ctx_NEXT_PUBLIC_SUPABASE_URL}, NEXT_PUBLIC_SUPABASE_ANON_KEY=${ctx_NEXT_PUBLIC_SUPABASE_ANON_KEY}, SUPABASE_SERVICE_ROLE_KEY=${ctx_SUPABASE_SERVICE_ROLE_KEY} | process.env: NEXT_PUBLIC_SUPABASE_URL=${proc_NEXT_PUBLIC_SUPABASE_URL}, NEXT_PUBLIC_SUPABASE_ANON_KEY=${proc_NEXT_PUBLIC_SUPABASE_ANON_KEY}, SUPABASE_SERVICE_ROLE_KEY=${proc_SUPABASE_SERVICE_ROLE_KEY}`
-  );
-}
 
 function getSupabaseAdmin() {
   const supabaseUrl =
@@ -100,7 +77,6 @@ async function verifyProUser(req: Request) {
 
 // GET: Unlocks a single job by id for a verified Pro subscriber
 export async function GET(req: Request) {
-  logPresence();
   try {
     const authCheck = await verifyProUser(req);
     if (authCheck.error || !authCheck.user) {
@@ -149,7 +125,6 @@ export async function GET(req: Request) {
 
 // POST: Unlocks a list of jobs by IDs for a verified Pro subscriber
 export async function POST(req: Request) {
-  logPresence();
   try {
     const authCheck = await verifyProUser(req);
     if (authCheck.error || !authCheck.user) {
