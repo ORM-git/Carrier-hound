@@ -135,6 +135,11 @@ export async function getServerEntitlement(
       // a) Server-controlled launch policy is active (launch_policy.is_enabled = true)
       // b) Valid server-stored selection (user_launch_access for this user)
       // c) No server-side abuse revocation (revoked_at IS NULL)
+      //
+      // PAID-LISTINGS / FREE-LAUNCH-AI INTERACTION:
+      // If a user holds an active paid Listings subscription, Section 1 above matched first and
+      // definitively granted tier="listings" with accessSource="subscription" and canAccessAi=false.
+      // Launch access tier selection does NOT override, modify, or corrupt paid subscription rows.
       try {
         const { data: policy, error: policyError } = await supabaseAdmin
           .from("launch_policy")
@@ -145,15 +150,30 @@ export async function getServerEntitlement(
         if (!policyError && policy && policy.is_enabled) {
           const { data: userAccess, error: accessError } = await supabaseAdmin
             .from("user_launch_access")
-            .select("id, tier, revoked_at")
+            .select("user_id, tier, revoked_at")
             .eq("user_id", userId)
             .maybeSingle();
 
           if (!accessError && userAccess && !userAccess.revoked_at) {
             const rawTier = userAccess.tier;
             if (rawTier === "ai" || rawTier === "listings") {
-              const tier: UserTier =
-                rawTier === "ai" && policy.allow_ai !== false ? "ai" : "listings";
+              let tier: UserTier = "none";
+
+              if (rawTier === "ai") {
+                if (policy.allow_ai !== false) {
+                  tier = "ai";
+                } else if (policy.allow_listings !== false) {
+                  tier = "listings"; // fallback to listings if AI tier is policy-disabled
+                }
+              } else if (rawTier === "listings") {
+                if (policy.allow_listings !== false) {
+                  tier = "listings";
+                }
+              }
+
+              if (tier === "none") {
+                return freeDefault;
+              }
 
               return {
                 tier,

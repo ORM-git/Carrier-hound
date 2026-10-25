@@ -3,17 +3,28 @@
 -- STATUS: PROPOSED ONLY — NOT APPLIED TO DATABASE
 -- SAFETY: DO NOT EXECUTE. FOR OWNER ARCHITECTURAL REVIEW ONLY.
 --
--- This script supersedes the earlier `launch_passes` signed-pass design.
--- Under the owner decision, every signed-in user may choose Listings or AI and use
--- the actual features free for now. Payments will be enabled in a future release.
---
--- Compatibility & Rollback:
--- 1. Does not modify or drop customer subscriptions in `public.subscriptions`.
--- 2. If `public.launch_passes` was created in an earlier sandbox, this script
---    supersedes it cleanly. `launch_passes` can be dropped or left dormant.
--- 3. Policy starts explicitly DISABLED (`is_enabled = false`). Launch access cannot
---    become active until the owner reviews and executes the enabling UPDATE.
--- 4. Complete rollback script provided at the end of this file.
+-- REVISION NOTICE (Post-Review Hardening):
+-- 1. Correct schema contract: `user_launch_access` uses `user_id UUID PRIMARY KEY`,
+--    NOT an artificial `id` column.
+-- 2. `SECURITY DEFINER` procedures strictly pin `SET search_path = public, pg_temp;`
+--    preventing search_path hijacking via temporary objects.
+-- 3. Policy and RLS definitions are idempotent and rerunnable (`DROP POLICY IF EXISTS`).
+-- 4. Explicitly revokes `authenticated` privileges on all launch tables prior to
+--    narrow column-level grants.
+-- 5. Internal administrative fields (`revocation_reason`, `revoked_by`) are strictly
+--    omitted from the `authenticated` SELECT column grant to preserve admin privacy.
+-- 6. Administrative revocation procedure supports pre-selection abuse revocation via
+--    atomic upsert (`INSERT ... ON CONFLICT DO UPDATE`).
+-- 7. Eliminates authenticated RPC bypass: `set_user_launch_tier` is callable ONLY by
+--    `service_role`. All client selection flows route through `POST /api/billing/activate`
+--    which enforces session verification, payload validation, and rate limiting.
+-- 8. Global AI quota uses atomic `INSERT ... ON CONFLICT DO UPDATE ... WHERE request_count < limit`
+--    with `RETURNING`, eliminating race conditions and TOCTOU bugs. Refund uses atomic decrement.
+-- 9. Rate limiting transparency: Edge in-memory Maps are best-effort per isolate;
+--    cross-instance rate limiting relies on shared PostgreSQL store (`public.check_rate_limit`).
+-- 10. Paid-Listings / Free-Launch-AI interaction: Existing paid subscriptions in
+--     `public.subscriptions` retain strict precedence (`accessSource: "subscription"`).
+--     They are NEVER silently modified or downgraded.
 -- ==============================================================================
 
 -- ------------------------------------------------------------------------------
@@ -40,18 +51,20 @@ ON CONFLICT (id) DO NOTHING;
 -- RLS: Enabled
 ALTER TABLE public.launch_policy ENABLE ROW LEVEL SECURITY;
 
--- Grants & Revokes
-REVOKE ALL ON public.launch_policy FROM PUBLIC, anon;
+-- Grants & Revokes: Explicitly revoke all authenticated before narrow grant
+REVOKE ALL ON public.launch_policy FROM PUBLIC, anon, authenticated;
 GRANT SELECT ON public.launch_policy TO authenticated, service_role;
 GRANT ALL ON public.launch_policy TO service_role;
 
--- RLS Policies
+-- RLS Policies (Idempotent)
+DROP POLICY IF EXISTS "allow_read_launch_policy" ON public.launch_policy;
 CREATE POLICY "allow_read_launch_policy"
   ON public.launch_policy
   FOR SELECT
   TO authenticated, service_role
   USING (true);
 
+DROP POLICY IF EXISTS "service_role_manage_launch_policy" ON public.launch_policy;
 CREATE POLICY "service_role_manage_launch_policy"
   ON public.launch_policy
   FOR ALL
@@ -61,8 +74,8 @@ CREATE POLICY "service_role_manage_launch_policy"
 
 -- ------------------------------------------------------------------------------
 -- 2. User Launch Access Selection Table
--- Stores the server-backed tier selection for signed-in users.
--- Single primary key on user_id ensures idempotent tier updates.
+-- Stores server-backed tier selection for signed-in users.
+-- Single primary key on user_id ensures idempotent tier updates (no artificial id).
 -- Supports administrative revocation for abuse via revoked_at timestamp.
 -- ------------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.user_launch_access (
@@ -83,19 +96,26 @@ CREATE INDEX IF NOT EXISTS idx_user_launch_access_active
 -- RLS: Enabled
 ALTER TABLE public.user_launch_access ENABLE ROW LEVEL SECURITY;
 
--- Grants & Revokes
-REVOKE ALL ON public.user_launch_access FROM PUBLIC, anon;
-GRANT SELECT ON public.user_launch_access TO authenticated, service_role;
+-- Grants & Revokes: Explicitly revoke authenticated table-wide privileges
+REVOKE ALL ON public.user_launch_access FROM PUBLIC, anon, authenticated;
+
+-- PRIVACY CONTROL: Grant SELECT strictly on user-facing columns.
+-- Internal revocation_reason and revoked_by are NEVER selectable by authenticated users.
+GRANT SELECT (user_id, tier, selected_at, updated_at, revoked_at)
+  ON public.user_launch_access TO authenticated;
+
+-- Full access reserved strictly for backend service_role
 GRANT ALL ON public.user_launch_access TO service_role;
 
--- RLS Policies
--- Users can view only their own launch access row; service_role can view all
+-- RLS Policies (Idempotent)
+DROP POLICY IF EXISTS "user_view_own_launch_access" ON public.user_launch_access;
 CREATE POLICY "user_view_own_launch_access"
   ON public.user_launch_access
   FOR SELECT
   TO authenticated
   USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "service_role_manage_user_launch_access" ON public.user_launch_access;
 CREATE POLICY "service_role_manage_user_launch_access"
   ON public.user_launch_access
   FOR ALL
@@ -122,6 +142,7 @@ ALTER TABLE public.ai_global_usage_daily ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.ai_global_usage_daily FROM PUBLIC, anon, authenticated;
 GRANT ALL ON public.ai_global_usage_daily TO service_role;
 
+DROP POLICY IF EXISTS "service_role_manage_ai_global_usage" ON public.ai_global_usage_daily;
 CREATE POLICY "service_role_manage_ai_global_usage"
   ON public.ai_global_usage_daily
   FOR ALL
@@ -150,33 +171,31 @@ GRANT SELECT ON public.active_job_country_counts TO anon, authenticated, service
 
 -- ------------------------------------------------------------------------------
 -- 5. Stored Procedures: Tier Selection & Administrative Revocation
--- SECURITY DEFINER with safe search_path = public.
+-- All SECURITY DEFINER procedures strictly pin search_path = public, pg_temp.
 -- ------------------------------------------------------------------------------
 
--- Procedure 5.1: Atomic User Tier Selection
+-- Procedure 5.1: Service-Role Controlled User Tier Selection
+-- NOTE: Callable ONLY by service_role. Revoked from authenticated/anon to prevent RPC bypass.
 CREATE OR REPLACE FUNCTION public.set_user_launch_tier(
+  p_user_id UUID,
   p_tier VARCHAR(16)
 ) RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, pg_temp
 AS $$
 DECLARE
-  v_user_id UUID;
   v_policy RECORD;
   v_existing RECORD;
 BEGIN
-  -- Derive user ID strictly from authenticated session
-  v_user_id := auth.uid();
-  IF v_user_id IS NULL THEN
+  IF p_user_id IS NULL THEN
     RETURN jsonb_build_object(
       'success', false,
-      'code', 'AUTH_REQUIRED',
-      'error', 'Authentication required to select a launch access tier.'
+      'code', 'USER_ID_REQUIRED',
+      'error', 'A valid user ID is required.'
     );
   END IF;
 
-  -- Validate tier input
   IF p_tier NOT IN ('listings', 'ai') THEN
     RETURN jsonb_build_object(
       'success', false,
@@ -217,20 +236,19 @@ BEGIN
   -- Check if user is revoked for abuse
   SELECT revoked_at, revocation_reason INTO v_existing
   FROM public.user_launch_access
-  WHERE user_id = v_user_id;
+  WHERE user_id = p_user_id;
 
   IF FOUND AND v_existing.revoked_at IS NOT NULL THEN
     RETURN jsonb_build_object(
       'success', false,
       'code', 'LAUNCH_ACCESS_REVOKED',
-      'error', 'Launch access has been revoked for this account.',
-      'revocation_reason', v_existing.revocation_reason
+      'error', 'Launch access has been revoked for this account.'
     );
   END IF;
 
   -- Idempotently upsert tier selection
   INSERT INTO public.user_launch_access (user_id, tier, selected_at, updated_at)
-  VALUES (v_user_id, p_tier, NOW(), NOW())
+  VALUES (p_user_id, p_tier, NOW(), NOW())
   ON CONFLICT (user_id) DO UPDATE
   SET tier = EXCLUDED.tier,
       updated_at = NOW();
@@ -245,34 +263,52 @@ BEGIN
 END;
 $$;
 
--- Function grants with explicit signatures
-REVOKE ALL ON FUNCTION public.set_user_launch_tier(VARCHAR(16)) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.set_user_launch_tier(VARCHAR(16)) TO authenticated, service_role;
+-- Service-role only execution; explicitly revoked from authenticated and anon
+REVOKE ALL ON FUNCTION public.set_user_launch_tier(UUID, VARCHAR(16)) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.set_user_launch_tier(UUID, VARCHAR(16)) TO service_role;
 
--- Procedure 5.2: Administrative Individual Revocation
+-- Procedure 5.2: Administrative Individual Revocation (Supports Pre-Selection Upsert)
 CREATE OR REPLACE FUNCTION public.revoke_user_launch_access(
   p_user_id UUID,
   p_reason TEXT DEFAULT 'Revoked by administrator'
 ) RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, pg_temp
 AS $$
 BEGIN
-  UPDATE public.user_launch_access
+  IF p_user_id IS NULL THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'code', 'USER_ID_REQUIRED',
+      'error', 'A valid user ID is required.'
+    );
+  END IF;
+
+  -- Atomically upsert revocation row so that users revoked prior to first selection are also blocked
+  INSERT INTO public.user_launch_access (
+    user_id,
+    tier,
+    selected_at,
+    updated_at,
+    revoked_at,
+    revocation_reason,
+    revoked_by
+  )
+  VALUES (
+    p_user_id,
+    'listings',
+    NOW(),
+    NOW(),
+    NOW(),
+    p_reason,
+    auth.uid()
+  )
+  ON CONFLICT (user_id) DO UPDATE
   SET revoked_at = NOW(),
       revocation_reason = p_reason,
       updated_at = NOW(),
-      revoked_by = auth.uid()
-  WHERE user_id = p_user_id;
-
-  IF NOT FOUND THEN
-    RETURN jsonb_build_object(
-      'success', false,
-      'code', 'USER_NOT_FOUND',
-      'error', 'No launch access record found for the specified user.'
-    );
-  END IF;
+      revoked_by = auth.uid();
 
   RETURN jsonb_build_object(
     'success', true,
@@ -286,7 +322,91 @@ REVOKE ALL ON FUNCTION public.revoke_user_launch_access(UUID, TEXT) FROM PUBLIC,
 GRANT EXECUTE ON FUNCTION public.revoke_user_launch_access(UUID, TEXT) TO service_role;
 
 -- ------------------------------------------------------------------------------
--- 6. Superseding Note & Rollback Instructions
+-- 6. Atomic Global AI Quota & Refund Functions
+-- Eliminates race conditions via single-statement INSERT ... ON CONFLICT DO UPDATE ... WHERE
+-- ------------------------------------------------------------------------------
+
+-- Procedure 6.1: Atomic Conditional Capacity Check & Increment
+CREATE OR REPLACE FUNCTION public.check_and_increment_global_ai_quota(
+  p_estimated_tokens BIGINT DEFAULT 0,
+  p_max_daily_requests INT DEFAULT 0
+) RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_res RECORD;
+BEGIN
+  IF p_max_daily_requests IS NULL OR p_max_daily_requests <= 0 THEN
+    RETURN jsonb_build_object(
+      'allowed', false,
+      'code', 'CAP_REQUIRED',
+      'error', 'Global AI capacity cap is unset or invalid. Explicit positive limit is required.'
+    );
+  END IF;
+
+  -- Atomic insert-or-increment with conditional ceiling enforcement
+  INSERT INTO public.ai_global_usage_daily AS d (usage_date, request_count, total_tokens, updated_at)
+  VALUES (CURRENT_DATE, 1, GREATEST(0, p_estimated_tokens), NOW())
+  ON CONFLICT (usage_date) DO UPDATE
+  SET request_count = d.request_count + 1,
+      total_tokens = d.total_tokens + GREATEST(0, p_estimated_tokens),
+      updated_at = NOW()
+  WHERE d.request_count < p_max_daily_requests
+  RETURNING d.request_count, d.total_tokens INTO v_res;
+
+  IF FOUND THEN
+    RETURN jsonb_build_object(
+      'allowed', true,
+      'currentCount', v_res.request_count,
+      'limit', p_max_daily_requests
+    );
+  ELSE
+    SELECT request_count INTO v_res FROM public.ai_global_usage_daily WHERE usage_date = CURRENT_DATE;
+    RETURN jsonb_build_object(
+      'allowed', false,
+      'code', 'GLOBAL_AI_CAPACITY_REACHED',
+      'currentCount', COALESCE(v_res.request_count, p_max_daily_requests),
+      'limit', p_max_daily_requests
+    );
+  END IF;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.check_and_increment_global_ai_quota(BIGINT, INT) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.check_and_increment_global_ai_quota(BIGINT, INT) TO service_role;
+
+-- Procedure 6.2: Atomic Upstream Failure Refund
+CREATE OR REPLACE FUNCTION public.refund_global_ai_quota(
+  p_estimated_tokens BIGINT DEFAULT 0
+) RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_res RECORD;
+BEGIN
+  UPDATE public.ai_global_usage_daily
+  SET request_count = GREATEST(0, request_count - 1),
+      total_tokens = GREATEST(0, total_tokens - GREATEST(0, p_estimated_tokens)),
+      updated_at = NOW()
+  WHERE usage_date = CURRENT_DATE
+  RETURNING request_count, total_tokens INTO v_res;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'currentCount', COALESCE(v_res.request_count, 0)
+  );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.refund_global_ai_quota(BIGINT) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.refund_global_ai_quota(BIGINT) TO service_role;
+
+-- ------------------------------------------------------------------------------
+-- 7. Superseding Note & Rollback Instructions
 -- ------------------------------------------------------------------------------
 -- SUPERSEDING NOTE:
 -- This script replaces the previous `launch_passes` signed-token mechanism.
@@ -296,8 +416,10 @@ GRANT EXECUTE ON FUNCTION public.revoke_user_launch_access(UUID, TEXT) TO servic
 --
 -- ROLLBACK INSTRUCTIONS (to completely remove this proposed feature):
 --   DROP VIEW IF EXISTS public.active_job_country_counts;
---   DROP FUNCTION IF EXISTS public.set_user_launch_tier(VARCHAR(16));
+--   DROP FUNCTION IF EXISTS public.refund_global_ai_quota(BIGINT);
+--   DROP FUNCTION IF EXISTS public.check_and_increment_global_ai_quota(BIGINT, INT);
 --   DROP FUNCTION IF EXISTS public.revoke_user_launch_access(UUID, TEXT);
---   DROP TABLE IF EXISTS public.user_launch_access;
---   DROP TABLE IF EXISTS public.ai_global_usage_daily;
---   DROP TABLE IF EXISTS public.launch_policy;
+--   DROP FUNCTION IF EXISTS public.set_user_launch_tier(UUID, VARCHAR(16));
+--   DROP TABLE IF EXISTS public.user_launch_access CASCADE;
+--   DROP TABLE IF EXISTS public.ai_global_usage_daily CASCADE;
+--   DROP TABLE IF EXISTS public.launch_policy CASCADE;

@@ -61,6 +61,10 @@ function createMockSupabaseForSearch() {
 
 function createMockSupabaseForAi() {
   return {
+    rpc: async () => ({
+      data: { allowed: true, currentCount: 1, limit: 1000 },
+      error: null,
+    }),
     auth: {
       getUser: async (token: string) => ({
         data: { user: { id: "user-ai-test", email: "test@example.com", user_metadata: {} } },
@@ -166,6 +170,7 @@ async function runRateLimitTests() {
 
   const mockDbAi = createMockSupabaseForAi();
   const aiHandler = createAiHandler({
+    env: { MAX_GLOBAL_DAILY_AI_REQUESTS: "1000" },
     getSupabaseAdmin: () => mockDbAi,
     getServerEntitlement: async () => ({ isPro: true }),
     callGroq: async () => "Simulated AI generated output",

@@ -1264,13 +1264,20 @@ export interface GlobalAiQuotaResult {
   currentCount: number;
   limit: number | null;
   isConfigured: boolean;
+  isServiceUnavailable?: boolean;
+  code?: string;
+  error?: string;
 }
 
 /**
- * Checks and records global daily AI request volume against MAX_GLOBAL_DAILY_AI_REQUESTS.
- * - If MAX_GLOBAL_DAILY_AI_REQUESTS is unset or non-numeric, does NOT invent a budget or block requests.
- * - If configured, enforces the owner's global spend/capacity guard across all users.
- * - Tracks daily volume in public.ai_global_usage_daily table.
+ * Checks and increments persistent global AI request volume atomically.
+ * Calls service-role-only stored procedure `public.check_and_increment_global_ai_quota`.
+ * 
+ * SECURITY CONTROLS:
+ * 1. Fails closed with isConfigured=false if MAX_GLOBAL_DAILY_AI_REQUESTS is unset or non-positive.
+ *    Does NOT enable uncapped AI or invent a cap/spend approval.
+ * 2. Uses atomic INSERT ... ON CONFLICT ... DO UPDATE with a conditional limit and RETURNING.
+ * 3. Fails closed with isServiceUnavailable=true if the RPC call fails or database is unreachable.
  */
 export async function checkAndIncrementGlobalAiQuota(
   supabaseAdmin: SupabaseClient,
@@ -1281,89 +1288,87 @@ export async function checkAndIncrementGlobalAiQuota(
     env?.MAX_GLOBAL_DAILY_AI_REQUESTS ||
     (typeof process !== "undefined" && process?.env?.MAX_GLOBAL_DAILY_AI_REQUESTS);
 
-  const isConfigured = Boolean(rawEnvLimit && !isNaN(parseInt(String(rawEnvLimit), 10)));
-  const limit = isConfigured ? parseInt(String(rawEnvLimit), 10) : null;
-  const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
-
-  try {
-    const { data: row, error: selectErr } = await supabaseAdmin
-      .from("ai_global_usage_daily")
-      .select("request_count, total_tokens")
-      .eq("usage_date", today)
-      .maybeSingle();
-
-    if (!selectErr) {
-      const currentCount = row?.request_count || 0;
-      if (limit !== null && currentCount >= limit) {
-        return {
-          allowed: false,
-          currentCount,
-          limit,
-          isConfigured: true,
-        };
-      }
-
-      if (row) {
-        await supabaseAdmin
-          .from("ai_global_usage_daily")
-          .update({
-            request_count: currentCount + 1,
-            total_tokens: (row.total_tokens || 0) + estimatedTokens,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("usage_date", today);
-      } else {
-        await supabaseAdmin.from("ai_global_usage_daily").insert({
-          usage_date: today,
-          request_count: 1,
-          total_tokens: estimatedTokens,
-          updated_at: new Date().toISOString(),
-        });
-      }
-
-      return {
-        allowed: true,
-        currentCount: currentCount + 1,
-        limit,
-        isConfigured,
-      };
-    }
-  } catch (err) {
-    // Non-blocking if table is not yet migrated; do not disrupt requests
+  // If cap is unset, empty, or invalid, FAIL CLOSED.
+  // Never enable uncapped AI or invent a spend approval.
+  if (!rawEnvLimit || isNaN(parseInt(String(rawEnvLimit), 10))) {
+    return {
+      allowed: false,
+      currentCount: 0,
+      limit: null,
+      isConfigured: false,
+      code: "AI_CAPACITY_UNCONFIGURED",
+      error: "Global daily AI request capacity is unconfigured. Owner configuration of MAX_GLOBAL_DAILY_AI_REQUESTS is required before AI operations can run.",
+    };
   }
 
-  return {
-    allowed: true,
-    currentCount: 0,
-    limit,
-    isConfigured,
-  };
+  const limit = parseInt(String(rawEnvLimit), 10);
+  if (limit <= 0) {
+    return {
+      allowed: false,
+      currentCount: 0,
+      limit,
+      isConfigured: false,
+      code: "INVALID_CAP",
+      error: "Global daily AI request capacity must be a positive integer.",
+    };
+  }
+
+  // Call atomic service-role RPC: check_and_increment_global_ai_quota
+  try {
+    const { data, error } = await supabaseAdmin.rpc("check_and_increment_global_ai_quota", {
+      p_estimated_tokens: Math.max(0, estimatedTokens),
+      p_max_daily_requests: limit,
+    });
+
+    if (error || !data) {
+      // Fail closed when a configured cap cannot be checked
+      return {
+        allowed: false,
+        currentCount: 0,
+        limit,
+        isConfigured: true,
+        isServiceUnavailable: true,
+        code: "GLOBAL_AI_CAPACITY_CHECK_FAILED",
+        error: "Unable to verify global daily AI capacity against database. Service temporarily unavailable.",
+      };
+    }
+
+    const res = typeof data === "string" ? JSON.parse(data) : data;
+    return {
+      allowed: Boolean(res.allowed),
+      currentCount: typeof res.currentCount === "number" ? res.currentCount : limit,
+      limit,
+      isConfigured: true,
+      code: res.code,
+      error: res.error,
+    };
+  } catch (err: any) {
+    // Fail closed when a configured cap cannot be checked
+    return {
+      allowed: false,
+      currentCount: 0,
+      limit,
+      isConfigured: true,
+      isServiceUnavailable: true,
+      code: "GLOBAL_AI_CAPACITY_CHECK_FAILED",
+      error: "Unable to check global daily AI capacity against database.",
+    };
+  }
 }
 
 /**
- * Decrements global AI request volume upon upstream failure.
+ * Decrements global AI request volume atomically upon upstream failure.
+ * Calls service-role-only stored procedure `public.refund_global_ai_quota`.
  */
 export async function refundGlobalAiQuota(
   supabaseAdmin: SupabaseClient,
   estimatedTokens: number = 0
 ): Promise<void> {
-  const today = new Date().toISOString().split("T")[0];
   try {
-    const { data: row, error: selectErr } = await supabaseAdmin
-      .from("ai_global_usage_daily")
-      .select("request_count, total_tokens")
-      .eq("usage_date", today)
-      .maybeSingle();
-
-    if (!selectErr && row && typeof row.request_count === "number" && row.request_count > 0) {
-      await supabaseAdmin
-        .from("ai_global_usage_daily")
-        .update({
-          request_count: Math.max(0, row.request_count - 1),
-          total_tokens: Math.max(0, (row.total_tokens || 0) - estimatedTokens),
-          updated_at: new Date().toISOString(),
-        })
-        .eq("usage_date", today);
-    }
-  } catch {}
+    await supabaseAdmin.rpc("refund_global_ai_quota", {
+      p_estimated_tokens: Math.max(0, estimatedTokens),
+    });
+  } catch (err) {
+    console.warn("[Quota Refund] Error executing atomic global AI refund:", err);
+  }
 }

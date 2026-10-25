@@ -337,6 +337,24 @@ export async function executeAiCore(
 
     const { payload } = payloadResult;
 
+    // Upstream provider API key pre-flight check:
+    // If external call is required and GROQ_API_KEY is missing, fail fast with HTTP 500
+    // without deducting user daily quota or recording global capacity usage.
+    let groqApiKey = "";
+    if (!activeDeps.callGroq) {
+      groqApiKey = getRuntimeEnv("GROQ_API_KEY", activeDeps.env) || "";
+      if (!groqApiKey || !groqApiKey.trim()) {
+        console.error("[AI Service] Missing required environment variable: GROQ_API_KEY");
+        return {
+          statusCode: 500,
+          body: {
+            error: "Missing required environment variable: GROQ_API_KEY",
+            missingVariable: "GROQ_API_KEY",
+          },
+        };
+      }
+    }
+
     // 4. Durable Quotas Enforcement (Per-User Daily Quota in Supabase)
     const quotaResult = await checkAndIncrementAiQuota(
       supabaseAdmin,
@@ -369,7 +387,7 @@ export async function executeAiCore(
     }
 
     // 4b. Global AI Cost / Capacity Guard (MAX_GLOBAL_DAILY_AI_REQUESTS)
-    // Does NOT invent a budget or block requests when unset.
+    // Fails closed if cap is unset/invalid or if check cannot be performed against the database.
     const globalQuota = await checkAndIncrementGlobalAiQuota(
       supabaseAdmin,
       payload.estimatedInputTokens,
@@ -378,6 +396,15 @@ export async function executeAiCore(
 
     if (!globalQuota.allowed) {
       await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
+      if (globalQuota.isServiceUnavailable || !globalQuota.isConfigured) {
+        return {
+          statusCode: 503,
+          body: {
+            error: globalQuota.error || "Global AI capacity check failed. Service temporarily unavailable.",
+            code: globalQuota.code || "AI_CAPACITY_UNCONFIGURED",
+          },
+        };
+      }
       return {
         statusCode: 429,
         body: {

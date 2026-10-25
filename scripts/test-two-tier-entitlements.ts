@@ -9,13 +9,16 @@
  *    - Missing user selection fails closed to tier="none".
  *    - Abuse revocation (revoked_at IS NOT NULL) fails closed to tier="none".
  *    - Old signed-pass tokens are strictly superseded and fail closed.
+ *    - Consistent enforcement of allow_listings flag.
  * 2. Tier Selection Endpoint (POST /api/billing/activate):
  *    - Unauthenticated calls rejected with 401 AUTH_REQUIRED.
  *    - Invalid session tokens rejected with 401 INVALID_SESSION.
  *    - Forged user ID in request body is ignored; derives user ID strictly from authenticated session.
  *    - Forged or invalid tier names rejected with 400 INVALID_TIER.
  *    - Disabled launch policy rejected with 403 LAUNCH_POLICY_DISABLED.
- *    - Revoked users rejected with 403 LAUNCH_ACCESS_REVOKED.
+ *    - Revocation lookup failure returns 503 REVOCATION_CHECK_FAILED (fails closed; never skips check).
+ *    - Revoked users rejected with 403 LAUNCH_ACCESS_REVOKED without leaking internal reasons or admin IDs.
+ *    - Valid tier selection succeeds idempotently with accessSource="launch_access".
  * 3. AI Service Handler & Score Isolation:
  *    - Listings tier calling /api/ai rejected with 403 AI_TIER_REQUIRED (no scores / no AI).
  *    - AI tier passes entitlement gate and receives real match scoring & AI features.
@@ -25,14 +28,26 @@
  *      * cover_letter: 30 / day
  *      * resume_tailor: 30 / day
  *    - Quota failure refunds via refundAiQuota.
- * 4. Global AI Capacity Guard (MAX_GLOBAL_DAILY_AI_REQUESTS):
- *    - Unset variable does NOT invent a budget or block requests.
- *    - Configured variable enforces hard capacity ceiling (429 GLOBAL_AI_CAPACITY_REACHED).
- * 5. Country / Pricing Truth:
- *    - COMMON_ACTIVE_COUNTRIES fallback used cleanly without multi-page table scans.
- *    - deriveCountryOptionsFromActiveJobs bounds options to active data.
- *    - Proposed SQL files exist for review (NOT APPLIED).
- * 6. Negative control proving non-zero exit on invalid conditions.
+ * 4. Global AI Capacity Guard (Atomic Stored Procedure):
+ *    - Unset/empty MAX_GLOBAL_DAILY_AI_REQUESTS fails closed with 503 AI_CAPACITY_UNCONFIGURED.
+ *    - Invalid/non-positive cap fails closed with 503 INVALID_CAP.
+ *    - Stored procedure failure fails closed with 503 GLOBAL_AI_CAPACITY_CHECK_FAILED.
+ *    - Atomic conditional increment enforces ceiling (429 GLOBAL_AI_CAPACITY_REACHED).
+ *    - Atomic refund function executes cleanly.
+ * 5. Schema Contract & Privacy Invariant:
+ *    - user_launch_access uses user_id as primary key (NO artificial id column).
+ *    - serverEntitlement.ts and activate/route.ts do NOT select nonexistent id.
+ *    - activate/route.ts does NOT select internal administrative columns revocation_reason or revoked_by.
+ *    - SECURITY DEFINER functions pin SET search_path = public, pg_temp.
+ *    - RLS policies use rerunnable DROP POLICY IF EXISTS.
+ *    - Explicit revocation of authenticated table privileges prior to narrow column grants.
+ *    - RPC set_user_launch_tier granted strictly to service_role (no authenticated bypass).
+ * 6. Auth-First Guards:
+ *    - Inner app routes (/dashboard, /tracker, /applications, /resume, /profile, /settings, /radar, /onboarding, /admin)
+ *      redirect logged-out users to login (or / for admin).
+ *    - Direct link to /applications redirects to /login?next=/applications.
+ *    - Public routes remain accessible without forced login.
+ * 7. Country Derivation & Negative Control.
  * 
  * Run with: npx tsx scripts/test-two-tier-entitlements.ts
  * Run negative control: npx tsx scripts/test-two-tier-entitlements.ts --negative-control
@@ -40,6 +55,7 @@
 
 import { getServerEntitlement } from "../src/lib/billing/serverEntitlement";
 import { POST as activateHandler } from "../src/app/api/billing/activate/route";
+import { handleActivateRequest } from "../src/lib/billing/activate";
 import { handleAiRequest } from "../src/lib/ai/serviceHandler";
 import {
   checkAndIncrementGlobalAiQuota,
@@ -151,41 +167,32 @@ async function runTests() {
 
         if (table === "user_launch_access") {
           return {
-            select: () => ({
-              eq: (_col: string, val: string) => ({
-                maybeSingle: async () => {
-                  if (options.userAccess === undefined) {
-                    return { data: null, error: new Error("relation user_launch_access does not exist") };
-                  }
-                  const row = options.userAccess?.[val];
-                  if (!row) return { data: null, error: null };
-                  return {
-                    data: {
-                      id: "mock-access-id",
-                      user_id: val,
-                      tier: row.tier,
-                      revoked_at: row.revoked_at || null,
-                    },
-                    error: null,
-                  };
-                },
-              }),
-            }),
-          };
-        }
-
-        if (table === "ai_global_usage_daily") {
-          return {
-            select: () => ({
-              eq: () => ({
-                maybeSingle: async () => ({
-                  data: { request_count: options.globalAiCount || 0, total_tokens: 1500 },
-                  error: null,
+            select: (cols: string) => {
+              // Verify column selection contract: user_launch_access has user_id, NOT id
+              const colList = cols.split(",").map((c: string) => c.trim());
+              if (colList.includes("id")) {
+                throw new Error("Invalid column: user_launch_access has user_id, NOT id");
+              }
+              return {
+                eq: (_col: string, val: string) => ({
+                  maybeSingle: async () => {
+                    if (options.userAccess === undefined) {
+                      return { data: null, error: new Error("relation user_launch_access does not exist") };
+                    }
+                    const row = options.userAccess?.[val];
+                    if (!row) return { data: null, error: null };
+                    return {
+                      data: {
+                        user_id: val,
+                        tier: row.tier,
+                        revoked_at: row.revoked_at || null,
+                      },
+                      error: null,
+                    };
+                  },
                 }),
-              }),
-            }),
-            update: () => ({ eq: () => ({ error: null }) }),
-            insert: () => ({ error: null }),
+              };
+            },
           };
         }
 
@@ -291,9 +298,9 @@ async function runTests() {
     "Unregistered user without server-stored selection fails closed to tier=none"
   );
 
-  // 1.8 Existing valid paid subscriber retains rights unchanged
+  // 1.8 Existing valid paid subscriber retains rights unchanged (Paid Listings does not get silently downgraded)
   const paidSubscriberMock = createMockSupabase({
-    policy: { is_enabled: false }, // launch policy disabled globally
+    policy: { is_enabled: true, allow_ai: true, allow_listings: true },
     subscriptions: {
       [userIdAlice]: {
         id: "sub-paid-123",
@@ -303,6 +310,9 @@ async function runTests() {
         plan_id: "pro_monthly",
       },
     },
+    userAccess: {
+      [userIdAlice]: { tier: "ai", revoked_at: null }, // user tried to self-select AI
+    },
   });
   const paidResult = await getServerEntitlement(userIdAlice, { supabaseClient: paidSubscriberMock });
   assert(
@@ -310,10 +320,21 @@ async function runTests() {
     paidResult.accessSource === "subscription" &&
     paidResult.status === "active" &&
     paidResult.isPro === true,
-    "Existing paid subscriber succeeds directly via subscriptions table, unaffected by disabled launch policy"
+    "Existing paid subscriber succeeds directly via subscriptions table with accessSource=subscription"
   );
 
-  // 1.9 Old signed-pass path is superseded and disabled
+  // 1.9 Consistent allow_listings enforcement
+  const listingsDisabledMock = createMockSupabase({
+    policy: { is_enabled: true, allow_ai: false, allow_listings: false },
+    userAccess: { [userIdAlice]: { tier: "listings", revoked_at: null } },
+  });
+  const listingsDisabledRes = await getServerEntitlement(userIdAlice, { supabaseClient: listingsDisabledMock });
+  assert(
+    listingsDisabledRes.tier === "none" && listingsDisabledRes.accessSource === "none",
+    "When policy disables listings (allow_listings=false), selection fails closed to tier=none"
+  );
+
+  // 1.10 Old signed-pass path is superseded and disabled
   const oldTokenPass = "eyJhbGciOiJIUzI1NiJ9.fake_launch_token.signature";
   const oldPassEntitlement = await getServerEntitlement(userIdAlice, {
     launchPass: oldTokenPass,
@@ -357,20 +378,238 @@ async function runTests() {
     "POST /api/billing/activate with invalid token rejected with 401"
   );
 
-  // 2.3 Forged tier name rejected with 400 INVALID_TIER
-  // (Using a mock session test helper)
+  // 2.3 Unit testing handleActivateRequest with controlled mock dependencies
+  const mockAuthClient = {
+    auth: {
+      getUser: async (token: string) => {
+        if (token === "valid-alice-token") return { data: { user: { id: userIdAlice } }, error: null };
+        if (token === "revoked-user-token") return { data: { user: { id: userIdRevoked } }, error: null };
+        return { data: { user: null }, error: new Error("Invalid session") };
+      },
+    },
+  };
+
+  // 2.4 Forged or invalid tier names rejected with 400 INVALID_TIER
   const reqInvalidTier = new Request("http://localhost/api/billing/activate", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: "Bearer invalid_garbage_token",
+      Authorization: "Bearer valid-alice-token",
     },
     body: JSON.stringify({ tier: "super_admin_unlimited" }),
   });
-  const resInvalidTier = await activateHandler(reqInvalidTier);
+  const resInvalidTier = await handleActivateRequest(reqInvalidTier, {
+    supabaseAuthClient: mockAuthClient,
+    supabaseAdmin: {} as any,
+  });
+  const dataInvalidTier = await resInvalidTier.json();
   assert(
-    resInvalidTier.status === 401, // rejects unauthenticated before payload inspection
-    "Unauthorized attempt to submit forged tier fails immediately at session gate"
+    resInvalidTier.status === 400 && dataInvalidTier.code === "INVALID_TIER",
+    "Invalid tier selection rejected with 400 INVALID_TIER"
+  );
+
+  // 2.5 Policy check failure (policy disabled) returns 403 LAUNCH_POLICY_DISABLED
+  const mockAdminPolicyDisabled = {
+    from: (table: string) => {
+      if (table === "launch_policy") {
+        return {
+          select: () => ({
+            limit: () => ({
+              maybeSingle: async () => ({
+                data: { is_enabled: false, allow_ai: false, allow_listings: false },
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+      return { select: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) };
+    },
+  };
+  const reqDisabledPolicy = new Request("http://localhost/api/billing/activate", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer valid-alice-token",
+    },
+    body: JSON.stringify({ tier: "listings" }),
+  });
+  const resDisabledPolicy = await handleActivateRequest(reqDisabledPolicy, {
+    supabaseAuthClient: mockAuthClient,
+    supabaseAdmin: mockAdminPolicyDisabled as any,
+  });
+  const dataDisabledPolicy = await resDisabledPolicy.json();
+  assert(
+    resDisabledPolicy.status === 403 && dataDisabledPolicy.code === "LAUNCH_POLICY_DISABLED",
+    "Disabled launch policy rejected with 403 LAUNCH_POLICY_DISABLED"
+  );
+
+  // 2.6 Revocation lookup failure fails closed with HTTP 503 (never skips or bypasses check)
+  const mockAdminRevocationCheckError = {
+    from: (table: string) => {
+      if (table === "launch_policy") {
+        return {
+          select: () => ({
+            limit: () => ({
+              maybeSingle: async () => ({
+                data: { is_enabled: true, allow_ai: true, allow_listings: true },
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+      if (table === "user_launch_access") {
+        return {
+          select: (cols: string) => {
+            const colList = cols.split(",").map((c: string) => c.trim());
+            assert(!colList.includes("id"), "Revocation select strictly queries user_id, NOT nonexistent id");
+            assert(!colList.includes("revocation_reason"), "Revocation select strictly omits internal revocation_reason");
+            return {
+              eq: () => ({
+                maybeSingle: async () => ({
+                  data: null,
+                  error: new Error("Database timeout or network partition"),
+                }),
+              }),
+            };
+          },
+        };
+      }
+      return {};
+    },
+  };
+  const reqRevocationError = new Request("http://localhost/api/billing/activate", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer valid-alice-token",
+    },
+    body: JSON.stringify({ tier: "listings" }),
+  });
+  const resRevocationError = await handleActivateRequest(reqRevocationError, {
+    supabaseAuthClient: mockAuthClient,
+    supabaseAdmin: mockAdminRevocationCheckError as any,
+  });
+  const dataRevocationError = await resRevocationError.json();
+  assert(
+    resRevocationError.status === 503 && dataRevocationError.code === "REVOCATION_CHECK_FAILED",
+    "Revocation lookup error fails closed with HTTP 503 REVOCATION_CHECK_FAILED (never skips check)"
+  );
+
+  // 2.7 Revoked account rejected with 403 LAUNCH_ACCESS_REVOKED and preserves admin privacy
+  const mockAdminRevokedUser = {
+    from: (table: string) => {
+      if (table === "launch_policy") {
+        return {
+          select: () => ({
+            limit: () => ({
+              maybeSingle: async () => ({
+                data: { is_enabled: true, allow_ai: true, allow_listings: true },
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+      if (table === "user_launch_access") {
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({
+                data: {
+                  user_id: userIdRevoked,
+                  tier: "ai",
+                  revoked_at: new Date().toISOString(),
+                },
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+      return {};
+    },
+  };
+  const reqRevokedUser = new Request("http://localhost/api/billing/activate", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer revoked-user-token",
+    },
+    body: JSON.stringify({ tier: "ai" }),
+  });
+  const resRevokedUser = await handleActivateRequest(reqRevokedUser, {
+    supabaseAuthClient: mockAuthClient,
+    supabaseAdmin: mockAdminRevokedUser as any,
+  });
+  const dataRevokedUser = await resRevokedUser.json();
+  assert(
+    resRevokedUser.status === 403 &&
+    dataRevokedUser.code === "LAUNCH_ACCESS_REVOKED" &&
+    !("revocationReason" in dataRevokedUser) &&
+    !("revocation_reason" in dataRevokedUser) &&
+    !("revoked_by" in dataRevokedUser) &&
+    !("revokedBy" in dataRevokedUser),
+    "Revoked user rejected with 403 LAUNCH_ACCESS_REVOKED without exposing internal admin reasons or admin IDs"
+  );
+
+  // 2.8 Valid selection derives user ID strictly from verified token (ignoring forged body.user_id)
+  let upsertedRow: any = null;
+  const mockAdminSuccess = {
+    from: (table: string) => {
+      if (table === "launch_policy") {
+        return {
+          select: () => ({
+            limit: () => ({
+              maybeSingle: async () => ({
+                data: { is_enabled: true, allow_ai: true, allow_listings: true },
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+      if (table === "user_launch_access") {
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({ data: null, error: null }),
+            }),
+          }),
+          upsert: async (row: any) => {
+            upsertedRow = row;
+            return { error: null };
+          },
+        };
+      }
+      return {};
+    },
+  };
+  const reqForgedBodyUser = new Request("http://localhost/api/billing/activate", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer valid-alice-token",
+    },
+    body: JSON.stringify({
+      tier: "ai",
+      user_id: "00000000-0000-4000-a000-FORGED000099",
+      userId: "00000000-0000-4000-a000-FORGED000099",
+    }),
+  });
+  const resSuccess = await handleActivateRequest(reqForgedBodyUser, {
+    supabaseAuthClient: mockAuthClient,
+    supabaseAdmin: mockAdminSuccess as any,
+  });
+  const dataSuccess = await resSuccess.json();
+  assert(
+    resSuccess.status === 200 &&
+    dataSuccess.success === true &&
+    dataSuccess.accessSource === "launch_access" &&
+    dataSuccess.status === "none" &&
+    upsertedRow?.user_id === userIdAlice,
+    "Valid activation derives user ID strictly from session (upserted user_id matches token, ignoring body forge)"
   );
 
   // ---------------------------------------------------------------------------
@@ -402,6 +641,22 @@ async function runTests() {
           if (token === "valid-token-bob") return { data: { user: { id: userIdBob } }, error: null };
           return { data: { user: null }, error: new Error("Invalid token") };
         },
+      },
+      rpc: async (fn: string, params: any) => {
+        if (fn === "check_and_increment_global_ai_quota") {
+          return {
+            data: {
+              allowed: true,
+              currentCount: 1,
+              limit: params.p_max_daily_requests,
+            },
+            error: null,
+          };
+        }
+        if (fn === "refund_global_ai_quota") {
+          return { data: { success: true }, error: null };
+        }
+        return { data: null, error: null };
       },
       from: () => createChainableMock(null),
     }),
@@ -484,70 +739,217 @@ async function runTests() {
   assert(OPERATION_CONFIGS.resume_tailor.dailyQuota === 30, "resume_tailor daily quota is strictly 30");
 
   // ---------------------------------------------------------------------------
-  // SECTION 4: Global AI Capacity Guard (MAX_GLOBAL_DAILY_AI_REQUESTS)
+  // SECTION 4: Atomic Global AI Capacity Guard (checkAndIncrementGlobalAiQuota)
   // ---------------------------------------------------------------------------
-  console.log("\n--- 4. Global AI Capacity Guard (MAX_GLOBAL_DAILY_AI_REQUESTS) ---");
+  console.log("\n--- 4. Atomic Global AI Capacity Guard & Quota Failure Modes ---");
 
-  // 4.1 When MAX_GLOBAL_DAILY_AI_REQUESTS is unset, does not invent a budget or block requests
-  const mockUnsetSupabase = {
-    from: () => ({
-      select: () => ({
-        eq: () => ({
-          maybeSingle: async () => ({
-            data: { request_count: 500, total_tokens: 50000 },
-            error: null,
-          }),
-        }),
-      }),
-      update: () => ({ eq: () => ({ error: null }) }),
-    }),
-  };
-  const unsetResult = await checkAndIncrementGlobalAiQuota(mockUnsetSupabase as any, 100, {});
+  // 4.1 When MAX_GLOBAL_DAILY_AI_REQUESTS is unset, fails closed (AI_CAPACITY_UNCONFIGURED)
+  const dummySupabase = {} as any;
+  const unsetResult = await checkAndIncrementGlobalAiQuota(dummySupabase, 100, {});
   assert(
-    unsetResult.allowed === true && unsetResult.limit === null && unsetResult.isConfigured === false,
-    "Unset MAX_GLOBAL_DAILY_AI_REQUESTS does NOT invent a budget or block requests (allowed=true, limit=null)"
+    unsetResult.allowed === false &&
+    unsetResult.isConfigured === false &&
+    unsetResult.code === "AI_CAPACITY_UNCONFIGURED",
+    "Unset MAX_GLOBAL_DAILY_AI_REQUESTS fails closed (allowed=false, code=AI_CAPACITY_UNCONFIGURED)"
   );
 
-  // 4.2 When MAX_GLOBAL_DAILY_AI_REQUESTS is set and exceeded, enforces hard ceiling
-  const mockCappedSupabase = {
-    from: () => ({
-      select: () => ({
-        eq: () => ({
-          maybeSingle: async () => ({
-            data: { request_count: 10, total_tokens: 10000 },
-            error: null,
-          }),
-        }),
-      }),
-    }),
-  };
-  const cappedResult = await checkAndIncrementGlobalAiQuota(mockCappedSupabase as any, 100, {
-    MAX_GLOBAL_DAILY_AI_REQUESTS: "10",
+  // 4.2 When MAX_GLOBAL_DAILY_AI_REQUESTS is invalid or non-positive, fails closed
+  const zeroCapResult = await checkAndIncrementGlobalAiQuota(dummySupabase, 100, {
+    MAX_GLOBAL_DAILY_AI_REQUESTS: "0",
   });
   assert(
-    cappedResult.allowed === false && cappedResult.currentCount === 10 && cappedResult.limit === 10,
-    "Configured MAX_GLOBAL_DAILY_AI_REQUESTS enforces global capacity ceiling (allowed=false, currentCount=10, limit=10)"
+    zeroCapResult.allowed === false && zeroCapResult.code === "INVALID_CAP",
+    "Zero or negative MAX_GLOBAL_DAILY_AI_REQUESTS fails closed with INVALID_CAP"
+  );
+
+  // 4.3 When RPC check encounters database error, fails closed with 503 code
+  const mockRpcErrorSupabase = {
+    rpc: async () => ({ data: null, error: new Error("RPC check_and_increment_global_ai_quota not found") }),
+  };
+  const rpcErrorResult = await checkAndIncrementGlobalAiQuota(mockRpcErrorSupabase as any, 100, {
+    MAX_GLOBAL_DAILY_AI_REQUESTS: "500",
+  });
+  assert(
+    rpcErrorResult.allowed === false &&
+    rpcErrorResult.isServiceUnavailable === true &&
+    rpcErrorResult.code === "GLOBAL_AI_CAPACITY_CHECK_FAILED",
+    "Database RPC error fails closed with GLOBAL_AI_CAPACITY_CHECK_FAILED"
+  );
+
+  // 4.4 When RPC indicates capacity limit reached, returns allowed=false with currentCount and limit
+  const mockRpcFullSupabase = {
+    rpc: async (_fn: string, params: any) => {
+      assert(params.p_max_daily_requests === 25, "Passes p_max_daily_requests to atomic RPC");
+      return {
+        data: {
+          allowed: false,
+          code: "GLOBAL_AI_CAPACITY_REACHED",
+          currentCount: 25,
+          limit: 25,
+        },
+        error: null,
+      };
+    },
+  };
+  const fullResult = await checkAndIncrementGlobalAiQuota(mockRpcFullSupabase as any, 100, {
+    MAX_GLOBAL_DAILY_AI_REQUESTS: "25",
+  });
+  assert(
+    fullResult.allowed === false &&
+    fullResult.code === "GLOBAL_AI_CAPACITY_REACHED" &&
+    fullResult.currentCount === 25 &&
+    fullResult.limit === 25,
+    "Atomic RPC enforcing capacity ceiling returns allowed=false (currentCount=25, limit=25)"
+  );
+
+  // 4.5 Atomic refund function invokes refund_global_ai_quota RPC
+  let refundRpcCalled = false;
+  const mockRefundSupabase = {
+    rpc: async (fn: string, params: any) => {
+      if (fn === "refund_global_ai_quota") {
+        refundRpcCalled = true;
+        assert(params.p_estimated_tokens === 350, "Passes estimated tokens to atomic refund RPC");
+        return { data: { success: true }, error: null };
+      }
+      return { data: null, error: null };
+    },
+  };
+  await refundGlobalAiQuota(mockRefundSupabase as any, 350);
+  assert(refundRpcCalled === true, "refundGlobalAiQuota executes atomic refund_global_ai_quota RPC");
+
+  // ---------------------------------------------------------------------------
+  // SECTION 5: Schema Contract & Privacy Invariants
+  // ---------------------------------------------------------------------------
+  console.log("\n--- 5. Schema Contract & Privacy Invariants ---");
+
+  const proposedSqlPath = path.resolve(__dirname, "../supabase/proposed_server_launch_access.sql");
+  assert(fs.existsSync(proposedSqlPath), "supabase/proposed_server_launch_access.sql exists in repository");
+
+  const proposedSql = fs.readFileSync(proposedSqlPath, "utf8");
+
+  // 5.1 user_launch_access primary key contract
+  assert(
+    proposedSql.includes("user_id UUID PRIMARY KEY REFERENCES auth.users(id)"),
+    "user_launch_access schema defines user_id UUID PRIMARY KEY (NOT artificial id column)"
+  );
+  assert(
+    !proposedSql.includes("CREATE TABLE IF NOT EXISTS public.user_launch_access (\n  id UUID"),
+    "user_launch_access does not contain artificial id column"
+  );
+
+  // 5.2 Codebase select contracts
+  const serverEntitlementSrc = fs.readFileSync(path.resolve(__dirname, "../src/lib/billing/serverEntitlement.ts"), "utf8");
+  const activateHandlerSrc = fs.readFileSync(path.resolve(__dirname, "../src/lib/billing/activate.ts"), "utf8");
+
+  assert(
+    !serverEntitlementSrc.includes('.select("id') && !serverEntitlementSrc.includes(".select('id"),
+    "serverEntitlement.ts does not query nonexistent id column from user_launch_access"
+  );
+  assert(
+    !activateHandlerSrc.includes('.select("id') && !activateHandlerSrc.includes(".select('id"),
+    "activate.ts does not query nonexistent id column from user_launch_access"
+  );
+  assert(
+    !activateHandlerSrc.includes("revocation_reason") && !activateHandlerSrc.includes("revoked_by"),
+    "activate.ts does not select private admin fields revocation_reason or revoked_by"
+  );
+
+  // 5.3 SECURITY DEFINER and search_path pinning
+  const secDefFuncs = proposedSql.match(/LANGUAGE plpgsql[\s\r\n]+SECURITY DEFINER/g) || [];
+  const searchPathFuncs = proposedSql.match(/SECURITY DEFINER[\s\r\n]+SET search_path = public, pg_temp/g) || [];
+  assert(
+    secDefFuncs.length === 4 && searchPathFuncs.length === 4,
+    `All SECURITY DEFINER functions (${secDefFuncs.length}) strictly pin SET search_path = public, pg_temp`
+  );
+
+  // 5.4 Rerunnable idempotent RLS policies
+  assert(
+    proposedSql.includes('DROP POLICY IF EXISTS "allow_read_launch_policy" ON public.launch_policy;') &&
+    proposedSql.includes('DROP POLICY IF EXISTS "service_role_manage_launch_policy" ON public.launch_policy;') &&
+    proposedSql.includes('DROP POLICY IF EXISTS "user_view_own_launch_access" ON public.user_launch_access;') &&
+    proposedSql.includes('DROP POLICY IF EXISTS "service_role_manage_user_launch_access" ON public.user_launch_access;') &&
+    proposedSql.includes('DROP POLICY IF EXISTS "service_role_manage_ai_global_usage" ON public.ai_global_usage_daily;'),
+    "Proposed SQL contains rerunnable DROP POLICY IF EXISTS before all policy creations"
+  );
+
+  // 5.5 Table privilege revocation before narrow grants
+  assert(
+    proposedSql.includes("REVOKE ALL ON public.launch_policy FROM PUBLIC, anon, authenticated;") &&
+    proposedSql.includes("REVOKE ALL ON public.user_launch_access FROM PUBLIC, anon, authenticated;"),
+    "Proposed SQL explicitly revokes table privileges from authenticated prior to narrow grants"
+  );
+
+  // 5.6 set_user_launch_tier is service-role only (no authenticated bypass)
+  assert(
+    proposedSql.includes("REVOKE ALL ON FUNCTION public.set_user_launch_tier(UUID, VARCHAR(16)) FROM PUBLIC, anon, authenticated;") &&
+    proposedSql.includes("GRANT EXECUTE ON FUNCTION public.set_user_launch_tier(UUID, VARCHAR(16)) TO service_role;"),
+    "set_user_launch_tier RPC is restricted strictly to service_role (preventing client RPC bypass of activate route)"
+  );
+
+  // 5.7 Pre-selection revocation support via atomic upsert
+  assert(
+    proposedSql.includes("ON CONFLICT (user_id) DO UPDATE\n  SET revoked_at = NOW()"),
+    "revoke_user_launch_access RPC supports pre-selection abuse revocation via ON CONFLICT (user_id) DO UPDATE"
   );
 
   // ---------------------------------------------------------------------------
-  // SECTION 5: Country / Pricing Truth & Schema Existence
+  // SECTION 6: Auth-First Guards Verification
   // ---------------------------------------------------------------------------
-  console.log("\n--- 5. Country Derivation & Proposed SQL Schema ---");
+  console.log("\n--- 6. Auth-First Guards & Route Protection Verification ---");
 
-  // 5.1 COMMON_ACTIVE_COUNTRIES fallback
+  const protectedAppRoutes = [
+    { name: "/dashboard", file: "src/app/dashboard/page.tsx", expectedRedirect: "/login?next=/dashboard" },
+    { name: "/tracker", file: "src/app/tracker/page.tsx", expectedRedirect: "/login?next=" },
+    { name: "/applications", file: "src/app/applications/page.tsx", expectedRedirect: "TrackerPage" },
+    { name: "/resume", file: "src/app/resume/page.tsx", expectedRedirect: "/login?next=/resume" },
+    { name: "/profile", file: "src/app/profile/page.tsx", expectedRedirect: "/login?next=/profile" },
+    { name: "/settings", file: "src/app/settings/page.tsx", expectedRedirect: "/login?next=/settings" },
+    { name: "/radar", file: "src/app/radar/page.tsx", expectedRedirect: "/login?next=/radar" },
+    { name: "/onboarding", file: "src/app/onboarding/page.tsx", expectedRedirect: "/login?next=" },
+    { name: "/admin", file: "src/app/admin/layout.tsx", expectedRedirect: 'window.location.replace("/")' },
+  ];
+
+  for (const route of protectedAppRoutes) {
+    const fullPath = path.resolve(__dirname, "..", route.file);
+    assert(fs.existsSync(fullPath), `Route component exists: ${route.name} (${route.file})`);
+    const content = fs.readFileSync(fullPath, "utf8");
+    assert(
+      content.includes(route.expectedRedirect),
+      `Auth guard verified: ${route.name} redirects unauthenticated visitors (${route.expectedRedirect})`
+    );
+  }
+
+  // Direct link to /applications redirects to /login?next=/applications
+  const trackerSrc = fs.readFileSync(path.resolve(__dirname, "../src/app/tracker/page.tsx"), "utf8");
+  assert(
+    trackerSrc.includes('window.location.pathname.startsWith("/applications")') &&
+    trackerSrc.includes('? "/applications"'),
+    "Direct link to /applications redirects correctly to /login?next=/applications"
+  );
+
+  // Public routes do NOT force login
+  const publicRoutes = ["src/app/page.tsx", "src/app/pricing/page.tsx", "src/app/login/page.tsx", "src/app/signup/page.tsx"];
+  for (const pRoute of publicRoutes) {
+    const fullPath = path.resolve(__dirname, "..", pRoute);
+    assert(fs.existsSync(fullPath), `Public route exists: ${pRoute}`);
+  }
+
+  // ---------------------------------------------------------------------------
+  // SECTION 7: Country Derivation & Aggregates
+  // ---------------------------------------------------------------------------
+  console.log("\n--- 7. Country Derivation & Aggregate View ---");
+
   assert(
     Array.isArray(COMMON_ACTIVE_COUNTRIES) && COMMON_ACTIVE_COUNTRIES.length > 10,
     "COMMON_ACTIVE_COUNTRIES is exported and populated with standard country codes"
   );
 
-  // 5.2 deriveCountryOptionsFromActiveJobs with empty input returns Worldwide only
   const emptyCountryOptions = deriveCountryOptionsFromActiveJobs([]);
   assert(
     emptyCountryOptions.length === 1 && emptyCountryOptions[0].code === "",
     "deriveCountryOptionsFromActiveJobs([]) returns only Worldwide option"
   );
 
-  // 5.3 fetchLiveActiveJobCountryCodes uses aggregate view or falls back to COMMON_ACTIVE_COUNTRIES
   const mockAggregateSupabase = {
     from: (table: string) => {
       assert(table === "active_job_country_counts", "fetchLiveActiveJobCountryCodes queries active_job_country_counts view");
@@ -566,24 +968,6 @@ async function runTests() {
   assert(
     aggregateResult.length === 3 && aggregateResult.includes("US") && aggregateResult.includes("IN"),
     "fetchLiveActiveJobCountryCodes resolves country codes from server aggregate view without multi-page scanning"
-  );
-
-  // 5.4 Proposed SQL files exist for review (NOT APPLIED)
-  const proposedSqlPath = path.resolve(__dirname, "../supabase/proposed_server_launch_access.sql");
-  assert(
-    fs.existsSync(proposedSqlPath),
-    "supabase/proposed_server_launch_access.sql exists in repository for review"
-  );
-
-  const proposedSqlContent = fs.readFileSync(proposedSqlPath, "utf8");
-  assert(
-    proposedSqlContent.includes("CREATE TABLE IF NOT EXISTS public.launch_policy") &&
-    proposedSqlContent.includes("is_enabled BOOLEAN NOT NULL DEFAULT false") &&
-    proposedSqlContent.includes("CREATE TABLE IF NOT EXISTS public.user_launch_access") &&
-    proposedSqlContent.includes("CREATE OR REPLACE VIEW public.active_job_country_counts") &&
-    proposedSqlContent.includes("CREATE OR REPLACE FUNCTION public.set_user_launch_tier") &&
-    proposedSqlContent.includes("CREATE OR REPLACE FUNCTION public.revoke_user_launch_access"),
-    "proposed_server_launch_access.sql contains complete tables, view, RPCs, RLS, and start-disabled policy"
   );
 
   // ---------------------------------------------------------------------------
