@@ -655,17 +655,26 @@ async function setupPageMocks(page, options = {}) {
   });
 
   if (isSigned) {
-    const cookieChunks = ssr.createChunks(
-      "sb-szakevhxhwpeskidvtfs-auth-token",
-      "base64-" + ssr.stringToBase64URL(JSON.stringify(sampleSession))
-    );
-    for (const c of cookieChunks) {
-      await page.setCookie({
-        name: c.name,
-        value: c.value,
-        domain: "localhost",
-        path: "/",
-      });
+    const candidateRefs = new Set(["szakevhxhwpeskidvtfs", "placeholder"]);
+    if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
+      try {
+        const h = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL).hostname.split(".")[0];
+        if (h) candidateRefs.add(h);
+      } catch {}
+    }
+    for (const ref of candidateRefs) {
+      const cookieChunks = ssr.createChunks(
+        `sb-${ref}-auth-token`,
+        "base64-" + ssr.stringToBase64URL(JSON.stringify(sampleSession))
+      );
+      for (const c of cookieChunks) {
+        await page.setCookie({
+          name: c.name,
+          value: c.value,
+          domain: "localhost",
+          path: "/",
+        });
+      }
     }
 
     await page.setCookie({
@@ -676,7 +685,7 @@ async function setupPageMocks(page, options = {}) {
     });
 
     await page.evaluateOnNewDocument(
-      ({ profile, cookieNotice, initialApps }) => {
+      ({ profile, cookieNotice, initialApps, sampleSession }) => {
         try {
           const isReload =
             Boolean(window.performance && window.performance.getEntriesByType && window.performance.getEntriesByType("navigation")[0]?.type === "reload") ||
@@ -685,6 +694,10 @@ async function setupPageMocks(page, options = {}) {
           if (!isReload) {
             sessionStorage.setItem("__test_page_initialized", "true");
             localStorage.clear();
+            for (const ref of ["szakevhxhwpeskidvtfs", "placeholder"]) {
+              localStorage.setItem(`sb-${ref}-auth-token`, JSON.stringify(sampleSession));
+            }
+            localStorage.setItem("careermonke_auth_user", JSON.stringify(sampleSession.user));
             localStorage.setItem("careermonke_candidate_profile", JSON.stringify(profile));
             localStorage.setItem("careermonke_user_email", "alex.candidate@careermonke.com");
             if (initialApps && initialApps.length > 0) {
@@ -732,7 +745,7 @@ async function setupPageMocks(page, options = {}) {
           }
         } catch {}
       },
-      { profile: sampleProfile, cookieNotice, initialApps: applicationsStore }
+      { profile: sampleProfile, cookieNotice, initialApps: applicationsStore, sampleSession }
     );
   } else {
     // Guest / unauthenticated state: clear cookies and local storage
