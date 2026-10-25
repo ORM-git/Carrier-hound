@@ -59,26 +59,23 @@ export async function GET(req: Request) {
     const pageSize = Math.min(100, Math.max(1, parseInt(searchParams.get("pageSize") || "50", 10)));
 
     let cfEnv: Record<string, any> | undefined;
-    let reqContextStatus = "unknown";
     try {
       const ctx = getRequestContext();
       if (ctx?.env) {
         cfEnv = ctx.env as Record<string, any>;
-        reqContextStatus = "returned_with_env";
-      } else {
-        reqContextStatus = "returned_without_env";
       }
-    } catch (err: any) {
-      reqContextStatus = `threw_${err?.name || "Error"}`;
-    }
+    } catch {}
 
-    const hasCtxRoleKey = Boolean(cfEnv?.SUPABASE_SERVICE_ROLE_KEY);
-    const hasCtxServiceKey = Boolean(cfEnv?.SUPABASE_SERVICE_KEY);
-    const hasProcRoleKey = typeof process !== "undefined" && Boolean(process.env?.SUPABASE_SERVICE_ROLE_KEY);
-    const hasProcServiceKey = typeof process !== "undefined" && Boolean(process.env?.SUPABASE_SERVICE_KEY);
+    const ctx_NEXT_PUBLIC_SUPABASE_URL = Boolean(cfEnv?.NEXT_PUBLIC_SUPABASE_URL);
+    const ctx_NEXT_PUBLIC_SUPABASE_ANON_KEY = Boolean(cfEnv?.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+    const ctx_SUPABASE_SERVICE_ROLE_KEY = Boolean(cfEnv?.SUPABASE_SERVICE_ROLE_KEY);
+
+    const proc_NEXT_PUBLIC_SUPABASE_URL = typeof process !== "undefined" && Boolean(process.env?.NEXT_PUBLIC_SUPABASE_URL);
+    const proc_NEXT_PUBLIC_SUPABASE_ANON_KEY = typeof process !== "undefined" && Boolean(process.env?.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+    const proc_SUPABASE_SERVICE_ROLE_KEY = typeof process !== "undefined" && Boolean(process.env?.SUPABASE_SERVICE_ROLE_KEY);
 
     console.log(
-      `[Search Route Runtime] getRequestContext: ${reqContextStatus}, ctx.env exists: ${Boolean(cfEnv)}, ctx has SUPABASE_SERVICE_ROLE_KEY: ${hasCtxRoleKey}, ctx has SUPABASE_SERVICE_KEY: ${hasCtxServiceKey}, proc has SUPABASE_SERVICE_ROLE_KEY: ${hasProcRoleKey}, proc has SUPABASE_SERVICE_KEY: ${hasProcServiceKey}`
+      `[Search Route Runtime] ctx.env: NEXT_PUBLIC_SUPABASE_URL=${ctx_NEXT_PUBLIC_SUPABASE_URL}, NEXT_PUBLIC_SUPABASE_ANON_KEY=${ctx_NEXT_PUBLIC_SUPABASE_ANON_KEY}, SUPABASE_SERVICE_ROLE_KEY=${ctx_SUPABASE_SERVICE_ROLE_KEY} | process.env: NEXT_PUBLIC_SUPABASE_URL=${proc_NEXT_PUBLIC_SUPABASE_URL}, NEXT_PUBLIC_SUPABASE_ANON_KEY=${proc_NEXT_PUBLIC_SUPABASE_ANON_KEY}, SUPABASE_SERVICE_ROLE_KEY=${proc_SUPABASE_SERVICE_ROLE_KEY}`
     );
 
     const cleanQuery = sanitizeSearchQuery(rawQuery);
