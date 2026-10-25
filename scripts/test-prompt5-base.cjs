@@ -226,7 +226,13 @@ async function setupPageMocks(page, options = {}) {
 
   await page.setRequestInterception(true);
   page.on("request", (req) => {
+    if (req.isInterceptResolutionHandled && req.isInterceptResolutionHandled()) {
+      return;
+    }
     const url = req.url();
+    const reqHeaders = req.headers ? req.headers() : {};
+    const acceptHeader = (reqHeaders["accept"] || reqHeaders["Accept"] || "").toLowerCase();
+    const isPgrstObject = acceptHeader.includes("vnd.pgrst.object+json");
 
     // Allow local document navigation and static assets to load normally
     if (url.startsWith("http://localhost:") && !url.includes("/api/")) {
@@ -280,7 +286,7 @@ async function setupPageMocks(page, options = {}) {
         });
         return;
       }
-      const isObjectExpected = (req.headers()["accept"] || "").includes("vnd.pgrst.object+json");
+      const isObjectExpected = isPgrstObject;
       const subRow = {
         id: "sub_mock_active",
         user_id: "usr_mock_123",
@@ -306,7 +312,7 @@ async function setupPageMocks(page, options = {}) {
     }
 
     if (url.includes("/user_preferences")) {
-      const isObjectExpected = (req.headers()["accept"] || "").includes("vnd.pgrst.object+json");
+      const isObjectExpected = isPgrstObject;
       const prefRow = {
         user_id: "usr_mock_123",
         roles: ["Staff Software Engineer", "Platform Engineer"],
@@ -336,7 +342,7 @@ async function setupPageMocks(page, options = {}) {
     }
 
     if (url.includes("/candidate_profiles") || url.includes("/profiles")) {
-      const isObjectExpected = (req.headers()["accept"] || "").includes("vnd.pgrst.object+json");
+      const isObjectExpected = isPgrstObject;
       req.respond({
         status: 200,
         headers: {
@@ -403,7 +409,7 @@ async function setupPageMocks(page, options = {}) {
     }
 
     if (url.includes("/daily_digests")) {
-      const isObjectExpected = (req.headers()["accept"] || "").includes("vnd.pgrst.object+json");
+      const isObjectExpected = isPgrstObject;
       req.respond({
         status: 200,
         headers: {
@@ -564,15 +570,16 @@ async function setupPageMocks(page, options = {}) {
     }
 
     if (url.includes("/rest/v1/jobs") || url.includes("jobs_public")) {
-      const isSingle = (req.headers()["accept"] || "").includes("vnd.pgrst.object+json");
+      const isSingle = isPgrstObject;
       const matched = mockDbJobs.find((j) => url.includes(j.id) || (j.legacy_id && url.includes(j.legacy_id))) || mockDbJobs[0];
+      const isFilteredById = url.includes("id=eq.") || url.includes(mockDbJobs[0].id) || url.includes(mockDbJobs[1]?.id || "");
       req.respond({
         status: 200,
         headers: {
           "Access-Control-Allow-Origin": "*",
           "Content-Type": isSingle ? "application/vnd.pgrst.object+json" : "application/json",
         },
-        body: isSingle ? JSON.stringify(matched) : JSON.stringify(mockDbJobs),
+        body: isSingle ? JSON.stringify(matched) : (isFilteredById ? JSON.stringify([matched]) : JSON.stringify(mockDbJobs)),
       });
       return;
     }
