@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { X, Copy, Download, Check, Sparkles, FileText, ArrowRight, ShieldCheck, AlertCircle } from "lucide-react";
 import { CandidateProfile } from "@/lib/resume/types";
 import { generateTailoredCoverLetter, validateCoverLetter, formatContactHeader } from "@/lib/resume/tailor";
@@ -13,8 +13,10 @@ import { downloadCoverLetterPdf } from "@/lib/resume/atsPdfGenerator";
 import { generateGroqTailoredCoverLetter, getGroqApiKey } from "@/lib/ai/groq";
 import { buildCoverLetterDocHtml, sanitizeDownloadFilename } from "@/lib/security/xss";
 import { toast } from "react-toastify";
+import { createClient } from "@/lib/supabase/client";
 
 interface CoverLetterModalProps {
+  userId?: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   candidate: CandidateProfile;
@@ -32,6 +34,7 @@ export default function CoverLetterModal({
   onOpenChange,
   candidate,
   job,
+  userId,
 }: CoverLetterModalProps) {
   const [content, setContent] = useState("");
   const [copied, setCopied] = useState(false);
@@ -40,10 +43,70 @@ export default function CoverLetterModal({
 
   const jobId = job.id || `${(job.company || "").replace(/\s+/g, "-")}_${(job.title || "").replace(/\s+/g, "-")}`;
 
+  const [activeOwnerId, setActiveOwnerId] = useState<string | null>(
+    userId === "guest" ? "guest" : null
+  );
+  const activeOwnerIdRef = useRef<string | null>(
+    userId === "guest" ? "guest" : null
+  );
+  const authGenerationRef = useRef<number>(0);
+
+  const getVerifiedSessionUserId = async (): Promise<string | null> => {
+    try {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      return session?.user?.id ?? null;
+    } catch {
+      return null;
+    }
+  };
+
+  useEffect(() => {
+    let isMounted = true;
+    const syncOwner = async () => {
+      authGenerationRef.current++;
+      const sessionUserId = await getVerifiedSessionUserId();
+      // Verified session user strictly determines owner.
+      // A null/failed session must NEVER resurrect an old prop identity.
+      const resolved = sessionUserId ?? (userId === "guest" ? "guest" : null);
+      if (isMounted) {
+        setActiveOwnerId(resolved);
+        activeOwnerIdRef.current = resolved;
+      }
+    };
+    syncOwner();
+    const handleAuth = () => syncOwner();
+    window.addEventListener("careermonke_auth_updated", handleAuth);
+
+    let authListener: { unsubscribe: () => void } | null = null;
+    try {
+      const supabase = createClient();
+      const { data } = supabase.auth.onAuthStateChange(() => {
+        syncOwner();
+      });
+      authListener = data.subscription;
+    } catch {}
+
+    return () => {
+      isMounted = false;
+      window.removeEventListener("careermonke_auth_updated", handleAuth);
+      authListener?.unsubscribe();
+    };
+  }, [userId]);
+
   useEffect(() => {
     if (open && candidate && job) {
+      const currentOwner = activeOwnerId;
+      // For authenticated work, stop safely when no owner is verified: clean rules-based, no cache
+      if (!currentOwner) {
+        const result = generateTailoredCoverLetter(candidate, job);
+        setContent(result.fullText);
+        setIsValidated(true);
+        return;
+      }
+
       // 1. Check per-job cache first
-      const cached = getCachedTailoredCoverLetter(jobId);
+      const cached = getCachedTailoredCoverLetter(jobId, currentOwner);
       if (cached && cached.fullText) {
         setContent(cached.fullText);
         setIsValidated(cached.isValidated ?? true);
@@ -51,8 +114,9 @@ export default function CoverLetterModal({
       }
 
       // Check remote Supabase cache before fresh generation
-      getTailoredCoverLetterAsync(jobId)
+      getTailoredCoverLetterAsync(jobId, currentOwner)
         .then((remote) => {
+          if (activeOwnerIdRef.current !== currentOwner) return;
           if (remote && remote.fullText) {
             setContent(remote.fullText);
             setIsValidated(remote.isValidated ?? true);
@@ -63,22 +127,37 @@ export default function CoverLetterModal({
           const result = generateTailoredCoverLetter(candidate, job);
           setContent(result.fullText);
           setIsValidated(true);
-          saveCachedTailoredCoverLetter(jobId, result);
+          saveCachedTailoredCoverLetter(jobId, result, currentOwner);
 
           // 3. If Groq API Key is configured, enhance with SMART_MODEL under hard evidence validation
           if (getGroqApiKey()) {
             setIsGeneratingAi(true);
+            const currentGen = ++authGenerationRef.current;
             generateGroqTailoredCoverLetter(candidate, job)
-              .then((res) => {
+              .then(async (res) => {
+                const liveSessionUserId = await getVerifiedSessionUserId();
+                const liveExpectedOwner = liveSessionUserId ?? (userId === "guest" ? "guest" : null);
+                if (
+                  authGenerationRef.current !== currentGen ||
+                  currentOwner !== liveExpectedOwner ||
+                  currentOwner !== activeOwnerIdRef.current
+                ) {
+                  console.warn("Auth changed during cover letter generation; discarding result.");
+                  return;
+                }
                 if (res.text) {
                   setContent(res.text);
                   setIsValidated(res.isValidated);
-                  saveCachedTailoredCoverLetter(jobId, {
-                    ...result,
-                    fullText: res.text,
-                    paragraphs: res.text.split("\n\n").filter(Boolean),
-                    isValidated: res.isValidated,
-                  });
+                  saveCachedTailoredCoverLetter(
+                    jobId,
+                    {
+                      ...result,
+                      fullText: res.text,
+                      paragraphs: res.text.split("\n\n").filter(Boolean),
+                      isValidated: res.isValidated,
+                    },
+                    currentOwner
+                  );
                   if (res.error) {
                     toast.warn(res.error);
                   }
@@ -96,14 +175,27 @@ export default function CoverLetterModal({
           const result = generateTailoredCoverLetter(candidate, job);
           setContent(result.fullText);
           setIsValidated(true);
-          saveCachedTailoredCoverLetter(jobId, result);
+          if (currentOwner) {
+            saveCachedTailoredCoverLetter(jobId, result, currentOwner);
+          }
         });
     }
-  }, [open, candidate, job, jobId]);
+  }, [open, candidate, job, jobId, activeOwnerId]);
 
   if (!open) return null;
 
-  const handleDownloadPdf = () => {
+  const verifyExportAllowed = async (): Promise<boolean> => {
+    if (userId === "guest") return true;
+    const liveSessionUser = await getVerifiedSessionUserId();
+    if (!liveSessionUser || liveSessionUser !== activeOwnerIdRef.current) {
+      toast.error("Please sign in with your active account to export tailored documents.");
+      return false;
+    }
+    return true;
+  };
+
+  const handleDownloadPdf = async () => {
+    if (!(await verifyExportAllowed())) return;
     downloadCoverLetterPdf({
       candidate,
       company: job.company,
@@ -117,26 +209,34 @@ export default function CoverLetterModal({
     setContent(newVal);
     const validation = validateCoverLetter(newVal, candidate, job);
     setIsValidated(validation.valid);
-    saveCachedTailoredCoverLetter(jobId, {
-      recipient: `Hiring Team at ${job.company}`,
-      company: job.company,
-      jobTitle: job.title,
-      salutation: `Dear Hiring Team at ${job.company},`,
-      contactHeader: formatContactHeader(candidate),
-      paragraphs: newVal.split("\n\n").filter(Boolean),
-      fullText: newVal,
-      isValidated: validation.valid,
-    });
+    if (activeOwnerId) {
+      saveCachedTailoredCoverLetter(
+        jobId,
+        {
+          recipient: `Hiring Team at ${job.company}`,
+          company: job.company,
+          jobTitle: job.title,
+          salutation: `Dear Hiring Team at ${job.company},`,
+          contactHeader: formatContactHeader(candidate),
+          paragraphs: newVal.split("\n\n").filter(Boolean),
+          fullText: newVal,
+          isValidated: validation.valid,
+        },
+        activeOwnerId
+      );
+    }
   };
 
-  const handleCopy = () => {
+  const handleCopy = async () => {
+    if (!(await verifyExportAllowed())) return;
     navigator.clipboard.writeText(content);
     setCopied(true);
     toast.success("Cover letter copied to clipboard!");
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleDownloadTxt = () => {
+  const handleDownloadTxt = async () => {
+    if (!(await verifyExportAllowed())) return;
     const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -149,7 +249,8 @@ export default function CoverLetterModal({
     toast.success("Cover letter downloaded as text file!");
   };
 
-  const handleDownloadDoc = () => {
+  const handleDownloadDoc = async () => {
+    if (!(await verifyExportAllowed())) return;
     // Generate clean Word-compatible document with strict HTML escaping
     const html = buildCoverLetterDocHtml(job.company, content);
     const blob = new Blob([html], { type: "application/msword;charset=utf-8" });

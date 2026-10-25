@@ -1,0 +1,20 @@
+{
+  "1280": {
+    "cardLeft": 88,
+    "cardWidth": 1176,
+    "innerContentX": 88,
+    "headerRowHeight": 49,
+    "bodyRowHeight": 80,
+    "titleFont": "18px / 700",
+    "thFont": "13px / 600"
+  },
+  "1440": {
+    "cardLeft": 168,
+    "cardWidth": 1176,
+    "innerContentX": 168,
+    "headerRowHeight": 49,
+    "bodyRowHeight": 80,
+    "titleFont": "18px / 700",
+    "thFont": "13px / 600"
+  }
+}

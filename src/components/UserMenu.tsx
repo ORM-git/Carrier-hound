@@ -152,6 +152,7 @@ export default function UserMenu({
         className={triggerClass}
         aria-haspopup="true"
         aria-expanded={open}
+        aria-label="User account menu"
       >
         <span className={avatarCircleClass}>{initial}</span>
         <span className="hidden sm:inline max-w-[100px] truncate">{shortEmail}</span>

@@ -272,18 +272,55 @@ export async function deleteCandidateProfile(): Promise<void> {
   }
 }
 
-const TAILORED_RESUME_PREFIX = "careermonke_tailored_resume_";
-const TAILORED_COVER_LETTER_PREFIX = "careermonke_tailored_cover_letter_";
+export const TAILORED_RESUME_PREFIX = "careermonke_tailored_resume_";
+export const TAILORED_COVER_LETTER_PREFIX = "careermonke_tailored_cover_letter_";
+
+export function getScopedTailoredResumeKey(jobId: string, ownerId?: string | null): string | null {
+  const resolvedOwner = ownerId?.trim() || null;
+  if (!resolvedOwner) return null;
+  if (resolvedOwner === "guest") {
+    return `${TAILORED_RESUME_PREFIX}guest_${jobId}`;
+  }
+  return `${TAILORED_RESUME_PREFIX}${resolvedOwner}_${jobId}`;
+}
+
+export function getScopedTailoredCoverLetterKey(jobId: string, ownerId?: string | null): string | null {
+  const resolvedOwner = ownerId?.trim() || null;
+  if (!resolvedOwner) return null;
+  if (resolvedOwner === "guest") {
+    return `${TAILORED_COVER_LETTER_PREFIX}guest_${jobId}`;
+  }
+  return `${TAILORED_COVER_LETTER_PREFIX}${resolvedOwner}_${jobId}`;
+}
 
 /**
  * Gets cached job-specific tailored resume from localStorage (synchronous).
+ * Scoped by verified authenticated Supabase user ID to prevent cross-account contamination.
+ * Unowned legacy keys are never attached or read by signed-in accounts.
  */
-export function getCachedTailoredResume(jobId: string): TailoredJobResumeResult | null {
+export function getCachedTailoredResume(
+  jobId: string,
+  expectedHash?: string,
+  ownerId?: string | null
+): TailoredJobResumeResult | null {
   if (typeof window === "undefined" || !jobId) return null;
   try {
-    const raw = localStorage.getItem(`${TAILORED_RESUME_PREFIX}${jobId}`);
+    const storageKey = getScopedTailoredResumeKey(jobId, ownerId);
+    if (!storageKey) return null;
+    const raw = localStorage.getItem(storageKey);
     if (raw) {
-      return JSON.parse(raw);
+      const parsed = JSON.parse(raw) as TailoredJobResumeResult;
+      if (parsed.tailoringSource === "ai") {
+        if (expectedHash && parsed.sourceHash && parsed.sourceHash !== expectedHash) {
+          localStorage.removeItem(storageKey);
+          return null;
+        }
+        if (parsed.operationVersion && parsed.operationVersion !== "1.0") {
+          localStorage.removeItem(storageKey);
+          return null;
+        }
+      }
+      return parsed;
     }
   } catch (e) {
     console.warn(`Could not read cached tailored resume for ${jobId}`, e);
@@ -292,20 +329,32 @@ export function getCachedTailoredResume(jobId: string): TailoredJobResumeResult 
 }
 
 /**
- * Persists job-specific tailored resume into localStorage and Supabase.
+ * Persists job-specific tailored resume into scoped localStorage and Supabase.
  */
-export function saveCachedTailoredResume(jobId: string, data: TailoredJobResumeResult): void {
+export function saveCachedTailoredResume(
+  jobId: string,
+  data: TailoredJobResumeResult,
+  ownerId?: string | null
+): void {
   if (typeof window === "undefined" || !jobId) return;
+  const resolvedOwner = ownerId?.trim() || null;
+  const storageKey = getScopedTailoredResumeKey(jobId, resolvedOwner);
+  if (!storageKey) {
+    console.warn(`[TailoredCache] Refusing to persist tailored resume for ${jobId}: explicit verified owner or "guest" required; missing owner will not be saved as guest work.`);
+    return;
+  }
   try {
-    localStorage.setItem(`${TAILORED_RESUME_PREFIX}${jobId}`, JSON.stringify(data));
+    localStorage.setItem(storageKey, JSON.stringify(data));
   } catch (e) {
     console.warn(`Could not save cached tailored resume for ${jobId}`, e);
   }
 
-  // Asynchronously persist to Supabase for multi-device / multi-user persistence
-  saveTailoredResumeToSupabase(jobId, data).catch((err) => {
-    console.warn(`Could not sync tailored resume to Supabase for ${jobId}:`, err);
-  });
+  // Asynchronously persist to Supabase for multi-device / multi-user persistence if authenticated
+  if (resolvedOwner && resolvedOwner !== "guest") {
+    saveTailoredResumeToSupabase(jobId, data, resolvedOwner).catch((err) => {
+      console.warn(`Could not sync tailored resume to Supabase for ${jobId}:`, err);
+    });
+  }
 }
 
 /**
@@ -313,12 +362,16 @@ export function saveCachedTailoredResume(jobId: string, data: TailoredJobResumeR
  */
 export async function saveTailoredResumeToSupabase(
   jobId: string,
-  data: TailoredJobResumeResult
+  data: TailoredJobResumeResult,
+  ownerId?: string | null
 ): Promise<void> {
+  const resolvedOwner = ownerId?.trim() || null;
+  if (!resolvedOwner || resolvedOwner === "guest") return; // Guests never persist to Supabase user tables
+
   try {
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    if (!user || user.id !== resolvedOwner) return;
 
     await supabase.from("tailored_resumes").upsert(
       {
@@ -341,15 +394,20 @@ export async function saveTailoredResumeToSupabase(
  * Fetches tailored resume from Supabase if not found locally.
  */
 export async function getTailoredResumeAsync(
-  jobId: string
+  jobId: string,
+  expectedHash?: string,
+  ownerId?: string | null
 ): Promise<TailoredJobResumeResult | null> {
-  const local = getCachedTailoredResume(jobId);
+  const resolvedOwner = ownerId?.trim() || null;
+  const local = getCachedTailoredResume(jobId, expectedHash, resolvedOwner);
   if (local) return local;
+
+  if (!resolvedOwner) return null; // Guests do not have Supabase remote storage
 
   try {
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return null;
+    if (!user || user.id !== resolvedOwner) return null;
 
     const { data, error } = await supabase
       .from("tailored_resumes")
@@ -360,8 +418,19 @@ export async function getTailoredResumeAsync(
 
     if (!error && data?.tailored_data) {
       const parsed = data.tailored_data as TailoredJobResumeResult;
+      if (parsed.tailoringSource === "ai") {
+        if (expectedHash && parsed.sourceHash && parsed.sourceHash !== expectedHash) {
+          return null;
+        }
+        if (parsed.operationVersion && parsed.operationVersion !== "1.0") {
+          return null;
+        }
+      }
       if (typeof window !== "undefined") {
-        localStorage.setItem(`${TAILORED_RESUME_PREFIX}${jobId}`, JSON.stringify(parsed));
+        const storageKey = getScopedTailoredResumeKey(jobId, resolvedOwner);
+        if (storageKey) {
+          localStorage.setItem(storageKey, JSON.stringify(parsed));
+        }
       }
       return parsed;
     }
@@ -372,11 +441,17 @@ export async function getTailoredResumeAsync(
 
 /**
  * Gets cached job-specific cover letter from localStorage (synchronous).
+ * Scoped by verified authenticated Supabase user ID.
  */
-export function getCachedTailoredCoverLetter(jobId: string): TailoredCoverLetterResult | null {
+export function getCachedTailoredCoverLetter(
+  jobId: string,
+  ownerId?: string | null
+): TailoredCoverLetterResult | null {
   if (typeof window === "undefined" || !jobId) return null;
   try {
-    const raw = localStorage.getItem(`${TAILORED_COVER_LETTER_PREFIX}${jobId}`);
+    const storageKey = getScopedTailoredCoverLetterKey(jobId, ownerId);
+    if (!storageKey) return null;
+    const raw = localStorage.getItem(storageKey);
     if (raw) {
       return JSON.parse(raw);
     }
@@ -387,20 +462,32 @@ export function getCachedTailoredCoverLetter(jobId: string): TailoredCoverLetter
 }
 
 /**
- * Persists job-specific cover letter into localStorage and Supabase.
+ * Persists job-specific cover letter into scoped localStorage and Supabase.
  */
-export function saveCachedTailoredCoverLetter(jobId: string, data: TailoredCoverLetterResult): void {
+export function saveCachedTailoredCoverLetter(
+  jobId: string,
+  data: TailoredCoverLetterResult,
+  ownerId?: string | null
+): void {
   if (typeof window === "undefined" || !jobId) return;
+  const resolvedOwner = ownerId?.trim() || null;
+  const storageKey = getScopedTailoredCoverLetterKey(jobId, resolvedOwner);
+  if (!storageKey) {
+    console.warn(`[TailoredCache] Refusing to persist tailored cover letter for ${jobId}: explicit verified owner or "guest" required; missing owner will not be saved as guest work.`);
+    return;
+  }
   try {
-    localStorage.setItem(`${TAILORED_COVER_LETTER_PREFIX}${jobId}`, JSON.stringify(data));
+    localStorage.setItem(storageKey, JSON.stringify(data));
   } catch (e) {
     console.warn(`Could not save cached tailored cover letter for ${jobId}`, e);
   }
 
-  // Asynchronously persist to Supabase for multi-device / multi-user persistence
-  saveTailoredCoverLetterToSupabase(jobId, data).catch((err) => {
-    console.warn(`Could not sync tailored cover letter to Supabase for ${jobId}:`, err);
-  });
+  // Asynchronously persist to Supabase for multi-device / multi-user persistence if authenticated
+  if (resolvedOwner && resolvedOwner !== "guest") {
+    saveTailoredCoverLetterToSupabase(jobId, data, resolvedOwner).catch((err) => {
+      console.warn(`Could not sync tailored cover letter to Supabase for ${jobId}:`, err);
+    });
+  }
 }
 
 /**
@@ -408,12 +495,16 @@ export function saveCachedTailoredCoverLetter(jobId: string, data: TailoredCover
  */
 export async function saveTailoredCoverLetterToSupabase(
   jobId: string,
-  data: TailoredCoverLetterResult
+  data: TailoredCoverLetterResult,
+  ownerId?: string | null
 ): Promise<void> {
+  const resolvedOwner = ownerId?.trim() || null;
+  if (!resolvedOwner || resolvedOwner === "guest") return;
+
   try {
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    if (!user || user.id !== resolvedOwner) return;
 
     await supabase.from("tailored_resumes").upsert(
       {
@@ -435,15 +526,19 @@ export async function saveTailoredCoverLetterToSupabase(
  * Fetches tailored cover letter from Supabase if not found locally.
  */
 export async function getTailoredCoverLetterAsync(
-  jobId: string
+  jobId: string,
+  ownerId?: string | null
 ): Promise<TailoredCoverLetterResult | null> {
-  const local = getCachedTailoredCoverLetter(jobId);
+  const resolvedOwner = ownerId?.trim() || null;
+  const local = getCachedTailoredCoverLetter(jobId, resolvedOwner);
   if (local) return local;
+
+  if (!resolvedOwner) return null;
 
   try {
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return null;
+    if (!user || user.id !== resolvedOwner) return null;
 
     const { data, error } = await supabase
       .from("tailored_resumes")
@@ -455,7 +550,10 @@ export async function getTailoredCoverLetterAsync(
     if (!error && data?.cover_letter_data) {
       const parsed = data.cover_letter_data as TailoredCoverLetterResult;
       if (typeof window !== "undefined") {
-        localStorage.setItem(`${TAILORED_COVER_LETTER_PREFIX}${jobId}`, JSON.stringify(parsed));
+        const storageKey = getScopedTailoredCoverLetterKey(jobId, resolvedOwner);
+        if (storageKey) {
+          localStorage.setItem(storageKey, JSON.stringify(parsed));
+        }
       }
       return parsed;
     }

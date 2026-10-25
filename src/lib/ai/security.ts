@@ -1,5 +1,11 @@
 import { SupabaseClient } from "@supabase/supabase-js";
 import { CandidateProfile } from "../resume/types";
+import { SKILLS_TAXONOMY } from "../resume/parser";
+import {
+  GENUINE_SKILL_ALIASES,
+  getCanonicalSkillId,
+  areSkillsGenuineMatch,
+} from "../matcher/scoring";
 import { stripControlChars, stripHtmlAndExecutableMarkup } from "../security/xss";
 
 export type AllowedAiOperation =
@@ -140,6 +146,10 @@ export function estimateTokens(text: string): number {
 }
 
 export interface BuiltAiPayload {
+  metadata?: {
+    jobDescriptionShortened?: boolean;
+    [key: string]: any;
+  };
   messages: Array<{ role: "system" | "user"; content: string }>;
   model: string;
   maxOutputTokens: number;
@@ -162,6 +172,7 @@ export function buildOperationPayload(
 
   let systemPrompt = "";
   let userPrompt = "";
+  let metadata: { jobDescriptionShortened?: boolean; [key: string]: any } | undefined;
 
   switch (config.operation) {
     case "cover_letter": {
@@ -307,40 +318,86 @@ CRITICAL ZERO-FABRICATION RULES:
         };
       }
 
-      const inputTokens = estimateTokens(JSON.stringify(candidate)) + estimateTokens(JSON.stringify(job));
-      if (inputTokens > config.maxInputTokens) {
-        return {
-          ok: false,
-          error: `Payload exceeds maximum allowed token limit for operation 'resume_tailor' (${inputTokens} > ${config.maxInputTokens}).`,
-        };
-      }
-
-      const skillsList = Array.isArray(candidate.skills)
-        ? candidate.skills
-            .slice(0, 15)
-            .map((s) => sanitizeAiInputText(s, AI_FIELD_LENGTH_CAPS.skill))
-            .filter(Boolean)
-            .join(", ")
-        : "";
-
-      const candName = sanitizeAiInputText(candidate.name || "Candidate", AI_FIELD_LENGTH_CAPS.name);
-      const candSummary = sanitizeAiInputText(candidate.summary || "", AI_FIELD_LENGTH_CAPS.summary);
-      const jobTitle = sanitizeAiInputText(job.title || "", AI_FIELD_LENGTH_CAPS.jobTitle);
-      const jobCompany = sanitizeAiInputText(job.company || "", AI_FIELD_LENGTH_CAPS.jobCompany);
-      const jobDesc = sanitizeAiInputText(job.description || "", AI_FIELD_LENGTH_CAPS.jobDescription);
-
-      systemPrompt = `You are an ATS resume tailoring specialist. Tailor the candidate's existing summary and bullet points to align with the target job.
-CRITICAL ZERO-FABRICATION RULES:
-1. ONLY rephrase or emphasize skills and achievements directly evidenced in candidate facts.
-2. DO NOT invent employers, degrees, responsibilities, or tools not in the source facts.
-3. Return a valid JSON object:
+      systemPrompt = `You are an expert ATS resume tailoring engine.
+CRITICAL ZERO-FABRICATION AND GROUNDING RULES:
+1. ONLY rewrite the candidate's existing professional summary and experience bullets.
+2. NEVER modify, invent, or output employers, roles, dates, degrees, schools, or certifications.
+3. Every numeric fact, percentage, metric, count, and dollar value present in an original bullet MUST be preserved exactly in the rewritten bullet. Do NOT alter numbers or fabricate new metrics.
+4. "highlightedSkills" MUST be a strict subset of the candidate's verified skills list. Do NOT introduce tools or skills not in verified skills.
+5. In "tailoredBullets", each experience ID MUST match an existing ID from the input. The number of rewritten bullets for each experience ID MUST exactly match the number of source bullets.
+6. Return a valid JSON object matching this schema:
 {
   "tailoredSummary": string,
   "highlightedSkills": string[],
   "tailoredBullets": { [experienceId: string]: string[] }
 }${UNTRUSTED_DATA_SYSTEM_GUARD}`;
 
-      userPrompt = `<untrusted_candidate_data>\nName: ${candName}\nSkills: ${skillsList}\nSummary: ${candSummary}\n</untrusted_candidate_data>\n\n<untrusted_job_data>\nTitle: ${jobTitle}\nCompany: ${jobCompany}\nDescription: ${jobDesc}\n</untrusted_job_data>`;
+      const candName = sanitizeAiInputText(candidate.name || "Candidate", AI_FIELD_LENGTH_CAPS.name);
+      const candHeadline = sanitizeAiInputText(candidate.headline || "Professional", AI_FIELD_LENGTH_CAPS.headline);
+      const candSummary = sanitizeAiInputText(candidate.summary || "", AI_FIELD_LENGTH_CAPS.summary);
+      const skillsList = Array.isArray(candidate.skills)
+        ? candidate.skills
+            .slice(0, AI_FIELD_LENGTH_CAPS.maxSkillsCount)
+            .map((s) => sanitizeAiInputText(s, AI_FIELD_LENGTH_CAPS.skill))
+            .filter(Boolean)
+            .join(", ")
+        : "";
+
+      const experienceEntries = Array.isArray(candidate.experience) && candidate.experience.length > 0
+        ? candidate.experience
+            .map((e, idx) => {
+              const expId = sanitizeAiInputText(e?.id || `exp-${idx + 1}`, 50);
+              const role = sanitizeAiInputText(e?.role || "Role", AI_FIELD_LENGTH_CAPS.role);
+              const company = sanitizeAiInputText(e?.company || "Company", AI_FIELD_LENGTH_CAPS.company);
+              const dates = `${sanitizeAiInputText(e?.startDate || "", AI_FIELD_LENGTH_CAPS.date)} - ${sanitizeAiInputText(e?.endDate || "", AI_FIELD_LENGTH_CAPS.date)}`;
+              const bullets = Array.isArray(e?.bullets) && e.bullets.length > 0
+                ? e.bullets
+                    .map((b, bIdx) => `  [Bullet ${bIdx + 1}]: ${sanitizeAiInputText(b || "", 1000)}`)
+                    .join("\n")
+                : "  (None)";
+              return `Experience ID [${expId}]:\nRole: ${role} at ${company} (${dates})\nBullets:\n${bullets}`;
+            })
+            .join("\n\n")
+        : "(No prior work experience)";
+
+      const candDataText = `<untrusted_candidate_data>\nName: ${candName}\nHeadline: ${candHeadline}\nSummary: ${candSummary}\nSkills: ${skillsList}\n\nWork History:\n${experienceEntries}\n</untrusted_candidate_data>`;
+
+      const jobTitle = sanitizeAiInputText(job.title || "Target Role", AI_FIELD_LENGTH_CAPS.jobTitle);
+      const jobCompany = sanitizeAiInputText(job.company || "Target Company", AI_FIELD_LENGTH_CAPS.jobCompany);
+      const originalJobDesc = typeof job.description === "string" ? job.description : "";
+      const rawJobDesc = sanitizeAiInputText(originalJobDesc, AI_FIELD_LENGTH_CAPS.jobDescription);
+
+      const systemTokens = estimateTokens(systemPrompt);
+      const candTokens = estimateTokens(candDataText);
+      const jobBaseText = `<untrusted_job_data>\nTitle: ${jobTitle}\nCompany: ${jobCompany}\nDescription: \n</untrusted_job_data>`;
+      const jobBaseTokens = estimateTokens(jobBaseText);
+      const baseTokens = systemTokens + candTokens + jobBaseTokens;
+
+      if (baseTokens > config.maxInputTokens) {
+        return {
+          ok: false,
+          error: `Payload exceeds maximum allowed token limit for operation 'resume_tailor' (${baseTokens} > ${config.maxInputTokens}). Candidate facts exceed token capacity.`,
+        };
+      }
+
+      // Remaining budget for job description
+      const availableTokensForDesc = config.maxInputTokens - baseTokens - 5;
+      const descTokens = estimateTokens(rawJobDesc);
+
+      let finalJobDesc = rawJobDesc;
+      let jobDescriptionShortened = originalJobDesc.trim().length > rawJobDesc.length;
+
+      if (descTokens > availableTokensForDesc) {
+        const maxChars = Math.max(0, Math.floor(availableTokensForDesc * 3.5));
+        finalJobDesc = rawJobDesc.slice(0, maxChars).trim();
+        jobDescriptionShortened = true;
+      }
+
+      metadata = {
+        jobDescriptionShortened,
+      };
+
+      userPrompt = `${candDataText}\n\n<untrusted_job_data>\nTitle: ${jobTitle}\nCompany: ${jobCompany}\nDescription: ${finalJobDesc}\n</untrusted_job_data>`;
       break;
     }
 
@@ -417,6 +474,394 @@ RULES:
       temperature: config.temperature,
       jsonMode: config.jsonMode,
       estimatedInputTokens,
+      metadata,
+    },
+  };
+}
+
+export const KNOWN_TECH_KEYWORDS = new Set([
+  "kubernetes", "docker", "terraform", "aws", "gcp", "azure", "kafka", "redis",
+  "graphql", "snowflake", "databricks", "spark", "airflow", "fastapi", "django",
+  "flask", "spring boot", "nestjs", "postgresql", "mongodb", "elasticsearch",
+  "cassandra", "dynamodb", "bigquery", "firebase", "prisma", "ansible", "helm",
+  "nginx", "tableau", "power bi", "dbt", "pytorch", "tensorflow", "pandas",
+  "numpy", "figma", "salesforce", "hubspot", "jira", "selenium", "playwright",
+  "cypress", "jest", "golang", "rust", "ruby", "php", "swift", "kotlin",
+  "scala", "hadoop"
+]);
+
+/**
+ * Combined canonical dictionary of identifiable tools, platforms, skills, and credentials.
+ * Includes both KNOWN_TECH_KEYWORDS, the broader SKILLS_TAXONOMY, and GENUINE_SKILL_ALIASES catalog.
+ * Sorted longest-first to ensure multi-word phrases (e.g. 'react native') are checked before substrings ('react').
+ */
+export const ALL_CANONICAL_TOOLS_AND_SKILLS: string[] = Array.from(
+  new Set([
+    ...SKILLS_TAXONOMY.map((s) => s.toLowerCase().trim()),
+    ...Array.from(KNOWN_TECH_KEYWORDS).map((s) => s.toLowerCase().trim()),
+    ...Object.keys(GENUINE_SKILL_ALIASES),
+    ...Object.values(GENUINE_SKILL_ALIASES).flat(),
+    // High-frequency identifiable engineering credentials and modern tools
+    "aws certified", "pmp", "cpa", "cissp", "certified kubernetes administrator",
+    "cka", "ckad", "scrum master", "csm", "solidity", "tableau", "power bi",
+    "dbt", "spark", "airflow", "kafka", "pandas", "numpy", "pytorch", "tensorflow",
+    "fastapi", "django", "flask", "nestjs", "spring boot"
+  ])
+)
+  .filter((s) => s.length > 1)
+  .sort((a, b) => b.length - a.length);
+
+/**
+ * LIMITATIONS AND SENSITIVITY NOTE:
+ * - Deterministic validation ensures that recognized tools (from SKILLS_TAXONOMY and KNOWN_TECH_KEYWORDS),
+ *   exact numeric metrics, employer boundaries, and structural counts are strictly conserved.
+ * - However, lexical rules cannot fully evaluate qualitative claims, subtle domain misalignments, or
+ *   plausible-sounding conceptual extrapolations generated by LLMs.
+ * - False positives can occasionally occur for common words that overlap with tech tools (e.g. "spark" as a verb,
+ *   "r" as a letter, or "go" as a verb) if used outside tech contexts; regex boundary checks minimize this.
+ * - Therefore, automated validation serves as an essential safety gate, but candidate manual review remains mandatory.
+ */
+
+/**
+ * Extracts numeric facts, percentages, metrics, and currency from text.
+ * e.g., "35%", "$100k", "10,000", "5x", "2.5", "40", "1st"
+ */
+export function extractNumericFacts(text: string): string[] {
+  if (!text || typeof text !== "string") return [];
+  const matches = text.match(/(?:[\$€£])?\b\d+(?:[.,]\d+)*(?:%|[xXkKmMbB]|st|nd|rd|th|\+)?(?!\w)/g);
+  if (!matches) return [];
+  return matches
+    .map((m) => m.toLowerCase().replace(/,/g, "").trim())
+    .filter(Boolean);
+}
+
+export function numericFactsMatch(source: string, target: string): boolean {
+  const sourceFacts = extractNumericFacts(source).sort();
+  const targetFacts = extractNumericFacts(target).sort();
+  if (sourceFacts.length !== targetFacts.length) return false;
+  return sourceFacts.every((val, i) => val === targetFacts[i]);
+}
+
+export function extractCandidateTerms(candidate: CandidateProfile): Set<string> {
+  const terms = new Set<string>();
+  const addText = (t?: string) => {
+    if (!t) return;
+    t.toLowerCase()
+      .split(/[^a-z0-9+#.-]+/)
+      .filter((w) => w.length > 1)
+      .forEach((w) => terms.add(w));
+  };
+
+  (candidate.skills || []).forEach((s) => {
+    terms.add(s.toLowerCase().trim());
+    addText(s);
+  });
+  addText(candidate.headline);
+  addText(candidate.summary);
+  (candidate.experience || []).forEach((e) => {
+    addText(e?.role);
+    addText(e?.company);
+    (e?.bullets || []).forEach(addText);
+  });
+  (candidate.education || []).forEach((ed) => {
+    addText(ed?.degree);
+    addText(ed?.institution);
+  });
+  (candidate.certifications || []).forEach((c) => {
+    terms.add(c.toLowerCase().trim());
+    addText(c);
+  });
+  return terms;
+}
+
+/**
+ * Checks whether an identifiable tool or skill is evidenced anywhere in the candidate's profile.
+ * Note: Words appearing only in the target job description or job title are NOT evidence.
+ * Strict canonical matching and boundary checking are enforced (no symmetric substring matching).
+ */
+export function isSkillEvidencedInCandidate(
+  skill: string,
+  candidate: CandidateProfile,
+  candidateTerms: Set<string>
+): boolean {
+  const sLower = skill.toLowerCase().trim();
+  if (!sLower) return true;
+
+  // 1. Check candidate explicit skills using genuine canonical match (not substring!)
+  if ((candidate.skills || []).some((cs) => areSkillsGenuineMatch(cs, sLower))) {
+    return true;
+  }
+
+  // 2. Check candidate certifications using genuine canonical match
+  if ((candidate.certifications || []).some((cert) => areSkillsGenuineMatch(cert, sLower))) {
+    return true;
+  }
+
+  // 3. Check full candidate text with strict boundary checking and disambiguation
+  const allCandidateText = [
+    candidate.headline,
+    candidate.summary,
+    ...(candidate.certifications || []),
+    ...(candidate.education || []).map((ed) => `${ed.degree} ${ed.institution}`),
+    ...(candidate.experience || []).flatMap((e) => [e.company, e.role, ...(e.bullets || [])]),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  const canon = getCanonicalSkillId(sLower);
+  const aliasesToCheck = canon && GENUINE_SKILL_ALIASES[canon]
+    ? GENUINE_SKILL_ALIASES[canon]
+    : [sLower];
+
+  for (const alias of aliasesToCheck) {
+    const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const regex = new RegExp(`(^|[^a-z0-9+#])${escaped}([^a-z0-9+#]|$)`, "i");
+    if (regex.test(allCandidateText)) {
+      if (canon === "react") {
+        // Disambiguate "react" from "react native":
+        const textWithoutReactNative = allCandidateText.replace(/react[\s\-_]?native/gi, " ");
+        if (regex.test(textWithoutReactNative)) return true;
+      } else if (canon === "java") {
+        // Disambiguate "java" from "javascript":
+        const textWithoutJs = allCandidateText.replace(/java[\s\-_]?script/gi, " ");
+        if (regex.test(textWithoutJs)) return true;
+      } else {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Scans candidate text against the canonical tools taxonomy.
+ * Returns the first unevidenced skill/tool found, or null if all mentioned skills are verified.
+ */
+export function findUnevidencedToolOrSkill(
+  text: string,
+  candidate: CandidateProfile,
+  candidateTerms: Set<string>
+): string | null {
+  if (!text) return null;
+  const lowerText = text.toLowerCase();
+
+  for (const skill of ALL_CANONICAL_TOOLS_AND_SKILLS) {
+    const escaped = skill.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const regex = new RegExp(`(^|[^a-z0-9+#])${escaped}([^a-z0-9+#]|$)`, "i");
+    if (regex.test(lowerText)) {
+      if (skill === "react") {
+        const textWithoutReactNative = lowerText.replace(/react[\s\-_]?native/gi, " ");
+        if (!regex.test(textWithoutReactNative)) {
+          continue; // "react" only appeared as part of "react native"
+        }
+      } else if (skill === "java") {
+        const textWithoutJs = lowerText.replace(/java[\s\-_]?script/gi, " ");
+        if (!regex.test(textWithoutJs)) {
+          continue; // "java" only appeared as part of "javascript"
+        }
+      }
+      if (!isSkillEvidencedInCandidate(skill, candidate, candidateTerms)) {
+        return skill;
+      }
+    }
+  }
+
+  return null;
+}
+
+export function validateTailoredResumeOutput(
+  parsed: any,
+  candidate: CandidateProfile,
+  job?: any
+): { ok: true; sanitized: { tailoredSummary: string; highlightedSkills: string[]; tailoredBullets: Record<string, string[]> } } | { ok: false; error: string } {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return { ok: false, error: "AI output rejected: expected JSON object for resume_tailor." };
+  }
+
+  // Reject foreign schema fields attempting to model employer, role, dates, education, or certifications
+  const forbiddenKeys = ["experience", "education", "certifications", "company", "role", "dates", "startDate", "endDate"];
+  for (const fk of forbiddenKeys) {
+    if (fk in parsed && parsed[fk] !== undefined && parsed[fk] !== null) {
+      return { ok: false, error: `AI output rejected: forbidden field '${fk}' returned. Output can only rewrite summary and existing bullets.` };
+    }
+  }
+
+  // 1. Validate tailoredSummary
+  if (typeof parsed.tailoredSummary !== "string" || parsed.tailoredSummary.trim().length < 20) {
+    return { ok: false, error: "AI output rejected: 'tailoredSummary' must be a non-empty string of at least 20 characters." };
+  }
+  if (parsed.tailoredSummary.length > 2000) {
+    return { ok: false, error: "AI output rejected: 'tailoredSummary' exceeds maximum allowed length." };
+  }
+  const cleanSummary = stripHtmlAndExecutableMarkup(parsed.tailoredSummary).trim();
+  const candidateTerms = extractCandidateTerms(candidate);
+
+  // Summary skills check: reject newly introduced identifiable tools from skills taxonomy
+  const unevidencedSummarySkill = findUnevidencedToolOrSkill(cleanSummary, candidate, candidateTerms);
+  if (unevidencedSummarySkill) {
+    return {
+      ok: false,
+      error: `AI output rejected: summary claims unevidenced skill/tool '${unevidencedSummarySkill}' not found in candidate profile.`,
+    };
+  }
+
+  // Summary numeric facts check: reject newly introduced numbers not evidenced anywhere in candidate profile
+  const summaryNumbers = extractNumericFacts(cleanSummary);
+  if (summaryNumbers.length > 0) {
+    const candidateProfileNumbers = new Set<string>();
+    extractNumericFacts(candidate.summary || "").forEach((n) => candidateProfileNumbers.add(n));
+    extractNumericFacts(candidate.headline || "").forEach((n) => candidateProfileNumbers.add(n));
+    (candidate.experience || []).forEach((e) => {
+      (e?.bullets || []).forEach((b) => {
+        extractNumericFacts(b).forEach((n) => candidateProfileNumbers.add(n));
+      });
+    });
+    for (const num of summaryNumbers) {
+      const normalizedNum = num.replace(/\+$/, "");
+      if (!candidateProfileNumbers.has(num) && !candidateProfileNumbers.has(normalizedNum)) {
+        return {
+          ok: false,
+          error: `AI output rejected: summary introduces unevidenced numeric metric '${num}' not found in candidate profile facts.`,
+        };
+      }
+    }
+  }
+
+  // 2. Validate highlightedSkills: must be a strict subset of verified candidate.skills
+  if (!Array.isArray(parsed.highlightedSkills)) {
+    return { ok: false, error: "AI output rejected: 'highlightedSkills' must be an array." };
+  }
+
+  const candidateSkillsList = (candidate.skills || []).map((s) => s.trim()).filter(Boolean);
+  const validHighlightedSkills: string[] = [];
+  for (const s of parsed.highlightedSkills) {
+    if (typeof s !== "string" || !s.trim()) continue;
+    const sLower = s.toLowerCase().trim();
+    const matchedSkill = candidateSkillsList.find((cs) => areSkillsGenuineMatch(cs, sLower));
+    if (!matchedSkill) {
+      return {
+        ok: false,
+        error: `AI output rejected: highlighted skill '${s}' is not a verified skill in candidate profile.`,
+      };
+    }
+    validHighlightedSkills.push(s.trim());
+  }
+
+  // 3. Validate tailoredBullets
+  if (!parsed.tailoredBullets || typeof parsed.tailoredBullets !== "object" || Array.isArray(parsed.tailoredBullets)) {
+    return { ok: false, error: "AI output rejected: 'tailoredBullets' must be an object keyed by experience ID." };
+  }
+
+  const candidateExpMap = new Map<string, { id: string; bullets: string[]; company?: string }>();
+  (candidate.experience || []).forEach((e, idx) => {
+    const id = e?.id || `exp-${idx + 1}`;
+    candidateExpMap.set(id, { id, bullets: Array.isArray(e?.bullets) ? e.bullets : [], company: e?.company });
+  });
+
+  const cleanTailoredBullets: Record<string, string[]> = {};
+
+  for (const [expId, bullets] of Object.entries(parsed.tailoredBullets)) {
+    if (!candidateExpMap.has(expId)) {
+      return {
+        ok: false,
+        error: `AI output rejected: foreign experience ID '${expId}' not found in candidate experience.`,
+      };
+    }
+
+    const sourceExp = candidateExpMap.get(expId)!;
+    if (!Array.isArray(bullets)) {
+      return {
+        ok: false,
+        error: `AI output rejected: bullets for experience '${expId}' must be an array.`,
+      };
+    }
+
+    if (bullets.length !== sourceExp.bullets.length) {
+      return {
+        ok: false,
+        error: `AI output rejected: bullet count mismatch for experience '${expId}'. Expected ${sourceExp.bullets.length}, got ${bullets.length}.`,
+      };
+    }
+
+    // Build facts from other experience entries to detect cross-employer transfer
+    const otherExperiences = (candidate.experience || []).filter((e, idx) => (e.id || `exp-${idx + 1}`) !== expId);
+    const sourceExpAllNumbers = new Set(sourceExp.bullets.flatMap(extractNumericFacts));
+
+    const cleanedExpBullets: string[] = [];
+    for (let i = 0; i < bullets.length; i++) {
+      const bulletText = stripHtmlAndExecutableMarkup(String(bullets[i] || "")).trim();
+      if (!bulletText) {
+        return {
+          ok: false,
+          error: `AI output rejected: empty bullet at index ${i + 1} for experience '${expId}'.`,
+        };
+      }
+
+      const sourceBullet = sourceExp.bullets[i] || "";
+
+      // Cross-Employer Fact Transfer Check:
+      // A. Check if bullet introduces numeric facts belonging to OTHER employers but absent from this employer's source bullets
+      for (const otherExp of otherExperiences) {
+        const otherNumbers = (otherExp.bullets || []).flatMap(extractNumericFacts);
+        for (const otherNum of otherNumbers) {
+          if (!sourceExpAllNumbers.has(otherNum)) {
+            const bulletNumbers = extractNumericFacts(bulletText);
+            if (bulletNumbers.includes(otherNum)) {
+              return {
+                ok: false,
+                error: `AI output rejected: cross-employer fact transfer detected in experience '${expId}' bullet ${i + 1}. Metric '${otherNum}' belongs to another experience entry ('${otherExp.company || "Other Employer"}').`,
+              };
+            }
+          }
+        }
+
+        // B. Check if bullet references another employer's company name
+        if (otherExp.company && otherExp.company.trim().length > 3) {
+          const otherCompLower = otherExp.company.toLowerCase().trim();
+          const sourceExpCompLower = sourceExp.company ? sourceExp.company.toLowerCase().trim() : "";
+          if (otherCompLower !== sourceExpCompLower) {
+            const compEscaped = otherCompLower.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            const compRegex = new RegExp(`(^|[^a-z0-9+#])${compEscaped}([^a-z0-9+#]|$)`, "i");
+            if (compRegex.test(bulletText) && !compRegex.test(sourceBullet)) {
+              return {
+                ok: false,
+                error: `AI output rejected: cross-employer fact transfer detected in experience '${expId}' bullet ${i + 1}. Bullet references foreign company '${otherExp.company}'.`,
+              };
+            }
+          }
+        }
+      }
+
+      if (!numericFactsMatch(sourceBullet, bulletText)) {
+        return {
+          ok: false,
+          error: `AI output rejected: numeric facts modified or omitted in experience '${expId}' bullet ${i + 1}. Source: "${sourceBullet}", Generated: "${bulletText}".`,
+        };
+      }
+
+      // Check unsupported tools: check if any skill or tool from taxonomy was fabricated
+      const unevidencedSkill = findUnevidencedToolOrSkill(bulletText, candidate, candidateTerms);
+      if (unevidencedSkill) {
+        return {
+          ok: false,
+          error: `AI output rejected: unsupported tool '${unevidencedSkill}' in experience '${expId}' bullet ${i + 1} is not evidenced in candidate profile.`,
+        };
+      }
+
+      cleanedExpBullets.push(bulletText);
+    }
+
+    cleanTailoredBullets[expId] = cleanedExpBullets;
+  }
+
+  return {
+    ok: true,
+    sanitized: {
+      tailoredSummary: cleanSummary,
+      highlightedSkills: Array.from(new Set(validHighlightedSkills)),
+      tailoredBullets: cleanTailoredBullets,
     },
   };
 }
@@ -429,7 +874,8 @@ RULES:
  */
 export function validateAndSanitizeAiOutput(
   operation: AllowedAiOperation,
-  rawContent: string
+  rawContent: string,
+  context?: { candidate?: CandidateProfile; job?: any; [key: string]: any }
 ): { ok: true; sanitizedText: string; parsedJson?: any } | { ok: false; error: string } {
   if (!rawContent || typeof rawContent !== "string" || !rawContent.trim()) {
     return { ok: false, error: "AI output rejected: empty generation." };
@@ -528,6 +974,18 @@ export function validateAndSanitizeAiOutput(
   }
 
   if (operation === "resume_tailor") {
+    if (context && context.candidate) {
+      const deepValidation = validateTailoredResumeOutput(parsed, context.candidate, context.job);
+      if (!deepValidation.ok) {
+        return { ok: false, error: deepValidation.error };
+      }
+      return {
+        ok: true,
+        sanitizedText: JSON.stringify(deepValidation.sanitized),
+        parsedJson: deepValidation.sanitized,
+      };
+    }
+
     const hasExpected =
       typeof parsed.tailoredSummary === "string" ||
       Array.isArray(parsed.highlightedSkills) ||

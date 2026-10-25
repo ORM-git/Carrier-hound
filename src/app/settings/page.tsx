@@ -4,8 +4,9 @@ import React, { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import GuideHeader from "@/components/GuideHeader";
 import AppIconRail from "@/components/shell/AppIconRail";
+import { useSidebarMode } from "@/lib/sidebar";
 import AppTopBar from "@/components/shell/AppTopBar";
-import Footer from "@/components/Footer";
+import LoggedInAppShell from "@/components/shell/LoggedInAppShell";
 import { getAuthUser, getUserPreferences, saveUserPreferences, signOutUser } from "@/lib/auth/session";
 import { UserPreferences } from "@/lib/auth/types";
 import { getUserSubscription, cancelSubscription } from "@/lib/billing/subscription";
@@ -31,6 +32,7 @@ import {
 import { toast } from "react-toastify";
 
 function SettingsPageInner() {
+  const { isExpanded } = useSidebarMode();
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialTab = searchParams.get("tab") || "preferences";
@@ -204,44 +206,69 @@ function SettingsPageInner() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col font-sans">
-        <AppIconRail />
-        <div className="flex-1 md:pl-[72px] flex flex-col min-w-0 pb-16 md:pb-0">
-          <AppTopBar
-            pageLabel={activeTab === "preferences" ? "PROFILE" : "SETTINGS"}
-            user={user}
-            isPro={false}
-          />
-          <div className="flex-1 flex items-center justify-center">
-            <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-          </div>
+      <LoggedInAppShell pageLabel="SETTINGS" user={user} isPro={false}>
+        <div className="flex-1 flex items-center justify-center min-h-[60vh]">
+          <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
         </div>
-      </div>
+      </LoggedInAppShell>
     );
   }
 
   const isPro = subscription?.status === "active";
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-[#09090B] flex flex-col font-sans">
-      <AppIconRail />
-
-      <div className="flex-1 md:pl-[72px] flex flex-col min-w-0 pb-16 md:pb-0">
-        <AppTopBar
-          pageLabel={activeTab === "preferences" ? "PROFILE" : "SETTINGS"}
-          user={user}
-          isPro={isPro}
-        />
-
-        <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-12 space-y-8">
+    <LoggedInAppShell pageLabel="SETTINGS" user={user} isPro={isPro}>
+      <div className="max-w-5xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-12 space-y-8">
         <div>
           <h1 className="text-[18px] font-bold uppercase tracking-wider text-[#0F172A]">
-            Account & Settings
+            SETTINGS
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
             Manage your target preferences, notifications, billing, and privacy controls.
           </p>
         </div>
+
+        {/* Signed-in Account Identity Card */}
+        {user && (
+          <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="space-y-1.5">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                Signed-in Account
+              </span>
+              <div className="text-sm sm:text-base font-bold text-slate-900 flex items-center gap-2">
+                <span>{user.email || "Authenticated User"}</span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  Verified
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 pt-1 text-xs text-slate-600">
+                <span className="text-slate-500">Auth Method:</span>
+                {user.app_metadata?.providers?.includes("google") ? (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-800 text-xs font-semibold border border-slate-200">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                    Google OAuth
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-800 text-xs font-semibold border border-blue-200">
+                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                    Email Magic Link (Passwordless)
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={async () => {
+                await signOutUser();
+                router.push("/");
+              }}
+              className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition cursor-pointer min-h-[44px] shrink-0"
+            >
+              <span>Sign Out</span>
+            </button>
+          </div>
+        )}
 
         {/* Tab Navigation */}
         <div className="flex flex-wrap sm:flex-nowrap items-center gap-1.5 sm:gap-2 border-b border-slate-200 overflow-x-auto pb-px">
@@ -587,18 +614,16 @@ function SettingsPageInner() {
             </div>
           </div>
         )}
-      </main>
-
-      <Footer />
       </div>
 
+      
       <PaywallModal
         open={isPaywallOpen}
         onOpenChange={setIsPaywallOpen}
         user={user}
         featureTitle="Upgrade to CareerMonke Pro"
       />
-    </div>
+    </LoggedInAppShell>
   );
 }
 

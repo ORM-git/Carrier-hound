@@ -26,6 +26,121 @@ export interface TailoredJobResumeResult {
   scoringResult: AtsScoringResult;
   revisionAttempts: number;
   tailoredAt: string;
+  tailoringSource?: "rules" | "ai";
+  sourceHash?: string;
+  operationVersion?: string;
+  modelIdentity?: string;
+  jobDescriptionShortened?: boolean;
+  aiDraft?: {
+    tailoredSummary: string;
+    highlightedSkills: string[];
+    tailoredBullets: Record<string, string[]>;
+  };
+}
+
+/**
+ * Computes a deterministic 64-bit FNV-1a hash over candidate facts + job info + version.
+ * Used for cache invalidation when candidate facts, target job, or algorithm version change.
+ */
+export function computeResumeSourceHash(
+  candidate: CandidateProfile,
+  job: { id?: string; title: string; company: string; description?: string },
+  operationVersion = "1.0"
+): string {
+  const normalizedCandidate = {
+    name: candidate.name || "",
+    summary: candidate.summary || "",
+    skills: (candidate.skills || []).slice().sort(),
+    experience: (candidate.experience || []).map((e) => ({
+      id: e?.id || "",
+      company: e?.company || "",
+      role: e?.role || "",
+      startDate: e?.startDate || "",
+      endDate: e?.endDate || "",
+      bullets: e?.bullets || [],
+    })),
+    education: (candidate.education || []).map((ed) => ({
+      degree: ed?.degree || "",
+      institution: ed?.institution || "",
+      year: ed?.year || "",
+    })),
+    certifications: (candidate.certifications || []).slice().sort(),
+  };
+
+  const normalizedJob = {
+    id: job.id || "",
+    title: job.title || "",
+    company: job.company || "",
+    description: job.description || "",
+  };
+
+  const payloadString = JSON.stringify({
+    version: operationVersion,
+    candidate: normalizedCandidate,
+    job: normalizedJob,
+  });
+
+  let h1 = 0x811c9dc5;
+  let h2 = 0xcbf29ce4;
+  for (let i = 0; i < payloadString.length; i++) {
+    const code = payloadString.charCodeAt(i);
+    h1 = Math.imul(h1 ^ code, 0x01000193);
+    h2 = Math.imul(h2 ^ code, 0x01000193);
+  }
+  const hex1 = (h1 >>> 0).toString(16).padStart(8, "0");
+  const hex2 = (h2 >>> 0).toString(16).padStart(8, "0");
+  return `${hex1}${hex2}`;
+}
+
+/**
+ * Applies an accepted AI draft to a candidate profile:
+ * - Rewrites summary with tailoredSummary.
+ * - Prioritizes highlightedSkills at the front, keeping other verified skills.
+ * - Rewrites experience bullets for matching IDs only.
+ * - STRICTLY preserves all immutable facts: name, contact, company, role, dates, education, certifications.
+ */
+export function applyAcceptedAiDraft(
+  candidate: CandidateProfile,
+  aiDraft: {
+    tailoredSummary: string;
+    highlightedSkills: string[];
+    tailoredBullets: Record<string, string[]>;
+  }
+): CandidateProfile {
+  const highlightedSet = new Set(aiDraft.highlightedSkills.map((s) => s.toLowerCase()));
+  const prioritizedSkills: string[] = [...aiDraft.highlightedSkills];
+  for (const skill of candidate.skills || []) {
+    if (!highlightedSet.has(skill.toLowerCase())) {
+      prioritizedSkills.push(skill);
+    }
+  }
+
+  const updatedExperience = (candidate.experience || []).map((exp, idx) => {
+    const expId = exp.id || `exp-${idx + 1}`;
+    if (aiDraft.tailoredBullets[expId] && Array.isArray(aiDraft.tailoredBullets[expId])) {
+      return {
+        ...exp,
+        bullets: aiDraft.tailoredBullets[expId],
+      };
+    }
+    return exp;
+  });
+
+  return {
+    ...candidate,
+    summary: aiDraft.tailoredSummary,
+    skills: prioritizedSkills,
+    experience: updatedExperience,
+    // Explicit immutable preservation
+    name: candidate.name,
+    headline: candidate.headline,
+    email: candidate.email,
+    phone: candidate.phone,
+    location: candidate.location,
+    education: candidate.education,
+    certifications: candidate.certifications,
+    updatedAt: new Date().toISOString(),
+  };
 }
 
 const COMMON_STOP_WORDS = new Set([
@@ -297,15 +412,34 @@ export function computeJobAtsScore(
     : 1;
   const skillsScore = Math.min(100, Math.round(skillsCoverageRate * 100));
 
-  // 3. Title & Summary Alignment (~15% weight)
+  // 3. Title & Role Alignment (~15% weight)
+  // Role alignment must compare candidate's source headline and actual experience roles against target title words
   const titleWords = (job.title || "")
     .toLowerCase()
     .replace(/[^\w\s]/g, " ")
     .split(/\s+/)
     .filter((w) => w.length > 2 && !COMMON_STOP_WORDS.has(w));
 
-  const headerSummaryText = `${candidate.headline || ""} ${candidate.summary || ""}`.toLowerCase();
-  const matchedTitleWords = titleWords.filter((w) => headerSummaryText.includes(w));
+  const candidateRoleText = [
+    candidate.headline || "",
+    ...(candidate.experience || []).map((e) => e.role || ""),
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  const candidateRoleWords = new Set(
+    candidateRoleText
+      .replace(/[^\w\s]/g, " ")
+      .split(/\s+/)
+      .filter((w) => w.length > 0)
+  );
+
+  const matchedTitleWords = titleWords.filter(
+    (w) =>
+      candidateRoleWords.has(w) ||
+      (w === "full" && candidateRoleWords.has("fullstack")) ||
+      (w === "stack" && candidateRoleWords.has("fullstack"))
+  );
   const titleAlignmentRate = titleWords.length > 0
     ? matchedTitleWords.length / titleWords.length
     : 1;
@@ -314,7 +448,7 @@ export function computeJobAtsScore(
   // Weighted composition
   const totalScore = Math.min(
     100,
-    Math.max(10, Math.round(keywordScore * 0.60 + skillsScore * 0.25 + titleScore * 0.15))
+    Math.max(0, Math.round(keywordScore * 0.60 + skillsScore * 0.25 + titleScore * 0.15))
   );
 
   return {
@@ -379,6 +513,25 @@ function getSkillRoleScore(skill: string, domain: JobDomain, jdKeywords: string[
   return score;
 }
 
+function generateRoleSummary(
+  job: { title: string; company: string },
+  domain: JobDomain,
+  topSkills: string[]
+): string {
+  const skillsPhrase = topSkills.slice(0, 4).join(", ");
+
+  if (domain === "ai_ml") {
+    return `High-impact ${job.title} with proven expertise in ${skillsPhrase}. Strong background in scalable platform architecture, distributed execution, and low-latency API orchestration. Targeted to deliver immediate engineering impact for ${job.company}'s AI platform and systems initiatives.`;
+  }
+  if (domain === "backend") {
+    return `High-impact ${job.title} with proven expertise in ${skillsPhrase}. Strong background in high-throughput backend services, fault-tolerant transaction pipelines, and sub-50ms API performance. Targeted to scale ${job.company}'s backend infrastructure and critical service operations.`;
+  }
+  if (domain === "frontend") {
+    return `High-impact ${job.title} with proven expertise in ${skillsPhrase}. Strong background in modern frontend architecture, critical rendering path optimization, and responsive design systems. Targeted to build performant, accessible web interfaces for ${job.company}.`;
+  }
+  return `Targeted ${job.title} professional offering verified proficiencies in ${skillsPhrase}. Committed to engineering excellence, scalable execution, and delivering measurable value at ${job.company}.`;
+}
+
 function scoreBulletForDomain(bullet: string, domain: JobDomain): number {
   const lower = bullet.toLowerCase();
   let score = 0;
@@ -404,34 +557,9 @@ function scoreBulletForDomain(bullet: string, domain: JobDomain): number {
   return score;
 }
 
-function generateRoleSummary(
-  job: { title: string; company: string },
-  domain: JobDomain,
-  topSkills: string[]
-): string {
-  const skillsPhrase = topSkills.slice(0, 4).join(", ");
-
-  if (domain === "ai_ml") {
-    return `High-impact ${job.title} with proven expertise in ${skillsPhrase}. Strong background in scalable platform architecture, distributed execution, and low-latency API orchestration. Targeted to deliver immediate engineering impact for ${job.company}'s AI platform and systems initiatives.`;
-  }
-  if (domain === "backend") {
-    return `High-impact ${job.title} with proven expertise in ${skillsPhrase}. Strong background in high-throughput backend services, fault-tolerant transaction pipelines, and sub-50ms API performance. Targeted to scale ${job.company}'s backend infrastructure and critical service operations.`;
-  }
-  if (domain === "frontend") {
-    return `High-impact ${job.title} with proven expertise in ${skillsPhrase}. Strong background in modern frontend architecture, critical rendering path optimization, and responsive design systems. Targeted to build performant, accessible web interfaces for ${job.company}.`;
-  }
-  if (domain === "devops_cloud") {
-    return `High-impact ${job.title} with proven expertise in ${skillsPhrase}. Strong background in cloud infrastructure, automated deployment pipelines, and high-availability systems. Targeted to elevate reliability and deployment velocity for ${job.company}.`;
-  }
-  if (domain === "data") {
-    return `High-impact ${job.title} with proven expertise in ${skillsPhrase}. Strong background in resilient data processing, relational query optimization, and structured pipelines. Targeted to deliver robust data services for ${job.company}.`;
-  }
-  return `High-impact ${job.title} with proven expertise in ${skillsPhrase}. Strong background in scalable full-stack architecture, clean code standards, and cross-functional execution. Targeted to drive measurable results for ${job.company}.`;
-}
-
 /**
- * Tailors a candidate profile specifically to a target job with an iterative 3-pass revision loop.
- * Guarantees a target ATS score of 85+ while strictly preserving factual integrity (zero hallucinations).
+ * Tailors a candidate profile specifically to a target job with an iterative revision loop.
+ * Computes an honest ATS alignment score bounded 0-100 without artificial score floors.
  */
 export function tailorProfileForJobWithAts(
   baseProfile: CandidateProfile,
@@ -460,21 +588,18 @@ export function tailorProfileForJobWithAts(
     return verifiedSkills.indexOf(a) - verifiedSkills.indexOf(b);
   });
 
-  const topRoleSkills = prioritizedSkills.slice(0, 3);
-
-  // 2. Domain-adaptive experience bullet prioritization & natural tailoring
+  // 2. Domain-adaptive experience bullet prioritization
+  // Sort bullets by relevance to target domain and frame lead bullet for role context
   const currentExperience = (baseProfile.experience || []).map((exp, expIdx) => {
     const rawBullets = exp.bullets || [];
     if (rawBullets.length === 0) return exp;
 
-    // Sort bullets by relevance to this target role's domain
     const sortedBullets = [...rawBullets].sort((a, b) => {
       const diff = scoreBulletForDomain(b, domain) - scoreBulletForDomain(a, domain);
       if (diff !== 0) return diff;
       return rawBullets.indexOf(a) - rawBullets.indexOf(b);
     });
 
-    // Subtly re-frame the lead bullet for the primary role context without inventing facts
     const tailoredBullets = sortedBullets.map((bullet, bIdx) => {
       if (expIdx === 0 && bIdx === 0) {
         if (domain === "backend" && !bullet.toLowerCase().includes("backend")) {
@@ -496,13 +621,12 @@ export function tailorProfileForJobWithAts(
     };
   });
 
-  // -------------------------------------------------------------
-  // PASS 1: Base Job-Specific Tailoring
-  // -------------------------------------------------------------
-  let currentHeadline = `${job.title} • ${topRoleSkills.join(" • ")}`;
-  let currentSummary = generateRoleSummary(job, domain, prioritizedSkills);
+  // 3. Role-Targeted Profile Presentation (CareerOps Engine)
+  const topRoleSkills = prioritizedSkills.slice(0, 3);
+  const currentHeadline = `${job.title} • ${topRoleSkills.join(" • ")}`;
+  const currentSummary = generateRoleSummary(job, domain, prioritizedSkills);
 
-  let currentCandidate: CandidateProfile = {
+  const currentCandidate: CandidateProfile = {
     ...baseProfile,
     headline: currentHeadline,
     summary: currentSummary,
@@ -510,55 +634,14 @@ export function tailorProfileForJobWithAts(
     experience: currentExperience,
   };
 
-  let scoring = computeJobAtsScore(currentCandidate, job);
-  let attempts = 1;
+  const scoring = computeJobAtsScore(currentCandidate, job);
+  const attempts = 1;
 
-  // -------------------------------------------------------------
-  // PASS 2: Integrate Missing Keywords backed by verified skills
-  // -------------------------------------------------------------
-  if (scoring.score < 85) {
-    attempts = 2;
-    const missing = scoring.missingKeywords;
-
-    const integrableKeywords = missing.filter((kw) => {
-      const lower = kw.toLowerCase();
-      return (
-        ["rest", "api", "cloud", "agile", "testing", "database", "git", "ci/cd", "performance", "scalability", "architecture", "data modeling", "security", "docker", "microservices"].includes(lower) ||
-        prioritizedSkills.some((ps) => ps.toLowerCase().includes(lower) || lower.includes(ps.toLowerCase()))
-      );
-    });
-
-    const integrationPhrases = integrableKeywords.slice(0, 3);
-    if (integrationPhrases.length > 0) {
-      currentSummary = `${generateRoleSummary(job, domain, prioritizedSkills)} Verifiable strengths in ${integrationPhrases.join(", ")}.`;
-      currentCandidate = {
-        ...currentCandidate,
-        summary: currentSummary,
-      };
-      scoring = computeJobAtsScore(currentCandidate, job);
-    }
-  }
-
-  // -------------------------------------------------------------
-  // PASS 3: Deep Alignment Pass (if still below 85)
-  // -------------------------------------------------------------
-  if (scoring.score < 85) {
-    attempts = 3;
-    const missingPills = scoring.missingKeywords.slice(0, 3);
-    currentSummary = `High-impact ${job.title} offering deep capabilities in ${prioritizedSkills.slice(0, 5).join(", ")}${missingPills.length > 0 ? `, with practical focus on ${missingPills.join(", ")}` : ""}. Built for fast execution, rigorous quality standards, and immediate contribution to ${job.company}.`;
-
-    currentCandidate = {
-      ...currentCandidate,
-      headline: `${job.title} • ${prioritizedSkills.slice(0, 3).join(" • ")}`,
-      summary: currentSummary,
-      skills: prioritizedSkills,
-    };
-
-    scoring = computeJobAtsScore(currentCandidate, job);
-  }
-
-  const finalAtsScore = Math.max(85, scoring.score);
+  // Final ATS score is the honest computed score, bounded strictly 0 to 100
+  const finalAtsScore = Math.max(0, Math.min(100, Math.round(scoring.score)));
   scoring.score = finalAtsScore;
+
+  const sourceHash = computeResumeSourceHash(baseProfile, job, "1.0");
 
   return {
     jobId,
@@ -569,5 +652,9 @@ export function tailorProfileForJobWithAts(
     scoringResult: scoring,
     revisionAttempts: attempts,
     tailoredAt: new Date().toISOString(),
+    tailoringSource: "rules",
+    sourceHash,
+    operationVersion: "1.0",
+    jobDescriptionShortened: false,
   };
 }

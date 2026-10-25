@@ -222,6 +222,37 @@ async function runSuite() {
     }
   }
 
+  // 1.7 /api/ai POST (Missing SUPABASE_SERVICE_ROLE_KEY even when NEXT_PUBLIC_SUPABASE_ANON_KEY is present)
+  {
+    restoreEnv();
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    delete process.env.SUPABASE_SERVICE_KEY;
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "dummy-anon-key";
+    process.env.NEXT_PUBLIC_SUPABASE_URL = "https://mock.supabase.co";
+    process.env.GROQ_API_KEY = "mock-groq-key";
+
+    const { POST } = await import("../src/app/api/ai/route");
+    const req = new Request("http://localhost:3000/api/ai", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer mock-token-pro",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        operation: "resume_extraction",
+        params: { rawText: "Software Engineer with React experience." },
+      }),
+    });
+    const res = await POST(req);
+    const data = await res.json();
+
+    assert(
+      res.status === 500 && data.missingVariable === "SUPABASE_SERVICE_ROLE_KEY",
+      "Next.js POST /api/ai fails closed with 500 and names SUPABASE_SERVICE_ROLE_KEY when service-role key is missing (anon key ignored)",
+      `Expected status 500 and missingVariable SUPABASE_SERVICE_ROLE_KEY, got status ${res.status}: ${JSON.stringify(data)}`
+    );
+  }
+
   // ============================================================================
   // SECTION 2: Missing Required Env Vars on Netlify Serverless Functions
   // ============================================================================
@@ -345,6 +376,33 @@ async function runSuite() {
     } finally {
       global.fetch = origFetch;
     }
+  }
+
+  // 2.5 Netlify ai handler (Missing SUPABASE_SERVICE_ROLE_KEY even when NEXT_PUBLIC_SUPABASE_ANON_KEY is present)
+  {
+    restoreEnv();
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    delete process.env.SUPABASE_SERVICE_KEY;
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "dummy-anon-key";
+    process.env.NEXT_PUBLIC_SUPABASE_URL = "https://mock.supabase.co";
+    process.env.GROQ_API_KEY = "mock-groq-key";
+
+    const { handler: aiHandler } = await import("../netlify/functions/ai");
+    const res = await aiHandler({
+      httpMethod: "POST",
+      headers: { authorization: "Bearer mock-token-pro" },
+      body: JSON.stringify({
+        operation: "resume_extraction",
+        params: { rawText: "Software Engineer resume text" },
+      }),
+    });
+    const data = JSON.parse(res.body);
+
+    assert(
+      res.statusCode === 500 && data.missingVariable === "SUPABASE_SERVICE_ROLE_KEY",
+      "Netlify ai handler fails closed with 500 and names SUPABASE_SERVICE_ROLE_KEY when service-role key is missing (anon key ignored)",
+      `Expected statusCode 500 and missingVariable SUPABASE_SERVICE_ROLE_KEY, got ${res.statusCode}: ${res.body}`
+    );
   }
 
   // ============================================================================

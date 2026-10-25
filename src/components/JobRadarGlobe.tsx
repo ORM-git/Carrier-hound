@@ -1051,8 +1051,8 @@ export default function JobRadarGlobe() {
   }, [selectedCity, countryFilter, categoryFilter, remoteFilter, internshipFilter]);
 
   // Telemetry numbers
-  const activeCountDisplay = telemetry ? telemetry.header.totalActive.toLocaleString() : "...";
-  const verifiedCountDisplay = telemetry ? telemetry.header.totalVerified.toLocaleString() : "...";
+  const activeCountDisplay = telemetry?.header?.totalActive != null ? telemetry.header.totalActive.toLocaleString() : "...";
+  const verifiedCountDisplay = telemetry?.header?.totalVerified != null ? telemetry.header.totalVerified.toLocaleString() : "...";
 
   // List of real countries sorted by job count
   const realCountriesList = useMemo(() => {
@@ -1067,7 +1067,7 @@ export default function JobRadarGlobe() {
   }, [telemetry]);
 
   return (
-    <div className="relative w-full h-[calc(100vh-64px)] min-h-[580px] bg-[#040610] text-white overflow-hidden select-none font-sans">
+    <div className="relative w-full flex-1 h-full min-h-[580px] bg-[#040610] text-white overflow-hidden select-none font-sans">
       {/* 3D WebGL Canvas Container */}
       {webglSupported ? (
         <div

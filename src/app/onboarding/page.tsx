@@ -199,7 +199,15 @@ function OnboardingPageInner() {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col">
         <GuideHeader />
-        <main className="flex-1 max-w-5xl w-full mx-auto px-4 py-8">
+        <main className="flex-1 max-w-5xl w-full mx-auto px-4 py-8 space-y-4">
+          <div className="text-center">
+            <Link
+              href="/jobs"
+              className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-[#2563EB] hover:text-[#1D4ED8] hover:underline"
+            >
+              ← Back to Browse Free Jobs
+            </Link>
+          </div>
           <ProUpgradeScreen
             title="Unlock CareerMonke Pro"
             subtitle="The personalized guided setup and job matches are exclusive to CareerMonke Pro members."

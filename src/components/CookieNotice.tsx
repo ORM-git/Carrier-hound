@@ -1,10 +1,65 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useLayoutEffect } from "react";
 import Link from "next/link";
 
 export const COOKIE_CONSENT_KEY = "cm_cookie_notice";
 export const COOKIE_CONSENT_EVENT = "cm_cookie_consent_updated";
+
+/**
+ * Custom hook to obtain the live rendered height of the CookieNotice banner.
+ * Employs resize and custom event listeners to ensure layout offsets (bottom nav, mobile apply bar)
+ * remain dynamically and precisely positioned without manual refresh or hardcoding.
+ */
+export function useCookieNoticeHeight(): number {
+  const [height, setHeight] = useState<number>(0);
+
+  useEffect(() => {
+    const updateHeight = () => {
+      try {
+        const acknowledged = localStorage.getItem(COOKIE_CONSENT_KEY);
+        if (acknowledged) {
+          setHeight(0);
+          if (typeof document !== "undefined") {
+            document.documentElement.style.setProperty("--cm-cookie-notice-height", "0px");
+          }
+          return;
+        }
+
+        const el = document.getElementById("cm-cookie-notice");
+        if (el) {
+          const rect = el.getBoundingClientRect();
+          const measured = Math.round(rect.height);
+          setHeight(measured);
+          document.documentElement.style.setProperty("--cm-cookie-notice-height", `${measured}px`);
+        } else {
+          setHeight(0);
+          document.documentElement.style.setProperty("--cm-cookie-notice-height", "0px");
+        }
+      } catch {
+        setHeight(0);
+      }
+    };
+
+    updateHeight();
+
+    window.addEventListener(COOKIE_CONSENT_EVENT, updateHeight);
+    window.addEventListener("resize", updateHeight);
+
+    const observer = new MutationObserver(updateHeight);
+    if (typeof document !== "undefined" && document.body) {
+      observer.observe(document.body, { childList: true, subtree: true });
+    }
+
+    return () => {
+      window.removeEventListener(COOKIE_CONSENT_EVENT, updateHeight);
+      window.removeEventListener("resize", updateHeight);
+      observer.disconnect();
+    };
+  }, []);
+
+  return height;
+}
 
 /**
  * Minimal fixed bottom cookie notice.
@@ -15,6 +70,7 @@ export const COOKIE_CONSENT_EVENT = "cm_cookie_consent_updated";
 export default function CookieNotice() {
   const [mounted, setMounted] = useState(false);
   const [visible, setVisible] = useState(false);
+  const noticeRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -22,18 +78,53 @@ export default function CookieNotice() {
       const acknowledged = localStorage.getItem(COOKIE_CONSENT_KEY);
       if (!acknowledged) {
         setVisible(true);
+      } else {
+        if (typeof document !== "undefined") {
+          document.documentElement.style.setProperty("--cm-cookie-notice-height", "0px");
+        }
       }
     } catch {
-      // In case localStorage is disabled or throws
       setVisible(false);
     }
   }, []);
 
+  // Live measurement of actual banner height
+  useEffect(() => {
+    if (!visible || !noticeRef.current) {
+      if (typeof document !== "undefined") {
+        document.documentElement.style.setProperty("--cm-cookie-notice-height", "0px");
+      }
+      return;
+    }
+
+    const updateMeasuredHeight = () => {
+      if (noticeRef.current) {
+        const measured = Math.round(noticeRef.current.getBoundingClientRect().height);
+        document.documentElement.style.setProperty("--cm-cookie-notice-height", `${measured}px`);
+        window.dispatchEvent(
+          new CustomEvent(COOKIE_CONSENT_EVENT, { detail: { height: measured, visible: true } })
+        );
+      }
+    };
+
+    updateMeasuredHeight();
+    window.addEventListener("resize", updateMeasuredHeight);
+
+    return () => {
+      window.removeEventListener("resize", updateMeasuredHeight);
+    };
+  }, [visible]);
+
   const handleDismiss = () => {
     try {
       localStorage.setItem(COOKIE_CONSENT_KEY, "true");
+      if (typeof document !== "undefined") {
+        document.documentElement.style.setProperty("--cm-cookie-notice-height", "0px");
+      }
       if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent(COOKIE_CONSENT_EVENT));
+        window.dispatchEvent(
+          new CustomEvent(COOKIE_CONSENT_EVENT, { detail: { height: 0, visible: false } })
+        );
       }
     } catch {}
     setVisible(false);
@@ -45,9 +136,11 @@ export default function CookieNotice() {
 
   return (
     <div
+      ref={noticeRef}
+      id="cm-cookie-notice"
       role="region"
       aria-label="Cookie and privacy notice"
-      className="fixed bottom-0 inset-x-0 z-50 bg-white/95 border-t border-[#E4E4E7] shadow-lg backdrop-blur-md animate-fadeIn"
+      className="fixed bottom-0 inset-x-0 z-50 bg-white/95 border-t border-[#E4E4E7] shadow-lg backdrop-blur-md animate-fadeIn pb-[max(0.5rem,env(safe-area-inset-bottom,0px))]"
     >
       <div className="max-w-6xl mx-auto px-4 py-2.5 sm:py-3 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs sm:text-sm text-[#09090B]">
         <p className="leading-snug text-center sm:text-left text-[#4B5563]">

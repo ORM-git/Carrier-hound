@@ -1,0 +1,40 @@
+{
+  "at1280": {
+    "reference": {
+      "cardLeft": 88,
+      "innerContentLeft": 112,
+      "cardWidth": 1176,
+      "title": "24px 800",
+      "headerHeight": "~49px",
+      "rowHeight": "~80px"
+    },
+    "measured": {
+      "titleFontSize": "24px",
+      "titleFontWeight": "800",
+      "cardLeft": 88,
+      "cardWidth": 1176,
+      "innerContentLeft": 112,
+      "headerHeight": 49,
+      "rowHeight": 80
+    },
+    "pass": true
+  },
+  "at1440": {
+    "note": "CM-specific layout measurement; not an inspected Jobright reference",
+    "measured": {
+      "cardLeft": 168,
+      "cardWidth": 1176,
+      "innerContentLeft": 192
+    }
+  },
+  "at390": {
+    "measured": {
+      "cardWidth": 358,
+      "primaryClipped": false,
+      "actionsVisible": true,
+      "hasHorizontalOverflow": false,
+      "statusTextVerified": true
+    },
+    "pass": true
+  }
+}

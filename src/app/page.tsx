@@ -87,17 +87,23 @@ export default function HomePage() {
           </h1>
 
           <p className="mt-4 text-white/90 text-sm sm:text-base md:text-lg max-w-xl mx-auto font-normal leading-relaxed">
-            We find jobs posted on company websites. Access AI-powered resume tools and smart job matching.
+            We hunt down jobs posted on company career pages, the ones most people never see. Then our AI Monke tunes up your resume, so you&apos;re actually ready for them.
           </p>
 
-          <div className="mt-4 flex flex-wrap items-center justify-center gap-3 w-full max-w-md sm:max-w-none">
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-3 w-full max-w-md sm:max-w-none">
             <button
               onClick={() => setModalOpen(true)}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 bg-white text-[#09090B] font-bold text-base sm:text-lg px-8 sm:px-10 py-3.5 sm:py-4 min-h-[48px] rounded-xl shadow-lg hover:shadow-xl hover:scale-105 transition-all cursor-pointer"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 bg-white text-[#09090B] font-bold text-base sm:text-lg px-8 sm:px-10 py-3.5 sm:py-4 min-h-[48px] rounded-xl shadow-lg hover:shadow-xl hover:scale-105 transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
             >
-              <span>View Jobs</span>
+              <span>Explore jobs</span>
               <ArrowRight className="w-5 h-5 ml-0.5 stroke-[2.5]" />
             </button>
+            <Link
+              href="/resume"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-blue-700/80 hover:bg-blue-700 text-white font-bold text-base sm:text-lg px-7 sm:px-8 py-3.5 sm:py-4 min-h-[48px] rounded-xl border border-white/30 shadow-md hover:shadow-lg transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+            >
+              <span>Try AI resume tools</span>
+            </Link>
           </div>
 
           <div className="mt-4">
@@ -128,30 +134,31 @@ export default function HomePage() {
       </section>
 
       {/* ========================================================================= */}
-      {/* 3. PROBLEM VS SOLUTION (Centered H2 + 2 columns)                          */}
+      {/* 3. PROBLEM VS SOLUTION (Comparison)                                       */}
       {/* ========================================================================= */}
       <section className="pt-20 pb-12 lg:pt-[120px] lg:pb-[90px] max-w-content mx-auto px-6">
         <div className="text-center max-w-2xl mx-auto mb-10 sm:mb-12">
-          <h2 className="text-3xl font-bold text-[#09090B] sm:text-4xl md:text-[40px] md:leading-[1.2]">
+          <span className="text-xs font-bold text-[#2563EB] uppercase tracking-wider bg-blue-50 px-3 py-1 rounded-full border border-blue-100">
+            Comparison
+          </span>
+          <h2 className="text-3xl font-bold text-[#09090B] sm:text-4xl md:text-[40px] md:leading-[1.2] mt-3">
             Tired of getting auto-rejections?
           </h2>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
-          {/* Left card: LinkedIn / Indeed */}
+          {/* Left card: The usual grind */}
           <div className="bg-white border border-[#E4E4E7] rounded-xl p-7 shadow-sm">
-            <span className="mb-5 block text-xl font-medium text-dark pb-4 border-b border-gray-100">
-              <a href="https://www.linkedin.com/jobs" target="_blank" rel="noreferrer noopener" className="hover:underline">LinkedIn</a>
-              {" / "}
-              <a href="https://www.indeed.com/" target="_blank" rel="noreferrer noopener" className="hover:underline">Indeed</a>
+            <span className="mb-5 block text-xl font-bold text-[#09090B] pb-4 border-b border-gray-100">
+              The usual grind
             </span>
             <ul className="space-y-4">
               {[
-                "\"Posted 1 hour ago, over 200 applicants.\"",
-                "Low reply rate for interviews.",
-                "Advertised jobs = low quality jobs.",
-                "Recruiter fees. Companies prefer direct applicants.",
-                "Fake jobs.",
+                "Scrolling the same feeds. Again.",
+                "\"Posted 1 hour ago, 200 applicants\"",
+                "Rewriting your resume. Again.",
+                "\"Am I even qualified for this?\"",
+                "Endless searching",
               ].map((item, idx) => (
                 <li key={idx} className="flex items-start gap-3">
                   <div className="w-5 h-5 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0 mt-0.5">
@@ -163,18 +170,18 @@ export default function HomePage() {
             </ul>
           </div>
 
-          {/* Right card: CareerMonke */}
+          {/* Right card: The Monke way */}
           <div className="bg-white border border-[#E4E4E7] rounded-xl p-7 shadow-sm">
-            <span className="mb-5 block text-xl font-medium text-dark pb-4 border-b border-gray-100">
-              CareerMonke
+            <span className="mb-5 block text-xl font-bold text-[#09090B] pb-4 border-b border-gray-100">
+              The Monke way
             </span>
             <ul className="space-y-4">
               {[
-                "Less competition.",
-                "High reply rate for interviews.",
-                "Jobs that aren't being advertised.",
-                "Apply directly to the hiring team.",
-                "Real jobs.",
+                "Jobs straight from company career pages",
+                "Employers you didn't know existed",
+                "AI-refined resume",
+                "Resume score card",
+                "Browse roles worldwide and check each role's eligibility",
               ].map((item, idx) => (
                 <li key={idx} className="flex items-start gap-3">
                   <div className="w-5 h-5 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0 mt-0.5">
@@ -187,14 +194,14 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* 4-Step How It Works Flow: Resume & Match Hero Sequence */}
+        {/* AI Resume Monke Section */}
         <div className="mt-12 p-6 sm:p-8 bg-slate-50 border border-slate-200 rounded-2xl max-w-4xl mx-auto shadow-2xs">
           <div className="text-center mb-6">
-            <span className="text-xs font-bold text-blue-600 uppercase tracking-wider bg-blue-50 px-2.5 py-1 rounded-full border border-blue-100">
-              Verified Matching Workflow
+            <span className="text-xs font-bold text-[#2563EB] uppercase tracking-wider bg-blue-50 px-2.5 py-1 rounded-full border border-blue-100">
+              AI Resume Monke
             </span>
             <h3 className="text-xl sm:text-2xl font-bold text-slate-900 mt-2">
-              From raw resume to direct hire in 4 honest steps
+              Meet the monke that fixes your resume.
             </h3>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-center">
@@ -203,8 +210,8 @@ export default function HomePage() {
                 <div className="w-8 h-8 mx-auto rounded-full bg-blue-100 text-blue-700 font-extrabold text-xs flex items-center justify-center mb-2.5">
                   1
                 </div>
-                <div className="text-sm font-bold text-slate-900">Upload Resume</div>
-                <p className="text-xs text-slate-500 mt-1">PDF or Word (.docx) document parsed into structured facts</p>
+                <div className="text-sm font-bold text-slate-900">Upload your resume</div>
+                <p className="text-xs text-slate-500 mt-1">PDF or Word, the monke isn&apos;t picky.</p>
               </div>
             </div>
             <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
@@ -212,8 +219,8 @@ export default function HomePage() {
                 <div className="w-8 h-8 mx-auto rounded-full bg-blue-100 text-blue-700 font-extrabold text-xs flex items-center justify-center mb-2.5">
                   2
                 </div>
-                <div className="text-sm font-bold text-slate-900">Confirm Facts</div>
-                <p className="text-xs text-slate-500 mt-1">Review verified skills, career history, and degrees</p>
+                <div className="text-sm font-bold text-slate-900">Check the details</div>
+                <p className="text-xs text-slate-500 mt-1">It reads fast, but you know your career best. Fix anything it got wrong.</p>
               </div>
             </div>
             <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
@@ -221,8 +228,8 @@ export default function HomePage() {
                 <div className="w-8 h-8 mx-auto rounded-full bg-blue-100 text-blue-700 font-extrabold text-xs flex items-center justify-center mb-2.5">
                   3
                 </div>
-                <div className="text-sm font-bold text-slate-900">Export ATS Resume</div>
-                <p className="text-xs text-slate-500 mt-1">Download single-column ATS Word (.docx) or plain text</p>
+                <div className="text-sm font-bold text-slate-900">Download a clean version</div>
+                <p className="text-xs text-slate-500 mt-1">Simple, single-column, recruiter-friendly.</p>
               </div>
             </div>
             <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
@@ -230,10 +237,19 @@ export default function HomePage() {
                 <div className="w-8 h-8 mx-auto rounded-full bg-blue-100 text-blue-700 font-extrabold text-xs flex items-center justify-center mb-2.5">
                   4
                 </div>
-                <div className="text-sm font-bold text-slate-900">Score Against Any Job</div>
-                <p className="text-xs text-slate-500 mt-1">0-100% verified AI fit score & skill gap analysis</p>
+                <div className="text-sm font-bold text-slate-900">Check the fit</div>
+                <p className="text-xs text-slate-500 mt-1">See where you match and what&apos;s missing, before you hit apply.</p>
               </div>
             </div>
+          </div>
+          <div className="mt-6 text-center">
+            <Link
+              href="/resume"
+              className="inline-flex items-center justify-center gap-2 bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-sm sm:text-base px-6 py-3 min-h-[44px] rounded-xl shadow-sm transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
+            >
+              <span>Try AI resume tools</span>
+              <ArrowRight className="w-4 h-4" />
+            </Link>
           </div>
         </div>
       </section>
@@ -263,20 +279,20 @@ export default function HomePage() {
         <div className="absolute inset-0 pointer-events-none opacity-10 bg-[radial-gradient(#fff_1px,transparent_1px)] [background-size:24px_24px]" />
         <div className="max-w-3xl mx-auto px-6 text-center relative z-10 space-y-4 sm:space-y-5">
           <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight">
-            Free Preview
+            Free preview
           </h2>
           <p className="text-white/90 text-base sm:text-lg max-w-xl mx-auto leading-relaxed font-normal">
-            Find jobs you can&apos;t find on job sites. Start applying directly to companies. No more middle-men!
+            No commitment. Just window shopping for your dream job. Job maxxing starts here.
           </p>
           <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
             <WhiteHeroButton onClick={() => setModalOpen(true)} className="px-8 min-w-[200px]">
-              View Jobs (Preview Only)
+              View Jobs
             </WhiteHeroButton>
             <Link
               href="/jobs"
-              className="inline-flex items-center justify-center gap-2 bg-blue-700 hover:bg-blue-800 text-white border border-white/30 font-bold text-sm sm:text-base px-6 py-3.5 min-h-[44px] rounded-xl shadow-md transition-all cursor-pointer"
+              className="inline-flex items-center justify-center gap-2 bg-blue-700 hover:bg-blue-800 text-white border border-white/30 font-bold text-sm sm:text-base px-6 py-3.5 min-h-[44px] rounded-xl shadow-md transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
             >
-              <span>See My Job Match</span>
+              <span>See my Ideal Match</span>
               <ArrowRight className="w-4 h-4" />
             </Link>
           </div>
@@ -292,22 +308,29 @@ export default function HomePage() {
           <div className="order-1 lg:order-2 space-y-5 text-center lg:text-left">
             <div>
               <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold border border-gray-200 text-gray-700 bg-white shadow-sm">
-                Global coverage
+                Global map / radar
               </span>
             </div>
             <h2 className="text-3xl sm:text-4xl md:text-[42px] font-bold text-[#09090B] tracking-tight leading-tight">
-              Hidden jobs from every corner of the map
+              Your next role might be in a city you haven&apos;t thought of yet.
             </h2>
             <p className="text-gray-600 text-base sm:text-lg leading-relaxed max-w-xl mx-auto lg:mx-0">
-              We scan company career pages across the globe - from Silicon Valley startups to Bangalore scale-ups - and surface openings before they hit the big job boards.
+              Look beyond the companies already on your radar. Work under the Bangalore sky or in Paris with a morning coffee. Explore listings by location and check each role&apos;s work setup and eligibility.
             </p>
-            <div className="pt-2 flex justify-center lg:justify-start w-full">
+            <div className="pt-2 flex flex-wrap items-center justify-center lg:justify-start gap-3 w-full">
               <Link
-                href="/radar"
+                href="/jobs"
                 className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-base sm:text-lg px-8 sm:px-10 py-3.5 sm:py-4 min-h-[48px] rounded-xl shadow-md hover:shadow-xl hover:scale-105 transition-all cursor-pointer"
               >
                 <span>View Jobs</span>
                 <ArrowRight className="w-5 h-5 ml-0.5 stroke-[2.5]" />
+              </Link>
+              <Link
+                href="/radar"
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-[#0F172A] border border-[#CBD5E1] font-bold text-sm sm:text-base px-6 py-3.5 min-h-[48px] rounded-xl shadow-sm transition-all cursor-pointer"
+              >
+                <span>Open interactive map</span>
+                <span className="text-xs text-[#64748B] font-normal">(Sign-in required)</span>
               </Link>
             </div>
 

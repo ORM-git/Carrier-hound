@@ -313,3 +313,49 @@ input[type="password"]::-ms-clear {
   display: none;
 }
 
+
+/* Jobright-style Auth Modal Entrance: 0.3s cubic-bezier(0.08, 0.82, 0.17, 1) */
+@keyframes authModalEntrance {
+  0% {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes authDrawerEntranceMobile {
+  0% {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-auth-modal {
+  animation: authDrawerEntranceMobile 0.3s cubic-bezier(0.08, 0.82, 0.17, 1) forwards;
+}
+
+@media (min-width: 640px) {
+  .animate-auth-modal {
+    animation: authModalEntrance 0.3s cubic-bezier(0.08, 0.82, 0.17, 1) forwards;
+  }
+}
+
+@keyframes authBackdropFade {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+.animate-auth-backdrop {
+  animation: authBackdropFade 0.25s ease-out forwards;
+}

@@ -1,27 +1,38 @@
 "use client";
 
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { LiveJob } from "@/lib/jobs/service";
 import { CandidateProfile } from "@/lib/resume/types";
 import { computeFitDiagnostics, FitDiagnosticsResult } from "@/lib/matcher/scoring";
 import { stripHtmlAndExecutableMarkup } from "@/lib/security/xss";
+import { getSiteUrl } from "@/lib/siteUrl";
 import CompanyLogo from "@/components/CompanyLogo";
+import { useCookieNoticeHeight } from "@/components/CookieNotice";
 import type { User } from "@supabase/supabase-js";
 import {
   ArrowLeft,
+  FileText,
   Heart,
   ExternalLink,
   Lock,
   Sparkles,
   ArrowRight,
   Check,
+  CheckCircle2,
+  XCircle,
   AlertCircle,
   Clock,
   Briefcase,
   DollarSign,
   MapPin,
+  Share2,
+  Flag,
+  X,
 } from "lucide-react";
+
+const TailorResumeModal = dynamic(() => import("@/components/resume/TailorResumeModal"), { ssr: false });
 
 interface JobDetailViewProps {
   job: LiveJob;
@@ -29,8 +40,12 @@ interface JobDetailViewProps {
   user: User | null;
   isPro: boolean;
   isSaved: boolean;
+  isApplied?: boolean;
+  trackedStage?: "saved" | "applied" | "interview" | "offer" | "rejected" | null;
+  isUpdatingApplied?: boolean;
   onSave: () => void;
   onApply: (e?: React.MouseEvent) => void;
+  onToggleApplied?: () => void;
   onBack: () => void;
 }
 
@@ -117,8 +132,34 @@ function CircularDetailMatchRing({
           </div>
         )}
       </div>
+
     </div>
   );
+}
+
+export const VERIFIED_SUPPORT_EMAIL = "support@careermonke.com";
+
+/**
+ * Pure helper to construct the canonical job URL without private/session parameters.
+ */
+export function getCanonicalJobUrl(jobId: string): string {
+  const base =
+    typeof window !== "undefined" && window.location.origin && window.location.origin !== "null"
+      ? window.location.origin
+      : getSiteUrl();
+  return `${base}/jobs?id=${encodeURIComponent(jobId)}`;
+}
+
+/**
+ * Reuses verified support destination with job context and zero candidate data.
+ */
+export function getReportJobMailto(job: { id: string; title: string; company?: string }): string {
+  const canonicalUrl = getCanonicalJobUrl(job.id);
+  const subject = encodeURIComponent(`[Job Issue] ${job.title} (${job.id})`);
+  const body = encodeURIComponent(
+    `Job ID: ${job.id}\nJob Title: ${job.title}\nCompany: ${job.company || "N/A"}\nURL: ${canonicalUrl}\n\nPlease describe the issue with this job posting:`
+  );
+  return `mailto:${VERIFIED_SUPPORT_EMAIL}?subject=${subject}&body=${body}`;
 }
 
 export default function JobDetailView({
@@ -127,11 +168,38 @@ export default function JobDetailView({
   user,
   isPro,
   isSaved,
+  isApplied = false,
+  trackedStage = null,
+  isUpdatingApplied = false,
   onSave,
   onApply,
+  onToggleApplied,
   onBack,
 }: JobDetailViewProps) {
   const hasConfirmedResume = Boolean(candidate && candidate.confirmedAt);
+  const cookieNoticeHeight = useCookieNoticeHeight();
+
+  const [isTailorOpen, setIsTailorOpen] = useState(false);
+  const [shareStatus, setShareStatus] = useState<"idle" | "success" | "error">("idle");
+  const [shareErrorMsg, setShareErrorMsg] = useState<string>("");
+
+  const handleShare = async () => {
+    const canonicalUrl = getCanonicalJobUrl(job.id);
+    try {
+      if (!navigator.clipboard || typeof navigator.clipboard.writeText !== "function") {
+        throw new Error("Clipboard API unavailable in this browser context");
+      }
+      await navigator.clipboard.writeText(canonicalUrl);
+      setShareStatus("success");
+      setShareErrorMsg("");
+      setTimeout(() => {
+        setShareStatus((cur) => (cur === "success" ? "idle" : cur));
+      }, 2500);
+    } catch (err: any) {
+      setShareStatus("error");
+      setShareErrorMsg(err?.message || "Failed to copy link to clipboard");
+    }
+  };
 
   const diagnostics: FitDiagnosticsResult | null = useMemo(() => {
     if (!hasConfirmedResume || !candidate) return null;
@@ -180,29 +248,98 @@ export default function JobDetailView({
     return [];
   }, [job]);
 
+  const hasZeroSkillMatches = Boolean(diagnostics && diagnostics.matchedSkills.length === 0);
+  const hasJobSkills = Boolean(diagnostics && diagnostics.jobRequiredSkills && diagnostics.jobRequiredSkills.length > 0);
+
   const matchLabel =
     matchScore !== null
-      ? matchScore > 70
+      ? hasZeroSkillMatches
+        ? hasJobSkills
+          ? "Experience match (0 skill matches)"
+          : "Preliminary Match (Skills unlisted)"
+        : matchScore > 70
         ? "Great match"
         : matchScore >= 50
         ? "Good match"
         : "Fair match"
       : "";
 
+  const matchExplanation =
+    diagnostics
+      ? hasZeroSkillMatches
+        ? hasJobSkills
+          ? "Score reflects candidate title and experience overlap; no required skills matched."
+          : "Score estimated from title and experience alignment; posting does not list required skills."
+        : (diagnostics.whyYouFit && diagnostics.whyYouFit[0]) || "Calculated from your confirmed resume against verified job requirements."
+      : "";
+
   return (
-    <div className="max-w-[880px] w-full mx-auto space-y-4 pb-28 md:pb-12">
-      {/* Top Left Back Button */}
+    <div
+      style={{ paddingBottom: `calc(${cookieNoticeHeight}px + 7rem)` }}
+      className="max-w-[880px] w-full mx-auto space-y-4 md:pb-12"
+    >
+      {/* Top Left Back Button & Utility Actions */}
       <div className="flex items-center justify-between">
         <button
           type="button"
           onClick={onBack}
           aria-label="Back to jobs list"
-          className="inline-flex items-center gap-2 text-sm font-semibold text-[#475569] hover:text-[#0F172A] transition-colors py-2 px-1 min-h-[44px] cursor-pointer"
+          className="inline-flex items-center gap-2 text-sm font-semibold text-[#475569] hover:text-[#0F172A] transition-colors py-2 px-1 min-h-[44px] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] rounded-lg"
         >
           <ArrowLeft className="w-4 h-4" />
           <span>Back</span>
         </button>
+
+        <div className="flex items-center gap-2">
+          {/* Report Issue link in top utility bar */}
+          <a
+            href={getReportJobMailto(job)}
+            data-testid="report-issue-link"
+            aria-label="Report an issue with this job posting"
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-[#475569] hover:text-[#2563EB] transition-colors py-2 px-2.5 rounded-lg hover:bg-slate-100 min-h-[44px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
+          >
+            <Flag className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Report issue</span>
+          </a>
+        </div>
       </div>
+
+      {/* Clipboard Fallback Alert when copy fails */}
+      {shareStatus === "error" && (
+        <div
+          data-testid="share-fallback-container"
+          role="alert"
+          className="bg-[#FEF2F2] border border-[#FECACA] rounded-[12px] p-3.5 text-xs text-[#991B1B] space-y-2 animate-fadeIn"
+        >
+          <div className="flex items-center justify-between">
+            <span className="font-semibold flex items-center gap-1.5 text-[#B91C1C]">
+              <AlertCircle className="w-4 h-4" />
+              Unable to copy link automatically
+            </span>
+            <button
+              type="button"
+              onClick={() => setShareStatus("idle")}
+              aria-label="Dismiss error"
+              className="text-[#991B1B] hover:text-[#7F1D1D] p-1 cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <p className="text-[11px] text-[#B91C1C]">
+            Select and copy this link manually:
+          </p>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              readOnly
+              data-testid="share-fallback-input"
+              value={getCanonicalJobUrl(job.id)}
+              onFocus={(e) => e.currentTarget.select()}
+              className="flex-1 bg-white border border-[#FCA5A5] rounded-lg px-2.5 py-1.5 text-xs text-[#0F172A] select-all focus:outline-none focus:ring-1 focus:ring-[#EF4444]"
+            />
+          </div>
+        </div>
+      )}
 
       {/* 1. Header Block Card */}
       <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-5 sm:p-6 shadow-none space-y-4">
@@ -230,6 +367,30 @@ export default function JobDetailView({
 
           {/* Action buttons (Desktop header) */}
           <div className="hidden sm:flex items-center gap-2.5 shrink-0 self-start">
+            <button
+              type="button"
+              onClick={handleShare}
+              data-testid="share-job-button"
+              aria-label={shareStatus === "success" ? "Link copied" : "Share job"}
+              className={`min-h-[44px] px-3.5 flex items-center gap-1.5 rounded-full border transition cursor-pointer text-xs font-semibold ${
+                shareStatus === "success"
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                  : "border-[#E2E8F0] bg-[#F1F5F9] text-[#475569] hover:bg-[#E2E8F0] hover:text-[#0F172A]"
+              }`}
+            >
+              {shareStatus === "success" ? (
+                <>
+                  <Check className="w-4 h-4 text-emerald-600" />
+                  <span data-testid="link-copied-text">Link copied</span>
+                </>
+              ) : (
+                <>
+                  <Share2 className="w-4 h-4 text-[#475569]" />
+                  <span>Share</span>
+                </>
+              )}
+            </button>
+
             <button
               type="button"
               onClick={onSave}
@@ -264,32 +425,106 @@ export default function JobDetailView({
                 <span>Apply</span>
               </button>
             )}
+
+            {isPro && onToggleApplied && (
+              <button
+                type="button"
+                onClick={onToggleApplied}
+                disabled={isUpdatingApplied}
+                aria-label={
+                  trackedStage === "interview"
+                    ? "In interview stage"
+                    : trackedStage === "offer"
+                    ? "In offer stage"
+                    : trackedStage === "rejected"
+                    ? "In rejected stage"
+                    : trackedStage === "applied" || isApplied
+                    ? "Marked as applied"
+                    : "Mark as applied"
+                }
+                className={`inline-flex items-center gap-1.5 px-4 py-2.5 min-h-[44px] rounded-full text-xs font-bold transition cursor-pointer border focus:outline-none focus:ring-2 focus:ring-[#93C5FD] ${
+                  isUpdatingApplied
+                    ? "opacity-60 cursor-not-allowed bg-slate-100 text-slate-400 border-slate-200"
+                    : trackedStage === "interview" || trackedStage === "offer"
+                    ? "bg-purple-50 text-purple-700 border-purple-300"
+                    : trackedStage === "rejected"
+                    ? "bg-rose-50 text-rose-700 border-rose-300"
+                    : trackedStage === "applied" || isApplied
+                    ? "bg-emerald-50 text-emerald-700 border-emerald-300"
+                    : "bg-white text-[#475569] hover:text-[#0F172A] hover:bg-slate-50 border-[#E2E8F0]"
+                }`}
+              >
+                {trackedStage === "interview" || trackedStage === "offer" ? (
+                  <CheckCircle2 className="w-3.5 h-3.5 text-purple-600" />
+                ) : trackedStage === "rejected" ? (
+                  <XCircle className="w-3.5 h-3.5 text-rose-600" />
+                ) : trackedStage === "applied" || isApplied ? (
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                ) : (
+                  <Clock className="w-3.5 h-3.5 text-[#475569]" />
+                )}
+                <span>
+                  {trackedStage === "interview"
+                    ? "Interview"
+                    : trackedStage === "offer"
+                    ? "Offer"
+                    : trackedStage === "rejected"
+                    ? "Rejected"
+                    : trackedStage === "applied" || isApplied
+                    ? "Applied ✓"
+                    : "Mark Applied"}
+                </span>
+              </button>
+            )}
+
+            {hasConfirmedResume && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (!isPro) {
+                    onApply();
+                  } else {
+                    setIsTailorOpen(true);
+                  }
+                }}
+                aria-label="Tailor resume with AI"
+                className="inline-flex items-center gap-1.5 px-4 py-2.5 min-h-[44px] rounded-full text-xs font-bold transition cursor-pointer border border-blue-200 bg-blue-50 hover:bg-blue-100 text-[#1D4ED8] focus:outline-none focus:ring-2 focus:ring-[#93C5FD]"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                <span>Tailor Resume</span>
+              </button>
+            )}
           </div>
         </div>
 
         {/* Gray Chips Row */}
         <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-[#E2E8F0]">
           <span className="inline-flex items-center gap-1 text-[12px] font-medium px-2.5 py-0.5 rounded-full bg-[#F1F5F9] text-[#475569]">
-            <MapPin className="w-3 h-3 text-[#94A3B8]" />
+            <MapPin className="w-3 h-3 text-[#475569]" />
             <span className="truncate">
               {isPro ? (job.location || "Remote") : <span className="filter blur-[3.5px] select-none">Location Locked</span>}
             </span>
           </span>
 
           <span className="inline-flex items-center gap-1 text-[12px] font-medium px-2.5 py-0.5 rounded-full bg-[#F1F5F9] text-[#475569]">
-            <Briefcase className="w-3 h-3 text-[#94A3B8]" />
+            <Briefcase className="w-3 h-3 text-[#475569]" />
             <span>{job.type || "Full-time"}</span>
           </span>
 
-          {job.salary && (
+          {job.salary ? (
             <span className="inline-flex items-center gap-1 text-[12px] font-medium px-2.5 py-0.5 rounded-full bg-[#F1F5F9] text-[#475569]">
-              <DollarSign className="w-3 h-3 text-[#16A34A]" />
+              <DollarSign className="w-3 h-3 text-[#166534]" />
               <span>{isPro ? job.salary : "••••••••"}</span>
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 text-[12px] font-medium px-2.5 py-0.5 rounded-full bg-[#F1F5F9] text-[#64748B]">
+              <DollarSign className="w-3 h-3 text-[#94A3B8]" />
+              <span>Pay not disclosed</span>
             </span>
           )}
 
           <span className="inline-flex items-center gap-1 text-[12px] font-medium px-2.5 py-0.5 rounded-full bg-[#F1F5F9] text-[#475569]">
-            <Clock className="w-3 h-3 text-[#94A3B8]" />
+            <Clock className="w-3 h-3 text-[#475569]" />
             <span>{formatRelativeTime(job.postedAt || job.date)}</span>
           </span>
         </div>
@@ -315,7 +550,7 @@ export default function JobDetailView({
                     <span>{matchLabel}</span>
                   </div>
                   <div className="text-xs text-slate-300 pt-0.5">
-                    {(diagnostics?.whyYouFit && diagnostics.whyYouFit[0]) || "Calculated from your confirmed resume against verified job requirements."}
+                    {matchExplanation}
                   </div>
                 </div>
               </div>
@@ -326,7 +561,7 @@ export default function JobDetailView({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
                 <div className="p-3.5 rounded-[12px] bg-[#EFF6FF] border border-[#BFDBFE] space-y-2">
                   <div className="text-xs font-bold text-[#1E3A8A] flex items-center gap-1.5">
-                    <Check className="w-3.5 h-3.5 text-[#16A34A]" />
+                    <Check className="w-3.5 h-3.5 text-[#166534]" />
                     <span>Matched Skills ({diagnostics.matchedSkills.length})</span>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
@@ -346,8 +581,8 @@ export default function JobDetailView({
                 </div>
 
                 <div className="p-3.5 rounded-[12px] bg-[#FEF3C7] border border-[#FDE68A] space-y-2">
-                  <div className="text-xs font-bold text-[#D97706] flex items-center gap-1.5">
-                    <AlertCircle className="w-3.5 h-3.5 text-[#D97706]" />
+                  <div className="text-xs font-bold text-[#92400E] flex items-center gap-1.5">
+                    <AlertCircle className="w-3.5 h-3.5 text-[#92400E]" />
                     <span>Skills to Highlight ({diagnostics.missingSkills.length})</span>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
@@ -355,13 +590,15 @@ export default function JobDetailView({
                       diagnostics.missingSkills.map((s) => (
                         <span
                           key={s}
-                          className="text-[12px] font-medium px-2 py-0.5 rounded-full bg-white text-[#D97706] border border-[#FDE68A]"
+                          className="text-[12px] font-medium px-2 py-0.5 rounded-full bg-white text-[#92400E] border border-[#FDE68A]"
                         >
                           {s}
                         </span>
                       ))
+                    ) : hasJobSkills && diagnostics.missingSkills.length === 0 && diagnostics.matchedSkills.length > 0 ? (
+                      <span className="text-xs text-[#166534] font-semibold">Zero critical skill gaps (all required skills matched)!</span>
                     ) : (
-                      <span className="text-xs text-[#16A34A] font-semibold">Zero critical skill gaps!</span>
+                      <span className="text-xs text-[#92400E] font-medium">Skill requirements not explicitly detailed in job posting.</span>
                     )}
                   </div>
                 </div>
@@ -394,6 +631,25 @@ export default function JobDetailView({
         )}
       </div>
 
+      {/* 2b. Private Tracker Notes (if tracked application) */}
+      {job.trackerNotes && (
+        <div
+          data-testid="tracker-notes-panel"
+          className="bg-[#F8FAFC] rounded-[16px] ring-1 ring-[#E2E8F0] p-5 sm:p-6 shadow-none space-y-2.5"
+        >
+          <div className="flex items-center gap-2 text-[#0F172A]">
+            <FileText className="w-4 h-4 text-[#2563EB]" />
+            <h3 className="text-base font-bold">Your notes</h3>
+          </div>
+          <p className="text-[14px] leading-relaxed text-[#334155] whitespace-pre-wrap break-words">
+            {job.trackerNotes}
+          </p>
+          <span className="inline-block text-[11px] text-[#64748B]">
+            Private to your account — never shared with employers or external services.
+          </span>
+        </div>
+      )}
+
       {/* 3. Job Description Card */}
       <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-5 sm:p-6 shadow-none space-y-3">
         <h2 className="text-[18px] font-bold text-[#0F172A]">Job description</h2>
@@ -405,6 +661,19 @@ export default function JobDetailView({
               Apply directly on the employer&apos;s site to view the complete posting and application instructions.
             </p>
           )}
+        </div>
+
+        {/* Footer info: Job ID & Report Issue */}
+        <div className="pt-4 border-t border-[#E2E8F0] flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-[#475569]">
+          <span>Job ID: <code className="font-mono text-[#0F172A]">{job.id}</code></span>
+          <a
+            href={getReportJobMailto(job)}
+            data-testid="report-issue-detail-link"
+            className="inline-flex items-center gap-1.5 text-[#475569] hover:text-[#2563EB] transition-colors min-h-[44px] py-1 cursor-pointer"
+          >
+            <Flag className="w-3.5 h-3.5" />
+            <span>Report issue with this listing</span>
+          </a>
         </div>
       </div>
 
@@ -430,7 +699,7 @@ export default function JobDetailView({
           <ul className="space-y-2 max-w-[720px] text-[15px] leading-[24px] text-[#0F172A]">
             {benefitsList.map((ben, idx) => (
               <li key={idx} className="flex items-start gap-2.5">
-                <span className="text-[#16A34A] font-bold select-none">✓</span>
+                <span className="text-[#166534] font-bold select-none">✓</span>
                 <span className="flex-1 break-words">{ben}</span>
               </li>
             ))}
@@ -442,14 +711,32 @@ export default function JobDetailView({
       <div
         role="region"
         aria-label="Quick apply bar"
-        className={`md:hidden fixed ${user ? "bottom-16" : "bottom-0"} inset-x-0 z-30 bg-white/95 backdrop-blur-md border-t border-[#E2E8F0] p-4 flex items-center justify-between gap-3 shadow-lg`}
+        style={{ bottom: `${cookieNoticeHeight}px` }}
+        className="md:hidden fixed inset-x-0 z-30 bg-white/95 backdrop-blur-md border-t border-[#E2E8F0] px-3 sm:px-4 py-2.5 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] flex items-center justify-between gap-2 shadow-lg transition-[bottom] duration-200"
       >
-        <div className="flex items-center gap-2 min-w-0">
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            type="button"
+            onClick={handleShare}
+            data-testid="mobile-share-job-button"
+            aria-label={shareStatus === "success" ? "Link copied" : "Share job"}
+            className={`w-10 h-10 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full border transition cursor-pointer shrink-0 ${
+              shareStatus === "success"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                : "border-[#E2E8F0] bg-[#F1F5F9] text-[#475569]"
+            }`}
+          >
+            {shareStatus === "success" ? (
+              <Check className="w-4 h-4 text-emerald-600" />
+            ) : (
+              <Share2 className="w-4 h-4" />
+            )}
+          </button>
           <button
             type="button"
             onClick={onSave}
             aria-label={isSaved ? "Unlike job" : "Save job"}
-            className={`w-10 h-10 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full border transition cursor-pointer ${
+            className={`w-10 h-10 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full border transition cursor-pointer shrink-0 ${
               isSaved
                 ? "border-rose-200 bg-rose-50 text-rose-600"
                 : "border-[#E2E8F0] bg-[#F1F5F9] text-[#475569]"
@@ -457,38 +744,105 @@ export default function JobDetailView({
           >
             <Heart className={`w-4 h-4 ${isSaved ? "fill-rose-500 text-rose-500" : ""}`} />
           </button>
-          <div className="min-w-0">
-            <div className="text-xs font-bold text-[#0F172A] truncate">
-              {job.title}
-            </div>
-            <div className="text-[11px] text-[#475569] truncate">
-              {job.company}
-            </div>
-          </div>
         </div>
 
-        {isPro && job.applyUrl ? (
-          <a
-            href={job.applyUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={onApply}
-            className="inline-flex items-center gap-1.5 px-6 py-2.5 min-h-[44px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-xs font-bold transition shadow-none shrink-0"
-          >
-            <span>Apply</span>
-            <ExternalLink className="w-3.5 h-3.5" />
-          </a>
-        ) : (
-          <button
-            type="button"
-            onClick={onApply}
-            className="inline-flex items-center gap-1.5 px-6 py-2.5 min-h-[44px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-xs font-bold transition shadow-none shrink-0"
-          >
-            {!isPro && <Lock className="w-3.5 h-3.5" />}
-            <span>Apply</span>
-          </button>
-        )}
+        <div className="flex items-center gap-2 shrink-0">
+          {isPro && onToggleApplied && (
+            <button
+              type="button"
+              onClick={onToggleApplied}
+              disabled={isUpdatingApplied}
+              aria-label={
+                trackedStage === "interview"
+                  ? "In interview stage"
+                  : trackedStage === "offer"
+                  ? "In offer stage"
+                  : trackedStage === "rejected"
+                  ? "In rejected stage"
+                  : trackedStage === "applied" || isApplied
+                  ? "Marked as applied"
+                  : "Mark as applied"
+              }
+              className={`inline-flex items-center justify-center gap-1 px-3 py-2.5 min-h-[44px] rounded-full text-xs font-bold transition border cursor-pointer ${
+                isUpdatingApplied
+                  ? "opacity-60 cursor-not-allowed bg-slate-100 text-slate-400 border-slate-200"
+                  : trackedStage === "interview" || trackedStage === "offer"
+                  ? "bg-purple-50 text-purple-700 border-purple-300"
+                  : trackedStage === "rejected"
+                  ? "bg-rose-50 text-rose-700 border-rose-300"
+                  : trackedStage === "applied" || isApplied
+                  ? "bg-emerald-50 text-emerald-700 border-emerald-300"
+                  : "bg-white text-[#475569] border-[#E2E8F0]"
+              }`}
+            >
+              {trackedStage === "interview" || trackedStage === "offer" ? (
+                <CheckCircle2 className="w-3.5 h-3.5 text-purple-600" />
+              ) : trackedStage === "rejected" ? (
+                <XCircle className="w-3.5 h-3.5 text-rose-600" />
+              ) : trackedStage === "applied" || isApplied ? (
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+              ) : (
+                <Clock className="w-3.5 h-3.5 text-[#475569]" />
+              )}
+              <span>
+                {trackedStage === "interview"
+                  ? "Interview"
+                  : trackedStage === "offer"
+                  ? "Offer"
+                  : trackedStage === "rejected"
+                  ? "Rejected"
+                  : trackedStage === "applied" || isApplied
+                  ? "Applied ✓"
+                  : "Mark Applied"}
+              </span>
+            </button>
+          )}
+
+          {isPro && job.applyUrl ? (
+            <a
+              href={job.applyUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={onApply}
+              className="inline-flex items-center gap-1.5 px-6 py-2.5 min-h-[44px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-xs font-bold transition shadow-none shrink-0"
+            >
+              <span>Apply</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+          ) : (
+            <button
+              type="button"
+              onClick={onApply}
+              className="inline-flex items-center gap-1.5 px-6 py-2.5 min-h-[44px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-xs font-bold transition shadow-none shrink-0"
+            >
+              {!isPro && <Lock className="w-3.5 h-3.5" />}
+              <span>Apply</span>
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* Mobile Copied Notification Toast */}
+      {shareStatus === "success" && (
+        <div
+          data-testid="share-success-banner"
+          role="status"
+          className="sm:hidden fixed bottom-28 left-1/2 -translate-x-1/2 z-40 bg-[#0F172A] text-white text-xs font-medium px-4 py-2 rounded-full shadow-lg flex items-center gap-1.5 animate-fadeIn"
+        >
+          <Check className="w-3.5 h-3.5 text-emerald-400" />
+          <span>Link copied</span>
+        </div>
+      )}
+
+      {candidate && isTailorOpen && (
+        <TailorResumeModal
+          open={isTailorOpen}
+          onOpenChange={setIsTailorOpen}
+          candidate={candidate}
+          job={job}
+          userId={user?.id || null}
+        />
+      )}
     </div>
   );
 }

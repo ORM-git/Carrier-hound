@@ -3,6 +3,7 @@
 import React from "react";
 import AppIconRail from "./AppIconRail";
 import AppTopBar, { TopBarTab } from "./AppTopBar";
+import { useSidebarMode } from "@/lib/sidebar";
 import type { User } from "@supabase/supabase-js";
 
 interface LoggedInAppShellProps {
@@ -13,6 +14,7 @@ interface LoggedInAppShellProps {
   searchPlaceholder?: string;
   user?: User | null;
   isPro?: boolean;
+  mainClassName?: string;
   children: React.ReactNode;
 }
 
@@ -24,15 +26,22 @@ export default function LoggedInAppShell({
   searchPlaceholder,
   user,
   isPro,
+  mainClassName,
   children,
 }: LoggedInAppShellProps) {
+  const { isExpanded } = useSidebarMode();
+
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col font-sans">
-      {/* Left Icon Rail (fixed 72px on desktop, bottom tab bar on mobile) */}
+      {/* Left Icon Rail / Sidebar (dual-mode 72px / 240px on desktop, hidden on mobile) */}
       <AppIconRail />
 
-      {/* Top Bar + Content area (offset by 72px on desktop, pb-16 on mobile for tab bar) */}
-      <div className="flex-1 md:pl-[72px] flex flex-col min-w-0 pb-16 md:pb-0">
+      {/* Top Bar + Content area (offset dynamically by 72px or 240px on desktop) */}
+      <div
+        className={`flex-1 flex flex-col min-w-0 pb-6 md:pb-0 transition-[padding] duration-300 ease-[cubic-bezier(0.2,0,0,1)] ${
+          isExpanded ? "md:pl-[240px]" : "md:pl-[72px]"
+        }`}
+      >
         <AppTopBar
           pageLabel={pageLabel}
           tabs={tabs}
@@ -42,7 +51,7 @@ export default function LoggedInAppShell({
           user={user}
           isPro={isPro}
         />
-        <main id="main-content" className="flex-1 min-w-0">
+        <main id="main-content" className={mainClassName || "flex-1 min-w-0"}>
           {children}
         </main>
       </div>
