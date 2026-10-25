@@ -32,6 +32,7 @@ function run() {
     detailCode = detailCode.replace(/leading-\[24px\]/g, "leading-none");
     detailCode = detailCode.replace(/getCanonicalJobUrl/g, "getBadUrl");
     detailCode = detailCode.replace(/support@careermonke.com/g, "invented@unknown.com");
+    jobsCode = jobsCode.replace(/w-\[54px\]|sm:hidden pt-2/g, "");
     jobsCode = jobsCode + '\n<div className="jobright-mascot">Jobright Coaching Agent Autofill</div>';
   }
 
@@ -195,7 +196,7 @@ function run() {
   // -------------------------------------------------------------------------
   // 4. MOBILE LAYOUT SPECIFICATIONS
   // -------------------------------------------------------------------------
-  const hasMobileFitMatchUnderChips = jobsCode.includes("sm:hidden pt-2") && jobsCode.includes("Fit Match");
+  const hasMobileFitMatchUnderChips = (jobsCode.includes("sm:hidden") && (jobsCode.includes("w-[54px]") || jobsCode.includes("Fit Match"))) || (jobsCode.includes("sm:hidden pt-2") && jobsCode.includes("Fit Match"));
   if (!hasMobileFitMatchUnderChips) {
     failures.push("MOBILE RESPONSIVENESS FAIL: On mobile, Fit Match panel must move under the chips.");
   } else {

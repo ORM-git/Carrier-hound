@@ -320,7 +320,7 @@ function CircularMatchRing({
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (score / 100) * circumference;
-  const textClass = size >= 75 ? "text-2xl font-black" : size >= 50 ? "text-[16px] font-bold" : "text-[13px] font-bold";
+  const textClass = size >= 75 ? "text-2xl font-black" : size >= 65 ? "text-xl font-black" : size >= 50 ? "text-[16px] font-bold" : "text-[13px] font-bold";
 
   return (
     <div
@@ -1322,7 +1322,7 @@ function JobsPageInner() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col font-sans">
+    <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col font-sans overflow-x-clip">
       {!user && <GuideHeader />}
 
       {/* Left Icon Rail (fixed 72px wide, full height, white, #E2E8F0; bottom tab bar on mobile) */}
@@ -2207,10 +2207,10 @@ function JobsPageInner() {
                 )}
               </div>
 
-              {/* Jobs List Feed & Right Rail (2-Column Grid on Desktop) */}
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start pt-2">
-                {/* Left Feed Column (8 cols on lg, 9 cols on xl) */}
-                <div className="lg:col-span-8 xl:col-span-9 space-y-3.5 w-full min-w-0">
+              {/* Jobs List Feed & Right Rail (Main Column ~973px, Right Rail ~316px, Gap 32px on Desktop) */}
+              <div className="flex flex-col lg:flex-row gap-8 items-start w-full min-w-0 pt-2">
+                {/* Left Feed Column: about 973px max on wide desktop, flex-1 */}
+                <div className="w-full lg:max-w-[973px] flex-1 space-y-3 min-w-0">
                   {loadingJobs ? (
                     /* Skeleton Loader matching layout exactly */
                     <div className="space-y-3" data-testid="jobs-skeleton-list">
@@ -2335,310 +2335,435 @@ function JobsPageInner() {
                                 handleSelectJob(job);
                               }
                             }}
-                            className="group bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-5 shadow-none transition-[box-shadow,border-color] duration-200 hover:ring-[#93C5FD] focus:ring-2 focus:ring-[#93C5FD] focus:outline-none space-y-4 cursor-pointer"
+                            className="group bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-4 sm:p-5 shadow-none transition-[box-shadow,border-color] duration-200 hover:ring-[#93C5FD] focus:ring-2 focus:ring-[#93C5FD] focus:outline-none cursor-pointer min-h-fit space-y-4"
                           >
-                            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-                              <div className="flex items-start gap-3.5 min-w-0 flex-1">
-                                {/* 48px company logo square */}
-                                <CompanyLogo
-                                  company={job.company}
-                                  applyUrl={job.applyUrl}
-                                  className="w-12 h-12 rounded-xl shrink-0 object-contain p-1 border border-[#E2E8F0] bg-white"
-                                />
+                            {/* DESKTOP VIEW (sm and up: 768px, 1024px, 1440px) */}
+                            <div className="hidden sm:flex flex-col justify-between flex-1 min-h-[232px] w-full space-y-4">
+                              <div className="flex items-start justify-between gap-4">
+                                {/* Left: 72x72 Logo + Header & Aligned 2x3 Grid */}
+                                <div className="flex items-start gap-4 min-w-0 flex-1">
+                                  {/* 72px company logo square, radius 8, minimal padding */}
+                                  <CompanyLogo
+                                    company={job.company}
+                                    applyUrl={job.applyUrl}
+                                    className="w-[56px] h-[56px] sm:w-[72px] sm:h-[72px] rounded-lg shrink-0 object-contain p-1 border border-[#E2E8F0] bg-white"
+                                  />
 
-                                <div className="relative min-w-0 flex-1 grid grid-cols-1 grid-rows-1">
-                                  {/* View A: Standard content (Title, Company, Chips) - crossfades out over 0.2s on desktop hover/focus */}
-                                  <div className="col-start-1 row-start-1 w-full space-y-1 transition-opacity duration-200 motion-reduce:transition-none sm:group-hover:opacity-0 sm:group-focus-within:opacity-0 sm:group-focus:opacity-0 pointer-events-auto sm:group-hover:pointer-events-none sm:group-focus-within:pointer-events-none sm:group-focus:pointer-events-none">
-                                    <div className="flex items-center justify-between gap-2">
-                                      <div className="flex flex-wrap items-center gap-2">
-                                        <span className="text-xs text-[#475569]">
-                                          {job.postedAt ? formatRelativeTime(job.postedAt) : (job.date ? `Tracked ${formatRelativeTime(job.date)}` : "")}
+                                  <div className="relative min-w-0 flex-1 grid grid-cols-1 grid-rows-1">
+                                    {/* View A: Standard content (crossfades out over 0.2s on desktop hover/focus) */}
+                                    <div className="col-start-1 row-start-1 w-full space-y-1.5 transition-opacity duration-200 motion-reduce:transition-none sm:group-hover:opacity-0 sm:group-focus-within:opacity-0 sm:group-focus:opacity-0 pointer-events-auto sm:group-hover:pointer-events-none sm:group-focus-within:pointer-events-none sm:group-focus:pointer-events-none">
+                                      {/* Badges row: 22px high / 11px text */}
+                                      <div className="flex items-center gap-2">
+                                        <span className="h-[22px] px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-100 text-[#475569] inline-flex items-center">
+                                          {job.postedAt ? formatRelativeTime(job.postedAt) : (job.date ? `Tracked ${formatRelativeTime(job.date)}` : "Active")}
                                         </span>
                                         {isRecent && (
-                                          <span className="inline-flex items-center text-[11px] font-semibold px-2 py-0.5 rounded-md bg-[#EFF6FF] text-[#1E40AF] border border-[#BFDBFE]">
+                                          <span className="h-[22px] px-2 py-0.5 rounded text-[11px] font-semibold bg-[#EFF6FF] text-[#1E40AF] border border-[#BFDBFE] inline-flex items-center">
                                             Early applicant
                                           </span>
                                         )}
                                       </div>
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleHideJob(e, job.id);
-                                        }}
-                                        aria-label="Hide position"
-                                        title="Hide position"
-                                        className="text-[#475569] hover:text-[#0F172A] min-w-[44px] min-h-[44px] flex items-center justify-center p-2 rounded-full hover:bg-slate-100 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
-                                      >
-                                        <MoreHorizontal className="w-4 h-4" />
-                                      </button>
-                                    </div>
 
-                                    {/* Title bold 16px ink */}
-                                    <h2 className="text-[16px] font-bold text-[#0F172A] leading-snug break-words">
-                                      {job.title}
-                                    </h2>
+                                      {/* Title: 20px / 600 / 24px line-height with ellipsis */}
+                                      <h2 className="text-[20px] font-semibold text-[#0F172A] leading-[24px] truncate" title={job.title}>
+                                        {job.title}
+                                      </h2>
 
-                                    {/* Company 14px #475569 */}
-                                    <div className="text-[14px] text-[#475569]">
-                                      <span className={!isPro ? "filter blur-[4.5px] select-none" : ""}>
-                                        {job.company || "Verified Employer"}
-                                      </span>
-                                      {job.category && <span className="capitalize"> · {job.category}</span>}
-                                      {job.remote && <span> · Remote Eligible</span>}
-                                    </div>
+                                      {/* Company and industry 13px below */}
+                                      <div className="text-[13px] text-[#475569] truncate">
+                                        <span className={!isPro ? "filter blur-[4.5px] select-none font-medium" : "font-medium"}>
+                                          {job.company || "Verified Employer"}
+                                        </span>
+                                        {job.category && <span className="capitalize"> · {job.category}</span>}
+                                        {job.remote && <span> · Remote Eligible</span>}
+                                      </div>
 
-                                    {/* Row of small gray chips: location, work type, salary only if present, posted time */}
-                                    <div className="flex flex-wrap items-center gap-1.5 pt-1.5">
-                                      <span className="inline-flex items-center text-[12px] font-medium px-2.5 py-0.5 rounded-full bg-[#F1F5F9] text-[#475569]">
-                                        {isPro ? (job.location || "Location unlisted") : <span className="filter blur-[3px] select-none">Location Locked</span>}
-                                      </span>
-                                      {job.type && (
-                                        <span className="inline-flex items-center text-[12px] font-medium px-2.5 py-0.5 rounded-full bg-[#F1F5F9] text-[#475569]">
-                                          {job.type}
-                                        </span>
-                                      )}
-                                      {job.remote && (
-                                        <span className="inline-flex items-center text-[12px] font-medium px-2.5 py-0.5 rounded-full bg-[#F1F5F9] text-[#475569]">
-                                          Remote
-                                        </span>
-                                      )}
-                                      {inferJobLevel(job.title) && (
-                                        <span className="inline-flex items-center text-[12px] font-medium px-2.5 py-0.5 rounded-full bg-[#F1F5F9] text-[#475569]">
-                                          {inferJobLevel(job.title)}
-                                        </span>
-                                      )}
-                                      {job.salary && (
-                                        <span className="inline-flex items-center text-[12px] font-medium px-2.5 py-0.5 rounded-full bg-[#F1F5F9] text-[#475569]">
-                                          {isPro ? job.salary : "••••••••"}
-                                        </span>
-                                      )}
-                                      {job.postedAt && (
-                                        <span className="inline-flex items-center text-[12px] font-medium px-2.5 py-0.5 rounded-full bg-[#F1F5F9] text-[#475569]">
-                                          {formatRelativeTime(job.postedAt)}
-                                        </span>
-                                      )}
-                                    </div>
-
-                                    {/* Mobile: Fit Match panel moves under the chips */}
-                                    <div className="sm:hidden pt-2">
-                                      {matchScore !== null ? (
-                                        <div className="flex items-center justify-between p-3 rounded-[16px] bg-[#0B1528] border border-[#1E293B] text-white">
-                                          <div className="flex items-center gap-3">
-                                            <CircularMatchRing
-                                              score={matchScore}
-                                              size={44}
-                                              strokeWidth={4}
-                                              isPro={isPro}
-                                            />
-                                            <div className="text-left">
-                                              <div className="text-xs font-bold text-white uppercase tracking-wider">
-                                                {cardZeroSkills ? "Fit Match · Experience only" : `Fit Match · ${matchScore >= 80 ? "Strong" : "Good"}`}
-                                              </div>
-                                              <div className="text-[11px] text-slate-300 flex items-center gap-2 pt-0.5">
-                                                {job.directSource ? (
-                                                  <span>✓ Direct Employer Feed</span>
-                                                ) : job.postedAt ? (
-                                                  <span>{formatRelativeTime(job.postedAt)}</span>
-                                                ) : (
-                                                  <span>Tracked Application</span>
-                                                )}
-                                              </div>
-                                            </div>
-                                          </div>
-                                        </div>
-                                      ) : (
-                                        <Link
-                                          href="/resume"
-                                          onClick={(e) => e.stopPropagation()}
-                                          className="flex items-center gap-2.5 p-3 rounded-[16px] bg-[#F8FAFC] hover:bg-[#EFF6FF] border border-[#E2E8F0] hover:border-[#93C5FD] text-left transition-all duration-200"
-                                        >
-                                          <div className="w-8 h-8 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] flex items-center justify-center shrink-0">
-                                            <Sparkles className="w-4 h-4 text-[#2563EB]" />
-                                          </div>
-                                          <span className="text-xs font-semibold text-[#0F172A]">
-                                            Upload your resume to see your real match
+                                      {/* Aligned 2-row × 3-column metadata grid, 16px SVG icons, 4px gap, 13px text */}
+                                      <div className="grid grid-cols-3 grid-rows-2 gap-x-4 gap-y-2 pt-2 text-[13px] text-[#475569]">
+                                        {/* Row 1, Col 1: Location */}
+                                        <div className="flex items-center gap-1.5 min-w-0 truncate">
+                                          <MapPin className="w-4 h-4 text-[#475569] shrink-0" />
+                                          <span className="truncate">
+                                            {isPro ? (locInfo.primary || "Location unlisted") : <span className="filter blur-[3px] select-none">Location Locked</span>}
                                           </span>
-                                        </Link>
-                                      )}
-                                    </div>
-                                  </div>
-
-                                  {/* View B: Desktop Hover panel "Why this job is a match" (14px bold ink) - crossfades in over 0.2s */}
-                                  <div
-                                    data-testid="card-hover-match-panel"
-                                    className="col-start-1 row-start-1 w-full hidden sm:flex flex-col justify-center space-y-1.5 opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 sm:group-focus:opacity-100 transition-opacity duration-200 motion-reduce:transition-none pointer-events-none sm:group-hover:pointer-events-auto sm:group-focus-within:pointer-events-auto sm:group-focus:pointer-events-auto"
-                                  >
-                                    <h3 className="text-[14px] font-bold text-[#0F172A] leading-snug">
-                                      Why this job is a match
-                                    </h3>
-
-                                    {diagnostics ? (
-                                      <>
-                                        <p className="text-[12px] text-[#475569] leading-snug line-clamp-2">
-                                          {getDiagnosticsSummary(diagnostics)}
-                                        </p>
-
-                                        <div className="flex items-center gap-4 pt-0.5" data-testid="match-component-rings">
-                                          <SmallComponentRing
-                                            label="Experience"
-                                            score={Math.min(100, Math.max(0, Math.round((diagnostics.breakdown.experienceScore / 15) * 100)))}
-                                          />
-                                          <SmallComponentRing
-                                            label="Skill"
-                                            score={Math.min(100, Math.max(0, Math.round((diagnostics.breakdown.skillScore / 50) * 100)))}
-                                          />
-                                          {typeof (diagnostics.breakdown as any)?.industryScore === "number" && (
-                                            <SmallComponentRing
-                                              label="Industry"
-                                              score={Math.min(100, Math.max(0, Math.round((diagnostics.breakdown as any).industryScore)))}
-                                            />
+                                          {isPro && locInfo.extraCount > 0 && (
+                                            <span
+                                              className="text-[11px] font-bold text-blue-600 bg-blue-50 px-1 py-0.5 rounded shrink-0 cursor-help"
+                                              title={locInfo.all.join(", ")}
+                                              aria-label={`${locInfo.extraCount} additional locations`}
+                                            >
+                                              +{locInfo.extraCount}
+                                            </span>
                                           )}
                                         </div>
-                                      </>
-                                    ) : (
-                                      <div className="pt-0.5">
-                                        <Link
-                                          href="/resume"
-                                          data-testid="hover-upload-resume-cta"
-                                          onClick={(e) => e.stopPropagation()}
-                                          className="inline-flex items-center gap-2 p-2.5 rounded-[12px] bg-[#F8FAFC] hover:bg-[#EFF6FF] border border-[#E2E8F0] hover:border-[#93C5FD] text-left transition-all duration-200 group/cta focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1 w-fit"
-                                        >
-                                          <div className="w-6 h-6 rounded-full bg-[#EFF6FF] group-hover/cta:bg-[#DBEAFE] border border-[#BFDBFE] flex items-center justify-center shrink-0 transition-colors">
-                                            <Sparkles className="w-3.5 h-3.5 text-[#2563EB]" />
-                                          </div>
-                                          <span className="text-[12px] font-semibold text-[#0F172A] group-hover/cta:text-[#1D4ED8] transition-colors leading-snug">
-                                            Upload your resume to see why this job matches
+
+                                        {/* Row 1, Col 2: Job type */}
+                                        <div className="flex items-center gap-1.5 min-w-0 truncate">
+                                          <Briefcase className="w-4 h-4 text-[#475569] shrink-0" />
+                                          <span className="truncate">{job.type || "Full-time"}</span>
+                                        </div>
+
+                                        {/* Row 1, Col 3: Salary */}
+                                        <div className="flex items-center gap-1.5 min-w-0 truncate">
+                                          <DollarSign className="w-4 h-4 text-[#475569] shrink-0" />
+                                          <span className="truncate">
+                                            {job.salary ? (isPro ? job.salary : "••••••••") : "Salary unlisted"}
                                           </span>
-                                        </Link>
+                                        </div>
+
+                                        {/* Row 2, Col 1: Work mode */}
+                                        <div className="flex items-center gap-1.5 min-w-0 truncate">
+                                          <Laptop className="w-4 h-4 text-[#475569] shrink-0" />
+                                          <span className="truncate">{job.remote ? "Remote" : "On-site"}</span>
+                                        </div>
+
+                                        {/* Row 2, Col 2: Seniority level */}
+                                        <div className="flex items-center gap-1.5 min-w-0 truncate">
+                                          <TrendingUp className="w-4 h-4 text-[#475569] shrink-0" />
+                                          <span className="truncate">{jobLevel || "Mid-Senior"}</span>
+                                        </div>
+
+                                        {/* Row 2, Col 3: Experience or Date */}
+                                        <div className="flex items-center gap-1.5 min-w-0 truncate">
+                                          <Clock className="w-4 h-4 text-[#475569] shrink-0" />
+                                          <span className="truncate">
+                                            {job.postedAt ? `Posted ${formatRelativeTime(job.postedAt)}` : "Verified Recent"}
+                                          </span>
+                                        </div>
                                       </div>
-                                    )}
+                                    </div>
+
+                                    {/* View B: Desktop Hover panel "Why this job is a match" (14px bold ink) */}
+                                    <div
+                                      data-testid="card-hover-match-panel"
+                                      className="col-start-1 row-start-1 w-full hidden sm:flex flex-col justify-center space-y-1.5 opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 sm:group-focus:opacity-100 transition-opacity duration-200 motion-reduce:transition-none pointer-events-none sm:group-hover:pointer-events-auto sm:group-focus-within:pointer-events-auto sm:group-focus:pointer-events-auto"
+                                    >
+                                      <h3 className="text-[14px] font-bold text-[#0F172A] leading-snug">
+                                        Why this job is a match
+                                      </h3>
+
+                                      {diagnostics ? (
+                                        <>
+                                          <p className="text-[12px] text-[#475569] leading-snug line-clamp-2">
+                                            {getDiagnosticsSummary(diagnostics)}
+                                          </p>
+
+                                          <div className="flex items-center gap-4 pt-0.5" data-testid="match-component-rings">
+                                            <SmallComponentRing
+                                              label="Experience"
+                                              score={Math.min(100, Math.max(0, Math.round((diagnostics.breakdown.experienceScore / 15) * 100)))}
+                                            />
+                                            <SmallComponentRing
+                                              label="Skill"
+                                              score={Math.min(100, Math.max(0, Math.round((diagnostics.breakdown.skillScore / 50) * 100)))}
+                                            />
+                                            {typeof (diagnostics.breakdown as any)?.industryScore === "number" && (
+                                              <SmallComponentRing
+                                                label="Industry"
+                                                score={Math.min(100, Math.max(0, Math.round((diagnostics.breakdown as any).industryScore)))}
+                                              />
+                                            )}
+                                          </div>
+                                        </>
+                                      ) : (
+                                        <div className="pt-0.5">
+                                          <Link
+                                            href="/resume"
+                                            data-testid="hover-upload-resume-cta"
+                                            onClick={(e) => e.stopPropagation()}
+                                            className="inline-flex items-center gap-2 p-2.5 rounded-[12px] bg-[#F8FAFC] hover:bg-[#EFF6FF] border border-[#E2E8F0] hover:border-[#93C5FD] text-left transition-all duration-200 group/cta focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1 w-fit"
+                                          >
+                                            <div className="w-6 h-6 rounded-full bg-[#EFF6FF] group-hover/cta:bg-[#DBEAFE] border border-[#BFDBFE] flex items-center justify-center shrink-0 transition-colors">
+                                              <Sparkles className="w-3.5 h-3.5 text-[#2563EB]" />
+                                            </div>
+                                            <span className="text-[12px] font-semibold text-[#0F172A] group-hover/cta:text-[#1D4ED8] transition-colors leading-snug">
+                                              Upload your resume to see why this job matches
+                                            </span>
+                                          </Link>
+                                        </div>
+                                      )}
+                                    </div>
                                   </div>
+                                </div>
+
+                                {/* Right: Desktop Match Panel (roughly 164px wide, radius 12, dark gradient, ~70px ring, full card height) */}
+                                {matchScore !== null ? (
+                                  <div className="w-[164px] sm:w-44 shrink-0 rounded-xl sm:rounded-[16px] bg-gradient-to-b from-[#09151E] via-[#0B1E28] to-[#06241D] text-white border border-emerald-950/40 p-3 self-stretch my-0.5 mr-0.5 flex flex-col items-center justify-between min-h-[170px] text-center shadow-inner">
+                                    <div className="flex flex-col items-center w-full pt-1">
+                                      <CircularMatchRing
+                                        score={matchScore}
+                                        size={70}
+                                        strokeWidth={4.5}
+                                        isPro={isPro}
+                                      />
+                                      <div className="text-[11px] font-bold uppercase tracking-wider text-slate-100 mt-2">
+                                        {cardZeroSkills
+                                          ? "EXPERIENCE MATCH"
+                                          : matchScore >= 80
+                                          ? "STRONG MATCH"
+                                          : matchScore >= 60
+                                          ? "GOOD MATCH"
+                                          : "FAIR MATCH"}
+                                      </div>
+                                    </div>
+
+                                    <div className="w-full pt-2 border-t border-white/10 mt-2">
+                                      <div className="space-y-1 text-[11px] text-slate-300 text-left w-full pl-2">
+                                        <div className="flex items-center gap-1.5 text-slate-300">
+                                          <span className="text-emerald-400 font-bold">✓</span>
+                                          <span className="truncate">{job.remote ? "Remote Eligible" : "Verified Direct"}</span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5 text-slate-300">
+                                          <span className="text-emerald-400 font-bold">✓</span>
+                                          <span className="truncate">{job.directSource ? "Direct Feed" : "Active Ingestion"}</span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <Link
+                                    href="/resume"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="w-[164px] sm:w-44 shrink-0 rounded-xl sm:rounded-[16px] bg-gradient-to-b from-[#09151E] via-[#0B1E28] to-[#06241D] border border-emerald-950/40 text-center p-3 transition-all duration-200 group/cta space-y-2.5 self-stretch my-0.5 mr-0.5 focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1 text-white min-h-[170px] flex flex-col items-center justify-between"
+                                  >
+                                    <div className="flex flex-col items-center justify-center flex-1 w-full space-y-2">
+                                      <div className="w-11 h-11 rounded-full bg-blue-500/10 border border-blue-400/30 flex items-center justify-center transition-colors">
+                                        <Sparkles className="w-5 h-5 text-blue-400" />
+                                      </div>
+                                      <span className="text-xs font-bold text-white uppercase tracking-wider">
+                                        Match Score
+                                      </span>
+                                      <span className="text-[11px] text-slate-300 group-hover/cta:text-blue-300 transition-colors leading-tight px-1">
+                                        Upload your resume to see your real match
+                                      </span>
+                                    </div>
+                                  </Link>
+                                )}
+                              </div>
+
+                              {/* Desktop Card Footer: Actions aligned to the right, 16px icons, ~32px button height, >= 44px touch targets */}
+                              <div className="flex items-center justify-between pt-3 border-t border-[#E2E8F0]">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs text-[#475569]">
+                                    {job.postedAt ? `Posted ${formatRelativeTime(job.postedAt)}` : (job.date ? `Tracked ${formatRelativeTime(job.date)}` : "")}
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleHideJob(e, job.id);
+                                    }}
+                                    aria-label="Hide position"
+                                    title="Hide position"
+                                    className="w-10 h-10 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full border border-[#E2E8F0] bg-[#F1F5F9] text-[#475569] hover:bg-[#E2E8F0] hover:text-[#0F172A] transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
+                                  >
+                                    <Ban className="w-4 h-4" />
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleSaveJob(job);
+                                    }}
+                                    aria-label={isSaved ? "Unlike job" : "Save job"}
+                                    title={isSaved ? "Saved to Tracker (Liked)" : "Like & save to Tracker"}
+                                    className={`w-10 h-10 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full border transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
+                                      isSaved
+                                        ? "border-rose-200 bg-rose-50 text-rose-600"
+                                        : "border-[#E2E8F0] bg-[#F1F5F9] text-[#475569] hover:bg-[#E2E8F0] hover:text-[#0F172A]"
+                                    }`}
+                                  >
+                                    <Heart className={`w-4 h-4 ${isSaved ? "fill-rose-500 text-rose-500" : ""}`} />
+                                  </button>
+
+                                  <Link
+                                    href="/resume"
+                                    onClick={(e) => e.stopPropagation()}
+                                    aria-label="Tailor resume for this job"
+                                    className="inline-flex items-center gap-1.5 h-8 px-3 rounded-full border border-blue-200 bg-blue-50/80 hover:bg-blue-100 text-[#2563EB] text-xs font-bold transition shadow-none cursor-pointer min-h-[44px]"
+                                  >
+                                    <Sparkles className="w-3.5 h-3.5" />
+                                    <span>Tailor Resume</span>
+                                  </Link>
+
+                                  {isPro ? (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleSelectJob(job);
+                                      }}
+                                      className="inline-flex items-center gap-1.5 h-8 px-4 min-h-[44px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-xs font-bold transition shadow-none focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1 cursor-pointer"
+                                    >
+                                      <span>Apply</span>
+                                      <ArrowRight className="w-3.5 h-3.5" />
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleLockedAction(e);
+                                      }}
+                                      className="inline-flex items-center gap-1.5 h-8 px-4 min-h-[44px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-xs font-bold transition shadow-none focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1 cursor-pointer"
+                                    >
+                                      <Lock className="w-3.5 h-3.5" />
+                                      <span>Apply</span>
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* MOBILE VIEW (under sm: 390px, 360px) */}
+                            <div className="flex sm:hidden flex-col justify-between w-full space-y-3">
+                              {/* Top Row: 32px logo beside company & industry, compact match-percentage badge (roughly 54x30) at top right */}
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                  <CompanyLogo
+                                    company={job.company}
+                                    applyUrl={job.applyUrl}
+                                    className="w-8 h-8 rounded-lg shrink-0 object-contain p-0.5 border border-[#E2E8F0] bg-white"
+                                  />
+                                  <div className="min-w-0 flex-1">
+                                    <div className="text-[14px] text-[#475569] truncate">
+                                      <span className={!isPro ? "filter blur-[4.5px] select-none font-semibold text-[#0F172A]" : "font-semibold text-[#0F172A]"}>
+                                        {job.company || "Verified Employer"}
+                                      </span>
+                                    </div>
+                                    <div className="text-xs text-[#475569] truncate">
+                                      {job.category ? <span className="capitalize">{job.category}</span> : "Technology"}
+                                      {job.remote && <span> · Remote</span>}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Compact match badge at top right */}
+                                <div className="shrink-0">
+                                  {matchScore !== null ? (
+                                    <div
+                                      className="w-[54px] h-[30px] rounded-full border border-emerald-500/30 bg-emerald-500/10 flex items-center justify-center text-xs font-bold text-emerald-600"
+                                      title={`Fit Match: ${matchScore}%`}
+                                      aria-label={`Fit Match: ${matchScore}%`}
+                                    >
+                                      {matchScore}%
+                                    </div>
+                                  ) : (
+                                    <Link
+                                      href="/resume"
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="h-[30px] px-2.5 rounded-full border border-blue-500/30 bg-blue-500/10 flex items-center justify-center text-[11px] font-bold text-blue-600 hover:bg-blue-500/20 transition"
+                                      title="Fit Match: Upload resume"
+                                    >
+                                      +Score
+                                    </Link>
+                                  )}
                                 </div>
                               </div>
 
-                              {/* Right: Desktop Match Panel (roughly 180px wide, dark gradient, ~80px ring, full card height) */}
-                              {matchScore !== null ? (
-                                <div className="hidden sm:flex flex-col items-center justify-between p-4 rounded-[16px] bg-gradient-to-b from-[#09151E] via-[#0B1E28] to-[#06241D] text-white w-44 shrink-0 text-center border border-emerald-950/40 shadow-inner self-stretch min-h-[170px]">
-                                  <div className="flex flex-col items-center w-full pt-1">
-                                    <CircularMatchRing
-                                      score={matchScore}
-                                      size={80}
-                                      strokeWidth={5}
-                                      isPro={isPro}
-                                    />
-                                    <div className="text-[12px] font-bold uppercase tracking-wider text-slate-100 mt-2.5">
-                                      {cardZeroSkills
-                                        ? "EXPERIENCE MATCH"
-                                        : matchScore >= 80
-                                        ? "STRONG MATCH"
-                                        : matchScore >= 60
-                                        ? "GOOD MATCH"
-                                        : "FAIR MATCH"}
-                                    </div>
-                                  </div>
+                              {/* Title: 16px/700 below the top row */}
+                              <h2 className="text-[16px] font-bold text-[#0F172A] leading-snug line-clamp-2 mt-1">
+                                {job.title}
+                              </h2>
 
-                                  <div className="w-full pt-2 border-t border-white/10 mt-2">
-                                    <div className="space-y-1 text-[11px] text-slate-300 text-left w-full pl-2">
-                                      <div className="flex items-center gap-1.5 text-slate-300">
-                                        <span className="text-emerald-400 font-bold">✓</span>
-                                        <span className="truncate">{job.remote ? "Remote Eligible" : "Verified Direct"}</span>
-                                      </div>
-                                      <div className="flex items-center gap-1.5 text-slate-300">
-                                        <span className="text-emerald-400 font-bold">✓</span>
-                                        <span className="truncate">{job.directSource ? "Direct Feed" : "Active Ingestion"}</span>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-                              ) : (
-                                <Link
-                                  href="/resume"
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="hidden sm:flex flex-col items-center justify-between p-4 rounded-[16px] bg-gradient-to-b from-[#09151E] via-[#0B1E28] to-[#06241D] border border-emerald-950/40 text-center w-44 shrink-0 transition-all duration-200 group/cta space-y-2.5 self-stretch focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1 text-white min-h-[170px]"
-                                >
-                                  <div className="flex flex-col items-center justify-center flex-1 w-full space-y-2">
-                                    <div className="w-12 h-12 rounded-full bg-blue-500/10 border border-blue-400/30 flex items-center justify-center transition-colors">
-                                      <Sparkles className="w-6 h-6 text-blue-400" />
-                                    </div>
-                                    <span className="text-xs font-bold text-white uppercase tracking-wider">
-                                      Match Score
-                                    </span>
-                                    <span className="text-[11px] text-slate-300 group-hover/cta:text-blue-300 transition-colors leading-tight px-1">
-                                      Upload your resume to see your real match
-                                    </span>
-                                  </div>
-                                </Link>
-                              )}
-                            </div>
-
-                            {/* Bottom row of the card: Save icon button and primary blue pill Apply */}
-                            <div className="flex items-center justify-between pt-3 border-t border-[#E2E8F0]">
-                              <div className="flex items-center gap-2" />
-
-                              <div className="flex items-center gap-2">
-                                <button
-                                  type="button"
-                                  onClick={(e) => handleHideJob(e, job.id)}
-                                  aria-label="Hide position"
-                                  title="Hide position"
-                                  className="w-10 h-10 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full border border-[#E2E8F0] bg-[#F1F5F9] text-[#475569] hover:bg-[#E2E8F0] hover:text-[#0F172A] transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
-                                >
-                                  <Ban className="w-4 h-4" />
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleSaveJob(job);
-                                  }}
-                                  aria-label={isSaved ? "Unlike job" : "Save job"}
-                                  title={isSaved ? "Saved to Tracker (Liked)" : "Like & save to Tracker"}
-                                  className={`w-10 h-10 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full border transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
-                                    isSaved
-                                      ? "border-rose-200 bg-rose-50 text-rose-600"
-                                      : "border-[#E2E8F0] bg-[#F1F5F9] text-[#475569] hover:bg-[#E2E8F0] hover:text-[#0F172A]"
-                                  }`}
-                                >
-                                  <Heart className={`w-4 h-4 ${isSaved ? "fill-rose-500 text-rose-500" : ""}`} />
-                                </button>
-
-                                <Link
-                                  href="/resume"
-                                  onClick={(e) => e.stopPropagation()}
-                                  aria-label="Tailor resume for this job"
-                                  className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full border border-blue-200 bg-blue-50/80 hover:bg-blue-100 text-[#2563EB] text-xs font-bold transition shadow-none cursor-pointer min-h-[44px]"
-                                >
-                                  <Sparkles className="w-3.5 h-3.5" />
-                                  <span>Tailor Resume</span>
-                                </Link>
-
-                                {isPro ? (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleSelectJob(job);
-                                    }}
-                                    className="inline-flex items-center gap-1.5 px-5 py-2 min-h-[44px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-xs font-bold transition shadow-none focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1 cursor-pointer"
-                                  >
-                                    <span>Apply</span>
-                                    <ArrowRight className="w-3.5 h-3.5" />
-                                  </button>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleLockedAction(e);
-                                    }}
-                                    className="inline-flex items-center gap-1.5 px-5 py-2 min-h-[44px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-xs font-bold transition shadow-none focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1 cursor-pointer"
-                                  >
-                                    <Lock className="w-3.5 h-3.5" />
-                                    <span>Apply</span>
-                                  </button>
+                              {/* Small wrapping metadata chips beneath title: roughly 24px high, 13px text */}
+                              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                                <span className="h-6 px-2.5 py-0.5 rounded-md bg-[#F1F5F9] text-[#475569] text-[12px] font-medium inline-flex items-center gap-1">
+                                  <MapPin className="w-3 h-3 text-[#475569]" />
+                                  {isPro ? (locInfo.primary || "Location unlisted") : <span className="filter blur-[3px] select-none">Location Locked</span>}
+                                  {isPro && locInfo.extraCount > 0 && <span>(+{locInfo.extraCount})</span>}
+                                </span>
+                                {job.type && (
+                                  <span className="h-6 px-2.5 py-0.5 rounded-md bg-[#F1F5F9] text-[#475569] text-[12px] font-medium inline-flex items-center gap-1">
+                                    <Briefcase className="w-3 h-3 text-[#475569]" />
+                                    {job.type}
+                                  </span>
                                 )}
+                                {job.remote && (
+                                  <span className="h-6 px-2.5 py-0.5 rounded-md bg-[#F1F5F9] text-[#475569] text-[12px] font-medium inline-flex items-center gap-1">
+                                    <Laptop className="w-3 h-3 text-[#475569]" />
+                                    Remote
+                                  </span>
+                                )}
+                                {job.salary && (
+                                  <span className="h-6 px-2.5 py-0.5 rounded-md bg-[#F1F5F9] text-[#475569] text-[12px] font-medium inline-flex items-center gap-1">
+                                    <DollarSign className="w-3 h-3 text-[#475569]" />
+                                    {isPro ? job.salary : "••••••••"}
+                                  </span>
+                                )}
+                                {job.postedAt && (
+                                  <span className="h-6 px-2.5 py-0.5 rounded-md bg-[#F1F5F9] text-[#475569] text-[12px] font-medium inline-flex items-center gap-1">
+                                    <Clock className="w-3 h-3 text-[#475569]" />
+                                    {formatRelativeTime(job.postedAt)}
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Footer divider, posted time on left, existing actions on right with 44px targets */}
+                              <div className="flex items-center justify-between pt-3 border-t border-[#E2E8F0] mt-1">
+                                <span className="text-xs text-[#475569] truncate">
+                                  {job.postedAt ? formatRelativeTime(job.postedAt) : "Recently added"}
+                                </span>
+
+                                <div className="flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleHideJob(e, job.id);
+                                    }}
+                                    aria-label="Hide position"
+                                    className="w-10 h-10 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full border border-[#E2E8F0] bg-[#F1F5F9] text-[#475569] hover:bg-[#E2E8F0] hover:text-[#0F172A] transition cursor-pointer"
+                                  >
+                                    <Ban className="w-4 h-4" />
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleSaveJob(job);
+                                    }}
+                                    aria-label={isSaved ? "Unlike job" : "Save job"}
+                                    className={`w-10 h-10 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full border transition cursor-pointer ${
+                                      isSaved
+                                        ? "border-rose-200 bg-rose-50 text-rose-600"
+                                        : "border-[#E2E8F0] bg-[#F1F5F9] text-[#475569] hover:bg-[#E2E8F0] hover:text-[#0F172A]"
+                                    }`}
+                                  >
+                                    <Heart className={`w-4 h-4 ${isSaved ? "fill-rose-500 text-rose-500" : ""}`} />
+                                  </button>
+
+                                  {isPro ? (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleSelectJob(job);
+                                      }}
+                                      className="inline-flex items-center gap-1.5 px-4 py-2 min-h-[44px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-xs font-bold transition cursor-pointer"
+                                    >
+                                      <span>Apply</span>
+                                      <ArrowRight className="w-3.5 h-3.5" />
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleLockedAction(e);
+                                      }}
+                                      className="inline-flex items-center gap-1.5 px-4 py-2 min-h-[44px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-xs font-bold transition cursor-pointer"
+                                    >
+                                      <Lock className="w-3.5 h-3.5" />
+                                      <span>Apply</span>
+                                    </button>
+                                  )}
+                                </div>
                               </div>
                             </div>
                           </motion.article>
@@ -2664,8 +2789,8 @@ function JobsPageInner() {
                   )}
                 </div>
 
-                {/* Right Rail Column (4 cols on lg, 3 cols on xl, hidden on mobile) */}
-                <div className="hidden lg:block lg:col-span-4 xl:col-span-3 space-y-4 shrink-0 sticky top-20">
+                {/* Right Rail Column: about 316px, sticky, hidden on mobile */}
+                <div className="hidden lg:block w-[316px] shrink-0 space-y-4 sticky top-20">
                   {/* Card 1: Your Saved Filters */}
                   <div className="bg-white rounded-[16px] border border-[#E2E8F0] p-4 space-y-3">
                     <div className="flex items-center justify-between">
@@ -2792,7 +2917,7 @@ function JobsPageInner() {
 
 function JobsPageFallback() {
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col font-sans">
+    <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col font-sans overflow-x-clip">
       <div className="flex-1 max-w-[880px] w-full mx-auto px-4 sm:px-6 py-6 space-y-4">
         <div className="h-8 w-48 bg-slate-200/80 rounded-lg animate-pulse" />
         <div className="h-14 w-full bg-white rounded-xl border border-slate-200 animate-pulse" />

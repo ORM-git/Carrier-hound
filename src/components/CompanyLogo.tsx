@@ -62,7 +62,7 @@ export default function CompanyLogo({
       <div
         className={`rounded-xl bg-gradient-to-br ${gradient} text-white font-black flex items-center justify-center shrink-0 shadow-2xs select-none border border-white/20 ${className}`}
       >
-        <span className="text-lg sm:text-2xl font-bold">{initial}</span>
+        <span className="text-xs sm:text-xl font-bold leading-none">{initial}</span>
       </div>
     );
   }
