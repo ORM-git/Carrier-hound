@@ -362,12 +362,59 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       count = res.count;
 
       if (candidatePool.length === 0 && preferences?.categories?.length) {
-        const catQuery = supabase
+        let catQuery = supabase
           .from("jobs_public")
           .select(PUBLIC_SELECT_COLUMNS, { count: "exact" })
           .eq("is_active", true)
           .eq("status", "active")
-          .in("category", preferences.categories)
+          .in("category", preferences.categories);
+
+        if (remoteOnly) {
+          catQuery = catQuery.eq("remote", true);
+        }
+        if (location && location.trim() && location.toLowerCase() !== "all") {
+          const loc = location.trim().replace(/[%_(),\"'`;\\$*]/g, " ").trim();
+          if (loc.toLowerCase() === "remote") {
+            catQuery = catQuery.or("remote.eq.true,location.ilike.%remote%");
+          } else if (loc) {
+            catQuery = catQuery.ilike("location", "%" + loc + "%");
+          }
+        }
+        if (jobType && jobType.trim() && jobType.toLowerCase() !== "all") {
+          const jt = jobType.trim().toLowerCase();
+          if (jt.includes("full")) {
+            catQuery = catQuery.or("job_type.ilike.%full%,job_type.eq.full-time,job_type.eq.full_time");
+          } else if (jt.includes("contract")) {
+            catQuery = catQuery.or("job_type.ilike.%contract%,job_type.eq.contractor");
+          } else if (jt.includes("part")) {
+            catQuery = catQuery.ilike("job_type", "%part%");
+          } else if (jt.includes("intern")) {
+            catQuery = catQuery.or("job_type.ilike.%intern%,job_type.eq.internship");
+          } else {
+            catQuery = catQuery.ilike("job_type", "%" + jt + "%");
+          }
+        }
+        if (level && level.trim() && level.toLowerCase() !== "all") {
+          const lvl = level.trim().toLowerCase();
+          if (lvl.includes("lead") || lvl.includes("staff")) {
+            catQuery = catQuery.or("title.ilike.%staff%,title.ilike.%principal%,title.ilike.%lead%");
+          } else if (lvl.includes("senior")) {
+            catQuery = catQuery.or("title.ilike.%senior%,title.ilike.%sr.%");
+          } else if (lvl.includes("entry") || lvl.includes("junior")) {
+            catQuery = catQuery.or("title.ilike.%junior%,title.ilike.%entry%,title.ilike.%associate%");
+          } else if (lvl.includes("mid")) {
+            catQuery = catQuery
+              .not("title", "ilike", "%senior%")
+              .not("title", "ilike", "%sr.%")
+              .not("title", "ilike", "%staff%")
+              .not("title", "ilike", "%principal%")
+              .not("title", "ilike", "%lead%")
+              .not("title", "ilike", "%junior%")
+              .not("title", "ilike", "%entry%");
+          }
+        }
+
+        catQuery = catQuery
           .order("posted_at", { ascending: false })
           .range(0, 249);
         const catRes = await catQuery;
