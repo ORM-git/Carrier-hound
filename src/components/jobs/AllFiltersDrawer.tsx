@@ -18,6 +18,7 @@ import {
   Building,
 } from "lucide-react";
 import { JobFilterValues } from "./JobFilterBar";
+import { SUPPORTED_COUNTRY_OPTIONS } from "@/lib/geo/cities";
 
 interface AllFiltersDrawerProps {
   isOpen: boolean;
@@ -507,14 +508,7 @@ export default function AllFiltersDrawer({
                   <label className="text-[13px] font-bold text-[#0F172A] block">Country (Indexed Filter)</label>
                   <p className="text-[11px] text-[#64748B]">Filters database directly by ISO country code</p>
                   <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-                    {[
-                      { code: "", label: "Worldwide" },
-                      { code: "US", label: "US" },
-                      { code: "GB", label: "UK" },
-                      { code: "CA", label: "Canada" },
-                      { code: "DE", label: "Germany" },
-                      { code: "IN", label: "India" },
-                    ].map((item) => (
+                    {SUPPORTED_COUNTRY_OPTIONS.map((item) => (
                       <button
                         key={item.code || "worldwide"}
                         type="button"
@@ -525,7 +519,7 @@ export default function AllFiltersDrawer({
                             : "bg-[#F8FAFC] border-[#E2E8F0] text-[#0F172A] hover:bg-slate-100"
                         }`}
                       >
-                        {item.label}
+                        {item.shortLabel}
                       </button>
                     ))}
                   </div>

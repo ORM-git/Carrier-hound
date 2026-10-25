@@ -1,5 +1,7 @@
 export type BillingProvider = "razorpay" | "stripe" | "manual";
 
+export type UserTier = "none" | "listings" | "ai";
+
 export type SubscriptionStatus =
   | "none"
   | "active"
@@ -61,6 +63,41 @@ export const PLAN_INTERNATIONAL: BillingPlan = {
   ],
 };
 
+export const PLAN_LISTINGS_TIER: BillingPlan = {
+  id: "listings_launch_pass",
+  name: "Listings Pass (No-Payment Launch)",
+  description: "Direct ATS endpoints and verified salary bands without AI features.",
+  provider: "manual",
+  currency: "USD",
+  price: 0,
+  formattedPrice: "Free (Launch)",
+  period: "month",
+  features: [
+    "Direct Company ATS Endpoints (Greenhouse, Lever, Ashby)",
+    "Unmasked Verified Salary Bands & Compensation",
+    "Full Unredacted Job Descriptions & Apply URLs",
+    "Application Kanban Pipeline with Auto-Sync",
+  ],
+};
+
+export const PLAN_AI_TIER: BillingPlan = {
+  id: "ai_launch_pass",
+  name: "AI Pro Pass (No-Payment Launch)",
+  description: "Full unmasked listings plus candidate compatibility scores and AI tailoring.",
+  provider: "manual",
+  currency: "USD",
+  price: 0,
+  formattedPrice: "Free (Launch)",
+  period: "month",
+  features: [
+    "All Listings Tier Features Included",
+    "Compatibility Match Scores & Ring Indicators",
+    "Detailed Candidate Fit Diagnostics",
+    "Sort Jobs by Candidate Match",
+    "AI Resume Tailoring & Cover Letter Generation",
+  ],
+};
+
 export interface UserSubscription {
   id: string;
   userId: string;
@@ -77,6 +114,10 @@ export interface UserSubscription {
 }
 
 export interface ProAccessStatus {
+  tier: UserTier;
+  canAccessListings: boolean;
+  canAccessScores: boolean;
+  canAccessAi: boolean;
   isPro: boolean;
   status: SubscriptionStatus;
   planName?: string;

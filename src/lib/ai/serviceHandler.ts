@@ -287,15 +287,23 @@ export async function executeAiCore(
 
     // 2. Server-side Pro Entitlement check (Single Source of Truth)
     const entitlement = activeDeps.getServerEntitlement
-      ? await activeDeps.getServerEntitlement(user.id)
-      : await getServerEntitlement(user.id);
-    if (!entitlement.isPro) {
+      ? await activeDeps.getServerEntitlement(user.id, { env: activeDeps.env })
+      : await getServerEntitlement(user.id, { env: activeDeps.env });
+    const canAccessAi = Boolean(
+      entitlement.canAccessAi ?? (entitlement.isPro && entitlement.tier !== "listings")
+    );
+    if (!canAccessAi) {
       return {
         statusCode: 403,
         body: {
-          error: "CareerMonke Pro subscription required for AI features.",
+          error:
+            entitlement.tier === "listings"
+              ? "Your subscription is on the Listings tier. AI features require an AI tier subscription."
+              : "CareerMonke Pro AI subscription required for AI features.",
           isPro: false,
-          code: "PRO_REQUIRED",
+          tier: entitlement.tier,
+          canAccessAi: false,
+          code: entitlement.tier === "listings" ? "AI_TIER_REQUIRED" : "PRO_REQUIRED",
         },
       };
     }

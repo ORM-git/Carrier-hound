@@ -62,10 +62,10 @@ async function verifyProUser(req: Request) {
   }
 
   // Server-managed subscription check — ONLY source of truth
-  const entitlement = await getServerEntitlement(user.id);
-  if (!entitlement.isPro) {
+  const entitlement = await getServerEntitlement(user.id, { headers: req.headers });
+  if (!entitlement.canAccessListings) {
     return {
-      error: "Pro subscription required to access full job details.",
+      error: "Subscription required to access full job details.",
       status: 403,
       user,
       isPro: false,

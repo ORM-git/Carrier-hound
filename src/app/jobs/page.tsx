@@ -20,6 +20,7 @@ import {
   isMatchingTrackerJob,
 } from "@/lib/tracker/storage";
 import { getProAccessStatus } from "@/lib/billing/subscription";
+import { ProAccessStatus } from "@/lib/billing/types";
 import GuideHeader from "@/components/GuideHeader";
 import Footer from "@/components/Footer";
 import AppIconRail from "@/components/shell/AppIconRail";
@@ -416,6 +417,18 @@ function JobsPageInner() {
     }
   }, [user?.id]);
 
+  const [proStatus, setProStatus] = useState<ProAccessStatus>({
+    tier: "none",
+    canAccessListings: false,
+    canAccessScores: false,
+    canAccessAi: false,
+    isPro: false,
+    status: "none",
+    planName: "Free Tier",
+    inGracePeriod: false,
+    isLoading: false,
+    isDefinitive: true,
+  });
   const [isPro, setIsPro] = useState(false);
   const [isProDefinitive, setIsProDefinitive] = useState(false);
   const [candidate, setCandidate] = useState<CandidateProfile | null>(null);
@@ -718,7 +731,8 @@ function JobsPageInner() {
         if (cancelled) return;
 
         setUser(u);
-        setIsPro(proRes.isPro);
+        setProStatus(proRes);
+        setIsPro(Boolean(proRes.canAccessListings));
         setIsProDefinitive(Boolean(proRes.isDefinitive));
         setCandidate(cp && cp.confirmedAt ? cp : null);
         setTrackedApplications(apps);
@@ -745,7 +759,8 @@ function JobsPageInner() {
 
     const handleSubUpdate = () => {
       getProAccessStatus().then((res) => {
-        setIsPro(res.isPro);
+        setProStatus(res);
+        setIsPro(Boolean(res.canAccessListings));
         setIsProDefinitive(Boolean(res.isDefinitive));
       });
     };
@@ -1033,7 +1048,7 @@ function JobsPageInner() {
     }
 
     // Sort
-    if (sortBy === "match" && candidate) {
+    if (sortBy === "match" && candidate && proStatus.canAccessScores) {
       result = [...result].sort((a, b) => {
         const scoreA = getJobMatchScore(a, candidate) ?? 0;
         const scoreB = getJobMatchScore(b, candidate) ?? 0;
@@ -1057,6 +1072,7 @@ function JobsPageInner() {
     selectedExperience,
     sortBy,
     candidate,
+    proStatus.canAccessScores,
   ]);
 
   const displayedJobs = filteredJobs;
@@ -1065,11 +1081,13 @@ function JobsPageInner() {
   const confirmedResumeKey = candidate?.confirmedAt || "";
   const cardDiagnosticsMap = useMemo(() => {
     const map = new Map<string, FitDiagnosticsResult | null>();
-    for (const job of displayedJobs) {
-      map.set(job.id, getJobDiagnostics(job, candidate));
+    if (proStatus.canAccessScores) {
+      for (const job of displayedJobs) {
+        map.set(job.id, getJobDiagnostics(job, candidate));
+      }
     }
     return map;
-  }, [displayedJobs, candidate?.confirmedAt, confirmedResumeKey]);
+  }, [displayedJobs, candidate?.confirmedAt, confirmedResumeKey, proStatus.canAccessScores]);
 
   const selectedJobTrackedApp = useMemo(() => {
     if (!selectedJob) return null;
@@ -1452,6 +1470,9 @@ function JobsPageInner() {
                 candidate={candidate}
                 user={user}
                 isPro={isPro}
+                canAccessScores={proStatus.canAccessScores}
+                canAccessAi={proStatus.canAccessAi}
+                tier={proStatus.tier}
                 isSaved={savedJobIds.includes(selectedJob.id)}
                 isApplied={Boolean(selectedJobTrackedApp && selectedJobTrackedApp.stage !== "saved")}
                 trackedStage={selectedJobTrackedApp?.stage || null}
@@ -1677,8 +1698,8 @@ function JobsPageInner() {
                       {displayedJobs.map((job, index) => {
                         const isSaved = savedJobIds.includes(job.id);
                         const staggerDelay = Math.min(index * 0.03, 0.3);
-                        const diagnostics = cardDiagnosticsMap.get(job.id) ?? getJobDiagnostics(job, candidate);
-                        const matchScore = getJobMatchScore(job, candidate);
+                        const diagnostics = proStatus.canAccessScores ? (cardDiagnosticsMap.get(job.id) ?? getJobDiagnostics(job, candidate)) : null;
+                        const matchScore = proStatus.canAccessScores ? getJobMatchScore(job, candidate) : null;
                         const matchLabel =
                           matchScore !== null
                             ? matchScore > 70
@@ -1841,6 +1862,22 @@ function JobsPageInner() {
                                             )}
                                           </div>
                                         </>
+                                      ) : proStatus.tier === "listings" ? (
+                                        <div className="pt-0.5">
+                                          <Link
+                                            href="/pricing"
+                                            data-testid="hover-upgrade-ai-cta"
+                                            onClick={(e) => e.stopPropagation()}
+                                            className="inline-flex items-center gap-2 p-2.5 rounded-[12px] bg-[#F8FAFC] hover:bg-[#EFF6FF] border border-[#E2E8F0] hover:border-[#93C5FD] text-left transition-all duration-200 group/cta focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1 w-fit"
+                                          >
+                                            <div className="w-6 h-6 rounded-full bg-[#EFF6FF] group-hover/cta:bg-[#DBEAFE] border border-[#BFDBFE] flex items-center justify-center shrink-0 transition-colors">
+                                              <Sparkles className="w-3.5 h-3.5 text-[#2563EB]" />
+                                            </div>
+                                            <span className="text-[12px] font-semibold text-[#0F172A] group-hover/cta:text-[#1D4ED8] transition-colors leading-snug">
+                                              Match diagnostics are part of the AI Tier · View options
+                                            </span>
+                                          </Link>
+                                        </div>
                                       ) : (
                                         <div className="pt-0.5">
                                           <Link
@@ -1895,9 +1932,10 @@ function JobsPageInner() {
                                   </button>
 
                                   <Link
-                                    href="/resume"
+                                    href={proStatus.canAccessAi ? "/resume" : "/pricing"}
                                     onClick={(e) => e.stopPropagation()}
                                     aria-label="Tailor resume for this job"
+                                    title={proStatus.canAccessAi ? "Tailor resume for this job" : "AI Tailoring requires AI Tier"}
                                     className="w-[120px] h-8 min-h-[44px] inline-flex items-center justify-center gap-1.5 rounded-full border border-blue-200 bg-blue-50/80 hover:bg-blue-100 text-[#2563EB] text-xs font-bold transition shadow-none cursor-pointer"
                                   >
                                     <Sparkles className="w-3.5 h-3.5" />
@@ -1966,6 +2004,29 @@ function JobsPageInner() {
                                     </div>
                                   </div>
                                 </div>
+                              ) : proStatus.tier === "listings" ? (
+                                <div className="w-[164px] sm:w-44 shrink-0 rounded-xl sm:rounded-[16px] bg-gradient-to-b from-[#09151E] via-[#0B1E28] to-[#06241D] border border-emerald-950/40 text-center p-3 transition-all duration-200 space-y-2 self-stretch my-0.5 mr-0.5 text-white min-h-[224px] flex flex-col items-center justify-between shadow-inner">
+                                  <div className="flex flex-col items-center justify-center flex-1 w-full space-y-2 pt-1">
+                                    <div className="w-10 h-10 rounded-full bg-blue-500/10 border border-blue-400/30 flex items-center justify-center">
+                                      <Sparkles className="w-5 h-5 text-blue-400" />
+                                    </div>
+                                    <span className="text-[11px] font-bold text-white uppercase tracking-wider">
+                                      AI Match Scoring
+                                    </span>
+                                    <span className="text-[11px] text-slate-300 leading-tight px-1">
+                                      Available on AI Tier
+                                    </span>
+                                  </div>
+                                  <div className="w-full pt-2 border-t border-white/10 mt-1">
+                                    <Link
+                                      href="/pricing"
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="w-full h-8 px-2 inline-flex items-center justify-center rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-[11px] font-bold transition shadow-sm"
+                                    >
+                                      Upgrade to AI
+                                    </Link>
+                                  </div>
+                                </div>
                               ) : (
                                 <Link
                                   href="/resume"
@@ -2020,6 +2081,15 @@ function JobsPageInner() {
                                     >
                                       {matchScore}%
                                     </div>
+                                  ) : proStatus.tier === "listings" ? (
+                                    <Link
+                                      href="/pricing"
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="h-[30px] px-2 rounded-full border border-indigo-500/30 bg-indigo-500/10 flex items-center justify-center text-[10px] font-bold text-indigo-600 hover:bg-indigo-500/20 transition"
+                                      title="Match scoring on AI tier"
+                                    >
+                                      AI Tier
+                                    </Link>
                                   ) : (
                                     <Link
                                       href="/resume"

@@ -39,6 +39,9 @@ interface JobDetailViewProps {
   candidate: CandidateProfile | null;
   user: User | null;
   isPro: boolean;
+  canAccessScores?: boolean;
+  canAccessAi?: boolean;
+  tier?: "none" | "listings" | "ai";
   isSaved: boolean;
   isApplied?: boolean;
   trackedStage?: "saved" | "applied" | "interview" | "offer" | "rejected" | null;
@@ -167,6 +170,9 @@ export default function JobDetailView({
   candidate,
   user,
   isPro,
+  canAccessScores = false,
+  canAccessAi = false,
+  tier = "none",
   isSaved,
   isApplied = false,
   trackedStage = null,
@@ -202,7 +208,7 @@ export default function JobDetailView({
   };
 
   const diagnostics: FitDiagnosticsResult | null = useMemo(() => {
-    if (!hasConfirmedResume || !candidate) return null;
+    if (!canAccessScores || !hasConfirmedResume || !candidate) return null;
     try {
       return computeFitDiagnostics(candidate, {
         id: job.id,
@@ -220,7 +226,7 @@ export default function JobDetailView({
     } catch {
       return null;
     }
-  }, [hasConfirmedResume, candidate, job]);
+  }, [canAccessScores, hasConfirmedResume, candidate, job]);
 
   const matchScore = diagnostics ? Math.max(10, Math.min(99, Math.round(diagnostics.score))) : null;
 
@@ -481,13 +487,16 @@ export default function JobDetailView({
               <button
                 type="button"
                 onClick={() => {
-                  if (!isPro) {
-                    onApply();
+                  if (!canAccessAi) {
+                    if (typeof window !== "undefined") {
+                      window.location.href = "/pricing";
+                    }
                   } else {
                     setIsTailorOpen(true);
                   }
                 }}
                 aria-label="Tailor resume with AI"
+                title={canAccessAi ? "Tailor resume with AI" : "AI Tailoring requires AI Tier"}
                 className="inline-flex items-center gap-1.5 px-4 py-2.5 min-h-[44px] rounded-full text-xs font-bold transition cursor-pointer border border-blue-200 bg-blue-50 hover:bg-blue-100 text-[#1D4ED8] focus:outline-none focus:ring-2 focus:ring-[#93C5FD]"
               >
                 <Sparkles className="w-3.5 h-3.5 text-blue-600" />
@@ -605,6 +614,29 @@ export default function JobDetailView({
               </div>
             )}
           </div>
+        ) : tier === "listings" ? (
+          <Link
+            href="/pricing"
+            className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 rounded-[16px] bg-[#F8FAFC] hover:bg-[#EFF6FF] border border-[#E2E8F0] hover:border-[#93C5FD] transition-all duration-200 group/cta focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-[#EFF6FF] group-hover/cta:bg-[#DBEAFE] border border-[#BFDBFE] flex items-center justify-center shrink-0 transition-colors">
+                <Sparkles className="w-5 h-5 text-[#2563EB]" />
+              </div>
+              <div className="space-y-0.5 text-left">
+                <div className="text-sm font-semibold text-[#0F172A] group-hover/cta:text-[#1D4ED8] transition-colors">
+                  Match scoring & fit breakdown are part of the AI Tier
+                </div>
+                <div className="text-xs text-[#475569]">
+                  Upgrade to unlock real-time match percentage, skill gap analysis, and tailored AI suggestions.
+                </div>
+              </div>
+            </div>
+            <span className="inline-flex items-center gap-1.5 px-4 py-2 min-h-[44px] rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold shrink-0 shadow-none">
+              <span>View AI Tier</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </span>
+          </Link>
         ) : (
           <Link
             href="/resume"

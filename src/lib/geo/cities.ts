@@ -351,6 +351,22 @@ export const COUNTRY_CENTROIDS: Record<string, { name: string; coordinates: [num
   KR: { name: 'South Korea', coordinates: [127.7669, 35.9078], region: 'asia_pac' },
 };
 
+export interface SupportedCountryOption {
+  code: string;
+  label: string;
+  shortLabel: string;
+}
+
+// Derived from supported geographic data registry (COUNTRY_CENTROIDS)
+export const SUPPORTED_COUNTRY_OPTIONS: SupportedCountryOption[] = [
+  { code: "", label: "All Locations (Worldwide)", shortLabel: "Worldwide" },
+  ...Object.entries(COUNTRY_CENTROIDS).map(([code, data]) => ({
+    code,
+    label: data.name,
+    shortLabel: code === "US" ? "US" : code === "GB" ? "UK" : data.name,
+  })),
+];
+
 /**
  * Normalizes raw location string and country_code into a resolved Geo target.
  */

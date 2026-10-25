@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { formatSalary } from "../../src/lib/salary/parser";
 import { safeLog } from "./_logger";
+import { getServerEntitlement } from "../../src/lib/billing/serverEntitlement";
 
 function getSupabaseAdmin() {
   const supabaseUrl =
@@ -187,24 +188,8 @@ export function createHandler(deps: JobsSearchDeps = {}) {
       try {
         const { data: { user } } = await supabaseAdmin.auth.getUser(token);
         if (user) {
-          const { data: sub } = await supabaseAdmin
-            .from("subscriptions")
-            .select("*")
-            .eq("user_id", user.id)
-            .order("created_at", { ascending: false })
-            .limit(1)
-            .maybeSingle();
-
-          if (sub) {
-            const now = new Date();
-            const periodEnd = sub.current_period_end ? new Date(sub.current_period_end) : null;
-            const graceEnd = sub.grace_period_end ? new Date(sub.grace_period_end) : null;
-            const isPeriodActive = periodEnd ? periodEnd > now : false;
-            const isGraceActive = graceEnd ? graceEnd > now : false;
-            if ((sub.status === "active" && isPeriodActive) || isGraceActive) {
-              isPro = true;
-            }
-          }
+          const entitlement = await getServerEntitlement(user.id, { headers: event.headers });
+          isPro = Boolean(entitlement.canAccessListings);
         }
       } catch (authErr) {
         safeLog.warn("[Netlify /jobs-search] Token verification failed", authErr);

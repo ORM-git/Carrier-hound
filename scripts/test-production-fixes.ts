@@ -193,7 +193,7 @@ async function runSuite() {
         from: () => mockQueryBuilder,
       };
     },
-    getServerEntitlement: async () => ({ isPro: true, status: "active" }),
+    getServerEntitlement: async () => ({ tier: "ai", canAccessAi: true, canAccessListings: true, canAccessScores: true, isPro: true, status: "active" }),
   };
 
   const resMissingGroq = await executeAiCore(

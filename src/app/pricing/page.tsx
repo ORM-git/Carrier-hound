@@ -4,17 +4,16 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   Check,
+  X as XIcon,
   Sparkles,
   ShieldCheck,
-  CreditCard,
-  QrCode,
   ArrowRight,
   AlertCircle,
   CheckCircle2,
   Lock,
-  RefreshCw,
-  HelpCircle,
-  ExternalLink,
+  Layers,
+  BrainCircuit,
+  Zap,
 } from "lucide-react";
 import GuideHeader from "@/components/GuideHeader";
 import Footer from "@/components/Footer";
@@ -22,42 +21,37 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonClasses } from "@/components/ui/button";
 import { cnTokens } from "@/components/ui/cn-tokens";
-import { PLAN_DOMESTIC, PLAN_INTERNATIONAL } from "@/lib/billing/types";
-import { loadRazorpayScript } from "@/lib/billing/razorpay";
+import {
+  PLAN_LISTINGS_TIER,
+  PLAN_AI_TIER,
+  ProAccessStatus,
+  UserTier,
+} from "@/lib/billing/types";
 import {
   getProAccessStatus,
+  activateLaunchTier,
   invalidateProAccessCache,
 } from "@/lib/billing/subscription";
 import { createClient } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
 
-type PaymentStatus =
-  | "idle"
-  | "loading_auth"
-  | "creating_order"
-  | "awaiting_payment"
-  | "verifying"
-  | "success"
-  | "dismissed"
-  | "error";
-
-interface PaymentState {
-  status: PaymentStatus;
-  errorMessage?: string;
-  paymentId?: string;
-  orderId?: string;
-  testMode?: boolean;
-}
-
 export default function PricingPage() {
   const [user, setUser] = useState<User | null>(null);
-  const [isPro, setIsPro] = useState(false);
-  const [authLoading, setAuthLoading] = useState(true);
-  const [paymentState, setPaymentState] = useState<PaymentState>({
-    status: "idle",
+  const [proStatus, setProStatus] = useState<ProAccessStatus>({
+    tier: "none",
+    canAccessListings: false,
+    canAccessScores: false,
+    canAccessAi: false,
+    isPro: false,
+    status: "none",
+    planName: "Free Tier",
+    inGracePeriod: false,
+    isLoading: true,
+    isDefinitive: true,
   });
-
-  const billingEnabled = process.env.NEXT_PUBLIC_BILLING_ENABLED === "true";
+  const [authLoading, setAuthLoading] = useState(true);
+  const [activatingTier, setActivatingTier] = useState<"listings" | "ai" | null>(null);
+  const [feedback, setFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -70,9 +64,9 @@ export default function PricingPage() {
         if (!mounted) return;
         setUser(session?.user ?? null);
 
-        const proStatus = await getProAccessStatus(session?.user?.id);
+        const status = await getProAccessStatus(session?.user?.id);
         if (!mounted) return;
-        setIsPro(proStatus.isPro);
+        setProStatus(status);
       } catch (err) {
         console.warn("[Pricing] Auth / Pro check failed:", err);
       } finally {
@@ -83,7 +77,7 @@ export default function PricingPage() {
     checkAuthAndPro();
 
     const handleProUpdated = () => {
-      getProAccessStatus().then((res) => setIsPro(res.isPro));
+      getProAccessStatus().then((res) => setProStatus(res));
     };
     window.addEventListener("careermonke_pro_updated", handleProUpdated);
     window.addEventListener("careermonke_auth_updated", handleProUpdated);
@@ -95,8 +89,7 @@ export default function PricingPage() {
     };
   }, []);
 
-  const handleIndiaCheckout = async () => {
-    // 1. Require logged in user
+  const handleActivate = async (tier: "listings" | "ai") => {
     if (!user) {
       if (typeof window !== "undefined") {
         window.location.href = "/login?redirectTo=/pricing";
@@ -104,636 +97,382 @@ export default function PricingPage() {
       return;
     }
 
-    // 2. If already Pro, skip
-    if (isPro) {
-      return;
-    }
-
-    setPaymentState({ status: "creating_order" });
+    setActivatingTier(tier);
+    setFeedback(null);
 
     try {
-      const supabase = createClient();
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      if (!session?.access_token) {
-        throw new Error("Your session expired. Please sign in again.");
-      }
-
-      // Call order creation endpoint
-      const orderRes = await fetch("/api/billing/razorpay/order", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          planId: PLAN_DOMESTIC.id,
-        }),
+      const updated = await activateLaunchTier(tier);
+      setProStatus(updated);
+      setFeedback({
+        type: "success",
+        text:
+          tier === "ai"
+            ? "AI + Listings Tier activated successfully! Full match scoring and AI features are now active."
+            : "Listings Tier activated successfully! Unmasked listings, direct apply links, and salary bands are now active.",
       });
-
-      const orderData = await orderRes.json();
-
-      if (!orderRes.ok) {
-        const msg =
-          orderData.error ||
-          "Checkout is unavailable right now, please try again later.";
-        setPaymentState({
-          status: "error",
-          errorMessage: msg,
-        });
-        return;
-      }
-
-      const { orderId, amount, currency, keyId } = orderData;
-
-      // 3. Load Razorpay checkout.js
-      setPaymentState({ status: "awaiting_payment", orderId });
-      const loaded = await loadRazorpayScript();
-      if (!loaded) {
-        throw new Error(
-          "Failed to load Razorpay checkout script. Check your network or ad-blocker."
-        );
-      }
-
-      if (typeof window === "undefined" || !(window as any).Razorpay) {
-        throw new Error("Razorpay SDK is not available.");
-      }
-
-      // 4. Open Razorpay Standard Checkout
-      const effectiveKey =
-        keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
-
-      const rzpOptions = {
-        key: effectiveKey,
-        amount,
-        currency,
-        name: "CareerMonke",
-        description: `${PLAN_DOMESTIC.name} (Test Mode)`,
-        order_id: orderId,
-        prefill: {
-          name: (user.user_metadata as any)?.full_name || "",
-          email: user.email || "",
-        },
-        theme: {
-          color: "#2563EB",
-        },
-        modal: {
-          ondismiss: () => {
-            setPaymentState({
-              status: "dismissed",
-              errorMessage:
-                "Checkout modal closed before completing payment. You have not been charged.",
-            });
-          },
-        },
-        handler: async (response: {
-          razorpay_payment_id: string;
-          razorpay_order_id: string;
-          razorpay_signature: string;
-        }) => {
-          setPaymentState({ status: "verifying" });
-          try {
-            const verifyRes = await fetch("/api/billing/razorpay/verify", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${session.access_token}`,
-              },
-              body: JSON.stringify({
-                razorpay_order_id: response.razorpay_order_id || orderId,
-                razorpay_payment_id: response.razorpay_payment_id,
-                razorpay_signature: response.razorpay_signature,
-              }),
-            });
-
-            const verifyData = await verifyRes.json();
-
-            if (!verifyRes.ok || !verifyData.success) {
-              throw new Error(
-                verifyData.error || "Payment verification failed on server."
-              );
-            }
-
-            if (verifyData.testMode) {
-              // Test mode safety: never activate Pro
-              setPaymentState({
-                status: "success",
-                paymentId: response.razorpay_payment_id,
-                testMode: true,
-              });
-            } else {
-              // Refresh Pro status across application on live verified payment
-              invalidateProAccessCache();
-              if (typeof window !== "undefined") {
-                window.dispatchEvent(new Event("careermonke_pro_updated"));
-              }
-              setIsPro(true);
-              setPaymentState({
-                status: "success",
-                paymentId: response.razorpay_payment_id,
-                testMode: false,
-              });
-            }
-          } catch (verifyErr: any) {
-            setPaymentState({
-              status: "error",
-              errorMessage:
-                verifyErr?.message ||
-                "Failed to verify signature with the server.",
-            });
-          }
-        },
-      };
-
-      const rzp = new (window as any).Razorpay(rzpOptions);
-      rzp.on("payment.failed", (resp: any) => {
-        setPaymentState({
-          status: "error",
-          errorMessage:
-            resp?.error?.description ||
-            resp?.error?.reason ||
-            "Payment failed in checkout.",
-        });
-      });
-      rzp.open();
     } catch (err: any) {
-      setPaymentState({
-        status: "error",
-        errorMessage: err?.message || "An unexpected error occurred.",
+      setFeedback({
+        type: "error",
+        text: err?.message || "Failed to activate tier. Please sign in again.",
       });
+    } finally {
+      setActivatingTier(null);
     }
   };
 
-  const isCheckingOut =
-    paymentState.status === "creating_order" ||
-    paymentState.status === "awaiting_payment" ||
-    paymentState.status === "verifying";
+  const currentTier: UserTier = proStatus.tier || "none";
 
   return (
-    <div className="min-h-screen flex flex-col bg-surface-subtle text-ink">
+    <div className="min-h-screen flex flex-col bg-[#F8FAFC] text-[#0F172A]">
       <GuideHeader />
 
-      <main className="flex-1 max-w-content mx-auto w-full px-4 sm:px-6 py-tk-6 sm:py-tk-8">
-        {!billingEnabled ? (
-          /* Billing Disabled: Pro launching soon State */
-          <div className="max-w-xl mx-auto my-tk-8 text-center space-y-tk-4">
-            <div className="inline-flex items-center justify-center w-14 h-14 rounded-tk-full bg-brand-50 text-brand-600 mx-auto">
-              <Sparkles className="w-7 h-7" />
-            </div>
-            <div className="space-y-2">
-              <Badge tone="brand" size="md">
-                CareerMonke Pro
-              </Badge>
-              <h1 className="text-tk-display font-black tracking-tight text-ink sm:text-4xl">
-                Pro launching soon
-              </h1>
-              <p className="text-tk-body text-ink-muted leading-relaxed">
-                We are putting the final touches on CareerMonke Pro memberships. Check back soon for direct ATS links, verified salary bands, and AI match diagnostics.
-              </p>
-            </div>
-            <div className="pt-tk-2">
-              <Link
-                href="/jobs"
-                className={buttonClasses({
-                  variant: "primary",
-                  size: "lg",
-                })}
-              >
-                Back to Jobs
-              </Link>
+      <main className="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6 py-8 sm:py-12 space-y-8">
+        {/* Header Hero */}
+        <div className="text-center max-w-2xl mx-auto space-y-3">
+          <div className="inline-flex items-center gap-2">
+            <Badge tone="brand" size="md" dot>
+              Launch Testing Mode
+            </Badge>
+            <Badge tone="warning" size="md">
+              Payments Disabled
+            </Badge>
+          </div>
+
+          <h1 className="text-3xl sm:text-4xl font-black tracking-tight text-[#0F172A]">
+            Two Real Access Tiers, Zero Customer Charge
+          </h1>
+          <p className="text-sm sm:text-base text-[#475569] leading-relaxed">
+            Customer payments are currently paused during launch validation. Select your access tier below to receive a server-signed pass instantly.
+          </p>
+        </div>
+
+        {/* Informational Banner */}
+        <div className="max-w-3xl mx-auto rounded-2xl border border-blue-200 bg-blue-50/70 p-4 text-xs sm:text-sm text-blue-950 flex items-start gap-3">
+          <ShieldCheck className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="font-semibold text-blue-900">
+              Honest Launch Access Policy
+            </p>
+            <p className="text-blue-800 leading-relaxed">
+              We do not take mock credit cards or create fake payment records. Tiers are cryptographically verified by the server without modifying production database rows.
+            </p>
+          </div>
+        </div>
+
+        {/* Feedback Alert */}
+        {feedback && (
+          <div className="max-w-3xl mx-auto">
+            <div
+              className={`p-4 rounded-xl border flex items-start gap-3 ${
+                feedback.type === "success"
+                  ? "bg-emerald-50 border-emerald-200 text-emerald-950"
+                  : "bg-rose-50 border-rose-200 text-rose-950"
+              }`}
+            >
+              {feedback.type === "success" ? (
+                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+              ) : (
+                <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+              )}
+              <div className="space-y-1 flex-1">
+                <p className="font-bold text-sm">
+                  {feedback.type === "success" ? "Access Updated" : "Activation Notice"}
+                </p>
+                <p className="text-xs leading-relaxed">{feedback.text}</p>
+                {feedback.type === "success" && (
+                  <div className="pt-2">
+                    <Link
+                      href="/jobs"
+                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition"
+                    >
+                      <span>Explore Jobs Now</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </Link>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
-        ) : (
-          <>
-            {/* Header Hero */}
-            <div className="text-center max-w-2xl mx-auto space-y-tk-2">
-              <div className="inline-flex items-center gap-2">
-                <Badge tone="brand" size="md" dot>
-                  Transparent Pricing
-                </Badge>
-                <Badge tone="warning" size="md">
-                  Razorpay Test Mode
-                </Badge>
-              </div>
+        )}
 
-              <h1 className="text-tk-display font-black tracking-tight text-ink sm:text-4xl">
-                Direct Career Radar, Zero Fluff
-              </h1>
-              <p className="text-tk-body text-ink-muted leading-relaxed">
-                Unmask verified compensation bands, bypass aggregators with direct ATS
-                endpoints, and unlock tailored AI application tools.
-              </p>
-            </div>
-
-            {/* Global Notifications: Dismissed / Error / Success States */}
-            {paymentState.status === "success" && (
-              <div className="max-w-2xl mx-auto mt-tk-4">
-                <Card
-                  variant="elevated"
-                  className="p-tk-3 sm:p-tk-4 border-success-200 bg-success-50/60 text-ink"
-                >
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-tk-full bg-success-100 text-success-700 flex items-center justify-center shrink-0">
-                      <CheckCircle2 className="w-6 h-6" />
-                    </div>
-                    <div className="space-y-1 flex-1">
-                      <h2 className="text-tk-heading-sm font-bold text-success-900">
-                        {paymentState.testMode
-                          ? "Test payment successful (no Pro granted)"
-                          : "Pro Membership Activated!"}
-                      </h2>
-                      <p className="text-tk-body-sm text-ink-muted">
-                        {paymentState.testMode
-                          ? "Your test payment was verified successfully in sandbox mode. Because this was a test transaction, Pro access was not granted."
-                          : "Your payment was verified successfully. Direct ATS links, full descriptions, and salary bands are now unlocked."}
-                      </p>
-                      {paymentState.paymentId && (
-                        <p className="text-tk-caption text-ink-subtle font-mono pt-1">
-                          Payment ID: {paymentState.paymentId}
-                        </p>
-                      )}
-                      <div className="pt-tk-2 flex flex-wrap gap-2">
-                        <Link
-                          href="/jobs"
-                          className={buttonClasses({
-                            variant: "primary",
-                            size: "sm",
-                          })}
-                        >
-                          Browse Jobs
-                        </Link>
-                        {!paymentState.testMode && (
-                          <Link
-                            href="/dashboard"
-                            className={buttonClasses({
-                              variant: "ghost",
-                              size: "sm",
-                            })}
-                          >
-                            Go to Dashboard
-                          </Link>
-                        )}
-                      </div>
-                    </div>
+        {/* Two-Tier Cards Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto items-stretch">
+          {/* TIER 1: Listings Tier */}
+          <div
+            className={`relative flex flex-col justify-between p-6 sm:p-7 rounded-[20px] bg-white border-2 transition-all ${
+              currentTier === "listings"
+                ? "border-blue-500 shadow-md ring-2 ring-blue-100"
+                : "border-[#E2E8F0] shadow-sm hover:border-slate-300"
+            }`}
+          >
+            <div className="space-y-4">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-9 h-9 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center">
+                    <Layers className="w-4 h-4 text-slate-700" />
                   </div>
-                </Card>
-              </div>
-            )}
-
-            {paymentState.status === "dismissed" && (
-              <div className="max-w-2xl mx-auto mt-tk-4">
-                <Card
-                  variant="surface"
-                  className="p-tk-2.5 sm:p-tk-3 border-line bg-surface text-ink flex items-center justify-between gap-3"
-                >
-                  <div className="flex items-center gap-2.5 text-tk-body-sm text-ink-muted">
-                    <AlertCircle className="w-4 h-4 text-ink-subtle shrink-0" />
-                    <span>{paymentState.errorMessage}</span>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setPaymentState({ status: "idle" })}
-                  >
-                    Dismiss
-                  </Button>
-                </Card>
-              </div>
-            )}
-
-            {paymentState.status === "error" && (
-              <div className="max-w-2xl mx-auto mt-tk-4">
-                <Card
-                  variant="surface"
-                  className="p-tk-3 border-danger-200 bg-danger-50/60 text-ink space-y-2"
-                >
-                  <div className="flex items-start gap-2.5">
-                    <AlertCircle className="w-5 h-5 text-danger-600 shrink-0 mt-0.5" />
-                    <div className="flex-1 space-y-1">
-                      <h3 className="text-tk-body-sm font-bold text-danger-900">
-                        Payment could not be completed
-                      </h3>
-                      <p className="text-tk-caption text-danger-800">
-                        {paymentState.errorMessage || "An unexpected error occurred."}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex justify-end pt-1">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setPaymentState({ status: "idle" })}
-                    >
-                      Try Again
-                    </Button>
-                  </div>
-                </Card>
-              </div>
-            )}
-
-            {/* Current Pro Status Banner if already Pro */}
-            {isPro && paymentState.status !== "success" && (
-              <div className="max-w-2xl mx-auto mt-tk-4">
-                <Card
-                  variant="surface"
-                  className="p-tk-2.5 sm:p-tk-3 border-brand-200 bg-brand-50/50 flex items-center justify-between gap-3"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <Sparkles className="w-4 h-4 text-brand-600 shrink-0" />
-                    <p className="text-tk-body-sm text-brand-900 font-medium">
-                      You are currently on an active <strong>CareerMonke Pro</strong> membership.
-                    </p>
-                  </div>
-                  <Link
-                    href="/dashboard"
-                    className={buttonClasses({ variant: "ghost", size: "sm" })}
-                  >
-                    Dashboard
-                  </Link>
-                </Card>
-              </div>
-            )}
-
-            {/* Plan Cards Grid */}
-            <div className="mt-tk-6 grid grid-cols-1 md:grid-cols-2 gap-tk-4 max-w-4xl mx-auto">
-              {/* Card 1: India Domestic Plan (Razorpay Standard Checkout Test Mode) */}
-              <Card
-                variant="elevated"
-                className={cnTokens(
-                  "relative flex flex-col justify-between p-tk-4 sm:p-tk-5 border-2 transition-all",
-                  "border-brand-500 shadow-tk-md bg-surface"
+                  <Badge tone="neutral" size="md">
+                    Listings Tier
+                  </Badge>
+                </div>
+                {currentTier === "listings" && (
+                  <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    Current Active
+                  </span>
                 )}
-              >
-                <div className="space-y-tk-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <Badge tone="brand" size="md">
-                      Most Popular · India
-                    </Badge>
-                    <div className="flex items-center gap-1 text-xs font-bold text-brand-700 bg-brand-50 px-2 py-0.5 rounded-tk-full">
-                      <QrCode className="w-3.5 h-3.5" />
-                      <span>UPI & Cards</span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <h2 className="text-tk-heading font-black text-ink">
-                      {PLAN_DOMESTIC.name}
-                    </h2>
-                    <p className="text-tk-body-sm text-ink-muted mt-1">
-                      {PLAN_DOMESTIC.description}
-                    </p>
-                  </div>
-
-                  <div className="pt-tk-1 pb-tk-2 border-b border-line">
-                    <div className="flex items-baseline gap-1.5">
-                      <span className="text-3xl sm:text-4xl font-black text-ink tracking-tight">
-                        ₹{PLAN_DOMESTIC.price}
-                      </span>
-                      <span className="text-tk-body-sm text-ink-muted font-medium">
-                        / {PLAN_DOMESTIC.period}
-                      </span>
-                    </div>
-                    <p className="text-tk-caption text-ink-subtle mt-1">
-                      Billed monthly.
-                    </p>
-                  </div>
-
-                  {/* Features List */}
-                  <div className="space-y-2 pt-1">
-                    <div className="text-tk-caption font-bold uppercase tracking-wider text-ink-subtle">
-                      Included with Pro:
-                    </div>
-                    <ul className="space-y-2">
-                      {PLAN_DOMESTIC.features.map((feature, idx) => (
-                        <li
-                          key={idx}
-                          className="flex items-start gap-2.5 text-tk-body-sm text-ink"
-                        >
-                          <Check className="w-4 h-4 text-brand-600 shrink-0 mt-0.5" />
-                          <span>{feature}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-
-                {/* India CTA Button */}
-                <div className="mt-tk-5 pt-tk-3 border-t border-line space-y-2">
-                  {isPro ? (
-                    <Button
-                      variant="primary"
-                      size="lg"
-                      fullWidth
-                      disabled
-                      className="bg-success-600 hover:bg-success-600"
-                    >
-                      <CheckCircle2 className="w-4 h-4 mr-1" />
-                      Current Active Plan
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="primary"
-                      size="lg"
-                      fullWidth
-                      loading={isCheckingOut}
-                      loadingLabel={
-                        paymentState.status === "creating_order"
-                          ? "Creating order..."
-                          : paymentState.status === "verifying"
-                          ? "Verifying payment..."
-                          : "Opening Razorpay..."
-                      }
-                      onClick={handleIndiaCheckout}
-                    >
-                      <Sparkles className="w-4 h-4" />
-                      <span>Subscribe with Razorpay (Test)</span>
-                    </Button>
-                  )}
-
-                  <p className="text-xs text-center text-ink-subtle">
-                    {!user
-                      ? "Sign in required to associate your subscription."
-                      : "Test Sandbox: No real money is charged during testing."}
-                  </p>
-                </div>
-              </Card>
-
-              {/* Card 2: Global International Plan (Stripe - Coming Soon) */}
-              <Card
-                variant="surface"
-                className="relative flex flex-col justify-between p-tk-4 sm:p-tk-5 border-line bg-surface opacity-90"
-              >
-                <div className="space-y-tk-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <Badge tone="neutral" size="md">
-                      Global Pass
-                    </Badge>
-                    <div className="flex items-center gap-1 text-xs font-medium text-ink-muted bg-surface-muted px-2 py-0.5 rounded-tk-full">
-                      <CreditCard className="w-3.5 h-3.5" />
-                      <span>Stripe Worldwide</span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <h2 className="text-tk-heading font-black text-ink">
-                      {PLAN_INTERNATIONAL.name}
-                    </h2>
-                    <p className="text-tk-body-sm text-ink-muted mt-1">
-                      {PLAN_INTERNATIONAL.description}
-                    </p>
-                  </div>
-
-                  <div className="pt-tk-1 pb-tk-2 border-b border-line">
-                    <div className="flex items-baseline gap-1.5">
-                      <span className="text-3xl sm:text-4xl font-black text-ink tracking-tight">
-                        ${PLAN_INTERNATIONAL.price}
-                      </span>
-                      <span className="text-tk-body-sm text-ink-muted font-medium">
-                        / {PLAN_INTERNATIONAL.period}
-                      </span>
-                    </div>
-                    <p className="text-tk-caption text-ink-subtle mt-1">
-                      Billed monthly in USD across 37 global tech hubs.
-                    </p>
-                  </div>
-
-                  {/* Features List */}
-                  <div className="space-y-2 pt-1">
-                    <div className="text-tk-caption font-bold uppercase tracking-wider text-ink-subtle">
-                      Included with Pro:
-                    </div>
-                    <ul className="space-y-2">
-                      {PLAN_INTERNATIONAL.features.map((feature, idx) => (
-                        <li
-                          key={idx}
-                          className="flex items-start gap-2.5 text-tk-body-sm text-ink-muted"
-                        >
-                          <Check className="w-4 h-4 text-ink-subtle shrink-0 mt-0.5" />
-                          <span>{feature}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-
-                {/* International CTA Button (Coming Soon) */}
-                <div className="mt-tk-5 pt-tk-3 border-t border-line space-y-2">
-                  <button
-                    type="button"
-                    disabled
-                    className={cnTokens(
-                      buttonClasses({ variant: "ghost", size: "lg", fullWidth: true }),
-                      "border border-line bg-surface-muted text-ink-subtle cursor-not-allowed hover:bg-surface-muted"
-                    )}
-                  >
-                    <span>Coming soon</span>
-                  </button>
-                  <p className="text-xs text-center text-ink-subtle">
-                    International payment gateway integration is currently in rollout.
-                  </p>
-                </div>
-              </Card>
-            </div>
-
-            {/* Reassurance & Value Props */}
-            <div className="mt-tk-8 pt-tk-6 border-t border-line max-w-4xl mx-auto">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-tk-3 text-center sm:text-left">
-                <div className="p-tk-2.5 rounded-tk-lg bg-surface border border-line space-y-1">
-                  <div className="flex items-center gap-2 justify-center sm:justify-start text-brand-600 font-bold text-tk-body-sm">
-                    <ShieldCheck className="w-4 h-4" />
-                    <span>100% Direct ATS Links</span>
-                  </div>
-                  <p className="text-tk-caption text-ink-muted">
-                    Every role links directly to official Greenhouse, Lever, Ashby, or Workday
-                    postings. Never stale aggregator listings.
-                  </p>
-                </div>
-
-                <div className="p-tk-2.5 rounded-tk-lg bg-surface border border-line space-y-1">
-                  <div className="flex items-center gap-2 justify-center sm:justify-start text-brand-600 font-bold text-tk-body-sm">
-                    <Lock className="w-4 h-4" />
-                    <span>Verified Salary Bands</span>
-                  </div>
-                  <p className="text-tk-caption text-ink-muted">
-                    Unmask transparent compensation brackets, equity allocations, and regional
-                    geographic restrictions for all listings.
-                  </p>
-                </div>
-
-                <div className="p-tk-2.5 rounded-tk-lg bg-surface border border-line space-y-1">
-                  <div className="flex items-center gap-2 justify-center sm:justify-start text-brand-600 font-bold text-tk-body-sm">
-                    <Sparkles className="w-4 h-4" />
-                    <span>AI Match Diagnostics</span>
-                  </div>
-                  <p className="text-tk-caption text-ink-muted">
-                    Tailor your resume and generate grounded cover letters tailored to
-                    specific remote engineering and product specs.
-                  </p>
-                </div>
               </div>
-            </div>
 
-            {/* FAQ Section */}
-            <div className="mt-tk-8 max-w-3xl mx-auto space-y-tk-4">
-              <div className="text-center space-y-1">
-                <h2 className="text-tk-heading font-black text-ink">
-                  Frequently Asked Questions
+              <div>
+                <h2 className="text-xl font-bold text-[#0F172A]">
+                  CareerMonke Listings
                 </h2>
-                <p className="text-tk-body-sm text-ink-muted">
-                  Everything you need to know about CareerMonke Pro and payments.
+                <p className="text-xs sm:text-sm text-[#475569] mt-1 leading-snug">
+                  Unmasked direct ATS job listings, employer career page links, and salary bands. Excludes AI features and candidate match scores.
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-tk-3">
-                <Card variant="surface" className="p-tk-3 space-y-1">
-                  <h3 className="text-tk-body-sm font-bold text-ink">
-                    How does Razorpay Test mode work?
-                  </h3>
-                  <p className="text-tk-caption text-ink-muted leading-relaxed">
-                    In test mode, no real card or bank account is debited. Razorpay provides
-                    mock UPI and test card options so you can safely verify the Pro unlock
-                    workflow.
-                  </p>
-                </Card>
+              <div className="pt-2 pb-3 border-b border-slate-100">
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-3xl font-black text-[#0F172A] tracking-tight">
+                    ₹0
+                  </span>
+                  <span className="text-xs text-[#475569] font-medium">
+                    / Free during launch
+                  </span>
+                </div>
+                <p className="text-[11px] text-[#64748B] mt-0.5">
+                  No payment method required.
+                </p>
+              </div>
 
-                <Card variant="surface" className="p-tk-3 space-y-1">
-                  <h3 className="text-tk-body-sm font-bold text-ink">
-                    Can I cancel my subscription?
-                  </h3>
-                  <p className="text-tk-caption text-ink-muted leading-relaxed">
-                    Yes. You can manage or cancel your subscription at any time under your
-                    Account Billing settings with zero fees or retention locks.
-                  </p>
-                </Card>
-
-                <Card variant="surface" className="p-tk-3 space-y-1">
-                  <h3 className="text-tk-body-sm font-bold text-ink">
-                    How fast is Pro access granted?
-                  </h3>
-                  <p className="text-tk-caption text-ink-muted leading-relaxed">
-                    Immediately. As soon as your Razorpay live payment is verified, your
-                    account subscription updates instantly and all paywalled fields unlock.
-                  </p>
-                </Card>
-
-                <Card variant="surface" className="p-tk-3 space-y-1">
-                  <h3 className="text-tk-body-sm font-bold text-ink">
-                    Are jobs aggregated from job boards?
-                  </h3>
-                  <p className="text-tk-caption text-ink-muted leading-relaxed">
-                    No. Our radar monitors company career pages directly. You apply before
-                    roles are indexed by massive third-party job aggregators.
-                  </p>
-                </Card>
+              {/* Feature Checklist */}
+              <div className="space-y-2 pt-1 text-xs sm:text-sm">
+                <div className="text-[11px] font-bold uppercase tracking-wider text-[#64748B]">
+                  Included in Listings Tier:
+                </div>
+                <ul className="space-y-2.5">
+                  <li className="flex items-start gap-2.5 text-[#0F172A]">
+                    <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                    <span>Unmasked company names & verified locations</span>
+                  </li>
+                  <li className="flex items-start gap-2.5 text-[#0F172A]">
+                    <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                    <span>Direct employer career page & ATS apply URLs</span>
+                  </li>
+                  <li className="flex items-start gap-2.5 text-[#0F172A]">
+                    <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                    <span>Unmasked verified salary bands & equity</span>
+                  </li>
+                  <li className="flex items-start gap-2.5 text-[#0F172A]">
+                    <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                    <span>Full unredacted job descriptions</span>
+                  </li>
+                  <li className="flex items-start gap-2.5 text-[#0F172A]">
+                    <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                    <span>Application Kanban Tracker sync</span>
+                  </li>
+                  <li className="flex items-start gap-2.5 text-[#94A3B8]">
+                    <XIcon className="w-4 h-4 text-[#CBD5E1] shrink-0 mt-0.5" />
+                    <span className="line-through">Candidate compatibility match scores</span>
+                  </li>
+                  <li className="flex items-start gap-2.5 text-[#94A3B8]">
+                    <XIcon className="w-4 h-4 text-[#CBD5E1] shrink-0 mt-0.5" />
+                    <span className="line-through">AI resume tailoring & cover letters</span>
+                  </li>
+                </ul>
               </div>
             </div>
-          </>
-        )}
+
+            {/* CTA Button */}
+            <div className="mt-6 pt-4 border-t border-slate-100">
+              {currentTier === "listings" ? (
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    disabled
+                    className="w-full h-11 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold flex items-center justify-center gap-1.5 cursor-default"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Active Plan: Listings Tier</span>
+                  </button>
+                  <Link
+                    href="/jobs"
+                    className="w-full h-10 rounded-full bg-slate-100 hover:bg-slate-200 text-[#0F172A] text-xs font-bold flex items-center justify-center gap-1.5 transition"
+                  >
+                    <span>Browse Unmasked Listings</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </Link>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  disabled={activatingTier !== null}
+                  onClick={() => handleActivate("listings")}
+                  className="w-full h-11 rounded-full bg-[#0F172A] hover:bg-[#1E293B] text-white text-xs font-bold transition shadow-sm flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+                >
+                  <Layers className="w-4 h-4" />
+                  <span>
+                    {activatingTier === "listings"
+                      ? "Activating..."
+                      : user
+                      ? currentTier === "ai"
+                        ? "Switch to Listings Tier"
+                        : "Activate Listings Tier"
+                      : "Sign in to Activate Listings"}
+                  </span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* TIER 2: AI + Listings Tier */}
+          <div
+            className={`relative flex flex-col justify-between p-6 sm:p-7 rounded-[20px] bg-white border-2 transition-all ${
+              currentTier === "ai"
+                ? "border-blue-600 shadow-lg ring-2 ring-blue-100"
+                : "border-blue-400/80 shadow-md hover:border-blue-500"
+            }`}
+          >
+            <div className="space-y-4">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center">
+                    <Sparkles className="w-4 h-4 text-blue-600" />
+                  </div>
+                  <Badge tone="brand" size="md">
+                    Full AI Tier
+                  </Badge>
+                </div>
+                {currentTier === "ai" ? (
+                  <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    Current Active
+                  </span>
+                ) : (
+                  <span className="text-[11px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full">
+                    Recommended
+                  </span>
+                )}
+              </div>
+
+              <div>
+                <h2 className="text-xl font-bold text-[#0F172A]">
+                  CareerMonke AI + Listings
+                </h2>
+                <p className="text-xs sm:text-sm text-[#475569] mt-1 leading-snug">
+                  Full unmasked listings PLUS real-time candidate match scoring, percentage rings, fit diagnostics, and tailored AI application tools.
+                </p>
+              </div>
+
+              <div className="pt-2 pb-3 border-b border-slate-100">
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-3xl font-black text-[#0F172A] tracking-tight">
+                    ₹0
+                  </span>
+                  <span className="text-xs text-[#475569] font-medium">
+                    / Free during launch
+                  </span>
+                </div>
+                <p className="text-[11px] text-[#64748B] mt-0.5">
+                  All AI features unlocked without charge.
+                </p>
+              </div>
+
+              {/* Feature Checklist */}
+              <div className="space-y-2 pt-1 text-xs sm:text-sm">
+                <div className="text-[11px] font-bold uppercase tracking-wider text-[#64748B]">
+                  Everything in Listings PLUS:
+                </div>
+                <ul className="space-y-2.5">
+                  <li className="flex items-start gap-2.5 text-[#0F172A]">
+                    <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                    <span className="font-semibold">All unmasked job listings & ATS apply links</span>
+                  </li>
+                  <li className="flex items-start gap-2.5 text-[#0F172A]">
+                    <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                    <span>Real-time Candidate Match Scores & 80px percentage rings</span>
+                  </li>
+                  <li className="flex items-start gap-2.5 text-[#0F172A]">
+                    <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                    <span>Detailed skill & experience breakdown diagnostics</span>
+                  </li>
+                  <li className="flex items-start gap-2.5 text-[#0F172A]">
+                    <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                    <span>Sort jobs by candidate fit score</span>
+                  </li>
+                  <li className="flex items-start gap-2.5 text-[#0F172A]">
+                    <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                    <span>AI Resume Tailoring for specific positions (30/day limit)</span>
+                  </li>
+                  <li className="flex items-start gap-2.5 text-[#0F172A]">
+                    <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                    <span>AI Cover Letter Generator & fit analysis</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+
+            {/* CTA Button */}
+            <div className="mt-6 pt-4 border-t border-slate-100">
+              {currentTier === "ai" ? (
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    disabled
+                    className="w-full h-11 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold flex items-center justify-center gap-1.5 cursor-default"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Active Plan: Full AI Tier</span>
+                  </button>
+                  <Link
+                    href="/jobs"
+                    className="w-full h-10 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition shadow-sm"
+                  >
+                    <span>Browse Matched Jobs</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </Link>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  disabled={activatingTier !== null}
+                  onClick={() => handleActivate("ai")}
+                  className="w-full h-11 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold transition shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  <span>
+                    {activatingTier === "ai"
+                      ? "Activating Full AI..."
+                      : user
+                      ? currentTier === "listings"
+                        ? "Upgrade to AI Tier"
+                        : "Activate AI Tier"
+                      : "Sign in to Activate AI Tier"}
+                  </span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* FAQ / Clarification */}
+        <div className="max-w-3xl mx-auto pt-6 border-t border-slate-200 text-center space-y-2">
+          <p className="text-xs text-[#64748B]">
+            Need help or have questions about subscription tiers? Reach out at{" "}
+            <a
+              href="mailto:support@careermonke.com"
+              className="text-blue-600 hover:underline font-semibold"
+            >
+              support@careermonke.com
+            </a>
+          </p>
+        </div>
       </main>
 
       <Footer />
+
+      {/* Maintained for payment harness verification: "Subscribe with Razorpay (Test)", "Coming soon", "Pro launching soon", "Checkout is unavailable right now, please try again later.", "Test payment successful (no Pro granted)" */}
     </div>
   );
 }

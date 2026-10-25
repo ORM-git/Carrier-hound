@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { formatSalary } from "../../src/lib/salary/parser";
 import { verifyUserNotBanned } from "../../src/lib/admin/auth";
 import { safeLog } from "./_logger";
+import { getServerEntitlement } from "../../src/lib/billing/serverEntitlement";
 
 function getSupabaseAdmin() {
   const supabaseUrl =
@@ -61,34 +62,11 @@ async function verifyProUser(event: any) {
     };
   }
 
-  // Check subscription table directly on server
-  const { data: sub, error: subError } = await supabaseAdmin
-    .from("subscriptions")
-    .select("*")
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (subError || !sub) {
+  // Check subscription table or valid launch pass on server
+  const entitlement = await getServerEntitlement(user.id, { headers: event.headers });
+  if (!entitlement.canAccessListings) {
     return {
       error: "Pro subscription required to access full job details.",
-      status: 403,
-      user,
-      isPro: false,
-    };
-  }
-
-  const now = new Date();
-  const periodEnd = sub.current_period_end ? new Date(sub.current_period_end) : null;
-  const graceEnd = sub.grace_period_end ? new Date(sub.grace_period_end) : null;
-
-  const isGraceActive = sub.status === "in_grace_period" && graceEnd && graceEnd > now;
-  const isActive = (sub.status === "active" || sub.status === "trialing") && (!periodEnd || periodEnd > now);
-
-  if (!isActive && !isGraceActive) {
-    return {
-      error: "Subscription is expired or inactive.",
       status: 403,
       user,
       isPro: false,

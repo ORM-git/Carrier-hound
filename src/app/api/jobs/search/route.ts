@@ -92,8 +92,11 @@ export async function GET(req: Request) {
       try {
         const { data: { user } } = await supabaseAdmin.auth.getUser(token);
         if (user) {
-          const entitlement = await getServerEntitlement(user.id);
-          isPro = Boolean(entitlement.isPro);
+          const entitlement = await getServerEntitlement(user.id, {
+            env: cfEnv,
+            headers: req.headers,
+          });
+          isPro = Boolean(entitlement.canAccessListings);
         }
       } catch (authErr) {
         // Fall back to safe preview

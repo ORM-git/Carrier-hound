@@ -100,6 +100,10 @@ async function querySubscriptionWithRetry(
  */
 export async function getProAccessStatus(userId?: string): Promise<ProAccessStatus> {
   const unauthenticatedDefault: ProAccessStatus = {
+    tier: "none",
+    canAccessListings: false,
+    canAccessScores: false,
+    canAccessAi: false,
     isPro: false,
     status: "none",
     planName: "Free Tier",
@@ -161,6 +165,10 @@ export async function getProAccessStatus(userId?: string): Promise<ProAccessStat
 
           // Otherwise, stay in loading/unknown state (never Free)
           return {
+            tier: "none",
+            canAccessListings: false,
+            canAccessScores: false,
+            canAccessAi: false,
             isPro: false,
             status: "unknown",
             inGracePeriod: false,
@@ -171,6 +179,10 @@ export async function getProAccessStatus(userId?: string): Promise<ProAccessStat
 
         // Definitive response from the server:
         let resultStatus: ProAccessStatus = {
+          tier: "none",
+          canAccessListings: false,
+          canAccessScores: false,
+          canAccessAi: false,
           isPro: false,
           status: "none",
           planName: "Free Tier",
@@ -184,6 +196,8 @@ export async function getProAccessStatus(userId?: string): Promise<ProAccessStat
           const nowMs = nowDate.getTime();
           const periodEnd = sub.current_period_end ? new Date(sub.current_period_end) : null;
           const graceEnd = sub.grace_period_end ? new Date(sub.grace_period_end) : null;
+          const isListingsOnly = Boolean(sub.plan_id && sub.plan_id.includes("listings"));
+          const tier = isListingsOnly ? "listings" : "ai";
 
           // 1. Check if within 7-day grace period
           if (sub.status === "in_grace_period" && graceEnd) {
@@ -192,9 +206,13 @@ export async function getProAccessStatus(userId?: string): Promise<ProAccessStat
 
             if (diffMs > 0) {
               resultStatus = {
+                tier,
+                canAccessListings: true,
+                canAccessScores: tier === "ai",
+                canAccessAi: tier === "ai",
                 isPro: true,
                 status: "in_grace_period",
-                planName: sub.plan_id === PLAN_INTERNATIONAL.id ? PLAN_INTERNATIONAL.name : PLAN_DOMESTIC.name,
+                planName: sub.plan_id === PLAN_INTERNATIONAL.id ? PLAN_INTERNATIONAL.name : isListingsOnly ? "Listings Pass" : PLAN_DOMESTIC.name,
                 inGracePeriod: true,
                 graceDaysLeft: daysLeft,
                 expirationDate: graceEnd.toISOString(),
@@ -204,6 +222,10 @@ export async function getProAccessStatus(userId?: string): Promise<ProAccessStat
             } else {
               // Grace period expired
               resultStatus = {
+                tier: "none",
+                canAccessListings: false,
+                canAccessScores: false,
+                canAccessAi: false,
                 isPro: false,
                 status: "canceled",
                 planName: "Free Tier",
@@ -219,9 +241,13 @@ export async function getProAccessStatus(userId?: string): Promise<ProAccessStat
 
             if (!isPeriodExpired) {
               resultStatus = {
+                tier,
+                canAccessListings: true,
+                canAccessScores: tier === "ai",
+                canAccessAi: tier === "ai",
                 isPro: true,
                 status: sub.status,
-                planName: sub.plan_id === PLAN_INTERNATIONAL.id ? PLAN_INTERNATIONAL.name : PLAN_DOMESTIC.name,
+                planName: sub.plan_id === PLAN_INTERNATIONAL.id ? PLAN_INTERNATIONAL.name : isListingsOnly ? "Listings Pass" : PLAN_DOMESTIC.name,
                 inGracePeriod: false,
                 expirationDate: periodEnd ? periodEnd.toISOString() : undefined,
                 isLoading: false,
@@ -230,6 +256,10 @@ export async function getProAccessStatus(userId?: string): Promise<ProAccessStat
             } else {
               // Period has ended -> Expired!
               resultStatus = {
+                tier: "none",
+                canAccessListings: false,
+                canAccessScores: false,
+                canAccessAi: false,
                 isPro: false,
                 status: "canceled",
                 planName: "Free Tier",
@@ -242,6 +272,10 @@ export async function getProAccessStatus(userId?: string): Promise<ProAccessStat
           } else {
             // Explicitly inactive subscription row: canceled, past_due, unpaid
             resultStatus = {
+              tier: "none",
+              canAccessListings: false,
+              canAccessScores: false,
+              canAccessAi: false,
               isPro: false,
               status: sub.status || "none",
               planName: "Free Tier",
@@ -251,6 +285,40 @@ export async function getProAccessStatus(userId?: string): Promise<ProAccessStat
               isDefinitive: true,
             };
           }
+        }
+
+        // Check server-backed launch status if database has no active subscription
+        if (!resultStatus.isPro && typeof window !== "undefined") {
+          try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const launchToken = sessionStorage.getItem("cm_launch_pass");
+            if (session?.access_token) {
+              const statusRes = await fetch("/api/billing/status", {
+                headers: {
+                  Authorization: `Bearer ${session.access_token}`,
+                  ...(launchToken ? { "x-cm-launch-pass": launchToken } : {}),
+                },
+              });
+              if (statusRes.ok) {
+                const s = await statusRes.json();
+                if (s.isPro && (s.tier === "listings" || s.tier === "ai")) {
+                  resultStatus = {
+                    tier: s.tier,
+                    canAccessListings: Boolean(s.canAccessListings),
+                    canAccessScores: Boolean(s.canAccessScores),
+                    canAccessAi: Boolean(s.canAccessAi),
+                    isPro: true,
+                    status: s.status || "active",
+                    planName: s.planName || (s.tier === "ai" ? "Launch AI Pass" : "Launch Listings Pass"),
+                    inGracePeriod: false,
+                    expirationDate: s.expirationDate,
+                    isLoading: false,
+                    isDefinitive: true,
+                  };
+                }
+              }
+            }
+          } catch {}
         }
 
         // Requirement 3: ONLY cache definitive server answers
@@ -276,6 +344,10 @@ export async function getProAccessStatus(userId?: string): Promise<ProAccessStat
 
   // Fallback on unexpected unhandled error: stay unknown/loading, do not cache
   return {
+    tier: "none",
+    canAccessListings: false,
+    canAccessScores: false,
+    canAccessAi: false,
     isPro: false,
     status: "unknown",
     inGracePeriod: false,
@@ -343,6 +415,8 @@ export async function getUserSubscription(): Promise<UserSubscription | null> {
   return null;
 }
 
+
+
 /**
  * Marks the subscription to cancel at the end of the current period
  */
@@ -366,3 +440,56 @@ export async function cancelSubscription(): Promise<UserSubscription | null> {
 
   return null;
 }
+
+/**
+ * Activates a server-backed launch tier (Listings or AI) when customer payments are paused.
+ * Fails closed without valid user authentication.
+ */
+export async function activateLaunchTier(tier: "listings" | "ai"): Promise<ProAccessStatus> {
+  const supabase = createClient();
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) {
+    throw new Error("Authentication required to activate launch tier");
+  }
+
+  const res = await fetch("/api/billing/activate", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify({ tier }),
+  });
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.error || "Failed to activate launch tier");
+  }
+
+  const data = await res.json();
+  invalidateProAccessCache();
+
+  if (typeof window !== "undefined") {
+    try {
+      sessionStorage.setItem("cm_launch_pass", data.token);
+    } catch {}
+    window.dispatchEvent(new Event("careermonke_pro_updated"));
+    window.dispatchEvent(new Event("careermonke_auth_updated"));
+  }
+
+  return {
+    tier: data.tier,
+    canAccessListings: Boolean(data.canAccessListings),
+    canAccessScores: Boolean(data.canAccessScores),
+    canAccessAi: Boolean(data.canAccessAi),
+    isPro: true,
+    status: "active",
+    planName: data.planName,
+    inGracePeriod: false,
+    expirationDate: data.expiresAt,
+    isLoading: false,
+    isDefinitive: true,
+  };
+}
+
+

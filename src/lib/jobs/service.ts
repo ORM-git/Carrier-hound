@@ -301,6 +301,13 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       query = query.eq("remote", true);
     }
 
+    if (countryCode && countryCode.trim() && countryCode.toLowerCase() !== "all") {
+      const code = countryCode.trim().toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2);
+      if (code) {
+        query = query.eq("country_code", code);
+      }
+    }
+
     if (location && location.trim() && location.toLowerCase() !== "all") {
       const loc = location.trim().replace(/[%_(),\"'`;\\$*]/g, " ").trim();
       if (loc.toLowerCase() === "remote") {
@@ -654,10 +661,17 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
       if (token) {
+        const headers: Record<string, string> = {
+          Authorization: `Bearer ${token}`,
+        };
+        if (typeof window !== "undefined") {
+          try {
+            const lp = sessionStorage.getItem("cm_launch_pass");
+            if (lp) headers["x-cm-launch-pass"] = lp;
+          } catch {}
+        }
         const res = await fetch(`/api/jobs/pro?id=${encodeURIComponent(cleanId)}`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+          headers,
         });
         if (res.ok) {
           const { job } = await res.json();
