@@ -18,6 +18,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import GuideHeader from "@/components/GuideHeader";
+import LoggedInAppShell from "@/components/shell/LoggedInAppShell";
 import Footer from "@/components/Footer";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -279,11 +280,8 @@ export default function PricingPage() {
     paymentState.status === "awaiting_payment" ||
     paymentState.status === "verifying";
 
-  return (
-    <div className="min-h-screen flex flex-col bg-surface-subtle text-ink">
-      <GuideHeader />
-
-      <main className="flex-1 max-w-content mx-auto w-full px-4 sm:px-6 py-tk-6 sm:py-tk-8">
+  const pricingContent = (
+    <div className="max-w-content mx-auto w-full px-4 sm:px-6 py-tk-6 sm:py-tk-8">
         {!billingEnabled ? (
           /* Billing Disabled: Pro launching soon State */
           <div className="max-w-xl mx-auto my-tk-8 text-center space-y-tk-4">
@@ -739,6 +737,24 @@ export default function PricingPage() {
             </div>
           </>
         )}
+    </div>
+  );
+
+  if (user) {
+    return (
+      <LoggedInAppShell pageLabel="PRICING" user={user} isPro={isPro}>
+        {pricingContent}
+        <Footer />
+      </LoggedInAppShell>
+    );
+  }
+
+  return (
+    <div className="min-h-screen flex flex-col bg-surface-subtle text-ink">
+      <GuideHeader />
+
+      <main className="flex-1">
+        {pricingContent}
       </main>
 
       <Footer />
