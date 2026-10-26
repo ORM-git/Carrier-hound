@@ -377,7 +377,7 @@ export default function AppTopBar({
               <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center p-0.5 border border-[#E2E8F0] shadow-xs">
                 <BrandIcon className="w-6 h-6" />
               </div>
-              <span className="text-lg font-bold text-[#090E34] tracking-tight">Career<span className="text-[#2563EB]">Monke</span></span>
+              <span className="text-lg font-bold text-[#2563EB] tracking-tight">CareerMonke</span>
             </Link>
             <button
               type="button"
@@ -386,7 +386,7 @@ export default function AppTopBar({
                 menuButtonRef.current?.focus();
               }}
               aria-label="Close navigation menu"
-              className="inline-flex items-center justify-center w-10 h-10 min-h-[44px] min-w-[44px] rounded-full text-[#090E34] hover:text-[#2563EB] hover:bg-[#EFF6FF] transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
+              className="inline-flex items-center justify-center w-10 h-10 min-h-[44px] min-w-[44px] rounded-full text-[#475569] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
             >
               <X className="w-5 h-5" />
             </button>
@@ -405,8 +405,8 @@ export default function AppTopBar({
                   aria-current={active ? "page" : undefined}
                   className={`flex items-center gap-3 px-3 py-2 min-h-[44px] rounded-xl text-[14px] transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
                     active
-                      ? "bg-[#EFF6FF] text-[#2563EB] font-bold ring-1 ring-[#93C5FD]/60"
-                      : "text-[#090E34] hover:text-[#2563EB] hover:bg-[#F0F7FF] font-medium"
+                      ? "bg-[#EFF6FF] text-[#2563EB] font-bold"
+                      : "text-[#475569] hover:text-[#0F172A] hover:bg-[#F8FAFC] font-medium"
                   }`}
                 >
                   <Icon className="w-5 h-5 stroke-[1.75] shrink-0" />
@@ -422,8 +422,8 @@ export default function AppTopBar({
               aria-current={pathname === "/settings" ? "page" : undefined}
               className={`flex items-center gap-3 px-3 py-2 min-h-[44px] rounded-xl text-[14px] transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
                 pathname === "/settings"
-                  ? "bg-[#EFF6FF] text-[#2563EB] font-bold ring-1 ring-[#93C5FD]/60"
-                  : "text-[#090E34] hover:text-[#2563EB] hover:bg-[#F0F7FF] font-medium"
+                  ? "bg-[#EFF6FF] text-[#2563EB] font-bold"
+                  : "text-[#475569] hover:text-[#0F172A] hover:bg-[#F8FAFC] font-medium"
               }`}
             >
               <Settings className="w-5 h-5 stroke-[1.75] shrink-0" />
@@ -441,14 +441,14 @@ export default function AppTopBar({
                   {userInitial}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-[13px] font-bold text-[#090E34] truncate">
+                  <p className="text-[13px] font-bold text-[#0F172A] truncate">
                     {displayName}
                   </p>
-                  <p className="text-[11px] text-[#090E34]/70 truncate">
+                  <p className="text-[11px] text-[#475569] truncate">
                     {user?.email || "Signed in"}
                   </p>
                 </div>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold border border-[#090E34]/20 text-[#090E34] bg-white shrink-0">
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold border border-[#CBD5E1] text-[#475569] bg-white shrink-0">
                   {isPro ? "Pro" : "Free"}
                 </span>
               </div>

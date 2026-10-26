@@ -29,6 +29,13 @@ export interface NavItem {
 
 export const NAV_ITEMS: NavItem[] = [
   {
+    id: "dashboard",
+    label: "Dashboard",
+    href: "/dashboard",
+    icon: LayoutDashboard,
+    isActive: (p) => p === "/dashboard",
+  },
+  {
     id: "jobs",
     label: "Jobs",
     href: "/jobs",
@@ -36,18 +43,25 @@ export const NAV_ITEMS: NavItem[] = [
     isActive: (p) => p === "/jobs" || p.startsWith("/job-search") || p.startsWith("/job-detail"),
   },
   {
-    id: "Tracker",
-    label: "Saved/Applied",
-    href: "/tracker",
-    icon: CheckSquare,
-    isActive: (p) => p === "/tracker" || p === "/applications",
-  },
-  {
     id: "resume",
     label: "Resume",
     href: "/resume",
     icon: FileText,
     isActive: (p) => p === "/resume",
+  },
+  {
+    id: "tracker",
+    label: "Tracker",
+    href: "/tracker",
+    icon: CheckSquare,
+    isActive: (p) => p === "/tracker" || p === "/applications",
+  },
+  {
+    id: "profile",
+    label: "Profile",
+    href: "/profile",
+    icon: UserIcon,
+    isActive: (p) => p === "/profile",
   },
   {
     id: "radar",
@@ -62,20 +76,6 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/pricing",
     icon: CreditCard,
     isActive: (p) => p === "/pricing",
-  },
-  {
-    id: "dashboard",
-    label: "Dashboard",
-    href: "/dashboard",
-    icon: LayoutDashboard,
-    isActive: (p) => p === "/dashboard",
-  },
-  {
-    id: "profile",
-    label: "Profile",
-    href: "/profile",
-    icon: UserIcon,
-    isActive: (p) => p === "/profile",
   },
 ];
 
@@ -167,7 +167,7 @@ export default function AppIconRail({ currentRoute }: AppIconRailProps) {
           )}
 
           {/* =================================================================== */}
-          {/* PRIMARY NAVIGATION ITEMS (Jobs, Saved/Applied, Resume, Radar, etc.) */}
+          {/* PRIMARY NAVIGATION ITEMS (Dashboard, Jobs, Resume, Tracker, Profile, Radar, Pricing) */}
           {/* =================================================================== */}
           <nav
             aria-label="Application Rail"
