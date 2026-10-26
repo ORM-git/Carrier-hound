@@ -15,6 +15,29 @@
 import http from "http";
 import fs from "fs";
 import path from "path";
+import Module from "module";
+
+// Register Node test hook for @cloudflare/next-on-pages in unit test environment
+const originalResolve = (Module as any)._resolveFilename;
+(Module as any)._resolveFilename = function (request: string, parent: any, isMain: boolean, options: any) {
+  if (request === "@cloudflare/next-on-pages") {
+    return "virtual:@cloudflare/next-on-pages";
+  }
+  return originalResolve.call(this, request, parent, isMain, options);
+};
+
+require.cache["virtual:@cloudflare/next-on-pages"] = {
+  id: "virtual:@cloudflare/next-on-pages",
+  filename: "virtual:@cloudflare/next-on-pages",
+  loaded: true,
+  exports: {
+    getRequestContext: () => {
+      const sym = Symbol.for("__cloudflare-request-context__");
+      return (globalThis as any)[sym];
+    },
+  },
+} as any;
+
 import puppeteer from "puppeteer-core";
 import { getRuntimeEnv, handleAiRequest, executeAiCore, getSupabaseAdminClient } from "../src/lib/ai/serviceHandler";
 
@@ -153,6 +176,113 @@ async function runSuite() {
     "1.5 Search route getSupabaseAdmin fails closed when SUPABASE_SERVICE_ROLE_KEY is missing everywhere",
     "Expected getSupabaseAdmin to throw missing required environment variable error"
   );
+
+  // 1.5b Search route getSupabaseAdmin resolves anon key when allowAnonFallback is true
+  let clientCreatedWithAnon = false;
+  try {
+    const admin = getSupabaseAdminClient({
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: "context-only-anon-key",
+      NEXT_PUBLIC_SUPABASE_URL: "https://szakevhxhwpeskidvtfs.supabase.co",
+    }, true);
+    clientCreatedWithAnon = !!admin;
+  } catch (err) {
+    clientCreatedWithAnon = false;
+  }
+  assert(
+    clientCreatedWithAnon,
+    "1.5b Search route getSupabaseAdmin resolves anon key when allowAnonFallback is true",
+    "Expected getSupabaseAdmin to succeed with anon key when allowAnonFallback is enabled"
+  );
+
+  // 1.5c Admin and AI routes fail closed even if anon key is present (allowAnonFallback defaults to false)
+  let adminWithAnonOnlyFailedClosed = false;
+  try {
+    getSupabaseAdminClient({
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: "context-only-anon-key",
+      NEXT_PUBLIC_SUPABASE_URL: "https://szakevhxhwpeskidvtfs.supabase.co",
+    }, false);
+  } catch (err: any) {
+    adminWithAnonOnlyFailedClosed = Boolean(err.message && err.message.includes("SUPABASE_SERVICE_ROLE_KEY"));
+  }
+  assert(
+    adminWithAnonOnlyFailedClosed,
+    "1.5c Admin routes fail closed when service role key is absent, even if anon key is present",
+    "Expected getSupabaseAdminClient without allowAnonFallback to reject anon key and fail closed"
+  );
+
+  // 1.5d Route handler integration: search route returns data with only anon key, fails with missing-variable on no keys
+  {
+    const savedRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const savedSvc = process.env.SUPABASE_SERVICE_KEY;
+    const savedAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    const savedUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    delete process.env.SUPABASE_SERVICE_KEY;
+    delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    process.env.NEXT_PUBLIC_SUPABASE_URL = "https://mock.supabase.co";
+
+    const { GET: searchGet } = await import("../src/app/api/jobs/search/route");
+
+    // Case 1: No keys -> returns missingVariable: SUPABASE_SERVICE_ROLE_KEY
+    const noKeysRes = await searchGet(new Request("http://localhost:3000/api/jobs/search?q=engineer"));
+    const noKeysData = await noKeysRes.json();
+    assert(
+      noKeysRes.status === 500 && noKeysData.missingVariable === "SUPABASE_SERVICE_ROLE_KEY",
+      "1.5d Search route with no keys returns missing-variable error (HTTP 500)",
+      `Expected 500 with missingVariable SUPABASE_SERVICE_ROLE_KEY, got ${noKeysRes.status}: ${JSON.stringify(noKeysData)}`
+    );
+
+    // Case 2: Only anon key present -> returns data (HTTP 200)
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "mock-anon-key";
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const urlStr = typeof input === "string" ? input : input instanceof URL ? input.toString() : (input as any).url;
+      if (urlStr.includes("mock.supabase.co") || urlStr.includes("/jobs")) {
+        return new Response(
+          JSON.stringify([
+            {
+              id: "00000000-0000-0000-0000-000000000001",
+              title: "Senior Platform Engineer",
+              company: "Monke Corp",
+              location: "Remote",
+              category: "engineering",
+              remote: true,
+              country_code: "US",
+              job_type: "full-time",
+              verified: true,
+              posted_at: "2026-10-20T12:00:00Z",
+              created_at: "2026-10-20T12:00:00Z",
+            },
+          ]),
+          {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
+              "Content-Range": "0-0/1",
+            },
+          }
+        );
+      }
+      return originalFetch(input, init);
+    }) as any;
+
+    try {
+      const anonRes = await searchGet(new Request("http://localhost:3000/api/jobs/search?q=engineer"));
+      const anonData = await anonRes.json();
+      assert(
+        anonRes.status === 200 && Array.isArray(anonData.jobs) && anonData.jobs.length > 0,
+        "1.5e Search route with only anon key returns data (HTTP 200)",
+        `Expected 200 with jobs array, got ${anonRes.status}: ${JSON.stringify(anonData)}`
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (savedRole) process.env.SUPABASE_SERVICE_ROLE_KEY = savedRole;
+      if (savedSvc) process.env.SUPABASE_SERVICE_KEY = savedSvc;
+      if (savedAnon) process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = savedAnon;
+      if (savedUrl) process.env.NEXT_PUBLIC_SUPABASE_URL = savedUrl;
+    }
+  }
 
   if (savedServiceRole) process.env.SUPABASE_SERVICE_ROLE_KEY = savedServiceRole;
   if (savedServiceKey) process.env.SUPABASE_SERVICE_KEY = savedServiceKey;

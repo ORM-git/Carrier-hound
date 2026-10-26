@@ -136,6 +136,62 @@ async function runSuite() {
     );
   }
 
+  // 1.3b /api/jobs/search GET with only anon key present returns data
+  {
+    restoreEnv();
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    delete process.env.SUPABASE_SERVICE_KEY;
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "mock-anon-key";
+    process.env.NEXT_PUBLIC_SUPABASE_URL = "https://mock.supabase.co";
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const urlStr = typeof input === "string" ? input : input instanceof URL ? input.toString() : (input as any).url;
+      if (urlStr.includes("mock.supabase.co") || urlStr.includes("/jobs")) {
+        return new Response(
+          JSON.stringify([
+            {
+              id: "00000000-0000-0000-0000-000000000001",
+              title: "Senior Software Engineer",
+              company: "Tech Corp",
+              location: "Remote",
+              category: "engineering",
+              remote: true,
+              country_code: "US",
+              job_type: "full-time",
+              verified: true,
+              posted_at: "2026-10-20T12:00:00Z",
+              created_at: "2026-10-20T12:00:00Z",
+            },
+          ]),
+          {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
+              "Content-Range": "0-0/1",
+            },
+          }
+        );
+      }
+      return originalFetch(input, init);
+    }) as any;
+
+    try {
+      const { GET } = await import("../src/app/api/jobs/search/route");
+      const req = new Request("http://localhost:3000/api/jobs/search?q=engineer");
+      const res = await GET(req);
+      const data = await res.json();
+
+      assert(
+        res.status === 200 && Array.isArray(data.jobs) && data.jobs.length > 0,
+        "Next.js GET /api/jobs/search with only anon key returns data",
+        `Expected status 200 with jobs array, got status ${res.status}: ${JSON.stringify(data)}`
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  }
+
   // 1.4 /api/jobs/pro GET (Missing SUPABASE_SERVICE_ROLE_KEY)
   {
     restoreEnv();

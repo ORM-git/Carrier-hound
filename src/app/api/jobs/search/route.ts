@@ -59,30 +59,15 @@ export async function GET(req: Request) {
     const pageSize = Math.min(100, Math.max(1, parseInt(searchParams.get("pageSize") || "50", 10)));
 
     let cfEnv: Record<string, any> | undefined;
-    let reqContextStatus = "unknown";
     try {
       const ctx = getRequestContext();
       if (ctx?.env) {
         cfEnv = ctx.env as Record<string, any>;
-        reqContextStatus = "returned_with_env";
-      } else {
-        reqContextStatus = "returned_without_env";
       }
-    } catch (err: any) {
-      reqContextStatus = `threw_${err?.name || "Error"}`;
-    }
-
-    const hasCtxRoleKey = Boolean(cfEnv?.SUPABASE_SERVICE_ROLE_KEY);
-    const hasCtxServiceKey = Boolean(cfEnv?.SUPABASE_SERVICE_KEY);
-    const hasProcRoleKey = typeof process !== "undefined" && Boolean(process.env?.SUPABASE_SERVICE_ROLE_KEY);
-    const hasProcServiceKey = typeof process !== "undefined" && Boolean(process.env?.SUPABASE_SERVICE_KEY);
-
-    console.log(
-      `[Search Route Runtime] getRequestContext: ${reqContextStatus}, ctx.env exists: ${Boolean(cfEnv)}, ctx has SUPABASE_SERVICE_ROLE_KEY: ${hasCtxRoleKey}, ctx has SUPABASE_SERVICE_KEY: ${hasCtxServiceKey}, proc has SUPABASE_SERVICE_ROLE_KEY: ${hasProcRoleKey}, proc has SUPABASE_SERVICE_KEY: ${hasProcServiceKey}`
-    );
+    } catch {}
 
     const cleanQuery = sanitizeSearchQuery(rawQuery);
-    const supabaseAdmin = getSupabaseAdminClient(cfEnv);
+    const supabaseAdmin = getSupabaseAdminClient(cfEnv, true);
 
     // Check optional Pro entitlement via Bearer token
     let isPro = false;

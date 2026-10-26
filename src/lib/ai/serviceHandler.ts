@@ -129,21 +129,25 @@ export function getRuntimeEnv(key: string, envOverrides?: Record<string, any>): 
   return undefined;
 }
 
-export function getSupabaseAdminClient(envOverrides?: Record<string, any>) {
+export function getSupabaseAdminClient(
+  envOverrides?: Record<string, any>,
+  allowAnonFallback: boolean = false
+) {
   const supabaseUrl =
     getRuntimeEnv("NEXT_PUBLIC_SUPABASE_URL", envOverrides) ||
     getRuntimeEnv("SUPABASE_URL", envOverrides) ||
     "https://szakevhxhwpeskidvtfs.supabase.co";
   const serviceKey =
     getRuntimeEnv("SUPABASE_SERVICE_ROLE_KEY", envOverrides) ||
-    getRuntimeEnv("SUPABASE_SERVICE_KEY", envOverrides);
+    getRuntimeEnv("SUPABASE_SERVICE_KEY", envOverrides) ||
+    (allowAnonFallback ? getRuntimeEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", envOverrides) : undefined);
 
   const missing = checkRequiredEnv(
     {
       NEXT_PUBLIC_SUPABASE_URL: supabaseUrl,
       SUPABASE_SERVICE_ROLE_KEY: serviceKey,
     },
-    "Supabase Admin Client"
+    allowAnonFallback ? "API /jobs/search" : "Supabase Admin Client"
   );
   if (missing) {
     throw new Error(JSON.stringify(missing));
