@@ -655,17 +655,28 @@ async function setupPageMocks(page, options = {}) {
   });
 
   if (isSigned) {
-    const cookieChunks = ssr.createChunks(
+    const rawUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "szakevhxhwpeskidvtfs";
+    const refMatch = rawUrl.replace(/^https?:\/\//, "").split(".")[0] || "placeholder";
+    const prefixes = Array.from(new Set([
+      `sb-${refMatch}-auth-token`,
+      "sb-placeholder-auth-token",
       "sb-szakevhxhwpeskidvtfs-auth-token",
-      "base64-" + ssr.stringToBase64URL(JSON.stringify(sampleSession))
-    );
-    for (const c of cookieChunks) {
-      await page.setCookie({
-        name: c.name,
-        value: c.value,
-        domain: "localhost",
-        path: "/",
-      });
+      "sb-auth-token"
+    ]));
+
+    for (const prefix of prefixes) {
+      const cookieChunks = ssr.createChunks(
+        prefix,
+        "base64-" + ssr.stringToBase64URL(JSON.stringify(sampleSession))
+      );
+      for (const chunk of cookieChunks) {
+        await page.setCookie({
+          name: chunk.name,
+          value: chunk.value,
+          domain: "localhost",
+          path: "/",
+        });
+      }
     }
 
     await page.setCookie({
