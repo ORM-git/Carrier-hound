@@ -659,7 +659,9 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
               } else {
                 console.error(`[API /jobs/pro error]: Pro batch unlock failed with status ${proRes.status}`);
                 if (proRes.status === 401) {
-                  if (typeof window !== "undefined") {
+                  // Only redirect if getSession shows no session (prevents redirect loop)
+                  const { data: { session: currentSession } } = await supabase.auth.getSession();
+                  if (!currentSession && typeof window !== "undefined") {
                     const returnTo = window.location.pathname + window.location.search;
                     window.location.assign(`/login?returnTo=${encodeURIComponent(returnTo)}`);
                   }
@@ -667,9 +669,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
                 mappedJobs.forEach((j) => {
                   j.proUnlockError = {
                     status: proRes.status,
-                    message: proRes.status === 403
-                      ? "Pro subscription required to access full job details."
-                      : `Pro unlock request failed with status ${proRes.status}`,
+                    message: `Pro unlock request failed with status ${proRes.status}`,
                   };
                 });
               }
@@ -764,7 +764,9 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
             };
 
             if (res.status === 401) {
-              if (typeof window !== "undefined") {
+              // Only redirect if getSession shows no session (prevents redirect loop)
+              const { data: { session: currentSession } } = await supabase.auth.getSession();
+              if (!currentSession && typeof window !== "undefined") {
                 const currentPath = window.location.pathname + window.location.search;
                 window.location.assign(`/login?returnTo=${encodeURIComponent(currentPath)}`);
               }

@@ -662,77 +662,29 @@ export default function JobDetailView({
         {job.proUnlockError ? (
           <div
             data-testid="pro-unlock-error-banner"
-            className={`p-4 rounded-[14px] border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-left ${
-              job.proUnlockError.status === 403
-                ? "bg-[#F8FAFC] border-[#E2E8F0]"
-                : "bg-[#FEF2F2] border-[#FECACA]"
-            }`}
+            className="p-4 rounded-[14px] border border-[#E2E8F0] bg-[#F8FAFC] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-left"
           >
             <div className="flex items-center gap-2.5">
-              <div
-                className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
-                  job.proUnlockError.status === 403
-                    ? "bg-[#EFF6FF] border border-[#BFDBFE] text-[#2563EB]"
-                    : "bg-white border border-[#FECACA] text-[#DC2626]"
-                }`}
-              >
-                {job.proUnlockError.status === 403 ? (
-                  <Lock className="w-4 h-4" />
-                ) : (
-                  <AlertCircle className="w-4 h-4" />
-                )}
+              <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-[#EFF6FF] border border-[#BFDBFE] text-[#2563EB]">
+                <Lock className="w-4 h-4" />
               </div>
-              <div>
-                <div
-                  className={`text-sm font-bold ${
-                    job.proUnlockError.status === 403 ? "text-[#0F172A]" : "text-[#991B1B]"
-                  }`}
-                >
-                  {job.proUnlockError.status === 403
-                    ? "Full Job Details Locked"
-                    : job.proUnlockError.isNetworkError
-                    ? "Network Error Unlocking Details"
-                    : `Unable to Unlock Details (HTTP ${job.proUnlockError.status})`}
-                </div>
-                <div
-                  className={`text-xs ${
-                    job.proUnlockError.status === 403 ? "text-[#475569]" : "text-[#7F1D1D]"
-                  }`}
-                >
-                  {job.proUnlockError.status === 403
-                    ? "Pro subscription required to access verified employer details and ATS links."
-                    : "Could not retrieve full unlocked details from server. Details remain locked."}
-                </div>
+              <div className="text-sm font-semibold text-[#0F172A]">
+                Details are locked. Retry
               </div>
             </div>
 
-            <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-              {onRetryUnlock && (
-                <button
-                  type="button"
-                  data-testid="pro-unlock-retry-btn"
-                  onClick={onRetryUnlock}
-                  disabled={isRetryingUnlock}
-                  className={`px-3.5 py-1.5 min-h-[36px] rounded-full text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 ${
-                    job.proUnlockError.status === 403
-                      ? "border border-[#CBD5E1] bg-white hover:bg-[#F1F5F9] text-[#0F172A]"
-                      : "bg-[#DC2626] hover:bg-[#B91C1C] text-white"
-                  }`}
-                >
-                  <RotateCw className={`w-3.5 h-3.5 ${isRetryingUnlock ? "animate-spin" : ""}`} />
-                  <span>{isRetryingUnlock ? "Retrying..." : "Retry"}</span>
-                </button>
-              )}
-              {job.proUnlockError.status === 403 && (
-                <button
-                  type="button"
-                  onClick={onApply}
-                  className="px-4 py-1.5 min-h-[36px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] text-xs font-bold text-white transition cursor-pointer"
-                >
-                  Upgrade to Pro
-                </button>
-              )}
-            </div>
+            {onRetryUnlock && (
+              <button
+                type="button"
+                data-testid="pro-unlock-retry-btn"
+                onClick={onRetryUnlock}
+                disabled={isRetryingUnlock}
+                className="px-3.5 py-1.5 min-h-[36px] rounded-full text-xs font-semibold border border-[#CBD5E1] bg-white hover:bg-[#F1F5F9] text-[#0F172A] transition cursor-pointer flex items-center gap-1.5 shrink-0 self-end sm:self-center"
+              >
+                <RotateCw className={`w-3.5 h-3.5 ${isRetryingUnlock ? "animate-spin" : ""}`} />
+                <span>{isRetryingUnlock ? "Retrying..." : "Retry"}</span>
+              </button>
+            )}
           </div>
         ) : (
           <div className="text-[15px] leading-[24px] text-[#0F172A] max-w-[720px] whitespace-pre-wrap break-words">

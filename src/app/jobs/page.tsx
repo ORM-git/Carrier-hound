@@ -1249,12 +1249,6 @@ function JobsPageInner() {
         setSelectedJob(fullJob);
         if (!fullJob.proUnlockError) {
           toast.success("Job details unlocked!");
-        } else if (fullJob.proUnlockError.status === 401) {
-          const currentPath =
-            typeof window !== "undefined"
-              ? window.location.pathname + window.location.search
-              : "/jobs";
-          window.location.assign(`/login?returnTo=${encodeURIComponent(currentPath)}`);
         } else {
           toast.error("Retry failed. Details remain locked.");
         }
@@ -1523,11 +1517,7 @@ function JobsPageInner() {
                 onToggleApplied={() => handleToggleApplied(selectedJob)}
                 onApply={(e) => {
                   if (!isPro || selectedJob?.proUnlockError) {
-                    if (selectedJob?.proUnlockError && selectedJob.proUnlockError.status !== 403) {
-                      handleRetryUnlock(selectedJob.id);
-                    } else {
-                      handleLockedAction(e);
-                    }
+                    handleLockedAction(e);
                   }
                 }}
                 onBack={handleBackToList}

@@ -9,7 +9,7 @@ import { createBrowserClient } from "@supabase/ssr";
 let browserClient: ReturnType<typeof createBrowserClient> | null = null;
 
 export function createClient() {
-  if ((globalThis as any).__mockSupabaseClient) {
+  if (process.env.NODE_ENV === "test" && (globalThis as any).__mockSupabaseClient) {
     return (globalThis as any).__mockSupabaseClient;
   }
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
