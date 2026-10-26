@@ -75,6 +75,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-no-dummy-jobs.ts", command: "npx tsx scripts/test-no-dummy-jobs.ts", classification: "offline" },
   { name: "scripts/test-auth-guard.ts", command: "npx tsx scripts/test-auth-guard.ts", classification: "offline" },
   { name: "scripts/test-prompt5-base.cjs", command: "node scripts/test-prompt5-base.cjs", classification: "offline" },
+  { name: "scripts/test-admin-bypass-removal.ts", command: "npx tsx scripts/test-admin-bypass-removal.ts", classification: "offline" },
 
   // DB-capable suites: read operations (BLOCKED by default unless authorized on test project)
   { name: "scripts/test-enhanced-scoring.ts", command: "npx tsx scripts/test-enhanced-scoring.ts", classification: "db-read", requiresSupabase: true },
