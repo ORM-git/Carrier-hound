@@ -45,7 +45,7 @@ const PRESET_ROLES = [
 function OnboardingPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const rawNext = searchParams.get("next");
+  const rawNext = searchParams.get("returnTo") || searchParams.get("return_to") || searchParams.get("next");
   const next = getValidReturnUrl(rawNext, "/dashboard");
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
@@ -77,7 +77,7 @@ function OnboardingPageInner() {
     getAuthUser().then(async (user) => {
       if (!user) {
         const returnUrl = rawNext ? `/onboarding?next=${encodeURIComponent(rawNext)}` : "/onboarding";
-        router.replace(`/login?next=${encodeURIComponent(returnUrl)}`);
+        router.replace(`/login?returnTo=${encodeURIComponent(returnUrl)}`);
         return;
       }
       setUserId(user.id);

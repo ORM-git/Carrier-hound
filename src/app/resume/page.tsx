@@ -127,7 +127,7 @@ export default function ResumePage() {
   useEffect(() => {
     getAuthUser().then((u) => {
       if (!u) {
-        router.replace("/login?next=/resume");
+        router.replace("/login?returnTo=/resume");
         return;
       }
       setUser(u);

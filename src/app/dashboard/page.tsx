@@ -185,7 +185,7 @@ export default function DashboardPage() {
   useEffect(() => {
     getAuthUser().then((authUser) => {
       if (!authUser) {
-        router.replace("/login?next=/dashboard");
+        router.replace("/login?returnTo=/dashboard");
         return;
       }
       setUser(authUser);

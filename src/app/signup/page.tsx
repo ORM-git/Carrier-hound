@@ -48,7 +48,7 @@ export default function SignupPage() {
   useEffect(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
-      const rawNext = params.get("next");
+      const rawNext = params.get("returnTo") || params.get("return_to") || params.get("next");
       setNext(getValidReturnUrl(rawNext, "/onboarding"));
       const queryError = params.get("error");
       if (queryError) {
@@ -100,7 +100,7 @@ export default function SignupPage() {
     try {
       const supabase = createClient();
       const origin = typeof window !== "undefined" && window.location.origin ? window.location.origin : getSiteUrl();
-      const redirectUrl = `${origin}/auth/callback?next=${encodeURIComponent(next)}`;
+      const redirectUrl = `${origin}/auth/callback?returnTo=${encodeURIComponent(next)}`;
       const { error: signInError } = await supabase.auth.signInWithOtp({
         email: cleanEmail,
         options: {
@@ -131,7 +131,7 @@ export default function SignupPage() {
     try {
       const supabase = createClient();
       const origin = typeof window !== "undefined" && window.location.origin ? window.location.origin : getSiteUrl();
-      const redirectUrl = `${origin}/auth/callback?next=${encodeURIComponent(next)}`;
+      const redirectUrl = `${origin}/auth/callback?returnTo=${encodeURIComponent(next)}`;
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {

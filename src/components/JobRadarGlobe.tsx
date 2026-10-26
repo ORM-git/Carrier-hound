@@ -511,7 +511,7 @@ export default function JobRadarGlobe() {
         typeof window !== "undefined"
           ? window.location.pathname + window.location.search
           : "/radar";
-      router.push(`/login?next=${encodeURIComponent(currentPath)}`);
+      router.push(`/login?returnTo=${encodeURIComponent(currentPath)}`);
     } else {
       setIsPaywallOpen(true);
     }

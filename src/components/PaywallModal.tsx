@@ -230,7 +230,7 @@ export default function PaywallModal({
               ) : (
                 <div className="text-center pt-1">
                   <Link
-                    href={`/login?next=${encodeURIComponent(loginNextUrl)}`}
+                    href={`/login?returnTo=${encodeURIComponent(loginNextUrl)}`}
                     onClick={() => onOpenChange(false)}
                     className="text-xs text-brand-600 hover:text-brand-700 font-semibold inline-flex items-center gap-1"
                   >

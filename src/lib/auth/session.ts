@@ -11,16 +11,56 @@ const CANDIDATE_PROFILE_KEY = "careermonke_candidate_profile";
 
 /**
  * Validates a return URL to ensure it is a safe relative same-site path.
- * Disallows absolute URLs, protocol-relative '//', or external schemes.
+ * Disallows absolute URLs, protocol-relative '//', backslashes, encoded exploits,
+ * or loop-inducing auth paths (/login, /signup, /auth).
  */
 export function getValidReturnUrl(targetUrl: string | null | undefined, fallback: string = "/dashboard"): string {
   if (!targetUrl) return fallback;
   const trimmed = targetUrl.trim();
-  // Must start with '/' but not '//'
-  if (trimmed.startsWith("/") && !trimmed.startsWith("//") && !trimmed.includes("\\")) {
-    return trimmed;
+  
+  // Must start with a single '/' and not contain backslashes
+  if (!trimmed.startsWith("/") || trimmed.startsWith("//") || trimmed.includes("\\")) {
+    return fallback;
   }
-  return fallback;
+
+  // Reject ASCII control characters (codes 0 to 31 and 127) in raw string
+  if (/[\x00-\x1F\x7F]/.test(trimmed)) {
+    return fallback;
+  }
+
+  // Check for encoded backslashes (%5C, %5c) or encoded double slashes (%2F, %2f)
+  // or encoded ASCII control characters (e.g. /%09/evil.com, /%00/evil.com, /%1f/evil.com, /%7f/evil.com)
+  try {
+    const decoded = decodeURIComponent(trimmed);
+    if (decoded.startsWith("//") || decoded.includes("\\") || /[\x00-\x1F\x7F]/.test(decoded)) {
+      return fallback;
+    }
+    // Also guard against double-encoded control characters or slashes
+    if (decoded.includes("%")) {
+      try {
+        const doubleDecoded = decodeURIComponent(decoded);
+        if (doubleDecoded.startsWith("//") || doubleDecoded.includes("\\") || /[\x00-\x1F\x7F]/.test(doubleDecoded)) {
+          return fallback;
+        }
+      } catch {
+        // Ignore secondary decode error
+      }
+    }
+  } catch {
+    return fallback;
+  }
+
+  // Prevent redirect loops back to authentication screens
+  const pathOnly = trimmed.split("?")[0].toLowerCase();
+  if (
+    pathOnly === "/login" ||
+    pathOnly === "/signup" ||
+    pathOnly.startsWith("/auth")
+  ) {
+    return fallback;
+  }
+
+  return trimmed;
 }
 
 /**

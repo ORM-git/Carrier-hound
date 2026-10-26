@@ -17,7 +17,10 @@ export default function AuthCallbackPage() {
     // Read search params via window.location (safe for static export)
     const search = typeof window !== "undefined" ? window.location.search : "";
     const params = new URLSearchParams(search);
-    const next = getValidReturnUrl(params.get("next"), "/onboarding");
+    const next = getValidReturnUrl(
+      params.get("returnTo") || params.get("return_to") || params.get("next"),
+      "/onboarding"
+    );
     const code = params.get("code");
 
     const supabase = createClient();

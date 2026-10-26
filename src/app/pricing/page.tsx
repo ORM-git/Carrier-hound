@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Check,
   Sparkles,
@@ -50,6 +51,7 @@ interface PaymentState {
 }
 
 export default function PricingPage() {
+  const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [isPro, setIsPro] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
@@ -68,7 +70,13 @@ export default function PricingPage() {
           data: { session },
         } = await supabase.auth.getSession();
         if (!mounted) return;
-        setUser(session?.user ?? null);
+
+        if (!session?.user) {
+          router.replace("/login?returnTo=/pricing");
+          return;
+        }
+
+        setUser(session.user);
 
         const proStatus = await getProAccessStatus(session?.user?.id);
         if (!mounted) return;
@@ -99,7 +107,7 @@ export default function PricingPage() {
     // 1. Require logged in user
     if (!user) {
       if (typeof window !== "undefined") {
-        window.location.href = "/login?redirectTo=/pricing";
+        window.location.href = "/login?returnTo=/pricing";
       }
       return;
     }
