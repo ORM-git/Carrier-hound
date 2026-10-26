@@ -12,9 +12,18 @@ import {
   detectRemoteEligibility,
   normalizeDate,
   parseSalary,
+  formatSalary,
 } from '../utils/sanitizer';
 
-interface GreenhouseJob {
+export interface GreenhousePayInputRange {
+  min_cents?: number | null;
+  max_cents?: number | null;
+  currency_type?: string | null;
+  title?: string | null;
+  blurb?: string | null;
+}
+
+export interface GreenhouseJob {
   id: number | string;
   title: string;
   absolute_url: string;
@@ -24,9 +33,10 @@ interface GreenhouseJob {
   updated_at?: string;
   content?: string;
   metadata?: Array<{ name: string; value: any }>;
+  pay_input_ranges?: GreenhousePayInputRange[] | null;
 }
 
-interface GreenhouseResponse {
+export interface GreenhouseResponse {
   jobs?: GreenhouseJob[];
 }
 
@@ -35,7 +45,7 @@ export class GreenhouseAdapter implements SourceAdapter {
 
   async fetchJobs(source: SourceConfig): Promise<NormalizedJob[]> {
     const slug = source.target.trim().toLowerCase();
-    const url = `https://boards-api.greenhouse.io/v1/boards/${slug}/jobs?content=true`;
+    const url = `https://boards-api.greenhouse.io/v1/boards/${slug}/jobs?content=true&pay_transparency=true`;
     const data = await politeFetchJson<GreenhouseResponse>(url);
 
     if (!data || !Array.isArray(data.jobs)) {
@@ -53,7 +63,71 @@ export class GreenhouseAdapter implements SourceAdapter {
         const remote = detectRemote(title, location);
         const jobType = detectJobType(title);
         const description = cleanAndTruncateDescription(j.content, 4000);
-        const salary = parseSalary(description, { title, location });
+
+        // Structured pay transparency extraction
+        let salaryText: string | null = null;
+        let salaryMin: number | null = null;
+        let salaryMax: number | null = null;
+        let currency = 'USD';
+        let salaryPeriod: 'yearly' | 'monthly' | 'hourly' | undefined = undefined;
+
+        const validRange = Array.isArray(j.pay_input_ranges)
+          ? j.pay_input_ranges.find(
+              (r) =>
+                (r && r.min_cents != null && r.min_cents > 0) ||
+                (r && r.max_cents != null && r.max_cents > 0)
+            )
+          : null;
+
+        if (validRange) {
+          const rawMin =
+            validRange.min_cents != null && validRange.min_cents > 0
+              ? validRange.min_cents / 100
+              : null;
+          const rawMax =
+            validRange.max_cents != null && validRange.max_cents > 0
+              ? validRange.max_cents / 100
+              : null;
+
+          salaryMin = rawMin != null ? Math.round(rawMin) : null;
+          salaryMax = rawMax != null ? Math.round(rawMax) : null;
+
+          if (salaryMin != null && salaryMax != null && salaryMin > salaryMax) {
+            const temp = salaryMin;
+            salaryMin = salaryMax;
+            salaryMax = temp;
+          }
+
+          if (validRange.currency_type && validRange.currency_type.trim()) {
+            currency = validRange.currency_type.trim().toUpperCase();
+          }
+
+          // Greenhouse does not provide a native interval field.
+          // Rule: No period guess from title/blurb text alone.
+          // Infer only when currency is USD and text explicitly says hour.
+          // Otherwise leave period unset (undefined).
+          const context = `${validRange.title || ''} ${validRange.blurb || ''}`;
+          if (currency === 'USD' && /\b(hour|hourly|\/hr)\b/i.test(context)) {
+            salaryPeriod = 'hourly';
+          } else {
+            salaryPeriod = undefined;
+          }
+
+          if (salaryMin != null || salaryMax != null) {
+            salaryText = formatSalary(salaryMin, salaryMax, currency, salaryPeriod);
+          }
+        }
+
+        // Fallback to description regex parsing if no structured range exists
+        if (!salaryText && salaryMin == null && salaryMax == null) {
+          const fallback = parseSalary(description, { title, location });
+          salaryText = fallback.salary_text;
+          salaryMin = fallback.salary_min;
+          salaryMax = fallback.salary_max;
+          currency = fallback.currency;
+          salaryPeriod = fallback.salary_period;
+        }
+
         const postedAt = normalizeDate(j.updated_at);
         const category = source.category || detectCategory(title);
         const seniority = detectSeniority(title);
@@ -77,11 +151,11 @@ export class GreenhouseAdapter implements SourceAdapter {
           description,
           apply_url: j.absolute_url,
           source_url: `https://boards.greenhouse.io/${slug}`,
-          salary_text: salary.salary_text,
-          salary_min: salary.salary_min,
-          salary_max: salary.salary_max,
-          currency: salary.currency,
-          salary_period: salary.salary_period,
+          salary_text: salaryText,
+          salary_min: salaryMin,
+          salary_max: salaryMax,
+          currency,
+          salary_period: salaryPeriod,
           category,
           posted_at: postedAt,
           discovered_at: nowIso,
