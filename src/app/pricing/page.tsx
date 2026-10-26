@@ -52,23 +52,7 @@ interface PaymentState {
 
 export default function PricingPage() {
   const router = useRouter();
-  const [user, setUser] = useState<User | null>(() => {
-    if (typeof window === "undefined") return null;
-    try {
-      const email = localStorage.getItem("careermonke_user_email");
-      if (!email) return null;
-      return {
-        id: "local-user",
-        email,
-        user_metadata: {},
-        app_metadata: {},
-        aud: "authenticated",
-        created_at: new Date().toISOString(),
-      } as unknown as User;
-    } catch {
-      return null;
-    }
-  });
+  const [user, setUser] = useState<User | null>(null);
   const [isPro, setIsPro] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
   const [paymentState, setPaymentState] = useState<PaymentState>({

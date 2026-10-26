@@ -80,7 +80,9 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-pro-unlock-errors.ts", command: "npx tsx scripts/test-pro-unlock-errors.ts", classification: "offline" },
   { name: "scripts/test-job-detail-redesign.ts", command: "npx tsx scripts/test-job-detail-redesign.ts", classification: "offline" },
   { name: "scripts/test-early-applicant-badge.ts", command: "npx tsx scripts/test-early-applicant-badge.ts", classification: "offline" },
+  { name: "scripts/test-adapter-structured-salaries.ts", command: "npx tsx scripts/test-adapter-structured-salaries.ts", classification: "offline" },
   { name: "scripts/test-hide-empty-titles-heading.ts", command: "npx tsx scripts/test-hide-empty-titles-heading.ts", classification: "offline" },
+  { name: "scripts/test-radar-drawer-retry-error.ts", command: "npx tsx scripts/test-radar-drawer-retry-error.ts", classification: "offline" },
   { name: "scripts/test-pricing-header-first-render.ts", command: "npx tsx scripts/test-pricing-header-first-render.ts", classification: "offline" },
 
   // DB-capable suites: read operations (BLOCKED by default unless authorized on test project)

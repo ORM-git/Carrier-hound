@@ -121,5 +121,63 @@ for (const t of testCases) {
   }
 }
 
-console.log(`\nResults: ${passed} passed, ${failed} failed out of ${testCases.length} tests.`);
+// -------------------------------------------------------------------------------------------
+// 4. formatSalary Backwards Compatibility Tests (yearly, hourly, monthly, null, opt-in omitSuffix)
+// -------------------------------------------------------------------------------------------
+console.log('\nRunning formatSalary Backward Compatibility Tests...\n');
+
+const formatTests = [
+  {
+    desc: 'formatSalary with explicit yearly period',
+    actual: formatSalary(120000, 160000, 'USD', 'yearly'),
+    expected: '$120,000 - $160,000 /yr',
+  },
+  {
+    desc: 'formatSalary with explicit hourly period',
+    actual: formatSalary(45, 65, 'USD', 'hourly'),
+    expected: '$45 - $65 /hr',
+  },
+  {
+    desc: 'formatSalary with explicit monthly period and INR',
+    actual: formatSalary(50000, 80000, 'INR', 'monthly'),
+    expected: '₹50,000 - ₹80,000 /mo',
+  },
+  {
+    desc: 'formatSalary with null period (defaults to /yr)',
+    actual: formatSalary(120000, 160000, 'USD', null as any),
+    expected: '$120,000 - $160,000 /yr',
+  },
+  {
+    desc: 'formatSalary with undefined period (defaults to /yr)',
+    actual: formatSalary(120000, 160000, 'USD', undefined),
+    expected: '$120,000 - $160,000 /yr',
+  },
+  {
+    desc: 'formatSalary with omitted period argument (defaults to /yr)',
+    actual: formatSalary(120000, 160000, 'USD'),
+    expected: '$120,000 - $160,000 /yr',
+  },
+  {
+    desc: 'formatSalary with opt-in omitSuffix: true (no /yr suffix)',
+    actual: formatSalary(120000, 160000, 'USD', undefined, { omitSuffix: true }),
+    expected: '$120,000 - $160,000',
+  },
+  {
+    desc: 'formatSalary with single value and null period',
+    actual: formatSalary(150000, null, 'USD', null as any),
+    expected: '$150,000 /yr',
+  },
+];
+
+for (const ft of formatTests) {
+  if (ft.actual === ft.expected) {
+    console.log(`✅ PASS: [${ft.desc}] -> "${ft.actual}"`);
+    passed++;
+  } else {
+    console.error(`❌ FAIL: [${ft.desc}] -> Got "${ft.actual}", expected "${ft.expected}"`);
+    failed++;
+  }
+}
+
+console.log(`\nResults: ${passed} passed, ${failed} failed out of ${testCases.length + formatTests.length} tests.`);
 if (failed > 0) process.exit(1);
