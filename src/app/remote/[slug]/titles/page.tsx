@@ -177,12 +177,14 @@ export default function RoleTitlesPage({ params }: PageProps) {
             <p className="text-[#4B5563] text-sm">
               Recent openings captured directly from employer applicant tracking systems before public syndication.
             </p>
-            <JobPreview
-              title={`Live ${guide.roleName} Openings`}
-              subtitle="Crawled directly from employer ATS endpoints every 15 minutes"
-              jobs={roleJobs}
-              limit={4}
-            />
+            {roleJobs && roleJobs.length > 0 && (
+              <JobPreview
+                title={`Live ${guide.roleName} Openings`}
+                subtitle="Crawled directly from employer ATS endpoints every 15 minutes"
+                jobs={roleJobs}
+                limit={4}
+              />
+            )}
           </section>
 
           {/* ======================================================================= */}

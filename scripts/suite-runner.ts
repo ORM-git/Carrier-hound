@@ -76,6 +76,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-auth-guard.ts", command: "npx tsx scripts/test-auth-guard.ts", classification: "offline" },
   { name: "scripts/test-prompt5-base.cjs", command: "node scripts/test-prompt5-base.cjs", classification: "offline" },
   { name: "scripts/test-admin-bypass-removal.ts", command: "npx tsx scripts/test-admin-bypass-removal.ts", classification: "offline" },
+  { name: "scripts/test-hide-empty-feed-card.ts", command: "npx tsx scripts/test-hide-empty-feed-card.ts", classification: "offline" },
 
   // DB-capable suites: read operations (BLOCKED by default unless authorized on test project)
   { name: "scripts/test-enhanced-scoring.ts", command: "npx tsx scripts/test-enhanced-scoring.ts", classification: "db-read", requiresSupabase: true },
@@ -97,7 +98,7 @@ export const SUITES: SuiteSpec[] = [
   // DB-capable suites: write operations (BLOCKED by default unless authorized on test project)
   { name: "scripts/test-insert.ts", command: "npx tsx scripts/test-insert.ts", classification: "db-write", requiresSupabase: true },
   { name: "scripts/test-admin-suite.ts", command: "npx tsx scripts/test-admin-suite.ts", classification: "db-write", requiresSupabase: true },
-  { name: "scripts/verify-account-stats-payment.js", command: "npx tsx scripts/verify-account-stats-payment.js", classification: "db-write", requiresSupabase: true },
+  { name: "scripts/verify-account-stats-payment.js", command: "node scripts/verify-account-stats-payment.js", classification: "db-write", requiresSupabase: true },
   { name: "scripts/verify-security-critical2-3.ts", command: "npx tsx scripts/verify-security-critical2-3.ts", classification: "db-write", requiresSupabase: true },
 
   // DB-capable suites: anonymous write attempt (tests RLS denial; attempts insert/update)
