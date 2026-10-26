@@ -170,22 +170,22 @@ export default function RoleTitlesPage({ params }: PageProps) {
           {/* ======================================================================= */}
           {/* EMBEDDED JOB-PREVIEW BLOCK (Same component as in Page 9)                 */}
           {/* ======================================================================= */}
-          <section className="space-y-4">
-            <h3 className="text-xl sm:text-2xl font-bold text-[#09090B]">
-              Live {guide.roleName} ATS Snapshot
-            </h3>
-            <p className="text-[#4B5563] text-sm">
-              Recent openings captured directly from employer applicant tracking systems before public syndication.
-            </p>
-            {roleJobs && roleJobs.length > 0 && (
+          {roleJobs && roleJobs.length > 0 && (
+            <section className="space-y-4">
+              <h3 className="text-xl sm:text-2xl font-bold text-[#09090B]">
+                Live {guide.roleName} ATS Snapshot
+              </h3>
+              <p className="text-[#4B5563] text-sm">
+                Recent openings captured directly from employer applicant tracking systems before public syndication.
+              </p>
               <JobPreview
                 title={`Live ${guide.roleName} Openings`}
                 subtitle="Crawled directly from employer ATS endpoints every 15 minutes"
                 jobs={roleJobs}
                 limit={4}
               />
-            )}
-          </section>
+            </section>
+          )}
 
           {/* ======================================================================= */}
           {/* 2. TITLE BANDS (CSS Cards with equivalents & compensation)               */}
