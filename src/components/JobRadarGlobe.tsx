@@ -364,6 +364,7 @@ export default function JobRadarGlobe() {
   const fetchCityJobs = useCallback(
     async (target: ActiveSelection, page: number = 1, append: boolean = false) => {
       setJobsLoading(true);
+      setRadarProUnlockError(false);
       try {
         const supabase = createClient();
         const pageSize = 10;
@@ -466,6 +467,7 @@ export default function JobRadarGlobe() {
                     }
                   });
                 }
+                setRadarProUnlockError(false);
               } else {
                 console.error(`[API /jobs/pro error]: Radar drawer Pro unlock failed with status ${proRes.status}`);
                 if (proRes.status === 401) {
@@ -480,6 +482,7 @@ export default function JobRadarGlobe() {
             }
           } catch (proErr: any) {
             console.error(`[API /jobs/pro error]: Radar drawer Pro unlock failure (${proErr?.message || "fetch failed"})`);
+            setRadarProUnlockError(true);
           }
         }
 
@@ -504,6 +507,7 @@ export default function JobRadarGlobe() {
 
   // Trigger drawer fetch when selectedCity or any filter changes
   useEffect(() => {
+    setRadarProUnlockError(false);
     if (selectedCity) {
       fetchCityJobs(selectedCity, 1, false);
     } else {
@@ -928,6 +932,7 @@ export default function JobRadarGlobe() {
 
   // Handle City Select (Cinematic flyTo)
   const handleCitySelect = useCallback((city: ActiveSelection) => {
+    setRadarProUnlockError(false);
     setSelectedCity(city);
     setIsSpinning(false);
 
@@ -947,6 +952,7 @@ export default function JobRadarGlobe() {
 
   // Handle Close Drawer
   const handleCloseDrawer = useCallback(() => {
+    setRadarProUnlockError(false);
     setSelectedCity(null);
     if (!cameraRef.current || !controlsRef.current) return;
 
@@ -1017,6 +1023,7 @@ export default function JobRadarGlobe() {
 
   // Dedicated Worldwide Remote Click
   const handleWorldwideRemoteClick = () => {
+    setRadarProUnlockError(false);
     if (!telemetry) return;
     setSelectedCity({
       id: "worldwide-remote",
@@ -1513,7 +1520,10 @@ export default function JobRadarGlobe() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => selectedCity && fetchCityJobs(selectedCity, jobsPage, false)}
+                  onClick={() => {
+                    setRadarProUnlockError(false);
+                    if (selectedCity) fetchCityJobs(selectedCity, jobsPage, false);
+                  }}
                   disabled={jobsLoading}
                   className="px-3 py-1 rounded-full text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-white border border-slate-600 transition flex items-center gap-1.5 cursor-pointer"
                 >
