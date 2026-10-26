@@ -414,7 +414,7 @@ async function main() {
                 }
                 row.remote_eligibility = j.remote_eligibility || 'unknown';
                 row.seniority = j.seniority || 'unknown';
-                row.salary_period = j.salary_period || 'yearly';
+                row.salary_period = j.salary_period || null;
                 if (companyId) row.company_id = companyId;
               }
 

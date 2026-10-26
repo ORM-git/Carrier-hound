@@ -473,7 +473,7 @@ async function run() {
     if (!gh1 || gh1.salary_min !== expectedGhMin || gh1.salary_max !== 160000 || gh1.currency !== 'USD' || gh1.salary_period !== undefined) {
       failures.push(`FAIL: Greenhouse Job 1 yearly salary parsed incorrectly: min=${gh1?.salary_min}, max=${gh1?.salary_max}, period=${gh1?.salary_period}`);
     }
-    if (!gh1?.salary_text?.includes('$120,000') || !gh1?.salary_text?.includes('$160,000') || gh1?.salary_text?.includes('/yr')) {
+    if (!gh1?.salary_text?.includes('$120,000') || !gh1?.salary_text?.includes('$160,000') || !gh1?.salary_text?.includes('/yr')) {
       failures.push(`FAIL: Greenhouse Job 1 salary_text unexpected: "${gh1?.salary_text}"`);
     }
 
@@ -627,7 +627,7 @@ async function run() {
     if (!levNoInterval || levNoInterval.salary_min !== 110000 || levNoInterval.salary_max !== 140000 || levNoInterval.salary_period !== undefined) {
       failures.push(`FAIL: Lever missing interval should leave period unset: min=${levNoInterval?.salary_min}, period=${levNoInterval?.salary_period}`);
     }
-    if (!levNoInterval?.salary_text?.includes('$110,000 - $140,000') || levNoInterval?.salary_text?.includes('/yr')) {
+    if (!levNoInterval?.salary_text?.includes('$110,000 - $140,000') || !levNoInterval?.salary_text?.includes('/yr')) {
       failures.push(`FAIL: Lever missing interval salary_text unexpected: "${levNoInterval?.salary_text}"`);
     }
 

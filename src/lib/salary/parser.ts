@@ -37,23 +37,21 @@ export function formatSalary(
   min: number | null | undefined,
   max: number | null | undefined,
   currency: string = 'USD',
-  period?: SalaryPeriod | string | null
+  period: SalaryPeriod | string = 'yearly',
+  options?: { omitSuffix?: boolean }
 ): string | null {
   if ((min === null || min === undefined) && (max === null || max === undefined)) {
     return null;
   }
 
-  let periodSuffix = '';
-  if (period) {
-    const p = String(period).toLowerCase();
-    if (p === 'hourly' || p.includes('hour')) {
-      periodSuffix = ' /hr';
-    } else if (p === 'monthly' || p.includes('month')) {
-      periodSuffix = ' /mo';
-    } else if (p === 'yearly' || p.includes('year') || p.includes('annual')) {
-      periodSuffix = ' /yr';
-    }
-  }
+  const cleanPeriod = (period === 'monthly' || period === 'hourly' ? period : 'yearly') as SalaryPeriod;
+  const periodSuffix = options?.omitSuffix
+    ? ''
+    : cleanPeriod === 'hourly'
+      ? ' /hr'
+      : cleanPeriod === 'monthly'
+        ? ' /mo'
+        : ' /yr';
 
   const formatNumber = (num: number, curr: string): string => {
     if (curr === 'INR') {
