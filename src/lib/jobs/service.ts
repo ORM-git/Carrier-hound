@@ -357,10 +357,6 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       const exp = experience.trim().toLowerCase();
       if (exp.includes("8") || exp.includes("lead") || exp.includes("staff") || exp.includes("principal")) {
         query = query.or("title.ilike.%staff%,title.ilike.%principal%,title.ilike.%lead%");
-      } else if (exp.includes("5") || exp.includes("senior") || exp.includes("sr")) {
-        query = query.or("title.ilike.%senior%,title.ilike.%sr.%");
-      } else if (exp.includes("1-3") || exp.includes("1 to 3") || exp.includes("entry") || exp.includes("junior") || exp.includes("intern")) {
-        query = query.or("title.ilike.%junior%,title.ilike.%entry%,title.ilike.%associate%");
       } else if (exp.includes("3-5") || exp.includes("3 to 5") || exp.includes("mid")) {
         query = query
           .not("title", "ilike", "%senior%")
@@ -370,6 +366,16 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
           .not("title", "ilike", "%lead%")
           .not("title", "ilike", "%junior%")
           .not("title", "ilike", "%entry%");
+      } else if (exp.includes("1-3") || exp.includes("1 to 3") || exp.includes("entry") || exp.includes("junior") || exp.includes("intern")) {
+        query = query
+          .or("title.ilike.%junior%,title.ilike.%entry%,title.ilike.%associate%")
+          .not("title", "ilike", "%senior%")
+          .not("title", "ilike", "%sr.%")
+          .not("title", "ilike", "%staff%")
+          .not("title", "ilike", "%principal%")
+          .not("title", "ilike", "%lead%");
+      } else if (exp.includes("5") || exp.includes("senior") || exp.includes("sr")) {
+        query = query.or("title.ilike.%senior%,title.ilike.%sr.%");
       }
     }
 
@@ -492,10 +498,6 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
           const exp = experience.trim().toLowerCase();
           if (exp.includes("8") || exp.includes("lead") || exp.includes("staff") || exp.includes("principal")) {
             catQuery = catQuery.or("title.ilike.%staff%,title.ilike.%principal%,title.ilike.%lead%");
-          } else if (exp.includes("5") || exp.includes("senior") || exp.includes("sr")) {
-            catQuery = catQuery.or("title.ilike.%senior%,title.ilike.%sr.%");
-          } else if (exp.includes("1-3") || exp.includes("1 to 3") || exp.includes("entry") || exp.includes("junior") || exp.includes("intern")) {
-            catQuery = catQuery.or("title.ilike.%junior%,title.ilike.%entry%,title.ilike.%associate%");
           } else if (exp.includes("3-5") || exp.includes("3 to 5") || exp.includes("mid")) {
             catQuery = catQuery
               .not("title", "ilike", "%senior%")
@@ -505,6 +507,16 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
               .not("title", "ilike", "%lead%")
               .not("title", "ilike", "%junior%")
               .not("title", "ilike", "%entry%");
+          } else if (exp.includes("1-3") || exp.includes("1 to 3") || exp.includes("entry") || exp.includes("junior") || exp.includes("intern")) {
+            catQuery = catQuery
+              .or("title.ilike.%junior%,title.ilike.%entry%,title.ilike.%associate%")
+              .not("title", "ilike", "%senior%")
+              .not("title", "ilike", "%sr.%")
+              .not("title", "ilike", "%staff%")
+              .not("title", "ilike", "%principal%")
+              .not("title", "ilike", "%lead%");
+          } else if (exp.includes("5") || exp.includes("senior") || exp.includes("sr")) {
+            catQuery = catQuery.or("title.ilike.%senior%,title.ilike.%sr.%");
           }
         }
 
@@ -720,9 +732,13 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
     fallbackList = fallbackList.filter((j) => {
       const jt = (j.title || "").toLowerCase();
       if (exp.includes("8") || exp.includes("lead") || exp.includes("staff") || exp.includes("principal")) return jt.includes("staff") || jt.includes("principal") || jt.includes("lead");
-      if (exp.includes("5") || exp.includes("senior") || exp.includes("sr")) return jt.includes("senior") || jt.includes("sr.");
-      if (exp.includes("1-3") || exp.includes("1 to 3") || exp.includes("entry") || exp.includes("junior") || exp.includes("intern")) return jt.includes("junior") || jt.includes("entry") || jt.includes("associate");
       if (exp.includes("3-5") || exp.includes("3 to 5") || exp.includes("mid")) return !jt.includes("senior") && !jt.includes("sr.") && !jt.includes("staff") && !jt.includes("principal") && !jt.includes("lead") && !jt.includes("junior") && !jt.includes("entry");
+      if (exp.includes("1-3") || exp.includes("1 to 3") || exp.includes("entry") || exp.includes("junior") || exp.includes("intern")) {
+        const isEntry = jt.includes("junior") || jt.includes("entry") || jt.includes("associate");
+        const isSenior = jt.includes("senior") || jt.includes("sr.") || jt.includes("staff") || jt.includes("principal") || jt.includes("lead");
+        return isEntry && !isSenior;
+      }
+      if (exp.includes("5") || exp.includes("senior") || exp.includes("sr")) return jt.includes("senior") || jt.includes("sr.");
       return true;
     });
   }

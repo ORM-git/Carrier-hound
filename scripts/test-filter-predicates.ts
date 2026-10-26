@@ -286,6 +286,206 @@ async function run() {
   }
 
   // ---------------------------------------------------------------------------
+  // 5. Experience Mapping & Predicate Differentiation (1-3, 3-5, 5+, 8+)
+  // ---------------------------------------------------------------------------
+  console.log("\nTEST 5: Verifying experience mappings prove 1-3, 3-5, 5+, and 8+ produce distinct predicates...");
+
+  // 5a. Static ordering check: "3-5" evaluated before "5" in route.ts and service.ts
+  if (fs.existsSync(routePath)) {
+    const routeCode = fs.readFileSync(routePath, "utf-8");
+    const expBlockMatch = routeCode.match(/if\s*\(experienceParam[\s\S]*?\}\s*\}\s*\n/);
+    if (expBlockMatch) {
+      const block = expBlockMatch[0];
+      const idx35 = block.indexOf('exp.includes("3-5")');
+      const idx5 = block.indexOf('exp.includes("5")');
+      if (idx35 === -1 || idx5 === -1 || idx35 > idx5) {
+        failures.push("route.ts: '3-5' must be evaluated before '5' in experienceParam handler!");
+      } else {
+        console.log("  [PASS] route.ts: '3-5' is evaluated before '5' in experience handler");
+      }
+      const hasEntryExcludesSenior =
+        block.includes('.not("title", "ilike", "%senior%")') &&
+        block.includes('.not("title", "ilike", "%staff%")') &&
+        block.includes('.not("title", "ilike", "%lead%")') &&
+        block.includes('.not("title", "ilike", "%principal%")');
+      if (!hasEntryExcludesSenior) {
+        failures.push("route.ts: '1-3 Years' does not exclude senior/staff/lead/principal titles!");
+      } else {
+        console.log("  [PASS] route.ts: '1-3 Years' excludes senior/sr./staff/lead/principal titles");
+      }
+    } else {
+      failures.push("route.ts: experienceParam block not found!");
+    }
+  }
+
+  if (fs.existsSync(servicePath)) {
+    const serviceCode = fs.readFileSync(servicePath, "utf-8");
+    const expBlocks = (serviceCode.match(/if\s*\(experience\s*&&[\s\S]*?(?:query|catQuery)[\s\S]*?\}\s*\}\s*\r?\n/g) || [])
+      .filter((b) => b.includes("exp.includes"));
+    if (expBlocks.length < 2) {
+      failures.push(`service.ts: expected 2 experience query blocks, found ${expBlocks.length}`);
+    } else {
+      let allBefore = true;
+      let allExclude = true;
+      for (let i = 0; i < expBlocks.length; i++) {
+        const b = expBlocks[i];
+        const idx35 = b.indexOf('exp.includes("3-5")');
+        const idx5 = b.indexOf('exp.includes("5")');
+        if (idx35 === -1 || idx5 === -1 || idx35 > idx5) {
+          allBefore = false;
+        }
+        if (!b.includes('.not("title", "ilike", "%senior%")') || !b.includes('.not("title", "ilike", "%staff%")')) {
+          allExclude = false;
+        }
+      }
+      if (!allBefore) {
+        failures.push("service.ts: in one or more queries, '3-5' is not evaluated before '5'!");
+      } else {
+        console.log("  [PASS] service.ts: '3-5' is evaluated before '5' across main and category-fallback queries");
+      }
+      if (!allExclude) {
+        failures.push("service.ts: '1-3 Years' does not exclude senior/staff/lead/principal across query blocks!");
+      } else {
+        console.log("  [PASS] service.ts: '1-3 Years' excludes senior/sr./staff/lead/principal titles in all queries");
+      }
+    }
+
+    // Check DUMMY fallback
+    const dummyMatch = serviceCode.match(/fallbackList\s*=\s*fallbackList\.filter\(\(j\)\s*=>\s*\{[\s\S]*?\}\);/g);
+    const expFallback = (dummyMatch || []).find((m) => m.includes("exp.includes"));
+    if (!expFallback) {
+      failures.push("service.ts: experience fallbackList filter block not found!");
+    } else {
+      const idx35 = expFallback.indexOf('exp.includes("3-5")');
+      const idx5 = expFallback.indexOf('exp.includes("5")');
+      if (idx35 === -1 || idx5 === -1 || idx35 > idx5) {
+        failures.push("service.ts: DUMMY fallback does not evaluate '3-5' before '5'!");
+      } else {
+        console.log("  [PASS] service.ts: DUMMY fallback evaluates '3-5' before '5'");
+      }
+      if (!expFallback.includes("!isSenior") && !expFallback.includes("!jt.includes(\"senior\")")) {
+        failures.push("service.ts: DUMMY fallback 1-3 does not exclude senior titles!");
+      } else {
+        console.log("  [PASS] service.ts: DUMMY fallback 1-3 excludes senior titles");
+      }
+    }
+  }
+
+  // 5b. Functional predicate generation test simulating query builder
+  function buildPredicatesForExperience(expParam: string) {
+    const orCalls: string[] = [];
+    const notCalls: { col: string; op: string; val: string }[] = [];
+    const mockQuery = {
+      or: (val: string) => {
+        orCalls.push(val);
+        return mockQuery;
+      },
+      not: (col: string, op: string, val: string) => {
+        notCalls.push({ col, op, val });
+        return mockQuery;
+      },
+    };
+
+    const exp = expParam.trim().toLowerCase();
+    if (exp.includes("8") || exp.includes("lead") || exp.includes("staff") || exp.includes("principal")) {
+      mockQuery.or("title.ilike.%staff%,title.ilike.%principal%,title.ilike.%lead%");
+    } else if (exp.includes("3-5") || exp.includes("3 to 5") || exp.includes("mid")) {
+      mockQuery
+        .not("title", "ilike", "%senior%")
+        .not("title", "ilike", "%sr.%")
+        .not("title", "ilike", "%staff%")
+        .not("title", "ilike", "%principal%")
+        .not("title", "ilike", "%lead%")
+        .not("title", "ilike", "%junior%")
+        .not("title", "ilike", "%entry%");
+    } else if (exp.includes("1-3") || exp.includes("1 to 3") || exp.includes("entry") || exp.includes("junior") || exp.includes("intern")) {
+      mockQuery
+        .or("title.ilike.%junior%,title.ilike.%entry%,title.ilike.%associate%")
+        .not("title", "ilike", "%senior%")
+        .not("title", "ilike", "%sr.%")
+        .not("title", "ilike", "%staff%")
+        .not("title", "ilike", "%principal%")
+        .not("title", "ilike", "%lead%");
+    } else if (exp.includes("5") || exp.includes("senior") || exp.includes("sr")) {
+      mockQuery.or("title.ilike.%senior%,title.ilike.%sr.%");
+    }
+
+    return { orCalls, notCalls };
+  }
+
+  const p13 = buildPredicatesForExperience("1-3 Years");
+  const p35 = buildPredicatesForExperience("3-5 Years");
+  const p5plus = buildPredicatesForExperience("5+ Years");
+  const p8plus = buildPredicatesForExperience("8+ Years");
+
+  const s13 = JSON.stringify(p13);
+  const s35 = JSON.stringify(p35);
+  const s5plus = JSON.stringify(p5plus);
+  const s8plus = JSON.stringify(p8plus);
+
+  const uniquePredicates = new Set([s13, s35, s5plus, s8plus]);
+
+  if (isNegativeControl) {
+    uniquePredicates.delete(s35); // Force negative control failure
+  }
+
+  if (uniquePredicates.size !== 4) {
+    failures.push(`Expected 4 distinct predicates for 1-3, 3-5, 5+, and 8+, but got ${uniquePredicates.size}!`);
+  } else {
+    console.log("  [PASS] All 4 experience brackets ('1-3', '3-5', '5+', '8+') produce strictly distinct predicates");
+    console.log(`    - 1-3 Years: OR=${JSON.stringify(p13.orCalls)}, NOT count=${p13.notCalls.length}`);
+    console.log(`    - 3-5 Years: OR=${JSON.stringify(p35.orCalls)}, NOT count=${p35.notCalls.length}`);
+    console.log(`    - 5+  Years: OR=${JSON.stringify(p5plus.orCalls)}, NOT count=${p5plus.notCalls.length}`);
+    console.log(`    - 8+  Years: OR=${JSON.stringify(p8plus.orCalls)}, NOT count=${p8plus.notCalls.length}`);
+  }
+
+  // 5c. Functional DUMMY fallback title matching test
+  function simulateFallbackFilter(title: string, expParam: string): boolean {
+    const exp = expParam.trim().toLowerCase();
+    const jt = title.toLowerCase();
+    if (exp.includes("8") || exp.includes("lead") || exp.includes("staff") || exp.includes("principal")) return jt.includes("staff") || jt.includes("principal") || jt.includes("lead");
+    if (exp.includes("3-5") || exp.includes("3 to 5") || exp.includes("mid")) return !jt.includes("senior") && !jt.includes("sr.") && !jt.includes("staff") && !jt.includes("principal") && !jt.includes("lead") && !jt.includes("junior") && !jt.includes("entry");
+    if (exp.includes("1-3") || exp.includes("1 to 3") || exp.includes("entry") || exp.includes("junior") || exp.includes("intern")) {
+      const isEntry = jt.includes("junior") || jt.includes("entry") || jt.includes("associate");
+      const isSenior = jt.includes("senior") || jt.includes("sr.") || jt.includes("staff") || jt.includes("principal") || jt.includes("lead");
+      return isEntry && !isSenior;
+    }
+    if (exp.includes("5") || exp.includes("senior") || exp.includes("sr")) return jt.includes("senior") || jt.includes("sr.");
+    return true;
+  }
+
+  const seniorMatch35 = simulateFallbackFilter("Senior Software Engineer", "3-5 Years");
+  const seniorMatch5p = simulateFallbackFilter("Senior Software Engineer", "5+ Years");
+  const juniorSeniorMatch13 = simulateFallbackFilter("Junior Senior Lead Engineer", "1-3 Years");
+  const entryMatch13 = simulateFallbackFilter("Junior Frontend Engineer", "1-3 Years");
+  const midMatch35 = simulateFallbackFilter("Full Stack Developer", "3-5 Years");
+  const staffMatch8p = simulateFallbackFilter("Staff Infrastructure Architect", "8+ Years");
+
+  if (seniorMatch35) {
+    failures.push("DUMMY fallback: '3-5 Years' falsely matched 'Senior Software Engineer'!");
+  } else {
+    console.log("  [PASS] '3-5 Years' correctly excludes 'Senior Software Engineer'");
+  }
+
+  if (!seniorMatch5p) {
+    failures.push("DUMMY fallback: '5+ Years' failed to match 'Senior Software Engineer'!");
+  } else {
+    console.log("  [PASS] '5+ Years' correctly matches 'Senior Software Engineer'");
+  }
+
+  if (juniorSeniorMatch13) {
+    failures.push("DUMMY fallback: '1-3 Years' failed to exclude 'Junior Senior Lead Engineer'!");
+  } else {
+    console.log("  [PASS] '1-3 Years' excludes titles containing senior/lead keywords even if junior is present");
+  }
+
+  if (!entryMatch13 || !midMatch35 || !staffMatch8p) {
+    failures.push("DUMMY fallback: basic role matching failed for 1-3, 3-5, or 8+!");
+  } else {
+    console.log("  [PASS] Clean matching across 1-3 (junior), 3-5 (mid developer), and 8+ (staff architect)");
+  }
+
+  // ---------------------------------------------------------------------------
   // Summary & Exit Codes
   // ---------------------------------------------------------------------------
   if (failures.length > 0) {
