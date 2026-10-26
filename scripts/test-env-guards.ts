@@ -136,7 +136,7 @@ async function runSuite() {
     );
   }
 
-  // 1.3b /api/jobs/search GET with only anon key present returns data
+  // 1.3b /api/jobs/search GET with only anon key present returns data from jobs_public
   {
     restoreEnv();
     delete process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -144,16 +144,18 @@ async function runSuite() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "mock-anon-key";
     process.env.NEXT_PUBLIC_SUPABASE_URL = "https://mock.supabase.co";
 
+    let interceptedUrl = "";
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const urlStr = typeof input === "string" ? input : input instanceof URL ? input.toString() : (input as any).url;
-      if (urlStr.includes("mock.supabase.co") || urlStr.includes("/jobs")) {
+      if (urlStr.includes("mock.supabase.co")) {
+        interceptedUrl = urlStr;
         return new Response(
           JSON.stringify([
             {
               id: "00000000-0000-0000-0000-000000000001",
               title: "Senior Software Engineer",
-              company: "Tech Corp",
+              company: "Verified Employer",
               location: "Remote",
               category: "engineering",
               remote: true,
@@ -186,6 +188,11 @@ async function runSuite() {
         res.status === 200 && Array.isArray(data.jobs) && data.jobs.length > 0,
         "Next.js GET /api/jobs/search with only anon key returns data",
         `Expected status 200 with jobs array, got status ${res.status}: ${JSON.stringify(data)}`
+      );
+      assert(
+        interceptedUrl.includes("/rest/v1/jobs_public"),
+        "Next.js GET /api/jobs/search with only anon key queries public.jobs_public",
+        `Expected outbound query to contain /rest/v1/jobs_public, got: ${interceptedUrl}`
       );
     } finally {
       globalThis.fetch = originalFetch;

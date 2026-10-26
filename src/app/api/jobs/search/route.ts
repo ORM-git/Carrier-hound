@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
 import { formatSalary } from "@/lib/salary/parser";
-import { getSupabaseAdminClient } from "@/lib/ai/serviceHandler";
+import { getSupabaseAdminClient, getRuntimeEnv } from "@/lib/ai/serviceHandler";
 import { getRequestContext } from "@cloudflare/next-on-pages";
 
 export const runtime = "edge";
@@ -69,10 +69,16 @@ export async function GET(req: Request) {
     const cleanQuery = sanitizeSearchQuery(rawQuery);
     const supabaseAdmin = getSupabaseAdminClient(cfEnv, true);
 
+    const hasServiceKey = Boolean(
+      getRuntimeEnv("SUPABASE_SERVICE_ROLE_KEY", cfEnv) ||
+      getRuntimeEnv("SUPABASE_SERVICE_KEY", cfEnv)
+    );
+    const targetTable = hasServiceKey ? "jobs" : "jobs_public";
+
     // Check optional Pro entitlement via Bearer token
     let isPro = false;
     const authHeader = req.headers.get("authorization") || req.headers.get("Authorization");
-    if (authHeader && authHeader.startsWith("Bearer ")) {
+    if (authHeader && authHeader.startsWith("Bearer ") && hasServiceKey) {
       const token = authHeader.replace("Bearer ", "").trim();
       try {
         const { data: { user } } = await supabaseAdmin.auth.getUser(token);
@@ -86,12 +92,12 @@ export async function GET(req: Request) {
       }
     }
 
-    const selectColumns = isPro
+    const selectColumns = (isPro && hasServiceKey)
       ? "*"
       : "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at";
 
     let query = supabaseAdmin
-      .from("jobs")
+      .from(targetTable)
       .select(selectColumns, { count: "exact" })
       .eq("is_active", true)
       .eq("status", "active");
@@ -287,7 +293,7 @@ export async function GET(req: Request) {
       rows = rows.slice(from, to + 1);
     }
     const formattedJobs = rows.map((row: any) => {
-      if (isPro) {
+      if (isPro && hasServiceKey) {
         return {
           id: row.id,
           title: row.title || "Untitled Position",
@@ -336,7 +342,7 @@ export async function GET(req: Request) {
       totalCount: count || 0,
       page,
       pageSize,
-      isPro,
+      isPro: Boolean(isPro && hasServiceKey),
     });
   } catch (err: any) {
     try {

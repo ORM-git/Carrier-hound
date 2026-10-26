@@ -233,18 +233,20 @@ async function runSuite() {
       `Expected 500 with missingVariable SUPABASE_SERVICE_ROLE_KEY, got ${noKeysRes.status}: ${JSON.stringify(noKeysData)}`
     );
 
-    // Case 2: Only anon key present -> returns data (HTTP 200)
+    // Case 2: Only anon key present -> returns data (HTTP 200) and targets jobs_public view
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "mock-anon-key";
+    let capturedUrlAnon = "";
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const urlStr = typeof input === "string" ? input : input instanceof URL ? input.toString() : (input as any).url;
-      if (urlStr.includes("mock.supabase.co") || urlStr.includes("/jobs")) {
+      if (urlStr.includes("mock.supabase.co")) {
+        capturedUrlAnon = urlStr;
         return new Response(
           JSON.stringify([
             {
               id: "00000000-0000-0000-0000-000000000001",
               title: "Senior Platform Engineer",
-              company: "Monke Corp",
+              company: "Verified Employer",
               location: "Remote",
               category: "engineering",
               remote: true,
@@ -274,6 +276,64 @@ async function runSuite() {
         anonRes.status === 200 && Array.isArray(anonData.jobs) && anonData.jobs.length > 0,
         "1.5e Search route with only anon key returns data (HTTP 200)",
         `Expected 200 with jobs array, got ${anonRes.status}: ${JSON.stringify(anonData)}`
+      );
+      assert(
+        capturedUrlAnon.includes("/rest/v1/jobs_public"),
+        "1.5f Search route with only anon key queries public.jobs_public view",
+        `Expected outbound query to contain /rest/v1/jobs_public, got: ${capturedUrlAnon}`
+      );
+      assert(
+        anonData.jobs[0].company === "Verified Employer" && anonData.jobs[0].salary === "" && anonData.jobs[0].applyUrl === "",
+        "1.5g Search route does not return paid fields to guests",
+        `Expected masked fields, got: ${JSON.stringify(anonData.jobs[0])}`
+      );
+
+      // Case 3: Service role key present -> queries public.jobs
+      process.env.SUPABASE_SERVICE_ROLE_KEY = "mock-service-role-key";
+      let capturedUrlService = "";
+      globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const urlStr = typeof input === "string" ? input : input instanceof URL ? input.toString() : (input as any).url;
+        if (urlStr.includes("mock.supabase.co")) {
+          capturedUrlService = urlStr;
+          return new Response(
+            JSON.stringify([
+              {
+                id: "00000000-0000-0000-0000-000000000002",
+                title: "Staff Systems Engineer",
+                company: "Acme Corp",
+                location: "Remote",
+                category: "engineering",
+                remote: true,
+                country_code: "US",
+                job_type: "full-time",
+                verified: true,
+                posted_at: "2026-10-20T12:00:00Z",
+                created_at: "2026-10-20T12:00:00Z",
+              },
+            ]),
+            {
+              status: 200,
+              headers: {
+                "Content-Type": "application/json",
+                "Content-Range": "0-0/1",
+              },
+            }
+          );
+        }
+        return originalFetch(input, init);
+      }) as any;
+
+      const svcRes = await searchGet(new Request("http://localhost:3000/api/jobs/search?q=engineer"));
+      const svcData = await svcRes.json();
+      assert(
+        svcRes.status === 200 && Array.isArray(svcData.jobs) && svcData.jobs.length > 0,
+        "1.5h Search route with service key returns data (HTTP 200)",
+        `Expected 200 with jobs array, got ${svcRes.status}: ${JSON.stringify(svcData)}`
+      );
+      assert(
+        capturedUrlService.includes("/rest/v1/jobs?"),
+        "1.5i Search route with service key queries public.jobs table",
+        `Expected outbound query to contain /rest/v1/jobs?, got: ${capturedUrlService}`
       );
     } finally {
       globalThis.fetch = originalFetch;
