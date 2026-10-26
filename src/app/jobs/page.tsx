@@ -1521,6 +1521,10 @@ function JobsPageInner() {
                   }
                 }}
                 onBack={handleBackToList}
+                onHide={(e) => {
+                  handleHideJob(e || ({ stopPropagation: () => {} } as any), selectedJob.id);
+                  handleBackToList();
+                }}
                 onRetryUnlock={() => handleRetryUnlock(selectedJob.id)}
                 isRetryingUnlock={isRetryingUnlock}
               />

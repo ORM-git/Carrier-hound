@@ -78,6 +78,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-admin-bypass-removal.ts", command: "npx tsx scripts/test-admin-bypass-removal.ts", classification: "offline" },
   { name: "scripts/test-hide-empty-feed-card.ts", command: "npx tsx scripts/test-hide-empty-feed-card.ts", classification: "offline" },
   { name: "scripts/test-pro-unlock-errors.ts", command: "npx tsx scripts/test-pro-unlock-errors.ts", classification: "offline" },
+  { name: "scripts/test-job-detail-redesign.ts", command: "npx tsx scripts/test-job-detail-redesign.ts", classification: "offline" },
   { name: "scripts/test-early-applicant-badge.ts", command: "npx tsx scripts/test-early-applicant-badge.ts", classification: "offline" },
 
   // DB-capable suites: read operations (BLOCKED by default unless authorized on test project)
