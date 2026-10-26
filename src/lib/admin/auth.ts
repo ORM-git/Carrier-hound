@@ -107,14 +107,6 @@ export async function verifyAdminSession(req?: Request): Promise<{
       }
     }
 
-    // Also support test bypass when explicitly configured in testing env
-    if (process.env.ADMIN_TEST_BYPASS === "true") {
-      const { data: { users } } = await adminClient.auth.admin.listUsers();
-      const admin = users?.find((u) => u.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase());
-      if (admin) {
-        return { isAdmin: true, user: admin };
-      }
-    }
 
     return { isAdmin: false, user: null, error: "Unauthorized: Admin access required." };
   } catch (err: any) {
