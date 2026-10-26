@@ -498,10 +498,10 @@ export default function JobDetailView({
         </div>
 
         {/* Gray Chips Row */}
-        <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-[#E2E8F0]">
-          <span className="inline-flex items-center gap-1 text-[12px] font-medium px-2.5 py-0.5 rounded-full bg-[#F1F5F9] text-[#475569]">
-            <MapPin className="w-3 h-3 text-[#475569]" />
-            <span className="truncate">
+        <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-[#E2E8F0] max-w-full min-w-0">
+          <span className="inline-flex items-start gap-1.5 text-[12px] font-medium px-2.5 py-1 rounded-2xl bg-[#F1F5F9] text-[#475569] max-w-full">
+            <MapPin className="w-3.5 h-3.5 text-[#475569] shrink-0 mt-0.5" />
+            <span className="break-words whitespace-normal leading-relaxed">
               {isPro ? (job.location || "Remote") : <span className="filter blur-[3.5px] select-none">Location Locked</span>}
             </span>
           </span>

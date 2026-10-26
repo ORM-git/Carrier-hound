@@ -60,9 +60,9 @@ export default function CompanyLogo({
   if (!domain || imgStage === "fallback") {
     return (
       <div
-        className={`rounded-xl bg-gradient-to-br ${gradient} text-white font-black flex items-center justify-center shrink-0 shadow-2xs text-sm select-none border border-white/20 ${className}`}
+        className={`rounded-xl bg-gradient-to-br ${gradient} text-white font-black flex items-center justify-center shrink-0 shadow-2xs select-none border border-white/20 ${className}`}
       >
-        {initial}
+        <span className="text-xs sm:text-xl font-bold leading-none">{initial}</span>
       </div>
     );
   }

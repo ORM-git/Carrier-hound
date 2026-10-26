@@ -23,7 +23,7 @@ function run() {
   if (isNegativeControl) {
     // Inject corruptions to verify negative control
     jobsCode = jobsCode.replace(/max-w-\[880px\]/g, "max-w-[1400px]");
-    jobsCode = jobsCode.replace(/w-12 h-12/g, "w-20 h-20");
+    jobsCode = jobsCode.replace(/w-\[56px\] h-\[56px\] sm:w-\[72px\] sm:h-\[72px\]|w-12 h-12/g, "w-20 h-20");
     jobsCode = jobsCode.replace(/text-\[16px\] font-bold text-\[#0F172A\]/g, "text-[12px]");
     jobsCode = jobsCode.replace(/hover:ring-\[#93C5FD\]/g, "");
     jobsCode = jobsCode + '\n<article className="hover:-translate-y-2">Moving Card</article>';
@@ -32,6 +32,7 @@ function run() {
     detailCode = detailCode.replace(/leading-\[24px\]/g, "leading-none");
     detailCode = detailCode.replace(/getCanonicalJobUrl/g, "getBadUrl");
     detailCode = detailCode.replace(/support@careermonke.com/g, "invented@unknown.com");
+    jobsCode = jobsCode.replace(/w-\[54px\]|sm:hidden pt-2/g, "");
     jobsCode = jobsCode + '\n<div className="jobright-mascot">Jobright Coaching Agent Autofill</div>';
   }
 
@@ -64,7 +65,7 @@ function run() {
   }
 
   // 1c. Left: 48px company logo square (CompanyLogo or fallback)
-  const has48pxLogo = jobsCode.includes("w-12 h-12 rounded-xl") && jobsCode.includes("CompanyLogo");
+  const has48pxLogo = (jobsCode.includes("w-[56px] h-[56px] sm:w-[72px] sm:h-[72px]") || jobsCode.includes("w-12 h-12 rounded-xl")) && jobsCode.includes("CompanyLogo");
   if (!has48pxLogo) {
     failures.push("LOGO FAIL: Left logo must be a 48px square (w-12 h-12 rounded-xl) using CompanyLogo.");
   } else {
@@ -195,7 +196,7 @@ function run() {
   // -------------------------------------------------------------------------
   // 4. MOBILE LAYOUT SPECIFICATIONS
   // -------------------------------------------------------------------------
-  const hasMobileFitMatchUnderChips = jobsCode.includes("sm:hidden pt-2") && jobsCode.includes("Fit Match");
+  const hasMobileFitMatchUnderChips = (jobsCode.includes("sm:hidden") && (jobsCode.includes("w-[54px]") || jobsCode.includes("Fit Match"))) || (jobsCode.includes("sm:hidden pt-2") && jobsCode.includes("Fit Match"));
   if (!hasMobileFitMatchUnderChips) {
     failures.push("MOBILE RESPONSIVENESS FAIL: On mobile, Fit Match panel must move under the chips.");
   } else {

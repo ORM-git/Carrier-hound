@@ -156,7 +156,7 @@ export default function GuideHeader() {
           {/* Centre / Left Nav Links: Desktop */}
           {user ? (
             /* Logged-In User Nav */
-            <nav aria-label="Primary" className="hidden md:flex flex-1 items-center justify-center gap-1 h-full">
+            <nav aria-label="Primary" className="hidden lg:flex flex-1 items-center justify-center gap-1 h-full">
               <Link href="/dashboard" className={navLinkClass(isDashboardActive)}>
                 Dashboard
               </Link>
@@ -214,7 +214,7 @@ export default function GuideHeader() {
             </nav>
           ) : (
             /* Public Guest Nav */
-            <nav aria-label="Primary" className="hidden md:flex flex-1 items-center justify-start ml-6 gap-1 h-full">
+            <nav aria-label="Primary" className="hidden lg:flex flex-1 items-center justify-start ml-6 gap-1 h-full">
               <Link href="/jobs" prefetch={false} className={navLinkClass(isJobsActive)}>
                 Jobs
               </Link>
@@ -234,7 +234,7 @@ export default function GuideHeader() {
           )}
 
           {/* Right Action Buttons */}
-          <div className="hidden md:flex items-center gap-2 shrink-0">
+          <div className="hidden lg:flex items-center gap-2 shrink-0">
             {user ? (
               /* User Account Dropdown */
               <div className="relative" ref={accountRef}>
@@ -324,7 +324,7 @@ export default function GuideHeader() {
           </div>
 
           {/* Mobile Hamburger Button */}
-          <div className="flex items-center md:hidden">
+          <div className="flex items-center lg:hidden">
             <button
               ref={menuButtonRef}
               type="button"
@@ -347,7 +347,7 @@ export default function GuideHeader() {
       <div
         role="presentation"
         onClick={() => setDrawerOpen(false)}
-        className={`fixed inset-0 bg-[#0F172A]/60 z-50 transition-opacity duration-300 md:hidden ${
+        className={`fixed inset-0 bg-[#0F172A]/60 z-50 transition-opacity duration-300 lg:hidden ${
           drawerOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
         }`}
       />
@@ -355,7 +355,7 @@ export default function GuideHeader() {
       {/* Drawer */}
       <div
         id="mobile-nav-drawer"
-        className={`fixed inset-y-0 right-0 z-50 w-full max-w-[320px] bg-white h-full shadow-2xl flex flex-col justify-between p-6 transition-transform duration-300 ease-[cubic-bezier(0.2,0,0,1)] md:hidden ${
+        className={`fixed inset-y-0 right-0 z-50 w-full max-w-[320px] bg-white h-full shadow-2xl flex flex-col justify-between p-6 transition-transform duration-300 ease-[cubic-bezier(0.2,0,0,1)] lg:hidden ${
           drawerOpen ? "translate-x-0" : "translate-x-full"
         }`}
       >

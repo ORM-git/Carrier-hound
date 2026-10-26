@@ -32,6 +32,29 @@ function assert(condition: boolean, testName: string, failureMsg: string) {
   }
 }
 
+import Module from "module";
+
+// Register Node test hook for @cloudflare/next-on-pages in unit test environment
+const originalResolve = (Module as any)._resolveFilename;
+(Module as any)._resolveFilename = function (request: string, parent: any, isMain: boolean, options: any) {
+  if (request === "@cloudflare/next-on-pages") {
+    return "virtual:@cloudflare/next-on-pages";
+  }
+  return originalResolve.call(this, request, parent, isMain, options);
+};
+
+require.cache["virtual:@cloudflare/next-on-pages"] = {
+  id: "virtual:@cloudflare/next-on-pages",
+  filename: "virtual:@cloudflare/next-on-pages",
+  loaded: true,
+  exports: {
+    getRequestContext: () => {
+      const sym = Symbol.for("__cloudflare-request-context__");
+      return (globalThis as any)[sym];
+    },
+  },
+} as any;
+
 // Preserve original environment
 const originalEnv = { ...process.env };
 
@@ -111,6 +134,69 @@ async function runSuite() {
       "Next.js GET /api/jobs/search fails with 500 and names SUPABASE_SERVICE_ROLE_KEY",
       `Expected status 500 and missingVariable SUPABASE_SERVICE_ROLE_KEY, got status ${res.status}: ${JSON.stringify(data)}`
     );
+  }
+
+  // 1.3b /api/jobs/search GET with only anon key present returns data from jobs_public
+  {
+    restoreEnv();
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    delete process.env.SUPABASE_SERVICE_KEY;
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "mock-anon-key";
+    process.env.NEXT_PUBLIC_SUPABASE_URL = "https://mock.supabase.co";
+
+    let interceptedUrl = "";
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const urlStr = typeof input === "string" ? input : input instanceof URL ? input.toString() : (input as any).url;
+      if (urlStr.includes("mock.supabase.co")) {
+        interceptedUrl = urlStr;
+        return new Response(
+          JSON.stringify([
+            {
+              id: "00000000-0000-0000-0000-000000000001",
+              title: "Senior Software Engineer",
+              company: "Verified Employer",
+              location: "Remote",
+              category: "engineering",
+              remote: true,
+              country_code: "US",
+              job_type: "full-time",
+              verified: true,
+              posted_at: "2026-10-20T12:00:00Z",
+              created_at: "2026-10-20T12:00:00Z",
+            },
+          ]),
+          {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
+              "Content-Range": "0-0/1",
+            },
+          }
+        );
+      }
+      return originalFetch(input, init);
+    }) as any;
+
+    try {
+      const { GET } = await import("../src/app/api/jobs/search/route");
+      const req = new Request("http://localhost:3000/api/jobs/search?q=engineer");
+      const res = await GET(req);
+      const data = await res.json();
+
+      assert(
+        res.status === 200 && Array.isArray(data.jobs) && data.jobs.length > 0,
+        "Next.js GET /api/jobs/search with only anon key returns data",
+        `Expected status 200 with jobs array, got status ${res.status}: ${JSON.stringify(data)}`
+      );
+      assert(
+        interceptedUrl.includes("/rest/v1/jobs_public"),
+        "Next.js GET /api/jobs/search with only anon key queries public.jobs_public",
+        `Expected outbound query to contain /rest/v1/jobs_public, got: ${interceptedUrl}`
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   }
 
   // 1.4 /api/jobs/pro GET (Missing SUPABASE_SERVICE_ROLE_KEY)

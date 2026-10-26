@@ -95,6 +95,67 @@ export interface AiServiceDeps {
   getSupabaseAdmin?: () => any;
   getServerEntitlement?: typeof getServerEntitlement;
   callGroq?: (payload: any) => Promise<any>;
+  env?: Record<string, any>;
+}
+
+/**
+ * Robust server environment variable resolution across Node.js, Netlify functions,
+ * Cloudflare Pages Edge isolates, and unit testing contexts.
+ */
+export function getRuntimeEnv(key: string, envOverrides?: Record<string, any>): string | undefined {
+  if (envOverrides && typeof envOverrides[key] === "string" && envOverrides[key].trim()) {
+    return envOverrides[key].trim();
+  }
+  if (typeof process !== "undefined" && process?.env && typeof process.env[key] === "string" && process.env[key].trim()) {
+    return process.env[key].trim();
+  }
+  try {
+    const cfContext = (globalThis as any)[Symbol.for("__cloudflare-request-context__")];
+    if (cfContext?.env && typeof cfContext.env[key] === "string" && cfContext.env[key].trim()) {
+      return cfContext.env[key].trim();
+    }
+  } catch {}
+  try {
+    const cfEnv = (globalThis as any)[Symbol.for("__cloudflare-env__")];
+    if (cfEnv && typeof cfEnv[key] === "string" && cfEnv[key].trim()) {
+      return cfEnv[key].trim();
+    }
+  } catch {}
+  try {
+    if (typeof (globalThis as any)[key] === "string" && (globalThis as any)[key].trim()) {
+      return (globalThis as any)[key].trim();
+    }
+  } catch {}
+  return undefined;
+}
+
+export function getSupabaseAdminClient(
+  envOverrides?: Record<string, any>,
+  allowAnonFallback: boolean = false
+) {
+  const supabaseUrl =
+    getRuntimeEnv("NEXT_PUBLIC_SUPABASE_URL", envOverrides) ||
+    getRuntimeEnv("SUPABASE_URL", envOverrides) ||
+    "https://szakevhxhwpeskidvtfs.supabase.co";
+  const serviceKey =
+    getRuntimeEnv("SUPABASE_SERVICE_ROLE_KEY", envOverrides) ||
+    getRuntimeEnv("SUPABASE_SERVICE_KEY", envOverrides) ||
+    (allowAnonFallback ? getRuntimeEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", envOverrides) : undefined);
+
+  const missing = checkRequiredEnv(
+    {
+      NEXT_PUBLIC_SUPABASE_URL: supabaseUrl,
+      SUPABASE_SERVICE_ROLE_KEY: serviceKey,
+    },
+    allowAnonFallback ? "API /jobs/search" : "Supabase Admin Client"
+  );
+  if (missing) {
+    throw new Error(JSON.stringify(missing));
+  }
+
+  return createClient(supabaseUrl, serviceKey!, {
+    auth: { persistSession: false },
+  });
 }
 
 export interface AiCoreResponse {
@@ -152,12 +213,12 @@ export async function executeAiCore(
 
     const token = authHeader.replace("Bearer ", "").trim();
     const supabaseUrl =
-      process.env.NEXT_PUBLIC_SUPABASE_URL ||
-      process.env.SUPABASE_URL ||
+      getRuntimeEnv("NEXT_PUBLIC_SUPABASE_URL", activeDeps.env) ||
+      getRuntimeEnv("SUPABASE_URL", activeDeps.env) ||
       "https://szakevhxhwpeskidvtfs.supabase.co";
     const serviceKey =
-      process.env.SUPABASE_SERVICE_ROLE_KEY ||
-      process.env.SUPABASE_SERVICE_KEY;
+      getRuntimeEnv("SUPABASE_SERVICE_ROLE_KEY", activeDeps.env) ||
+      getRuntimeEnv("SUPABASE_SERVICE_KEY", activeDeps.env);
 
     if (!activeDeps.getSupabaseAdmin) {
       const missingSupabase = checkRequiredEnv(
@@ -314,7 +375,7 @@ export async function executeAiCore(
         };
       }
     } else {
-      const groqApiKey = process.env.GROQ_API_KEY;
+      const groqApiKey = getRuntimeEnv("GROQ_API_KEY", activeDeps.env);
       if (!groqApiKey || !groqApiKey.trim()) {
         console.error("[AI Service] Missing required environment variable: GROQ_API_KEY");
         await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);

@@ -37,6 +37,13 @@ export interface GetJobsOptions {
   sortBy?: "newest" | "match";
   candidate?: CandidateProfile | null;
   preferences?: UserPreferences | null;
+  location?: string;
+  level?: string;
+  jobType?: string;
+  workModel?: string;
+  datePosted?: string;
+  countryCode?: string;
+  experience?: string;
 }
 
 export interface GetJobsResult {
@@ -199,6 +206,13 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
     sortBy = "newest",
     candidate,
     preferences,
+    location,
+    level,
+    jobType,
+    workModel,
+    datePosted,
+    countryCode,
+    experience,
   } = options;
 
   const from = (page - 1) * pageSize;
@@ -223,6 +237,12 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       });
       if (category && category !== "all") params.set("category", category);
       if (remoteOnly) params.set("remoteOnly", "true");
+      if (location && location !== "all") params.set("location", location);
+      if (level && level !== "all") params.set("level", level);
+      if (jobType && jobType !== "all") params.set("jobType", jobType);
+      if (workModel && workModel !== "all") params.set("workModel", workModel);
+      if (datePosted && datePosted !== "all") params.set("datePosted", datePosted);
+      if (countryCode && countryCode !== "all") params.set("country_code", countryCode);
 
       const res = await fetch(`/api/jobs/search?${params.toString()}`, { headers });
       if (res.ok) {
@@ -281,6 +301,79 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       query = query.eq("remote", true);
     }
 
+    if (location && location.trim() && location.toLowerCase() !== "all") {
+      const loc = location.trim().replace(/[%_(),\"'`;\\$*]/g, " ").trim();
+      if (loc.toLowerCase() === "remote") {
+        query = query.or("remote.eq.true,location.ilike.%remote%");
+      } else if (loc) {
+        query = query.ilike("location", "%" + loc + "%");
+      }
+    }
+
+    if (jobType && jobType.trim() && jobType.toLowerCase() !== "all") {
+      const jt = jobType.trim().toLowerCase();
+      if (jt.includes("full")) {
+        query = query.or("job_type.ilike.%full%,job_type.eq.full-time,job_type.eq.full_time");
+      } else if (jt.includes("contract")) {
+        query = query.or("job_type.ilike.%contract%,job_type.eq.contractor");
+      } else if (jt.includes("part")) {
+        query = query.ilike("job_type", "%part%");
+      } else if (jt.includes("intern")) {
+        query = query.or("job_type.ilike.%intern%,job_type.eq.internship");
+      } else {
+        query = query.ilike("job_type", "%" + jt + "%");
+      }
+    }
+
+    if (level && level.trim() && level.toLowerCase() !== "all") {
+      const lvl = level.trim().toLowerCase();
+      if (lvl.includes("lead") || lvl.includes("staff")) {
+        query = query.or("title.ilike.%staff%,title.ilike.%principal%,title.ilike.%lead%");
+      } else if (lvl.includes("senior")) {
+        query = query.or("title.ilike.%senior%,title.ilike.%sr.%");
+      } else if (lvl.includes("entry") || lvl.includes("junior")) {
+        query = query.or("title.ilike.%junior%,title.ilike.%entry%,title.ilike.%associate%");
+      } else if (lvl.includes("mid")) {
+        query = query
+          .not("title", "ilike", "%senior%")
+          .not("title", "ilike", "%sr.%")
+          .not("title", "ilike", "%staff%")
+          .not("title", "ilike", "%principal%")
+          .not("title", "ilike", "%lead%")
+          .not("title", "ilike", "%junior%")
+          .not("title", "ilike", "%entry%")
+      }
+    }
+
+    if (workModel && workModel.trim() && workModel.toLowerCase() !== "all") {
+      const wmTokens = workModel.toLowerCase().split(",").map((s) => s.trim()).filter(Boolean);
+      const orParts: string[] = [];
+      for (const wm of wmTokens) {
+        if (wm === "remote") orParts.push("remote.eq.true", "location.ilike.%remote%");
+        else if (wm === "hybrid") orParts.push("location.ilike.%hybrid%", "remote_scope.eq.hybrid");
+        else if (wm === "onsite") orParts.push("remote.eq.false", "location.ilike.%onsite%");
+      }
+      if (orParts.length > 0) {
+        query = query.or(orParts.join(","));
+      }
+    }
+
+    if (datePosted && datePosted.trim() && datePosted.toLowerCase() !== "all") {
+      const dp = datePosted.trim().toLowerCase();
+      const ms =
+        dp === "24h" || dp.includes("24")
+          ? 24 * 60 * 60 * 1000
+          : dp === "7d" || dp.includes("week")
+          ? 7 * 24 * 60 * 60 * 1000
+          : dp === "30d" || dp.includes("month")
+          ? 30 * 24 * 60 * 60 * 1000
+          : 0;
+      if (ms > 0) {
+        const cutoff = new Date(Date.now() - ms).toISOString();
+        query = query.gte("posted_at", cutoff);
+      }
+    }
+
     if (search && search.trim()) {
       const q = search.trim().replace(/[%_(),"'`;\\$*]/g, " ").replace(/\s+/g, " ").trim().slice(0, 200);
       const parts = q.split(" ").filter((p) => p.length >= 2);
@@ -309,12 +402,59 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       count = res.count;
 
       if (candidatePool.length === 0 && preferences?.categories?.length) {
-        const catQuery = supabase
+        let catQuery = supabase
           .from("jobs_public")
           .select(PUBLIC_SELECT_COLUMNS, { count: "exact" })
           .eq("is_active", true)
           .eq("status", "active")
-          .in("category", preferences.categories)
+          .in("category", preferences.categories);
+
+        if (remoteOnly) {
+          catQuery = catQuery.eq("remote", true);
+        }
+        if (location && location.trim() && location.toLowerCase() !== "all") {
+          const loc = location.trim().replace(/[%_(),\"'`;\\$*]/g, " ").trim();
+          if (loc.toLowerCase() === "remote") {
+            catQuery = catQuery.or("remote.eq.true,location.ilike.%remote%");
+          } else if (loc) {
+            catQuery = catQuery.ilike("location", "%" + loc + "%");
+          }
+        }
+        if (jobType && jobType.trim() && jobType.toLowerCase() !== "all") {
+          const jt = jobType.trim().toLowerCase();
+          if (jt.includes("full")) {
+            catQuery = catQuery.or("job_type.ilike.%full%,job_type.eq.full-time,job_type.eq.full_time");
+          } else if (jt.includes("contract")) {
+            catQuery = catQuery.or("job_type.ilike.%contract%,job_type.eq.contractor");
+          } else if (jt.includes("part")) {
+            catQuery = catQuery.ilike("job_type", "%part%");
+          } else if (jt.includes("intern")) {
+            catQuery = catQuery.or("job_type.ilike.%intern%,job_type.eq.internship");
+          } else {
+            catQuery = catQuery.ilike("job_type", "%" + jt + "%");
+          }
+        }
+        if (level && level.trim() && level.toLowerCase() !== "all") {
+          const lvl = level.trim().toLowerCase();
+          if (lvl.includes("lead") || lvl.includes("staff")) {
+            catQuery = catQuery.or("title.ilike.%staff%,title.ilike.%principal%,title.ilike.%lead%");
+          } else if (lvl.includes("senior")) {
+            catQuery = catQuery.or("title.ilike.%senior%,title.ilike.%sr.%");
+          } else if (lvl.includes("entry") || lvl.includes("junior")) {
+            catQuery = catQuery.or("title.ilike.%junior%,title.ilike.%entry%,title.ilike.%associate%");
+          } else if (lvl.includes("mid")) {
+            catQuery = catQuery
+              .not("title", "ilike", "%senior%")
+              .not("title", "ilike", "%sr.%")
+              .not("title", "ilike", "%staff%")
+              .not("title", "ilike", "%principal%")
+              .not("title", "ilike", "%lead%")
+              .not("title", "ilike", "%junior%")
+              .not("title", "ilike", "%entry%");
+          }
+        }
+
+        catQuery = catQuery
           .order("posted_at", { ascending: false })
           .range(0, 249);
         const catRes = await catQuery;
