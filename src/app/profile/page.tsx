@@ -70,20 +70,7 @@ export default function ProfilePage() {
   useEffect(() => {
     getAuthUser().then((u) => {
       if (!u) {
-        // Fallback for local testing / offline verification when candidate profile is primed in storage
-        if (typeof window !== "undefined") {
-          try {
-            const localUser = localStorage.getItem("careermonke_auth_user");
-            const localProf = localStorage.getItem("careermonke_candidate_profile");
-            if (localUser && localProf) {
-              const parsedUser = JSON.parse(localUser);
-              setUser(parsedUser);
-              loadProfileData(parsedUser.id);
-              return;
-            }
-          } catch {}
-        }
-        router.replace("/login?next=/profile");
+        router.replace("/login?returnTo=/profile");
         return;
       }
       setUser(u);
@@ -95,15 +82,6 @@ export default function ProfilePage() {
         if (u) {
           setUser(u);
           loadProfileData(u.id);
-        } else if (typeof window !== "undefined") {
-          try {
-            const localUser = localStorage.getItem("careermonke_auth_user");
-            if (localUser) {
-              const parsedUser = JSON.parse(localUser);
-              setUser(parsedUser);
-              loadProfileData(parsedUser.id);
-            }
-          } catch {}
         }
       });
     };

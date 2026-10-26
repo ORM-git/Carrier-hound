@@ -11,16 +11,39 @@ const CANDIDATE_PROFILE_KEY = "careermonke_candidate_profile";
 
 /**
  * Validates a return URL to ensure it is a safe relative same-site path.
- * Disallows absolute URLs, protocol-relative '//', or external schemes.
+ * Disallows absolute URLs, protocol-relative '//', backslashes, encoded exploits,
+ * or loop-inducing auth paths (/login, /signup, /auth).
  */
 export function getValidReturnUrl(targetUrl: string | null | undefined, fallback: string = "/dashboard"): string {
   if (!targetUrl) return fallback;
   const trimmed = targetUrl.trim();
-  // Must start with '/' but not '//'
-  if (trimmed.startsWith("/") && !trimmed.startsWith("//") && !trimmed.includes("\\")) {
-    return trimmed;
+  
+  // Must start with a single '/' and not contain backslashes
+  if (!trimmed.startsWith("/") || trimmed.startsWith("//") || trimmed.includes("\\")) {
+    return fallback;
   }
-  return fallback;
+
+  // Check for encoded backslashes (%5C, %5c) or encoded double slashes (%2F, %2f)
+  try {
+    const decoded = decodeURIComponent(trimmed);
+    if (decoded.startsWith("//") || decoded.includes("\\")) {
+      return fallback;
+    }
+  } catch {
+    return fallback;
+  }
+
+  // Prevent redirect loops back to authentication screens
+  const pathOnly = trimmed.split("?")[0].toLowerCase();
+  if (
+    pathOnly === "/login" ||
+    pathOnly === "/signup" ||
+    pathOnly.startsWith("/auth")
+  ) {
+    return fallback;
+  }
+
+  return trimmed;
 }
 
 /**

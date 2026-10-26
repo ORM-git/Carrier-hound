@@ -61,7 +61,7 @@ function SettingsPageInner() {
   useEffect(() => {
     getAuthUser().then((u) => {
       if (!u) {
-        router.replace("/login?next=/settings");
+        router.replace("/login?returnTo=/settings");
         return;
       }
       setUser(u);

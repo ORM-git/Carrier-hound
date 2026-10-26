@@ -713,9 +713,16 @@ function JobsPageInner() {
           getProAccessStatus(),
           getCandidateProfile(),
         ]);
-        const apps = await getTrackedApplications(u?.id);
-
         if (cancelled) return;
+
+        if (!u) {
+          const currentSearch = typeof window !== "undefined" ? window.location.search : "";
+          const returnPath = `/jobs${currentSearch}`;
+          router.replace(`/login?returnTo=${encodeURIComponent(returnPath)}`);
+          return;
+        }
+
+        const apps = await getTrackedApplications(u.id);
 
         setUser(u);
         setIsPro(proRes.isPro);
@@ -1310,7 +1317,7 @@ function JobsPageInner() {
         typeof window !== "undefined"
           ? window.location.pathname + window.location.search
           : "/jobs";
-      router.push(`/login?next=${encodeURIComponent(currentPath)}`);
+      router.push(`/login?returnTo=${encodeURIComponent(currentPath)}`);
     } else {
       setIsPaywallOpen(true);
     }

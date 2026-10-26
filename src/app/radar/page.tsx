@@ -46,7 +46,7 @@ export default function RadarPage() {
   useEffect(() => {
     getAuthUser().then(async (authUser) => {
       if (!authUser) {
-        router.replace("/login?next=/radar");
+        router.replace("/login?returnTo=/radar");
         return;
       }
       setUser(authUser);
