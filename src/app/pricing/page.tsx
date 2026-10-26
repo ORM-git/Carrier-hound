@@ -17,7 +17,6 @@ import {
   HelpCircle,
   ExternalLink,
 } from "lucide-react";
-import GuideHeader from "@/components/GuideHeader";
 import LoggedInAppShell from "@/components/shell/LoggedInAppShell";
 import Footer from "@/components/Footer";
 import { Card } from "@/components/ui/card";
@@ -740,24 +739,10 @@ export default function PricingPage() {
     </div>
   );
 
-  if (user) {
-    return (
-      <LoggedInAppShell pageLabel="PRICING" user={user} isPro={isPro}>
-        {pricingContent}
-        <Footer />
-      </LoggedInAppShell>
-    );
-  }
-
   return (
-    <div className="min-h-screen flex flex-col bg-surface-subtle text-ink">
-      <GuideHeader />
-
-      <main className="flex-1">
-        {pricingContent}
-      </main>
-
+    <LoggedInAppShell pageLabel="PRICING" user={user} isPro={isPro}>
+      {pricingContent}
       <Footer />
-    </div>
+    </LoggedInAppShell>
   );
 }
