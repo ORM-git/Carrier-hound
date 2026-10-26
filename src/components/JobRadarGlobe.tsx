@@ -203,6 +203,7 @@ export default function JobRadarGlobe() {
   const [jobsTotal, setJobsTotal] = useState<number>(0);
   const [jobsHasMore, setJobsHasMore] = useState<boolean>(false);
   const [appliedJobs, setAppliedJobs] = useState<Record<string, boolean>>({});
+  const [radarProUnlockError, setRadarProUnlockError] = useState<boolean>(false);
 
   // Sync refs for animation loop
   const isSpinningRef = useRef<boolean>(true);
@@ -465,10 +466,20 @@ export default function JobRadarGlobe() {
                     }
                   });
                 }
+              } else {
+                console.error(`[API /jobs/pro error]: Radar drawer Pro unlock failed with status ${proRes.status}`);
+                if (proRes.status === 401) {
+                  const { data: { session: currentSession } } = await supabase.auth.getSession();
+                  if (!currentSession && typeof window !== "undefined") {
+                    const returnTo = window.location.pathname + window.location.search;
+                    window.location.assign(`/login?returnTo=${encodeURIComponent(returnTo)}`);
+                  }
+                }
+                setRadarProUnlockError(true);
               }
             }
-          } catch (proErr) {
-            console.warn("Could not unlock radar drawer jobs:", proErr);
+          } catch (proErr: any) {
+            console.error(`[API /jobs/pro error]: Radar drawer Pro unlock failure (${proErr?.message || "fetch failed"})`);
           }
         }
 
@@ -1491,6 +1502,26 @@ export default function JobRadarGlobe() {
 
           {/* Job Cards List (Scrollable) */}
           <div className="p-4 overflow-y-auto max-h-[52vh] space-y-3.5 divide-y divide-slate-800/60">
+            {radarProUnlockError && (
+              <div
+                data-testid="radar-pro-unlock-error-banner"
+                className="p-3 rounded-xl bg-slate-900/90 border border-slate-700/80 flex items-center justify-between gap-3 text-xs text-slate-300"
+              >
+                <div className="flex items-center gap-2">
+                  <Lock className="w-4 h-4 text-cyan-400 shrink-0" />
+                  <span>Details are locked. Retry</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => selectedCity && fetchCityJobs(selectedCity, jobsPage, false)}
+                  disabled={jobsLoading}
+                  className="px-3 py-1 rounded-full text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-white border border-slate-600 transition flex items-center gap-1.5 cursor-pointer"
+                >
+                  <RotateCw className={`w-3 h-3 ${jobsLoading ? "animate-spin" : ""}`} />
+                  <span>Retry</span>
+                </button>
+              </div>
+            )}
             {jobsLoading && drawerJobs.length === 0 ? (
               /* Loading Skeletons */
               <div className="space-y-3 py-6">
