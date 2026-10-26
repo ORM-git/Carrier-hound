@@ -145,18 +145,7 @@ export async function runDailyDigestCron(options: {
     // 3. Fetch active job listings (limit 500 most recent active)
     let activeJobs: any[] = [];
     if (!supabase) {
-      const { DUMMY_JOBS } = await import("../../../data/jobs");
-      activeJobs = (DUMMY_JOBS || []).map((j) => ({
-        id: j.id,
-        title: j.title,
-        company: j.company,
-        location: j.location,
-        remote_scope: j.remote ? "worldwide" : undefined,
-        category: j.category,
-        salary_text: j.salary,
-        apply_url: j.applyUrl,
-        discovered_at: new Date().toISOString(),
-      }));
+      activeJobs = [];
     } else {
       const { data: jobsData, error: jobsError } = await supabase
         .from("jobs")
@@ -165,19 +154,8 @@ export async function runDailyDigestCron(options: {
         .limit(500);
 
       if (jobsError) {
-        console.warn("Notice: jobs table query returned error, falling back to local dataset:", jobsError.message);
-        const { DUMMY_JOBS } = await import("../../../data/jobs");
-        activeJobs = (DUMMY_JOBS || []).map((j) => ({
-          id: j.id,
-          title: j.title,
-          company: j.company,
-          location: j.location,
-          remote_scope: j.remote ? "worldwide" : undefined,
-          category: j.category,
-          salary_text: j.salary,
-          apply_url: j.applyUrl,
-          discovered_at: new Date().toISOString(),
-        }));
+        console.warn("Notice: jobs table query returned error:", jobsError.message);
+        activeJobs = [];
       } else {
         activeJobs = jobsData || [];
       }
