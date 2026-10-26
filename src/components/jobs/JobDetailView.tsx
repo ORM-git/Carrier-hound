@@ -6,7 +6,7 @@ import Link from "next/link";
 import { LiveJob } from "@/lib/jobs/service";
 import { CandidateProfile } from "@/lib/resume/types";
 import { computeFitDiagnostics, FitDiagnosticsResult } from "@/lib/matcher/scoring";
-import { stripHtmlAndExecutableMarkup } from "@/lib/security/xss";
+import { stripHtmlAndExecutableMarkup, sanitizeExternalUrl } from "@/lib/security/xss";
 import { getSiteUrl } from "@/lib/siteUrl";
 import CompanyLogo from "@/components/CompanyLogo";
 import { useCookieNoticeHeight } from "@/components/CookieNotice";
@@ -268,12 +268,14 @@ export default function JobDetailView({
   // Parse company details only where available
   const companyInfo = useMemo(() => {
     const raw = (job as any).companyInfo || (job as any).company_data || {};
+    const rawWebsite = raw.website || (job as any).company_website || null;
+    const sanitizedWebsite = sanitizeExternalUrl(rawWebsite);
     return {
       description: raw.description || (job as any).company_description || "",
       founded: raw.founded || (job as any).founded || null,
       hq: raw.hq || raw.headquarters || (job as any).hq || null,
       size: raw.size || raw.employees || (job as any).company_size || null,
-      website: raw.website || (job as any).company_website || null,
+      website: sanitizedWebsite,
     };
   }, [job]);
 
@@ -323,9 +325,10 @@ export default function JobDetailView({
       <div
         role="region"
         aria-label="Job header"
-        className="sticky top-14 z-20 bg-white/95 backdrop-blur-md rounded-[16px] ring-1 ring-[#E2E8F0] px-4 sm:px-5 py-2.5 shadow-sm transition-all duration-200"
+        className="sticky top-14 z-20 bg-white/95 backdrop-blur-md rounded-[16px] ring-1 ring-[#E2E8F0] px-3.5 sm:px-5 py-2.5 shadow-sm transition-all duration-200"
       >
-        <div className="flex items-center justify-between gap-3">
+        {/* DESKTOP SINGLE-ROW STRIP (md: and above) */}
+        <div className="hidden md:flex items-center justify-between gap-3">
           {/* Left strip: Back/close, Scrolled Chip OR Tabs + Utility links */}
           <div className="flex items-center gap-3 min-w-0">
             <button
@@ -336,15 +339,6 @@ export default function JobDetailView({
             >
               <ArrowLeft className="w-4 h-4" />
             </button>
-
-            {/* Mobile logo on sticky header row */}
-            <div className="md:hidden flex items-center shrink-0">
-              <CompanyLogo
-                company={job.company}
-                applyUrl={job.applyUrl}
-                className="w-7 h-7 rounded-md object-contain p-0.5 border border-[#E2E8F0] bg-white shrink-0"
-              />
-            </div>
 
             {/* When scrolled: compact logo + job title chip in strip */}
             {isScrolled ? (
@@ -393,7 +387,7 @@ export default function JobDetailView({
                 </div>
 
                 {/* Utility actions (Desktop) */}
-                <div className="hidden md:flex items-center gap-2 text-xs text-[#64748B]">
+                <div className="flex items-center gap-2 text-xs text-[#64748B]">
                   <button
                     type="button"
                     onClick={handleShare}
@@ -477,6 +471,124 @@ export default function JobDetailView({
                 <span>Apply</span>
               </button>
             )}
+          </div>
+        </div>
+
+        {/* MOBILE TWO-ROW STRIP (md:hidden, stays sticky, zero overlap at 360px-414px) */}
+        <div data-testid="mobile-sticky-header-strip" className="md:hidden flex flex-col gap-2">
+          {/* Row 1: Back, Overview and Company tabs (full labels visible), Share icon */}
+          <div className="flex items-center justify-between gap-2 min-w-0">
+            <div className="flex items-center gap-2 min-w-0">
+              <button
+                type="button"
+                onClick={onBack}
+                aria-label="Back to jobs list"
+                className="w-8 h-8 min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg hover:bg-slate-100 text-[#475569] hover:text-[#0F172A] transition-colors cursor-pointer shrink-0"
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </button>
+
+              <div className="flex items-center gap-1 bg-[#F1F5F9] p-0.5 rounded-lg shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("overview")}
+                  className={`text-xs font-semibold py-1 px-2.5 rounded-md transition-colors ${
+                    activeTab === "overview"
+                      ? "text-[#2563EB] bg-white shadow-xs font-bold"
+                      : "text-[#64748B] hover:text-[#0F172A]"
+                  }`}
+                >
+                  Overview
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab("company");
+                    document.getElementById("company-section")?.scrollIntoView({ behavior: "smooth" });
+                  }}
+                  className={`text-xs font-semibold py-1 px-2.5 rounded-md transition-colors ${
+                    activeTab === "company"
+                      ? "text-[#2563EB] bg-white shadow-xs font-bold"
+                      : "text-[#64748B] hover:text-[#0F172A]"
+                  }`}
+                >
+                  Company
+                </button>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleShare}
+              data-testid="mobile-header-share-button"
+              aria-label="Share position"
+              className="w-8 h-8 min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg text-[#475569] hover:bg-slate-100 transition-colors cursor-pointer shrink-0"
+            >
+              <Share2 className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Row 2: logo, Hide, Heart and Apply on the right */}
+          <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-[#F1F5F9] min-w-0">
+            <div className="flex items-center gap-2 min-w-0">
+              <CompanyLogo
+                company={job.company}
+                applyUrl={job.applyUrl}
+                className="w-7 h-7 rounded-lg object-contain p-0.5 border border-[#E2E8F0] bg-white shrink-0"
+              />
+              <span className={`text-xs font-bold text-[#0F172A] truncate max-w-[120px] ${!isUnlocked ? "filter blur-[3.5px] select-none" : ""}`}>
+                {job.company || "Verified Employer"}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              {onHide && (
+                <button
+                  type="button"
+                  onClick={onHide}
+                  aria-label="Hide position"
+                  title="Hide position"
+                  className="w-8 h-8 min-h-[36px] min-w-[36px] flex items-center justify-center rounded-full border border-[#E2E8F0] bg-[#F1F5F9] text-[#475569] hover:bg-[#E2E8F0] transition cursor-pointer"
+                >
+                  <Ban className="w-3.5 h-3.5" />
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={onSave}
+                aria-label={isSaved ? "Unlike job" : "Save job"}
+                className={`w-8 h-8 min-h-[36px] min-w-[36px] flex items-center justify-center rounded-full border transition cursor-pointer ${
+                  isSaved
+                    ? "border-rose-200 bg-rose-50 text-rose-600"
+                    : "border-[#E2E8F0] bg-[#F1F5F9] text-[#475569] hover:bg-[#E2E8F0]"
+                }`}
+              >
+                <Heart className={`w-3.5 h-3.5 ${isSaved ? "fill-rose-500 text-rose-500" : ""}`} />
+              </button>
+
+              {isUnlocked && job.applyUrl ? (
+                <a
+                  href={job.applyUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={onApply}
+                  className="inline-flex items-center gap-1 px-3.5 py-1.5 min-h-[36px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-xs font-bold transition shadow-none cursor-pointer shrink-0"
+                >
+                  <span>Apply</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              ) : (
+                <button
+                  type="button"
+                  onClick={onApply}
+                  className="inline-flex items-center gap-1 px-3.5 py-1.5 min-h-[36px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-xs font-bold transition shadow-none cursor-pointer shrink-0"
+                >
+                  {!isUnlocked && <Lock className="w-3 h-3" />}
+                  <span>Apply</span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -635,31 +747,31 @@ export default function JobDetailView({
               Match Score
             </div>
             <div className="grid grid-cols-4 gap-2">
-              <div className="p-2.5 rounded-xl bg-emerald-50/70 border border-emerald-200 text-center space-y-0.5">
+              <div className="p-2 sm:p-2.5 rounded-xl bg-emerald-50/70 border border-emerald-200 text-center space-y-0.5 min-w-0">
                 <div className="text-base font-black text-[#0F172A]">
                   {isUnlocked ? `${matchScore}%` : "••%"}
                 </div>
-                <div className="text-[10px] font-bold text-emerald-800 uppercase tracking-tight truncate">
+                <div className="text-[9px] sm:text-[10px] font-bold text-emerald-800 uppercase tracking-tight leading-tight break-words line-clamp-2">
                   {isUnlocked ? matchLabel : "Match"}
                 </div>
               </div>
-              <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-center space-y-0.5">
+              <div className="p-2 sm:p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-center space-y-0.5 min-w-0">
                 <div className="text-base font-bold text-[#0F172A]">
                   {isUnlocked ? (expSubScore !== null ? `${expSubScore}%` : "—") : "••%"}
                 </div>
-                <div className="text-[10px] text-[#64748B] leading-tight truncate">Experience</div>
+                <div className="text-[9px] sm:text-[10px] text-[#64748B] leading-tight break-words truncate">Experience</div>
               </div>
-              <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-center space-y-0.5">
+              <div className="p-2 sm:p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-center space-y-0.5 min-w-0">
                 <div className="text-base font-bold text-[#0F172A]">
                   {isUnlocked ? (skillSubScore !== null ? `${skillSubScore}%` : "—") : "••%"}
                 </div>
-                <div className="text-[10px] text-[#64748B] leading-tight truncate">Skill</div>
+                <div className="text-[9px] sm:text-[10px] text-[#64748B] leading-tight break-words truncate">Skill</div>
               </div>
-              <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-center space-y-0.5">
+              <div className="p-2 sm:p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-center space-y-0.5 min-w-0">
                 <div className="text-base font-bold text-[#0F172A]">
                   {isUnlocked ? (industrySubScore !== null ? `${industrySubScore}%` : "—") : "••%"}
                 </div>
-                <div className="text-[10px] text-[#64748B] leading-tight truncate">Industry</div>
+                <div className="text-[9px] sm:text-[10px] text-[#64748B] leading-tight break-words truncate">Industry</div>
               </div>
             </div>
           </div>

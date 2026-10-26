@@ -25,6 +25,8 @@ function run() {
     detailCode = detailCode.replace(/Company/g, "BadTab2");
     detailCode = detailCode.replace(/const isUnlocked = isPro && !job.proUnlockError;/g, "const isUnlocked = false;");
     detailCode = detailCode.replace(/lg:grid-cols-12/g, "block");
+    detailCode = detailCode.replace(/mobile-sticky-header-strip/g, "bad-strip");
+    detailCode = detailCode.replace(/sanitizeExternalUrl\(rawWebsite\)/g, "rawWebsite");
   }
 
   const failures: string[] = [];
@@ -113,18 +115,47 @@ function run() {
     console.log("  [PASS] unlock logic: preserves isUnlocked (isPro && !job.proUnlockError), error retry banner, and onRetryUnlock prop");
   }
 
-  // 7. Mobile Compact Cards in One Row
+  // 7. Mobile Compact Cards in One Row with Non-Truncated Label
   const hasMobileMatchRow =
     detailCode.includes("grid-cols-4 gap-2") &&
-    detailCode.includes("Match Score");
+    detailCode.includes("Match Score") &&
+    detailCode.includes("text-[9px]") &&
+    detailCode.includes("line-clamp-2");
 
   if (!hasMobileMatchRow) {
-    failures.push("MOBILE MATCH ROW FAIL: Mobile must render match score as compact cards in one row (grid-cols-4 gap-2).");
+    failures.push("MOBILE MATCH ROW FAIL: Mobile must render match score as compact cards in one row (grid-cols-4 gap-2) with wrap-friendly font (text-[9px] line-clamp-2).");
   } else {
-    console.log("  [PASS] mobile match layout: match scores rendered as compact cards in one row on mobile");
+    console.log("  [PASS] mobile match layout: match scores rendered in one row with wrap-friendly text so labels are not truncated");
   }
 
-  // 8. Prohibited Terms & Data Blocks We Do Not Have
+  // 8. Mobile Two-Row Sticky Strip
+  const hasMobileTwoRowStrip =
+    detailCode.includes('data-testid="mobile-sticky-header-strip"') &&
+    detailCode.includes("md:hidden flex flex-col gap-2") &&
+    detailCode.includes("Overview") &&
+    detailCode.includes("Company") &&
+    detailCode.includes("mobile-header-share-button");
+
+  if (!hasMobileTwoRowStrip) {
+    failures.push("MOBILE TWO-ROW STRIP FAIL: Mobile header must use a two-row sticky strip (Row 1 = Back, Overview/Company tabs, Share; Row 2 = logo, Hide, Heart, Apply).");
+  } else {
+    console.log("  [PASS] mobile two-row strip: two rows on mobile with full Overview/Company tabs, Share, and row 2 action buttons");
+  }
+
+  // 9. Sanitized Company Website URL
+  const { sanitizeExternalUrl } = require("../src/lib/security/xss");
+  const hasSanitizedWebsite =
+    detailCode.includes("sanitizeExternalUrl(rawWebsite)") &&
+    sanitizeExternalUrl("javascript:alert(1)") === null &&
+    sanitizeExternalUrl("https://careermonke.com") === "https://careermonke.com/";
+
+  if (!hasSanitizedWebsite) {
+    failures.push("SANITIZED WEBSITE FAIL: Company website must be wrapped with sanitizeExternalUrl and reject javascript: URLs.");
+  } else {
+    console.log("  [PASS] sanitized company website: wrapped with sanitizeExternalUrl; javascript: URLs rejected");
+  }
+
+  // 10. Prohibited Terms & Data Blocks We Do Not Have
   const prohibitedTerms = [
     /jobright/i,
     /coaching/i,
