@@ -69,8 +69,13 @@ export interface SourceBackfillStats {
   wouldFill: number;
   noSalary: number;
   minGreaterThanMax: number;
+  unsetPeriodSmallCount: number;
+  largeSalaryMaxCount: number;
+  skippedSuspiciousCount: number;
   samples: SampleSalary[];
   invalidRanges: InvalidSalaryRange[];
+  unsetPeriodSmallSamples: SampleSalary[];
+  largeSalaryMaxSamples: SampleSalary[];
 }
 
 export interface BackfillReport {
@@ -79,9 +84,14 @@ export interface BackfillReport {
   totalWouldFill: number;
   totalNoSalary: number;
   totalMinGreaterThanMax: number;
+  totalUnsetPeriodSmall: number;
+  totalLargeSalaryMax: number;
+  totalSkippedSuspicious: number;
   candidatesToUpdate: SalaryUpdateCandidate[];
   samples: SampleSalary[];
   invalidRanges: InvalidSalaryRange[];
+  unsetPeriodSmallSamples: SampleSalary[];
+  largeSalaryMaxSamples: SampleSalary[];
 }
 
 /**
@@ -119,7 +129,8 @@ export function buildUpdatePayload(candidate: SalaryUpdateCandidate): SalaryFiel
  */
 export function evaluateBackfillCandidates(
   existingJobs: ExistingJobRecord[],
-  reFetchedJobs: NormalizedJob[]
+  reFetchedJobs: NormalizedJob[],
+  options?: { skipSuspicious?: boolean }
 ): BackfillReport {
   const sources: SupportedSource[] = ['greenhouse', 'ashby', 'lever'];
   const statsBySource: Record<string, SourceBackfillStats> = {};
@@ -131,8 +142,13 @@ export function evaluateBackfillCandidates(
       wouldFill: 0,
       noSalary: 0,
       minGreaterThanMax: 0,
+      unsetPeriodSmallCount: 0,
+      largeSalaryMaxCount: 0,
+      skippedSuspiciousCount: 0,
       samples: [],
       invalidRanges: [],
+      unsetPeriodSmallSamples: [],
+      largeSalaryMaxSamples: [],
     };
   }
 
@@ -147,6 +163,8 @@ export function evaluateBackfillCandidates(
   const candidatesToUpdate: SalaryUpdateCandidate[] = [];
   const allSamples: SampleSalary[] = [];
   const allInvalidRanges: InvalidSalaryRange[] = [];
+  const allUnsetPeriodSmallSamples: SampleSalary[] = [];
+  const allLargeSalaryMaxSamples: SampleSalary[] = [];
 
   for (const existing of existingJobs) {
     const src = (existing.source || '').toLowerCase() as SupportedSource;
@@ -157,8 +175,13 @@ export function evaluateBackfillCandidates(
         wouldFill: 0,
         noSalary: 0,
         minGreaterThanMax: 0,
+        unsetPeriodSmallCount: 0,
+        largeSalaryMaxCount: 0,
+        skippedSuspiciousCount: 0,
         samples: [],
         invalidRanges: [],
+        unsetPeriodSmallSamples: [],
+        largeSalaryMaxSamples: [],
       };
     }
     const stat = statsBySource[src];
@@ -213,27 +236,61 @@ export function evaluateBackfillCandidates(
         allSamples.push(sample);
       }
 
-      candidatesToUpdate.push({
-        id: existing.id,
-        source: src,
-        source_job_id: existing.source_job_id,
-        company: existing.company || remote?.company || 'Unknown',
-        title: existing.title || remote?.title || 'Unknown',
-        existing: {
-          salary_min: existing.salary_min,
-          salary_max: existing.salary_max,
-          salary_text: existing.salary_text,
-          currency: existing.currency,
-          salary_period: existing.salary_period,
-        },
-        computed: {
-          salary_min: computedMin,
-          salary_max: computedMax,
-          salary_text: computedText,
-          currency: computedCurrency,
-          salary_period: computedPeriod,
-        },
-      });
+      // Suspicious Category A: computed period unset AND (salary_min < 1000 or salary_max < 1000)
+      const isUnsetSmall =
+        computedPeriod == null &&
+        ((computedMin != null && computedMin < 1000) ||
+          (computedMax != null && computedMax < 1000));
+
+      if (isUnsetSmall) {
+        stat.unsetPeriodSmallCount++;
+        if (stat.unsetPeriodSmallSamples.length < 10) {
+          stat.unsetPeriodSmallSamples.push(sample);
+        }
+        if (allUnsetPeriodSmallSamples.length < 10) {
+          allUnsetPeriodSmallSamples.push(sample);
+        }
+      }
+
+      // Suspicious Category B: salary_max > 2,000,000
+      const isLargeSalary = computedMax != null && computedMax > 2000000;
+      if (isLargeSalary) {
+        stat.largeSalaryMaxCount++;
+        if (stat.largeSalaryMaxSamples.length < 10) {
+          stat.largeSalaryMaxSamples.push(sample);
+        }
+        if (allLargeSalaryMaxSamples.length < 10) {
+          allLargeSalaryMaxSamples.push(sample);
+        }
+      }
+
+      // If --skip-suspicious is active, exclude both groups from candidatesToUpdate
+      const isSuspicious = isUnsetSmall || isLargeSalary;
+      if (options?.skipSuspicious && isSuspicious) {
+        stat.skippedSuspiciousCount++;
+      } else {
+        candidatesToUpdate.push({
+          id: existing.id,
+          source: src,
+          source_job_id: existing.source_job_id,
+          company: existing.company || remote?.company || 'Unknown',
+          title: existing.title || remote?.title || 'Unknown',
+          existing: {
+            salary_min: existing.salary_min,
+            salary_max: existing.salary_max,
+            salary_text: existing.salary_text,
+            currency: existing.currency,
+            salary_period: existing.salary_period,
+          },
+          computed: {
+            salary_min: computedMin,
+            salary_max: computedMax,
+            salary_text: computedText,
+            currency: computedCurrency,
+            salary_period: computedPeriod,
+          },
+        });
+      }
     } else {
       stat.noSalary++;
     }
@@ -243,12 +300,18 @@ export function evaluateBackfillCandidates(
   let totalWouldFill = 0;
   let totalNoSalary = 0;
   let totalMinGreaterThanMax = 0;
+  let totalUnsetPeriodSmall = 0;
+  let totalLargeSalaryMax = 0;
+  let totalSkippedSuspicious = 0;
 
   for (const s of Object.values(statsBySource)) {
     totalAlreadyPopulated += s.alreadyPopulated;
     totalWouldFill += s.wouldFill;
     totalNoSalary += s.noSalary;
     totalMinGreaterThanMax += s.minGreaterThanMax;
+    totalUnsetPeriodSmall += s.unsetPeriodSmallCount;
+    totalLargeSalaryMax += s.largeSalaryMaxCount;
+    totalSkippedSuspicious += s.skippedSuspiciousCount;
   }
 
   return {
@@ -257,9 +320,14 @@ export function evaluateBackfillCandidates(
     totalWouldFill,
     totalNoSalary,
     totalMinGreaterThanMax,
+    totalUnsetPeriodSmall,
+    totalLargeSalaryMax,
+    totalSkippedSuspicious,
     candidatesToUpdate,
     samples: allSamples,
     invalidRanges: allInvalidRanges,
+    unsetPeriodSmallSamples: allUnsetPeriodSmallSamples,
+    largeSalaryMaxSamples: allLargeSalaryMaxSamples,
   };
 }
 
@@ -470,8 +538,8 @@ export async function restoreFromCsv(
     throw new Error('Supabase client unavailable. Missing credentials.');
   }
 
-  // Restore in batches of 200
-  const BATCH_SIZE = 200;
+  // Restore in batches of 25 to avoid socket saturation
+  const BATCH_SIZE = 25;
   for (let i = 0; i < records.length; i += BATCH_SIZE) {
     const batch = records.slice(i, i + BATCH_SIZE);
     for (const record of batch) {
@@ -563,6 +631,7 @@ export function loadSourcesForBackfill(customConfigPath?: string): SourceConfig[
  */
 export async function runSalaryBackfill(options?: {
   isApply?: boolean;
+  skipSuspicious?: boolean;
   sourceFilter?: string;
   configPath?: string;
   limit?: number;
@@ -571,11 +640,18 @@ export async function runSalaryBackfill(options?: {
   supabaseClient?: SupabaseClient | null;
 }): Promise<BackfillReport> {
   const isApply = options?.isApply ?? false;
+  // --skip-suspicious is only effective with --apply
+  const skipSuspicious = isApply && (options?.skipSuspicious ?? false);
+
   console.log('================================================================================');
   console.log(`   CAREERMONKE SALARY BACKFILL RUNNER [MODE: ${isApply ? 'LIVE APPLY' : 'DRY-RUN'}]`);
   console.log('================================================================================');
   console.log(`Safety Protocol: UPDATE only salary fields WHERE salary_min IS NULL.`);
-  console.log(`Guaranteed: Never touches non-salary columns. Never overwrites existing data with null.\n`);
+  console.log(`Guaranteed: Never touches non-salary columns. Never overwrites existing data with null.`);
+  if (skipSuspicious) {
+    console.log(`Filter: --skip-suspicious enabled. Excluded rows with unset period < 1000 or salary_max > 2,000,000.`);
+  }
+  console.log('');
 
   let existingJobs: ExistingJobRecord[] = [];
   let reFetchedJobs: NormalizedJob[] = [];
@@ -646,24 +722,31 @@ export async function runSalaryBackfill(options?: {
   }
 
   // Evaluate candidates
-  const report = evaluateBackfillCandidates(existingJobs, reFetchedJobs);
+  const report = evaluateBackfillCandidates(existingJobs, reFetchedJobs, { skipSuspicious });
 
   // Print Summary Table
   console.log('\n--- SALARY BACKFILL EVALUATION SUMMARY ---');
-  console.log('Source        | Would-Fill | Already-Populated | No-Salary | Min > Max');
-  console.log('--------------+------------+-------------------+-----------+----------');
+  console.log('Source        | Would-Fill | Already-Populated | No-Salary | Min > Max | Unset Period <1k | Max > $2M');
+  console.log('--------------+------------+-------------------+-----------+-----------+------------------+----------');
   for (const src of ['greenhouse', 'ashby', 'lever']) {
-    const s = report.statsBySource[src] || { wouldFill: 0, alreadyPopulated: 0, noSalary: 0, minGreaterThanMax: 0 };
+    const s = report.statsBySource[src] || {
+      wouldFill: 0,
+      alreadyPopulated: 0,
+      noSalary: 0,
+      minGreaterThanMax: 0,
+      unsetPeriodSmallCount: 0,
+      largeSalaryMaxCount: 0,
+    };
     console.log(
-      `${s.source.padEnd(13)} | ${String(s.wouldFill).padStart(10)} | ${String(s.alreadyPopulated).padStart(17)} | ${String(s.noSalary).padStart(9)} | ${String(s.minGreaterThanMax).padStart(9)}`
+      `${s.source.padEnd(13)} | ${String(s.wouldFill).padStart(10)} | ${String(s.alreadyPopulated).padStart(17)} | ${String(s.noSalary).padStart(9)} | ${String(s.minGreaterThanMax).padStart(9)} | ${String(s.unsetPeriodSmallCount).padStart(16)} | ${String(s.largeSalaryMaxCount).padStart(9)}`
     );
   }
-  console.log('--------------+------------+-------------------+-----------+----------');
+  console.log('--------------+------------+-------------------+-----------+-----------+------------------+----------');
   console.log(
-    `TOTAL         | ${String(report.totalWouldFill).padStart(10)} | ${String(report.totalAlreadyPopulated).padStart(17)} | ${String(report.totalNoSalary).padStart(9)} | ${String(report.totalMinGreaterThanMax).padStart(9)}\n`
+    `TOTAL         | ${String(report.totalWouldFill).padStart(10)} | ${String(report.totalAlreadyPopulated).padStart(17)} | ${String(report.totalNoSalary).padStart(9)} | ${String(report.totalMinGreaterThanMax).padStart(9)} | ${String(report.totalUnsetPeriodSmall).padStart(16)} | ${String(report.totalLargeSalaryMax).padStart(9)}\n`
   );
 
-  // Print 10 Samples
+  // Print 10 Samples (Standard)
   console.log(`--- 10 SAMPLE PARSED SALARIES (${report.samples.length} collected) ---`);
   report.samples.slice(0, 10).forEach((sample, idx) => {
     console.log(
@@ -673,6 +756,32 @@ export async function runSalaryBackfill(options?: {
   });
   if (report.samples.length === 0) {
     console.log('  (No parsed salary samples found in current evaluation slice)');
+  }
+
+  // Print 10 Samples: Unset Period with Small Figure (< 1000)
+  console.log(`\n--- 10 SAMPLES: UNSET PERIOD WITH SMALL FIGURE (< 1000 / likely hourly) (${report.unsetPeriodSmallSamples.length} collected) ---`);
+  if (report.unsetPeriodSmallSamples.length > 0) {
+    report.unsetPeriodSmallSamples.slice(0, 10).forEach((sample, idx) => {
+      console.log(
+        ` ${idx + 1}. [${sample.source.toUpperCase()}] ${sample.company} — "${sample.title}": ${sample.salary_text || 'No text'} ` +
+        `(min: ${sample.salary_min}, max: ${sample.salary_max}, curr: ${sample.currency}, period: ${sample.salary_period})`
+      );
+    });
+  } else {
+    console.log('  (Zero unset-period small figure rows detected)');
+  }
+
+  // Print 10 Samples: Large Salary Max (> 2,000,000)
+  console.log(`\n--- 10 SAMPLES: LARGE SALARY MAX (> $2,000,000) (${report.largeSalaryMaxSamples.length} collected) ---`);
+  if (report.largeSalaryMaxSamples.length > 0) {
+    report.largeSalaryMaxSamples.slice(0, 10).forEach((sample, idx) => {
+      console.log(
+        ` ${idx + 1}. [${sample.source.toUpperCase()}] ${sample.company} — "${sample.title}": ${sample.salary_text || 'No text'} ` +
+        `(min: ${sample.salary_min}, max: ${sample.salary_max}, curr: ${sample.currency}, period: ${sample.salary_period})`
+      );
+    });
+  } else {
+    console.log('  (Zero large salary max (> $2,000,000) rows detected)');
   }
 
   // Print any Min > Max cases
@@ -696,6 +805,10 @@ export async function runSalaryBackfill(options?: {
 
   // Apply Phase (Only when explicit --apply flag is provided)
   if (isApply) {
+    if (skipSuspicious) {
+      console.log(`\n[--skip-suspicious ACTIVE] Excluded ${report.totalSkippedSuspicious} suspicious rows (unset period < 1000 or salary_max > $2M) from update candidates.`);
+    }
+
     if (report.candidatesToUpdate.length === 0) {
       console.log('\nNo candidates qualify for update. Exiting apply phase.');
       return report;
@@ -706,14 +819,14 @@ export async function runSalaryBackfill(options?: {
     const backup = createCsvBackup(report.candidatesToUpdate);
     console.log(`✅ Backup successfully saved to: ${backup.filePath}`);
 
-    // Step 2: Perform batch updates in chunks of 200
+    // Step 2: Perform batch updates in chunks of 25 (throttled to avoid socket saturation)
     const supabase = options?.supabaseClient || getSupabaseClient();
     if (!supabase) {
       throw new Error('Supabase client unavailable for apply phase.');
     }
 
-    console.log(`\n[STEP 2] Updating ${report.candidatesToUpdate.length} rows in batches of 200...`);
-    const BATCH_SIZE = 200;
+    console.log(`\n[STEP 2] Updating ${report.candidatesToUpdate.length} rows in parallel batches of 25...`);
+    const BATCH_SIZE = 25;
     let updatedCount = 0;
     let failedCount = 0;
 
@@ -755,6 +868,7 @@ const scriptName = process.argv[1] ? path.basename(process.argv[1]) : '';
 if (scriptName === 'backfill-salaries.ts' || scriptName === 'backfill-salaries.js') {
   const args = process.argv.slice(2);
   const isApply = args.includes('--apply');
+  const skipSuspicious = args.includes('--skip-suspicious');
   const restoreIdx = args.findIndex((a) => a === '--restore');
   const restoreFile = restoreIdx !== -1 && args[restoreIdx + 1] ? args[restoreIdx + 1] : null;
   const sourceIdx = args.findIndex((a) => a === '--source');
@@ -775,7 +889,7 @@ if (scriptName === 'backfill-salaries.ts' || scriptName === 'backfill-salaries.j
         process.exit(1);
       });
   } else {
-    runSalaryBackfill({ isApply, sourceFilter, configPath, limit })
+    runSalaryBackfill({ isApply, skipSuspicious, sourceFilter, configPath, limit })
       .then(() => process.exit(0))
       .catch((err) => {
         console.error('Fatal backfill failure:', err);
