@@ -200,7 +200,13 @@ const mockDbJobs = mockJobs.map((j) => ({
 }));
 
 async function setupPageMocks(page, options = {}) {
-  const { isSigned = true, isPro = true, cookieNotice = false, initialApplications } = options;
+  const {
+    isSigned = true,
+    isPro = true,
+    cookieNotice = false,
+    initialApplications,
+    wrongAuthCookie = false,
+  } = options;
 
   // Isolated per-page record store modeling real record IDs, user/job matching, notes, and stages
   const applicationsStore = (initialApplications
@@ -664,18 +670,37 @@ async function setupPageMocks(page, options = {}) {
       "sb-auth-token"
     ]));
 
-    for (const prefix of prefixes) {
-      const cookieChunks = ssr.createChunks(
-        prefix,
-        "base64-" + ssr.stringToBase64URL(JSON.stringify(sampleSession))
-      );
-      for (const chunk of cookieChunks) {
+    if (wrongAuthCookie) {
+      // Intentionally set invalid / wrong auth cookie chunks for negative control verification
+      const wrongCookieVal = "base64-eyJpbnZhbGlkIjoid3JvbmctYXV0aC1jb29raWUifQ.corrupted_sig";
+      for (const prefix of prefixes) {
         await page.setCookie({
-          name: chunk.name,
-          value: chunk.value,
+          name: `${prefix}.0`,
+          value: wrongCookieVal,
           domain: "localhost",
           path: "/",
         });
+        await page.setCookie({
+          name: prefix,
+          value: wrongCookieVal,
+          domain: "localhost",
+          path: "/",
+        });
+      }
+    } else {
+      for (const prefix of prefixes) {
+        const cookieChunks = ssr.createChunks(
+          prefix,
+          "base64-" + ssr.stringToBase64URL(JSON.stringify(sampleSession))
+        );
+        for (const chunk of cookieChunks) {
+          await page.setCookie({
+            name: chunk.name,
+            value: chunk.value,
+            domain: "localhost",
+            path: "/",
+          });
+        }
       }
     }
 
@@ -791,6 +816,74 @@ function getContrastRatio(rgb1, rgb2) {
   return (brightest + 0.05) / (darkest + 0.05);
 }
 
+/**
+ * Validates a Supabase SSR auth cookie array against project ref and session payload structure.
+ * Returns { valid: true, user } if session is valid; { valid: false, reason } on any defect.
+ */
+function validateAuthSessionCookie(cookies, projectRef) {
+  const ref = projectRef || (process.env.NEXT_PUBLIC_SUPABASE_URL || "szakevhxhwpeskidvtfs").replace(/^https?:\/\//, "").split(".")[0];
+  const expectedPrefix = `sb-${ref}-auth-token`;
+
+  const relevant = (cookies || []).filter(
+    (c) => c && c.name && (c.name === expectedPrefix || c.name.startsWith(`${expectedPrefix}.`))
+  );
+
+  if (relevant.length === 0) {
+    return { valid: false, reason: `No auth cookie found matching prefix '${expectedPrefix}'` };
+  }
+
+  // Sort chunked cookies: sb-*-auth-token.0, sb-*-auth-token.1
+  relevant.sort((a, b) => {
+    const aIdx = a.name.includes(".") ? parseInt(a.name.split(".").pop(), 10) : 0;
+    const bIdx = b.name.includes(".") ? parseInt(b.name.split(".").pop(), 10) : 0;
+    return aIdx - bIdx;
+  });
+
+  const combinedValue = relevant.map((c) => c.value).join("");
+  if (!combinedValue.startsWith("base64-")) {
+    return { valid: false, reason: "Auth cookie value missing 'base64-' prefix" };
+  }
+
+  let sessionJson;
+  try {
+    const b64 = combinedValue.slice(7);
+    const decoded = Buffer.from(b64, "base64url").toString("utf8");
+    sessionJson = JSON.parse(decoded);
+  } catch (err) {
+    return { valid: false, reason: `Malformed base64/JSON in auth cookie: ${err.message}` };
+  }
+
+  if (!sessionJson || typeof sessionJson !== "object") {
+    return { valid: false, reason: "Decoded session payload is not an object" };
+  }
+
+  if (!sessionJson.access_token || typeof sessionJson.access_token !== "string") {
+    return { valid: false, reason: "Missing or invalid access_token in session" };
+  }
+
+  // Validate 3-part JWT structure
+  const jwtParts = sessionJson.access_token.split(".");
+  if (jwtParts.length !== 3) {
+    return { valid: false, reason: "access_token is not a valid 3-part JWT" };
+  }
+
+  // Validate JWT payload expiration and user
+  try {
+    const payload = JSON.parse(Buffer.from(jwtParts[1], "base64url").toString("utf8"));
+    if (payload.exp && payload.exp < Date.now() / 1000) {
+      return { valid: false, reason: "access_token is expired" };
+    }
+  } catch {
+    return { valid: false, reason: "access_token payload is not valid base64url JSON" };
+  }
+
+  if (!sessionJson.user || !sessionJson.user.id) {
+    return { valid: false, reason: "Session object missing user or user.id" };
+  }
+
+  return { valid: true, user: sessionJson.user };
+}
+
 module.exports = {
   PORT,
   OUT_DIR,
@@ -801,4 +894,147 @@ module.exports = {
   getLuminance,
   parseRgb,
   getContrastRatio,
+  validateAuthSessionCookie,
+  sampleSession,
+  validJwt,
 };
+
+// ---------------------------------------------------------------------------
+// Standalone Auth Cookie Verification & Negative Control Runner
+// ---------------------------------------------------------------------------
+const isNegativeControl = process.argv.includes("--negative-control");
+
+function runAuthCookieVerification() {
+  const assert = require("assert");
+
+  console.log("================================================================================");
+  console.log("      CAREERMONKE PROMPT 5 BASE - AUTH COOKIE VALIDATION & NEGATIVE CONTROL     ");
+  console.log("================================================================================\n");
+
+  if (isNegativeControl) {
+    console.log("[NEGATIVE CONTROL MODE] Proving assertions fail with non-zero exit when auth cookie is wrong...");
+    const wrongCookies = [
+      { name: "sb-szakevhxhwpeskidvtfs-auth-token", value: "base64-invalid-wrong-token-signature" },
+    ];
+    const result = validateAuthSessionCookie(wrongCookies, "szakevhxhwpeskidvtfs");
+
+    // Deliberately assert that the wrong cookie is valid — MUST throw AssertionError and exit non-zero
+    assert.strictEqual(
+      result.valid,
+      true,
+      "Negative control expected mismatch: wrong auth cookie must NEVER be accepted as valid session!"
+    );
+    return;
+  }
+
+  // 1. Valid Session Cookies
+  console.log("Test 1: Verifying valid Supabase session cookies pass validation...");
+  const validChunks = ssr.createChunks(
+    "sb-szakevhxhwpeskidvtfs-auth-token",
+    "base64-" + ssr.stringToBase64URL(JSON.stringify(sampleSession))
+  );
+  const validResult = validateAuthSessionCookie(validChunks, "szakevhxhwpeskidvtfs");
+  assert.strictEqual(validResult.valid, true, "Valid session cookie chunks must pass validation");
+  assert.strictEqual(validResult.user.id, "usr_mock_123", "User ID must match sample session");
+  console.log("  -> [PASS-LOCAL] Valid session correctly parsed and verified.");
+
+  // 2. Wrong Auth Cookies
+  console.log("\nTest 2: Verifying wrong / corrupted auth cookies are rejected...");
+  const wrongCookieScenarios = [
+    {
+      name: "Corrupted base64 payload",
+      cookies: [{ name: "sb-szakevhxhwpeskidvtfs-auth-token", value: "base64-NOT-VALID-BASE64!@#" }],
+    },
+    {
+      name: "Invalid JWT token structure",
+      cookies: [
+        {
+          name: "sb-szakevhxhwpeskidvtfs-auth-token",
+          value:
+            "base64-" +
+            Buffer.from(JSON.stringify({ access_token: "not-a-jwt", user: { id: "usr_mock_123" } })).toString(
+              "base64url"
+            ),
+        },
+      ],
+    },
+    {
+      name: "Expired JWT token",
+      cookies: [
+        {
+          name: "sb-szakevhxhwpeskidvtfs-auth-token",
+          value:
+            "base64-" +
+            Buffer.from(
+              JSON.stringify({
+                access_token:
+                  "eyJhbGciOiJIUzI1NiJ9." +
+                  Buffer.from(JSON.stringify({ exp: 1000000000 })).toString("base64url") +
+                  ".sig",
+                user: { id: "usr_mock_123" },
+              })
+            ).toString("base64url"),
+        },
+      ],
+    },
+    {
+      name: "Wrong project ref prefix",
+      cookies: [
+        {
+          name: "sb-wrongproject-auth-token",
+          value: "base64-" + ssr.stringToBase64URL(JSON.stringify(sampleSession)),
+        },
+      ],
+    },
+    {
+      name: "Missing user object",
+      cookies: [
+        {
+          name: "sb-szakevhxhwpeskidvtfs-auth-token",
+          value: "base64-" + Buffer.from(JSON.stringify({ access_token: validJwt })).toString("base64url"),
+        },
+      ],
+    },
+    {
+      name: "Empty cookies array",
+      cookies: [],
+    },
+  ];
+
+  for (const sc of wrongCookieScenarios) {
+    const res = validateAuthSessionCookie(sc.cookies, "szakevhxhwpeskidvtfs");
+    assert.strictEqual(
+      res.valid,
+      false,
+      `Scenario '${sc.name}' must fail validation, but unexpectedly passed!`
+    );
+    console.log(`  -> [PASS-LOCAL] Wrong cookie scenario '${sc.name}' correctly rejected: ${res.reason}`);
+  }
+
+  // 3. Negative Control Proof via Subprocess
+  console.log("\nTest 3: Confirming negative control fails with non-zero exit when auth cookie is wrong...");
+  const { spawnSync } = require("child_process");
+  const negResult = spawnSync(process.execPath, [__filename, "--negative-control"], {
+    encoding: "utf-8",
+    env: process.env,
+  });
+
+  assert.notStrictEqual(
+    negResult.status,
+    0,
+    "Negative control MUST exit with non-zero exit code when wrong auth cookie is asserted valid!"
+  );
+  assert.ok(
+    negResult.stderr.includes("AssertionError") || negResult.stderr.includes("Negative control expected mismatch"),
+    `Negative control stderr must contain AssertionError or expected failure message, got:\n${negResult.stderr}`
+  );
+  console.log(`  -> [PASS-LOCAL] Negative control exited non-zero (${negResult.status}) as expected on wrong auth cookie.`);
+
+  console.log("\n================================================================================");
+  console.log("             ALL AUTH COOKIE VERIFICATION TESTS PASSED [PASS-LOCAL]             ");
+  console.log("================================================================================");
+}
+
+if (require.main === module) {
+  runAuthCookieVerification();
+}

@@ -218,6 +218,25 @@ async function runAuthGuardSuite() {
     "/login?returnTo=/dashboard",
     "/signup",
     "/auth/callback",
+    // ASCII control character injection attacks (codes 0 to 31 and 127 in raw or percent-encoded forms)
+    "/%09/evil.com", // Exact user specification: encoded tab
+    "/%00/evil.com",
+    "/%0a/evil.com",
+    "/%0d/evil.com",
+    "/%1f/evil.com",
+    "/%7f/evil.com",
+    "/%7F/evil.com",
+    "/%2509/evil.com",
+    "/\t/evil.com",
+    "/\n/evil.com",
+    "/\r/evil.com",
+    "/\x00/evil.com",
+    "/\x1f/evil.com",
+    "/\x7f/evil.com",
+    "/dashboard\x00extra",
+    "/jobs%09",
+    "/resume%0a",
+    "/tracker%0d",
   ];
 
   for (const attack of openRedirectAttacks) {
@@ -228,7 +247,54 @@ async function runAuthGuardSuite() {
       `Attack string '${String(attack)}' must be rejected and fallback to '/dashboard', got '${validated}'`
     );
   }
-  console.log("  -> [PASS-LOCAL] All 22 open redirect attack vectors neutralized and defaulted to safe fallback.");
+  console.log(`  -> [PASS-LOCAL] All ${openRedirectAttacks.length} open redirect attack vectors neutralized and defaulted to safe fallback.`);
+
+  // ---------------------------------------------------------------------------
+  // TEST 4b: Exhaustive ASCII Control Character Rejection (Codes 0-31 and 127)
+  // ---------------------------------------------------------------------------
+  console.log("\nTest 4b: Exhaustive ASCII control character rejection (codes 0-31 and 127, raw & decoded)...");
+
+  // Verify codes 0 to 31
+  for (let code = 0; code <= 31; code++) {
+    const hexLower = code.toString(16).padStart(2, "0");
+    const hexUpper = hexLower.toUpperCase();
+    const rawChar = String.fromCharCode(code);
+
+    // 1. Raw control character embedded in path
+    const rawTarget = `/${rawChar}/evil.com`;
+    const resRaw = getValidReturnUrl(rawTarget, "/dashboard");
+    assert.strictEqual(
+      resRaw,
+      "/dashboard",
+      `Raw ASCII control code ${code} (${JSON.stringify(rawChar)}) must be rejected and return '/dashboard', got '${resRaw}'`
+    );
+
+    // 2. Percent-encoded lowercase
+    const encodedLower = `/%${hexLower}/evil.com`;
+    const resLower = getValidReturnUrl(encodedLower, "/dashboard");
+    assert.strictEqual(
+      resLower,
+      "/dashboard",
+      `Percent-encoded ASCII control code %${hexLower} must be rejected and return '/dashboard', got '${resLower}'`
+    );
+
+    // 3. Percent-encoded uppercase
+    const encodedUpper = `/%${hexUpper}/evil.com`;
+    const resUpper = getValidReturnUrl(encodedUpper, "/dashboard");
+    assert.strictEqual(
+      resUpper,
+      "/dashboard",
+      `Percent-encoded ASCII control code %${hexUpper} must be rejected and return '/dashboard', got '${resUpper}'`
+    );
+  }
+
+  // Verify code 127 (DEL)
+  const delRaw = String.fromCharCode(127);
+  assert.strictEqual(getValidReturnUrl(`/${delRaw}/evil.com`, "/dashboard"), "/dashboard", "Raw DEL (127) must be rejected");
+  assert.strictEqual(getValidReturnUrl("/%7f/evil.com", "/dashboard"), "/dashboard", "Encoded %7f (127) must be rejected");
+  assert.strictEqual(getValidReturnUrl("/%7F/evil.com", "/dashboard"), "/dashboard", "Encoded %7F (127) must be rejected");
+  assert.strictEqual(getValidReturnUrl("/%2509/evil.com", "/dashboard"), "/dashboard", "Double-encoded tab %2509 must be rejected");
+  console.log("  -> [PASS-LOCAL] All 33 ASCII control character codes (0-31, 127) verified rejected across raw and decoded forms.");
 
   // ---------------------------------------------------------------------------
   // TEST 5: No Fake or LocalStorage Login Flags
