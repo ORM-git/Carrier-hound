@@ -69,7 +69,7 @@ export class GreenhouseAdapter implements SourceAdapter {
         let salaryMin: number | null = null;
         let salaryMax: number | null = null;
         let currency = 'USD';
-        let salaryPeriod: 'yearly' | 'monthly' | 'hourly' = 'yearly';
+        let salaryPeriod: 'yearly' | 'monthly' | 'hourly' | undefined = undefined;
 
         const validRange = Array.isArray(j.pay_input_ranges)
           ? j.pay_input_ranges.find(
@@ -102,18 +102,20 @@ export class GreenhouseAdapter implements SourceAdapter {
             currency = validRange.currency_type.trim().toUpperCase();
           }
 
-          const context = `${validRange.title || ''} ${validRange.blurb || ''}`.toLowerCase();
-          if (/\b(hour|hourly|\/hr)\b/i.test(context)) {
-            salaryPeriod = 'hourly';
-          } else if (/\b(month|monthly|\/mo)\b/i.test(context)) {
-            salaryPeriod = 'monthly';
-          } else if (Math.max(salaryMax || 0, salaryMin || 0) < 1000) {
+          // Greenhouse does not provide a native interval field.
+          // Rule: No period guess from title/blurb text alone.
+          // Infer only when currency is USD and text explicitly says hour.
+          // Otherwise leave period unset (undefined).
+          const context = `${validRange.title || ''} ${validRange.blurb || ''}`;
+          if (currency === 'USD' && /\b(hour|hourly|\/hr)\b/i.test(context)) {
             salaryPeriod = 'hourly';
           } else {
-            salaryPeriod = 'yearly';
+            salaryPeriod = undefined;
           }
 
-          salaryText = formatSalary(salaryMin, salaryMax, currency, salaryPeriod);
+          if (salaryMin != null || salaryMax != null) {
+            salaryText = formatSalary(salaryMin, salaryMax, currency, salaryPeriod);
+          }
         }
 
         // Fallback to description regex parsing if no structured range exists

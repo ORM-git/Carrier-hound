@@ -90,7 +90,7 @@ export class AshbyAdapter implements SourceAdapter {
         let salaryMin: number | null = null;
         let salaryMax: number | null = null;
         let currency = 'USD';
-        let salaryPeriod: 'yearly' | 'monthly' | 'hourly' = 'yearly';
+        let salaryPeriod: 'yearly' | 'monthly' | 'hourly' | undefined = undefined;
 
         if (j.compensation) {
           // 1. Check structured compensation tiers/components
@@ -109,9 +109,8 @@ export class AshbyAdapter implements SourceAdapter {
           const salaryComponent = allComponents.find(
             (c) =>
               c &&
-              (c.compensationType?.toLowerCase() === 'salary' ||
-                ((c.minValue != null || c.maxValue != null) &&
-                  c.compensationType?.toLowerCase() !== 'equitypercentage'))
+              typeof c.compensationType === 'string' &&
+              c.compensationType.trim().toLowerCase() === 'salary'
           );
 
           if (salaryComponent) {
@@ -134,18 +133,27 @@ export class AshbyAdapter implements SourceAdapter {
               currency = salaryComponent.currencyCode.trim().toUpperCase();
             }
 
-            const interval = (salaryComponent.interval || '').toUpperCase();
-            if (interval.includes('HOUR')) {
+            const rawInterval = (salaryComponent.interval || '').toUpperCase();
+            if (rawInterval.includes('HOUR')) {
               salaryPeriod = 'hourly';
-            } else if (interval.includes('MONTH')) {
+            } else if (rawInterval.includes('MONTH')) {
               salaryPeriod = 'monthly';
-            } else if (Math.max(salaryMax || 0, salaryMin || 0) < 1000) {
-              salaryPeriod = 'hourly';
-            } else {
+            } else if (rawInterval.includes('YEAR')) {
               salaryPeriod = 'yearly';
+            } else {
+              // Interval is missing or unmapped
+              // Infer only when currency is USD and text says hour
+              const textContext = `${j.compensation.compensationTierSummary || ''} ${j.compensation.summary || ''} ${j.title || ''}`;
+              if (currency === 'USD' && /\b(hour|hourly|\/hr)\b/i.test(textContext)) {
+                salaryPeriod = 'hourly';
+              } else {
+                salaryPeriod = undefined;
+              }
             }
 
-            salaryText = formatSalary(salaryMin, salaryMax, currency, salaryPeriod);
+            if (salaryMin != null || salaryMax != null) {
+              salaryText = formatSalary(salaryMin, salaryMax, currency, salaryPeriod);
+            }
           }
 
           // 2. If no numeric components found, check compensation summary strings

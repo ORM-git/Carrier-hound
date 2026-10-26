@@ -75,7 +75,7 @@ export class LeverAdapter implements SourceAdapter {
         let salaryMin: number | null = null;
         let salaryMax: number | null = null;
         let currency = 'USD';
-        let salaryPeriod: 'yearly' | 'monthly' | 'hourly' = 'yearly';
+        let salaryPeriod: 'yearly' | 'monthly' | 'hourly' | undefined = undefined;
 
         if (
           j.salaryRange &&
@@ -101,18 +101,27 @@ export class LeverAdapter implements SourceAdapter {
             currency = j.salaryRange.currency.trim().toUpperCase();
           }
 
-          const interval = (j.salaryRange.interval || '').toLowerCase();
-          if (interval.includes('hour') || interval.includes('wage')) {
+          const rawInterval = (j.salaryRange.interval || '').toLowerCase();
+          if (rawInterval.includes('hour') || rawInterval.includes('wage')) {
             salaryPeriod = 'hourly';
-          } else if (interval.includes('month')) {
+          } else if (rawInterval.includes('month')) {
             salaryPeriod = 'monthly';
-          } else if (Math.max(salaryMax || 0, salaryMin || 0) < 1000) {
-            salaryPeriod = 'hourly';
-          } else {
+          } else if (rawInterval.includes('year') || rawInterval.includes('annual')) {
             salaryPeriod = 'yearly';
+          } else {
+            // Interval is missing or unmapped
+            // Infer only when currency is USD and text says hour
+            const textContext = `${j.text || ''}`;
+            if (currency === 'USD' && /\b(hour|hourly|\/hr)\b/i.test(textContext)) {
+              salaryPeriod = 'hourly';
+            } else {
+              salaryPeriod = undefined;
+            }
           }
 
-          salaryText = formatSalary(salaryMin, salaryMax, currency, salaryPeriod);
+          if (salaryMin != null || salaryMax != null) {
+            salaryText = formatSalary(salaryMin, salaryMax, currency, salaryPeriod);
+          }
         }
 
         // Fallback to description regex parsing if no structured salaryRange exists
