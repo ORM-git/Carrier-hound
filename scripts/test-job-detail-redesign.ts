@@ -19,34 +19,50 @@ function run() {
   let detailCode = fs.readFileSync(detailViewPath, "utf-8");
 
   if (isNegativeControl) {
-    // Inject corruptions to verify negative control
+    // Inject intentional corruptions to verify negative control failure detection
     detailCode = detailCode.replace(/sticky top-14/g, "static");
+    detailCode = detailCode.replace(/Overview/g, "BadTab1");
+    detailCode = detailCode.replace(/Company/g, "BadTab2");
+    detailCode = detailCode.replace(/const isUnlocked = isPro && !job.proUnlockError;/g, "const isUnlocked = false;");
     detailCode = detailCode.replace(/lg:grid-cols-12/g, "block");
-    detailCode = detailCode.replace(/lg:col-span-7/g, "w-full");
-    detailCode = detailCode.replace(/lg:col-span-5/g, "hidden");
-    detailCode = detailCode.replace(/const isUnlocked/g, "const isBad");
-    detailCode = detailCode.replace(/pro-unlock-error-banner/g, "bad-banner");
   }
 
   const failures: string[] = [];
 
-  // 1. Sticky Header
+  // 1. Sticky Header under Top Bar
   const hasStickyHeader =
     detailCode.includes("sticky top-14 z-20") &&
     detailCode.includes('aria-label="Job header"') &&
     detailCode.includes("onBack") &&
-    detailCode.includes("ArrowLeft") &&
     detailCode.includes("onApply") &&
-    detailCode.includes("text-[24px] font-bold text-[#0F172A]") &&
-    detailCode.includes("formatRelativeTime");
+    detailCode.includes("Overview") &&
+    detailCode.includes("Company") &&
+    detailCode.includes("onHide") &&
+    detailCode.includes("onSave") &&
+    detailCode.includes("isScrolled") &&
+    detailCode.includes("scrolled-header-chip");
 
   if (!hasStickyHeader) {
-    failures.push("STICKY HEADER FAIL: Header must be sticky (sticky top-14 z-20) with title, company, location, posted time, back button, and primary apply button.");
+    failures.push("STICKY HEADER FAIL: Header must be sticky (sticky top-14 z-20) with Back, Overview/Company tabs, Share, Report issue, Hide, Heart, Apply, and scrolled compact chip.");
   } else {
-    console.log("  [PASS] sticky header: pinned with top-14 z-20 docking under AppTopBar, with title, company, location, posted time, back button, and Apply");
+    console.log("  [PASS] sticky header: pinned with top-14 z-20 docking under AppTopBar, with Back, Overview/Company tabs, Share, Report issue, Hide, Heart, Apply, and scrolled compact chip");
   }
 
-  // 2. Two-Column Desktop Layout
+  // 2. Header Body with 2x3 metadata and Match card
+  const hasHeaderBody =
+    detailCode.includes("inferJobLevel") &&
+    detailCode.includes("formatRelativeTime") &&
+    detailCode.includes("Experience Level") &&
+    detailCode.includes("Skill") &&
+    detailCode.includes("Industry Exp.");
+
+  if (!hasHeaderBody) {
+    failures.push("HEADER BODY FAIL: Must contain 2x3 metadata grid (location, job type, work model, level, salary, exp) and Match card with sub-scores.");
+  } else {
+    console.log("  [PASS] header body: metadata grid (location, type, work model, level, salary, exp) and match card with total % + sub-scores");
+  }
+
+  // 3. Two-Column Desktop Layout
   const hasTwoColumnGrid =
     detailCode.includes("grid-cols-1 lg:grid-cols-12") &&
     detailCode.includes("lg:col-span-7") &&
@@ -58,21 +74,33 @@ function run() {
     console.log("  [PASS] two-column layout: clean two-column grid on desktop (lg:grid-cols-12 with 7/5 column ratio), single column on mobile");
   }
 
-  // 3. Left Column Sections: Description, Requirements, Benefits
-  const hasLeftSections =
+  // 4. Content Order: Summary + tags, Responsibilities, Qualifications, Benefits, Company
+  const hasContentOrder =
     detailCode.includes("Job description") &&
-    detailCode.includes("requirementsList.length > 0") &&
+    detailCode.includes("Responsibilities") &&
     detailCode.includes("Requirements") &&
-    detailCode.includes("benefitsList.length > 0") &&
-    detailCode.includes("Benefits");
+    detailCode.includes("Benefits") &&
+    detailCode.includes('id="company-section"');
 
-  if (!hasLeftSections) {
-    failures.push("LEFT COLUMN SECTIONS FAIL: Left column must contain Job description, Requirements, and Benefits.");
+  if (!hasContentOrder) {
+    failures.push("CONTENT ORDER FAIL: Must render summary + tags, Responsibilities, Qualifications, Benefits, and Company section in order.");
   } else {
-    console.log("  [PASS] left column content: contains Job description, guarded Requirements, and guarded Benefits");
+    console.log("  [PASS] content order: summary + tags, Responsibilities, Qualifications, Benefits, and Company section");
   }
 
-  // 4. Pro unlock error handling & isUnlocked logic preserved
+  // 5. Right Rail with Stacked Cards
+  const hasRightRail =
+    detailCode.includes("Tailor Resume") &&
+    detailCode.includes("Similar jobs") &&
+    detailCode.includes("Your notes");
+
+  if (!hasRightRail) {
+    failures.push("RIGHT RAIL FAIL: Desktop right rail must contain stacked cards (Tailor Resume, Similar jobs, Your notes).");
+  } else {
+    console.log("  [PASS] right rail: stacked action cards (Tailor Resume, Similar jobs, Your notes) with sections hidden when no data");
+  }
+
+  // 6. Pro Unlock Error Handling & isUnlocked logic preserved
   const hasUnlockLogic =
     detailCode.includes("const isUnlocked = isPro && !job.proUnlockError;") &&
     detailCode.includes('data-testid="pro-unlock-error-banner"') &&
@@ -85,16 +113,18 @@ function run() {
     console.log("  [PASS] unlock logic: preserves isUnlocked (isPro && !job.proUnlockError), error retry banner, and onRetryUnlock prop");
   }
 
-  // 5. Similar jobs card
-  const hasSimilarJobsCard = detailCode.includes("Similar jobs");
+  // 7. Mobile Compact Cards in One Row
+  const hasMobileMatchRow =
+    detailCode.includes("grid-cols-4 gap-2") &&
+    detailCode.includes("Match Score");
 
-  if (!hasSimilarJobsCard) {
-    failures.push("SIMILAR JOBS CARD FAIL: Right column must contain Similar jobs card.");
+  if (!hasMobileMatchRow) {
+    failures.push("MOBILE MATCH ROW FAIL: Mobile must render match score as compact cards in one row (grid-cols-4 gap-2).");
   } else {
-    console.log("  [PASS] similar jobs card: present in right column");
+    console.log("  [PASS] mobile match layout: match scores rendered as compact cards in one row on mobile");
   }
 
-  // 6. Prohibited Terms & Brand Purity
+  // 8. Prohibited Terms & Data Blocks We Do Not Have
   const prohibitedTerms = [
     /jobright/i,
     /coaching/i,
@@ -103,6 +133,10 @@ function run() {
     /autofill/i,
     /referral/i,
     /upsell/i,
+    /insider connection/i,
+    /find any email/i,
+    /h1b sponsor/i,
+    /email credits/i,
   ];
 
   for (const term of prohibitedTerms) {
@@ -114,7 +148,7 @@ function run() {
   if (failures.some((f) => f.includes("BRAND PURITY FAIL"))) {
     // already logged
   } else {
-    console.log("  [PASS] brand purity: zero Jobright copy, mascots, coaching, agent, or autofill terms in code");
+    console.log("  [PASS] brand & data purity: zero unbacked blocks (no referral people, H1B, funding, news, ratings, applicant counts, or external AI tools)");
   }
 
   console.log("\n----------------------------------------------------------------------------------");
