@@ -23,7 +23,14 @@ export interface LiveJob {
   description?: string;
   skills?: string[];
   postedAt?: string;
-trackerNotes?: string;
+  trackerNotes?: string;
+  proUnlockError?: ProUnlockError;
+}
+
+export interface ProUnlockError {
+  status?: number;
+  message?: string;
+  isNetworkError?: boolean;
 }
 
 export interface GetJobsOptions {
@@ -612,37 +619,64 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
           const { data: { session } } = await supabase.auth.getSession();
           const token = session?.access_token;
           if (token) {
-            const proRes = await fetch("/api/jobs/pro", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${token}`,
-              },
-              body: JSON.stringify({ ids: mappedJobs.map((j) => j.id) }),
-            });
-            if (proRes.ok) {
-              const proData = await proRes.json();
-              if (Array.isArray(proData.jobs)) {
-                const unlockedMap = new Map<string, any>(
-                  proData.jobs.map((pj: any) => [pj.id, pj])
-                );
-                mappedJobs.forEach((job) => {
-                  const u = unlockedMap.get(job.id);
-                  if (u) {
-                    if (u.company) job.company = stripHtmlAndExecutableMarkup(u.company);
-                    if (u.salary_text || u.salary_min != null) {
-                      job.salary = stripHtmlAndExecutableMarkup(formatSalary(u.salary_min, u.salary_max, u.currency, u.salary_period) || u.salary_text || "");
+            let proRes: Response | null = null;
+            try {
+              proRes = await fetch("/api/jobs/pro", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({ ids: mappedJobs.map((j) => j.id) }),
+              });
+            } catch (netErr: any) {
+              console.error(`[API /jobs/pro error]: Network failure during batch Pro unlock (${netErr?.message || "fetch failed"})`);
+              mappedJobs.forEach((j) => {
+                j.proUnlockError = { isNetworkError: true, message: "Network connection error while unlocking Pro job details." };
+              });
+            }
+
+            if (proRes) {
+              if (proRes.ok) {
+                const proData = await proRes.json();
+                if (Array.isArray(proData.jobs)) {
+                  const unlockedMap = new Map<string, any>(
+                    proData.jobs.map((pj: any) => [pj.id, pj])
+                  );
+                  mappedJobs.forEach((job) => {
+                    const u = unlockedMap.get(job.id);
+                    if (u) {
+                      if (u.company) job.company = stripHtmlAndExecutableMarkup(u.company);
+                      if (u.salary_text || u.salary_min != null) {
+                        job.salary = stripHtmlAndExecutableMarkup(formatSalary(u.salary_min, u.salary_max, u.currency, u.salary_period) || u.salary_text || "");
+                      }
+                      if (u.apply_url) job.applyUrl = sanitizeExternalUrl(u.apply_url) || "";
+                      if (u.description) job.description = stripHtmlAndExecutableMarkup(u.description);
+                      if (u.skills) job.skills = u.skills;
                     }
-                    if (u.apply_url) job.applyUrl = sanitizeExternalUrl(u.apply_url) || "";
-                    if (u.description) job.description = stripHtmlAndExecutableMarkup(u.description);
-                    if (u.skills) job.skills = u.skills;
+                  });
+                }
+              } else {
+                console.error(`[API /jobs/pro error]: Pro batch unlock failed with status ${proRes.status}`);
+                if (proRes.status === 401) {
+                  if (typeof window !== "undefined") {
+                    const returnTo = window.location.pathname + window.location.search;
+                    window.location.assign(`/login?returnTo=${encodeURIComponent(returnTo)}`);
                   }
+                }
+                mappedJobs.forEach((j) => {
+                  j.proUnlockError = {
+                    status: proRes.status,
+                    message: proRes.status === 403
+                      ? "Pro subscription required to access full job details."
+                      : `Pro unlock request failed with status ${proRes.status}`,
+                  };
                 });
               }
             }
           }
-        } catch (proErr) {
-          console.warn("Could not fetch server-unlocked Pro jobs:", proErr);
+        } catch (proErr: any) {
+          console.error(`[API /jobs/pro error]: Unexpected batch Pro unlock error (${proErr?.message || "error"})`);
         }
       }
 
@@ -675,6 +709,8 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
   if (!jobId || !jobId.trim()) return null;
   const cleanId = jobId.trim();
 
+  let proUnlockError: ProUnlockError | undefined;
+
   // 1. If Pro user, fetch full unlocked job from authenticated server endpoint
   if (isPro) {
     try {
@@ -682,42 +718,69 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
       if (token) {
-        const res = await fetch(`/api/jobs/pro?id=${encodeURIComponent(cleanId)}`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-        if (res.ok) {
-          const { job } = await res.json();
-          if (job) {
-            return {
-              id: job.id,
-              title: stripHtmlAndExecutableMarkup(job.title || "Untitled Position"),
-              company: stripHtmlAndExecutableMarkup(job.company || "Verified Employer"),
-              location: stripHtmlAndExecutableMarkup(job.location || (job.remote ? "Remote (Worldwide)" : "Remote")),
-              date: formatDate(job.posted_at || job.first_seen_at || job.created_at),
-              salary: stripHtmlAndExecutableMarkup(formatSalary(job.salary_min, job.salary_max, job.currency, job.salary_period) || job.salary_text || ""),
-              category: stripHtmlAndExecutableMarkup(job.category || "engineering"),
-              remote: Boolean(job.remote),
-              remoteScope: job.remote_scope || undefined,
-              remoteEligibility: job.remote_eligibility || undefined,
-              country: job.country || job.country_code || "US",
-              type: job.job_type === "internship" ? "Internship" : "Full-time",
-              directSource: Boolean(job.verified ?? true),
-              applyUrl: sanitizeExternalUrl(job.apply_url) || "",
-              description: stripHtmlAndExecutableMarkup(job.description || ""),
-              skills: job.skills || [],
-              postedAt: job.posted_at || job.first_seen_at || job.created_at,
+        let res: Response | null = null;
+        try {
+          res = await fetch(`/api/jobs/pro?id=${encodeURIComponent(cleanId)}`, {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+        } catch (fetchErr: any) {
+          console.error(`[API /jobs/pro error]: Network failure unlocking job ${cleanId} (${fetchErr?.message || "fetch failed"})`);
+          proUnlockError = { isNetworkError: true, message: "Network connection error while unlocking Pro job details." };
+        }
+
+        if (res) {
+          if (res.ok) {
+            const { job } = await res.json();
+            if (job) {
+              return {
+                id: job.id,
+                title: stripHtmlAndExecutableMarkup(job.title || "Untitled Position"),
+                company: stripHtmlAndExecutableMarkup(job.company || "Verified Employer"),
+                location: stripHtmlAndExecutableMarkup(job.location || (job.remote ? "Remote (Worldwide)" : "Remote")),
+                date: formatDate(job.posted_at || job.first_seen_at || job.created_at),
+                salary: stripHtmlAndExecutableMarkup(formatSalary(job.salary_min, job.salary_max, job.currency, job.salary_period) || job.salary_text || ""),
+                category: stripHtmlAndExecutableMarkup(job.category || "engineering"),
+                remote: Boolean(job.remote),
+                remoteScope: job.remote_scope || undefined,
+                remoteEligibility: job.remote_eligibility || undefined,
+                country: job.country || job.country_code || "US",
+                type: job.job_type === "internship" ? "Internship" : "Full-time",
+                directSource: Boolean(job.verified ?? true),
+                applyUrl: sanitizeExternalUrl(job.apply_url) || "",
+                description: stripHtmlAndExecutableMarkup(job.description || ""),
+                skills: job.skills || [],
+                postedAt: job.posted_at || job.first_seen_at || job.created_at,
+              };
+            }
+          } else {
+            console.error(`[API /jobs/pro error]: Pro unlock failed with status ${res.status}`);
+            proUnlockError = {
+              status: res.status,
+              message: res.status === 403
+                ? "Pro subscription required to access full job details."
+                : `Pro unlock request failed with status ${res.status}`,
             };
+
+            if (res.status === 401) {
+              if (typeof window !== "undefined") {
+                const currentPath = window.location.pathname + window.location.search;
+                window.location.assign(`/login?returnTo=${encodeURIComponent(currentPath)}`);
+              }
+            }
           }
         }
       }
-    } catch (proErr) {
-      console.warn("Pro job detail fetch error:", proErr);
+    } catch (proErr: any) {
+      console.error(`[API /jobs/pro error]: Unexpected error during Pro unlock (${proErr?.message || "error"})`);
+      if (!proUnlockError) {
+        proUnlockError = { isNetworkError: true, message: "Network error unlocking Pro job details." };
+      }
     }
   }
 
-  // 2. Guest or non-Pro: Query public preview from jobs_public view
+  // 2. Guest, non-Pro, or Pro unlock error: Query public preview from jobs_public view
   try {
     const supabase = createClient();
     const selectColumns =
@@ -749,6 +812,7 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
         description: "",
         skills: [],
         postedAt: row.posted_at || row.created_at,
+        proUnlockError,
       };
     }
   } catch (err) {

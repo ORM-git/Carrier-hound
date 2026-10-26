@@ -30,6 +30,7 @@ import {
   Share2,
   Flag,
   X,
+  RotateCw,
 } from "lucide-react";
 
 const TailorResumeModal = dynamic(() => import("@/components/resume/TailorResumeModal"), { ssr: false });
@@ -47,6 +48,8 @@ interface JobDetailViewProps {
   onApply: (e?: React.MouseEvent) => void;
   onToggleApplied?: () => void;
   onBack: () => void;
+  onRetryUnlock?: () => void;
+  isRetryingUnlock?: boolean;
 }
 
 function formatRelativeTime(dateStr?: string): string {
@@ -175,7 +178,10 @@ export default function JobDetailView({
   onApply,
   onToggleApplied,
   onBack,
+  onRetryUnlock,
+  isRetryingUnlock = false,
 }: JobDetailViewProps) {
+  const isUnlocked = isPro && !job.proUnlockError;
   const hasConfirmedResume = Boolean(candidate && candidate.confirmedAt);
   const cookieNoticeHeight = useCookieNoticeHeight();
 
@@ -355,7 +361,7 @@ export default function JobDetailView({
                 {job.title}
               </h1>
               <div className="text-[14px] text-[#475569]">
-                <span className={!isPro ? "filter blur-[4.5px] select-none" : ""}>
+                <span className={!isUnlocked ? "filter blur-[4.5px] select-none" : ""}>
                   {job.company || "Verified Employer"}
                 </span>
                 {job.category && (
@@ -404,7 +410,7 @@ export default function JobDetailView({
               <Heart className={`w-4 h-4 ${isSaved ? "fill-rose-500 text-rose-500" : ""}`} />
             </button>
 
-            {isPro && job.applyUrl ? (
+            {isUnlocked && job.applyUrl ? (
               <a
                 href={job.applyUrl}
                 target="_blank"
@@ -421,12 +427,12 @@ export default function JobDetailView({
                 onClick={onApply}
                 className="inline-flex items-center gap-1.5 px-6 py-2.5 min-h-[44px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-xs font-bold transition shadow-none focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1 cursor-pointer"
               >
-                {!isPro && <Lock className="w-3.5 h-3.5" />}
+                {!isUnlocked && <Lock className="w-3.5 h-3.5" />}
                 <span>Apply</span>
               </button>
             )}
 
-            {isPro && onToggleApplied && (
+            {isUnlocked && onToggleApplied && (
               <button
                 type="button"
                 onClick={onToggleApplied}
@@ -502,7 +508,7 @@ export default function JobDetailView({
           <span className="inline-flex items-start gap-1.5 text-[12px] font-medium px-2.5 py-1 rounded-2xl bg-[#F1F5F9] text-[#475569] max-w-full">
             <MapPin className="w-3.5 h-3.5 text-[#475569] shrink-0 mt-0.5" />
             <span className="break-words whitespace-normal leading-relaxed">
-              {isPro ? (job.location || "Remote") : <span className="filter blur-[3.5px] select-none">Location Locked</span>}
+              {isUnlocked ? (job.location || "Remote") : <span className="filter blur-[3.5px] select-none">Location Locked</span>}
             </span>
           </span>
 
@@ -514,7 +520,7 @@ export default function JobDetailView({
           {job.salary ? (
             <span className="inline-flex items-center gap-1 text-[12px] font-medium px-2.5 py-0.5 rounded-full bg-[#F1F5F9] text-[#475569]">
               <DollarSign className="w-3 h-3 text-[#166534]" />
-              <span>{isPro ? job.salary : "••••••••"}</span>
+              <span>{isUnlocked ? job.salary : "••••••••"}</span>
             </span>
           ) : (
             <span className="inline-flex items-center gap-1 text-[12px] font-medium px-2.5 py-0.5 rounded-full bg-[#F1F5F9] text-[#64748B]">
@@ -653,15 +659,92 @@ export default function JobDetailView({
       {/* 3. Job Description Card */}
       <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-5 sm:p-6 shadow-none space-y-3">
         <h2 className="text-[18px] font-bold text-[#0F172A]">Job description</h2>
-        <div className="text-[15px] leading-[24px] text-[#0F172A] max-w-[720px] whitespace-pre-wrap break-words">
-          {job.description ? (
-            stripHtmlAndExecutableMarkup(job.description)
-          ) : (
-            <p className="text-[#475569]">
-              Apply directly on the employer&apos;s site to view the complete posting and application instructions.
-            </p>
-          )}
-        </div>
+        {job.proUnlockError ? (
+          <div
+            data-testid="pro-unlock-error-banner"
+            className={`p-4 rounded-[14px] border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-left ${
+              job.proUnlockError.status === 403
+                ? "bg-[#F8FAFC] border-[#E2E8F0]"
+                : "bg-[#FEF2F2] border-[#FECACA]"
+            }`}
+          >
+            <div className="flex items-center gap-2.5">
+              <div
+                className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+                  job.proUnlockError.status === 403
+                    ? "bg-[#EFF6FF] border border-[#BFDBFE] text-[#2563EB]"
+                    : "bg-white border border-[#FECACA] text-[#DC2626]"
+                }`}
+              >
+                {job.proUnlockError.status === 403 ? (
+                  <Lock className="w-4 h-4" />
+                ) : (
+                  <AlertCircle className="w-4 h-4" />
+                )}
+              </div>
+              <div>
+                <div
+                  className={`text-sm font-bold ${
+                    job.proUnlockError.status === 403 ? "text-[#0F172A]" : "text-[#991B1B]"
+                  }`}
+                >
+                  {job.proUnlockError.status === 403
+                    ? "Full Job Details Locked"
+                    : job.proUnlockError.isNetworkError
+                    ? "Network Error Unlocking Details"
+                    : `Unable to Unlock Details (HTTP ${job.proUnlockError.status})`}
+                </div>
+                <div
+                  className={`text-xs ${
+                    job.proUnlockError.status === 403 ? "text-[#475569]" : "text-[#7F1D1D]"
+                  }`}
+                >
+                  {job.proUnlockError.status === 403
+                    ? "Pro subscription required to access verified employer details and ATS links."
+                    : "Could not retrieve full unlocked details from server. Details remain locked."}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+              {onRetryUnlock && (
+                <button
+                  type="button"
+                  data-testid="pro-unlock-retry-btn"
+                  onClick={onRetryUnlock}
+                  disabled={isRetryingUnlock}
+                  className={`px-3.5 py-1.5 min-h-[36px] rounded-full text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 ${
+                    job.proUnlockError.status === 403
+                      ? "border border-[#CBD5E1] bg-white hover:bg-[#F1F5F9] text-[#0F172A]"
+                      : "bg-[#DC2626] hover:bg-[#B91C1C] text-white"
+                  }`}
+                >
+                  <RotateCw className={`w-3.5 h-3.5 ${isRetryingUnlock ? "animate-spin" : ""}`} />
+                  <span>{isRetryingUnlock ? "Retrying..." : "Retry"}</span>
+                </button>
+              )}
+              {job.proUnlockError.status === 403 && (
+                <button
+                  type="button"
+                  onClick={onApply}
+                  className="px-4 py-1.5 min-h-[36px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] text-xs font-bold text-white transition cursor-pointer"
+                >
+                  Upgrade to Pro
+                </button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="text-[15px] leading-[24px] text-[#0F172A] max-w-[720px] whitespace-pre-wrap break-words">
+            {job.description ? (
+              stripHtmlAndExecutableMarkup(job.description)
+            ) : (
+              <p className="text-[#475569]">
+                Apply directly on the employer&apos;s site to view the complete posting and application instructions.
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Footer info: Job ID & Report Issue */}
         <div className="pt-4 border-t border-[#E2E8F0] flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-[#475569]">
@@ -747,7 +830,7 @@ export default function JobDetailView({
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          {isPro && onToggleApplied && (
+          {isUnlocked && onToggleApplied && (
             <button
               type="button"
               onClick={onToggleApplied}
@@ -798,7 +881,7 @@ export default function JobDetailView({
             </button>
           )}
 
-          {isPro && job.applyUrl ? (
+          {isUnlocked && job.applyUrl ? (
             <a
               href={job.applyUrl}
               target="_blank"
@@ -815,7 +898,7 @@ export default function JobDetailView({
               onClick={onApply}
               className="inline-flex items-center gap-1.5 px-6 py-2.5 min-h-[44px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-xs font-bold transition shadow-none shrink-0"
             >
-              {!isPro && <Lock className="w-3.5 h-3.5" />}
+              {!isUnlocked && <Lock className="w-3.5 h-3.5" />}
               <span>Apply</span>
             </button>
           )}

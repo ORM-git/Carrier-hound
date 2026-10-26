@@ -433,6 +433,7 @@ function JobsPageInner() {
   const activeTabRef = useRef<HTMLButtonElement | null>(null);
   const hasInitializedFromUrl = useRef(false);
   const [isPaywallOpen, setIsPaywallOpen] = useState(false);
+  const [isRetryingUnlock, setIsRetryingUnlock] = useState(false);
   const [page, setPage] = useState(1);
 
   // Live Supabase Jobs Data
@@ -1240,6 +1241,31 @@ function JobsPageInner() {
     }
   };
 
+  const handleRetryUnlock = async (jobId: string) => {
+    setIsRetryingUnlock(true);
+    try {
+      const fullJob = await getLiveJobById(jobId, isPro);
+      if (fullJob) {
+        setSelectedJob(fullJob);
+        if (!fullJob.proUnlockError) {
+          toast.success("Job details unlocked!");
+        } else if (fullJob.proUnlockError.status === 401) {
+          const currentPath =
+            typeof window !== "undefined"
+              ? window.location.pathname + window.location.search
+              : "/jobs";
+          window.location.assign(`/login?returnTo=${encodeURIComponent(currentPath)}`);
+        } else {
+          toast.error("Retry failed. Details remain locked.");
+        }
+      }
+    } catch {
+      toast.error("Retry failed. Please check connection.");
+    } finally {
+      setIsRetryingUnlock(false);
+    }
+  };
+
   const handleSelectJob = async (job: LiveJob) => {
     pendingJobIdRef.current = null;
     if (typeof window !== "undefined") {
@@ -1255,8 +1281,8 @@ function JobsPageInner() {
         `${window.location.pathname}?${params.toString()}`
       );
     }
-    // Fetch full job record with description if missing or short
-    if (!job.description || job.description.length < 50) {
+    // Fetch full job record with description if missing, short, or has unlock error
+    if (!job.description || job.description.length < 50 || job.proUnlockError) {
       try {
         const fullJob = await getLiveJobById(job.id, isPro);
         if (fullJob) setSelectedJob(fullJob);
@@ -1496,11 +1522,17 @@ function JobsPageInner() {
                 onSave={() => handleSaveJob(selectedJob)}
                 onToggleApplied={() => handleToggleApplied(selectedJob)}
                 onApply={(e) => {
-                  if (!isPro) {
-                    handleLockedAction(e);
+                  if (!isPro || selectedJob?.proUnlockError) {
+                    if (selectedJob?.proUnlockError && selectedJob.proUnlockError.status !== 403) {
+                      handleRetryUnlock(selectedJob.id);
+                    } else {
+                      handleLockedAction(e);
+                    }
                   }
                 }}
                 onBack={handleBackToList}
+                onRetryUnlock={() => handleRetryUnlock(selectedJob.id)}
+                isRetryingUnlock={isRetryingUnlock}
               />
             </div>
           ) : (

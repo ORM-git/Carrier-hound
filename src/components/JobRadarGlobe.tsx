@@ -465,10 +465,16 @@ export default function JobRadarGlobe() {
                     }
                   });
                 }
+              } else {
+                console.error(`[API /jobs/pro error]: Radar drawer Pro unlock failed with status ${proRes.status}`);
+                if (proRes.status === 401 && typeof window !== "undefined") {
+                  const returnTo = window.location.pathname + window.location.search;
+                  window.location.assign(`/login?returnTo=${encodeURIComponent(returnTo)}`);
+                }
               }
             }
-          } catch (proErr) {
-            console.warn("Could not unlock radar drawer jobs:", proErr);
+          } catch (proErr: any) {
+            console.error(`[API /jobs/pro error]: Radar drawer Pro unlock failure (${proErr?.message || "fetch failed"})`);
           }
         }
 
