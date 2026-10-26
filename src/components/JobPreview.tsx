@@ -21,6 +21,10 @@ export default function JobPreview({
   jobs,
   limit = 5,
 }: JobPreviewProps) {
+  if (!jobs || jobs.length === 0) {
+    return null;
+  }
+
   const displayJobs = jobs.slice(0, limit);
 
   return (

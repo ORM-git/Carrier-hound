@@ -160,12 +160,14 @@ export default function CategoryLandingPage({ params }: PageProps) {
           </div>
 
           {/* Job Preview Component */}
-          <JobPreview
-            title={`Real-Time ${data.name} Feed`}
-            subtitle="Scraped from employer subdomains within the last 4 hours"
-            jobs={sampleJobs}
-            limit={5}
-          />
+          {sampleJobs && sampleJobs.length > 0 && (
+            <JobPreview
+              title={`Real-Time ${data.name} Feed`}
+              subtitle="Scraped from employer subdomains within the last 4 hours"
+              jobs={sampleJobs}
+              limit={5}
+            />
+          )}
 
           <div className="text-center pt-2">
             <Link
