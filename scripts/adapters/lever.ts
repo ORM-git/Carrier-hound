@@ -13,9 +13,17 @@ import {
   detectRemoteEligibility,
   normalizeDate,
   parseSalary,
+  formatSalary,
 } from '../utils/sanitizer';
 
-interface LeverJob {
+export interface LeverSalaryRange {
+  min?: number | null;
+  max?: number | null;
+  currency?: string | null;
+  interval?: string | null; // e.g. "per-year-salary", "per-hour-wage", "per-month-salary"
+}
+
+export interface LeverJob {
   id: string;
   text: string;
   hostedUrl: string;
@@ -31,6 +39,9 @@ interface LeverJob {
   descriptionPlain?: string;
   description?: string;
   workplaceType?: string; // 'remote', 'hybrid', 'on-site'
+  salaryRange?: LeverSalaryRange | null;
+  salaryDescription?: string;
+  salaryDescriptionPlain?: string;
 }
 
 export class LeverAdapter implements SourceAdapter {
@@ -58,7 +69,62 @@ export class LeverAdapter implements SourceAdapter {
         const jobType = detectJobType(title, j.categories?.commitment || '');
         const rawDesc = j.descriptionPlain || stripHtml(j.description);
         const description = cleanAndTruncateDescription(rawDesc, 4000);
-        const salary = parseSalary(description, { title, location });
+
+        // Structured salaryRange extraction
+        let salaryText: string | null = null;
+        let salaryMin: number | null = null;
+        let salaryMax: number | null = null;
+        let currency = 'USD';
+        let salaryPeriod: 'yearly' | 'monthly' | 'hourly' = 'yearly';
+
+        if (
+          j.salaryRange &&
+          ((j.salaryRange.min != null && j.salaryRange.min > 0) ||
+            (j.salaryRange.max != null && j.salaryRange.max > 0))
+        ) {
+          salaryMin =
+            j.salaryRange.min != null && j.salaryRange.min > 0
+              ? Math.round(j.salaryRange.min)
+              : null;
+          salaryMax =
+            j.salaryRange.max != null && j.salaryRange.max > 0
+              ? Math.round(j.salaryRange.max)
+              : null;
+
+          if (salaryMin != null && salaryMax != null && salaryMin > salaryMax) {
+            const temp = salaryMin;
+            salaryMin = salaryMax;
+            salaryMax = temp;
+          }
+
+          if (j.salaryRange.currency && j.salaryRange.currency.trim()) {
+            currency = j.salaryRange.currency.trim().toUpperCase();
+          }
+
+          const interval = (j.salaryRange.interval || '').toLowerCase();
+          if (interval.includes('hour') || interval.includes('wage')) {
+            salaryPeriod = 'hourly';
+          } else if (interval.includes('month')) {
+            salaryPeriod = 'monthly';
+          } else if (Math.max(salaryMax || 0, salaryMin || 0) < 1000) {
+            salaryPeriod = 'hourly';
+          } else {
+            salaryPeriod = 'yearly';
+          }
+
+          salaryText = formatSalary(salaryMin, salaryMax, currency, salaryPeriod);
+        }
+
+        // Fallback to description regex parsing if no structured salaryRange exists
+        if (!salaryText && salaryMin == null && salaryMax == null) {
+          const fallback = parseSalary(description, { title, location });
+          salaryText = fallback.salary_text;
+          salaryMin = fallback.salary_min;
+          salaryMax = fallback.salary_max;
+          currency = fallback.currency;
+          salaryPeriod = fallback.salary_period;
+        }
+
         const postedAt = j.createdAt ? new Date(j.createdAt).toISOString() : normalizeDate(null);
         const category =
           source.category ||
@@ -84,11 +150,11 @@ export class LeverAdapter implements SourceAdapter {
           description,
           apply_url: j.applyUrl || j.hostedUrl,
           source_url: j.hostedUrl || `https://jobs.lever.co/${slug}`,
-          salary_text: salary.salary_text,
-          salary_min: salary.salary_min,
-          salary_max: salary.salary_max,
-          currency: salary.currency,
-          salary_period: salary.salary_period,
+          salary_text: salaryText,
+          salary_min: salaryMin,
+          salary_max: salaryMax,
+          currency,
+          salary_period: salaryPeriod,
           category,
           posted_at: postedAt,
           discovered_at: nowIso,
