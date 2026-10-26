@@ -1,5 +1,4 @@
 import { createClient } from "../supabase/client";
-import type { Job } from "@/data/jobs";
 import { CandidateProfile } from "../resume/types";
 import { computeFitDiagnostics, FitDiagnosticsResult } from "../matcher/scoring";
 import { formatSalary } from "@/lib/salary/parser";
@@ -662,119 +661,10 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
   }
 
 
-  // Offline / Error fallback: filter static list (loaded dynamically only on failure)
-  const { DUMMY_JOBS } = await import("@/data/jobs");
-  let fallbackList = DUMMY_JOBS.slice();
-  if (!isPro) {
-    fallbackList = fallbackList.map((j) => ({
-      ...j,
-      company: "Verified Employer",
-      salary: "",
-      applyUrl: "",
-      description: "",
-      skills: [],
-    }));
-  }
-  if (category && category !== "all") {
-    const c = category.toLowerCase().trim();
-    fallbackList = fallbackList.filter((j) => {
-      const jc = (j.category || "").toLowerCase();
-      const jt = (j.title || "").toLowerCase();
-      if (c === "trending") return ["ai", "engineering", "devops"].includes(jc);
-      if (c === "internships") {
-        return isGenuineInternshipJob(j.title, j.type);
-      }
-      if (c === "remote") return j.remote;
-      if (c === "fresher") return jt.includes("junior") || jt.includes("entry") || /\b(intern|internship)\b/i.test(jt);
-      if (c === "operations") return jc === "operations" || jt.includes("operation") || jt.includes("ops");
-      if (c === "cyber-security") return jc === "cyber-security" || jt.includes("security") || jt.includes("cyber");
-      if (c === "customer-support") return jc === "customer-support" || jt.includes("support") || jt.includes("customer");
-      if (c === "legal") return jc === "legal" || jt.includes("legal") || jt.includes("compliance");
-      if (c === "healthcare") return jc === "healthcare" || jt.includes("health");
-      return jc.includes(c) || jt.includes(c);
-    });
-  }
-  if (remoteOnly) {
-    fallbackList = fallbackList.filter((j) => j.remote);
-  }
-  if (search && search.trim()) {
-    const q = search.trim().toLowerCase();
-    fallbackList = fallbackList.filter(
-      (j) => j.title.toLowerCase().includes(q) || j.location.toLowerCase().includes(q)
-    );
-  }
-
-  if (countryCode && countryCode.trim() && countryCode.toLowerCase() !== "all") {
-    const cc = countryCode.trim().toLowerCase();
-    fallbackList = fallbackList.filter((j) => (j.country || "").toLowerCase() === cc);
-  }
-  if (location && location.trim() && location.toLowerCase() !== "all") {
-    const loc = location.trim().toLowerCase();
-    fallbackList = fallbackList.filter((j) => (j.location || "").toLowerCase().includes(loc));
-  }
-  if (jobType && jobType.trim() && jobType.toLowerCase() !== "all") {
-    const jt = jobType.trim().toLowerCase();
-    fallbackList = fallbackList.filter((j) => (j.type || "").toLowerCase().includes(jt));
-  }
-  if (level && level.trim() && level.toLowerCase() !== "all") {
-    const lvl = level.trim().toLowerCase();
-    fallbackList = fallbackList.filter((j) => {
-      const jt = (j.title || "").toLowerCase();
-      if (lvl.includes("lead") || lvl.includes("staff")) return jt.includes("staff") || jt.includes("principal") || jt.includes("lead");
-      if (lvl.includes("senior")) return jt.includes("senior") || jt.includes("sr.");
-      if (lvl.includes("entry") || lvl.includes("junior")) return jt.includes("junior") || jt.includes("entry") || jt.includes("associate");
-      if (lvl.includes("mid")) return !jt.includes("senior") && !jt.includes("sr.") && !jt.includes("staff") && !jt.includes("principal") && !jt.includes("lead") && !jt.includes("junior") && !jt.includes("entry");
-      return true;
-    });
-  }
-  if (experience && experience.trim() && experience.toLowerCase() !== "all" && experience.toLowerCase() !== "all experience") {
-    const exp = experience.trim().toLowerCase();
-    fallbackList = fallbackList.filter((j) => {
-      const jt = (j.title || "").toLowerCase();
-      if (exp.includes("8") || exp.includes("lead") || exp.includes("staff") || exp.includes("principal")) return jt.includes("staff") || jt.includes("principal") || jt.includes("lead");
-      if (exp.includes("3-5") || exp.includes("3 to 5") || exp.includes("mid")) return !jt.includes("senior") && !jt.includes("sr.") && !jt.includes("staff") && !jt.includes("principal") && !jt.includes("lead") && !jt.includes("junior") && !jt.includes("entry");
-      if (exp.includes("1-3") || exp.includes("1 to 3") || exp.includes("entry") || exp.includes("junior") || exp.includes("intern")) {
-        const isEntry = jt.includes("junior") || jt.includes("entry") || jt.includes("associate");
-        const isSenior = jt.includes("senior") || jt.includes("sr.") || jt.includes("staff") || jt.includes("principal") || jt.includes("lead");
-        return isEntry && !isSenior;
-      }
-      if (exp.includes("5") || exp.includes("senior") || exp.includes("sr")) return jt.includes("senior") || jt.includes("sr.");
-      return true;
-    });
-  }
-  if (workModel && workModel.trim() && workModel.toLowerCase() !== "all") {
-    const wm = workModel.trim().toLowerCase();
-    fallbackList = fallbackList.filter((j) => {
-      if (wm === "remote") return j.remote || (j.location || "").toLowerCase().includes("remote");
-      if (wm === "hybrid") return (j.location || "").toLowerCase().includes("hybrid");
-      if (wm === "onsite") return !j.remote || (j.location || "").toLowerCase().includes("onsite");
-      return true;
-    });
-  }
-  if (datePosted && datePosted.trim() && datePosted.toLowerCase() !== "all") {
-    const dp = datePosted.trim().toLowerCase();
-    const ms =
-      dp === "24h" || dp.includes("24")
-        ? 24 * 60 * 60 * 1000
-        : dp === "7d" || dp.includes("week")
-        ? 7 * 24 * 60 * 60 * 1000
-        : dp === "30d" || dp.includes("month")
-        ? 30 * 24 * 60 * 60 * 1000
-        : 0;
-    if (ms > 0) {
-      const now = Date.now();
-      fallbackList = fallbackList.filter((j) => {
-        const d = new Date(j.date || 0).getTime();
-        return !isNaN(d) && (now - d) <= ms;
-      });
-    }
-  }
-
-  const pagedFallback = fallbackList.slice(from, to + 1);
-
+  // Fallback: If database query or API fails, return the empty state (never fake or sample jobs)
   return {
-    jobs: pagedFallback,
-    totalCount: fallbackList.length,
+    jobs: [],
+    totalCount: 0,
   };
 }
 
@@ -865,35 +755,7 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
     console.warn("Public job fetch error:", err);
   }
 
-  // Fallback to static DUMMY_JOBS if matching legacy ID (loaded dynamically only on failure)
-  const { DUMMY_JOBS } = await import("@/data/jobs");
-  const found = DUMMY_JOBS.find((j) => j.id === cleanId);
-  if (found) {
-    if (!isPro) {
-      return {
-        id: found.id,
-        title: found.title,
-        company: "Verified Employer",
-        location: found.location,
-        date: found.date,
-        salary: "",
-        category: found.category,
-        remote: found.remote,
-        country: found.country,
-        type: found.type,
-        directSource: false,
-        applyUrl: "",
-        description: "",
-        skills: [],
-      };
-    }
-    return {
-      ...found,
-      company: found.company,
-      salary: found.salary,
-      applyUrl: found.applyUrl,
-    };
-  }
+
 
   return null;
 }
@@ -971,11 +833,10 @@ export async function getAllActiveJobs(): Promise<LiveJob[]> {
       return mapped;
     }
   } catch (err) {
-    console.warn("getAllActiveJobs error, using static fallback:", err);
+    console.warn("getAllActiveJobs error:", err);
   }
 
-  const { DUMMY_JOBS } = await import("@/data/jobs");
-  return DUMMY_JOBS;
+  return [];
 }
 
 /**

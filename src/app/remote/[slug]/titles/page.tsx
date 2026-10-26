@@ -6,7 +6,6 @@ import Footer from "@/components/Footer";
 import JobPreview from "@/components/JobPreview";
 import { FaqGuidesItem } from "@/components/FaqItems";
 import { ROLE_GUIDES } from "@/data/guides/roles";
-import { DUMMY_JOBS } from "@/data/jobs";
 import {
   ChevronRight,
   TrendingUp,
@@ -48,10 +47,8 @@ export default function RoleTitlesPage({ params }: PageProps) {
     notFound();
   }
 
-  // Sample jobs for this role
-  const roleJobs = DUMMY_JOBS.filter(
-    (j) => j.category === guide.sampleJobCategory
-  ).slice(0, 4);
+  // Live role jobs (empty state when offline or unpopulated)
+  const roleJobs: any[] = [];
 
   return (
     <div className="min-h-screen bg-white text-[#09090B] flex flex-col">

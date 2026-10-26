@@ -7,7 +7,6 @@ import JobPreview from "@/components/JobPreview";
 import Chip from "@/components/Chip";
 import { FaqGuidesItem } from "@/components/FaqItems";
 import { CATEGORY_LANDINGS } from "@/data/guides/categories";
-import { DUMMY_JOBS } from "@/data/jobs";
 import { ChevronRight, ArrowRight, ShieldCheck } from "lucide-react";
 
 interface PageProps {
@@ -41,10 +40,8 @@ export default function CategoryLandingPage({ params }: PageProps) {
     notFound();
   }
 
-  // Filter sample jobs
-  const sampleJobs = DUMMY_JOBS.filter(
-    (j) => j.category === data.slug || (data.slug === "data" && j.category === "data-analytics")
-  ).slice(0, 5);
+  // Live category jobs (empty state when offline or unpopulated)
+  const sampleJobs: any[] = [];
 
   return (
     <div className="min-h-screen bg-white text-[#09090B] flex flex-col">
