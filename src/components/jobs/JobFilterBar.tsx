@@ -861,79 +861,8 @@ export default function JobFilterBar({
           </div>
         </div>
 
-        {/* ROW 2: Industry, Years of Experience, Hidden Jobs, All Filters button */}
+        {/* ROW 2: Years of Experience, Hidden Jobs, All Filters button */}
         <div className="flex flex-wrap items-center gap-1.5 lg:gap-2">
-          {/* Industry Chip & Popover */}
-          <div className="relative">
-            <button
-              ref={(el) => { triggerRefs.current["industry"] = el; }}
-              type="button"
-              onClick={() => handleOpenPopover("industry")}
-              aria-expanded={activePopover === "industry"}
-              aria-label={`Industry filter: ${filters.industry || "All"}`}
-              className={`h-8 px-3 rounded-lg border text-[13px] font-medium transition inline-flex items-center gap-1.5 cursor-pointer shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
-                filters.industry
-                  ? "bg-[#EFF6FF] border-[#BFDBFE] text-[#1D4ED8] font-semibold"
-                  : "bg-white border-[#CBD5E1] text-[#0F172A] hover:bg-[#F8FAFC]"
-              }`}
-            >
-              <span>{filters.industry ? (filters.industry.charAt(0).toUpperCase() + filters.industry.slice(1)) : "Industry"}</span>
-              <ChevronDown className="w-3.5 h-3.5 text-[#64748B]" />
-            </button>
-
-            {activePopover === "industry" && (
-              <div
-                ref={popoverRef}
-                role="dialog"
-                aria-label="Filter by Industry"
-                className="absolute left-0 mt-1.5 w-64 max-w-[calc(100vw-32px)] bg-white border border-[#E2E8F0] rounded-2xl shadow-xl p-4 z-50 text-xs space-y-3"
-              >
-                <div className="flex items-center justify-between pb-2 border-b border-[#E2E8F0]">
-                  <span className="font-bold text-[13px] text-[#0F172A]">Industry</span>
-                  <button
-                    type="button"
-                    onClick={() => handleReset("industry", "")}
-                    className="text-[11px] text-[#2563EB] hover:underline font-semibold"
-                  >
-                    Clear
-                  </button>
-                </div>
-
-                <div className="space-y-1 max-h-48 overflow-y-auto">
-                  {["", "tech", "ai", "finance", "healthcare", "marketing", "operations"].map((ind) => (
-                    <button
-                      key={ind || "all"}
-                      type="button"
-                      onClick={() => setDraftFilters((prev) => ({ ...prev, industry: ind }))}
-                      className={`w-full text-left px-2.5 py-1.5 rounded-lg capitalize transition text-[13px] ${
-                        draftFilters.industry === ind ? "bg-[#EFF6FF] text-[#1D4ED8] font-bold" : "text-[#334155] hover:bg-slate-50"
-                      }`}
-                    >
-                      {ind ? ind : "All Industries"}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="flex items-center justify-between pt-2 border-t border-[#E2E8F0]">
-                  <button
-                    type="button"
-                    onClick={() => handleReset("industry", "")}
-                    className="px-3 py-1.5 rounded-lg text-xs font-semibold text-[#64748B] hover:text-[#0F172A] hover:bg-slate-100 transition"
-                  >
-                    Reset
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleConfirm({ industry: draftFilters.industry })}
-                    className="px-4 py-1.5 rounded-lg text-xs font-bold bg-[#2563EB] text-white hover:bg-[#1D4ED8] transition shadow-xs"
-                  >
-                    Confirm
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
           {/* Years of Experience Chip & Popover */}
           <div className="relative">
             <button
@@ -1130,20 +1059,6 @@ export default function JobFilterBar({
                 type="button"
                 onClick={() => onChange({ datePosted: "" })}
                 aria-label={`Remove date posted filter ${filters.datePosted}`}
-                className="hover:text-rose-600 transition"
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </span>
-          )}
-
-          {filters.industry && (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#1D4ED8] font-medium text-[11px]">
-              <span>{filters.industry}</span>
-              <button
-                type="button"
-                onClick={() => onChange({ industry: "" })}
-                aria-label={`Remove industry filter ${filters.industry}`}
                 className="hover:text-rose-600 transition"
               >
                 <X className="w-3 h-3" />

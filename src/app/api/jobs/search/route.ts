@@ -55,6 +55,7 @@ export async function GET(req: Request) {
     const jobTypeParam = searchParams.get("jobType") || "";
     const dateParam = searchParams.get("datePosted") || searchParams.get("date") || "";
     const workModelParam = searchParams.get("workModel") || "";
+    const experienceParam = searchParams.get("experience") || searchParams.get("exp") || "";
     const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
     const pageSize = Math.min(100, Math.max(1, parseInt(searchParams.get("pageSize") || "50", 10)));
 
@@ -181,7 +182,27 @@ export async function GET(req: Request) {
           .not("title", "ilike", "%principal%")
           .not("title", "ilike", "%lead%")
           .not("title", "ilike", "%junior%")
-          .not("title", "ilike", "%entry%")
+          .not("title", "ilike", "%entry%");
+      }
+    }
+
+    if (experienceParam && experienceParam.trim() && experienceParam.toLowerCase() !== "all" && experienceParam.toLowerCase() !== "all experience") {
+      const exp = experienceParam.trim().toLowerCase();
+      if (exp.includes("8") || exp.includes("lead") || exp.includes("staff") || exp.includes("principal")) {
+        query = query.or("title.ilike.%staff%,title.ilike.%principal%,title.ilike.%lead%");
+      } else if (exp.includes("5") || exp.includes("senior") || exp.includes("sr")) {
+        query = query.or("title.ilike.%senior%,title.ilike.%sr.%");
+      } else if (exp.includes("1-3") || exp.includes("1 to 3") || exp.includes("entry") || exp.includes("junior") || exp.includes("intern")) {
+        query = query.or("title.ilike.%junior%,title.ilike.%entry%,title.ilike.%associate%");
+      } else if (exp.includes("3-5") || exp.includes("3 to 5") || exp.includes("mid")) {
+        query = query
+          .not("title", "ilike", "%senior%")
+          .not("title", "ilike", "%sr.%")
+          .not("title", "ilike", "%staff%")
+          .not("title", "ilike", "%principal%")
+          .not("title", "ilike", "%lead%")
+          .not("title", "ilike", "%junior%")
+          .not("title", "ilike", "%entry%");
       }
     }
 

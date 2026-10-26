@@ -243,6 +243,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       if (workModel && workModel !== "all") params.set("workModel", workModel);
       if (datePosted && datePosted !== "all") params.set("datePosted", datePosted);
       if (countryCode && countryCode !== "all") params.set("country_code", countryCode);
+      if (experience && experience !== "all" && experience !== "All Experience") params.set("experience", experience);
 
       const res = await fetch(`/api/jobs/search?${params.toString()}`, { headers });
       if (res.ok) {
@@ -301,6 +302,13 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       query = query.eq("remote", true);
     }
 
+    if (countryCode && countryCode.trim() && countryCode.toLowerCase() !== "all") {
+      const code = countryCode.trim().replace(/[%_(),"'`;\\$*]/g, " ").toUpperCase().trim();
+      if (code) {
+        query = query.eq("country_code", code);
+      }
+    }
+
     if (location && location.trim() && location.toLowerCase() !== "all") {
       const loc = location.trim().replace(/[%_(),\"'`;\\$*]/g, " ").trim();
       if (loc.toLowerCase() === "remote") {
@@ -341,7 +349,27 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
           .not("title", "ilike", "%principal%")
           .not("title", "ilike", "%lead%")
           .not("title", "ilike", "%junior%")
-          .not("title", "ilike", "%entry%")
+          .not("title", "ilike", "%entry%");
+      }
+    }
+
+    if (experience && experience.trim() && experience.toLowerCase() !== "all" && experience.toLowerCase() !== "all experience") {
+      const exp = experience.trim().toLowerCase();
+      if (exp.includes("8") || exp.includes("lead") || exp.includes("staff") || exp.includes("principal")) {
+        query = query.or("title.ilike.%staff%,title.ilike.%principal%,title.ilike.%lead%");
+      } else if (exp.includes("5") || exp.includes("senior") || exp.includes("sr")) {
+        query = query.or("title.ilike.%senior%,title.ilike.%sr.%");
+      } else if (exp.includes("1-3") || exp.includes("1 to 3") || exp.includes("entry") || exp.includes("junior") || exp.includes("intern")) {
+        query = query.or("title.ilike.%junior%,title.ilike.%entry%,title.ilike.%associate%");
+      } else if (exp.includes("3-5") || exp.includes("3 to 5") || exp.includes("mid")) {
+        query = query
+          .not("title", "ilike", "%senior%")
+          .not("title", "ilike", "%sr.%")
+          .not("title", "ilike", "%staff%")
+          .not("title", "ilike", "%principal%")
+          .not("title", "ilike", "%lead%")
+          .not("title", "ilike", "%junior%")
+          .not("title", "ilike", "%entry%");
       }
     }
 
@@ -412,6 +440,12 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         if (remoteOnly) {
           catQuery = catQuery.eq("remote", true);
         }
+        if (countryCode && countryCode.trim() && countryCode.toLowerCase() !== "all") {
+          const code = countryCode.trim().replace(/[%_(),"'`;\\$*]/g, " ").toUpperCase().trim();
+          if (code) {
+            catQuery = catQuery.eq("country_code", code);
+          }
+        }
         if (location && location.trim() && location.toLowerCase() !== "all") {
           const loc = location.trim().replace(/[%_(),\"'`;\\$*]/g, " ").trim();
           if (loc.toLowerCase() === "remote") {
@@ -443,6 +477,26 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
           } else if (lvl.includes("entry") || lvl.includes("junior")) {
             catQuery = catQuery.or("title.ilike.%junior%,title.ilike.%entry%,title.ilike.%associate%");
           } else if (lvl.includes("mid")) {
+            catQuery = catQuery
+              .not("title", "ilike", "%senior%")
+              .not("title", "ilike", "%sr.%")
+              .not("title", "ilike", "%staff%")
+              .not("title", "ilike", "%principal%")
+              .not("title", "ilike", "%lead%")
+              .not("title", "ilike", "%junior%")
+              .not("title", "ilike", "%entry%");
+          }
+        }
+
+        if (experience && experience.trim() && experience.toLowerCase() !== "all" && experience.toLowerCase() !== "all experience") {
+          const exp = experience.trim().toLowerCase();
+          if (exp.includes("8") || exp.includes("lead") || exp.includes("staff") || exp.includes("principal")) {
+            catQuery = catQuery.or("title.ilike.%staff%,title.ilike.%principal%,title.ilike.%lead%");
+          } else if (exp.includes("5") || exp.includes("senior") || exp.includes("sr")) {
+            catQuery = catQuery.or("title.ilike.%senior%,title.ilike.%sr.%");
+          } else if (exp.includes("1-3") || exp.includes("1 to 3") || exp.includes("entry") || exp.includes("junior") || exp.includes("intern")) {
+            catQuery = catQuery.or("title.ilike.%junior%,title.ilike.%entry%,title.ilike.%associate%");
+          } else if (exp.includes("3-5") || exp.includes("3 to 5") || exp.includes("mid")) {
             catQuery = catQuery
               .not("title", "ilike", "%senior%")
               .not("title", "ilike", "%sr.%")
@@ -512,7 +566,13 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       count = res.count;
     }
 
-    if (data && data.length > 0) {
+    if (data) {
+      if (data.length === 0) {
+        return {
+          jobs: [],
+          totalCount: count ?? 0,
+        };
+      }
       const mappedJobs: LiveJob[] = data.map((row: any) => {
         return {
           id: row.id,
@@ -630,6 +690,68 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
     fallbackList = fallbackList.filter(
       (j) => j.title.toLowerCase().includes(q) || j.location.toLowerCase().includes(q)
     );
+  }
+
+  if (countryCode && countryCode.trim() && countryCode.toLowerCase() !== "all") {
+    const cc = countryCode.trim().toLowerCase();
+    fallbackList = fallbackList.filter((j) => (j.country || "").toLowerCase() === cc);
+  }
+  if (location && location.trim() && location.toLowerCase() !== "all") {
+    const loc = location.trim().toLowerCase();
+    fallbackList = fallbackList.filter((j) => (j.location || "").toLowerCase().includes(loc));
+  }
+  if (jobType && jobType.trim() && jobType.toLowerCase() !== "all") {
+    const jt = jobType.trim().toLowerCase();
+    fallbackList = fallbackList.filter((j) => (j.type || "").toLowerCase().includes(jt));
+  }
+  if (level && level.trim() && level.toLowerCase() !== "all") {
+    const lvl = level.trim().toLowerCase();
+    fallbackList = fallbackList.filter((j) => {
+      const jt = (j.title || "").toLowerCase();
+      if (lvl.includes("lead") || lvl.includes("staff")) return jt.includes("staff") || jt.includes("principal") || jt.includes("lead");
+      if (lvl.includes("senior")) return jt.includes("senior") || jt.includes("sr.");
+      if (lvl.includes("entry") || lvl.includes("junior")) return jt.includes("junior") || jt.includes("entry") || jt.includes("associate");
+      if (lvl.includes("mid")) return !jt.includes("senior") && !jt.includes("sr.") && !jt.includes("staff") && !jt.includes("principal") && !jt.includes("lead") && !jt.includes("junior") && !jt.includes("entry");
+      return true;
+    });
+  }
+  if (experience && experience.trim() && experience.toLowerCase() !== "all" && experience.toLowerCase() !== "all experience") {
+    const exp = experience.trim().toLowerCase();
+    fallbackList = fallbackList.filter((j) => {
+      const jt = (j.title || "").toLowerCase();
+      if (exp.includes("8") || exp.includes("lead") || exp.includes("staff") || exp.includes("principal")) return jt.includes("staff") || jt.includes("principal") || jt.includes("lead");
+      if (exp.includes("5") || exp.includes("senior") || exp.includes("sr")) return jt.includes("senior") || jt.includes("sr.");
+      if (exp.includes("1-3") || exp.includes("1 to 3") || exp.includes("entry") || exp.includes("junior") || exp.includes("intern")) return jt.includes("junior") || jt.includes("entry") || jt.includes("associate");
+      if (exp.includes("3-5") || exp.includes("3 to 5") || exp.includes("mid")) return !jt.includes("senior") && !jt.includes("sr.") && !jt.includes("staff") && !jt.includes("principal") && !jt.includes("lead") && !jt.includes("junior") && !jt.includes("entry");
+      return true;
+    });
+  }
+  if (workModel && workModel.trim() && workModel.toLowerCase() !== "all") {
+    const wm = workModel.trim().toLowerCase();
+    fallbackList = fallbackList.filter((j) => {
+      if (wm === "remote") return j.remote || (j.location || "").toLowerCase().includes("remote");
+      if (wm === "hybrid") return (j.location || "").toLowerCase().includes("hybrid");
+      if (wm === "onsite") return !j.remote || (j.location || "").toLowerCase().includes("onsite");
+      return true;
+    });
+  }
+  if (datePosted && datePosted.trim() && datePosted.toLowerCase() !== "all") {
+    const dp = datePosted.trim().toLowerCase();
+    const ms =
+      dp === "24h" || dp.includes("24")
+        ? 24 * 60 * 60 * 1000
+        : dp === "7d" || dp.includes("week")
+        ? 7 * 24 * 60 * 60 * 1000
+        : dp === "30d" || dp.includes("month")
+        ? 30 * 24 * 60 * 60 * 1000
+        : 0;
+    if (ms > 0) {
+      const now = Date.now();
+      fallbackList = fallbackList.filter((j) => {
+        const d = new Date(j.date || 0).getTime();
+        return !isNaN(d) && (now - d) <= ms;
+      });
+    }
   }
 
   const pagedFallback = fallbackList.slice(from, to + 1);
