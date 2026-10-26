@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, useReducedMotion, AnimatePresence } from "motion/react";
-import { getLiveJobs, getLiveJobById, LiveJob } from "@/lib/jobs/service";
+import { getLiveJobs, getLiveJobById, LiveJob, isEarlyApplicant } from "@/lib/jobs/service";
 import { getAuthUser, getUserPreferences } from "@/lib/auth/session";
 import { getCandidateProfile } from "@/lib/resume/storage";
 import { CandidateProfile } from "@/lib/resume/types";
@@ -1751,7 +1751,7 @@ function JobsPageInner() {
                               : "Fair match"
                             : "";
                         const cardZeroSkills = Boolean(diagnostics && diagnostics.matchedSkills && diagnostics.matchedSkills.length === 0);
-                        const isRecent = Boolean(job.postedAt && isPostedUnder24Hours(job.postedAt));
+                        const isRecent = isEarlyApplicant(job);
                         const locInfo = parseJobLocation(job.location);
                         const jobLevel = inferJobLevel(job.title);
 
