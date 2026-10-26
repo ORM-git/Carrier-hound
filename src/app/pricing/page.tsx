@@ -17,7 +17,6 @@ import {
   HelpCircle,
   ExternalLink,
 } from "lucide-react";
-import GuideHeader from "@/components/GuideHeader";
 import LoggedInAppShell from "@/components/shell/LoggedInAppShell";
 import Footer from "@/components/Footer";
 import { Card } from "@/components/ui/card";
@@ -53,7 +52,23 @@ interface PaymentState {
 
 export default function PricingPage() {
   const router = useRouter();
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | null>(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const email = localStorage.getItem("careermonke_user_email");
+      if (!email) return null;
+      return {
+        id: "local-user",
+        email,
+        user_metadata: {},
+        app_metadata: {},
+        aud: "authenticated",
+        created_at: new Date().toISOString(),
+      } as unknown as User;
+    } catch {
+      return null;
+    }
+  });
   const [isPro, setIsPro] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
   const [paymentState, setPaymentState] = useState<PaymentState>({
@@ -740,24 +755,10 @@ export default function PricingPage() {
     </div>
   );
 
-  if (user) {
-    return (
-      <LoggedInAppShell pageLabel="PRICING" user={user} isPro={isPro}>
-        {pricingContent}
-        <Footer />
-      </LoggedInAppShell>
-    );
-  }
-
   return (
-    <div className="min-h-screen flex flex-col bg-surface-subtle text-ink">
-      <GuideHeader />
-
-      <main className="flex-1">
-        {pricingContent}
-      </main>
-
+    <LoggedInAppShell pageLabel="PRICING" user={user} isPro={isPro}>
+      {pricingContent}
       <Footer />
-    </div>
+    </LoggedInAppShell>
   );
 }
