@@ -25,6 +25,7 @@ export interface LiveJob {
   postedAt?: string;
   trackerNotes?: string;
   proUnlockError?: ProUnlockError;
+  applicantCount?: number;
 }
 
 export interface ProUnlockError {
@@ -97,6 +98,82 @@ export function getJobRemoteEligibility(job: {
   }
 
   return "unknown";
+}
+
+
+/**
+ * Calculates the post age in hours from an ISO string, relative string, or date string.
+ */
+export function getJobAgeInHours(dateStr?: string): number | null {
+  if (!dateStr) return null;
+  const s = dateStr.trim().toLowerCase();
+  if (s === "just now" || s.includes("minute") || s.includes("sec")) {
+    return 0.1;
+  }
+  const hourMatch = s.match(/^(\d+)\s*(?:h|hour|hours)(?:\s*ago)?$/);
+  if (hourMatch) {
+    return parseInt(hourMatch[1], 10);
+  }
+  const dayMatch = s.match(/^(\d+)\s*(?:d|day|days)(?:\s*ago)?$/);
+  if (dayMatch) {
+    return parseInt(dayMatch[1], 10) * 24;
+  }
+  const timestamp = Date.parse(dateStr);
+  if (!isNaN(timestamp)) {
+    const diffMs = Date.now() - timestamp;
+    if (diffMs >= 0) {
+      return diffMs / (1000 * 60 * 60);
+    }
+    return 0;
+  }
+  if (s === "today") {
+    return 12;
+  }
+  return null;
+}
+
+/**
+ * Evaluates whether a job qualifies for the "Early applicant" badge.
+ * Criteria:
+ * - When applicant count is known: posted within the last 24 hours AND applicant count is low (<= 25).
+ * - When no applicant-count data exists: posted under 6 hours old.
+ */
+export function isEarlyApplicant(job: {
+  postedAt?: string;
+  date?: string;
+  applicantCount?: number | null;
+  applicant_count?: number | null;
+  applicantsCount?: number | null;
+  applicants_count?: number | null;
+  applicants?: number | null;
+  [key: string]: any;
+}): boolean {
+  if (!job) return false;
+  const dateStr = job.postedAt || job.date;
+  const ageHours = getJobAgeInHours(dateStr);
+  if (ageHours === null || ageHours < 0) return false;
+
+  const rawCount =
+    job.applicantCount ??
+    job.applicant_count ??
+    job.applicantsCount ??
+    job.applicants_count ??
+    job.applicants;
+
+  const hasApplicantData =
+    rawCount !== undefined && rawCount !== null && (rawCount as any) !== "";
+
+  if (hasApplicantData) {
+    const num = typeof rawCount === "number" ? rawCount : parseInt(String(rawCount), 10);
+    const isLow = !isNaN(num)
+      ? num <= 25 && num >= 0
+      : String(rawCount).toLowerCase() === "low" || String(rawCount).toLowerCase() === "few";
+
+    return ageHours < 24 && isLow;
+  }
+
+  // If no applicant-count data exists, show it only for posts under 6 hours old
+  return ageHours < 6;
 }
 
 function formatDate(dateStr?: string | null): string {
