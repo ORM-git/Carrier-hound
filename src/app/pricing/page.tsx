@@ -462,12 +462,12 @@ export default function PricingPage() {
             )}
 
             {/* Plan Cards Grid */}
-            <div className="mt-tk-6 grid grid-cols-1 md:grid-cols-2 gap-tk-4 max-w-4xl mx-auto">
+            <div className="mt-tk-4 grid grid-cols-1 md:grid-cols-2 gap-tk-3 max-w-4xl mx-auto">
               {/* Card 1: India Domestic Plan (Razorpay Standard Checkout Test Mode) */}
               <Card
                 variant="elevated"
                 className={cnTokens(
-                  "relative flex flex-col justify-between p-tk-4 sm:p-tk-5 border-2 transition-all",
+                  "relative flex flex-col justify-between p-tk-2.5 sm:p-tk-3 border-2 transition-all",
                   "border-brand-500 shadow-tk-md bg-surface"
                 )}
               >
@@ -568,7 +568,7 @@ export default function PricingPage() {
               {/* Card 2: Global International Plan (Stripe - Coming Soon) */}
               <Card
                 variant="surface"
-                className="relative flex flex-col justify-between p-tk-4 sm:p-tk-5 border-line bg-surface opacity-90"
+                className="relative flex flex-col justify-between p-tk-2.5 sm:p-tk-3 border-line bg-surface opacity-90"
               >
                 <div className="space-y-tk-3">
                   <div className="flex items-center justify-between gap-2">
@@ -681,7 +681,7 @@ export default function PricingPage() {
             </div>
 
             {/* FAQ Section */}
-            <div className="mt-tk-8 max-w-3xl mx-auto space-y-tk-4">
+            <div className="mt-tk-5 max-w-3xl mx-auto space-y-tk-3">
               <div className="text-center space-y-1">
                 <h2 className="text-tk-heading font-black text-ink">
                   Frequently Asked Questions
@@ -691,8 +691,8 @@ export default function PricingPage() {
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-tk-3">
-                <Card variant="surface" className="p-tk-3 space-y-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-tk-2">
+                <Card variant="surface" className="p-tk-2 space-y-1">
                   <h3 className="text-tk-body-sm font-bold text-ink">
                     How does Razorpay Test mode work?
                   </h3>
@@ -703,7 +703,7 @@ export default function PricingPage() {
                   </p>
                 </Card>
 
-                <Card variant="surface" className="p-tk-3 space-y-1">
+                <Card variant="surface" className="p-tk-2 space-y-1">
                   <h3 className="text-tk-body-sm font-bold text-ink">
                     Can I cancel my subscription?
                   </h3>
@@ -713,7 +713,7 @@ export default function PricingPage() {
                   </p>
                 </Card>
 
-                <Card variant="surface" className="p-tk-3 space-y-1">
+                <Card variant="surface" className="p-tk-2 space-y-1">
                   <h3 className="text-tk-body-sm font-bold text-ink">
                     How fast is Pro access granted?
                   </h3>
@@ -723,7 +723,7 @@ export default function PricingPage() {
                   </p>
                 </Card>
 
-                <Card variant="surface" className="p-tk-3 space-y-1">
+                <Card variant="surface" className="p-tk-2 space-y-1">
                   <h3 className="text-tk-body-sm font-bold text-ink">
                     Are jobs aggregated from job boards?
                   </h3>

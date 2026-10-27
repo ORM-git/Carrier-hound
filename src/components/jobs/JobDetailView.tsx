@@ -282,7 +282,7 @@ export default function JobDetailView({
   return (
     <div
       style={{ paddingBottom: `calc(${cookieNoticeHeight}px + 7rem)` }}
-      className="max-w-[880px] w-full mx-auto space-y-4 md:pb-12"
+      className="max-w-[880px] w-full mx-auto space-y-3 md:pb-12"
     >
       {/* Clipboard Fallback Alert when copy fails */}
       {shareStatus === "error" && (
@@ -594,7 +594,7 @@ export default function JobDetailView({
       </div>
 
       {/* (2) HEADER BODY CARD */}
-      <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-5 sm:p-6 shadow-none space-y-4">
+      <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-4 sm:p-4 shadow-none space-y-3">
         <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-5">
           {/* Left / Middle: Logo, Company, Title, 2x3 Metadata */}
           <div className="flex-1 min-w-0 space-y-3.5">
@@ -848,7 +848,7 @@ export default function JobDetailView({
 
           {/* 2. Responsibilities (only if data exists) */}
           {responsibilitiesList.length > 0 && (
-            <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-5 sm:p-6 shadow-none space-y-3">
+            <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-4 sm:p-4 shadow-none space-y-3">
               <h2 className="text-[18px] font-bold text-[#0F172A]">Responsibilities</h2>
               <ul className="space-y-2 max-w-[720px] text-[15px] leading-[24px] text-[#0F172A]">
                 {responsibilitiesList.map((resp, idx) => (
@@ -863,7 +863,7 @@ export default function JobDetailView({
 
           {/* 3. Qualification (Required, Preferred) (only if data exists) */}
           {(requirementsList.length > 0 || preferredList.length > 0) && (
-            <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-5 sm:p-6 shadow-none space-y-4">
+            <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-4 sm:p-4 shadow-none space-y-3">
               <h2 className="text-[18px] font-bold text-[#0F172A]">Requirements</h2>
 
               {requirementsList.length > 0 && (
@@ -904,7 +904,7 @@ export default function JobDetailView({
 
           {/* 4. Benefits (only if data exists) */}
           {benefitsList.length > 0 && (
-            <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-5 sm:p-6 shadow-none space-y-3">
+            <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-4 sm:p-4 shadow-none space-y-3">
               <h2 className="text-[18px] font-bold text-[#0F172A]">Benefits</h2>
               <ul className="space-y-2 max-w-[720px] text-[15px] leading-[24px] text-[#0F172A]">
                 {benefitsList.map((ben, idx) => (
@@ -920,7 +920,7 @@ export default function JobDetailView({
           {/* 5. Company section as grouped cards (name/logo/description, plus founded/HQ/size/website only where data exists) */}
           <div
             id="company-section"
-            className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-5 sm:p-6 shadow-none space-y-4"
+            className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-4 sm:p-4 shadow-none space-y-3"
           >
             <h2 className="text-[18px] font-bold text-[#0F172A]">Company</h2>
 
@@ -1003,10 +1003,10 @@ export default function JobDetailView({
         </div>
 
         {/* (4) RIGHT RAIL (DESKTOP ONLY: STACKED CARDS REUSING CURRENT LABELS) */}
-        <div className="hidden lg:block lg:col-span-5 space-y-4 min-w-0">
+        <div className="hidden lg:block lg:col-span-5 space-y-3 min-w-0">
           {/* Card 1: Tailor Resume Card */}
           {hasConfirmedResume && (
-            <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-5 shadow-none space-y-3">
+            <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-4 shadow-none space-y-3">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-full bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600 shrink-0">
                   <Sparkles className="w-4 h-4" />
@@ -1038,7 +1038,7 @@ export default function JobDetailView({
 
           {/* Card 2: Similar jobs Card (only when similar jobs exist) */}
           {similarJobs && similarJobs.length > 0 && (
-            <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-5 shadow-none space-y-3">
+            <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-4 shadow-none space-y-3">
               <h2 className="text-[16px] font-bold text-[#0F172A]">Similar jobs</h2>
               <div className="space-y-2.5">
                 {similarJobs.slice(0, 3).map((simJob) => (
@@ -1071,7 +1071,7 @@ export default function JobDetailView({
           {job.trackerNotes && (
             <div
               data-testid="tracker-notes-panel"
-              className="bg-[#F8FAFC] rounded-[16px] ring-1 ring-[#E2E8F0] p-5 shadow-none space-y-2.5"
+              className="bg-[#F8FAFC] rounded-[16px] ring-1 ring-[#E2E8F0] p-4 shadow-none space-y-2.5"
             >
               <div className="flex items-center gap-2 text-[#0F172A]">
                 <FileText className="w-4 h-4 text-[#2563EB]" />

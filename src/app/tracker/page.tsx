@@ -351,7 +351,7 @@ export default function TrackerPage() {
       pageLabel="TRACKER"
       user={user}
       isPro={isPro}
-      mainClassName="flex-1 max-w-[1400px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-6 space-y-5 pb-24 lg:pb-12"
+      mainClassName="flex-1 max-w-[1400px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-4 space-y-3.5 pb-24 lg:pb-12"
     >
           {/* Top row above the board: segmented control, search input pill, primary blue Add button */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3.5">
@@ -418,7 +418,7 @@ export default function TrackerPage() {
           </div>
 
           {/* Daily Automated Digest Banner */}
-          <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-4 sm:p-5 shadow-none space-y-3">
+          <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-4 sm:p-4 shadow-none space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-[12px] bg-[#EFF6FF] border border-[#BFDBFE] text-[#2563EB] flex items-center justify-center shrink-0">
@@ -871,7 +871,7 @@ export default function TrackerPage() {
       {/* MODAL 1: ADD APPLICATION */}
       {isAddModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(15,23,42,0.6)] backdrop-blur-xs p-4 animate-fadeIn">
-          <div className="bg-white rounded-[20px] ring-1 ring-[#E2E8F0] shadow-[0_16px_48px_rgba(15,23,42,0.18)] w-full max-w-md p-6 space-y-4 text-[#0F172A]">
+          <div className="bg-white rounded-[20px] ring-1 ring-[#E2E8F0] shadow-[0_16px_48px_rgba(15,23,42,0.18)] w-full max-w-md p-4 sm:p-5 space-y-3 text-[#0F172A]">
             <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
               <h3 className="text-[16px] font-bold text-[#0F172A] flex items-center gap-2">
                 <span>Track Job Application</span>
@@ -1014,7 +1014,7 @@ export default function TrackerPage() {
       {/* MODAL 2: NOTES EDITOR */}
       {activeNotesApp && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(15,23,42,0.6)] backdrop-blur-xs p-4 animate-fadeIn">
-          <div className="bg-white rounded-[20px] ring-1 ring-[#E2E8F0] shadow-[0_16px_48px_rgba(15,23,42,0.18)] w-full max-w-md p-6 space-y-4 text-[#0F172A]">
+          <div className="bg-white rounded-[20px] ring-1 ring-[#E2E8F0] shadow-[0_16px_48px_rgba(15,23,42,0.18)] w-full max-w-md p-4 sm:p-5 space-y-3 text-[#0F172A]">
             <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
               <div>
                 <h3 className="text-base font-bold text-[#0F172A]">

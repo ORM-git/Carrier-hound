@@ -102,7 +102,7 @@ export default function PaywallModal({
         {/* Pro Upgrade Content */}
         <div className="overflow-y-auto flex-1 min-h-0 overscroll-contain">
           {/* Header */}
-          <div className="bg-surface border-b border-line p-5 sm:p-6 relative pr-14">
+          <div className="bg-surface border-b border-line p-4 sm:p-4 relative pr-14">
             <div className="flex items-center gap-2 mb-2">
               <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-tk-full text-xs font-bold uppercase tracking-wider bg-brand-50 text-brand-700 border border-brand-200">
                 <Sparkles className="w-3.5 h-3.5 text-brand-600" /> Pro Member Access
@@ -120,7 +120,7 @@ export default function PaywallModal({
           </div>
 
           {/* Content Body */}
-          <div className="p-5 sm:p-6 space-y-4 pb-8 sm:pb-6 pb-[max(2rem,env(safe-area-inset-bottom))]">
+          <div className="p-4 sm:p-4 space-y-3 pb-8 sm:pb-6 pb-[max(2rem,env(safe-area-inset-bottom))]">
             {/* Billing Plan Selector: India vs International */}
             <div className="space-y-2">
               <span className="text-xs font-bold text-ink-muted uppercase tracking-wider block">

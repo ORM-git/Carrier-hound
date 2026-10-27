@@ -30,6 +30,7 @@ import JobFilterBar, { JobFilterValues } from "@/components/jobs/JobFilterBar";
 import AllFiltersDrawer from "@/components/jobs/AllFiltersDrawer";
 import { COUNTRY_CODE_TO_NAME, matchCountryWithStrictFallback } from "@/lib/countries";
 import MobileFilterSheet from "@/components/jobs/MobileFilterSheet";
+import { JobCardMenu } from "@/components/jobs/JobCardMenu";
 import { computeFitDiagnostics, FitDiagnosticsResult } from "@/lib/matcher/scoring";
 import type { User } from "@supabase/supabase-js";
 import {
@@ -1440,7 +1441,7 @@ function JobsPageInner() {
         <main
           id="main-content"
           data-testid="jobs-main-content"
-          className="flex-1 w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-5 space-y-4 pb-44 sm:pb-32 lg:pb-12"
+          className="flex-1 w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:pt-4 sm:pb-32 lg:pb-12 space-y-3"
         >
           {selectedJob ? (
             /* In-place job detail swap inside the same shell */
@@ -1541,7 +1542,7 @@ function JobsPageInner() {
                 </div>
               </div>
 
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {/* 3. COMPACT FILTER TOOLBAR */}
                 {/* Contract assertions: sticky top-[64px] z-tk-sticky Active: Clear all mobileFiltersOpen SlidersHorizontal aria-label="Sort by" */}
                 <JobFilterBar
@@ -1587,7 +1588,7 @@ function JobsPageInner() {
               </div>
 
               {/* Jobs List Feed & Right Rail (Main Column ~973px, Right Rail ~316px, Gap 32px on Desktop) */}
-              <div className="flex flex-col lg:flex-row gap-8 items-start w-full min-w-0 pt-2">
+              <div className="flex flex-col lg:flex-row gap-8 items-start w-full min-w-0 pt-0">
                 {/* Left Feed Column: about 973px max on wide desktop, flex-1 */}
                 <div className="w-full lg:max-w-[973px] flex-1 space-y-3 min-w-0">
                   {loadingJobs ? (
@@ -1714,13 +1715,14 @@ function JobsPageInner() {
                                 handleSelectJob(job);
                               }
                             }}
-                            className="group bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-4 sm:p-5 shadow-none transition-[box-shadow,border-color] duration-200 hover:ring-[#93C5FD] focus:ring-2 focus:ring-[#93C5FD] focus:outline-none cursor-pointer min-h-fit space-y-4"
+                            className="group bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-4 shadow-none transition-[box-shadow,border-color] duration-200 hover:ring-[#93C5FD] focus:ring-2 focus:ring-[#93C5FD] focus:outline-none cursor-pointer min-h-fit"
                           >
                             {/* DESKTOP VIEW (sm and up: 768px, 1024px, 1440px) */}
-                            <div className="hidden sm:flex items-stretch justify-between gap-4 flex-1 min-h-[232px] w-full">
-                              {/* Left & Middle: 72x72 Logo, Header, Aligned 2x3 Grid, and Actions INSIDE card */}
-                              <div className="flex-1 min-w-0 flex flex-col justify-between space-y-3">
-                                <div className="flex items-start gap-4 min-w-0 flex-1">
+                            <div className="hidden sm:flex items-stretch justify-between gap-4 flex-1 min-h-[196px] w-full">
+                              {/* Left & Middle: 72x72 Logo, Header, Dividers, Aligned 2x3 Grid, and Footer Actions */}
+                              <div className="flex-1 min-w-0 flex flex-col justify-between gap-2.5">
+                                {/* Top area: Logo left, Header with badges & options menu */}
+                                <div className="flex items-start gap-4 min-w-0">
                                   {/* 72px company logo square, radius 8, minimal padding */}
                                   <CompanyLogo
                                     company={job.company}
@@ -1728,9 +1730,10 @@ function JobsPageInner() {
                                     className="w-[56px] h-[56px] sm:w-[72px] sm:h-[72px] rounded-lg shrink-0 object-contain p-1 border border-[#E2E8F0] bg-white"
                                   />
 
-                                  <div className="min-w-0 flex-1 space-y-1.5">
-                                    {/* Badges row: 22px high / 11px text */}
-                                      <div className="flex items-center gap-2">
+                                  <div className="min-w-0 flex-1 space-y-1">
+                                    {/* Badges row: 22px high / 11px text with ... options menu at top right */}
+                                    <div className="flex items-center justify-between gap-2 min-h-[22px]">
+                                      <div className="flex items-center gap-2 min-w-0 flex-wrap">
                                         {isRecent && (
                                           <span className="h-[22px] px-2 py-0.5 rounded text-[11px] font-semibold bg-[#EFF6FF] text-[#1E40AF] border border-[#BFDBFE] inline-flex items-center">
                                             Early applicant
@@ -1742,78 +1745,90 @@ function JobsPageInner() {
                                           </span>
                                         )}
                                       </div>
+                                      <JobCardMenu
+                                        job={job}
+                                        onRemoveFromList={() => handleHideJob({ stopPropagation: () => {} } as any, job.id)}
+                                        onAlreadyApplied={() => handleToggleApplied(job)}
+                                      />
+                                    </div>
 
-                                      {/* Title: 20px / 600 / 24px line-height with ellipsis */}
-                                      <h2 className="text-[20px] font-semibold text-[#0F172A] leading-[24px] truncate" title={job.title}>
-                                        {job.title}
-                                      </h2>
+                                    {/* Title: 20px / 600 / 24px line-height with ellipsis */}
+                                    <h2 className="text-[20px] font-semibold text-[#0F172A] leading-[24px] truncate" title={job.title}>
+                                      {job.title}
+                                    </h2>
 
-                                      {/* Company and industry 13px below */}
-                                      <div className="text-[13px] text-[#475569] truncate">
-                                        <span className={!isPro ? "filter blur-[4.5px] select-none font-medium" : "font-medium"}>
-                                          {job.company || "Verified Employer"}
-                                        </span>
-                                        {job.category && <span className="capitalize"> · {job.category}</span>}
-                                      </div>
-
-                                      {/* Aligned 2-row × 3-column metadata grid, 16px SVG icons, 4px gap, 13px text */}
-                                      <div className="grid grid-cols-3 grid-rows-2 gap-x-4 gap-y-2 pt-2 text-[13px] text-[#475569]">
-                                        {/* Row 1, Col 1: Location */}
-                                        <div className="flex items-center gap-1.5 min-w-0 truncate">
-                                          <MapPin className="w-4 h-4 text-[#475569] shrink-0" />
-                                          <span className="truncate" title={isPro ? (locInfo.primary || "Location unlisted") : undefined}>
-                                            {isPro ? (locInfo.primary || "Location unlisted") : <span className="filter blur-[3px] select-none">Location Locked</span>}
-                                          </span>
-                                          {isPro && locInfo.extraCount > 0 && (
-                                            <span
-                                              className="text-[11px] font-bold text-blue-600 bg-blue-50 px-1 py-0.5 rounded shrink-0 cursor-help"
-                                              title={locInfo.all.join(", ")}
-                                              aria-label={`${locInfo.extraCount} additional locations`}
-                                            >
-                                              +{locInfo.extraCount}
-                                            </span>
-                                          )}
-                                        </div>
-
-                                        {/* Row 1, Col 2: Job type */}
-                                        <div className="flex items-center gap-1.5 min-w-0 truncate">
-                                          <Briefcase className="w-4 h-4 text-[#475569] shrink-0" />
-                                          <span className="truncate">{job.type || "Full-time"}</span>
-                                        </div>
-
-                                        {/* Row 1, Col 3: Salary */}
-                                        <div className="flex items-center gap-1.5 min-w-0 truncate">
-                                          <DollarSign className="w-4 h-4 text-[#475569] shrink-0" />
-                                          <span className="truncate">
-                                            {job.salary ? (isPro ? job.salary : "••••••••") : "Salary unlisted"}
-                                          </span>
-                                        </div>
-
-                                        {/* Row 2, Col 1: Work mode */}
-                                        <div className="flex items-center gap-1.5 min-w-0 truncate">
-                                          <Laptop className="w-4 h-4 text-[#475569] shrink-0" />
-                                          <span className="truncate">{job.remote ? "Remote" : "On-site"}</span>
-                                        </div>
-
-                                        {/* Row 2, Col 2: Seniority level */}
-                                        <div className="flex items-center gap-1.5 min-w-0 truncate">
-                                          <TrendingUp className="w-4 h-4 text-[#475569] shrink-0" />
-                                          <span className="truncate">{jobLevel || "Mid-Senior"}</span>
-                                        </div>
-
-                                        {/* Row 2, Col 3: Posted Time (appears once) */}
-                                        <div className="flex items-center gap-1.5 min-w-0 truncate">
-                                          <Clock className="w-4 h-4 text-[#475569] shrink-0" />
-                                          <span className="truncate">
-                                            {job.postedAt ? `Posted ${formatRelativeTime(job.postedAt)}` : "Verified Recent"}
-                                          </span>
-                                        </div>
-                                      </div>
+                                    {/* Company and industry: one line "Company · Category/domain" */}
+                                    <div className="text-[13px] text-[#475569] truncate">
+                                      <span className={!isPro ? "filter blur-[4.5px] select-none font-medium" : "font-medium"}>
+                                        {job.company || "Verified Employer"}
+                                      </span>
+                                      {job.category && <span className="capitalize"> · {job.category}</span>}
+                                    </div>
                                   </div>
                                 </div>
 
-                                {/* Actions INSIDE the card, not a separate bordered footer row */}
-                                <div className="flex items-center justify-end gap-2 pt-2">
+                                {/* Horizontal divider 1: thin 1px light gray line */}
+                                <div className="border-b border-[#E2E8F0]" />
+
+                                {/* Aligned 2-row × 3-column metadata grid, 16px SVG icons, 4px gap, 13px text */}
+                                <div className="grid grid-cols-3 grid-rows-2 gap-x-4 gap-y-2 text-[13px] text-[#475569]">
+                                  {/* Row 1, Col 1: Location */}
+                                  <div className="flex items-center gap-1.5 min-w-0 truncate">
+                                    <MapPin className="w-4 h-4 text-[#475569] shrink-0" />
+                                    <span className="truncate" title={isPro ? (locInfo.primary || "Location unlisted") : undefined}>
+                                      {isPro ? (locInfo.primary || "Location unlisted") : <span className="filter blur-[3px] select-none">Location Locked</span>}
+                                    </span>
+                                    {isPro && locInfo.extraCount > 0 && (
+                                      <span
+                                        className="text-[11px] font-bold text-blue-600 bg-blue-50 px-1 py-0.5 rounded shrink-0 cursor-help"
+                                        title={locInfo.all.join(", ")}
+                                        aria-label={`${locInfo.extraCount} additional locations`}
+                                      >
+                                        +{locInfo.extraCount}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  {/* Row 1, Col 2: Job type */}
+                                  <div className="flex items-center gap-1.5 min-w-0 truncate">
+                                    <Briefcase className="w-4 h-4 text-[#475569] shrink-0" />
+                                    <span className="truncate">{job.type || "Full-time"}</span>
+                                  </div>
+
+                                  {/* Row 1, Col 3: Salary */}
+                                  <div className="flex items-center gap-1.5 min-w-0 truncate">
+                                    <DollarSign className="w-4 h-4 text-[#475569] shrink-0" />
+                                    <span className="truncate">
+                                      {job.salary ? (isPro ? job.salary : "••••••••") : "Salary unlisted"}
+                                    </span>
+                                  </div>
+
+                                  {/* Row 2, Col 1: Work mode */}
+                                  <div className="flex items-center gap-1.5 min-w-0 truncate">
+                                    <Laptop className="w-4 h-4 text-[#475569] shrink-0" />
+                                    <span className="truncate">{job.remote ? "Remote" : "On-site"}</span>
+                                  </div>
+
+                                  {/* Row 2, Col 2: Seniority level */}
+                                  <div className="flex items-center gap-1.5 min-w-0 truncate">
+                                    <TrendingUp className="w-4 h-4 text-[#475569] shrink-0" />
+                                    <span className="truncate">{jobLevel || "Mid-Senior"}</span>
+                                  </div>
+
+                                  {/* Row 2, Col 3: Posted Time */}
+                                  <div className="flex items-center gap-1.5 min-w-0 truncate">
+                                    <Clock className="w-4 h-4 text-[#475569] shrink-0" />
+                                    <span className="truncate">
+                                      {job.postedAt ? `Posted ${formatRelativeTime(job.postedAt)}` : "Verified Recent"}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* Horizontal divider 2: thin 1px light gray line */}
+                                <div className="border-b border-[#E2E8F0]" />
+
+                                {/* Footer with action buttons (Hide, Save, Tailor Resume, Apply) */}
+                                <div className="flex items-center justify-end gap-2">
                                   <button
                                     type="button"
                                     onClick={(e) => {
@@ -1884,7 +1899,7 @@ function JobsPageInner() {
 
                               {/* Right: Desktop Match Panel (about 164px wide, inset 4px top/right/bottom, radius 12, full card height ~224px) */}
                               {matchScore !== null ? (
-                                <div className="w-[164px] sm:w-44 shrink-0 rounded-xl sm:rounded-[16px] bg-gradient-to-b from-[#09151E] via-[#0B1E28] to-[#06241D] text-white border border-emerald-950/40 p-3 self-stretch my-0.5 mr-0.5 flex flex-col items-center justify-between min-h-[224px] text-center shadow-inner">
+                                <div className="w-[164px] sm:w-44 shrink-0 rounded-xl sm:rounded-[16px] bg-gradient-to-b from-[#09151E] via-[#0B1E28] to-[#06241D] text-white border border-emerald-950/40 p-3 self-stretch my-0.5 mr-0.5 flex flex-col items-center justify-between min-h-[196px] text-center shadow-inner">
                                   <div className="flex flex-col items-center w-full pt-1">
                                     <CircularMatchRing
                                       score={matchScore}
@@ -1920,7 +1935,7 @@ function JobsPageInner() {
                                 <Link
                                   href="/resume"
                                   onClick={(e) => e.stopPropagation()}
-                                  className="w-[164px] sm:w-44 shrink-0 rounded-xl sm:rounded-[16px] bg-gradient-to-b from-[#09151E] via-[#0B1E28] to-[#06241D] border border-emerald-950/40 text-center p-3 transition-all duration-200 group/cta space-y-2.5 self-stretch my-0.5 mr-0.5 focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1 text-white min-h-[224px] flex flex-col items-center justify-between"
+                                  className="w-[164px] sm:w-44 shrink-0 rounded-xl sm:rounded-[16px] bg-gradient-to-b from-[#09151E] via-[#0B1E28] to-[#06241D] border border-emerald-950/40 text-center p-3 transition-all duration-200 group/cta space-y-2.5 self-stretch my-0.5 mr-0.5 focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1 text-white min-h-[196px] flex flex-col items-center justify-between"
                                 >
                                   <div className="flex flex-col items-center justify-center flex-1 w-full space-y-2">
                                     <div className="w-11 h-11 rounded-full bg-blue-500/10 border border-blue-400/30 flex items-center justify-center transition-colors">
@@ -1960,8 +1975,8 @@ function JobsPageInner() {
                                   </div>
                                 </div>
 
-                                {/* Compact match badge at top right */}
-                                <div className="shrink-0">
+                                {/* Compact match badge & options menu at top right */}
+                                <div className="flex items-center gap-1.5 shrink-0">
                                   {matchScore !== null ? (
                                     <div
                                       className="w-[54px] h-[30px] rounded-full border border-emerald-500/30 bg-emerald-500/10 flex items-center justify-center text-xs font-bold text-emerald-600"
@@ -1980,6 +1995,12 @@ function JobsPageInner() {
                                       +Score
                                     </Link>
                                   )}
+
+                                  <JobCardMenu
+                                    job={job}
+                                    onRemoveFromList={() => handleHideJob({ stopPropagation: () => {} } as any, job.id)}
+                                    onAlreadyApplied={() => handleToggleApplied(job)}
+                                  />
                                 </div>
                               </div>
 
@@ -1987,6 +2008,9 @@ function JobsPageInner() {
                               <h2 className="text-[16px] font-bold text-[#0F172A] leading-snug line-clamp-2 mt-1">
                                 {job.title}
                               </h2>
+
+                              {/* Horizontal divider 1 on mobile */}
+                              <div className="border-b border-[#E2E8F0]" />
 
                               {/* Small wrapping metadata chips beneath title: roughly 24px high, 13px text (posted time not duplicated here) */}
                               <div className="flex flex-wrap items-center gap-1.5 pt-1">
@@ -2102,7 +2126,39 @@ function JobsPageInner() {
                 </div>
 
                 {/* Right Rail Column: about 316px, sticky, hidden on mobile */}
-                <div className="hidden lg:block w-[316px] shrink-0 space-y-4 sticky top-20">
+                <div className="hidden lg:block w-[316px] shrink-0 space-y-3 sticky top-20">
+                  {/* User Profile & Subscription Card (signed-in only) */}
+                  {user && (
+                    <div className="bg-white rounded-[16px] border border-[#E2E8F0] p-4 space-y-3" data-testid="sidebar-user-card">
+                      <div className="flex items-center justify-between gap-2.5">
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                          <div className="w-8 h-8 rounded-full bg-[#2563EB] text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs">
+                            {user.email ? user.email.slice(0, 1).toUpperCase() : "U"}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="font-bold text-sm text-[#0F172A] truncate">
+                              {((user.user_metadata?.full_name as string) ||
+                                (user.user_metadata?.name as string) ||
+                                (candidate?.name as string) ||
+                                (user.email ? user.email.split("@")[0] : "Candidate")).replace(/^\w/, (c) => c.toUpperCase())}
+                            </p>
+                          </div>
+                        </div>
+                        <span
+                          data-testid="sidebar-plan-badge"
+                          className={`px-2 py-0.5 rounded text-[11px] font-semibold shrink-0 ${
+                            isPro
+                              ? "bg-[#EFF6FF] text-[#1E40AF] border border-[#BFDBFE]"
+                              : "bg-slate-100 text-[#475569] border border-slate-200"
+                          }`}
+                        >
+                          {isPro ? "Pro" : "Free"}
+                        </span>
+                      </div>
+                      <div className="border-b border-[#E2E8F0]" />
+                    </div>
+                  )}
+
                   {/* Card 1: Your Saved Filters */}
                   <div className="bg-white rounded-[16px] border border-[#E2E8F0] p-4 space-y-3">
                     <div className="flex items-center justify-between">

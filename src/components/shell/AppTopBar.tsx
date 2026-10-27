@@ -219,9 +219,11 @@ export default function AppTopBar({
                   <div className="w-8 h-8 rounded-full bg-[#2563EB] text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs">
                     {userInitial}
                   </div>
-                  <span className="font-bold text-[13px] text-[#0F172A] hidden lg:inline truncate max-w-[120px]">
-                    {displayName}
-                  </span>
+                  {pathname !== "/jobs" && (
+                    <span className="font-bold text-[13px] text-[#0F172A] hidden lg:inline truncate max-w-[120px]">
+                      {displayName}
+                    </span>
+                  )}
                   <ChevronDown className={`w-3 h-3 text-[#475569] hidden sm:inline transition-transform ${avatarMenuOpen ? "rotate-180" : ""}`} />
                 </button>
 
