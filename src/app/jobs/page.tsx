@@ -26,6 +26,7 @@ import AppIconRail from "@/components/shell/AppIconRail";
 import { useSidebarMode } from "@/lib/sidebar";
 import AppTopBar, { TopBarTab } from "@/components/shell/AppTopBar";
 import JobDetailView from "@/components/jobs/JobDetailView";
+import WhyMatchCard from "@/components/jobs/WhyMatchCard";
 import JobFilterBar, { JobFilterValues } from "@/components/jobs/JobFilterBar";
 import AllFiltersDrawer from "@/components/jobs/AllFiltersDrawer";
 import { COUNTRY_CODE_TO_NAME, matchCountryWithStrictFallback } from "@/lib/countries";
@@ -372,6 +373,7 @@ function JobsPageInner() {
 
   // In-place Selected Job for Detail View
   const [selectedJob, setSelectedJob] = useState<LiveJob | null>(null);
+  const [mobileWhyMatchJob, setMobileWhyMatchJob] = useState<LiveJob | null>(null);
   const pendingJobIdRef = useRef<string | null>(null);
   const scrollPositionRef = useRef<number>(0);
   const [viewHiddenJobs, setViewHiddenJobs] = useState(false);
@@ -1774,8 +1776,27 @@ function JobsPageInner() {
                                 handleSelectJob(job);
                               }
                             }}
-                            className="group bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-4 sm:p-5 shadow-none transition-[box-shadow,border-color] duration-200 hover:ring-[#93C5FD] focus:ring-2 focus:ring-[#93C5FD] focus:outline-none cursor-pointer min-h-fit space-y-4"
+                            className="group relative bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-4 sm:p-5 shadow-none transition-[box-shadow,border-color] duration-200 hover:ring-[#93C5FD] focus:ring-2 focus:ring-[#93C5FD] focus:outline-none cursor-pointer min-h-fit space-y-4"
                           >
+                            {/* Upgraded Two-Panel Desktop Hover Popover & Mobile Sheet */}
+                            <WhyMatchCard
+                              job={job}
+                              candidate={candidate}
+                              isPro={isPro}
+                              isSaved={isSaved}
+                              onSelectJob={handleSelectJob}
+                              onHideJob={handleHideJob}
+                              onSaveJob={handleSaveJob}
+                              onApplyJob={(e, j) => {
+                                if (isPro) {
+                                  handleSelectJob(j);
+                                } else {
+                                  handleLockedAction(e);
+                                }
+                              }}
+                              isMobileSheetOpen={mobileWhyMatchJob?.id === job.id}
+                              onCloseMobileSheet={() => setMobileWhyMatchJob(null)}
+                            />
                             {/* DESKTOP VIEW (sm and up: 768px, 1024px, 1440px) */}
                             <div className="hidden sm:flex items-stretch justify-between gap-4 flex-1 min-h-[232px] w-full">
                               {/* Left & Middle: 72x72 Logo, Header, Aligned 2x3 Grid, and Actions INSIDE card */}
@@ -2136,6 +2157,20 @@ function JobsPageInner() {
                                 </span>
 
                                 <div className="flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setMobileWhyMatchJob(job);
+                                    }}
+                                    aria-label="Why this job matches"
+                                    data-testid="mobile-why-match-button"
+                                    className="h-10 min-h-[44px] min-w-[44px] px-2.5 flex items-center justify-center gap-1 rounded-full border border-blue-200 bg-blue-50 text-[#2563EB] text-xs font-semibold hover:bg-blue-100 transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
+                                  >
+                                    <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                                    <span>Why match</span>
+                                  </button>
+
                                   <button
                                     type="button"
                                     onClick={(e) => {

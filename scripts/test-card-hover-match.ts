@@ -24,6 +24,10 @@ function run() {
   }
 
   let code = fs.readFileSync(jobsPath, "utf-8");
+  const whyCardPath = path.resolve(process.cwd(), "src/components/jobs/WhyMatchCard.tsx");
+  if (fs.existsSync(whyCardPath)) {
+    code += "\n" + fs.readFileSync(whyCardPath, "utf-8");
+  }
   const scoringCode = fs.readFileSync(scoringPath, "utf-8");
 
   if (isNegativeControl) {
