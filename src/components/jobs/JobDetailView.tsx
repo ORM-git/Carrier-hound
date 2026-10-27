@@ -848,7 +848,7 @@ export default function JobDetailView({
 
           {/* 2. Responsibilities (only if data exists) */}
           {responsibilitiesList.length > 0 && (
-            <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-5 sm:p-4 shadow-none space-y-4 sm:space-y-3">
+            <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-5 sm:p-4 shadow-none space-y-3">
               <h2 className="text-[18px] font-bold text-[#0F172A]">Responsibilities</h2>
               <ul className="space-y-2 max-w-[720px] text-[15px] leading-[24px] text-[#0F172A]">
                 {responsibilitiesList.map((resp, idx) => (
@@ -904,7 +904,7 @@ export default function JobDetailView({
 
           {/* 4. Benefits (only if data exists) */}
           {benefitsList.length > 0 && (
-            <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-5 sm:p-4 shadow-none space-y-4 sm:space-y-3">
+            <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-5 sm:p-4 shadow-none space-y-3">
               <h2 className="text-[18px] font-bold text-[#0F172A]">Benefits</h2>
               <ul className="space-y-2 max-w-[720px] text-[15px] leading-[24px] text-[#0F172A]">
                 {benefitsList.map((ben, idx) => (

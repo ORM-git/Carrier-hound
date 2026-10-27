@@ -149,7 +149,7 @@ export default function TopTenCompatibleJobs({
 
       {/* Loading Skeleton */}
       {loading ? (
-        <div className="space-y-3.5 sm:space-y-3">
+        <div className="space-y-3">
           {[1, 2, 3, 4, 5].map((i) => (
             <div
               key={i}
@@ -174,7 +174,7 @@ export default function TopTenCompatibleJobs({
         </div>
       ) : (
         /* Top 10 Jobs List */
-        <div className="space-y-3">
+        <div className="space-y-3.5 sm:space-y-3">
           {rankedJobs.filter(({ job }) => !hiddenJobIds.includes(job.id)).map(({ job, diagnostics }, idx) => {
             const isSaved = savedJobIds.includes(job.id);
             const scoreColor = getScoreBadgeColor(diagnostics.score);
