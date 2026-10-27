@@ -1036,6 +1036,30 @@ export default function JobDetailView({
             </div>
           )}
 
+          {/* Card: Interview Pack Card */}
+          <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-4 shadow-none space-y-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-full bg-blue-50 border border-blue-200 flex items-center justify-center text-[#2563EB] shrink-0">
+                <FileText className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-[#0F172A]">Interview Pack</h3>
+                <p className="text-[11px] text-[#64748B]">
+                  Dossier, questions & tailored answers
+                </p>
+              </div>
+            </div>
+
+            <Link
+              href={`/jobs/${job.id}/interview-pack`}
+              data-testid="interview-pack-entry-button"
+              className="w-full py-2 px-4 rounded-full text-xs font-bold transition border border-[#BFDBFE] bg-[#EFF6FF] hover:bg-[#DBEAFE] text-[#1D4ED8] flex items-center justify-center gap-1.5 cursor-pointer min-h-[38px]"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-[#2563EB]" />
+              <span>Open Interview Pack</span>
+            </Link>
+          </div>
+
           {/* Card 2: Similar jobs Card (only when similar jobs exist) */}
           {similarJobs && similarJobs.length > 0 && (
             <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-4 shadow-none space-y-3">

@@ -46,6 +46,12 @@
   force = true
 
 [[redirects]]
+  from = "/api/jobs/interview-pack"
+  to = "/.netlify/functions/interview-pack"
+  status = 200
+  force = true
+
+[[redirects]]
   from = "/api/account/delete"
   to = "/.netlify/functions/account-delete"
   status = 200
@@ -86,6 +92,12 @@
   to = "/privacy-policy"
   status = 301
   force = true
+
+[[redirects]]
+  from = "/jobs/:id/interview-pack"
+  to = "/jobs/sample/interview-pack.html"
+  status = 200
+  force = false
 
 [[redirects]]
   from = "/jobs/detail"
