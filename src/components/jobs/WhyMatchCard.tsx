@@ -127,8 +127,8 @@ export function computePopoverDiagnostics(
 
 /**
  * Sub-score circular progress ring (Experience, Skill, Role).
- * Preserves Prompt 5 token specifications: #2563EB stroke fallback, #E2E8F0 track, 12px label.
- * Styled with horizontal ring + label layout and vibrant electric mint (#00E599) matching the reference design.
+ * Preserves Prompt 5 token specifications: #2563EB stroke, #E2E8F0 track, 12px label.
+ * Styled with horizontal ring + label layout using CareerMonke brand blue (#2563EB).
  */
 export function SmallComponentRing({
   score,
@@ -136,7 +136,7 @@ export function SmallComponentRing({
   subLabel,
   size = 40,
   strokeWidth = 3.5,
-  color = "#00E599",
+  color = "#2563EB",
 }: {
   score: number;
   label: string;
@@ -385,16 +385,12 @@ export default function WhyMatchCard({
   const renderLeftPanel = (isMobile = false) => (
     <div className={`flex-1 bg-white p-4 sm:p-5 flex flex-col justify-between min-w-0 ${isMobile ? "space-y-4" : ""}`}>
       <div className="space-y-2.5">
-        {/* Title row with electric mint Sparkle icon & action menu dots */}
+        {/* Title row with CareerMonke brand Sparkle icon & action menu dots */}
         <div className="flex items-center justify-between w-full">
           <div className="flex items-center gap-2">
-            <svg
-              viewBox="0 0 24 24"
-              className="w-5 h-5 text-[#00E599] fill-[#00E599] shrink-0 drop-shadow-[0_0_6px_rgba(0,229,153,0.35)]"
-              fill="currentColor"
-            >
-              <path d="M12 0L14.6 9.4L24 12L14.6 14.6L12 24L9.4 14.6L0 12L9.4 9.4L12 0Z" />
-            </svg>
+            <div className="w-6 h-6 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] flex items-center justify-center shrink-0">
+              <Sparkles className="w-3.5 h-3.5 text-[#2563EB]" />
+            </div>
             <h3 className="text-[14px] font-bold text-[#0F172A] leading-snug">
               Why this job is a match
             </h3>
@@ -413,8 +409,8 @@ export default function WhyMatchCard({
 
             {/* Factual matched skills line (rendered only when real skills match) */}
             {matchedSkillsLine && (
-              <p className="text-[11.5px] text-[#059669] font-medium leading-snug truncate flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#00E599] shrink-0" />
+              <p className="text-[11.5px] text-[#2563EB] font-medium leading-snug truncate flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#2563EB] shrink-0" />
                 <span>{matchedSkillsLine}</span>
               </p>
             )}
@@ -483,7 +479,7 @@ export default function WhyMatchCard({
             }}
             aria-label="Hide position"
             title="Hide position"
-            className="w-9 h-9 min-h-[36px] min-w-[36px] flex items-center justify-center rounded-full border border-slate-200/80 bg-slate-100/90 text-slate-600 hover:bg-slate-200 hover:text-slate-900 transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
+            className="w-9 h-9 min-h-[36px] min-w-[36px] flex items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
           >
             <Ban className="w-4 h-4" />
           </button>
@@ -500,7 +496,7 @@ export default function WhyMatchCard({
             className={`w-9 h-9 min-h-[36px] min-w-[36px] flex items-center justify-center rounded-full border transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
               isSaved
                 ? "border-rose-200 bg-rose-50 text-rose-600"
-                : "border-slate-200/80 bg-slate-100/90 text-slate-600 hover:bg-slate-200 hover:text-slate-900"
+                : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
             }`}
           >
             <Heart className={`w-4 h-4 ${isSaved ? "fill-rose-500 text-rose-500" : ""}`} />
@@ -512,25 +508,25 @@ export default function WhyMatchCard({
               type="button"
               onClick={handleFitAnalysisClick}
               aria-label="Open detailed fit analysis modal"
-              className="px-3.5 h-9 min-h-[36px] inline-flex items-center justify-center gap-1.5 rounded-full border border-slate-200/80 bg-slate-100/90 hover:bg-slate-200 text-[#0F172A] text-xs font-bold transition shadow-none cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
+              className="px-3.5 h-9 min-h-[36px] inline-flex items-center justify-center gap-1.5 rounded-full border border-blue-200 bg-blue-50/90 hover:bg-blue-100 text-[#2563EB] text-xs font-bold transition shadow-none cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
             >
-              <Sparkles className="w-3.5 h-3.5 text-[#00E599] fill-[#00E599]" />
+              <Sparkles className="w-3.5 h-3.5 text-[#2563EB] fill-[#2563EB]" />
               <span>Fit analysis</span>
             </button>
           )}
 
-          {/* Apply button (Vibrant mint pill matching reference) */}
+          {/* Apply button (CareerMonke signature blue brand pill) */}
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation();
               onApplyJob?.(e, job);
             }}
-            className="px-5 h-9 min-h-[36px] inline-flex items-center justify-center gap-1.5 rounded-full bg-[#00E599] hover:bg-[#00D488] active:bg-[#00C27C] text-[#042017] text-xs font-black tracking-wider uppercase transition shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00E599] cursor-pointer"
+            className="px-5 h-9 min-h-[36px] inline-flex items-center justify-center gap-1.5 rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-xs font-bold tracking-wide transition shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] cursor-pointer"
           >
-            {!isPro && <Lock className="w-3.5 h-3.5 text-[#042017]" />}
+            {!isPro && <Lock className="w-3.5 h-3.5 text-white" />}
             <span>Apply</span>
-            {isPro && <ArrowRight className="w-3.5 h-3.5 text-[#042017]" />}
+            {isPro && <ArrowRight className="w-3.5 h-3.5 text-white" />}
           </button>
         </div>
       </div>
@@ -554,11 +550,11 @@ export default function WhyMatchCard({
 
           <div className="w-full pt-2.5 border-t border-white/15 mt-2 space-y-1 text-[11px] text-emerald-100/90 text-left pl-1">
             <div className="flex items-center gap-1.5 truncate">
-              <span className="text-[#00E599] font-bold">✓</span>
+              <span className="text-[#34D399] font-bold">✓</span>
               <span className="truncate">{job.remote ? "Remote Eligible" : "Verified Direct"}</span>
             </div>
             <div className="flex items-center gap-1.5 truncate">
-              <span className="text-[#00E599] font-bold">✓</span>
+              <span className="text-[#34D399] font-bold">✓</span>
               <span className="truncate">{job.directSource ? "Direct Feed" : "Active Ingestion"}</span>
             </div>
           </div>
