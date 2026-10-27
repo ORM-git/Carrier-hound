@@ -3,6 +3,8 @@ import { createClient } from "@supabase/supabase-js";
 import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
 import { formatSalary } from "@/lib/salary/parser";
 import { verifyUserNotBanned } from "@/lib/admin/auth";
+import { COUNTRY_CODE_TO_NAME } from "@/lib/countries";
+import { sanitizeSearchQuery } from "@/lib/api/jobs";
 
 import { checkRequiredEnv } from "@/lib/api/envCheck";
 
@@ -88,15 +90,46 @@ export async function GET(req: Request) {
 
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
+    const countryCodeParam = searchParams.get("country_code") || searchParams.get("country");
+
+    const supabaseAdmin = getSupabaseAdmin();
 
     if (!id) {
+      if (countryCodeParam) {
+        const code = sanitizeSearchQuery(countryCodeParam).toUpperCase().trim();
+        let query = supabaseAdmin
+          .from("jobs")
+          .select("id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, country_code, posted_at, first_seen_at")
+          .eq("status", "active")
+          .eq("is_active", true);
+
+        const countryName = COUNTRY_CODE_TO_NAME[code];
+        if (countryName) {
+          query = query.or(`country_code.eq.${code},location.ilike.%${countryName}%`);
+        } else {
+          query = query.eq("country_code", code);
+        }
+
+        const { data: jobs, error } = await query.order("posted_at", { ascending: false }).limit(50);
+        if (error) {
+          return NextResponse.json({ error: "Failed to query jobs" }, { status: 500 });
+        }
+
+        const formattedJobs = (jobs || []).map((j: any) => ({
+          ...j,
+          country: j.country_code || j.country || "",
+          salary_text: formatSalary(j.salary_min, j.salary_max, j.currency, j.salary_period) || j.salary_text,
+        }));
+
+        return NextResponse.json({ jobs: formattedJobs, isPro: true });
+      }
+
       return NextResponse.json({ error: "Missing required query parameter: id" }, { status: 400 });
     }
 
-    const supabaseAdmin = getSupabaseAdmin();
     const { data: job, error } = await supabaseAdmin
       .from("jobs")
-      .select("id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, posted_at, first_seen_at")
+      .select("id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, country_code, posted_at, first_seen_at")
       .eq("id", id)
       .maybeSingle();
 
@@ -107,6 +140,7 @@ export async function GET(req: Request) {
     const formattedSalary = formatSalary(job.salary_min, job.salary_max, job.currency, job.salary_period) || job.salary_text;
     const formattedJob = {
       ...job,
+      country: job.country_code || job.country || "",
       salary_text: formattedSalary,
     };
 
@@ -147,7 +181,7 @@ export async function POST(req: Request) {
     const supabaseAdmin = getSupabaseAdmin();
     const { data: jobs, error } = await supabaseAdmin
       .from("jobs")
-      .select("id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, posted_at, first_seen_at")
+      .select("id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, country_code, posted_at, first_seen_at")
       .in("id", ids.slice(0, 100));
 
     if (error) {
@@ -156,6 +190,7 @@ export async function POST(req: Request) {
 
     const formattedJobs = (jobs || []).map((j: any) => ({
       ...j,
+      country: j.country_code || j.country || "",
       salary_text: formatSalary(j.salary_min, j.salary_max, j.currency, j.salary_period) || j.salary_text,
     }));
 

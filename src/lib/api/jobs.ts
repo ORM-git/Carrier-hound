@@ -3,6 +3,7 @@ import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { expandCategoryFilter, normalizeCategorySlug } from "@/lib/taxonomy";
 import type { Job } from "@/data/jobs";
 import { sanitizeExternalUrl, stripHtmlAndExecutableMarkup } from "@/lib/security/xss";
+import { COUNTRY_CODE_TO_NAME } from "@/lib/countries";
 
 export interface SearchJobsParams {
   q?: string;
@@ -39,7 +40,7 @@ const ALLOWED_DATE = new Set(["all", "24h", "7d", "30d"]);
 
 // Card fields only — no description or skills bloat
 const CARD_FIELDS =
-  "id, title, company, location, remote, remote_scope, job_type, salary_text, first_seen_at, last_seen_at, posted_at, status, category, country, apply_url";
+  "id, title, company, location, remote, remote_scope, job_type, salary_text, first_seen_at, last_seen_at, posted_at, status, category, country, country_code, apply_url";
 
 /**
  * Sanitizes user input to prevent SQL and PostgREST injection syntax breakage.
@@ -129,7 +130,9 @@ export async function searchJobs(
   }
 
   if (country !== "all") {
-    query = query.eq("country", country);
+    const code = country.toUpperCase();
+    const countryName = COUNTRY_CODE_TO_NAME[code] || country;
+    query = query.or(`country_code.eq.${code},country.eq.${countryName},location.ilike.%${countryName}%`);
   }
 
   if (remoteOnly) {
@@ -219,7 +222,7 @@ export async function searchJobs(
     salary: d.salary_text || "Competitive",
     category: d.category || "software",
     remote: d.remote === true || d.remote_scope === "remote",
-    country: d.country || "United States",
+    country: d.country_code || d.country || "",
     type:
       d.job_type === "full-time"
         ? "Full-time"

@@ -85,6 +85,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-radar-drawer-retry-error.ts", command: "npx tsx scripts/test-radar-drawer-retry-error.ts", classification: "offline" },
   { name: "scripts/test-pricing-header-first-render.ts", command: "npx tsx scripts/test-pricing-header-first-render.ts", classification: "offline" },
   { name: "scripts/test-backfill-salaries.ts", command: "npx tsx scripts/test-backfill-salaries.ts", classification: "offline" },
+  { name: "scripts/test-location-country-filter.ts", command: "npx tsx scripts/test-location-country-filter.ts", classification: "offline" },
 
   // DB-capable suites: read operations (BLOCKED by default unless authorized on test project)
   { name: "scripts/test-enhanced-scoring.ts", command: "npx tsx scripts/test-enhanced-scoring.ts", classification: "db-read", requiresSupabase: true },

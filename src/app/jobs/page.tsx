@@ -28,6 +28,7 @@ import AppTopBar, { TopBarTab } from "@/components/shell/AppTopBar";
 import JobDetailView from "@/components/jobs/JobDetailView";
 import JobFilterBar, { JobFilterValues } from "@/components/jobs/JobFilterBar";
 import AllFiltersDrawer from "@/components/jobs/AllFiltersDrawer";
+import { COUNTRY_CODE_TO_NAME } from "@/lib/countries";
 import MobileFilterSheet from "@/components/jobs/MobileFilterSheet";
 import { computeFitDiagnostics, FitDiagnosticsResult, getDiagnosticsSummary } from "@/lib/matcher/scoring";
 import type { User } from "@supabase/supabase-js";
@@ -993,9 +994,18 @@ function JobsPageInner() {
     }
 
     if (selectedCountryCode && selectedCountryCode.toLowerCase() !== "all") {
-      result = result.filter((job) =>
-        (job.country || "").toUpperCase() === selectedCountryCode.toUpperCase()
-      );
+      const targetCode = selectedCountryCode.trim().toUpperCase();
+      const countryName = COUNTRY_CODE_TO_NAME[targetCode]?.toLowerCase();
+      result = result.filter((job) => {
+        const jobCountry = (job.country || "").trim().toUpperCase();
+        if (jobCountry && jobCountry !== "UNKNOWN" && jobCountry === targetCode) {
+          return true;
+        }
+        if (countryName && (job.location || "").toLowerCase().includes(countryName)) {
+          return true;
+        }
+        return false;
+      });
     }
 
     if (selectedLocation) {

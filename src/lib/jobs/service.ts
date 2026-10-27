@@ -4,6 +4,7 @@ import { computeFitDiagnostics, FitDiagnosticsResult } from "../matcher/scoring"
 import { formatSalary } from "@/lib/salary/parser";
 import type { UserPreferences } from "@/lib/auth/types";
 import { sanitizeExternalUrl, stripHtmlAndExecutableMarkup } from "@/lib/security/xss";
+import { COUNTRY_CODE_TO_NAME } from "@/lib/countries";
 
 export interface LiveJob {
   id: string;
@@ -388,7 +389,12 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
     if (countryCode && countryCode.trim() && countryCode.toLowerCase() !== "all") {
       const code = countryCode.trim().replace(/[%_(),"'`;\\$*]/g, " ").toUpperCase().trim();
       if (code) {
-        query = query.eq("country_code", code);
+        const countryName = COUNTRY_CODE_TO_NAME[code];
+        if (countryName) {
+          query = query.or(`country_code.eq.${code},location.ilike.%${countryName}%`);
+        } else {
+          query = query.eq("country_code", code);
+        }
       }
     }
 
@@ -532,7 +538,12 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         if (countryCode && countryCode.trim() && countryCode.toLowerCase() !== "all") {
           const code = countryCode.trim().replace(/[%_(),"'`;\\$*]/g, " ").toUpperCase().trim();
           if (code) {
-            catQuery = catQuery.eq("country_code", code);
+            const countryName = COUNTRY_CODE_TO_NAME[code];
+            if (countryName) {
+              catQuery = catQuery.or(`country_code.eq.${code},location.ilike.%${countryName}%`);
+            } else {
+              catQuery = catQuery.eq("country_code", code);
+            }
           }
         }
         if (location && location.trim() && location.toLowerCase() !== "all") {
@@ -680,7 +691,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
           remote: Boolean(row.remote),
           remoteScope: row.remote_scope || undefined,
           remoteEligibility: row.remote_eligibility || undefined,
-          country: row.country_code || "US",
+          country: row.country_code || row.country || "",
           type: row.job_type === "internship" ? "Internship" : "Full-time",
           directSource: Boolean(row.verified),
           applyUrl: "",
@@ -822,7 +833,7 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
                 remote: Boolean(job.remote),
                 remoteScope: job.remote_scope || undefined,
                 remoteEligibility: job.remote_eligibility || undefined,
-                country: job.country || job.country_code || "US",
+                country: job.country || job.country_code || "",
                 type: job.job_type === "internship" ? "Internship" : "Full-time",
                 directSource: Boolean(job.verified ?? true),
                 applyUrl: sanitizeExternalUrl(job.apply_url) || "",
@@ -884,7 +895,7 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
         remote: Boolean(row.remote),
         remoteScope: row.remote_scope || undefined,
         remoteEligibility: row.remote_eligibility || undefined,
-        country: row.country_code || "US",
+        country: row.country_code || row.country || "",
         type: row.job_type === "internship" ? "Internship" : "Full-time",
         directSource: Boolean(row.verified),
         applyUrl: "",
@@ -962,7 +973,7 @@ export async function getAllActiveJobs(): Promise<LiveJob[]> {
         remote: Boolean(row.remote),
         remoteScope: row.remote_scope || undefined,
         remoteEligibility: row.remote_eligibility || undefined,
-        country: row.country_code || "US",
+        country: row.country_code || row.country || "",
         type: row.job_type === "internship" ? "Internship" : "Full-time",
         directSource: Boolean(row.verified),
         applyUrl: "",
