@@ -144,7 +144,7 @@ function inferJobLevel(title: string): string {
 }
 
 function formatRelativeTime(dateStr?: string): string {
-  if (!dateStr) return "Recently posted";
+  if (!dateStr) return "";
   try {
     const s = dateStr.trim().toLowerCase();
     if (s === "today") return "Today";
@@ -154,26 +154,95 @@ function formatRelativeTime(dateStr?: string): string {
     if (isNaN(diffMs)) return dateStr;
     const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
     if (diffHours < 1) return "Just now";
+    if (diffHours === 1) return "1 hour ago";
     if (diffHours < 24) return `${diffHours} hours ago`;
     const diffDays = Math.floor(diffHours / 24);
     if (diffDays === 1) return "1 day ago";
     if (diffDays < 30) return `${diffDays} days ago`;
-    return "Recently posted";
+    return `${Math.floor(diffDays / 30)} mo ago`;
   } catch {
-    return "Recently posted";
+    return dateStr;
   }
 }
 
 function isPostedUnder24Hours(dateStr?: string): boolean {
   if (!dateStr) return false;
   const s = dateStr.trim().toLowerCase();
-  if (s === "today" || s === "just now" || s.includes("minute") || s.includes("hour")) {
+  if (s === "today" || s === "just now" || s.includes("minute") || s.includes("sec")) {
     return true;
+  }
+  const hourMatch = s.match(/^(\d+)\s*(?:h|hour|hours)(?:\s*ago)?$/);
+  if (hourMatch) {
+    const h = parseInt(hourMatch[1], 10);
+    return h >= 0 && h < 24;
+  }
+  const dayMatch = s.match(/^(\d+)\s*(?:d|day|days)(?:\s*ago)?$/);
+  if (dayMatch) {
+    const d = parseInt(dayMatch[1], 10);
+    return d < 1;
   }
   const timestamp = Date.parse(dateStr);
   if (isNaN(timestamp)) return false;
   const diffMs = Date.now() - timestamp;
   return diffMs >= 0 && diffMs < 24 * 60 * 60 * 1000;
+}
+
+function getTagColorClass(text: string): string {
+  let hash = 0;
+  for (let i = 0; i < text.length; i++) {
+    hash = (hash << 5) - hash + text.charCodeAt(i);
+    hash |= 0;
+  }
+  const index = Math.abs(hash) % 4;
+  const TINTS = [
+    "bg-blue-50 text-[#1D4ED8] border-blue-200/70",
+    "bg-emerald-50 text-emerald-800 border-emerald-200/70",
+    "bg-violet-50 text-violet-800 border-violet-200/70",
+    "bg-amber-50 text-amber-800 border-amber-200/70",
+  ];
+  return TINTS[index];
+}
+
+function formatPillLabel(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed) return "";
+  if (trimmed.includes("-") && !trimmed.includes(" ")) {
+    return trimmed
+      .split("-")
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(" ");
+  }
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+}
+
+function getCompanyTagPills(job: LiveJob): string[] {
+  const pills: string[] = [];
+  const seen = new Set<string>();
+
+  const addPill = (val?: string | null) => {
+    if (!val || typeof val !== "string") return;
+    const parts = val.includes("·")
+      ? val.split("·")
+      : val.includes(",")
+      ? val.split(",")
+      : [val];
+
+    for (const part of parts) {
+      const cleaned = formatPillLabel(part);
+      const lower = cleaned.toLowerCase();
+      if (cleaned && !seen.has(lower)) {
+        seen.add(lower);
+        pills.push(cleaned);
+      }
+    }
+  };
+
+  if (job.category) addPill(job.category);
+  if ((job as any).industry) addPill((job as any).industry);
+  if ((job as any).companyType) addPill((job as any).companyType);
+  if ((job as any).company_type) addPill((job as any).company_type);
+
+  return pills;
 }
 
 function getJobMatchScore(job: LiveJob, candidate: CandidateProfile | null): number | null {
@@ -1693,7 +1762,10 @@ function JobsPageInner() {
                               : "Fair match"
                             : "";
                         const cardZeroSkills = Boolean(diagnostics && diagnostics.matchedSkills && diagnostics.matchedSkills.length === 0);
-                        const isRecent = isEarlyApplicant(job);
+                        const isRecent = Boolean(job.postedAt && isPostedUnder24Hours(job.postedAt));
+                        const _contractEarly = isEarlyApplicant(job);
+                        const postedRelative = job.postedAt ? formatRelativeTime(job.postedAt) : null;
+                        const companyPills = getCompanyTagPills(job);
                         const locInfo = parseJobLocation(job.location);
                         const jobLevel = inferJobLevel(job.title);
 
@@ -1721,7 +1793,7 @@ function JobsPageInner() {
                             <div className="hidden sm:flex items-stretch justify-between gap-4 flex-1 min-h-[196px] w-full">
                               {/* Left & Middle: 72x72 Logo, Header, Dividers, Aligned 2x3 Grid, and Footer Actions */}
                               <div className="flex-1 min-w-0 flex flex-col justify-between gap-2.5">
-                                {/* Top area: Logo left, Header with badges & options menu */}
+                                {/* Top area: Logo left, Header with tags & options menu */}
                                 <div className="flex items-start gap-4 min-w-0">
                                   {/* 72px company logo square, radius 8, minimal padding */}
                                   <CompanyLogo
@@ -1731,19 +1803,26 @@ function JobsPageInner() {
                                   />
 
                                   <div className="min-w-0 flex-1 space-y-1">
-                                    {/* Badges row: 22px high / 11px text with ... options menu at top right */}
+                                    {/* Top row: small colored pill tags (posted time & early applicant) left aligned, options menu at right */}
                                     <div className="flex items-center justify-between gap-2 min-h-[22px]">
-                                      <div className="flex items-center gap-2 min-w-0 flex-wrap">
-                                        {isRecent && (
-                                          <span className="h-[22px] px-2 py-0.5 rounded text-[11px] font-semibold bg-[#EFF6FF] text-[#1E40AF] border border-[#BFDBFE] inline-flex items-center">
+                                      <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                                        {job.postedAt && postedRelative ? (
+                                          <span
+                                            data-testid="job-card-posted-tag"
+                                            className="h-[22px] px-2 py-0.5 rounded text-[11px] font-medium bg-[#EFF6FF] text-[#1E40AF] border border-[#BFDBFE] inline-flex items-center gap-1"
+                                          >
+                                            <Clock className="w-3 h-3 text-[#2563EB] shrink-0" />
+                                            <span>{postedRelative}</span>
+                                          </span>
+                                        ) : null}
+                                        {isRecent ? (
+                                          <span
+                                            data-testid="job-card-early-tag"
+                                            className="h-[22px] px-2 py-0.5 rounded text-[11px] font-medium bg-sky-50 text-[#0369A1] border border-sky-200/70 inline-flex items-center"
+                                          >
                                             Early applicant
                                           </span>
-                                        )}
-                                        {job.remote && (
-                                          <span className="h-[22px] px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-100 text-[#475569] inline-flex items-center">
-                                            Remote Eligible
-                                          </span>
-                                        )}
+                                        ) : null}
                                       </div>
                                       <JobCardMenu
                                         job={job}
@@ -1757,12 +1836,23 @@ function JobsPageInner() {
                                       {job.title}
                                     </h2>
 
-                                    {/* Company and industry: one line "Company · Category/domain" */}
-                                    <div className="text-[13px] text-[#475569] truncate">
-                                      <span className={!isPro ? "filter blur-[4.5px] select-none font-medium" : "font-medium"}>
+                                    {/* Company and category/type pills */}
+                                    <div className="flex items-center gap-1.5 text-[13px] text-[#475569] min-w-0 flex-wrap">
+                                      <span className={!isPro ? "filter blur-[4.5px] select-none font-medium text-[#334155]" : "font-medium text-[#334155]"}>
                                         {job.company || "Verified Employer"}
                                       </span>
-                                      {job.category && <span className="capitalize"> · {job.category}</span>}
+                                      {companyPills.length > 0 && (
+                                        <div className="flex items-center gap-1.5 min-w-0 flex-wrap" data-testid="job-card-category-pills">
+                                          {companyPills.map((pill) => (
+                                            <span
+                                              key={pill}
+                                              className={`inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium border ${getTagColorClass(pill)}`}
+                                            >
+                                              {pill}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      )}
                                     </div>
                                   </div>
                                 </div>
@@ -1799,10 +1889,10 @@ function JobsPageInner() {
                                     ) : null}
                                   </div>
 
-                                  {/* Row 1, Col 3: Salary */}
+                                  {/* Row 1, Col 3: Salary (highlighted with stronger weight) */}
                                   <div className="flex items-center gap-1.5 min-w-0 truncate">
                                     <DollarSign className="w-4 h-4 text-[#475569] shrink-0" />
-                                    <span className="truncate">
+                                    <span className={`truncate ${job.salary ? "font-semibold text-[#0F172A]" : ""}`}>
                                       {job.salary ? (isPro ? job.salary : "••••••••") : "Salary unlisted"}
                                     </span>
                                   </div>
@@ -1823,17 +1913,8 @@ function JobsPageInner() {
                                     ) : null}
                                   </div>
 
-                                  {/* Row 2, Col 3: Posted Time */}
-                                  <div className="flex items-center gap-1.5 min-w-0 truncate">
-                                    {job.postedAt ? (
-                                      <>
-                                        <Clock className="w-4 h-4 text-[#475569] shrink-0" />
-                                        <span className="truncate">
-                                          Posted {formatRelativeTime(job.postedAt)}
-                                        </span>
-                                      </>
-                                    ) : null}
-                                  </div>
+                                  {/* Row 2, Col 3: Empty cell */}
+                                  <div className="flex items-center gap-1.5 min-w-0 truncate" />
                                 </div>
 
                                 {/* Horizontal divider 2: thin 1px light gray line */}

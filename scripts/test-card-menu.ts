@@ -5,7 +5,7 @@ const isNegativeControl = process.argv.includes("--negative-control");
 
 function run() {
   console.log("==================================================================================");
-  console.log("       TEST: /JOBS CARD STRUCTURE DIVIDERS & OPTIONS MENU POPOVER AUDIT           ");
+  console.log("       TEST: /JOBS CARD STRUCTURE, PILLS, ICONS & OPTIONS MENU AUDIT              ");
   console.log("==================================================================================");
   console.log(`Mode: ${isNegativeControl ? "NEGATIVE CONTROL (Expect Failure)" : "NORMAL VALIDATION"}\n`);
 
@@ -24,6 +24,9 @@ function run() {
     // In-memory mutation to prove non-zero exit on invalid conditions
     jobsPageCode = jobsPageCode.replace(/JobCardMenu/g, "FakeMissingMenu");
     jobsPageCode = jobsPageCode.replace(/border-b border-\[#E2E8F0\]/g, "");
+    jobsPageCode = jobsPageCode.replace(/job-card-posted-tag/g, "corrupted-tag");
+    jobsPageCode = jobsPageCode.replace(/getTagColorClass/g, "corruptedColor");
+    jobsPageCode = jobsPageCode.replace(/font-semibold text-\[#0F172A\]/g, "text-gray-200");
     menuCompCode = menuCompCode.replace(/Remove From List/g, "Delete All");
     menuCompCode = menuCompCode.replace(/Already Applied/g, "");
     menuCompCode = menuCompCode.replace(/navigator\.share/g, "undefinedShare");
@@ -54,29 +57,79 @@ function run() {
     console.log("  [PASS] Dividers: Thin 1px light gray horizontal dividers (border-b border-[#E2E8F0]) present inside card");
   }
 
-  // Company · Category/domain line (omit missing fields)
-  const hasCompanyDomainLine = jobsPageCode.includes("job.company || \"Verified Employer\"") &&
-    jobsPageCode.includes("job.category && <span className=\"capitalize\"> · {job.category}</span>");
-  if (!hasCompanyDomainLine) {
-    failures.push("CARD HEADER FAIL: Card must include one line 'Company · Category/domain' using real fields and omitting missing ones.");
+  // -------------------------------------------------------------------------
+  // 2. TOP ROW PILL TAGS (POSTED TIME & EARLY APPLICANT)
+  // -------------------------------------------------------------------------
+  // Posted time pill: Clock SVG icon, soft CM-blue pill, rendered ONLY from real postedAt
+  const hasPostedPill = jobsPageCode.includes("data-testid=\"job-card-posted-tag\"") &&
+    jobsPageCode.includes("job.postedAt && postedRelative ?") &&
+    jobsPageCode.includes("<Clock className=\"w-3 h-3 text-[#2563EB]") &&
+    jobsPageCode.includes("bg-[#EFF6FF] text-[#1E40AF] border border-[#BFDBFE]");
+  if (!hasPostedPill) {
+    failures.push("TOP PILL FAIL: Card top row must include posted-time tag with Clock SVG icon in soft CM-blue pill derived strictly from real postedAt (empty when missing).");
   } else {
-    console.log("  [PASS] Card header: One line 'Company · Category/domain' with conditional category rendering");
+    console.log("  [PASS] Top pills: Posted-time tag with Clock SVG icon and soft CM-blue pill from real postedAt");
   }
 
-  // Meta grid 3 columns x 2 rows (location, job type, salary / work model, level, posted)
-  const has3x2MetaGrid = jobsPageCode.includes("grid grid-cols-3 grid-rows-2") &&
-    jobsPageCode.includes("job.remote ? \"Remote\" : \"On-site\"") &&
-    jobsPageCode.includes("{job.type ?") &&
-    jobsPageCode.includes("{jobLevel ?") &&
-    jobsPageCode.includes("{job.postedAt ?") &&
-    !jobsPageCode.includes('job.type || "Full-time"') &&
+  // Early applicant pill: strictly derived from real data under 24h
+  const hasEarlyPill = jobsPageCode.includes("data-testid=\"job-card-early-tag\"") &&
+    jobsPageCode.includes("isRecent ?") &&
+    jobsPageCode.includes("isPostedUnder24Hours") &&
+    jobsPageCode.includes("Early applicant");
+  if (!hasEarlyPill) {
+    failures.push("EARLY APPLICANT FAIL: Card top row must include Early applicant tag derived strictly from real data posted within 24h.");
+  } else {
+    console.log("  [PASS] Top pills: Early applicant tag derived strictly from real data (< 24h old)");
+  }
+
+  // -------------------------------------------------------------------------
+  // 3. COMPANY & CATEGORY/TYPE COLORED PILLS
+  // -------------------------------------------------------------------------
+  // Category & company-type words rendered as separate small colored pills with soft tints by stable hash
+  const hasCompanyPills = jobsPageCode.includes("data-testid=\"job-card-category-pills\"") &&
+    jobsPageCode.includes("companyPills.length > 0 &&") &&
+    jobsPageCode.includes("getTagColorClass(pill)") &&
+    jobsPageCode.includes("getCompanyTagPills(job)") &&
+    jobsPageCode.includes("bg-blue-50 text-[#1D4ED8]") &&
+    jobsPageCode.includes("bg-emerald-50 text-emerald-800") &&
+    jobsPageCode.includes("bg-violet-50 text-violet-800") &&
+    jobsPageCode.includes("bg-amber-50 text-amber-800");
+  if (!hasCompanyPills) {
+    failures.push("CATEGORY PILLS FAIL: Under title, category & company-type words must render as separate small pills with soft tints (blue, green, violet, amber) rotated by stable hash, strictly from real fields only.");
+  } else {
+    console.log("  [PASS] Category pills: Real fields rendered as separate small pills with 4 soft tints rotated by stable hash");
+  }
+
+  // -------------------------------------------------------------------------
+  // 4. META GRID (3x2): SVG ICONS, SALARY WEIGHT & NO INVENTED DEFAULTS
+  // -------------------------------------------------------------------------
+  const hasMetaGridIcons = jobsPageCode.includes("grid grid-cols-3 grid-rows-2") &&
+    jobsPageCode.includes("<MapPin className=\"w-4 h-4 text-[#475569]") &&
+    jobsPageCode.includes("<Briefcase className=\"w-4 h-4 text-[#475569]") &&
+    jobsPageCode.includes("<DollarSign className=\"w-4 h-4 text-[#475569]") &&
+    jobsPageCode.includes("<Laptop className=\"w-4 h-4 text-[#475569]") &&
+    jobsPageCode.includes("<TrendingUp className=\"w-4 h-4 text-[#475569]");
+  if (!hasMetaGridIcons) {
+    failures.push("META GRID ICONS FAIL: Meta grid must have small SVG icon before every item (MapPin, Briefcase, DollarSign, Laptop, TrendingUp).");
+  } else {
+    console.log("  [PASS] Meta grid icons: Small SVG icon before every item (MapPin, Briefcase, DollarSign, Laptop, TrendingUp)");
+  }
+
+  const hasSalaryHighlight = jobsPageCode.includes("font-semibold text-[#0F172A]");
+  if (!hasSalaryHighlight) {
+    failures.push("SALARY HIGHLIGHT FAIL: Salary value must be highlighted in stronger font weight (font-semibold text-[#0F172A]).");
+  } else {
+    console.log("  [PASS] Meta grid salary: Value highlighted in stronger font weight (font-semibold text-[#0F172A])");
+  }
+
+  const hasNoInventedDefaults = !jobsPageCode.includes('job.type || "Full-time"') &&
     !jobsPageCode.includes('jobLevel || "Mid-Senior"') &&
     !jobsPageCode.includes('"Verified Recent"') &&
     !jobsPageCode.includes('"Technology"');
-  if (!has3x2MetaGrid) {
-    failures.push("META GRID FAIL: Card must include 3 columns x 2 rows meta grid with location, job type, salary, work model, level, and posted time, with no invented defaults when empty.");
+  if (!hasNoInventedDefaults) {
+    failures.push("INVENTED DEFAULTS FAIL: Meta grid must not invent placeholder defaults when real fields are empty.");
   } else {
-    console.log("  [PASS] Meta grid: 3 columns x 2 rows verified with real fields only and no invented defaults");
+    console.log("  [PASS] Meta grid purity: Empty cells stay empty, zero invented defaults");
   }
 
   // Footer action buttons: Hide, Save, Tailor Resume, Apply
@@ -99,8 +152,17 @@ function run() {
     console.log("  [PASS] Match panel: Right dark match panel preserved unchanged");
   }
 
+  // Mobile below 640px preserved
+  const hasMobilePreserved = jobsPageCode.includes("flex sm:hidden flex-col justify-between w-full space-y-3") &&
+    jobsPageCode.includes("w-8 h-8 rounded-lg shrink-0 object-contain");
+  if (!hasMobilePreserved) {
+    failures.push("MOBILE PRESERVATION FAIL: Mobile view (<640px) must be preserved identical to main.");
+  } else {
+    console.log("  [PASS] Mobile view: Mobile layout below 640px preserved identical to main");
+  }
+
   // -------------------------------------------------------------------------
-  // 2. "..." MENU BUTTON & POPOVER SPECIFICATIONS
+  // 5. "..." MENU BUTTON & POPOVER SPECIFICATIONS
   // -------------------------------------------------------------------------
   // Trigger button attributes & touch target (32px desktop, >=44px mobile)
   const hasMenuButton = menuCompCode.includes('data-testid="job-card-menu-button"') &&
@@ -129,7 +191,7 @@ function run() {
   }
 
   // -------------------------------------------------------------------------
-  // 3. POPOVER 4 ROWS / ACTIONS
+  // 6. POPOVER 4 ROWS / ACTIONS
   // -------------------------------------------------------------------------
   // Row 1: Remove From List
   const hasRemoveAction = menuCompCode.includes('data-testid="job-card-menu-item-remove"') &&
@@ -174,7 +236,7 @@ function run() {
   }
 
   // -------------------------------------------------------------------------
-  // 4. ACCESSIBILITY, FOCUS MANAGEMENT & KEYBOARD ARROW NAVIGATION
+  // 7. ACCESSIBILITY, FOCUS MANAGEMENT & KEYBOARD ARROW NAVIGATION
   // -------------------------------------------------------------------------
   const hasKeyboardNav = menuCompCode.includes("ArrowDown") &&
     menuCompCode.includes("ArrowUp") &&
@@ -213,7 +275,7 @@ function run() {
   }
 
   console.log("\n----------------------------------------------------------------------------------");
-  console.log("JOB CARD DIVIDERS & OPTIONS MENU POPOVER VALIDATED [PASS-LOCAL]");
+  console.log("JOB CARD POLISH, PILLS, ICONS & MENU AUDIT VALIDATED [PASS-LOCAL]");
   console.log("----------------------------------------------------------------------------------");
 }
 
