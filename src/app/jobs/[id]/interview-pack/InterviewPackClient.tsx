@@ -39,10 +39,16 @@ export default function InterviewPackClient({ jobId }: InterviewPackClientProps)
       setUser(authUser);
       setLoadingAuth(false);
 
+      const metadataPro = Boolean(authUser.user_metadata?.pro_granted || authUser.user_metadata?.is_pro);
+      if (metadataPro) {
+        setIsPro(true);
+        setIsProDefinitive(true);
+        return;
+      }
+
       try {
         const proStatus = await getProAccessStatus(authUser.id);
-        const userIsPro = Boolean(proStatus.isPro || authUser.user_metadata?.pro_granted || authUser.user_metadata?.is_pro);
-        setIsPro(userIsPro);
+        setIsPro(Boolean(proStatus.isPro));
         setIsProDefinitive(true);
       } catch (err) {
         console.warn("Failed checking Pro status:", err);
