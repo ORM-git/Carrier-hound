@@ -187,6 +187,11 @@ async function runTestSuite() {
   testCase('Country of Georgia -> GE', detectCountryCode('Country of Georgia'), 'GE');
   testCase('Standalone "Georgia" -> null (ambiguous)', detectCountryCode('Georgia'), null);
   testCase('Standalone "Remote - Georgia" -> null (ambiguous)', detectCountryCode('Remote - Georgia'), null);
+  testCase('Athens, Greece -> GR', detectCountryCode('Athens, Greece'), 'GR');
+  testCase('Athens, GR -> GR', detectCountryCode('Athens, GR'), 'GR');
+  testCase('bare "Athens" -> null', detectCountryCode('Athens'), null);
+  testCase('Athens, GA -> US', detectCountryCode('Athens, GA'), 'US');
+  testCase('Athens, Georgia -> US', detectCountryCode('Athens, Georgia'), 'US');
 
   // ---------------------------------------------------------------------------
   // 9. Safe Traps: Trap 4 - New Jersey vs Jersey Channel Island
@@ -252,6 +257,11 @@ async function runTestSuite() {
   testCase('US / UK -> null', detectCountryCode('US / UK'), null);
   testCase('London or New York -> null', detectCountryCode('London or New York'), null);
   testCase('Conflicting ATS vs Location -> null', detectCountryCode('London, UK', 'United States'), null);
+  testCase('Standalone "DE" -> null (ambiguous)', detectCountryCode('DE'), null);
+  testCase('Standalone "Remote - DE" -> null (ambiguous)', detectCountryCode('Remote - DE'), null);
+  testCase('Standalone "CA" -> null (ambiguous)', detectCountryCode('CA'), null);
+  testCase('Standalone "Remote - CA" -> null (ambiguous)', detectCountryCode('Remote - CA'), null);
+  testCase('Wilmington, DE -> US', detectCountryCode('Wilmington, DE'), 'US');
 
   console.log(`\n================================================================================`);
   console.log(`Test Results: ${passed} passed, ${failed} failed out of ${passed + failed} assertions.`);
