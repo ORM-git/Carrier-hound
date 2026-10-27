@@ -176,17 +176,46 @@ export function detectSeniority(title: string = ''): 'entry' | 'mid' | 'senior' 
 }
 
 /**
- * Common country name to ISO 2-letter alpha-2 map
+ * Valid ISO 3166-1 alpha-2 2-letter country code set
  */
-const COUNTRY_MAP: Record<string, string> = {
+export const ISO_ALPHA2_CODES = new Set([
+  'AD', 'AE', 'AF', 'AG', 'AI', 'AL', 'AM', 'AO', 'AQ', 'AR', 'AS', 'AT', 'AU', 'AW', 'AX', 'AZ',
+  'BA', 'BB', 'BD', 'BE', 'BF', 'BG', 'BH', 'BI', 'BJ', 'BL', 'BM', 'BN', 'BO', 'BQ', 'BR', 'BS',
+  'BT', 'BV', 'BW', 'BY', 'BZ', 'CA', 'CC', 'CD', 'CF', 'CG', 'CH', 'CI', 'CK', 'CL', 'CM', 'CN',
+  'CO', 'CR', 'CU', 'CV', 'CW', 'CX', 'CY', 'CZ', 'DE', 'DJ', 'DK', 'DM', 'DO', 'DZ', 'EC', 'EE',
+  'EG', 'EH', 'ER', 'ES', 'ET', 'FI', 'FJ', 'FK', 'FM', 'FO', 'FR', 'GA', 'GB', 'GD', 'GE', 'GF',
+  'GG', 'GH', 'GI', 'GL', 'GM', 'GN', 'GP', 'GQ', 'GR', 'GS', 'GT', 'GU', 'GW', 'GY', 'HK', 'HM',
+  'HN', 'HR', 'HT', 'HU', 'ID', 'IE', 'IL', 'IM', 'IN', 'IO', 'IQ', 'IR', 'IS', 'IT', 'JE', 'JM',
+  'JO', 'JP', 'KE', 'KG', 'KH', 'KI', 'KM', 'KN', 'KP', 'KR', 'KW', 'KY', 'KZ', 'LA', 'LB', 'LC',
+  'LI', 'LK', 'LR', 'LS', 'LT', 'LU', 'LV', 'LY', 'MA', 'MC', 'MD', 'ME', 'MF', 'MG', 'MH', 'MK',
+  'ML', 'MM', 'MN', 'MO', 'MP', 'MQ', 'MR', 'MS', 'MT', 'MU', 'MV', 'MW', 'MX', 'MY', 'MZ', 'NA',
+  'NC', 'NE', 'NF', 'NG', 'NI', 'NL', 'NO', 'NP', 'NR', 'NU', 'NZ', 'OM', 'PA', 'PE', 'PF', 'PG',
+  'PH', 'PK', 'PL', 'PM', 'PN', 'PR', 'PS', 'PT', 'PW', 'PY', 'QA', 'RE', 'RO', 'RS', 'RU', 'RW',
+  'SA', 'SB', 'SC', 'SD', 'SE', 'SG', 'SH', 'SI', 'SJ', 'SK', 'SL', 'SM', 'SN', 'SO', 'SR', 'SS',
+  'ST', 'SV', 'SX', 'SY', 'SZ', 'TC', 'TD', 'TF', 'TG', 'TH', 'TJ', 'TK', 'TL', 'TM', 'TN', 'TO',
+  'TR', 'TT', 'TV', 'TW', 'TZ', 'UA', 'UG', 'UM', 'US', 'UY', 'UZ', 'VA', 'VC', 'VE', 'VG', 'VI',
+  'VN', 'VU', 'WF', 'WS', 'YE', 'YT', 'ZA', 'ZM', 'ZW',
+]);
+
+/**
+ * Common country name and aliases mapped to ISO 2-letter alpha-2 codes.
+ */
+export const COUNTRY_MAP: Record<string, string> = {
   'united states': 'US',
+  'united states of america': 'US',
   'usa': 'US',
+  'u.s.a.': 'US',
+  'u.s.': 'US',
   'us': 'US',
   'india': 'IN',
   'united kingdom': 'GB',
-  'uk': 'GB',
   'great britain': 'GB',
   'england': 'GB',
+  'scotland': 'GB',
+  'wales': 'GB',
+  'northern ireland': 'GB',
+  'uk': 'GB',
+  'u.k.': 'GB',
   'canada': 'CA',
   'germany': 'DE',
   'deutschland': 'DE',
@@ -194,19 +223,28 @@ const COUNTRY_MAP: Record<string, string> = {
   'australia': 'AU',
   'france': 'FR',
   'netherlands': 'NL',
+  'the netherlands': 'NL',
+  'holland': 'NL',
   'ireland': 'IE',
+  'republic of ireland': 'IE',
   'japan': 'JP',
+  'nippon': 'JP',
   'brazil': 'BR',
+  'brasil': 'BR',
   'switzerland': 'CH',
   'sweden': 'SE',
   'spain': 'ES',
+  'españa': 'ES',
   'italy': 'IT',
+  'italia': 'IT',
   'poland': 'PL',
+  'polska': 'PL',
   'mexico': 'MX',
+  'méxico': 'MX',
   'israel': 'IL',
   'uae': 'AE',
+  'u.a.e.': 'AE',
   'united arab emirates': 'AE',
-  'dubai': 'AE',
   'austria': 'AT',
   'denmark': 'DK',
   'norway': 'NO',
@@ -214,40 +252,785 @@ const COUNTRY_MAP: Record<string, string> = {
   'new zealand': 'NZ',
   'portugal': 'PT',
   'philippines': 'PH',
+  'belgium': 'BE',
+  'czech republic': 'CZ',
+  'czechia': 'CZ',
+  'romania': 'RO',
+  'hungary': 'HU',
+  'greece': 'GR',
+  'south africa': 'ZA',
+  'argentina': 'AR',
+  'colombia': 'CO',
+  'chile': 'CL',
+  'south korea': 'KR',
+  'korea, republic of': 'KR',
+  'republic of korea': 'KR',
+  'taiwan': 'TW',
+  'estonia': 'EE',
+  'lithuania': 'LT',
+  'latvia': 'LV',
+  'ukraine': 'UA',
+  'turkey': 'TR',
+  'türkiye': 'TR',
+  'saudi arabia': 'SA',
+  'indonesia': 'ID',
+  'malaysia': 'MY',
+  'thailand': 'TH',
+  'vietnam': 'VN',
+  'viet nam': 'VN',
+  'nigeria': 'NG',
+  'kenya': 'KE',
+  'egypt': 'EG',
+  'pakistan': 'PK',
+  'croatia': 'HR',
+  'serbia': 'RS',
+  'bulgaria': 'BG',
+  'slovakia': 'SK',
+  'slovenia': 'SI',
+  'luxembourg': 'LU',
+  'iceland': 'IS',
+  'cyprus': 'CY',
+  'malta': 'MT',
+  'costa rica': 'CR',
+  'panama': 'PA',
+  'uruguay': 'UY',
+  'peru': 'PE',
+  'ecuador': 'EC',
+  'bangladesh': 'BD',
+  'sri lanka': 'LK',
+  'morocco': 'MA',
+  'ghana': 'GH',
+  'uganda': 'UG',
+};
+
+const US_STATE_NAMES: Record<string, string> = {
+  'alabama': 'US',
+  'alaska': 'US',
+  'arizona': 'US',
+  'arkansas': 'US',
+  'california': 'US',
+  'colorado': 'US',
+  'connecticut': 'US',
+  'delaware': 'US',
+  'florida': 'US',
+  'hawaii': 'US',
+  'idaho': 'US',
+  'illinois': 'US',
+  'indiana': 'US',
+  'iowa': 'US',
+  'kansas': 'US',
+  'kentucky': 'US',
+  'louisiana': 'US',
+  'maine': 'US',
+  'maryland': 'US',
+  'massachusetts': 'US',
+  'michigan': 'US',
+  'minnesota': 'US',
+  'mississippi': 'US',
+  'missouri': 'US',
+  'montana': 'US',
+  'nebraska': 'US',
+  'nevada': 'US',
+  'new hampshire': 'US',
+  'new jersey': 'US',
+  'new mexico': 'US',
+  'new york': 'US',
+  'north carolina': 'US',
+  'north dakota': 'US',
+  'ohio': 'US',
+  'oklahoma': 'US',
+  'oregon': 'US',
+  'pennsylvania': 'US',
+  'rhode island': 'US',
+  'south carolina': 'US',
+  'south dakota': 'US',
+  'tennessee': 'US',
+  'texas': 'US',
+  'utah': 'US',
+  'vermont': 'US',
+  'virginia': 'US',
+  'washington': 'US',
+  'west virginia': 'US',
+  'wisconsin': 'US',
+  'wyoming': 'US',
+  'district of columbia': 'US',
+};
+
+const CANADIAN_PROVINCES: Record<string, string> = {
+  'ontario': 'CA',
+  'british columbia': 'CA',
+  'quebec': 'CA',
+  'québec': 'CA',
+  'alberta': 'CA',
+  'manitoba': 'CA',
+  'saskatchewan': 'CA',
+  'nova scotia': 'CA',
+  'new brunswick': 'CA',
+  'newfoundland': 'CA',
+  'prince edward island': 'CA',
+};
+
+const CITY_TO_COUNTRY: Record<string, string> = {
+  // US Cities
+  'san francisco': 'US',
+  'new york': 'US',
+  'new york city': 'US',
+  'nyc': 'US',
+  'seattle': 'US',
+  'austin': 'US',
+  'boston': 'US',
+  'chicago': 'US',
+  'los angeles': 'US',
+  'denver': 'US',
+  'dallas': 'US',
+  'san jose': 'US',
+  'san diego': 'US',
+  'portland': 'US',
+  'miami': 'US',
+  'washington dc': 'US',
+  'washington, dc': 'US',
+  'raleigh': 'US',
+  'durham': 'US',
+  'pittsburgh': 'US',
+  'salt lake city': 'US',
+  'minneapolis': 'US',
+  'philadelphia': 'US',
+  'phoenix': 'US',
+  'houston': 'US',
+  'detroit': 'US',
+  'nashville': 'US',
+  'charlotte': 'US',
+  'orlando': 'US',
+  'tampa': 'US',
+  'las vegas': 'US',
+  'baltimore': 'US',
+  'columbus': 'US',
+  'indianapolis': 'US',
+  'fort wayne': 'US',
+  'albuquerque': 'US',
+  'santa fe': 'US',
+  'wichita': 'US',
+  'little rock': 'US',
+  'jersey city': 'US',
+  'newark': 'US',
+  'hoboken': 'US',
+  'kansas city': 'US',
+
+  // Canada Cities
+  'toronto': 'CA',
+  'vancouver': 'CA',
+  'montreal': 'CA',
+  'montréal': 'CA',
+  'ottawa': 'CA',
+  'calgary': 'CA',
+  'edmonton': 'CA',
+  'waterloo': 'CA',
+  'quebec city': 'CA',
+  'halifax': 'CA',
+  'victoria': 'CA',
+
+  // UK Cities
+  'london': 'GB',
+  'manchester': 'GB',
+  'edinburgh': 'GB',
+  'cambridge': 'GB',
+  'oxford': 'GB',
+  'bristol': 'GB',
+  'birmingham': 'GB',
+  'glasgow': 'GB',
+  'leeds': 'GB',
+  'belfast': 'GB',
+  'liverpool': 'GB',
+  'sheffield': 'GB',
+  'newcastle': 'GB',
+
+  // India Cities
+  'bengaluru': 'IN',
+  'bangalore': 'IN',
+  'hyderabad': 'IN',
+  'mumbai': 'IN',
+  'pune': 'IN',
+  'gurgaon': 'IN',
+  'gurugram': 'IN',
+  'noida': 'IN',
+  'delhi': 'IN',
+  'new delhi': 'IN',
+  'chennai': 'IN',
+  'kolkata': 'IN',
+  'ahmedabad': 'IN',
+  'jaipur': 'IN',
+  'kochi': 'IN',
+  'trivandrum': 'IN',
+  'thiruvananthapuram': 'IN',
+  'indore': 'IN',
+  'chandigarh': 'IN',
+
+  // Germany Cities
+  'berlin': 'DE',
+  'munich': 'DE',
+  'münchen': 'DE',
+  'frankfurt': 'DE',
+  'hamburg': 'DE',
+  'cologne': 'DE',
+  'köln': 'DE',
+  'stuttgart': 'DE',
+  'dusseldorf': 'DE',
+  'düsseldorf': 'DE',
+  'leipzig': 'DE',
+  'dresden': 'DE',
+
+  // France Cities
+  'paris': 'FR',
+  'lyon': 'FR',
+  'toulouse': 'FR',
+  'marseille': 'FR',
+  'nantes': 'FR',
+  'bordeaux': 'FR',
+  'lille': 'FR',
+
+  // Netherlands Cities
+  'amsterdam': 'NL',
+  'rotterdam': 'NL',
+  'utrecht': 'NL',
+  'eindhoven': 'NL',
+  'the hague': 'NL',
+  'den haag': 'NL',
+  'delft': 'NL',
+
+  // Ireland Cities
+  'dublin': 'IE',
+  'cork': 'IE',
+  'galway': 'IE',
+  'limerick': 'IE',
+
+  // Australia Cities
+  'sydney': 'AU',
+  'melbourne': 'AU',
+  'brisbane': 'AU',
+  'perth': 'AU',
+  'adelaide': 'AU',
+  'canberra': 'AU',
+
+  // Japan Cities
+  'tokyo': 'JP',
+  'osaka': 'JP',
+  'kyoto': 'JP',
+  'yokohama': 'JP',
+  'fukuoka': 'JP',
+  'nagoya': 'JP',
+  'sapporo': 'JP',
+
+  // Brazil Cities
+  'são paulo': 'BR',
+  'sao paulo': 'BR',
+  'rio de janeiro': 'BR',
+  'belo horizonte': 'BR',
+  'curitiba': 'BR',
+  'florianópolis': 'BR',
+  'florianopolis': 'BR',
+  'brasilia': 'BR',
+  'brasília': 'BR',
+  'porto alegre': 'BR',
+
+  // Spain Cities
+  'madrid': 'ES',
+  'barcelona': 'ES',
+  'valencia': 'ES',
+  'seville': 'ES',
+  'sevilla': 'ES',
+  'malaga': 'ES',
+  'málaga': 'ES',
+  'bilbao': 'ES',
+
+  // Italy Cities
+  'milan': 'IT',
+  'milano': 'IT',
+  'rome': 'IT',
+  'roma': 'IT',
+  'turin': 'IT',
+  'torino': 'IT',
+  'bologna': 'IT',
+
+  // Israel Cities
+  'tel aviv': 'IL',
+  'jerusalem': 'IL',
+  'haifa': 'IL',
+  'herzliya': 'IL',
+
+  // Poland Cities
+  'warsaw': 'PL',
+  'warszawa': 'PL',
+  'krakow': 'PL',
+  'kraków': 'PL',
+  'wroclaw': 'PL',
+  'wrocław': 'PL',
+  'gdansk': 'PL',
+  'gdańsk': 'PL',
+
+  // Sweden Cities
+  'stockholm': 'SE',
+  'gothenburg': 'SE',
+  'göteborg': 'SE',
+  'malmo': 'SE',
+  'malmö': 'SE',
+
+  // Switzerland Cities
+  'zurich': 'CH',
+  'zürich': 'CH',
+  'geneva': 'CH',
+  'genève': 'CH',
+  'basel': 'CH',
+  'lausanne': 'CH',
+  'bern': 'CH',
+
+  // Austria Cities
+  'vienna': 'AT',
+  'wien': 'AT',
+  'graz': 'AT',
+  'salzburg': 'AT',
+
+  // Portugal Cities
+  'lisbon': 'PT',
+  'lisboa': 'PT',
+  'porto': 'PT',
+
+  // Denmark Cities
+  'copenhagen': 'DK',
+  'københavn': 'DK',
+  'aarhus': 'DK',
+
+  // Finland Cities
+  'helsinki': 'FI',
+  'espoo': 'FI',
+
+  // Norway Cities
+  'oslo': 'NO',
+  'bergen': 'NO',
+
+  // New Zealand Cities
+  'auckland': 'NZ',
+  'wellington': 'NZ',
+  'christchurch': 'NZ',
+
+  // Philippines Cities
+  'manila': 'PH',
+  'quezon city': 'PH',
+  'cebu city': 'PH',
+  'makati': 'PH',
+  'taguig': 'PH',
+
+  // Mexico Cities
+  'mexico city': 'MX',
+  'ciudad de méxico': 'MX',
+  'cdmx': 'MX',
+  'guadalajara': 'MX',
+  'monterrey': 'MX',
+  'cancun': 'MX',
+  'cancún': 'MX',
+  'tijuana': 'MX',
+  'puebla': 'MX',
+
+  // UAE
+  'dubai': 'AE',
+  'abu dhabi': 'AE',
+
+  // Others
+  'belgrade': 'RS',
+  'beograd': 'RS',
+  'bucharest': 'RO',
+  'bucuresti': 'RO',
+  'budapest': 'HU',
+  'prague': 'CZ',
+  'praha': 'CZ',
+  'brussels': 'BE',
+  'kyiv': 'UA',
+  'kiev': 'UA',
+  'istanbul': 'TR',
+  'seoul': 'KR',
+  'taipei': 'TW',
+  'buenos aires': 'AR',
+  'santiago': 'CL',
+  'bogota': 'CO',
+  'bogotá': 'CO',
+  'cairo': 'EG',
+  'lagos': 'NG',
+  'nairobi': 'KE',
+  'jakarta': 'ID',
+  'kuala lumpur': 'MY',
+  'bangkok': 'TH',
+  'ho chi minh city': 'VN',
+  'saigon': 'VN',
+  'hanoi': 'VN',
+  'karachi': 'PK',
 };
 
 /**
- * Extracts 2-letter ISO country code from location string if detectable.
+ * Resolves safe traps before generic lookups:
+ * - New Mexico (US) vs Mexico (MX)
+ * - Indiana (US) vs India (IN)
+ * - Georgia state (US) vs Georgia country (GE) vs standalone Georgia (null)
+ * - New Jersey (US) vs Jersey Channel Island (JE) vs standalone Jersey (null)
+ * - Guinea (GN) vs New Guinea / Papua New Guinea (PG) vs Equatorial Guinea (GQ) vs Guinea-Bissau (GW)
+ * - Arkansas (US) vs Kansas (US) vs Kansas City (US)
  */
-export function detectCountryCode(location: string = ''): string | null {
-  if (!location) return null;
-  const loc = location.trim();
-  const lower = loc.toLowerCase();
-
-  // Explicit country matching
-  for (const [name, code] of Object.entries(COUNTRY_MAP)) {
-    const regex = new RegExp(`\\b${name}\\b`, 'i');
-    if (regex.test(lower)) {
-      return code;
-    }
+function resolveTrapCases(lower: string): { code?: string; ambiguous?: boolean } | null {
+  // Trap 5: Guinea vs New Guinea vs Equatorial Guinea vs Guinea-Bissau
+  if (/\b(?:papua\s+new\s+guinea|new\s+guinea|port\s+moresby)\b/i.test(lower)) {
+    return { code: 'PG' };
+  }
+  if (/\b(?:equatorial\s+guinea|malabo)\b/i.test(lower)) {
+    return { code: 'GQ' };
+  }
+  if (/\b(?:guinea[- ]bissau|bissau)\b/i.test(lower)) {
+    return { code: 'GW' };
+  }
+  if (/\b(?:republic\s+of\s+guinea|conakry)\b/i.test(lower)) {
+    return { code: 'GN' };
+  }
+  if (/\bguinea\b/i.test(lower)) {
+    return { code: 'GN' };
   }
 
-  // Common US state abbreviations (e.g. "San Francisco, CA" or "Austin, TX")
-  if (/,?\s*(AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)\b/.test(loc)) {
-    return 'US';
+  // Trap 2: New Mexico vs Mexico
+  if (/\bnew\s+mexico\b/i.test(lower) || /\b(albuquerque|santa fe|las cruces)\b/i.test(lower)) {
+    return { code: 'US' };
+  }
+  if (/\b(?:mexico\s+city|ciudad\s+de\s+m[eé]xico|cdmx|guadalajara|monterrey|canc[uú]n|tijuana|puebla)\b/i.test(lower)) {
+    return { code: 'MX' };
+  }
+  if (/\b(?:mexico|m[eé]xico)\b/i.test(lower)) {
+    return { code: 'MX' };
   }
 
-  // Common Indian cities
-  if (/\b(bengaluru|bangalore|hyderabad|mumbai|pune|gurgaon|gurugram|noida|delhi|chennai)\b/i.test(lower)) {
-    return 'IN';
+  // Trap 1: India vs Indiana
+  if (/\bindiana\b/i.test(lower) || /\b(indianapolis|fort wayne|bloomington|evansville|south bend)\b/i.test(lower)) {
+    return { code: 'US' };
+  }
+  // Standalone "IN" or "Remote - IN" without city/qualifier is ambiguous (could be US state IN or ISO code for India)
+  if (/^(?:remote\s*[-–—:]\s*)?in$/i.test(lower.trim())) {
+    return { ambiguous: true };
+  }
+  if (/\bindia\b/i.test(lower)) {
+    return { code: 'IN' };
   }
 
-  // Common UK cities
-  if (/\b(london|manchester|edinburgh|cambridge|oxford|bristol)\b/i.test(lower)) {
-    return 'GB';
+  // Trap 3: Georgia state vs Georgia country
+  // Georgia country indicators
+  if (
+    /\b(tbilisi|batumi|kutaisi|rustavi)\b/i.test(lower) ||
+    /\bgeorgia\s*\((?:country|sakartvelo)\)/i.test(lower) ||
+    /\bcountry\s+of\s+georgia\b/i.test(lower) ||
+    /\bgeorgia\s*,\s*ge\b/i.test(lower)
+  ) {
+    return { code: 'GE' };
+  }
+  // Georgia state indicators (Atlanta, Savannah, Augusta, GA state with US context)
+  if (
+    /\b(atlanta|savannah|alpharetta|augusta|marietta|athens|macon|roswell)\b/i.test(lower) ||
+    /\bgeorgia\s*,\s*(?:us|usa|united states)\b/i.test(lower) ||
+    /\bga\s*,\s*(?:us|usa|united states)\b/i.test(lower)
+  ) {
+    return { code: 'US' };
+  }
+  // Standalone "Georgia" or "Remote - Georgia" is ambiguous (never guess between US state and Caucasus country)
+  if (/^(?:remote\s*[-–—:]\s*)?georgia$/i.test(lower.trim())) {
+    return { ambiguous: true };
+  }
+
+  // Trap 4: Jersey (New Jersey vs Island of Jersey)
+  if (
+    /\bnew\s+jersey\b/i.test(lower) ||
+    /\b(jersey\s+city|newark|hoboken|trenton|princeton|camden|paterson)\b/i.test(lower) ||
+    /\bnj\s*,\s*(?:us|usa|united states)\b/i.test(lower)
+  ) {
+    return { code: 'US' };
+  }
+  if (
+    /\b(saint\s+helier|st\.?\s*helier)\b/i.test(lower) ||
+    /\bjersey\s*,\s*(?:channel\s+islands?|uk|je)\b/i.test(lower) ||
+    /\bchannel\s+islands?\b/i.test(lower)
+  ) {
+    return { code: 'JE' };
+  }
+  // Standalone "Jersey" or "Remote - Jersey" is ambiguous
+  if (/^(?:remote\s*[-–—:]\s*)?jersey$/i.test(lower.trim())) {
+    return { ambiguous: true };
+  }
+
+  // Trap 6: Kansas vs Kansas-like names
+  if (/\barkansas\b/i.test(lower) || /\b(little rock|fayetteville|fort smith|springdale)\b/i.test(lower)) {
+    return { code: 'US' };
+  }
+  if (/\bkansas\s+city\b/i.test(lower)) {
+    return { code: 'US' };
+  }
+  if (/\bkansas\b/i.test(lower) || /\b(wichita|overland park|topeka|olathe)\b/i.test(lower)) {
+    return { code: 'US' };
   }
 
   return null;
+}
+
+export type AtsCountryInput =
+  | string
+  | {
+      country?: string | null;
+      countryCode?: string | null;
+      location?: string | null;
+    }
+  | null
+  | undefined;
+
+/**
+ * Extracts 2-letter ISO country code from location string and/or ATS source fields.
+ * Safe against known geographical traps:
+ * - India vs Indiana
+ * - Mexico vs New Mexico
+ * - Georgia state vs Georgia country
+ * - Jersey vs New Jersey
+ * - Guinea vs New Guinea / Equatorial Guinea / Guinea-Bissau
+ * - Kansas vs Arkansas vs Kansas City
+ * Ambiguous locations strictly remain null (never guesses).
+ */
+export function detectCountryCode(
+  location: string = '',
+  atsField?: AtsCountryInput
+): string | null {
+  // Step 1: Parse ATS country field if provided
+  let atsCountryCode: string | null = null;
+  if (atsField) {
+    let rawAts: string | null = null;
+    if (typeof atsField === 'string') {
+      rawAts = atsField.trim();
+    } else if (typeof atsField === 'object' && atsField !== null) {
+      if (atsField.countryCode && typeof atsField.countryCode === 'string') {
+        const directCode = atsField.countryCode.trim().toUpperCase();
+        if (ISO_ALPHA2_CODES.has(directCode)) {
+          atsCountryCode = directCode;
+        }
+      }
+      if (!atsCountryCode && atsField.country && typeof atsField.country === 'string') {
+        rawAts = atsField.country.trim();
+      }
+    }
+
+    if (!atsCountryCode && rawAts) {
+      const upper = rawAts.toUpperCase();
+      if (ISO_ALPHA2_CODES.has(upper)) {
+        atsCountryCode = upper;
+      } else {
+        const lower = rawAts.toLowerCase();
+        const nonCountryStubs = new Set([
+          'remote', 'worldwide', 'global', 'anywhere', 'hybrid', 'in-office', 'onsite', 'none', 'n/a'
+        ]);
+        if (!nonCountryStubs.has(lower)) {
+          const trap = resolveTrapCases(lower);
+          if (trap?.code) {
+            atsCountryCode = trap.code;
+          } else if (!trap?.ambiguous && COUNTRY_MAP[lower]) {
+            atsCountryCode = COUNTRY_MAP[lower];
+          }
+        }
+      }
+    }
+  }
+
+  // Step 2: Location parsing
+  if (!location || typeof location !== 'string') {
+    return atsCountryCode;
+  }
+  const loc = location.trim();
+  if (!loc) {
+    return atsCountryCode;
+  }
+
+  const lower = loc.toLowerCase();
+
+  // Pure broad region / remote indicators (return ATS country or null)
+  const broadRegions = new Set([
+    'remote',
+    'worldwide',
+    'global',
+    'anywhere',
+    'work from anywhere',
+    'distributed',
+    'flexible',
+    'hybrid',
+    'in-office',
+    'onsite',
+    'remote - worldwide',
+    'remote - global',
+    'remote - emea',
+    'remote - apac',
+    'remote - latam',
+    'remote - americas',
+    'remote - europe',
+    'all regions',
+    'multiple locations',
+    'various locations',
+    'emea',
+    'apac',
+    'latam',
+    'americas',
+    'europe',
+    'north america',
+    'eu',
+    'european union',
+    'asia',
+    'africa',
+    'middle east',
+  ]);
+  if (broadRegions.has(lower)) {
+    return atsCountryCode;
+  }
+
+  // Multi-country delimiter check (e.g. "US or Canada", "US / UK", "US, UK, CA")
+  if (/\b(?:us|usa|ca|uk|gb|eu|india|germany)\b.*(?:\/|\||\bor\b|,\s*and\b).*\b(?:us|usa|ca|uk|gb|eu|india|germany)\b/i.test(loc)) {
+    return null; // Ambiguous stays null
+  }
+
+  // Check known traps first
+  const trapResult = resolveTrapCases(lower);
+  if (trapResult) {
+    if (trapResult.ambiguous) {
+      return null;
+    }
+    if (trapResult.code) {
+      // If ATS gave an explicit conflicting country, resolve safely
+      if (atsCountryCode && atsCountryCode !== trapResult.code) {
+        return null;
+      }
+      return trapResult.code;
+    }
+  }
+
+  // Collect candidate country codes from location text
+  const detectedCandidates = new Set<string>();
+
+  // Format 1: "Remote - <Country>" or "Remote: <Country>"
+  const remoteMatch = loc.match(/^remote\s*[-–—:]\s*(.+)$/i);
+  if (remoteMatch) {
+    const target = remoteMatch[1].trim().toLowerCase();
+    if (COUNTRY_MAP[target]) {
+      detectedCandidates.add(COUNTRY_MAP[target]);
+    }
+    const targetUpper = target.toUpperCase();
+    if (ISO_ALPHA2_CODES.has(targetUpper)) {
+      detectedCandidates.add(targetUpper);
+    }
+  }
+
+  const US_STATE_CODES = new Set([
+    'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA',
+    'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ',
+    'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT',
+    'VA', 'WA', 'WV', 'WI', 'WY', 'DC'
+  ]);
+
+  const CANADIAN_PROVINCE_CODES = new Set([
+    'ON', 'BC', 'QC', 'AB', 'MB', 'SK', 'NS', 'NB', 'PE', 'NL', 'YT', 'NT', 'NU'
+  ]);
+
+  // Format 2: Segments separated by commas, semicolons, dashes, slashes, or "or"/"and"
+  const parts = loc.split(/[,;\-\/|]|\s+(?:or|and)\s+/i).map((p) => p.trim()).filter(Boolean);
+  for (const part of parts) {
+    const partLower = part.toLowerCase();
+    const partUpper = part.toUpperCase();
+
+    if (COUNTRY_MAP[partLower]) {
+      detectedCandidates.add(COUNTRY_MAP[partLower]);
+    }
+
+    // US State name
+    if (US_STATE_NAMES[partLower]) {
+      detectedCandidates.add('US');
+    }
+    // Canadian province name
+    if (CANADIAN_PROVINCES[partLower]) {
+      detectedCandidates.add('CA');
+    }
+    // City
+    if (CITY_TO_COUNTRY[partLower]) {
+      detectedCandidates.add(CITY_TO_COUNTRY[partLower]);
+    }
+
+    // Two-letter postal / ISO code disambiguation:
+    if (partUpper.length === 2) {
+      if (partUpper === 'US') {
+        detectedCandidates.add('US');
+      } else if (partUpper === 'UK' || partUpper === 'GB') {
+        detectedCandidates.add('GB');
+      } else if (US_STATE_CODES.has(partUpper)) {
+        // If it's a known US state code (e.g. CA, NY, TX, MA) attached to a city or in US postal format
+        detectedCandidates.add('US');
+      } else if (CANADIAN_PROVINCE_CODES.has(partUpper)) {
+        detectedCandidates.add('CA');
+      } else if (
+        ISO_ALPHA2_CODES.has(partUpper) &&
+        partUpper !== 'IN' &&
+        partUpper !== 'GA' &&
+        partUpper !== 'OR' &&
+        partUpper !== 'ME' &&
+        partUpper !== 'NO' &&
+        partUpper !== 'ID' &&
+        partUpper !== 'SO' &&
+        partUpper !== 'IT' &&
+        partUpper !== 'AT' &&
+        partUpper !== 'BE'
+      ) {
+        detectedCandidates.add(partUpper);
+      }
+    }
+  }
+
+  // Format 3: Explicit US state code regex (e.g. "San Francisco, CA" or "Austin, TX")
+  if (/(?:,\s*|\b)(?:AL|AK|AZ|AR|CA|CO|CT|DE|FL|HI|ID|IL|IA|KS|KY|LA|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|DC)\b/.test(loc)) {
+    detectedCandidates.add('US');
+  }
+
+  // State code IN or GA preceded by a comma and not in "India"
+  if (/(?:,\s*)(?:IN|GA)(?:\s*,\s*(?:US|USA|United States))?(?:\s*|\b|$)/.test(loc) && !loc.toLowerCase().includes('india')) {
+    detectedCandidates.add('US');
+  }
+
+  // Format 4: Canadian province codes with comma (e.g. "Vancouver, BC" or "Toronto, ON")
+  if (/(?:,\s*)(?:ON|BC|QC|AB|MB|SK|NS|NB|PE)\b/.test(loc)) {
+    detectedCandidates.add('CA');
+  }
+
+  // Format 5: Direct full-string country name search (word boundary)
+  for (const [name, code] of Object.entries(COUNTRY_MAP)) {
+    if (name.length <= 2) continue; // Skip 2-letter tokens in full search to avoid word collision
+    const regex = new RegExp(`\\b${name}\\b`, 'i');
+    if (regex.test(lower)) {
+      detectedCandidates.add(code);
+    }
+  }
+
+  // Format 6: Direct full-string city search
+  for (const [city, code] of Object.entries(CITY_TO_COUNTRY)) {
+    const regex = new RegExp(`\\b${city}\\b`, 'i');
+    if (regex.test(lower)) {
+      detectedCandidates.add(code);
+    }
+  }
+
+  // Evaluation of candidates
+  if (detectedCandidates.size === 1) {
+    const code = Array.from(detectedCandidates)[0];
+    if (atsCountryCode && atsCountryCode !== code) {
+      // Conflict between location and ATS field -> ambiguous
+      return null;
+    }
+    return code;
+  }
+
+  if (detectedCandidates.size > 1) {
+    // Multiple distinct countries detected (e.g. "London or New York") -> ambiguous stays null
+    return null;
+  }
+
+  return atsCountryCode || null;
 }
 
 /**
