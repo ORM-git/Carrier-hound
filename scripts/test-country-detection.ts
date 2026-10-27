@@ -192,6 +192,10 @@ async function runTestSuite() {
   testCase('bare "Athens" -> null', detectCountryCode('Athens'), null);
   testCase('Athens, GA -> US', detectCountryCode('Athens, GA'), 'US');
   testCase('Athens, Georgia -> US', detectCountryCode('Athens, Georgia'), 'US');
+  testCase('Gori, Georgia -> null', detectCountryCode('Gori, Georgia'), null);
+  testCase('Remote, Georgia -> null', detectCountryCode('Remote, Georgia'), null);
+  testCase('Remote in Georgia -> null', detectCountryCode('Remote in Georgia'), null);
+  testCase('Warsaw, Georgia -> PL', detectCountryCode('Warsaw, Georgia'), 'PL');
 
   // ---------------------------------------------------------------------------
   // 9. Safe Traps: Trap 4 - New Jersey vs Jersey Channel Island
@@ -262,6 +266,8 @@ async function runTestSuite() {
   testCase('Standalone "CA" -> null (ambiguous)', detectCountryCode('CA'), null);
   testCase('Standalone "Remote - CA" -> null (ambiguous)', detectCountryCode('Remote - CA'), null);
   testCase('Wilmington, DE -> US', detectCountryCode('Wilmington, DE'), 'US');
+  testCase('Remote, CA -> null', detectCountryCode('Remote, CA'), null);
+  testCase('Remote, DE -> null', detectCountryCode('Remote, DE'), null);
 
   console.log(`\n================================================================================`);
   console.log(`Test Results: ${passed} passed, ${failed} failed out of ${passed + failed} assertions.`);

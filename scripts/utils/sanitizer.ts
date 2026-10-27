@@ -706,14 +706,14 @@ function resolveTrapCases(lower: string): { code?: string; ambiguous?: boolean }
   if (/\bindiana\b/i.test(lower) || /\b(indianapolis|fort wayne|bloomington|evansville|south bend)\b/i.test(lower)) {
     return { code: 'US' };
   }
-  // Standalone "IN" or "Remote - IN" without city/qualifier is ambiguous (could be US state IN or ISO code for India)
-  if (/^(?:remote\s*[-–—:]\s*)?in$/i.test(lower.trim())) {
+  // Standalone "IN" or "Remote - IN", "Remote, IN" without city/qualifier is ambiguous (could be US state IN or ISO code for India)
+  if (/^(?:remote\s*(?:[-–—:,]|in)?\s*)?in$/i.test(lower.trim())) {
     return { ambiguous: true };
   }
-  // Standalone 2-letter "DE" or "CA" without US state context (city, comma) is ambiguous:
+  // Standalone 2-letter "DE" or "CA" (including "Remote, CA", "Remote, DE", etc.) without US state context is ambiguous:
   // "DE" could be Germany (ISO) or Delaware (US state)
   // "CA" could be Canada (ISO) or California (US state)
-  if (/^(?:remote\s*[-–—:]\s*)?(?:de|ca)$/i.test(lower.trim())) {
+  if (/^(?:remote\s*(?:[-–—:,]|in)?\s*)?(?:de|ca)$/i.test(lower.trim())) {
     return { ambiguous: true };
   }
   if (/\bindia\b/i.test(lower)) {
@@ -730,17 +730,18 @@ function resolveTrapCases(lower: string): { code?: string; ambiguous?: boolean }
   ) {
     return { code: 'GE' };
   }
-  // Georgia state indicators (Atlanta, Savannah, Augusta, GA state with US context)
+  // Georgia state indicators: US context only (city list, athens, georgia, georgia, us/usa/united states, or , GA)
   if (
     /\b(atlanta|savannah|alpharetta|augusta|marietta|macon|roswell)\b/i.test(lower) ||
+    /\bathens\s*,\s*georgia\b/i.test(lower) ||
     /\bgeorgia\s*,\s*(?:us|usa|united states)\b/i.test(lower) ||
     /\bga\s*,\s*(?:us|usa|united states)\b/i.test(lower) ||
-    /(?:,\s*|\bin\s+)georgia(?:\s*,\s*(?:us|usa|united states))?\b/i.test(lower)
+    /(?:,\s*)ga(?:\s*|\b|$)/i.test(lower)
   ) {
     return { code: 'US' };
   }
-  // Standalone "Georgia" or "Remote - Georgia" is ambiguous (never guess between US state and Caucasus country)
-  if (/^(?:remote\s*[-–—:]\s*)?georgia$/i.test(lower.trim())) {
+  // Standalone "Georgia", "Remote, Georgia", "Remote in Georgia", etc. is ambiguous
+  if (/^(?:remote\s*(?:[-–—:,]|in)?\s*)?georgia$/i.test(lower.trim())) {
     return { ambiguous: true };
   }
 
@@ -970,7 +971,10 @@ export function detectCountryCode(
       } else if (partUpper === 'DE') {
         // "DE" is Germany ISO code or Delaware US state.
         // Only treat as US if US state context is present (e.g. preceded by comma: "Wilmington, DE")
-        if (/(?:,\s*)DE\b/i.test(loc) || /\bDE\s*,\s*(?:US|USA)\b/i.test(loc)) {
+        // and not preceded by "Remote, DE"
+        if (
+          ((/(?:,\s*)DE\b/i.test(loc) && !/\bremote\s*,\s*DE\b/i.test(loc)) || /\bDE\s*,\s*(?:US|USA)\b/i.test(loc))
+        ) {
           if (!/\b(?:germany|deutschland|berlin|munich|hamburg|frankfurt)\b/i.test(loc)) {
             detectedCandidates.add('US');
           } else {
@@ -982,7 +986,10 @@ export function detectCountryCode(
       } else if (partUpper === 'CA') {
         // "CA" is Canada ISO code or California US state.
         // Only treat as US if US state context is present (e.g. preceded by comma: "San Francisco, CA")
-        if (/(?:,\s*)CA\b/i.test(loc) || /\bCA\s*,\s*(?:US|USA)\b/i.test(loc)) {
+        // and not preceded by "Remote, CA"
+        if (
+          ((/(?:,\s*)CA\b/i.test(loc) && !/\bremote\s*,\s*CA\b/i.test(loc)) || /\bCA\s*,\s*(?:US|USA)\b/i.test(loc))
+        ) {
           if (!/\b(?:canada|ontario|quebec|british columbia|alberta|toronto|vancouver|montreal|ottawa)\b/i.test(loc)) {
             detectedCandidates.add('US');
           } else {
@@ -1025,7 +1032,8 @@ export function detectCountryCode(
   }
 
   // State code DE or CA preceded by a comma (US state context like "Wilmington, DE", "San Francisco, CA")
-  if (/(?:,\s*)(?:DE|CA)(?:\s*,\s*(?:US|USA|United States))?(?:\s*|\b|$)/.test(loc)) {
+  // Excludes "Remote, DE" and "Remote, CA" which are ambiguous
+  if (/(?:,\s*)(?:DE|CA)(?:\s*,\s*(?:US|USA|United States))?(?:\s*|\b|$)/.test(loc) && !/\bremote\s*,\s*(?:DE|CA)\b/i.test(loc)) {
     const isCanadaContext = /\b(?:canada|ontario|quebec|british columbia|alberta|toronto|vancouver|montreal)\b/i.test(loc);
     const isGermanyContext = /\b(?:germany|deutschland|berlin|munich|hamburg|frankfurt)\b/i.test(loc);
     if (!isCanadaContext && !isGermanyContext) {
