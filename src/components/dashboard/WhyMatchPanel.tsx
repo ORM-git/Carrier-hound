@@ -438,7 +438,7 @@ export default function WhyMatchPanel({
       {/* =================================================================== */}
       {/* LEFT PANEL: White Card with Title, Summary, Rings, and Action Row   */}
       {/* =================================================================== */}
-      <div className="flex-1 bg-white p-4 sm:p-5 flex flex-col justify-between min-w-0 space-y-4">
+      <div className="flex-1 bg-white p-4 sm:p-4 flex flex-col justify-between min-w-0 space-y-4 sm:space-y-3">
         <div className="space-y-3">
           {/* Header Row: Sparkle Icon + Title + AI Action Button */}
           <div className="flex flex-wrap items-center justify-between gap-2 w-full">
@@ -684,7 +684,7 @@ export default function WhyMatchPanel({
       {/* RIGHT PANEL: Scoped Dark Green Gradient with Big Overall Ring        */}
       {/* Gradient: #064E3B to #065F46, Mint ring: #34D399, Accent: #5EEAD4   */}
       {/* =================================================================== */}
-      <div className="w-full md:w-[170px] lg:w-[185px] shrink-0 bg-gradient-to-b from-[#064E3B] via-[#043327] to-[#065F46] p-4 sm:p-5 flex flex-col items-center justify-between text-white text-center border-t md:border-t-0 md:border-l border-emerald-950/40 shadow-inner">
+      <div className="w-full md:w-[170px] lg:w-[185px] shrink-0 bg-gradient-to-b from-[#064E3B] via-[#043327] to-[#065F46] p-4 sm:p-4 flex flex-col items-center justify-between text-white text-center border-t md:border-t-0 md:border-l border-emerald-950/40 shadow-inner">
         {diagnostics && overallScore !== null ? (
           <>
             <div className="flex flex-col items-center w-full pt-1">
