@@ -131,14 +131,27 @@ export async function searchJobs(
 
   if (country !== "all") {
     const code = country.toUpperCase();
-    const countryName = COUNTRY_CODE_TO_NAME[code] || country;
-    query = query.or(`country_code.eq.${code},country.eq.${countryName},location.ilike.%${countryName}%`);
+    const countryName = COUNTRY_CODE_TO_NAME[code];
+    if (countryName) {
+      if (code === "IN") {
+        query = query.or("country_code.eq.IN,country.eq.India,and(location.ilike.%India%,location.not.ilike.%Indiana%)");
+      } else if (code === "MX") {
+        query = query.or("country_code.eq.MX,country.eq.Mexico,and(location.ilike.%Mexico%,location.not.ilike.%New Mexico%)");
+      } else {
+        query = query.or(`country_code.eq.${code},country.eq.${countryName},location.ilike.%${countryName}%`);
+      }
+    } else {
+      const sanitized = sanitizeSearchQuery(country);
+      if (sanitized) {
+        query = query.eq("country", sanitized);
+      }
+    }
   }
 
   if (remoteOnly) {
     query = query.eq("remote_scope", "remote");
     if (country !== "all" && country.toLowerCase() === "india") {
-      query = query.or("country.eq.India,location.ilike.%worldwide%,location.ilike.%india%");
+      query = query.or("country.eq.India,location.ilike.%worldwide%,and(location.ilike.%india%,location.not.ilike.%indiana%)");
     }
   }
 

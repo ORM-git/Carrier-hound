@@ -3,7 +3,7 @@ import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
 import { formatSalary } from "@/lib/salary/parser";
 import { getSupabaseAdminClient, getRuntimeEnv } from "@/lib/ai/serviceHandler";
 import { getRequestContext } from "@cloudflare/next-on-pages";
-import { COUNTRY_CODE_TO_NAME } from "@/lib/countries";
+import { COUNTRY_CODE_TO_NAME, getCountryFilterClause } from "@/lib/countries";
 
 export const runtime = "edge";
 
@@ -139,9 +139,9 @@ export async function GET(req: Request) {
     if (countryCodeParam && countryCodeParam.trim() && countryCodeParam.toLowerCase() !== "all") {
       const code = sanitizeSearchQuery(countryCodeParam).toUpperCase().trim();
       if (code) {
-        const countryName = COUNTRY_CODE_TO_NAME[code];
-        if (countryName) {
-          query = query.or(`country_code.eq.${code},location.ilike.%${countryName}%`);
+        const orClause = getCountryFilterClause(code);
+        if (orClause) {
+          query = query.or(orClause);
         } else {
           query = query.eq("country_code", code);
         }

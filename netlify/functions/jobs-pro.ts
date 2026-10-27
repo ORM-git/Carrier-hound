@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { formatSalary } from "../../src/lib/salary/parser";
 import { verifyUserNotBanned } from "../../src/lib/admin/auth";
-import { COUNTRY_CODE_TO_NAME } from "../../src/lib/countries";
+import { COUNTRY_CODE_TO_NAME, getCountryFilterClause } from "../../src/lib/countries";
 import { sanitizeSearchQuery } from "../../src/lib/api/jobs";
 import { safeLog } from "./_logger";
 
@@ -142,9 +142,9 @@ export async function handler(event: any) {
             .eq("status", "active")
             .eq("is_active", true);
 
-          const countryName = COUNTRY_CODE_TO_NAME[code];
-          if (countryName) {
-            query = query.or(`country_code.eq.${code},location.ilike.%${countryName}%`);
+          const orClause = getCountryFilterClause(code);
+          if (orClause) {
+            query = query.or(orClause);
           } else {
             query = query.eq("country_code", code);
           }

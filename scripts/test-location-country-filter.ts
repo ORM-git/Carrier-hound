@@ -3,26 +3,85 @@
  *
  * Verifies the Location & Country filter fixes across:
  * 1. src/components/jobs/JobFilterBar.tsx:
- *    - Confirm commits { countryCode, location }
+ *    - Confirm commits { countryCode: draftFilters.countryCode, location: draftFilters.location }
  *    - Reset clears both countryCode and location
  *    - Renders "Country: XX" chip when filters.countryCode is set
  *    - Displays expanded list of supported countries (at least US, GB, CA, IN, DE, FR, NL, AU, ES, BR, SG, IE, JP, MX)
- * 2. Backend & Service Predicates (service.ts, search route, pro route):
+ * 2. Backend & Service Predicates (service.ts, search route, pro route, netlify functions):
  *    - Country filter matches country_code.eq.CODE OR location.ilike.%country name%
- * 3. Null Country Not Defaulted to "US":
+ *    - Applies strict exclusions for false positives:
+ *      * IN matches "India" but excludes "Indiana"
+ *      * MX matches "Mexico" but excludes "New Mexico"
+ * 3. Security in src/lib/api/jobs.ts:
+ *    - Restricts .or() query to COUNTRY_CODE_TO_NAME allowlist
+ *    - Falls back to .eq("country", sanitized) for unlisted inputs
+ *    - No raw unverified user strings in .or(...)
+ * 4. Null Country Not Defaulted to "US":
  *    - Null country_code is mapped to empty/unknown, never defaulted to "US"
- * 4. Client-side filter in page.tsx:
- *    - Correctly matches country_code or falls back to location containing country name
- *    - Does NOT falsely match null/unknown country jobs as "US"
- *
- * Supports --negative-control to verify non-zero exit on corrupted expectations.
+ * 5. Client-side filter in page.tsx:
+ *    - Uses matchCountryWithStrictFallback:
+ *      * "Indianapolis, Indiana" is NOT IN
+ *      * "Albuquerque, New Mexico" is NOT MX
+ *      * "Mumbai, India" IS IN
+ *      * "Mexico City, Mexico" IS MX
+ *      * Does NOT falsely match null/unknown country jobs as "US"
+ * 6. Negative Controls:
+ *    - Two real in-memory mutation negative controls:
+ *      * Mutate Confirm handler in memory to drop countryCode -> assert validator detects regression.
+ *      * Mutate matcher in memory to omit Indiana/New Mexico exclusion -> assert false positive detected.
+ *    - When executed with --negative-control, runs the mutation directly against validation, exiting with code 1.
  */
 
 import * as fs from "fs";
 import * as path from "path";
-import { SUPPORTED_COUNTRIES, COUNTRY_CODE_TO_NAME, getCountryName } from "../src/lib/countries";
+import {
+  SUPPORTED_COUNTRIES,
+  COUNTRY_CODE_TO_NAME,
+  getCountryFilterClause,
+  matchCountryWithStrictFallback,
+} from "../src/lib/countries";
 
 const isNegativeControl = process.argv.includes("--negative-control");
+
+// Helper validator for JobFilterBar code (used for both real validation and mutation testing)
+export function validateJobFilterBarConfirmHandler(code: string): string[] {
+  const issues: string[] = [];
+  const confirmCalls = [...code.matchAll(/handleConfirm\(\s*\{([^}]+)\}\s*\)/g)].map((m) => m[1]);
+  const locationConfirm = confirmCalls.find((call) => call.includes("draftFilters.location"));
+
+  if (!locationConfirm) {
+    issues.push("JobFilterBar Confirm handler for location is missing completely!");
+  } else if (!locationConfirm.includes("countryCode: draftFilters.countryCode")) {
+    issues.push("JobFilterBar Confirm handler drops countryCode when committing location!");
+  }
+  return issues;
+}
+
+// Helper validator for country matcher false-positive safety
+export function validateStrictCountryMatching(
+  matcher: (country: string | null | undefined, loc: string | null | undefined, code: string) => boolean
+): string[] {
+  const issues: string[] = [];
+  // Negative control assertions:
+  // "Indianapolis, Indiana" must NOT match IN
+  if (matcher("", "Indianapolis, Indiana", "IN")) {
+    issues.push("False positive: 'Indianapolis, Indiana' was incorrectly matched as IN!");
+  }
+  // "Albuquerque, New Mexico" must NOT match MX
+  if (matcher("", "Albuquerque, New Mexico", "MX")) {
+    issues.push("False positive: 'Albuquerque, New Mexico' was incorrectly matched as MX!");
+  }
+  // Positive assertions:
+  // "Mumbai, India" MUST match IN
+  if (!matcher("", "Mumbai, India", "IN")) {
+    issues.push("False negative: 'Mumbai, India' was not matched as IN!");
+  }
+  // "Mexico City, Mexico" MUST match MX
+  if (!matcher("", "Mexico City, Mexico", "MX")) {
+    issues.push("False negative: 'Mexico City, Mexico' was not matched as MX!");
+  }
+  return issues;
+}
 
 async function run() {
   console.log("==================================================================================");
@@ -54,7 +113,7 @@ async function run() {
   }
 
   const barPath = path.resolve(process.cwd(), "src/components/jobs/JobFilterBar.tsx");
-  const barCode = fs.readFileSync(barPath, "utf-8");
+  let barCode = fs.readFileSync(barPath, "utf-8");
 
   if (!barCode.includes("SUPPORTED_COUNTRIES")) {
     failures.push("JobFilterBar.tsx does not use SUPPORTED_COUNTRIES for country options!");
@@ -67,17 +126,17 @@ async function run() {
   // ---------------------------------------------------------------------------
   console.log("\nTEST 2: Verifying JobFilterBar popover Confirm and Reset handlers...");
 
-  // Confirm must send { countryCode: draftFilters.countryCode, location: draftFilters.location }
-  const hasConfirmCountryAndLoc =
-    barCode.includes("handleConfirm({ countryCode: draftFilters.countryCode, location: draftFilters.location })") ||
-    (barCode.includes("draftFilters.countryCode") && barCode.includes("handleConfirm") && barCode.includes("draftFilters.location"));
+  if (isNegativeControl) {
+    // Under negative control execution, deliberately mutate barCode in memory to drop countryCode
+    barCode = barCode.replace(
+      "handleConfirm({ countryCode: draftFilters.countryCode, location: draftFilters.location })",
+      "handleConfirm({ location: draftFilters.location })"
+    );
+  }
 
-  const dropsCountryOnConfirm =
-    barCode.includes("handleConfirm({ location: draftFilters.location })") &&
-    !barCode.includes("countryCode: draftFilters.countryCode");
-
-  if (!hasConfirmCountryAndLoc || dropsCountryOnConfirm) {
-    failures.push("JobFilterBar.tsx: Confirm button does NOT commit { countryCode, location }!");
+  const confirmIssues = validateJobFilterBarConfirmHandler(barCode);
+  if (confirmIssues.length > 0) {
+    failures.push(...confirmIssues);
   } else {
     console.log("  [PASS] Confirm button commits both countryCode and location from draftFilters");
   }
@@ -109,10 +168,33 @@ async function run() {
   }
 
   // ---------------------------------------------------------------------------
-  // 4. Server & Service Query Predicates: country_code.eq.CODE OR location.ilike.%name%
+  // 4. Server & Service Query Predicates: getCountryFilterClause & Strict Exclusions
   // ---------------------------------------------------------------------------
-  console.log("\nTEST 4: Verifying OR location text-match fallback predicate across routes & service...");
+  console.log("\nTEST 4: Verifying getCountryFilterClause and strict exclusion predicates...");
 
+  // Verify getCountryFilterClause output
+  const inClause = getCountryFilterClause("IN");
+  if (!inClause || !inClause.includes("not.ilike.%Indiana%")) {
+    failures.push(`getCountryFilterClause('IN') missing Indiana exclusion! Got: ${inClause}`);
+  } else {
+    console.log(`  [PASS] getCountryFilterClause('IN') -> ${inClause}`);
+  }
+
+  const mxClause = getCountryFilterClause("MX");
+  if (!mxClause || !mxClause.includes("not.ilike.%New Mexico%")) {
+    failures.push(`getCountryFilterClause('MX') missing New Mexico exclusion! Got: ${mxClause}`);
+  } else {
+    console.log(`  [PASS] getCountryFilterClause('MX') -> ${mxClause}`);
+  }
+
+  const deClause = getCountryFilterClause("DE");
+  if (!deClause || deClause !== "country_code.eq.DE,location.ilike.%Germany%") {
+    failures.push(`getCountryFilterClause('DE') unexpected: ${deClause}`);
+  } else {
+    console.log(`  [PASS] getCountryFilterClause('DE') -> ${deClause}`);
+  }
+
+  // Verify imports and usage across backend files
   const searchRoutePath = path.resolve(process.cwd(), "src/app/api/jobs/search/route.ts");
   const searchRouteCode = fs.readFileSync(searchRoutePath, "utf-8");
 
@@ -128,72 +210,68 @@ async function run() {
   const netlifyProPath = path.resolve(process.cwd(), "netlify/functions/jobs-pro.ts");
   const netlifyProCode = fs.readFileSync(netlifyProPath, "utf-8");
 
-  // Check search route
-  const searchRouteHasOrPredicate =
-    searchRouteCode.includes("country_code.eq.") &&
-    searchRouteCode.includes("location.ilike.") &&
-    searchRouteCode.includes("COUNTRY_CODE_TO_NAME");
+  const apiJobsPath = path.resolve(process.cwd(), "src/lib/api/jobs.ts");
+  const apiJobsCode = fs.readFileSync(apiJobsPath, "utf-8");
 
-  if (!searchRouteHasOrPredicate) {
-    failures.push("search route (src/app/api/jobs/search/route.ts): missing country_code.eq.CODE OR location.ilike.%countryName% predicate!");
+  if (!serviceCode.includes("getCountryFilterClause")) {
+    failures.push("src/lib/jobs/service.ts: does not use getCountryFilterClause!");
   } else {
-    console.log("  [PASS] src/app/api/jobs/search/route.ts: applies country_code.eq.CODE OR location.ilike.%countryName%");
+    console.log("  [PASS] src/lib/jobs/service.ts uses getCountryFilterClause in main and category queries");
   }
 
-  // Check service.ts
-  const serviceHasOrPredicate =
-    serviceCode.includes("country_code.eq.") &&
-    serviceCode.includes("location.ilike.") &&
-    serviceCode.includes("COUNTRY_CODE_TO_NAME");
-
-  if (!serviceHasOrPredicate) {
-    failures.push("service.ts (src/lib/jobs/service.ts): missing country_code.eq.CODE OR location.ilike.%countryName% predicate!");
+  if (!searchRouteCode.includes("getCountryFilterClause")) {
+    failures.push("src/app/api/jobs/search/route.ts: does not use getCountryFilterClause!");
   } else {
-    console.log("  [PASS] src/lib/jobs/service.ts: applies country_code.eq.CODE OR location.ilike.%countryName% across main & category queries");
+    console.log("  [PASS] src/app/api/jobs/search/route.ts uses getCountryFilterClause");
   }
 
-  // Check netlify functions jobs-search
-  const netlifySearchHasOrPredicate =
-    netlifySearchCode.includes("country_code.eq.") &&
-    netlifySearchCode.includes("location.ilike.") &&
-    netlifySearchCode.includes("COUNTRY_CODE_TO_NAME");
-
-  if (!netlifySearchHasOrPredicate) {
-    failures.push("netlify/functions/jobs-search.ts: missing country_code.eq.CODE OR location.ilike.%countryName% predicate!");
+  if (!netlifySearchCode.includes("getCountryFilterClause")) {
+    failures.push("netlify/functions/jobs-search.ts: does not use getCountryFilterClause!");
   } else {
-    console.log("  [PASS] netlify/functions/jobs-search.ts: applies country_code.eq.CODE OR location.ilike.%countryName%");
+    console.log("  [PASS] netlify/functions/jobs-search.ts uses getCountryFilterClause");
   }
 
-  // Check pro route
-  const proRouteHasOrPredicate =
-    proRouteCode.includes("country_code.eq.") &&
-    proRouteCode.includes("location.ilike.") &&
-    proRouteCode.includes("COUNTRY_CODE_TO_NAME");
-
-  if (!proRouteHasOrPredicate) {
-    failures.push("pro route (src/app/api/jobs/pro/route.ts): missing country_code.eq.CODE OR location.ilike.%countryName% predicate!");
+  if (!proRouteCode.includes("getCountryFilterClause")) {
+    failures.push("src/app/api/jobs/pro/route.ts: does not use getCountryFilterClause!");
   } else {
-    console.log("  [PASS] src/app/api/jobs/pro/route.ts: applies country_code.eq.CODE OR location.ilike.%countryName%");
+    console.log("  [PASS] src/app/api/jobs/pro/route.ts uses getCountryFilterClause");
   }
 
-  // Check netlify functions jobs-pro
-  const netlifyProHasOrPredicate =
-    netlifyProCode.includes("country_code.eq.") &&
-    netlifyProCode.includes("location.ilike.") &&
-    netlifyProCode.includes("COUNTRY_CODE_TO_NAME");
-
-  if (!netlifyProHasOrPredicate) {
-    failures.push("netlify/functions/jobs-pro.ts: missing country_code.eq.CODE OR location.ilike.%countryName% predicate!");
+  if (!netlifyProCode.includes("getCountryFilterClause")) {
+    failures.push("netlify/functions/jobs-pro.ts: does not use getCountryFilterClause!");
   } else {
-    console.log("  [PASS] netlify/functions/jobs-pro.ts: applies country_code.eq.CODE OR location.ilike.%countryName%");
+    console.log("  [PASS] netlify/functions/jobs-pro.ts uses getCountryFilterClause");
   }
 
   // ---------------------------------------------------------------------------
-  // 5. Null country_code Stop Defaulting to "US"
+  // 5. Security & Sanitization in src/lib/api/jobs.ts
   // ---------------------------------------------------------------------------
-  console.log("\nTEST 5: Verifying null country_code is NOT defaulted to 'US' in display and mappings...");
+  console.log("\nTEST 5: Verifying security in src/lib/api/jobs.ts (allowlist & sanitization)...");
 
-  // Check that row.country_code || "US" has been eliminated from service.ts, route.ts, and functions
+  const hasOrAllowlistCheck =
+    apiJobsCode.includes("COUNTRY_CODE_TO_NAME[code]") &&
+    apiJobsCode.includes("sanitizeSearchQuery(country)");
+
+  const hasNoRawOrInterpolation =
+    !apiJobsCode.includes("`country_code.eq.${code},country.eq.${countryName},location.ilike.%${countryName}%`") ||
+    apiJobsCode.includes("if (countryName)");
+
+  const hasStrictInAndMxInApiJobs =
+    apiJobsCode.includes("not.ilike.%Indiana%") &&
+    apiJobsCode.includes("not.ilike.%New Mexico%");
+
+  if (!hasOrAllowlistCheck || !hasNoRawOrInterpolation || !hasStrictInAndMxInApiJobs) {
+    failures.push("src/lib/api/jobs.ts: missing allowlist gating or strict IN/MX exclusion for .or() queries!");
+  } else {
+    console.log("  [PASS] src/lib/api/jobs.ts: country .or() strictly allowlisted; raw inputs sanitized with .eq('country', ...)");
+    console.log("  [PASS] src/lib/api/jobs.ts: includes strict not.ilike.%Indiana% and not.ilike.%New Mexico% exclusions");
+  }
+
+  // ---------------------------------------------------------------------------
+  // 6. Null country_code Stop Defaulting to "US"
+  // ---------------------------------------------------------------------------
+  console.log("\nTEST 6: Verifying null country_code is NOT defaulted to 'US' in display and mappings...");
+
   const serviceDefaultsToUs = serviceCode.includes('row.country_code || "US"') || serviceCode.includes('job.country_code || "US"');
   if (serviceDefaultsToUs) {
     failures.push("service.ts still defaults null country_code to 'US'!");
@@ -216,85 +294,123 @@ async function run() {
   }
 
   // ---------------------------------------------------------------------------
-  // 6. Client-Side Filter in src/app/jobs/page.tsx: Unknown handling & text fallback
+  // 7. Client-Side Filter in src/app/jobs/page.tsx: Strict Fallback & False Positive Prevention
   // ---------------------------------------------------------------------------
-  console.log("\nTEST 6: Simulating client-side job filtering logic from page.tsx...");
+  console.log("\nTEST 7: Verifying client-side job filtering logic from page.tsx & matchCountryWithStrictFallback...");
 
   const pagePath = path.resolve(process.cwd(), "src/app/jobs/page.tsx");
   const pageCode = fs.readFileSync(pagePath, "utf-8");
 
-  // Verify page.tsx imports COUNTRY_CODE_TO_NAME and implements fallback
-  const pageHasFallback =
-    pageCode.includes("COUNTRY_CODE_TO_NAME") &&
-    pageCode.includes("countryName") &&
-    pageCode.includes("includes(countryName)");
-
-  if (!pageHasFallback) {
-    failures.push("src/app/jobs/page.tsx: client-side filter missing COUNTRY_CODE_TO_NAME fallback for location text match!");
+  if (!pageCode.includes("matchCountryWithStrictFallback")) {
+    failures.push("src/app/jobs/page.tsx: client-side filter does not use matchCountryWithStrictFallback!");
   } else {
-    console.log("  [PASS] src/app/jobs/page.tsx: client-side filter binds COUNTRY_CODE_TO_NAME and fallback");
+    console.log("  [PASS] src/app/jobs/page.tsx: client-side filter uses matchCountryWithStrictFallback");
   }
 
-  // Simulation test with synthetic jobs
+  // 7a. Required Test Cases:
+  // - "Indianapolis, Indiana" is NOT IN
+  // - "Albuquerque, New Mexico" is NOT MX
+  // - "Mumbai, India" IS IN
+  // - "Mexico City, Mexico" IS MX
+  let effectiveMatcher = matchCountryWithStrictFallback;
+  if (isNegativeControl) {
+    // Deliberately simulate naive fallback without Indiana/New Mexico exclusion
+    effectiveMatcher = (country, location, code) => {
+      const c = (country || "").trim().toUpperCase();
+      if (c && c === code.toUpperCase()) return true;
+      const cName = COUNTRY_CODE_TO_NAME[code.toUpperCase()]?.toLowerCase();
+      return Boolean(cName && (location || "").toLowerCase().includes(cName));
+    };
+  }
+
+  const strictMatchingIssues = validateStrictCountryMatching(effectiveMatcher);
+  if (strictMatchingIssues.length > 0) {
+    failures.push(...strictMatchingIssues);
+  } else {
+    console.log("  [PASS] 'Indianapolis, Indiana' is NOT matched as IN");
+    console.log("  [PASS] 'Albuquerque, New Mexico' is NOT matched as MX");
+    console.log("  [PASS] 'Mumbai, India' IS matched as IN");
+    console.log("  [PASS] 'Mexico City, Mexico' IS matched as MX");
+  }
+
+  // 7b. Simulation test with full synthetic jobs
   const sampleJobs = [
     { id: "1", title: "Engineer 1", country: "US", location: "New York, NY" },
     { id: "2", title: "Engineer 2", country: "DE", location: "Berlin" },
-    { id: "3", title: "Engineer 3", country: "", location: "Munich, Germany" }, // Null country_code, but location has "Germany"
-    { id: "4", title: "Engineer 4", country: "", location: "Toronto, Canada" }, // Null country_code, location has "Canada"
-    { id: "5", title: "Engineer 5", country: "", location: "Remote" }, // Null country_code, unknown location
+    { id: "3", title: "Engineer 3", country: "", location: "Munich, Germany" }, // Fallback to Germany
+    { id: "4", title: "Engineer 4", country: "", location: "Toronto, Canada" }, // Fallback to Canada
+    { id: "5", title: "Engineer 5", country: "", location: "Remote" }, // Null country, unknown location
     { id: "6", title: "Engineer 6", country: "US", location: "San Francisco, CA" },
+    { id: "7", title: "Engineer 7", country: "", location: "Indianapolis, Indiana" }, // MUST NOT match IN
+    { id: "8", title: "Engineer 8", country: "", location: "Mumbai, India" }, // MUST match IN
+    { id: "9", title: "Engineer 9", country: "", location: "Albuquerque, New Mexico" }, // MUST NOT match MX
+    { id: "10", title: "Engineer 10", country: "", location: "Mexico City, Mexico" }, // MUST match MX
   ];
 
-  function filterClientSide(jobs: typeof sampleJobs, selectedCountryCode: string) {
-    if (!selectedCountryCode || selectedCountryCode.toLowerCase() === "all") return jobs;
-    const targetCode = selectedCountryCode.trim().toUpperCase();
-    const countryName = COUNTRY_CODE_TO_NAME[targetCode]?.toLowerCase();
-    return jobs.filter((job) => {
-      const jobCountry = (job.country || "").trim().toUpperCase();
-      if (jobCountry && jobCountry !== "UNKNOWN" && jobCountry === targetCode) {
-        return true;
-      }
-      if (countryName && (job.location || "").toLowerCase().includes(countryName)) {
-        return true;
-      }
-      return false;
-    });
+  // Test DE
+  const deJobs = sampleJobs.filter((j) => effectiveMatcher(j.country, j.location, "DE")).map((j) => j.id);
+  if (!deJobs.includes("2") || !deJobs.includes("3") || deJobs.includes("5")) {
+    failures.push(`Filter DE failed: expected [2, 3], got [${deJobs.join(", ")}]`);
+  } else {
+    console.log("  [PASS] Filter DE matches explicit (Job 2) and fallback (Job 3)");
   }
 
-  // 6a. Filter by "DE": Must match Job 2 (country: DE) AND Job 3 (country: "", location: Munich, Germany)
-  const deResults = filterClientSide(sampleJobs, "DE");
-  const deIds = deResults.map((j) => j.id);
-  if (!deIds.includes("2") || !deIds.includes("3") || deIds.includes("5")) {
-    failures.push(`Filter DE failed: expected jobs [2, 3], got [${deIds.join(", ")}]`);
+  // Test IN: must match Job 8 only, NOT Job 7
+  const inJobs = sampleJobs.filter((j) => effectiveMatcher(j.country, j.location, "IN")).map((j) => j.id);
+  if (!inJobs.includes("8") || inJobs.includes("7")) {
+    failures.push(`Filter IN failed: expected [8] (Mumbai, India), got [${inJobs.join(", ")}] (contained Job 7 Indianapolis, Indiana)`);
   } else {
-    console.log(`  [PASS] Filter DE correctly matches explicit country (Job 2) and text fallback (Job 3)`);
+    console.log("  [PASS] Filter IN matches Mumbai (Job 8) and correctly rejects Indianapolis, Indiana (Job 7)");
   }
 
-  // 6b. Filter by "CA": Must match Job 4 (country: "", location: Toronto, Canada)
-  const caResults = filterClientSide(sampleJobs, "CA");
-  const caIds = caResults.map((j) => j.id);
-  if (!caIds.includes("4") || caIds.includes("5")) {
-    failures.push(`Filter CA failed: expected job 4, got [${caIds.join(", ")}]`);
+  // Test MX: must match Job 10 only, NOT Job 9
+  const mxJobs = sampleJobs.filter((j) => effectiveMatcher(j.country, j.location, "MX")).map((j) => j.id);
+  if (!mxJobs.includes("10") || mxJobs.includes("9")) {
+    failures.push(`Filter MX failed: expected [10] (Mexico City, Mexico), got [${mxJobs.join(", ")}] (contained Job 9 Albuquerque, New Mexico)`);
   } else {
-    console.log(`  [PASS] Filter CA correctly matches text fallback with null country (Job 4)`);
+    console.log("  [PASS] Filter MX matches Mexico City (Job 10) and correctly rejects Albuquerque, New Mexico (Job 9)");
   }
 
-  // 6c. Filter by "US": Must match Jobs 1 and 6, and MUST NOT match Job 5 (unknown remote job with null country)
-  const usResults = filterClientSide(sampleJobs, "US");
-  const usIds = usResults.map((j) => j.id);
-  if (!usIds.includes("1") || !usIds.includes("6") || usIds.includes("5") || usIds.includes("3")) {
-    failures.push(`Filter US failed: Job 5 (null country) must NOT be defaulted to US! Got [${usIds.join(", ")}]`);
+  // Test US: must match Jobs 1 and 6, and MUST NOT include Job 5 (remote with null country)
+  const usJobs = sampleJobs.filter((j) => effectiveMatcher(j.country, j.location, "US")).map((j) => j.id);
+  if (!usJobs.includes("1") || !usJobs.includes("6") || usJobs.includes("5")) {
+    failures.push(`Filter US failed: Job 5 must NOT be defaulted to US! Got [${usJobs.join(", ")}]`);
   } else {
-    console.log(`  [PASS] Filter US strictly matches US jobs (1, 6) and does NOT include unknown null-country Job 5`);
+    console.log("  [PASS] Filter US strictly matches US jobs (1, 6) and excludes unknown null-country Job 5");
   }
 
   // ---------------------------------------------------------------------------
-  // 7. Negative Control Evaluation
+  // 8. In-Memory Negative Controls Verification (Proves Validators Detect Failures)
   // ---------------------------------------------------------------------------
-  if (isNegativeControl) {
-    console.log("\n[NEGATIVE CONTROL ASSERTION]: Simulating broken Confirm/Reset/US-default behavior...");
-    // Inject deliberate negative control failure to verify non-zero exit
-    failures.push("Negative control intentional failure: verified non-zero exit on corrupted filter state.");
+  if (!isNegativeControl) {
+    console.log("\nTEST 8: In-memory mutation negative controls verification...");
+
+    // Real Negative Control 1: Mutate Confirm handler in memory to drop countryCode
+    const corruptedBarSource = barCode.replace(
+      "handleConfirm({ countryCode: draftFilters.countryCode, location: draftFilters.location })",
+      "handleConfirm({ location: draftFilters.location })"
+    );
+    const caughtConfirmRegression = validateJobFilterBarConfirmHandler(corruptedBarSource);
+    if (caughtConfirmRegression.length === 0) {
+      failures.push("Negative Control 1 FAILED: Validator did NOT detect corrupted Confirm handler!");
+    } else {
+      console.log(`  [PASS] Negative Control 1: In-memory Confirm mutation successfully caught: "${caughtConfirmRegression[0]}"`);
+    }
+
+    // Real Negative Control 2: Naive substring matcher without Indiana/New Mexico exclusions
+    const naiveMatcher = (country: string | null | undefined, location: string | null | undefined, code: string) => {
+      const c = (country || "").trim().toUpperCase();
+      if (c && c === code.toUpperCase()) return true;
+      const cName = COUNTRY_CODE_TO_NAME[code.toUpperCase()]?.toLowerCase();
+      return Boolean(cName && (location || "").toLowerCase().includes(cName));
+    };
+    const caughtFalsePositives = validateStrictCountryMatching(naiveMatcher);
+    if (caughtFalsePositives.length < 2) {
+      failures.push("Negative Control 2 FAILED: Validator did NOT detect naive matcher false positives!");
+    } else {
+      console.log(`  [PASS] Negative Control 2: In-memory naive matcher mutations successfully caught:`);
+      caughtFalsePositives.forEach((msg) => console.log(`         -> ${msg}`));
+    }
   }
 
   console.log("\n==================================================================================");

@@ -1,7 +1,7 @@
 /**
  * src/lib/countries.ts
  *
- * Supported country list and code-to-name dictionary for CareerMonke job filtering.
+ * Supported country list, code-to-name dictionary, and strict location filter helpers for CareerMonke.
  * Used across JobFilterBar, AllFiltersDrawer, MobileFilterSheet, service.ts, and search/pro routes.
  */
 
@@ -67,4 +67,54 @@ export function getCountryName(countryCode?: string | null): string | null {
   if (!countryCode) return null;
   const upper = countryCode.trim().toUpperCase();
   return COUNTRY_CODE_TO_NAME[upper] || null;
+}
+
+/**
+ * Builds the PostgREST .or() filter clause for a given country code,
+ * applying strict exclusions for known false positives:
+ * - "IN": matches "India" but excludes "Indiana"
+ * - "MX": matches "Mexico" but excludes "New Mexico"
+ */
+export function getCountryFilterClause(countryCode: string): string | null {
+  const code = countryCode.trim().toUpperCase();
+  const countryName = COUNTRY_CODE_TO_NAME[code];
+  if (!countryName) return null;
+
+  if (code === "IN") {
+    return "country_code.eq.IN,and(location.ilike.%India%,location.not.ilike.%Indiana%)";
+  }
+  if (code === "MX") {
+    return "country_code.eq.MX,and(location.ilike.%Mexico%,location.not.ilike.%New Mexico%)";
+  }
+  return `country_code.eq.${code},location.ilike.%${countryName}%`;
+}
+
+/**
+ * Matches a job against a selected country code, supporting strict text fallback:
+ * - Direct match: jobCountry === targetCode
+ * - Text fallback: location contains country name
+ * - Strict exclusions: "Indiana" is not "India", "New Mexico" is not "Mexico"
+ */
+export function matchCountryWithStrictFallback(
+  jobCountry: string | null | undefined,
+  jobLocation: string | null | undefined,
+  selectedCountryCode: string
+): boolean {
+  if (!selectedCountryCode || selectedCountryCode.toLowerCase() === "all") return true;
+  const targetCode = selectedCountryCode.trim().toUpperCase();
+  const c = (jobCountry || "").trim().toUpperCase();
+  if (c && c !== "UNKNOWN" && c === targetCode) {
+    return true;
+  }
+  const countryName = COUNTRY_CODE_TO_NAME[targetCode]?.toLowerCase();
+  if (!countryName) return false;
+
+  const loc = (jobLocation || "").toLowerCase();
+  if (targetCode === "IN") {
+    return loc.includes("india") && !loc.includes("indiana");
+  }
+  if (targetCode === "MX") {
+    return loc.includes("mexico") && !loc.includes("new mexico");
+  }
+  return loc.includes(countryName);
 }

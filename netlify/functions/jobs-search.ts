@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { formatSalary } from "../../src/lib/salary/parser";
-import { COUNTRY_CODE_TO_NAME } from "../../src/lib/countries";
+import { COUNTRY_CODE_TO_NAME, getCountryFilterClause } from "../../src/lib/countries";
 import { safeLog } from "./_logger";
 
 function getSupabaseAdmin() {
@@ -257,9 +257,9 @@ export function createHandler(deps: JobsSearchDeps = {}) {
     if (countryCodeParam && countryCodeParam.trim() && countryCodeParam.toLowerCase() !== "all") {
       const code = sanitizeSearchQuery(countryCodeParam).toUpperCase().trim();
       if (code) {
-        const countryName = COUNTRY_CODE_TO_NAME[code];
-        if (countryName) {
-          query = query.or(`country_code.eq.${code},location.ilike.%${countryName}%`);
+        const orClause = getCountryFilterClause(code);
+        if (orClause) {
+          query = query.or(orClause);
         } else {
           query = query.eq("country_code", code);
         }

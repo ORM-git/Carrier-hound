@@ -4,7 +4,7 @@ import { computeFitDiagnostics, FitDiagnosticsResult } from "../matcher/scoring"
 import { formatSalary } from "@/lib/salary/parser";
 import type { UserPreferences } from "@/lib/auth/types";
 import { sanitizeExternalUrl, stripHtmlAndExecutableMarkup } from "@/lib/security/xss";
-import { COUNTRY_CODE_TO_NAME } from "@/lib/countries";
+import { COUNTRY_CODE_TO_NAME, getCountryFilterClause } from "@/lib/countries";
 
 export interface LiveJob {
   id: string;
@@ -389,9 +389,9 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
     if (countryCode && countryCode.trim() && countryCode.toLowerCase() !== "all") {
       const code = countryCode.trim().replace(/[%_(),"'`;\\$*]/g, " ").toUpperCase().trim();
       if (code) {
-        const countryName = COUNTRY_CODE_TO_NAME[code];
-        if (countryName) {
-          query = query.or(`country_code.eq.${code},location.ilike.%${countryName}%`);
+        const orClause = getCountryFilterClause(code);
+        if (orClause) {
+          query = query.or(orClause);
         } else {
           query = query.eq("country_code", code);
         }
@@ -538,9 +538,9 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         if (countryCode && countryCode.trim() && countryCode.toLowerCase() !== "all") {
           const code = countryCode.trim().replace(/[%_(),"'`;\\$*]/g, " ").toUpperCase().trim();
           if (code) {
-            const countryName = COUNTRY_CODE_TO_NAME[code];
-            if (countryName) {
-              catQuery = catQuery.or(`country_code.eq.${code},location.ilike.%${countryName}%`);
+            const orClause = getCountryFilterClause(code);
+            if (orClause) {
+              catQuery = catQuery.or(orClause);
             } else {
               catQuery = catQuery.eq("country_code", code);
             }
