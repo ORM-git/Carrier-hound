@@ -61,13 +61,13 @@ function DashboardSkeleton() {
         <AppTopBar pageLabel="DASHBOARD" />
         <main
           id="main-content"
-          className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-tk-2 sm:py-tk-3 min-w-0"
+          className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-tk-3 sm:py-tk-3 min-w-0"
         >
         <div
           role="status"
           aria-label="Loading your account"
           data-testid="dashboard-skeleton"
-          className="space-y-tk-2"
+          className="space-y-tk-3 sm:space-y-tk-2"
         >
           <span className="sr-only">Loading your account...</span>
 
@@ -84,7 +84,7 @@ function DashboardSkeleton() {
           {/* Stat cards row */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-tk-2">
             {[0, 1, 2].map((i) => (
-              <Card key={i} variant="surface" className="p-tk-2 space-y-tk-1">
+              <Card key={i} variant="surface" className="p-tk-3 sm:p-tk-2 space-y-tk-1">
                 <div className="flex items-center justify-between">
                   <Skeleton shape="text" className="h-3.5 w-28" />
                   <Skeleton className="w-9 h-9 rounded-tk-lg" />
@@ -97,13 +97,13 @@ function DashboardSkeleton() {
 
           {/* Next action + recent activity */}
           <div className="grid grid-cols-1 lg:grid-cols-5 gap-tk-2">
-            <Card variant="surface" className="lg:col-span-2 p-tk-2 space-y-tk-2">
+            <Card variant="surface" className="lg:col-span-2 p-tk-3 sm:p-tk-2 space-y-tk-2">
               <Skeleton shape="text" className="h-4 w-28" />
               <Skeleton className="h-6 w-48 rounded-tk-sm" />
               <Skeleton shape="text" className="h-3.5 w-full" />
               <Skeleton className="h-11 w-36 rounded-tk-lg" />
             </Card>
-            <Card variant="surface" className="lg:col-span-3 p-tk-2 space-y-tk-2">
+            <Card variant="surface" className="lg:col-span-3 p-tk-3 sm:p-tk-2 space-y-tk-2">
               <Skeleton shape="text" className="h-4 w-32" />
               {[0, 1, 2].map((i) => (
                 <div key={i} className="flex items-center justify-between gap-tk-2">
@@ -128,7 +128,7 @@ function DashboardSkeleton() {
           </Card>
 
           {/* Step content */}
-          <Card variant="surface" className="p-tk-2 sm:p-tk-2 space-y-tk-2">
+          <Card variant="surface" className="p-tk-3 sm:p-tk-2 space-y-tk-2">
             <Skeleton className="h-6 w-56 rounded-tk-sm" />
             <Skeleton className="h-24 w-full rounded-tk-lg" />
             <Skeleton className="h-24 w-full rounded-tk-lg" />
@@ -292,8 +292,8 @@ export default function DashboardPage() {
   // TIER 3: PRO USER (Guided Pro Flow)
   return (
     <LoggedInAppShell pageLabel="DASHBOARD" user={user} isPro={isPro}>
-      <div className="max-w-5xl w-full mx-auto px-4 sm:px-6 py-tk-2 sm:py-tk-3">
-        <motion.div {...entrance} className="space-y-tk-2">
+      <div className="max-w-5xl w-full mx-auto px-4 sm:px-6 py-tk-3 sm:py-tk-3">
+        <motion.div {...entrance} className="space-y-tk-3 sm:space-y-tk-2">
           {/* ================================================================= */}
           {/* GREETING HEADER + ONE PRIMARY CTA                                 */}
           {/* ================================================================= */}
@@ -329,7 +329,7 @@ export default function DashboardPage() {
           {/* STAT CARDS ROW (existing data only)                               */}
           {/* ================================================================= */}
           <div data-testid="dashboard-stats" className="grid grid-cols-1 sm:grid-cols-3 gap-tk-2">
-            <Card variant="surface" className="p-tk-2 space-y-1">
+            <Card variant="surface" className="p-tk-3 sm:p-tk-2 space-y-1">
               <div className="flex items-center justify-between gap-tk-1">
                 <span className="text-tk-caption font-semibold uppercase tracking-wider text-ink-subtle">
                   Applications Tracked
@@ -342,7 +342,7 @@ export default function DashboardPage() {
               <p className="text-tk-caption text-ink-muted">Application Pipeline</p>
             </Card>
 
-            <Card variant="surface" className="p-tk-2 space-y-1">
+            <Card variant="surface" className="p-tk-3 sm:p-tk-2 space-y-1">
               <div className="flex items-center justify-between gap-tk-1">
                 <span className="text-tk-caption font-semibold uppercase tracking-wider text-ink-subtle">
                   Matches
@@ -363,7 +363,7 @@ export default function DashboardPage() {
               </p>
             </Card>
 
-            <Card variant="surface" className="p-tk-2 space-y-1">
+            <Card variant="surface" className="p-tk-3 sm:p-tk-2 space-y-1">
               <div className="flex items-center justify-between gap-tk-1">
                 <span className="text-tk-caption font-semibold uppercase tracking-wider text-ink-subtle">
                   Saved
@@ -384,7 +384,7 @@ export default function DashboardPage() {
             <Card
               variant="surface"
               data-testid="dashboard-next-action"
-              className="lg:col-span-2 p-tk-2 flex flex-col gap-tk-2"
+              className="lg:col-span-2 p-tk-3 sm:p-tk-2 flex flex-col gap-tk-2"
             >
               <div className="flex items-center gap-tk-1">
                 <span className="w-9 h-9 rounded-tk-lg bg-brand-50 text-brand-600 flex items-center justify-center shrink-0">
@@ -404,7 +404,7 @@ export default function DashboardPage() {
             <Card
               variant="surface"
               data-testid="dashboard-recent-activity"
-              className="lg:col-span-3 p-tk-2 space-y-tk-2"
+              className="lg:col-span-3 p-tk-3 sm:p-tk-2 space-y-tk-2"
             >
               <div className="flex items-center justify-between gap-tk-1">
                 <h2 className="text-tk-h3 text-ink flex items-center gap-tk-1">
@@ -531,7 +531,7 @@ export default function DashboardPage() {
 
           {/* STEP 2: RESUME STEP (Upload or Skip & fill manually) */}
           {activeStep === "resume" && (
-            <Card variant="surface" className="p-tk-2 sm:p-tk-2">
+            <Card variant="surface" className="p-tk-3 sm:p-tk-2">
               <div className="mb-tk-2 pb-tk-2 border-b border-line flex flex-wrap items-center justify-between gap-tk-1">
                 <div className="space-y-0.5">
                   <span className="text-tk-caption font-semibold text-brand-700 uppercase tracking-wider">
@@ -578,7 +578,7 @@ export default function DashboardPage() {
             <Card
               variant="surface"
               data-testid="dashboard-resume-empty"
-              className="p-tk-2 sm:p-tk-3 text-center space-y-tk-2"
+              className="p-tk-4 sm:p-tk-3 text-center space-y-tk-2"
             >
               <div className="w-12 h-12 rounded-tk-xl bg-brand-50 text-brand-600 flex items-center justify-center mx-auto">
                 <FileText className="w-6 h-6" />

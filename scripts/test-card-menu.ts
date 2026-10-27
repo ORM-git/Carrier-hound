@@ -65,13 +65,18 @@ function run() {
 
   // Meta grid 3 columns x 2 rows (location, job type, salary / work model, level, posted)
   const has3x2MetaGrid = jobsPageCode.includes("grid grid-cols-3 grid-rows-2") &&
-    jobsPageCode.includes("job.type || \"Full-time\"") &&
     jobsPageCode.includes("job.remote ? \"Remote\" : \"On-site\"") &&
-    jobsPageCode.includes("jobLevel || \"Mid-Senior\"");
+    jobsPageCode.includes("{job.type ?") &&
+    jobsPageCode.includes("{jobLevel ?") &&
+    jobsPageCode.includes("{job.postedAt ?") &&
+    !jobsPageCode.includes('job.type || "Full-time"') &&
+    !jobsPageCode.includes('jobLevel || "Mid-Senior"') &&
+    !jobsPageCode.includes('"Verified Recent"') &&
+    !jobsPageCode.includes('"Technology"');
   if (!has3x2MetaGrid) {
-    failures.push("META GRID FAIL: Card must include 3 columns x 2 rows meta grid with location, job type, salary, work model, level, and posted time.");
+    failures.push("META GRID FAIL: Card must include 3 columns x 2 rows meta grid with location, job type, salary, work model, level, and posted time, with no invented defaults when empty.");
   } else {
-    console.log("  [PASS] Meta grid: 3 columns x 2 rows (location, job type, salary, work model, level, posted) verified");
+    console.log("  [PASS] Meta grid: 3 columns x 2 rows verified with real fields only and no invented defaults");
   }
 
   // Footer action buttons: Hide, Save, Tailor Resume, Apply

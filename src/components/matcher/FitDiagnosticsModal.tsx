@@ -97,7 +97,7 @@ export default function FitDiagnosticsModal({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="p-4 sm:p-5 bg-slate-900 text-white flex items-start justify-between relative">
+        <div className="p-5 sm:p-5 bg-slate-900 text-white flex items-start justify-between relative">
           <div className="pr-8 space-y-1">
             <div className="flex items-center gap-2">
               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-500/20 text-blue-300 border border-blue-500/30">
@@ -122,7 +122,7 @@ export default function FitDiagnosticsModal({
         </div>
 
         {/* Scrollable Body */}
-        <div className="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1">
+        <div className="p-5 sm:p-5 space-y-6 sm:space-y-4 overflow-y-auto flex-1">
           {!isProUser ? (
             <LockedPreview
               title="Unlock Detailed Fit Analysis & Skill Gaps"

@@ -186,7 +186,7 @@ export default function JobFilterBar({
   const workModelInfo = formatMultiLabel(filters.workModel, "Work model");
 
   return (
-    <div className="sticky top-[56px] z-tk-sticky py-1.5 sm:py-0 bg-[#F8FAFC]/95 backdrop-blur-xs space-y-2">
+    <div className="sticky top-[56px] z-tk-sticky py-2 sm:py-0 bg-[#F8FAFC]/95 backdrop-blur-xs space-y-2">
       {/* =================================================================== */}
       {/* 1. MOBILE FILTER ROW (< 768px)                                      */}
       {/* =================================================================== */}

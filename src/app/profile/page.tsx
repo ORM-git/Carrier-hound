@@ -198,7 +198,7 @@ export default function ProfilePage() {
       user={user}
       isPro={isPro}
     >
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-5 space-y-4">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-5 space-y-6 sm:space-y-4">
         {/* ================================================================= */}
         {/* 1. STICKY SECTION TABS WITH SCROLL-SPY                            */}
         {/* ================================================================= */}
@@ -244,18 +244,18 @@ export default function ProfilePage() {
         {/* ================================================================= */}
         {/* 2. MAIN 2-COLUMN LAYOUT (DESKTOP) / 1-COLUMN (MOBILE)             */}
         {/* ================================================================= */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-5 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-5 items-start">
           {/* =============================================================== */}
           {/* LEFT / CENTER COLUMN: Profile Cards (col-span-8)                 */}
           {/* =============================================================== */}
-          <div className="lg:col-span-8 space-y-4">
+          <div className="lg:col-span-8 space-y-6 sm:space-y-4">
             {/* ------------------------------------------------------------- */}
             {/* HEADER CARD                                                   */}
             {/* ------------------------------------------------------------- */}
             <section
               aria-label="Profile Header"
               data-testid="profile-header-card"
-              className="bg-white rounded-2xl border border-[#E2E8F0] p-4 sm:p-5 relative shadow-none"
+              className="bg-white rounded-2xl border border-[#E2E8F0] p-6 sm:p-5 relative shadow-none"
             >
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex items-start sm:items-center gap-4">
@@ -320,7 +320,7 @@ export default function ProfilePage() {
               id="section-personal"
               aria-label="Personal Information"
               data-testid="profile-section-personal"
-              className="bg-white rounded-2xl border border-[#E2E8F0] p-4 sm:p-5 space-y-3 shadow-none scroll-mt-32"
+              className="bg-white rounded-2xl border border-[#E2E8F0] p-6 sm:p-5 space-y-4 sm:space-y-3 shadow-none scroll-mt-32"
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -363,7 +363,7 @@ export default function ProfilePage() {
               id="section-education"
               aria-label="Education"
               data-testid="profile-section-education"
-              className="bg-white rounded-2xl border border-[#E2E8F0] p-4 sm:p-5 space-y-3 shadow-none scroll-mt-32"
+              className="bg-white rounded-2xl border border-[#E2E8F0] p-6 sm:p-5 space-y-4 sm:space-y-3 shadow-none scroll-mt-32"
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -428,7 +428,7 @@ export default function ProfilePage() {
               id="section-experience"
               aria-label="Work Experience"
               data-testid="profile-section-experience"
-              className="bg-white rounded-2xl border border-[#E2E8F0] p-4 sm:p-5 space-y-3 shadow-none scroll-mt-32"
+              className="bg-white rounded-2xl border border-[#E2E8F0] p-6 sm:p-5 space-y-4 sm:space-y-3 shadow-none scroll-mt-32"
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -509,7 +509,7 @@ export default function ProfilePage() {
               id="section-skills"
               aria-label="Skills"
               data-testid="profile-section-skills"
-              className="bg-white rounded-2xl border border-[#E2E8F0] p-4 sm:p-5 space-y-3 shadow-none scroll-mt-32"
+              className="bg-white rounded-2xl border border-[#E2E8F0] p-6 sm:p-5 space-y-4 sm:space-y-3 shadow-none scroll-mt-32"
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -561,10 +561,10 @@ export default function ProfilePage() {
           <aside
             aria-label="Profile Sidebar"
             data-testid="profile-right-rail"
-            className="lg:col-span-4 space-y-4"
+            className="lg:col-span-4 space-y-6 sm:space-y-4"
           >
             {/* Card 1: Profile Completion Warning & Actions */}
-            <div className="bg-white rounded-2xl border border-[#E2E8F0] p-4 sm:p-5 space-y-3 shadow-none">
+            <div className="bg-white rounded-2xl border border-[#E2E8F0] p-5 sm:p-5 space-y-4 sm:space-y-3 shadow-none">
               <div className="flex items-center justify-between">
                 <h4 className="text-[15px] font-bold text-[#0F172A]">Profile Strength</h4>
                 <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-[#EFF6FF] text-[#2563EB]">
@@ -631,7 +631,7 @@ export default function ProfilePage() {
             </div>
 
             {/* Card 2: Quick Links (Strictly to existing internal pages) */}
-            <div className="bg-white rounded-2xl border border-[#E2E8F0] p-4 sm:p-5 space-y-3 shadow-none">
+            <div className="bg-white rounded-2xl border border-[#E2E8F0] p-5 sm:p-5 space-y-3 shadow-none">
               <h4 className="text-[15px] font-bold text-[#0F172A] mb-1">Quick Links</h4>
               <nav aria-label="Profile Quick Links" className="space-y-1">
                 <Link

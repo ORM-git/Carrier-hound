@@ -117,7 +117,7 @@ export default function TopTenCompatibleJobs({
   };
 
   return (
-    <div className="space-y-4 animate-fadeIn">
+    <div className="space-y-5 sm:space-y-4 animate-fadeIn">
       {/* Section Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-200">
         <div>
@@ -149,7 +149,7 @@ export default function TopTenCompatibleJobs({
 
       {/* Loading Skeleton */}
       {loading ? (
-        <div className="space-y-3">
+        <div className="space-y-3.5 sm:space-y-3">
           {[1, 2, 3, 4, 5].map((i) => (
             <div
               key={i}
@@ -185,7 +185,7 @@ export default function TopTenCompatibleJobs({
               <div
                 key={job.id}
                 data-testid={`top10-row-${job.id}`}
-                className="p-4 sm:p-4 bg-white rounded-2xl border border-slate-200 shadow-2xs hover:shadow-md transition-all flex flex-col gap-3 group"
+                className="p-5 sm:p-4 bg-white rounded-2xl border border-slate-200 shadow-2xs hover:shadow-md transition-all flex flex-col gap-4 sm:gap-3 group"
               >
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 w-full">
                 {/* Left: Score Badge + Details */}

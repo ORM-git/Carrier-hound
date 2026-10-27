@@ -438,7 +438,7 @@ export default function WhyMatchPanel({
       {/* =================================================================== */}
       {/* LEFT PANEL: White Card with Title, Summary, Rings, and Action Row   */}
       {/* =================================================================== */}
-      <div className="flex-1 bg-white p-4 sm:p-4 flex flex-col justify-between min-w-0 space-y-3">
+      <div className="flex-1 bg-white p-4 sm:p-4 flex flex-col justify-between min-w-0 space-y-4 sm:space-y-3">
         <div className="space-y-3">
           {/* Header Row: Sparkle Icon + Title + AI Action Button */}
           <div className="flex flex-wrap items-center justify-between gap-2 w-full">

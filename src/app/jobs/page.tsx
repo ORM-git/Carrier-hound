@@ -140,7 +140,7 @@ function inferJobLevel(title: string): string {
   if (t.includes("staff") || t.includes("principal") || t.includes("lead")) return "Staff / Lead";
   if (t.includes("senior") || t.includes("sr.")) return "Senior Level";
   if (t.includes("junior") || t.includes("entry") || t.includes("associate")) return "Entry Level";
-  return "Mid-Senior Level";
+  return "";
 }
 
 function formatRelativeTime(dateStr?: string): string {
@@ -1441,7 +1441,7 @@ function JobsPageInner() {
         <main
           id="main-content"
           data-testid="jobs-main-content"
-          className="flex-1 w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:pt-4 sm:pb-32 lg:pb-12 space-y-3"
+          className="flex-1 w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:pt-4 space-y-4 sm:space-y-3 pb-44 sm:pb-32 lg:pb-12"
         >
           {selectedJob ? (
             /* In-place job detail swap inside the same shell */
@@ -1542,7 +1542,7 @@ function JobsPageInner() {
                 </div>
               </div>
 
-              <div className="space-y-3">
+              <div className="space-y-4 sm:space-y-3">
                 {/* 3. COMPACT FILTER TOOLBAR */}
                 {/* Contract assertions: sticky top-[64px] z-tk-sticky Active: Clear all mobileFiltersOpen SlidersHorizontal aria-label="Sort by" */}
                 <JobFilterBar
@@ -1588,7 +1588,7 @@ function JobsPageInner() {
               </div>
 
               {/* Jobs List Feed & Right Rail (Main Column ~973px, Right Rail ~316px, Gap 32px on Desktop) */}
-              <div className="flex flex-col lg:flex-row gap-8 items-start w-full min-w-0 pt-0">
+              <div className="flex flex-col lg:flex-row gap-8 items-start w-full min-w-0 pt-2 sm:pt-0">
                 {/* Left Feed Column: about 973px max on wide desktop, flex-1 */}
                 <div className="w-full lg:max-w-[973px] flex-1 space-y-3 min-w-0">
                   {loadingJobs ? (
@@ -1791,8 +1791,12 @@ function JobsPageInner() {
 
                                   {/* Row 1, Col 2: Job type */}
                                   <div className="flex items-center gap-1.5 min-w-0 truncate">
-                                    <Briefcase className="w-4 h-4 text-[#475569] shrink-0" />
-                                    <span className="truncate">{job.type || "Full-time"}</span>
+                                    {job.type ? (
+                                      <>
+                                        <Briefcase className="w-4 h-4 text-[#475569] shrink-0" />
+                                        <span className="truncate">{job.type}</span>
+                                      </>
+                                    ) : null}
                                   </div>
 
                                   {/* Row 1, Col 3: Salary */}
@@ -1811,16 +1815,24 @@ function JobsPageInner() {
 
                                   {/* Row 2, Col 2: Seniority level */}
                                   <div className="flex items-center gap-1.5 min-w-0 truncate">
-                                    <TrendingUp className="w-4 h-4 text-[#475569] shrink-0" />
-                                    <span className="truncate">{jobLevel || "Mid-Senior"}</span>
+                                    {jobLevel ? (
+                                      <>
+                                        <TrendingUp className="w-4 h-4 text-[#475569] shrink-0" />
+                                        <span className="truncate">{jobLevel}</span>
+                                      </>
+                                    ) : null}
                                   </div>
 
                                   {/* Row 2, Col 3: Posted Time */}
                                   <div className="flex items-center gap-1.5 min-w-0 truncate">
-                                    <Clock className="w-4 h-4 text-[#475569] shrink-0" />
-                                    <span className="truncate">
-                                      {job.postedAt ? `Posted ${formatRelativeTime(job.postedAt)}` : "Verified Recent"}
-                                    </span>
+                                    {job.postedAt ? (
+                                      <>
+                                        <Clock className="w-4 h-4 text-[#475569] shrink-0" />
+                                        <span className="truncate">
+                                          Posted {formatRelativeTime(job.postedAt)}
+                                        </span>
+                                      </>
+                                    ) : null}
                                   </div>
                                 </div>
 
@@ -1968,10 +1980,13 @@ function JobsPageInner() {
                                         {job.company || "Verified Employer"}
                                       </span>
                                     </div>
-                                    <div className="text-xs text-[#475569] truncate">
-                                      {job.category ? <span className="capitalize">{job.category}</span> : "Technology"}
-                                      {job.remote && <span> · Remote</span>}
-                                    </div>
+                                    {(job.category || job.remote) ? (
+                                      <div className="text-xs text-[#475569] truncate">
+                                        {job.category && <span className="capitalize">{job.category}</span>}
+                                        {job.category && job.remote && <span> · </span>}
+                                        {job.remote && <span>Remote</span>}
+                                      </div>
+                                    ) : null}
                                   </div>
                                 </div>
 
@@ -2144,16 +2159,24 @@ function JobsPageInner() {
                             </p>
                           </div>
                         </div>
-                        <span
-                          data-testid="sidebar-plan-badge"
-                          className={`px-2 py-0.5 rounded text-[11px] font-semibold shrink-0 ${
-                            isPro
-                              ? "bg-[#EFF6FF] text-[#1E40AF] border border-[#BFDBFE]"
-                              : "bg-slate-100 text-[#475569] border border-slate-200"
-                          }`}
-                        >
-                          {isPro ? "Pro" : "Free"}
-                        </span>
+                        {isProDefinitive ? (
+                          <span
+                            data-testid="sidebar-plan-badge"
+                            className={`px-2 py-0.5 rounded text-[11px] font-semibold shrink-0 ${
+                              isPro
+                                ? "bg-[#EFF6FF] text-[#1E40AF] border border-[#BFDBFE]"
+                                : "bg-slate-100 text-[#475569] border border-slate-200"
+                            }`}
+                          >
+                            {isPro ? "Pro" : "Free"}
+                          </span>
+                        ) : (
+                          <span
+                            data-testid="sidebar-plan-badge"
+                            className="w-10 h-5 rounded bg-slate-100 animate-pulse shrink-0 border border-slate-200"
+                            aria-hidden="true"
+                          />
+                        )}
                       </div>
                       <div className="border-b border-[#E2E8F0]" />
                     </div>

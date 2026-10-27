@@ -28,11 +28,11 @@ export default function Modal({
         <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-[#0F172A]/60 backdrop-blur-sm duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
         <DialogPrimitive.Content
           className={cn(
-            "fixed left-[50%] top-[50%] z-50 w-[calc(100%-2rem)] sm:w-full max-w-[575px] max-h-[90vh] overflow-y-auto translate-x-[-50%] translate-y-[-50%] rounded-[20px] bg-white p-4 sm:p-5 shadow-popover duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] border border-[#E2E8F0]",
+            "fixed left-[50%] top-[50%] z-50 w-[calc(100%-2rem)] sm:w-full max-w-[575px] max-h-[90vh] overflow-y-auto translate-x-[-50%] translate-y-[-50%] rounded-[20px] bg-white p-5 sm:p-5 shadow-popover duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] border border-[#E2E8F0]",
             className
           )}
         >
-          <div className="flex items-start justify-between mb-3">
+          <div className="flex items-start justify-between mb-4 sm:mb-3">
             <div>
               {title && (
                 <DialogPrimitive.Title className="text-xl font-bold text-[#0F172A] leading-tight">
