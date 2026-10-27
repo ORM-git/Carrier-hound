@@ -144,6 +144,27 @@ function inferJobLevel(title: string): string {
 }
 
 function formatRelativeTime(dateStr?: string): string {
+  if (!dateStr) return "Recently posted";
+  try {
+    const s = dateStr.trim().toLowerCase();
+    if (s === "today") return "Today";
+    const d = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now.getTime() - d.getTime();
+    if (isNaN(diffMs)) return dateStr;
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    if (diffHours < 1) return "Just now";
+    if (diffHours < 24) return `${diffHours} hours ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays === 1) return "1 day ago";
+    if (diffDays < 30) return `${diffDays} days ago`;
+    return "Recently posted";
+  } catch {
+    return "Recently posted";
+  }
+}
+
+function formatDesktopPillTime(dateStr?: string): string {
   if (!dateStr) return "";
   try {
     const s = dateStr.trim().toLowerCase();
@@ -215,32 +236,25 @@ function formatPillLabel(text: string): string {
   return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
 }
 
-function getCompanyTagPills(job: LiveJob): string[] {
+function getCompanyTagPills(category?: string | null): string[] {
+  if (!category || typeof category !== "string") return [];
   const pills: string[] = [];
   const seen = new Set<string>();
 
-  const addPill = (val?: string | null) => {
-    if (!val || typeof val !== "string") return;
-    const parts = val.includes("·")
-      ? val.split("·")
-      : val.includes(",")
-      ? val.split(",")
-      : [val];
+  const parts = category.includes("·")
+    ? category.split("·")
+    : category.includes(",")
+    ? category.split(",")
+    : [category];
 
-    for (const part of parts) {
-      const cleaned = formatPillLabel(part);
-      const lower = cleaned.toLowerCase();
-      if (cleaned && !seen.has(lower)) {
-        seen.add(lower);
-        pills.push(cleaned);
-      }
+  for (const part of parts) {
+    const cleaned = formatPillLabel(part);
+    const lower = cleaned.toLowerCase();
+    if (cleaned && !seen.has(lower)) {
+      seen.add(lower);
+      pills.push(cleaned);
     }
-  };
-
-  if (job.category) addPill(job.category);
-  if ((job as any).industry) addPill((job as any).industry);
-  if ((job as any).companyType) addPill((job as any).companyType);
-  if ((job as any).company_type) addPill((job as any).company_type);
+  }
 
   return pills;
 }
@@ -1762,10 +1776,9 @@ function JobsPageInner() {
                               : "Fair match"
                             : "";
                         const cardZeroSkills = Boolean(diagnostics && diagnostics.matchedSkills && diagnostics.matchedSkills.length === 0);
-                        const isRecent = Boolean(job.postedAt && isPostedUnder24Hours(job.postedAt));
-                        const _contractEarly = isEarlyApplicant(job);
-                        const postedRelative = job.postedAt ? formatRelativeTime(job.postedAt) : null;
-                        const companyPills = getCompanyTagPills(job);
+                        const isRecent = Boolean(job.postedAt && isPostedUnder24Hours(job.postedAt) && isEarlyApplicant(job) !== undefined);
+                        const postedRelative = job.postedAt ? formatDesktopPillTime(job.postedAt) : null;
+                        const companyPills = getCompanyTagPills(job.category);
                         const locInfo = parseJobLocation(job.location);
                         const jobLevel = inferJobLevel(job.title);
 
@@ -1818,11 +1831,16 @@ function JobsPageInner() {
                                         {isRecent ? (
                                           <span
                                             data-testid="job-card-early-tag"
-                                            className="h-[22px] px-2 py-0.5 rounded text-[11px] font-medium bg-sky-50 text-[#0369A1] border border-sky-200/70 inline-flex items-center"
+                                            className="h-[22px] px-2 py-0.5 rounded text-[11px] font-medium bg-[#EFF6FF] text-[#1E40AF] border border-[#BFDBFE] inline-flex items-center"
                                           >
                                             Early applicant
                                           </span>
                                         ) : null}
+                                        {job.remote && (
+                                          <span className="h-[22px] px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-100 text-[#475569] inline-flex items-center">
+                                            Remote Eligible
+                                          </span>
+                                        )}
                                       </div>
                                       <JobCardMenu
                                         job={job}
