@@ -127,6 +127,38 @@ export function buildUpdatePayload(candidate: SalaryUpdateCandidate): SalaryFiel
  * 3. If reFetched.salary_min IS NULL, job is categorized as 'noSalary' and NEVER updated.
  * 4. Flags any min > max inconsistencies for auditing.
  */
+/**
+ * Evaluates whether a salary candidate is suspicious, with currency-aware thresholds:
+ * - INR amounts like 94L (9,400,000) - 3Cr (30,000,000) are valid tech compensation.
+ *   Large threshold for INR is > 200,000,000 (20 Crores INR). Small threshold is < 10,000.
+ * - USD under 1k per year or unset period stays suspicious. Large threshold is > 2,000,000 ($2M).
+ */
+export function isSuspiciousSalary(
+  min: number | null | undefined,
+  max: number | null | undefined,
+  currency: string = 'USD',
+  period?: 'yearly' | 'monthly' | 'hourly' | string | null
+): { isSuspicious: boolean; isUnsetSmall: boolean; isLargeSalary: boolean } {
+  const curr = (currency || 'USD').toUpperCase();
+  const isINR = curr === 'INR';
+
+  const isUnsetSmall = isINR
+    ? ((period == null || period === 'yearly') &&
+        ((min != null && min < 10000) || (max != null && max < 10000)))
+    : ((period == null || period === 'yearly') &&
+        ((min != null && min < 1000) || (max != null && max < 1000)));
+
+  const isLargeSalary = isINR
+    ? (max != null && max > 200000000)
+    : (max != null && max > 2000000);
+
+  return {
+    isSuspicious: isUnsetSmall || isLargeSalary,
+    isUnsetSmall,
+    isLargeSalary,
+  };
+}
+
 export function evaluateBackfillCandidates(
   existingJobs: ExistingJobRecord[],
   reFetchedJobs: NormalizedJob[],
@@ -236,11 +268,13 @@ export function evaluateBackfillCandidates(
         allSamples.push(sample);
       }
 
-      // Suspicious Category A: computed period unset AND (salary_min < 1000 or salary_max < 1000)
-      const isUnsetSmall =
-        computedPeriod == null &&
-        ((computedMin != null && computedMin < 1000) ||
-          (computedMax != null && computedMax < 1000));
+      // Currency-aware suspicious evaluation
+      const { isSuspicious, isUnsetSmall, isLargeSalary } = isSuspiciousSalary(
+        computedMin,
+        computedMax,
+        computedCurrency,
+        computedPeriod
+      );
 
       if (isUnsetSmall) {
         stat.unsetPeriodSmallCount++;
@@ -252,8 +286,6 @@ export function evaluateBackfillCandidates(
         }
       }
 
-      // Suspicious Category B: salary_max > 2,000,000
-      const isLargeSalary = computedMax != null && computedMax > 2000000;
       if (isLargeSalary) {
         stat.largeSalaryMaxCount++;
         if (stat.largeSalaryMaxSamples.length < 10) {
@@ -265,7 +297,6 @@ export function evaluateBackfillCandidates(
       }
 
       // If --skip-suspicious is active, exclude both groups from candidatesToUpdate
-      const isSuspicious = isUnsetSmall || isLargeSalary;
       if (options?.skipSuspicious && isSuspicious) {
         stat.skippedSuspiciousCount++;
       } else {
