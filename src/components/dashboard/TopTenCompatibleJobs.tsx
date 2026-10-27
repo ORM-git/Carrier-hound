@@ -358,6 +358,7 @@ export default function TopTenCompatibleJobs({
       {/* Modals */}
       {activeTailorJob && (
         <TailorResumeModal
+          isPro={isPro}
           userId={userId ?? null}
           open={Boolean(activeTailorJob)}
           onOpenChange={(open) => !open && setActiveTailorJob(null)}
@@ -381,6 +382,7 @@ export default function TopTenCompatibleJobs({
 
       {activeCoverLetterJob && (
         <CoverLetterModal
+          isPro={isPro}
           userId={userId ?? null}
           open={Boolean(activeCoverLetterJob)}
           onOpenChange={(open) => !open && setActiveCoverLetterJob(null)}

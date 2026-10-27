@@ -10,7 +10,7 @@ import {
   saveUserPreferences,
   getUserPreferences,
 } from "@/lib/auth/session";
-import { UserPreferences, DEFAULT_USER_PREFERENCES } from "@/lib/auth/types";
+import { UserPreferences } from "@/lib/auth/types";
 import {
   validateResumeUploadFile,
   extractTextFromFile,
@@ -106,14 +106,16 @@ function OnboardingPageInner() {
   const [currentStep, setCurrentStep] = useState<number>(1);
   const [userId, setUserId] = useState<string | undefined>(undefined);
   const [checkingAuth, setCheckingAuth] = useState(true);
+  const [existingPrefs, setExistingPrefs] = useState<UserPreferences | null>(null);
 
   // Preference fields (saved to existing UserPreferences)
-  const [roles, setRoles] = useState<string[]>(["Full-Stack Developer"]);
+  const [roles, setRoles] = useState<string[]>([]);
   const [customRoleInput, setCustomRoleInput] = useState("");
-  const [experienceLevel, setExperienceLevel] = useState<UserPreferences["experienceLevel"]>("mid");
-  const [remotePreference, setRemotePreference] = useState<UserPreferences["remotePreference"]>("remote");
-  const [locations, setLocations] = useState<string[]>(["Worldwide / Remote"]);
-  const [employmentTypes, setEmploymentTypes] = useState<string[]>(["full-time"]);
+  const [experienceLevel, setExperienceLevel] = useState<UserPreferences["experienceLevel"] | "">("");
+  const [remotePreference, setRemotePreference] = useState<UserPreferences["remotePreference"] | "">("");
+  const [locations, setLocations] = useState<string[]>([]);
+  const [employmentTypes, setEmploymentTypes] = useState<string[]>([]);
+  const [dailyDigestOptIn, setDailyDigestOptIn] = useState<boolean>(true);
 
   // Resume Processing State (Jobright style)
   const [isProcessing, setIsProcessing] = useState(false);
@@ -139,12 +141,16 @@ function OnboardingPageInner() {
       try {
         const prefs = await getUserPreferences(user.id);
         if (prefs) {
+          setExistingPrefs(prefs);
           if (Array.isArray(prefs.roles) && prefs.roles.length > 0) setRoles(prefs.roles);
           if (prefs.experienceLevel) setExperienceLevel(prefs.experienceLevel);
           if (prefs.remotePreference) setRemotePreference(prefs.remotePreference);
           if (Array.isArray(prefs.locations) && prefs.locations.length > 0) setLocations(prefs.locations);
           if (Array.isArray(prefs.employmentTypes) && prefs.employmentTypes.length > 0) {
             setEmploymentTypes(prefs.employmentTypes);
+          }
+          if (typeof prefs.dailyDigestOptIn === "boolean") {
+            setDailyDigestOptIn(prefs.dailyDigestOptIn);
           }
         }
       } catch (err) {
@@ -161,18 +167,25 @@ function OnboardingPageInner() {
   const persistPreferences = async (completed = false) => {
     if (!userId) return;
     try {
+      const basePrefs: Partial<UserPreferences> = existingPrefs ? { ...existingPrefs } : {};
       const payload: UserPreferences = {
-        ...DEFAULT_USER_PREFERENCES,
-        roles: roles.length > 0 ? roles : ["Full-Stack Developer"],
-        experienceLevel,
-        remotePreference,
-        locations: locations.length > 0 ? locations : ["Worldwide / Remote"],
-        employmentTypes: employmentTypes.length > 0 ? employmentTypes : ["full-time"],
-        dailyDigestOptIn: true,
+        ...basePrefs,
+        // Save only the 5 answered fields on top, keeping skipped fields empty/unchanged
+        roles: roles.length > 0 ? roles : (existingPrefs?.roles ?? []),
+        experienceLevel: (experienceLevel || existingPrefs?.experienceLevel || "mid") as UserPreferences["experienceLevel"],
+        remotePreference: (remotePreference || existingPrefs?.remotePreference || "remote") as UserPreferences["remotePreference"],
+        locations: locations.length > 0 ? locations : (existingPrefs?.locations ?? []),
+        employmentTypes: employmentTypes.length > 0 ? employmentTypes : (existingPrefs?.employmentTypes ?? []),
+        categories: existingPrefs?.categories ?? [],
+        salaryCurrency: existingPrefs?.salaryCurrency ?? "USD",
+        workAuth: existingPrefs?.workAuth,
+        minSalary: existingPrefs?.minSalary,
+        dailyDigestOptIn,
         onboardingCompleted: completed,
         updatedAt: new Date().toISOString(),
       };
       await saveUserPreferences(payload, userId);
+      setExistingPrefs(payload);
     } catch (err) {
       console.warn("Could not save preferences snapshot:", err);
     }
@@ -209,13 +222,9 @@ function OnboardingPageInner() {
 
   // Role toggle
   const toggleRole = (role: string) => {
-    setRoles((prev) => {
-      if (prev.includes(role)) {
-        const filtered = prev.filter((r) => r !== role);
-        return filtered.length > 0 ? filtered : [role];
-      }
-      return [...prev, role];
-    });
+    setRoles((prev) =>
+      prev.includes(role) ? prev.filter((r) => r !== role) : [...prev, role]
+    );
   };
 
   const handleAddCustomRole = (e: React.FormEvent) => {
@@ -230,24 +239,16 @@ function OnboardingPageInner() {
 
   // Location toggle
   const toggleLocation = (loc: string) => {
-    setLocations((prev) => {
-      if (prev.includes(loc)) {
-        const filtered = prev.filter((l) => l !== loc);
-        return filtered.length > 0 ? filtered : [loc];
-      }
-      return [...prev, loc];
-    });
+    setLocations((prev) =>
+      prev.includes(loc) ? prev.filter((l) => l !== loc) : [...prev, loc]
+    );
   };
 
   // Employment type toggle
   const toggleEmploymentType = (type: string) => {
-    setEmploymentTypes((prev) => {
-      if (prev.includes(type)) {
-        const filtered = prev.filter((t) => t !== type);
-        return filtered.length > 0 ? filtered : [type];
-      }
-      return [...prev, type];
-    });
+    setEmploymentTypes((prev) =>
+      prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]
+    );
   };
 
   // Resume Processing Stepper Execution (Strictly real events, no fake timers, no AI before payment)
@@ -283,23 +284,29 @@ function OnboardingPageInner() {
       };
       await saveConfirmedCandidateProfile(candidateProfile);
 
-      // Step 4: Matching you with jobs (Persist final completed preferences)
+      // Step 4: Saving your preferences (Persist final completed preferences)
       setProcessingStep(4);
+      const basePrefs: Partial<UserPreferences> = existingPrefs ? { ...existingPrefs } : {};
       const finalPrefs: UserPreferences = {
-        ...DEFAULT_USER_PREFERENCES,
-        roles: roles.length > 0 ? roles : ["Full-Stack Developer"],
-        experienceLevel,
-        remotePreference,
-        locations: locations.length > 0 ? locations : ["Worldwide / Remote"],
-        employmentTypes: employmentTypes.length > 0 ? employmentTypes : ["full-time"],
-        dailyDigestOptIn: true,
+        ...basePrefs,
+        roles: roles.length > 0 ? roles : (existingPrefs?.roles ?? []),
+        experienceLevel: (experienceLevel || existingPrefs?.experienceLevel || "mid") as UserPreferences["experienceLevel"],
+        remotePreference: (remotePreference || existingPrefs?.remotePreference || "remote") as UserPreferences["remotePreference"],
+        locations: locations.length > 0 ? locations : (existingPrefs?.locations ?? []),
+        employmentTypes: employmentTypes.length > 0 ? employmentTypes : (existingPrefs?.employmentTypes ?? []),
+        categories: existingPrefs?.categories ?? [],
+        salaryCurrency: existingPrefs?.salaryCurrency ?? "USD",
+        workAuth: existingPrefs?.workAuth,
+        minSalary: existingPrefs?.minSalary,
+        dailyDigestOptIn,
         onboardingCompleted: true,
         updatedAt: new Date().toISOString(),
       };
       await saveUserPreferences(finalPrefs, userId);
+      setExistingPrefs(finalPrefs);
 
       // Successfully processed: redirect to dashboard
-      toast.success("Resume parsed and matches computed!");
+      toast.success("Resume saved");
       setTimeout(() => {
         router.push(next);
       }, 400);
@@ -377,9 +384,9 @@ function OnboardingPageInner() {
       },
       {
         step: 4,
-        title: "Matching you with jobs",
-        desc: "Connecting with unindexed remote opportunities",
-        doneDesc: "Personalized candidate feed ready",
+        title: "Saving your preferences",
+        desc: "Updating your target role, work model, and location preferences",
+        doneDesc: "Preferences saved successfully",
       },
     ];
 
@@ -851,6 +858,21 @@ function OnboardingPageInner() {
               <p className="text-[11px] sm:text-xs text-slate-500 mt-1">
                 Supports PDF, DOCX, and TXT (up to 10MB)
               </p>
+            </div>
+
+            {/* Daily Digest Opt-In Checkbox */}
+            <div className="p-3.5 rounded-xl border border-blue-100 bg-blue-50/50 flex items-start gap-3 text-left">
+              <input
+                type="checkbox"
+                id="daily-digest"
+                checked={dailyDigestOptIn}
+                onChange={(e) => setDailyDigestOptIn(e.target.checked)}
+                className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+              />
+              <label htmlFor="daily-digest" className="text-xs text-slate-700 cursor-pointer select-none">
+                <span className="font-bold text-slate-900 block">Enable Automated Daily Job Matching Digest</span>
+                Scan connected company career portals daily and queue verified matching positions into your tracker.
+              </label>
             </div>
 
             <div className="text-center pt-2">

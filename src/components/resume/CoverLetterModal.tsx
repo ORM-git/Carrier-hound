@@ -39,13 +39,15 @@ export default function CoverLetterModal({
   userId,
   isPro,
 }: CoverLetterModalProps) {
-  const [isProUser, setIsProUser] = useState<boolean>(Boolean(isPro));
+  const [isProUser, setIsProUser] = useState<boolean | null>(
+    typeof isPro === "boolean" ? isPro : null
+  );
 
   useEffect(() => {
     if (typeof isPro === "boolean") {
       setIsProUser(isPro);
     } else {
-      getProAccessStatus().then((res) => setIsProUser(res.isPro)).catch(() => setIsProUser(false));
+      getProAccessStatus().then((res) => setIsProUser(res.isPro)).catch(() => setIsProUser(null));
     }
   }, [isPro]);
 

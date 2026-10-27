@@ -22,8 +22,8 @@ export interface LockedPreviewProps {
 
 export default function LockedPreview({
   children,
-  title = "Unlock to see your compatible score and your Top 10 jobs.",
-  subtitle = "Your match score is ready. Only you can't see it yet. Recruiters filter by fit. Find out where you stand.",
+  title = "Unlock your Top 10 jobs ranked by fit",
+  subtitle = "Unlock to see your match score and fit analysis. Recruiters filter by fit. Find out where you stand.",
   ctaText = "Unlock my score",
   ctaHref = "/pricing",
   badge = "PRO FEATURE",

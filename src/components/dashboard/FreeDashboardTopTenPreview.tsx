@@ -21,15 +21,15 @@ export default function FreeDashboardTopTenPreview() {
             <span className="text-xs font-semibold text-slate-500">• Top 10 Jobs</span>
           </div>
           <h2 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight">
-            Top 10 Roles Matching Your Verified Experience
+            Top 10 Roles Ranked by Fit
           </h2>
         </div>
       </div>
 
       {/* Blurred 10-card preview behind truthful, loss-aversion LockedPreview overlay */}
       <LockedPreview
-        title="Unlock to see your compatible score and your Top 10 jobs."
-        subtitle="Your match score is ready. Only you can't see it yet. Recruiters filter by fit. Find out where you stand."
+        title="Unlock your Top 10 jobs ranked by fit"
+        subtitle="Unlock to see your match score and fit analysis. Recruiters filter by fit. Find out where you stand."
         ctaText="Unlock my score"
         ctaHref="/pricing"
         badge="PRO SUBSCRIPTION REQUIRED"

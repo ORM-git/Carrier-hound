@@ -456,10 +456,10 @@ export default function WhyMatchPanel({
               <Link
                 href="/pricing"
                 data-testid="why-match-explain-pro-lock"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 min-h-[36px] rounded-xl text-xs font-bold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 transition shadow-2xs cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 min-h-[36px] rounded-xl text-xs font-bold text-[#2563EB] bg-blue-50 hover:bg-blue-100 border border-blue-200 transition shadow-2xs cursor-pointer"
                 title="Recruiters filter by fit. Unlock to see AI match explanation."
               >
-                <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                <Sparkles className="w-3.5 h-3.5 text-[#2563EB]" />
                 <span>Explain with AI (Pro)</span>
               </Link>
             )}

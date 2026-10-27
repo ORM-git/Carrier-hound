@@ -358,7 +358,7 @@ export default function DashboardPage() {
               </p>
               <p className="text-tk-caption text-ink-muted">
                 {candidate?.confirmedAt
-                  ? (isPro ? "Ready to review" : "Your match score is ready")
+                  ? (isPro ? "Ready to review" : "Unlock your Top 10 jobs ranked by fit")
                   : "Resume Required for Scoring"}
               </p>
             </Card>
@@ -555,6 +555,7 @@ export default function DashboardPage() {
               </div>
 
               <ResumeUploadAndConfirm
+                isPro={isPro}
                 onProfileConfirmed={(p) => {
                   setCandidate(p);
                   setActiveStep("matches");

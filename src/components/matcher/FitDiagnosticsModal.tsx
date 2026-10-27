@@ -126,7 +126,7 @@ export default function FitDiagnosticsModal({
           {!isProUser ? (
             <LockedPreview
               title="Unlock Detailed Fit Analysis & Skill Gaps"
-              subtitle="Your resume has gaps. See exactly which ones. Unlock to see your compatible score and your Top 10 jobs."
+              subtitle="Unlock to see your match score and fit analysis across keywords, experience, and role criteria."
               ctaText="Unlock full fit analysis"
               ctaHref="/pricing"
               badge="PRO FEATURE"

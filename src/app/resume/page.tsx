@@ -763,7 +763,7 @@ export default function ResumePage() {
             </div>
 
             <div className="pt-2">
-              <ResumeUploadAndConfirm onProfileConfirmed={handleProfileConfirmed} />
+              <ResumeUploadAndConfirm isPro={isPro} onProfileConfirmed={handleProfileConfirmed} />
             </div>
           </div>
         </div>

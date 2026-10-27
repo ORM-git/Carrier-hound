@@ -71,13 +71,15 @@ export default function TailorResumeModal({
   userId,
   isPro,
 }: TailorResumeModalProps) {
-  const [isProUser, setIsProUser] = useState<boolean>(Boolean(isPro));
+  const [isProUser, setIsProUser] = useState<boolean | null>(
+    typeof isPro === "boolean" ? isPro : null
+  );
 
   useEffect(() => {
     if (typeof isPro === "boolean") {
       setIsProUser(isPro);
     } else {
-      getProAccessStatus().then((res) => setIsProUser(res.isPro)).catch(() => setIsProUser(false));
+      getProAccessStatus().then((res) => setIsProUser(res.isPro)).catch(() => setIsProUser(null));
     }
   }, [isPro]);
   const [copied, setCopied] = useState(false);
@@ -216,7 +218,7 @@ export default function TailorResumeModal({
   if (!open) return null;
 
   const handleGenerateAi = async () => {
-    if (!isProUser) {
+    if (isProUser === false) {
       toast.info("CareerMonke Pro subscription required for AI resume tailoring.");
       return;
     }
@@ -490,10 +492,18 @@ export default function TailorResumeModal({
           {/* AI Tailoring Control & Review Section */}
           <div className="space-y-3">
             {aiStatus === "rules" && (
-              !isProUser ? (
+              isProUser === null ? (
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-pulse">
+                  <div className="space-y-1.5">
+                    <div className="h-4 bg-slate-200 rounded w-44" />
+                    <div className="h-3 bg-slate-200 rounded w-64" />
+                  </div>
+                  <div className="h-9 w-44 bg-slate-200 rounded-xl" />
+                </div>
+              ) : isProUser === false ? (
                 <LockedPreview
                   title="Unlock AI Resume Tailoring"
-                  subtitle="Your resume has gaps. See exactly which ones. AI resume tailoring aligns your keywords directly to this role."
+                  subtitle="Unlock AI resume tailoring to align your keywords and experience directly with target role criteria."
                   ctaText="Unlock AI tailoring"
                   ctaHref="/pricing"
                   badge="PRO FEATURE"
