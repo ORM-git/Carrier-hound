@@ -452,6 +452,18 @@ export default function WhyMatchPanel({
             </div>
 
             {/* AI Action Button (Pro + Confirmed Resume ONLY) */}
+            {!isPro && candidate?.confirmedAt && (
+              <Link
+                href="/pricing"
+                data-testid="why-match-explain-pro-lock"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 min-h-[36px] rounded-xl text-xs font-bold text-[#2563EB] bg-blue-50 hover:bg-blue-100 border border-blue-200 transition shadow-2xs cursor-pointer"
+                title="Recruiters filter by fit. Unlock to see AI match explanation."
+              >
+                <Sparkles className="w-3.5 h-3.5 text-[#2563EB]" />
+                <span>Explain with AI (Pro)</span>
+              </Link>
+            )}
+
             {isPro && candidate?.confirmedAt && (
               <div className="flex items-center gap-2">
                 {isAiGenerated ? (
@@ -720,6 +732,7 @@ export default function WhyMatchPanel({
           onOpenChange={setIsFitModalOpen}
           diagnostics={diagnostics}
           candidate={candidate}
+          isPro={isPro}
           job={{
             id: job.id,
             title: job.title,

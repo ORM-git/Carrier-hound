@@ -40,15 +40,29 @@ import {
   downloadAtsResumeText,
 } from "@/lib/resume/tailor";
 import { extractResumeFactsWithGroq, getGroqApiKey } from "@/lib/ai/groq";
+import { getProAccessStatus } from "@/lib/billing/subscription";
 import Link from "next/link";
 
 export interface ResumeUploadAndConfirmProps {
   onProfileConfirmed?: (profile: CandidateProfile) => void;
+  isPro?: boolean;
 }
 
 export default function ResumeUploadAndConfirm({
   onProfileConfirmed,
+  isPro,
 }: ResumeUploadAndConfirmProps = {}) {
+  const [isProUser, setIsProUser] = useState<boolean | null>(
+    typeof isPro === "boolean" ? isPro : null
+  );
+
+  useEffect(() => {
+    if (typeof isPro === "boolean") {
+      setIsProUser(isPro);
+    } else {
+      getProAccessStatus().then((res) => setIsProUser(res.isPro)).catch(() => setIsProUser(null));
+    }
+  }, [isPro]);
   const [profile, setProfile] = useState<CandidateProfile | null>(null);
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const [isParsing, setIsParsing] = useState(false);
@@ -99,7 +113,7 @@ export default function ResumeUploadAndConfirm({
 
       const parsed: ParsedResumeResult = parseResumeText(text);
       let profileResult = parsed.profile;
-      if (getGroqApiKey()) {
+      if (isProUser && getGroqApiKey()) {
         profileResult = await extractResumeFactsWithGroq(text, parsed.profile);
       }
       setProfile(profileResult);
@@ -155,7 +169,7 @@ export default function ResumeUploadAndConfirm({
     try {
       const parsed: ParsedResumeResult = parseResumeText(pastedText);
       let profileResult = parsed.profile;
-      if (getGroqApiKey()) {
+      if (isProUser && getGroqApiKey()) {
         profileResult = await extractResumeFactsWithGroq(pastedText, parsed.profile);
       }
       setProfile(profileResult);

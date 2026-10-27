@@ -1090,6 +1090,7 @@ export default function JobDetailView({
 
       {candidate && isTailorOpen && (
         <TailorResumeModal
+          isPro={isPro}
           open={isTailorOpen}
           onOpenChange={setIsTailorOpen}
           candidate={candidate}

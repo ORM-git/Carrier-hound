@@ -12,6 +12,7 @@ import ProUpgradeScreen from "@/components/billing/ProUpgradeScreen";
 import ProOnboardingCard from "@/components/onboarding/ProOnboardingCard";
 import ResumeUploadAndConfirm from "@/components/resume/ResumeUploadAndConfirm";
 import TopTenCompatibleJobs from "@/components/dashboard/TopTenCompatibleJobs";
+import FreeDashboardTopTenPreview from "@/components/dashboard/FreeDashboardTopTenPreview";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -26,6 +27,7 @@ import { TrackedApplication, STAGE_CONFIG, ApplicationStage } from "@/lib/tracke
 import type { User } from "@supabase/supabase-js";
 import {
   Sparkles,
+  Lock,
   Briefcase,
   FileText,
   CheckCircle2,
@@ -197,19 +199,7 @@ export default function DashboardPage() {
     return <DashboardSkeleton />;
   }
 
-  // TIER 2: Signed-in but NOT Pro (Definitively confirmed by server)
-  if (!isPro) {
-    return (
-      <LoggedInAppShell pageLabel="DASHBOARD" user={user} isPro={false}>
-        <div className="max-w-5xl w-full mx-auto px-4 py-tk-4">
-          <ProUpgradeScreen
-            title="Unlock CareerMonke Pro"
-            subtitle="Access full job details, compatibility scores, and the guided Top 10 job-fit flow."
-          />
-        </div>
-      </LoggedInAppShell>
-    );
-  }
+
 
   // ---------------------------------------------------------------------------
   // Overview data — derived strictly from already-loaded state (no new numbers)
@@ -301,7 +291,7 @@ export default function DashboardPage() {
 
   // TIER 3: PRO USER (Guided Pro Flow)
   return (
-    <LoggedInAppShell pageLabel="DASHBOARD" user={user} isPro={true}>
+    <LoggedInAppShell pageLabel="DASHBOARD" user={user} isPro={isPro}>
       <div className="max-w-5xl w-full mx-auto px-4 sm:px-6 py-tk-3 sm:py-tk-4">
         <motion.div {...entrance} className="space-y-tk-3">
           {/* ================================================================= */}
@@ -312,8 +302,8 @@ export default function DashboardPage() {
             className="flex flex-col sm:flex-row sm:items-end justify-between gap-tk-2"
           >
             <div className="space-y-1.5 min-w-0">
-              <Badge tone="brand" size="md" className="font-extrabold">
-                PRO MEMBER
+              <Badge tone={isPro ? "brand" : "neutral"} size="md" className="font-extrabold">
+                {isPro ? "PRO MEMBER" : "FREE PLAN"}
               </Badge>
               <h1 className="text-[18px] font-bold uppercase tracking-wider text-ink break-words">
                 {firstName ? `Welcome back, ${firstName}` : "Welcome back"}
@@ -357,13 +347,19 @@ export default function DashboardPage() {
                 <span className="text-tk-caption font-semibold uppercase tracking-wider text-ink-subtle">
                   Matches
                 </span>
-                <span className="w-9 h-9 rounded-tk-lg bg-success-50 text-success-700 flex items-center justify-center">
-                  <Sparkles className="w-4 h-4" />
+                <span className={`w-9 h-9 rounded-tk-lg flex items-center justify-center ${
+                  isPro ? "bg-success-50 text-success-700" : "bg-brand-50 text-brand-600"
+                }`}>
+                  {isPro ? <Sparkles className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
                 </span>
               </div>
-              <p className="text-tk-h2 text-ink">{candidate?.confirmedAt ? "Top 10" : "—"}</p>
+              <p className="text-tk-h2 text-ink">
+                {candidate?.confirmedAt ? (isPro ? "Top 10" : "Top 10 (Locked)") : "—"}
+              </p>
               <p className="text-tk-caption text-ink-muted">
-                {candidate?.confirmedAt ? "Ready to review" : "Resume Required for Scoring"}
+                {candidate?.confirmedAt
+                  ? (isPro ? "Ready to review" : "Unlock your Top 10 jobs ranked by fit")
+                  : "Resume Required for Scoring"}
               </p>
             </Card>
 
@@ -559,6 +555,7 @@ export default function DashboardPage() {
               </div>
 
               <ResumeUploadAndConfirm
+                isPro={isPro}
                 onProfileConfirmed={(p) => {
                   setCandidate(p);
                   setActiveStep("matches");
@@ -569,7 +566,11 @@ export default function DashboardPage() {
 
           {/* STEP 3 & 4: TOP 10 JOBS WITH COMPATIBLE SCORE & PER-JOB AI ACTIONS */}
           {activeStep === "matches" && candidate && (
-            <TopTenCompatibleJobs candidate={candidate} isPro={isPro} userId={user?.id || null} />
+            isPro ? (
+              <TopTenCompatibleJobs candidate={candidate} isPro={isPro} userId={user?.id || null} />
+            ) : (
+              <FreeDashboardTopTenPreview />
+            )
           )}
 
           {/* Fallback prompt if step is matches but resume is not uploaded */}
