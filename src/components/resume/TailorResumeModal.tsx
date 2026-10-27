@@ -26,6 +26,8 @@ import {
   computeJobAtsScore,
 } from "@/lib/resume/atsScorer";
 import { generateAiTailoredResume } from "@/lib/ai/groq";
+import { getProAccessStatus } from "@/lib/billing/subscription";
+import LockedPreview from "@/components/billing/LockedPreview";
 import {
   getCachedTailoredResume,
   saveCachedTailoredResume,
@@ -55,6 +57,7 @@ interface TailorResumeModalProps {
   };
   onOpenCoverLetter?: () => void;
   userId?: string | null;
+  isPro?: boolean;
 }
 
 type AiTailoringStatus = "rules" | "generating" | "reviewing" | "accepted" | "failed";
@@ -66,7 +69,17 @@ export default function TailorResumeModal({
   job,
   onOpenCoverLetter,
   userId,
+  isPro,
 }: TailorResumeModalProps) {
+  const [isProUser, setIsProUser] = useState<boolean>(Boolean(isPro));
+
+  useEffect(() => {
+    if (typeof isPro === "boolean") {
+      setIsProUser(isPro);
+    } else {
+      getProAccessStatus().then((res) => setIsProUser(res.isPro)).catch(() => setIsProUser(false));
+    }
+  }, [isPro]);
   const [copied, setCopied] = useState(false);
   const [showFullPreview, setShowFullPreview] = useState(false);
 
@@ -203,6 +216,10 @@ export default function TailorResumeModal({
   if (!open) return null;
 
   const handleGenerateAi = async () => {
+    if (!isProUser) {
+      toast.info("CareerMonke Pro subscription required for AI resume tailoring.");
+      return;
+    }
     const currentGen = ++authGenerationRef.current;
     const initialSessionUser = await getVerifiedSessionUserId();
     const capturedOwner = initialSessionUser ?? (userId === "guest" ? "guest" : null);
@@ -473,25 +490,52 @@ export default function TailorResumeModal({
           {/* AI Tailoring Control & Review Section */}
           <div className="space-y-3">
             {aiStatus === "rules" && (
-              <div className="p-4 rounded-xl bg-gradient-to-r from-blue-50 via-indigo-50 to-purple-50 border border-indigo-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div>
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900">
-                    <Sparkles className="w-4 h-4 text-indigo-600" />
-                    <span>Generate AI-tailored version</span>
-                  </div>
-                  <p className="text-[11px] text-slate-600 mt-0.5">
-                    Currently using deterministic rules and templates based on your verified resume. Click to generate an AI rewrite aligned with target role criteria (uses 1 of your 30 daily tailoring allowance).
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleGenerateAi}
-                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5 shrink-0 cursor-pointer min-h-[44px]"
+              !isProUser ? (
+                <LockedPreview
+                  title="Unlock AI Resume Tailoring"
+                  subtitle="Your resume has gaps. See exactly which ones. AI resume tailoring aligns your keywords directly to this role."
+                  ctaText="Unlock AI tailoring"
+                  ctaHref="/pricing"
+                  badge="PRO FEATURE"
+                  blurIntensity="sm"
+                  minHeight="min-h-[140px]"
                 >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Generate AI-tailored version</span>
-                </button>
-              </div>
+                  <div className="p-4 rounded-xl bg-gradient-to-r from-blue-50 via-indigo-50 to-purple-50 border border-indigo-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900">
+                        <Sparkles className="w-4 h-4 text-indigo-600" />
+                        <span>Generate AI-tailored version</span>
+                      </div>
+                      <p className="text-[11px] text-slate-600 mt-0.5">
+                        Aligns summary and experience bullets with target job criteria and keywords.
+                      </p>
+                    </div>
+                    <div className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold shadow-xs">
+                      Generate AI-tailored version
+                    </div>
+                  </div>
+                </LockedPreview>
+              ) : (
+                <div className="p-4 rounded-xl bg-gradient-to-r from-blue-50 via-indigo-50 to-purple-50 border border-indigo-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900">
+                      <Sparkles className="w-4 h-4 text-indigo-600" />
+                      <span>Generate AI-tailored version</span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 mt-0.5">
+                      Currently using deterministic rules and templates based on your verified resume. Click to generate an AI rewrite aligned with target role criteria (uses 1 of your 30 daily tailoring allowance).
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleGenerateAi}
+                    className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5 shrink-0 cursor-pointer min-h-[44px]"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Generate AI-tailored version</span>
+                  </button>
+                </div>
+              )
             )}
 
             {aiStatus === "generating" && (

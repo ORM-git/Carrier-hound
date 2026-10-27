@@ -11,12 +11,14 @@ import {
 } from "@/lib/resume/storage";
 import { downloadCoverLetterPdf } from "@/lib/resume/atsPdfGenerator";
 import { generateGroqTailoredCoverLetter, getGroqApiKey } from "@/lib/ai/groq";
+import { getProAccessStatus } from "@/lib/billing/subscription";
 import { buildCoverLetterDocHtml, sanitizeDownloadFilename } from "@/lib/security/xss";
 import { toast } from "react-toastify";
 import { createClient } from "@/lib/supabase/client";
 
 interface CoverLetterModalProps {
   userId?: string | null;
+  isPro?: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   candidate: CandidateProfile;
@@ -35,7 +37,18 @@ export default function CoverLetterModal({
   candidate,
   job,
   userId,
+  isPro,
 }: CoverLetterModalProps) {
+  const [isProUser, setIsProUser] = useState<boolean>(Boolean(isPro));
+
+  useEffect(() => {
+    if (typeof isPro === "boolean") {
+      setIsProUser(isPro);
+    } else {
+      getProAccessStatus().then((res) => setIsProUser(res.isPro)).catch(() => setIsProUser(false));
+    }
+  }, [isPro]);
+
   const [content, setContent] = useState("");
   const [copied, setCopied] = useState(false);
   const [isGeneratingAi, setIsGeneratingAi] = useState(false);
@@ -129,8 +142,8 @@ export default function CoverLetterModal({
           setIsValidated(true);
           saveCachedTailoredCoverLetter(jobId, result, currentOwner);
 
-          // 3. If Groq API Key is configured, enhance with SMART_MODEL under hard evidence validation
-          if (getGroqApiKey()) {
+          // 3. If Groq API Key is configured and user is Pro, enhance with SMART_MODEL under hard evidence validation
+          if (isProUser && getGroqApiKey()) {
             setIsGeneratingAi(true);
             const currentGen = ++authGenerationRef.current;
             generateGroqTailoredCoverLetter(candidate, job)

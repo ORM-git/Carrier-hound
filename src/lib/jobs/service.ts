@@ -1002,6 +1002,10 @@ export async function getTopRankedJobsForCandidate(
   limit = 10,
   isPro = false
 ): Promise<{ job: LiveJob; diagnostics: FitDiagnosticsResult }[]> {
+  if (!isPro) {
+    // Pro-only feature: strictly return empty array for non-Pro to prevent unentitled data exposure
+    return [];
+  }
   try {
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();

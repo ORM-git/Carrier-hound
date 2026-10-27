@@ -19,6 +19,8 @@ import { FitDiagnosticsResult } from "@/lib/matcher/scoring";
 import { CandidateProfile } from "@/lib/resume/types";
 import { addApplicationToTracker } from "@/lib/tracker/storage";
 import { sanitizeExternalUrl } from "@/lib/security/xss";
+import { getProAccessStatus } from "@/lib/billing/subscription";
+import LockedPreview from "@/components/billing/LockedPreview";
 import { toast } from "react-toastify";
 
 interface FitDiagnosticsModalProps {
@@ -36,6 +38,7 @@ interface FitDiagnosticsModalProps {
   };
   onOpenCoverLetter?: () => void;
   onExportResume?: () => void;
+  isPro?: boolean;
 }
 
 export default function FitDiagnosticsModal({
@@ -46,7 +49,17 @@ export default function FitDiagnosticsModal({
   job,
   onOpenCoverLetter,
   onExportResume,
+  isPro,
 }: FitDiagnosticsModalProps) {
+  const [isProUser, setIsProUser] = useState<boolean>(Boolean(isPro));
+
+  React.useEffect(() => {
+    if (typeof isPro === "boolean") {
+      setIsProUser(isPro);
+    } else {
+      getProAccessStatus().then((res) => setIsProUser(res.isPro)).catch(() => setIsProUser(false));
+    }
+  }, [isPro]);
   const [isSavedToTracker, setIsSavedToTracker] = useState(false);
 
   if (!open) return null;
@@ -110,6 +123,36 @@ export default function FitDiagnosticsModal({
 
         {/* Scrollable Body */}
         <div className="p-5 sm:p-6 space-y-6 overflow-y-auto flex-1">
+          {!isProUser ? (
+            <LockedPreview
+              title="Unlock Detailed Fit Analysis & Skill Gaps"
+              subtitle="Your resume has gaps. See exactly which ones. Unlock to see your compatible score and your Top 10 jobs."
+              ctaText="Unlock full fit analysis"
+              ctaHref="/pricing"
+              badge="PRO FEATURE"
+              blurIntensity="md"
+              minHeight="min-h-[340px]"
+            >
+              <div className="space-y-5" aria-hidden="true">
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 flex items-center gap-4">
+                  <div className="w-16 h-16 rounded-2xl bg-slate-200 shrink-0" />
+                  <div className="space-y-2 flex-1">
+                    <div className="h-4 bg-slate-200 rounded-md w-40" />
+                    <div className="h-3 bg-slate-200 rounded-md w-60" />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <div className="h-4 bg-slate-200 rounded-md w-32" />
+                  <div className="h-16 bg-slate-100 rounded-xl" />
+                </div>
+                <div className="space-y-2">
+                  <div className="h-4 bg-slate-200 rounded-md w-36" />
+                  <div className="h-16 bg-slate-100 rounded-xl" />
+                </div>
+              </div>
+            </LockedPreview>
+          ) : (
+            <>
           {/* Match Score Hero Card */}
           <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-4">
@@ -299,6 +342,8 @@ export default function FitDiagnosticsModal({
               </button>
             </div>
           </div>
+            </>
+          )}
         </div>
 
         {/* Footer */}
