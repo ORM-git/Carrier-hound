@@ -3,6 +3,7 @@ import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
 import { formatSalary } from "@/lib/salary/parser";
 import { getSupabaseAdminClient, getRuntimeEnv } from "@/lib/ai/serviceHandler";
 import { getRequestContext } from "@cloudflare/next-on-pages";
+import { COUNTRY_CODE_TO_NAME, getCountryFilterClause } from "@/lib/countries";
 
 export const runtime = "edge";
 
@@ -138,7 +139,12 @@ export async function GET(req: Request) {
     if (countryCodeParam && countryCodeParam.trim() && countryCodeParam.toLowerCase() !== "all") {
       const code = sanitizeSearchQuery(countryCodeParam).toUpperCase().trim();
       if (code) {
-        query = query.eq("country_code", code);
+        const orClause = getCountryFilterClause(code);
+        if (orClause) {
+          query = query.or(orClause);
+        } else {
+          query = query.eq("country_code", code);
+        }
       }
     }
 
@@ -332,7 +338,7 @@ export async function GET(req: Request) {
           remote: Boolean(row.remote),
           remoteScope: row.remote_scope || undefined,
           remoteEligibility: row.remote_eligibility || undefined,
-          country: row.country || row.country_code || "US",
+          country: row.country_code || row.country || "",
           type: row.job_type === "internship" ? "Internship" : "Full-time",
           directSource: Boolean(row.verified ?? true),
           applyUrl: row.apply_url || "",
@@ -354,7 +360,7 @@ export async function GET(req: Request) {
         remote: Boolean(row.remote),
         remoteScope: row.remote_scope || undefined,
         remoteEligibility: row.remote_eligibility || undefined,
-        country: row.country_code || "US",
+        country: row.country_code || row.country || "",
         type: row.job_type === "internship" ? "Internship" : "Full-time",
         directSource: Boolean(row.verified),
         applyUrl: "",

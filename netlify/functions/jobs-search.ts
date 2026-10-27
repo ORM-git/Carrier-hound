@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { formatSalary } from "../../src/lib/salary/parser";
+import { COUNTRY_CODE_TO_NAME, getCountryFilterClause } from "../../src/lib/countries";
 import { safeLog } from "./_logger";
 
 function getSupabaseAdmin() {
@@ -253,6 +254,18 @@ export function createHandler(deps: JobsSearchDeps = {}) {
       query = query.eq("remote", true);
     }
 
+    if (countryCodeParam && countryCodeParam.trim() && countryCodeParam.toLowerCase() !== "all") {
+      const code = sanitizeSearchQuery(countryCodeParam).toUpperCase().trim();
+      if (code) {
+        const orClause = getCountryFilterClause(code);
+        if (orClause) {
+          query = query.or(orClause);
+        } else {
+          query = query.eq("country_code", code);
+        }
+      }
+    }
+
     if (locationParam && locationParam.trim() && locationParam.toLowerCase() !== "all") {
       const loc = sanitizeSearchQuery(locationParam);
       if (loc.toLowerCase() === "remote") {
@@ -420,7 +433,7 @@ export function createHandler(deps: JobsSearchDeps = {}) {
           remote: Boolean(row.remote),
           remoteScope: row.remote_scope || undefined,
           remoteEligibility: row.remote_eligibility || undefined,
-          country: row.country || row.country_code || "US",
+          country: row.country_code || row.country || "",
           type: row.job_type === "internship" ? "Internship" : "Full-time",
           directSource: Boolean(row.verified ?? true),
           applyUrl: row.apply_url || "",
@@ -441,7 +454,7 @@ export function createHandler(deps: JobsSearchDeps = {}) {
         remote: Boolean(row.remote),
         remoteScope: row.remote_scope || undefined,
         remoteEligibility: row.remote_eligibility || undefined,
-        country: row.country_code || "US",
+        country: row.country_code || row.country || "",
         type: row.job_type === "internship" ? "Internship" : "Full-time",
         directSource: Boolean(row.verified),
         applyUrl: "",

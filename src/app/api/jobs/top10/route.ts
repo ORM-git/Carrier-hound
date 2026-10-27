@@ -152,7 +152,7 @@ export async function POST(req: Request) {
     let query = supabaseAdmin
       .from("jobs")
       .select(
-        "id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, posted_at, first_seen_at"
+        "id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, country_code, posted_at, first_seen_at"
       )
       .eq("is_active", true)
       .eq("status", "active");
@@ -179,7 +179,7 @@ export async function POST(req: Request) {
       const { data: fallbackPool } = await supabaseAdmin
         .from("jobs")
         .select(
-          "id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, posted_at, first_seen_at"
+          "id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, country_code, posted_at, first_seen_at"
         )
         .eq("is_active", true)
         .eq("status", "active")
@@ -226,7 +226,7 @@ export async function POST(req: Request) {
         remote: Boolean(row.remote),
         remoteScope: row.remote_scope || undefined,
         remoteEligibility: row.remote_eligibility || undefined,
-        country: row.country || "US",
+        country: row.country_code || row.country || "",
         type: row.job_type === "internship" ? "Internship" : "Full-time",
         directSource: Boolean(row.apply_url),
         applyUrl: row.apply_url || "",

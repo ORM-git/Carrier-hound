@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { SUPPORTED_COUNTRIES } from "@/lib/countries";
 import {
   MapPin,
   Briefcase,
@@ -268,9 +269,9 @@ export default function JobFilterBar({
                 type="button"
                 onClick={() => handleOpenPopover("location")}
                 aria-expanded={activePopover === "location"}
-                aria-label={`Location filter: ${filters.location || "All"}`}
+                aria-label={`Location filter: ${filters.countryCode ? `Country: ${filters.countryCode}` : (filters.location || "All")}`}
                 className={`h-8 px-3 rounded-lg border text-[13px] font-medium transition inline-flex items-center gap-1.5 cursor-pointer shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
-                  filters.location
+                  filters.location || filters.countryCode
                     ? "bg-[#EFF6FF] border-[#BFDBFE] text-[#1D4ED8] font-semibold"
                     : "bg-white border-[#CBD5E1] text-[#0F172A] hover:bg-[#F8FAFC]"
                 }`}
@@ -290,7 +291,7 @@ export default function JobFilterBar({
                     <span className="font-bold text-[13px] text-[#0F172A]">Country / Region</span>
                     <button
                       type="button"
-                      onClick={() => handleReset("location", "")}
+                      onClick={() => setDraftFilters((prev) => ({ ...prev, countryCode: "", location: "" }))}
                       className="text-[11px] text-[#2563EB] hover:underline font-semibold"
                     >
                       Clear
@@ -300,14 +301,7 @@ export default function JobFilterBar({
                   {/* Real Country Selection (Filtering genuine country_code column) */}
                   <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
                     <span className="text-[11px] font-semibold text-[#64748B] block mb-1">Country (Filters country_code):</span>
-                    {[
-                      { code: "", label: "Worldwide (All Countries)" },
-                      { code: "US", label: "United States (US)" },
-                      { code: "GB", label: "United Kingdom (GB)" },
-                      { code: "CA", label: "Canada (CA)" },
-                      { code: "DE", label: "Germany (DE)" },
-                      { code: "IN", label: "India (IN)" },
-                    ].map((c) => (
+                    {SUPPORTED_COUNTRIES.map((c) => (
                       <label
                         key={c.code || "all"}
                         className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg cursor-pointer transition text-[13px] ${
@@ -347,14 +341,14 @@ export default function JobFilterBar({
                   <div className="flex items-center justify-between pt-2 border-t border-[#E2E8F0]">
                     <button
                       type="button"
-                      onClick={() => handleReset("location", "")}
+                      onClick={() => setDraftFilters((prev) => ({ ...prev, countryCode: "", location: "" }))}
                       className="px-3 py-1.5 rounded-lg text-xs font-semibold text-[#64748B] hover:text-[#0F172A] hover:bg-slate-100 transition"
                     >
                       Reset
                     </button>
                     <button
                       type="button"
-                      onClick={() => handleConfirm({ location: draftFilters.location })}
+                      onClick={() => handleConfirm({ countryCode: draftFilters.countryCode, location: draftFilters.location })}
                       className="px-4 py-1.5 rounded-lg text-xs font-bold bg-[#2563EB] text-white hover:bg-[#1D4ED8] transition shadow-xs"
                     >
                       Confirm
@@ -981,6 +975,20 @@ export default function JobFilterBar({
       {activeCount > 0 && (
         <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-[#E2E8F0] text-xs">
           <span className="font-bold text-[#64748B]">Active:</span>
+
+          {filters.countryCode && (
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#1D4ED8] font-medium text-[11px]">
+              <span>Country: {filters.countryCode}</span>
+              <button
+                type="button"
+                onClick={() => onChange({ countryCode: "" })}
+                aria-label={`Remove country filter ${filters.countryCode}`}
+                className="hover:text-rose-600 transition"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          )}
 
           {filters.location && (
             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#1D4ED8] font-medium text-[11px]">
