@@ -706,8 +706,14 @@ function resolveTrapCases(lower: string): { code?: string; ambiguous?: boolean }
   if (/\bindiana\b/i.test(lower) || /\b(indianapolis|fort wayne|bloomington|evansville|south bend)\b/i.test(lower)) {
     return { code: 'US' };
   }
-  // Standalone "IN" or "Remote - IN" without city/qualifier is ambiguous (could be US state IN or ISO code for India)
-  if (/^(?:remote\s*[-–—:]\s*)?in$/i.test(lower.trim())) {
+  // Standalone "IN" or "Remote - IN", "Remote, IN" without city/qualifier is ambiguous (could be US state IN or ISO code for India)
+  if (/^(?:remote\s*(?:[-–—:,]|in)?\s*)?in$/i.test(lower.trim())) {
+    return { ambiguous: true };
+  }
+  // Standalone 2-letter "DE" or "CA" (including "Remote, CA", "Remote, DE", etc.) without US state context is ambiguous:
+  // "DE" could be Germany (ISO) or Delaware (US state)
+  // "CA" could be Canada (ISO) or California (US state)
+  if (/^(?:remote\s*(?:[-–—:,]|in)?\s*)?(?:de|ca)$/i.test(lower.trim())) {
     return { ambiguous: true };
   }
   if (/\bindia\b/i.test(lower)) {
@@ -724,16 +730,18 @@ function resolveTrapCases(lower: string): { code?: string; ambiguous?: boolean }
   ) {
     return { code: 'GE' };
   }
-  // Georgia state indicators (Atlanta, Savannah, Augusta, GA state with US context)
+  // Georgia state indicators: US context only (city list, athens, georgia, georgia, us/usa/united states, or , GA)
   if (
-    /\b(atlanta|savannah|alpharetta|augusta|marietta|athens|macon|roswell)\b/i.test(lower) ||
+    /\b(atlanta|savannah|alpharetta|augusta|marietta|macon|roswell)\b/i.test(lower) ||
+    /\bathens\s*,\s*georgia\b/i.test(lower) ||
     /\bgeorgia\s*,\s*(?:us|usa|united states)\b/i.test(lower) ||
-    /\bga\s*,\s*(?:us|usa|united states)\b/i.test(lower)
+    /\bga\s*,\s*(?:us|usa|united states)\b/i.test(lower) ||
+    /(?:,\s*)ga(?:\s*|\b|$)/i.test(lower)
   ) {
     return { code: 'US' };
   }
-  // Standalone "Georgia" or "Remote - Georgia" is ambiguous (never guess between US state and Caucasus country)
-  if (/^(?:remote\s*[-–—:]\s*)?georgia$/i.test(lower.trim())) {
+  // Standalone "Georgia", "Remote, Georgia", "Remote in Georgia", etc. is ambiguous
+  if (/^(?:remote\s*(?:[-–—:,]|in)?\s*)?georgia$/i.test(lower.trim())) {
     return { ambiguous: true };
   }
 
@@ -960,8 +968,38 @@ export function detectCountryCode(
         detectedCandidates.add('US');
       } else if (partUpper === 'UK' || partUpper === 'GB') {
         detectedCandidates.add('GB');
+      } else if (partUpper === 'DE') {
+        // "DE" is Germany ISO code or Delaware US state.
+        // Only treat as US if US state context is present (e.g. preceded by comma: "Wilmington, DE")
+        // and not preceded by "Remote, DE"
+        if (
+          ((/(?:,\s*)DE\b/i.test(loc) && !/\bremote\s*,\s*DE\b/i.test(loc)) || /\bDE\s*,\s*(?:US|USA)\b/i.test(loc))
+        ) {
+          if (!/\b(?:germany|deutschland|berlin|munich|hamburg|frankfurt)\b/i.test(loc)) {
+            detectedCandidates.add('US');
+          } else {
+            detectedCandidates.add('DE');
+          }
+        } else if (/\b(?:germany|deutschland|berlin|munich|hamburg|frankfurt)\b/i.test(loc)) {
+          detectedCandidates.add('DE');
+        }
+      } else if (partUpper === 'CA') {
+        // "CA" is Canada ISO code or California US state.
+        // Only treat as US if US state context is present (e.g. preceded by comma: "San Francisco, CA")
+        // and not preceded by "Remote, CA"
+        if (
+          ((/(?:,\s*)CA\b/i.test(loc) && !/\bremote\s*,\s*CA\b/i.test(loc)) || /\bCA\s*,\s*(?:US|USA)\b/i.test(loc))
+        ) {
+          if (!/\b(?:canada|ontario|quebec|british columbia|alberta|toronto|vancouver|montreal|ottawa)\b/i.test(loc)) {
+            detectedCandidates.add('US');
+          } else {
+            detectedCandidates.add('CA');
+          }
+        } else if (/\b(?:canada|ontario|quebec|british columbia|alberta|toronto|vancouver|montreal|ottawa)\b/i.test(loc)) {
+          detectedCandidates.add('CA');
+        }
       } else if (US_STATE_CODES.has(partUpper)) {
-        // If it's a known US state code (e.g. CA, NY, TX, MA) attached to a city or in US postal format
+        // If it's a known US state code (e.g. NY, TX, MA, WA) attached to a city or in US postal format
         detectedCandidates.add('US');
       } else if (CANADIAN_PROVINCE_CODES.has(partUpper)) {
         detectedCandidates.add('CA');
@@ -983,14 +1021,24 @@ export function detectCountryCode(
     }
   }
 
-  // Format 3: Explicit US state code regex (e.g. "San Francisco, CA" or "Austin, TX")
-  if (/(?:,\s*|\b)(?:AL|AK|AZ|AR|CA|CO|CT|DE|FL|HI|ID|IL|IA|KS|KY|LA|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|DC)\b/.test(loc)) {
+  // Format 3: Explicit US state code regex (e.g. "Austin, TX")
+  if (/(?:,\s*|\b)(?:AL|AK|AZ|AR|CO|CT|FL|HI|ID|IL|IA|KS|KY|LA|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|DC)\b/.test(loc)) {
     detectedCandidates.add('US');
   }
 
   // State code IN or GA preceded by a comma and not in "India"
   if (/(?:,\s*)(?:IN|GA)(?:\s*,\s*(?:US|USA|United States))?(?:\s*|\b|$)/.test(loc) && !loc.toLowerCase().includes('india')) {
     detectedCandidates.add('US');
+  }
+
+  // State code DE or CA preceded by a comma (US state context like "Wilmington, DE", "San Francisco, CA")
+  // Excludes "Remote, DE" and "Remote, CA" which are ambiguous
+  if (/(?:,\s*)(?:DE|CA)(?:\s*,\s*(?:US|USA|United States))?(?:\s*|\b|$)/.test(loc) && !/\bremote\s*,\s*(?:DE|CA)\b/i.test(loc)) {
+    const isCanadaContext = /\b(?:canada|ontario|quebec|british columbia|alberta|toronto|vancouver|montreal)\b/i.test(loc);
+    const isGermanyContext = /\b(?:germany|deutschland|berlin|munich|hamburg|frankfurt)\b/i.test(loc);
+    if (!isCanadaContext && !isGermanyContext) {
+      detectedCandidates.add('US');
+    }
   }
 
   // Format 4: Canadian province codes with comma (e.g. "Vancouver, BC" or "Toronto, ON")
