@@ -11,6 +11,7 @@ import {
   FileCheck2,
   ExternalLink,
   ChevronRight,
+  ChevronDown,
   RefreshCw,
   BookmarkPlus,
   ShieldCheck,
@@ -27,6 +28,7 @@ import { addApplicationToTracker, getTrackedApplications, removeApplicationFromT
 import CompanyLogo from "@/components/CompanyLogo";
 import { toast } from "react-toastify";
 import { useLiveStats } from "@/lib/api/stats";
+import WhyMatchPanel from "./WhyMatchPanel";
 
 interface TopTenCompatibleJobsProps {
   userId?: string | null;
@@ -48,6 +50,19 @@ export default function TopTenCompatibleJobs({
   const [loading, setLoading] = useState(true);
   const [rankedJobs, setRankedJobs] = useState<RankedJobItem[]>([]);
   const [savedJobIds, setSavedJobIds] = useState<string[]>([]);
+  const [expandedJobIds, setExpandedJobIds] = useState<string[]>([]);
+  const [hiddenJobIds, setHiddenJobIds] = useState<string[]>([]);
+
+  const toggleExpand = (jobId: string) => {
+    setExpandedJobIds((prev) =>
+      prev.includes(jobId) ? prev.filter((id) => id !== jobId) : [...prev, jobId]
+    );
+  };
+
+  const handleHideJob = (jobId: string) => {
+    setHiddenJobIds((prev) => [...prev, jobId]);
+    toast.info("Hidden from your Top 10 list.");
+  };
 
   // Modals state
   const [activeTailorJob, setActiveTailorJob] = useState<LiveJob | null>(null);
@@ -160,15 +175,19 @@ export default function TopTenCompatibleJobs({
       ) : (
         /* Top 10 Jobs List */
         <div className="space-y-3.5">
-          {rankedJobs.map(({ job, diagnostics }, idx) => {
+          {rankedJobs.filter(({ job }) => !hiddenJobIds.includes(job.id)).map(({ job, diagnostics }, idx) => {
             const isSaved = savedJobIds.includes(job.id);
             const scoreColor = getScoreBadgeColor(diagnostics.score);
+
+            const isExpanded = expandedJobIds.includes(job.id);
 
             return (
               <div
                 key={job.id}
-                className="p-5 sm:p-6 bg-white rounded-2xl border border-slate-200 shadow-2xs hover:shadow-md transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 group"
+                data-testid={`top10-row-${job.id}`}
+                className="p-5 sm:p-6 bg-white rounded-2xl border border-slate-200 shadow-2xs hover:shadow-md transition-all flex flex-col gap-4 group"
               >
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 w-full">
                 {/* Left: Score Badge + Details */}
                 <div className="flex items-start gap-4 flex-1 min-w-0">
                   {/* Large Clear Score Badge */}
@@ -283,16 +302,54 @@ export default function TopTenCompatibleJobs({
                     <BookmarkPlus className="w-4 h-4" />
                   </button>
 
-                  {/* Action 4: Inspect & Apply */}
+                  {/* Action 4: Why this job is a match Expandable Trigger */}
+                  <button
+                    type="button"
+                    onClick={() => toggleExpand(job.id)}
+                    aria-expanded={isExpanded}
+                    aria-controls={`why-match-panel-${job.id}`}
+                    data-testid={`why-match-toggle-${job.id}`}
+                    title={isExpanded ? "Collapse match analysis" : "Expand match analysis"}
+                    className={`inline-flex items-center gap-1.5 px-3.5 py-2 min-h-[44px] min-w-[44px] rounded-xl border text-xs font-bold transition cursor-pointer shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                      isExpanded
+                        ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                        : "bg-white hover:bg-blue-50 text-blue-700 border-blue-200"
+                    }`}
+                  >
+                    <Sparkles className={`w-3.5 h-3.5 ${isExpanded ? "text-white" : "text-blue-600"}`} />
+                    <span>Why match</span>
+                    <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`} />
+                  </button>
+
+                  {/* Action 5: Inspect & Apply */}
                   <Link
                     href={`/job-detail?id=${encodeURIComponent(job.id)}`}
-                    className="inline-flex items-center gap-1 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition shadow-xs"
+                    className="inline-flex items-center gap-1 px-3.5 py-2 min-h-[44px] rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition shadow-xs"
                   >
                     <span>Inspect</span>
                     <ChevronRight className="w-3.5 h-3.5" />
                   </Link>
                 </div>
               </div>
+
+              {/* Full-width Expandable Why This Job is a Match Panel */}
+              {isExpanded && (
+                <div
+                  id={`why-match-panel-${job.id}`}
+                  className="w-full pt-3 border-t border-slate-100 animate-in fade-in duration-200"
+                >
+                  <WhyMatchPanel
+                    job={job}
+                    candidate={candidate}
+                    isPro={isPro}
+                    userId={userId}
+                    isSaved={isSaved}
+                    onToggleSave={() => handleToggleSave(job)}
+                    onHideJob={handleHideJob}
+                  />
+                </div>
+              )}
+            </div>
             );
           })}
         </div>

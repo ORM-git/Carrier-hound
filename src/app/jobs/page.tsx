@@ -30,7 +30,7 @@ import JobFilterBar, { JobFilterValues } from "@/components/jobs/JobFilterBar";
 import AllFiltersDrawer from "@/components/jobs/AllFiltersDrawer";
 import { COUNTRY_CODE_TO_NAME, matchCountryWithStrictFallback } from "@/lib/countries";
 import MobileFilterSheet from "@/components/jobs/MobileFilterSheet";
-import { computeFitDiagnostics, FitDiagnosticsResult, getDiagnosticsSummary } from "@/lib/matcher/scoring";
+import { computeFitDiagnostics, FitDiagnosticsResult } from "@/lib/matcher/scoring";
 import type { User } from "@supabase/supabase-js";
 import {
   Search,
@@ -219,66 +219,6 @@ function getJobDiagnostics(job: LiveJob, candidate: CandidateProfile | null): Fi
     } catch {}
   }
   return null;
-}
-
-function SmallComponentRing({
-  score,
-  label,
-  size = 36,
-  strokeWidth = 3,
-}: {
-  score: number;
-  label: string;
-  size?: number;
-  strokeWidth?: number;
-}) {
-  const radius = (size - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (score / 100) * circumference;
-
-  return (
-    <div
-      className="flex flex-col items-center gap-1 shrink-0"
-      data-testid={`match-ring-${label.toLowerCase()}`}
-      data-score={score}
-    >
-      <div
-        className="relative inline-flex items-center justify-center shrink-0"
-        style={{ width: size, height: size }}
-      >
-        <svg className="w-full h-full -rotate-90" viewBox={`0 0 ${size} ${size}`}>
-          {/* #E2E8F0 track */}
-          <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={radius}
-            stroke="#E2E8F0"
-            strokeWidth={strokeWidth}
-            fill="transparent"
-          />
-          {/* #2563EB ring */}
-          <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={radius}
-            stroke="#2563EB"
-            strokeWidth={strokeWidth}
-            strokeDasharray={circumference}
-            strokeDashoffset={offset}
-            strokeLinecap="round"
-            fill="transparent"
-            className="transition-all duration-300 ease-out"
-          />
-        </svg>
-        {/* value inside the ring */}
-        <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-[#0F172A]">
-          {score}%
-        </span>
-      </div>
-      {/* 12px label */}
-      <span className="text-[12px] font-medium text-[#475569]">{label}</span>
-    </div>
-  );
 }
 
 function getMatchPanelGradient(score: number): string {
@@ -1788,10 +1728,8 @@ function JobsPageInner() {
                                     className="w-[56px] h-[56px] sm:w-[72px] sm:h-[72px] rounded-lg shrink-0 object-contain p-1 border border-[#E2E8F0] bg-white"
                                   />
 
-                                  <div className="relative min-w-0 flex-1 grid grid-cols-1 grid-rows-1">
-                                    {/* View A: Standard content (crossfades out over 0.2s on desktop hover/focus) */}
-                                    <div className="col-start-1 row-start-1 w-full space-y-1.5 transition-opacity duration-200 motion-reduce:transition-none sm:group-hover:opacity-0 sm:group-focus-within:opacity-0 sm:group-focus:opacity-0 pointer-events-auto sm:group-hover:pointer-events-none sm:group-focus-within:pointer-events-none sm:group-focus:pointer-events-none">
-                                      {/* Badges row: 22px high / 11px text */}
+                                  <div className="min-w-0 flex-1 space-y-1.5">
+                                    {/* Badges row: 22px high / 11px text */}
                                       <div className="flex items-center gap-2">
                                         {isRecent && (
                                           <span className="h-[22px] px-2 py-0.5 rounded text-[11px] font-semibold bg-[#EFF6FF] text-[#1E40AF] border border-[#BFDBFE] inline-flex items-center">
@@ -1871,58 +1809,6 @@ function JobsPageInner() {
                                           </span>
                                         </div>
                                       </div>
-                                    </div>
-
-                                    {/* View B: Desktop Hover panel "Why this job is a match" (14px bold ink) */}
-                                    <div
-                                      data-testid="card-hover-match-panel"
-                                      className="col-start-1 row-start-1 w-full hidden sm:flex flex-col justify-center space-y-1.5 opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 sm:group-focus:opacity-100 transition-opacity duration-200 motion-reduce:transition-none pointer-events-none sm:group-hover:pointer-events-auto sm:group-focus-within:pointer-events-auto sm:group-focus:pointer-events-auto"
-                                    >
-                                      <h3 className="text-[14px] font-bold text-[#0F172A] leading-snug">
-                                        Why this job is a match
-                                      </h3>
-
-                                      {diagnostics ? (
-                                        <>
-                                          <p className="text-[12px] text-[#475569] leading-snug line-clamp-2">
-                                            {getDiagnosticsSummary(diagnostics)}
-                                          </p>
-
-                                          <div className="flex items-center gap-4 pt-0.5" data-testid="match-component-rings">
-                                            <SmallComponentRing
-                                              label="Experience"
-                                              score={Math.min(100, Math.max(0, Math.round((diagnostics.breakdown.experienceScore / 15) * 100)))}
-                                            />
-                                            <SmallComponentRing
-                                              label="Skill"
-                                              score={Math.min(100, Math.max(0, Math.round((diagnostics.breakdown.skillScore / 50) * 100)))}
-                                            />
-                                            {typeof (diagnostics.breakdown as any)?.industryScore === "number" && (
-                                              <SmallComponentRing
-                                                label="Industry"
-                                                score={Math.min(100, Math.max(0, Math.round((diagnostics.breakdown as any).industryScore)))}
-                                              />
-                                            )}
-                                          </div>
-                                        </>
-                                      ) : (
-                                        <div className="pt-0.5">
-                                          <Link
-                                            href="/resume"
-                                            data-testid="hover-upload-resume-cta"
-                                            onClick={(e) => e.stopPropagation()}
-                                            className="inline-flex items-center gap-2 p-2.5 rounded-[12px] bg-[#F8FAFC] hover:bg-[#EFF6FF] border border-[#E2E8F0] hover:border-[#93C5FD] text-left transition-all duration-200 group/cta focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1 w-fit"
-                                          >
-                                            <div className="w-6 h-6 rounded-full bg-[#EFF6FF] group-hover/cta:bg-[#DBEAFE] border border-[#BFDBFE] flex items-center justify-center shrink-0 transition-colors">
-                                              <Sparkles className="w-3.5 h-3.5 text-[#2563EB]" />
-                                            </div>
-                                            <span className="text-[12px] font-semibold text-[#0F172A] group-hover/cta:text-[#1D4ED8] transition-colors leading-snug">
-                                              Upload your resume to see why this job matches
-                                            </span>
-                                          </Link>
-                                        </div>
-                                      )}
-                                    </div>
                                   </div>
                                 </div>
 

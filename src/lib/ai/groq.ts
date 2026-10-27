@@ -297,3 +297,121 @@ export async function generateAiTailoredResume(
     };
   }
 }
+
+export interface JobFitExplanationResult {
+  success: boolean;
+  summary?: string;
+  missingSkills?: string[];
+  error?: string;
+  statusCode?: number;
+}
+
+/**
+ * 1-Click AI Job Fit Explanation for Pro subscribers with confirmed resume.
+ * Proxies to server-side /api/ai with operation 'job_fit'.
+ * Sends ONLY candidate skills + headline and job title, company, description.
+ * Shows ONLY the returned summary (2-3 sentences) and missingSkills as 'Gaps to address'.
+ * NEVER exposes or returns the AI score.
+ */
+export async function generateJobFitExplanation(
+  candidate: CandidateProfile,
+  job: {
+    title: string;
+    company: string;
+    description?: string;
+  }
+): Promise<JobFitExplanationResult> {
+  try {
+    const supabase = createClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+
+    if (!token) {
+      return {
+        success: false,
+        error: "Authentication required to generate AI match explanation.",
+        statusCode: 401,
+      };
+    }
+
+    // Send only candidate skills + headline and job title, company, description
+    const candidatePayload = {
+      headline: candidate.headline || "",
+      skills: Array.isArray(candidate.skills) ? candidate.skills : [],
+    };
+    const jobPayload = {
+      title: job.title || "",
+      company: job.company || "",
+      description: job.description || "",
+    };
+
+    const response = await fetch("/api/ai", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        operation: "job_fit",
+        params: {
+          candidate: candidatePayload,
+          job: jobPayload,
+        },
+      }),
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      return {
+        success: false,
+        error: data.error || `AI service returned error (HTTP ${response.status}).`,
+        statusCode: response.status,
+      };
+    }
+
+    let parsed = data.result;
+    if (!parsed && typeof data.content === "string") {
+      try {
+        parsed = JSON.parse(data.content);
+      } catch {}
+    }
+
+    if (!parsed || typeof parsed !== "object") {
+      return {
+        success: false,
+        error: "AI service returned invalid match explanation structure.",
+        statusCode: 502,
+      };
+    }
+
+    const rawSummary = String(parsed.summary || "").trim();
+    if (!rawSummary) {
+      return {
+        success: false,
+        error: "AI service returned empty match summary.",
+        statusCode: 502,
+      };
+    }
+
+    // Strict sanitization: strip HTML and executable markup, plain text only
+    const cleanSummary = stripHtmlAndExecutableMarkup(rawSummary).replace(/\s+/g, " ").trim();
+    const missingSkills = Array.isArray(parsed.missingSkills)
+      ? parsed.missingSkills
+          .map((s: any) => stripHtmlAndExecutableMarkup(String(s || "")).replace(/\s+/g, " ").trim())
+          .filter(Boolean)
+      : [];
+
+    return {
+      success: true,
+      summary: cleanSummary,
+      missingSkills,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err?.message || "Failed to connect to AI match explanation service.",
+      statusCode: 500,
+    };
+  }
+}
