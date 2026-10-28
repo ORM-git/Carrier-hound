@@ -26,6 +26,17 @@ const ATS_SOURCES = new Set([
   'personio',
   'bamboohr',
   'join',
+  'greenhouse-board',
+  'lever-board',
+  'ashby-board',
+  'workable-board',
+  'smartrecruiters-board',
+  'recruitee-board',
+  'breezy-board',
+  'teamtailor-board',
+  'personio-board',
+  'bamboohr-board',
+  'join-board',
 ]);
 
 /**
@@ -33,7 +44,13 @@ const ATS_SOURCES = new Set([
  */
 export function isAtsJob(job: { source?: string; source_type?: string }): boolean {
   if (job.source_type === 'ats') return true;
-  if (job.source && ATS_SOURCES.has(job.source.toLowerCase())) return true;
+  if (!job.source) return false;
+  const s = job.source.toLowerCase();
+  if (ATS_SOURCES.has(s)) return true;
+  if (s.endsWith('-board')) {
+    const base = s.slice(0, -6);
+    if (ATS_SOURCES.has(base)) return true;
+  }
   return false;
 }
 
