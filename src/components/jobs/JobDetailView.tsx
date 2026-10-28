@@ -608,14 +608,7 @@ export default function JobDetailView({
         onSave={onSave}
         onToggleApplied={onToggleApplied}
         onOpenTailor={() => {
-          if (!isUnlocked) {
-            onApply();
-          } else {
-            setIsTailorOpen(true);
-          }
-        }}
-        onRequireAuth={() => {
-          onApply();
+          setIsTailorOpen(true);
         }}
         onOpenPaywall={onApply}
       />

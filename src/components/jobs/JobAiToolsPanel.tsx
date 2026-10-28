@@ -19,6 +19,27 @@ import { CandidateProfile } from "@/lib/resume/types";
 import { FitDiagnosticsResult } from "@/lib/matcher/scoring";
 import type { User } from "@supabase/supabase-js";
 
+export interface TailorClickDecision {
+  action: "open_tailor" | "show_login_modal" | "redirect_resume";
+  destination?: string;
+}
+
+export function resolveTailorClickAction({
+  user,
+  hasConfirmedResume,
+}: {
+  user: User | null;
+  hasConfirmedResume: boolean;
+}): TailorClickDecision {
+  if (!user) {
+    return { action: "show_login_modal" };
+  }
+  if (!hasConfirmedResume) {
+    return { action: "redirect_resume", destination: "/resume" };
+  }
+  return { action: "open_tailor" };
+}
+
 export interface JobAiToolsPanelProps {
   job: LiveJob;
   candidate: CandidateProfile | null;
@@ -32,7 +53,6 @@ export interface JobAiToolsPanelProps {
   onSave: () => void;
   onToggleApplied?: () => void;
   onOpenTailor: () => void;
-  onRequireAuth?: () => void;
   onOpenPaywall?: () => void;
 }
 
@@ -49,7 +69,6 @@ export default function JobAiToolsPanel({
   onSave,
   onToggleApplied,
   onOpenTailor,
-  onRequireAuth,
   onOpenPaywall,
 }: JobAiToolsPanelProps) {
   const [isMobileExpanded, setIsMobileExpanded] = useState(false);
@@ -70,20 +89,20 @@ export default function JobAiToolsPanel({
   const topMissingSkills = diagnostics?.missingSkills ? diagnostics.missingSkills.slice(0, 4) : [];
 
   const handleTailorClick = () => {
-    if (!user) {
+    const decision = resolveTailorClickAction({ user, hasConfirmedResume });
+    if (decision.action === "show_login_modal") {
       setShowLoginModal(true);
-      if (onRequireAuth) {
-        onRequireAuth();
-      }
       return;
     }
-    if (!hasConfirmedResume) {
+    if (decision.action === "redirect_resume") {
       if (typeof window !== "undefined") {
-        window.location.href = "/resume";
+        window.location.href = decision.destination || "/resume";
       }
       return;
     }
-    onOpenTailor();
+    if (decision.action === "open_tailor") {
+      onOpenTailor();
+    }
   };
 
   const getLoginRedirectUrl = () => {
