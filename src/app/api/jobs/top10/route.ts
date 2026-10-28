@@ -164,7 +164,7 @@ export async function POST(req: Request) {
 
     // Trimmed to 120 most relevant rows: fast network transfer while providing plenty of candidates
     const { data: candidatePool, error: queryErr } = await query
-      .order("posted_at", { ascending: false })
+      .order("posted_at", { ascending: false, nullsFirst: false })
       .limit(120);
 
     if (queryErr) {
@@ -183,7 +183,7 @@ export async function POST(req: Request) {
         )
         .eq("is_active", true)
         .eq("status", "active")
-        .order("posted_at", { ascending: false })
+        .order("posted_at", { ascending: false, nullsFirst: false })
         .limit(50);
 
       const existingIds = new Set(jobsToScore.map((j) => j.id));

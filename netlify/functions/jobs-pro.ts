@@ -149,7 +149,7 @@ export async function handler(event: any) {
             query = query.eq("country_code", code);
           }
 
-          const { data: jobs, error } = await query.order("posted_at", { ascending: false }).limit(50);
+          const { data: jobs, error } = await query.order("posted_at", { ascending: false, nullsFirst: false }).limit(50);
           if (error) {
             return {
               statusCode: 500,
