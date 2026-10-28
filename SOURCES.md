@@ -1,11 +1,12 @@
 # ATS Board Discovery: Sources & Licences
 
-This document records the provenance, licenses, and collection methodologies for the Applicant Tracking System (ATS) board discovery pipeline in CareerMonke.
+This document records the provenance, licenses, and collection methodologies for the Applicant Tracking System (ATS) board discovery and adapter pipeline in CareerMonke.
 
 All sources adhere strictly to the project's operational locks:
-- No scraping of third-party job boards (strictly zero requests to LinkedIn, Indeed, Naukri, Glassdoor, Jobright, Workday).
+- No scraping of third-party job boards (strictly zero requests to LinkedIn, Indeed, Naukri, Glassdoor, Jobright, ZipRecruiter, Workday, JobSpy).
 - No login-gated systems or bypass of terms of service.
 - Respect for domain rate pacing (1 request per second per host) and automated `429` / `Retry-After` backoff.
+- User-Agent strictly `CareerMonkeBot/1.0`.
 
 ---
 
@@ -20,7 +21,14 @@ All sources adhere strictly to the project's operational locks:
   - `job-boards.greenhouse.io/*`
   - `jobs.lever.co/*`
   - `jobs.ashbyhq.com/*`
-- **Data Extracted**: Organization path segment extracted as company board token (e.g. `boards.greenhouse.io/<token>/jobs`).
+  - `apply.workable.com/*`
+  - `*.recruitee.com/*`
+  - `*.breezy.hr/*`
+  - `*.bamboohr.com/careers/*`
+  - `*.personio.de/*`
+  - `*.personio.com/*`
+  - `join.com/companies/*`
+- **Data Extracted**: Organization path segment or subdomain extracted as company board token (e.g. `apply.workable.com/<token>`, `<token>.breezy.hr`).
 
 ---
 
@@ -34,6 +42,7 @@ All sources adhere strictly to the project's operational locks:
   - `data/greenhouse_companies.json` (Public Greenhouse organization tokens)
   - `data/lever_companies.json` (Public Lever site identifiers)
   - `data/ashby_companies.json` (Public Ashby organization slugs)
+  - `data/bamboohr_companies.json` (Public BambooHR subdomain slugs)
 - **Usage**: Used as seed candidate tokens for automated public API verification.
 
 ### B. `AkshatBhat/find-companies-using-ashby-job-boards`
@@ -46,21 +55,27 @@ All sources adhere strictly to the project's operational locks:
 
 ---
 
-## 3. Direct Public Company Probing
+## 3. Guessed Candidates (Unverified, Expected Low Hit Rate)
 
-- **Source**: CareerMonke public company index (`src/data/companies.json`, `scripts/config/companies-phase2.json`)
-- **License**: Internal project seed dataset
-- **Methodology**: Generates slug variants (e.g., lowercase, kebab-case, concatenated) from known tech employers and queries documented public ATS endpoints directly.
+- **Source / Method**: `company_probe` generated from known employer names (`src/data/companies.json`, `scripts/config/companies-phase2.json`, `data/ats-company-registry.json`).
+- **Status & Classification**: Guessed candidates (unverified, expected low hit rate).
+- **Default Policy**: Disabled by default in discovery (`--probe` flag required).
+- **Scope Restriction**: Restricted strictly to established platforms (`greenhouse`, `lever`, `ashby`). For new ATS platforms, probing is disabled until verified.
+- **Verification Requirement**: Guessed candidates are never ingested into the database without passing live verification (HTTP 200 and >= 1 active job on public API). All unverified probe cross-products are excluded from the candidate dataset.
 
 ---
 
-## 4. Verification Protocol
+## 4. Supported Adapters & Public Endpoints
 
-A candidate token is verified if and only if:
-1. The request URL is verified by `isAuthorizedAtsUrl` against public endpoints:
-   - Greenhouse: `https://boards-api.greenhouse.io/v1/boards/<token>/jobs`
-   - Lever: `https://api.lever.co/v0/postings/<token>?mode=json`
-   - Ashby: `https://api.ashbyhq.com/posting-api/job-board/<token>`
-2. The endpoint responds with `HTTP 200 OK`.
-3. The response payload parses to a non-empty list of active jobs (`job_count >= 1`).
-4. Tokens returning `404 Not Found`, errors, or `0 jobs` are immediately rejected.
+The pipeline provides normalized adapters targeting legal, unauthenticated public feeds and endpoints:
+- **Greenhouse**: `https://boards-api.greenhouse.io/v1/boards/<token>/jobs?content=true&pay_transparency=true`
+- **Lever**: `https://api.lever.co/v0/postings/<token>?mode=json`
+- **Ashby**: `https://api.ashbyhq.com/posting-api/job-board/<token>`
+- **Workable**: `https://apply.workable.com/api/v1/widget/accounts/<token>`
+- **SmartRecruiters**: `https://api.smartrecruiters.com/v1/companies/<token>/postings`
+- **Recruitee**: `https://<token>.recruitee.com/api/offers/`
+- **Breezy**: `https://<token>.breezy.hr/json`
+- **Teamtailor**: `https://<token>.teamtailor.com/jobs.rss`
+- **Personio**: `https://<token>.jobs.personio.de/xml` (fallback `.jobs.personio.com/xml`)
+
+All adapters output the standard `NormalizedJob` shape and respect 1 req/s domain pacing and `CareerMonkeBot/1.0` User-Agent.

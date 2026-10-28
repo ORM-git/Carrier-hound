@@ -7,11 +7,50 @@ const DEFAULT_TIMEOUT_MS = 15000;
 const MAX_RETRIES = 2;
 const MIN_DOMAIN_INTERVAL_MS = 1000; // 1 request per second per domain
 
-// Track timestamp of last request per domain
-const lastRequestByDomain = new Map<string, number>();
+// Track timestamp of last request per domain (keyed on registrable domain)
+export const lastRequestByDomain = new Map<string, number>();
 
-// Cache robots.txt disallow rules per domain
-const robotsCache = new Map<string, string[]>();
+// Cache robots.txt disallow rules per registrable domain
+export const robotsCache = new Map<string, string[]>();
+
+// Known registrable domains for ATS platforms and public sources
+export const KNOWN_REGISTRABLE_DOMAINS = [
+  'greenhouse.io',
+  'lever.co',
+  'ashbyhq.com',
+  'breezy.hr',
+  'recruitee.com',
+  'teamtailor.com',
+  'personio.de',
+  'personio.com',
+  'bamboohr.com',
+  'workable.com',
+  'smartrecruiters.com',
+  'join.com',
+  'commoncrawl.org',
+  'githubusercontent.com',
+];
+
+/**
+ * Extracts the registrable domain (eTLD+1) for rate-limiting and robots caching.
+ * Ensures all subdomains of an ATS share the 1 req/s pacing lock and robots rules.
+ */
+export function getRegistrableDomain(hostname: string): string {
+  if (!hostname || typeof hostname !== 'string') return '';
+  const cleanHost = hostname.trim().toLowerCase();
+
+  for (const kd of KNOWN_REGISTRABLE_DOMAINS) {
+    if (cleanHost === kd || cleanHost.endsWith(`.${kd}`)) {
+      return kd;
+    }
+  }
+
+  const parts = cleanHost.split('.');
+  if (parts.length <= 2) {
+    return cleanHost;
+  }
+  return parts.slice(-2).join('.');
+}
 
 // Explicitly banned scrapable domains (as requested)
 const FORBIDDEN_DOMAINS = [
@@ -23,6 +62,8 @@ const FORBIDDEN_DOMAINS = [
   'glassdoor.com',
   'workday.com',
   'myworkdayjobs.com',
+  'ziprecruiter.com',
+  'jobspy',
 ];
 
 /**
@@ -33,17 +74,18 @@ export function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Enforces polite 1 req/sec pacing per domain.
+ * Enforces polite 1 req/sec pacing per registrable domain.
  */
-async function throttleDomain(hostname: string, intervalMs = MIN_DOMAIN_INTERVAL_MS): Promise<void> {
+export async function throttleDomain(hostnameOrDomain: string, intervalMs = MIN_DOMAIN_INTERVAL_MS): Promise<void> {
+  const regDomain = getRegistrableDomain(hostnameOrDomain) || hostnameOrDomain;
   const now = Date.now();
-  const last = lastRequestByDomain.get(hostname) || 0;
+  const last = lastRequestByDomain.get(regDomain) || 0;
   const elapsed = now - last;
   if (elapsed < intervalMs) {
     const waitTime = intervalMs - elapsed;
     await sleep(waitTime);
   }
-  lastRequestByDomain.set(hostname, Date.now());
+  lastRequestByDomain.set(regDomain, Date.now());
 }
 
 /**
@@ -53,7 +95,7 @@ export function isForbiddenDomain(url: string): boolean {
   try {
     const { hostname } = new URL(url);
     return FORBIDDEN_DOMAINS.some(
-      (banned) => hostname === banned || hostname.endsWith(`.${banned}`)
+      (banned) => hostname === banned || hostname.endsWith(`.${banned}`) || hostname.includes(banned)
     );
   } catch {
     return false;
@@ -61,17 +103,17 @@ export function isForbiddenDomain(url: string): boolean {
 }
 
 /**
- * Inspects domain robots.txt for disallow rules matching User-Agent or *.
+ * Inspects registrable domain robots.txt for disallow rules matching User-Agent or *.
  */
 export async function isAllowedByRobotsTxt(url: string): Promise<boolean> {
   try {
     const parsedUrl = new URL(url);
-    const domain = parsedUrl.origin;
+    const domainKey = getRegistrableDomain(parsedUrl.hostname);
     const pathname = parsedUrl.pathname;
 
-    if (!robotsCache.has(domain)) {
+    if (!robotsCache.has(domainKey)) {
       try {
-        const robotsUrl = `${domain}/robots.txt`;
+        const robotsUrl = `https://${domainKey}/robots.txt`;
         const res = await fetch(robotsUrl, {
           headers: { 'User-Agent': USER_AGENT },
           signal: AbortSignal.timeout(6000),
@@ -94,17 +136,17 @@ export async function isAllowedByRobotsTxt(url: string): Promise<boolean> {
               if (path) disallowedPaths.push(path);
             }
           }
-          robotsCache.set(domain, disallowedPaths);
+          robotsCache.set(domainKey, disallowedPaths);
         } else {
           // If 404 or not found, robots.txt doesn't disallow
-          robotsCache.set(domain, []);
+          robotsCache.set(domainKey, []);
         }
       } catch {
-        robotsCache.set(domain, []);
+        robotsCache.set(domainKey, []);
       }
     }
 
-    const disallows = robotsCache.get(domain) || [];
+    const disallows = robotsCache.get(domainKey) || [];
     for (const disallow of disallows) {
       if (disallow === '/') return false;
       if (pathname.startsWith(disallow)) return false;
@@ -148,11 +190,12 @@ export async function politeFetch(url: string, options: PoliteFetchOptions = {})
   }
 
   const parsedUrl = new URL(url);
+  const regDomain = getRegistrableDomain(parsedUrl.hostname) || parsedUrl.hostname;
   let attempt = 0;
   let lastError: Error | null = null;
 
   while (attempt <= retries) {
-    await throttleDomain(parsedUrl.hostname, rateLimitMs || MIN_DOMAIN_INTERVAL_MS);
+    await throttleDomain(regDomain, rateLimitMs || MIN_DOMAIN_INTERVAL_MS);
 
     try {
       const controller = new AbortController();
