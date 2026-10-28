@@ -116,6 +116,8 @@ export interface IngestionOptions {
   fixtureMode?: boolean;
   fixtureDir?: string;
   supabaseClient?: any;
+  expectHost?: string;
+  skipExistingRegistry?: boolean;
 }
 
 export interface ClosedJobRecord {
@@ -173,7 +175,11 @@ export interface BoardIngestionStats {
  * Initializes Supabase Client safely from local environment only.
  * Tokens and keys are strictly masked and never logged.
  */
-export function getSupabaseClient(customUrl?: string, customKey?: string): SupabaseClient | null {
+export function getSupabaseClient(
+  customUrl?: string,
+  customKey?: string,
+  expectHost?: string
+): SupabaseClient | null {
   const supabaseUrl = customUrl || process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
   const serviceRoleKey = customKey || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
 
@@ -181,13 +187,23 @@ export function getSupabaseClient(customUrl?: string, customKey?: string): Supab
     return null;
   }
 
+  let targetHost = '';
   try {
     const parsed = new URL(supabaseUrl);
-    const maskedKey = serviceRoleKey.length > 8 ? `${serviceRoleKey.slice(0, 4)}****` : '****';
-    console.log(`🔌 [Live-Write] Connected to Supabase host: ${parsed.host} (Key masked: ${maskedKey})`);
+    targetHost = parsed.host;
+    console.log(`🔌 [Live-Write] Target Supabase host: ${targetHost}`);
   } catch {
     console.error('❌ [Live-Write] Invalid Supabase URL in local environment.');
+    if (expectHost) {
+      throw new Error(`HOST MISMATCH ABORT: Invalid Supabase URL, cannot verify expected host "${expectHost}".`);
+    }
     return null;
+  }
+
+  if (expectHost && targetHost !== expectHost) {
+    const errMsg = `HOST MISMATCH ABORT: Expected host "${expectHost}" does not match target host "${targetHost}".`;
+    console.error(`❌ ${errMsg}`);
+    throw new Error(errMsg);
   }
 
   return createClient(supabaseUrl, serviceRoleKey, {
@@ -457,7 +473,7 @@ export function normalizeAtsJob(
     const remote = detectRemote(title, location);
     const countryCode = detectCountryCode(location);
     const description = cleanAndTruncateDescription(raw.content, 1500);
-    const postedAt = raw.first_published_at || raw.created_at || nowIso;
+    const postedAt = raw.first_published_at || raw.created_at || null;
 
     let salaryText: string | null = null;
     let salaryMin: number | null = null;
@@ -505,7 +521,7 @@ export function normalizeAtsJob(
     }
 
     return {
-      source: 'greenhouse',
+      source: ats.endsWith('-board') ? ats : `${ats}-board`,
       source_type: 'ats',
       source_job_id: `${slug}-${raw.id}`,
       title,
@@ -550,7 +566,7 @@ export function normalizeAtsJob(
     const countryCode = detectCountryCode(location);
     const rawDesc = raw.descriptionPlain || raw.description;
     const description = cleanAndTruncateDescription(rawDesc, 1500);
-    const postedAt = raw.createdAt ? new Date(raw.createdAt).toISOString() : nowIso;
+    const postedAt = raw.createdAt ? new Date(raw.createdAt).toISOString() : null;
 
     let salaryText: string | null = null;
     let salaryMin: number | null = null;
@@ -583,7 +599,7 @@ export function normalizeAtsJob(
     }
 
     return {
-      source: 'lever',
+      source: ats.endsWith('-board') ? ats : `${ats}-board`,
       source_type: 'ats',
       source_job_id: `${slug}-${raw.id}`,
       title,
@@ -627,7 +643,7 @@ export function normalizeAtsJob(
     const countryCode = detectCountryCode(location);
     const rawDesc = raw.descriptionPlain || raw.descriptionHtml;
     const description = cleanAndTruncateDescription(rawDesc, 1500);
-    const postedAt = raw.publishedAt || raw.createdAt || nowIso;
+    const postedAt = raw.publishedAt || raw.createdAt || null;
 
     let salaryText: string | null = null;
     let salaryMin: number | null = null;
@@ -671,7 +687,7 @@ export function normalizeAtsJob(
     }
 
     return {
-      source: 'ashby',
+      source: ats.endsWith('-board') ? ats : `${ats}-board`,
       source_type: 'ats',
       source_job_id: `${slug}-${raw.id}`,
       title,
@@ -839,6 +855,8 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
     fixtureMode = false,
     fixtureDir,
     supabaseClient,
+    expectHost,
+    skipExistingRegistry = true,
   } = options;
 
   const effectiveBoardsLimit = boardsLimit || limit;
@@ -854,27 +872,76 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
   if (maxJobs) console.log(`Max Jobs Cap:   ${maxJobs}`);
   if (effectiveBoardsLimit) console.log(`Boards Limit:   ${effectiveBoardsLimit}`);
 
-  // Safety Gate: Live write requires explicit --confirm-prod-write
-  if (liveWrite && !confirmProdWrite) {
-    throw new Error('LIVE PRODUCTION WRITE REFUSED: --live-write requires explicit --confirm-prod-write flag.');
+  // Safety Gate: Live write requires explicit --confirm-prod-write, compulsory --max-jobs, and compulsory --expect-host
+  if (liveWrite) {
+    if (!confirmProdWrite) {
+      throw new Error('LIVE PRODUCTION WRITE REFUSED: --live-write requires explicit --confirm-prod-write flag.');
+    }
+    if (!maxJobs || maxJobs <= 0) {
+      throw new Error('LIVE PRODUCTION WRITE REFUSED: --max-jobs <N> is compulsory with --live-write (aborting).');
+    }
+    if (!expectHost || !expectHost.trim()) {
+      throw new Error('LIVE PRODUCTION WRITE REFUSED: --expect-host <host> is compulsory with --live-write (aborting).');
+    }
   }
 
   // Obtain Supabase Client if live write or dry-plan against DB is needed
   let supabase: SupabaseClient | null = null;
   if (isActualLiveWrite || (dryPlan && (process.env.SUPABASE_SERVICE_ROLE_KEY || supabaseClient))) {
-    supabase = supabaseClient || getSupabaseClient();
+    supabase = supabaseClient || getSupabaseClient(undefined, undefined, expectHost);
     if (isActualLiveWrite && !supabase) {
       throw new Error('LIVE PRODUCTION WRITE FAILED: Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in environment.');
+    }
+
+    if (expectHost && supabaseClient) {
+      const clientUrl = supabaseClient._url || process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+      let actualHost = '';
+      try {
+        if (clientUrl) actualHost = new URL(clientUrl).host;
+      } catch {
+        actualHost = '';
+      }
+      if (actualHost) {
+        console.log(`🔌 [Live-Write] Target Supabase host: ${actualHost}`);
+        if (actualHost !== expectHost) {
+          throw new Error(`HOST MISMATCH ABORT: Expected host "${expectHost}" does not match target host "${actualHost}".`);
+        }
+      } else {
+        throw new Error(`HOST MISMATCH ABORT: Unable to determine target host to verify against expected host "${expectHost}".`);
+      }
     }
   }
 
   // Load target verified boards
   let targetBoards = loadVerifiedBoards(inputPath || configPath);
+
+  // Load existing registry to ensure live-write never touches existing registry boards
+  const registryEntries = loadCompanyRegistry();
+  const existingRegistrySlugs = new Set<string>();
+  for (const r of registryEntries) {
+    if (r.token) existingRegistrySlugs.add(r.token.toLowerCase());
+    if (r.target) existingRegistrySlugs.add(r.target.toLowerCase());
+  }
+
+  let skippedRegistryCount = 0;
   let targets = targetBoards.filter((entry) => {
     if (atsFilter !== 'all' && entry.ats !== atsFilter) return false;
     if (companyFilter && !entry.company?.toLowerCase().includes(companyFilter.toLowerCase())) return false;
+
+    // Skip any board whose slug already exists in the existing registry
+    if (skipExistingRegistry !== false) {
+      const slug = (entry.token || '').toLowerCase();
+      if (existingRegistrySlugs.has(slug)) {
+        skippedRegistryCount++;
+        return false;
+      }
+    }
     return true;
   });
+
+  if (skippedRegistryCount > 0) {
+    console.log(`🛡️ Skipped ${skippedRegistryCount} boards already present in existing registry.`);
+  }
 
   const tokensPerAts: Record<string, number> = {};
   for (const t of targetBoards) {
@@ -1048,6 +1115,7 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
   let rowsToInsert: NormalizedJob[] = [];
   let rowsToUpdate: NormalizedJob[] = [];
   let dedupSkipped = 0;
+  const nowIso = new Date().toISOString();
 
   if (supabase && allAcceptedJobs.length > 0) {
     const uniqueCompanyNames = Array.from(new Set(allAcceptedJobs.map((j) => j.company)));
@@ -1056,18 +1124,25 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
 
     // Chunk company lookups in groups of 50 to avoid query size limits
     const compChunkSize = 50;
+    const existingDbJobsMap = new Map<string, { posted_at?: string | null; discovered_at?: string | null }>();
+
     for (let i = 0; i < uniqueCompanyNames.length; i += compChunkSize) {
       const compSlice = uniqueCompanyNames.slice(i, i + compChunkSize);
       const { data: dbRows, error: dbErr } = await supabase
         .from('jobs')
-        .select('id, company, title, location, source, source_job_id, apply_url')
+        .select('id, company, title, location, source, source_job_id, apply_url, posted_at, discovered_at')
         .in('company', compSlice);
 
       if (!dbErr && Array.isArray(dbRows)) {
         for (const row of dbRows) {
           const roleKey = `${slugify(row.company)}::${slugify(row.title)}::${slugify(row.location || 'unspecified')}`;
           existingDbRoles.add(roleKey);
-          existingDbSourceIds.add(`${row.source}:${row.source_job_id}`);
+          const sourceIdKey = `${row.source}:${row.source_job_id}`;
+          existingDbSourceIds.add(sourceIdKey);
+          existingDbJobsMap.set(sourceIdKey, {
+            posted_at: row.posted_at || null,
+            discovered_at: row.discovered_at || null,
+          });
         }
       }
     }
@@ -1079,14 +1154,29 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
       const roleKey = `${slugify(job.company)}::${slugify(job.title)}::${slugify(job.location || 'unspecified')}`;
 
       if (existingDbSourceIds.has(sourceIdKey)) {
-        // Exists with identical source + source_job_id -> UPDATE (sets last_seen_at)
-        rowsToUpdate.push(job);
+        // Exists with identical source + source_job_id -> UPDATE
+        // Never overwrite existing posted_at or discovered_at
+        const existingMeta = existingDbJobsMap.get(sourceIdKey);
+        const updatedJob: NormalizedJob = {
+          ...job,
+          posted_at: existingMeta?.posted_at ?? (job.posted_at || null),
+          discovered_at: existingMeta?.discovered_at ?? undefined,
+          last_seen_at: nowIso,
+        };
+        rowsToUpdate.push(updatedJob);
       } else if (existingDbRoles.has(roleKey) || seenLocalRoles.has(roleKey)) {
         // Role (company + title + location) already exists under different ID -> DEDUP SKIP
         dedupSkipped++;
       } else {
-        // Brand new job
-        rowsToInsert.push(job);
+        // Brand new job -> INSERT
+        // discovered_at only set on insert
+        const newJob: NormalizedJob = {
+          ...job,
+          posted_at: job.posted_at || null,
+          discovered_at: nowIso,
+          last_seen_at: nowIso,
+        };
+        rowsToInsert.push(newJob);
         seenLocalRoles.add(roleKey);
       }
     }
@@ -1138,7 +1228,6 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
     const BATCH_SIZE = 500;
     let totalWritten = 0;
     let batchesCount = 0;
-    const nowIso = new Date().toISOString();
 
     for (let i = 0; i < jobsToWrite.length; i += BATCH_SIZE) {
       const chunk = jobsToWrite.slice(i, i + BATCH_SIZE);
@@ -1160,7 +1249,7 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
         salary_max: j.salary_max,
         currency: j.currency || 'USD',
         category: j.category,
-        posted_at: j.posted_at || nowIso,
+        posted_at: j.posted_at || null,
         last_seen_at: nowIso,
         is_active: true,
         status: 'active',
@@ -1168,7 +1257,7 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
         verified: true,
         verified_at: nowIso,
         source_type: 'ats',
-        discovered_at: j.discovered_at || nowIso,
+        discovered_at: j.discovered_at || null,
         country_code: j.country_code || null,
         country: j.country_code && COUNTRY_NAMES[j.country_code] && !j.remote ? COUNTRY_NAMES[j.country_code] : null,
         remote_eligibility: j.remote_eligibility || 'unknown',
@@ -1229,6 +1318,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(__filename
   const inputIdx = args.findIndex((a) => a === '--input');
   const inputPath = inputIdx !== -1 ? args[inputIdx + 1] : undefined;
 
+  const hostIdx = args.findIndex((a) => a === '--expect-host');
+  const expectHost = hostIdx !== -1 && args[hostIdx + 1] && !args[hostIdx + 1].startsWith('--') ? args[hostIdx + 1] : undefined;
+
   runBoardIngestion({
     dryRun: !liveWrite,
     liveWrite,
@@ -1240,6 +1332,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(__filename
     atsFilter,
     companyFilter,
     inputPath,
+    expectHost,
   })
     .then(() => process.exit(0))
     .catch((err) => {

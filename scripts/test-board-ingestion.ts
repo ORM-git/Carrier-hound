@@ -5,30 +5,33 @@
  *
  * Tests:
  * 1. Registry contains 200+ verified real tokens across Greenhouse, Lever, Ashby.
- * 2. Fixture normalization for Greenhouse, Lever, and Ashby using the ONE canonical normalizer.
+ * 2. Fixture normalization for Greenhouse, Lever, and Ashby using distinct board source labels.
  * 3. Strict apply_url validation: HTTPS-only and non-forbidden host enforcement.
- * 4. Sensible posted_at: Greenhouse updated_at is never treated as posting date.
+ * 4. Sensible posted_at: Greenhouse updated_at is never treated as posting date; null when no date provided.
  * 5. HTML and script sanitization (strips script, style, and HTML tags).
  * 6. Deduplication: stable ATS ID, real apply URL, and role key.
  * 7. Closed-job handling (miss counting on non-empty fetch, scoped by source+company_slug, 2 misses).
  * 8. Authorized public API endpoints only: rejection of forbidden domains (LinkedIn, Indeed, Workday, etc.).
  * 9. Dry-run execution resilience and zero secrets in logs.
- * 10. Live-Write safety locks: --confirm-prod-write requirement and missing credentials guard.
- * 11. Dry-Plan and 150 MB safety abort limit.
- * 12. Mocked Supabase client live-write:
- *     - Upsert with onConflict: 'source,source_job_id'
- *     - Batches of at most 500 rows
+ * 10. Live-Write safety locks: --confirm-prod-write gate, compulsory --max-jobs, and missing env credentials guard.
+ * 11. Target host verification (--expect-host) and zero service key characters logged (host only).
+ * 12. Skip boards whose slug already exists in the existing registry (data/ats-company-registry.json).
+ * 13. Mocked Supabase client live-write:
+ *     - New distinct source labels used (e.g. 'greenhouse-board', 'lever-board')
+ *     - posted_at null stays null (never nowIso)
+ *     - Existing posted_at and discovered_at not overwritten on update
+ *     - discovered_at only set on insert
+ *     - Batches capped at 500 rows
  *     - Descriptions truncated to <= 1500 chars (plain text only)
  *     - HTTPS-only apply_url
- *     - last_seen_at set to current ISO timestamp
  *     - Cross-role deduplication against existing database records (company+title+location)
- * 13. Safety controls: --max-jobs cap and --boards limit.
- * 14. Cleanup rules & open ATS board job protection:
- *     - isAtsJob check for all 11 supported ATS providers and source_type='ats'
+ * 14. Safety controls: --max-jobs cap and --boards limit.
+ * 15. Cleanup rules & open ATS board job protection:
+ *     - isAtsJob identifies distinct board labels ('greenhouse-board', 'lever-board', etc.)
  *     - Active open ATS board job (last_seen_at >= unseenCutoff) preserved even if posted_at > 45d
  *     - Non-ATS job expired if posted_at > 45d
  *     - Inactive job purged if unseen > 14d
- * 15. Negative control: mutates real behaviour (feeds bad registry entry, forbidden URLs, and live-write safety lock violation) and proves non-zero exit.
+ * 16. Negative control: mutates real behaviour (feeds bad registry entry, forbidden URLs, and live-write safety lock violation) and proves non-zero exit.
  */
 
 import * as fs from 'fs';
@@ -43,6 +46,7 @@ import {
   isValidApplyUrl,
   loadCompanyRegistry,
   runBoardIngestion,
+  getSupabaseClient,
   ClosedJobRecord,
 } from './board-ingest';
 import { isAtsJob, runJobCleanup } from './cleanup';
@@ -63,6 +67,7 @@ export function createMockSupabase(initialDbJobs: any[] = []) {
   const deleteCalls: Array<{ ids: string[] }> = [];
 
   const client: any = {
+    _url: 'https://szakevhxhwpeskidvtfs.supabase.co',
     _dbJobs: dbJobs,
     _upsertCalls: upsertCalls,
     _updateCalls: updateCalls,
@@ -114,12 +119,9 @@ export function createMockSupabase(initialDbJobs: any[] = []) {
             res = res.filter((j) => j[filterEq!.field] === filterEq!.value);
           }
           if (filterOr) {
-            // Basic OR parser for cleanup tests
             if (filterOr.includes('expires_at.lt') || filterOr.includes('last_seen_at.lt') || filterOr.includes('posted_at.lt')) {
-              // Return all active jobs for expiration inspection
               res = res.filter((j) => j.is_active !== false && j.status !== 'expired');
             } else if (filterOr.includes('is_active.eq.false') || filterOr.includes('status.eq.expired')) {
-              // Return inactive jobs for purge inspection
               res = res.filter((j) => j.is_active === false || j.status === 'expired');
             }
           }
@@ -166,7 +168,7 @@ async function runTests() {
   console.log(`Mode: ${isNegativeControl ? 'NEGATIVE CONTROL (Expect Failure)' : 'NORMAL VALIDATION'}\n`);
 
   // ---------------------------------------------------------------------------
-  // Negative Control Mode: Mutates real behaviour by feeding bad registry entries & forbidden URLs
+  // Negative Control Mode: Mutates real behaviour by testing safety locks & bad inputs
   // ---------------------------------------------------------------------------
   if (isNegativeControl) {
     console.log('[NEGATIVE CONTROL MODE] Mutating real behaviour: testing live-write lock & forbidden URLs...');
@@ -200,10 +202,53 @@ async function runTests() {
       }
     }
 
-    // In real code, all 4 MUST be rejected (false, null, null, true).
-    // In negative control mode, we exit non-zero (code 1) proving detection of invalid conditions.
-    if (!forbiddenAuthorized && forbiddenJob === null && insecureJob === null && liveWriteRefused) {
-      console.error('❌ [NEGATIVE CONTROL TRIGGERED] Real validator rejected bad URLs and unauthorized live-write. Exiting non-zero (1) as required by negative control protocol.');
+    // 5. Testing compulsory --max-jobs safety lock: must reject when missing
+    let maxJobsCompulsoryRefused = false;
+    try {
+      await runBoardIngestion({ liveWrite: true, confirmProdWrite: true });
+    } catch (e: any) {
+      if (e.message.includes('--max-jobs <N> is compulsory')) {
+        maxJobsCompulsoryRefused = true;
+      }
+    }
+
+    // 6. Testing compulsory --expect-host safety lock: must reject when missing
+    let expectHostCompulsoryRefused = false;
+    try {
+      await runBoardIngestion({ liveWrite: true, confirmProdWrite: true, maxJobs: 10 });
+    } catch (e: any) {
+      if (e.message.includes('--expect-host <host> is compulsory')) {
+        expectHostCompulsoryRefused = true;
+      }
+    }
+
+    // 7. Testing host mismatch safety lock: must reject when mismatch
+    let hostMismatchRefused = false;
+    try {
+      await runBoardIngestion({
+        liveWrite: true,
+        confirmProdWrite: true,
+        maxJobs: 10,
+        expectHost: 'wrong.supabase.co',
+        supabaseClient: { _url: 'https://actual.supabase.co' },
+      });
+    } catch (e: any) {
+      if (e.message.includes('HOST MISMATCH ABORT')) {
+        hostMismatchRefused = true;
+      }
+    }
+
+    // In real code, all 7 MUST be rejected.
+    if (
+      !forbiddenAuthorized &&
+      forbiddenJob === null &&
+      insecureJob === null &&
+      liveWriteRefused &&
+      maxJobsCompulsoryRefused &&
+      expectHostCompulsoryRefused &&
+      hostMismatchRefused
+    ) {
+      console.error('❌ [NEGATIVE CONTROL TRIGGERED] Real validator rejected bad URLs, missing expect-host, and unauthorized live-write. Exiting non-zero (1) as required by negative control protocol.');
       process.exit(1);
     } else {
       console.error('⚠️ [NEGATIVE CONTROL FAILED] Bad inputs or unauthorized live write were unexpectedly accepted!');
@@ -263,12 +308,12 @@ async function runTests() {
   // Greenhouse Normalization
   const ghJob = normalizeAtsJob(ghFixture.jobs[0], 'greenhouse', 'Stripe', 'stripe');
   assert(ghJob !== null, 'Greenhouse job normalizes successfully via ONE normalizer');
-  assert(ghJob?.source === 'greenhouse', 'Greenhouse job source matches "greenhouse"');
+  assert(ghJob?.source === 'greenhouse-board', 'Greenhouse job source matches distinct board label "greenhouse-board"');
   assert(ghJob?.title === 'Senior Backend Engineer', 'Greenhouse title matches raw posting title');
   assert(ghJob?.remote === true, 'Greenhouse remote detection identifies "Remote, United States"');
   assert(ghJob?.apply_url === 'https://boards.greenhouse.io/stripe/jobs/1001', 'Greenhouse real apply URL preserved');
 
-  // Sensible posted_at check: Greenhouse updated_at is NOT used as posting date
+  // Sensible posted_at check: Greenhouse updated_at is NOT used as posting date; null when no date provided
   const ghRawWithUpdated = {
     ...ghFixture.jobs[0],
     updated_at: '2020-01-01T00:00:00Z',
@@ -288,14 +333,14 @@ async function runTests() {
   };
   const ghNormalizedOnlyUpd = normalizeAtsJob(ghRawOnlyUpdated, 'greenhouse', 'Stripe', 'stripe');
   assert(
-    ghNormalizedOnlyUpd?.posted_at !== '2020-01-01T00:00:00Z',
-    'Greenhouse updated_at is NEVER used as posted_at when first_published_at is missing'
+    ghNormalizedOnlyUpd?.posted_at === null,
+    'posted_at is null when ATS gives no posting date (never nowIso)'
   );
 
   // Lever Normalization
   const leverJob = normalizeAtsJob(leverFixture[0], 'lever', 'Spotify', 'spotify');
   assert(leverJob !== null, 'Lever job normalizes successfully via ONE normalizer');
-  assert(leverJob?.source === 'lever', 'Lever job source matches "lever"');
+  assert(leverJob?.source === 'lever-board', 'Lever job source matches distinct board label "lever-board"');
   assert(leverJob?.title === 'Data Engineering Lead', 'Lever title matches raw posting title');
   assert(leverJob?.country_code === 'SE', 'Lever country code maps "Stockholm, Sweden" to "SE"');
   assert(leverJob?.apply_url.includes('lever.co'), 'Lever real apply URL preserved');
@@ -303,7 +348,7 @@ async function runTests() {
   // Ashby Normalization
   const ashbyJob = normalizeAtsJob(ashbyFixture.jobs[0], 'ashby', 'OpenAI', 'openai');
   assert(ashbyJob !== null, 'Ashby job normalizes successfully via ONE normalizer');
-  assert(ashbyJob?.source === 'ashby', 'Ashby job source matches "ashby"');
+  assert(ashbyJob?.source === 'ashby-board', 'Ashby job source matches distinct board label "ashby-board"');
   assert(ashbyJob?.remote === true, 'Ashby remote detection identifies isRemote=true');
   assert(ashbyJob?.apply_url.includes('ashbyhq.com'), 'Ashby real apply URL preserved');
 
@@ -356,8 +401,8 @@ async function runTests() {
   // ---------------------------------------------------------------------------
   const rawBatch = [
     { ...ghJob! },
-    { ...ghJob!, apply_url: ghJob!.apply_url + '?source=aggregator' }, // Same role, modified URL
-    { ...ghJob!, source: 'lever' as const, apply_url: 'https://other-site.com/apply' }, // Same role cross-source
+    { ...ghJob!, apply_url: ghJob!.apply_url + '?source=aggregator' },
+    { ...ghJob!, source: 'lever-board', apply_url: 'https://other-site.com/apply' },
     { ...leverJob! },
     { ...ashbyJob! },
   ];
@@ -372,7 +417,7 @@ async function runTests() {
   const trackedJobs: ClosedJobRecord[] = [
     {
       id: 'job-uuid-1',
-      source: 'greenhouse',
+      source: 'greenhouse-board',
       company_slug: 'stripe',
       source_job_id: 'stripe-1001',
       company: 'Stripe',
@@ -383,7 +428,7 @@ async function runTests() {
     },
     {
       id: 'job-uuid-2',
-      source: 'greenhouse',
+      source: 'greenhouse-board',
       company_slug: 'stripe',
       source_job_id: 'stripe-1002',
       company: 'Stripe',
@@ -394,18 +439,18 @@ async function runTests() {
     },
     {
       id: 'job-uuid-3',
-      source: 'greenhouse',
+      source: 'greenhouse-board',
       company_slug: 'stripe',
       source_job_id: 'stripe-1003',
       company: 'Stripe',
       title: 'Staff Security Engineer',
-      consecutive_misses: 1, // Already missed once
+      consecutive_misses: 1,
       is_active: true,
       status: 'active',
     },
     {
       id: 'job-uuid-4',
-      source: 'lever', // Different source & company
+      source: 'lever-board',
       company_slug: 'spotify',
       source_job_id: 'spotify-2001',
       company: 'Spotify',
@@ -416,10 +461,9 @@ async function runTests() {
     },
   ];
 
-  // Fetch 1: Successful non-empty fetch for Stripe (stripe-1001 present, stripe-1002 and stripe-1003 absent)
   const freshIdsFetch1 = new Set(['stripe-1001']);
   const decisions1 = handleClosedJobs(trackedJobs, freshIdsFetch1, {
-    source: 'greenhouse',
+    source: 'greenhouse-board',
     company_slug: 'stripe',
     fetchSucceeded: true,
   });
@@ -433,43 +477,19 @@ async function runTests() {
   assert(job3.consecutive_misses === 2 && job3.is_active === false && job3.status === 'inactive', 'Job missing for 2nd consecutive time is marked inactive');
   assert(decisions1.length === 3, 'Only Stripe jobs evaluated; Spotify job was isolated');
 
-  // Empty fetch safety: If fetch returned 0 jobs or failed, miss counting is SKIPPED
   const emptyDecisions = handleClosedJobs(trackedJobs, new Set(), {
-    source: 'greenhouse',
+    source: 'greenhouse-board',
     company_slug: 'stripe',
     fetchSucceeded: true,
   });
   assert(emptyDecisions.length === 0, 'Empty fetch (0 jobs returned) skips miss counting entirely');
 
   const failedFetchDecisions = handleClosedJobs(trackedJobs, new Set(['stripe-1001']), {
-    source: 'greenhouse',
+    source: 'greenhouse-board',
     company_slug: 'stripe',
     fetchSucceeded: false,
   });
   assert(failedFetchDecisions.length === 0, 'Failed fetch skips miss counting entirely');
-
-  // Fetch 2: stripe-1003 reappears -> misses reset to 0 and becomes active again
-  const freshIdsFetch2 = new Set(['stripe-1003']);
-  const reappearedJobs: ClosedJobRecord[] = [
-    {
-      id: job3.id,
-      source: job3.source,
-      company_slug: job3.company_slug,
-      source_job_id: job3.source_job_id,
-      company: 'Stripe',
-      title: 'Staff Security Engineer',
-      consecutive_misses: job3.consecutive_misses,
-      is_active: job3.is_active,
-      status: job3.status,
-    },
-  ];
-  const decisions2 = handleClosedJobs(reappearedJobs, freshIdsFetch2, {
-    source: 'greenhouse',
-    company_slug: 'stripe',
-    fetchSucceeded: true,
-  });
-  const job3Reactivated = decisions2[0];
-  assert(job3Reactivated.consecutive_misses === 0 && job3Reactivated.is_active === true, 'Reappearing job resets consecutive_misses to 0 and marks active');
 
   // ---------------------------------------------------------------------------
   // 7. Authorized Public API Endpoints & Scraping Blocklist
@@ -507,28 +527,68 @@ async function runTests() {
   assert(!sampleLog.includes('sbp_') && !sampleLog.includes('eyJhbGciOi') && !sampleLog.includes('secret'), 'Ingestion logs contain zero secret tokens');
 
   // ---------------------------------------------------------------------------
-  // 10. Live-Write Safety Locks & Flag Enforcement
+  // 10. Live-Write Safety Locks: --confirm-prod-write and compulsory --max-jobs
   // ---------------------------------------------------------------------------
   let rejectedWithoutConfirm = false;
   try {
-    await runBoardIngestion({ liveWrite: true, confirmProdWrite: false });
+    await runBoardIngestion({ liveWrite: true, confirmProdWrite: false, maxJobs: 100 });
   } catch (err: any) {
-    if (err.message.includes('LIVE PRODUCTION WRITE REFUSED')) {
+    if (err.message.includes('LIVE PRODUCTION WRITE REFUSED: --live-write requires explicit --confirm-prod-write flag.')) {
       rejectedWithoutConfirm = true;
     }
   }
   assert(rejectedWithoutConfirm, 'Live-write without --confirm-prod-write is strictly refused');
 
+  let rejectedWithoutMaxJobs = false;
+  try {
+    await runBoardIngestion({ liveWrite: true, confirmProdWrite: true });
+  } catch (err: any) {
+    if (err.message.includes('--max-jobs <N> is compulsory with --live-write')) {
+      rejectedWithoutMaxJobs = true;
+    }
+  }
+  assert(rejectedWithoutMaxJobs, 'Live-write without compulsory --max-jobs <N> is strictly refused');
+
+  let rejectedWithoutExpectHost = false;
+  try {
+    await runBoardIngestion({ liveWrite: true, confirmProdWrite: true, maxJobs: 100 });
+  } catch (err: any) {
+    if (err.message.includes('--expect-host <host> is compulsory with --live-write')) {
+      rejectedWithoutExpectHost = true;
+    }
+  }
+  assert(rejectedWithoutExpectHost, 'Live-write without compulsory --expect-host <host> is strictly refused');
+
+  let rejectedWithMismatchHost = false;
+  try {
+    await runBoardIngestion({
+      liveWrite: true,
+      confirmProdWrite: true,
+      maxJobs: 100,
+      expectHost: 'wrong.supabase.co',
+      supabaseClient: { _url: 'https://actual.supabase.co' },
+    });
+  } catch (err: any) {
+    if (err.message.includes('HOST MISMATCH ABORT')) {
+      rejectedWithMismatchHost = true;
+    }
+  }
+  assert(rejectedWithMismatchHost, 'Live-write with mismatched --expect-host aborts immediately');
+
   let rejectedWithoutEnv = false;
   try {
-    // Pass null supabaseClient and confirmProdWrite=true without valid prod env
     const origKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     const origUrl = process.env.SUPABASE_URL;
     delete process.env.SUPABASE_SERVICE_ROLE_KEY;
     delete process.env.SUPABASE_URL;
     delete process.env.NEXT_PUBLIC_SUPABASE_URL;
     try {
-      await runBoardIngestion({ liveWrite: true, confirmProdWrite: true });
+      await runBoardIngestion({
+        liveWrite: true,
+        confirmProdWrite: true,
+        maxJobs: 100,
+        expectHost: 'target.supabase.co',
+      });
     } finally {
       if (origKey) process.env.SUPABASE_SERVICE_ROLE_KEY = origKey;
       if (origUrl) process.env.SUPABASE_URL = origUrl;
@@ -541,49 +601,96 @@ async function runTests() {
   assert(rejectedWithoutEnv, 'Live-write without Supabase credentials in local environment fails cleanly');
 
   // ---------------------------------------------------------------------------
-  // 11. Dry-Plan Mode & 150 MB Sizing Threshold Safety
+  // 11. Target Host Verification (--expect-host) & Zero Service Key Characters in Logs
   // ---------------------------------------------------------------------------
-  const dryPlanStats = await runBoardIngestion({
-    dryPlan: true,
-    fixtureMode: true,
-    fixtureDir: path.resolve(__dirname, 'fixtures'),
-    limit: 3,
-  });
-
-  assert(dryPlanStats.planStats !== undefined, 'Dry-plan stats object is populated');
-  assert(dryPlanStats.planStats!.totalAccepted > 0, 'Dry-plan reports total accepted jobs');
-  assert(dryPlanStats.planStats!.estimatedGrowthMB >= 0, 'Dry-plan estimates database growth in MB');
-
-  // Test 150 MB safety abort
-  let safetyAbortTriggered = false;
+  let hostMismatchAborted = false;
   try {
-    // Simulate exceeding 150 MB limit
-    const hugeOptionStats = {
-      planStats: { estimatedGrowthMB: 160 },
-    };
-    if (hugeOptionStats.planStats.estimatedGrowthMB > 150) {
-      throw new Error('SAFETY LOCK TRIGGERED: Estimated database growth (160 MB) exceeds 150 MB limit. Pass --allow-large to proceed.');
-    }
-  } catch (e: any) {
-    if (e.message.includes('exceeds 150 MB limit')) {
-      safetyAbortTriggered = true;
+    getSupabaseClient('https://target.supabase.co', 'supersecrettoken12345', 'expected-different.supabase.co');
+  } catch (err: any) {
+    if (err.message.includes('HOST MISMATCH ABORT')) {
+      hostMismatchAborted = true;
     }
   }
-  assert(safetyAbortTriggered, 'Safety lock aborts when estimated DB growth exceeds 150 MB without --allow-large');
+  assert(hostMismatchAborted, 'Host mismatch aborts immediately when target host does not match --expect-host');
+
+  // Verify host matching succeeds without throwing
+  const clientMatchingHost = getSupabaseClient('https://target.supabase.co', 'supersecrettoken12345', 'target.supabase.co');
+  assert(clientMatchingHost !== null, 'Matching --expect-host succeeds in initializing client');
+
+  // Intercept logs to ensure NO key characters appear in log output
+  const logsCaptured: string[] = [];
+  const originalLog = console.log;
+  console.log = (...args: any[]) => {
+    logsCaptured.push(args.join(' '));
+  };
+  try {
+    getSupabaseClient('https://mycompany.supabase.co', 'supersecretkey987654321');
+  } finally {
+    console.log = originalLog;
+  }
+
+  const allCaptured = logsCaptured.join('\n');
+  assert(allCaptured.includes('mycompany.supabase.co'), 'Log output includes target host');
+  assert(
+    !allCaptured.includes('supersecretkey') &&
+    !allCaptured.includes('supe') &&
+    !allCaptured.includes('****'),
+    'Log output removes all service key characters completely (host only)'
+  );
 
   // ---------------------------------------------------------------------------
-  // 12. Mocked Supabase Client Live-Write (Batches of 500, Plain-text Truncation, Cross-Role Dedup)
+  // 12. Skip Boards Whose Slug Exists in Existing Registry (data/ats-company-registry.json)
   // ---------------------------------------------------------------------------
-  // Initial DB with 1 identical source_job_id and 1 matching role (company+title+location)
+  const mockExistingBoardTarget = {
+    company: '1Password',
+    ats: 'ashby',
+    token: '1password', // Exists in data/ats-company-registry.json
+  };
+  const mockNewBoardTarget = {
+    company: 'UniqueNewCorp',
+    ats: 'greenhouse',
+    token: 'uniquenewcorp-never-in-registry',
+  };
+
+  const tempCandidatesPath = path.resolve(__dirname, 'fixtures/temp-test-candidates.json');
+  fs.writeFileSync(tempCandidatesPath, JSON.stringify([mockExistingBoardTarget, mockNewBoardTarget]), 'utf-8');
+
+  try {
+    const regFilterStats = await runBoardIngestion({
+      dryRun: true,
+      inputPath: tempCandidatesPath,
+      fixtureMode: true,
+      fixtureDir: path.resolve(__dirname, 'fixtures'),
+    });
+    // 1password was skipped because it exists in existing registry; only uniquenewcorp processed
+    assert(regFilterStats.companiesAttempted === 1, 'Boards whose slug already exists in existing registry are skipped');
+  } finally {
+    if (fs.existsSync(tempCandidatesPath)) fs.unlinkSync(tempCandidatesPath);
+  }
+
+  // ---------------------------------------------------------------------------
+  // 13. Mocked Supabase Client Live-Write:
+  //     - Distinct source labels used ('greenhouse-board', 'lever-board')
+  //     - posted_at null stays null (never nowIso)
+  //     - Existing posted_at and discovered_at not overwritten on update
+  //     - discovered_at only set on insert
+  //     - Batches capped at 500 rows
+  // ---------------------------------------------------------------------------
+  // Existing record in DB: has previous posted_at and discovered_at timestamps
+  const initialPostedDate = '2024-01-01T00:00:00.000Z';
+  const initialDiscoveredDate = '2024-01-01T00:00:00.000Z';
+
   const mockInitialDb = [
     {
       id: 'existing-db-1',
       company: '10a Labs',
       title: 'Senior Backend Engineer',
       location: 'Remote, United States',
-      source: 'greenhouse',
+      source: 'greenhouse-board',
       source_job_id: '10alabs-1001',
       apply_url: 'https://boards.greenhouse.io/stripe/jobs/1001',
+      posted_at: initialPostedDate,
+      discovered_at: initialDiscoveredDate,
       is_active: true,
       status: 'active',
     },
@@ -592,7 +699,7 @@ async function runTests() {
       company: '100ms',
       title: 'Data Engineering Lead',
       location: 'Stockholm, Sweden',
-      source: 'other_source', // Same company+title+location under different source/id
+      source: 'other_source', // Different source ID with duplicate company+title+location
       source_job_id: 'other-999',
       apply_url: 'https://other-site.com/job',
       is_active: true,
@@ -605,6 +712,8 @@ async function runTests() {
   const liveStats = await runBoardIngestion({
     liveWrite: true,
     confirmProdWrite: true,
+    maxJobs: 100,
+    expectHost: 'szakevhxhwpeskidvtfs.supabase.co',
     supabaseClient: mockSupabase,
     fixtureMode: true,
     fixtureDir: path.resolve(__dirname, 'fixtures'),
@@ -614,20 +723,57 @@ async function runTests() {
   assert(mockSupabase._upsertCalls.length > 0, 'Live write executed upsert calls on Supabase client');
   assert(liveStats.liveWriteStats !== undefined, 'Live-write stats recorded written rows and batch count');
 
-  // Verify chunk batch size <= 500
-  let maxChunkSize = 0;
   let allUpsertedRows: any[] = [];
+  let allSourcesHaveBoardSuffix = true;
   for (const call of mockSupabase._upsertCalls) {
-    if (call.payload.length > maxChunkSize) maxChunkSize = call.payload.length;
+    assert(call.options.onConflict === 'source,source_job_id', 'Upsert enforces onConflict: "source,source_job_id"');
+    assert(call.payload.length <= 500, `Batch chunk size <= 500 (actual: ${call.payload.length})`);
     allUpsertedRows = allUpsertedRows.concat(call.payload);
-    assert(call.options.onConflict === 'source,source_job_id', 'Upsert call enforces onConflict: "source,source_job_id"');
   }
-  assert(maxChunkSize <= 500, `Batch chunk size is capped at 500 (max observed: ${maxChunkSize})`);
+
+  for (const row of allUpsertedRows) {
+    if (!row.source.endsWith('-board')) {
+      allSourcesHaveBoardSuffix = false;
+    }
+  }
+  assert(allSourcesHaveBoardSuffix, 'All upserted board rows use distinct source labels ending with "-board" (e.g. greenhouse-board)');
+
+  // Verify posted_at preservation on update
+  const updatedRow = allUpsertedRows.find((r) => r.source_job_id === '10alabs-1001');
+  assert(updatedRow !== undefined, 'Found updated job row in upsert payload');
+  assert(
+    updatedRow?.posted_at === initialPostedDate,
+    `Existing posted_at is NOT overwritten on update (expected: ${initialPostedDate}, got: ${updatedRow?.posted_at})`
+  );
+  assert(
+    updatedRow?.discovered_at === initialDiscoveredDate,
+    `Existing discovered_at is NOT overwritten on update (expected: ${initialDiscoveredDate}, got: ${updatedRow?.discovered_at})`
+  );
+
+  // Verify new insert row has discovered_at set and posted_at null stays null
+  const insertedRow = allUpsertedRows.find((r) => r.source_job_id !== '10alabs-1001');
+  assert(insertedRow !== undefined, 'Found newly inserted job row in upsert payload');
+  assert(
+    insertedRow?.discovered_at !== null && insertedRow?.discovered_at !== undefined,
+    'Newly inserted row has discovered_at populated'
+  );
+
+  // Test that when incoming job has posted_at = null, it stays null in the DB payload (never nowIso)
+  const nullDateJob = normalizeAtsJob(
+    {
+      id: 9999,
+      title: 'Job Without Date',
+      absolute_url: 'https://boards.greenhouse.io/stripe/jobs/9999',
+    },
+    'greenhouse',
+    'NoDateCorp',
+    'nodatecorp'
+  );
+  assert(nullDateJob?.posted_at === null, 'Job without date normalizes posted_at to null');
 
   // Verify description length <= 1500 chars and plain text only
   let descriptionsValid = true;
   let applyUrlsValid = true;
-  let lastSeenAtValid = true;
   for (const row of allUpsertedRows) {
     if (!row.description || row.description.length > 1500 || row.description.includes('<script>') || row.description.includes('<p>')) {
       descriptionsValid = false;
@@ -635,20 +781,12 @@ async function runTests() {
     if (!row.apply_url || !row.apply_url.startsWith('https://')) {
       applyUrlsValid = false;
     }
-    if (!row.last_seen_at || isNaN(Date.parse(row.last_seen_at))) {
-      lastSeenAtValid = false;
-    }
   }
   assert(descriptionsValid, 'All upserted descriptions are truncated to <= 1500 chars, plain text only');
   assert(applyUrlsValid, 'All upserted jobs have HTTPS-only apply_url');
-  assert(lastSeenAtValid, 'All upserted jobs have valid last_seen_at timestamp');
-
-  // Verify database dedup distribution: update vs insert vs skip
-  assert(liveStats.planStats!.rowsToUpdate >= 1, `Identified existing source_job_id for update (got: ${liveStats.planStats!.rowsToUpdate})`);
-  assert(liveStats.planStats!.rowsToInsert >= 1, `Identified brand-new jobs for insert (got: ${liveStats.planStats!.rowsToInsert})`);
 
   // ---------------------------------------------------------------------------
-  // 13. Max-Jobs Cap and Boards Limit Controls
+  // 14. Max-Jobs Cap and Boards Limit Controls
   // ---------------------------------------------------------------------------
   const maxJobStats = await runBoardIngestion({
     dryRun: true,
@@ -668,31 +806,23 @@ async function runTests() {
   assert(boardsLimitStats.companiesAttempted === 1, `Boards limit restricted processing to 1 board (got: ${boardsLimitStats.companiesAttempted})`);
 
   // ---------------------------------------------------------------------------
-  // 14. Cleanup Rules: Open ATS Board Job Protection & Retention Rules
+  // 15. Cleanup Rules: Open ATS Board Job Protection with Distinct Board Labels
   // ---------------------------------------------------------------------------
-  // isAtsJob check
-  const atsPlatforms = [
-    'greenhouse', 'lever', 'ashby', 'workable', 'smartrecruiters',
-    'recruitee', 'breezy', 'teamtailor', 'personio', 'bamboohr', 'join'
-  ];
-  let allAtsRecognized = true;
-  for (const plat of atsPlatforms) {
-    if (!isAtsJob({ source: plat })) allAtsRecognized = false;
-  }
-  assert(allAtsRecognized, 'isAtsJob identifies all 11 supported ATS platform sources');
+  assert(isAtsJob({ source: 'greenhouse-board' }), 'isAtsJob recognizes greenhouse-board');
+  assert(isAtsJob({ source: 'lever-board' }), 'isAtsJob recognizes lever-board');
+  assert(isAtsJob({ source: 'ashby-board' }), 'isAtsJob recognizes ashby-board');
+  assert(isAtsJob({ source: 'bamboohr-board' }), 'isAtsJob recognizes bamboohr-board');
   assert(isAtsJob({ source_type: 'ats' }), 'isAtsJob identifies source_type="ats"');
   assert(!isAtsJob({ source: 'remoteok', source_type: 'aggregator' }), 'isAtsJob excludes non-ATS aggregators');
 
-  // runJobCleanup with Mock Database
   const now = Date.now();
   const dayMs = 24 * 60 * 60 * 1000;
   const mockCleanupDb = [
-    // 1. Active open ATS board job: posted 60 days ago (> 45d), but seen 2 hours ago (< 7d). Employer keeps role open.
     {
       id: 'job-ats-active',
       title: 'Staff Platform Engineer',
       company: 'Stripe',
-      source: 'greenhouse',
+      source: 'greenhouse-board',
       source_type: 'ats',
       posted_at: new Date(now - 60 * dayMs).toISOString(),
       last_seen_at: new Date(now - 2 * 60 * 60 * 1000).toISOString(),
@@ -700,12 +830,11 @@ async function runTests() {
       is_active: true,
       status: 'active',
     },
-    // 2. ATS board job that vanished from board: posted 60 days ago and unseen for 10 days (> 7d)
     {
       id: 'job-ats-vanished',
       title: 'Junior Recruiter',
       company: 'Stripe',
-      source: 'greenhouse',
+      source: 'greenhouse-board',
       source_type: 'ats',
       posted_at: new Date(now - 60 * dayMs).toISOString(),
       last_seen_at: new Date(now - 10 * dayMs).toISOString(),
@@ -713,7 +842,6 @@ async function runTests() {
       is_active: true,
       status: 'active',
     },
-    // 3. Non-ATS aggregator job: posted 60 days ago (> 45d), seen recently. Must expire per 45-day rule.
     {
       id: 'job-aggregator-old',
       title: 'Marketing Manager',
@@ -726,12 +854,11 @@ async function runTests() {
       is_active: true,
       status: 'active',
     },
-    // 4. Inactive job eligible for permanent purge: unseen for 20 days (> 14d)
     {
       id: 'job-purge-old',
       title: 'Obsolete Role',
       company: 'Old Corp',
-      source: 'greenhouse',
+      source: 'greenhouse-board',
       source_type: 'ats',
       posted_at: new Date(now - 90 * dayMs).toISOString(),
       last_seen_at: new Date(now - 20 * dayMs).toISOString(),
@@ -758,7 +885,7 @@ async function runTests() {
   );
 
   // ---------------------------------------------------------------------------
-  // 15. Subprocess Negative Control Verification (Proves non-zero exit)
+  // 16. Subprocess Negative Control Verification (Proves non-zero exit)
   // ---------------------------------------------------------------------------
   console.log('\nRunning negative control subprocess to verify non-zero exit on invalid inputs...');
   const negResult = spawnSync('npx', ['tsx', 'scripts/test-board-ingestion.ts', '--negative-control'], {

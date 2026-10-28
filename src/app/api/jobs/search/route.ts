@@ -270,9 +270,9 @@ export async function GET(req: Request) {
     // For multi-word text queries, pull pool to rank by relevance before pagination
     const isMultiWord = cleanQuery && cleanQuery.includes(" ");
     if (isMultiWord) {
-      query = query.order("posted_at", { ascending: false }).limit(200);
+      query = query.order("posted_at", { ascending: false, nullsFirst: false }).limit(200);
     } else {
-      query = query.order("posted_at", { ascending: false }).range(from, to);
+      query = query.order("posted_at", { ascending: false, nullsFirst: false }).range(from, to);
     }
 
     const { data, count, error } = await query;
