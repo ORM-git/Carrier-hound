@@ -61,7 +61,8 @@ export function cleanAndTruncateDescription(raw: string | null | undefined, maxC
   text = stripHtml(text);
   if (!text) return null;
   if (text.length > maxChars) {
-    return text.substring(0, maxChars).trim() + '...';
+    const cut = Math.max(0, maxChars - 3);
+    return text.substring(0, cut).trim() + '...';
   }
   return text;
 }

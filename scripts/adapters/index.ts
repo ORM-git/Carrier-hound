@@ -9,6 +9,8 @@ import { WorkableAdapter } from './workable';
 import { BreezyAdapter } from './breezy';
 import { TeamtailorAdapter } from './teamtailor';
 import { PersonioAdapter } from './personio';
+import { BambooHRAdapter } from './bamboohr';
+import { JoinAdapter } from './join';
 import { RemotiveAdapter } from './remotive';
 import { ArbeitnowAdapter } from './arbeitnow';
 import { RemoteOKAdapter } from './remoteok';
@@ -25,6 +27,8 @@ const adapterRegistry: Record<string, SourceAdapter> = {
   breezy: new BreezyAdapter(),
   teamtailor: new TeamtailorAdapter(),
   personio: new PersonioAdapter(),
+  bamboohr: new BambooHRAdapter(),
+  join: new JoinAdapter(),
   adzuna: new AdzunaAdapter(),
   remotive: new RemotiveAdapter(),
   arbeitnow: new ArbeitnowAdapter(),
@@ -46,6 +50,8 @@ export {
   BreezyAdapter,
   TeamtailorAdapter,
   PersonioAdapter,
+  BambooHRAdapter,
+  JoinAdapter,
   AdzunaAdapter,
   RemotiveAdapter,
   ArbeitnowAdapter,

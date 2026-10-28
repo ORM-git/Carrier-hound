@@ -11,12 +11,38 @@ export interface CleanupConfig {
 export interface CleanupResult {
   markedExpired: number;
   permanentlyDeleted: number;
+  preservedBoardJobs?: number;
+}
+
+const ATS_SOURCES = new Set([
+  'greenhouse',
+  'lever',
+  'ashby',
+  'workable',
+  'smartrecruiters',
+  'recruitee',
+  'breezy',
+  'teamtailor',
+  'personio',
+  'bamboohr',
+  'join',
+]);
+
+/**
+ * Determines whether a job originates from an official employer ATS board.
+ */
+export function isAtsJob(job: { source?: string; source_type?: string }): boolean {
+  if (job.source_type === 'ats') return true;
+  if (job.source && ATS_SOURCES.has(job.source.toLowerCase())) return true;
+  return false;
 }
 
 /**
  * Runs cleanup rules:
- * 1. Mark jobs inactive/expired if expires_at < now OR last_seen_at < 7d ago OR posted_at < 45d ago
- * 2. Permanently delete inactive jobs where last_seen_at < 14d ago
+ * 1. Mark jobs inactive/expired if expires_at < now OR last_seen_at < 7d ago OR posted_at < 45d ago.
+ *    Special rule for ATS board jobs: Open board jobs that are still actively listed on the employer's
+ *    board (last_seen_at >= unseenCutoff) are preserved and NOT wrongly expired by the 45-day rule.
+ * 2. Permanently delete inactive jobs where last_seen_at < 14d ago.
  */
 export async function runJobCleanup(
   supabase: SupabaseClient,
@@ -49,7 +75,6 @@ export async function runJobCleanup(
   let permanentlyDeleted = 0;
 
   // Find active jobs that meet expiration criteria
-  // Condition: is_active = true AND (expires_at < now OR (last_seen_at < unseenCutoff IF not skipped) OR posted_at < postedCutoff)
   let expiredJobs: any[] | null = null;
   let selectExpiredError: any = null;
 
@@ -59,7 +84,7 @@ export async function runJobCleanup(
 
   const res = await supabase
     .from('jobs')
-    .select('id, title, company, last_seen_at, posted_at, expires_at')
+    .select('id, title, company, source, source_type, last_seen_at, posted_at, expires_at')
     .eq('is_active', true)
     .or(orFilter)
     .limit(1000);
@@ -73,7 +98,7 @@ export async function runJobCleanup(
     } else {
       const fallbackRes = await supabase
         .from('jobs')
-        .select('id, title, company, last_seen_at')
+        .select('id, title, company, source, source_type, last_seen_at')
         .eq('status', 'active')
         .lt('last_seen_at', unseenCutoff)
         .limit(1000);
@@ -85,33 +110,93 @@ export async function runJobCleanup(
     selectExpiredError = res.error;
   }
 
+  const jobsToExpire: any[] = [];
+  const preservedBoardJobs: any[] = [];
+
   if (selectExpiredError) {
     console.error(`❌ [Cleanup] Failed to query expired jobs:`, selectExpiredError.message);
   } else if (expiredJobs && expiredJobs.length > 0) {
-    markedExpired = expiredJobs.length;
-    console.log(`   Found ${markedExpired} active jobs eligible for expiration.`);
+    for (const job of expiredJobs) {
+      const isAts = isAtsJob(job);
+      let shouldExpire = false;
+      let reason = '';
 
-    if (!dryRun) {
-      const idsToExpire = expiredJobs.map((j) => j.id);
-      const chunkSize = 200;
-      for (let i = 0; i < idsToExpire.length; i += chunkSize) {
-        const chunk = idsToExpire.slice(i, i + chunkSize);
-        // Update both is_active and status for complete compatibility
-        const updatePayload: Record<string, any> = { status: 'expired' };
-        if (!res.error) updatePayload.is_active = false;
-
-        const { error: updateError } = await supabase
-          .from('jobs')
-          .update(updatePayload)
-          .in('id', chunk);
-
-        if (updateError) {
-          console.error(`❌ [Cleanup] Failed marking batch inactive:`, updateError.message);
-        }
+      // 1. Explicit expiration timestamp passed
+      if (job.expires_at && job.expires_at < nowIso) {
+        shouldExpire = true;
+        reason = `expires_at (${job.expires_at}) < now`;
       }
-      console.log(`   ✅ Marked ${markedExpired} jobs as is_active = false / expired.`);
+      // 2. Unseen for unseenExpiryDays (vanished from source / board)
+      else if (!skipUnseenCheck && job.last_seen_at && job.last_seen_at < unseenCutoff) {
+        shouldExpire = true;
+        reason = `last_seen_at (${job.last_seen_at}) < ${unseenCutoff} (${unseenExpiryDays}d unseen)`;
+      }
+      // 3. posted_at older than maxPostedDays
+      else if (job.posted_at && job.posted_at < postedCutoff) {
+        if (isAts) {
+          // Open ATS board job protection: If this job was seen recently on the employer's board,
+          // it is an active opening that the employer chose to keep live. Do not expire it!
+          if (!skipUnseenCheck && job.last_seen_at && job.last_seen_at >= unseenCutoff) {
+            preservedBoardJobs.push({
+              id: job.id,
+              title: job.title,
+              company: job.company,
+              source: job.source,
+              posted_at: job.posted_at,
+              last_seen_at: job.last_seen_at,
+              reason: `Active open board job (last seen ${job.last_seen_at} >= cutoff; employer still listing role)`,
+            });
+            continue;
+          }
+        }
+        // Non-ATS sources (or unseen ATS): apply 45-day rule
+        shouldExpire = true;
+        reason = `posted_at (${job.posted_at}) < ${postedCutoff} (${maxPostedDays}d max age)`;
+      }
+
+      if (shouldExpire) {
+        jobsToExpire.push({ ...job, expiration_reason: reason });
+      }
+    }
+
+    if (preservedBoardJobs.length > 0) {
+      console.log(`\n🛡️ [Cleanup] Protected ${preservedBoardJobs.length} open board jobs from 45-day posted_at expiration:`);
+      for (const p of preservedBoardJobs) {
+        console.log(`   - [PRESERVED] "${p.title}" at ${p.company} (${p.source}) | posted: ${p.posted_at} | last_seen: ${p.last_seen_at}`);
+      }
+    }
+
+    if (jobsToExpire.length > 0) {
+      console.log(`\n📋 [Cleanup] Listing ${jobsToExpire.length} active jobs to be deactivated/expired:`);
+      for (const j of jobsToExpire) {
+        console.log(`   - [EXPIRE] "${j.title}" at ${j.company} (${j.source}) | reason: ${j.expiration_reason}`);
+      }
+
+      markedExpired = jobsToExpire.length;
+
+      if (!dryRun) {
+        const idsToExpire = jobsToExpire.map((j) => j.id);
+        const chunkSize = 200;
+        for (let i = 0; i < idsToExpire.length; i += chunkSize) {
+          const chunk = idsToExpire.slice(i, i + chunkSize);
+          const updatePayload: Record<string, any> = { status: 'expired' };
+          if (!res.error) updatePayload.is_active = false;
+
+          const { error: updateError } = await supabase
+            .from('jobs')
+            .update(updatePayload)
+            .in('id', chunk);
+
+          if (updateError) {
+            console.error(`❌ [Cleanup] Failed marking batch inactive:`, updateError.message);
+          }
+        }
+        console.log(`   ✅ Marked ${markedExpired} jobs as is_active = false / expired.`);
+      } else {
+        console.log(`   [DRY RUN] Would mark ${markedExpired} jobs as is_active = false.`);
+      }
     } else {
-      console.log(`   [DRY RUN] Would mark ${markedExpired} jobs as is_active = false.`);
+      console.log(`   ✨ No active jobs found matching expiration criteria.`);
     }
   } else {
     console.log(`   ✨ No active jobs found matching expiration criteria.`);
@@ -123,7 +208,7 @@ export async function runJobCleanup(
 
   const purgeRes = await supabase
     .from('jobs')
-    .select('id')
+    .select('id, title, company, source, last_seen_at, status')
     .or(`is_active.eq.false,status.eq.expired`)
     .lt('last_seen_at', deleteCutoff)
     .limit(1000);
@@ -131,7 +216,7 @@ export async function runJobCleanup(
   if (purgeRes.error && purgeRes.error.message.includes('does not exist')) {
     const fallbackPurge = await supabase
       .from('jobs')
-      .select('id')
+      .select('id, title, company, source, last_seen_at, status')
       .eq('status', 'expired')
       .lt('last_seen_at', deleteCutoff)
       .limit(1000);
@@ -146,7 +231,10 @@ export async function runJobCleanup(
     console.error(`❌ [Cleanup] Failed to query purge candidates:`, selectPurgeError.message);
   } else if (purgeJobs && purgeJobs.length > 0) {
     permanentlyDeleted = purgeJobs.length;
-    console.log(`   Found ${permanentlyDeleted} inactive jobs older than retention window.`);
+    console.log(`\n🗑️ [Cleanup] Listing ${permanentlyDeleted} inactive/expired jobs eligible for permanent deletion (unseen > ${permanentDeleteDays}d):`);
+    for (const p of purgeJobs) {
+      console.log(`   - [PURGE] "${p.title || p.id}" at ${p.company || 'Unknown'} (${p.source || 'N/A'}) | status: ${p.status} | last_seen: ${p.last_seen_at}`);
+    }
 
     if (!dryRun) {
       const idsToPurge = purgeJobs.map((j) => j.id);
@@ -166,5 +254,5 @@ export async function runJobCleanup(
     console.log(`   ✨ No old inactive jobs need permanent purging.`);
   }
 
-  return { markedExpired, permanentlyDeleted };
+  return { markedExpired, permanentlyDeleted, preservedBoardJobs: preservedBoardJobs.length };
 }
