@@ -131,7 +131,22 @@ export function loadCompanyRegistry(customPath?: string): CompanyRegistryEntry[]
 /**
  * Builds the canonical public API URL for a given ATS provider and token.
  */
-export function buildAtsApiUrl(ats: 'greenhouse' | 'lever' | 'ashby', token: string): string {
+export function buildAtsApiUrl(
+  ats:
+    | 'greenhouse'
+    | 'lever'
+    | 'ashby'
+    | 'workable'
+    | 'smartrecruiters'
+    | 'recruitee'
+    | 'breezy'
+    | 'teamtailor'
+    | 'personio'
+    | 'bamboohr'
+    | 'join'
+    | string,
+  token: string
+): string {
   const cleanToken = encodeURIComponent(token.trim().toLowerCase());
   if (ats === 'greenhouse') {
     return `https://boards-api.greenhouse.io/v1/boards/${cleanToken}/jobs?content=true&pay_transparency=true`;
@@ -142,12 +157,36 @@ export function buildAtsApiUrl(ats: 'greenhouse' | 'lever' | 'ashby', token: str
   if (ats === 'ashby') {
     return `https://api.ashbyhq.com/posting-api/job-board/${cleanToken}`;
   }
+  if (ats === 'workable') {
+    return `https://apply.workable.com/api/v1/widget/accounts/${cleanToken}`;
+  }
+  if (ats === 'smartrecruiters') {
+    return `https://api.smartrecruiters.com/v1/companies/${cleanToken}/postings`;
+  }
+  if (ats === 'recruitee') {
+    return `https://${cleanToken}.recruitee.com/api/offers/`;
+  }
+  if (ats === 'breezy') {
+    return `https://${cleanToken}.breezy.hr/json`;
+  }
+  if (ats === 'teamtailor') {
+    return `https://${cleanToken}.teamtailor.com/jobs.rss`;
+  }
+  if (ats === 'personio') {
+    return `https://${cleanToken}.jobs.personio.de/xml`;
+  }
+  if (ats === 'bamboohr') {
+    return `https://${cleanToken}.bamboohr.com/careers/list`;
+  }
+  if (ats === 'join') {
+    return `https://join.com/api/companies/${cleanToken}`;
+  }
   throw new Error(`Unsupported ATS type: ${ats}`);
 }
 
 /**
  * Evaluates whether an ATS request URL is authorized and adheres to public API locks.
- * Strictly verifies https protocol, authorized hostnames, and rejects forbidden scrapable domains.
+ * Strictly verifies https protocol, exact authorized hostnames, and rejects forbidden scrapable domains.
  */
 export function isAuthorizedAtsUrl(url: string, ats: string): boolean {
   if (!url || typeof url !== 'string') return false;
@@ -157,14 +196,44 @@ export function isAuthorizedAtsUrl(url: string, ats: string): boolean {
     const parsed = new URL(url);
     if (parsed.protocol !== 'https:') return false;
 
+    const host = parsed.hostname.toLowerCase();
+    const pathname = parsed.pathname;
+
     if (ats === 'greenhouse') {
-      return parsed.hostname === 'boards-api.greenhouse.io' && parsed.pathname.startsWith('/v1/boards/');
+      return host === 'boards-api.greenhouse.io' && pathname.startsWith('/v1/boards/');
     }
     if (ats === 'lever') {
-      return parsed.hostname === 'api.lever.co' && parsed.pathname.startsWith('/v0/postings/');
+      return host === 'api.lever.co' && pathname.startsWith('/v0/postings/');
     }
     if (ats === 'ashby') {
-      return parsed.hostname === 'api.ashbyhq.com' && parsed.pathname.startsWith('/posting-api/job-board/');
+      return host === 'api.ashbyhq.com' && pathname.startsWith('/posting-api/job-board/');
+    }
+    if (ats === 'workable') {
+      return host === 'apply.workable.com' && pathname.startsWith('/api/');
+    }
+    if (ats === 'smartrecruiters') {
+      return host === 'api.smartrecruiters.com' && pathname.startsWith('/v1/companies/');
+    }
+    if (ats === 'recruitee') {
+      return /^[a-z0-9_-]+.recruitee.com$/.test(host) && pathname.startsWith('/api/offers');
+    }
+    if (ats === 'breezy') {
+      return /^[a-z0-9_-]+.breezy.hr$/.test(host) && pathname.startsWith('/json');
+    }
+    if (ats === 'teamtailor') {
+      return /^[a-z0-9_-]+.teamtailor.com$/.test(host) && pathname.startsWith('/jobs');
+    }
+    if (ats === 'personio') {
+      return /^[a-z0-9_-]+(.[a-z0-9_-]+)?.personio.(de|com)$/.test(host) && pathname.startsWith('/xml');
+    }
+    if (ats === 'bamboohr') {
+      return /^[a-z0-9_-]+.bamboohr.com$/.test(host) && pathname.startsWith('/careers/');
+    }
+    if (ats === 'join') {
+      return (
+        (host === 'join.com' || host === 'www.join.com' || /^[a-z0-9_-]+.join.com$/.test(host)) &&
+        (pathname.startsWith('/api/') || pathname.startsWith('/companies/'))
+      );
     }
     return false;
   } catch {

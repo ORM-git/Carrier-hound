@@ -25,7 +25,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { buildAtsApiUrl, isAuthorizedAtsUrl } from './board-ingest';
-import { politeFetchJson, isForbiddenDomain, sleep } from './utils/polite-fetch';
+import { politeFetchJson, politeFetchText, isForbiddenDomain, sleep } from './utils/polite-fetch';
 import { sanitizeToken, AtsType, DiscoverySource } from './board-discovery';
 import { detectRemote, detectCountryCode } from './utils/sanitizer';
 
@@ -191,7 +191,12 @@ export async function verifyAtsTokenWithMetrics(
   }
 
   try {
-    const data = await politeFetchJson<any>(url, { retries: 0 });
+    let data: any;
+    if (ats === 'teamtailor' || ats === 'personio') {
+      data = await politeFetchText(url, { retries: 0 });
+    } else {
+      data = await politeFetchJson<any>(url, { retries: 0 });
+    }
     if (!data) {
       return {
         verified: false,
@@ -247,6 +252,89 @@ export async function verifyAtsTokenWithMetrics(
           (Array.isArray(j.secondaryLocations) && j.secondaryLocations.some((l: any) => detectCountryCode(l.location) === 'IN')) ||
           /\b(india|bangalore|bengaluru|delhi|mumbai|hyderabad|pune|gurgaon|noida)\b/i.test(loc);
         if (isIndia) indiaCount++;
+      }
+    } else if (ats === 'workable') {
+      const rawJobs = Array.isArray(data.jobs) ? data.jobs : [];
+      jobCount = rawJobs.length;
+      for (const j of rawJobs) {
+        const title = j.title || '';
+        const loc = [j.city, j.country, j.countryCode].filter(Boolean).join(', ');
+        if (j.telecommuting || detectRemote(title, loc)) remoteCount++;
+        if (j.countryCode === 'IN' || detectCountryCode(loc) === 'IN' || /\b(india|bangalore|bengaluru|delhi|mumbai|hyderabad|pune|gurgaon|noida)\b/i.test(loc)) {
+          indiaCount++;
+        }
+      }
+    } else if (ats === 'smartrecruiters') {
+      const rawJobs = Array.isArray(data.content) ? data.content : [];
+      jobCount = rawJobs.length;
+      for (const j of rawJobs) {
+        const title = j.name || '';
+        const loc = [j.location?.city, j.location?.region, j.location?.country].filter(Boolean).join(', ');
+        if (j.location?.remote || detectRemote(title, loc)) remoteCount++;
+        if (j.location?.country?.toLowerCase() === 'in' || detectCountryCode(loc) === 'IN' || /\b(india|bangalore|bengaluru|delhi|mumbai|hyderabad|pune|gurgaon|noida)\b/i.test(loc)) {
+          indiaCount++;
+        }
+      }
+    } else if (ats === 'recruitee') {
+      const rawJobs = Array.isArray(data.offers) ? data.offers : [];
+      jobCount = rawJobs.length;
+      for (const j of rawJobs) {
+        const title = j.title || '';
+        const loc = [j.city, j.country_code, j.location].filter(Boolean).join(', ');
+        if (j.remote || detectRemote(title, loc)) remoteCount++;
+        if (j.country_code?.toUpperCase() === 'IN' || detectCountryCode(loc) === 'IN' || /\b(india|bangalore|bengaluru|delhi|mumbai|hyderabad|pune|gurgaon|noida)\b/i.test(loc)) {
+          indiaCount++;
+        }
+      }
+    } else if (ats === 'breezy') {
+      const rawJobs = Array.isArray(data) ? data : [];
+      jobCount = rawJobs.length;
+      for (const j of rawJobs) {
+        const title = j.name || '';
+        const loc = [j.location?.name, j.location?.country?.name].filter(Boolean).join(', ');
+        if (detectRemote(title, loc)) remoteCount++;
+        if (j.location?.country?.code?.toUpperCase() === 'IN' || detectCountryCode(loc) === 'IN' || /\b(india|bangalore|bengaluru|delhi|mumbai|hyderabad|pune|gurgaon|noida)\b/i.test(loc)) {
+          indiaCount++;
+        }
+      }
+    } else if (ats === 'teamtailor') {
+      // Data might be XML string or parsed json
+      const xmlStr = typeof data === 'string' ? data : '';
+      const items = xmlStr.match(/<item[\s\S]*?<\/item>/gi) || [];
+      jobCount = items.length;
+      for (const it of items) {
+        if (/remote/i.test(it)) remoteCount++;
+        if (/india|bengaluru|bangalore/i.test(it)) indiaCount++;
+      }
+    } else if (ats === 'personio') {
+      const xmlStr = typeof data === 'string' ? data : '';
+      const positions = xmlStr.match(/<position[\s\S]*?<\/position>/gi) || [];
+      jobCount = positions.length;
+      for (const pos of positions) {
+        if (/remote|home[\s_-]?office/i.test(pos)) remoteCount++;
+        if (/india|bengaluru|bangalore/i.test(pos)) indiaCount++;
+      }
+    } else if (ats === 'bamboohr') {
+      const rawJobs = Array.isArray(data.result) ? data.result : Array.isArray(data.jobs) ? data.jobs : Array.isArray(data) ? data : [];
+      jobCount = rawJobs.length;
+      for (const j of rawJobs) {
+        const title = j.jobOpeningName || j.title || '';
+        const loc = [j.location?.city, j.location?.country].filter(Boolean).join(', ');
+        if (j.isRemote || detectRemote(title, loc)) remoteCount++;
+        if (detectCountryCode(loc) === 'IN' || /\b(india|bangalore|bengaluru|delhi|mumbai|hyderabad|pune|gurgaon|noida)\b/i.test(loc)) {
+          indiaCount++;
+        }
+      }
+    } else if (ats === 'join') {
+      const rawJobs = Array.isArray(data.jobs) ? data.jobs : Array.isArray(data) ? data : [];
+      jobCount = rawJobs.length;
+      for (const j of rawJobs) {
+        const title = j.title || '';
+        const loc = j.city || '';
+        if (detectRemote(title, loc)) remoteCount++;
+        if (detectCountryCode(loc) === 'IN' || /\b(india|bangalore|bengaluru|delhi|mumbai|hyderabad|pune|gurgaon|noida)\b/i.test(loc)) {
+          indiaCount++;
+        }
       }
     }
 
@@ -346,20 +434,46 @@ export async function runBoardVerifyAll(options: VerifyAllOptions = {}): Promise
 
   console.log(`Runnable candidates selected for this run: ${queueToTest.length}\n`);
 
-  // Partition candidates by ATS provider to run hosts concurrently
-  const ghQueue = queueToTest.filter((c) => c.ats === 'greenhouse');
-  const leverQueue = queueToTest.filter((c) => c.ats === 'lever');
-  const ashbyQueue = queueToTest.filter((c) => c.ats === 'ashby');
+  // Partition candidates by ATS provider to run hosts concurrently (1 req/s per registrable domain)
+  const ATS_PROVIDERS: AtsType[] = [
+    'greenhouse',
+    'lever',
+    'ashby',
+    'workable',
+    'smartrecruiters',
+    'recruitee',
+    'breezy',
+    'teamtailor',
+    'personio',
+    'bamboohr',
+    'join',
+  ];
 
-  console.log(`Worker partition queues:`);
-  console.log(`  - Greenhouse (boards-api.greenhouse.io): ${ghQueue.length}`);
-  console.log(`  - Lever (api.lever.co):                 ${leverQueue.length}`);
-  console.log(`  - Ashby (api.ashbyhq.com):              ${ashbyQueue.length}\n`);
+  const queuesByAts = new Map<AtsType, RawCandidateEntry[]>();
+  for (const ats of ATS_PROVIDERS) {
+    queuesByAts.set(ats, []);
+  }
+  for (const c of queueToTest) {
+    const q = queuesByAts.get(c.ats);
+    if (q) q.push(c);
+  }
+
+  console.log(`Worker partition queues (1 req/s per registrable domain):`);
+  for (const ats of ATS_PROVIDERS) {
+    const qLen = queuesByAts.get(ats)?.length || 0;
+    if (qLen > 0) {
+      console.log(`  - ${ats}: ${qLen}`);
+    }
+  }
+  console.log('');
 
   // Metrics trackers
   let testedCount = 0;
   let verifiedCount = 0;
-  const verifiedPerAts: Record<AtsType, number> = { greenhouse: 0, lever: 0, ashby: 0 };
+  const verifiedPerAts: Record<string, number> = {};
+  for (const ats of ATS_PROVIDERS) {
+    verifiedPerAts[ats] = 0;
+  }
   let rejected404 = 0;
   let rejectedZeroJobs = 0;
   let rejectedErrors = 0;
@@ -477,13 +591,13 @@ export async function runBoardVerifyAll(options: VerifyAllOptions = {}): Promise
     }
   }
 
-  // Execute the 3 per-host workers in parallel
+  // Execute per-host workers in parallel (each paced at 1 req/s per registrable domain)
   console.log(`🚀 Starting concurrent host workers...\n`);
-  await Promise.all([
-    runHostWorker(ghQueue, 'greenhouse'),
-    runHostWorker(leverQueue, 'lever'),
-    runHostWorker(ashbyQueue, 'ashby'),
-  ]);
+  const activeWorkers = ATS_PROVIDERS
+    .filter((ats) => (queuesByAts.get(ats)?.length || 0) > 0)
+    .map((ats) => runHostWorker(queuesByAts.get(ats)!, ats));
+
+  await Promise.all(activeWorkers);
 
   // Final checkpoint save (stores completed keys and failures only)
   saveCheckpoint(checkpointPath, checkpoint);
@@ -516,9 +630,11 @@ export async function runBoardVerifyAll(options: VerifyAllOptions = {}): Promise
   console.log(`Candidates Tested:            ${metrics.tested}`);
   console.log(`Candidates Verified:          ${metrics.verified} (${metrics.tested > 0 ? Math.round((metrics.verified / metrics.tested) * 100) : 0}% success rate)`);
   console.log(`Verified per ATS:`);
-  console.log(`  - Greenhouse:               ${metrics.verifiedPerAts.greenhouse}`);
-  console.log(`  - Lever:                    ${metrics.verifiedPerAts.lever}`);
-  console.log(`  - Ashby:                    ${metrics.verifiedPerAts.ashby}`);
+  for (const [atsName, vCount] of Object.entries(metrics.verifiedPerAts)) {
+    if (vCount > 0 || (queuesByAts.get(atsName as AtsType)?.length || 0) > 0) {
+      console.log(`  - ${atsName.padEnd(16)}: ${vCount}`);
+    }
+  }
   console.log(`Rejected Total:               ${metrics.rejectedTotal}`);
   console.log(`  - 404 Not Found:            ${metrics.rejected404}`);
   console.log(`  - 0 Active Jobs:            ${metrics.rejectedZeroJobs}`);

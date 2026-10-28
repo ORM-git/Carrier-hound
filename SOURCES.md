@@ -55,12 +55,13 @@ All sources adhere strictly to the project's operational locks:
 
 ---
 
-## 3. Direct Public Company Probing
+## 3. Guessed Candidates (Unverified, Expected Low Hit Rate)
 
-- **Source**: CareerMonke public company index (`src/data/companies.json`, `scripts/config/companies-phase2.json`, `data/ats-company-registry.json`)
-- **License**: Internal project seed dataset
-- **Methodology**: Generates slug variants (e.g., lowercase, kebab-case, concatenated) from known employers and probes candidate tokens across supported ATS platforms:
-  - Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Recruitee, Breezy, Teamtailor, Personio, BambooHR, Join.
+- **Source / Method**: `company_probe` generated from known employer names (`src/data/companies.json`, `scripts/config/companies-phase2.json`, `data/ats-company-registry.json`).
+- **Status & Classification**: Guessed candidates (unverified, expected low hit rate).
+- **Default Policy**: Disabled by default in discovery (`--probe` flag required).
+- **Scope Restriction**: Restricted strictly to established platforms (`greenhouse`, `lever`, `ashby`). For new ATS platforms, probing is disabled until verified.
+- **Verification Requirement**: Guessed candidates are never ingested into the database without passing live verification (HTTP 200 and >= 1 active job on public API). All unverified probe cross-products are excluded from the candidate dataset.
 
 ---
 

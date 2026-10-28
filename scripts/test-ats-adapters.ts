@@ -12,13 +12,31 @@
  */
 
 import { spawnSync } from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 import { WorkableAdapter } from './adapters/workable';
 import { SmartRecruitersAdapter } from './adapters/smartrecruiters';
 import { RecruiteeAdapter } from './adapters/recruitee';
 import { BreezyAdapter } from './adapters/breezy';
 import { TeamtailorAdapter } from './adapters/teamtailor';
 import { PersonioAdapter } from './adapters/personio';
-import { dedupeCandidates, mergeAndDedupeCandidates, extractTokenFromUrl } from './board-discovery';
+import {
+  dedupeCandidates,
+  mergeAndDedupeCandidates,
+  extractTokenFromUrl,
+  discoverFromCompanyProbing,
+  runBoardDiscovery,
+} from './board-discovery';
+import {
+  getRegistrableDomain,
+  throttleDomain,
+  lastRequestByDomain,
+} from './utils/polite-fetch';
+import { isAuthorizedAtsUrl } from './board-ingest';
 import { SourceConfig } from './types';
 
 const isNegativeControl = process.argv.includes('--negative-control');
@@ -201,6 +219,33 @@ function setupMockFetch() {
       return new Response(PERSONIO_FIXTURE, {
         status: 200,
         headers: { 'Content-Type': 'application/xml; charset=utf-8' },
+      });
+    }
+
+    if (urlStr.includes('index.commoncrawl.org/collinfo.json')) {
+      return new Response(JSON.stringify([{ id: 'CC-MAIN-2026-43' }]), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (urlStr.includes('index.commoncrawl.org/')) {
+      return new Response('{"url":"https://boards.greenhouse.io/mockcompany"}\n', {
+        status: 200,
+        headers: { 'Content-Type': 'text/plain' },
+      });
+    }
+
+    if (urlStr.includes('raw.githubusercontent.com')) {
+      if (urlStr.endsWith('.csv')) {
+        return new Response('token,name\nmockslug,MockCompany\n', {
+          status: 200,
+          headers: { 'Content-Type': 'text/plain' },
+        });
+      }
+      return new Response(JSON.stringify(['mockslug']), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
       });
     }
 
@@ -397,13 +442,101 @@ async function runTests() {
     'Merged incoming ashby:openai'
   );
 
-  // Restore fetch
+  // ---------------------------------------------------------------------------
+  // 9. Registrable-Domain Throttle & Suffix Extraction
+  // ---------------------------------------------------------------------------
+  console.log('\n9. Testing Registrable-Domain Throttle & Suffix Extraction...');
+  assert(getRegistrableDomain('boards-api.greenhouse.io') === 'greenhouse.io', 'Greenhouse registrable domain is greenhouse.io');
+  assert(getRegistrableDomain('api.lever.co') === 'lever.co', 'Lever registrable domain is lever.co');
+  assert(getRegistrableDomain('api.ashbyhq.com') === 'ashbyhq.com', 'Ashby registrable domain is ashbyhq.com');
+  assert(getRegistrableDomain('apply.workable.com') === 'workable.com', 'Workable registrable domain is workable.com');
+  assert(getRegistrableDomain('api.smartrecruiters.com') === 'smartrecruiters.com', 'SmartRecruiters registrable domain is smartrecruiters.com');
+  assert(getRegistrableDomain('hotjar.recruitee.com') === 'recruitee.com', 'Recruitee registrable domain is recruitee.com');
+  assert(getRegistrableDomain('acme.breezy.hr') === 'breezy.hr', 'Breezy registrable domain is breezy.hr');
+  assert(getRegistrableDomain('acme.teamtailor.com') === 'teamtailor.com', 'Teamtailor registrable domain is teamtailor.com');
+  assert(getRegistrableDomain('acme.jobs.personio.de') === 'personio.de', 'Personio .de registrable domain is personio.de');
+  assert(getRegistrableDomain('acme.jobs.personio.com') === 'personio.com', 'Personio .com registrable domain is personio.com');
+  assert(getRegistrableDomain('gitlab.bamboohr.com') === 'bamboohr.com', 'BambooHR registrable domain is bamboohr.com');
+  assert(getRegistrableDomain('join.com') === 'join.com', 'Join registrable domain is join.com');
+  assert(getRegistrableDomain('sub.join.com') === 'join.com', 'Join subdomain registrable domain is join.com');
+
+  // Throttle shares bucket across subdomains of same registrable domain
+  lastRequestByDomain.delete('breezy.hr');
+  await throttleDomain('sub1.breezy.hr', 10);
+  const t1 = lastRequestByDomain.get('breezy.hr');
+  assert(typeof t1 === 'number' && t1 > 0, 'throttleDomain updated lastRequestByDomain for breezy.hr on sub1');
+  await throttleDomain('sub2.breezy.hr', 10);
+  const t2 = lastRequestByDomain.get('breezy.hr');
+  assert(typeof t2 === 'number' && t2 >= t1, 'sub2.breezy.hr shares same rate-limiter bucket as sub1.breezy.hr');
+
+  // ---------------------------------------------------------------------------
+  // 10. isAuthorizedAtsUrl Security Enforcement for All 11 Hosts
+  // ---------------------------------------------------------------------------
+  console.log('\n10. Testing isAuthorizedAtsUrl for All 11 ATS Hosts...');
+  assert(isAuthorizedAtsUrl('https://boards-api.greenhouse.io/v1/boards/stripe/jobs', 'greenhouse'), 'Authorized Greenhouse URL');
+  assert(isAuthorizedAtsUrl('https://api.lever.co/v0/postings/spotify', 'lever'), 'Authorized Lever URL');
+  assert(isAuthorizedAtsUrl('https://api.ashbyhq.com/posting-api/job-board/openai', 'ashby'), 'Authorized Ashby URL');
+  assert(isAuthorizedAtsUrl('https://apply.workable.com/api/v1/widget/accounts/acme', 'workable'), 'Authorized Workable URL');
+  assert(isAuthorizedAtsUrl('https://api.smartrecruiters.com/v1/companies/visa/postings', 'smartrecruiters'), 'Authorized SmartRecruiters URL');
+  assert(isAuthorizedAtsUrl('https://acme.recruitee.com/api/offers/', 'recruitee'), 'Authorized Recruitee URL');
+  assert(isAuthorizedAtsUrl('https://acme.breezy.hr/json', 'breezy'), 'Authorized Breezy URL');
+  assert(isAuthorizedAtsUrl('https://acme.teamtailor.com/jobs.rss', 'teamtailor'), 'Authorized Teamtailor URL');
+  assert(isAuthorizedAtsUrl('https://acme.jobs.personio.de/xml', 'personio'), 'Authorized Personio .de URL');
+  assert(isAuthorizedAtsUrl('https://acme.jobs.personio.com/xml', 'personio'), 'Authorized Personio .com URL');
+  assert(isAuthorizedAtsUrl('https://acme.bamboohr.com/careers/list', 'bamboohr'), 'Authorized BambooHR URL');
+  assert(isAuthorizedAtsUrl('https://join.com/api/companies/startup', 'join'), 'Authorized Join URL');
+
+  // Security rejections: non-https, domain spoofing, wrong ATS, forbidden domains
+  assert(!isAuthorizedAtsUrl('http://boards-api.greenhouse.io/v1/boards/stripe/jobs', 'greenhouse'), 'Rejects non-https');
+  assert(!isAuthorizedAtsUrl('https://boards-api.greenhouse.io.attacker.com/v1/boards/stripe', 'greenhouse'), 'Rejects host suffix spoofing on Greenhouse');
+  assert(!isAuthorizedAtsUrl('https://acme.breezy.hr.attacker.com/json', 'breezy'), 'Rejects host suffix spoofing on Breezy');
+  assert(!isAuthorizedAtsUrl('https://api.lever.co/v0/postings/spotify', 'greenhouse'), 'Rejects ATS type mismatch (Lever URL tested as Greenhouse)');
+  assert(!isAuthorizedAtsUrl('https://www.linkedin.com/jobs/search', 'greenhouse'), 'Rejects forbidden scrapable domain (LinkedIn)');
+  assert(!isAuthorizedAtsUrl('https://indeed.com/jobs', 'workable'), 'Rejects forbidden scrapable domain (Indeed)');
+  assert(!isAuthorizedAtsUrl('https://workday.com/careers', 'smartrecruiters'), 'Rejects forbidden scrapable domain (Workday)');
+
+  // ---------------------------------------------------------------------------
+  // 11. Company Probe OFF by Default & Restricted to GH/Lever/Ashby
+  // ---------------------------------------------------------------------------
+  console.log('\n11. Testing Probe Flag OFF by Default & Restriction to GH/Lever/Ashby...');
+  const probeCandidates = discoverFromCompanyProbing();
+  const probeAtsTypes = new Set(probeCandidates.map((c) => c.ats));
+  assert(probeCandidates.length > 0, 'discoverFromCompanyProbing generates probe candidates');
+  assert(
+    Array.from(probeAtsTypes).every((ats) => ['greenhouse', 'lever', 'ashby'].includes(ats)),
+    'Probing is strictly restricted to established platforms (greenhouse, lever, ashby) only'
+  );
+  assert(!probeAtsTypes.has('workable' as any), 'Probing excludes workable');
+  assert(!probeAtsTypes.has('breezy' as any), 'Probing excludes breezy');
+  assert(!probeAtsTypes.has('bamboohr' as any), 'Probing excludes bamboohr');
+
+  // Verify runBoardDiscovery does NOT invoke company probing when companyProbe is omitted (default false)
+  const testTmpPath = path.resolve(__dirname, '../data/ats-candidates-test-tmp.json');
+  const discoveryRunDefault = await runBoardDiscovery({
+    sourceFilter: 'all',
+    verifyLimit: 1,
+    companyProbe: false,
+    outputFilePath: testTmpPath,
+  });
+  assert(
+    discoveryRunDefault.stats.candidatesFoundPerSource.company_probe === 0,
+    'Company probing is OFF by default when companyProbe is false or omitted'
+  );
+
+  // Clean up temporary output file
+  try {
+    if (fs.existsSync(testTmpPath)) {
+      fs.unlinkSync(testTmpPath);
+    }
+  } catch {}
+
+  // Restore fetch before running subprocess
   globalThis.fetch = originalFetch;
 
   // ---------------------------------------------------------------------------
-  // 9. Negative Control Subprocess Verification
+  // 12. Negative Control Subprocess Verification
   // ---------------------------------------------------------------------------
-  console.log('\n9. Running negative control subprocess to verify non-zero exit on assertion failures...');
+  console.log('\n12. Running negative control subprocess to verify non-zero exit on assertion failures...');
   const negResult = spawnSync('npx', ['tsx', 'scripts/test-ats-adapters.ts', '--negative-control'], {
     encoding: 'utf-8',
     shell: true,

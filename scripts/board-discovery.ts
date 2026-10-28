@@ -64,6 +64,7 @@ export interface DiscoveryOptions {
   atsFilter?: 'all' | AtsType;
   outputFilePath?: string;
   offlineFixtureMode?: boolean;
+  companyProbe?: boolean;
 }
 
 export interface DiscoveryStats {
@@ -489,18 +490,11 @@ export function discoverFromCompanyProbing(): DiscoveredTokenCandidate[] {
     path.resolve(__dirname, '../data/ats-company-registry.json'),
   ];
 
+  // Probing restricted to Greenhouse, Lever, Ashby until new ATSes are verified
   const ATS_LIST: AtsType[] = [
     'greenhouse',
     'lever',
     'ashby',
-    'workable',
-    'smartrecruiters',
-    'recruitee',
-    'breezy',
-    'teamtailor',
-    'personio',
-    'bamboohr',
-    'join',
   ];
 
   for (const file of configFiles) {
@@ -552,6 +546,7 @@ export async function runBoardDiscovery(options: DiscoveryOptions = {}): Promise
     atsFilter = 'all',
     outputFilePath,
     offlineFixtureMode = false,
+    companyProbe = false,
   } = options;
 
   console.log('\n======================================================');
@@ -561,7 +556,8 @@ export async function runBoardDiscovery(options: DiscoveryOptions = {}): Promise
   console.log(`Rate Pacing:    1 req/s per host (MIN_DOMAIN_INTERVAL_MS = 1000)`);
   console.log(`Verify Limit:   ${verifyLimit}`);
   console.log(`Source Filter:  ${sourceFilter}`);
-  console.log(`ATS Filter:     ${atsFilter}\n`);
+  console.log(`ATS Filter:     ${atsFilter}`);
+  console.log(`Company Probe:  ${companyProbe ? 'ON (--probe)' : 'OFF (default)'}\n`);
 
   const mainRegistry = loadCompanyRegistry();
   const existingKeys = new Set(mainRegistry.map((e) => `${e.ats}:${e.token.toLowerCase()}`));
@@ -583,7 +579,8 @@ export async function runBoardDiscovery(options: DiscoveryOptions = {}): Promise
       const gh = await discoverFromGitHubDatasets();
       rawCandidates.push(...gh);
     }
-    if (sourceFilter === 'all' || sourceFilter === 'company_probe') {
+    // Company probing is OFF by default; requires explicit companyProbe === true or sourceFilter === 'company_probe'
+    if (companyProbe || sourceFilter === 'company_probe') {
       const cp = discoverFromCompanyProbing();
       rawCandidates.push(...cp);
     }
@@ -700,7 +697,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(__filename
   const atsIdx = args.findIndex((a) => a === '--ats');
   const atsFilter = atsIdx !== -1 ? (args[atsIdx + 1] as any) : 'all';
 
-  runBoardDiscovery({ verifyLimit, sourceFilter, atsFilter })
+  const companyProbe = args.includes('--probe');
+
+  runBoardDiscovery({ verifyLimit, sourceFilter, atsFilter, companyProbe })
     .then(() => process.exit(0))
     .catch((err) => {
       console.error('Fatal Discovery Error:', err);
