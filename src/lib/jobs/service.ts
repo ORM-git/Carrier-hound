@@ -5,6 +5,7 @@ import { formatSalary } from "@/lib/salary/parser";
 import type { UserPreferences } from "@/lib/auth/types";
 import { sanitizeExternalUrl, stripHtmlAndExecutableMarkup } from "@/lib/security/xss";
 import { COUNTRY_CODE_TO_NAME, getCountryFilterClause } from "@/lib/countries";
+import { decodeCursor, encodeCursor } from "@/lib/pagination/cursor";
 
 export interface LiveJob {
   id: string;
@@ -52,11 +53,17 @@ export interface GetJobsOptions {
   datePosted?: string;
   countryCode?: string;
   experience?: string;
+  salaryMin?: number | string | null;
+  sourceType?: string | null;
+  company?: string | null;
+  cursor?: string | null;
 }
 
 export interface GetJobsResult {
   jobs: LiveJob[];
   totalCount: number;
+  nextCursor?: string | null;
+  hasNextPage?: boolean;
 }
 
 /**
@@ -297,6 +304,10 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
     datePosted,
     countryCode,
     experience,
+    salaryMin,
+    sourceType,
+    company,
+    cursor,
   } = options;
 
   const from = (page - 1) * pageSize;
@@ -304,7 +315,8 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
 
   // 1. Route text search through safe server endpoint so company and keywords can be searched
   // without exposing raw database tables or leaking paid fields to guests
-  if (search && search.trim() && typeof window !== "undefined") {
+  const hasServerFilter = Boolean((search && search.trim()) || (company && company.trim()) || salaryMin || (sourceType && sourceType !== "all") || cursor);
+  if (hasServerFilter && typeof window !== "undefined") {
     try {
       const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
@@ -315,7 +327,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       }
 
       const params = new URLSearchParams({
-        q: search.trim(),
+        q: (search || '').trim(),
         page: String(page),
         pageSize: String(pageSize),
       });
@@ -328,6 +340,10 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       if (datePosted && datePosted !== "all") params.set("datePosted", datePosted);
       if (countryCode && countryCode !== "all") params.set("country_code", countryCode);
       if (experience && experience !== "all" && experience !== "All Experience") params.set("experience", experience);
+      if (salaryMin) params.set("salaryMin", String(salaryMin));
+      if (sourceType && sourceType !== "all") params.set("sourceType", sourceType);
+      if (company && company !== "all") params.set("company", company);
+      if (cursor) params.set("cursor", cursor);
 
       const res = await fetch(`/api/jobs/search?${params.toString()}`, { headers });
       if (res.ok) {
@@ -335,6 +351,8 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         return {
           jobs: json.jobs || [],
           totalCount: json.totalCount ?? (json.jobs?.length || 0),
+          nextCursor: json.nextCursor ?? null,
+          hasNextPage: Boolean(json.hasNextPage),
         };
       }
     } catch (searchErr) {
@@ -496,6 +514,23 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         query = query.gte("posted_at", cutoff);
       }
     }
+
+    if (company && company.trim() && company.toLowerCase() !== "all") {
+      const comp = company.trim().replace(/[%_(),"'\$;*]/g, " ").trim();
+      if (comp) {
+        query = query.or(`company.ilike.%${comp}%,company_slug.ilike.%${comp.toLowerCase()}%`);
+      }
+    }
+
+    if (sourceType && sourceType.trim() && sourceType.toLowerCase() !== "all") {
+      const st = sourceType.trim().toLowerCase();
+      if (["ats", "api", "feed", "direct", "aggregator"].includes(st)) {
+        query = query.eq("source_type", st);
+      } else {
+        query = query.or(`source_type.eq.${st},source.ilike.%${st}%`);
+      }
+    }
+
 
     if (search && search.trim()) {
       const q = search.trim().replace(/[%_(),"'`;\\$*]/g, " ").replace(/\s+/g, " ").trim().slice(0, 200);

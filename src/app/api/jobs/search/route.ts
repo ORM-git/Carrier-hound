@@ -4,6 +4,7 @@ import { formatSalary } from "@/lib/salary/parser";
 import { getSupabaseAdminClient, getRuntimeEnv } from "@/lib/ai/serviceHandler";
 import { getRequestContext } from "@cloudflare/next-on-pages";
 import { COUNTRY_CODE_TO_NAME, getCountryFilterClause } from "@/lib/countries";
+import { decodeCursor, encodeCursor } from "@/lib/pagination/cursor";
 
 export const runtime = "edge";
 
@@ -57,8 +58,12 @@ export async function GET(req: Request) {
     const dateParam = searchParams.get("datePosted") || searchParams.get("date") || "";
     const workModelParam = searchParams.get("workModel") || "";
     const experienceParam = searchParams.get("experience") || searchParams.get("exp") || "";
+    const salaryMinParam = searchParams.get("salaryMin") || searchParams.get("salary_min") || "";
+    const sourceTypeParam = searchParams.get("sourceType") || searchParams.get("source_type") || "";
+    const companyParam = searchParams.get("company") || "";
+    const cursorParam = searchParams.get("cursor") || "";
     const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
-    const pageSize = Math.min(100, Math.max(1, parseInt(searchParams.get("pageSize") || "50", 10)));
+    const pageSize = Math.min(100, Math.max(1, parseInt(searchParams.get("pageSize") || "25", 10)));
 
     let cfEnv: Record<string, any> | undefined;
     try {
@@ -96,11 +101,13 @@ export async function GET(req: Request) {
 
     const selectColumns = (isPro && hasServiceKey)
       ? "*"
+      : hasServiceKey
+      ? "id, title, company, location, category, remote, remote_scope, remote_eligibility, country_code, country, job_type, verified, posted_at, created_at, salary_min, salary_max, currency, salary_period, salary_text, source_type, source"
       : "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at";
 
     let query = supabaseAdmin
       .from(targetTable)
-      .select(selectColumns, { count: "exact" })
+      .select(selectColumns, { count: "estimated" })
       .eq("is_active", true)
       .eq("status", "active");
 
@@ -247,6 +254,37 @@ export async function GET(req: Request) {
       }
     }
 
+    // Company filter (server-side)
+    if (companyParam && companyParam.trim() && companyParam.toLowerCase() !== "all") {
+      const cleanComp = sanitizeSearchQuery(companyParam).trim();
+      if (cleanComp) {
+        query = query.or(`company.ilike.%${cleanComp}%,company_slug.ilike.%${cleanComp.toLowerCase()}%`);
+      }
+    }
+
+    // Salary Min filter (only where salary exists)
+    if (salaryMinParam) {
+      const minVal = parseInt(salaryMinParam, 10);
+      if (!isNaN(minVal) && minVal > 0) {
+        query = query.not("salary_min", "is", null).gte("salary_min", minVal);
+      }
+    }
+
+    // Source Type filter (ats, direct, aggregator, etc.)
+    if (sourceTypeParam && sourceTypeParam.trim() && sourceTypeParam.toLowerCase() !== "all") {
+      const st = sanitizeSearchQuery(sourceTypeParam).toLowerCase().trim();
+      if (st === "ats") {
+        query = query.or("source_type.eq.ats,source.ilike.%board%,source.ilike.%greenhouse%,source.ilike.%lever%,source.ilike.%ashby%");
+      } else if (st === "direct") {
+        query = query.or("source_type.eq.direct,source_type.eq.ats");
+      } else if (st === "aggregator") {
+        query = query.or("source_type.eq.aggregator,source_type.eq.feed,source_type.eq.api");
+      } else if (st) {
+        query = query.or(`source_type.eq.${st},source.ilike.%${st}%`);
+      }
+    }
+
+
     // Search query matching across title, company, location, category, description
     if (cleanQuery) {
       const parts = cleanQuery.split(" ").filter((p) => p.length >= 2);
@@ -267,12 +305,30 @@ export async function GET(req: Request) {
     const from = (page - 1) * pageSize;
     const to = from + pageSize - 1;
 
+    // Keyset cursor decoding
+    const cursor = decodeCursor(cursorParam);
+    const fetchLimit = pageSize + 1; // fetch 1 extra to determine hasNextPage
+
     // For multi-word text queries, pull pool to rank by relevance before pagination
     const isMultiWord = cleanQuery && cleanQuery.includes(" ");
     if (isMultiWord) {
       query = query.order("posted_at", { ascending: false, nullsFirst: false }).limit(200);
+    } else if (cursor) {
+      // Keyset cursor pagination (no OFFSET, 0ms on 100k+ rows)
+      if (cursor.posted_at) {
+        query = query.or(
+          `posted_at.lt.${cursor.posted_at},and(posted_at.eq.${cursor.posted_at},id.lt.${cursor.id}),posted_at.is.null`
+        );
+      } else {
+        query = query.is("posted_at", null).lt("id", cursor.id);
+      }
+      query = query.order("posted_at", { ascending: false, nullsFirst: false }).order("id", { ascending: false }).limit(fetchLimit);
+    } else if (page > 1 && !cursorParam) {
+      // Legacy offset pagination fallback for backward compatibility
+      query = query.order("posted_at", { ascending: false, nullsFirst: false }).order("id", { ascending: false }).range(from, to);
     } else {
-      query = query.order("posted_at", { ascending: false, nullsFirst: false }).range(from, to);
+      // Page 1 initial keyset query
+      query = query.order("posted_at", { ascending: false, nullsFirst: false }).order("id", { ascending: false }).limit(fetchLimit);
     }
 
     const { data, count, error } = await query;
@@ -325,6 +381,23 @@ export async function GET(req: Request) {
       // Slice to page window
       rows = rows.slice(from, to + 1);
     }
+
+    let hasNextPage = false;
+    let nextCursor: string | null = null;
+
+    if (!isMultiWord) {
+      if (rows.length > pageSize) {
+        hasNextPage = true;
+        rows = rows.slice(0, pageSize);
+        const lastItem = rows[rows.length - 1] as any;
+        if (lastItem) {
+          nextCursor = encodeCursor(lastItem.posted_at, lastItem.id);
+        }
+      } else if (page > 1 && !cursorParam) {
+        // Offset pagination: check if count exceeds current window
+        hasNextPage = (count ? from + rows.length < count : false);
+      }
+    }
     const formattedJobs = rows.map((row: any) => {
       if (isPro && hasServiceKey) {
         return {
@@ -370,9 +443,13 @@ export async function GET(req: Request) {
       };
     });
 
+    const approximateTotalCount = count ?? (rows.length > 0 ? (page ? Math.max(rows.length, page * pageSize) : 100000) : 0);
+
     return NextResponse.json({
       jobs: formattedJobs,
-      totalCount: count || 0,
+      totalCount: approximateTotalCount,
+      nextCursor,
+      hasNextPage,
       page,
       pageSize,
       isPro: Boolean(isPro && hasServiceKey),

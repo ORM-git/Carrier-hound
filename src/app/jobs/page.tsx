@@ -402,6 +402,7 @@ function JobsPageInner() {
 
   // Search & Filter state
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
   const [remoteOnly, setRemoteOnly] = useState(false);
   const [selectedLocation, setSelectedLocation] = useState("");
@@ -412,11 +413,22 @@ function JobsPageInner() {
   const [selectedExperience, setSelectedExperience] = useState("");
   const [selectedWorkModel, setSelectedWorkModel] = useState("");
   const [selectedIndustry, setSelectedIndustry] = useState("");
+  const [selectedSalaryMin, setSelectedSalaryMin] = useState("");
+  const [selectedSourceType, setSelectedSourceType] = useState("");
+  const [selectedCompany, setSelectedCompany] = useState("");
   const [allFiltersDrawerOpen, setAllFiltersDrawerOpen] = useState(false);
   const allFiltersTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [sortBy, setSortBy] = useState<"match" | "newest">("newest");
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+
+  // Debounced search for server-side execution (300ms)
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [search]);
 
   // User state
   const [user, setUser] = useState<User | null>(null);
@@ -460,6 +472,8 @@ function JobsPageInner() {
   const [isPaywallOpen, setIsPaywallOpen] = useState(false);
   const [isRetryingUnlock, setIsRetryingUnlock] = useState(false);
   const [page, setPage] = useState(1);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [hasNextPage, setHasNextPage] = useState<boolean>(false);
 
   // Live Supabase Jobs Data
   const [liveJobs, setLiveJobs] = useState<LiveJob[]>([]);
@@ -481,6 +495,9 @@ function JobsPageInner() {
     const qExp = params.get("experience") || params.get("exp") || "";
     const qWorkModel = params.get("workModel") || "";
     const qIndustry = params.get("industry") || "";
+    const qSalaryMin = params.get("salaryMin") || params.get("salary") || "";
+    const qSourceType = params.get("sourceType") || params.get("source") || "";
+    const qCompany = params.get("company") || "";
     const qHidden = params.get("hidden") === "true";
     const qTab = params.get("tab");
     const qSort = params.get("sort") || params.get("sortBy");
@@ -496,6 +513,9 @@ function JobsPageInner() {
     if (qExp) setSelectedExperience(qExp);
     if (qWorkModel) setSelectedWorkModel(qWorkModel);
     if (qIndustry) setSelectedIndustry(qIndustry);
+    if (qSalaryMin) setSelectedSalaryMin(qSalaryMin);
+    if (qSourceType) setSelectedSourceType(qSourceType);
+    if (qCompany) setSelectedCompany(qCompany);
     if (qHidden) setViewHiddenJobs(true);
     if (qSort === "match" || qSort === "newest") setSortBy(qSort);
 
@@ -549,6 +569,9 @@ function JobsPageInner() {
     syncParam("remote", remoteOnly ? "true" : null);
     syncParam("workModel", selectedWorkModel);
     syncParam("industry", selectedIndustry);
+    syncParam("salaryMin", selectedSalaryMin);
+    syncParam("sourceType", selectedSourceType);
+    syncParam("company", selectedCompany);
     syncParam("hidden", viewHiddenJobs ? "true" : null);
     syncParam("sort", sortBy === "match" ? "match" : null);
     syncParam("id", selectedJob?.id || pendingJobIdRef.current || null);
@@ -579,6 +602,9 @@ function JobsPageInner() {
     sortBy,
     selectedWorkModel,
     selectedIndustry,
+    selectedSalaryMin,
+    selectedSourceType,
+    selectedCompany,
     selectedJob,
   ]);
 
@@ -673,6 +699,9 @@ function JobsPageInner() {
       const qType = params.get("type") || params.get("jobType") || "";
       const qDate = params.get("datePosted") || params.get("date") || "";
       const qExp = params.get("experience") || params.get("exp") || "";
+      const qSalaryMin = params.get("salaryMin") || params.get("salary") || "";
+      const qSourceType = params.get("sourceType") || params.get("source") || "";
+      const qCompany = params.get("company") || "";
       const qHidden = params.get("hidden") === "true";
       const qTab = params.get("tab");
       const qSort = params.get("sort") || params.get("sortBy");
@@ -686,6 +715,9 @@ function JobsPageInner() {
       setSelectedJobType(qType);
       setSelectedDatePosted(qDate);
       setSelectedExperience(qExp);
+      setSelectedSalaryMin(qSalaryMin);
+      setSelectedSourceType(qSourceType);
+      setSelectedCompany(qCompany);
       setViewHiddenJobs(qHidden);
       setSortBy(qSort === "match" ? "match" : "newest");
 
@@ -837,7 +869,7 @@ function JobsPageInner() {
     const queryKey = JSON.stringify({
       tab: activeTab,
       category: selectedCategory,
-      search: search.trim(),
+      search: debouncedSearch.trim(),
       remoteOnly,
       location: selectedLocation,
       level: selectedLevel,
@@ -846,6 +878,9 @@ function JobsPageInner() {
       workModel: selectedWorkModel,
       datePosted: selectedDatePosted,
       experience: selectedExperience,
+      salaryMin: selectedSalaryMin,
+      sourceType: selectedSourceType,
+      company: selectedCompany,
       isPro,
       sortBy: effectiveSortBy,
       candidateUpdated: effectiveCandidate?.updatedAt || null,
@@ -859,12 +894,13 @@ function JobsPageInner() {
 
     setLoadingJobs(true);
     setPage(1);
+    setNextCursor(null);
 
     getLiveJobs({
       page: 1,
-      pageSize: 50,
+      pageSize: 25,
       category: selectedCategory,
-      search,
+      search: debouncedSearch,
       remoteOnly,
       location: selectedLocation,
       level: selectedLevel,
@@ -873,6 +909,9 @@ function JobsPageInner() {
       workModel: selectedWorkModel,
       datePosted: selectedDatePosted,
       experience: selectedExperience,
+      salaryMin: selectedSalaryMin,
+      sourceType: selectedSourceType,
+      company: selectedCompany,
       isPro,
       sortBy: effectiveSortBy,
       candidate: effectiveCandidate,
@@ -882,6 +921,8 @@ function JobsPageInner() {
         if (queryKey === lastQueryKeyRef.current) {
           setLiveJobs(res.jobs);
           setTotalCount(res.totalCount);
+          setNextCursor(res.nextCursor ?? null);
+          setHasNextPage(Boolean(res.hasNextPage));
           setLoadingJobs(false);
         }
       })
@@ -893,7 +934,7 @@ function JobsPageInner() {
       });
   }, [
     selectedCategory,
-    search,
+    debouncedSearch,
     remoteOnly,
     selectedLocation,
     selectedLevel,
@@ -902,6 +943,9 @@ function JobsPageInner() {
     selectedWorkModel,
     selectedDatePosted,
     selectedExperience,
+    selectedSalaryMin,
+    selectedSourceType,
+    selectedCompany,
     isPro,
     isProDefinitive,
     user,
@@ -912,6 +956,7 @@ function JobsPageInner() {
   ]);
 
   const handleLoadMore = async () => {
+    if (loadingMore) return;
     const nextPage = page + 1;
     setLoadingMore(true);
     try {
@@ -922,9 +967,10 @@ function JobsPageInner() {
 
       const res = await getLiveJobs({
         page: nextPage,
-        pageSize: 50,
+        pageSize: 25,
+        cursor: nextCursor ?? undefined,
         category: selectedCategory,
-        search,
+        search: debouncedSearch,
         remoteOnly,
         location: selectedLocation,
         level: selectedLevel,
@@ -933,12 +979,17 @@ function JobsPageInner() {
         workModel: selectedWorkModel,
         datePosted: selectedDatePosted,
         experience: selectedExperience,
+        salaryMin: selectedSalaryMin,
+        sourceType: selectedSourceType,
+        company: selectedCompany,
         isPro,
         sortBy: effectiveSortBy,
         candidate: effectiveCandidate,
         preferences: effectivePreferences,
       });
       setLiveJobs((prev) => [...prev, ...res.jobs]);
+      setNextCursor(res.nextCursor ?? null);
+      setHasNextPage(Boolean(res.hasNextPage));
       setPage(nextPage);
       if (res.totalCount) setTotalCount(res.totalCount);
     } catch (e) {
@@ -1145,9 +1196,13 @@ function JobsPageInner() {
     setSelectedDatePosted("");
     setSelectedIndustry("");
     setSelectedExperience("");
+    setSelectedSalaryMin("");
+    setSelectedSourceType("");
+    setSelectedCompany("");
     setViewHiddenJobs(false);
     setSortBy("newest");
     setPage(1);
+    setNextCursor(null);
     setMobileFiltersOpen(false);
     setAllFiltersDrawerOpen(false);
     setOpenDropdown(null);
@@ -1166,6 +1221,11 @@ function JobsPageInner() {
       p.delete("datePosted");
       p.delete("industry");
       p.delete("experience");
+      p.delete("salaryMin");
+      p.delete("salary");
+      p.delete("sourceType");
+      p.delete("source");
+      p.delete("company");
       p.delete("hidden");
       p.delete("sort");
       p.delete("sortBy");
@@ -1385,6 +1445,9 @@ function JobsPageInner() {
     (selectedJobType ? 1 : 0) +
     (selectedDatePosted && selectedDatePosted !== "all" && selectedDatePosted !== "Any time" ? 1 : 0) +
     (selectedExperience && selectedExperience !== "all" && selectedExperience !== "All Experience" ? 1 : 0) +
+    (selectedSalaryMin ? 1 : 0) +
+    (selectedSourceType ? 1 : 0) +
+    (selectedCompany ? 1 : 0) +
     (viewHiddenJobs ? 1 : 0);
   const hasActiveFilters = activeFiltersCount > 0;
 
@@ -1397,6 +1460,9 @@ function JobsPageInner() {
     workModel: selectedWorkModel || (remoteOnly ? "remote" : ""),
     datePosted: selectedDatePosted,
     experience: selectedExperience,
+    salaryMin: selectedSalaryMin,
+    sourceType: selectedSourceType,
+    company: selectedCompany,
     hidden: viewHiddenJobs,
     sort: sortBy,
   }), [
@@ -1409,6 +1475,9 @@ function JobsPageInner() {
     remoteOnly,
     selectedDatePosted,
     selectedExperience,
+    selectedSalaryMin,
+    selectedSourceType,
+    selectedCompany,
     viewHiddenJobs,
     sortBy,
   ]);
@@ -1429,9 +1498,13 @@ function JobsPageInner() {
     }
     if (patch.datePosted !== undefined) setSelectedDatePosted(patch.datePosted);
     if (patch.experience !== undefined) setSelectedExperience(patch.experience);
+    if (patch.salaryMin !== undefined) setSelectedSalaryMin(String(patch.salaryMin));
+    if (patch.sourceType !== undefined) setSelectedSourceType(patch.sourceType);
+    if (patch.company !== undefined) setSelectedCompany(patch.company);
     if (patch.hidden !== undefined) setViewHiddenJobs(patch.hidden);
     if (patch.sort !== undefined) setSortBy(patch.sort);
     setPage(1);
+    setNextCursor(null);
   };
 
   const handleApplyAllFilters = (updated: JobFilterValues) => {
@@ -1448,9 +1521,13 @@ function JobsPageInner() {
     }
     setSelectedDatePosted(updated.datePosted);
     if (updated.experience !== undefined) setSelectedExperience(updated.experience);
+    setSelectedSalaryMin(updated.salaryMin !== undefined ? String(updated.salaryMin) : "");
+    setSelectedSourceType(updated.sourceType || "");
+    setSelectedCompany(updated.company || "");
     setViewHiddenJobs(updated.hidden);
     setSortBy(updated.sort);
     setPage(1);
+    setNextCursor(null);
     setAllFiltersDrawerOpen(false);
     setMobileFiltersOpen(false);
   };
@@ -2221,7 +2298,7 @@ function JobsPageInner() {
                       })}
 
                       {/* Load More Pagination: strictly scoped to tabs with active server-side pagination */}
-                      {activeTab === "recommended" && liveJobs.length < totalCount && (
+                      {activeTab === "recommended" && (hasNextPage || (totalCount > 0 && liveJobs.length < totalCount)) && (
                         <div className="pt-4 text-center">
                           <button
                             type="button"
@@ -2231,7 +2308,9 @@ function JobsPageInner() {
                           >
                             {loadingMore
                               ? "Loading Positions..."
-                              : `Load More Verified Positions (${Math.max(0, totalCount - liveJobs.length).toLocaleString()} remaining)`}
+                              : totalCount > liveJobs.length
+                              ? `Load More Verified Positions (~${Math.max(0, totalCount - liveJobs.length).toLocaleString()} remaining)`
+                              : "Load More Verified Positions"}
                           </button>
                         </div>
                       )}

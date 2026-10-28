@@ -72,6 +72,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-url-state-assertions.ts", command: "npx tsx scripts/test-url-state-assertions.ts", classification: "offline" },
   { name: "scripts/test-production-fixes.ts", command: "npx tsx scripts/test-production-fixes.ts", classification: "offline" },
   { name: "scripts/test-filter-predicates.ts", command: "npx tsx scripts/test-filter-predicates.ts", classification: "offline" },
+  { name: "scripts/test-keyset-pagination.ts", command: "npx tsx scripts/test-keyset-pagination.ts", classification: "offline" },
   { name: "scripts/test-no-dummy-jobs.ts", command: "npx tsx scripts/test-no-dummy-jobs.ts", classification: "offline" },
   { name: "scripts/test-auth-guard.ts", command: "npx tsx scripts/test-auth-guard.ts", classification: "offline" },
   { name: "scripts/test-prompt5-base.cjs", command: "node scripts/test-prompt5-base.cjs", classification: "offline" },
