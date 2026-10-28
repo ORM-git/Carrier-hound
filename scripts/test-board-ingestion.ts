@@ -212,9 +212,43 @@ async function runTests() {
       }
     }
 
-    // In real code, all 5 MUST be rejected (false, null, null, true, true).
-    if (!forbiddenAuthorized && forbiddenJob === null && insecureJob === null && liveWriteRefused && maxJobsCompulsoryRefused) {
-      console.error('❌ [NEGATIVE CONTROL TRIGGERED] Real validator rejected bad URLs and unauthorized live-write. Exiting non-zero (1) as required by negative control protocol.');
+    // 6. Testing compulsory --expect-host safety lock: must reject when missing
+    let expectHostCompulsoryRefused = false;
+    try {
+      await runBoardIngestion({ liveWrite: true, confirmProdWrite: true, maxJobs: 10 });
+    } catch (e: any) {
+      if (e.message.includes('--expect-host <host> is compulsory')) {
+        expectHostCompulsoryRefused = true;
+      }
+    }
+
+    // 7. Testing host mismatch safety lock: must reject when mismatch
+    let hostMismatchRefused = false;
+    try {
+      await runBoardIngestion({
+        liveWrite: true,
+        confirmProdWrite: true,
+        maxJobs: 10,
+        expectHost: 'wrong.supabase.co',
+        supabaseClient: { _url: 'https://actual.supabase.co' },
+      });
+    } catch (e: any) {
+      if (e.message.includes('HOST MISMATCH ABORT')) {
+        hostMismatchRefused = true;
+      }
+    }
+
+    // In real code, all 7 MUST be rejected.
+    if (
+      !forbiddenAuthorized &&
+      forbiddenJob === null &&
+      insecureJob === null &&
+      liveWriteRefused &&
+      maxJobsCompulsoryRefused &&
+      expectHostCompulsoryRefused &&
+      hostMismatchRefused
+    ) {
+      console.error('❌ [NEGATIVE CONTROL TRIGGERED] Real validator rejected bad URLs, missing expect-host, and unauthorized live-write. Exiting non-zero (1) as required by negative control protocol.');
       process.exit(1);
     } else {
       console.error('⚠️ [NEGATIVE CONTROL FAILED] Bad inputs or unauthorized live write were unexpectedly accepted!');
@@ -515,6 +549,32 @@ async function runTests() {
   }
   assert(rejectedWithoutMaxJobs, 'Live-write without compulsory --max-jobs <N> is strictly refused');
 
+  let rejectedWithoutExpectHost = false;
+  try {
+    await runBoardIngestion({ liveWrite: true, confirmProdWrite: true, maxJobs: 100 });
+  } catch (err: any) {
+    if (err.message.includes('--expect-host <host> is compulsory with --live-write')) {
+      rejectedWithoutExpectHost = true;
+    }
+  }
+  assert(rejectedWithoutExpectHost, 'Live-write without compulsory --expect-host <host> is strictly refused');
+
+  let rejectedWithMismatchHost = false;
+  try {
+    await runBoardIngestion({
+      liveWrite: true,
+      confirmProdWrite: true,
+      maxJobs: 100,
+      expectHost: 'wrong.supabase.co',
+      supabaseClient: { _url: 'https://actual.supabase.co' },
+    });
+  } catch (err: any) {
+    if (err.message.includes('HOST MISMATCH ABORT')) {
+      rejectedWithMismatchHost = true;
+    }
+  }
+  assert(rejectedWithMismatchHost, 'Live-write with mismatched --expect-host aborts immediately');
+
   let rejectedWithoutEnv = false;
   try {
     const origKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -523,7 +583,12 @@ async function runTests() {
     delete process.env.SUPABASE_URL;
     delete process.env.NEXT_PUBLIC_SUPABASE_URL;
     try {
-      await runBoardIngestion({ liveWrite: true, confirmProdWrite: true, maxJobs: 100 });
+      await runBoardIngestion({
+        liveWrite: true,
+        confirmProdWrite: true,
+        maxJobs: 100,
+        expectHost: 'target.supabase.co',
+      });
     } finally {
       if (origKey) process.env.SUPABASE_SERVICE_ROLE_KEY = origKey;
       if (origUrl) process.env.SUPABASE_URL = origUrl;
@@ -648,6 +713,7 @@ async function runTests() {
     liveWrite: true,
     confirmProdWrite: true,
     maxJobs: 100,
+    expectHost: 'szakevhxhwpeskidvtfs.supabase.co',
     supabaseClient: mockSupabase,
     fixtureMode: true,
     fixtureDir: path.resolve(__dirname, 'fixtures'),

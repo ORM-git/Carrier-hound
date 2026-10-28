@@ -116,6 +116,8 @@ export interface IngestionOptions {
   fixtureMode?: boolean;
   fixtureDir?: string;
   supabaseClient?: any;
+  expectHost?: string;
+  skipExistingRegistry?: boolean;
 }
 
 export interface ClosedJobRecord {
@@ -192,6 +194,9 @@ export function getSupabaseClient(
     console.log(`🔌 [Live-Write] Target Supabase host: ${targetHost}`);
   } catch {
     console.error('❌ [Live-Write] Invalid Supabase URL in local environment.');
+    if (expectHost) {
+      throw new Error(`HOST MISMATCH ABORT: Invalid Supabase URL, cannot verify expected host "${expectHost}".`);
+    }
     return null;
   }
 
@@ -867,13 +872,16 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
   if (maxJobs) console.log(`Max Jobs Cap:   ${maxJobs}`);
   if (effectiveBoardsLimit) console.log(`Boards Limit:   ${effectiveBoardsLimit}`);
 
-  // Safety Gate: Live write requires explicit --confirm-prod-write AND compulsory --max-jobs
+  // Safety Gate: Live write requires explicit --confirm-prod-write, compulsory --max-jobs, and compulsory --expect-host
   if (liveWrite) {
     if (!confirmProdWrite) {
       throw new Error('LIVE PRODUCTION WRITE REFUSED: --live-write requires explicit --confirm-prod-write flag.');
     }
     if (!maxJobs || maxJobs <= 0) {
       throw new Error('LIVE PRODUCTION WRITE REFUSED: --max-jobs <N> is compulsory with --live-write (aborting).');
+    }
+    if (!expectHost || !expectHost.trim()) {
+      throw new Error('LIVE PRODUCTION WRITE REFUSED: --expect-host <host> is compulsory with --live-write (aborting).');
     }
   }
 
@@ -898,6 +906,8 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
         if (actualHost !== expectHost) {
           throw new Error(`HOST MISMATCH ABORT: Expected host "${expectHost}" does not match target host "${actualHost}".`);
         }
+      } else {
+        throw new Error(`HOST MISMATCH ABORT: Unable to determine target host to verify against expected host "${expectHost}".`);
       }
     }
   }
@@ -1309,7 +1319,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(__filename
   const inputPath = inputIdx !== -1 ? args[inputIdx + 1] : undefined;
 
   const hostIdx = args.findIndex((a) => a === '--expect-host');
-  const expectHost = hostIdx !== -1 ? args[hostIdx + 1] : undefined;
+  const expectHost = hostIdx !== -1 && args[hostIdx + 1] && !args[hostIdx + 1].startsWith('--') ? args[hostIdx + 1] : undefined;
 
   runBoardIngestion({
     dryRun: !liveWrite,

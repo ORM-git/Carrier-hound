@@ -517,7 +517,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       const matchClause = relevanceTerms.map((t) => `title.ilike.%${t}%`).join(",");
       const matchQuery = query
         .or(matchClause)
-        .order("posted_at", { ascending: false })
+        .order("posted_at", { ascending: false, nullsFirst: false })
         .range(0, 249);
 
       const res = await matchQuery;
@@ -615,7 +615,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         }
 
         catQuery = catQuery
-          .order("posted_at", { ascending: false })
+          .order("posted_at", { ascending: false, nullsFirst: false })
           .range(0, 249);
         const catRes = await catQuery;
         candidatePool = catRes.data || [];
@@ -624,7 +624,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
 
       if (candidatePool.length === 0) {
         const fallbackRes = await query
-          .order("posted_at", { ascending: false })
+          .order("posted_at", { ascending: false, nullsFirst: false })
           .range(from, to);
         data = fallbackRes.data;
         count = fallbackRes.count;
