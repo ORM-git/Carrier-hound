@@ -29,7 +29,13 @@ export default function TopMatchComparison({
             Current Profile Match
           </span>
           <div className="flex items-baseline gap-2">
-            <span className="text-4xl sm:text-5xl font-extrabold text-[#334155] tracking-tight">
+            <span
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+              aria-label={`Current profile match ${baseMatch} percent`}
+              className="text-4xl sm:text-5xl font-extrabold text-[#334155] tracking-tight"
+            >
               {baseMatch}%
             </span>
           </div>
@@ -45,19 +51,35 @@ export default function TopMatchComparison({
               Simulated Match
             </span>
             {isPositive ? (
-              <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[15px] font-bold text-[#1D4ED8]">
+              <span
+                role="status"
+                aria-live="polite"
+                aria-label={`Plus ${delta} percent match gain`}
+                className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[15px] font-bold text-[#1D4ED8]"
+              >
                 <ArrowUpRight className="w-4 h-4 text-[#2563EB]" />
                 +{delta}% match gain
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-slate-100 text-[15px] font-medium text-[#64748B]">
+              <span
+                role="status"
+                aria-live="polite"
+                aria-label="No change in match score"
+                className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-slate-100 text-[15px] font-medium text-[#64748B]"
+              >
                 <Minus className="w-4 h-4 text-[#64748B]" />
                 no change
               </span>
             )}
           </div>
           <div className="flex items-baseline gap-2">
-            <span className="text-4xl sm:text-5xl font-extrabold text-[#2563EB] tracking-tight">
+            <span
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+              aria-label={`Simulated match ${newMatch} percent`}
+              className="text-4xl sm:text-5xl font-extrabold text-[#2563EB] tracking-tight"
+            >
               {newMatch}%
             </span>
           </div>

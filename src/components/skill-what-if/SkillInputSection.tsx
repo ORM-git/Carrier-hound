@@ -74,7 +74,7 @@ export default function SkillInputSection({
                 )}
                 <span>{skill.name}</span>
                 <span
-                  className={`text-xs px-1.5 py-0.5 rounded font-extrabold ${
+                  className={`text-[15px] px-2 py-0.5 rounded font-extrabold ${
                     isSelected
                       ? "bg-blue-800 text-blue-100"
                       : "bg-blue-50 text-[#1D4ED8] border border-blue-200"

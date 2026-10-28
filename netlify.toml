@@ -94,12 +94,6 @@
   force = false
 
 [[redirects]]
-  from = "/jobs/:id/skill-what-if"
-  to = "/jobs/sample/skill-what-if.html"
-  status = 200
-  force = false
-
-[[redirects]]
   from = "/jobs/detail"
   to = "/jobs/detail.html"
   status = 200

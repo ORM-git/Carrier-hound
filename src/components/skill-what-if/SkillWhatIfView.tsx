@@ -190,17 +190,17 @@ export default function SkillWhatIfView({
           </button>
           <div>
             <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1 text-xs font-bold text-[#2563EB] uppercase tracking-wider">
+              <span className="inline-flex items-center gap-1 text-[15px] font-bold text-[#2563EB] uppercase tracking-wider">
                 <Cpu className="w-3.5 h-3.5 text-[#2563EB]" />
                 Skill What-If Simulator
               </span>
               <span className="text-slate-300">•</span>
-              <span className="text-xs font-semibold text-[#64748B]">
+              <span className="text-[15px] font-semibold text-[#64748B]">
                 Interactive Match Projection
               </span>
             </div>
             <h1 className="text-xl sm:text-2xl font-extrabold text-[#0F172A] leading-tight mt-0.5">
-              {simulation.jobTitle} @ {simulation.companyName}
+              {simulation.jobTitle}{simulation.companyName ? ` @ ${simulation.companyName}` : ""}
             </h1>
           </div>
         </div>

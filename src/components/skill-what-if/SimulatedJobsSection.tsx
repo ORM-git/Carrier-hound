@@ -96,11 +96,15 @@ export default function SimulatedJobsSection({
                       {job.title}
                     </h3>
                     <div className="flex items-center gap-2 text-[15px] text-[#475569] flex-wrap">
-                      <span className="inline-flex items-center gap-1 font-medium">
-                        <Building2 className="w-4 h-4 text-[#64748B]" />
-                        {job.company}
-                      </span>
-                      <span className="text-slate-300">•</span>
+                      {job.company && job.company.trim().length > 0 && (
+                        <>
+                          <span className="inline-flex items-center gap-1 font-medium">
+                            <Building2 className="w-4 h-4 text-[#64748B]" />
+                            {job.company}
+                          </span>
+                          <span className="text-slate-300">•</span>
+                        </>
+                      )}
                       <span className="inline-flex items-center gap-1">
                         <Globe className="w-4 h-4 text-[#64748B]" />
                         {job.country} {job.workModel ? `(${job.workModel})` : ""}
@@ -129,7 +133,7 @@ export default function SimulatedJobsSection({
                       {job.newMatch}%
                     </span>
                     {delta > 0 && (
-                      <span className="text-xs font-bold text-[#1D4ED8]">
+                      <span className="text-[15px] font-bold text-[#1D4ED8]">
                         (+{delta}%)
                       </span>
                     )}
@@ -139,13 +143,13 @@ export default function SimulatedJobsSection({
                 {/* Associated Required Skills */}
                 {job.requiredSkills && job.requiredSkills.length > 0 && (
                   <div className="flex items-center gap-1.5 flex-wrap pt-1 text-[15px] text-[#64748B]">
-                    <span className="text-xs font-semibold text-[#64748B] uppercase tracking-wider">
+                    <span className="text-[15px] font-semibold text-[#64748B] uppercase tracking-wider">
                       Relevant skills:
                     </span>
                     {job.requiredSkills.map((s) => (
                       <span
                         key={s}
-                        className="inline-block px-2 py-0.5 rounded text-xs font-semibold bg-slate-100 text-[#334155]"
+                        className="inline-block px-2.5 py-1 rounded text-[15px] font-semibold bg-slate-100 text-[#334155]"
                       >
                         {s}
                       </span>

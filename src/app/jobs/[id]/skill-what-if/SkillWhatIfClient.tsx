@@ -27,10 +27,9 @@ export default function SkillWhatIfClient({ jobId }: SkillWhatIfClientProps) {
   const [loadingSimulation, setLoadingSimulation] = useState(true);
   const [simError, setSimError] = useState<string | null>(null);
 
-  // Check feature flag: disabled in production unless NEXT_PUBLIC_ENABLE_SKILL_WHAT_IF or NEXT_PUBLIC_ENABLE_INTERVIEW_PACK is true
+  // Check feature flag: disabled in production unless NEXT_PUBLIC_ENABLE_SKILL_WHAT_IF is true
   const isFeatureEnabled =
     process.env.NEXT_PUBLIC_ENABLE_SKILL_WHAT_IF === "true" ||
-    process.env.NEXT_PUBLIC_ENABLE_INTERVIEW_PACK === "true" ||
     process.env.NODE_ENV !== "production";
 
   // 1. Check Auth & Server-Verified Pro status (strictly never trust user_metadata)
