@@ -27,6 +27,9 @@ function run() {
     jobsPageCode = jobsPageCode.replace(/job-card-posted-tag/g, "corrupted-tag");
     jobsPageCode = jobsPageCode.replace(/getTagColorClass/g, "corruptedColor");
     jobsPageCode = jobsPageCode.replace(/font-semibold text-\[#0F172A\]/g, "text-gray-200");
+    jobsPageCode = jobsPageCode.replace(/Remote Eligible/g, "Corrupted Badge");
+    jobsPageCode = jobsPageCode.replace(/formatDesktopPillTime/g, "formatBrokenPillTime");
+    jobsPageCode = jobsPageCode.replace(/getCompanyTagPills\(job\.category\)/g, "getCompanyTagPills((job as any))");
     menuCompCode = menuCompCode.replace(/Remove From List/g, "Delete All");
     menuCompCode = menuCompCode.replace(/Already Applied/g, "");
     menuCompCode = menuCompCode.replace(/navigator\.share/g, "undefinedShare");
@@ -58,46 +61,61 @@ function run() {
   }
 
   // -------------------------------------------------------------------------
-  // 2. TOP ROW PILL TAGS (POSTED TIME & EARLY APPLICANT)
+  // 2. TOP ROW PILL TAGS (POSTED TIME & EARLY APPLICANT) & REMOTE ELIGIBLE
   // -------------------------------------------------------------------------
-  // Posted time pill: Clock SVG icon, soft CM-blue pill, rendered ONLY from real postedAt
+  // Posted time pill: Clock SVG icon, soft CM-blue pill, rendered ONLY from real postedAt via formatDesktopPillTime
   const hasPostedPill = jobsPageCode.includes("data-testid=\"job-card-posted-tag\"") &&
     jobsPageCode.includes("job.postedAt && postedRelative ?") &&
     jobsPageCode.includes("<Clock className=\"w-3 h-3 text-[#2563EB]") &&
-    jobsPageCode.includes("bg-[#EFF6FF] text-[#1E40AF] border border-[#BFDBFE]");
+    jobsPageCode.includes("bg-[#EFF6FF] text-[#1E40AF] border border-[#BFDBFE]") &&
+    jobsPageCode.includes("formatDesktopPillTime(job.postedAt)");
   if (!hasPostedPill) {
-    failures.push("TOP PILL FAIL: Card top row must include posted-time tag with Clock SVG icon in soft CM-blue pill derived strictly from real postedAt (empty when missing).");
+    failures.push("TOP PILL FAIL: Card top row must include posted-time tag with Clock SVG icon in soft CM-blue pill derived strictly from real postedAt via formatDesktopPillTime (empty when missing).");
   } else {
-    console.log("  [PASS] Top pills: Posted-time tag with Clock SVG icon and soft CM-blue pill from real postedAt");
+    console.log("  [PASS] Top pills: Posted-time tag with Clock SVG icon and soft CM-blue pill from real postedAt via formatDesktopPillTime");
   }
 
-  // Early applicant pill: strictly derived from real data under 24h
+  // Early applicant pill: strictly derived from real data under 24h with matching CM-blue tint
   const hasEarlyPill = jobsPageCode.includes("data-testid=\"job-card-early-tag\"") &&
     jobsPageCode.includes("isRecent ?") &&
     jobsPageCode.includes("isPostedUnder24Hours") &&
-    jobsPageCode.includes("Early applicant");
+    jobsPageCode.includes("Early applicant") &&
+    jobsPageCode.includes("className=\"h-[22px] px-2 py-0.5 rounded text-[11px] font-medium bg-[#EFF6FF] text-[#1E40AF] border border-[#BFDBFE] inline-flex items-center\"");
   if (!hasEarlyPill) {
-    failures.push("EARLY APPLICANT FAIL: Card top row must include Early applicant tag derived strictly from real data posted within 24h.");
+    failures.push("EARLY APPLICANT FAIL: Card top row must include Early applicant tag in CM-blue family derived strictly from real data posted within 24h.");
   } else {
-    console.log("  [PASS] Top pills: Early applicant tag derived strictly from real data (< 24h old)");
+    console.log("  [PASS] Top pills: Early applicant tag in CM-blue family derived strictly from real data (< 24h old)");
+  }
+
+  // Remote Eligible badge on desktop top row
+  const hasRemoteBadge = jobsPageCode.includes("job.remote &&") &&
+    jobsPageCode.includes("Remote Eligible") &&
+    jobsPageCode.includes("bg-slate-100 text-[#475569]");
+  if (!hasRemoteBadge) {
+    failures.push("REMOTE BADGE FAIL: Desktop top row must preserve the Remote Eligible badge when job.remote is true.");
+  } else {
+    console.log("  [PASS] Top row badges: Remote Eligible badge preserved on desktop");
   }
 
   // -------------------------------------------------------------------------
   // 3. COMPANY & CATEGORY/TYPE COLORED PILLS
   // -------------------------------------------------------------------------
-  // Category & company-type words rendered as separate small colored pills with soft tints by stable hash
+  // Category words rendered as separate small colored pills with soft tints by stable hash; only real category
   const hasCompanyPills = jobsPageCode.includes("data-testid=\"job-card-category-pills\"") &&
     jobsPageCode.includes("companyPills.length > 0 &&") &&
     jobsPageCode.includes("getTagColorClass(pill)") &&
-    jobsPageCode.includes("getCompanyTagPills(job)") &&
+    jobsPageCode.includes("getCompanyTagPills(job.category)") &&
     jobsPageCode.includes("bg-blue-50 text-[#1D4ED8]") &&
     jobsPageCode.includes("bg-emerald-50 text-emerald-800") &&
     jobsPageCode.includes("bg-violet-50 text-violet-800") &&
     jobsPageCode.includes("bg-amber-50 text-amber-800");
-  if (!hasCompanyPills) {
-    failures.push("CATEGORY PILLS FAIL: Under title, category & company-type words must render as separate small pills with soft tints (blue, green, violet, amber) rotated by stable hash, strictly from real fields only.");
+  const hasNoAnyOrUnused = !jobsPageCode.includes("(job as any)") &&
+    !jobsPageCode.includes("_contractEarly") &&
+    jobsPageCode.includes("if (!dateStr) return \"Recently posted\";");
+  if (!hasCompanyPills || !hasNoAnyOrUnused) {
+    failures.push("CATEGORY PILLS FAIL: Category words must render as separate small pills with soft tints (blue, green, violet, amber) rotated by stable hash strictly from real job.category with no (job as any) and formatRelativeTime preserved for mobile.");
   } else {
-    console.log("  [PASS] Category pills: Real fields rendered as separate small pills with 4 soft tints rotated by stable hash");
+    console.log("  [PASS] Category pills: Real category rendered with soft tints by stable hash, zero (job as any), formatRelativeTime preserved");
   }
 
   // -------------------------------------------------------------------------
