@@ -125,6 +125,9 @@ export default function AllFiltersDrawer({
     draft.jobType,
     draft.workModel,
     draft.datePosted,
+    draft.salaryMin,
+    draft.sourceType,
+    draft.company,
     draft.hidden,
   ].filter((v) => Boolean(v && v !== "all")).length;
 
@@ -145,6 +148,9 @@ export default function AllFiltersDrawer({
       datePosted: "",
       industry: "",
       experience: "",
+      salaryMin: "",
+      sourceType: "",
+      company: "",
       hidden: false,
       sort: filters.sort,
     });
@@ -567,6 +573,76 @@ export default function AllFiltersDrawer({
                         {item.label}
                       </button>
                     ))}
+                  </div>
+                </div>
+
+                {/* Minimum Salary */}
+                <div className="space-y-2">
+                  <label className="text-[13px] font-bold text-[#0F172A] block">Minimum Base Salary</label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {[
+                      { val: "", label: "Any" },
+                      { val: "50000", label: "$50k+" },
+                      { val: "80000", label: "$80k+" },
+                      { val: "100000", label: "$100k+" },
+                      { val: "120000", label: "$120k+" },
+                      { val: "150000", label: "$150k+" },
+                      { val: "200000", label: "$200k+" },
+                    ].map((item) => (
+                      <button
+                        key={item.val || "any-salary"}
+                        type="button"
+                        onClick={() => setDraft((p) => ({ ...p, salaryMin: item.val }))}
+                        className={`p-2.5 rounded-xl border text-xs font-semibold transition text-center cursor-pointer ${
+                          (draft.salaryMin || "") === item.val
+                            ? "bg-[#EFF6FF] border-[#BFDBFE] text-[#1D4ED8]"
+                            : "bg-[#F8FAFC] border-[#E2E8F0] text-[#0F172A] hover:bg-slate-100"
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Source Type */}
+                <div className="space-y-2">
+                  <label className="text-[13px] font-bold text-[#0F172A] block">Source Type</label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {[
+                      { val: "", label: "All sources" },
+                      { val: "ats", label: "Direct ATS" },
+                      { val: "direct", label: "Employer" },
+                      { val: "aggregator", label: "Aggregator" },
+                    ].map((item) => (
+                      <button
+                        key={item.val || "all-sources"}
+                        type="button"
+                        onClick={() => setDraft((p) => ({ ...p, sourceType: item.val }))}
+                        className={`p-2.5 rounded-xl border text-xs font-semibold transition text-center cursor-pointer ${
+                          (draft.sourceType || "") === item.val
+                            ? "bg-[#EFF6FF] border-[#BFDBFE] text-[#1D4ED8]"
+                            : "bg-[#F8FAFC] border-[#E2E8F0] text-[#0F172A] hover:bg-slate-100"
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Company Filter */}
+                <div className="space-y-2">
+                  <label className="text-[13px] font-bold text-[#0F172A] block">Company</label>
+                  <div className="relative">
+                    <Building className="w-4 h-4 text-[#94A3B8] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="text"
+                      placeholder="e.g. Stripe, OpenAI, Linear..."
+                      value={draft.company || ""}
+                      onChange={(e) => setDraft((p) => ({ ...p, company: e.target.value }))}
+                      className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-[#CBD5E1] text-xs focus:outline-none focus:ring-2 focus:ring-[#93C5FD]"
+                    />
                   </div>
                 </div>
               </section>

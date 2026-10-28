@@ -30,6 +30,9 @@ export interface JobFilterValues {
   jobType: string; // Job Type (multi-select, comma-separated)
   workModel: string; // Work Model heuristic (Remote, Hybrid, Onsite)
   datePosted: string; // Any time, 24h, 7d, 30d
+  salaryMin?: string | number;
+  sourceType?: string;
+  company?: string;
   industry?: string; // GAP: unindexed in DB; omitted from active search predicates
   experience?: string; // GAP: unindexed in DB; omitted from active search predicates
   hidden: boolean;
@@ -930,6 +933,231 @@ export default function JobFilterBar({
             )}
           </div>
 
+          {/* Min Salary Chip & Popover */}
+          <div className="relative">
+            <button
+              ref={(el) => { triggerRefs.current["salaryMin"] = el; }}
+              type="button"
+              onClick={() => handleOpenPopover("salaryMin")}
+              aria-expanded={activePopover === "salaryMin"}
+              aria-label={`Min Salary filter: ${filters.salaryMin ? `${parseInt(String(filters.salaryMin), 10) / 1000}k+` : "All"}`}
+              className={`h-8 px-3 rounded-lg border text-[13px] font-medium transition inline-flex items-center gap-1.5 cursor-pointer shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
+                filters.salaryMin
+                  ? "bg-[#EFF6FF] border-[#BFDBFE] text-[#1D4ED8] font-semibold"
+                  : "bg-white border-[#CBD5E1] text-[#0F172A] hover:bg-[#F8FAFC]"
+              }`}
+            >
+              <span>{filters.salaryMin ? `${parseInt(String(filters.salaryMin), 10) / 1000}k+` : "Min Salary"}</span>
+              <ChevronDown className="w-3.5 h-3.5 text-[#64748B]" />
+            </button>
+
+            {activePopover === "salaryMin" && (
+              <div
+                ref={popoverRef}
+                role="dialog"
+                aria-label="Filter by Minimum Salary"
+                className="absolute left-0 mt-1.5 w-60 max-w-[calc(100vw-32px)] bg-white border border-[#E2E8F0] rounded-2xl shadow-xl p-4 z-50 text-xs space-y-3"
+              >
+                <div className="flex items-center justify-between pb-2 border-b border-[#E2E8F0]">
+                  <span className="font-bold text-[13px] text-[#0F172A]">Min Salary</span>
+                  <button
+                    type="button"
+                    onClick={() => handleReset("salaryMin", "")}
+                    className="text-[11px] text-[#2563EB] hover:underline font-semibold"
+                  >
+                    Clear
+                  </button>
+                </div>
+
+                <div className="space-y-1">
+                  {[
+                    { val: "", label: "Any salary" },
+                    { val: "50000", label: "$50k+/year" },
+                    { val: "80000", label: "$80k+/year" },
+                    { val: "100000", label: "$100k+/year" },
+                    { val: "120000", label: "$120k+/year" },
+                    { val: "150000", label: "$150k+/year" },
+                    { val: "200000", label: "$200k+/year" },
+                  ].map((s) => (
+                    <button
+                      key={s.val || "any"}
+                      type="button"
+                      onClick={() => setDraftFilters((prev) => ({ ...prev, salaryMin: s.val }))}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-lg transition text-[13px] ${
+                        (!draftFilters.salaryMin && !s.val) || String(draftFilters.salaryMin) === s.val
+                          ? "bg-[#EFF6FF] text-[#1D4ED8] font-bold"
+                          : "text-[#334155] hover:bg-slate-50"
+                      }`}
+                    >
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex items-center justify-between pt-2 border-t border-[#E2E8F0]">
+                  <button
+                    type="button"
+                    onClick={() => handleReset("salaryMin", "")}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold text-[#64748B] hover:text-[#0F172A] hover:bg-slate-100 transition"
+                  >
+                    Reset
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleConfirm({ salaryMin: draftFilters.salaryMin })}
+                    className="px-4 py-1.5 rounded-lg text-xs font-bold bg-[#2563EB] text-white hover:bg-[#1D4ED8] transition shadow-xs"
+                  >
+                    Confirm
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Source Type Chip & Popover */}
+          <div className="relative">
+            <button
+              ref={(el) => { triggerRefs.current["sourceType"] = el; }}
+              type="button"
+              onClick={() => handleOpenPopover("sourceType")}
+              aria-expanded={activePopover === "sourceType"}
+              aria-label={`Source filter: ${filters.sourceType || "All"}`}
+              className={`h-8 px-3 rounded-lg border text-[13px] font-medium transition inline-flex items-center gap-1.5 cursor-pointer shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
+                filters.sourceType && filters.sourceType !== "all"
+                  ? "bg-[#EFF6FF] border-[#BFDBFE] text-[#1D4ED8] font-semibold"
+                  : "bg-white border-[#CBD5E1] text-[#0F172A] hover:bg-[#F8FAFC]"
+              }`}
+            >
+              <span>{filters.sourceType && filters.sourceType !== "all" ? filters.sourceType.toUpperCase() : "Source"}</span>
+              <ChevronDown className="w-3.5 h-3.5 text-[#64748B]" />
+            </button>
+
+            {activePopover === "sourceType" && (
+              <div
+                ref={popoverRef}
+                role="dialog"
+                aria-label="Filter by Source Type"
+                className="absolute left-0 mt-1.5 w-60 max-w-[calc(100vw-32px)] bg-white border border-[#E2E8F0] rounded-2xl shadow-xl p-4 z-50 text-xs space-y-3"
+              >
+                <div className="flex items-center justify-between pb-2 border-b border-[#E2E8F0]">
+                  <span className="font-bold text-[13px] text-[#0F172A]">Source Type</span>
+                  <button
+                    type="button"
+                    onClick={() => handleReset("sourceType", "")}
+                    className="text-[11px] text-[#2563EB] hover:underline font-semibold"
+                  >
+                    Clear
+                  </button>
+                </div>
+
+                <div className="space-y-1">
+                  {[
+                    { val: "", label: "All sources" },
+                    { val: "ats", label: "Direct ATS (Greenhouse, Lever, etc.)" },
+                    { val: "direct", label: "Employer Career Pages" },
+                    { val: "aggregator", label: "Aggregated Feeds" },
+                  ].map((s) => (
+                    <button
+                      key={s.val || "all"}
+                      type="button"
+                      onClick={() => setDraftFilters((prev) => ({ ...prev, sourceType: s.val }))}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-lg transition text-[13px] ${
+                        (!draftFilters.sourceType && !s.val) || draftFilters.sourceType === s.val
+                          ? "bg-[#EFF6FF] text-[#1D4ED8] font-bold"
+                          : "text-[#334155] hover:bg-slate-50"
+                      }`}
+                    >
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex items-center justify-between pt-2 border-t border-[#E2E8F0]">
+                  <button
+                    type="button"
+                    onClick={() => handleReset("sourceType", "")}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold text-[#64748B] hover:text-[#0F172A] hover:bg-slate-100 transition"
+                  >
+                    Reset
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleConfirm({ sourceType: draftFilters.sourceType })}
+                    className="px-4 py-1.5 rounded-lg text-xs font-bold bg-[#2563EB] text-white hover:bg-[#1D4ED8] transition shadow-xs"
+                  >
+                    Confirm
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Company Chip & Popover */}
+          <div className="relative">
+            <button
+              ref={(el) => { triggerRefs.current["company"] = el; }}
+              type="button"
+              onClick={() => handleOpenPopover("company")}
+              aria-expanded={activePopover === "company"}
+              aria-label={`Company filter: ${filters.company || "All"}`}
+              className={`h-8 px-3 rounded-lg border text-[13px] font-medium transition inline-flex items-center gap-1.5 cursor-pointer shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
+                filters.company && filters.company !== "all"
+                  ? "bg-[#EFF6FF] border-[#BFDBFE] text-[#1D4ED8] font-semibold"
+                  : "bg-white border-[#CBD5E1] text-[#0F172A] hover:bg-[#F8FAFC]"
+              }`}
+            >
+              <span>{filters.company && filters.company !== "all" ? `Company: ${filters.company}` : "Company"}</span>
+              <ChevronDown className="w-3.5 h-3.5 text-[#64748B]" />
+            </button>
+
+            {activePopover === "company" && (
+              <div
+                ref={popoverRef}
+                role="dialog"
+                aria-label="Filter by Company"
+                className="absolute left-0 mt-1.5 w-64 max-w-[calc(100vw-32px)] bg-white border border-[#E2E8F0] rounded-2xl shadow-xl p-4 z-50 text-xs space-y-3"
+              >
+                <div className="flex items-center justify-between pb-2 border-b border-[#E2E8F0]">
+                  <span className="font-bold text-[13px] text-[#0F172A]">Company Name</span>
+                  <button
+                    type="button"
+                    onClick={() => handleReset("company", "")}
+                    className="text-[11px] text-[#2563EB] hover:underline font-semibold"
+                  >
+                    Clear
+                  </button>
+                </div>
+
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={draftFilters.company || ""}
+                    onChange={(e) => setDraftFilters((prev) => ({ ...prev, company: e.target.value }))}
+                    placeholder="e.g. Stripe, OpenAI, Spotify..."
+                    className="w-full text-xs px-3 py-2 rounded-lg border border-[#CBD5E1] bg-white text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#93C5FD]"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between pt-2 border-t border-[#E2E8F0]">
+                  <button
+                    type="button"
+                    onClick={() => handleReset("company", "")}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold text-[#64748B] hover:text-[#0F172A] hover:bg-slate-100 transition"
+                  >
+                    Reset
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleConfirm({ company: draftFilters.company })}
+                    className="px-4 py-1.5 rounded-lg text-xs font-bold bg-[#2563EB] text-white hover:bg-[#1D4ED8] transition shadow-xs"
+                  >
+                    Confirm
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Hidden Jobs Toggle Chip */}
           <button
             type="button"
@@ -1095,6 +1323,48 @@ export default function JobFilterBar({
                 type="button"
                 onClick={() => onChange({ hidden: false })}
                 aria-label="Remove hidden jobs filter"
+                className="hover:text-rose-600 transition"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          )}
+
+                    {filters.salaryMin && (
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#1D4ED8] font-medium text-[11px]">
+              <span>Min Salary: ${parseInt(String(filters.salaryMin), 10) / 1000}k+</span>
+              <button
+                type="button"
+                onClick={() => onChange({ salaryMin: "" })}
+                aria-label="Remove salary filter"
+                className="hover:text-rose-600 transition"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          )}
+
+          {filters.sourceType && filters.sourceType !== "all" && (
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#1D4ED8] font-medium text-[11px]">
+              <span>Source: {filters.sourceType.toUpperCase()}</span>
+              <button
+                type="button"
+                onClick={() => onChange({ sourceType: "" })}
+                aria-label="Remove source type filter"
+                className="hover:text-rose-600 transition"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          )}
+
+          {filters.company && (
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#1D4ED8] font-medium text-[11px]">
+              <span>Company: {filters.company}</span>
+              <button
+                type="button"
+                onClick={() => onChange({ company: "" })}
+                aria-label={`Remove company filter ${filters.company}`}
                 className="hover:text-rose-600 transition"
               >
                 <X className="w-3 h-3" />
