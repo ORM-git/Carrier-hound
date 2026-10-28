@@ -1,18 +1,22 @@
 [
   {
-    "company": null,
+    "company": "10a Labs",
     "ats": "greenhouse",
     "token": "10alabs",
     "job_count": 23,
-    "verified_at": "2026-10-28T11:26:26.613Z",
+    "india_job_count": 0,
+    "remote_job_count": 9,
+    "verified_at": "2026-10-28T12:18:23.184Z",
     "discovery_source": "github_open_dataset"
   },
   {
-    "company": null,
+    "company": "10Beauty",
     "ats": "greenhouse",
     "token": "10beauty",
     "job_count": 7,
-    "verified_at": "2026-10-28T11:26:27.558Z",
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:18:24.206Z",
     "discovery_source": "github_open_dataset"
   },
   {
@@ -4306,5 +4310,2425 @@
     "remote_job_count": 11,
     "verified_at": "2026-10-28T12:05:23.869Z",
     "discovery_source": "company_probe"
+  },
+  {
+    "company": "Watershed Informatics",
+    "ats": "greenhouse",
+    "token": "watershed",
+    "job_count": 8,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:18:00.180Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "Warp",
+    "ats": "greenhouse",
+    "token": "warp",
+    "job_count": 4,
+    "india_job_count": 0,
+    "remote_job_count": 4,
+    "verified_at": "2026-10-28T12:18:15.065Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "RAMP",
+    "ats": "greenhouse",
+    "token": "ramp",
+    "job_count": 1,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:18:19.440Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "Orion Global Solutions",
+    "ats": "greenhouse",
+    "token": "12jlkfsk",
+    "job_count": 5,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:18:28.191Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "12twenty",
+    "ats": "greenhouse",
+    "token": "12twenty",
+    "job_count": 8,
+    "india_job_count": 0,
+    "remote_job_count": 8,
+    "verified_at": "2026-10-28T12:18:29.205Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Davidson Kempner Capital Management",
+    "ats": "greenhouse",
+    "token": "1456754456yhgbhfg",
+    "job_count": 1,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:18:31.219Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "14 Technology Holdings",
+    "ats": "greenhouse",
+    "token": "14technology",
+    "job_count": 2,
+    "india_job_count": 0,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:18:32.255Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "1-800 Contacts",
+    "ats": "greenhouse",
+    "token": "1800contacts",
+    "job_count": 11,
+    "india_job_count": 0,
+    "remote_job_count": 4,
+    "verified_at": "2026-10-28T12:18:34.272Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "1stdibs.com",
+    "ats": "greenhouse",
+    "token": "1stdibscom",
+    "job_count": 1,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:18:38.324Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "2026 Summer Intern Program",
+    "ats": "greenhouse",
+    "token": "2026_summer_intern_program",
+    "job_count": 2,
+    "india_job_count": 0,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:18:40.360Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "2K",
+    "ats": "greenhouse",
+    "token": "2k",
+    "job_count": 98,
+    "india_job_count": 4,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:18:46.524Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "2K Czech",
+    "ats": "greenhouse",
+    "token": "2kczech",
+    "job_count": 6,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:18:46.888Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "2K Madrid",
+    "ats": "greenhouse",
+    "token": "2kmadrid",
+    "job_count": 10,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:18:49.086Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "2U",
+    "ats": "greenhouse",
+    "token": "2u",
+    "job_count": 2,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:18:51.318Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "CO/ NJ Internal Job Board",
+    "ats": "greenhouse",
+    "token": "2uinlinepromotions",
+    "job_count": 1,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:18:52.864Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "30th Street Animal Hospital",
+    "ats": "greenhouse",
+    "token": "30thstreetanimalhospital",
+    "job_count": 3,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:18:53.879Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "31st Union",
+    "ats": "greenhouse",
+    "token": "31stunion",
+    "job_count": 10,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:18:54.929Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "3Cloud",
+    "ats": "greenhouse",
+    "token": "3cloud",
+    "job_count": 39,
+    "india_job_count": 0,
+    "remote_job_count": 39,
+    "verified_at": "2026-10-28T12:18:59.474Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "3 Day Blinds (Corporate)",
+    "ats": "greenhouse",
+    "token": "3dayblindscorporate",
+    "job_count": 4,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:19:00.035Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "3 Day Blinds (Sales)",
+    "ats": "greenhouse",
+    "token": "3dayblindssales",
+    "job_count": 104,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:19:01.389Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "3MG Roofing & Solar",
+    "ats": "greenhouse",
+    "token": "3mgroofing",
+    "job_count": 28,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:19:02.460Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "3Red Partners",
+    "ats": "greenhouse",
+    "token": "3redpartners",
+    "job_count": 8,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:19:03.976Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "4D Molecular Therapeutics",
+    "ats": "greenhouse",
+    "token": "4dmoleculartherapeutics",
+    "job_count": 10,
+    "india_job_count": 0,
+    "remote_job_count": 8,
+    "verified_at": "2026-10-28T12:19:06.022Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Alumni Network Job Board",
+    "ats": "greenhouse",
+    "token": "4lu44n1n37w012k",
+    "job_count": 13,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:19:07.124Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "5minlab",
+    "ats": "greenhouse",
+    "token": "5minlab",
+    "job_count": 1,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:19:10.091Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "5WPR",
+    "ats": "greenhouse",
+    "token": "5wpr",
+    "job_count": 11,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:19:11.122Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "617MediaGroup",
+    "ats": "greenhouse",
+    "token": "617mediagroup",
+    "job_count": 11,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:19:13.083Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "66degrees",
+    "ats": "greenhouse",
+    "token": "66degrees",
+    "job_count": 18,
+    "india_job_count": 8,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:19:14.111Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "6sense",
+    "ats": "greenhouse",
+    "token": "6sense",
+    "job_count": 31,
+    "india_job_count": 8,
+    "remote_job_count": 11,
+    "verified_at": "2026-10-28T12:19:16.188Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "8th Light",
+    "ats": "greenhouse",
+    "token": "8thlightrebuild",
+    "job_count": 5,
+    "india_job_count": 0,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:19:22.145Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "9th Way Insignia",
+    "ats": "greenhouse",
+    "token": "9thwayinsignia",
+    "job_count": 14,
+    "india_job_count": 0,
+    "remote_job_count": 7,
+    "verified_at": "2026-10-28T12:19:24.223Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "a16z",
+    "ats": "greenhouse",
+    "token": "a16z",
+    "job_count": 15,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:19:25.215Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "A1M Solutions",
+    "ats": "greenhouse",
+    "token": "a1msolutions",
+    "job_count": 3,
+    "india_job_count": 0,
+    "remote_job_count": 3,
+    "verified_at": "2026-10-28T12:19:27.191Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "A24",
+    "ats": "greenhouse",
+    "token": "a24",
+    "job_count": 5,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:19:28.251Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Ivanti",
+    "ats": "greenhouse",
+    "token": "a3c41b8b71eff8c4",
+    "job_count": 7,
+    "india_job_count": 2,
+    "remote_job_count": 3,
+    "verified_at": "2026-10-28T12:19:29.300Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "AAC Pacific Northwest",
+    "ats": "greenhouse",
+    "token": "aacpnw",
+    "job_count": 40,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:19:31.403Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "A-Alpha Bio",
+    "ats": "greenhouse",
+    "token": "aalphabio",
+    "job_count": 1,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:19:32.244Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "AAVantgarde Bio",
+    "ats": "greenhouse",
+    "token": "aavantgardebio",
+    "job_count": 3,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:19:34.262Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Abacus Insights",
+    "ats": "greenhouse",
+    "token": "abacusinsights",
+    "job_count": 22,
+    "india_job_count": 5,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:19:36.438Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Abacus Learning Center",
+    "ats": "greenhouse",
+    "token": "abacuslc",
+    "job_count": 4,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:19:37.303Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "ABBYY",
+    "ats": "greenhouse",
+    "token": "abbyy",
+    "job_count": 7,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:19:41.365Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "AbCellera",
+    "ats": "greenhouse",
+    "token": "abcellera",
+    "job_count": 37,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:19:42.432Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "ABC Legal Services",
+    "ats": "greenhouse",
+    "token": "abclegalservices",
+    "job_count": 140,
+    "india_job_count": 0,
+    "remote_job_count": 42,
+    "verified_at": "2026-10-28T12:19:45.305Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "AbilityPath",
+    "ats": "greenhouse",
+    "token": "abilitypath",
+    "job_count": 9,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:19:48.645Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "AB InBev  | Growth Group",
+    "ats": "greenhouse",
+    "token": "abinbev",
+    "job_count": 63,
+    "india_job_count": 0,
+    "remote_job_count": 14,
+    "verified_at": "2026-10-28T12:19:49.762Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Abiologics",
+    "ats": "greenhouse",
+    "token": "abiologics",
+    "job_count": 3,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:19:50.644Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Ably (UK)",
+    "ats": "greenhouse",
+    "token": "ably30",
+    "job_count": 6,
+    "india_job_count": 0,
+    "remote_job_count": 6,
+    "verified_at": "2026-10-28T12:19:53.918Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "A Bright Beginning Childcare",
+    "ats": "greenhouse",
+    "token": "abrightbeginnings",
+    "job_count": 2,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:19:59.720Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Absurd Ventures",
+    "ats": "greenhouse",
+    "token": "absurdventures",
+    "job_count": 16,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:20:02.756Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Acadian Asset Management LLC",
+    "ats": "greenhouse",
+    "token": "acadianassetmanagementllc",
+    "job_count": 16,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:20:03.770Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Acadia Pharmaceuticals Inc.",
+    "ats": "greenhouse",
+    "token": "acadiapharmaceuticals",
+    "job_count": 42,
+    "india_job_count": 0,
+    "remote_job_count": 19,
+    "verified_at": "2026-10-28T12:20:05.086Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Accela",
+    "ats": "greenhouse",
+    "token": "accela",
+    "job_count": 8,
+    "india_job_count": 0,
+    "remote_job_count": 8,
+    "verified_at": "2026-10-28T12:20:05.852Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Acceleration Partners",
+    "ats": "greenhouse",
+    "token": "accelerationpartners",
+    "job_count": 18,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:20:07.903Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Acceleron Fusion",
+    "ats": "greenhouse",
+    "token": "acceleronfusion",
+    "job_count": 3,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:20:08.798Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "ACCEL Schools",
+    "ats": "greenhouse",
+    "token": "accelschools",
+    "job_count": 244,
+    "india_job_count": 0,
+    "remote_job_count": 4,
+    "verified_at": "2026-10-28T12:20:10.383Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Accenture Federal Services",
+    "ats": "greenhouse",
+    "token": "accenturefederalservices",
+    "job_count": 715,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:20:13.740Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Access Holdings",
+    "ats": "greenhouse",
+    "token": "accessholdingsmanagementfirm",
+    "job_count": 3,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:20:14.033Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "accesso",
+    "ats": "greenhouse",
+    "token": "accesso",
+    "job_count": 4,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:20:15.039Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Accordion",
+    "ats": "greenhouse",
+    "token": "accordion",
+    "job_count": 46,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:20:18.106Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Accredited Labs",
+    "ats": "greenhouse",
+    "token": "accreditedlabs",
+    "job_count": 41,
+    "india_job_count": 0,
+    "remote_job_count": 6,
+    "verified_at": "2026-10-28T12:20:19.108Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Accrue",
+    "ats": "greenhouse",
+    "token": "accrue",
+    "job_count": 5,
+    "india_job_count": 0,
+    "remote_job_count": 3,
+    "verified_at": "2026-10-28T12:20:20.086Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "AccuWeather Careers",
+    "ats": "greenhouse",
+    "token": "accuweather",
+    "job_count": 17,
+    "india_job_count": 0,
+    "remote_job_count": 8,
+    "verified_at": "2026-10-28T12:20:24.157Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Aceable",
+    "ats": "greenhouse",
+    "token": "aceable",
+    "job_count": 1,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:20:25.147Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Acentria Insurance",
+    "ats": "greenhouse",
+    "token": "acentria",
+    "job_count": 11,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:20:26.244Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Achievement First Network Support",
+    "ats": "greenhouse",
+    "token": "achievementfirstnetworksupportcareers",
+    "job_count": 6,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:20:28.203Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Achievers Early College Prep",
+    "ats": "greenhouse",
+    "token": "achieversearlycollegeprep",
+    "job_count": 16,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:20:29.271Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "ACI Learning",
+    "ats": "greenhouse",
+    "token": "acilearning",
+    "job_count": 3,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:20:32.250Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "ACLU - National Office",
+    "ats": "greenhouse",
+    "token": "aclu",
+    "job_count": 16,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:20:35.781Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "ACLU - Internships",
+    "ats": "greenhouse",
+    "token": "acluinternships",
+    "job_count": 50,
+    "india_job_count": 0,
+    "remote_job_count": 36,
+    "verified_at": "2026-10-28T12:20:37.041Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "ACLU of Northern California",
+    "ats": "greenhouse",
+    "token": "aclunc",
+    "job_count": 6,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:20:37.334Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "ACLU of New Jersey",
+    "ats": "greenhouse",
+    "token": "aclunj",
+    "job_count": 13,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:20:38.340Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "American College of Obstetricians and Gynecologists",
+    "ats": "greenhouse",
+    "token": "acog",
+    "job_count": 12,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:20:39.351Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "aCommerce",
+    "ats": "greenhouse",
+    "token": "acommerce",
+    "job_count": 72,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:20:40.411Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Acorn Health",
+    "ats": "greenhouse",
+    "token": "acornhealth",
+    "job_count": 122,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:20:43.298Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "A&C Plastics",
+    "ats": "greenhouse",
+    "token": "acplastics",
+    "job_count": 4,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:20:44.593Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "DataHub",
+    "ats": "greenhouse",
+    "token": "acryldata",
+    "job_count": 3,
+    "india_job_count": 1,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:20:47.616Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "ActBlue",
+    "ats": "greenhouse",
+    "token": "actblue",
+    "job_count": 3,
+    "india_job_count": 0,
+    "remote_job_count": 3,
+    "verified_at": "2026-10-28T12:20:48.719Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Activate Global, Inc",
+    "ats": "greenhouse",
+    "token": "activate",
+    "job_count": 2,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:20:51.700Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "AcuityMD",
+    "ats": "greenhouse",
+    "token": "acuitymd",
+    "job_count": 9,
+    "india_job_count": 0,
+    "remote_job_count": 9,
+    "verified_at": "2026-10-28T12:20:54.692Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Acurus Solutions Private Limited",
+    "ats": "greenhouse",
+    "token": "acurussolutions",
+    "job_count": 10,
+    "india_job_count": 10,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:20:55.685Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "AcuTech Group, Inc.",
+    "ats": "greenhouse",
+    "token": "acutechgroupinc",
+    "job_count": 10,
+    "india_job_count": 1,
+    "remote_job_count": 5,
+    "verified_at": "2026-10-28T12:20:56.743Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Ada",
+    "ats": "greenhouse",
+    "token": "ada18",
+    "job_count": 7,
+    "india_job_count": 0,
+    "remote_job_count": 7,
+    "verified_at": "2026-10-28T12:20:58.801Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Adams Clinical",
+    "ats": "greenhouse",
+    "token": "adamsclinical",
+    "job_count": 33,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:21:01.799Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Adams Street Partners",
+    "ats": "greenhouse",
+    "token": "adamsstreetpartners",
+    "job_count": 17,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:21:02.786Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Adams Street Partners - Early Careers",
+    "ats": "greenhouse",
+    "token": "adamsstreetpartnersearlycareers",
+    "job_count": 1,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:21:03.786Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Adapter",
+    "ats": "greenhouse",
+    "token": "adapter",
+    "job_count": 4,
+    "india_job_count": 0,
+    "remote_job_count": 4,
+    "verified_at": "2026-10-28T12:21:04.863Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Adaptive Biotechnologies",
+    "ats": "greenhouse",
+    "token": "adaptivebiotechnologies",
+    "job_count": 21,
+    "india_job_count": 0,
+    "remote_job_count": 16,
+    "verified_at": "2026-10-28T12:21:06.829Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Adaugeo Healthcare Solutions",
+    "ats": "greenhouse",
+    "token": "adaugeohealthcare",
+    "job_count": 1,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:21:08.823Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "the Ad Council",
+    "ats": "greenhouse",
+    "token": "adcouncil",
+    "job_count": 2,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:21:10.001Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Alzheimer's Disease Data Initiative",
+    "ats": "greenhouse",
+    "token": "addatainitiative",
+    "job_count": 1,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:21:10.867Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Addepar",
+    "ats": "greenhouse",
+    "token": "addepar1",
+    "job_count": 113,
+    "india_job_count": 16,
+    "remote_job_count": 17,
+    "verified_at": "2026-10-28T12:21:13.852Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Adeedo!",
+    "ats": "greenhouse",
+    "token": "adeedo",
+    "job_count": 3,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:21:14.141Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "International",
+    "ats": "greenhouse",
+    "token": "adfinternational",
+    "job_count": 3,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:21:18.219Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Adicet Bio",
+    "ats": "greenhouse",
+    "token": "adicettherapeuticsinc",
+    "job_count": 2,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:21:22.208Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Aditum Bio",
+    "ats": "greenhouse",
+    "token": "aditumbio",
+    "job_count": 2,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:21:24.216Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Adjust",
+    "ats": "greenhouse",
+    "token": "adjustjobs",
+    "job_count": 11,
+    "india_job_count": 1,
+    "remote_job_count": 6,
+    "verified_at": "2026-10-28T12:21:26.544Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Admios Jobs",
+    "ats": "greenhouse",
+    "token": "admios",
+    "job_count": 3,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:21:29.243Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Adswerve, Inc",
+    "ats": "greenhouse",
+    "token": "adswerveinc",
+    "job_count": 7,
+    "india_job_count": 1,
+    "remote_job_count": 6,
+    "verified_at": "2026-10-28T12:21:34.296Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "AdvancedMD",
+    "ats": "greenhouse",
+    "token": "advancedmd",
+    "job_count": 2,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:21:35.329Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Advanced Space",
+    "ats": "greenhouse",
+    "token": "advancedspace",
+    "job_count": 20,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:21:36.565Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Advanced Technology Services",
+    "ats": "greenhouse",
+    "token": "advancedtechnologyservices",
+    "job_count": 110,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:21:37.860Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Advertising Specialty Institute",
+    "ats": "greenhouse",
+    "token": "advertisingspecialtyinstitute",
+    "job_count": 9,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:21:38.632Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Advocates for Children of New York",
+    "ats": "greenhouse",
+    "token": "advocatesforchildrenofnewyork",
+    "job_count": 1,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:21:39.457Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Aechelon Technology",
+    "ats": "greenhouse",
+    "token": "aechelontechnology",
+    "job_count": 25,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:21:41.007Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Aegis Ventures",
+    "ats": "greenhouse",
+    "token": "aegisventures",
+    "job_count": 13,
+    "india_job_count": 0,
+    "remote_job_count": 9,
+    "verified_at": "2026-10-28T12:21:43.080Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "AEG Worldwide",
+    "ats": "greenhouse",
+    "token": "aegworldwide",
+    "job_count": 148,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:21:45.219Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "AEVEX",
+    "ats": "greenhouse",
+    "token": "aevexaerospace",
+    "job_count": 67,
+    "india_job_count": 0,
+    "remote_job_count": 4,
+    "verified_at": "2026-10-28T12:21:50.361Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "AEye, Inc",
+    "ats": "greenhouse",
+    "token": "aeyeinc",
+    "job_count": 2,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:21:52.657Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Advocates for Children - Interns and Volunteers",
+    "ats": "greenhouse",
+    "token": "afcvolunteers",
+    "job_count": 1,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:21:53.662Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Affinidi",
+    "ats": "greenhouse",
+    "token": "affinidi",
+    "job_count": 6,
+    "india_job_count": 1,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:21:56.744Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "8am",
+    "ats": "greenhouse",
+    "token": "affinipay1",
+    "job_count": 26,
+    "india_job_count": 0,
+    "remote_job_count": 20,
+    "verified_at": "2026-10-28T12:21:57.740Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Affinitiv",
+    "ats": "greenhouse",
+    "token": "affinitiv",
+    "job_count": 5,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:21:58.720Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "AffirmedRx, PBC",
+    "ats": "greenhouse",
+    "token": "affirmedrxpbc",
+    "job_count": 4,
+    "india_job_count": 0,
+    "remote_job_count": 4,
+    "verified_at": "2026-10-28T12:22:00.733Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Afresh",
+    "ats": "greenhouse",
+    "token": "afresh",
+    "job_count": 12,
+    "india_job_count": 0,
+    "remote_job_count": 9,
+    "verified_at": "2026-10-28T12:22:01.895Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "AfterShip",
+    "ats": "greenhouse",
+    "token": "aftership",
+    "job_count": 11,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:22:02.882Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "AG1",
+    "ats": "greenhouse",
+    "token": "ag1",
+    "job_count": 9,
+    "india_job_count": 0,
+    "remote_job_count": 7,
+    "verified_at": "2026-10-28T12:22:05.801Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Age Bold",
+    "ats": "greenhouse",
+    "token": "agebold",
+    "job_count": 5,
+    "india_job_count": 0,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:22:07.789Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "AGE Solutions",
+    "ats": "greenhouse",
+    "token": "agecareers",
+    "job_count": 71,
+    "india_job_count": 0,
+    "remote_job_count": 4,
+    "verified_at": "2026-10-28T12:22:09.464Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Meridial",
+    "ats": "greenhouse",
+    "token": "agency",
+    "job_count": 833,
+    "india_job_count": 52,
+    "remote_job_count": 209,
+    "verified_at": "2026-10-28T12:22:11.783Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "WITHIN",
+    "ats": "greenhouse",
+    "token": "agencywithin",
+    "job_count": 82,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:22:12.499Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Agero",
+    "ats": "greenhouse",
+    "token": "agero",
+    "job_count": 15,
+    "india_job_count": 0,
+    "remote_job_count": 14,
+    "verified_at": "2026-10-28T12:22:14.801Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Agibank",
+    "ats": "greenhouse",
+    "token": "agibank",
+    "job_count": 83,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:22:16.715Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Agile Six Applications",
+    "ats": "greenhouse",
+    "token": "agilesix",
+    "job_count": 2,
+    "india_job_count": 0,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:22:17.031Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Agilisys",
+    "ats": "greenhouse",
+    "token": "agilisys",
+    "job_count": 1,
+    "india_job_count": 1,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:22:20.041Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Agility Robotics",
+    "ats": "greenhouse",
+    "token": "agilityrobotics",
+    "job_count": 71,
+    "india_job_count": 0,
+    "remote_job_count": 19,
+    "verified_at": "2026-10-28T12:22:21.440Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Agilize",
+    "ats": "greenhouse",
+    "token": "agilize",
+    "job_count": 7,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:22:22.071Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Agoda",
+    "ats": "greenhouse",
+    "token": "agoda",
+    "job_count": 310,
+    "india_job_count": 15,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:22:25.699Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Agoda Sandbox",
+    "ats": "greenhouse",
+    "token": "agodasandbox",
+    "job_count": 34,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:22:26.347Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Assured Guaranty Opportunistic",
+    "ats": "greenhouse",
+    "token": "agopportunistic",
+    "job_count": 1,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:22:28.014Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "AgWest Farm Credit",
+    "ats": "greenhouse",
+    "token": "agwestfarmcredit",
+    "job_count": 16,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:22:31.181Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Ahrefs",
+    "ats": "greenhouse",
+    "token": "ahrefsjobs",
+    "job_count": 16,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:22:32.140Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "AiDASH, Inc.",
+    "ats": "greenhouse",
+    "token": "aidashinc",
+    "job_count": 17,
+    "india_job_count": 10,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:22:33.442Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "The AI Education Project",
+    "ats": "greenhouse",
+    "token": "aiedu",
+    "job_count": 1,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:22:34.253Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "AIFT",
+    "ats": "greenhouse",
+    "token": "aift",
+    "job_count": 26,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:22:36.606Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "AIP Publishing",
+    "ats": "greenhouse",
+    "token": "aippublishing",
+    "job_count": 3,
+    "india_job_count": 0,
+    "remote_job_count": 3,
+    "verified_at": "2026-10-28T12:22:38.218Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Aircapture",
+    "ats": "greenhouse",
+    "token": "aircapture",
+    "job_count": 5,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:22:41.247Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "AIRCO",
+    "ats": "greenhouse",
+    "token": "aircompany",
+    "job_count": 8,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:22:42.190Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Airia",
+    "ats": "greenhouse",
+    "token": "airia",
+    "job_count": 4,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:22:44.152Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Air North",
+    "ats": "greenhouse",
+    "token": "airnorth",
+    "job_count": 9,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:22:46.335Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "AirSculpt",
+    "ats": "greenhouse",
+    "token": "airsculpt",
+    "job_count": 11,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:22:48.275Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Airship",
+    "ats": "greenhouse",
+    "token": "airship",
+    "job_count": 9,
+    "india_job_count": 0,
+    "remote_job_count": 9,
+    "verified_at": "2026-10-28T12:22:49.349Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Airspace",
+    "ats": "greenhouse",
+    "token": "airspace",
+    "job_count": 22,
+    "india_job_count": 0,
+    "remote_job_count": 11,
+    "verified_at": "2026-10-28T12:22:50.420Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Airtame",
+    "ats": "greenhouse",
+    "token": "airtamejobs",
+    "job_count": 4,
+    "india_job_count": 0,
+    "remote_job_count": 3,
+    "verified_at": "2026-10-28T12:22:52.223Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "AirTrunk",
+    "ats": "greenhouse",
+    "token": "airtrunk",
+    "job_count": 57,
+    "india_job_count": 7,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:22:54.882Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "air up",
+    "ats": "greenhouse",
+    "token": "airup",
+    "job_count": 2,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:22:55.411Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "AI Security Institute",
+    "ats": "greenhouse",
+    "token": "aisi",
+    "job_count": 8,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:22:58.395Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "AI Squared",
+    "ats": "greenhouse",
+    "token": "aisquared",
+    "job_count": 8,
+    "india_job_count": 2,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:22:59.288Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Aiven",
+    "ats": "greenhouse",
+    "token": "aiven36",
+    "job_count": 44,
+    "india_job_count": 1,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:23:00.958Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Aiviq - UK",
+    "ats": "greenhouse",
+    "token": "aiviq",
+    "job_count": 5,
+    "india_job_count": 3,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:23:01.456Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Aizer Health",
+    "ats": "greenhouse",
+    "token": "aizerhealth",
+    "job_count": 25,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:23:02.579Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "AJ Boggs/ProPower",
+    "ats": "greenhouse",
+    "token": "ajboggs",
+    "job_count": 5,
+    "india_job_count": 1,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:23:03.347Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "AJ Tutoring",
+    "ats": "greenhouse",
+    "token": "ajtutoring",
+    "job_count": 24,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:23:04.367Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Akaysha Energy",
+    "ats": "greenhouse",
+    "token": "akayshaenergy",
+    "job_count": 5,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:23:05.350Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Akero Therapeutics",
+    "ats": "greenhouse",
+    "token": "akerotherapeutics",
+    "job_count": 3,
+    "india_job_count": 0,
+    "remote_job_count": 3,
+    "verified_at": "2026-10-28T12:23:06.393Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Akido",
+    "ats": "greenhouse",
+    "token": "akidolabs",
+    "job_count": 25,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:23:07.837Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "AKKO",
+    "ats": "greenhouse",
+    "token": "akko",
+    "job_count": 8,
+    "india_job_count": 4,
+    "remote_job_count": 4,
+    "verified_at": "2026-10-28T12:23:08.483Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "AKQA",
+    "ats": "greenhouse",
+    "token": "akqa",
+    "job_count": 29,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:23:10.476Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Akuity",
+    "ats": "greenhouse",
+    "token": "akuity",
+    "job_count": 7,
+    "india_job_count": 0,
+    "remote_job_count": 6,
+    "verified_at": "2026-10-28T12:23:12.405Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Akuna Capital",
+    "ats": "greenhouse",
+    "token": "akunacapital",
+    "job_count": 34,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:23:13.574Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Alabama Title Loans, Inc",
+    "ats": "greenhouse",
+    "token": "alabamatitleloansinc",
+    "job_count": 10,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:23:14.413Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "ALAIKA Advisory",
+    "ats": "greenhouse",
+    "token": "alaika",
+    "job_count": 14,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:23:16.733Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Alamar Biosciences",
+    "ats": "greenhouse",
+    "token": "alamarbiosciences",
+    "job_count": 31,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:23:17.633Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Alarm.com",
+    "ats": "greenhouse",
+    "token": "alarmcom",
+    "job_count": 81,
+    "india_job_count": 0,
+    "remote_job_count": 5,
+    "verified_at": "2026-10-28T12:23:19.708Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "AlayaCare",
+    "ats": "greenhouse",
+    "token": "alayacare",
+    "job_count": 23,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:23:20.708Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "AlertMedia",
+    "ats": "greenhouse",
+    "token": "alertmedia",
+    "job_count": 22,
+    "india_job_count": 0,
+    "remote_job_count": 6,
+    "verified_at": "2026-10-28T12:23:24.350Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Benesch",
+    "ats": "greenhouse",
+    "token": "alfredbeneschco",
+    "job_count": 151,
+    "india_job_count": 0,
+    "remote_job_count": 7,
+    "verified_at": "2026-10-28T12:23:27.666Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Align Communications",
+    "ats": "greenhouse",
+    "token": "align46",
+    "job_count": 39,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:23:30.446Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Aligned",
+    "ats": "greenhouse",
+    "token": "aligned",
+    "job_count": 5,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:23:31.114Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "ALKU",
+    "ats": "greenhouse",
+    "token": "alku",
+    "job_count": 13,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:23:33.281Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "ALKU - Apply Today!",
+    "ats": "greenhouse",
+    "token": "alkujobs",
+    "job_count": 13,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:23:34.121Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Cortica - Neurodevelopmental",
+    "ats": "greenhouse",
+    "token": "allcareers",
+    "job_count": 133,
+    "india_job_count": 0,
+    "remote_job_count": 10,
+    "verified_at": "2026-10-28T12:23:41.850Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Allen Control Systems",
+    "ats": "greenhouse",
+    "token": "allencontrolsystems",
+    "job_count": 68,
+    "india_job_count": 0,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:23:43.287Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Allen Integrated Solutions",
+    "ats": "greenhouse",
+    "token": "allenintegratedsolutions",
+    "job_count": 105,
+    "india_job_count": 0,
+    "remote_job_count": 5,
+    "verified_at": "2026-10-28T12:23:45.600Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Alliance Defending Freedom",
+    "ats": "greenhouse",
+    "token": "alliancedefendingfreedom",
+    "job_count": 39,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:23:48.158Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Alliance US",
+    "ats": "greenhouse",
+    "token": "allianceus",
+    "job_count": 1,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:23:48.905Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Aspire Living & Learning",
+    "ats": "greenhouse",
+    "token": "allinc",
+    "job_count": 33,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:23:50.983Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Alltrna",
+    "ats": "greenhouse",
+    "token": "alltrna",
+    "job_count": 2,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:23:53.972Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "AWL",
+    "ats": "greenhouse",
+    "token": "allwebleads",
+    "job_count": 5,
+    "india_job_count": 0,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:23:55.974Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Allworth Financial",
+    "ats": "greenhouse",
+    "token": "allworthfinancial",
+    "job_count": 22,
+    "india_job_count": 0,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:23:57.235Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Alma",
+    "ats": "greenhouse",
+    "token": "alma31",
+    "job_count": 22,
+    "india_job_count": 0,
+    "remote_job_count": 3,
+    "verified_at": "2026-10-28T12:23:59.329Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "ALOHA Collection Inc.",
+    "ats": "greenhouse",
+    "token": "alohacollection",
+    "job_count": 5,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:24:01.015Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "ALO",
+    "ats": "greenhouse",
+    "token": "aloyoga",
+    "job_count": 790,
+    "india_job_count": 0,
+    "remote_job_count": 9,
+    "verified_at": "2026-10-28T12:24:03.556Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Alpha-9 Oncology",
+    "ats": "greenhouse",
+    "token": "alpha9oncology",
+    "job_count": 2,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:24:04.848Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Alpha Alternatives",
+    "ats": "greenhouse",
+    "token": "alphaalternatives",
+    "job_count": 2,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:24:05.880Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Alpha Financial Markets Consulting",
+    "ats": "greenhouse",
+    "token": "alphafmcroles",
+    "job_count": 57,
+    "india_job_count": 0,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:24:08.854Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "AlphaGrep Securities",
+    "ats": "greenhouse",
+    "token": "alphagrepsecurities",
+    "job_count": 13,
+    "india_job_count": 4,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:24:09.238Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Alphalion",
+    "ats": "greenhouse",
+    "token": "alphalion",
+    "job_count": 3,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:24:11.169Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Alpha Public Schools",
+    "ats": "greenhouse",
+    "token": "alphapublicschools",
+    "job_count": 9,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:24:12.217Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "AlphaSense",
+    "ats": "greenhouse",
+    "token": "alphasense",
+    "job_count": 206,
+    "india_job_count": 33,
+    "remote_job_count": 99,
+    "verified_at": "2026-10-28T12:24:14.405Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "AlphaSense Helsinki",
+    "ats": "greenhouse",
+    "token": "alphasensehelsinki",
+    "job_count": 1,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:24:14.775Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "AlphaSense India",
+    "ats": "greenhouse",
+    "token": "alphasenseindia",
+    "job_count": 31,
+    "india_job_count": 31,
+    "remote_job_count": 10,
+    "verified_at": "2026-10-28T12:24:15.904Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "AlphaSights Campus Recruiting",
+    "ats": "greenhouse",
+    "token": "alphasightsresumedrop",
+    "job_count": 23,
+    "india_job_count": 0,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:24:16.845Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Alphataraxia",
+    "ats": "greenhouse",
+    "token": "alphataraxia",
+    "job_count": 1,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:24:17.721Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Alpine Eagle GmbH",
+    "ats": "greenhouse",
+    "token": "alpineeagle",
+    "job_count": 17,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:24:18.999Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Altamira for freelancers",
+    "ats": "greenhouse",
+    "token": "altamirafreelance",
+    "job_count": 4,
+    "india_job_count": 0,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:24:22.812Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Altamira.ai",
+    "ats": "greenhouse",
+    "token": "altamiratechnologies",
+    "job_count": 3,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:24:23.781Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Altana",
+    "ats": "greenhouse",
+    "token": "altanaai",
+    "job_count": 36,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:24:25.100Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "ALTEN Technology USA",
+    "ats": "greenhouse",
+    "token": "altentechnologyusa",
+    "job_count": 229,
+    "india_job_count": 0,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:24:26.268Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "AltiSales",
+    "ats": "greenhouse",
+    "token": "altisales",
+    "job_count": 4,
+    "india_job_count": 0,
+    "remote_job_count": 4,
+    "verified_at": "2026-10-28T12:24:30.841Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Altos Labs",
+    "ats": "greenhouse",
+    "token": "altoslabs",
+    "job_count": 16,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:24:34.868Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Altruist",
+    "ats": "greenhouse",
+    "token": "altruist",
+    "job_count": 83,
+    "india_job_count": 0,
+    "remote_job_count": 8,
+    "verified_at": "2026-10-28T12:24:39.461Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "ALU",
+    "ats": "greenhouse",
+    "token": "alu",
+    "job_count": 25,
+    "india_job_count": 0,
+    "remote_job_count": 7,
+    "verified_at": "2026-10-28T12:24:41.952Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Internal ALU",
+    "ats": "greenhouse",
+    "token": "aluinternalopenings",
+    "job_count": 2,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:24:42.983Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Alumis",
+    "ats": "greenhouse",
+    "token": "alumis",
+    "job_count": 5,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:24:43.949Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Alumni Ventures",
+    "ats": "greenhouse",
+    "token": "alumniventures",
+    "job_count": 12,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:24:45.022Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Alvys",
+    "ats": "greenhouse",
+    "token": "alvys",
+    "job_count": 7,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:24:45.980Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "ALX Africa",
+    "ats": "greenhouse",
+    "token": "alxafrica",
+    "job_count": 12,
+    "india_job_count": 0,
+    "remote_job_count": 6,
+    "verified_at": "2026-10-28T12:24:47.978Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Amae Health",
+    "ats": "greenhouse",
+    "token": "amaehealth",
+    "job_count": 39,
+    "india_job_count": 0,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:24:49.032Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "AMAROK",
+    "ats": "greenhouse",
+    "token": "amarok",
+    "job_count": 19,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:24:50.077Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Amber Charter Schools",
+    "ats": "greenhouse",
+    "token": "ambercharterschools",
+    "job_count": 9,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:24:52.220Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Ambiq Micro, Inc.",
+    "ats": "greenhouse",
+    "token": "ambiqmicroinc",
+    "job_count": 46,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:24:57.653Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Ameelio",
+    "ats": "greenhouse",
+    "token": "ameelio",
+    "job_count": 2,
+    "india_job_count": 0,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:25:02.091Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "AMEND Consulting",
+    "ats": "greenhouse",
+    "token": "amendconsulting",
+    "job_count": 13,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:25:03.164Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "American Flood Coalition",
+    "ats": "greenhouse",
+    "token": "americanfloodcoalition",
+    "job_count": 1,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:25:07.135Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "American Institutes for Research",
+    "ats": "greenhouse",
+    "token": "americaninstitutesforresearch",
+    "job_count": 16,
+    "india_job_count": 0,
+    "remote_job_count": 16,
+    "verified_at": "2026-10-28T12:25:08.489Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "America's Promise Alliance",
+    "ats": "greenhouse",
+    "token": "americaspromisealliance",
+    "job_count": 2,
+    "india_job_count": 0,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:25:11.400Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Amity",
+    "ats": "greenhouse",
+    "token": "amity",
+    "job_count": 6,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:25:15.348Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "American Museum of Natural History",
+    "ats": "greenhouse",
+    "token": "amnh",
+    "job_count": 3,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:25:16.208Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Amoria Group",
+    "ats": "greenhouse",
+    "token": "amoriabond",
+    "job_count": 43,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:25:17.398Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "FIS® Amount™",
+    "ats": "greenhouse",
+    "token": "amount",
+    "job_count": 3,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:25:18.239Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Amperesand",
+    "ats": "greenhouse",
+    "token": "amperesand",
+    "job_count": 55,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:25:20.264Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Amperity",
+    "ats": "greenhouse",
+    "token": "amperity",
+    "job_count": 13,
+    "india_job_count": 0,
+    "remote_job_count": 4,
+    "verified_at": "2026-10-28T12:25:20.691Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Amperon",
+    "ats": "greenhouse",
+    "token": "amperon",
+    "job_count": 2,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:25:21.630Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Amplemarket",
+    "ats": "greenhouse",
+    "token": "amplemarket",
+    "job_count": 17,
+    "india_job_count": 0,
+    "remote_job_count": 16,
+    "verified_at": "2026-10-28T12:25:27.090Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "AMP: AI-Powered Sortation for Waste and Recycling",
+    "ats": "greenhouse",
+    "token": "ampsortation",
+    "job_count": 7,
+    "india_job_count": 0,
+    "remote_job_count": 3,
+    "verified_at": "2026-10-28T12:25:28.736Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Amtech Software",
+    "ats": "greenhouse",
+    "token": "amtechsoftware",
+    "job_count": 17,
+    "india_job_count": 14,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:25:30.705Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Amwell",
+    "ats": "greenhouse",
+    "token": "amwell",
+    "job_count": 8,
+    "india_job_count": 0,
+    "remote_job_count": 5,
+    "verified_at": "2026-10-28T12:25:33.927Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Amylyx Pharmaceuticals",
+    "ats": "greenhouse",
+    "token": "amylyx",
+    "job_count": 42,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:25:34.932Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Amyris, Inc.",
+    "ats": "greenhouse",
+    "token": "amyrisinc",
+    "job_count": 12,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:25:35.980Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Analyst1",
+    "ats": "greenhouse",
+    "token": "analyst1",
+    "job_count": 2,
+    "india_job_count": 0,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:25:37.707Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Analytic Services Inc",
+    "ats": "greenhouse",
+    "token": "analyticservicesinc",
+    "job_count": 82,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:25:38.906Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Anaplan",
+    "ats": "greenhouse",
+    "token": "anaplan",
+    "job_count": 153,
+    "india_job_count": 59,
+    "remote_job_count": 6,
+    "verified_at": "2026-10-28T12:25:40.344Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Anders",
+    "ats": "greenhouse",
+    "token": "anderscpasadvisors",
+    "job_count": 11,
+    "india_job_count": 0,
+    "remote_job_count": 5,
+    "verified_at": "2026-10-28T12:25:46.822Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Andesite",
+    "ats": "greenhouse",
+    "token": "andesite",
+    "job_count": 4,
+    "india_job_count": 0,
+    "remote_job_count": 3,
+    "verified_at": "2026-10-28T12:25:47.829Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Andgo Systems",
+    "ats": "greenhouse",
+    "token": "andgosystems",
+    "job_count": 3,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:25:48.831Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Anduril Industries",
+    "ats": "greenhouse",
+    "token": "andurilindustries",
+    "job_count": 2526,
+    "india_job_count": 0,
+    "remote_job_count": 36,
+    "verified_at": "2026-10-28T12:26:04.736Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Anello Photonics",
+    "ats": "greenhouse",
+    "token": "anellophotonics",
+    "job_count": 6,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:26:05.031Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Animal Care Center - Pearisburg",
+    "ats": "greenhouse",
+    "token": "animalcarecenterpearisburg",
+    "job_count": 1,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:26:10.121Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Animal Care Center - Princeton",
+    "ats": "greenhouse",
+    "token": "animalcarecenterprinceton",
+    "job_count": 3,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:26:11.114Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Schwarzman Animal Medical Center",
+    "ats": "greenhouse",
+    "token": "animalmedicalcenter",
+    "job_count": 33,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:26:15.138Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "ANINE BING",
+    "ats": "greenhouse",
+    "token": "aninebing",
+    "job_count": 17,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:26:17.394Z",
+    "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": "Annexon Biosciences",
+    "ats": "greenhouse",
+    "token": "annexonbioscience",
+    "job_count": 5,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:26:20.251Z",
+    "discovery_source": "github_open_dataset"
   }
 ]
