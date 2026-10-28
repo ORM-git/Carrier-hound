@@ -14,7 +14,7 @@ All sources adhere strictly to the project's operational locks:
 - **Provider**: Common Crawl Foundation (501(c)(3) registered non-profit)
 - **Service**: Common Crawl Index Server (CDX API)
 - **Endpoint**: `https://index.commoncrawl.org/` (Index: `CC-MAIN-2026-43`)
-- **License / Terms**: Open Public Data (Creative Commons / Public Domain)
+- **License / Terms**: Common Crawl Terms of Use; only URL strings used
 - **Methodology**: Queries line-delimited CDX records for authorized ATS public domains:
   - `boards.greenhouse.io/*`
   - `job-boards.greenhouse.io/*`

@@ -47,16 +47,20 @@ jobs:
         run: npm ci
 
       - name: Run ATS Board Ingestion (Dry-Run)
+        env:
+          INPUT_LIMIT: ${{ github.event.inputs.limit }}
+          INPUT_ATS: ${{ github.event.inputs.ats }}
+          INPUT_COMPANY: ${{ github.event.inputs.company }}
         run: |
           ARGS=""
-          if [ -n "${{ github.event.inputs.limit }}" ]; then
-            ARGS="$ARGS --limit ${{ github.event.inputs.limit }}"
+          if [[ -n "$INPUT_LIMIT" && "$INPUT_LIMIT" =~ ^[0-9]+$ ]]; then
+            ARGS="$ARGS --limit $INPUT_LIMIT"
           fi
-          if [ -n "${{ github.event.inputs.ats }}" ] && [ "${{ github.event.inputs.ats }}" != "all" ]; then
-            ARGS="$ARGS --ats ${{ github.event.inputs.ats }}"
+          if [[ -n "$INPUT_ATS" && "$INPUT_ATS" =~ ^(greenhouse|lever|ashby)$ ]]; then
+            ARGS="$ARGS --ats $INPUT_ATS"
           fi
-          if [ -n "${{ github.event.inputs.company }}" ]; then
-            ARGS="$ARGS --company '${{ github.event.inputs.company }}'"
+          if [[ -n "$INPUT_COMPANY" && "$INPUT_COMPANY" =~ ^[A-Za-z0-9\ .-]+$ ]]; then
+            ARGS="$ARGS --company \"$INPUT_COMPANY\""
           fi
 
           echo "Starting ATS board ingestion runner in safe dry-run mode..."

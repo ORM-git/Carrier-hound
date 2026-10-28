@@ -1,14 +1,6 @@
 [
   {
-    "company": "103644278",
-    "ats": "greenhouse",
-    "token": "103644278",
-    "job_count": 15,
-    "verified_at": "2026-10-28T11:26:24.719Z",
-    "discovery_source": "github_open_dataset"
-  },
-  {
-    "company": "10alabs",
+    "company": null,
     "ats": "greenhouse",
     "token": "10alabs",
     "job_count": 23,
@@ -16,7 +8,7 @@
     "discovery_source": "github_open_dataset"
   },
   {
-    "company": "10beauty",
+    "company": null,
     "ats": "greenhouse",
     "token": "10beauty",
     "job_count": 7,
@@ -24,7 +16,7 @@
     "discovery_source": "github_open_dataset"
   },
   {
-    "company": "100ms",
+    "company": null,
     "ats": "lever",
     "token": "100ms",
     "job_count": 8,
@@ -32,7 +24,7 @@
     "discovery_source": "common_crawl"
   },
   {
-    "company": "90seconds",
+    "company": null,
     "ats": "lever",
     "token": "90seconds",
     "job_count": 7,
@@ -40,7 +32,7 @@
     "discovery_source": "common_crawl"
   },
   {
-    "company": "Achievers",
+    "company": null,
     "ats": "lever",
     "token": "achievers",
     "job_count": 17,
@@ -48,7 +40,7 @@
     "discovery_source": "common_crawl"
   },
   {
-    "company": "Actionlife",
+    "company": null,
     "ats": "lever",
     "token": "actionlife",
     "job_count": 66,
@@ -56,7 +48,7 @@
     "discovery_source": "common_crawl"
   },
   {
-    "company": "Aeratechnology",
+    "company": null,
     "ats": "lever",
     "token": "aeratechnology",
     "job_count": 18,
@@ -64,7 +56,7 @@
     "discovery_source": "common_crawl"
   },
   {
-    "company": "Aero",
+    "company": null,
     "ats": "lever",
     "token": "aero",
     "job_count": 9,
@@ -72,7 +64,7 @@
     "discovery_source": "common_crawl"
   },
   {
-    "company": "Agiloft",
+    "company": null,
     "ats": "lever",
     "token": "agiloft",
     "job_count": 12,
@@ -80,7 +72,7 @@
     "discovery_source": "common_crawl"
   },
   {
-    "company": "Ahschc",
+    "company": null,
     "ats": "lever",
     "token": "ahschc",
     "job_count": 38,
@@ -88,7 +80,7 @@
     "discovery_source": "common_crawl"
   },
   {
-    "company": "0g",
+    "company": null,
     "ats": "ashby",
     "token": "0g",
     "job_count": 9,
@@ -96,7 +88,7 @@
     "discovery_source": "common_crawl"
   },
   {
-    "company": "0x",
+    "company": null,
     "ats": "ashby",
     "token": "0x",
     "job_count": 5,
@@ -104,7 +96,7 @@
     "discovery_source": "common_crawl"
   },
   {
-    "company": "115ventures",
+    "company": null,
     "ats": "ashby",
     "token": "115ventures",
     "job_count": 2,
@@ -112,15 +104,17 @@
     "discovery_source": "common_crawl"
   },
   {
-    "company": "1password",
+    "company": null,
     "ats": "ashby",
     "token": "1password",
     "job_count": 88,
-    "verified_at": "2026-10-28T11:27:07.180Z",
-    "discovery_source": "common_crawl"
+    "india_job_count": 0,
+    "remote_job_count": 87,
+    "verified_at": "2026-10-28T12:00:55.085Z",
+    "discovery_source": "company_probe"
   },
   {
-    "company": "1x",
+    "company": null,
     "ats": "ashby",
     "token": "1x",
     "job_count": 104,
@@ -128,7 +122,7 @@
     "discovery_source": "common_crawl"
   },
   {
-    "company": "10xteam",
+    "company": null,
     "ats": "ashby",
     "token": "10xteam",
     "job_count": 134,
@@ -136,11 +130,4181 @@
     "discovery_source": "github_open_dataset"
   },
   {
-    "company": "1mind",
+    "company": null,
     "ats": "ashby",
     "token": "1mind",
     "job_count": 7,
     "verified_at": "2026-10-28T11:27:13.150Z",
     "discovery_source": "github_open_dataset"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "openai",
+    "job_count": 805,
+    "india_job_count": 6,
+    "remote_job_count": 545,
+    "verified_at": "2026-10-28T12:00:24.203Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "stripe",
+    "job_count": 716,
+    "india_job_count": 46,
+    "remote_job_count": 109,
+    "verified_at": "2026-10-28T12:00:24.790Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "ramp",
+    "job_count": 172,
+    "india_job_count": 0,
+    "remote_job_count": 153,
+    "verified_at": "2026-10-28T12:00:25.087Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "linear",
+    "job_count": 32,
+    "india_job_count": 0,
+    "remote_job_count": 32,
+    "verified_at": "2026-10-28T12:00:25.314Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "elevenlabs",
+    "job_count": 153,
+    "india_job_count": 9,
+    "remote_job_count": 132,
+    "verified_at": "2026-10-28T12:00:26.778Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "datadog",
+    "job_count": 411,
+    "india_job_count": 10,
+    "remote_job_count": 59,
+    "verified_at": "2026-10-28T12:00:27.304Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "baseten",
+    "job_count": 105,
+    "india_job_count": 0,
+    "remote_job_count": 99,
+    "verified_at": "2026-10-28T12:00:27.750Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "cloudflare",
+    "job_count": 459,
+    "india_job_count": 0,
+    "remote_job_count": 65,
+    "verified_at": "2026-10-28T12:00:28.317Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "perplexity",
+    "job_count": 134,
+    "india_job_count": 0,
+    "remote_job_count": 59,
+    "verified_at": "2026-10-28T12:00:28.506Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "figma",
+    "job_count": 142,
+    "india_job_count": 4,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:00:28.845Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "modal",
+    "job_count": 43,
+    "india_job_count": 0,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:00:29.661Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "airbnb",
+    "job_count": 196,
+    "india_job_count": 10,
+    "remote_job_count": 19,
+    "verified_at": "2026-10-28T12:00:30.700Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "anyscale",
+    "job_count": 22,
+    "india_job_count": 5,
+    "remote_job_count": 8,
+    "verified_at": "2026-10-28T12:00:30.734Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "lever",
+    "token": "palantir",
+    "job_count": 306,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:00:31.193Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "notion",
+    "job_count": 139,
+    "india_job_count": 3,
+    "remote_job_count": 87,
+    "verified_at": "2026-10-28T12:00:31.506Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "reddit",
+    "job_count": 162,
+    "india_job_count": 0,
+    "remote_job_count": 128,
+    "verified_at": "2026-10-28T12:00:31.621Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "discord",
+    "job_count": 46,
+    "india_job_count": 0,
+    "remote_job_count": 11,
+    "verified_at": "2026-10-28T12:00:32.077Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "cursor",
+    "job_count": 123,
+    "india_job_count": 6,
+    "remote_job_count": 52,
+    "verified_at": "2026-10-28T12:00:32.723Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "pinterest",
+    "job_count": 161,
+    "india_job_count": 0,
+    "remote_job_count": 69,
+    "verified_at": "2026-10-28T12:00:33.417Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "vanta",
+    "job_count": 79,
+    "india_job_count": 0,
+    "remote_job_count": 71,
+    "verified_at": "2026-10-28T12:00:33.786Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "robinhood",
+    "job_count": 159,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:00:34.199Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "watershed",
+    "job_count": 39,
+    "india_job_count": 0,
+    "remote_job_count": 20,
+    "verified_at": "2026-10-28T12:00:34.754Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "brex",
+    "job_count": 261,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:00:35.244Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "lever",
+    "token": "spotify",
+    "job_count": 89,
+    "india_job_count": 1,
+    "remote_job_count": 28,
+    "verified_at": "2026-10-28T12:00:35.293Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "sierra",
+    "job_count": 213,
+    "india_job_count": 0,
+    "remote_job_count": 25,
+    "verified_at": "2026-10-28T12:00:35.919Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "harvey",
+    "job_count": 368,
+    "india_job_count": 10,
+    "remote_job_count": 290,
+    "verified_at": "2026-10-28T12:00:37.208Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "gitlab",
+    "job_count": 237,
+    "india_job_count": 30,
+    "remote_job_count": 214,
+    "verified_at": "2026-10-28T12:00:37.612Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "warp",
+    "job_count": 20,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:00:37.811Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "langchain",
+    "job_count": 101,
+    "india_job_count": 0,
+    "remote_job_count": 37,
+    "verified_at": "2026-10-28T12:00:38.859Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "coinbase",
+    "job_count": 227,
+    "india_job_count": 10,
+    "remote_job_count": 191,
+    "verified_at": "2026-10-28T12:00:39.577Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "supabase",
+    "job_count": 64,
+    "india_job_count": 0,
+    "remote_job_count": 64,
+    "verified_at": "2026-10-28T12:00:39.966Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "elastic",
+    "job_count": 406,
+    "india_job_count": 17,
+    "remote_job_count": 18,
+    "verified_at": "2026-10-28T12:00:40.699Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "posthog",
+    "job_count": 11,
+    "india_job_count": 0,
+    "remote_job_count": 10,
+    "verified_at": "2026-10-28T12:00:40.752Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "mongodb",
+    "job_count": 364,
+    "india_job_count": 82,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:00:41.482Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "pinecone",
+    "job_count": 8,
+    "india_job_count": 0,
+    "remote_job_count": 6,
+    "verified_at": "2026-10-28T12:00:41.787Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "instacart",
+    "job_count": 94,
+    "india_job_count": 0,
+    "remote_job_count": 92,
+    "verified_at": "2026-10-28T12:00:42.304Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "runway",
+    "job_count": 3,
+    "india_job_count": 0,
+    "remote_job_count": 3,
+    "verified_at": "2026-10-28T12:00:42.766Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "lyft",
+    "job_count": 178,
+    "india_job_count": 0,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:00:43.172Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "cohere",
+    "job_count": 118,
+    "india_job_count": 0,
+    "remote_job_count": 107,
+    "verified_at": "2026-10-28T12:00:43.995Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "okta",
+    "job_count": 385,
+    "india_job_count": 94,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:00:44.536Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "midjourney",
+    "job_count": 17,
+    "india_job_count": 0,
+    "remote_job_count": 10,
+    "verified_at": "2026-10-28T12:00:44.838Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "toast",
+    "job_count": 339,
+    "india_job_count": 20,
+    "remote_job_count": 52,
+    "verified_at": "2026-10-28T12:00:45.543Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "replit",
+    "job_count": 32,
+    "india_job_count": 0,
+    "remote_job_count": 32,
+    "verified_at": "2026-10-28T12:00:45.854Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "affirm",
+    "job_count": 240,
+    "india_job_count": 0,
+    "remote_job_count": 232,
+    "verified_at": "2026-10-28T12:00:46.647Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "llamaindex",
+    "job_count": 4,
+    "india_job_count": 0,
+    "remote_job_count": 4,
+    "verified_at": "2026-10-28T12:00:46.927Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "fivetran",
+    "job_count": 160,
+    "india_job_count": 25,
+    "remote_job_count": 37,
+    "verified_at": "2026-10-28T12:00:47.247Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "deepgram",
+    "job_count": 80,
+    "india_job_count": 2,
+    "remote_job_count": 72,
+    "verified_at": "2026-10-28T12:00:48.050Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "Character.ai",
+    "ats": "ashby",
+    "token": "character",
+    "job_count": 13,
+    "india_job_count": 0,
+    "remote_job_count": 10,
+    "verified_at": "2026-10-28T12:00:48.967Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "neon",
+    "job_count": 1,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:00:49.935Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "databricks",
+    "job_count": 894,
+    "india_job_count": 84,
+    "remote_job_count": 84,
+    "verified_at": "2026-10-28T12:00:50.661Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "synthesia",
+    "job_count": 37,
+    "india_job_count": 0,
+    "remote_job_count": 36,
+    "verified_at": "2026-10-28T12:00:51.016Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "temporal",
+    "job_count": 74,
+    "india_job_count": 2,
+    "remote_job_count": 74,
+    "verified_at": "2026-10-28T12:00:52.139Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "sentry",
+    "job_count": 42,
+    "india_job_count": 0,
+    "remote_job_count": 41,
+    "verified_at": "2026-10-28T12:00:52.992Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "twilio",
+    "job_count": 132,
+    "india_job_count": 8,
+    "remote_job_count": 132,
+    "verified_at": "2026-10-28T12:00:53.107Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "asana",
+    "job_count": 113,
+    "india_job_count": 0,
+    "remote_job_count": 6,
+    "verified_at": "2026-10-28T12:00:53.586Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "infisical",
+    "job_count": 12,
+    "india_job_count": 0,
+    "remote_job_count": 10,
+    "verified_at": "2026-10-28T12:00:54.026Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "flexport",
+    "job_count": 186,
+    "india_job_count": 5,
+    "remote_job_count": 3,
+    "verified_at": "2026-10-28T12:00:54.586Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "Gusto, Inc.",
+    "ats": "greenhouse",
+    "token": "gusto",
+    "job_count": 93,
+    "india_job_count": 0,
+    "remote_job_count": 5,
+    "verified_at": "2026-10-28T12:00:55.502Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "doppler",
+    "job_count": 4,
+    "india_job_count": 0,
+    "remote_job_count": 4,
+    "verified_at": "2026-10-28T12:00:55.989Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "Chime Financial, Inc",
+    "ats": "greenhouse",
+    "token": "chime",
+    "job_count": 72,
+    "india_job_count": 0,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:00:56.506Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "samsara",
+    "job_count": 320,
+    "india_job_count": 5,
+    "remote_job_count": 270,
+    "verified_at": "2026-10-28T12:00:57.893Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "clickhouse",
+    "job_count": 207,
+    "india_job_count": 10,
+    "remote_job_count": 151,
+    "verified_at": "2026-10-28T12:00:58.087Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "docker",
+    "job_count": 54,
+    "india_job_count": 0,
+    "remote_job_count": 52,
+    "verified_at": "2026-10-28T12:00:58.451Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "DoorDash USA",
+    "ats": "greenhouse",
+    "token": "doordashusa",
+    "job_count": 442,
+    "india_job_count": 0,
+    "remote_job_count": 36,
+    "verified_at": "2026-10-28T12:00:59.305Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "Fin",
+    "ats": "greenhouse",
+    "token": "intercom",
+    "job_count": 101,
+    "india_job_count": 0,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:00:59.684Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "duolingo",
+    "job_count": 58,
+    "india_job_count": 1,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:01:00.666Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "snowflake",
+    "job_count": 365,
+    "india_job_count": 8,
+    "remote_job_count": 175,
+    "verified_at": "2026-10-28T12:01:00.979Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "zapier",
+    "job_count": 12,
+    "india_job_count": 0,
+    "remote_job_count": 12,
+    "verified_at": "2026-10-28T12:01:01.624Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "braze",
+    "job_count": 339,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:01:02.155Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "Match Group",
+    "ats": "lever",
+    "token": "matchgroup",
+    "job_count": 64,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:01:02.186Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "miro",
+    "job_count": 12,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:01:02.611Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "anthropic",
+    "job_count": 681,
+    "india_job_count": 4,
+    "remote_job_count": 67,
+    "verified_at": "2026-10-28T12:01:03.657Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "clickup",
+    "job_count": 50,
+    "india_job_count": 0,
+    "remote_job_count": 50,
+    "verified_at": "2026-10-28T12:01:04.015Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "Scale AI",
+    "ats": "greenhouse",
+    "token": "scaleai",
+    "job_count": 169,
+    "india_job_count": 1,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:01:04.160Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "lever",
+    "token": "articulate",
+    "job_count": 2,
+    "india_job_count": 0,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:01:04.855Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "vercel",
+    "job_count": 93,
+    "india_job_count": 1,
+    "remote_job_count": 10,
+    "verified_at": "2026-10-28T12:01:05.030Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "plaid",
+    "job_count": 129,
+    "india_job_count": 0,
+    "remote_job_count": 117,
+    "verified_at": "2026-10-28T12:01:05.157Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "planetscale",
+    "job_count": 11,
+    "india_job_count": 0,
+    "remote_job_count": 6,
+    "verified_at": "2026-10-28T12:01:05.970Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "amplitude",
+    "job_count": 40,
+    "india_job_count": 1,
+    "remote_job_count": 25,
+    "verified_at": "2026-10-28T12:01:06.013Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "lever",
+    "token": "ataccama",
+    "job_count": 7,
+    "india_job_count": 0,
+    "remote_job_count": 3,
+    "verified_at": "2026-10-28T12:01:06.639Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "lever",
+    "token": "collabora",
+    "job_count": 2,
+    "india_job_count": 0,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:01:06.938Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "secureframe",
+    "job_count": 7,
+    "india_job_count": 0,
+    "remote_job_count": 7,
+    "verified_at": "2026-10-28T12:01:07.014Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "launchdarkly",
+    "job_count": 52,
+    "india_job_count": 5,
+    "remote_job_count": 32,
+    "verified_at": "2026-10-28T12:01:07.045Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "snyk",
+    "job_count": 35,
+    "india_job_count": 0,
+    "remote_job_count": 27,
+    "verified_at": "2026-10-28T12:01:08.029Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "tailscale",
+    "job_count": 53,
+    "india_job_count": 0,
+    "remote_job_count": 45,
+    "verified_at": "2026-10-28T12:01:08.067Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "bitwarden",
+    "job_count": 34,
+    "india_job_count": 14,
+    "remote_job_count": 16,
+    "verified_at": "2026-10-28T12:01:09.115Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "drata",
+    "job_count": 29,
+    "india_job_count": 0,
+    "remote_job_count": 29,
+    "verified_at": "2026-10-28T12:01:09.237Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "Grafana Labs",
+    "ats": "greenhouse",
+    "token": "grafanalabs",
+    "job_count": 133,
+    "india_job_count": 3,
+    "remote_job_count": 133,
+    "verified_at": "2026-10-28T12:01:10.170Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "hopper",
+    "job_count": 18,
+    "india_job_count": 0,
+    "remote_job_count": 18,
+    "verified_at": "2026-10-28T12:01:10.212Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "Modern Treasury",
+    "ats": "ashby",
+    "token": "moderntreasury",
+    "job_count": 9,
+    "india_job_count": 0,
+    "remote_job_count": 4,
+    "verified_at": "2026-10-28T12:01:11.009Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "Honeycomb.io",
+    "ats": "greenhouse",
+    "token": "honeycomb",
+    "job_count": 25,
+    "india_job_count": 0,
+    "remote_job_count": 25,
+    "verified_at": "2026-10-28T12:01:11.095Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "lever",
+    "token": "contentsquare",
+    "job_count": 18,
+    "india_job_count": 0,
+    "remote_job_count": 6,
+    "verified_at": "2026-10-28T12:01:11.873Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "unit",
+    "job_count": 2,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:01:11.999Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "render",
+    "job_count": 35,
+    "india_job_count": 0,
+    "remote_job_count": 35,
+    "verified_at": "2026-10-28T12:01:13.135Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "starburst",
+    "job_count": 35,
+    "india_job_count": 6,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:01:13.228Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "railway",
+    "job_count": 7,
+    "india_job_count": 0,
+    "remote_job_count": 7,
+    "verified_at": "2026-10-28T12:01:14.019Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "weaviate",
+    "job_count": 2,
+    "india_job_count": 0,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:01:15.024Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "fastly",
+    "job_count": 53,
+    "india_job_count": 1,
+    "remote_job_count": 3,
+    "verified_at": "2026-10-28T12:01:16.003Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "redis",
+    "job_count": 27,
+    "india_job_count": 3,
+    "remote_job_count": 23,
+    "verified_at": "2026-10-28T12:01:16.113Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "lever",
+    "token": "justwatch",
+    "job_count": 13,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:01:16.238Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "Cockroach Labs",
+    "ats": "greenhouse",
+    "token": "cockroachlabs",
+    "job_count": 15,
+    "india_job_count": 2,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:01:16.303Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "benchling",
+    "job_count": 58,
+    "india_job_count": 0,
+    "remote_job_count": 55,
+    "verified_at": "2026-10-28T12:01:18.104Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "airtable",
+    "job_count": 4,
+    "india_job_count": 0,
+    "remote_job_count": 3,
+    "verified_at": "2026-10-28T12:01:18.307Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "substack",
+    "job_count": 16,
+    "india_job_count": 0,
+    "remote_job_count": 16,
+    "verified_at": "2026-10-28T12:01:19.090Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "strava",
+    "job_count": 28,
+    "india_job_count": 0,
+    "remote_job_count": 27,
+    "verified_at": "2026-10-28T12:01:20.100Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "lever",
+    "token": "kinsta",
+    "job_count": 3,
+    "india_job_count": 0,
+    "remote_job_count": 3,
+    "verified_at": "2026-10-28T12:01:20.295Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "dropbox",
+    "job_count": 21,
+    "india_job_count": 0,
+    "remote_job_count": 21,
+    "verified_at": "2026-10-28T12:01:20.598Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "patreon",
+    "job_count": 21,
+    "india_job_count": 0,
+    "remote_job_count": 14,
+    "verified_at": "2026-10-28T12:01:21.107Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "klaviyo",
+    "job_count": 158,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:01:21.530Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "adthena",
+    "job_count": 10,
+    "india_job_count": 0,
+    "remote_job_count": 7,
+    "verified_at": "2026-10-28T12:01:22.095Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "mixpanel",
+    "job_count": 44,
+    "india_job_count": 4,
+    "remote_job_count": 9,
+    "verified_at": "2026-10-28T12:01:22.398Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "lever",
+    "token": "spreedly",
+    "job_count": 5,
+    "india_job_count": 0,
+    "remote_job_count": 4,
+    "verified_at": "2026-10-28T12:01:22.735Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "almabase",
+    "job_count": 2,
+    "india_job_count": 2,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:01:23.105Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "monzo",
+    "job_count": 67,
+    "india_job_count": 0,
+    "remote_job_count": 39,
+    "verified_at": "2026-10-28T12:01:24.428Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "lever",
+    "token": "symplicity",
+    "job_count": 5,
+    "india_job_count": 0,
+    "remote_job_count": 3,
+    "verified_at": "2026-10-28T12:01:24.887Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "applied",
+    "job_count": 328,
+    "india_job_count": 3,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:01:25.626Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "mercury",
+    "job_count": 76,
+    "india_job_count": 0,
+    "remote_job_count": 71,
+    "verified_at": "2026-10-28T12:01:25.672Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "artsy",
+    "job_count": 9,
+    "india_job_count": 0,
+    "remote_job_count": 5,
+    "verified_at": "2026-10-28T12:01:25.925Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "atlan",
+    "job_count": 7,
+    "india_job_count": 5,
+    "remote_job_count": 6,
+    "verified_at": "2026-10-28T12:01:26.975Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "carta",
+    "job_count": 74,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:01:27.436Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "lever",
+    "token": "wealthfront",
+    "job_count": 22,
+    "india_job_count": 0,
+    "remote_job_count": 9,
+    "verified_at": "2026-10-28T12:01:27.638Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "brightwheel",
+    "job_count": 14,
+    "india_job_count": 0,
+    "remote_job_count": 12,
+    "verified_at": "2026-10-28T12:01:27.941Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "lever",
+    "token": "aerostrat",
+    "job_count": 3,
+    "india_job_count": 0,
+    "remote_job_count": 3,
+    "verified_at": "2026-10-28T12:01:27.992Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "General Assembly Remote Jobs",
+    "ats": "greenhouse",
+    "token": "remote",
+    "job_count": 2,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:01:28.447Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "lattice",
+    "job_count": 9,
+    "india_job_count": 0,
+    "remote_job_count": 8,
+    "verified_at": "2026-10-28T12:01:29.396Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "clipboard",
+    "job_count": 39,
+    "india_job_count": 0,
+    "remote_job_count": 39,
+    "verified_at": "2026-10-28T12:01:29.974Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "Culture Amp",
+    "ats": "greenhouse",
+    "token": "cultureamp",
+    "job_count": 33,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:01:30.434Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "close",
+    "job_count": 6,
+    "india_job_count": 0,
+    "remote_job_count": 6,
+    "verified_at": "2026-10-28T12:01:30.986Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "colonist",
+    "job_count": 4,
+    "india_job_count": 0,
+    "remote_job_count": 4,
+    "verified_at": "2026-10-28T12:01:31.984Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "zscaler",
+    "job_count": 354,
+    "india_job_count": 70,
+    "remote_job_count": 139,
+    "verified_at": "2026-10-28T12:01:33.131Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "fonoa",
+    "job_count": 19,
+    "india_job_count": 0,
+    "remote_job_count": 18,
+    "verified_at": "2026-10-28T12:01:33.150Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "chainguard",
+    "job_count": 91,
+    "india_job_count": 4,
+    "remote_job_count": 91,
+    "verified_at": "2026-10-28T12:01:33.506Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "freetrade",
+    "job_count": 3,
+    "india_job_count": 0,
+    "remote_job_count": 3,
+    "verified_at": "2026-10-28T12:01:33.999Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "coursera",
+    "job_count": 27,
+    "india_job_count": 5,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:01:34.730Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "lever",
+    "token": "activecampaign",
+    "job_count": 12,
+    "india_job_count": 0,
+    "remote_job_count": 3,
+    "verified_at": "2026-10-28T12:01:34.914Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "hinge-health",
+    "job_count": 82,
+    "india_job_count": 6,
+    "remote_job_count": 82,
+    "verified_at": "2026-10-28T12:01:35.163Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "udemy",
+    "job_count": 3,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:01:35.530Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "hoxhunt",
+    "job_count": 14,
+    "india_job_count": 0,
+    "remote_job_count": 14,
+    "verified_at": "2026-10-28T12:01:36.028Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "influxdata",
+    "job_count": 5,
+    "india_job_count": 0,
+    "remote_job_count": 5,
+    "verified_at": "2026-10-28T12:01:37.048Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "twitch",
+    "job_count": 62,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:01:37.603Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "kong",
+    "job_count": 105,
+    "india_job_count": 13,
+    "remote_job_count": 66,
+    "verified_at": "2026-10-28T12:01:38.103Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "Riot Games",
+    "ats": "greenhouse",
+    "token": "riotgames",
+    "job_count": 184,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:01:38.199Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "Epic Games",
+    "ats": "greenhouse",
+    "token": "epicgames",
+    "job_count": 144,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:01:39.035Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "litmus",
+    "job_count": 33,
+    "india_job_count": 10,
+    "remote_job_count": 23,
+    "verified_at": "2026-10-28T12:01:39.175Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "mapbox",
+    "job_count": 30,
+    "india_job_count": 2,
+    "remote_job_count": 17,
+    "verified_at": "2026-10-28T12:01:40.088Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "roblox",
+    "job_count": 271,
+    "india_job_count": 9,
+    "remote_job_count": 7,
+    "verified_at": "2026-10-28T12:01:40.344Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "lever",
+    "token": "appen",
+    "job_count": 45,
+    "india_job_count": 1,
+    "remote_job_count": 45,
+    "verified_at": "2026-10-28T12:01:40.770Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "scopely",
+    "job_count": 180,
+    "india_job_count": 12,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:01:41.079Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "mux",
+    "job_count": 1,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:01:41.084Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "motive",
+    "job_count": 10,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:01:41.949Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "nerdwallet",
+    "job_count": 22,
+    "india_job_count": 0,
+    "remote_job_count": 16,
+    "verified_at": "2026-10-28T12:01:42.115Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "deliveroo",
+    "job_count": 205,
+    "india_job_count": 7,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:01:43.623Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "lever",
+    "token": "bounteous",
+    "job_count": 31,
+    "india_job_count": 0,
+    "remote_job_count": 29,
+    "verified_at": "2026-10-28T12:01:43.863Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "faire",
+    "job_count": 67,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:01:44.028Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "nubank",
+    "job_count": 98,
+    "india_job_count": 0,
+    "remote_job_count": 83,
+    "verified_at": "2026-10-28T12:01:44.224Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "stockx",
+    "job_count": 34,
+    "india_job_count": 11,
+    "remote_job_count": 5,
+    "verified_at": "2026-10-28T12:01:44.988Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "seatgeek",
+    "job_count": 39,
+    "india_job_count": 0,
+    "remote_job_count": 16,
+    "verified_at": "2026-10-28T12:01:45.991Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "persona",
+    "job_count": 13,
+    "india_job_count": 0,
+    "remote_job_count": 12,
+    "verified_at": "2026-10-28T12:01:46.124Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "lever",
+    "token": "britecore",
+    "job_count": 8,
+    "india_job_count": 0,
+    "remote_job_count": 8,
+    "verified_at": "2026-10-28T12:01:47.011Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "sofi",
+    "job_count": 62,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:01:47.088Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "philo",
+    "job_count": 3,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:01:47.116Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "lever",
+    "token": "findem",
+    "job_count": 6,
+    "india_job_count": 3,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:01:47.423Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "betterment",
+    "job_count": 26,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:01:47.997Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "plane",
+    "job_count": 33,
+    "india_job_count": 10,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:01:48.135Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "lever",
+    "token": "logrocket",
+    "job_count": 8,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:01:48.930Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "pleo",
+    "job_count": 36,
+    "india_job_count": 0,
+    "remote_job_count": 28,
+    "verified_at": "2026-10-28T12:01:49.460Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "poki",
+    "job_count": 4,
+    "india_job_count": 0,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:01:50.198Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "lever",
+    "token": "mindful",
+    "job_count": 11,
+    "india_job_count": 0,
+    "remote_job_count": 11,
+    "verified_at": "2026-10-28T12:01:50.768Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "Wise Worksite Field Sales",
+    "ats": "greenhouse",
+    "token": "wise",
+    "job_count": 21,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:01:51.151Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "primary",
+    "job_count": 4,
+    "india_job_count": 0,
+    "remote_job_count": 4,
+    "verified_at": "2026-10-28T12:01:51.159Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "alloy",
+    "job_count": 29,
+    "india_job_count": 0,
+    "remote_job_count": 6,
+    "verified_at": "2026-10-28T12:01:52.228Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "prokeep",
+    "job_count": 2,
+    "india_job_count": 0,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:01:52.230Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "melio",
+    "job_count": 21,
+    "india_job_count": 0,
+    "remote_job_count": 3,
+    "verified_at": "2026-10-28T12:01:53.105Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "qonto",
+    "job_count": 43,
+    "india_job_count": 0,
+    "remote_job_count": 41,
+    "verified_at": "2026-10-28T12:01:53.169Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "netlify",
+    "job_count": 4,
+    "india_job_count": 0,
+    "remote_job_count": 4,
+    "verified_at": "2026-10-28T12:01:54.026Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "reaktor",
+    "job_count": 14,
+    "india_job_count": 0,
+    "remote_job_count": 9,
+    "verified_at": "2026-10-28T12:01:54.162Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "lever",
+    "token": "olo",
+    "job_count": 12,
+    "india_job_count": 0,
+    "remote_job_count": 12,
+    "verified_at": "2026-10-28T12:01:54.292Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "lever",
+    "token": "renofi",
+    "job_count": 3,
+    "india_job_count": 0,
+    "remote_job_count": 3,
+    "verified_at": "2026-10-28T12:01:54.567Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "neo4j",
+    "job_count": 60,
+    "india_job_count": 5,
+    "remote_job_count": 20,
+    "verified_at": "2026-10-28T12:01:55.112Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "searchapi",
+    "job_count": 12,
+    "india_job_count": 0,
+    "remote_job_count": 12,
+    "verified_at": "2026-10-28T12:01:55.423Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "lever",
+    "token": "teamsnap",
+    "job_count": 8,
+    "india_job_count": 0,
+    "remote_job_count": 8,
+    "verified_at": "2026-10-28T12:01:55.696Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "New Relic",
+    "ats": "greenhouse",
+    "token": "newrelic",
+    "job_count": 49,
+    "india_job_count": 4,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:01:56.100Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "sensor-tower",
+    "job_count": 67,
+    "india_job_count": 1,
+    "remote_job_count": 64,
+    "verified_at": "2026-10-28T12:01:56.259Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "Sumo Logic",
+    "ats": "greenhouse",
+    "token": "sumologic",
+    "job_count": 11,
+    "india_job_count": 7,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:01:57.093Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "signal-ai",
+    "job_count": 3,
+    "india_job_count": 0,
+    "remote_job_count": 3,
+    "verified_at": "2026-10-28T12:01:57.183Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "netskope",
+    "job_count": 130,
+    "india_job_count": 20,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:01:58.219Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "signoz",
+    "job_count": 14,
+    "india_job_count": 13,
+    "remote_job_count": 8,
+    "verified_at": "2026-10-28T12:01:58.239Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "workato",
+    "job_count": 54,
+    "india_job_count": 2,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:01:59.135Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "svix",
+    "job_count": 2,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:01:59.196Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "Orca Security",
+    "ats": "greenhouse",
+    "token": "orcasecurity",
+    "job_count": 9,
+    "india_job_count": 1,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:02:00.080Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "tooploox",
+    "job_count": 2,
+    "india_job_count": 0,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:02:00.312Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "axonius",
+    "job_count": 22,
+    "india_job_count": 0,
+    "remote_job_count": 13,
+    "verified_at": "2026-10-28T12:02:01.102Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "top-hat",
+    "job_count": 6,
+    "india_job_count": 0,
+    "remote_job_count": 5,
+    "verified_at": "2026-10-28T12:02:01.199Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "Abnormal",
+    "ats": "greenhouse",
+    "token": "abnormalsecurity",
+    "job_count": 89,
+    "india_job_count": 12,
+    "remote_job_count": 75,
+    "verified_at": "2026-10-28T12:02:02.164Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "uberall",
+    "job_count": 10,
+    "india_job_count": 0,
+    "remote_job_count": 10,
+    "verified_at": "2026-10-28T12:02:02.221Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "wealthsimple",
+    "job_count": 41,
+    "india_job_count": 0,
+    "remote_job_count": 38,
+    "verified_at": "2026-10-28T12:02:03.317Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "Huntress Labs",
+    "ats": "greenhouse",
+    "token": "huntress",
+    "job_count": 32,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:02:03.588Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "expel",
+    "job_count": 8,
+    "india_job_count": 0,
+    "remote_job_count": 6,
+    "verified_at": "2026-10-28T12:02:04.163Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "airbyte",
+    "job_count": 13,
+    "india_job_count": 0,
+    "remote_job_count": 13,
+    "verified_at": "2026-10-28T12:02:04.269Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "airgarage",
+    "job_count": 16,
+    "india_job_count": 0,
+    "remote_job_count": 6,
+    "verified_at": "2026-10-28T12:02:05.316Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "andela",
+    "job_count": 15,
+    "india_job_count": 0,
+    "remote_job_count": 15,
+    "verified_at": "2026-10-28T12:02:06.339Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "Oscar Health",
+    "ats": "greenhouse",
+    "token": "oscar",
+    "job_count": 232,
+    "india_job_count": 0,
+    "remote_job_count": 61,
+    "verified_at": "2026-10-28T12:02:06.676Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "Cato Networks",
+    "ats": "greenhouse",
+    "token": "catonetworks",
+    "job_count": 106,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:02:07.075Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "astronomer",
+    "job_count": 19,
+    "india_job_count": 1,
+    "remote_job_count": 19,
+    "verified_at": "2026-10-28T12:02:07.286Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "Maven Clinic",
+    "ats": "greenhouse",
+    "token": "mavenclinic",
+    "job_count": 30,
+    "india_job_count": 0,
+    "remote_job_count": 29,
+    "verified_at": "2026-10-28T12:02:08.011Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "betterup",
+    "job_count": 8,
+    "india_job_count": 0,
+    "remote_job_count": 8,
+    "verified_at": "2026-10-28T12:02:08.280Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "Ginkgo Bioworks Inc.",
+    "ats": "greenhouse",
+    "token": "ginkgobioworks",
+    "job_count": 19,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:02:09.038Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "calibre",
+    "job_count": 2,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:02:09.312Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "Komodo Health",
+    "ats": "greenhouse",
+    "token": "komodohealth",
+    "job_count": 25,
+    "india_job_count": 4,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:02:10.028Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "capchase",
+    "job_count": 7,
+    "india_job_count": 0,
+    "remote_job_count": 7,
+    "verified_at": "2026-10-28T12:02:10.294Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "Calm.com",
+    "ats": "greenhouse",
+    "token": "calm",
+    "job_count": 1,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:02:11.020Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "checkly",
+    "job_count": 2,
+    "india_job_count": 0,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:02:11.291Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "medium",
+    "job_count": 2,
+    "india_job_count": 0,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:02:12.014Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "caremessage",
+    "job_count": 5,
+    "india_job_count": 0,
+    "remote_job_count": 5,
+    "verified_at": "2026-10-28T12:02:12.298Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "masterclass",
+    "job_count": 6,
+    "india_job_count": 0,
+    "remote_job_count": 5,
+    "verified_at": "2026-10-28T12:02:13.043Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "dave",
+    "job_count": 5,
+    "india_job_count": 0,
+    "remote_job_count": 5,
+    "verified_at": "2026-10-28T12:02:13.322Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "able",
+    "job_count": 8,
+    "india_job_count": 0,
+    "remote_job_count": 8,
+    "verified_at": "2026-10-28T12:02:14.102Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "envoy",
+    "job_count": 22,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:02:14.329Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "acumen",
+    "job_count": 4,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:02:15.055Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "gitbook",
+    "job_count": 3,
+    "india_job_count": 0,
+    "remote_job_count": 3,
+    "verified_at": "2026-10-28T12:02:15.314Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "headway",
+    "job_count": 90,
+    "india_job_count": 0,
+    "remote_job_count": 83,
+    "verified_at": "2026-10-28T12:02:16.476Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "instructure",
+    "job_count": 55,
+    "india_job_count": 0,
+    "remote_job_count": 54,
+    "verified_at": "2026-10-28T12:02:17.443Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "lever",
+    "token": "cred",
+    "job_count": 10,
+    "india_job_count": 10,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:02:18.380Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "joor",
+    "job_count": 2,
+    "india_job_count": 0,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:02:18.385Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "adyen",
+    "job_count": 242,
+    "india_job_count": 4,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:02:19.315Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "kestra",
+    "job_count": 5,
+    "india_job_count": 1,
+    "remote_job_count": 5,
+    "verified_at": "2026-10-28T12:02:19.403Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "algolia",
+    "job_count": 25,
+    "india_job_count": 0,
+    "remote_job_count": 5,
+    "verified_at": "2026-10-28T12:02:20.124Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "kindred",
+    "job_count": 4,
+    "india_job_count": 0,
+    "remote_job_count": 3,
+    "verified_at": "2026-10-28T12:02:20.387Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "alphasights",
+    "job_count": 63,
+    "india_job_count": 0,
+    "remote_job_count": 3,
+    "verified_at": "2026-10-28T12:02:21.169Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "lightspeed",
+    "job_count": 5,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:02:21.396Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "lifen",
+    "job_count": 6,
+    "india_job_count": 0,
+    "remote_job_count": 6,
+    "verified_at": "2026-10-28T12:02:22.380Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "autoscout24",
+    "job_count": 35,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:02:23.163Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "luxor",
+    "job_count": 1,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:02:23.390Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "lever",
+    "token": "meesho",
+    "job_count": 53,
+    "india_job_count": 52,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:02:23.466Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "meridianlink",
+    "job_count": 21,
+    "india_job_count": 0,
+    "remote_job_count": 21,
+    "verified_at": "2026-10-28T12:02:24.419Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "nuna",
+    "job_count": 4,
+    "india_job_count": 0,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:02:25.491Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "axios",
+    "job_count": 35,
+    "india_job_count": 0,
+    "remote_job_count": 23,
+    "verified_at": "2026-10-28T12:02:25.791Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "b12",
+    "job_count": 4,
+    "india_job_count": 1,
+    "remote_job_count": 4,
+    "verified_at": "2026-10-28T12:02:26.162Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "openrouter",
+    "job_count": 28,
+    "india_job_count": 0,
+    "remote_job_count": 27,
+    "verified_at": "2026-10-28T12:02:26.588Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "payscale",
+    "job_count": 10,
+    "india_job_count": 0,
+    "remote_job_count": 10,
+    "verified_at": "2026-10-28T12:02:27.495Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "percona",
+    "job_count": 16,
+    "india_job_count": 2,
+    "remote_job_count": 15,
+    "verified_at": "2026-10-28T12:02:28.614Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "bitpanda",
+    "job_count": 33,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:02:28.646Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "prelude",
+    "job_count": 12,
+    "india_job_count": 0,
+    "remote_job_count": 12,
+    "verified_at": "2026-10-28T12:02:29.451Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "bugcrowd",
+    "job_count": 10,
+    "india_job_count": 3,
+    "remote_job_count": 9,
+    "verified_at": "2026-10-28T12:02:30.209Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "lever",
+    "token": "anomali",
+    "job_count": 9,
+    "india_job_count": 0,
+    "remote_job_count": 9,
+    "verified_at": "2026-10-28T12:02:30.334Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "primer",
+    "job_count": 24,
+    "india_job_count": 0,
+    "remote_job_count": 9,
+    "verified_at": "2026-10-28T12:02:30.508Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "buildkite",
+    "job_count": 8,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:02:31.215Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "procurify",
+    "job_count": 10,
+    "india_job_count": 0,
+    "remote_job_count": 10,
+    "verified_at": "2026-10-28T12:02:31.559Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "cabify",
+    "job_count": 64,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:02:32.268Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "quora",
+    "job_count": 9,
+    "india_job_count": 0,
+    "remote_job_count": 9,
+    "verified_at": "2026-10-28T12:02:32.479Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "lever",
+    "token": "superside",
+    "job_count": 13,
+    "india_job_count": 0,
+    "remote_job_count": 12,
+    "verified_at": "2026-10-28T12:02:32.482Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "calendly",
+    "job_count": 8,
+    "india_job_count": 0,
+    "remote_job_count": 6,
+    "verified_at": "2026-10-28T12:02:33.241Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "recharge",
+    "job_count": 4,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:02:33.493Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "resend",
+    "job_count": 14,
+    "india_job_count": 0,
+    "remote_job_count": 14,
+    "verified_at": "2026-10-28T12:02:34.494Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "lever",
+    "token": "blablacar",
+    "job_count": 8,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:02:34.723Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "checkr",
+    "job_count": 47,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:02:35.306Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "revenuecat",
+    "job_count": 19,
+    "india_job_count": 0,
+    "remote_job_count": 19,
+    "verified_at": "2026-10-28T12:02:35.510Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "circleci",
+    "job_count": 14,
+    "india_job_count": 0,
+    "remote_job_count": 8,
+    "verified_at": "2026-10-28T12:02:36.271Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "spruce",
+    "job_count": 4,
+    "india_job_count": 0,
+    "remote_job_count": 4,
+    "verified_at": "2026-10-28T12:02:36.511Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "lever",
+    "token": "metabase",
+    "job_count": 19,
+    "india_job_count": 0,
+    "remote_job_count": 19,
+    "verified_at": "2026-10-28T12:02:36.557Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "contentful",
+    "job_count": 29,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:02:37.302Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "testgorilla",
+    "job_count": 1,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:02:37.544Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "truelogic",
+    "job_count": 126,
+    "india_job_count": 0,
+    "remote_job_count": 126,
+    "verified_at": "2026-10-28T12:02:38.636Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "lever",
+    "token": "sonatype",
+    "job_count": 14,
+    "india_job_count": 2,
+    "remote_job_count": 11,
+    "verified_at": "2026-10-28T12:02:39.121Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "webfx",
+    "job_count": 36,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:02:39.838Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "DigitalService GmbH des Bundes",
+    "ats": "greenhouse",
+    "token": "digitalservice",
+    "job_count": 7,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:02:40.393Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "yazio",
+    "job_count": 6,
+    "india_job_count": 0,
+    "remote_job_count": 6,
+    "verified_at": "2026-10-28T12:02:40.598Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "lever",
+    "token": "zensurance",
+    "job_count": 8,
+    "india_job_count": 0,
+    "remote_job_count": 7,
+    "verified_at": "2026-10-28T12:02:40.686Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "workos",
+    "job_count": 28,
+    "india_job_count": 0,
+    "remote_job_count": 28,
+    "verified_at": "2026-10-28T12:02:41.673Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "doctolib",
+    "job_count": 147,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:02:42.162Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "poolside",
+    "job_count": 2,
+    "india_job_count": 0,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:02:42.646Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "emarketer",
+    "job_count": 11,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:02:42.937Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "suno",
+    "job_count": 71,
+    "india_job_count": 0,
+    "remote_job_count": 5,
+    "verified_at": "2026-10-28T12:02:43.669Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "extend",
+    "job_count": 19,
+    "india_job_count": 0,
+    "remote_job_count": 16,
+    "verified_at": "2026-10-28T12:02:44.491Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "ideogram",
+    "job_count": 3,
+    "india_job_count": 0,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:02:44.591Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "lever",
+    "token": "sysdig",
+    "job_count": 31,
+    "india_job_count": 0,
+    "remote_job_count": 25,
+    "verified_at": "2026-10-28T12:02:45.048Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "Form3 - External",
+    "ats": "greenhouse",
+    "token": "form3",
+    "job_count": 6,
+    "india_job_count": 0,
+    "remote_job_count": 6,
+    "verified_at": "2026-10-28T12:02:45.501Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "tavus",
+    "job_count": 19,
+    "india_job_count": 0,
+    "remote_job_count": 9,
+    "verified_at": "2026-10-28T12:02:45.601Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "Founders Green Animal Hospital",
+    "ats": "greenhouse",
+    "token": "founders",
+    "job_count": 2,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:02:46.534Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "pika",
+    "job_count": 16,
+    "india_job_count": 0,
+    "remote_job_count": 11,
+    "verified_at": "2026-10-28T12:02:46.641Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "etched",
+    "job_count": 117,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:02:47.774Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "gemini",
+    "job_count": 30,
+    "india_job_count": 0,
+    "remote_job_count": 13,
+    "verified_at": "2026-10-28T12:02:48.113Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "Luma AI",
+    "ats": "ashby",
+    "token": "lumaai",
+    "job_count": 30,
+    "india_job_count": 0,
+    "remote_job_count": 30,
+    "verified_at": "2026-10-28T12:02:48.666Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "cognition",
+    "job_count": 107,
+    "india_job_count": 3,
+    "remote_job_count": 21,
+    "verified_at": "2026-10-28T12:02:49.773Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "gocardless",
+    "job_count": 23,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:02:50.579Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "depot",
+    "job_count": 1,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:02:50.678Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "cerebras",
+    "job_count": 119,
+    "india_job_count": 6,
+    "remote_job_count": 76,
+    "verified_at": "2026-10-28T12:02:51.771Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "navi",
+    "job_count": 2,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:02:52.701Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "hellofresh",
+    "job_count": 379,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:02:52.923Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "hologram",
+    "job_count": 4,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:02:53.585Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "Oyster HR",
+    "ats": "ashby",
+    "token": "oyster",
+    "job_count": 24,
+    "india_job_count": 2,
+    "remote_job_count": 17,
+    "verified_at": "2026-10-28T12:02:53.760Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "homelight",
+    "job_count": 9,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:02:54.612Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "alan",
+    "job_count": 124,
+    "india_job_count": 0,
+    "remote_job_count": 105,
+    "verified_at": "2026-10-28T12:02:54.825Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "housemarque",
+    "job_count": 5,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:02:55.613Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "babbel",
+    "job_count": 10,
+    "india_job_count": 0,
+    "remote_job_count": 10,
+    "verified_at": "2026-10-28T12:02:55.734Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "ideo",
+    "job_count": 12,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:02:56.631Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "supercell",
+    "job_count": 37,
+    "india_job_count": 0,
+    "remote_job_count": 4,
+    "verified_at": "2026-10-28T12:02:56.772Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "scout24",
+    "job_count": 20,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:02:57.656Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "mollie",
+    "job_count": 51,
+    "india_job_count": 0,
+    "remote_job_count": 19,
+    "verified_at": "2026-10-28T12:02:57.803Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "infosum",
+    "job_count": 16,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:02:58.664Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "deepl",
+    "job_count": 9,
+    "india_job_count": 0,
+    "remote_job_count": 5,
+    "verified_at": "2026-10-28T12:02:58.771Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "hex",
+    "job_count": 37,
+    "india_job_count": 0,
+    "remote_job_count": 37,
+    "verified_at": "2026-10-28T12:03:00.260Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "gamma",
+    "job_count": 21,
+    "india_job_count": 0,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:03:00.796Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "cube",
+    "job_count": 16,
+    "india_job_count": 3,
+    "remote_job_count": 13,
+    "verified_at": "2026-10-28T12:03:01.822Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "KUNGFU.AI",
+    "ats": "greenhouse",
+    "token": "kungfuai",
+    "job_count": 2,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:03:02.680Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "hightouch",
+    "job_count": 1,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:03:02.871Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "deepnote",
+    "job_count": 3,
+    "india_job_count": 0,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:03:04.387Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "lob",
+    "job_count": 6,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:03:04.845Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "lightdash",
+    "job_count": 2,
+    "india_job_count": 0,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:03:04.876Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "mattermost",
+    "job_count": 10,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:03:05.707Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "knock",
+    "job_count": 3,
+    "india_job_count": 0,
+    "remote_job_count": 3,
+    "verified_at": "2026-10-28T12:03:05.877Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "upguard",
+    "job_count": 15,
+    "india_job_count": 0,
+    "remote_job_count": 15,
+    "verified_at": "2026-10-28T12:03:06.899Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "mixmax",
+    "job_count": 2,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:03:07.718Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "column",
+    "job_count": 21,
+    "india_job_count": 0,
+    "remote_job_count": 5,
+    "verified_at": "2026-10-28T12:03:07.864Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "mozilla",
+    "job_count": 121,
+    "india_job_count": 0,
+    "remote_job_count": 121,
+    "verified_at": "2026-10-28T12:03:08.867Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "sardine",
+    "job_count": 47,
+    "india_job_count": 1,
+    "remote_job_count": 40,
+    "verified_at": "2026-10-28T12:03:08.922Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "myheritage",
+    "job_count": 5,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:03:09.729Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "clearco",
+    "job_count": 5,
+    "india_job_count": 0,
+    "remote_job_count": 3,
+    "verified_at": "2026-10-28T12:03:09.865Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "trulioo",
+    "job_count": 27,
+    "india_job_count": 0,
+    "remote_job_count": 26,
+    "verified_at": "2026-10-28T12:03:10.946Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "ashby",
+    "token": "socure",
+    "job_count": 80,
+    "india_job_count": 4,
+    "remote_job_count": 65,
+    "verified_at": "2026-10-28T12:03:12.010Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "odeko",
+    "job_count": 22,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:03:13.769Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "pagerduty",
+    "job_count": 48,
+    "india_job_count": 0,
+    "remote_job_count": 12,
+    "verified_at": "2026-10-28T12:03:14.812Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "Upsun",
+    "ats": "greenhouse",
+    "token": "platformsh",
+    "job_count": 7,
+    "india_job_count": 0,
+    "remote_job_count": 7,
+    "verified_at": "2026-10-28T12:03:15.826Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "salesloft",
+    "job_count": 35,
+    "india_job_count": 2,
+    "remote_job_count": 12,
+    "verified_at": "2026-10-28T12:03:18.441Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "seesaw",
+    "job_count": 4,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:03:18.818Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "sertis",
+    "job_count": 9,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:03:19.815Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "Smartly",
+    "ats": "greenhouse",
+    "token": "smartlyio",
+    "job_count": 60,
+    "india_job_count": 1,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:03:21.888Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "splice",
+    "job_count": 6,
+    "india_job_count": 0,
+    "remote_job_count": 6,
+    "verified_at": "2026-10-28T12:03:22.842Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "sumup",
+    "job_count": 343,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:03:24.327Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "textio",
+    "job_count": 2,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:03:26.880Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "thoughtworks",
+    "job_count": 49,
+    "india_job_count": 1,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:03:29.172Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "trivago",
+    "job_count": 14,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:03:29.921Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "unbounce",
+    "job_count": 1,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:03:30.955Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "updater",
+    "job_count": 1,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:03:31.939Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "verve",
+    "job_count": 32,
+    "india_job_count": 2,
+    "remote_job_count": 6,
+    "verified_at": "2026-10-28T12:03:33.017Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "vtex",
+    "job_count": 33,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:03:33.966Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "waymark",
+    "job_count": 17,
+    "india_job_count": 0,
+    "remote_job_count": 6,
+    "verified_at": "2026-10-28T12:03:34.976Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "weploy",
+    "job_count": 16,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:03:35.977Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "wheely",
+    "job_count": 37,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:03:37.003Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "yld",
+    "job_count": 6,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:03:39.180Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "acquia",
+    "job_count": 6,
+    "india_job_count": 0,
+    "remote_job_count": 6,
+    "verified_at": "2026-10-28T12:03:40.085Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "AE Studio",
+    "ats": "greenhouse",
+    "token": "aestudio",
+    "job_count": 6,
+    "india_job_count": 0,
+    "remote_job_count": 6,
+    "verified_at": "2026-10-28T12:03:41.026Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "appinio",
+    "job_count": 10,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:03:42.100Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "brave",
+    "job_count": 10,
+    "india_job_count": 1,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:03:43.058Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "canonical",
+    "job_count": 314,
+    "india_job_count": 0,
+    "remote_job_count": 8,
+    "verified_at": "2026-10-28T12:03:44.390Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "MetaMask",
+    "ats": "greenhouse",
+    "token": "consensys",
+    "job_count": 11,
+    "india_job_count": 0,
+    "remote_job_count": 11,
+    "verified_at": "2026-10-28T12:03:46.092Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "comet",
+    "job_count": 2,
+    "india_job_count": 0,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:03:47.143Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "datacamp",
+    "job_count": 41,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:03:48.237Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "dashlane",
+    "job_count": 12,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:03:49.132Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "doximity",
+    "job_count": 15,
+    "india_job_count": 0,
+    "remote_job_count": 12,
+    "verified_at": "2026-10-28T12:03:50.143Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "ebury",
+    "job_count": 145,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:03:51.280Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "fingerprint",
+    "job_count": 24,
+    "india_job_count": 0,
+    "remote_job_count": 24,
+    "verified_at": "2026-10-28T12:03:54.244Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "flip",
+    "job_count": 10,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:03:55.284Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "fleetio",
+    "job_count": 18,
+    "india_job_count": 0,
+    "remote_job_count": 18,
+    "verified_at": "2026-10-28T12:03:56.197Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "godaddy",
+    "job_count": 29,
+    "india_job_count": 4,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:03:58.263Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "gohiring",
+    "job_count": 4,
+    "india_job_count": 0,
+    "remote_job_count": 4,
+    "verified_at": "2026-10-28T12:03:59.215Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "gremlin",
+    "job_count": 4,
+    "india_job_count": 0,
+    "remote_job_count": 4,
+    "verified_at": "2026-10-28T12:04:00.252Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "hudl",
+    "job_count": 36,
+    "india_job_count": 0,
+    "remote_job_count": 5,
+    "verified_at": "2026-10-28T12:04:01.800Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "karat",
+    "job_count": 13,
+    "india_job_count": 4,
+    "remote_job_count": 13,
+    "verified_at": "2026-10-28T12:04:03.568Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "kentik",
+    "job_count": 4,
+    "india_job_count": 0,
+    "remote_job_count": 4,
+    "verified_at": "2026-10-28T12:04:04.279Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "labelbox",
+    "job_count": 9,
+    "india_job_count": 1,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:04:05.289Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "liveperson",
+    "job_count": 2,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:04:06.300Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "metalab",
+    "job_count": 4,
+    "india_job_count": 0,
+    "remote_job_count": 4,
+    "verified_at": "2026-10-28T12:04:09.362Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "nearform",
+    "job_count": 23,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:04:10.360Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "oddball",
+    "job_count": 11,
+    "india_job_count": 0,
+    "remote_job_count": 8,
+    "verified_at": "2026-10-28T12:04:11.360Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "openzeppelin",
+    "job_count": 7,
+    "india_job_count": 0,
+    "remote_job_count": 7,
+    "verified_at": "2026-10-28T12:04:12.359Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "paypay",
+    "job_count": 84,
+    "india_job_count": 0,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:04:13.650Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "Raft Company Website",
+    "ats": "greenhouse",
+    "token": "raft",
+    "job_count": 30,
+    "india_job_count": 0,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:04:14.829Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "scandit",
+    "job_count": 14,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:04:15.395Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "securityscorecard",
+    "job_count": 10,
+    "india_job_count": 0,
+    "remote_job_count": 8,
+    "verified_at": "2026-10-28T12:04:16.390Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "streamnative",
+    "job_count": 1,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:04:17.452Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "thorn",
+    "job_count": 3,
+    "india_job_count": 0,
+    "remote_job_count": 3,
+    "verified_at": "2026-10-28T12:04:18.395Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "Careers at Tide",
+    "ats": "greenhouse",
+    "token": "tide",
+    "job_count": 103,
+    "india_job_count": 37,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:04:19.509Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "turing",
+    "job_count": 36,
+    "india_job_count": 6,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:04:20.435Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "udacity",
+    "job_count": 24,
+    "india_job_count": 0,
+    "remote_job_count": 21,
+    "verified_at": "2026-10-28T12:04:22.468Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "Valimail Inc.",
+    "ats": "greenhouse",
+    "token": "valimail",
+    "job_count": 4,
+    "india_job_count": 0,
+    "remote_job_count": 3,
+    "verified_at": "2026-10-28T12:04:23.427Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "wizeline",
+    "job_count": 33,
+    "india_job_count": 0,
+    "remote_job_count": 6,
+    "verified_at": "2026-10-28T12:04:25.467Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "cloudbeds",
+    "job_count": 31,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:04:26.931Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "ghost",
+    "job_count": 4,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:04:27.492Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "Develocity",
+    "ats": "greenhouse",
+    "token": "gradle",
+    "job_count": 2,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:04:28.495Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "upwork",
+    "job_count": 7,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:04:29.495Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "Wikimedia Foundation",
+    "ats": "greenhouse",
+    "token": "wikimedia",
+    "job_count": 15,
+    "india_job_count": 0,
+    "remote_job_count": 15,
+    "verified_at": "2026-10-28T12:04:30.469Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "saas.group",
+    "ats": "greenhouse",
+    "token": "saasgroup",
+    "job_count": 12,
+    "india_job_count": 0,
+    "remote_job_count": 10,
+    "verified_at": "2026-10-28T12:04:31.500Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "heygen",
+    "job_count": 19,
+    "india_job_count": 0,
+    "remote_job_count": 3,
+    "verified_at": "2026-10-28T12:04:33.516Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "udio",
+    "job_count": 5,
+    "india_job_count": 0,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:04:34.500Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "descript",
+    "job_count": 9,
+    "india_job_count": 0,
+    "remote_job_count": 9,
+    "verified_at": "2026-10-28T12:04:35.512Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "tenstorrent",
+    "job_count": 123,
+    "india_job_count": 6,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:04:38.193Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "upbound",
+    "job_count": 5,
+    "india_job_count": 0,
+    "remote_job_count": 3,
+    "verified_at": "2026-10-28T12:04:38.740Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "tigera",
+    "job_count": 6,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:04:39.494Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "lightmatter",
+    "job_count": 59,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:04:40.572Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "groww",
+    "job_count": 10,
+    "india_job_count": 10,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:04:41.504Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "slice",
+    "job_count": 23,
+    "india_job_count": 0,
+    "remote_job_count": 4,
+    "verified_at": "2026-10-28T12:04:42.528Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "inmobi",
+    "job_count": 79,
+    "india_job_count": 45,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:04:45.153Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "Porter Works",
+    "ats": "greenhouse",
+    "token": "porter",
+    "job_count": 5,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:04:46.479Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "highradius",
+    "job_count": 69,
+    "india_job_count": 47,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:04:47.487Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "druva",
+    "job_count": 30,
+    "india_job_count": 12,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:04:48.486Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "betterhelp",
+    "job_count": 164,
+    "india_job_count": 0,
+    "remote_job_count": 140,
+    "verified_at": "2026-10-28T12:04:49.581Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "talkspace",
+    "job_count": 24,
+    "india_job_count": 0,
+    "remote_job_count": 23,
+    "verified_at": "2026-10-28T12:04:51.188Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "Carrot",
+    "ats": "greenhouse",
+    "token": "carrotfertility",
+    "job_count": 12,
+    "india_job_count": 0,
+    "remote_job_count": 10,
+    "verified_at": "2026-10-28T12:04:51.495Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "ifit",
+    "job_count": 29,
+    "india_job_count": 0,
+    "remote_job_count": 19,
+    "verified_at": "2026-10-28T12:04:57.571Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "celonis",
+    "job_count": 223,
+    "india_job_count": 32,
+    "remote_job_count": 18,
+    "verified_at": "2026-10-28T12:05:02.006Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "trustpilot",
+    "job_count": 44,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:05:04.355Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "Wolt - English",
+    "ats": "greenhouse",
+    "token": "wolt",
+    "job_count": 193,
+    "india_job_count": 0,
+    "remote_job_count": 6,
+    "verified_at": "2026-10-28T12:05:08.373Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "n26",
+    "job_count": 32,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:05:09.183Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "Customer.io",
+    "ats": "greenhouse",
+    "token": "customerio",
+    "job_count": 25,
+    "india_job_count": 0,
+    "remote_job_count": 25,
+    "verified_at": "2026-10-28T12:05:10.153Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "bigid",
+    "job_count": 8,
+    "india_job_count": 0,
+    "remote_job_count": 2,
+    "verified_at": "2026-10-28T12:05:10.682Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "onetrust",
+    "job_count": 78,
+    "india_job_count": 23,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:05:12.108Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "ArmorCode Inc.",
+    "ats": "greenhouse",
+    "token": "armorcode",
+    "job_count": 5,
+    "india_job_count": 2,
+    "remote_job_count": 3,
+    "verified_at": "2026-10-28T12:05:12.696Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "apiiro",
+    "job_count": 5,
+    "india_job_count": 0,
+    "remote_job_count": 1,
+    "verified_at": "2026-10-28T12:05:13.702Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "alpaca",
+    "job_count": 69,
+    "india_job_count": 2,
+    "remote_job_count": 63,
+    "verified_at": "2026-10-28T12:05:15.875Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "drivewealth",
+    "job_count": 24,
+    "india_job_count": 3,
+    "remote_job_count": 5,
+    "verified_at": "2026-10-28T12:05:16.831Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "datagrail",
+    "job_count": 5,
+    "india_job_count": 0,
+    "remote_job_count": 5,
+    "verified_at": "2026-10-28T12:05:17.756Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "lithic",
+    "job_count": 11,
+    "india_job_count": 0,
+    "remote_job_count": 7,
+    "verified_at": "2026-10-28T12:05:18.767Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": "Endor Labs",
+    "ats": "greenhouse",
+    "token": "endorlabs",
+    "job_count": 32,
+    "india_job_count": 10,
+    "remote_job_count": 6,
+    "verified_at": "2026-10-28T12:05:19.785Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "idnow",
+    "job_count": 11,
+    "india_job_count": 0,
+    "remote_job_count": 0,
+    "verified_at": "2026-10-28T12:05:21.856Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "veriff",
+    "job_count": 11,
+    "india_job_count": 0,
+    "remote_job_count": 7,
+    "verified_at": "2026-10-28T12:05:22.803Z",
+    "discovery_source": "company_probe"
+  },
+  {
+    "company": null,
+    "ats": "greenhouse",
+    "token": "jumio",
+    "job_count": 18,
+    "india_job_count": 7,
+    "remote_job_count": 11,
+    "verified_at": "2026-10-28T12:05:23.869Z",
+    "discovery_source": "company_probe"
   }
 ]

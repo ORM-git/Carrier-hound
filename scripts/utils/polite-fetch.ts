@@ -2,7 +2,7 @@
  * Polite Fetcher with domain rate limiting, timeout, retries, and robots.txt compliance.
  */
 
-const USER_AGENT = 'CareerMonkeBot/1.0 (+https://careermonke.com; ingestion@careermonke.com)';
+const USER_AGENT = 'CareerMonkeBot/1.0';
 const DEFAULT_TIMEOUT_MS = 15000;
 const MAX_RETRIES = 2;
 const MIN_DOMAIN_INTERVAL_MS = 1000; // 1 request per second per domain

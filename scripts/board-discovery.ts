@@ -13,7 +13,7 @@
  *     c) Token probing from public company-name lists: slugify variants and verify.
  * - Strictly forbidden domains: LinkedIn, Indeed, Naukri, Glassdoor, Jobright, Workday.
  * - Rate limit: Strictly 1 req/s per host (MIN_DOMAIN_INTERVAL_MS = 1000).
- * - User-Agent: CareerMonkeBot/1.0 (+https://careermonke.com; ingestion@careermonke.com).
+ * - User-Agent: CareerMonkeBot/1.0.
  * - Retry on 429 with Retry-After backoff.
  * - Verification Rule: A token is verified ONLY IF documented public ATS API returns HTTP 200 AND >= 1 job.
  * - Output: Writes candidates to data/ats-candidates.json (NOT merged into main registry).
@@ -24,7 +24,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { buildAtsApiUrl, isAuthorizedAtsUrl, loadCompanyRegistry } from './board-ingest';
-import { politeFetchJson, isForbiddenDomain, sleep } from './utils/polite-fetch';
+import { politeFetchJson, politeFetchText, isForbiddenDomain, sleep } from './utils/polite-fetch';
 import { slugify, cleanText } from './utils/sanitizer';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -34,14 +34,14 @@ export type AtsType = 'greenhouse' | 'lever' | 'ashby';
 export type DiscoverySource = 'common_crawl' | 'github_open_dataset' | 'company_probe';
 
 export interface DiscoveredTokenCandidate {
-  company: string;
+  company: string | null;
   ats: AtsType;
   token: string;
   discovery_source: DiscoverySource;
 }
 
 export interface AtsCandidate {
-  company: string;
+  company: string | null;
   ats: AtsType;
   token: string;
   job_count: number;
@@ -76,6 +76,7 @@ export function sanitizeToken(raw: string): string {
   if (!raw || typeof raw !== 'string') return '';
   const cleaned = raw.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
   if (cleaned.length < 2 || cleaned.length > 64) return '';
+  if (/^\d+$/.test(cleaned)) return ''; // Numeric-only tokens skipped
   return cleaned;
 }
 
@@ -136,38 +137,50 @@ export function extractTokenFromUrl(urlStr: string): { ats: AtsType; token: stri
 
 /**
  * Verifies a single candidate token against the documented public ATS API.
- * Rate limited to 1 req/s per host, User-Agent CareerMonkeBot.
+ * Rate limited to 1 req/s per host, User-Agent CareerMonkeBot/1.0.
  * Rule: Token verified ONLY IF API returns HTTP 200 AND jobCount >= 1.
+ * Company Name: Extracted from real ATS response if available, else null. Never inferred from token.
  */
 export async function verifyAtsToken(
   ats: AtsType,
   token: string
-): Promise<{ verified: boolean; jobCount: number; status: number; error?: string }> {
+): Promise<{
+  verified: boolean;
+  jobCount: number;
+  status: number;
+  companyName: string | null;
+  error?: string;
+}> {
   const cleanTok = sanitizeToken(token);
   if (!cleanTok) {
-    return { verified: false, jobCount: 0, status: 400, error: 'Malformed token' };
+    return { verified: false, jobCount: 0, status: 400, companyName: null, error: 'Malformed token' };
   }
 
   let url: string;
   try {
     url = buildAtsApiUrl(ats, cleanTok);
   } catch (err: any) {
-    return { verified: false, jobCount: 0, status: 400, error: err.message };
+    return { verified: false, jobCount: 0, status: 400, companyName: null, error: err.message };
   }
 
   if (!isAuthorizedAtsUrl(url, ats)) {
-    return { verified: false, jobCount: 0, status: 403, error: 'Forbidden or unauthorized ATS URL' };
+    return { verified: false, jobCount: 0, status: 403, companyName: null, error: 'Forbidden or unauthorized ATS URL' };
   }
 
   try {
     const data = await politeFetchJson<any>(url, { retries: 0 });
     if (!data) {
-      return { verified: false, jobCount: 0, status: 404, error: 'Empty or not found' };
+      return { verified: false, jobCount: 0, status: 404, companyName: null, error: 'Empty or not found' };
     }
 
     let jobCount = 0;
+    let companyName: string | null = null;
+
     if (ats === 'greenhouse') {
       jobCount = Array.isArray(data.jobs) ? data.jobs.length : 0;
+      if (Array.isArray(data.jobs) && data.jobs.length > 0 && data.jobs[0]?.company_name) {
+        companyName = String(data.jobs[0].company_name).trim() || null;
+      }
     } else if (ats === 'lever') {
       jobCount = Array.isArray(data) ? data.length : 0;
     } else if (ats === 'ashby') {
@@ -179,10 +192,12 @@ export async function verifyAtsToken(
       verified,
       jobCount,
       status: 200,
+      companyName,
       error: verified ? undefined : 'Board returned 0 active jobs',
     };
   } catch (err: any) {
-    return { verified: false, jobCount: 0, status: 500, error: err.message };
+    const status = err.message?.includes('404') ? 404 : 500;
+    return { verified: false, jobCount: 0, status, companyName: null, error: err.message };
   }
 }
 
@@ -198,7 +213,7 @@ export async function discoverFromCommonCrawl(limit = 100): Promise<DiscoveredTo
   let indexId = 'CC-MAIN-2026-43';
   try {
     const collinfoUrl = 'https://index.commoncrawl.org/collinfo.json';
-    const collinfo = await politeFetchJson<any[]>(collinfoUrl);
+    const collinfo = await politeFetchJson<any[]>(collinfoUrl, { skipRobotsCheck: true, timeoutMs: 8000 });
     if (Array.isArray(collinfo) && collinfo.length > 0 && collinfo[0].id) {
       indexId = collinfo[0].id;
     }
@@ -208,6 +223,7 @@ export async function discoverFromCommonCrawl(limit = 100): Promise<DiscoveredTo
 
   const queries = [
     { ats: 'greenhouse' as AtsType, pattern: 'boards.greenhouse.io/*' },
+    { ats: 'greenhouse' as AtsType, pattern: 'job-boards.greenhouse.io/*' },
     { ats: 'lever' as AtsType, pattern: 'jobs.lever.co/*' },
     { ats: 'ashby' as AtsType, pattern: 'jobs.ashbyhq.com/*' },
   ];
@@ -217,35 +233,29 @@ export async function discoverFromCommonCrawl(limit = 100): Promise<DiscoveredTo
   for (const q of queries) {
     try {
       const cdxUrl = `https://index.commoncrawl.org/${indexId}-index?url=${encodeURIComponent(q.pattern)}&output=json&limit=${perQueryLimit}`;
-      const res = await fetch(cdxUrl, {
-        headers: { 'User-Agent': 'CareerMonkeBot/1.0 (+https://careermonke.com; ingestion@careermonke.com)' },
-        signal: AbortSignal.timeout(12000),
-      });
+      const text = await politeFetchText(cdxUrl, { skipRobotsCheck: true, timeoutMs: 12000 });
 
-      if (res.ok) {
-        const text = await res.text();
-        const lines = text.trim().split('\n').filter(Boolean);
-        for (const line of lines) {
-          try {
-            const parsed = JSON.parse(line);
-            if (parsed.url) {
-              const extracted = extractTokenFromUrl(parsed.url);
-              if (extracted) {
-                const key = `${extracted.ats}:${extracted.token}`;
-                if (!seenKeys.has(key)) {
-                  seenKeys.add(key);
-                  candidates.push({
-                    company: inferCompanyName(extracted.token),
-                    ats: extracted.ats,
-                    token: extracted.token,
-                    discovery_source: 'common_crawl',
-                  });
-                }
+      const lines = text.trim().split('\n').filter(Boolean);
+      for (const line of lines) {
+        try {
+          const parsed = JSON.parse(line);
+          if (parsed.url) {
+            const extracted = extractTokenFromUrl(parsed.url);
+            if (extracted) {
+              const key = `${extracted.ats}:${extracted.token}`;
+              if (!seenKeys.has(key)) {
+                seenKeys.add(key);
+                candidates.push({
+                  company: null, // Never infer company name from token
+                  ats: extracted.ats,
+                  token: extracted.token,
+                  discovery_source: 'common_crawl',
+                });
               }
             }
-          } catch {
-            // Ignore corrupted line
           }
+        } catch {
+          // Ignore corrupted line
         }
       }
     } catch (err: any) {
@@ -282,7 +292,7 @@ export async function discoverFromGitHubDatasets(): Promise<DiscoveredTokenCandi
             if (!seenKeys.has(key)) {
               seenKeys.add(key);
               candidates.push({
-                company: inferCompanyName(token),
+                company: null, // Never infer company name from token
                 ats: ds.ats,
                 token,
                 discovery_source: 'github_open_dataset',
@@ -299,28 +309,22 @@ export async function discoverFromGitHubDatasets(): Promise<DiscoveredTokenCandi
   // Also query AkshatBhat Ashby CSV dataset
   try {
     const csvUrl = 'https://raw.githubusercontent.com/AkshatBhat/find-companies-using-ashby-job-boards/main/examples/example_verified_ashby_slugs.csv';
-    const res = await fetch(csvUrl, {
-      headers: { 'User-Agent': 'CareerMonkeBot/1.0 (+https://careermonke.com)' },
-      signal: AbortSignal.timeout(8000),
-    });
-    if (res.ok) {
-      const text = await res.text();
-      const rows = text.split('\n').map((r) => r.trim()).filter(Boolean);
-      for (const row of rows.slice(1)) {
-        const parts = row.split(',');
-        const slug = sanitizeToken(parts[0] || '');
-        const companyName = cleanText(parts[1] || '') || inferCompanyName(slug);
-        if (slug) {
-          const key = `ashby:${slug}`;
-          if (!seenKeys.has(key)) {
-            seenKeys.add(key);
-            candidates.push({
-              company: companyName,
-              ats: 'ashby',
-              token: slug,
-              discovery_source: 'github_open_dataset',
-            });
-          }
+    const text = await politeFetchText(csvUrl, { timeoutMs: 8000 });
+    const rows = text.split('\n').map((r) => r.trim()).filter(Boolean);
+    for (const row of rows.slice(1)) {
+      const parts = row.split(',');
+      const slug = sanitizeToken(parts[0] || '');
+      const companyName = cleanText(parts[1] || '') || null;
+      if (slug) {
+        const key = `ashby:${slug}`;
+        if (!seenKeys.has(key)) {
+          seenKeys.add(key);
+          candidates.push({
+            company: companyName,
+            ats: 'ashby',
+            token: slug,
+            discovery_source: 'github_open_dataset',
+          });
         }
       }
     }
@@ -361,7 +365,7 @@ export function discoverFromCompanyProbing(): DiscoveredTokenCandidate[] {
               if (!seenKeys.has(key)) {
                 seenKeys.add(key);
                 candidates.push({
-                  company: rawName || inferCompanyName(token),
+                  company: rawName || null,
                   ats,
                   token,
                   discovery_source: 'company_probe',
@@ -479,14 +483,14 @@ export async function runBoardDiscovery(options: DiscoveryOptions = {}): Promise
 
   for (let i = 0; i < queue.length; i++) {
     const item = queue[i];
-    const prefix = `[${i + 1}/${queue.length}] [${item.ats.toUpperCase()}] ${item.company} (${item.token})`;
+    const prefix = `[${i + 1}/${queue.length}] [${item.ats.toUpperCase()}] ${item.company || 'Unknown'} (${item.token})`;
 
     try {
       const res = await verifyAtsToken(item.ats, item.token);
 
       if (res.verified && res.jobCount >= 1) {
         const verifiedRecord: AtsCandidate = {
-          company: item.company,
+          company: res.companyName || item.company || null,
           ats: item.ats,
           token: item.token,
           job_count: res.jobCount,
