@@ -12,10 +12,12 @@ const targetFiles = [
   path.join(rootDir, 'src', 'app', 'remote', '[slug]', 'page.tsx'),
   path.join(rootDir, 'src', 'app', 'remote', '[slug]', 'titles', 'page.tsx'),
   path.join(rootDir, 'src', 'app', 'remote', 'jobs', '[category]', 'page.tsx'),
+  path.join(rootDir, 'src', 'app', 'jobs', '[id]', 'interview-pack', 'page.tsx'),
+  path.join(rootDir, 'src', 'app', 'jobs', '[id]', 'skill-what-if', 'page.tsx'),
 ];
 
 const RUNTIME_EXPORT = "export const runtime = 'edge';";
-const RUNTIME_REGEX = /export\s+const\s+runtime\s*=\s*['"]edge['"];?\r?\n?/g;
+const RUNTIME_REGEX = /export\s+const\s+runtime\s*=\s*['"]edge['"];?\r?\n/g;
 
 let modifiedCount = 0;
 
@@ -46,15 +48,15 @@ for (const filePath of targetFiles) {
   }
 
   let updatedContent;
-  if (content.includes('export const dynamicParams = false;')) {
+  if (/export const dynamicParams\s*=\s*(false|true);/.test(content)) {
     updatedContent = content.replace(
-      'export const dynamicParams = false;',
-      `${RUNTIME_EXPORT}\nexport const dynamicParams = false;`
+      /export const dynamicParams\s*=\s*(false|true);/,
+      `${RUNTIME_EXPORT}\nexport const dynamicParams = $1;`
     );
   } else if (content.includes('export function generateStaticParams')) {
     updatedContent = content.replace(
       'export function generateStaticParams',
-      `${RUNTIME_EXPORT}\n\nexport function generateStaticParams`
+      `${RUNTIME_EXPORT}\nexport function generateStaticParams`
     );
   } else {
     updatedContent = `${RUNTIME_EXPORT}\n${content}`;
