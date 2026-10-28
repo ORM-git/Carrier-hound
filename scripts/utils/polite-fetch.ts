@@ -23,6 +23,8 @@ const FORBIDDEN_DOMAINS = [
   'glassdoor.com',
   'workday.com',
   'myworkdayjobs.com',
+  'ziprecruiter.com',
+  'jobspy',
 ];
 
 /**
@@ -53,7 +55,7 @@ export function isForbiddenDomain(url: string): boolean {
   try {
     const { hostname } = new URL(url);
     return FORBIDDEN_DOMAINS.some(
-      (banned) => hostname === banned || hostname.endsWith(`.${banned}`)
+      (banned) => hostname === banned || hostname.endsWith(`.${banned}`) || hostname.includes(banned)
     );
   } catch {
     return false;

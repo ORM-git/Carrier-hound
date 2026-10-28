@@ -52,7 +52,7 @@ export interface CompanyRegistryEntry {
   id: string;
   company: string;
   name?: string;
-  ats: 'greenhouse' | 'lever' | 'ashby';
+  ats: 'greenhouse' | 'lever' | 'ashby' | 'workable' | 'smartrecruiters' | 'recruitee' | 'breezy' | 'teamtailor' | 'personio' | 'bamboohr' | 'join' | string;
   type?: string;
   token: string;
   target?: string;

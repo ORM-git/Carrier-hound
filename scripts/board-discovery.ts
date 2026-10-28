@@ -1,23 +1,20 @@
 /**
  * scripts/board-discovery.ts
  *
- * Automated ATS Board Discovery & Verification Engine (Greenhouse, Lever, Ashby).
+ * Automated ATS Board Discovery & Verification Engine.
+ * Supports: Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Recruitee, Breezy, Teamtailor, Personio, BambooHR, Join.
  *
  * Operational Locks & Rules:
  * - Allowed sources only (public, no login, no scraping of third-party job boards):
- *     a) Common Crawl public URL index (index.commoncrawl.org):
- *        Query URL patterns boards.greenhouse.io/*, job-boards.greenhouse.io/*,
- *        jobs.lever.co/*, jobs.ashbyhq.com/* and extract the first path segment.
+ *     a) Common Crawl public URL index (index.commoncrawl.org).
  *     b) Public GitHub open datasets (Feashliaa/job-board-aggregator, AkshatBhat)
  *        [MIT Licensed, recorded in SOURCES.md].
  *     c) Token probing from public company-name lists: slugify variants and verify.
- * - Strictly forbidden domains: LinkedIn, Indeed, Naukri, Glassdoor, Jobright, Workday.
+ * - Strictly forbidden domains: LinkedIn, Indeed, Naukri, Glassdoor, Jobright, Workday, ZipRecruiter, JobSpy.
  * - Rate limit: Strictly 1 req/s per host (MIN_DOMAIN_INTERVAL_MS = 1000).
  * - User-Agent: CareerMonkeBot/1.0.
  * - Retry on 429 with Retry-After backoff.
- * - Verification Rule: A token is verified ONLY IF documented public ATS API returns HTTP 200 AND >= 1 job.
- * - Output: Writes candidates to data/ats-candidates.json (NOT merged into main registry).
- * - Prints stats: candidates found per source, verified per ATS, estimated total jobs = sum(job_count), error counts.
+ * - Output: Writes candidates to data/ats-candidates.json or data/ats-candidates-all.json.
  */
 
 import * as fs from 'fs';
@@ -30,7 +27,19 @@ import { slugify, cleanText } from './utils/sanitizer';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-export type AtsType = 'greenhouse' | 'lever' | 'ashby';
+export type AtsType =
+  | 'greenhouse'
+  | 'lever'
+  | 'ashby'
+  | 'workable'
+  | 'smartrecruiters'
+  | 'recruitee'
+  | 'breezy'
+  | 'teamtailor'
+  | 'personio'
+  | 'bamboohr'
+  | 'join';
+
 export type DiscoverySource = 'common_crawl' | 'github_open_dataset' | 'company_probe';
 
 export interface DiscoveredTokenCandidate {
@@ -62,7 +71,7 @@ export interface DiscoveryStats {
   candidatesFoundPerSource: Record<DiscoverySource, number>;
   candidatesTested: number;
   candidatesVerified: number;
-  verifiedPerAts: Record<AtsType, number>;
+  verifiedPerAts: Record<string, number>;
   estimatedTotalJobs: number;
   errorsCount: number;
   newBoardsCount: number;
@@ -93,6 +102,40 @@ export function inferCompanyName(token: string): string {
 }
 
 /**
+ * Deduplicates candidate tokens per ATS type (key: `${ats}:${token.toLowerCase()}`).
+ */
+export function dedupeCandidates<T extends { ats: string; token: string }>(candidates: T[]): T[] {
+  const seen = new Set<string>();
+  const result: T[] = [];
+
+  for (const c of candidates) {
+    if (!c || !c.ats || !c.token) continue;
+    const cleanTok = sanitizeToken(c.token);
+    if (!cleanTok) continue;
+    const key = `${c.ats.toLowerCase()}:${cleanTok}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      result.push({
+        ...c,
+        token: cleanTok,
+      });
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Merges two candidate lists and deduplicates them per ATS.
+ */
+export function mergeAndDedupeCandidates<T extends { ats: string; token: string }>(
+  existingList: T[],
+  newList: T[]
+): T[] {
+  return dedupeCandidates([...existingList, ...newList]);
+}
+
+/**
  * Extracts the ATS type and company token from a public URL.
  */
 export function extractTokenFromUrl(urlStr: string): { ats: AtsType; token: string } | null {
@@ -104,6 +147,7 @@ export function extractTokenFromUrl(urlStr: string): { ats: AtsType; token: stri
     const host = u.hostname.toLowerCase();
     const parts = u.pathname.split('/').filter(Boolean);
 
+    // Greenhouse
     if (host === 'boards.greenhouse.io' || host === 'job-boards.greenhouse.io') {
       if (parts[0] === 'embed' && u.searchParams.get('for')) {
         const token = sanitizeToken(u.searchParams.get('for') || '');
@@ -115,6 +159,7 @@ export function extractTokenFromUrl(urlStr: string): { ats: AtsType; token: stri
       }
     }
 
+    // Lever
     if (host === 'jobs.lever.co') {
       if (parts.length > 0 && !['search', 'api'].includes(parts[0].toLowerCase())) {
         const token = sanitizeToken(parts[0]);
@@ -122,10 +167,91 @@ export function extractTokenFromUrl(urlStr: string): { ats: AtsType; token: stri
       }
     }
 
+    // Ashby
     if (host === 'jobs.ashbyhq.com') {
       if (parts.length > 0 && !['search', 'api'].includes(parts[0].toLowerCase())) {
         const token = sanitizeToken(parts[0]);
         return token ? { ats: 'ashby', token } : null;
+      }
+    }
+
+    // Workable: apply.workable.com/<token>
+    if (host === 'apply.workable.com') {
+      if (parts.length > 0 && !['search', 'api', 'widget', 'j', 'careers'].includes(parts[0].toLowerCase())) {
+        const token = sanitizeToken(parts[0]);
+        return token ? { ats: 'workable', token } : null;
+      }
+    }
+
+    // SmartRecruiters: jobs.smartrecruiters.com/<token>
+    if (host === 'jobs.smartrecruiters.com') {
+      if (parts.length > 0 && !['search', 'api'].includes(parts[0].toLowerCase())) {
+        const token = sanitizeToken(parts[0]);
+        return token ? { ats: 'smartrecruiters', token } : null;
+      }
+    }
+
+    // Recruitee: <token>.recruitee.com
+    if (host.endsWith('.recruitee.com')) {
+      const sub = host.replace('.recruitee.com', '').split('.').pop() || '';
+      if (!['www', 'api', 'app', 'careers', 'blog', 'support', 'status'].includes(sub)) {
+        const token = sanitizeToken(sub);
+        return token ? { ats: 'recruitee', token } : null;
+      }
+    }
+
+    // Breezy: <token>.breezy.hr
+    if (host.endsWith('.breezy.hr')) {
+      const sub = host.replace('.breezy.hr', '').split('.').pop() || '';
+      if (!['www', 'api', 'app', 'careers', 'blog', 'support', 'status'].includes(sub)) {
+        const token = sanitizeToken(sub);
+        return token ? { ats: 'breezy', token } : null;
+      }
+    }
+
+    // BambooHR: <token>.bamboohr.com/careers
+    if (host.endsWith('.bamboohr.com')) {
+      const sub = host.replace('.bamboohr.com', '').split('.').pop() || '';
+      if (!['www', 'api', 'app', 'careers', 'blog', 'support', 'status'].includes(sub)) {
+        const token = sanitizeToken(sub);
+        return token ? { ats: 'bamboohr', token } : null;
+      }
+    }
+
+    // Teamtailor: <token>.teamtailor.com
+    if (host.endsWith('.teamtailor.com')) {
+      const sub = host.replace('.teamtailor.com', '').split('.').pop() || '';
+      if (!['www', 'api', 'app', 'careers', 'blog', 'support', 'status'].includes(sub)) {
+        const token = sanitizeToken(sub);
+        return token ? { ats: 'teamtailor', token } : null;
+      }
+    }
+
+    // Personio: <token>.jobs.personio.de or <token>.jobs.personio.com or <token>.personio.de / .com
+    if (host.includes('.personio.')) {
+      const cleanHost = host
+        .replace('.jobs.personio.de', '')
+        .replace('.jobs.personio.com', '')
+        .replace('.personio.de', '')
+        .replace('.personio.com', '');
+      const sub = cleanHost.split('.').pop() || '';
+      if (!['www', 'api', 'app', 'careers', 'blog', 'support', 'status', 'jobs'].includes(sub)) {
+        const token = sanitizeToken(sub);
+        return token ? { ats: 'personio', token } : null;
+      }
+    }
+
+    // Join: <token>.join.com or join.com/companies/<token>
+    if (host === 'join.com' || host === 'www.join.com') {
+      if (parts[0] === 'companies' && parts.length > 1) {
+        const token = sanitizeToken(parts[1]);
+        return token ? { ats: 'join', token } : null;
+      }
+    } else if (host.endsWith('.join.com')) {
+      const sub = host.replace('.join.com', '').split('.').pop() || '';
+      if (!['www', 'api', 'app', 'careers', 'blog', 'support', 'status'].includes(sub)) {
+        const token = sanitizeToken(sub);
+        return token ? { ats: 'join', token } : null;
       }
     }
 
@@ -138,8 +264,6 @@ export function extractTokenFromUrl(urlStr: string): { ats: AtsType; token: stri
 /**
  * Verifies a single candidate token against the documented public ATS API.
  * Rate limited to 1 req/s per host, User-Agent CareerMonkeBot/1.0.
- * Rule: Token verified ONLY IF API returns HTTP 200 AND jobCount >= 1.
- * Company Name: Extracted from real ATS response if available, else null. Never inferred from token.
  */
 export async function verifyAtsToken(
   ats: AtsType,
@@ -158,7 +282,7 @@ export async function verifyAtsToken(
 
   let url: string;
   try {
-    url = buildAtsApiUrl(ats, cleanTok);
+    url = buildAtsApiUrl(ats as any, cleanTok);
   } catch (err: any) {
     return { verified: false, jobCount: 0, status: 400, companyName: null, error: err.message };
   }
@@ -185,6 +309,14 @@ export async function verifyAtsToken(
       jobCount = Array.isArray(data) ? data.length : 0;
     } else if (ats === 'ashby') {
       jobCount = Array.isArray(data.jobs) ? data.jobs.length : 0;
+    } else if (ats === 'workable') {
+      jobCount = Array.isArray(data.jobs) ? data.jobs.length : 0;
+    } else if (ats === 'smartrecruiters') {
+      jobCount = Array.isArray(data.content) ? data.content.length : 0;
+    } else if (ats === 'recruitee') {
+      jobCount = Array.isArray(data.offers) ? data.offers.length : 0;
+    } else if (ats === 'breezy') {
+      jobCount = Array.isArray(data) ? data.length : 0;
     }
 
     const verified = jobCount >= 1;
@@ -209,7 +341,6 @@ export async function discoverFromCommonCrawl(limit = 100): Promise<DiscoveredTo
   const candidates: DiscoveredTokenCandidate[] = [];
   const seenKeys = new Set<string>();
 
-  // Determine latest index
   let indexId = 'CC-MAIN-2026-43';
   try {
     const collinfoUrl = 'https://index.commoncrawl.org/collinfo.json';
@@ -226,6 +357,13 @@ export async function discoverFromCommonCrawl(limit = 100): Promise<DiscoveredTo
     { ats: 'greenhouse' as AtsType, pattern: 'job-boards.greenhouse.io/*' },
     { ats: 'lever' as AtsType, pattern: 'jobs.lever.co/*' },
     { ats: 'ashby' as AtsType, pattern: 'jobs.ashbyhq.com/*' },
+    { ats: 'workable' as AtsType, pattern: 'apply.workable.com/*' },
+    { ats: 'recruitee' as AtsType, pattern: '*.recruitee.com/*' },
+    { ats: 'breezy' as AtsType, pattern: '*.breezy.hr/*' },
+    { ats: 'bamboohr' as AtsType, pattern: '*.bamboohr.com/careers/*' },
+    { ats: 'personio' as AtsType, pattern: '*.personio.de/*' },
+    { ats: 'personio' as AtsType, pattern: '*.personio.com/*' },
+    { ats: 'join' as AtsType, pattern: 'join.com/companies/*' },
   ];
 
   const perQueryLimit = Math.max(10, Math.floor(limit / queries.length));
@@ -246,7 +384,7 @@ export async function discoverFromCommonCrawl(limit = 100): Promise<DiscoveredTo
               if (!seenKeys.has(key)) {
                 seenKeys.add(key);
                 candidates.push({
-                  company: null, // Never infer company name from token
+                  company: null,
                   ats: extracted.ats,
                   token: extracted.token,
                   discovery_source: 'common_crawl',
@@ -279,6 +417,7 @@ export async function discoverFromGitHubDatasets(): Promise<DiscoveredTokenCandi
     { ats: 'greenhouse', url: 'https://raw.githubusercontent.com/Feashliaa/job-board-aggregator/main/data/greenhouse_companies.json' },
     { ats: 'lever', url: 'https://raw.githubusercontent.com/Feashliaa/job-board-aggregator/main/data/lever_companies.json' },
     { ats: 'ashby', url: 'https://raw.githubusercontent.com/Feashliaa/job-board-aggregator/main/data/ashby_companies.json' },
+    { ats: 'bamboohr', url: 'https://raw.githubusercontent.com/Feashliaa/job-board-aggregator/main/data/bamboohr_companies.json' },
   ];
 
   for (const ds of datasets) {
@@ -292,7 +431,7 @@ export async function discoverFromGitHubDatasets(): Promise<DiscoveredTokenCandi
             if (!seenKeys.has(key)) {
               seenKeys.add(key);
               candidates.push({
-                company: null, // Never infer company name from token
+                company: null,
                 ats: ds.ats,
                 token,
                 discovery_source: 'github_open_dataset',
@@ -347,6 +486,21 @@ export function discoverFromCompanyProbing(): DiscoveredTokenCandidate[] {
   const configFiles = [
     path.resolve(__dirname, 'config/companies-phase2.json'),
     path.resolve(__dirname, '../src/data/companies.json'),
+    path.resolve(__dirname, '../data/ats-company-registry.json'),
+  ];
+
+  const ATS_LIST: AtsType[] = [
+    'greenhouse',
+    'lever',
+    'ashby',
+    'workable',
+    'smartrecruiters',
+    'recruitee',
+    'breezy',
+    'teamtailor',
+    'personio',
+    'bamboohr',
+    'join',
   ];
 
   for (const file of configFiles) {
@@ -358,18 +512,19 @@ export function discoverFromCompanyProbing(): DiscoveredTokenCandidate[] {
             const rawName = item.name || item.company || '';
             const rawSlug = item.slug || item.target || slugify(rawName);
             const token = sanitizeToken(rawSlug);
-            const ats: AtsType = (['greenhouse', 'lever', 'ashby'].includes(item.type) ? item.type : 'greenhouse') as AtsType;
 
             if (token) {
-              const key = `${ats}:${token}`;
-              if (!seenKeys.has(key)) {
-                seenKeys.add(key);
-                candidates.push({
-                  company: rawName || null,
-                  ats,
-                  token,
-                  discovery_source: 'company_probe',
-                });
+              for (const ats of ATS_LIST) {
+                const key = `${ats}:${token}`;
+                if (!seenKeys.has(key)) {
+                  seenKeys.add(key);
+                  candidates.push({
+                    company: rawName || null,
+                    ats,
+                    token,
+                    discovery_source: 'company_probe',
+                  });
+                }
               }
             }
           }
@@ -400,7 +555,7 @@ export async function runBoardDiscovery(options: DiscoveryOptions = {}): Promise
   } = options;
 
   console.log('\n======================================================');
-  console.log('🌐 CareerMonke ATS Board Discovery Engine (Step 2)');
+  console.log('🌐 CareerMonke ATS Board Discovery Engine');
   console.log('======================================================');
   console.log(`Mode:           DRY RUN (Public API Verification Only)`);
   console.log(`Rate Pacing:    1 req/s per host (MIN_DOMAIN_INTERVAL_MS = 1000)`);
@@ -408,15 +563,12 @@ export async function runBoardDiscovery(options: DiscoveryOptions = {}): Promise
   console.log(`Source Filter:  ${sourceFilter}`);
   console.log(`ATS Filter:     ${atsFilter}\n`);
 
-  // Load existing main registry tokens to check overlap vs new
   const mainRegistry = loadCompanyRegistry();
   const existingKeys = new Set(mainRegistry.map((e) => `${e.ats}:${e.token.toLowerCase()}`));
 
-  // 1. Gather candidates from allowed sources
   let rawCandidates: DiscoveredTokenCandidate[] = [];
 
   if (offlineFixtureMode) {
-    // Deterministic offline fixture items
     rawCandidates = [
       { company: 'Stripe', ats: 'greenhouse', token: 'stripe', discovery_source: 'company_probe' },
       { company: 'Spotify', ats: 'lever', token: 'spotify', discovery_source: 'github_open_dataset' },
@@ -437,37 +589,25 @@ export async function runBoardDiscovery(options: DiscoveryOptions = {}): Promise
     }
   }
 
-  // 2. Filter & Deduplicate candidates
   const candidatesPerSource: Record<DiscoverySource, number> = {
     common_crawl: 0,
     github_open_dataset: 0,
     company_probe: 0,
   };
 
-  const dedupedCandidates: DiscoveredTokenCandidate[] = [];
-  const seenCandidates = new Set<string>();
-
+  const filteredCandidates: DiscoveredTokenCandidate[] = [];
   for (const c of rawCandidates) {
     candidatesPerSource[c.discovery_source] = (candidatesPerSource[c.discovery_source] || 0) + 1;
-
     if (atsFilter !== 'all' && c.ats !== atsFilter) continue;
-    const key = `${c.ats}:${c.token}`;
-    if (!seenCandidates.has(key)) {
-      seenCandidates.add(key);
-      dedupedCandidates.push(c);
-    }
+    filteredCandidates.push(c);
   }
 
+  const dedupedCandidates = dedupeCandidates(filteredCandidates);
   console.log(`\nAggregated ${dedupedCandidates.length} unique candidates across sources.`);
 
-  // 3. Select balanced candidate sample up to verifyLimit
   let queue: DiscoveredTokenCandidate[] = [];
   if (verifyLimit && verifyLimit > 0 && dedupedCandidates.length > verifyLimit) {
-    const perAts = Math.max(1, Math.floor(verifyLimit / 3));
-    const gh = dedupedCandidates.filter((c) => c.ats === 'greenhouse').slice(0, perAts);
-    const lv = dedupedCandidates.filter((c) => c.ats === 'lever').slice(0, perAts);
-    const as = dedupedCandidates.filter((c) => c.ats === 'ashby').slice(0, verifyLimit - gh.length - lv.length);
-    queue = [...gh, ...lv, ...as];
+    queue = dedupedCandidates.slice(0, verifyLimit);
   } else {
     queue = dedupedCandidates;
   }
@@ -475,7 +615,7 @@ export async function runBoardDiscovery(options: DiscoveryOptions = {}): Promise
   console.log(`Starting public API verification for ${queue.length} tokens...\n`);
 
   const verifiedCandidates: AtsCandidate[] = [];
-  const verifiedPerAts: Record<AtsType, number> = { greenhouse: 0, lever: 0, ashby: 0 };
+  const verifiedPerAts: Record<string, number> = {};
   let estimatedTotalJobs = 0;
   let errorsCount = 0;
   let newBoardsCount = 0;
@@ -517,12 +657,10 @@ export async function runBoardDiscovery(options: DiscoveryOptions = {}): Promise
     }
   }
 
-  // 4. Output to data/ats-candidates.json (NOT merged into main registry)
   const resolvedOutputPath = outputFilePath
     ? path.resolve(outputFilePath)
     : path.resolve(__dirname, '../data/ats-candidates.json');
 
-  // Read existing candidates from file to accumulate without overwriting previous verified tokens
   let existingSavedCandidates: AtsCandidate[] = [];
   if (fs.existsSync(resolvedOutputPath)) {
     try {
@@ -532,15 +670,7 @@ export async function runBoardDiscovery(options: DiscoveryOptions = {}): Promise
     }
   }
 
-  const combinedMap = new Map<string, AtsCandidate>();
-  for (const c of existingSavedCandidates) {
-    combinedMap.set(`${c.ats}:${c.token}`, c);
-  }
-  for (const c of verifiedCandidates) {
-    combinedMap.set(`${c.ats}:${c.token}`, c);
-  }
-
-  const finalCandidates = Array.from(combinedMap.values());
+  const finalCandidates = mergeAndDedupeCandidates(existingSavedCandidates, verifiedCandidates);
   fs.writeFileSync(resolvedOutputPath, JSON.stringify(finalCandidates, null, 2), 'utf-8');
 
   const stats: DiscoveryStats = {
@@ -554,28 +684,6 @@ export async function runBoardDiscovery(options: DiscoveryOptions = {}): Promise
     newBoardsCount,
     existingBoardsOverlapCount: existingOverlapCount,
   };
-
-  // 5. Print Structured Summary Report
-  console.log('\n======================================================');
-  console.log('📊 ATS BOARD DISCOVERY SUMMARY REPORT');
-  console.log('======================================================');
-  console.log(`Candidates Found Total:       ${stats.candidatesFoundTotal}`);
-  console.log(`Candidates per Source:`);
-  console.log(`  - Common Crawl:             ${stats.candidatesFoundPerSource.common_crawl}`);
-  console.log(`  - GitHub Open Datasets:     ${stats.candidatesFoundPerSource.github_open_dataset}`);
-  console.log(`  - Company Probing:          ${stats.candidatesFoundPerSource.company_probe}`);
-  console.log(`Candidates Tested:            ${stats.candidatesTested}`);
-  console.log(`Candidates Verified:          ${stats.candidatesVerified} (success rate: ${queue.length > 0 ? Math.round((stats.candidatesVerified / queue.length) * 100) : 0}%)`);
-  console.log(`Verified per ATS:`);
-  console.log(`  - Greenhouse:               ${stats.verifiedPerAts.greenhouse}`);
-  console.log(`  - Lever:                    ${stats.verifiedPerAts.lever}`);
-  console.log(`  - Ashby:                    ${stats.verifiedPerAts.ashby}`);
-  console.log(`New Discovered Boards:        ${stats.newBoardsCount}`);
-  console.log(`Existing Registry Overlap:    ${stats.existingBoardsOverlapCount}`);
-  console.log(`Estimated Total Jobs:         ${stats.estimatedTotalJobs}`);
-  console.log(`Errors / Rejections Count:    ${stats.errorsCount}`);
-  console.log(`Output File:                  ${resolvedOutputPath} (${finalCandidates.length} total saved)`);
-  console.log('======================================================\n');
 
   return { candidates: verifiedCandidates, stats };
 }
