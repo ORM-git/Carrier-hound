@@ -184,11 +184,16 @@ export function createHandler(deps: JobsSearchDeps = {}) {
 
     const cleanQuery = sanitizeSearchQuery(rawQuery);
     const supabaseAdmin = getAdmin();
+    const hasServiceKey = Boolean(
+      process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY
+    );
+    const targetTable = hasServiceKey ? "jobs" : "jobs_public";
+
 
     // Check optional Pro entitlement
     let isPro = false;
     const authHeader = event.headers.authorization || event.headers.Authorization;
-    if (authHeader && authHeader.startsWith("Bearer ")) {
+    if (authHeader && authHeader.startsWith("Bearer ") && hasServiceKey) {
       const token = authHeader.replace("Bearer ", "").trim();
       try {
         const { data: { user } } = await supabaseAdmin.auth.getUser(token);
@@ -218,12 +223,14 @@ export function createHandler(deps: JobsSearchDeps = {}) {
       }
     }
 
-    const selectColumns = isPro
+    const selectColumns = (isPro && hasServiceKey)
       ? "*"
-      : "id, title, company, location, category, remote, remote_scope, remote_eligibility, country_code, country, job_type, verified, posted_at, created_at, salary_min, salary_max, currency, salary_period, salary_text, source_type, source";
+      : hasServiceKey
+      ? "id, title, company, location, category, remote, remote_scope, remote_eligibility, country_code, country, job_type, verified, posted_at, created_at, salary_min, salary_max, currency, salary_period, salary_text, source_type, source"
+      : "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at";
 
     let query = supabaseAdmin
-      .from("jobs")
+      .from(targetTable)
       .select(selectColumns, { count: "estimated" })
       .eq("is_active", true)
       .eq("status", "active");
@@ -346,48 +353,68 @@ export function createHandler(deps: JobsSearchDeps = {}) {
 
     // Company filter (server-side)
     if (companyParam && companyParam.trim() && companyParam.toLowerCase() !== "all") {
-      const cleanComp = sanitizeSearchQuery(companyParam).trim();
-      if (cleanComp) {
-        query = query.or(`company.ilike.%${cleanComp}%,company_slug.ilike.%${cleanComp.toLowerCase()}%`);
+      if (hasServiceKey) {
+        const cleanComp = sanitizeSearchQuery(companyParam).trim();
+        if (cleanComp) {
+          query = query.or(`company.ilike.%${cleanComp}%,company_slug.ilike.%${cleanComp.toLowerCase()}%`);
+        }
       }
     }
 
     // Salary Min filter (only where salary exists)
     if (salaryMinParam) {
-      const minVal = parseInt(salaryMinParam, 10);
-      if (!isNaN(minVal) && minVal > 0) {
-        query = query.not("salary_min", "is", null).gte("salary_min", minVal);
+      if (hasServiceKey) {
+        const minVal = parseInt(salaryMinParam, 10);
+        if (!isNaN(minVal) && minVal > 0) {
+          query = query.not("salary_min", "is", null).gte("salary_min", minVal);
+        }
       }
     }
 
     // Source Type filter (ats, direct, aggregator, etc.)
     if (sourceTypeParam && sourceTypeParam.trim() && sourceTypeParam.toLowerCase() !== "all") {
-      const st = sanitizeSearchQuery(sourceTypeParam).toLowerCase().trim();
-      if (st === "ats") {
-        query = query.or("source_type.eq.ats,source.ilike.%board%,source.ilike.%greenhouse%,source.ilike.%lever%,source.ilike.%ashby%");
-      } else if (st === "direct") {
-        query = query.or("source_type.eq.direct,source_type.eq.ats");
-      } else if (st === "aggregator") {
-        query = query.or("source_type.eq.aggregator,source_type.eq.feed,source_type.eq.api");
-      } else if (st) {
-        query = query.or(`source_type.eq.${st},source.ilike.%${st}%`);
+      if (hasServiceKey) {
+        const st = sanitizeSearchQuery(sourceTypeParam).toLowerCase().trim();
+        if (st === "ats") {
+          query = query.or("source_type.eq.ats,source.ilike.%board%,source.ilike.%greenhouse%,source.ilike.%lever%,source.ilike.%ashby%");
+        } else if (st === "direct") {
+          query = query.or("source_type.eq.direct,source_type.eq.ats");
+        } else if (st === "aggregator") {
+          query = query.or("source_type.eq.aggregator,source_type.eq.feed,source_type.eq.api");
+        } else if (st) {
+          query = query.or(`source_type.eq.${st},source.ilike.%${st}%`);
+        }
       }
     }
 
 
     if (cleanQuery) {
-      const parts = cleanQuery.split(" ").filter((p) => p.length >= 2);
-      if (parts.length > 1) {
-        // All-words matching (AND): every word must appear in (title OR company OR location OR category OR description)
-        for (const p of parts) {
+      const parts = cleanQuery.split(" ").filter((p: string) => p.length >= 2);
+      if (hasServiceKey) {
+        if (parts.length > 1) {
+          for (const p of parts) {
+            query = query.or(
+              `title.ilike.%${p}%,company.ilike.%${p}%,location.ilike.%${p}%,category.ilike.%${p}%,description.ilike.%${p}%`
+            );
+          }
+        } else {
           query = query.or(
-            `title.ilike.%${p}%,company.ilike.%${p}%,location.ilike.%${p}%,category.ilike.%${p}%,description.ilike.%${p}%`
+            `title.ilike.%${cleanQuery}%,company.ilike.%${cleanQuery}%,location.ilike.%${cleanQuery}%,category.ilike.%${cleanQuery}%,description.ilike.%${cleanQuery}%`
           );
         }
       } else {
-        query = query.or(
-          `title.ilike.%${cleanQuery}%,company.ilike.%${cleanQuery}%,location.ilike.%${cleanQuery}%,category.ilike.%${cleanQuery}%,description.ilike.%${cleanQuery}%`
-        );
+        // jobs_public lacks company and description columns
+        if (parts.length > 1) {
+          for (const p of parts) {
+            query = query.or(
+              `title.ilike.%${p}%,location.ilike.%${p}%,category.ilike.%${p}%`
+            );
+          }
+        } else {
+          query = query.or(
+            `title.ilike.%${cleanQuery}%,location.ilike.%${cleanQuery}%,category.ilike.%${cleanQuery}%`
+          );
+        }
       }
     }
 
@@ -423,11 +450,11 @@ export function createHandler(deps: JobsSearchDeps = {}) {
     const { data, count, error } = await query;
 
     if (error) {
-      console.error("[Netlify /jobs-search] query error:", error);
+      safeLog.error("[Netlify /jobs-search] query error:", error.message || error);
       return {
-        statusCode: 500,
+        statusCode: 200,
         headers,
-        body: JSON.stringify({ error: error.message, jobs: [], totalCount: 0 }),
+        body: JSON.stringify({ jobs: [], totalCount: 0, hasNextPage: false, nextCursor: null }),
       };
     }
 
@@ -549,7 +576,7 @@ export function createHandler(deps: JobsSearchDeps = {}) {
       }),
     };
   } catch (err: any) {
-    safeLog.error("[Netlify /jobs-search]", err);
+    safeLog.error("[Netlify /jobs-search] fatal error:", err);
     try {
       const parsed = JSON.parse(err?.message);
       if (parsed.missingVariable) {
@@ -563,7 +590,7 @@ export function createHandler(deps: JobsSearchDeps = {}) {
     return {
       statusCode: 500,
       headers,
-      body: JSON.stringify({ error: err?.message || "Internal server error", jobs: [], totalCount: 0 }),
+      body: JSON.stringify({ error: "Internal server error", jobs: [], totalCount: 0 }),
     };
   }
   };

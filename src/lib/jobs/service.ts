@@ -515,22 +515,8 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       }
     }
 
-    if (company && company.trim() && company.toLowerCase() !== "all") {
-      const comp = company.trim().replace(/[%_(),"'\$;*]/g, " ").trim();
-      if (comp) {
-        query = query.or(`company.ilike.%${comp}%,company_slug.ilike.%${comp.toLowerCase()}%`);
-      }
-    }
-
-    if (sourceType && sourceType.trim() && sourceType.toLowerCase() !== "all") {
-      const st = sourceType.trim().toLowerCase();
-      if (["ats", "api", "feed", "direct", "aggregator"].includes(st)) {
-        query = query.eq("source_type", st);
-      } else {
-        query = query.or(`source_type.eq.${st},source.ilike.%${st}%`);
-      }
-    }
-
+    // Note: company, salaryMin, and sourceType columns are not present in jobs_public view.
+    // They are guarded here and safely resolved via server search (/api/jobs/search).
 
     if (search && search.trim()) {
       const q = search.trim().replace(/[%_(),"'`;\\$*]/g, " ").replace(/\s+/g, " ").trim().slice(0, 200);

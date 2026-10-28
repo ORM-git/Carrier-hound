@@ -495,6 +495,7 @@ function JobsPageInner() {
     const qExp = params.get("experience") || params.get("exp") || "";
     const qWorkModel = params.get("workModel") || "";
     const qIndustry = params.get("industry") || "";
+    const qCountry = params.get("country") || params.get("countryCode") || params.get("country_code") || "";
     const qSalaryMin = params.get("salaryMin") || params.get("salary") || "";
     const qSourceType = params.get("sourceType") || params.get("source") || "";
     const qCompany = params.get("company") || "";
@@ -514,6 +515,7 @@ function JobsPageInner() {
     if (qWorkModel) setSelectedWorkModel(qWorkModel);
     if (qIndustry) setSelectedIndustry(qIndustry);
     if (qSalaryMin) setSelectedSalaryMin(qSalaryMin);
+    if (qCountry) setSelectedCountryCode(qCountry);
     if (qSourceType) setSelectedSourceType(qSourceType);
     if (qCompany) setSelectedCompany(qCompany);
     if (qHidden) setViewHiddenJobs(true);
@@ -572,6 +574,7 @@ function JobsPageInner() {
     syncParam("salaryMin", selectedSalaryMin);
     syncParam("sourceType", selectedSourceType);
     syncParam("company", selectedCompany);
+    syncParam("country", selectedCountryCode);
     syncParam("hidden", viewHiddenJobs ? "true" : null);
     syncParam("sort", sortBy === "match" ? "match" : null);
     syncParam("id", selectedJob?.id || pendingJobIdRef.current || null);
@@ -586,7 +589,7 @@ function JobsPageInner() {
     const newUrl = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
     const currentUrl = `${window.location.pathname}${window.location.search}`;
     if (newUrl !== currentUrl) {
-      window.history.replaceState({ scrollPos: window.scrollY }, "", newUrl);
+      router.replace(newUrl, { scroll: false });
     }
   }, [
     activeTab,
@@ -605,6 +608,7 @@ function JobsPageInner() {
     selectedSalaryMin,
     selectedSourceType,
     selectedCompany,
+    selectedCountryCode,
     selectedJob,
   ]);
 
@@ -699,6 +703,9 @@ function JobsPageInner() {
       const qType = params.get("type") || params.get("jobType") || "";
       const qDate = params.get("datePosted") || params.get("date") || "";
       const qExp = params.get("experience") || params.get("exp") || "";
+      const qCountry = params.get("country") || params.get("countryCode") || params.get("country_code") || "";
+      const qWorkModel = params.get("workModel") || "";
+      const qIndustry = params.get("industry") || "";
       const qSalaryMin = params.get("salaryMin") || params.get("salary") || "";
       const qSourceType = params.get("sourceType") || params.get("source") || "";
       const qCompany = params.get("company") || "";
@@ -715,6 +722,9 @@ function JobsPageInner() {
       setSelectedJobType(qType);
       setSelectedDatePosted(qDate);
       setSelectedExperience(qExp);
+      setSelectedCountryCode(qCountry);
+      setSelectedWorkModel(qWorkModel);
+      setSelectedIndustry(qIndustry);
       setSelectedSalaryMin(qSalaryMin);
       setSelectedSourceType(qSourceType);
       setSelectedCompany(qCompany);
@@ -1230,7 +1240,8 @@ function JobsPageInner() {
       p.delete("sort");
       p.delete("sortBy");
       const qs = p.toString();
-      window.history.replaceState({}, "", qs ? `${window.location.pathname}?${qs}` : window.location.pathname);
+      const newUrl = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
+      router.replace(newUrl, { scroll: false });
     }
   };
 

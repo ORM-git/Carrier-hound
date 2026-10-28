@@ -256,49 +256,69 @@ export async function GET(req: Request) {
 
     // Company filter (server-side)
     if (companyParam && companyParam.trim() && companyParam.toLowerCase() !== "all") {
-      const cleanComp = sanitizeSearchQuery(companyParam).trim();
-      if (cleanComp) {
-        query = query.or(`company.ilike.%${cleanComp}%,company_slug.ilike.%${cleanComp.toLowerCase()}%`);
+      if (hasServiceKey) {
+        const cleanComp = sanitizeSearchQuery(companyParam).trim();
+        if (cleanComp) {
+          query = query.or(`company.ilike.%${cleanComp}%,company_slug.ilike.%${cleanComp.toLowerCase()}%`);
+        }
       }
     }
 
     // Salary Min filter (only where salary exists)
     if (salaryMinParam) {
-      const minVal = parseInt(salaryMinParam, 10);
-      if (!isNaN(minVal) && minVal > 0) {
-        query = query.not("salary_min", "is", null).gte("salary_min", minVal);
+      if (hasServiceKey) {
+        const minVal = parseInt(salaryMinParam, 10);
+        if (!isNaN(minVal) && minVal > 0) {
+          query = query.not("salary_min", "is", null).gte("salary_min", minVal);
+        }
       }
     }
 
     // Source Type filter (ats, direct, aggregator, etc.)
     if (sourceTypeParam && sourceTypeParam.trim() && sourceTypeParam.toLowerCase() !== "all") {
-      const st = sanitizeSearchQuery(sourceTypeParam).toLowerCase().trim();
-      if (st === "ats") {
-        query = query.or("source_type.eq.ats,source.ilike.%board%,source.ilike.%greenhouse%,source.ilike.%lever%,source.ilike.%ashby%");
-      } else if (st === "direct") {
-        query = query.or("source_type.eq.direct,source_type.eq.ats");
-      } else if (st === "aggregator") {
-        query = query.or("source_type.eq.aggregator,source_type.eq.feed,source_type.eq.api");
-      } else if (st) {
-        query = query.or(`source_type.eq.${st},source.ilike.%${st}%`);
+      if (hasServiceKey) {
+        const st = sanitizeSearchQuery(sourceTypeParam).toLowerCase().trim();
+        if (st === "ats") {
+          query = query.or("source_type.eq.ats,source.ilike.%board%,source.ilike.%greenhouse%,source.ilike.%lever%,source.ilike.%ashby%");
+        } else if (st === "direct") {
+          query = query.or("source_type.eq.direct,source_type.eq.ats");
+        } else if (st === "aggregator") {
+          query = query.or("source_type.eq.aggregator,source_type.eq.feed,source_type.eq.api");
+        } else if (st) {
+          query = query.or(`source_type.eq.${st},source.ilike.%${st}%`);
+        }
       }
     }
 
 
-    // Search query matching across title, company, location, category, description
+    // Search query matching: company and description guarded when jobs_public is used
     if (cleanQuery) {
       const parts = cleanQuery.split(" ").filter((p) => p.length >= 2);
-      if (parts.length > 1) {
-        // All-words matching (AND): every word must appear in (title OR company OR location OR category OR description)
-        for (const p of parts) {
+      if (hasServiceKey) {
+        if (parts.length > 1) {
+          for (const p of parts) {
+            query = query.or(
+              `title.ilike.%${p}%,company.ilike.%${p}%,location.ilike.%${p}%,category.ilike.%${p}%,description.ilike.%${p}%`
+            );
+          }
+        } else {
           query = query.or(
-            `title.ilike.%${p}%,company.ilike.%${p}%,location.ilike.%${p}%,category.ilike.%${p}%,description.ilike.%${p}%`
+            `title.ilike.%${cleanQuery}%,company.ilike.%${cleanQuery}%,location.ilike.%${cleanQuery}%,category.ilike.%${cleanQuery}%,description.ilike.%${cleanQuery}%`
           );
         }
       } else {
-        query = query.or(
-          `title.ilike.%${cleanQuery}%,company.ilike.%${cleanQuery}%,location.ilike.%${cleanQuery}%,category.ilike.%${cleanQuery}%,description.ilike.%${cleanQuery}%`
-        );
+        // jobs_public lacks company and description columns
+        if (parts.length > 1) {
+          for (const p of parts) {
+            query = query.or(
+              `title.ilike.%${p}%,location.ilike.%${p}%,category.ilike.%${p}%`
+            );
+          }
+        } else {
+          query = query.or(
+            `title.ilike.%${cleanQuery}%,location.ilike.%${cleanQuery}%,category.ilike.%${cleanQuery}%`
+          );
+        }
       }
     }
 
@@ -334,8 +354,8 @@ export async function GET(req: Request) {
     const { data, count, error } = await query;
 
     if (error) {
-      console.error("Jobs search query error:", error);
-      return NextResponse.json({ error: error.message, jobs: [], totalCount: 0 }, { status: 500 });
+      console.error("[/api/jobs/search] query error:", error.message || error);
+      return NextResponse.json({ jobs: [], totalCount: 0, hasNextPage: false, nextCursor: null });
     }
 
     let rows = data || [];
@@ -461,9 +481,9 @@ export async function GET(req: Request) {
         return NextResponse.json({ ...parsed, jobs: [], totalCount: 0 }, { status: 500 });
       }
     } catch {}
-    console.error("Jobs search API route error:", err);
+    console.error("[/api/jobs/search] fatal error:", err);
     return NextResponse.json(
-      { error: err?.message || "Internal server error", jobs: [], totalCount: 0 },
+      { error: "Internal server error", jobs: [], totalCount: 0 },
       { status: 500 }
     );
   }
