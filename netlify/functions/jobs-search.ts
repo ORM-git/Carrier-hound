@@ -452,9 +452,9 @@ export function createHandler(deps: JobsSearchDeps = {}) {
     if (error) {
       safeLog.error("[Netlify /jobs-search] query error:", error.message || error);
       return {
-        statusCode: 200,
+        statusCode: 503,
         headers,
-        body: JSON.stringify({ jobs: [], totalCount: 0, hasNextPage: false, nextCursor: null }),
+        body: JSON.stringify({ degraded: true, jobs: [], totalCount: 0, hasNextPage: false, nextCursor: null }),
       };
     }
 

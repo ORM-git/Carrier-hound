@@ -9,6 +9,8 @@ import { decodeCursor, encodeCursor } from "@/lib/pagination/cursor";
 
 export interface LiveJob {
   id: string;
+  isExpired?: boolean;
+  status?: string;
   title: string;
   company: string;
   location: string;
@@ -64,6 +66,8 @@ export interface GetJobsResult {
   totalCount: number;
   nextCursor?: string | null;
   hasNextPage?: boolean;
+  isDegraded?: boolean;
+  error?: string | null;
 }
 
 /**
@@ -318,9 +322,14 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
   const hasServerFilter = Boolean((search && search.trim()) || (company && company.trim()) || salaryMin || (sourceType && sourceType !== "all") || cursor);
   if (hasServerFilter && typeof window !== "undefined") {
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
+      let token: string | undefined;
+      try {
+        const supabase = createClient();
+        const { data: { session } } = await supabase.auth.getSession();
+        token = session?.access_token;
+      } catch {
+        // Unauthenticated guest or testing environment
+      }
       const headers: Record<string, string> = {};
       if (token) {
         headers["Authorization"] = `Bearer ${token}`;
@@ -346,6 +355,17 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       if (cursor) params.set("cursor", cursor);
 
       const res = await fetch(`/api/jobs/search?${params.toString()}`, { headers });
+      if (res.status === 503) {
+        const json = await res.json().catch(() => ({}));
+        return {
+          jobs: [],
+          totalCount: 0,
+          nextCursor: null,
+          hasNextPage: false,
+          isDegraded: true,
+          error: "degraded",
+        };
+      }
       if (res.ok) {
         const json = await res.json();
         return {
@@ -353,6 +373,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
           totalCount: json.totalCount ?? (json.jobs?.length || 0),
           nextCursor: json.nextCursor ?? null,
           hasNextPage: Boolean(json.hasNextPage),
+          isDegraded: Boolean(json.degraded),
         };
       }
     } catch (searchErr) {

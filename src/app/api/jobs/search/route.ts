@@ -355,7 +355,10 @@ export async function GET(req: Request) {
 
     if (error) {
       console.error("[/api/jobs/search] query error:", error.message || error);
-      return NextResponse.json({ jobs: [], totalCount: 0, hasNextPage: false, nextCursor: null });
+      return NextResponse.json(
+        { degraded: true, jobs: [], totalCount: 0, hasNextPage: false, nextCursor: null },
+        { status: 503 }
+      );
     }
 
     let rows = data || [];
