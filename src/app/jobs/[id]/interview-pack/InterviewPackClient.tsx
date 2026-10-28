@@ -8,7 +8,7 @@ import InterviewPackView from "@/components/interview-pack/InterviewPackView";
 import { getAuthUser } from "@/lib/auth/session";
 import { getProAccessStatus } from "@/lib/billing/subscription";
 import { createClient } from "@/lib/supabase/client";
-import { SAMPLE_INTERVIEW_PACK, type InterviewPackData } from "@/data/interviewPackFixture";
+import type { InterviewPackData } from "@/data/interviewPackFixture";
 import type { User } from "@supabase/supabase-js";
 
 interface InterviewPackClientProps {
@@ -27,8 +27,18 @@ export default function InterviewPackClient({ jobId }: InterviewPackClientProps)
   const [loadingPack, setLoadingPack] = useState(true);
   const [packError, setPackError] = useState<string | null>(null);
 
-  // 1. Check Auth & Pro status
+  // Check feature flag: disabled in production unless NEXT_PUBLIC_ENABLE_INTERVIEW_PACK is true
+  const isFeatureEnabled =
+    process.env.NEXT_PUBLIC_ENABLE_INTERVIEW_PACK === "true" ||
+    process.env.NODE_ENV !== "production";
+
+  // 1. Check Auth & Server-Verified Pro status (strictly never trust user_metadata)
   useEffect(() => {
+    if (!isFeatureEnabled) {
+      router.replace("/dashboard");
+      return;
+    }
+
     getAuthUser().then(async (authUser) => {
       if (!authUser) {
         // Redirect to login if unauthenticated
@@ -38,13 +48,6 @@ export default function InterviewPackClient({ jobId }: InterviewPackClientProps)
 
       setUser(authUser);
       setLoadingAuth(false);
-
-      const metadataPro = Boolean(authUser.user_metadata?.pro_granted || authUser.user_metadata?.is_pro);
-      if (metadataPro) {
-        setIsPro(true);
-        setIsProDefinitive(true);
-        return;
-      }
 
       try {
         const proStatus = await getProAccessStatus(authUser.id);
@@ -56,9 +59,9 @@ export default function InterviewPackClient({ jobId }: InterviewPackClientProps)
         setIsProDefinitive(true);
       }
     });
-  }, [jobId, router]);
+  }, [jobId, router, isFeatureEnabled]);
 
-  // 2. Fetch pack data from server-enforced endpoint when user is Pro
+  // 2. Fetch pack data strictly from server-enforced endpoint when user is Pro
   const fetchPackData = useCallback(async () => {
     if (!user || !isPro) return;
 
@@ -89,17 +92,12 @@ export default function InterviewPackClient({ jobId }: InterviewPackClientProps)
       if (json.pack) {
         setPack(json.pack);
       } else {
-        setPack({
-          ...SAMPLE_INTERVIEW_PACK,
-          jobId,
-        });
+        throw new Error("Invalid interview pack response from server");
       }
     } catch (err: any) {
-      console.warn("Error fetching pack from server, using local fixture:", err);
-      setPack({
-        ...SAMPLE_INTERVIEW_PACK,
-        jobId,
-      });
+      console.warn("Error fetching pack from server:", err);
+      setPackError(err.message || "Failed to load interview pack. Please try again.");
+      setPack(null);
     } finally {
       setLoadingPack(false);
     }
@@ -111,13 +109,17 @@ export default function InterviewPackClient({ jobId }: InterviewPackClientProps)
     }
   }, [isPro, user, fetchPackData]);
 
+  if (!isFeatureEnabled) {
+    return null;
+  }
+
   // Loading Screen while authenticating
   if (loadingAuth || !isProDefinitive) {
     return (
       <LoggedInAppShell pageLabel="INTERVIEW PACK" user={user} isPro={false}>
         <div className="min-h-[70vh] flex flex-col items-center justify-center p-6 space-y-4">
           <div className="w-10 h-10 border-4 border-[#2563EB] border-t-transparent rounded-full animate-spin" />
-          <p className="text-xs font-semibold text-[#64748B]">
+          <p className="text-[15px] font-semibold text-[#64748B]">
             Verifying your CareerMonke Pro membership...
           </p>
         </div>

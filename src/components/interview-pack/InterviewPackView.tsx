@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, RefreshCw, AlertTriangle, Building2, Sparkles } from "lucide-react";
+import { ArrowLeft, RefreshCw, AlertTriangle } from "lucide-react";
 import type { InterviewPackData, InterviewCard } from "@/data/interviewPackFixture";
 import FearQuestionScreen from "./FearQuestionScreen";
 import TimeBoxScreen, { TimeBoxOption } from "./TimeBoxScreen";
@@ -94,8 +94,8 @@ export default function InterviewPackView({
         <div className="w-12 h-12 rounded-full border-4 border-[#2563EB] border-t-transparent animate-spin" />
         <div className="text-center space-y-1">
           <h3 className="text-lg font-bold text-[#0F172A]">Assembling Interview Pack...</h3>
-          <p className="text-xs text-[#64748B]">
-            Synthesizing public Glassdoor, Blind, and engineering handbook records.
+          <p className="text-[15px] text-[#64748B]">
+            Synthesizing interview preparation and candidate debrief records.
           </p>
         </div>
       </div>
@@ -111,7 +111,7 @@ export default function InterviewPackView({
         </div>
         <div className="space-y-1">
           <h3 className="text-lg font-bold text-[#0F172A]">Failed to Load Interview Pack</h3>
-          <p className="text-xs text-[#64748B]">
+          <p className="text-[15px] text-[#64748B]">
             {error || "We could not retrieve interview dossier records for this role."}
           </p>
         </div>
@@ -119,7 +119,7 @@ export default function InterviewPackView({
           <button
             type="button"
             onClick={() => router.back()}
-            className="px-4 py-2 rounded-xl border border-[#CBD5E1] text-xs font-bold text-[#334155] hover:bg-slate-50 transition cursor-pointer"
+            className="px-4 py-2 rounded-xl border border-[#CBD5E1] text-[15px] font-bold text-[#334155] hover:bg-slate-50 transition cursor-pointer"
           >
             Go Back
           </button>
@@ -127,7 +127,7 @@ export default function InterviewPackView({
             <button
               type="button"
               onClick={onRetry}
-              className="px-4 py-2 rounded-xl bg-[#2563EB] text-white text-xs font-bold hover:bg-[#1D4ED8] transition cursor-pointer flex items-center gap-1.5"
+              className="px-4 py-2 rounded-xl bg-[#2563EB] text-white text-[15px] font-bold hover:bg-[#1D4ED8] transition cursor-pointer flex items-center gap-1.5"
             >
               <RefreshCw className="w-3.5 h-3.5" />
               <span>Retry</span>
@@ -148,9 +148,7 @@ export default function InterviewPackView({
           if (optionId) setFearOptionId(optionId);
           setStep("timebox");
         }}
-        onSkip={() => {
-          setStep("timebox");
-        }}
+        onSkip={() => setStep("timebox")}
       />
     );
   }
@@ -172,21 +170,24 @@ export default function InterviewPackView({
 
   // Step 3: Main Dossier View
   return (
-    <div className="w-full">
-      {/* Mobile progress & section bar */}
-      <MobileProgressStrip
-        activeSection={activeSection}
-        onSelectSection={(sec) => setActiveSection(sec)}
-        isLastNightMode={isLastNightMode}
-        onToggleLastNightMode={() => setIsLastNightMode(!isLastNightMode)}
-        onOpenSources={() => setIsSourcesDrawerOpen(true)}
-        totalCards={trimmedCards.length}
-      />
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6 animate-in fade-in duration-300">
+      {/* Mobile Top Progress Strip */}
+      <div className="lg:hidden">
+        <MobileProgressStrip
+          activeSection={activeSection}
+          onSelectSection={(sec) => setActiveSection(sec)}
+          isLastNightMode={isLastNightMode}
+          onToggleLastNightMode={() => setIsLastNightMode(!isLastNightMode)}
+          onOpenSources={() => setIsSourcesDrawerOpen(true)}
+          totalCards={trimmedCards.length}
+        />
+      </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {/* Top Header Bar */}
-        <div className="flex items-center justify-between gap-4 pb-6 border-b border-[#E2E8F0] mb-6 flex-wrap">
-          <div className="flex items-center gap-3">
+      {/* Main Dossier Container */}
+      <div className="space-y-6">
+        {/* Dossier Header */}
+        <div className="bg-white rounded-2xl ring-1 ring-[#E2E8F0] shadow-sm p-6 sm:p-8 flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-4">
             <button
               type="button"
               onClick={() => router.push(jobId ? `/jobs?selectedJobId=${jobId}` : "/jobs")}
@@ -215,10 +216,24 @@ export default function InterviewPackView({
             <button
               type="button"
               onClick={() => setIsSourcesDrawerOpen(true)}
-              className="px-3.5 py-1.5 rounded-xl border border-[#CBD5E1] bg-white hover:bg-slate-50 text-xs font-bold text-[#334155] transition cursor-pointer shadow-2xs"
+              className="px-3.5 py-1.5 rounded-xl border border-[#CBD5E1] bg-white hover:bg-slate-50 text-[15px] font-bold text-[#334155] transition cursor-pointer shadow-2xs"
             >
               Public Sources ({pack.sources.length})
             </button>
+          </div>
+        </div>
+
+        {/* Persistent Sample Preview Banner */}
+        <div
+          role="alert"
+          className="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-4 flex items-start gap-3 shadow-2xs"
+        >
+          <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+          <div className="text-[15px] leading-relaxed">
+            <p className="font-bold text-amber-950">Sample preview, not data for this job</p>
+            <p className="text-amber-800 text-[15px] mt-0.5">
+              This dossier is an interactive preview demonstrating interview preparation workflows. Live job data integration is currently in preview.
+            </p>
           </div>
         </div>
 
@@ -249,68 +264,44 @@ export default function InterviewPackView({
             {isLastNightMode ? (
               <LastNightModeView
                 cards={trimmedCards}
-                onSelectSection={(sec) => {
-                  setIsLastNightMode(false);
-                  setActiveSection(sec as DossierSection);
-                }}
+                onSelectSection={(sec) => setActiveSection(sec as DossierSection)}
               />
             ) : (
               <>
                 {activeSection === "brief" && (
                   <BriefSection brief={pack.brief} companyName={pack.companyName} />
                 )}
-
                 {activeSection === "process" && (
                   <ProcessSection processData={pack.process} companyName={pack.companyName} />
                 )}
-
                 {activeSection === "questions" && (
-                  <div className="space-y-6">
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#2563EB]">
-                        <Sparkles className="w-4 h-4" />
-                        <span>Interactive Preparation Cards</span>
-                      </div>
-                      <h2 className="text-2xl sm:text-3xl font-extrabold text-[#0F172A] tracking-tight">
-                        Predicted Question Cards for {pack.companyName}
-                      </h2>
-                      <p className="text-[15px] sm:text-[16px] text-[#475569] leading-relaxed">
-                        Step through one card at a time. Review the underlying psychological motive, practice your concise draft, and mark cards ready as you go.
-                      </p>
-                    </div>
-
-                    <QuestionsCardDeck
-                      cards={trimmedCards}
-                      onSelectSection={(sec) => setActiveSection(sec as DossierSection)}
-                    />
-                  </div>
+                  <QuestionsCardDeck
+                    cards={trimmedCards}
+                    onSelectSection={(sec) => setActiveSection(sec as DossierSection)}
+                  />
                 )}
-
                 {activeSection === "answers" && (
                   <YourAnswersSection cards={trimmedCards} />
                 )}
-
                 {activeSection === "gaps" && (
                   <GapsSection gaps={pack.gaps} />
                 )}
-
                 {activeSection === "askThem" && (
                   <AskThemSection questions={pack.askThem} />
                 )}
-
                 {activeSection === "quiz" && (
                   <QuickQuizSection quiz={pack.quiz} />
                 )}
               </>
             )}
 
-            {/* Persistent Compliance Footer */}
+            {/* Dossier Footer with Mandatory Disclaimer */}
             <DossierFooter />
           </main>
         </div>
       </div>
 
-      {/* Slide-over Sources Directory Drawer */}
+      {/* Slide-over Sources Drawer */}
       <SourcesDrawer
         open={isSourcesDrawerOpen}
         onClose={() => setIsSourcesDrawerOpen(false)}

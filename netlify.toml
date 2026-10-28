@@ -46,12 +46,6 @@
   force = true
 
 [[redirects]]
-  from = "/api/jobs/interview-pack"
-  to = "/.netlify/functions/interview-pack"
-  status = 200
-  force = true
-
-[[redirects]]
   from = "/api/account/delete"
   to = "/.netlify/functions/account-delete"
   status = 200

@@ -9,14 +9,14 @@ export interface SourceCitation {
   domain: string;
   url: string;
   date: string;
-  verificationType: "Confirmed" | "Reported by candidates" | "Likely" | "General practice" | "Unverified";
+  verificationType: "Reported by candidates" | "Reported by candidates" | "Likely" | "General practice" | "Unverified";
 }
 
 export interface InterviewCard {
   id: string;
   question: string;
   category: "fear" | "must-know" | "behavioral" | "technical" | "leadership" | "culture";
-  label: "Confirmed" | "Reported by candidates" | "Likely" | "General practice" | "Unverified";
+  label: "Reported by candidates" | "Reported by candidates" | "Likely" | "General practice" | "Unverified";
   whyTheyAsk: string; // One concise psychological line (10-25 words)
   answerDraft: string; // 40-60 words concise draft
   expandedAnswer: string; // Full in-depth framework (STAR or structured)
@@ -110,7 +110,7 @@ export interface InterviewPackData {
 export const SAMPLE_INTERVIEW_PACK: InterviewPackData = {
   jobId: "sample",
   jobTitle: "Senior Full-Stack Engineer",
-  companyName: "Acme Cloud Technologies",
+  companyName: "Cloud Infrastructure Technologies",
   department: "Core Platform & Infrastructure",
   location: "Remote (US / Worldwide)",
   isThinResearch: false,
@@ -118,23 +118,23 @@ export const SAMPLE_INTERVIEW_PACK: InterviewPackData = {
     {
       id: "fear-tell-me-about-yourself",
       chip: "Tell me about yourself",
-      question: "Walk me through your background and why this role at Acme Cloud?",
+      question: "Walk me through your background and why are you interested in this role?",
       whyTheyAsk: "They want to evaluate narrative structure, executive clarity, and whether your career trajectory naturally aligns with their mission.",
       answerDraft:
-        "I am a full-stack engineer with 6 years leading cloud platforms. At Stripe, I scaled high-concurrency ingestion pipelines handling 50k events per second. I specialize in resilient distributed systems and TypeScript architectures, and I am drawn to Acme because your team is solving developer infrastructure at global scale.",
+        "I am a full-stack engineer with 6 years leading cloud platforms. In my prior role, I scaled high-concurrency ingestion pipelines handling 50k events per second. I specialize in resilient distributed systems and TypeScript architectures, and I am drawn to this role because your team is solving developer infrastructure at global scale.",
       expandedAnswer:
-        "Structure: Present-Past-Future framework. 1. Present: Lead Senior Full-Stack Engineer focusing on real-time event streaming. 2. Past: Scaled distributed microservices and reduced p99 latency by 35% with Redis and Kafka. 3. Future: Excited to bring zero-downtime deployment patterns to Acme Cloud's multi-region architecture.",
+        "Structure: Present-Past-Future framework. 1. Present: Lead Senior Full-Stack Engineer focusing on real-time event streaming. 2. Past: Scaled distributed microservices and reduced p99 latency by 35% with Redis and Kafka. 3. Future: Excited to bring zero-downtime deployment patterns to the platform's multi-region architecture.",
       resumeBulletSource: {
         role: "Senior Software Engineer",
-        company: "Stripe",
+        company: "Previous Role",
         bullet: "Architected real-time event ingestion engine processing 50k events/sec with 99.99% availability.",
       },
       source: {
-        title: "Acme Cloud Engineering Interview Guide",
-        domain: "glassdoor.com",
-        url: "https://glassdoor.com/Interview/Acme-Cloud-Reviews",
+        title: "Cloud Platform Engineering Interview Guide",
+        domain: "Public Interview Archive",
+        url: "#",
         date: "Oct 2025",
-        verificationType: "Confirmed",
+        verificationType: "Reported by candidates",
       },
     },
     {
@@ -148,15 +148,15 @@ export const SAMPLE_INTERVIEW_PACK: InterviewPackData = {
         "Strategy: Anchor high within the public band, cite market standards, and maintain collaborative tone. Avoid giving a rigid single number. Emphasize total compensation including stock options and flexible benefits.",
       resumeBulletSource: {
         role: "Senior Software Engineer",
-        company: "Stripe",
+        company: "Previous Role",
         bullet: "Led 5-person technical squad delivering core billing integrations driving $12M annual GMV.",
       },
       source: {
-        title: "Levels.fyi Benchmark Data: Acme Cloud Senior Engineer",
-        domain: "levels.fyi",
-        url: "https://levels.fyi/companies/acme-cloud/salaries",
+        title: "Levels.fyi Benchmark Data: Cloud Platform Senior Engineer",
+        domain: "Public Compensation Benchmarks",
+        url: "#",
         date: "Nov 2025",
-        verificationType: "Confirmed",
+        verificationType: "Reported by candidates",
       },
     },
     {
@@ -165,18 +165,18 @@ export const SAMPLE_INTERVIEW_PACK: InterviewPackData = {
       question: "Why are you looking to move on from your current position?",
       whyTheyAsk: "They want to verify you are moving toward high-impact growth rather than running away from conflict or performance hurdles.",
       answerDraft:
-        "I have spent three rewarding years scaling our streaming pipeline and mentoring junior teammates. Having achieved those milestones, our product has entered maintenance mode. I am eager to join a high-velocity team tackling complex edge infrastructure like Acme Cloud.",
+        "I have spent three rewarding years scaling our streaming pipeline and mentoring junior teammates. Having achieved those milestones, our product has entered maintenance mode. I am eager to join a high-velocity team tackling complex edge infrastructure like Cloud Platform.",
       expandedAnswer:
-        "Strategy: Frame the departure purely around technical ambition and readiness for new architectural scale. Praise past teammates and managers, state the milestone achieved, and connect directly to Acme's active scaling roadmap.",
+        "Strategy: Frame the departure purely around technical ambition and readiness for new architectural scale. Praise past teammates and managers, state the milestone achieved, and connect directly to the platform's active scaling roadmap.",
       resumeBulletSource: {
         role: "Senior Software Engineer",
-        company: "Stripe",
+        company: "Previous Role",
         bullet: "Promoted after scaling core streaming service from 5,000 to 50,000 requests/sec with zero downtime.",
       },
       source: {
-        title: "Candidate Debrief: Acme Cloud Recruiter Screen",
-        domain: "blind.com",
-        url: "https://teamblind.com/post/acme-cloud-hiring-bar",
+        title: "Candidate Debrief: Cloud Platform Recruiter Screen",
+        domain: "Candidate Community Archive",
+        url: "#",
         date: "Dec 2025",
         verificationType: "Reported by candidates",
       },
@@ -196,34 +196,34 @@ export const SAMPLE_INTERVIEW_PACK: InterviewPackData = {
         bullet: "Authored 14 blameless incident reviews; implemented CI automated query validation reducing production incidents by 40%.",
       },
       source: {
-        title: "Acme Cloud Technical Bar Raiser Checklist",
+        title: "Cloud Platform Technical Bar Raiser Checklist",
         domain: "github.com",
-        url: "https://github.com/acme-cloud/engineering-handbook",
+        url: "#",
         date: "Sep 2025",
-        verificationType: "Confirmed",
+        verificationType: "Reported by candidates",
       },
     },
   ],
   brief: {
     summary:
-      "Acme Cloud Technologies builds developer-first cloud primitives and serverless execution environments powering over 40,000 global tech companies. Headquartered remotely across 18 countries.",
+      "Cloud Infrastructure Technologies builds developer-first cloud primitives and serverless execution environments powering over 40,000 global tech companies. Headquartered remotely across 18 countries.",
     mission:
       "Eliminating the friction between writing high-performance code and running it globally with single-digit millisecond latency.",
     marketContext:
       "Recently raised Series C ($75M) led by Sequoia; rapidly scaling infrastructure to compete directly with Cloudflare Workers and AWS Lambda at edge nodes.",
     recentNews: [
       {
-        title: "Acme Cloud launches Multi-Region Distributed Key-Value Store",
+        title: "Cloud Platform launches Multi-Region Distributed Key-Value Store",
         date: "Oct 14, 2025",
         source: "TechCrunch",
-        url: "https://techcrunch.com/acme-cloud-key-value",
-        snippet: "Acme Cloud unveiled global sub-10ms data storage accessible directly from edge functions worldwide.",
+        url: "#",
+        snippet: "Cloud Platform unveiled global sub-10ms data storage accessible directly from edge functions worldwide.",
       },
       {
-        title: "Acme Cloud passes SOC2 Type II and ISO 27001 Security Audits",
+        title: "Cloud Platform passes SOC2 Type II and ISO 27001 Security Audits",
         date: "Sep 28, 2025",
-        source: "Acme Blog",
-        url: "https://blog.acmecloud.com/security-milestone",
+        source: "Engineering Blog",
+        url: "https://blog.engineering.internal/security-milestone",
         snippet: "Enterprise-grade compliance achieved ahead of major Fortune 500 deployment contracts.",
       },
     ],
@@ -247,7 +247,7 @@ export const SAMPLE_INTERVIEW_PACK: InterviewPackData = {
   },
   process: {
     overview:
-      "Acme Cloud uses a 4-stage transparent interview pipeline designed to mirror day-to-day engineering collaboration rather than whiteboard trivia.",
+      "Cloud Platform uses a 4-stage transparent interview pipeline designed to mirror day-to-day engineering collaboration rather than whiteboard trivia.",
     stages: [
       {
         step: 1,
@@ -288,23 +288,23 @@ export const SAMPLE_INTERVIEW_PACK: InterviewPackData = {
       id: "card-1",
       question: "How do you handle race conditions in distributed edge environments?",
       category: "must-know",
-      label: "Confirmed",
-      whyTheyAsk: "Acme runs code across 250+ edge nodes; concurrency and eventual consistency are core daily problems.",
+      label: "Reported by candidates",
+      whyTheyAsk: "Cloud Platform runs code across 250+ edge nodes; concurrency and eventual consistency are core daily problems.",
       answerDraft:
-        "I utilize optimistic locking with version vectors for low-contention routes, and Redis-backed distributed locks with token renewals for critical financial mutations. In my last role at Stripe, this eliminated duplicate transaction processing across concurrent webhooks.",
+        "I utilize optimistic locking with version vectors for low-contention routes, and Redis-backed distributed locks with token renewals for critical financial mutations. In my previous role, this eliminated duplicate transaction processing across concurrent webhooks.",
       expandedAnswer:
         "When designing for edge concurrency: 1. Evaluate whether strong consistency is mandatory or if idempotent deduplication keys suffice. 2. Use atomic Compare-And-Swap (CAS) primitives. 3. Implement exponential backoff jitter on lock acquisition failures to avoid thundering herd.",
       resumeBulletSource: {
         role: "Senior Software Engineer",
-        company: "Stripe",
+        company: "Previous Role",
         bullet: "Designed distributed idempotency middleware preventing duplicate payments across 2M daily webhook deliveries.",
       },
       source: {
-        title: "Acme Cloud Systems Interview Feedback",
-        domain: "glassdoor.com",
-        url: "https://glassdoor.com/Interview/Acme-Cloud-Systems",
+        title: "Cloud Platform Systems Interview Feedback",
+        domain: "Public Interview Archive",
+        url: "#",
         date: "Oct 2025",
-        verificationType: "Confirmed",
+        verificationType: "Reported by candidates",
       },
       isMustKnow: true,
     },
@@ -325,8 +325,8 @@ export const SAMPLE_INTERVIEW_PACK: InterviewPackData = {
       },
       source: {
         title: "Frontend Engineering Round Insights",
-        domain: "blind.com",
-        url: "https://teamblind.com/post/acme-nextjs-interview",
+        domain: "Candidate Community Archive",
+        url: "#",
         date: "Nov 2025",
         verificationType: "Reported by candidates",
       },
@@ -336,7 +336,7 @@ export const SAMPLE_INTERVIEW_PACK: InterviewPackData = {
       id: "card-3",
       question: "How do you approach testing distributed asynchronous systems?",
       category: "must-know",
-      label: "Confirmed",
+      label: "Reported by candidates",
       whyTheyAsk: "They care deeply about automated regression safety without relying on slow, brittle end-to-end suites.",
       answerDraft:
         "I apply testing pyramids: lightweight unit tests with strict contract mocks for business logic, testcontainers for ephemeral database integration, and negative chaos injection to verify timeouts, circuit breakers, and retry backoffs.",
@@ -344,15 +344,15 @@ export const SAMPLE_INTERVIEW_PACK: InterviewPackData = {
         "Rather than mocking network calls completely, I prefer consumer-driven contract tests using Pact and spinning up transient Postgres/Redis containers in CI. This catches schema divergence before deployment.",
       resumeBulletSource: {
         role: "Senior Software Engineer",
-        company: "Stripe",
+        company: "Previous Role",
         bullet: "Built comprehensive contract test suite in GitHub Actions, slashing staging regressions by 65%.",
       },
       source: {
-        title: "Acme Engineering Principles Documentation",
-        domain: "acmecloud.com",
-        url: "https://acmecloud.com/docs/engineering-testing",
+        title: "Core Engineering Principles Documentation",
+        domain: "engineering.internal",
+        url: "https://engineering.internal/docs/engineering-testing",
         date: "Aug 2025",
-        verificationType: "Confirmed",
+        verificationType: "Reported by candidates",
       },
       isMustKnow: true,
     },
@@ -368,7 +368,7 @@ export const SAMPLE_INTERVIEW_PACK: InterviewPackData = {
         "Key principle: Never speak in abstract 'clean code' terms to product stakeholders. Translate technical debt into risk to uptime, delivery velocity, and operational costs. Propose tiered phased deliveries.",
       resumeBulletSource: {
         role: "Senior Software Engineer",
-        company: "Stripe",
+        company: "Previous Role",
         bullet: "Partnered with product leadership to balance feature roadmaps with 20% dedicated architectural maintenance sprints.",
       },
       source: {
@@ -384,7 +384,7 @@ export const SAMPLE_INTERVIEW_PACK: InterviewPackData = {
       id: "card-5",
       question: "How do you design an API that needs to scale to tens of millions of daily requests?",
       category: "must-know",
-      label: "Confirmed",
+      label: "Reported by candidates",
       whyTheyAsk: "Core capability test for platform teams handling developer-facing webhooks and REST/GraphQL APIs.",
       answerDraft:
         "I start with clear schema versioning, pagination via opaque cursors, and tiered rate-limiting at edge gateways. For read-heavy endpoints, I employ stale-while-revalidate caching and read replicas, keeping database writes buffered via message queues.",
@@ -396,11 +396,11 @@ export const SAMPLE_INTERVIEW_PACK: InterviewPackData = {
         bullet: "Redesigned telemetry ingestion API supporting 15M daily requests with sub-50ms p95 latency.",
       },
       source: {
-        title: "Acme Cloud Architecture Round Breakdown",
-        domain: "glassdoor.com",
-        url: "https://glassdoor.com/Interview/Acme-Cloud-Architecture",
+        title: "Cloud Platform Architecture Round Breakdown",
+        domain: "Public Interview Archive",
+        url: "#",
         date: "Oct 2025",
-        verificationType: "Confirmed",
+        verificationType: "Reported by candidates",
       },
       isMustKnow: true,
     },
@@ -416,13 +416,13 @@ export const SAMPLE_INTERVIEW_PACK: InterviewPackData = {
         "Never perform destructive schema operations in a single deployment. Always separate schema changes, data backfills, and application read/write migrations into independent releases.",
       resumeBulletSource: {
         role: "Senior Software Engineer",
-        company: "Stripe",
+        company: "Previous Role",
         bullet: "Executed 18 zero-downtime PostgreSQL migrations on tables with 100M+ rows using expand-contract patterns.",
       },
       source: {
         title: "Engineering Blog: How We Migrate Databases at Scale",
-        domain: "acmecloud.com",
-        url: "https://blog.acmecloud.com/zero-downtime-migrations",
+        domain: "engineering.internal",
+        url: "https://blog.engineering.internal/zero-downtime-migrations",
         date: "Jul 2025",
         verificationType: "Reported by candidates",
       },
@@ -440,7 +440,7 @@ export const SAMPLE_INTERVIEW_PACK: InterviewPackData = {
         "Healthy teams maintain review turnaround times under 4 hours. Automated linters (ESLint, Prettier) eliminate bikeshedding, allowing human reviewers to focus on system design and business logic edge cases.",
       resumeBulletSource: {
         role: "Senior Software Engineer",
-        company: "Stripe",
+        company: "Previous Role",
         bullet: "Championed trunk-based development and reduced average PR turnaround time from 28h to 3.5h across 12 engineers.",
       },
       source: {
@@ -457,20 +457,20 @@ export const SAMPLE_INTERVIEW_PACK: InterviewPackData = {
       question: "How do you mentor junior and mid-level engineers in a remote setting?",
       category: "leadership",
       label: "Likely",
-      whyTheyAsk: "Senior roles at Acme Cloud require lifting the productivity and technical maturity of the wider squad.",
+      whyTheyAsk: "Senior roles at Cloud Platform require lifting the productivity and technical maturity of the wider squad.",
       answerDraft:
         "I run weekly 1-on-1 pairing sessions, practice constructive PR commenting with 'why' explanations rather than demands, and assign stretch architectural components backed by collaborative design docs so they build confidence safely.",
       expandedAnswer:
         "Mentorship requires intentional asynchronous space: creating shared scratchpads, recording 2-minute Loom walkthroughs of tricky codebases, and celebrating when a mentee leads their first production launch.",
       resumeBulletSource: {
         role: "Senior Software Engineer",
-        company: "Stripe",
+        company: "Previous Role",
         bullet: "Mentored 3 junior developers to mid-level promotions within 14 months through weekly pairing and RFC reviews.",
       },
       source: {
-        title: "Acme Cloud Leadership Competencies",
-        domain: "acmecloud.com",
-        url: "https://acmecloud.com/careers/engineering-levels",
+        title: "Cloud Platform Leadership Competencies",
+        domain: "engineering.internal",
+        url: "https://engineering.internal/careers/engineering-levels",
         date: "May 2025",
         verificationType: "Likely",
       },
@@ -480,7 +480,7 @@ export const SAMPLE_INTERVIEW_PACK: InterviewPackData = {
       id: "card-9",
       question: "How do you diagnose and troubleshoot production memory leaks in Node.js?",
       category: "technical",
-      label: "Confirmed",
+      label: "Reported by candidates",
       whyTheyAsk: "Node microservices frequently suffer from uncollected closures, event listeners, or cache growth.",
       answerDraft:
         "I capture heap snapshots using node --inspect and compare allocation deltas across traffic spikes. In a past incident, I identified unevicted Map instances in a custom session cache, replacing it with an LRU cache with strict byte-size ceilings.",
@@ -492,11 +492,11 @@ export const SAMPLE_INTERVIEW_PACK: InterviewPackData = {
         bullet: "Identified and resolved V8 memory leak in telemetry workers, decreasing server memory footprint by 55%.",
       },
       source: {
-        title: "Acme Cloud Systems Debugging Round",
-        domain: "glassdoor.com",
-        url: "https://glassdoor.com/Interview/Acme-Node-Troubleshooting",
+        title: "Cloud Platform Systems Debugging Round",
+        domain: "Public Interview Archive",
+        url: "#",
         date: "Nov 2025",
-        verificationType: "Confirmed",
+        verificationType: "Reported by candidates",
       },
       isMustKnow: false,
     },
@@ -504,7 +504,7 @@ export const SAMPLE_INTERVIEW_PACK: InterviewPackData = {
       id: "card-10",
       question: "How do you prevent SQL injection and unauthorized data access in multi-tenant environments?",
       category: "technical",
-      label: "Confirmed",
+      label: "Reported by candidates",
       whyTheyAsk: "They host thousands of enterprise accounts on shared databases; data leakage between tenants is fatal.",
       answerDraft:
         "I enforce parameterized queries at all times, never concatenate strings into SQL, and implement PostgreSQL Row Level Security (RLS) with session-based tenant IDs so the database engine guarantees tenancy boundaries regardless of application layer bugs.",
@@ -512,15 +512,15 @@ export const SAMPLE_INTERVIEW_PACK: InterviewPackData = {
         "Defense-in-depth: 1. Strict ORM/query builder parameterization. 2. Database RLS policies bound to authenticated JWT tenant claims. 3. Automated static analysis linters scanning for dynamic query strings.",
       resumeBulletSource: {
         role: "Senior Software Engineer",
-        company: "Stripe",
+        company: "Previous Role",
         bullet: "Implemented multi-tenant isolation via Postgres RLS and hardened cryptographic token validation.",
       },
       source: {
         title: "Security & Multi-Tenancy Architecture Guidelines",
-        domain: "acmecloud.com",
-        url: "https://acmecloud.com/security/multi-tenancy",
+        domain: "engineering.internal",
+        url: "https://engineering.internal/security/multi-tenancy",
         date: "Sep 2025",
-        verificationType: "Confirmed",
+        verificationType: "Reported by candidates",
       },
       isMustKnow: false,
     },
@@ -536,7 +536,7 @@ export const SAMPLE_INTERVIEW_PACK: InterviewPackData = {
         "Transparency is key: never silently absorb scope creep and burn out the team. Present data on sprint velocity, identify what gets dropped if new requirements are accepted, and agree on written scope boundaries.",
       resumeBulletSource: {
         role: "Senior Software Engineer",
-        company: "Stripe",
+        company: "Previous Role",
         bullet: "Delivered Q3 billing redesign on schedule by negotiating phased MVP scope across 4 cross-functional teams.",
       },
       source: {
@@ -553,7 +553,7 @@ export const SAMPLE_INTERVIEW_PACK: InterviewPackData = {
       question: "Explain your experience with GraphQL vs REST tradeoffs.",
       category: "technical",
       label: "Unverified",
-      whyTheyAsk: "Acme maintains both public REST APIs and internal GraphQL federations.",
+      whyTheyAsk: "Cloud Platform maintains both public REST APIs and internal GraphQL federations.",
       answerDraft:
         "REST excels at HTTP-level caching, simplicity, and predictable security boundaries. GraphQL shines for complex frontends requiring multiple nested entities in one round trip. I use REST for public webhook endpoints and GraphQL for developer dashboard UI query efficiency.",
       expandedAnswer:
@@ -565,8 +565,8 @@ export const SAMPLE_INTERVIEW_PACK: InterviewPackData = {
       },
       source: {
         title: "Developer Community Interview Notes",
-        domain: "reddit.com",
-        url: "https://reddit.com/r/cscareerquestions",
+        domain: "Developer Forum Discussions",
+        url: "#",
         date: "Jan 2025",
         verificationType: "Unverified",
       },
@@ -589,8 +589,8 @@ export const SAMPLE_INTERVIEW_PACK: InterviewPackData = {
       },
       source: {
         title: "Candidate Debrief: Site Reliability Round",
-        domain: "blind.com",
-        url: "https://teamblind.com/post/acme-sre-metrics",
+        domain: "Candidate Community Archive",
+        url: "#",
         date: "Oct 2025",
         verificationType: "Reported by candidates",
       },
@@ -608,7 +608,7 @@ export const SAMPLE_INTERVIEW_PACK: InterviewPackData = {
         "Dependencies are future liabilities. Check: 1. Release frequency and open GitHub issues. 2. Zero transient dependency bloat. 3. Tree-shaking support. 4. Active corporate backing or healthy open source governance.",
       resumeBulletSource: {
         role: "Senior Software Engineer",
-        company: "Stripe",
+        company: "Previous Role",
         bullet: "Audited frontend monorepo dependencies, removing 14 unmaintained packages and reducing bundle size by 240KB.",
       },
       source: {
@@ -632,13 +632,13 @@ export const SAMPLE_INTERVIEW_PACK: InterviewPackData = {
         "Align personal ambitions with company growth vectors. Emphasize technical influence, multiplying team output, and tackling large-scale architectural challenges.",
       resumeBulletSource: {
         role: "Senior Software Engineer",
-        company: "Stripe",
+        company: "Previous Role",
         bullet: "Served as technical design reviewer across 3 engineering squads, establishing company-wide distributed design RFC templates.",
       },
       source: {
-        title: "Acme Cloud Recruiter Screen Questions",
-        domain: "glassdoor.com",
-        url: "https://glassdoor.com/Interview/Acme-Cloud-Career-Goals",
+        title: "Cloud Platform Recruiter Screen Questions",
+        domain: "Public Interview Archive",
+        url: "#",
         date: "Sep 2025",
         verificationType: "Likely",
       },
@@ -673,7 +673,7 @@ export const SAMPLE_INTERVIEW_PACK: InterviewPackData = {
       id: "gap-4",
       jdRequirement: "Track record of authoring RFCs and driving cross-team consensus",
       resumeStatus: "matched",
-      resumeEvidence: "Authored 8 accepted architectural RFCs at Stripe adopted across 4 platform engineering squads.",
+      resumeEvidence: "Authored 8 accepted architectural RFCs in prior platform teams adopted across 4 platform engineering squads.",
       bridgeStrategy: "Direct match. Describe your RFC process: drafting problem statements, evaluating alternatives, and collecting async feedback.",
     },
   ],
@@ -763,44 +763,44 @@ export const SAMPLE_INTERVIEW_PACK: InterviewPackData = {
   ],
   sources: [
     {
-      title: "Acme Cloud Engineering Interview Guide & Submissions",
-      domain: "glassdoor.com",
-      url: "https://glassdoor.com/Interview/Acme-Cloud-Reviews",
+      title: "Cloud Platform Engineering Interview Guide & Submissions",
+      domain: "Public Interview Archive",
+      url: "#",
       date: "Oct 2025",
-      verificationType: "Confirmed",
+      verificationType: "Reported by candidates",
     },
     {
-      title: "Candidate Debrief: Acme Cloud Recruiter Screen & Technical Rounds",
-      domain: "blind.com",
-      url: "https://teamblind.com/post/acme-cloud-hiring-bar",
+      title: "Candidate Debrief: Cloud Platform Recruiter Screen & Technical Rounds",
+      domain: "Candidate Community Archive",
+      url: "#",
       date: "Dec 2025",
       verificationType: "Reported by candidates",
     },
     {
-      title: "Acme Cloud Engineering Handbook & RFC Process",
+      title: "Cloud Platform Engineering Handbook & RFC Process",
       domain: "github.com",
-      url: "https://github.com/acme-cloud/engineering-handbook",
+      url: "#",
       date: "Sep 2025",
-      verificationType: "Confirmed",
+      verificationType: "Reported by candidates",
     },
     {
-      title: "Acme Cloud Multi-Region Distributed Key-Value Launch",
+      title: "Cloud Platform Multi-Region Distributed Key-Value Launch",
       domain: "techcrunch.com",
-      url: "https://techcrunch.com/acme-cloud-key-value",
+      url: "#",
       date: "Oct 2025",
-      verificationType: "Confirmed",
+      verificationType: "Reported by candidates",
     },
     {
-      title: "Levels.fyi Benchmark Data: Acme Cloud Compensation",
-      domain: "levels.fyi",
-      url: "https://levels.fyi/companies/acme-cloud/salaries",
+      title: "Levels.fyi Benchmark Data: Cloud Platform Compensation",
+      domain: "Public Compensation Benchmarks",
+      url: "#",
       date: "Nov 2025",
-      verificationType: "Confirmed",
+      verificationType: "Reported by candidates",
     },
     {
       title: "Engineering Blog: How We Migrate Databases at Scale",
-      domain: "acmecloud.com",
-      url: "https://blog.acmecloud.com/zero-downtime-migrations",
+      domain: "engineering.internal",
+      url: "https://blog.engineering.internal/zero-downtime-migrations",
       date: "Jul 2025",
       verificationType: "Reported by candidates",
     },
