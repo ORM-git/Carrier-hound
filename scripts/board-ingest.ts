@@ -1031,7 +1031,7 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
             .filter((j) => j && j.title && isValidApplyUrl(j.apply_url))
             .map((j): NormalizedJob => ({
               ...j,
-              source: target.ats,
+              source: target.ats.endsWith('-board') ? target.ats : `${target.ats}-board`,
               source_type: 'ats',
               company_slug: target.token,
               description: cleanAndTruncateDescription(j.description, 1500),
