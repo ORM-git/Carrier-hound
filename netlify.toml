@@ -88,6 +88,12 @@
   force = true
 
 [[redirects]]
+  from = "/jobs/:id/interview-pack"
+  to = "/jobs/sample/interview-pack.html"
+  status = 200
+  force = false
+
+[[redirects]]
   from = "/jobs/detail"
   to = "/jobs/detail.html"
   status = 200
