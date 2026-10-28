@@ -1,0 +1,63 @@
+name: ATS Board Ingestion (Dry-Run / Manual Dispatch)
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Maximum number of company boards to process (leave empty for all)'
+        required: false
+        type: string
+        default: '30'
+      ats:
+        description: 'Filter by ATS provider'
+        required: false
+        type: choice
+        options:
+          - all
+          - greenhouse
+          - lever
+          - ashby
+        default: all
+      company:
+        description: 'Filter by company name substring'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  board-ingest:
+    name: Run ATS Board Ingestion
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run ATS Board Ingestion (Dry-Run)
+        run: |
+          ARGS=""
+          if [ -n "${{ github.event.inputs.limit }}" ]; then
+            ARGS="$ARGS --limit ${{ github.event.inputs.limit }}"
+          fi
+          if [ -n "${{ github.event.inputs.ats }}" ] && [ "${{ github.event.inputs.ats }}" != "all" ]; then
+            ARGS="$ARGS --ats ${{ github.event.inputs.ats }}"
+          fi
+          if [ -n "${{ github.event.inputs.company }}" ]; then
+            ARGS="$ARGS --company '${{ github.event.inputs.company }}'"
+          fi
+
+          echo "Starting ATS board ingestion runner in safe dry-run mode..."
+          npx tsx scripts/board-ingest.ts $ARGS

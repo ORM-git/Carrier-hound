@@ -1,0 +1,43 @@
+{
+  "jobs": [
+    {
+      "id": "ashby-3001",
+      "title": "Machine Learning Research Scientist",
+      "location": "San Francisco, CA (Remote)",
+      "department": "Research",
+      "isRemote": true,
+      "publishedAt": "2026-10-27T10:00:00.000Z",
+      "jobUrl": "https://jobs.ashbyhq.com/openai/ashby-3001",
+      "applyUrl": "https://jobs.ashbyhq.com/openai/ashby-3001/application",
+      "descriptionHtml": "<div><h2>Research Focus</h2><p>Develop foundational reasoning models.</p><style>body{color:red;}</style></div>",
+      "compensation": {
+        "compensationTiers": [
+          {
+            "id": "tier-1",
+            "tierSummary": "$280,000 - $350,000",
+            "components": [
+              {
+                "compensationType": "Salary",
+                "interval": "1 YEAR",
+                "currencyCode": "USD",
+                "minValue": 280000,
+                "maxValue": 350000
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "ashby-3002",
+      "title": "Recruiting Coordinator",
+      "location": "Bengaluru, India",
+      "department": "Talent",
+      "isRemote": false,
+      "publishedAt": "2026-10-27T11:00:00.000Z",
+      "jobUrl": "https://jobs.ashbyhq.com/openai/ashby-3002",
+      "applyUrl": "https://jobs.ashbyhq.com/openai/ashby-3002/application",
+      "descriptionPlain": "Coordinate candidate interview schedules, logistics, and debrief sessions."
+    }
+  ]
+}

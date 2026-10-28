@@ -1,0 +1,32 @@
+{
+  "jobs": [
+    {
+      "id": 1001,
+      "title": "Senior Backend Engineer",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/1001",
+      "location": {
+        "name": "Remote, United States"
+      },
+      "updated_at": "2026-10-25T12:00:00Z",
+      "content": "&lt;p&gt;We are seeking a &lt;strong&gt;Senior Backend Engineer&lt;/strong&gt; to scale our payment infrastructure.&lt;/p&gt;&lt;script&gt;alert('xss')&lt;/script&gt;&lt;p&gt;Requires Go and PostgreSQL.&lt;/p&gt;",
+      "pay_input_ranges": [
+        {
+          "min_cents": 16000000,
+          "max_cents": 21000000,
+          "currency_type": "USD"
+        }
+      ]
+    },
+    {
+      "id": 1002,
+      "title": "Customer Support Specialist",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/1002",
+      "location": {
+        "name": "Bengaluru, India"
+      },
+      "updated_at": "2026-10-26T08:30:00Z",
+      "content": "<p>Support our global customers. Excellent communication required.</p>",
+      "pay_input_ranges": null
+    }
+  ]
+}
