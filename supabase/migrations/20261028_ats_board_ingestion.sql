@@ -2,13 +2,17 @@
 -- Migration: ATS Company Board Token Registry & Consecutive Misses Tracking
 -- Date: 2026-10-28
 -- Scope: public.company_token_registry, public.jobs.consecutive_misses
+-- Safety: Do NOT apply directly to production database during test/review.
 -- ==============================================================================
 
 -- 1. Add consecutive_misses column to public.jobs for stale board tracking
 ALTER TABLE public.jobs
   ADD COLUMN IF NOT EXISTS consecutive_misses INTEGER DEFAULT 0;
 
-CREATE INDEX IF NOT EXISTS jobs_consecutive_misses_idx
+-- Safe non-blocking index for stale tracking.
+-- Note: CONCURRENTLY avoids table locks during creation on public.jobs.
+-- Note: Must be executed outside a transaction block (Postgres limitation).
+CREATE INDEX CONCURRENTLY IF NOT EXISTS jobs_consecutive_misses_idx
   ON public.jobs (consecutive_misses)
   WHERE is_active = true;
 

@@ -12,18 +12,24 @@
  * - Explicitly banned scrapable domains: LinkedIn, Indeed, Naukri, Glassdoor, Jobright, Workday.
  * - Employer text is never misrepresented; real apply URLs & company names preserved.
  * - Stored sources: 'greenhouse' | 'lever' | 'ashby'.
- * - Closed-job handling: jobs that vanish from the board are marked inactive after 2 consecutive misses (not deleted).
+ * - Rate limit is strictly 1 req/s per host (1000ms delay between consecutive requests to the same domain).
+ *   Do not lower rate limit to 500ms unless explicitly instructed.
+ * - Closed-job handling:
+ *     - Only count misses after a successful non-empty fetch for that specific company board.
+ *     - Scoped strictly by source + company_slug.
+ *     - Reconciled with cleanup.ts: jobs that vanish are marked inactive after 2 consecutive misses (never deleted).
+ *     - Inactive jobs remain until cleanup.ts deletes them after 14 days of being unseen (last_seen_at < 14d).
+ *     - Active jobs older than 45 days are naturally expired by cleanup.ts (posted_at < 45d).
+ *     - Sensible posted_at: Greenhouse updated_at is NOT a posting date (it updates on recruiter edits).
+ *       Use first_published_at or created_at if present; otherwise fall back to discovery time.
+ * - Real run and fixture run share ONE canonical normalizer: normalizeAtsJob.
  * - Dry-run mode by default; live database writes require explicit --live-write-unlocked.
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
-import { getAdapter } from './adapters';
-import { GreenhouseAdapter } from './adapters/greenhouse';
-import { LeverAdapter } from './adapters/lever';
-import { AshbyAdapter } from './adapters/ashby';
-import { NormalizedJob, SourceConfig } from './types';
+import { NormalizedJob } from './types';
 import {
   cleanText,
   cleanAndTruncateDescription,
@@ -34,8 +40,10 @@ import {
   detectSeniority,
   detectCategory,
   slugify,
+  parseSalary,
+  formatSalary,
 } from './utils/sanitizer';
-import { isForbiddenDomain } from './utils/polite-fetch';
+import { politeFetchJson, isForbiddenDomain } from './utils/polite-fetch';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -65,6 +73,8 @@ export interface IngestionOptions {
 
 export interface ClosedJobRecord {
   id: string;
+  source: 'greenhouse' | 'lever' | 'ashby';
+  company_slug: string;
   source_job_id: string;
   company: string;
   title: string;
@@ -75,6 +85,8 @@ export interface ClosedJobRecord {
 
 export interface ClosedJobDecision {
   id: string;
+  source: 'greenhouse' | 'lever' | 'ashby';
+  company_slug: string;
   source_job_id: string;
   consecutive_misses: number;
   is_active: boolean;
@@ -100,26 +112,15 @@ export interface BoardIngestionStats {
 }
 
 /**
- * Loads the company-token registry from disk.
+ * Loads the company-token registry from disk (data/ats-company-registry.json).
  */
 export function loadCompanyRegistry(customPath?: string): CompanyRegistryEntry[] {
-  const defaultPaths = [
-    path.resolve(__dirname, '../data/ats-company-registry.json'),
-    path.resolve(__dirname, 'config/ats-company-registry.json'),
-  ];
+  const resolvedPath = customPath
+    ? path.resolve(customPath)
+    : path.resolve(__dirname, '../data/ats-company-registry.json');
 
-  let resolvedPath = customPath ? path.resolve(customPath) : null;
-  if (!resolvedPath || !fs.existsSync(resolvedPath)) {
-    for (const p of defaultPaths) {
-      if (fs.existsSync(p)) {
-        resolvedPath = p;
-        break;
-      }
-    }
-  }
-
-  if (!resolvedPath || !fs.existsSync(resolvedPath)) {
-    throw new Error('ATS company registry file not found in data/ or scripts/config/');
+  if (!fs.existsSync(resolvedPath)) {
+    throw new Error(`ATS company registry file not found at ${resolvedPath}`);
   }
 
   const raw = fs.readFileSync(resolvedPath, 'utf-8');
@@ -128,7 +129,25 @@ export function loadCompanyRegistry(customPath?: string): CompanyRegistryEntry[]
 }
 
 /**
- * Evaluates whether an ATS URL is authorized and adheres to public API locks.
+ * Builds the canonical public API URL for a given ATS provider and token.
+ */
+export function buildAtsApiUrl(ats: 'greenhouse' | 'lever' | 'ashby', token: string): string {
+  const cleanToken = encodeURIComponent(token.trim().toLowerCase());
+  if (ats === 'greenhouse') {
+    return `https://boards-api.greenhouse.io/v1/boards/${cleanToken}/jobs?content=true&pay_transparency=true`;
+  }
+  if (ats === 'lever') {
+    return `https://api.lever.co/v0/postings/${cleanToken}?mode=json`;
+  }
+  if (ats === 'ashby') {
+    return `https://api.ashbyhq.com/posting-api/job-board/${cleanToken}`;
+  }
+  throw new Error(`Unsupported ATS type: ${ats}`);
+}
+
+/**
+ * Evaluates whether an ATS request URL is authorized and adheres to public API locks.
+ * Strictly verifies https protocol, authorized hostnames, and rejects forbidden scrapable domains.
  */
 export function isAuthorizedAtsUrl(url: string, ats: string): boolean {
   if (!url || typeof url !== 'string') return false;
@@ -154,18 +173,155 @@ export function isAuthorizedAtsUrl(url: string, ats: string): boolean {
 }
 
 /**
- * Normalizes an employer posting into the standardized CareerMonke jobs schema.
+ * Validates apply_url to ensure it is HTTPS-only, well-formed, and not hosted on a forbidden domain.
  */
-export function normalizeAtsJob(raw: any, ats: 'greenhouse' | 'lever' | 'ashby', company: string, slug: string): NormalizedJob | null {
-  const nowIso = new Date().toISOString();
+export function isValidApplyUrl(applyUrl: string): boolean {
+  if (!applyUrl || typeof applyUrl !== 'string') return false;
+  try {
+    const parsed = new URL(applyUrl);
+    if (parsed.protocol !== 'https:') return false;
+    if (isForbiddenDomain(applyUrl)) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Fetches raw employer posting objects from authorized public endpoints.
+ * Calls isAuthorizedAtsUrl on every request URL before dispatching.
+ */
+export async function fetchRawAtsJobs(
+  ats: 'greenhouse' | 'lever' | 'ashby',
+  token: string
+): Promise<{ rawJobs: any[]; fetchSucceeded: boolean }> {
+  const url = buildAtsApiUrl(ats, token);
+
+  // Security guard: verify URL before making HTTP request
+  if (!isAuthorizedAtsUrl(url, ats)) {
+    throw new Error(`Unauthorized or forbidden ATS request URL: ${url}`);
+  }
+
+  const data = await politeFetchJson<any>(url);
+  if (!data) {
+    return { rawJobs: [], fetchSucceeded: false };
+  }
 
   if (ats === 'greenhouse') {
-    if (!raw || !raw.title || !raw.absolute_url) return null;
+    const jobs = Array.isArray(data.jobs) ? data.jobs : [];
+    return { rawJobs: jobs, fetchSucceeded: true };
+  }
+  if (ats === 'lever') {
+    const jobs = Array.isArray(data) ? data : [];
+    return { rawJobs: jobs, fetchSucceeded: true };
+  }
+  if (ats === 'ashby') {
+    const jobs = Array.isArray(data.jobs) ? data.jobs : [];
+    return { rawJobs: jobs, fetchSucceeded: true };
+  }
+
+  return { rawJobs: [], fetchSucceeded: false };
+}
+
+/**
+ * ONE CANONICAL NORMALIZER:
+ * Normalizes an employer posting into the standardized CareerMonke jobs schema.
+ * Shared by both the live network fetcher and fixture-based tests.
+ *
+ * Rules:
+ * 1. Validates apply_url: must be https-only and non-forbidden host.
+ * 2. Sensible posted_at: Greenhouse updated_at is NOT a posting date.
+ *    Uses first_published_at or created_at if present; falls back to discovery timestamp.
+ * 3. Extracts structured compensation when available with fallback to sanitizing description.
+ */
+export function normalizeAtsJob(
+  raw: any,
+  ats: 'greenhouse' | 'lever' | 'ashby',
+  company: string,
+  slug: string
+): NormalizedJob | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const nowIso = new Date().toISOString();
+
+  // ---------------------------------------------------------------------------
+  // GREENHOUSE
+  // ---------------------------------------------------------------------------
+  if (ats === 'greenhouse') {
+    if (!raw.title || !raw.absolute_url) return null;
+    const applyUrl = String(raw.absolute_url).trim();
+    if (!isValidApplyUrl(applyUrl)) return null;
+
     const title = cleanText(raw.title);
+    if (!title) return null;
+
     const location = cleanText(raw.location?.name || 'Unspecified');
     const remote = detectRemote(title, location);
     const countryCode = detectCountryCode(location);
     const description = cleanAndTruncateDescription(raw.content, 4000);
+
+    // Sensible posted_at: Greenhouse updated_at is NOT a posting date.
+    // Recruiter edits update updated_at. Use first_published_at or created_at if present;
+    // otherwise fallback to nowIso (discovery time).
+    const postedAt = raw.first_published_at || raw.created_at || nowIso;
+
+    // Structured pay transparency extraction
+    let salaryText: string | null = null;
+    let salaryMin: number | null = null;
+    let salaryMax: number | null = null;
+    let currency = 'USD';
+    let salaryPeriod: 'yearly' | 'monthly' | 'hourly' | undefined = undefined;
+
+    const validRange = Array.isArray(raw.pay_input_ranges)
+      ? raw.pay_input_ranges.find(
+          (r: any) =>
+            (r && r.min_cents != null && r.min_cents > 0) ||
+            (r && r.max_cents != null && r.max_cents > 0)
+        )
+      : null;
+
+    if (validRange) {
+      const rawMin =
+        validRange.min_cents != null && validRange.min_cents > 0
+          ? validRange.min_cents / 100
+          : null;
+      const rawMax =
+        validRange.max_cents != null && validRange.max_cents > 0
+          ? validRange.max_cents / 100
+          : null;
+
+      salaryMin = rawMin != null ? Math.round(rawMin) : null;
+      salaryMax = rawMax != null ? Math.round(rawMax) : null;
+
+      if (salaryMin != null && salaryMax != null && salaryMin > salaryMax) {
+        const temp = salaryMin;
+        salaryMin = salaryMax;
+        salaryMax = temp;
+      }
+
+      if (validRange.currency_type && String(validRange.currency_type).trim()) {
+        currency = String(validRange.currency_type).trim().toUpperCase();
+      }
+
+      const context = `${validRange.title || ''} ${validRange.blurb || ''}`;
+      if (currency === 'USD' && /\b(hour|hourly|\/hr)\b/i.test(context)) {
+        salaryPeriod = 'hourly';
+      } else {
+        salaryPeriod = undefined;
+      }
+
+      if (salaryMin != null || salaryMax != null) {
+        salaryText = formatSalary(salaryMin, salaryMax, currency, salaryPeriod);
+      }
+    }
+
+    if (!salaryText && salaryMin == null && salaryMax == null) {
+      const fallback = parseSalary(description, { title, location });
+      salaryText = fallback.salary_text;
+      salaryMin = fallback.salary_min;
+      salaryMax = fallback.salary_max;
+      currency = fallback.currency;
+      salaryPeriod = fallback.salary_period;
+    }
 
     return {
       source: 'greenhouse',
@@ -182,10 +338,15 @@ export function normalizeAtsJob(raw: any, ats: 'greenhouse' | 'lever' | 'ashby',
       job_type: detectJobType(title),
       seniority: detectSeniority(title),
       description,
-      apply_url: raw.absolute_url,
+      apply_url: applyUrl,
       source_url: `https://boards.greenhouse.io/${slug}`,
+      salary_text: salaryText,
+      salary_min: salaryMin,
+      salary_max: salaryMax,
+      currency,
+      salary_period: salaryPeriod,
       category: detectCategory(title),
-      posted_at: raw.updated_at || nowIso,
+      posted_at: postedAt,
       discovered_at: nowIso,
       last_seen_at: nowIso,
       verified: true,
@@ -193,15 +354,56 @@ export function normalizeAtsJob(raw: any, ats: 'greenhouse' | 'lever' | 'ashby',
     };
   }
 
+  // ---------------------------------------------------------------------------
+  // LEVER
+  // ---------------------------------------------------------------------------
   if (ats === 'lever') {
-    if (!raw || !raw.text || (!raw.hostedUrl && !raw.applyUrl)) return null;
+    if (!raw.text) return null;
+    const applyUrl = String(raw.hostedUrl || raw.applyUrl || '').trim();
+    if (!isValidApplyUrl(applyUrl)) return null;
+
     const title = cleanText(raw.text);
+    if (!title) return null;
+
     const location = cleanText(raw.categories?.location || 'Unspecified');
     const isRemoteWorkplace = raw.workplaceType === 'remote';
     const remote = isRemoteWorkplace || detectRemote(title, location);
     const countryCode = detectCountryCode(location);
     const rawDesc = raw.descriptionPlain || raw.description;
     const description = cleanAndTruncateDescription(rawDesc, 4000);
+
+    const postedAt = raw.createdAt ? new Date(raw.createdAt).toISOString() : nowIso;
+
+    // Structured salary extraction from Lever salaryRange
+    let salaryText: string | null = null;
+    let salaryMin: number | null = null;
+    let salaryMax: number | null = null;
+    let currency = 'USD';
+    let salaryPeriod: 'yearly' | 'monthly' | 'hourly' | undefined = undefined;
+
+    if (raw.salaryRange && typeof raw.salaryRange === 'object') {
+      const min = typeof raw.salaryRange.min === 'number' ? raw.salaryRange.min : null;
+      const max = typeof raw.salaryRange.max === 'number' ? raw.salaryRange.max : null;
+      if (min != null || max != null) {
+        salaryMin = min;
+        salaryMax = max;
+        currency = raw.salaryRange.currency ? String(raw.salaryRange.currency).toUpperCase() : 'USD';
+        const interval = raw.salaryRange.interval ? String(raw.salaryRange.interval).toLowerCase() : '';
+        if (interval.includes('hour')) salaryPeriod = 'hourly';
+        else if (interval.includes('month')) salaryPeriod = 'monthly';
+        else if (interval.includes('year') || interval.includes('annu')) salaryPeriod = 'yearly';
+        salaryText = formatSalary(salaryMin, salaryMax, currency, salaryPeriod);
+      }
+    }
+
+    if (!salaryText && salaryMin == null && salaryMax == null) {
+      const fallback = parseSalary(description, { title, location });
+      salaryText = fallback.salary_text;
+      salaryMin = fallback.salary_min;
+      salaryMax = fallback.salary_max;
+      currency = fallback.currency;
+      salaryPeriod = fallback.salary_period;
+    }
 
     return {
       source: 'lever',
@@ -218,10 +420,15 @@ export function normalizeAtsJob(raw: any, ats: 'greenhouse' | 'lever' | 'ashby',
       job_type: detectJobType(title, raw.categories?.commitment || ''),
       seniority: detectSeniority(title),
       description,
-      apply_url: raw.hostedUrl || raw.applyUrl,
+      apply_url: applyUrl,
       source_url: `https://jobs.lever.co/${slug}`,
+      salary_text: salaryText,
+      salary_min: salaryMin,
+      salary_max: salaryMax,
+      currency,
+      salary_period: salaryPeriod,
       category: detectCategory(title),
-      posted_at: raw.createdAt ? new Date(raw.createdAt).toISOString() : nowIso,
+      posted_at: postedAt,
       discovered_at: nowIso,
       last_seen_at: nowIso,
       verified: true,
@@ -229,14 +436,66 @@ export function normalizeAtsJob(raw: any, ats: 'greenhouse' | 'lever' | 'ashby',
     };
   }
 
+  // ---------------------------------------------------------------------------
+  // ASHBY
+  // ---------------------------------------------------------------------------
   if (ats === 'ashby') {
-    if (!raw || !raw.title || (!raw.jobUrl && !raw.applyUrl)) return null;
+    if (!raw.title) return null;
+    const applyUrl = String(raw.jobUrl || raw.applyUrl || '').trim();
+    if (!isValidApplyUrl(applyUrl)) return null;
+
     const title = cleanText(raw.title);
+    if (!title) return null;
+
     const location = cleanText(raw.location || 'Unspecified');
     const remote = detectRemote(title, location, raw.isRemote);
     const countryCode = detectCountryCode(location);
     const rawDesc = raw.descriptionPlain || raw.descriptionHtml;
     const description = cleanAndTruncateDescription(rawDesc, 4000);
+
+    const postedAt = raw.publishedAt || raw.createdAt || nowIso;
+
+    // Structured compensation extraction from Ashby compensation block
+    let salaryText: string | null = null;
+    let salaryMin: number | null = null;
+    let salaryMax: number | null = null;
+    let currency = 'USD';
+    let salaryPeriod: 'yearly' | 'monthly' | 'hourly' | undefined = undefined;
+
+    if (raw.compensation && typeof raw.compensation === 'object') {
+      const comp = raw.compensation;
+      const tier = Array.isArray(comp.compensationTiers) && comp.compensationTiers[0];
+      const components = tier?.components || comp.summaryComponents || [];
+      const salaryComp = components.find(
+        (c: any) =>
+          c &&
+          (c.compensationType === 'Salary' ||
+            (c.minValue != null && c.minValue > 0) ||
+            (c.maxValue != null && c.maxValue > 0))
+      );
+
+      if (salaryComp) {
+        salaryMin = salaryComp.minValue ?? null;
+        salaryMax = salaryComp.maxValue ?? null;
+        if (salaryComp.currencyCode) currency = String(salaryComp.currencyCode).toUpperCase();
+        const interval = salaryComp.interval ? String(salaryComp.interval).toLowerCase() : '';
+        if (interval.includes('hour')) salaryPeriod = 'hourly';
+        else if (interval.includes('month')) salaryPeriod = 'monthly';
+        else if (interval.includes('year')) salaryPeriod = 'yearly';
+        salaryText = formatSalary(salaryMin, salaryMax, currency, salaryPeriod);
+      } else if (comp.scrapeableCompensationSalarySummary) {
+        salaryText = comp.scrapeableCompensationSalarySummary;
+      }
+    }
+
+    if (!salaryText && salaryMin == null && salaryMax == null) {
+      const fallback = parseSalary(description, { title, location });
+      salaryText = fallback.salary_text;
+      salaryMin = fallback.salary_min;
+      salaryMax = fallback.salary_max;
+      currency = fallback.currency;
+      salaryPeriod = fallback.salary_period;
+    }
 
     return {
       source: 'ashby',
@@ -253,10 +512,15 @@ export function normalizeAtsJob(raw: any, ats: 'greenhouse' | 'lever' | 'ashby',
       job_type: detectJobType(title),
       seniority: detectSeniority(title),
       description,
-      apply_url: raw.jobUrl || raw.applyUrl,
+      apply_url: applyUrl,
       source_url: `https://jobs.ashbyhq.com/${slug}`,
+      salary_text: salaryText,
+      salary_min: salaryMin,
+      salary_max: salaryMax,
+      currency,
+      salary_period: salaryPeriod,
       category: detectCategory(title),
-      posted_at: raw.publishedAt || nowIso,
+      posted_at: postedAt,
       discovered_at: nowIso,
       last_seen_at: nowIso,
       verified: true,
@@ -270,7 +534,11 @@ export function normalizeAtsJob(raw: any, ats: 'greenhouse' | 'lever' | 'ashby',
 /**
  * Deduplicates jobs across ATS identifiers, employer apply URLs, and normalized content roles.
  */
-export function dedupJobs(jobs: NormalizedJob[], existingSeenUrls?: Set<string>, existingSeenRoles?: Set<string>): {
+export function dedupJobs(
+  jobs: NormalizedJob[],
+  existingSeenUrls?: Set<string>,
+  existingSeenRoles?: Set<string>
+): {
   accepted: NormalizedJob[];
   duplicates: number;
 } {
@@ -317,23 +585,50 @@ export function dedupJobs(jobs: NormalizedJob[], existingSeenUrls?: Set<string>,
 
 /**
  * Closed-job handling:
- * Jobs that vanish from an employer's board are marked inactive after 2 consecutive misses.
- * They are NEVER deleted.
- * When a job reappears, its consecutive misses count is reset to 0 and marked active.
+ *
+ * Rules:
+ * 1. Count a miss ONLY after a successful non-empty fetch for that specific company board.
+ *    If the API failed or returned 0 jobs (transient outage, rate limit), skip miss counting.
+ * 2. Scope strictly by source + company_slug:
+ *    Only evaluate jobs matching existing.source === ats && existing.company_slug === slug.
+ * 3. Reconciled with cleanup.ts:
+ *    - Re-seen active jobs: consecutive_misses reset to 0, status='active', is_active=true.
+ *    - 1 miss: consecutive_misses=1, remains active (grace period).
+ *    - 2 consecutive misses: consecutive_misses=2, is_active=false, status='inactive'.
+ *    - Jobs are NEVER deleted here. Inactive jobs are permanently deleted by cleanup.ts
+ *      only after 14 days of being unseen (last_seen_at < 14d).
+ *    - Active jobs posted > 45 days ago will also be naturally expired by cleanup.ts.
  */
 export function handleClosedJobs(
   existingJobsForCompany: ClosedJobRecord[],
-  freshFetchedJobIds: Set<string>
+  freshFetchedJobIds: Set<string>,
+  context: {
+    source: 'greenhouse' | 'lever' | 'ashby';
+    company_slug: string;
+    fetchSucceeded: boolean;
+  }
 ): ClosedJobDecision[] {
+  // If fetch failed or returned 0 jobs, do NOT penalize with a miss (defend against transient outages)
+  if (!context.fetchSucceeded || freshFetchedJobIds.size === 0) {
+    return [];
+  }
+
+  // Filter existing jobs strictly by source and company_slug
+  const targetJobs = existingJobsForCompany.filter(
+    (j) => j.source === context.source && j.company_slug === context.company_slug
+  );
+
   const decisions: ClosedJobDecision[] = [];
 
-  for (const existing of existingJobsForCompany) {
+  for (const existing of targetJobs) {
     const isPresent = freshFetchedJobIds.has(existing.source_job_id);
 
     if (isPresent) {
       // Re-verified active on board
       decisions.push({
         id: existing.id,
+        source: existing.source,
+        company_slug: existing.company_slug,
         source_job_id: existing.source_job_id,
         consecutive_misses: 0,
         is_active: true,
@@ -341,16 +636,18 @@ export function handleClosedJobs(
         action: 'reset_active',
       });
     } else {
-      // Vanished from current board fetch
+      // Vanished from current successful non-empty board fetch
       const updatedMisses = (existing.consecutive_misses || 0) + 1;
       const shouldDeactivate = updatedMisses >= 2;
 
       decisions.push({
         id: existing.id,
+        source: existing.source,
+        company_slug: existing.company_slug,
         source_job_id: existing.source_job_id,
         consecutive_misses: updatedMisses,
         is_active: !shouldDeactivate,
-        status: shouldDeactivate ? 'inactive' : existing.status,
+        status: shouldDeactivate ? 'inactive' : (existing.status || 'active'),
         action: shouldDeactivate ? 'marked_inactive' : 'kept_active',
       });
     }
@@ -361,6 +658,8 @@ export function handleClosedJobs(
 
 /**
  * Executes Board Ingestion across Greenhouse, Lever, and Ashby.
+ * In dry-run mode, fetches live API data or fixtures, runs through the ONE canonical
+ * normalizer (normalizeAtsJob), and prints structured summary statistics without DB mutations.
  */
 export async function runBoardIngestion(options: IngestionOptions = {}): Promise<BoardIngestionStats> {
   const {
@@ -378,7 +677,8 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
   console.log('🚀 CareerMonke ATS Board Ingestion (Greenhouse, Lever, Ashby)');
   console.log('======================================================');
   console.log(`Execution Mode: ${dryRun ? 'DRY RUN (Safe - No Writes)' : 'PRODUCTION'}`);
-  console.log(`ATS Filter: ${atsFilter}`);
+  console.log(`Rate Pacing:    1 req/s per host (MIN_DOMAIN_INTERVAL_MS = 1000)`);
+  console.log(`ATS Filter:     ${atsFilter}`);
   if (companyFilter) console.log(`Company Filter: ${companyFilter}`);
 
   const registry = loadCompanyRegistry(configPath);
@@ -433,7 +733,8 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
     const prefix = `[${i + 1}/${targets.length}] [${target.ats.toUpperCase()}] ${target.company}`;
 
     try {
-      let rawJobs: NormalizedJob[] = [];
+      let rawItems: any[] = [];
+      let fetchSucceeded = false;
 
       if (fixtureMode && fixtureDir) {
         // Load fixture files for test suite isolation
@@ -441,46 +742,40 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
         if (fs.existsSync(fixturePath)) {
           const rawFixture = JSON.parse(fs.readFileSync(fixturePath, 'utf-8'));
           if (target.ats === 'greenhouse') {
-            const jobsArr = Array.isArray(rawFixture.jobs) ? rawFixture.jobs : [];
-            rawJobs = jobsArr
-              .map((j: any) => normalizeAtsJob(j, 'greenhouse', target.company, target.token))
-              .filter(Boolean) as NormalizedJob[];
+            rawItems = Array.isArray(rawFixture.jobs) ? rawFixture.jobs : [];
           } else if (target.ats === 'lever') {
-            const jobsArr = Array.isArray(rawFixture) ? rawFixture : [];
-            rawJobs = jobsArr
-              .map((j: any) => normalizeAtsJob(j, 'lever', target.company, target.token))
-              .filter(Boolean) as NormalizedJob[];
+            rawItems = Array.isArray(rawFixture) ? rawFixture : [];
           } else if (target.ats === 'ashby') {
-            const jobsArr = Array.isArray(rawFixture.jobs) ? rawFixture.jobs : [];
-            rawJobs = jobsArr
-              .map((j: any) => normalizeAtsJob(j, 'ashby', target.company, target.token))
-              .filter(Boolean) as NormalizedJob[];
+            rawItems = Array.isArray(rawFixture.jobs) ? rawFixture.jobs : [];
           }
+          fetchSucceeded = true;
         }
       } else {
-        // Standard adapter fetch via polite rate-limited API client
-        const sourceConfig: SourceConfig = {
-          id: target.id || `${target.ats}-${target.token}`,
-          name: target.company,
-          type: target.ats,
-          target: target.token,
-          enabled: true,
-        };
-
-        const adapter = getAdapter(target.ats);
-        if (!adapter) {
-          throw new Error(`Adapter for ${target.ats} not found`);
-        }
-
-        rawJobs = await adapter.fetchJobs(sourceConfig);
+        // Real run: fetch raw JSON from authorized public endpoint
+        const fetchResult = await fetchRawAtsJobs(target.ats, target.token);
+        rawItems = fetchResult.rawJobs;
+        fetchSucceeded = fetchResult.fetchSucceeded;
       }
 
-      stats.totalJobsFetched += rawJobs.length;
+      stats.totalJobsFetched += rawItems.length;
 
-      const { accepted, duplicates } = dedupJobs(rawJobs, seenUrls, seenRoles);
+      // ONE NORMALIZER: Route every item through normalizeAtsJob
+      const normalizedJobs: NormalizedJob[] = [];
+      for (const item of rawItems) {
+        const job = normalizeAtsJob(item, target.ats, target.company, target.token);
+        if (job) {
+          normalizedJobs.push(job);
+        }
+      }
+
+      const { accepted, duplicates } = dedupJobs(normalizedJobs, seenUrls, seenRoles);
       stats.totalJobsDeduplicated += duplicates;
       stats.totalJobsAccepted += accepted.length;
-      stats.companiesSucceeded++;
+      if (fetchSucceeded) {
+        stats.companiesSucceeded++;
+      } else {
+        stats.companiesFailed++;
+      }
 
       for (const job of accepted) {
         const isIndia = job.country_code === 'IN' || (job.location && /india/i.test(job.location));
@@ -501,7 +796,7 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
         jobs: accepted.length,
       });
 
-      console.log(`   ${prefix}: ${accepted.length} accepted (${duplicates} deduped)`);
+      console.log(`   ${prefix}: ${accepted.length} accepted (${duplicates} deduped, ${rawItems.length} raw)`);
     } catch (err: any) {
       stats.companiesFailed++;
       stats.errors.push({
