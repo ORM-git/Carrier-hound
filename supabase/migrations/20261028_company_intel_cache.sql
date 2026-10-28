@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS public.company_intel_cache (
   fetched_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   expires_at          TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '30 days'),
   created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT company_intel_cache_dates_check CHECK (expires_at > fetched_at)
 );
 
 CREATE INDEX IF NOT EXISTS company_intel_cache_normalized_idx
@@ -24,13 +25,6 @@ CREATE INDEX IF NOT EXISTS company_intel_cache_expires_idx
 
 ALTER TABLE public.company_intel_cache ENABLE ROW LEVEL SECURITY;
 
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies
-    WHERE tablename = 'company_intel_cache' AND policyname = 'company_intel_cache_service_all'
-  ) THEN
-    CREATE POLICY "company_intel_cache_service_all" ON public.company_intel_cache
-      FOR ALL USING (true) WITH CHECK (true);
-  END IF;
-END $$;
+DROP POLICY IF EXISTS "company_intel_cache_service_all" ON public.company_intel_cache;
+
+REVOKE ALL ON public.company_intel_cache FROM anon, authenticated;

@@ -106,11 +106,15 @@ export default function QuestionsCardDeck({
   const getLabelBadge = (label: InterviewCard["label"]) => {
     switch (label) {
       case "Reported by candidates":
+      case "From job description":
         return "bg-blue-50 text-blue-800 border-blue-300";
       case "Likely":
+      case "From your resume":
         return "bg-indigo-50 text-indigo-800 border-indigo-300";
       case "General practice":
+      case "AI suggestion":
         return "bg-amber-50 text-amber-800 border-amber-300";
+      case "From company source":
       case "Unverified":
       default:
         return "bg-slate-100 text-slate-700 border-slate-300";

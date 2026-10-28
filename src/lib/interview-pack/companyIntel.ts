@@ -2,9 +2,12 @@
  * Company Intel Service & 30-Day Caching
  *
  * Strict verification rules:
- * 1. Only claims that have a source URL are accepted. Any claim without a valid sourceUrl is dropped.
- * 2. Never invent funding, news, salaries, interviewer names or culture.
- * 3. Cache per company for 30 days in public.company_intel_cache keyed by normalized company name.
+ * 1. Only claims that have a valid https:// source URL are accepted. Reject http://.
+ * 2. Reject localhost, private IP ranges (127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, ::1), and internal hosts (.local, .internal, .lan, .corp).
+ * 3. Never invent funding, news, salaries, interviewer names or culture.
+ * 4. Cache per company for 30 days in public.company_intel_cache keyed by normalized company name.
+ * 5. Do NOT cache empty results.
+ * 6. No fetcher configured yet -> return empty claims + isThin: true.
  */
 
 export interface CompanyClaim {
@@ -28,6 +31,61 @@ export interface CompanyIntelDeps {
 }
 
 /**
+ * Checks if a hostname belongs to a private network, internal domain, or loopback.
+ */
+export function isPrivateOrInternalHost(hostname: string): boolean {
+  if (!hostname || typeof hostname !== "string") return true;
+  const host = hostname.toLowerCase().trim();
+
+  // Strip brackets from IPv6 if present
+  const unbracketed = host.replace(/^\[|\]$/g, "");
+
+  // Localhost / Loopback / Any
+  if (
+    unbracketed === "localhost" ||
+    unbracketed === "127.0.0.1" ||
+    unbracketed === "0.0.0.0" ||
+    unbracketed === "::1" ||
+    unbracketed === "::"
+  ) {
+    return true;
+  }
+
+  // Internal domain extensions
+  if (
+    host.endsWith(".local") ||
+    host.endsWith(".internal") ||
+    host.endsWith(".lan") ||
+    host.endsWith(".corp") ||
+    host.endsWith(".home") ||
+    host.endsWith(".arpa")
+  ) {
+    return true;
+  }
+
+  // Reject single-word hostnames (e.g. "intranet", "corp")
+  if (!host.includes(".")) {
+    return true;
+  }
+
+  // Check IPv4 private and link-local ranges
+  const ipv4Match = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (ipv4Match) {
+    const o1 = parseInt(ipv4Match[1], 10);
+    const o2 = parseInt(ipv4Match[2], 10);
+
+    if (o1 === 0) return true; // 0.0.0.0/8
+    if (o1 === 10) return true; // 10.0.0.0/8
+    if (o1 === 127) return true; // 127.0.0.0/8
+    if (o1 === 169 && o2 === 254) return true; // 169.254.0.0/16
+    if (o1 === 172 && o2 >= 16 && o2 <= 31) return true; // 172.16.0.0/12
+    if (o1 === 192 && o2 === 168) return true; // 192.168.0.0/16
+  }
+
+  return false;
+}
+
+/**
  * Normalizes company name for deterministic cache keys.
  * e.g. "Stripe, Inc." -> "stripeinc"
  */
@@ -41,7 +99,10 @@ export function normalizeCompanyName(name: string): string {
 }
 
 /**
- * Sanitizes company claims: strictly drops any claim missing a valid HTTP(S) source URL.
+ * Sanitizes company claims:
+ * - Requires https:// protocol only.
+ * - Rejects localhost, private IPs, and internal hosts.
+ * - Drops any claim missing text or valid URL.
  */
 export function sanitizeCompanyClaims(rawClaims: any[]): CompanyClaim[] {
   if (!Array.isArray(rawClaims)) return [];
@@ -54,8 +115,19 @@ export function sanitizeCompanyClaims(rawClaims: any[]): CompanyClaim[] {
     const sourceUrl = typeof item.sourceUrl === "string" ? item.sourceUrl.trim() : "";
     const text = typeof item.text === "string" ? item.text.trim() : "";
 
-    // Hard requirement: Drop claims without non-empty HTTP(S) sourceUrl
-    if (!sourceUrl || !/^https?:\/\//i.test(sourceUrl)) {
+    // Hard requirement 1: https:// only
+    if (!sourceUrl.startsWith("https://")) {
+      continue;
+    }
+
+    // Hard requirement 2: Valid URL and reject private/internal hostnames
+    try {
+      const parsed = new URL(sourceUrl);
+      if (parsed.protocol !== "https:") continue;
+      if (isPrivateOrInternalHost(parsed.hostname)) {
+        continue;
+      }
+    } catch {
       continue;
     }
 
@@ -75,9 +147,10 @@ export function sanitizeCompanyClaims(rawClaims: any[]): CompanyClaim[] {
 }
 
 /**
- * Retrieves company intel, utilizing 30-day cache in Supabase table `company_intel_cache`.
+ * Retrieves company intel utilizing 30-day cache in Supabase table `company_intel_cache`.
  * A cache hit within 30 days returns cached intel immediately without calling upstream fetchers.
- * Expired or missing entries trigger fetchClaims and update the cache.
+ * Expired or missing entries trigger fetchClaims (if provided).
+ * Empty claim sets are NEVER cached.
  */
 export async function getCompanyIntel(
   companyName: string,
@@ -114,7 +187,6 @@ export async function getCompanyIntel(
         }
       }
     } catch (cacheErr) {
-      // Graceful fallback to fetch if cache lookup fails
       console.warn("[CompanyIntel] Cache lookup error:", cacheErr);
     }
   }
@@ -129,7 +201,7 @@ export async function getCompanyIntel(
     }
   }
 
-  // Strictly filter: Claim without sourceUrl is dropped
+  // Strictly filter: https only, reject private IPs, drop unsourced
   const sanitizedClaims = sanitizeCompanyClaims(rawFetchedClaims);
   const fetchedAtIso = new Date(nowMs).toISOString();
   const expiresAtIso = new Date(nowMs + THIRTY_DAYS_MS).toISOString();
@@ -143,8 +215,9 @@ export async function getCompanyIntel(
     isThin: sanitizedClaims.length < 2,
   };
 
-  // 3. Persist to 30-day cache in Supabase
-  if (supabaseAdmin?.from) {
+  // 3. Persist to 30-day cache in Supabase ONLY IF claims are not empty
+  // "Do not cache empty results."
+  if (sanitizedClaims.length > 0 && supabaseAdmin?.from) {
     try {
       const table = supabaseAdmin.from("company_intel_cache");
       if (typeof table?.upsert === "function") {
