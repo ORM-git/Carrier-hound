@@ -1,0 +1,38 @@
+[
+  {
+    "id": "lever-2001",
+    "text": "Data Engineering Lead",
+    "hostedUrl": "https://jobs.lever.co/spotify/lever-2001",
+    "applyUrl": "https://jobs.lever.co/spotify/lever-2001/apply",
+    "createdAt": 1730000000000,
+    "categories": {
+      "location": "Stockholm, Sweden",
+      "commitment": "Full-time",
+      "team": "Data Platform"
+    },
+    "descriptionPlain": "Lead our music recommendation telemetry data pipelines.\nMust have Python, Spark, and Kafka experience.",
+    "description": "<div><p>Lead our music recommendation telemetry data pipelines.</p><script>evil()</script></div>",
+    "workplaceType": "hybrid",
+    "salaryRange": {
+      "min": 950000,
+      "max": 1200000,
+      "currency": "SEK",
+      "interval": "per-year-salary"
+    }
+  },
+  {
+    "id": "lever-2002",
+    "text": "People Operations Generalist",
+    "hostedUrl": "https://jobs.lever.co/spotify/lever-2002",
+    "applyUrl": "https://jobs.lever.co/spotify/lever-2002/apply",
+    "createdAt": 1730050000000,
+    "categories": {
+      "location": "Mumbai, India",
+      "commitment": "Full-time",
+      "team": "HR"
+    },
+    "descriptionPlain": "Manage onboarding, employee relations, and HR compliance across India operations.",
+    "workplaceType": "on-site",
+    "salaryRange": null
+  }
+]

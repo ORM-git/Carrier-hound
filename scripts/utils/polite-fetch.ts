@@ -20,6 +20,9 @@ const FORBIDDEN_DOMAINS = [
   'naukri.com',
   'jobright.ai',
   'jobright.com',
+  'glassdoor.com',
+  'workday.com',
+  'myworkdayjobs.com',
 ];
 
 /**
@@ -117,6 +120,7 @@ export interface PoliteFetchOptions extends RequestInit {
   timeoutMs?: number;
   retries?: number;
   skipRobotsCheck?: boolean;
+  rateLimitMs?: number;
 }
 
 /**
@@ -131,6 +135,7 @@ export async function politeFetch(url: string, options: PoliteFetchOptions = {})
     timeoutMs = DEFAULT_TIMEOUT_MS,
     retries = MAX_RETRIES,
     skipRobotsCheck = false,
+    rateLimitMs,
     headers = {},
     ...rest
   } = options;
@@ -147,7 +152,7 @@ export async function politeFetch(url: string, options: PoliteFetchOptions = {})
   let lastError: Error | null = null;
 
   while (attempt <= retries) {
-    await throttleDomain(parsedUrl.hostname);
+    await throttleDomain(parsedUrl.hostname, rateLimitMs || MIN_DOMAIN_INTERVAL_MS);
 
     try {
       const controller = new AbortController();
