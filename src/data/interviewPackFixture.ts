@@ -1,3 +1,16 @@
+export type ItemSourceLabel =
+  | "From job description"
+  | "From your resume"
+  | "From company source"
+  | "AI suggestion";
+
+export type CardLabel =
+  | "Reported by candidates"
+  | "Likely"
+  | "General practice"
+  | "Unverified"
+  | ItemSourceLabel;
+
 export interface ResumeBulletSource {
   role: string;
   company: string;
@@ -9,14 +22,15 @@ export interface SourceCitation {
   domain: string;
   url: string;
   date: string;
-  verificationType: "Reported by candidates" | "Reported by candidates" | "Likely" | "General practice" | "Unverified";
+  verificationType: CardLabel;
+  label?: ItemSourceLabel;
 }
 
 export interface InterviewCard {
   id: string;
   question: string;
   category: "fear" | "must-know" | "behavioral" | "technical" | "leadership" | "culture";
-  label: "Reported by candidates" | "Reported by candidates" | "Likely" | "General practice" | "Unverified";
+  label: CardLabel;
   whyTheyAsk: string; // One concise psychological line (10-25 words)
   answerDraft: string; // 40-60 words concise draft
   expandedAnswer: string; // Full in-depth framework (STAR or structured)
@@ -31,12 +45,14 @@ export interface CompanyBriefNews {
   source: string;
   url: string;
   snippet: string;
+  label?: ItemSourceLabel;
 }
 
 export interface CultureSignal {
   title: string;
   detail: string;
   sentiment: "positive" | "neutral" | "caution";
+  label?: ItemSourceLabel;
 }
 
 export interface InterviewProcessStage {
@@ -46,6 +62,7 @@ export interface InterviewProcessStage {
   format: string;
   focus: string;
   proTip: string;
+  label?: ItemSourceLabel;
 }
 
 export interface GapMatrixItem {
@@ -54,6 +71,7 @@ export interface GapMatrixItem {
   resumeStatus: "matched" | "partial" | "gap";
   resumeEvidence: string;
   bridgeStrategy: string;
+  label?: ItemSourceLabel;
 }
 
 export interface ReverseQuestion {
@@ -62,6 +80,7 @@ export interface ReverseQuestion {
   category: "Engineering culture" | "Business direction" | "Role expectations" | "Team dynamics";
   whyAskThis: string;
   whatToListenFor: string;
+  label?: ItemSourceLabel;
 }
 
 export interface QuizQuestion {
@@ -70,6 +89,7 @@ export interface QuizQuestion {
   options: string[];
   correctIndex: number;
   explanation: string;
+  label?: ItemSourceLabel;
 }
 
 export interface InterviewPackData {
@@ -88,6 +108,7 @@ export interface InterviewPackData {
     expandedAnswer: string;
     resumeBulletSource: ResumeBulletSource;
     source: SourceCitation;
+    label?: CardLabel;
   }[];
   brief: {
     summary: string;
