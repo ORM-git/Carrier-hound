@@ -52,16 +52,16 @@ jobs:
           INPUT_ATS: ${{ github.event.inputs.ats }}
           INPUT_COMPANY: ${{ github.event.inputs.company }}
         run: |
-          ARGS=""
+          CLI_ARGS=()
           if [[ -n "$INPUT_LIMIT" && "$INPUT_LIMIT" =~ ^[0-9]+$ ]]; then
-            ARGS="$ARGS --limit $INPUT_LIMIT"
+            CLI_ARGS+=(--limit "$INPUT_LIMIT")
           fi
           if [[ -n "$INPUT_ATS" && "$INPUT_ATS" =~ ^(greenhouse|lever|ashby)$ ]]; then
-            ARGS="$ARGS --ats $INPUT_ATS"
+            CLI_ARGS+=(--ats "$INPUT_ATS")
           fi
           if [[ -n "$INPUT_COMPANY" && "$INPUT_COMPANY" =~ ^[A-Za-z0-9\ .-]+$ ]]; then
-            ARGS="$ARGS --company \"$INPUT_COMPANY\""
+            CLI_ARGS+=(--company "$INPUT_COMPANY")
           fi
 
           echo "Starting ATS board ingestion runner in safe dry-run mode..."
-          npx tsx scripts/board-ingest.ts $ARGS
+          npx tsx scripts/board-ingest.ts "${CLI_ARGS[@]}"

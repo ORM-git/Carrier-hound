@@ -4,10 +4,13 @@
  * High-Scale ATS Candidate Verification Engine (Greenhouse, Lever, Ashby).
  *
  * Operational Locks & Rules:
- * - Reads all candidate tokens from data/ats-candidates-all.json.
+ * - Reads candidate tokens from data/ats-candidates-all.json.
  * - Supports --resume, --offset <n>, --limit <n> (defaults to 500).
- * - Checkpoints progress every 25 tokens to data/ats-verify-checkpoint.json.
- * - Skips already-verified tokens and recent failures within TTL (7 days).
+ * - Checkpoint mechanism (data/ats-verify-checkpoint.json, gitignored):
+ *     * Stores per-candidate completed and failure keys only (no shared counter/offset).
+ *     * --resume scans candidates and never skips untested candidates.
+ *     * Real 404 / 0 active jobs get a 7-day TTL.
+ *     * Transient errors (network, 429, 5xx, timeout) get a 1-hour TTL and are automatically retried.
  * - Hosts run in parallel (Greenhouse, Lever, Ashby) with strict 1 req/s per host pacing.
  * - User-Agent: CareerMonkeBot/1.0.
  * - Respects 429 with Retry-After backoff.
@@ -29,7 +32,9 @@ import { detectRemote, detectCountryCode } from './utils/sanitizer';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const FAILURE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+// TTL configurations per failure classification
+export const TRANSIENT_FAILURE_TTL_MS = 60 * 60 * 1000; // 1 hour for network, 429, 5xx, timeouts
+export const PERMANENT_FAILURE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days for real 404 and 0 active jobs
 
 export interface RawCandidateEntry {
   company: string | null;
@@ -50,7 +55,6 @@ export interface VerifiedCandidateRecord {
 }
 
 export interface CheckpointRecord {
-  last_offset: number;
   updated_at: string;
   completed: Record<string, {
     verified: boolean;
@@ -66,6 +70,7 @@ export interface CheckpointRecord {
     error: string;
     checked_at: string;
     ttl_expires_at: string;
+    transient: boolean;
   }>;
 }
 
@@ -94,13 +99,13 @@ export interface VerifyMetrics {
 
 /**
  * Loads checkpoint file or initializes an empty one.
+ * Stores per-candidate completed and failure keys only (no offset counter).
  */
-function loadCheckpoint(checkpointFilePath: string): CheckpointRecord {
+export function loadCheckpoint(checkpointFilePath: string): CheckpointRecord {
   if (fs.existsSync(checkpointFilePath)) {
     try {
       const parsed = JSON.parse(fs.readFileSync(checkpointFilePath, 'utf-8'));
       return {
-        last_offset: parsed.last_offset || 0,
         updated_at: parsed.updated_at || new Date().toISOString(),
         completed: parsed.completed || {},
         failures: parsed.failures || {},
@@ -110,7 +115,6 @@ function loadCheckpoint(checkpointFilePath: string): CheckpointRecord {
     }
   }
   return {
-    last_offset: 0,
     updated_at: new Date().toISOString(),
     completed: {},
     failures: {},
@@ -120,7 +124,7 @@ function loadCheckpoint(checkpointFilePath: string): CheckpointRecord {
 /**
  * Safely saves checkpoint to disk.
  */
-function saveCheckpoint(checkpointFilePath: string, checkpoint: CheckpointRecord): void {
+export function saveCheckpoint(checkpointFilePath: string, checkpoint: CheckpointRecord): void {
   try {
     checkpoint.updated_at = new Date().toISOString();
     const tempPath = `${checkpointFilePath}.tmp`;
@@ -258,9 +262,11 @@ export async function verifyAtsTokenWithMetrics(
     };
   } catch (err: any) {
     const is404 = err.message?.includes('404');
+    const is429 = err.message?.includes('429');
+    const status = is404 ? 404 : is429 ? 429 : 500;
     return {
       verified: false,
-      status: is404 ? 404 : 500,
+      status,
       jobCount: 0,
       indiaCount: 0,
       remoteCount: 0,
@@ -294,6 +300,7 @@ export async function runBoardVerifyAll(options: VerifyAllOptions = {}): Promise
   console.log(`Output Registry:   ${outputPath}`);
   console.log(`Checkpoint File:   ${checkpointPath}`);
   console.log(`Limit:             ${limit}`);
+  console.log(`Resume Mode:       ${resume}`);
   console.log(`Parallel Pacing:   1 req/s per ATS host (Greenhouse, Lever, Ashby concurrent)`);
   console.log(`User-Agent:        CareerMonkeBot/1.0\n`);
 
@@ -305,31 +312,39 @@ export async function runBoardVerifyAll(options: VerifyAllOptions = {}): Promise
   console.log(`Total candidate tokens in dataset: ${allCandidates.length}`);
 
   const checkpoint = loadCheckpoint(checkpointPath);
-  const startOffset = resume ? checkpoint.last_offset : offset;
-  console.log(`Starting execution from offset: ${startOffset}`);
 
-  // Slice target candidates for this run
-  const candidateSlice = allCandidates.slice(startOffset, startOffset + limit);
-  console.log(`Candidates in current batch: ${candidateSlice.length}`);
-
+  // Resume scanning logic:
+  // Store per-candidate completed keys only.
+  // --resume must NEVER skip untested candidates: it iterates through all candidates and checks
+  // each against checkpoint.completed and active checkpoint.failures.
+  // Do NOT use a shared tested counter as offset.
   const now = Date.now();
   const queueToTest: RawCandidateEntry[] = [];
+  const startScanIdx = resume ? 0 : offset;
 
-  for (const c of candidateSlice) {
+  for (let i = startScanIdx; i < allCandidates.length; i++) {
+    const c = allCandidates[i];
     const key = `${c.ats}:${c.token}`;
-    // If completed and verified, skip
+
+    // Skip if already completed and verified
     if (checkpoint.completed[key]?.verified) {
       continue;
     }
-    // If recent failure within TTL, skip
+
+    // Skip if failure is still active within its TTL
     const existingFailure = checkpoint.failures[key];
     if (existingFailure && new Date(existingFailure.ttl_expires_at).getTime() > now) {
       continue;
     }
+
+    // Candidate is untested or its transient failure expired -> eligible for test
     queueToTest.push(c);
+    if (limit && limit > 0 && queueToTest.length >= limit) {
+      break;
+    }
   }
 
-  console.log(`Filtered runnable candidates (excluding verified / active TTL failures): ${queueToTest.length}\n`);
+  console.log(`Runnable candidates selected for this run: ${queueToTest.length}\n`);
 
   // Partition candidates by ATS provider to run hosts concurrently
   const ghQueue = queueToTest.filter((c) => c.ats === 'greenhouse');
@@ -363,13 +378,12 @@ export async function runBoardVerifyAll(options: VerifyAllOptions = {}): Promise
     existingOutputMap.set(`${r.ats}:${r.token}`, r);
   }
 
-  // Checkpoint counter across all workers
+  // Checkpoint counter across all workers (saves every 25 tokens)
   let processedSinceLastCheckpoint = 0;
 
-  function triggerCheckpointCheck(currentBatchOffset: number) {
+  function triggerCheckpointCheck() {
     processedSinceLastCheckpoint++;
     if (processedSinceLastCheckpoint >= 25) {
-      checkpoint.last_offset = startOffset + currentBatchOffset;
       saveCheckpoint(checkpointPath, checkpoint);
       processedSinceLastCheckpoint = 0;
     }
@@ -416,37 +430,50 @@ export async function runBoardVerifyAll(options: VerifyAllOptions = {}): Promise
             checked_at: new Date().toISOString(),
           };
 
-          // Remove from failures if previously failed
+          // Remove from failures if previously recorded
           delete checkpoint.failures[key];
 
           console.log(`   ✅ [${atsName.toUpperCase()}] ${record.company || item.token} (${item.token}): VERIFIED (${result.jobCount} jobs, ${result.indiaCount} IN, ${result.remoteCount} remote)`);
         } else {
-          if (result.status === 404) rejected404++;
-          else if (result.jobCount === 0 && result.status === 200) rejectedZeroJobs++;
+          // Failure classification:
+          // Only real 404 / 0 active jobs get the 7-day TTL.
+          // Transient errors (network, 429, 5xx, timeout) get a 1-hour TTL and are retried.
+          const isReal404 = result.status === 404;
+          const isZeroJobs = result.status === 200 && result.jobCount === 0;
+          const isPermanent = isReal404 || isZeroJobs;
+
+          if (isReal404) rejected404++;
+          else if (isZeroJobs) rejectedZeroJobs++;
           else rejectedErrors++;
+
+          const ttlMs = isPermanent ? PERMANENT_FAILURE_TTL_MS : TRANSIENT_FAILURE_TTL_MS;
+          const ttlExpiresAt = new Date(Date.now() + ttlMs).toISOString();
 
           checkpoint.failures[key] = {
             status: result.status,
-            error: result.error || '0 jobs / 404',
+            error: result.error || (isReal404 ? '404 Not Found' : isZeroJobs ? '0 active jobs' : 'Error'),
             checked_at: new Date().toISOString(),
-            ttl_expires_at: new Date(Date.now() + FAILURE_TTL_MS).toISOString(),
+            ttl_expires_at: ttlExpiresAt,
+            transient: !isPermanent,
           };
 
-          const reason = result.status === 404 ? '404' : result.jobCount === 0 ? '0 jobs' : result.error || 'error';
-          console.log(`   ❌ [${atsName.toUpperCase()}] ${item.token}: REJECTED (${reason})`);
+          const reason = isReal404 ? '404' : isZeroJobs ? '0 jobs' : `${result.status || 'error'} (${result.error})`;
+          console.log(`   ❌ [${atsName.toUpperCase()}] ${item.token}: REJECTED (${reason}) - TTL ${isPermanent ? '7d' : '1h'}`);
         }
       } catch (err: any) {
         rejectedErrors++;
+        const ttlExpiresAt = new Date(Date.now() + TRANSIENT_FAILURE_TTL_MS).toISOString();
         checkpoint.failures[key] = {
           status: 500,
           error: err.message,
           checked_at: new Date().toISOString(),
-          ttl_expires_at: new Date(Date.now() + FAILURE_TTL_MS).toISOString(),
+          ttl_expires_at: ttlExpiresAt,
+          transient: true,
         };
-        console.warn(`   ⚠️ [${atsName.toUpperCase()}] ${item.token}: Error (${err.message})`);
+        console.warn(`   ⚠️ [${atsName.toUpperCase()}] ${item.token}: Error (${err.message}) - TTL 1h`);
       }
 
-      triggerCheckpointCheck(testedCount);
+      triggerCheckpointCheck();
     }
   }
 
@@ -458,8 +485,7 @@ export async function runBoardVerifyAll(options: VerifyAllOptions = {}): Promise
     runHostWorker(ashbyQueue, 'ashby'),
   ]);
 
-  // Final checkpoint update
-  checkpoint.last_offset = startOffset + candidateSlice.length;
+  // Final checkpoint save (stores completed keys and failures only)
   saveCheckpoint(checkpointPath, checkpoint);
 
   // Write updated verified candidates to output file
@@ -502,7 +528,8 @@ export async function runBoardVerifyAll(options: VerifyAllOptions = {}): Promise
   console.log(`Remote Jobs:                  ${metrics.remoteJobs}`);
   console.log(`Time Taken:                   ${metrics.elapsedSeconds}s (${Math.round(metrics.elapsedSeconds / 60 * 10) / 10} min)`);
   console.log(`Total Verified in Registry:   ${finalVerifiedList.length} (${outputPath})`);
-  console.log(`Next Checkpoint Offset:       ${checkpoint.last_offset}`);
+  console.log(`Completed Keys in Checkpoint: ${Object.keys(checkpoint.completed).length}`);
+  console.log(`Active Failures in Checkpoint:${Object.keys(checkpoint.failures).length}`);
   console.log('======================================================\n');
 
   return { verifiedRecords: newVerifiedRecords, metrics };
