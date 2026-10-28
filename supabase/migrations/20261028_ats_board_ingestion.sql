@@ -9,12 +9,11 @@
 ALTER TABLE public.jobs
   ADD COLUMN IF NOT EXISTS consecutive_misses INTEGER DEFAULT 0;
 
--- Safe non-blocking index for stale tracking.
--- Note: CONCURRENTLY avoids table locks during creation on public.jobs.
--- Note: Must be executed outside a transaction block (Postgres limitation).
-CREATE INDEX CONCURRENTLY IF NOT EXISTS jobs_consecutive_misses_idx
-  ON public.jobs (consecutive_misses)
-  WHERE is_active = true;
+-- Optional index for stale tracking (commented out per migration safety):
+-- Note: If needed in production, execute CONCURRENTLY outside a transaction block:
+-- CREATE INDEX CONCURRENTLY IF NOT EXISTS jobs_consecutive_misses_idx
+--   ON public.jobs (consecutive_misses)
+--   WHERE is_active = true;
 
 -- 2. Create company_token_registry table for Greenhouse, Lever, and Ashby boards
 CREATE TABLE IF NOT EXISTS public.company_token_registry (
