@@ -106,11 +106,15 @@ export default function QuestionsCardDeck({
   const getLabelBadge = (label: InterviewCard["label"]) => {
     switch (label) {
       case "Reported by candidates":
+      case "From job description":
         return "bg-blue-50 text-blue-800 border-blue-300";
       case "Likely":
+      case "From your resume":
         return "bg-indigo-50 text-indigo-800 border-indigo-300";
       case "General practice":
+      case "AI suggestion":
         return "bg-amber-50 text-amber-800 border-amber-300";
+      case "From company source":
       case "Unverified":
       default:
         return "bg-slate-100 text-slate-700 border-slate-300";
@@ -274,18 +278,21 @@ export default function QuestionsCardDeck({
           </div>
 
           {/* Resume Bullet Source Citation */}
-          <div className="flex items-start gap-2 p-3.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-[15px] text-[#475569]">
-            <FileText className="w-4 h-4 text-[#2563EB] shrink-0 mt-0.5" />
-            <div className="flex-1 min-w-0">
-              <span className="font-bold text-[#1E293B]">
-                Grounded in your resume:
-              </span>{" "}
-              <span className="text-[#334155]">
-                {currentCard.resumeBulletSource.role} @ {currentCard.resumeBulletSource.company}
-              </span>{" "}
-              — &ldquo;{currentCard.resumeBulletSource.bullet}&rdquo;
+          {currentCard.resumeBulletSource?.bullet ? (
+            <div className="flex items-start gap-2 p-3.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-[15px] text-[#475569]">
+              <FileText className="w-4 h-4 text-[#2563EB] shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <span className="font-bold text-[#1E293B]">
+                  Grounded in your resume:
+                </span>{" "}
+                <span className="text-[#334155]">
+                  {currentCard.resumeBulletSource.role ? `${currentCard.resumeBulletSource.role} ` : ""}
+                  {currentCard.resumeBulletSource.company ? `@ ${currentCard.resumeBulletSource.company}` : ""}
+                </span>{" "}
+                — &ldquo;{currentCard.resumeBulletSource.bullet}&rdquo;
+              </div>
             </div>
-          </div>
+          ) : null}
         </div>
 
         {/* Expandable Deeper Breakdown */}
@@ -311,28 +318,30 @@ export default function QuestionsCardDeck({
         )}
 
         {/* Source citation */}
-        <div className="flex items-center justify-between text-[13px] text-[#64748B] pt-2 border-t border-[#E2E8F0] flex-wrap gap-2">
-          <div className="flex items-center gap-1.5">
-            <span>Verified source:</span>
-            {currentCard.source.url && currentCard.source.url !== "#" ? (
-              <a
-                href={currentCard.source.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label={`Inspect source: ${currentCard.source.title}`}
-                className="font-medium text-[#2563EB] hover:underline inline-flex items-center gap-1"
-              >
-                <span>{currentCard.source.title}</span>
-                <ExternalLink className="w-3 h-3" />
-              </a>
-            ) : (
-              <span className="font-medium text-[#334155]">{currentCard.source.title}</span>
-            )}
+        {currentCard.source ? (
+          <div className="flex items-center justify-between text-[13px] text-[#64748B] pt-2 border-t border-[#E2E8F0] flex-wrap gap-2">
+            <div className="flex items-center gap-1.5">
+              <span>Verified source:</span>
+              {currentCard.source.url && currentCard.source.url !== "#" ? (
+                <a
+                  href={currentCard.source.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={`Inspect source: ${currentCard.source.title}`}
+                  className="font-medium text-[#2563EB] hover:underline inline-flex items-center gap-1"
+                >
+                  <span>{currentCard.source.title}</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              ) : (
+                <span className="font-medium text-[#334155]">{currentCard.source.title}</span>
+              )}
+            </div>
+            <span className="font-semibold text-slate-400">
+              {currentCard.source.date}
+            </span>
           </div>
-          <span className="font-semibold text-slate-400">
-            {currentCard.source.date}
-          </span>
-        </div>
+        ) : null}
       </div>
 
       {/* Button Action Bar: Got It / Practice Again / Skip */}

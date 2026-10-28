@@ -3,6 +3,12 @@ import { createClient } from "@supabase/supabase-js";
 import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
 import { verifyUserNotBanned } from "@/lib/admin/auth";
 import { checkRequiredEnv } from "@/lib/api/envCheck";
+import { getCompanyIntel } from "./companyIntel";
+import {
+  generateInterviewPack,
+  JobInput,
+  CandidateInput,
+} from "./engine";
 import { SAMPLE_INTERVIEW_PACK } from "@/data/interviewPackFixture";
 
 function getSupabaseAdmin() {
@@ -31,9 +37,125 @@ function getSupabaseAdmin() {
   });
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Atomically checks and increments the daily interview pack quota for a user (10 packs/day).
+ * Strict rules:
+ * - Atomic increment using INSERT ... ON CONFLICT DO UPDATE ... RETURNING
+ * - Fails closed with 503 if DB errors (NO in-memory fallback)
+ */
+export async function checkAndIncrementInterviewPackQuota(
+  supabaseAdmin: any,
+  userId: string,
+  limit: number = 10
+): Promise<{ allowed: boolean; currentCount: number; limit: number; isServiceUnavailable?: boolean; error?: string }> {
+  const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+
+  if (!supabaseAdmin) {
+    return {
+      allowed: false,
+      currentCount: 0,
+      limit,
+      isServiceUnavailable: true,
+      error: "Database unavailable",
+    };
+  }
+
+  try {
+    // 1. Service-role atomic RPC function
+    if (typeof supabaseAdmin.rpc === "function") {
+      const { data, error: rpcErr } = await supabaseAdmin.rpc("consume_interview_pack_quota", {
+        p_user_id: userId,
+        p_period_date: today,
+        p_operation: "interview_pack",
+        p_limit: limit,
+        p_refund: false,
+      });
+
+      if (rpcErr) {
+        console.warn("[InterviewPack Quota] RPC error:", rpcErr.message || rpcErr);
+        return {
+          allowed: false,
+          currentCount: 0,
+          limit,
+          isServiceUnavailable: true,
+          error: rpcErr.message || "Database RPC failure",
+        };
+      }
+
+      const returnedRow = Array.isArray(data) ? data[0] : (typeof data === "number" ? { count: data } : data);
+      if (returnedRow && typeof returnedRow.count === "number") {
+        return {
+          allowed: true,
+          currentCount: returnedRow.count,
+          limit,
+        };
+      }
+
+      // No row returned -> atomic limit reached (WHERE count < p_limit was false)
+      return {
+        allowed: false,
+        currentCount: limit,
+        limit,
+      };
+    }
+
+    // Fail closed with 503 if RPC is missing
+    return {
+      allowed: false,
+      currentCount: 0,
+      limit,
+      isServiceUnavailable: true,
+      error: "RPC unavailable",
+    };
+  } catch (err: any) {
+    console.error("[InterviewPack Quota] Exception:", err);
+    return {
+      allowed: false,
+      currentCount: 0,
+      limit,
+      isServiceUnavailable: true,
+      error: err?.message,
+    };
+  }
+}
+
+/**
+ * Refunds an interview pack quota reservation on upstream provider failure.
+ * Calls the same RPC function with p_refund: true (count = greatest(count - 1, 0)).
+ */
+export async function refundInterviewPackQuota(
+  supabaseAdmin: any,
+  userId: string
+): Promise<void> {
+  const today = new Date().toISOString().split("T")[0];
+  if (!supabaseAdmin || typeof supabaseAdmin.rpc !== "function") return;
+
+  try {
+    await supabaseAdmin.rpc("consume_interview_pack_quota", {
+      p_user_id: userId,
+      p_period_date: today,
+      p_operation: "interview_pack",
+      p_limit: 10,
+      p_refund: true,
+    });
+  } catch (err) {
+    console.warn("[InterviewPack Quota] Refund failed:", err);
+  }
+}
+
 export interface InterviewPackDeps {
   getSupabaseAdmin?: () => any;
   getServerEntitlement?: (userId: string) => Promise<{ isPro: boolean }>;
+  fetchCandidateProfile?: (userId: string) => Promise<CandidateInput | null>;
+  fetchJob?: (jobId: string) => Promise<JobInput | null>;
+  fetchCompanyIntelClaims?: (companyName: string) => Promise<any[]>;
+  callAi?: (payload: any) => Promise<any>;
+  checkQuota?: (
+    userId: string
+  ) => Promise<{ allowed: boolean; currentCount: number; limit: number; isServiceUnavailable?: boolean }>;
+  timeoutMs?: number;
 }
 
 export async function handleInterviewPackRequest(
@@ -95,23 +217,173 @@ export async function handleInterviewPackRequest(
     );
   }
 
-  // 3. Return Pack for Pro Member
+  // 3. Resolve Job Details: sample mode OR valid UUID (never fictional job fallback)
   const url = new URL(req.url);
   const jobId = url.searchParams.get("jobId") || "sample";
 
-  return NextResponse.json(
-    {
-      pack: {
-        ...SAMPLE_INTERVIEW_PACK,
-        jobId,
-      },
+  // RULE 7: Sample mode: no AI call and no quota use, with the existing sample banner.
+  if (jobId === "sample") {
+    return NextResponse.json({
+      pack: SAMPLE_INTERVIEW_PACK,
       isPro: true,
-    },
-    {
-      status: 200,
-      headers: {
-        "Cache-Control": "private, no-cache, no-store, must-revalidate",
-      },
+      fromSample: true,
+      cachedAt: new Date().toISOString(),
+    });
+  }
+
+  // Production / Live: must be a valid UUID
+  if (!UUID_REGEX.test(jobId)) {
+    return NextResponse.json(
+      { error: "Job not found.", isPro: true, code: "JOB_NOT_FOUND" },
+      { status: 404 }
+    );
+  }
+
+  let job: JobInput | null = null;
+  if (deps.fetchJob) {
+    job = await deps.fetchJob(jobId);
+  } else if (supabaseAdmin?.from) {
+    try {
+      const { data: jobRow, error: jobErr } = await supabaseAdmin
+        .from("jobs")
+        .select("id, title, company, description, location, category, skills, apply_url, source_url")
+        .eq("id", jobId)
+        .maybeSingle();
+
+      if (!jobErr && jobRow) {
+        job = {
+          id: jobRow.id,
+          title: jobRow.title,
+          company: jobRow.company,
+          description: jobRow.description || "",
+          location: jobRow.location || "Remote",
+          category: jobRow.category || "Engineering",
+          skills: jobRow.skills,
+          apply_url: jobRow.apply_url,
+          source_url: jobRow.source_url,
+        };
+      }
+    } catch (e) {
+      console.warn("[InterviewPack] Error querying job:", e);
     }
-  );
+  }
+
+  // Job not found -> 404 JSON (NEVER substitute a fictional job)
+  if (!job) {
+    return NextResponse.json(
+      { error: "Job not found.", isPro: true, code: "JOB_NOT_FOUND" },
+      { status: 404 }
+    );
+  }
+
+  // 4. Per-User Quota Check (Atomic increment, fail closed 503 if DB errors, no in-memory fallback)
+  const quotaChecker =
+    deps.checkQuota || ((uid) => checkAndIncrementInterviewPackQuota(supabaseAdmin, uid, 10));
+  const quotaResult = await quotaChecker(user.id);
+
+  if (quotaResult.isServiceUnavailable) {
+    return NextResponse.json(
+      {
+        error: "AI quota service is temporarily unavailable. Please try again shortly.",
+        code: "AI_QUOTA_SERVICE_UNAVAILABLE",
+        isPro: true,
+      },
+      { status: 503 }
+    );
+  }
+
+  if (!quotaResult.allowed) {
+    return NextResponse.json(
+      {
+        error: `Daily Interview Pack generation quota exceeded (${quotaResult.currentCount}/${quotaResult.limit}). Quotas reset daily at midnight UTC.`,
+        code: "RATE_LIMIT_EXCEEDED",
+        isPro: true,
+      },
+      {
+        status: 429,
+        headers: {
+          "Retry-After": "86400",
+        },
+      }
+    );
+  }
+
+  // 5. Server-Side Fetch of Authenticated User's Resume from candidate_profiles
+  let candidate: CandidateInput | undefined = undefined;
+  if (deps.fetchCandidateProfile) {
+    const prof = await deps.fetchCandidateProfile(user.id);
+    if (prof) candidate = prof;
+  } else if (supabaseAdmin?.from) {
+    try {
+      const { data: profileRow, error: profileErr } = await supabaseAdmin
+        .from("candidate_profiles")
+        .select("name, headline, summary, skills, experience_json, raw_resume_text")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (!profileErr && profileRow) {
+        candidate = {
+          name: profileRow.name,
+          headline: profileRow.headline,
+          summary: profileRow.summary,
+          skills: profileRow.skills,
+          experience: profileRow.experience_json,
+          rawResumeText: profileRow.raw_resume_text,
+        };
+      }
+    } catch (e) {
+      console.warn("[InterviewPack] Error fetching candidate profile:", e);
+    }
+  }
+
+  // 6. Fetch Verified Company Intel with 30-Day Cache (no fetcher -> empty brief + thin state)
+  const companyIntel = await getCompanyIntel(job.company, supabaseAdmin, {
+    fetchClaims: deps.fetchCompanyIntelClaims,
+  });
+
+  // 7. Generate Grounded Interview Pack with Timeout & Provider Error Handling
+  const timeoutMs = deps.timeoutMs || 25000;
+
+  try {
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("Interview Pack generation timed out.")), timeoutMs)
+    );
+
+    const packPromise = generateInterviewPack(job, candidate, companyIntel, {
+      callAi: deps.callAi,
+    });
+
+    const pack = await Promise.race([packPromise, timeoutPromise]);
+
+    return NextResponse.json(
+      {
+        pack,
+        isPro: true,
+      },
+      {
+        status: 200,
+        headers: {
+          "Cache-Control": "private, no-cache, no-store, must-revalidate",
+        },
+      }
+    );
+  } catch (genErr: any) {
+    console.error("[InterviewPack Engine Error]:", genErr?.message || genErr);
+
+    // Refund quota charge on provider failure / timeout
+    await refundInterviewPackQuota(supabaseAdmin, user.id);
+
+    // Provider failure -> clean error JSON, never template filler
+    const isTimeout = genErr?.message?.includes("timed out");
+    return NextResponse.json(
+      {
+        error: isTimeout
+          ? "Interview Pack generation timed out. Please try again."
+          : "Interview Pack generation failed. Upstream AI provider returned an error.",
+        code: isTimeout ? "GENERATION_TIMEOUT" : "PROVIDER_ERROR",
+        isPro: true,
+      },
+      { status: isTimeout ? 504 : 502 }
+    );
+  }
 }

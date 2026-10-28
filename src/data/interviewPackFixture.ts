@@ -1,3 +1,16 @@
+export type ItemSourceLabel =
+  | "From job description"
+  | "From your resume"
+  | "From company source"
+  | "AI suggestion";
+
+export type CardLabel =
+  | "Reported by candidates"
+  | "Likely"
+  | "General practice"
+  | "Unverified"
+  | ItemSourceLabel;
+
 export interface ResumeBulletSource {
   role: string;
   company: string;
@@ -9,19 +22,20 @@ export interface SourceCitation {
   domain: string;
   url: string;
   date: string;
-  verificationType: "Reported by candidates" | "Reported by candidates" | "Likely" | "General practice" | "Unverified";
+  verificationType: CardLabel;
+  label?: ItemSourceLabel;
 }
 
 export interface InterviewCard {
   id: string;
   question: string;
   category: "fear" | "must-know" | "behavioral" | "technical" | "leadership" | "culture";
-  label: "Reported by candidates" | "Reported by candidates" | "Likely" | "General practice" | "Unverified";
+  label: CardLabel;
   whyTheyAsk: string; // One concise psychological line (10-25 words)
   answerDraft: string; // 40-60 words concise draft
   expandedAnswer: string; // Full in-depth framework (STAR or structured)
-  resumeBulletSource: ResumeBulletSource;
-  source: SourceCitation;
+  resumeBulletSource?: ResumeBulletSource;
+  source?: SourceCitation;
   isMustKnow: boolean;
 }
 
@@ -31,12 +45,14 @@ export interface CompanyBriefNews {
   source: string;
   url: string;
   snippet: string;
+  label?: ItemSourceLabel;
 }
 
 export interface CultureSignal {
   title: string;
   detail: string;
   sentiment: "positive" | "neutral" | "caution";
+  label?: ItemSourceLabel;
 }
 
 export interface InterviewProcessStage {
@@ -46,6 +62,7 @@ export interface InterviewProcessStage {
   format: string;
   focus: string;
   proTip: string;
+  label?: ItemSourceLabel;
 }
 
 export interface GapMatrixItem {
@@ -54,6 +71,7 @@ export interface GapMatrixItem {
   resumeStatus: "matched" | "partial" | "gap";
   resumeEvidence: string;
   bridgeStrategy: string;
+  label?: ItemSourceLabel;
 }
 
 export interface ReverseQuestion {
@@ -62,6 +80,7 @@ export interface ReverseQuestion {
   category: "Engineering culture" | "Business direction" | "Role expectations" | "Team dynamics";
   whyAskThis: string;
   whatToListenFor: string;
+  label?: ItemSourceLabel;
 }
 
 export interface QuizQuestion {
@@ -70,6 +89,7 @@ export interface QuizQuestion {
   options: string[];
   correctIndex: number;
   explanation: string;
+  label?: ItemSourceLabel;
 }
 
 export interface InterviewPackData {
@@ -86,8 +106,9 @@ export interface InterviewPackData {
     whyTheyAsk: string;
     answerDraft: string;
     expandedAnswer: string;
-    resumeBulletSource: ResumeBulletSource;
-    source: SourceCitation;
+    resumeBulletSource?: ResumeBulletSource;
+    source?: SourceCitation;
+    label?: CardLabel;
   }[];
   brief: {
     summary: string;
@@ -223,7 +244,7 @@ export const SAMPLE_INTERVIEW_PACK: InterviewPackData = {
         title: "Cloud Platform passes SOC2 Type II and ISO 27001 Security Audits",
         date: "Sep 28, 2025",
         source: "Engineering Blog",
-        url: "https://blog.engineering.internal/security-milestone",
+        url: "https://github.blog/security-milestone",
         snippet: "Enterprise-grade compliance achieved ahead of major Fortune 500 deployment contracts.",
       },
     ],
@@ -349,8 +370,8 @@ export const SAMPLE_INTERVIEW_PACK: InterviewPackData = {
       },
       source: {
         title: "Core Engineering Principles Documentation",
-        domain: "engineering.internal",
-        url: "https://engineering.internal/docs/engineering-testing",
+        domain: "github.blog",
+        url: "https://github.blog/docs/engineering-testing",
         date: "Aug 2025",
         verificationType: "Reported by candidates",
       },
@@ -421,8 +442,8 @@ export const SAMPLE_INTERVIEW_PACK: InterviewPackData = {
       },
       source: {
         title: "Engineering Blog: How We Migrate Databases at Scale",
-        domain: "engineering.internal",
-        url: "https://blog.engineering.internal/zero-downtime-migrations",
+        domain: "github.blog",
+        url: "https://github.blog/zero-downtime-migrations",
         date: "Jul 2025",
         verificationType: "Reported by candidates",
       },
@@ -469,8 +490,8 @@ export const SAMPLE_INTERVIEW_PACK: InterviewPackData = {
       },
       source: {
         title: "Cloud Platform Leadership Competencies",
-        domain: "engineering.internal",
-        url: "https://engineering.internal/careers/engineering-levels",
+        domain: "github.blog",
+        url: "https://github.blog/careers/engineering-levels",
         date: "May 2025",
         verificationType: "Likely",
       },
@@ -517,8 +538,8 @@ export const SAMPLE_INTERVIEW_PACK: InterviewPackData = {
       },
       source: {
         title: "Security & Multi-Tenancy Architecture Guidelines",
-        domain: "engineering.internal",
-        url: "https://engineering.internal/security/multi-tenancy",
+        domain: "github.blog",
+        url: "https://github.blog/security/multi-tenancy",
         date: "Sep 2025",
         verificationType: "Reported by candidates",
       },
@@ -799,8 +820,8 @@ export const SAMPLE_INTERVIEW_PACK: InterviewPackData = {
     },
     {
       title: "Engineering Blog: How We Migrate Databases at Scale",
-      domain: "engineering.internal",
-      url: "https://blog.engineering.internal/zero-downtime-migrations",
+      domain: "github.blog",
+      url: "https://github.blog/zero-downtime-migrations",
       date: "Jul 2025",
       verificationType: "Reported by candidates",
     },

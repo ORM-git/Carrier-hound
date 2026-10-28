@@ -78,16 +78,19 @@ export default function YourAnswersSection({ cards }: YourAnswersSectionProps) {
             </div>
 
             {/* Resume Source Citation */}
-            <div className="flex items-start gap-2 text-xs text-[#475569] bg-[#F8FAFC] p-3 rounded-xl border border-[#E2E8F0]">
-              <FileText className="w-4 h-4 text-[#2563EB] shrink-0 mt-0.5" />
-              <div>
-                <strong className="text-[#1E293B]">Resume Bullet Used:</strong>{" "}
-                <span className="text-[#334155]">
-                  {card.resumeBulletSource.role} @ {card.resumeBulletSource.company}
-                </span>{" "}
-                — &ldquo;{card.resumeBulletSource.bullet}&rdquo;
+            {card.resumeBulletSource?.bullet ? (
+              <div className="flex items-start gap-2 text-xs text-[#475569] bg-[#F8FAFC] p-3 rounded-xl border border-[#E2E8F0]">
+                <FileText className="w-4 h-4 text-[#2563EB] shrink-0 mt-0.5" />
+                <div>
+                  <strong className="text-[#1E293B]">Resume Bullet Used:</strong>{" "}
+                  <span className="text-[#334155]">
+                    {card.resumeBulletSource.role ? `${card.resumeBulletSource.role} ` : ""}
+                    {card.resumeBulletSource.company ? `@ ${card.resumeBulletSource.company}` : ""}
+                  </span>{" "}
+                  — &ldquo;{card.resumeBulletSource.bullet}&rdquo;
+                </div>
               </div>
-            </div>
+            ) : null}
           </div>
         ))}
       </div>
