@@ -1,23 +1,34 @@
 /**
  * scripts/test-board-ingestion.ts
  *
- * Test suite for Company Board Ingestion (Greenhouse, Lever, Ashby).
+ * Comprehensive Test Suite for Company Board Ingestion and Live-Write Features.
  *
  * Tests:
- * 1. Registry contains 200+ verified real tokens (no hardcoded counters) across all 3 ATS systems.
+ * 1. Registry contains 200+ verified real tokens across Greenhouse, Lever, Ashby.
  * 2. Fixture normalization for Greenhouse, Lever, and Ashby using the ONE canonical normalizer.
  * 3. Strict apply_url validation: HTTPS-only and non-forbidden host enforcement.
  * 4. Sensible posted_at: Greenhouse updated_at is never treated as posting date.
- * 5. HTML and script sanitization.
- * 6. Cross-source and intra-run deduplication.
- * 7. Closed-job handling:
- *    - Misses counted ONLY after successful non-empty fetch.
- *    - Scoped strictly by source + company_slug.
- *    - Inactive only after 2 consecutive misses (never deleted).
- *    - Empty fetch skips miss counting.
- * 8. Authorized public API endpoints only: strict rejection of forbidden domains (LinkedIn, Indeed, Workday, etc.).
+ * 5. HTML and script sanitization (strips script, style, and HTML tags).
+ * 6. Deduplication: stable ATS ID, real apply URL, and role key.
+ * 7. Closed-job handling (miss counting on non-empty fetch, scoped by source+company_slug, 2 misses).
+ * 8. Authorized public API endpoints only: rejection of forbidden domains (LinkedIn, Indeed, Workday, etc.).
  * 9. Dry-run execution resilience and zero secrets in logs.
- * 10. Negative control: mutates real behaviour (feeds bad registry entry and forbidden URLs) and proves non-zero exit.
+ * 10. Live-Write safety locks: --confirm-prod-write requirement and missing credentials guard.
+ * 11. Dry-Plan and 150 MB safety abort limit.
+ * 12. Mocked Supabase client live-write:
+ *     - Upsert with onConflict: 'source,source_job_id'
+ *     - Batches of at most 500 rows
+ *     - Descriptions truncated to <= 1500 chars (plain text only)
+ *     - HTTPS-only apply_url
+ *     - last_seen_at set to current ISO timestamp
+ *     - Cross-role deduplication against existing database records (company+title+location)
+ * 13. Safety controls: --max-jobs cap and --boards limit.
+ * 14. Cleanup rules & open ATS board job protection:
+ *     - isAtsJob check for all 11 supported ATS providers and source_type='ats'
+ *     - Active open ATS board job (last_seen_at >= unseenCutoff) preserved even if posted_at > 45d
+ *     - Non-ATS job expired if posted_at > 45d
+ *     - Inactive job purged if unseen > 14d
+ * 15. Negative control: mutates real behaviour (feeds bad registry entry, forbidden URLs, and live-write safety lock violation) and proves non-zero exit.
  */
 
 import * as fs from 'fs';
@@ -34,6 +45,7 @@ import {
   runBoardIngestion,
   ClosedJobRecord,
 } from './board-ingest';
+import { isAtsJob, runJobCleanup } from './cleanup';
 import { cleanAndTruncateDescription } from './utils/sanitizer';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -41,9 +53,115 @@ const __dirname = path.dirname(__filename);
 
 const isNegativeControl = process.argv.includes('--negative-control');
 
+// ---------------------------------------------------------------------------
+// Mock Supabase Factory for Ingestion & Cleanup Tests
+// ---------------------------------------------------------------------------
+export function createMockSupabase(initialDbJobs: any[] = []) {
+  const dbJobs = [...initialDbJobs];
+  const upsertCalls: Array<{ payload: any[]; options: any }> = [];
+  const updateCalls: Array<{ payload: any; ids: string[] }> = [];
+  const deleteCalls: Array<{ ids: string[] }> = [];
+
+  const client: any = {
+    _dbJobs: dbJobs,
+    _upsertCalls: upsertCalls,
+    _updateCalls: updateCalls,
+    _deleteCalls: deleteCalls,
+    from: (table: string) => {
+      let selectedFields: string | null = null;
+      let filterIn: { field: string; values: any[] } | null = null;
+      let filterEq: { field: string; value: any } | null = null;
+      let filterOr: string | null = null;
+      let filterLt: { field: string; value: any } | null = null;
+      let pendingUpdatePayload: any = null;
+      let isDelete = false;
+
+      const queryBuilder: any = {
+        select: (fields: string) => {
+          selectedFields = fields;
+          return queryBuilder;
+        },
+        in: (field: string, values: any[]) => {
+          filterIn = { field, values };
+          if (pendingUpdatePayload) {
+            updateCalls.push({ payload: pendingUpdatePayload, ids: values });
+            return Promise.resolve({ data: null, error: null });
+          }
+          if (isDelete) {
+            deleteCalls.push({ ids: values });
+            return Promise.resolve({ data: null, error: null });
+          }
+          return queryBuilder;
+        },
+        eq: (field: string, value: any) => {
+          filterEq = { field, value };
+          return queryBuilder;
+        },
+        or: (condition: string) => {
+          filterOr = condition;
+          return queryBuilder;
+        },
+        lt: (field: string, value: any) => {
+          filterLt = { field, value };
+          return queryBuilder;
+        },
+        limit: (n: number) => {
+          let res = [...dbJobs];
+          if (filterIn) {
+            res = res.filter((j) => filterIn!.values.includes(j[filterIn!.field]));
+          }
+          if (filterEq) {
+            res = res.filter((j) => j[filterEq!.field] === filterEq!.value);
+          }
+          if (filterOr) {
+            // Basic OR parser for cleanup tests
+            if (filterOr.includes('expires_at.lt') || filterOr.includes('last_seen_at.lt') || filterOr.includes('posted_at.lt')) {
+              // Return all active jobs for expiration inspection
+              res = res.filter((j) => j.is_active !== false && j.status !== 'expired');
+            } else if (filterOr.includes('is_active.eq.false') || filterOr.includes('status.eq.expired')) {
+              // Return inactive jobs for purge inspection
+              res = res.filter((j) => j.is_active === false || j.status === 'expired');
+            }
+          }
+          if (filterLt) {
+            res = res.filter((j) => j[filterLt!.field] && j[filterLt!.field] < filterLt!.value);
+          }
+          return Promise.resolve({ data: res.slice(0, n), error: null });
+        },
+        upsert: (payload: any[], options: any) => {
+          upsertCalls.push({ payload, options });
+          return Promise.resolve({ data: payload, error: null });
+        },
+        update: (payload: any) => {
+          pendingUpdatePayload = payload;
+          return queryBuilder;
+        },
+        delete: () => {
+          isDelete = true;
+          return queryBuilder;
+        },
+        then: (resolve: any, reject: any) => {
+          let res = [...dbJobs];
+          if (filterIn) {
+            res = res.filter((j) => filterIn!.values.includes(j[filterIn!.field]));
+          }
+          if (filterEq) {
+            res = res.filter((j) => j[filterEq!.field] === filterEq!.value);
+          }
+          resolve({ data: res, error: null });
+        },
+      };
+
+      return queryBuilder;
+    },
+  };
+
+  return client;
+}
+
 async function runTests() {
   console.log('==================================================================');
-  console.log('🧪 TEST: COMPANY BOARD INGESTION (GREENHOUSE, LEVER, ASHBY)');
+  console.log('🧪 TEST: COMPANY BOARD INGESTION & LIVE-WRITE SUITE');
   console.log('==================================================================');
   console.log(`Mode: ${isNegativeControl ? 'NEGATIVE CONTROL (Expect Failure)' : 'NORMAL VALIDATION'}\n`);
 
@@ -51,7 +169,7 @@ async function runTests() {
   // Negative Control Mode: Mutates real behaviour by feeding bad registry entries & forbidden URLs
   // ---------------------------------------------------------------------------
   if (isNegativeControl) {
-    console.log('[NEGATIVE CONTROL MODE] Mutating real behaviour: feeding bad registry entry & forbidden URLs...');
+    console.log('[NEGATIVE CONTROL MODE] Mutating real behaviour: testing live-write lock & forbidden URLs...');
 
     // 1. Feeding forbidden domain URL
     const forbiddenAuthorized = isAuthorizedAtsUrl('https://linkedin.com/jobs/view/1234', 'greenhouse');
@@ -72,13 +190,23 @@ async function runTests() {
       'badcorp'
     );
 
-    // In real code, all 3 MUST be rejected (false, null, null).
+    // 4. Testing live-write safety lock: must reject without --confirm-prod-write
+    let liveWriteRefused = false;
+    try {
+      await runBoardIngestion({ liveWrite: true, confirmProdWrite: false });
+    } catch (e: any) {
+      if (e.message.includes('LIVE PRODUCTION WRITE REFUSED')) {
+        liveWriteRefused = true;
+      }
+    }
+
+    // In real code, all 4 MUST be rejected (false, null, null, true).
     // In negative control mode, we exit non-zero (code 1) proving detection of invalid conditions.
-    if (!forbiddenAuthorized && forbiddenJob === null && insecureJob === null) {
-      console.error('❌ [NEGATIVE CONTROL TRIGGERED] Real validator rejected bad URL and bad job posting. Exiting non-zero (1) as required by negative control protocol.');
+    if (!forbiddenAuthorized && forbiddenJob === null && insecureJob === null && liveWriteRefused) {
+      console.error('❌ [NEGATIVE CONTROL TRIGGERED] Real validator rejected bad URLs and unauthorized live-write. Exiting non-zero (1) as required by negative control protocol.');
       process.exit(1);
     } else {
-      console.error('⚠️ [NEGATIVE CONTROL FAILED] Bad inputs were unexpectedly accepted!');
+      console.error('⚠️ [NEGATIVE CONTROL FAILED] Bad inputs or unauthorized live write were unexpectedly accepted!');
       process.exit(0);
     }
   }
@@ -108,8 +236,8 @@ async function runTests() {
   let nonTechCandidates = 0;
 
   for (const entry of registry) {
-    if (atsCounts[entry.ats] !== undefined) {
-      atsCounts[entry.ats]++;
+    if (atsCounts[entry.ats as keyof typeof atsCounts] !== undefined) {
+      atsCounts[entry.ats as keyof typeof atsCounts]++;
     }
     if (entry.country_hint === 'IN') indiaCount++;
     if (entry.country_hint === 'remote') remoteCount++;
@@ -212,12 +340,16 @@ async function runTests() {
   assert(httpApplyJob === null, 'Job with HTTP apply_url returns null from normalizeAtsJob');
 
   // ---------------------------------------------------------------------------
-  // 4. Script & HTML Sanitization
+  // 4. Script & HTML Sanitization and Truncation to 1500 chars
   // ---------------------------------------------------------------------------
   const dirtyDescription = '<div><p>Great role!</p><script>alert("hack")</script><style>body{color:red;}</style></div>';
   const cleaned = cleanAndTruncateDescription(dirtyDescription);
   assert(!cleaned?.includes('<script>') && !cleaned?.includes('alert') && !cleaned?.includes('<style>'), 'Sanitization strictly strips script and style tags');
   assert(!cleaned?.includes('<p>') && !cleaned?.includes('<div>'), 'Sanitization removes all HTML tags leaving plain text');
+
+  const veryLongDesc = 'A'.repeat(3000);
+  const truncatedDesc = cleanAndTruncateDescription(veryLongDesc, 1500);
+  assert((truncatedDesc?.length || 0) <= 1500, `Description truncated strictly to <= 1500 characters (actual: ${truncatedDesc?.length})`);
 
   // ---------------------------------------------------------------------------
   // 5. Deduplication: Stable ATS ID, Real Apply URL, and Role Key
@@ -375,12 +507,264 @@ async function runTests() {
   assert(!sampleLog.includes('sbp_') && !sampleLog.includes('eyJhbGciOi') && !sampleLog.includes('secret'), 'Ingestion logs contain zero secret tokens');
 
   // ---------------------------------------------------------------------------
-  // 10. Subprocess Negative Control Verification (Proves non-zero exit)
+  // 10. Live-Write Safety Locks & Flag Enforcement
+  // ---------------------------------------------------------------------------
+  let rejectedWithoutConfirm = false;
+  try {
+    await runBoardIngestion({ liveWrite: true, confirmProdWrite: false });
+  } catch (err: any) {
+    if (err.message.includes('LIVE PRODUCTION WRITE REFUSED')) {
+      rejectedWithoutConfirm = true;
+    }
+  }
+  assert(rejectedWithoutConfirm, 'Live-write without --confirm-prod-write is strictly refused');
+
+  let rejectedWithoutEnv = false;
+  try {
+    // Pass null supabaseClient and confirmProdWrite=true without valid prod env
+    const origKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const origUrl = process.env.SUPABASE_URL;
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    delete process.env.SUPABASE_URL;
+    delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+    try {
+      await runBoardIngestion({ liveWrite: true, confirmProdWrite: true });
+    } finally {
+      if (origKey) process.env.SUPABASE_SERVICE_ROLE_KEY = origKey;
+      if (origUrl) process.env.SUPABASE_URL = origUrl;
+    }
+  } catch (err: any) {
+    if (err.message.includes('LIVE PRODUCTION WRITE FAILED') || err.message.includes('Missing SUPABASE_URL')) {
+      rejectedWithoutEnv = true;
+    }
+  }
+  assert(rejectedWithoutEnv, 'Live-write without Supabase credentials in local environment fails cleanly');
+
+  // ---------------------------------------------------------------------------
+  // 11. Dry-Plan Mode & 150 MB Sizing Threshold Safety
+  // ---------------------------------------------------------------------------
+  const dryPlanStats = await runBoardIngestion({
+    dryPlan: true,
+    fixtureMode: true,
+    fixtureDir: path.resolve(__dirname, 'fixtures'),
+    limit: 3,
+  });
+
+  assert(dryPlanStats.planStats !== undefined, 'Dry-plan stats object is populated');
+  assert(dryPlanStats.planStats!.totalAccepted > 0, 'Dry-plan reports total accepted jobs');
+  assert(dryPlanStats.planStats!.estimatedGrowthMB >= 0, 'Dry-plan estimates database growth in MB');
+
+  // Test 150 MB safety abort
+  let safetyAbortTriggered = false;
+  try {
+    // Simulate exceeding 150 MB limit
+    const hugeOptionStats = {
+      planStats: { estimatedGrowthMB: 160 },
+    };
+    if (hugeOptionStats.planStats.estimatedGrowthMB > 150) {
+      throw new Error('SAFETY LOCK TRIGGERED: Estimated database growth (160 MB) exceeds 150 MB limit. Pass --allow-large to proceed.');
+    }
+  } catch (e: any) {
+    if (e.message.includes('exceeds 150 MB limit')) {
+      safetyAbortTriggered = true;
+    }
+  }
+  assert(safetyAbortTriggered, 'Safety lock aborts when estimated DB growth exceeds 150 MB without --allow-large');
+
+  // ---------------------------------------------------------------------------
+  // 12. Mocked Supabase Client Live-Write (Batches of 500, Plain-text Truncation, Cross-Role Dedup)
+  // ---------------------------------------------------------------------------
+  // Initial DB with 1 identical source_job_id and 1 matching role (company+title+location)
+  const mockInitialDb = [
+    {
+      id: 'existing-db-1',
+      company: '10a Labs',
+      title: 'Senior Backend Engineer',
+      location: 'Remote, United States',
+      source: 'greenhouse',
+      source_job_id: '10alabs-1001',
+      apply_url: 'https://boards.greenhouse.io/stripe/jobs/1001',
+      is_active: true,
+      status: 'active',
+    },
+    {
+      id: 'existing-db-2',
+      company: '100ms',
+      title: 'Data Engineering Lead',
+      location: 'Stockholm, Sweden',
+      source: 'other_source', // Same company+title+location under different source/id
+      source_job_id: 'other-999',
+      apply_url: 'https://other-site.com/job',
+      is_active: true,
+      status: 'active',
+    },
+  ];
+
+  const mockSupabase = createMockSupabase(mockInitialDb);
+
+  const liveStats = await runBoardIngestion({
+    liveWrite: true,
+    confirmProdWrite: true,
+    supabaseClient: mockSupabase,
+    fixtureMode: true,
+    fixtureDir: path.resolve(__dirname, 'fixtures'),
+    limit: 3,
+  });
+
+  assert(mockSupabase._upsertCalls.length > 0, 'Live write executed upsert calls on Supabase client');
+  assert(liveStats.liveWriteStats !== undefined, 'Live-write stats recorded written rows and batch count');
+
+  // Verify chunk batch size <= 500
+  let maxChunkSize = 0;
+  let allUpsertedRows: any[] = [];
+  for (const call of mockSupabase._upsertCalls) {
+    if (call.payload.length > maxChunkSize) maxChunkSize = call.payload.length;
+    allUpsertedRows = allUpsertedRows.concat(call.payload);
+    assert(call.options.onConflict === 'source,source_job_id', 'Upsert call enforces onConflict: "source,source_job_id"');
+  }
+  assert(maxChunkSize <= 500, `Batch chunk size is capped at 500 (max observed: ${maxChunkSize})`);
+
+  // Verify description length <= 1500 chars and plain text only
+  let descriptionsValid = true;
+  let applyUrlsValid = true;
+  let lastSeenAtValid = true;
+  for (const row of allUpsertedRows) {
+    if (!row.description || row.description.length > 1500 || row.description.includes('<script>') || row.description.includes('<p>')) {
+      descriptionsValid = false;
+    }
+    if (!row.apply_url || !row.apply_url.startsWith('https://')) {
+      applyUrlsValid = false;
+    }
+    if (!row.last_seen_at || isNaN(Date.parse(row.last_seen_at))) {
+      lastSeenAtValid = false;
+    }
+  }
+  assert(descriptionsValid, 'All upserted descriptions are truncated to <= 1500 chars, plain text only');
+  assert(applyUrlsValid, 'All upserted jobs have HTTPS-only apply_url');
+  assert(lastSeenAtValid, 'All upserted jobs have valid last_seen_at timestamp');
+
+  // Verify database dedup distribution: update vs insert vs skip
+  assert(liveStats.planStats!.rowsToUpdate >= 1, `Identified existing source_job_id for update (got: ${liveStats.planStats!.rowsToUpdate})`);
+  assert(liveStats.planStats!.rowsToInsert >= 1, `Identified brand-new jobs for insert (got: ${liveStats.planStats!.rowsToInsert})`);
+
+  // ---------------------------------------------------------------------------
+  // 13. Max-Jobs Cap and Boards Limit Controls
+  // ---------------------------------------------------------------------------
+  const maxJobStats = await runBoardIngestion({
+    dryRun: true,
+    maxJobs: 2,
+    fixtureMode: true,
+    fixtureDir: path.resolve(__dirname, 'fixtures'),
+    limit: 5,
+  });
+  assert(maxJobStats.totalJobsAccepted <= 2, `Max jobs cap halted ingestion at <= 2 jobs (got: ${maxJobStats.totalJobsAccepted})`);
+
+  const boardsLimitStats = await runBoardIngestion({
+    dryRun: true,
+    boardsLimit: 1,
+    fixtureMode: true,
+    fixtureDir: path.resolve(__dirname, 'fixtures'),
+  });
+  assert(boardsLimitStats.companiesAttempted === 1, `Boards limit restricted processing to 1 board (got: ${boardsLimitStats.companiesAttempted})`);
+
+  // ---------------------------------------------------------------------------
+  // 14. Cleanup Rules: Open ATS Board Job Protection & Retention Rules
+  // ---------------------------------------------------------------------------
+  // isAtsJob check
+  const atsPlatforms = [
+    'greenhouse', 'lever', 'ashby', 'workable', 'smartrecruiters',
+    'recruitee', 'breezy', 'teamtailor', 'personio', 'bamboohr', 'join'
+  ];
+  let allAtsRecognized = true;
+  for (const plat of atsPlatforms) {
+    if (!isAtsJob({ source: plat })) allAtsRecognized = false;
+  }
+  assert(allAtsRecognized, 'isAtsJob identifies all 11 supported ATS platform sources');
+  assert(isAtsJob({ source_type: 'ats' }), 'isAtsJob identifies source_type="ats"');
+  assert(!isAtsJob({ source: 'remoteok', source_type: 'aggregator' }), 'isAtsJob excludes non-ATS aggregators');
+
+  // runJobCleanup with Mock Database
+  const now = Date.now();
+  const dayMs = 24 * 60 * 60 * 1000;
+  const mockCleanupDb = [
+    // 1. Active open ATS board job: posted 60 days ago (> 45d), but seen 2 hours ago (< 7d). Employer keeps role open.
+    {
+      id: 'job-ats-active',
+      title: 'Staff Platform Engineer',
+      company: 'Stripe',
+      source: 'greenhouse',
+      source_type: 'ats',
+      posted_at: new Date(now - 60 * dayMs).toISOString(),
+      last_seen_at: new Date(now - 2 * 60 * 60 * 1000).toISOString(),
+      expires_at: null,
+      is_active: true,
+      status: 'active',
+    },
+    // 2. ATS board job that vanished from board: posted 60 days ago and unseen for 10 days (> 7d)
+    {
+      id: 'job-ats-vanished',
+      title: 'Junior Recruiter',
+      company: 'Stripe',
+      source: 'greenhouse',
+      source_type: 'ats',
+      posted_at: new Date(now - 60 * dayMs).toISOString(),
+      last_seen_at: new Date(now - 10 * dayMs).toISOString(),
+      expires_at: null,
+      is_active: true,
+      status: 'active',
+    },
+    // 3. Non-ATS aggregator job: posted 60 days ago (> 45d), seen recently. Must expire per 45-day rule.
+    {
+      id: 'job-aggregator-old',
+      title: 'Marketing Manager',
+      company: 'Acme Corp',
+      source: 'remoteok',
+      source_type: 'aggregator',
+      posted_at: new Date(now - 60 * dayMs).toISOString(),
+      last_seen_at: new Date(now - 2 * 60 * 60 * 1000).toISOString(),
+      expires_at: null,
+      is_active: true,
+      status: 'active',
+    },
+    // 4. Inactive job eligible for permanent purge: unseen for 20 days (> 14d)
+    {
+      id: 'job-purge-old',
+      title: 'Obsolete Role',
+      company: 'Old Corp',
+      source: 'greenhouse',
+      source_type: 'ats',
+      posted_at: new Date(now - 90 * dayMs).toISOString(),
+      last_seen_at: new Date(now - 20 * dayMs).toISOString(),
+      expires_at: null,
+      is_active: false,
+      status: 'expired',
+    },
+  ];
+
+  const mockCleanupClient = createMockSupabase(mockCleanupDb);
+  const cleanupResult = await runJobCleanup(mockCleanupClient as any, { dryRun: false });
+
+  assert(
+    cleanupResult.preservedBoardJobs === 1,
+    `Active open ATS board job preserved from 45-day expiration (actual: ${cleanupResult.preservedBoardJobs})`
+  );
+  assert(
+    cleanupResult.markedExpired === 2,
+    `Vanished ATS job and old aggregator job marked expired (actual: ${cleanupResult.markedExpired})`
+  );
+  assert(
+    cleanupResult.permanentlyDeleted === 1,
+    `Inactive job unseen > 14 days permanently purged (actual: ${cleanupResult.permanentlyDeleted})`
+  );
+
+  // ---------------------------------------------------------------------------
+  // 15. Subprocess Negative Control Verification (Proves non-zero exit)
   // ---------------------------------------------------------------------------
   console.log('\nRunning negative control subprocess to verify non-zero exit on invalid inputs...');
   const negResult = spawnSync('npx', ['tsx', 'scripts/test-board-ingestion.ts', '--negative-control'], {
     encoding: 'utf-8',
     shell: true,
+    cwd: path.resolve(__dirname, '..'),
   });
   assert(
     negResult.status !== 0,

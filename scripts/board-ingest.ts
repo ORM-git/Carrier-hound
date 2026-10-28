@@ -1,35 +1,41 @@
 /**
  * scripts/board-ingest.ts
  *
- * Automated Company Board Ingestion for Greenhouse, Lever, and Ashby.
+ * Automated Company Board Ingestion for Greenhouse, Lever, Ashby, and all supported ATS platforms.
  *
  * Operational Locks:
  * - Legal documented public endpoints only:
  *     Greenhouse: boards-api.greenhouse.io/v1/boards/<company>/jobs
  *     Lever: api.lever.co/v0/postings/<company>
  *     Ashby: api.ashbyhq.com/posting-api/job-board/<company>
+ *     Workable: apply.workable.com/api/v1/widget/accounts/<company>
+ *     SmartRecruiters: api.smartrecruiters.com/v1/companies/<company>/postings
+ *     Recruitee: <company>.recruitee.com/api/offers/
+ *     Breezy: <company>.breezy.hr/json
+ *     Teamtailor: <company>.teamtailor.com/jobs.rss
+ *     Personio: <company>.jobs.personio.de/xml
+ *     BambooHR: <company>.bamboohr.com/careers/list
+ *     Join: join.com/api/companies/<company>
  * - No scraping of HTML career pages, no login, no captcha bypass.
  * - Explicitly banned scrapable domains: LinkedIn, Indeed, Naukri, Glassdoor, Jobright, Workday.
  * - Employer text is never misrepresented; real apply URLs & company names preserved.
- * - Stored sources: 'greenhouse' | 'lever' | 'ashby'.
- * - Rate limit is strictly 1 req/s per host (1000ms delay between consecutive requests to the same domain).
- *   Do not lower rate limit to 500ms unless explicitly instructed.
- * - Closed-job handling:
- *     - Only count misses after a successful non-empty fetch for that specific company board.
- *     - Scoped strictly by source + company_slug.
- *     - Reconciled with cleanup.ts: jobs that vanish are marked inactive after 2 consecutive misses (never deleted).
- *     - Inactive jobs remain until cleanup.ts deletes them after 14 days of being unseen (last_seen_at < 14d).
- *     - Active jobs older than 45 days are naturally expired by cleanup.ts (posted_at < 45d).
- *     - Sensible posted_at: Greenhouse updated_at is NOT a posting date (it updates on recruiter edits).
- *       Use first_published_at or created_at if present; otherwise fall back to discovery time.
- * - Real run and fixture run share ONE canonical normalizer: normalizeAtsJob.
- * - Dry-run mode by default; live database writes require explicit --live-write-unlocked.
+ * - Rate limit: Strictly 1 req/s per host / registrable domain.
+ * - Descriptions truncated to 1500 chars, plain text only. apply_url https-only.
+ * - Dedup against existing rows (company+title+location) before insert.
+ * - Live-write mode: OFF by default. Requires explicit --live-write AND --confirm-prod-write.
+ *   Credentials read from local env only; never logged, never in CI/workflows (workflows stay dry-run only).
+ * - Safety controls: --max-jobs N, batches of 500, --boards N, --dry-plan, abort if estimated DB growth > 150 MB without --allow-large.
+ * - Writes go through standard upsert (onConflict: 'source,source_job_id', set last_seen_at).
+ *   No new tables/columns, do NOT depend on consecutive_misses migration. Skip closed-job logic in live-write.
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
-import { NormalizedJob } from './types';
+import * as dotenv from 'dotenv';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { NormalizedJob, SourceConfig, SourceType } from './types';
+import { getAdapter } from './adapters';
 import {
   cleanText,
   cleanAndTruncateDescription,
@@ -43,37 +49,78 @@ import {
   parseSalary,
   formatSalary,
 } from './utils/sanitizer';
-import { politeFetchJson, isForbiddenDomain } from './utils/polite-fetch';
+import { politeFetchJson, politeFetchText, isForbiddenDomain } from './utils/polite-fetch';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Load local environment safely without printing secrets
+dotenv.config();
+const envLocalPath = path.resolve(__dirname, '../.env.local');
+if (fs.existsSync(envLocalPath)) {
+  dotenv.config({ path: envLocalPath, override: true });
+}
+
+// ISO alpha-2 -> display name for the legacy country text column
+const COUNTRY_NAMES: Record<string, string> = {
+  US: 'United States', IN: 'India', GB: 'United Kingdom', CA: 'Canada', DE: 'Germany',
+  SG: 'Singapore', AU: 'Australia', FR: 'France', NL: 'Netherlands', IE: 'Ireland',
+  JP: 'Japan', BR: 'Brazil', CH: 'Switzerland', SE: 'Sweden', ES: 'Spain', IT: 'Italy',
+  PL: 'Poland', MX: 'Mexico', IL: 'Israel', AE: 'United Arab Emirates', AT: 'Austria',
+  DK: 'Denmark', NO: 'Norway', FI: 'Finland', NZ: 'New Zealand', PT: 'Portugal', PH: 'Philippines',
+};
+
 export interface CompanyRegistryEntry {
-  id: string;
+  id?: string;
   company: string;
   name?: string;
-  ats: 'greenhouse' | 'lever' | 'ashby' | 'workable' | 'smartrecruiters' | 'recruitee' | 'breezy' | 'teamtailor' | 'personio' | 'bamboohr' | 'join' | string;
+  ats:
+    | 'greenhouse'
+    | 'lever'
+    | 'ashby'
+    | 'workable'
+    | 'smartrecruiters'
+    | 'recruitee'
+    | 'breezy'
+    | 'teamtailor'
+    | 'personio'
+    | 'bamboohr'
+    | 'join'
+    | string;
   type?: string;
   token: string;
   target?: string;
   country_hint?: string;
+  job_count?: number;
+  india_job_count?: number;
+  remote_job_count?: number;
+  verified_at?: string;
+  discovery_source?: string;
   enabled?: boolean;
 }
 
 export interface IngestionOptions {
   dryRun?: boolean;
+  liveWrite?: boolean;
+  confirmProdWrite?: boolean;
+  dryPlan?: boolean;
+  allowLarge?: boolean;
+  maxJobs?: number;
+  boardsLimit?: number;
   limit?: number;
   offset?: number;
-  atsFilter?: 'greenhouse' | 'lever' | 'ashby' | 'all';
+  atsFilter?: string;
   companyFilter?: string;
+  inputPath?: string;
   configPath?: string;
   fixtureMode?: boolean;
   fixtureDir?: string;
+  supabaseClient?: any;
 }
 
 export interface ClosedJobRecord {
   id: string;
-  source: 'greenhouse' | 'lever' | 'ashby';
+  source: 'greenhouse' | 'lever' | 'ashby' | string;
   company_slug: string;
   source_job_id: string;
   company: string;
@@ -85,7 +132,7 @@ export interface ClosedJobRecord {
 
 export interface ClosedJobDecision {
   id: string;
-  source: 'greenhouse' | 'lever' | 'ashby';
+  source: 'greenhouse' | 'lever' | 'ashby' | string;
   company_slug: string;
   source_job_id: string;
   consecutive_misses: number;
@@ -109,10 +156,73 @@ export interface BoardIngestionStats {
   countryBreakdown: Record<string, number>;
   topCompanies: Array<{ company: string; ats: string; jobs: number }>;
   errors: Array<{ company: string; ats: string; error: string }>;
+  planStats?: {
+    totalAccepted: number;
+    rowsToInsert: number;
+    rowsToUpdate: number;
+    dedupSkipped: number;
+    estimatedGrowthMB: number;
+  };
+  liveWriteStats?: {
+    rowsWritten: number;
+    batchesCount: number;
+  };
 }
 
 /**
- * Loads the company-token registry from disk (data/ats-company-registry.json).
+ * Initializes Supabase Client safely from local environment only.
+ * Tokens and keys are strictly masked and never logged.
+ */
+export function getSupabaseClient(customUrl?: string, customKey?: string): SupabaseClient | null {
+  const supabaseUrl = customUrl || process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+  const serviceRoleKey = customKey || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(supabaseUrl);
+    const maskedKey = serviceRoleKey.length > 8 ? `${serviceRoleKey.slice(0, 4)}****` : '****';
+    console.log(`🔌 [Live-Write] Connected to Supabase host: ${parsed.host} (Key masked: ${maskedKey})`);
+  } catch {
+    console.error('❌ [Live-Write] Invalid Supabase URL in local environment.');
+    return null;
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
+
+/**
+ * Loads verified boards from data/ats-candidates.json (output of board-verify-all.ts).
+ * Only boards with verified status and >= 1 active job are selected.
+ */
+export function loadVerifiedBoards(customPath?: string): CompanyRegistryEntry[] {
+  const candidatesPath = customPath
+    ? path.resolve(customPath)
+    : path.resolve(__dirname, '../data/ats-candidates.json');
+
+  if (fs.existsSync(candidatesPath)) {
+    try {
+      const raw = fs.readFileSync(candidatesPath, 'utf-8');
+      const items: CompanyRegistryEntry[] = JSON.parse(raw);
+      const valid = items.filter(
+        (item) => item && (item.job_count == null || item.job_count >= 1) && item.enabled !== false
+      );
+      if (valid.length > 0) return valid;
+    } catch {
+      // Fallback if candidates file cannot be read
+    }
+  }
+
+  // Fallback to registry if candidates file is missing
+  return loadCompanyRegistry();
+}
+
+/**
+ * Loads company-token registry from disk (data/ats-company-registry.json).
  */
 export function loadCompanyRegistry(customPath?: string): CompanyRegistryEntry[] {
   const resolvedPath = customPath
@@ -215,23 +325,23 @@ export function isAuthorizedAtsUrl(url: string, ats: string): boolean {
       return host === 'api.smartrecruiters.com' && pathname.startsWith('/v1/companies/');
     }
     if (ats === 'recruitee') {
-      return /^[a-z0-9_-]+.recruitee.com$/.test(host) && pathname.startsWith('/api/offers');
+      return /^[a-z0-9_-]+\.recruitee\.com$/.test(host) && pathname.startsWith('/api/offers');
     }
     if (ats === 'breezy') {
-      return /^[a-z0-9_-]+.breezy.hr$/.test(host) && pathname.startsWith('/json');
+      return /^[a-z0-9_-]+\.breezy\.hr$/.test(host) && pathname.startsWith('/json');
     }
     if (ats === 'teamtailor') {
-      return /^[a-z0-9_-]+.teamtailor.com$/.test(host) && pathname.startsWith('/jobs');
+      return /^[a-z0-9_-]+\.teamtailor\.com$/.test(host) && pathname.startsWith('/jobs');
     }
     if (ats === 'personio') {
-      return /^[a-z0-9_-]+(.[a-z0-9_-]+)?.personio.(de|com)$/.test(host) && pathname.startsWith('/xml');
+      return /^[a-z0-9_-]+(\.[a-z0-9_-]+)?\.personio\.(de|com)$/.test(host) && pathname.startsWith('/xml');
     }
     if (ats === 'bamboohr') {
-      return /^[a-z0-9_-]+.bamboohr.com$/.test(host) && pathname.startsWith('/careers/');
+      return /^[a-z0-9_-]+\.bamboohr\.com$/.test(host) && pathname.startsWith('/careers/');
     }
     if (ats === 'join') {
       return (
-        (host === 'join.com' || host === 'www.join.com' || /^[a-z0-9_-]+.join.com$/.test(host)) &&
+        (host === 'join.com' || host === 'www.join.com' || /^[a-z0-9_-]+\.join\.com$/.test(host)) &&
         (pathname.startsWith('/api/') || pathname.startsWith('/companies/'))
       );
     }
@@ -261,14 +371,19 @@ export function isValidApplyUrl(applyUrl: string): boolean {
  * Calls isAuthorizedAtsUrl on every request URL before dispatching.
  */
 export async function fetchRawAtsJobs(
-  ats: 'greenhouse' | 'lever' | 'ashby',
+  ats: string,
   token: string
 ): Promise<{ rawJobs: any[]; fetchSucceeded: boolean }> {
   const url = buildAtsApiUrl(ats, token);
 
-  // Security guard: verify URL before making HTTP request
   if (!isAuthorizedAtsUrl(url, ats)) {
     throw new Error(`Unauthorized or forbidden ATS request URL: ${url}`);
+  }
+
+  if (ats === 'teamtailor' || ats === 'personio') {
+    const text = await politeFetchText(url);
+    if (!text) return { rawJobs: [], fetchSucceeded: false };
+    return { rawJobs: [text], fetchSucceeded: true };
   }
 
   const data = await politeFetchJson<any>(url);
@@ -277,16 +392,33 @@ export async function fetchRawAtsJobs(
   }
 
   if (ats === 'greenhouse') {
-    const jobs = Array.isArray(data.jobs) ? data.jobs : [];
-    return { rawJobs: jobs, fetchSucceeded: true };
+    return { rawJobs: Array.isArray(data.jobs) ? data.jobs : [], fetchSucceeded: true };
   }
   if (ats === 'lever') {
-    const jobs = Array.isArray(data) ? data : [];
-    return { rawJobs: jobs, fetchSucceeded: true };
+    return { rawJobs: Array.isArray(data) ? data : [], fetchSucceeded: true };
   }
   if (ats === 'ashby') {
-    const jobs = Array.isArray(data.jobs) ? data.jobs : [];
-    return { rawJobs: jobs, fetchSucceeded: true };
+    return { rawJobs: Array.isArray(data.jobs) ? data.jobs : [], fetchSucceeded: true };
+  }
+  if (ats === 'workable') {
+    return { rawJobs: Array.isArray(data.jobs) ? data.jobs : [], fetchSucceeded: true };
+  }
+  if (ats === 'smartrecruiters') {
+    return { rawJobs: Array.isArray(data.content) ? data.content : [], fetchSucceeded: true };
+  }
+  if (ats === 'recruitee') {
+    return { rawJobs: Array.isArray(data.offers) ? data.offers : [], fetchSucceeded: true };
+  }
+  if (ats === 'breezy') {
+    return { rawJobs: Array.isArray(data) ? data : [], fetchSucceeded: true };
+  }
+  if (ats === 'bamboohr') {
+    const list = Array.isArray(data.result) ? data.result : Array.isArray(data.jobs) ? data.jobs : Array.isArray(data) ? data : [];
+    return { rawJobs: list, fetchSucceeded: true };
+  }
+  if (ats === 'join') {
+    const list = Array.isArray(data.jobs) ? data.jobs : Array.isArray(data) ? data : [];
+    return { rawJobs: list, fetchSucceeded: true };
   }
 
   return { rawJobs: [], fetchSucceeded: false };
@@ -295,26 +427,24 @@ export async function fetchRawAtsJobs(
 /**
  * ONE CANONICAL NORMALIZER:
  * Normalizes an employer posting into the standardized CareerMonke jobs schema.
- * Shared by both the live network fetcher and fixture-based tests.
  *
  * Rules:
  * 1. Validates apply_url: must be https-only and non-forbidden host.
- * 2. Sensible posted_at: Greenhouse updated_at is NOT a posting date.
+ * 2. Descriptions capped strictly at 1500 characters, plain text only (strip HTML).
+ * 3. Sensible posted_at: Greenhouse updated_at is NOT a posting date.
  *    Uses first_published_at or created_at if present; falls back to discovery timestamp.
- * 3. Extracts structured compensation when available with fallback to sanitizing description.
+ * 4. Extracts structured compensation when available with fallback to sanitizing description.
  */
 export function normalizeAtsJob(
   raw: any,
-  ats: 'greenhouse' | 'lever' | 'ashby',
+  ats: string,
   company: string,
   slug: string
 ): NormalizedJob | null {
   if (!raw || typeof raw !== 'object') return null;
   const nowIso = new Date().toISOString();
 
-  // ---------------------------------------------------------------------------
   // GREENHOUSE
-  // ---------------------------------------------------------------------------
   if (ats === 'greenhouse') {
     if (!raw.title || !raw.absolute_url) return null;
     const applyUrl = String(raw.absolute_url).trim();
@@ -326,14 +456,9 @@ export function normalizeAtsJob(
     const location = cleanText(raw.location?.name || 'Unspecified');
     const remote = detectRemote(title, location);
     const countryCode = detectCountryCode(location);
-    const description = cleanAndTruncateDescription(raw.content, 4000);
-
-    // Sensible posted_at: Greenhouse updated_at is NOT a posting date.
-    // Recruiter edits update updated_at. Use first_published_at or created_at if present;
-    // otherwise fallback to nowIso (discovery time).
+    const description = cleanAndTruncateDescription(raw.content, 1500);
     const postedAt = raw.first_published_at || raw.created_at || nowIso;
 
-    // Structured pay transparency extraction
     let salaryText: string | null = null;
     let salaryMin: number | null = null;
     let salaryMax: number | null = null;
@@ -349,35 +474,22 @@ export function normalizeAtsJob(
       : null;
 
     if (validRange) {
-      const rawMin =
-        validRange.min_cents != null && validRange.min_cents > 0
-          ? validRange.min_cents / 100
-          : null;
-      const rawMax =
-        validRange.max_cents != null && validRange.max_cents > 0
-          ? validRange.max_cents / 100
-          : null;
-
+      const rawMin = validRange.min_cents != null && validRange.min_cents > 0 ? validRange.min_cents / 100 : null;
+      const rawMax = validRange.max_cents != null && validRange.max_cents > 0 ? validRange.max_cents / 100 : null;
       salaryMin = rawMin != null ? Math.round(rawMin) : null;
       salaryMax = rawMax != null ? Math.round(rawMax) : null;
-
       if (salaryMin != null && salaryMax != null && salaryMin > salaryMax) {
         const temp = salaryMin;
         salaryMin = salaryMax;
         salaryMax = temp;
       }
-
       if (validRange.currency_type && String(validRange.currency_type).trim()) {
         currency = String(validRange.currency_type).trim().toUpperCase();
       }
-
       const context = `${validRange.title || ''} ${validRange.blurb || ''}`;
       if (currency === 'USD' && /\b(hour|hourly|\/hr)\b/i.test(context)) {
         salaryPeriod = 'hourly';
-      } else {
-        salaryPeriod = undefined;
       }
-
       if (salaryMin != null || salaryMax != null) {
         salaryText = formatSalary(salaryMin, salaryMax, currency, salaryPeriod);
       }
@@ -423,9 +535,7 @@ export function normalizeAtsJob(
     };
   }
 
-  // ---------------------------------------------------------------------------
   // LEVER
-  // ---------------------------------------------------------------------------
   if (ats === 'lever') {
     if (!raw.text) return null;
     const applyUrl = String(raw.hostedUrl || raw.applyUrl || '').trim();
@@ -439,11 +549,9 @@ export function normalizeAtsJob(
     const remote = isRemoteWorkplace || detectRemote(title, location);
     const countryCode = detectCountryCode(location);
     const rawDesc = raw.descriptionPlain || raw.description;
-    const description = cleanAndTruncateDescription(rawDesc, 4000);
-
+    const description = cleanAndTruncateDescription(rawDesc, 1500);
     const postedAt = raw.createdAt ? new Date(raw.createdAt).toISOString() : nowIso;
 
-    // Structured salary extraction from Lever salaryRange
     let salaryText: string | null = null;
     let salaryMin: number | null = null;
     let salaryMax: number | null = null;
@@ -505,9 +613,7 @@ export function normalizeAtsJob(
     };
   }
 
-  // ---------------------------------------------------------------------------
   // ASHBY
-  // ---------------------------------------------------------------------------
   if (ats === 'ashby') {
     if (!raw.title) return null;
     const applyUrl = String(raw.jobUrl || raw.applyUrl || '').trim();
@@ -520,11 +626,9 @@ export function normalizeAtsJob(
     const remote = detectRemote(title, location, raw.isRemote);
     const countryCode = detectCountryCode(location);
     const rawDesc = raw.descriptionPlain || raw.descriptionHtml;
-    const description = cleanAndTruncateDescription(rawDesc, 4000);
-
+    const description = cleanAndTruncateDescription(rawDesc, 1500);
     const postedAt = raw.publishedAt || raw.createdAt || nowIso;
 
-    // Structured compensation extraction from Ashby compensation block
     let salaryText: string | null = null;
     let salaryMin: number | null = null;
     let salaryMax: number | null = null;
@@ -653,36 +757,21 @@ export function dedupJobs(
 }
 
 /**
- * Closed-job handling:
- *
- * Rules:
- * 1. Count a miss ONLY after a successful non-empty fetch for that specific company board.
- *    If the API failed or returned 0 jobs (transient outage, rate limit), skip miss counting.
- * 2. Scope strictly by source + company_slug:
- *    Only evaluate jobs matching existing.source === ats && existing.company_slug === slug.
- * 3. Reconciled with cleanup.ts:
- *    - Re-seen active jobs: consecutive_misses reset to 0, status='active', is_active=true.
- *    - 1 miss: consecutive_misses=1, remains active (grace period).
- *    - 2 consecutive misses: consecutive_misses=2, is_active=false, status='inactive'.
- *    - Jobs are NEVER deleted here. Inactive jobs are permanently deleted by cleanup.ts
- *      only after 14 days of being unseen (last_seen_at < 14d).
- *    - Active jobs posted > 45 days ago will also be naturally expired by cleanup.ts.
+ * Closed-job handling (used during audit/fixture checks, skipped in live-write).
  */
 export function handleClosedJobs(
   existingJobsForCompany: ClosedJobRecord[],
   freshFetchedJobIds: Set<string>,
   context: {
-    source: 'greenhouse' | 'lever' | 'ashby';
+    source: 'greenhouse' | 'lever' | 'ashby' | string;
     company_slug: string;
     fetchSucceeded: boolean;
   }
 ): ClosedJobDecision[] {
-  // If fetch failed or returned 0 jobs, do NOT penalize with a miss (defend against transient outages)
   if (!context.fetchSucceeded || freshFetchedJobIds.size === 0) {
     return [];
   }
 
-  // Filter existing jobs strictly by source and company_slug
   const targetJobs = existingJobsForCompany.filter(
     (j) => j.source === context.source && j.company_slug === context.company_slug
   );
@@ -693,7 +782,6 @@ export function handleClosedJobs(
     const isPresent = freshFetchedJobIds.has(existing.source_job_id);
 
     if (isPresent) {
-      // Re-verified active on board
       decisions.push({
         id: existing.id,
         source: existing.source,
@@ -705,7 +793,6 @@ export function handleClosedJobs(
         action: 'reset_active',
       });
     } else {
-      // Vanished from current successful non-empty board fetch
       const updatedMisses = (existing.consecutive_misses || 0) + 1;
       const shouldDeactivate = updatedMisses >= 2;
 
@@ -726,59 +813,82 @@ export function handleClosedJobs(
 }
 
 /**
- * Executes Board Ingestion across Greenhouse, Lever, and Ashby.
- * In dry-run mode, fetches live API data or fixtures, runs through the ONE canonical
- * normalizer (normalizeAtsJob), and prints structured summary statistics without DB mutations.
+ * Executes Company Board Ingestion across all supported ATS platforms.
+ *
+ * Modes:
+ * - Default: Safe Dry-Run (fetches, parses, dedups, prints audit summary).
+ * - --dry-plan: Calculates insert vs update distribution and estimated DB growth in MB.
+ *               Aborts if growth > 150 MB without --allow-large.
+ * - --live-write: Requires explicit --confirm-prod-write. Writes to database via batches of 500.
  */
 export async function runBoardIngestion(options: IngestionOptions = {}): Promise<BoardIngestionStats> {
   const {
     dryRun = true,
+    liveWrite = false,
+    confirmProdWrite = false,
+    dryPlan = false,
+    allowLarge = false,
+    maxJobs,
+    boardsLimit,
     limit,
     offset = 0,
     atsFilter = 'all',
     companyFilter,
+    inputPath,
     configPath,
     fixtureMode = false,
     fixtureDir,
+    supabaseClient,
   } = options;
 
+  const effectiveBoardsLimit = boardsLimit || limit;
+  const isActualLiveWrite = liveWrite && !dryPlan;
+
   console.log('\n======================================================');
-  console.log('🚀 CareerMonke ATS Board Ingestion (Greenhouse, Lever, Ashby)');
+  console.log('🚀 CareerMonke ATS Board Ingestion Engine');
   console.log('======================================================');
-  console.log(`Execution Mode: ${dryRun ? 'DRY RUN (Safe - No Writes)' : 'PRODUCTION'}`);
+  console.log(`Execution Mode: ${isActualLiveWrite ? '🔴 PRODUCTION LIVE-WRITE' : dryPlan ? '📋 DRY-PLAN' : '🟢 DRY-RUN (Safe)'}`);
   console.log(`Rate Pacing:    1 req/s per host (MIN_DOMAIN_INTERVAL_MS = 1000)`);
   console.log(`ATS Filter:     ${atsFilter}`);
   if (companyFilter) console.log(`Company Filter: ${companyFilter}`);
+  if (maxJobs) console.log(`Max Jobs Cap:   ${maxJobs}`);
+  if (effectiveBoardsLimit) console.log(`Boards Limit:   ${effectiveBoardsLimit}`);
 
-  const registry = loadCompanyRegistry(configPath);
-  let targets = registry.filter((entry) => {
-    if (atsFilter !== 'all' && entry.ats !== atsFilter) return false;
-    if (companyFilter && !entry.company.toLowerCase().includes(companyFilter.toLowerCase())) return false;
-    return true;
-  });
-
-  const tokensPerAts: Record<string, number> = { greenhouse: 0, lever: 0, ashby: 0 };
-  for (const t of registry) {
-    tokensPerAts[t.ats] = (tokensPerAts[t.ats] || 0) + 1;
+  // Safety Gate: Live write requires explicit --confirm-prod-write
+  if (liveWrite && !confirmProdWrite) {
+    throw new Error('LIVE PRODUCTION WRITE REFUSED: --live-write requires explicit --confirm-prod-write flag.');
   }
 
-  if (offset > 0 || (limit && limit > 0)) {
-    if (limit && atsFilter === 'all' && !companyFilter) {
-      // Balanced sample across Greenhouse, Lever, and Ashby
-      const perAts = Math.max(1, Math.floor(limit / 3));
-      const gh = targets.filter((t) => t.ats === 'greenhouse').slice(0, perAts);
-      const lv = targets.filter((t) => t.ats === 'lever').slice(0, perAts);
-      const as = targets.filter((t) => t.ats === 'ashby').slice(0, limit - gh.length - lv.length);
-      targets = [...gh, ...lv, ...as];
-    } else {
-      targets = targets.slice(offset, limit ? offset + limit : undefined);
+  // Obtain Supabase Client if live write or dry-plan against DB is needed
+  let supabase: SupabaseClient | null = null;
+  if (isActualLiveWrite || (dryPlan && (process.env.SUPABASE_SERVICE_ROLE_KEY || supabaseClient))) {
+    supabase = supabaseClient || getSupabaseClient();
+    if (isActualLiveWrite && !supabase) {
+      throw new Error('LIVE PRODUCTION WRITE FAILED: Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in environment.');
     }
   }
 
-  console.log(`Processing ${targets.length} target company boards...\n`);
+  // Load target verified boards
+  let targetBoards = loadVerifiedBoards(inputPath || configPath);
+  let targets = targetBoards.filter((entry) => {
+    if (atsFilter !== 'all' && entry.ats !== atsFilter) return false;
+    if (companyFilter && !entry.company?.toLowerCase().includes(companyFilter.toLowerCase())) return false;
+    return true;
+  });
+
+  const tokensPerAts: Record<string, number> = {};
+  for (const t of targetBoards) {
+    tokensPerAts[t.ats] = (tokensPerAts[t.ats] || 0) + 1;
+  }
+
+  if (offset > 0 || (effectiveBoardsLimit && effectiveBoardsLimit > 0)) {
+    targets = targets.slice(offset, effectiveBoardsLimit ? offset + effectiveBoardsLimit : undefined);
+  }
+
+  console.log(`Processing ${targets.length} target verified boards...\n`);
 
   const stats: BoardIngestionStats = {
-    verifiedTokensTotal: registry.length,
+    verifiedTokensTotal: targetBoards.length,
     tokensPerAts,
     companiesAttempted: targets.length,
     companiesSucceeded: 0,
@@ -796,57 +906,112 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
 
   const seenUrls = new Set<string>();
   const seenRoles = new Set<string>();
+  const allAcceptedJobs: NormalizedJob[] = [];
 
   for (let i = 0; i < targets.length; i++) {
+    // Check max-jobs cap
+    if (maxJobs && maxJobs > 0 && allAcceptedJobs.length >= maxJobs) {
+      console.log(`🛑 Reached max-jobs cap (${maxJobs}). Halting further board fetches.`);
+      break;
+    }
+
     const target = targets[i];
-    const prefix = `[${i + 1}/${targets.length}] [${target.ats.toUpperCase()}] ${target.company}`;
+    const prefix = `[${i + 1}/${targets.length}] [${target.ats.toUpperCase()}] ${target.company || target.token}`;
 
     try {
-      let rawItems: any[] = [];
+      let acceptedForCompany: NormalizedJob[] = [];
+      let rawCount = 0;
+      let duplicates = 0;
       let fetchSucceeded = false;
 
       if (fixtureMode && fixtureDir) {
-        // Load fixture files for test suite isolation
+        // Test suite fixture mode
         const fixturePath = path.resolve(fixtureDir, `${target.ats}-response.json`);
         if (fs.existsSync(fixturePath)) {
           const rawFixture = JSON.parse(fs.readFileSync(fixturePath, 'utf-8'));
-          if (target.ats === 'greenhouse') {
-            rawItems = Array.isArray(rawFixture.jobs) ? rawFixture.jobs : [];
-          } else if (target.ats === 'lever') {
-            rawItems = Array.isArray(rawFixture) ? rawFixture : [];
-          } else if (target.ats === 'ashby') {
-            rawItems = Array.isArray(rawFixture.jobs) ? rawFixture.jobs : [];
-          }
+          let rawItems: any[] = [];
+          if (target.ats === 'greenhouse') rawItems = Array.isArray(rawFixture.jobs) ? rawFixture.jobs : [];
+          else if (target.ats === 'lever') rawItems = Array.isArray(rawFixture) ? rawFixture : [];
+          else if (target.ats === 'ashby') rawItems = Array.isArray(rawFixture.jobs) ? rawFixture.jobs : [];
+
+          rawCount = rawItems.length;
+          const normalized = rawItems
+            .map((item) => normalizeAtsJob(item, target.ats, target.company || target.token, target.token))
+            .filter((j): j is NormalizedJob => j !== null);
+
+          const dedupRes = dedupJobs(normalized, seenUrls, seenRoles);
+          acceptedForCompany = dedupRes.accepted;
+          duplicates = dedupRes.duplicates;
           fetchSucceeded = true;
         }
       } else {
-        // Real run: fetch raw JSON from authorized public endpoint
-        const fetchResult = await fetchRawAtsJobs(target.ats, target.token);
-        rawItems = fetchResult.rawJobs;
-        fetchSucceeded = fetchResult.fetchSucceeded;
-      }
+        // Adapter-driven ingestion for all 11 ATS platforms
+        const adapter = getAdapter(target.ats as SourceType);
+        if (adapter) {
+          const sourceConfig: SourceConfig = {
+            id: target.token,
+            name: target.company || target.token,
+            type: target.ats as SourceType,
+            target: target.token,
+            enabled: true,
+          };
 
-      stats.totalJobsFetched += rawItems.length;
+          const rawFetchedJobs = await adapter.fetchJobs(sourceConfig);
+          rawCount = rawFetchedJobs.length;
 
-      // ONE NORMALIZER: Route every item through normalizeAtsJob
-      const normalizedJobs: NormalizedJob[] = [];
-      for (const item of rawItems) {
-        const job = normalizeAtsJob(item, target.ats, target.company, target.token);
-        if (job) {
-          normalizedJobs.push(job);
+          // Re-normalize descriptions <= 1500 chars text-only and validate apply_url https
+          const sanitizedJobs = rawFetchedJobs
+            .filter((j) => j && j.title && isValidApplyUrl(j.apply_url))
+            .map((j): NormalizedJob => ({
+              ...j,
+              source: target.ats,
+              source_type: 'ats',
+              company_slug: target.token,
+              description: cleanAndTruncateDescription(j.description, 1500),
+              last_seen_at: new Date().toISOString(),
+              is_active: true,
+              verified: true,
+            }));
+
+          const dedupRes = dedupJobs(sanitizedJobs, seenUrls, seenRoles);
+          acceptedForCompany = dedupRes.accepted;
+          duplicates = dedupRes.duplicates;
+          fetchSucceeded = true;
+        } else {
+          // Fallback to fetchRawAtsJobs + normalizeAtsJob
+          const fetchResult = await fetchRawAtsJobs(target.ats, target.token);
+          rawCount = fetchResult.rawJobs.length;
+          fetchSucceeded = fetchResult.fetchSucceeded;
+
+          const normalized = fetchResult.rawJobs
+            .map((item) => normalizeAtsJob(item, target.ats, target.company || target.token, target.token))
+            .filter((j): j is NormalizedJob => j !== null);
+
+          const dedupRes = dedupJobs(normalized, seenUrls, seenRoles);
+          acceptedForCompany = dedupRes.accepted;
+          duplicates = dedupRes.duplicates;
         }
       }
 
-      const { accepted, duplicates } = dedupJobs(normalizedJobs, seenUrls, seenRoles);
+      stats.totalJobsFetched += rawCount;
       stats.totalJobsDeduplicated += duplicates;
-      stats.totalJobsAccepted += accepted.length;
+
+      // Honor maxJobs cap within current board batch
+      if (maxJobs && maxJobs > 0 && allAcceptedJobs.length + acceptedForCompany.length > maxJobs) {
+        const remaining = maxJobs - allAcceptedJobs.length;
+        acceptedForCompany = acceptedForCompany.slice(0, remaining);
+      }
+
+      stats.totalJobsAccepted += acceptedForCompany.length;
+      allAcceptedJobs.push(...acceptedForCompany);
+
       if (fetchSucceeded) {
         stats.companiesSucceeded++;
       } else {
         stats.companiesFailed++;
       }
 
-      for (const job of accepted) {
+      for (const job of acceptedForCompany) {
         const isIndia = job.country_code === 'IN' || (job.location && /india/i.test(job.location));
         if (isIndia) stats.indiaCount++;
         if (job.remote) stats.remoteCount++;
@@ -860,16 +1025,16 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
       }
 
       stats.topCompanies.push({
-        company: target.company,
+        company: target.company || target.token,
         ats: target.ats,
-        jobs: accepted.length,
+        jobs: acceptedForCompany.length,
       });
 
-      console.log(`   ${prefix}: ${accepted.length} accepted (${duplicates} deduped, ${rawItems.length} raw)`);
+      console.log(`   ${prefix}: ${acceptedForCompany.length} accepted (${duplicates} deduped, ${rawCount} raw)`);
     } catch (err: any) {
       stats.companiesFailed++;
       stats.errors.push({
-        company: target.company,
+        company: target.company || target.token,
         ats: target.ats,
         error: err.message,
       });
@@ -877,26 +1042,162 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
     }
   }
 
-  // Sort top companies by job count descending
-  stats.topCompanies.sort((a, b) => b.jobs - a.jobs);
+  // ---------------------------------------------------------------------------
+  // Database Cross-Check & Planning (Dry-Plan / Live-Write)
+  // ---------------------------------------------------------------------------
+  let rowsToInsert: NormalizedJob[] = [];
+  let rowsToUpdate: NormalizedJob[] = [];
+  let dedupSkipped = 0;
 
-  // Print Dry-Run Summary Report
+  if (supabase && allAcceptedJobs.length > 0) {
+    const uniqueCompanyNames = Array.from(new Set(allAcceptedJobs.map((j) => j.company)));
+    const existingDbRoles = new Set<string>();
+    const existingDbSourceIds = new Set<string>();
+
+    // Chunk company lookups in groups of 50 to avoid query size limits
+    const compChunkSize = 50;
+    for (let i = 0; i < uniqueCompanyNames.length; i += compChunkSize) {
+      const compSlice = uniqueCompanyNames.slice(i, i + compChunkSize);
+      const { data: dbRows, error: dbErr } = await supabase
+        .from('jobs')
+        .select('id, company, title, location, source, source_job_id, apply_url')
+        .in('company', compSlice);
+
+      if (!dbErr && Array.isArray(dbRows)) {
+        for (const row of dbRows) {
+          const roleKey = `${slugify(row.company)}::${slugify(row.title)}::${slugify(row.location || 'unspecified')}`;
+          existingDbRoles.add(roleKey);
+          existingDbSourceIds.add(`${row.source}:${row.source_job_id}`);
+        }
+      }
+    }
+
+    const seenLocalRoles = new Set<string>();
+
+    for (const job of allAcceptedJobs) {
+      const sourceIdKey = `${job.source}:${job.source_job_id}`;
+      const roleKey = `${slugify(job.company)}::${slugify(job.title)}::${slugify(job.location || 'unspecified')}`;
+
+      if (existingDbSourceIds.has(sourceIdKey)) {
+        // Exists with identical source + source_job_id -> UPDATE (sets last_seen_at)
+        rowsToUpdate.push(job);
+      } else if (existingDbRoles.has(roleKey) || seenLocalRoles.has(roleKey)) {
+        // Role (company + title + location) already exists under different ID -> DEDUP SKIP
+        dedupSkipped++;
+      } else {
+        // Brand new job
+        rowsToInsert.push(job);
+        seenLocalRoles.add(roleKey);
+      }
+    }
+  } else {
+    // In offline dry-run without DB client: treat accepted jobs as new
+    rowsToInsert = allAcceptedJobs;
+  }
+
+  // Safety sizing calculations (conservative 4096 bytes per new row including indexes)
+  const ESTIMATED_BYTES_PER_ROW = 4096;
+  const estimatedGrowthBytes = rowsToInsert.length * ESTIMATED_BYTES_PER_ROW;
+  const estimatedGrowthMB = estimatedGrowthBytes / (1024 * 1024);
+
+  stats.planStats = {
+    totalAccepted: allAcceptedJobs.length,
+    rowsToInsert: rowsToInsert.length,
+    rowsToUpdate: rowsToUpdate.length,
+    dedupSkipped,
+    estimatedGrowthMB: Math.round(estimatedGrowthMB * 100) / 100,
+  };
+
+  // Print Dry-Plan Summary Report
   console.log('\n======================================================');
-  console.log('📊 DRY-RUN INGESTION SUMMARY REPORT');
+  console.log('📋 INGESTION PLAN (DRY-PLAN & SAFETY SIZING)');
   console.log('======================================================');
-  console.log(`Verified Tokens Total: ${stats.verifiedTokensTotal}`);
-  console.log(`Tokens per ATS:`);
-  console.log(`  - Greenhouse: ${stats.tokensPerAts.greenhouse || 0}`);
-  console.log(`  - Lever:      ${stats.tokensPerAts.lever || 0}`);
-  console.log(`  - Ashby:      ${stats.tokensPerAts.ashby || 0}`);
-  console.log(`Boards Processed:      ${stats.companiesAttempted} (${stats.companiesSucceeded} ok, ${stats.companiesFailed} err)`);
-  console.log(`Total Jobs Fetched:    ${stats.totalJobsFetched}`);
-  console.log(`Total Jobs Accepted:   ${stats.totalJobsAccepted}`);
-  console.log(`Duplicates Dropped:    ${stats.totalJobsDeduplicated}`);
-  console.log(`India Jobs:            ${stats.indiaCount}`);
-  console.log(`Remote Jobs:           ${stats.remoteCount}`);
-  console.log(`Non-Tech Jobs:         ${stats.nonTechCount}`);
+  console.log(`Target Boards Processed:    ${targets.length}`);
+  console.log(`Total Jobs Accepted:        ${allAcceptedJobs.length}`);
+  console.log(`New Rows to Insert:         ${rowsToInsert.length}`);
+  console.log(`Existing Rows to Update:    ${rowsToUpdate.length}`);
+  console.log(`Cross-Role Dupes Skipped:   ${dedupSkipped}`);
+  console.log(`Estimated DB Growth:        ${stats.planStats.estimatedGrowthMB} MB`);
+  console.log(`Safety Threshold:           150.00 MB`);
   console.log('======================================================\n');
+
+  // Safety Lock: abort if estimated growth > 150 MB without explicit --allow-large
+  if (stats.planStats.estimatedGrowthMB > 150 && !allowLarge) {
+    const errMsg = `SAFETY LOCK TRIGGERED: Estimated database growth (${stats.planStats.estimatedGrowthMB} MB) exceeds 150 MB limit. Pass --allow-large to proceed.`;
+    console.error(`❌ ${errMsg}`);
+    throw new Error(errMsg);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Live Production Writes (Batches of 500)
+  // ---------------------------------------------------------------------------
+  if (isActualLiveWrite && supabase) {
+    const jobsToWrite = [...rowsToUpdate, ...rowsToInsert];
+    console.log(`🚀 Executing LIVE WRITE for ${jobsToWrite.length} jobs in batches of 500...\n`);
+
+    const BATCH_SIZE = 500;
+    let totalWritten = 0;
+    let batchesCount = 0;
+    const nowIso = new Date().toISOString();
+
+    for (let i = 0; i < jobsToWrite.length; i += BATCH_SIZE) {
+      const chunk = jobsToWrite.slice(i, i + BATCH_SIZE);
+      batchesCount++;
+
+      const payload = chunk.map((j) => ({
+        source: j.source,
+        source_job_id: j.source_job_id,
+        title: j.title,
+        company: j.company,
+        location: j.location,
+        remote: j.remote,
+        remote_scope: j.remote_scope || (j.remote ? 'remote' : 'onsite'),
+        job_type: j.job_type,
+        apply_url: j.apply_url,
+        source_url: j.source_url || j.apply_url,
+        salary_text: j.salary_text,
+        salary_min: j.salary_min,
+        salary_max: j.salary_max,
+        currency: j.currency || 'USD',
+        category: j.category,
+        posted_at: j.posted_at || nowIso,
+        last_seen_at: nowIso,
+        is_active: true,
+        status: 'active',
+        description: cleanAndTruncateDescription(j.description, 1500),
+        verified: true,
+        verified_at: nowIso,
+        source_type: 'ats',
+        discovered_at: j.discovered_at || nowIso,
+        country_code: j.country_code || null,
+        country: j.country_code && COUNTRY_NAMES[j.country_code] && !j.remote ? COUNTRY_NAMES[j.country_code] : null,
+        remote_eligibility: j.remote_eligibility || 'unknown',
+        seniority: j.seniority || 'unknown',
+        salary_period: j.salary_period || null,
+      }));
+
+      const { error: upsertErr } = await supabase
+        .from('jobs')
+        .upsert(payload, { onConflict: 'source,source_job_id' });
+
+      if (upsertErr) {
+        throw new Error(`Database upsert error in batch ${batchesCount}: ${upsertErr.message}`);
+      }
+
+      totalWritten += chunk.length;
+      console.log(`   ✅ Batch ${batchesCount}: Upserted ${chunk.length} jobs (Total: ${totalWritten}/${jobsToWrite.length})`);
+    }
+
+    stats.liveWriteStats = {
+      rowsWritten: totalWritten,
+      batchesCount,
+    };
+
+    console.log(`\n🎉 Live-Write Complete: ${totalWritten} jobs successfully synced to database across ${batchesCount} batches.\n`);
+  }
+
+  // Sort top companies
+  stats.topCompanies.sort((a, b) => b.jobs - a.jobs);
 
   return stats;
 }
@@ -904,26 +1205,45 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
 // Direct CLI invocation
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(__filename)) {
   const args = process.argv.slice(2);
-  const isDryRun = !args.includes('--live-write-unlocked');
 
-  if (!isDryRun) {
-    console.error('❌ LIVE PRODUCTION WRITE LOCKED: This task strictly enforces Dry-Run mode only.');
-    process.exit(1);
-  }
+  const liveWrite = args.includes('--live-write');
+  const confirmProdWrite = args.includes('--confirm-prod-write');
+  const dryPlan = args.includes('--dry-plan');
+  const allowLarge = args.includes('--allow-large');
 
   const atsIdx = args.findIndex((a) => a === '--ats');
-  const atsFilter = atsIdx !== -1 ? (args[atsIdx + 1] as any) : 'all';
+  const atsFilter = atsIdx !== -1 ? args[atsIdx + 1] : 'all';
 
   const compIdx = args.findIndex((a) => a === '--company');
   const companyFilter = compIdx !== -1 ? args[compIdx + 1] : undefined;
 
+  const maxJobsIdx = args.findIndex((a) => a === '--max-jobs');
+  const maxJobs = maxJobsIdx !== -1 ? parseInt(args[maxJobsIdx + 1], 10) : undefined;
+
+  const boardsIdx = args.findIndex((a) => a === '--boards');
+  const boardsLimit = boardsIdx !== -1 ? parseInt(args[boardsIdx + 1], 10) : undefined;
+
   const limitIdx = args.findIndex((a) => a === '--limit');
   const limit = limitIdx !== -1 ? parseInt(args[limitIdx + 1], 10) : undefined;
 
-  runBoardIngestion({ dryRun: true, atsFilter, companyFilter, limit })
+  const inputIdx = args.findIndex((a) => a === '--input');
+  const inputPath = inputIdx !== -1 ? args[inputIdx + 1] : undefined;
+
+  runBoardIngestion({
+    dryRun: !liveWrite,
+    liveWrite,
+    confirmProdWrite,
+    dryPlan,
+    allowLarge,
+    maxJobs,
+    boardsLimit: boardsLimit || limit,
+    atsFilter,
+    companyFilter,
+    inputPath,
+  })
     .then(() => process.exit(0))
     .catch((err) => {
-      console.error('Fatal Ingestion Error:', err);
+      console.error('Fatal Ingestion Error:', err.message);
       process.exit(1);
     });
 }
