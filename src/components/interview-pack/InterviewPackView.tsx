@@ -57,31 +57,24 @@ export default function InterviewPackView({
 
     if (fearCustomQuestion || fearOptionId) {
       const fearOpt = pack.fearQuestionOptions.find((o) => o.id === fearOptionId);
-      const fearCard: InterviewCard = {
-        id: "card-fear-target",
-        question: fearCustomQuestion || fearOpt?.question || "Targeted Area of Concern",
-        category: "fear",
-        label: fearOpt?.source.verificationType || "Reported by candidates",
-        whyTheyAsk: fearOpt?.whyTheyAsk || "They want to evaluate composure, executive clarity, and self-awareness under pressure.",
-        answerDraft: fearOpt?.answerDraft || "I ground my answer in verifiable outcomes from my previous roles, focusing on systemic improvements, measurable impact, and accountability.",
-        expandedAnswer: fearOpt?.expandedAnswer || "Detailed structured STAR response framework.",
-        resumeBulletSource: fearOpt?.resumeBulletSource || {
-          role: "Senior Engineer",
-          company: "Verified Role",
-          bullet: "Demonstrated direct project delivery and cross-functional team alignment.",
-        },
-        source: fearOpt?.source || {
-          title: "Candidate Debrief Synthesis",
-          domain: "careermonke.com",
-          url: "https://careermonke.com",
-          date: "Oct 2025",
-          verificationType: "Reported by candidates",
-        },
-        isMustKnow: true,
-      };
+      const questionText = fearCustomQuestion || fearOpt?.question;
+      if (questionText) {
+        const fearCard: InterviewCard = {
+          id: "card-fear-target",
+          question: questionText,
+          category: "fear",
+          label: fearOpt?.label || (fearOpt?.resumeBulletSource ? "From your resume" : "AI suggestion"),
+          whyTheyAsk: fearOpt?.whyTheyAsk || "Evaluates candidate clarity and self-awareness under pressure.",
+          answerDraft: fearOpt?.answerDraft || "",
+          expandedAnswer: fearOpt?.expandedAnswer || "",
+          resumeBulletSource: fearOpt?.resumeBulletSource,
+          source: fearOpt?.source,
+          isMustKnow: true,
+        };
 
-      // Place fear card as card #1
-      baseCards = [fearCard, ...baseCards.filter((c) => c.question !== fearCard.question)];
+        // Place fear card as card #1
+        baseCards = [fearCard, ...baseCards.filter((c) => c.question !== fearCard.question)];
+      }
     }
 
     return baseCards.slice(0, cardLimit);

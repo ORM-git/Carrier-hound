@@ -12,7 +12,7 @@ import {
   ResumeBulletSource,
 } from "@/data/interviewPackFixture";
 import { CompanyIntel, isPrivateOrInternalHost } from "./companyIntel";
-import { UNTRUSTED_DATA_SYSTEM_GUARD } from "@/lib/ai/security";
+import { UNTRUSTED_DATA_SYSTEM_GUARD, sanitizeAiInputText, AI_FIELD_LENGTH_CAPS } from "@/lib/ai/security";
 
 export interface JobInput {
   id?: string;
@@ -187,6 +187,41 @@ async function callAiProvider(
  * - No careermonke.com URLs anywhere.
  * - Provider failure/timeout -> throws (caller returns clean error JSON, never template filler).
  */
+
+/**
+ * Checks whether an answer contains numeric, percentage, or currency metrics
+ * that are NOT present in the cited resume bullet text.
+ */
+export function hasInventedMetricsOrNumbers(
+  answer: string,
+  resumeBulletText: string
+): { hasInvented: boolean; inventedTokens: string[] } {
+  if (!answer) return { hasInvented: false, inventedTokens: [] };
+  const bulletLower = (resumeBulletText || "").toLowerCase();
+
+  // Matches currency ($100, €50, £30, ₹100, $50k), percentages (45%, 12.5%), or standalone numbers (300, 10)
+  const metricRegex = /(?:[\$€£₹]\s*\d+(?:[.,]\d+)*(?:[kKmMbB])?|\b\d+(?:[.,]\d+)?%?|\b\d+\b)/gi;
+  const answerTokens = answer.match(metricRegex) || [];
+
+  const inventedTokens: string[] = [];
+  for (const token of answerTokens) {
+    const cleanToken = token.trim().toLowerCase().replace(/\s+/g, "");
+    const numericCore = cleanToken.replace(/[^0-9.]/g, "");
+
+    const tokenInBullet = bulletLower.includes(cleanToken);
+    const coreInBullet = numericCore.length > 0 && bulletLower.includes(numericCore);
+
+    if (!tokenInBullet && !coreInBullet) {
+      inventedTokens.push(token);
+    }
+  }
+
+  return {
+    hasInvented: inventedTokens.length > 0,
+    inventedTokens,
+  };
+}
+
 export async function generateInterviewPack(
   job: JobInput,
   candidate: CandidateInput | undefined,
@@ -262,15 +297,31 @@ CRITICAL GROUNDING RULES:
 
 ${UNTRUSTED_DATA_SYSTEM_GUARD}`;
 
-  const skillsList = Array.isArray(job.skills)
-    ? job.skills.join(", ")
+  // 4. Sanitize all inputs with length caps before building prompt
+  const safeJobTitle = sanitizeAiInputText(job.title, AI_FIELD_LENGTH_CAPS.jobTitle || 200);
+  const safeJobCompany = sanitizeAiInputText(job.company, AI_FIELD_LENGTH_CAPS.jobCompany || 200);
+  const safeJobCategory = sanitizeAiInputText(job.category || "Engineering", 100);
+  const safeJobLocation = sanitizeAiInputText(job.location || "Remote", 100);
+  const rawSkills = Array.isArray(job.skills)
+    ? job.skills.map((s) => sanitizeAiInputText(s, AI_FIELD_LENGTH_CAPS.skill || 100)).join(", ")
     : typeof job.skills === "string"
-    ? job.skills
+    ? sanitizeAiInputText(job.skills, 500)
     : "Not specified";
+  const safeJobSkills = rawSkills || "Not specified";
+  const safeJobDescription = sanitizeAiInputText(
+    job.description || "No description provided.",
+    AI_FIELD_LENGTH_CAPS.jobDescription || 12000
+  );
+
+  const safeBullets = resumeBullets.map((b) => ({
+    role: sanitizeAiInputText(b.role, AI_FIELD_LENGTH_CAPS.role || 100),
+    company: sanitizeAiInputText(b.company, AI_FIELD_LENGTH_CAPS.company || 100),
+    bullet: sanitizeAiInputText(b.bullet, 1000),
+  }));
 
   const candidateBulletsText =
-    resumeBullets.length > 0
-      ? resumeBullets
+    safeBullets.length > 0
+      ? safeBullets
           .map((b, idx) => `[Bullet ${idx + 1}] (${b.role} @ ${b.company}): "${b.bullet}"`)
           .join("\n")
       : "No verified candidate resume bullets available.";
@@ -278,13 +329,13 @@ ${UNTRUSTED_DATA_SYSTEM_GUARD}`;
   const userPrompt = `Analyze this job and candidate profile:
 
 <untrusted_job_data>
-Title: ${job.title}
-Company: ${job.company}
-Category: ${job.category || "Engineering"}
-Location: ${job.location || "Remote"}
-Skills: ${skillsList}
+Title: ${safeJobTitle}
+Company: ${safeJobCompany}
+Category: ${safeJobCategory}
+Location: ${safeJobLocation}
+Skills: ${safeJobSkills}
 Description:
-${job.description || "No description provided."}
+${safeJobDescription}
 </untrusted_job_data>
 
 <untrusted_candidate_data>
@@ -427,7 +478,27 @@ Output a JSON object with this exact structure:
     const groundingBullet = findGroundingBullet(q.citedBulletText);
 
     if (groundingBullet) {
-      // Grounded in resume -> Answered card
+      // RULE 5: Reject any card whose answer contains a number, %, or currency value that is not present in the cited resume bullet; move it to gaps.
+      const metricCheck = hasInventedMetricsOrNumbers(
+        `${answerDraft} ${expandedAnswer}`,
+        groundingBullet.bullet
+      );
+
+      if (metricCheck.hasInvented) {
+        const isInJd = safeJobDescription.toLowerCase().includes(question.toLowerCase());
+        gaps.push({
+          id: `gap-${gaps.length + 1}`,
+          jdRequirement: question,
+          resumeStatus: "gap",
+          resumeEvidence: `Resume bullet ("${groundingBullet.bullet}") lacks cited metrics: ${metricCheck.inventedTokens.join(", ")}`,
+          bridgeStrategy:
+            whyTheyAsk || "Acknowledge this requirement directly and focus on foundational skills.",
+          label: isInJd ? "From job description" : "AI suggestion",
+        });
+        continue;
+      }
+
+      // Grounded in resume and verified free of invented numbers -> Answered card
       cardCount++;
       const validCategory = [
         "fear",
@@ -454,6 +525,7 @@ Output a JSON object with this exact structure:
       });
     } else {
       // RULE: Answer without resume citation becomes a gap item, not an answer!
+      const isInJd = safeJobDescription.toLowerCase().includes(question.toLowerCase());
       gaps.push({
         id: `gap-${gaps.length + 1}`,
         jdRequirement: question,
@@ -461,12 +533,12 @@ Output a JSON object with this exact structure:
         resumeEvidence: "No matching evidence cited in resume",
         bridgeStrategy:
           whyTheyAsk || "Acknowledge this requirement directly and focus on foundational skills.",
-        label: "AI suggestion",
+        label: isInJd ? "From job description" : "AI suggestion",
       });
     }
   }
 
-  // Validate gaps from model
+  // RULE 2: Validate gaps from model - label "AI suggestion" unless jdRequirement text is actually in the JD
   const rawGaps = Array.isArray(modelJson.gaps) ? modelJson.gaps : [];
   for (const g of rawGaps) {
     if (!g || typeof g !== "object") continue;
@@ -475,60 +547,62 @@ Output a JSON object with this exact structure:
 
     if (!jdRequirement || !bridgeStrategy) continue;
 
+    const isRequirementInJd = safeJobDescription.toLowerCase().includes(jdRequirement.toLowerCase());
+
     gaps.push({
       id: `gap-${gaps.length + 1}`,
       jdRequirement,
       resumeStatus: "gap",
       resumeEvidence: "No direct experience cited in resume",
       bridgeStrategy,
-      label: "From job description",
+      label: isRequirementInJd ? "From job description" : "AI suggestion",
     });
   }
 
-  // Validate fear questions
+  // RULE 3: Validate fear questions - label "From your resume" only when findGroundingBullet really matches.
+  // Otherwise label "AI suggestion" and omit resumeBulletSource. Remove invented anchor bullet and canned strings.
   const fearQuestionOptions = [];
   const rawFear = Array.isArray(modelJson.fearQuestions) ? modelJson.fearQuestions : [];
   const defaultChips = ["Tell me about yourself", "Salary", "Why leave", "Technical"];
-
-  const anchorBullet = resumeBullets[0] || {
-    role: job.title,
-    company: "Candidate History",
-    bullet: "Professional software engineering experience.",
-  };
 
   for (let i = 0; i < defaultChips.length; i++) {
     const chipName = defaultChips[i];
     const match = rawFear.find((f: any) => f?.chip?.toLowerCase() === chipName.toLowerCase());
 
-    const question =
-      typeof match?.question === "string" && match.question.trim()
-        ? match.question.trim()
-        : `Key interview inquiry regarding ${chipName}.`;
-    const whyTheyAsk =
-      typeof match?.whyTheyAsk === "string" && match.whyTheyAsk.trim()
-        ? match.whyTheyAsk.trim()
-        : "Evaluates role preparation, clarity, and communication under pressure.";
-    const answerDraft =
-      typeof match?.answerDraft === "string" && match.answerDraft.trim()
-        ? match.answerDraft.trim()
-        : `Anchored in my professional background: ${anchorBullet.bullet.slice(0, 90)}.`;
-    const expandedAnswer =
-      typeof match?.expandedAnswer === "string" && match.expandedAnswer.trim()
-        ? match.expandedAnswer.trim()
-        : answerDraft;
+    const question = typeof match?.question === "string" ? match.question.trim() : "";
+    if (!question) continue; // No canned question strings!
 
-    const grounded = findGroundingBullet(match?.citedBulletText) || anchorBullet;
+    const whyTheyAsk = typeof match?.whyTheyAsk === "string" ? match.whyTheyAsk.trim() : "";
+    const answerDraft = typeof match?.answerDraft === "string" ? match.answerDraft.trim() : "";
+    const expandedAnswer =
+      typeof match?.expandedAnswer === "string" ? match.expandedAnswer.trim() : answerDraft;
+
+    const grounded = findGroundingBullet(match?.citedBulletText);
+
+    let finalGrounded = grounded;
+    if (finalGrounded && answerDraft) {
+      const metricCheck = hasInventedMetricsOrNumbers(
+        `${answerDraft} ${expandedAnswer}`,
+        finalGrounded.bullet
+      );
+      if (metricCheck.hasInvented) {
+        finalGrounded = null;
+      }
+    }
+
+    const label: ItemSourceLabel = finalGrounded ? "From your resume" : "AI suggestion";
 
     fearQuestionOptions.push({
       id: `fear-opt-${i + 1}`,
       chip: chipName,
       question,
-      whyTheyAsk,
+      whyTheyAsk:
+        whyTheyAsk || "Evaluates candidate clarity and self-awareness on this targeted topic.",
       answerDraft,
       expandedAnswer,
-      resumeBulletSource: grounded,
+      resumeBulletSource: finalGrounded || undefined,
       source: fallbackCitation,
-      label: "From your resume" as ItemSourceLabel,
+      label,
     });
   }
 

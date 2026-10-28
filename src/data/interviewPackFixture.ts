@@ -34,8 +34,8 @@ export interface InterviewCard {
   whyTheyAsk: string; // One concise psychological line (10-25 words)
   answerDraft: string; // 40-60 words concise draft
   expandedAnswer: string; // Full in-depth framework (STAR or structured)
-  resumeBulletSource: ResumeBulletSource;
-  source: SourceCitation;
+  resumeBulletSource?: ResumeBulletSource;
+  source?: SourceCitation;
   isMustKnow: boolean;
 }
 
@@ -106,8 +106,8 @@ export interface InterviewPackData {
     whyTheyAsk: string;
     answerDraft: string;
     expandedAnswer: string;
-    resumeBulletSource: ResumeBulletSource;
-    source: SourceCitation;
+    resumeBulletSource?: ResumeBulletSource;
+    source?: SourceCitation;
     label?: CardLabel;
   }[];
   brief: {

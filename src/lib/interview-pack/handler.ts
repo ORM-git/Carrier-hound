@@ -9,6 +9,7 @@ import {
   JobInput,
   CandidateInput,
 } from "./engine";
+import { SAMPLE_INTERVIEW_PACK } from "@/data/interviewPackFixture";
 
 function getSupabaseAdmin() {
   const supabaseUrl =
@@ -51,7 +52,7 @@ export async function checkAndIncrementInterviewPackQuota(
 ): Promise<{ allowed: boolean; currentCount: number; limit: number; isServiceUnavailable?: boolean; error?: string }> {
   const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
 
-  if (!supabaseAdmin?.from) {
+  if (!supabaseAdmin) {
     return {
       allowed: false,
       currentCount: 0,
@@ -62,61 +63,52 @@ export async function checkAndIncrementInterviewPackQuota(
   }
 
   try {
-    // 1. Check existing count for today
-    const { data: row, error: selectErr } = await supabaseAdmin
-      .from("ai_usage_quotas")
-      .select("count")
-      .eq("user_id", userId)
-      .eq("period_date", today)
-      .eq("operation", "interview_pack")
-      .maybeSingle();
+    // 1. Service-role atomic RPC function
+    if (typeof supabaseAdmin.rpc === "function") {
+      const { data, error: rpcErr } = await supabaseAdmin.rpc("consume_interview_pack_quota", {
+        p_user_id: userId,
+        p_period_date: today,
+        p_operation: "interview_pack",
+        p_limit: limit,
+        p_refund: false,
+      });
 
-    if (selectErr) {
-      console.warn("[InterviewPack Quota] Select error:", selectErr.message || selectErr);
+      if (rpcErr) {
+        console.warn("[InterviewPack Quota] RPC error:", rpcErr.message || rpcErr);
+        return {
+          allowed: false,
+          currentCount: 0,
+          limit,
+          isServiceUnavailable: true,
+          error: rpcErr.message || "Database RPC failure",
+        };
+      }
+
+      const returnedRow = Array.isArray(data) ? data[0] : (typeof data === "number" ? { count: data } : data);
+      if (returnedRow && typeof returnedRow.count === "number") {
+        return {
+          allowed: true,
+          currentCount: returnedRow.count,
+          limit,
+        };
+      }
+
+      // No row returned -> atomic limit reached (WHERE count < p_limit was false)
       return {
         allowed: false,
-        currentCount: 0,
+        currentCount: limit,
         limit,
-        isServiceUnavailable: true,
-        error: selectErr.message,
       };
     }
 
-    const currentCount = row?.count || 0;
-    if (currentCount >= limit) {
-      return { allowed: false, currentCount, limit };
-    }
-
-    // 2. Atomic upsert with RETURNING count
-    const nextCount = currentCount + 1;
-    const { data: upsertData, error: upsertErr } = await supabaseAdmin
-      .from("ai_usage_quotas")
-      .upsert(
-        {
-          user_id: userId,
-          period_date: today,
-          operation: "interview_pack",
-          count: nextCount,
-          total_tokens: 0,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "user_id,period_date,operation" }
-      )
-      .select("count")
-      .single();
-
-    if (upsertErr) {
-      console.error("[InterviewPack Quota] Upsert error:", upsertErr);
-      return {
-        allowed: false,
-        currentCount,
-        limit,
-        isServiceUnavailable: true,
-        error: upsertErr.message,
-      };
-    }
-
-    return { allowed: true, currentCount: upsertData?.count ?? nextCount, limit };
+    // Fail closed with 503 if RPC is missing
+    return {
+      allowed: false,
+      currentCount: 0,
+      limit,
+      isServiceUnavailable: true,
+      error: "RPC unavailable",
+    };
   } catch (err: any) {
     console.error("[InterviewPack Quota] Exception:", err);
     return {
@@ -131,36 +123,25 @@ export async function checkAndIncrementInterviewPackQuota(
 
 /**
  * Refunds an interview pack quota reservation on upstream provider failure.
+ * Calls the same RPC function with p_refund: true (count = greatest(count - 1, 0)).
  */
 export async function refundInterviewPackQuota(
   supabaseAdmin: any,
   userId: string
 ): Promise<void> {
   const today = new Date().toISOString().split("T")[0];
-  if (!supabaseAdmin?.from) return;
+  if (!supabaseAdmin || typeof supabaseAdmin.rpc !== "function") return;
 
   try {
-    const { data: row } = await supabaseAdmin
-      .from("ai_usage_quotas")
-      .select("count")
-      .eq("user_id", userId)
-      .eq("period_date", today)
-      .eq("operation", "interview_pack")
-      .maybeSingle();
-
-    if (row && typeof row.count === "number" && row.count > 0) {
-      await supabaseAdmin
-        .from("ai_usage_quotas")
-        .update({
-          count: Math.max(0, row.count - 1),
-          updated_at: new Date().toISOString(),
-        })
-        .eq("user_id", userId)
-        .eq("period_date", today)
-        .eq("operation", "interview_pack");
-    }
+    await supabaseAdmin.rpc("consume_interview_pack_quota", {
+      p_user_id: userId,
+      p_period_date: today,
+      p_operation: "interview_pack",
+      p_limit: 10,
+      p_refund: true,
+    });
   } catch (err) {
-    console.warn("[InterviewPack Quota] Refund error:", err);
+    console.warn("[InterviewPack Quota] Refund failed:", err);
   }
 }
 
@@ -240,65 +221,59 @@ export async function handleInterviewPackRequest(
   const url = new URL(req.url);
   const jobId = url.searchParams.get("jobId") || "sample";
 
-  let job: JobInput | null = null;
-
+  // RULE 7: Sample mode: no AI call and no quota use, with the existing sample banner.
   if (jobId === "sample") {
-    // Sample mode preserved for preview route
-    job = {
-      id: "sample",
-      title: "Senior Full-Stack Engineer",
-      company: "Acme Analytics",
-      description:
-        "Building real-time job discovery engine, distributed search indexing, Next.js architecture, and high-performance serverless endpoints.",
-      location: "Worldwide (Remote)",
-      category: "Engineering",
-      skills: ["React", "TypeScript", "Node.js", "Next.js", "SQL"],
-      apply_url: "https://example.com/careers/sample-job",
-    };
-  } else {
-    // Production / Live: must be a valid UUID
-    if (!UUID_REGEX.test(jobId)) {
-      return NextResponse.json(
-        { error: "Job not found.", isPro: true, code: "JOB_NOT_FOUND" },
-        { status: 404 }
-      );
-    }
+    return NextResponse.json({
+      pack: SAMPLE_INTERVIEW_PACK,
+      isPro: true,
+      fromSample: true,
+      cachedAt: new Date().toISOString(),
+    });
+  }
 
-    if (deps.fetchJob) {
-      job = await deps.fetchJob(jobId);
-    } else if (supabaseAdmin?.from) {
-      try {
-        const { data: jobRow, error: jobErr } = await supabaseAdmin
-          .from("jobs")
-          .select("id, title, company, description, location, category, skills, apply_url, source_url")
-          .eq("id", jobId)
-          .maybeSingle();
+  // Production / Live: must be a valid UUID
+  if (!UUID_REGEX.test(jobId)) {
+    return NextResponse.json(
+      { error: "Job not found.", isPro: true, code: "JOB_NOT_FOUND" },
+      { status: 404 }
+    );
+  }
 
-        if (!jobErr && jobRow) {
-          job = {
-            id: jobRow.id,
-            title: jobRow.title,
-            company: jobRow.company,
-            description: jobRow.description || "",
-            location: jobRow.location || "Remote",
-            category: jobRow.category || "Engineering",
-            skills: jobRow.skills,
-            apply_url: jobRow.apply_url,
-            source_url: jobRow.source_url,
-          };
-        }
-      } catch (e) {
-        console.warn("[InterviewPack] Error querying job:", e);
+  let job: JobInput | null = null;
+  if (deps.fetchJob) {
+    job = await deps.fetchJob(jobId);
+  } else if (supabaseAdmin?.from) {
+    try {
+      const { data: jobRow, error: jobErr } = await supabaseAdmin
+        .from("jobs")
+        .select("id, title, company, description, location, category, skills, apply_url, source_url")
+        .eq("id", jobId)
+        .maybeSingle();
+
+      if (!jobErr && jobRow) {
+        job = {
+          id: jobRow.id,
+          title: jobRow.title,
+          company: jobRow.company,
+          description: jobRow.description || "",
+          location: jobRow.location || "Remote",
+          category: jobRow.category || "Engineering",
+          skills: jobRow.skills,
+          apply_url: jobRow.apply_url,
+          source_url: jobRow.source_url,
+        };
       }
+    } catch (e) {
+      console.warn("[InterviewPack] Error querying job:", e);
     }
+  }
 
-    // Job not found -> 404 JSON (NEVER substitute a fictional job)
-    if (!job) {
-      return NextResponse.json(
-        { error: "Job not found.", isPro: true, code: "JOB_NOT_FOUND" },
-        { status: 404 }
-      );
-    }
+  // Job not found -> 404 JSON (NEVER substitute a fictional job)
+  if (!job) {
+    return NextResponse.json(
+      { error: "Job not found.", isPro: true, code: "JOB_NOT_FOUND" },
+      { status: 404 }
+    );
   }
 
   // 4. Per-User Quota Check (Atomic increment, fail closed 503 if DB errors, no in-memory fallback)
