@@ -355,8 +355,8 @@ export default function HomePage() {
             <div className="flex flex-col items-center flex-shrink-0 space-y-3">
               <div className="relative w-28 h-28 rounded-full overflow-hidden border-2 border-blue-500 shadow-md">
                 <Image
-                  src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=160&h=160&q=75"
-                  alt="Roman - Creator of CareerMonke"
+                  src="/owner.jpg"
+                  alt="Orissa Lee Patnaik"
                   fill
                   className="object-cover"
                   sizes="112px"
@@ -376,13 +376,27 @@ export default function HomePage() {
             {/* Right: Name, role, story, 3 stats */}
             <div className="space-y-4">
               <div>
-                <h3 className="text-2xl font-bold text-[#09090B]">Roman here, saying hello.</h3>
-                <p className="text-sm font-medium text-gray-500">Creator of CareerMonke</p>
+                <h3 className="text-2xl font-bold text-[#09090B]">Orissa Lee Patnaik</h3>
+                <p className="text-sm font-medium text-gray-500">Founder CareerMonke</p>
               </div>
 
-              <p className="text-[#4B5563] text-base leading-relaxed">
-                I wasn&apos;t getting anywhere with LinkedIn, but it wasn&apos;t my fault. A lot of job postings aren&apos;t even real, and it&apos;s too competitive. My friend showed me a simpler way: apply directly to company websites. So I built this tool to find hidden jobs.
-              </p>
+              <div className="space-y-3 text-[#4B5563] text-base leading-relaxed">
+                <p>
+                  I grew up in the US and eventually chose to make my life in India. Dealing with two completely different economic landscapes gave me a strange, useful vantage point: while work culture varies wildly across continents, the friction of finding a decent job is universal.
+                </p>
+                <p>
+                  Between automated Applicant Tracking Systems discarding qualified people for missing arbitrary keywords and legacy job boards turning every opening into a 3,000-person cattle call, modern search is exhausting.
+                </p>
+                <p>
+                  I started CareerMonke because I got fed up watching capable people lose their time and money to bad software.
+                </p>
+                <p>
+                  The idea is straightforward: beat the automated noise at both ends. We run scrapers to dig up off-the-radar roles before they get sucked into the algorithmic circus, and we give you an AI resume editor that benchmarks, scores, and refines your story so it actually survives the ATS filter and reaches an actual person at the other end.
+                </p>
+                <p>
+                  To put things bluntly, I don&apos;t believe in hollow LinkedIn hustle rhetoric, and I don&apos;t believe in generic career algos that cough up the same thing. I created CareerMonke to give candidates the asymmetry back.
+                </p>
+              </div>
 
               {/* 3 Stats: 17M+ Views / 70K+ Followers / 900k+ Likes */}
               <div className="pt-2 border-t border-gray-100 grid grid-cols-3 gap-3 text-center sm:text-left">
