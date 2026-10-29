@@ -138,7 +138,7 @@ export async function handler(event: any) {
           const code = sanitizeSearchQuery(countryCodeParam).toUpperCase().trim();
           let query = supabaseAdmin
             .from("jobs")
-            .select("id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, country_code, posted_at, first_seen_at")
+            .select("id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, country_code, posted_at, first_seen_at, status, is_active")
             .eq("status", "active")
             .eq("is_active", true);
 
@@ -178,9 +178,9 @@ export async function handler(event: any) {
         };
       }
 
-      const { data: job, error } = await supabaseAdmin
+      const { data: job, error }: any = await (supabaseAdmin as any)
         .from("jobs")
-        .select("id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, country_code, posted_at, first_seen_at")
+        .select("id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, country_code, posted_at, first_seen_at, status, is_active")
         .eq("id", id)
         .maybeSingle();
 
@@ -192,11 +192,17 @@ export async function handler(event: any) {
         };
       }
 
-      const formattedSalary = formatSalary(job.salary_min, job.salary_max, job.currency, job.salary_period) || job.salary_text;
+      const row: any = job;
+      const formattedSalary = formatSalary(row.salary_min, job.salary_max, job.currency, job.salary_period) || job.salary_text;
+      const isInactive = Boolean(row.is_active === false || row.status === "expired" || row.status === "closed");
       const formattedJob = {
         ...job,
         country: job.country_code || job.country || "",
         salary_text: formattedSalary,
+        isExpired: isInactive,
+        is_expired: isInactive,
+        status: isInactive ? "expired" : (row.status || "active"),
+        apply_url: isInactive ? "" : job.apply_url,
       };
 
       return {
@@ -228,9 +234,9 @@ export async function handler(event: any) {
         };
       }
 
-      const { data: jobs, error } = await supabaseAdmin
+      const { data: jobs, error }: any = await (supabaseAdmin as any)
         .from("jobs")
-        .select("id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, country_code, posted_at, first_seen_at")
+        .select("id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, country_code, posted_at, first_seen_at, status, is_active")
         .in("id", ids.slice(0, 100));
 
       if (error) {

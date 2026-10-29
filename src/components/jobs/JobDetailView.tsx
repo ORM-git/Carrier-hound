@@ -61,24 +61,30 @@ export function getReportJobMailto(job: { id: string; title: string; company?: s
   return `mailto:${VERIFIED_SUPPORT_EMAIL}?subject=${subject}&body=${body}`;
 }
 
-function formatRelativeTime(dateStr?: string): string {
-  if (!dateStr) return "Recently posted";
+export function formatRelativeTime(dateStr?: string | null): string {
+  if (!dateStr || typeof dateStr !== "string" || !dateStr.trim()) {
+    return "Posted recently";
+  }
+  const clean = dateStr.trim().toLowerCase();
+  if (clean === "today" || clean === "recently" || clean === "recently posted") {
+    return "Posted recently";
+  }
   try {
-    const s = dateStr.trim().toLowerCase();
-    if (s === "today") return "Today";
     const d = new Date(dateStr);
-    const now = new Date();
-    const diffMs = now.getTime() - d.getTime();
-    if (isNaN(diffMs)) return dateStr;
+    const time = d.getTime();
+    if (isNaN(time)) return "Posted recently";
+    const now = Date.now();
+    const diffMs = now - time;
+    if (diffMs < 0) return "Posted recently";
     const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
     if (diffHours < 1) return "Just now";
     if (diffHours < 24) return `${diffHours} hours ago`;
     const diffDays = Math.floor(diffHours / 24);
     if (diffDays === 1) return "1 day ago";
     if (diffDays < 30) return `${diffDays} days ago`;
-    return "Recently posted";
+    return "Posted recently";
   } catch {
-    return "Recently posted";
+    return "Posted recently";
   }
 }
 
@@ -109,6 +115,7 @@ interface JobDetailViewProps {
   isRetryingUnlock?: boolean;
   similarJobs?: LiveJob[];
   onSelectJob?: (job: LiveJob) => void;
+  isExpired?: boolean;
 }
 
 export default function JobDetailView({
@@ -129,6 +136,7 @@ export default function JobDetailView({
   isRetryingUnlock = false,
   similarJobs,
   onSelectJob,
+  isExpired = false,
 }: JobDetailViewProps) {
   const isUnlocked = isPro && !job.proUnlockError;
   const hasConfirmedResume = Boolean(candidate && candidate.confirmedAt);
@@ -285,6 +293,23 @@ export default function JobDetailView({
       style={{ paddingBottom: `calc(${cookieNoticeHeight}px + 7rem)` }}
       className="max-w-[880px] w-full mx-auto space-y-4 sm:space-y-3 md:pb-12"
     >
+      {/* Expired Job Banner */}
+      {(isExpired || job.isExpired) && (
+        <div
+          data-testid="job-expired-banner"
+          role="alert"
+          className="bg-amber-50 border border-amber-200 rounded-[14px] p-4 text-xs text-amber-900 flex items-start gap-3 animate-fadeIn"
+        >
+          <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <div className="font-bold text-sm text-amber-950">This job posting has expired</div>
+            <p className="text-amber-800 leading-relaxed">
+              This position is no longer accepting applications on the employer&apos;s career page. Browse similar active opportunities below.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Clipboard Fallback Alert when copy fails */}
       {shareStatus === "error" && (
         <div
@@ -451,7 +476,15 @@ export default function JobDetailView({
               <Heart className={`w-4 h-4 ${isSaved ? "fill-rose-500 text-rose-500" : ""}`} />
             </button>
 
-            {isUnlocked && job.applyUrl ? (
+            {isExpired || job.isExpired ? (
+              <button
+                type="button"
+                disabled
+                className="inline-flex items-center gap-1.5 px-5 py-2 min-h-[44px] rounded-full bg-slate-200 text-slate-500 text-xs font-bold transition shadow-none cursor-not-allowed"
+              >
+                <span>Position Closed</span>
+              </button>
+            ) : isUnlocked && job.applyUrl ? (
               <a
                 href={job.applyUrl}
                 target="_blank"
@@ -568,7 +601,15 @@ export default function JobDetailView({
                 <Heart className={`w-3.5 h-3.5 ${isSaved ? "fill-rose-500 text-rose-500" : ""}`} />
               </button>
 
-              {isUnlocked && job.applyUrl ? (
+              {isExpired || job.isExpired ? (
+                <button
+                  type="button"
+                  disabled
+                  className="inline-flex items-center gap-1 px-3.5 py-1.5 min-h-[36px] rounded-full bg-slate-200 text-slate-500 text-xs font-bold transition shadow-none cursor-not-allowed shrink-0"
+                >
+                  <span>Closed</span>
+                </button>
+              ) : isUnlocked && job.applyUrl ? (
                 <a
                   href={job.applyUrl}
                   target="_blank"
@@ -642,6 +683,32 @@ export default function JobDetailView({
               {job.title}
             </h1>
 
+            {/* Overview chips: seniority, category, job type, remote scope */}
+            <div data-testid="overview-chips" className="flex flex-wrap items-center gap-2 pt-1 pb-1">
+              {jobLevel && (
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#F1F5F9] text-[#334155] text-xs font-semibold">
+                  <TrendingUp className="w-3.5 h-3.5 text-[#64748B]" />
+                  <span>{jobLevel}</span>
+                </div>
+              )}
+              {job.category && (
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#EFF6FF] text-[#1D4ED8] text-xs font-semibold capitalize">
+                  <Briefcase className="w-3.5 h-3.5 text-[#2563EB]" />
+                  <span>{job.category}</span>
+                </div>
+              )}
+              {job.type && (
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#F1F5F9] text-[#334155] text-xs font-semibold">
+                  <Clock className="w-3.5 h-3.5 text-[#64748B]" />
+                  <span>{job.type}</span>
+                </div>
+              )}
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#F1F5F9] text-[#334155] text-xs font-semibold">
+                <Globe className="w-3.5 h-3.5 text-[#64748B]" />
+                <span>{job.remoteScope || (job.remote ? "Remote (Worldwide)" : "On-site")}</span>
+              </div>
+            </div>
+
             {/* Metadata in 2 columns x 3 rows with small icons (only the ones that exist!) */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-[#E2E8F0] text-[13px]">
               {/* Col 1: location, job type, work model */}
@@ -675,12 +742,14 @@ export default function JobDetailView({
                   </div>
                 )}
 
-                <div className="flex items-center gap-2 min-w-0 px-2.5 py-1.5 rounded-lg bg-[#F1F5F9] text-[#475569]">
-                  <DollarSign className="w-4 h-4 text-[#166534] shrink-0" />
-                  <span className="truncate font-medium text-[#0F172A]">
-                    {job.salary ? (isUnlocked ? job.salary : "••••••••") : "Pay not disclosed"}
-                  </span>
-                </div>
+                {Boolean(job.salary && String(job.salary).trim()) && (
+                  <div className="flex items-center gap-2 min-w-0 px-2.5 py-1.5 rounded-lg bg-[#F1F5F9] text-[#475569]">
+                    <DollarSign className="w-4 h-4 text-[#166534] shrink-0" />
+                    <span className="truncate font-medium text-[#0F172A]">
+                      {isUnlocked ? job.salary : "••••••••"}
+                    </span>
+                  </div>
+                )}
 
                 {expText && (
                   <div className="flex items-center gap-2 min-w-0 px-2.5 py-1.5 rounded-lg bg-[#F1F5F9] text-[#475569]">
@@ -1113,7 +1182,7 @@ export default function JobDetailView({
             <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-4 shadow-none space-y-3">
               <h2 className="text-[16px] font-bold text-[#0F172A]">Similar jobs</h2>
               <div className="space-y-2.5">
-                {similarJobs.slice(0, 3).map((simJob) => (
+                {similarJobs.slice(0, 5).map((simJob) => (
                   <button
                     key={simJob.id}
                     type="button"
@@ -1182,7 +1251,15 @@ export default function JobDetailView({
         >
           <Share2 className="w-4 h-4" />
         </button>
-        {isUnlocked && job.applyUrl ? (
+        {isExpired || job.isExpired ? (
+          <button
+            type="button"
+            disabled
+            className="flex-1 py-2.5 min-h-[44px] rounded-full bg-slate-200 text-slate-500 text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-none cursor-not-allowed"
+          >
+            <span>Position Closed</span>
+          </button>
+        ) : isUnlocked && job.applyUrl ? (
           <a
             href={job.applyUrl}
             target="_blank"

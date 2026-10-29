@@ -63,6 +63,8 @@ import {
   DollarSign,
   Share2,
   ArrowUpDown,
+  AlertCircle,
+  ArrowLeft,
 } from "lucide-react";
 import CompanyLogo from "@/components/CompanyLogo";
 import { toast } from "react-toastify";
@@ -479,6 +481,11 @@ function JobsPageInner() {
   const [liveJobs, setLiveJobs] = useState<LiveJob[]>([]);
   const [totalCount, setTotalCount] = useState<number>(0);
   const [loadingJobs, setLoadingJobs] = useState<boolean>(true);
+  const [isDegraded, setIsDegraded] = useState<boolean>(false);
+  const [retryNonce, setRetryNonce] = useState<number>(0);
+  const [apiSimilarJobs, setApiSimilarJobs] = useState<LiveJob[]>([]);
+  const [detailLoading, setDetailLoading] = useState<boolean>(false);
+  const [detailStatus, setDetailStatus] = useState<"not-found" | "expired" | null>(null);
   const lastQueryKeyRef = useRef<string>("");
 
   // Static export safe: Read URL query parameters client-side via window.location.search
@@ -533,13 +540,25 @@ function JobsPageInner() {
 
     if (qId) {
       pendingJobIdRef.current = qId;
+      setDetailLoading(true);
+      setDetailStatus(null);
       getLiveJobById(qId, isPro)
         .then((job) => {
           pendingJobIdRef.current = null;
-          if (job) setSelectedJob(job);
+          setDetailLoading(false);
+          if (job) {
+            if (job.isExpired || job.status === "expired" || job.status === "closed") {
+              setDetailStatus("expired");
+            }
+            setSelectedJob(job);
+          } else {
+            setDetailStatus("not-found");
+          }
         })
         .catch(() => {
           pendingJobIdRef.current = null;
+          setDetailLoading(false);
+          setDetailStatus("not-found");
         });
     }
 
@@ -561,7 +580,7 @@ function JobsPageInner() {
     };
 
     syncParam("tab", activeTab === "recommended" ? null : activeTab);
-    syncParam("search", search);
+    syncParam("search", debouncedSearch);
     syncParam("category", selectedCategory);
     syncParam("location", selectedLocation);
     syncParam("level", selectedLevel);
@@ -593,7 +612,7 @@ function JobsPageInner() {
     }
   }, [
     activeTab,
-    search,
+    debouncedSearch,
     selectedCategory,
     selectedLocation,
     selectedLevel,
@@ -746,20 +765,36 @@ function JobsPageInner() {
         const found = liveJobs.find((j) => j.id === qId);
         if (found) {
           pendingJobIdRef.current = null;
+          setDetailLoading(false);
+          setDetailStatus(found.isExpired ? "expired" : null);
           setSelectedJob(found);
         } else {
+          setDetailLoading(true);
+          setDetailStatus(null);
           getLiveJobById(qId, isPro)
             .then((job) => {
               pendingJobIdRef.current = null;
-              if (job) setSelectedJob(job);
+              setDetailLoading(false);
+              if (job) {
+                if (job.isExpired || job.status === "expired" || job.status === "closed") {
+                  setDetailStatus("expired");
+                }
+                setSelectedJob(job);
+              } else {
+                setDetailStatus("not-found");
+              }
             })
             .catch(() => {
               pendingJobIdRef.current = null;
+              setDetailLoading(false);
+              setDetailStatus("not-found");
             });
         }
       } else {
         pendingJobIdRef.current = null;
         setSelectedJob(null);
+        setDetailLoading(false);
+        setDetailStatus(null);
         const targetScroll = e.state?.scrollPos ?? scrollPositionRef.current ?? 0;
         requestAnimationFrame(() => {
           window.scrollTo(0, targetScroll);
@@ -877,6 +912,7 @@ function JobsPageInner() {
     const effectivePreferences = (isRecommended || sortBy === "match") ? preferences : null;
 
     const queryKey = JSON.stringify({
+      retryNonce,
       tab: activeTab,
       category: selectedCategory,
       search: debouncedSearch.trim(),
@@ -933,16 +969,19 @@ function JobsPageInner() {
           setTotalCount(res.totalCount);
           setNextCursor(res.nextCursor ?? null);
           setHasNextPage(Boolean(res.hasNextPage));
+          setIsDegraded(Boolean(res.isDegraded || res.error === "degraded"));
           setLoadingJobs(false);
         }
       })
       .catch((err) => {
         console.warn("Failed to fetch live jobs:", err);
         if (queryKey === lastQueryKeyRef.current) {
+          setIsDegraded(true);
           setLoadingJobs(false);
         }
       });
   }, [
+    retryNonce,
     selectedCategory,
     debouncedSearch,
     remoteOnly,
@@ -1177,6 +1216,32 @@ function JobsPageInner() {
 
   const displayedJobs = filteredJobs;
 
+  // Similar jobs: same category first, country only as fallback; API-fetched if direct link
+  const similarJobs = useMemo(() => {
+    if (!selectedJob) return [];
+    const pool = liveJobs.length > 1 ? liveJobs : (apiSimilarJobs.length > 0 ? apiSimilarJobs : liveJobs);
+    const sameCategory = pool.filter((j) => j.id !== selectedJob.id && selectedJob.category && j.category && j.category.toLowerCase() === selectedJob.category.toLowerCase());
+    const sameCountryFallback = pool.filter((j) => j.id !== selectedJob.id && (!selectedJob.category || !j.category || j.category.toLowerCase() !== selectedJob.category.toLowerCase()) && selectedJob.country && j.country && j.country.toUpperCase() === selectedJob.country.toUpperCase());
+    return [...sameCategory, ...sameCountryFallback].slice(0, 5);
+  }, [selectedJob, liveJobs, apiSimilarJobs]);
+
+  // When opened by direct link (liveJobs is empty/minimal), fetch similar jobs from API
+  useEffect(() => {
+    if (!selectedJob || !selectedJob.id) return;
+    if (liveJobs.length <= 1) {
+      getLiveJobs({
+        category: selectedJob.category || undefined,
+        pageSize: 6,
+      })
+        .then((res) => {
+          if (Array.isArray(res.jobs)) {
+            setApiSimilarJobs(res.jobs.filter((j) => j.id !== selectedJob.id));
+          }
+        })
+        .catch(() => {});
+    }
+  }, [selectedJob?.id, selectedJob?.category, liveJobs.length]);
+
   // Memoize per-card fit diagnostics keyed by confirmed resume facts and job.id
   const confirmedResumeKey = candidate?.confirmedAt || "";
   const cardDiagnosticsMap = useMemo(() => {
@@ -1383,6 +1448,8 @@ function JobsPageInner() {
   const handleBackToList = () => {
     pendingJobIdRef.current = null;
     setSelectedJob(null);
+    setDetailLoading(false);
+    setDetailStatus(null);
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       params.delete("id");
@@ -1614,7 +1681,51 @@ function JobsPageInner() {
           data-testid="jobs-main-content"
           className="flex-1 w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:pt-4 space-y-4 sm:space-y-3 pb-44 sm:pb-32 lg:pb-12"
         >
-          {selectedJob ? (
+          {detailLoading ? (
+            <div data-testid="job-detail-skeleton" className="max-w-[880px] w-full mx-auto space-y-4 animate-pulse">
+              <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-6 space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-xl bg-slate-200" />
+                  <div className="space-y-2 flex-1">
+                    <div className="w-32 h-4 bg-slate-200 rounded" />
+                    <div className="w-20 h-3 bg-slate-100 rounded" />
+                  </div>
+                </div>
+                <div className="w-3/4 h-7 bg-slate-200 rounded" />
+                <div className="flex gap-2 pt-2 border-t border-[#E2E8F0]">
+                  <div className="w-24 h-7 bg-slate-100 rounded-full" />
+                  <div className="w-28 h-7 bg-slate-100 rounded-full" />
+                  <div className="w-24 h-7 bg-slate-100 rounded-full" />
+                </div>
+              </div>
+              <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-6 space-y-3">
+                <div className="w-36 h-5 bg-slate-200 rounded" />
+                <div className="w-full h-4 bg-slate-100 rounded" />
+                <div className="w-5/6 h-4 bg-slate-100 rounded" />
+                <div className="w-4/6 h-4 bg-slate-100 rounded" />
+              </div>
+            </div>
+          ) : detailStatus === "not-found" && !selectedJob ? (
+            <div data-testid="job-not-found-state" className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-10 sm:p-14 text-center space-y-3 shadow-none max-w-[880px] mx-auto">
+              <div className="w-12 h-12 rounded-full bg-slate-100 text-[#475569] flex items-center justify-center mx-auto">
+                <AlertCircle className="w-6 h-6" />
+              </div>
+              <h3 className="text-base font-bold text-[#0F172A]">Job not found</h3>
+              <p className="text-xs text-[#475569] max-w-sm mx-auto">
+                This job posting might have been removed or the link is invalid.
+              </p>
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={handleBackToList}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-bold transition cursor-pointer min-h-[44px]"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Back to all jobs</span>
+                </button>
+              </div>
+            </div>
+          ) : selectedJob ? (
             /* In-place job detail swap inside the same shell */
             <div className="max-w-[880px] w-full mx-auto">
               <JobDetailView
@@ -1640,6 +1751,12 @@ function JobsPageInner() {
                 }}
                 onRetryUnlock={() => handleRetryUnlock(selectedJob.id)}
                 isRetryingUnlock={isRetryingUnlock}
+                similarJobs={similarJobs}
+                onSelectJob={(job) => {
+                  setSelectedJob(job);
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }}
+                isExpired={detailStatus === "expired" || selectedJob.isExpired}
               />
             </div>
           ) : (
@@ -1791,6 +1908,31 @@ function JobsPageInner() {
                           </div>
                         </div>
                       ))}
+                    </div>
+                  ) : isDegraded ? (
+                    /* Degraded / HTTP 503 error state */
+                    <div data-testid="search-degraded-state" className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-10 sm:p-14 text-center space-y-3 shadow-none">
+                      <div className="w-12 h-12 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center mx-auto">
+                        <AlertCircle className="w-6 h-6" />
+                      </div>
+                      <h3 className="text-base font-bold text-[#0F172A]">Couldn&apos;t load jobs</h3>
+                      <p className="text-xs text-[#475569] max-w-sm mx-auto">
+                        We encountered a temporary issue querying the jobs directory. Please try again.
+                      </p>
+                      <div className="pt-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsDegraded(false);
+                            setLoadingJobs(true);
+                            setRetryNonce((n) => n + 1);
+                          }}
+                          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-bold transition cursor-pointer min-h-[44px]"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>Retry</span>
+                        </button>
+                      </div>
                     </div>
                   ) : displayedJobs.length === 0 ? (
                     /* Empty state distinguishing no saved vs filtered vs no applied */

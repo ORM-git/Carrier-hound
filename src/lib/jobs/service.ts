@@ -9,6 +9,8 @@ import { decodeCursor, encodeCursor } from "@/lib/pagination/cursor";
 
 export interface LiveJob {
   id: string;
+  isExpired?: boolean;
+  status?: string;
   title: string;
   company: string;
   location: string;
@@ -64,6 +66,8 @@ export interface GetJobsResult {
   totalCount: number;
   nextCursor?: string | null;
   hasNextPage?: boolean;
+  isDegraded?: boolean;
+  error?: string | null;
 }
 
 /**
@@ -318,9 +322,14 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
   const hasServerFilter = Boolean((search && search.trim()) || (company && company.trim()) || salaryMin || (sourceType && sourceType !== "all") || cursor);
   if (hasServerFilter && typeof window !== "undefined") {
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
+      let token: string | undefined;
+      try {
+        const supabase = createClient();
+        const { data: { session } } = await supabase.auth.getSession();
+        token = session?.access_token;
+      } catch {
+        // Unauthenticated guest or testing environment
+      }
       const headers: Record<string, string> = {};
       if (token) {
         headers["Authorization"] = `Bearer ${token}`;
@@ -346,6 +355,17 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       if (cursor) params.set("cursor", cursor);
 
       const res = await fetch(`/api/jobs/search?${params.toString()}`, { headers });
+      if (res.status === 503) {
+        const json = await res.json().catch(() => ({}));
+        return {
+          jobs: [],
+          totalCount: 0,
+          nextCursor: null,
+          hasNextPage: false,
+          isDegraded: true,
+          error: "degraded",
+        };
+      }
       if (res.ok) {
         const json = await res.json();
         return {
@@ -353,6 +373,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
           totalCount: json.totalCount ?? (json.jobs?.length || 0),
           nextCursor: json.nextCursor ?? null,
           hasNextPage: Boolean(json.hasNextPage),
+          isDegraded: Boolean(json.degraded),
         };
       }
     } catch (searchErr) {
@@ -843,6 +864,7 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
           if (res.ok) {
             const { job } = await res.json();
             if (job) {
+              const isInactive = Boolean(job.isExpired || job.is_expired || job.is_active === false || job.status === "expired" || job.status === "closed");
               return {
                 id: job.id,
                 title: stripHtmlAndExecutableMarkup(job.title || "Untitled Position"),
@@ -857,10 +879,12 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
                 country: job.country || job.country_code || "",
                 type: job.job_type === "internship" ? "Internship" : "Full-time",
                 directSource: Boolean(job.verified ?? true),
-                applyUrl: sanitizeExternalUrl(job.apply_url) || "",
+                applyUrl: isInactive ? "" : (sanitizeExternalUrl(job.apply_url) || ""),
                 description: stripHtmlAndExecutableMarkup(job.description || ""),
                 skills: job.skills || [],
                 postedAt: job.posted_at || job.first_seen_at || job.created_at,
+                isExpired: isInactive,
+                status: isInactive ? "expired" : (job.status || "active"),
               };
             }
           } else {
@@ -891,20 +915,55 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
     }
   }
 
-  // 2. Guest, non-Pro, or Pro unlock error: Query public preview from jobs_public view
+  // 2. Query server search endpoint for single job (works for both active and inactive/expired roles)
+  if (typeof window !== "undefined") {
+    try {
+      const res = await fetch(`/api/jobs/search?id=${encodeURIComponent(cleanId)}`);
+      if (res.ok) {
+        const json = await res.json();
+        if (Array.isArray(json.jobs) && json.jobs.length > 0) {
+          const job = json.jobs[0];
+          return {
+            ...job,
+            isExpired: Boolean(job.isExpired || job.status === "expired" || job.status === "closed"),
+            proUnlockError,
+          };
+        }
+      }
+    } catch (fetchErr) {
+      console.warn("Server search single job fetch failed, falling back to direct query:", fetchErr);
+    }
+  }
+
+  // Fallback / direct Supabase client query:
   try {
     const supabase = createClient();
     const selectColumns =
-      "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at";
+      "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at, status, is_active";
 
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from("jobs_public")
       .select(selectColumns)
       .eq("id", cleanId)
       .maybeSingle();
 
-    if (!error && data) {
+    let isInactive = false;
+    if (!data) {
+      // Direct query fallback for inactive/expired row fixture
+      const inactiveRes = await supabase
+        .from("jobs")
+        .select(selectColumns)
+        .eq("id", cleanId)
+        .maybeSingle();
+      if (!inactiveRes.error && inactiveRes.data) {
+        data = inactiveRes.data;
+        isInactive = true;
+      }
+    }
+
+    if (data) {
       const row = data as any;
+      const expired = Boolean(isInactive || row.is_active === false || row.status === "expired" || row.status === "closed");
       return {
         id: row.id,
         title: row.title || "Untitled Position",
@@ -923,6 +982,8 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
         description: "",
         skills: [],
         postedAt: row.posted_at || row.created_at,
+        isExpired: expired,
+        status: expired ? "expired" : (row.status || "active"),
         proUnlockError,
       };
     }

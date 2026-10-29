@@ -105,6 +105,64 @@ export async function GET(req: Request) {
       ? "id, title, company, location, category, remote, remote_scope, remote_eligibility, country_code, country, job_type, verified, posted_at, created_at, salary_min, salary_max, currency, salary_period, salary_text, source_type, source"
       : "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at";
 
+    const idParam = searchParams.get("id");
+    if (idParam) {
+      const cleanId = sanitizeSearchQuery(idParam).trim();
+      const singleColumns = (isPro && hasServiceKey)
+        ? "*"
+        : hasServiceKey
+        ? "id, title, company, location, category, remote, remote_scope, remote_eligibility, country_code, country, job_type, verified, posted_at, created_at, status, is_active"
+        : "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at, status, is_active";
+
+      const { data: rawJobRow, error: singleError } = await (supabaseAdmin
+        .from(targetTable)
+        .select(singleColumns as any) as any)
+        .eq("id", cleanId)
+        .maybeSingle();
+
+      if (singleError) {
+        console.error("[/api/jobs/search] single query error:", singleError.message || singleError);
+        return NextResponse.json(
+          { degraded: true, jobs: [], totalCount: 0, hasNextPage: false, nextCursor: null },
+          { status: 503 }
+        );
+      }
+
+      if (!rawJobRow) {
+        return NextResponse.json({ jobs: [], totalCount: 0, hasNextPage: false, nextCursor: null });
+      }
+
+      const jobRow: any = rawJobRow;
+      const isInactive = Boolean(jobRow.is_active === false || jobRow.status === "expired" || jobRow.status === "closed");
+      const formatted = {
+        id: jobRow.id,
+        title: jobRow.title || "Untitled Position",
+        company: isPro && !isInactive ? (jobRow.company || "Verified Employer") : "Verified Employer",
+        location: jobRow.location || (jobRow.remote ? "Remote (Worldwide)" : "Remote"),
+        category: jobRow.category || "engineering",
+        remote: Boolean(jobRow.remote),
+        remoteScope: jobRow.remote_scope || undefined,
+        remoteEligibility: jobRow.remote_eligibility || undefined,
+        country: jobRow.country_code || jobRow.country || "",
+        type: jobRow.job_type === "internship" ? "Internship" : "Full-time",
+        directSource: Boolean(jobRow.verified),
+        applyUrl: isInactive || !isPro ? "" : (jobRow.apply_url || ""),
+        salary: isInactive || !isPro ? "" : (formatSalary(jobRow.salary_min, jobRow.salary_max, jobRow.currency, jobRow.salary_period) || jobRow.salary_text || ""),
+        description: isInactive || !isPro ? "" : (jobRow.description || ""),
+        skills: isPro ? (jobRow.skills || []) : [],
+        postedAt: jobRow.posted_at || jobRow.created_at,
+        isExpired: isInactive,
+        status: isInactive ? "expired" : (jobRow.status || "active"),
+      };
+
+      return NextResponse.json({
+        jobs: [formatted],
+        totalCount: 1,
+        hasNextPage: false,
+        nextCursor: null,
+      });
+    }
+
     let query = supabaseAdmin
       .from(targetTable)
       .select(selectColumns, { count: "estimated" })
@@ -355,7 +413,10 @@ export async function GET(req: Request) {
 
     if (error) {
       console.error("[/api/jobs/search] query error:", error.message || error);
-      return NextResponse.json({ jobs: [], totalCount: 0, hasNextPage: false, nextCursor: null });
+      return NextResponse.json(
+        { degraded: true, jobs: [], totalCount: 0, hasNextPage: false, nextCursor: null },
+        { status: 503 }
+      );
     }
 
     let rows = data || [];
