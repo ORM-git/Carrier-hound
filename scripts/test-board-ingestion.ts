@@ -47,6 +47,7 @@ import {
   loadCompanyRegistry,
   runBoardIngestion,
   getSupabaseClient,
+  generateRollbackSql,
   ClosedJobRecord,
 } from './board-ingest';
 import { isAtsJob, runJobCleanup } from './cleanup';
@@ -132,6 +133,18 @@ export function createMockSupabase(initialDbJobs: any[] = []) {
         },
         upsert: (payload: any[], options: any) => {
           upsertCalls.push({ payload, options });
+          for (const item of payload) {
+            const idx = dbJobs.findIndex(
+              (j) => j.source === item.source && j.source_job_id === item.source_job_id
+            );
+            if (idx >= 0) {
+              if (!options?.ignoreDuplicates) {
+                dbJobs[idx] = { ...dbJobs[idx], ...item };
+              }
+            } else {
+              dbJobs.push({ id: `mock-${dbJobs.length + 1}`, ...item });
+            }
+          }
           return Promise.resolve({ data: payload, error: null });
         },
         update: (payload: any) => {
@@ -669,14 +682,17 @@ async function runTests() {
   }
 
   // ---------------------------------------------------------------------------
-  // 13. Mocked Supabase Client Live-Write:
-  //     - Distinct source labels used ('greenhouse-board', 'lever-board')
-  //     - posted_at null stays null (never nowIso)
-  //     - Existing posted_at and discovered_at not overwritten on update
-  //     - discovered_at only set on insert
-  //     - Batches capped at 500 rows
+  // 13. Mocked Supabase Client Live-Write & Ingestion Safety Locks:
+  //     - First run must be insert-only: skip existing (source,source_job_id) rows, no updates
+  //     - Opt-in updates via flag --allow-updates (default off)
+  //     - Pre-write manifest file saved with (source, source_job_id) for every row to insert
+  //     - Run's discovered_at value tracked and verified
+  //     - Re-select confirmation verifies exact inserted keys
+  //     - Rollback SQL printed (DELETE only for inserted pairs AND discovered_at = run value)
+  //     - Second run on same fixture inserts 0 rows and manifest matches 0 inserted rows
+  //     - Opt-in updates verifies existing posted_at and discovered_at preservation
+  //     - Batches capped at 500 rows, distinct source labels with -board suffix
   // ---------------------------------------------------------------------------
-  // Existing record in DB: has previous posted_at and discovered_at timestamps
   const initialPostedDate = '2024-01-01T00:00:00.000Z';
   const initialDiscoveredDate = '2024-01-01T00:00:00.000Z';
 
@@ -708,55 +724,160 @@ async function runTests() {
   ];
 
   const mockSupabase = createMockSupabase(mockInitialDb);
+  const tempManifestPath1 = path.resolve(__dirname, 'fixtures/temp-manifest-run1.json');
+  const tempManifestPath2 = path.resolve(__dirname, 'fixtures/temp-manifest-run2.json');
 
-  const liveStats = await runBoardIngestion({
-    liveWrite: true,
-    confirmProdWrite: true,
-    maxJobs: 100,
-    expectHost: 'szakevhxhwpeskidvtfs.supabase.co',
-    supabaseClient: mockSupabase,
-    fixtureMode: true,
-    fixtureDir: path.resolve(__dirname, 'fixtures'),
-    limit: 3,
-  });
+  try {
+    // -------------------------------------------------------------------------
+    // RUN 1: Default Insert-Only Mode (updates disabled by default)
+    // -------------------------------------------------------------------------
+    const liveStats1 = await runBoardIngestion({
+      liveWrite: true,
+      confirmProdWrite: true,
+      maxJobs: 100,
+      expectHost: 'szakevhxhwpeskidvtfs.supabase.co',
+      supabaseClient: mockSupabase,
+      fixtureMode: true,
+      fixtureDir: path.resolve(__dirname, 'fixtures'),
+      limit: 3,
+      manifestPath: tempManifestPath1,
+    });
 
-  assert(mockSupabase._upsertCalls.length > 0, 'Live write executed upsert calls on Supabase client');
-  assert(liveStats.liveWriteStats !== undefined, 'Live-write stats recorded written rows and batch count');
+    assert(mockSupabase._upsertCalls.length > 0, 'Live write executed upsert calls on Supabase client');
+    assert(liveStats1.liveWriteStats !== undefined, 'Live-write stats recorded written rows and batch count');
+    assert(liveStats1.liveWriteStats.rowsInserted > 0, 'First run inserted new job rows');
+    assert(liveStats1.liveWriteStats.rowsUpdated === 0, 'First run is insert-only: 0 updates performed');
+    assert(liveStats1.liveWriteStats.updatesSkipped === 1, 'Existing row (10alabs-1001) skipped from updates in insert-only mode');
 
-  let allUpsertedRows: any[] = [];
-  let allSourcesHaveBoardSuffix = true;
-  for (const call of mockSupabase._upsertCalls) {
-    assert(call.options.onConflict === 'source,source_job_id', 'Upsert enforces onConflict: "source,source_job_id"');
-    assert(call.payload.length <= 500, `Batch chunk size <= 500 (actual: ${call.payload.length})`);
-    allUpsertedRows = allUpsertedRows.concat(call.payload);
-  }
+    // Confirm that upsert used ignoreDuplicates: true
+    const firstUpsertCall = mockSupabase._upsertCalls[0];
+    assert(firstUpsertCall.options.ignoreDuplicates === true, 'Insert-only mode uses ignoreDuplicates: true');
+    assert(firstUpsertCall.options.onConflict === 'source,source_job_id', 'Upsert enforces onConflict: "source,source_job_id"');
 
-  for (const row of allUpsertedRows) {
-    if (!row.source.endsWith('-board')) {
-      allSourcesHaveBoardSuffix = false;
+    // Verify batch chunk size and distinct board labels
+    let allUpsertedRowsRun1: any[] = [];
+    let allSourcesHaveBoardSuffix = true;
+    for (const call of mockSupabase._upsertCalls) {
+      assert(call.payload.length <= 500, `Batch chunk size <= 500 (actual: ${call.payload.length})`);
+      allUpsertedRowsRun1 = allUpsertedRowsRun1.concat(call.payload);
     }
+    for (const row of allUpsertedRowsRun1) {
+      if (!row.source.endsWith('-board')) {
+        allSourcesHaveBoardSuffix = false;
+      }
+    }
+    assert(allSourcesHaveBoardSuffix, 'All upserted board rows use distinct source labels ending with "-board" (e.g. greenhouse-board)');
+
+    // Ensure 10alabs-1001 was NOT in the write payload
+    const skippedRowInPayload = allUpsertedRowsRun1.find((r) => r.source_job_id === '10alabs-1001');
+    assert(skippedRowInPayload === undefined, 'Existing row 10alabs-1001 was excluded from insert-only write payload');
+
+    // Verify manifest file saved before writing
+    assert(fs.existsSync(tempManifestPath1), 'Manifest file exists on disk');
+    const manifest1 = JSON.parse(fs.readFileSync(tempManifestPath1, 'utf-8'));
+    assert(manifest1.total_rows === liveStats1.liveWriteStats.rowsInserted, 'Manifest total_rows matches inserted count');
+    assert(manifest1.rows.length === liveStats1.liveWriteStats.rowsInserted, 'Manifest rows count matches inserted count');
+    assert(manifest1.run_discovered_at === liveStats1.liveWriteStats.discoveredAt, 'Manifest run_discovered_at matches run timestamp');
+
+    // Verify re-select confirmation
+    assert(
+      liveStats1.liveWriteStats.confirmedCount === liveStats1.liveWriteStats.rowsInserted,
+      `Re-select confirmation verified all inserted keys (expected: ${liveStats1.liveWriteStats.rowsInserted}, got: ${liveStats1.liveWriteStats.confirmedCount})`
+    );
+
+    // Verify rollback SQL
+    const rollbackSql1 = liveStats1.liveWriteStats.rollbackSql || '';
+    assert(rollbackSql1.includes('DELETE FROM jobs'), 'Rollback SQL contains DELETE FROM jobs');
+    assert(rollbackSql1.includes(liveStats1.liveWriteStats.discoveredAt), 'Rollback SQL targets exact run discovered_at');
+    assert(rollbackSql1.includes('(source, source_job_id) IN ('), 'Rollback SQL targets composite (source, source_job_id) pairs');
+    assert(!rollbackSql1.includes('10alabs-1001'), 'Rollback SQL excludes skipped existing rows');
+    for (const manifestRow of manifest1.rows) {
+      assert(rollbackSql1.includes(manifestRow.source_job_id), `Rollback SQL includes inserted key ${manifestRow.source_job_id}`);
+    }
+
+    // -------------------------------------------------------------------------
+    // RUN 2: Second Run on Same Fixture (Must insert 0 rows, manifest matches 0)
+    // -------------------------------------------------------------------------
+    const liveStats2 = await runBoardIngestion({
+      liveWrite: true,
+      confirmProdWrite: true,
+      maxJobs: 100,
+      expectHost: 'szakevhxhwpeskidvtfs.supabase.co',
+      supabaseClient: mockSupabase,
+      fixtureMode: true,
+      fixtureDir: path.resolve(__dirname, 'fixtures'),
+      limit: 3,
+      manifestPath: tempManifestPath2,
+    });
+
+    assert(liveStats2.liveWriteStats !== undefined, 'Run 2 recorded liveWriteStats');
+    assert(liveStats2.liveWriteStats.rowsInserted === 0, `Second run on same fixture inserts 0 rows (got: ${liveStats2.liveWriteStats.rowsInserted})`);
+    assert(liveStats2.liveWriteStats.rowsWritten === 0, `Second run writes 0 rows in insert-only mode (got: ${liveStats2.liveWriteStats.rowsWritten})`);
+    assert(liveStats2.liveWriteStats.updatesSkipped >= 2, 'Second run skips all existing rows from update');
+
+    assert(fs.existsSync(tempManifestPath2), 'Second run manifest file exists on disk');
+    const manifest2 = JSON.parse(fs.readFileSync(tempManifestPath2, 'utf-8'));
+    assert(manifest2.total_rows === 0, 'Second run manifest matches 0 inserted rows');
+    assert(manifest2.rows.length === 0, 'Second run manifest rows array is empty');
+
+    // -------------------------------------------------------------------------
+    // RUN 3: Opt-in Updates Mode (--allow-updates)
+    // -------------------------------------------------------------------------
+    const liveStats3 = await runBoardIngestion({
+      liveWrite: true,
+      confirmProdWrite: true,
+      allowUpdates: true,
+      maxJobs: 100,
+      expectHost: 'szakevhxhwpeskidvtfs.supabase.co',
+      supabaseClient: mockSupabase,
+      fixtureMode: true,
+      fixtureDir: path.resolve(__dirname, 'fixtures'),
+      limit: 3,
+    });
+
+    assert(liveStats3.liveWriteStats !== undefined, 'Run 3 recorded liveWriteStats');
+    assert(liveStats3.liveWriteStats.rowsUpdated > 0, 'Opt-in updates writes existing rows to database');
+
+    const updateCalls = mockSupabase._upsertCalls.filter((c: any) => !c.options?.ignoreDuplicates);
+    assert(updateCalls.length > 0, 'Opt-in update mode executed standard upsert without ignoreDuplicates');
+
+    let allUpdatedRows: any[] = [];
+    for (const c of updateCalls) {
+      allUpdatedRows = allUpdatedRows.concat(c.payload);
+    }
+    const updated10a = allUpdatedRows.find((r) => r.source_job_id === '10alabs-1001');
+    assert(updated10a !== undefined, 'Found updated 10alabs-1001 job row in opt-in upsert payload');
+    assert(
+      updated10a?.posted_at === initialPostedDate,
+      `Existing posted_at is NOT overwritten on update (expected: ${initialPostedDate}, got: ${updated10a?.posted_at})`
+    );
+    assert(
+      updated10a?.discovered_at === initialDiscoveredDate,
+      `Existing discovered_at is NOT overwritten on update (expected: ${initialDiscoveredDate}, got: ${updated10a?.discovered_at})`
+    );
+
+    // Verify description length <= 1500 chars and plain text only
+    let descriptionsValid = true;
+    let applyUrlsValid = true;
+    for (const row of allUpsertedRowsRun1) {
+      if (!row.description || row.description.length > 1500 || row.description.includes('<script>') || row.description.includes('<p>')) {
+        descriptionsValid = false;
+      }
+      if (!row.apply_url || !row.apply_url.startsWith('https://')) {
+        applyUrlsValid = false;
+      }
+    }
+    assert(descriptionsValid, 'All upserted descriptions are truncated to <= 1500 chars, plain text only');
+    assert(applyUrlsValid, 'All upserted jobs have HTTPS-only apply_url');
+  } finally {
+    if (fs.existsSync(tempManifestPath1)) fs.unlinkSync(tempManifestPath1);
+    const tempSqlPath1 = tempManifestPath1.replace(/\.json$/, '.sql');
+    if (fs.existsSync(tempSqlPath1)) fs.unlinkSync(tempSqlPath1);
+
+    if (fs.existsSync(tempManifestPath2)) fs.unlinkSync(tempManifestPath2);
+    const tempSqlPath2 = tempManifestPath2.replace(/\.json$/, '.sql');
+    if (fs.existsSync(tempSqlPath2)) fs.unlinkSync(tempSqlPath2);
   }
-  assert(allSourcesHaveBoardSuffix, 'All upserted board rows use distinct source labels ending with "-board" (e.g. greenhouse-board)');
-
-  // Verify posted_at preservation on update
-  const updatedRow = allUpsertedRows.find((r) => r.source_job_id === '10alabs-1001');
-  assert(updatedRow !== undefined, 'Found updated job row in upsert payload');
-  assert(
-    updatedRow?.posted_at === initialPostedDate,
-    `Existing posted_at is NOT overwritten on update (expected: ${initialPostedDate}, got: ${updatedRow?.posted_at})`
-  );
-  assert(
-    updatedRow?.discovered_at === initialDiscoveredDate,
-    `Existing discovered_at is NOT overwritten on update (expected: ${initialDiscoveredDate}, got: ${updatedRow?.discovered_at})`
-  );
-
-  // Verify new insert row has discovered_at set and posted_at null stays null
-  const insertedRow = allUpsertedRows.find((r) => r.source_job_id !== '10alabs-1001');
-  assert(insertedRow !== undefined, 'Found newly inserted job row in upsert payload');
-  assert(
-    insertedRow?.discovered_at !== null && insertedRow?.discovered_at !== undefined,
-    'Newly inserted row has discovered_at populated'
-  );
 
   // Test that when incoming job has posted_at = null, it stays null in the DB payload (never nowIso)
   const nullDateJob = normalizeAtsJob(
@@ -770,20 +891,6 @@ async function runTests() {
     'nodatecorp'
   );
   assert(nullDateJob?.posted_at === null, 'Job without date normalizes posted_at to null');
-
-  // Verify description length <= 1500 chars and plain text only
-  let descriptionsValid = true;
-  let applyUrlsValid = true;
-  for (const row of allUpsertedRows) {
-    if (!row.description || row.description.length > 1500 || row.description.includes('<script>') || row.description.includes('<p>')) {
-      descriptionsValid = false;
-    }
-    if (!row.apply_url || !row.apply_url.startsWith('https://')) {
-      applyUrlsValid = false;
-    }
-  }
-  assert(descriptionsValid, 'All upserted descriptions are truncated to <= 1500 chars, plain text only');
-  assert(applyUrlsValid, 'All upserted jobs have HTTPS-only apply_url');
 
   // ---------------------------------------------------------------------------
   // 14. Max-Jobs Cap and Boards Limit Controls
