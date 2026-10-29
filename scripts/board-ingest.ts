@@ -51,6 +51,26 @@ import {
 } from './utils/sanitizer';
 import { politeFetchJson, politeFetchText, isForbiddenDomain } from './utils/polite-fetch';
 
+export const NON_TECH_CATEGORIES = new Set([
+  'sales',
+  'marketing',
+  'operations',
+  'ops',
+  'hr',
+  'finance',
+  'design',
+  'customer-support',
+  'support',
+  'writing',
+  'content',
+  'legal',
+]);
+
+export function isNonTechCategory(category?: string | null): boolean {
+  if (!category) return false;
+  return NON_TECH_CATEGORIES.has(category.toLowerCase().trim());
+}
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -134,6 +154,7 @@ export interface IngestionOptions {
   supabaseClient?: any;
   expectHost?: string;
   skipExistingRegistry?: boolean;
+  categoryMode?: 'default' | 'non-tech' | 'tech' | 'all' | string;
 }
 
 export interface ClosedJobRecord {
@@ -172,6 +193,14 @@ export interface BoardIngestionStats {
   remoteCount: number;
   nonTechCount: number;
   countryBreakdown: Record<string, number>;
+  categoryBreakdown: Record<string, number>;
+  sampleJobs?: Array<{
+    title: string;
+    company: string;
+    location: string;
+    salary: string | null;
+    category: string;
+  }>;
   topCompanies: Array<{ company: string; ats: string; jobs: number }>;
   errors: Array<{ company: string; ats: string; error: string }>;
   planStats?: {
@@ -919,6 +948,7 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
     supabaseClient,
     expectHost,
     skipExistingRegistry = true,
+    categoryMode,
   } = options;
 
   const effectiveBoardsLimit = boardsLimit || limit;
@@ -935,6 +965,7 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
   if (maxJobs) console.log(`Max Jobs Cap:   ${maxJobs}`);
   if (maxPerBoard) console.log(`Max Per Board:  ${maxPerBoard}`);
   if (effectiveBoardsLimit) console.log(`Boards Limit:   ${effectiveBoardsLimit}`);
+  if (categoryMode) console.log(`Category Mode:  ${categoryMode}`);
 
   // Validation: --max-per-board must be a positive integer if provided
   if (maxPerBoard !== undefined && (isNaN(maxPerBoard) || maxPerBoard <= 0)) {
@@ -1036,6 +1067,8 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
     remoteCount: 0,
     nonTechCount: 0,
     countryBreakdown: {},
+    categoryBreakdown: {},
+    sampleJobs: [],
     topCompanies: [],
     errors: [],
   };
@@ -1071,11 +1104,17 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
           else if (target.ats === 'ashby') rawItems = Array.isArray(rawFixture.jobs) ? rawFixture.jobs : [];
 
           rawCount = rawItems.length;
-          const normalized = rawItems
+          let candidateJobs = rawItems
             .map((item) => normalizeAtsJob(item, target.ats, target.company || target.token, target.token))
             .filter((j): j is NormalizedJob => j !== null);
 
-          const dedupRes = dedupJobs(normalized, seenUrls, seenRoles);
+          if (categoryMode === 'non-tech') {
+            candidateJobs = candidateJobs.filter((j) => isNonTechCategory(j.category));
+          } else if (categoryMode === 'tech') {
+            candidateJobs = candidateJobs.filter((j) => !isNonTechCategory(j.category));
+          }
+
+          const dedupRes = dedupJobs(candidateJobs, seenUrls, seenRoles);
           acceptedForCompany = dedupRes.accepted;
           duplicates = dedupRes.duplicates;
           fetchSucceeded = true;
@@ -1096,7 +1135,7 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
           rawCount = rawFetchedJobs.length;
 
           // Re-normalize descriptions <= 1500 chars text-only and validate apply_url https
-          const sanitizedJobs = rawFetchedJobs
+          let candidateJobs = rawFetchedJobs
             .filter((j) => j && j.title && isValidApplyUrl(j.apply_url))
             .map((j): NormalizedJob => ({
               ...j,
@@ -1109,7 +1148,13 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
               verified: true,
             }));
 
-          const dedupRes = dedupJobs(sanitizedJobs, seenUrls, seenRoles);
+          if (categoryMode === 'non-tech') {
+            candidateJobs = candidateJobs.filter((j) => isNonTechCategory(j.category));
+          } else if (categoryMode === 'tech') {
+            candidateJobs = candidateJobs.filter((j) => !isNonTechCategory(j.category));
+          }
+
+          const dedupRes = dedupJobs(candidateJobs, seenUrls, seenRoles);
           acceptedForCompany = dedupRes.accepted;
           duplicates = dedupRes.duplicates;
           fetchSucceeded = true;
@@ -1119,11 +1164,17 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
           rawCount = fetchResult.rawJobs.length;
           fetchSucceeded = fetchResult.fetchSucceeded;
 
-          const normalized = fetchResult.rawJobs
+          let candidateJobs = fetchResult.rawJobs
             .map((item) => normalizeAtsJob(item, target.ats, target.company || target.token, target.token))
             .filter((j): j is NormalizedJob => j !== null);
 
-          const dedupRes = dedupJobs(normalized, seenUrls, seenRoles);
+          if (categoryMode === 'non-tech') {
+            candidateJobs = candidateJobs.filter((j) => isNonTechCategory(j.category));
+          } else if (categoryMode === 'tech') {
+            candidateJobs = candidateJobs.filter((j) => !isNonTechCategory(j.category));
+          }
+
+          const dedupRes = dedupJobs(candidateJobs, seenUrls, seenRoles);
           acceptedForCompany = dedupRes.accepted;
           duplicates = dedupRes.duplicates;
         }
@@ -1158,8 +1209,20 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
         if (job.remote) stats.remoteCount++;
 
         const category = job.category || 'other';
-        const isNonTech = category !== 'engineering' && category !== 'data';
+        const isNonTech = isNonTechCategory(category);
         if (isNonTech) stats.nonTechCount++;
+
+        stats.categoryBreakdown[category] = (stats.categoryBreakdown[category] || 0) + 1;
+
+        if (stats.sampleJobs && stats.sampleJobs.length < 10) {
+          stats.sampleJobs.push({
+            title: job.title,
+            company: job.company,
+            location: job.location,
+            salary: job.salary_text || (job.salary_min && job.salary_max ? `${job.salary_min} - ${job.salary_max} ${job.currency || 'USD'}` : null),
+            category,
+          });
+        }
 
         const countryKey = job.country_code || (job.remote ? 'REMOTE' : 'UNKNOWN');
         stats.countryBreakdown[countryKey] = (stats.countryBreakdown[countryKey] || 0) + 1;
@@ -1287,7 +1350,28 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
   console.log(`New Rows to Insert:         ${rowsToInsert.length}`);
   console.log(`Existing Rows to Update:    ${rowsToUpdate.length} ${allowUpdates ? '(Will be updated)' : '(SKIPPED: updates disabled)'}`);
   console.log(`Cross-Role Dupes Skipped:   ${dedupSkipped}`);
+  console.log(`In-Run Deduplicated:        ${stats.totalJobsDeduplicated}`);
+  console.log(`Total Duplicate Roles:      ${rowsToUpdate.length + dedupSkipped + stats.totalJobsDeduplicated}`);
   console.log(`Estimated DB Growth:        ${stats.planStats.estimatedGrowthMB} MB`);
+  console.log(`Safety Threshold:           150.00 MB`);
+  console.log('------------------------------------------------------');
+  console.log('Category Breakdown:');
+  const planCatEntries = Object.entries(stats.categoryBreakdown).sort((a, b) => b[1] - a[1]);
+  if (planCatEntries.length === 0) {
+    console.log('  (no jobs accepted)');
+  } else {
+    for (const [cat, count] of planCatEntries) {
+      console.log(`  - ${cat}: ${count}`);
+    }
+  }
+  if (stats.sampleJobs && stats.sampleJobs.length > 0) {
+    console.log('------------------------------------------------------');
+    console.log(`Sample Accepted Jobs (${stats.sampleJobs.length}):`);
+    stats.sampleJobs.forEach((sRow, idx) => {
+      console.log(`  ${idx + 1}. [${sRow.category.toUpperCase()}] "${sRow.title}" at ${sRow.company}`);
+      console.log(`     Location: ${sRow.location} | Salary: ${sRow.salary || 'N/A'}`);
+    });
+  }
   console.log(`Safety Threshold:           150.00 MB`);
   console.log('======================================================\n');
 
@@ -1489,6 +1573,38 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
   // Sort top companies
   stats.topCompanies.sort((a, b) => b.jobs - a.jobs);
 
+  if (!isActualLiveWrite && !dryPlan) {
+    console.log('\n======================================================');
+    console.log('📊 DRY-RUN INGESTION SUMMARY REPORT');
+    console.log('======================================================');
+    console.log(`Target Boards Processed:    ${targets.length}`);
+    console.log(`Total Jobs Fetched:         ${stats.totalJobsFetched}`);
+    console.log(`Total Jobs Accepted:        ${stats.totalJobsAccepted}`);
+    console.log(`In-Run Deduplicated:        ${stats.totalJobsDeduplicated}`);
+    console.log(`India Jobs:                 ${stats.indiaCount}`);
+    console.log(`Remote Jobs:                ${stats.remoteCount}`);
+    console.log(`Non-Tech Jobs:              ${stats.nonTechCount}`);
+    console.log('------------------------------------------------------');
+    console.log('Category Breakdown:');
+    const dryCatEntries = Object.entries(stats.categoryBreakdown).sort((a, b) => b[1] - a[1]);
+    if (dryCatEntries.length === 0) {
+      console.log('  (no jobs accepted)');
+    } else {
+      for (const [cat, count] of dryCatEntries) {
+        console.log(`  - ${cat}: ${count}`);
+      }
+    }
+    if (stats.sampleJobs && stats.sampleJobs.length > 0) {
+      console.log('------------------------------------------------------');
+      console.log(`Sample Accepted Jobs (${stats.sampleJobs.length}):`);
+      stats.sampleJobs.forEach((sRow, idx) => {
+        console.log(`  ${idx + 1}. [${sRow.category.toUpperCase()}] "${sRow.title}" at ${sRow.company}`);
+        console.log(`     Location: ${sRow.location} | Salary: ${sRow.salary || 'N/A'}`);
+      });
+    }
+    console.log('======================================================\n');
+  }
+
   return stats;
 }
 
@@ -1498,7 +1614,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(__filename
 
   const liveWrite = args.includes('--live-write');
   const confirmProdWrite = args.includes('--confirm-prod-write');
-  const dryPlan = args.includes('--dry-plan');
+  const dryPlan = args.includes('--dry-plan') || args.includes('--dry-run') || args.includes('--dry');
   const allowLarge = args.includes('--allow-large');
   const allowUpdates = args.includes('--allow-updates') || args.includes('--update-existing');
 
@@ -1532,6 +1648,18 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(__filename
   const hostIdx = args.findIndex((a) => a === '--expect-host');
   const expectHost = hostIdx !== -1 && args[hostIdx + 1] && !args[hostIdx + 1].startsWith('--') ? args[hostIdx + 1] : undefined;
 
+  const catModeIdx = args.findIndex((a) => a === '--category-mode');
+  let categoryMode: string | undefined = undefined;
+  if (catModeIdx !== -1 && args[catModeIdx + 1] && !args[catModeIdx + 1].startsWith('--')) {
+    categoryMode = args[catModeIdx + 1];
+  } else if (catModeIdx !== -1) {
+    categoryMode = 'non-tech';
+  }
+  const catModeEq = args.find((a) => a.startsWith('--category-mode='));
+  if (catModeEq) {
+    categoryMode = catModeEq.split('=')[1];
+  }
+
   runBoardIngestion({
     dryRun: !liveWrite,
     liveWrite,
@@ -1548,6 +1676,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(__filename
     companyFilter,
     inputPath,
     expectHost,
+    categoryMode,
   })
     .then(() => process.exit(0))
     .catch((err) => {

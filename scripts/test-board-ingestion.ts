@@ -1154,7 +1154,36 @@ async function runTests() {
   );
 
   // ---------------------------------------------------------------------------
-  // 16. Subprocess Negative Control Verification (Proves non-zero exit)
+  // 16. Category Mode: Non-Tech Filtering & Default Mode Preservation
+  // ---------------------------------------------------------------------------
+  // (a) categoryMode: 'non-tech' keeps only non-tech jobs
+  const nonTechStats = await runBoardIngestion({
+    dryRun: true,
+    fixtureMode: true,
+    fixtureDir: path.resolve(__dirname, 'fixtures'),
+    limit: 3,
+    categoryMode: 'non-tech',
+  });
+  assert(nonTechStats.totalJobsAccepted === 2, `non-tech mode accepts only non-tech roles (got: ${nonTechStats.totalJobsAccepted})`);
+  assert(nonTechStats.nonTechCount === 2, `non-tech mode reports nonTechCount == 2 (got: ${nonTechStats.nonTechCount})`);
+  assert(nonTechStats.categoryBreakdown['engineering'] === undefined, 'non-tech mode excludes engineering jobs');
+  assert(nonTechStats.categoryBreakdown['data'] === undefined, 'non-tech mode excludes data jobs');
+  assert(nonTechStats.categoryBreakdown['ai'] === undefined, 'non-tech mode excludes ai jobs');
+  assert((nonTechStats.categoryBreakdown['customer-support'] || 0) > 0, 'non-tech mode includes customer-support');
+  assert((nonTechStats.categoryBreakdown['operations'] || 0) > 0, 'non-tech mode includes operations');
+
+  // (b) categoryMode: default / undefined preserves all jobs unchanged
+  const defaultModeStats = await runBoardIngestion({
+    dryRun: true,
+    fixtureMode: true,
+    fixtureDir: path.resolve(__dirname, 'fixtures'),
+    limit: 3,
+  });
+  assert(defaultModeStats.totalJobsAccepted === 4, `default mode retains all jobs across fixtures (got: ${defaultModeStats.totalJobsAccepted})`);
+  assert((defaultModeStats.categoryBreakdown['engineering'] || 0) > 0, 'default mode includes engineering jobs');
+
+  // ---------------------------------------------------------------------------
+  // 17. Subprocess Negative Control Verification (Proves non-zero exit)
   // ---------------------------------------------------------------------------
   console.log('\nRunning negative control subprocess to verify non-zero exit on invalid inputs...');
   const negResult = spawnSync('npx', ['tsx', 'scripts/test-board-ingestion.ts', '--negative-control'], {
