@@ -7,7 +7,6 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import BrandIcon from "@/components/BrandIcon";
 import DotPattern from "@/components/DotPattern";
-import AvatarStack from "@/components/AvatarStack";
 import ProductScreenshotMock from "@/components/ProductScreenshotMock";
 import { FaqHomeItem } from "@/components/FaqItems";
 import { WhiteHeroButton } from "@/components/Buttons";
@@ -15,7 +14,6 @@ import CategorySelectModal from "@/components/CategorySelectModal";
 import Footer from "@/components/Footer";
 import GlobeLiveStats from "@/components/GlobeLiveStats";
 import { useLiveStats } from "@/lib/api/stats";
-import { TestimonialMarqueeDemo } from "@/components/ui/marquee-01";
 import { X, Check, ArrowRight } from "lucide-react";
 
 const WireframeDottedGlobe = dynamic(
@@ -104,14 +102,6 @@ export default function HomePage() {
             >
               <span>Try AI resume tools</span>
             </Link>
-          </div>
-
-          <div className="mt-4">
-            <AvatarStack
-              peopleCount="8,573"
-              jobsCount={totalJobs !== null && totalJobs > 0 ? `${totalJobs.toLocaleString()}+` : undefined}
-              textColor="text-white"
-            />
           </div>
         </div>
 
@@ -252,24 +242,6 @@ export default function HomePage() {
             </Link>
           </div>
         </div>
-      </section>
-
-      {/* ========================================================================= */}
-      {/* 4. MARQUEE TESTIMONIALS (Dual-row auto-scrolling marquee)                 */}
-      {/* ========================================================================= */}
-      <section className="py-14 sm:py-20 bg-white w-full overflow-hidden border-t border-gray-100">
-        <div className="max-w-3xl mx-auto px-6 text-center mb-10 sm:mb-12">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border border-blue-100 text-[#2563EB] bg-blue-50/80 mb-3 shadow-xs">
-            <span>Wall of Love</span>
-          </div>
-          <h2 className="text-3xl font-bold text-[#09090B] sm:text-4xl md:text-[40px] md:leading-[1.2] tracking-tight">
-            Loved by job seekers skipping the crowd
-          </h2>
-          <p className="mt-2.5 text-sm sm:text-base text-gray-600 max-w-xl mx-auto">
-            See how professionals bypass recruiter markups and public job board spam to land direct offers.
-          </p>
-        </div>
-        <TestimonialMarqueeDemo />
       </section>
 
       {/* ========================================================================= */}
@@ -419,7 +391,7 @@ export default function HomePage() {
       </section>
 
       {/* ========================================================================= */}
-      {/* 7. SCROLLING WALL OF LOVE (8,573 job seekers are using Career Hound)     */}
+      {/* 6. WHY PEOPLE JOIN THE WAITLIST (12 honest value cards)     */}
       {/* ========================================================================= */}
       <Testimonials />
 
