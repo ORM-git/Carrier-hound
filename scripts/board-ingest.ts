@@ -120,6 +120,7 @@ export interface IngestionOptions {
   allowUpdates?: boolean;
   manifestPath?: string;
   maxJobs?: number;
+  batchSize?: number;
   boardsLimit?: number;
   limit?: number;
   offset?: number;
@@ -903,6 +904,7 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
     allowUpdates = false,
     manifestPath: customManifestPath,
     maxJobs,
+    batchSize: customBatchSize,
     boardsLimit,
     limit,
     offset = 0,
@@ -1284,11 +1286,14 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
   }
 
   // ---------------------------------------------------------------------------
-  // Pre-Write Manifest & Run Timestamp
+  // Pre-Write Manifest & Rollback SQL Generation (Saved & Printed BEFORE Writes)
   // ---------------------------------------------------------------------------
   console.log(`🕒 Ingestion run discovered_at: ${runDiscoveredAt}`);
 
   let savedManifestPath: string | undefined = undefined;
+  let savedRollbackSqlPath: string | undefined = undefined;
+  const rollbackSql = generateRollbackSql(rowsToInsert, runDiscoveredAt);
+
   if (isActualLiveWrite || (dryPlan && rowsToInsert.length > 0)) {
     const sanitizedTimestamp = runDiscoveredAt.replace(/[:.]/g, '-');
     const defaultManifestPath = path.resolve(process.cwd(), 'reports', `ingest-manifest-${sanitizedTimestamp}.json`);
@@ -1311,6 +1316,21 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
     fs.writeFileSync(manifestPath, JSON.stringify(manifestData, null, 2), 'utf-8');
     savedManifestPath = manifestPath;
     console.log(`📝 Pre-write manifest saved: ${manifestPath} (${rowsToInsert.length} insert rows queued)`);
+
+    // Print and save rollback SQL immediately after manifest is written and BEFORE the first DB write
+    const rollbackSqlPath = manifestPath.replace(/\.json$/, '.sql');
+    fs.writeFileSync(rollbackSqlPath, rollbackSql, 'utf-8');
+    savedRollbackSqlPath = rollbackSqlPath;
+    console.log(`💾 Pre-write rollback SQL saved: ${rollbackSqlPath}`);
+
+    console.log('\n======================================================');
+    console.log('↩️ PRE-WRITE ROLLBACK SQL (MANUAL VERIFICATION ONLY)');
+    console.log(`   Discovered At: ${runDiscoveredAt}`);
+    console.log(`   Queued Insert Rows: ${rowsToInsert.length}`);
+    console.log(`   Manifest: ${manifestPath}`);
+    console.log('======================================================');
+    console.log(rollbackSql);
+    console.log('======================================================\n');
   }
 
   // ---------------------------------------------------------------------------
@@ -1322,12 +1342,12 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
     const updateCount = allowUpdates ? rowsToUpdate.length : 0;
     const skippedUpdateCount = allowUpdates ? 0 : rowsToUpdate.length;
 
-    console.log(`🚀 Executing LIVE WRITE for ${jobsToWrite.length} jobs in batches of 500 (mode: ${allowUpdates ? 'UPSERT' : 'INSERT-ONLY'})...\n`);
+    console.log(`🚀 Executing LIVE WRITE for ${jobsToWrite.length} jobs in batches of ${customBatchSize || 500} (mode: ${allowUpdates ? 'UPSERT' : 'INSERT-ONLY'})...\n`);
     if (skippedUpdateCount > 0) {
       console.log(`🛡️ [Insert-Only] ${skippedUpdateCount} existing rows skipped (pass --allow-updates to enable updates).\n`);
     }
 
-    const BATCH_SIZE = 500;
+    const BATCH_SIZE = customBatchSize && customBatchSize > 0 ? customBatchSize : 500;
     let totalWritten = 0;
     let batchesCount = 0;
 
@@ -1367,12 +1387,24 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
         salary_period: j.salary_period || null,
       }));
 
-      const { error: writeErr } = allowUpdates
-        ? await supabase.from('jobs').upsert(payload, { onConflict: 'source,source_job_id' })
-        : await supabase.from('jobs').upsert(payload, { onConflict: 'source,source_job_id', ignoreDuplicates: true });
+      try {
+        const { error: writeErr } = allowUpdates
+          ? await supabase.from('jobs').upsert(payload, { onConflict: 'source,source_job_id' })
+          : await supabase.from('jobs').upsert(payload, { onConflict: 'source,source_job_id', ignoreDuplicates: true });
 
-      if (writeErr) {
-        throw new Error(`Database write error in batch ${batchesCount}: ${writeErr.message}`);
+        if (writeErr) {
+          throw new Error(`Database write error in batch ${batchesCount}: ${writeErr.message}`);
+        }
+      } catch (err: any) {
+        console.error('\n======================================================');
+        console.error(`🚨 BATCH ${batchesCount} FAILED: ABORTED DURING LIVE-WRITE`);
+        console.error('↩️ ROLLBACK SQL (USE TO RESTORE DATABASE STATE)');
+        console.error(`   Manifest Path: ${savedManifestPath || 'none'}`);
+        console.error(`   Run discovered_at: ${runDiscoveredAt}`);
+        console.error('======================================================');
+        console.error(rollbackSql);
+        console.error('======================================================\n');
+        throw err;
       }
 
       totalWritten += chunk.length;
@@ -1420,18 +1452,8 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
       }
     }
 
-    // 4) Print the rollback SQL: DELETE only for exactly those (source, source_job_id) pairs AND discovered_at = that run value. Never run it, only print.
-    const rollbackSql = generateRollbackSql(rowsToInsert, runDiscoveredAt);
-    console.log('\n======================================================');
-    console.log('↩️ ROLLBACK SQL (DO NOT RUN AUTOMATICALLY - MANUAL ONLY)');
-    console.log('======================================================');
-    console.log(rollbackSql);
-    console.log('======================================================\n');
-
-    if (savedManifestPath) {
-      const rollbackSqlPath = savedManifestPath.replace(/\.json$/, '.sql');
-      fs.writeFileSync(rollbackSqlPath, rollbackSql, 'utf-8');
-      console.log(`💾 Rollback SQL saved: ${rollbackSqlPath}\n`);
+    if (savedRollbackSqlPath) {
+      console.log(`💾 Rollback SQL ready: ${savedRollbackSqlPath}\n`);
     }
 
     stats.liveWriteStats = {
@@ -1477,6 +1499,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(__filename
   const maxJobsIdx = args.findIndex((a) => a === '--max-jobs');
   const maxJobs = maxJobsIdx !== -1 ? parseInt(args[maxJobsIdx + 1], 10) : undefined;
 
+  const batchIdx = args.findIndex((a) => a === '--batch-size');
+  const batchSize = batchIdx !== -1 ? parseInt(args[batchIdx + 1], 10) : undefined;
+
   const boardsIdx = args.findIndex((a) => a === '--boards');
   const boardsLimit = boardsIdx !== -1 ? parseInt(args[boardsIdx + 1], 10) : undefined;
 
@@ -1496,6 +1521,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(__filename
     dryPlan,
     allowLarge,
     allowUpdates,
+    batchSize,
     manifestPath,
     maxJobs,
     boardsLimit: boardsLimit || limit,
