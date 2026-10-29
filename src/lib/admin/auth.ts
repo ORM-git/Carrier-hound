@@ -25,7 +25,7 @@ export function getSupabaseAdmin() {
 /**
  * Extracts a token from Authorization header or Cookie header.
  */
-function extractToken(req?: Request): string | null {
+export function extractToken(req?: Request): string | null {
   if (!req) return null;
 
   // 1. Check Authorization Bearer header

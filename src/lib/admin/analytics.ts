@@ -61,7 +61,7 @@ export interface UserManagementItem {
 // In-memory buffer to supplement storage (Edge/Worker safe, max 5,000 records)
 let inMemoryViews: PageViewRecord[] = [];
 
-function getFallbackRecords(): PageViewRecord[] {
+export function getFallbackRecords(): PageViewRecord[] {
   return inMemoryViews;
 }
 

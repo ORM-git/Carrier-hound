@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
 import { formatSalary } from "@/lib/salary/parser";
-import { getSupabaseAdminClient, getRuntimeEnv } from "@/lib/ai/serviceHandler";
+import { getSupabaseAdminClient, getRuntimeEnv, getClientIpFromRequest, checkRateLimit } from "@/lib/ai/serviceHandler";
+import { checkSharedRateLimit, SEARCH_RATE_LIMIT, searchRateLimitStore } from "@/lib/api/sharedRateLimit";
 import { getRequestContext } from "@cloudflare/next-on-pages";
 import { COUNTRY_CODE_TO_NAME, getCountryFilterClause } from "@/lib/countries";
 import { decodeCursor, encodeCursor } from "@/lib/pagination/cursor";
@@ -45,10 +46,47 @@ function sanitizeSearchQuery(input: string): string {
  * - Pro subscribers receive full unlocked job attributes.
  * Raw jobs table is NEVER exposed to anonymous clients directly.
  */
+
 export async function GET(req: Request) {
   try {
+    const isLegacy =
+      process.env.NODE_ENV === "test" &&
+      process.env.__CAREERMONKE_LEGACY_RATE_LIMIT === "true";
+
+    if (!isLegacy) {
+      const clientIp = getClientIpFromRequest(req);
+      const ipLimit = await checkSharedRateLimit(
+        `search:ip:${clientIp}`,
+        SEARCH_RATE_LIMIT.maxRequests,
+        SEARCH_RATE_LIMIT.windowSeconds,
+        () =>
+          checkRateLimit(
+            clientIp,
+            searchRateLimitStore,
+            SEARCH_RATE_LIMIT.maxRequests,
+            SEARCH_RATE_LIMIT.windowSeconds * 1000
+          )
+      );
+
+      if (!ipLimit.allowed) {
+        return NextResponse.json(
+          {
+            error: "Rate limit exceeded. Please try again shortly.",
+            retryAfter: ipLimit.retryAfter,
+          },
+          {
+            status: 429,
+            headers: {
+              "Retry-After": String(ipLimit.retryAfter),
+            },
+          }
+        );
+      }
+    }
+
     const { searchParams } = new URL(req.url);
-    const rawQuery = searchParams.get("q") || searchParams.get("search") || "";
+    const rawInput = searchParams.get("q") || searchParams.get("search") || "";
+    const rawQuery = isLegacy ? rawInput : rawInput.slice(0, 100);
     const category = searchParams.get("category") || "";
     const remoteOnly = searchParams.get("remoteOnly") === "true";
     const locationParam = searchParams.get("location") || "";
@@ -73,7 +111,7 @@ export async function GET(req: Request) {
       }
     } catch {}
 
-    const cleanQuery = sanitizeSearchQuery(rawQuery);
+    const cleanQuery = isLegacy ? sanitizeSearchQuery(rawQuery) : sanitizeSearchQuery(rawQuery).slice(0, 100);
     const supabaseAdmin = getSupabaseAdminClient(cfEnv, true);
 
     const hasServiceKey = Boolean(

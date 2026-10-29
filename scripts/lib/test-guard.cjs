@@ -59,6 +59,7 @@ const SUITE_CLASSIFICATIONS = Object.freeze({
   "scripts/test-country-detection.ts": "offline",
   "scripts/test-compact-spacing.ts": "offline",
   "scripts/test-card-menu.ts": "offline",
+  "scripts/test-search-track-rate-limits.ts": "offline",
 
   // DB-capable suites: read operations
   "scripts/test-enhanced-scoring.ts": "db-read",

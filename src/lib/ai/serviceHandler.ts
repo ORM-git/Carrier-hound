@@ -73,7 +73,8 @@ export function getClientIpFromRequest(req: Request): string {
   }
   const clientIp =
     req.headers.get("x-nf-client-connection-ip") ||
-    req.headers.get("client-ip");
+    req.headers.get("client-ip") ||
+    req.headers.get("x-real-ip");
   return clientIp || "anonymous-client";
 }
 
@@ -133,6 +134,9 @@ export function getSupabaseAdminClient(
   envOverrides?: Record<string, any>,
   allowAnonFallback: boolean = false
 ) {
+  if (process.env.NODE_ENV === "test" && (globalThis as any).__mockSupabaseClient) {
+    return (globalThis as any).__mockSupabaseClient;
+  }
   const supabaseUrl =
     getRuntimeEnv("NEXT_PUBLIC_SUPABASE_URL", envOverrides) ||
     getRuntimeEnv("SUPABASE_URL", envOverrides) ||
@@ -212,6 +216,7 @@ export async function executeAiCore(
     }
 
     const token = authHeader.replace("Bearer ", "").trim();
+
     const supabaseUrl =
       getRuntimeEnv("NEXT_PUBLIC_SUPABASE_URL", activeDeps.env) ||
       getRuntimeEnv("SUPABASE_URL", activeDeps.env) ||
