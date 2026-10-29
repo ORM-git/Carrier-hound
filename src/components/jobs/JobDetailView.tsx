@@ -40,6 +40,7 @@ import {
 } from "lucide-react";
 
 const TailorResumeModal = dynamic(() => import("@/components/resume/TailorResumeModal"), { ssr: false });
+import JobAiToolsPanel from "@/components/jobs/JobAiToolsPanel";
 
 export const VERIFIED_SUPPORT_EMAIL = "support@careermonke.com";
 
@@ -593,6 +594,25 @@ export default function JobDetailView({
         </div>
       </div>
 
+      {/* AI TOOLS & MATCH INSIGHTS PANEL */}
+      <JobAiToolsPanel
+        job={job}
+        candidate={candidate}
+        user={user}
+        isPro={isPro}
+        diagnostics={diagnostics}
+        isSaved={isSaved}
+        isApplied={isApplied}
+        trackedStage={trackedStage}
+        isUpdatingApplied={isUpdatingApplied}
+        onSave={onSave}
+        onToggleApplied={onToggleApplied}
+        onOpenTailor={() => {
+          setIsTailorOpen(true);
+        }}
+        onOpenPaywall={onApply}
+      />
+
       {/* (2) HEADER BODY CARD */}
       <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-5 sm:p-4 shadow-none space-y-4 sm:space-y-3">
         <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-5">
@@ -1037,7 +1057,7 @@ export default function JobDetailView({
           )}
 
           {/* Card: Interview Pack Card (gated behind feature flag, off in production by default) */}
-          {(process.env.NEXT_PUBLIC_ENABLE_INTERVIEW_PACK === "true" || process.env.NODE_ENV !== "production") && (
+          {process.env.NEXT_PUBLIC_ENABLE_INTERVIEW_PACK === "true" && (
             <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-4 shadow-none space-y-3">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-full bg-blue-50 border border-blue-200 flex items-center justify-center text-[#2563EB] shrink-0">
@@ -1063,7 +1083,7 @@ export default function JobDetailView({
           )}
 
           {/* Card: Skill What-If Card (gated behind feature flag, off in production by default) */}
-          {(process.env.NEXT_PUBLIC_ENABLE_SKILL_WHAT_IF === "true" || process.env.NODE_ENV !== "production") && (
+          {process.env.NEXT_PUBLIC_ENABLE_SKILL_WHAT_IF === "true" && (
             <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-4 shadow-none space-y-3">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-full bg-blue-50 border border-blue-200 flex items-center justify-center text-[#2563EB] shrink-0">
