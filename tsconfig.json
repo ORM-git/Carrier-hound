@@ -23,5 +23,5 @@
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules", "scripts", "ambient-design", "Bhagvatgita-Duolingo-App", "sadhna-apology"]
+  "exclude": ["node_modules", "scripts", "ambient-design", "Bhagvatgita-Duolingo-App", "sadhna-apology", "_collected"]
 }
