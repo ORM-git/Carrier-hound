@@ -3,76 +3,28 @@
 import React from "react";
 import { motion } from "motion/react";
 import { TestimonialsColumn, Testimonial } from "@/components/ui/testimonials-columns-1";
-import { MINI_REVIEWS } from "@/data/testimonials";
-
-const FALLBACK_AVATARS = [
-  "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=96&h=96&q=75",
-  "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=96&h=96&q=75",
-  "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=96&h=96&q=75",
-  "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=96&h=96&q=75",
-  "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=96&h=96&q=75",
-  "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=96&h=96&q=75",
-  "https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=96&h=96&q=75",
-  "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=96&h=96&q=75",
-];
-
-// Map MINI_REVIEWS to Testimonial items with identical avatars from the Wall of Love
-const mappedTestimonials: Testimonial[] = MINI_REVIEWS.map((review) => {
-  const avatarUrl =
-    FALLBACK_AVATARS[
-      Math.abs(
-        review.name.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0)
-      ) % FALLBACK_AVATARS.length
-    ];
-
-  return {
-    text: review.quote,
-    image: avatarUrl,
-    name: review.name,
-    handle: review.handle,
-    role: review.handle,
-    stars: review.stars || 5,
-  };
-});
-
-// Arrange the 4 columns matching the layout from the user's screenshot
-// Column 1: Sarah Chen, Zoe Martinez, Marcus H., Victor H. ...
-const col1 = [
-  mappedTestimonials[0],
-  mappedTestimonials[1],
-  mappedTestimonials[2],
-  mappedTestimonials[3],
-  ...mappedTestimonials.slice(16, 20),
-];
-
-// Column 2: Alexis R., Jasmine K., Isabella W., Maya R. ...
-const col2 = [
-  mappedTestimonials[4],
-  mappedTestimonials[5],
-  mappedTestimonials[6],
-  mappedTestimonials[7],
-  ...mappedTestimonials.slice(20, 24),
-];
-
-// Column 3: Nina C., Nathan B., Brooke A., Mia R. ...
-const col3 = [
-  mappedTestimonials[8],
-  mappedTestimonials[9],
-  mappedTestimonials[10],
-  mappedTestimonials[11],
-  ...mappedTestimonials.slice(24, 28),
-];
-
-// Column 4: Ava T., Chloe B., Olivia W., Ryan D. ...
-const col4 = [
-  mappedTestimonials[12],
-  mappedTestimonials[13],
-  mappedTestimonials[14],
-  mappedTestimonials[15],
-  ...mappedTestimonials.slice(28, 30),
-];
+import { getLandingCards } from "@/data/landingCards";
+import { useLiveStats } from "@/lib/api/stats";
 
 export const Testimonials = () => {
+  const { totalJobs } = useLiveStats();
+  const countStr = totalJobs !== null && totalJobs > 0 ? `${totalJobs.toLocaleString()}+` : undefined;
+  const cards = getLandingCards(countStr);
+
+  const mappedCards: Testimonial[] = cards.map((card) => ({
+    text: card.body,
+    name: card.title,
+    handle: card.tag,
+    role: card.tag,
+    iconName: card.iconName,
+  }));
+
+  // Arrange into 4 columns (3 cards each) matching layout
+  const col1 = [mappedCards[0], mappedCards[1], mappedCards[2]];
+  const col2 = [mappedCards[3], mappedCards[4], mappedCards[5]];
+  const col3 = [mappedCards[6], mappedCards[7], mappedCards[8]];
+  const col4 = [mappedCards[9], mappedCards[10], mappedCards[11]];
+
   return (
     <section className="py-16 sm:py-20 lg:py-24 relative overflow-hidden bg-white">
       <div className="max-w-[1320px] mx-auto px-4 sm:px-6">
@@ -85,7 +37,7 @@ export const Testimonials = () => {
           className="text-center max-w-3xl mx-auto mb-10 sm:mb-14"
         >
           <h2 className="text-3xl font-semibold tracking-tight text-[#142033] sm:text-4xl lg:whitespace-nowrap">
-            8,573 job seekers are using CareerMonke
+            Why people join the waitlist
           </h2>
         </motion.div>
 
@@ -98,21 +50,21 @@ export const Testimonials = () => {
           <TestimonialsColumn
             testimonials={col2}
             className="hidden sm:block"
-            duration={34}
+            duration={30}
           />
 
-          {/* Column 3 - visible on lg and up */}
+          {/* Column 3 - visible on md and up */}
           <TestimonialsColumn
             testimonials={col3}
-            className="hidden lg:block"
-            duration={29}
+            className="hidden md:block"
+            duration={24}
           />
 
-          {/* Column 4 - visible on xl and up */}
+          {/* Column 4 - visible on lg and up */}
           <TestimonialsColumn
             testimonials={col4}
-            className="hidden xl:block"
-            duration={36}
+            className="hidden lg:block"
+            duration={28}
           />
         </div>
       </div>
