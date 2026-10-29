@@ -289,7 +289,7 @@ export default function EarlyAccessPage() {
             </div>
 
             {/* Clean product preview card */}
-            <div className="relative w-full max-w-[400px] bg-white rounded-2xl border border-slate-200/90 p-5 sm:p-6 shadow-xl shadow-blue-500/5 space-y-3.5">
+            <div className="relative w-full max-w-[400px] bg-white rounded-2xl border border-slate-200/90 p-5 pt-8 sm:p-6 sm:pt-9 shadow-xl shadow-blue-500/5 space-y-3.5">
               <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider text-center">
                 Example preview
               </div>
