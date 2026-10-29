@@ -72,8 +72,14 @@ export const TRACK_RATE_LIMIT = {
   windowSeconds: 60,
 };
 
+export const EARLY_ACCESS_RATE_LIMIT = {
+  maxRequests: 5,
+  windowSeconds: 60,
+};
+
 export const searchRateLimitStore = new Map<string, { count: number; resetAt: number }>();
 export const trackRateLimitStore = new Map<string, { count: number; resetAt: number }>();
+export const earlyAccessRateLimitStore = new Map<string, { count: number; resetAt: number }>();
 
 export function _resetSearchRateLimitStore() {
   searchRateLimitStore.clear();
@@ -83,3 +89,6 @@ export function _resetTrackRateLimitStore() {
   trackRateLimitStore.clear();
 }
 
+export function _resetEarlyAccessRateLimitStore() {
+  earlyAccessRateLimitStore.clear();
+}

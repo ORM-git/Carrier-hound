@@ -16,11 +16,7 @@ export default function CategorySelectModal({ open, onOpenChange }: CategorySele
 
   const handleContinue = () => {
     onOpenChange(false);
-    if (selectedCategory) {
-      router.push(`/job-search/all?categories=${encodeURIComponent(selectedCategory)}`);
-    } else {
-      router.push(`/job-search/all`);
-    }
+    router.push("/early-access");
   };
 
   return (

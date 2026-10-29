@@ -41,22 +41,22 @@ function LandingFooter() {
               <h2 className={landingColumnHeadingClass}>Navigation</h2>
               <ul className="space-y-0.5">
                 <li>
-                  <Link href="/job-search/all" prefetch={false} className={landingFooterLinkClass}>
+                  <Link href="/early-access" prefetch={false} className={landingFooterLinkClass}>
                     Live Job Search
                   </Link>
                 </li>
                 <li>
-                  <Link href="/worldwide" prefetch={false} className={landingFooterLinkClass}>
+                  <Link href="/early-access" prefetch={false} className={landingFooterLinkClass}>
                     Companies Hiring Worldwide
                   </Link>
                 </li>
                 <li>
-                  <Link href="/pricing" prefetch={false} className={landingFooterLinkClass}>
+                  <Link href="/early-access" prefetch={false} className={landingFooterLinkClass}>
                     Pricing & Plans
                   </Link>
                 </li>
                 <li>
-                  <Link href="/login" className={landingFooterLinkClass}>
+                  <Link href="/early-access" className={landingFooterLinkClass}>
                     Member Sign In
                   </Link>
                 </li>
@@ -137,7 +137,7 @@ function LandingFooter() {
             <Link href="/terms-and-conditions" className={landingBottomLinkClass}>
               Terms
             </Link>
-            <Link href="/worldwide" className={landingBottomLinkClass}>
+            <Link href="/early-access" className={landingBottomLinkClass}>
               Worldwide Directory
             </Link>
           </div>

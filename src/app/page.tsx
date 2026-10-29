@@ -32,7 +32,7 @@ const UserMenu = dynamic(() => import("@/components/UserMenu"), {
   ssr: false,
   loading: () => (
     <Link
-      href="/login"
+      href="/early-access"
       className="inline-flex items-center gap-1.5 px-4 py-2 min-h-[44px] rounded-lg text-sm font-semibold transition-all border border-white/30 text-white hover:bg-white/10"
     >
       <span>Sign In</span>
@@ -77,7 +77,7 @@ export default function HomePage() {
           </Link>
 
           {/* Right: Auth-aware Sign In / User Menu */}
-          <UserMenu />
+          <UserMenu signInHref="/early-access" />
         </div>
 
         {/* Hero Content - centered with 16px rhythm and 32px gap above card panel */}
@@ -92,14 +92,14 @@ export default function HomePage() {
 
           <div className="mt-6 flex flex-wrap items-center justify-center gap-3 w-full max-w-md sm:max-w-none">
             <button
-              onClick={() => setModalOpen(true)}
+              onClick={() => router.push("/early-access")}
               className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 bg-white text-[#09090B] font-bold text-base sm:text-lg px-8 sm:px-10 py-3.5 sm:py-4 min-h-[48px] rounded-xl shadow-lg hover:shadow-xl hover:scale-105 transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
             >
               <span>Explore jobs</span>
               <ArrowRight className="w-5 h-5 ml-0.5 stroke-[2.5]" />
             </button>
             <Link
-              href="/resume"
+              href="/early-access"
               className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-blue-700/80 hover:bg-blue-700 text-white font-bold text-base sm:text-lg px-7 sm:px-8 py-3.5 sm:py-4 min-h-[48px] rounded-xl border border-white/30 shadow-md hover:shadow-lg transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
             >
               <span>Try AI resume tools</span>
@@ -244,7 +244,7 @@ export default function HomePage() {
           </div>
           <div className="mt-6 text-center">
             <Link
-              href="/resume"
+              href="/early-access"
               className="inline-flex items-center justify-center gap-2 bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-sm sm:text-base px-6 py-3 min-h-[44px] rounded-xl shadow-sm transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
             >
               <span>Try AI resume tools</span>
@@ -285,11 +285,11 @@ export default function HomePage() {
             No commitment. Just window shopping for your dream job. Job maxxing starts here.
           </p>
           <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
-            <WhiteHeroButton onClick={() => setModalOpen(true)} className="px-8 min-w-[200px]">
+            <WhiteHeroButton onClick={() => router.push("/early-access")} className="px-8 min-w-[200px]">
               View Jobs
             </WhiteHeroButton>
             <Link
-              href="/jobs"
+              href="/early-access"
               className="inline-flex items-center justify-center gap-2 bg-blue-700 hover:bg-blue-800 text-white border border-white/30 font-bold text-sm sm:text-base px-6 py-3.5 min-h-[44px] rounded-xl shadow-md transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
             >
               <span>See my Ideal Match</span>
@@ -319,14 +319,14 @@ export default function HomePage() {
             </p>
             <div className="pt-2 flex flex-wrap items-center justify-center lg:justify-start gap-3 w-full">
               <Link
-                href="/jobs"
+                href="/early-access"
                 className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-base sm:text-lg px-8 sm:px-10 py-3.5 sm:py-4 min-h-[48px] rounded-xl shadow-md hover:shadow-xl hover:scale-105 transition-all cursor-pointer"
               >
                 <span>View Jobs</span>
                 <ArrowRight className="w-5 h-5 ml-0.5 stroke-[2.5]" />
               </Link>
               <Link
-                href="/radar"
+                href="/early-access"
                 className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-[#0F172A] border border-[#CBD5E1] font-bold text-sm sm:text-base px-6 py-3.5 min-h-[48px] rounded-xl shadow-sm transition-all cursor-pointer"
               >
                 <span>Open interactive map</span>
