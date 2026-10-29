@@ -260,7 +260,7 @@ export default function ProductScreenshotMock() {
                   {/* Action Buttons Row */}
                   <div className="flex items-center gap-1 sm:gap-1.5 pt-1 sm:pt-2 overflow-x-auto no-scrollbar flex-nowrap">
                     <a
-                      href="/jobs"
+                      href="/early-access"
                       className="shrink-0 whitespace-nowrap bg-[#18181B] hover:bg-black text-white text-[9px] sm:text-xs font-semibold px-2 sm:px-3.5 py-1 sm:py-1.5 rounded-md sm:rounded-lg transition-colors shadow-sm inline-flex items-center"
                     >
                       Apply Now
@@ -270,6 +270,9 @@ export default function ProductScreenshotMock() {
                       onClick={() => {
                         setLiked(!liked);
                         if (disliked) setDisliked(false);
+                        if (typeof window !== "undefined") {
+                          window.location.href = "/early-access";
+                        }
                       }}
                       className={`shrink-0 whitespace-nowrap border text-[9px] sm:text-xs font-medium px-2 sm:px-3 py-1 sm:py-1.5 rounded-md sm:rounded-lg transition-colors ${
                         liked
@@ -284,6 +287,9 @@ export default function ProductScreenshotMock() {
                       onClick={() => {
                         setDisliked(!disliked);
                         if (liked) setLiked(false);
+                        if (typeof window !== "undefined") {
+                          window.location.href = "/early-access";
+                        }
                       }}
                       className={`shrink-0 whitespace-nowrap border text-[9px] sm:text-xs font-medium px-2 sm:px-3 py-1 sm:py-1.5 rounded-md sm:rounded-lg transition-colors ${
                         disliked

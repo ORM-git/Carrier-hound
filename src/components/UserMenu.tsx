@@ -13,17 +13,19 @@ interface UserMenuProps {
   /** "dark" for blue hero (white text/border); "light" for white headers (blue/gray text) */
   variant?: "dark" | "light";
   className?: string;
+  signInHref?: string;
 }
 
 /**
  * Auth-aware header component.
  *
- * Signed OUT → "Sign In" / "Login" button (links to /login)
+ * Signed OUT → "Sign In" / "Login" button (links to signInHref, defaults to /login)
  * Signed IN  → User email initial avatar + dropdown (Browse Jobs + Sign Out)
  */
 export default function UserMenu({
   variant = "dark",
   className = "",
+  signInHref = "/login",
 }: UserMenuProps) {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
@@ -106,7 +108,7 @@ export default function UserMenu({
     if (variant === "light") {
       return (
         <Link
-          href="/login"
+          href={signInHref}
           className={`inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 min-h-[44px] rounded-md border border-blue-600 text-blue-600 hover:bg-blue-50 text-xs sm:text-sm font-semibold transition-colors ${className}`}
         >
           <LogIn className="w-3.5 h-3.5" />
@@ -117,7 +119,7 @@ export default function UserMenu({
 
     return (
       <Link
-        href="/login"
+        href={signInHref}
         className={`w-[96px] sm:w-[108px] h-[46px] sm:h-[50px] rounded-xl border-2 border-white/90 hover:border-white text-white font-bold text-sm sm:text-base flex items-center justify-center transition-all hover:bg-white/10 shadow-sm ${className}`}
       >
         Sign In
@@ -126,7 +128,7 @@ export default function UserMenu({
   }
 
   // ── Signed IN ─────────────────────────────────────────────────────────────
-
+  const isEarlyAccessLocked = signInHref === "/early-access";
 
   const initial = (user.email?.[0] ?? "U").toUpperCase();
   const shortEmail = user.email
@@ -190,7 +192,7 @@ export default function UserMenu({
             </div>
             <div className="p-1.5 space-y-0.5">
               <Link
-                href="/dashboard"
+                href={isEarlyAccessLocked ? "/early-access" : "/dashboard"}
                 prefetch={false}
                 onClick={() => setOpen(false)}
                 className="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 rounded-lg transition-colors font-medium"
@@ -198,7 +200,7 @@ export default function UserMenu({
                 <span>Dashboard</span>
               </Link>
               <Link
-                href="/jobs"
+                href={isEarlyAccessLocked ? "/early-access" : "/jobs"}
                 prefetch={false}
                 onClick={() => setOpen(false)}
                 className="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 rounded-lg transition-colors font-medium"
@@ -206,7 +208,7 @@ export default function UserMenu({
                 <span>Browse All Jobs</span>
               </Link>
               <Link
-                href="/applications"
+                href={isEarlyAccessLocked ? "/early-access" : "/applications"}
                 prefetch={false}
                 onClick={() => setOpen(false)}
                 className="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 rounded-lg transition-colors font-medium"
@@ -214,7 +216,7 @@ export default function UserMenu({
                 <span>Application Tracker</span>
               </Link>
               <Link
-                href="/resume"
+                href={isEarlyAccessLocked ? "/early-access" : "/resume"}
                 prefetch={false}
                 onClick={() => setOpen(false)}
                 className="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 rounded-lg transition-colors font-medium"
@@ -222,7 +224,7 @@ export default function UserMenu({
                 <span>Resume & Facts (ATS)</span>
               </Link>
               <Link
-                href="/radar"
+                href={isEarlyAccessLocked ? "/early-access" : "/radar"}
                 prefetch={false}
                 onClick={() => setOpen(false)}
                 className="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 rounded-lg transition-colors font-medium"

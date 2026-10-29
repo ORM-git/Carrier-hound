@@ -17,6 +17,9 @@ import * as fs from "fs";
 import * as path from "path";
 
 const isNegativeControl = process.argv.includes("--negative-control");
+process.env.NODE_ENV = "test";
+process.env.__CAREERMONKE_LEGACY_EARLY_ACCESS_UNLOCK = "true";
+
 
 async function runAuthGuardSuite() {
   console.log("================================================================================");

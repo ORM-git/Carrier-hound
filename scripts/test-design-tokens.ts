@@ -36,17 +36,12 @@ const BASELINE_HEADER_HREFS: Record<string, number> = {
   "/signup": 2,
 };
 const BASELINE_FOOTER_HREFS: Record<string, number> = {
-  "/": 1,
-  "/job-search/all": 1,
-  "/worldwide": 3,
-  "/pricing": 2,
-  "/login": 2,
-  "mailto:support@careermonke.com": 1,
-  "/privacy-policy": 3,
-  "/terms-and-conditions": 3,
-  "https://x.com/careermonke": 1,
-  "https://linkedin.com/company/careermonke": 1,
-  "https://github.com": 1,
+  "/early-access": 14,
+  "/worldwide": 1,
+  "/pricing": 1,
+  "/login": 1,
+  "/privacy-policy": 1,
+  "/terms-and-conditions": 1,
   "/jobs": 1,
   "/radar": 1,
   "/remote": 1,
@@ -138,7 +133,7 @@ function run(neg: boolean) {
     tokensCss = tokensCss.replace(/--cm-ink-subtle:[^;]+;/, "--cm-ink-subtle: 170 180 190;"); // low contrast
     tokensCss = tokensCss.replace(/--cm-duration-base:\s*250ms/, "--cm-duration-base: 900ms");
     header = header.replace('href="/radar"', 'href="/radar-new"'); // changed href
-    footer = footer.replace(/<a\s+href="https:\/\/github\.com"/, '<a href="https://example.com"');
+    footer = footer.replace('href="/early-access"', 'href="https://example.com"');
     layout = layout.replace('import "@/styles/tokens.css";', "");
     header = header.replace(/w-11 h-11/g, "w-8 h-8");
   }

@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useLayoutEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 export const COOKIE_CONSENT_KEY = "cm_cookie_notice";
 export const COOKIE_CONSENT_EVENT = "cm_cookie_consent_updated";
@@ -68,6 +69,7 @@ export function useCookieNoticeHeight(): number {
  * Zero layout shift, keyboard accessible, fully compliant with Lighthouse a11y.
  */
 export default function CookieNotice() {
+  const pathname = usePathname();
   const [mounted, setMounted] = useState(false);
   const [visible, setVisible] = useState(false);
   const noticeRef = useRef<HTMLDivElement>(null);
@@ -145,12 +147,21 @@ export default function CookieNotice() {
       <div className="max-w-6xl mx-auto px-4 py-2.5 sm:py-3 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs sm:text-sm text-[#09090B]">
         <p className="leading-snug text-center sm:text-left text-[#4B5563]">
           We use only essential cookies for sign-in and anonymous error monitoring.{" "}
-          <Link
-            href="/privacy"
-            className="text-[#2563EB] hover:text-[#1D4ED8] font-semibold underline underline-offset-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-1 rounded-sm"
-          >
-            Learn more
-          </Link>
+          {pathname === "/" ? (
+            <Link
+              href="/early-access"
+              className="text-[#2563EB] hover:text-[#1D4ED8] font-semibold underline underline-offset-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-1 rounded-sm"
+            >
+              Learn more
+            </Link>
+          ) : (
+            <Link
+              href="/privacy"
+              className="text-[#2563EB] hover:text-[#1D4ED8] font-semibold underline underline-offset-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-1 rounded-sm"
+            >
+              Learn more
+            </Link>
+          )}
         </p>
 
         <button
