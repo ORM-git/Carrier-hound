@@ -120,6 +120,7 @@ export interface IngestionOptions {
   allowUpdates?: boolean;
   manifestPath?: string;
   maxJobs?: number;
+  maxPerBoard?: number;
   batchSize?: number;
   boardsLimit?: number;
   limit?: number;
@@ -904,6 +905,7 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
     allowUpdates = false,
     manifestPath: customManifestPath,
     maxJobs,
+    maxPerBoard,
     batchSize: customBatchSize,
     boardsLimit,
     limit,
@@ -931,7 +933,13 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
   console.log(`ATS Filter:     ${atsFilter}`);
   if (companyFilter) console.log(`Company Filter: ${companyFilter}`);
   if (maxJobs) console.log(`Max Jobs Cap:   ${maxJobs}`);
+  if (maxPerBoard) console.log(`Max Per Board:  ${maxPerBoard}`);
   if (effectiveBoardsLimit) console.log(`Boards Limit:   ${effectiveBoardsLimit}`);
+
+  // Validation: --max-per-board must be a positive integer if provided
+  if (maxPerBoard !== undefined && (isNaN(maxPerBoard) || maxPerBoard <= 0)) {
+    throw new Error('INVALID CONFIGURATION: --max-per-board must be a positive integer greater than 0.');
+  }
 
   // Safety Gate: Live write requires explicit --confirm-prod-write, compulsory --max-jobs, and compulsory --expect-host
   if (liveWrite) {
@@ -1123,6 +1131,11 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
 
       stats.totalJobsFetched += rawCount;
       stats.totalJobsDeduplicated += duplicates;
+
+      // Honor maxPerBoard cap if specified
+      if (maxPerBoard && maxPerBoard > 0 && acceptedForCompany.length > maxPerBoard) {
+        acceptedForCompany = acceptedForCompany.slice(0, maxPerBoard);
+      }
 
       // Honor maxJobs cap within current board batch
       if (maxJobs && maxJobs > 0 && allAcceptedJobs.length + acceptedForCompany.length > maxJobs) {
@@ -1501,6 +1514,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(__filename
   const maxJobsIdx = args.findIndex((a) => a === '--max-jobs');
   const maxJobs = maxJobsIdx !== -1 ? parseInt(args[maxJobsIdx + 1], 10) : undefined;
 
+  const maxPerBoardIdx = args.findIndex((a) => a === '--max-per-board');
+  const maxPerBoard = maxPerBoardIdx !== -1 ? parseInt(args[maxPerBoardIdx + 1], 10) : undefined;
+
   const batchIdx = args.findIndex((a) => a === '--batch-size');
   const batchSize = batchIdx !== -1 ? parseInt(args[batchIdx + 1], 10) : undefined;
 
@@ -1526,6 +1542,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(__filename
     batchSize,
     manifestPath,
     maxJobs,
+    maxPerBoard,
     boardsLimit: boardsLimit || limit,
     atsFilter,
     companyFilter,

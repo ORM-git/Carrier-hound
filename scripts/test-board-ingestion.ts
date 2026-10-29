@@ -270,7 +270,17 @@ async function runTests() {
       }
     }
 
-    // In real code, all 7 MUST be rejected.
+    // 8. Testing invalid maxPerBoard: must reject when <= 0
+    let maxPerBoardInvalidRefused = false;
+    try {
+      await runBoardIngestion({ maxPerBoard: 0 });
+    } catch (e: any) {
+      if (e.message.includes('--max-per-board must be a positive integer greater than 0')) {
+        maxPerBoardInvalidRefused = true;
+      }
+    }
+
+    // In real code, all 8 MUST be rejected.
     if (
       !forbiddenAuthorized &&
       forbiddenJob === null &&
@@ -278,7 +288,8 @@ async function runTests() {
       liveWriteRefused &&
       maxJobsCompulsoryRefused &&
       expectHostCompulsoryRefused &&
-      hostMismatchRefused
+      hostMismatchRefused &&
+      maxPerBoardInvalidRefused
     ) {
       console.error('❌ [NEGATIVE CONTROL TRIGGERED] Real validator rejected bad URLs, missing expect-host, and unauthorized live-write. Exiting non-zero (1) as required by negative control protocol.');
       process.exit(1);
@@ -1023,6 +1034,37 @@ async function runTests() {
     limit: 5,
   });
   assert(maxJobStats.totalJobsAccepted <= 2, `Max jobs cap halted ingestion at <= 2 jobs (got: ${maxJobStats.totalJobsAccepted})`);
+
+  // Max-per-board cap test: ensures no company accepts more than maxPerBoard jobs
+  const maxPerBoardStats = await runBoardIngestion({
+    dryRun: true,
+    maxPerBoard: 1,
+    fixtureMode: true,
+    fixtureDir: path.resolve(__dirname, 'fixtures'),
+    limit: 3,
+  });
+  const maxJobsObserved = Math.max(...maxPerBoardStats.topCompanies.map((c) => c.jobs));
+  assert(
+    maxJobsObserved <= 1,
+    `Max per board cap enforces <= 1 job per company across all boards (actual max: ${maxJobsObserved})`
+  );
+  assert(
+    maxPerBoardStats.topCompanies.some((c) => c.jobs === 1),
+    'At least one company accepted exactly 1 job under maxPerBoard: 1'
+  );
+
+  // Baseline comparison without maxPerBoard: shows that companies have > 1 jobs
+  const unconstrainedStats = await runBoardIngestion({
+    dryRun: true,
+    fixtureMode: true,
+    fixtureDir: path.resolve(__dirname, 'fixtures'),
+    limit: 3,
+  });
+  const unconstrainedMax = Math.max(...unconstrainedStats.topCompanies.map((c) => c.jobs));
+  assert(
+    unconstrainedMax > 1,
+    `Without maxPerBoard, companies accept > 1 jobs (actual unconstrained max: ${unconstrainedMax})`
+  );
 
   const boardsLimitStats = await runBoardIngestion({
     dryRun: true,
