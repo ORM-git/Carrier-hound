@@ -63,7 +63,7 @@ const isNegativeControl = process.argv.includes('--negative-control');
 // ---------------------------------------------------------------------------
 export function createMockSupabase(
   initialDbJobs: any[] = [],
-  mockOptions: { failOnUpsertCall?: number } = {}
+  mockOptions: { failOnUpsertCall?: number; allowOnConflict?: boolean } = {}
 ) {
   const dbJobs = [...initialDbJobs];
   const upsertCalls: Array<{ payload: any[]; options: any }> = [];
@@ -136,6 +136,16 @@ export function createMockSupabase(
         },
         upsert: (payload: any[], options: any) => {
           upsertCalls.push({ payload, options });
+          // Live DB has only a partial unique index, so any onConflict option fails in Postgres
+          if (options?.onConflict && !mockOptions.allowOnConflict) {
+            return Promise.resolve({
+              data: null,
+              error: {
+                message:
+                  'there is no unique or exclusion constraint matching the ON CONFLICT specification',
+              },
+            });
+          }
           if (mockOptions.failOnUpsertCall && upsertCalls.length === mockOptions.failOnUpsertCall) {
             return Promise.resolve({
               data: null,
@@ -758,10 +768,15 @@ async function runTests() {
     assert(liveStats1.liveWriteStats.rowsUpdated === 0, 'First run is insert-only: 0 updates performed');
     assert(liveStats1.liveWriteStats.updatesSkipped === 1, 'Existing row (10alabs-1001) skipped from updates in insert-only mode');
 
-    // Confirm that upsert used ignoreDuplicates: true
+    // Confirm that upsert used ignoreDuplicates: true with NO onConflict
     const firstUpsertCall = mockSupabase._upsertCalls[0];
     assert(firstUpsertCall.options.ignoreDuplicates === true, 'Insert-only mode uses ignoreDuplicates: true');
-    assert(firstUpsertCall.options.onConflict === 'source,source_job_id', 'Upsert enforces onConflict: "source,source_job_id"');
+    assert(firstUpsertCall.options.onConflict === undefined, 'Insert-only mode asserts options.onConflict is undefined');
+
+    for (const call of mockSupabase._upsertCalls) {
+      assert(call.options.ignoreDuplicates === true, 'All insert-only calls have ignoreDuplicates: true');
+      assert(call.options.onConflict === undefined, 'All insert-only calls have options.onConflict === undefined');
+    }
 
     // Verify batch chunk size and distinct board labels
     let allUpsertedRowsRun1: any[] = [];
@@ -830,15 +845,36 @@ async function runTests() {
     assert(manifest2.rows.length === 0, 'Second run manifest rows array is empty');
 
     // -------------------------------------------------------------------------
+    // Unit Assertion: Mock Supabase rejects any onConflict option
+    // -------------------------------------------------------------------------
+    const rejectingMock = createMockSupabase([]);
+    const conflictAttempt = await rejectingMock.from('jobs').upsert(
+      [{ source: 'test-board', source_job_id: '1' }],
+      { onConflict: 'source,source_job_id' }
+    );
+    assert(conflictAttempt.error !== null, 'Mock rejects onConflict option with error');
+    assert(
+      conflictAttempt.error?.message.includes('no unique or exclusion constraint matching the ON CONFLICT specification'),
+      'Mock returns Postgres error when onConflict is specified'
+    );
+
+    const ignoreDupesAttempt = await rejectingMock.from('jobs').upsert(
+      [{ source: 'test-board', source_job_id: '1' }],
+      { ignoreDuplicates: true }
+    );
+    assert(ignoreDupesAttempt.error === null, 'Mock succeeds when onConflict is undefined and ignoreDuplicates is true');
+
+    // -------------------------------------------------------------------------
     // RUN 3: Opt-in Updates Mode (--allow-updates)
     // -------------------------------------------------------------------------
+    const updateMockSupabase = createMockSupabase(mockSupabase._dbJobs, { allowOnConflict: true });
     const liveStats3 = await runBoardIngestion({
       liveWrite: true,
       confirmProdWrite: true,
       allowUpdates: true,
       maxJobs: 100,
       expectHost: 'szakevhxhwpeskidvtfs.supabase.co',
-      supabaseClient: mockSupabase,
+      supabaseClient: updateMockSupabase,
       fixtureMode: true,
       fixtureDir: path.resolve(__dirname, 'fixtures'),
       limit: 3,
@@ -847,7 +883,7 @@ async function runTests() {
     assert(liveStats3.liveWriteStats !== undefined, 'Run 3 recorded liveWriteStats');
     assert(liveStats3.liveWriteStats.rowsUpdated > 0, 'Opt-in updates writes existing rows to database');
 
-    const updateCalls = mockSupabase._upsertCalls.filter((c: any) => !c.options?.ignoreDuplicates);
+    const updateCalls = updateMockSupabase._upsertCalls.filter((c: any) => !c.options?.ignoreDuplicates);
     assert(updateCalls.length > 0, 'Opt-in update mode executed standard upsert without ignoreDuplicates');
 
     let allUpdatedRows: any[] = [];
