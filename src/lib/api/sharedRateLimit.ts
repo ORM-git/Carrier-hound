@@ -11,6 +11,9 @@ import { createClient } from "@supabase/supabase-js";
 let rlClient: any = null;
 
 function getRateLimitClient() {
+  if (process.env.NODE_ENV === "test" && (globalThis as any).__mockRateLimitClient !== undefined) {
+    return (globalThis as any).__mockRateLimitClient;
+  }
   if (rlClient) return rlClient;
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
@@ -57,5 +60,26 @@ export async function checkSharedRateLimit(
     }
   }
   return { ...memoryFallback(), source: "memory" };
+}
+
+export const SEARCH_RATE_LIMIT = {
+  maxRequests: 60,
+  windowSeconds: 60,
+};
+
+export const TRACK_RATE_LIMIT = {
+  maxRequests: 30,
+  windowSeconds: 60,
+};
+
+export const searchRateLimitStore = new Map<string, { count: number; resetAt: number }>();
+export const trackRateLimitStore = new Map<string, { count: number; resetAt: number }>();
+
+export function _resetSearchRateLimitStore() {
+  searchRateLimitStore.clear();
+}
+
+export function _resetTrackRateLimitStore() {
+  trackRateLimitStore.clear();
 }
 

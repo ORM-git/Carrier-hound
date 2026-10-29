@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { recordPageView } from "@/lib/admin/analytics";
+import { checkSharedRateLimit, TRACK_RATE_LIMIT, trackRateLimitStore } from "@/lib/api/sharedRateLimit";
+import { getClientIpFromRequest, checkRateLimit, getSupabaseAdminClient } from "@/lib/ai/serviceHandler";
+import { extractToken } from "@/lib/admin/auth";
 
 export const runtime = "edge";
+
 
 async function sha256Hex16(input: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -11,28 +15,93 @@ async function sha256Hex16(input: string): Promise<string> {
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 16);
 }
 
+async function getSessionUserId(req: Request): Promise<string | null> {
+  try {
+    const token = extractToken(req);
+    if (!token) return null;
+
+    const mockAdmin = (globalThis as any).__mockSupabaseClient;
+    if (mockAdmin?.auth?.getUser) {
+      const { data, error } = await mockAdmin.auth.getUser(token);
+      if (!error && data?.user?.id) {
+        return data.user.id;
+      }
+      return null;
+    }
+
+    const supabaseAdmin = getSupabaseAdminClient(undefined, true);
+    if (!supabaseAdmin?.auth?.getUser) return null;
+
+    const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+    if (error || !user?.id) return null;
+    return user.id;
+  } catch {
+    return null;
+  }
+}
+
 export async function POST(req: Request) {
   try {
+    const isLegacy =
+      process.env.NODE_ENV === "test" &&
+      process.env.__CAREERMONKE_LEGACY_RATE_LIMIT === "true";
+
+    const clientIp = getClientIpFromRequest(req);
+
+    if (!isLegacy) {
+      const ipLimit = await checkSharedRateLimit(
+        `track:ip:${clientIp}`,
+        TRACK_RATE_LIMIT.maxRequests,
+        TRACK_RATE_LIMIT.windowSeconds,
+        () =>
+          checkRateLimit(
+            clientIp,
+            trackRateLimitStore,
+            TRACK_RATE_LIMIT.maxRequests,
+            TRACK_RATE_LIMIT.windowSeconds * 1000
+          )
+      );
+
+      if (!ipLimit.allowed) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: "Rate limit exceeded. Please try again shortly.",
+            retryAfter: ipLimit.retryAfter,
+          },
+          {
+            status: 429,
+            headers: {
+              "Retry-After": String(ipLimit.retryAfter),
+            },
+          }
+        );
+      }
+    }
+
     const body = await req.json().catch(() => ({}));
-    const { path, referrer, userId } = body;
+    const { path, referrer } = body;
 
     if (!path || typeof path !== "string") {
       return NextResponse.json({ ok: false, error: "Invalid path" }, { status: 400 });
     }
 
-    // Extract headers for anonymous unique visitor metrics
-    const forwarded = req.headers.get("x-forwarded-for") || "";
-    const ip = forwarded.split(",")[0].trim() || req.headers.get("x-real-ip") || "127.0.0.1";
+    // In /api/track ignore any client-supplied userId from the body (derive from the session only)
+    let sessionUserId: string | null = null;
+    if (isLegacy) {
+      sessionUserId = body.userId || null;
+    } else {
+      sessionUserId = await getSessionUserId(req);
+    }
+
     const userAgent = req.headers.get("user-agent") || "";
+    const ipForHash = clientIp === "anonymous-client" ? (req.headers.get("x-real-ip") || "127.0.0.1") : clientIp;
+    const ipHash = await sha256Hex16(`${ipForHash}_careermonke_salt`);
 
-    // Salted anonymous IP hash (non-reversible)
-    const ipHash = await sha256Hex16(`${ip}_careermonke_salt`);
-
-    // Fire and record
     await recordPageView({
       path,
       referrer: referrer || null,
-      userId: userId || null,
+      userId: sessionUserId,
       ipHash,
       userAgent: userAgent ? userAgent.slice(0, 255) : null,
       createdAt: new Date().toISOString(),
