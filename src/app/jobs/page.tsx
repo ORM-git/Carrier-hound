@@ -482,6 +482,8 @@ function JobsPageInner() {
   const [totalCount, setTotalCount] = useState<number>(0);
   const [loadingJobs, setLoadingJobs] = useState<boolean>(true);
   const [isDegraded, setIsDegraded] = useState<boolean>(false);
+  const [retryNonce, setRetryNonce] = useState<number>(0);
+  const [apiSimilarJobs, setApiSimilarJobs] = useState<LiveJob[]>([]);
   const [detailLoading, setDetailLoading] = useState<boolean>(false);
   const [detailStatus, setDetailStatus] = useState<"not-found" | "expired" | null>(null);
   const lastQueryKeyRef = useRef<string>("");
@@ -910,6 +912,7 @@ function JobsPageInner() {
     const effectivePreferences = (isRecommended || sortBy === "match") ? preferences : null;
 
     const queryKey = JSON.stringify({
+      retryNonce,
       tab: activeTab,
       category: selectedCategory,
       search: debouncedSearch.trim(),
@@ -978,6 +981,7 @@ function JobsPageInner() {
         }
       });
   }, [
+    retryNonce,
     selectedCategory,
     debouncedSearch,
     remoteOnly,
@@ -1212,15 +1216,31 @@ function JobsPageInner() {
 
   const displayedJobs = filteredJobs;
 
+  // Similar jobs: same category first, country only as fallback; API-fetched if direct link
   const similarJobs = useMemo(() => {
     if (!selectedJob) return [];
-    return liveJobs
-      .filter((j) => j.id !== selectedJob.id && (
-        (selectedJob.category && j.category && j.category.toLowerCase() === selectedJob.category.toLowerCase()) ||
-        (selectedJob.country && j.country && j.country.toUpperCase() === selectedJob.country.toUpperCase())
-      ))
-      .slice(0, 5);
-  }, [selectedJob, liveJobs]);
+    const pool = liveJobs.length > 1 ? liveJobs : (apiSimilarJobs.length > 0 ? apiSimilarJobs : liveJobs);
+    const sameCategory = pool.filter((j) => j.id !== selectedJob.id && selectedJob.category && j.category && j.category.toLowerCase() === selectedJob.category.toLowerCase());
+    const sameCountryFallback = pool.filter((j) => j.id !== selectedJob.id && (!selectedJob.category || !j.category || j.category.toLowerCase() !== selectedJob.category.toLowerCase()) && selectedJob.country && j.country && j.country.toUpperCase() === selectedJob.country.toUpperCase());
+    return [...sameCategory, ...sameCountryFallback].slice(0, 5);
+  }, [selectedJob, liveJobs, apiSimilarJobs]);
+
+  // When opened by direct link (liveJobs is empty/minimal), fetch similar jobs from API
+  useEffect(() => {
+    if (!selectedJob || !selectedJob.id) return;
+    if (liveJobs.length <= 1) {
+      getLiveJobs({
+        category: selectedJob.category || undefined,
+        pageSize: 6,
+      })
+        .then((res) => {
+          if (Array.isArray(res.jobs)) {
+            setApiSimilarJobs(res.jobs.filter((j) => j.id !== selectedJob.id));
+          }
+        })
+        .catch(() => {});
+    }
+  }, [selectedJob?.id, selectedJob?.category, liveJobs.length]);
 
   // Memoize per-card fit diagnostics keyed by confirmed resume facts and job.id
   const confirmedResumeKey = candidate?.confirmedAt || "";
@@ -1905,9 +1925,7 @@ function JobsPageInner() {
                           onClick={() => {
                             setIsDegraded(false);
                             setLoadingJobs(true);
-                            lastQueryKeyRef.current = "";
-                            const current = new URLSearchParams(window.location.search);
-                            window.dispatchEvent(new Event("popstate"));
+                            setRetryNonce((n) => n + 1);
                           }}
                           className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-bold transition cursor-pointer min-h-[44px]"
                         >

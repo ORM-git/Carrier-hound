@@ -864,6 +864,7 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
           if (res.ok) {
             const { job } = await res.json();
             if (job) {
+              const isInactive = Boolean(job.isExpired || job.is_expired || job.is_active === false || job.status === "expired" || job.status === "closed");
               return {
                 id: job.id,
                 title: stripHtmlAndExecutableMarkup(job.title || "Untitled Position"),
@@ -878,10 +879,12 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
                 country: job.country || job.country_code || "",
                 type: job.job_type === "internship" ? "Internship" : "Full-time",
                 directSource: Boolean(job.verified ?? true),
-                applyUrl: sanitizeExternalUrl(job.apply_url) || "",
+                applyUrl: isInactive ? "" : (sanitizeExternalUrl(job.apply_url) || ""),
                 description: stripHtmlAndExecutableMarkup(job.description || ""),
                 skills: job.skills || [],
                 postedAt: job.posted_at || job.first_seen_at || job.created_at,
+                isExpired: isInactive,
+                status: isInactive ? "expired" : (job.status || "active"),
               };
             }
           } else {
@@ -912,20 +915,55 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
     }
   }
 
-  // 2. Guest, non-Pro, or Pro unlock error: Query public preview from jobs_public view
+  // 2. Query server search endpoint for single job (works for both active and inactive/expired roles)
+  if (typeof window !== "undefined") {
+    try {
+      const res = await fetch(`/api/jobs/search?id=${encodeURIComponent(cleanId)}`);
+      if (res.ok) {
+        const json = await res.json();
+        if (Array.isArray(json.jobs) && json.jobs.length > 0) {
+          const job = json.jobs[0];
+          return {
+            ...job,
+            isExpired: Boolean(job.isExpired || job.status === "expired" || job.status === "closed"),
+            proUnlockError,
+          };
+        }
+      }
+    } catch (fetchErr) {
+      console.warn("Server search single job fetch failed, falling back to direct query:", fetchErr);
+    }
+  }
+
+  // Fallback / direct Supabase client query:
   try {
     const supabase = createClient();
     const selectColumns =
-      "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at";
+      "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at, status, is_active";
 
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from("jobs_public")
       .select(selectColumns)
       .eq("id", cleanId)
       .maybeSingle();
 
-    if (!error && data) {
+    let isInactive = false;
+    if (!data) {
+      // Direct query fallback for inactive/expired row fixture
+      const inactiveRes = await supabase
+        .from("jobs")
+        .select(selectColumns)
+        .eq("id", cleanId)
+        .maybeSingle();
+      if (!inactiveRes.error && inactiveRes.data) {
+        data = inactiveRes.data;
+        isInactive = true;
+      }
+    }
+
+    if (data) {
       const row = data as any;
+      const expired = Boolean(isInactive || row.is_active === false || row.status === "expired" || row.status === "closed");
       return {
         id: row.id,
         title: row.title || "Untitled Position",
@@ -944,6 +982,8 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
         description: "",
         skills: [],
         postedAt: row.posted_at || row.created_at,
+        isExpired: expired,
+        status: expired ? "expired" : (row.status || "active"),
         proUnlockError,
       };
     }
