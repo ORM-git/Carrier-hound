@@ -99,12 +99,26 @@ export interface CompanyRegistryEntry {
   enabled?: boolean;
 }
 
+export interface IngestManifestRow {
+  source: string;
+  source_job_id: string;
+}
+
+export interface IngestManifest {
+  run_discovered_at: string;
+  generated_at: string;
+  total_rows: number;
+  rows: IngestManifestRow[];
+}
+
 export interface IngestionOptions {
   dryRun?: boolean;
   liveWrite?: boolean;
   confirmProdWrite?: boolean;
   dryPlan?: boolean;
   allowLarge?: boolean;
+  allowUpdates?: boolean;
+  manifestPath?: string;
   maxJobs?: number;
   boardsLimit?: number;
   limit?: number;
@@ -162,13 +176,55 @@ export interface BoardIngestionStats {
     totalAccepted: number;
     rowsToInsert: number;
     rowsToUpdate: number;
+    updatesSkipped?: number;
     dedupSkipped: number;
     estimatedGrowthMB: number;
   };
   liveWriteStats?: {
     rowsWritten: number;
+    rowsInserted: number;
+    rowsUpdated: number;
+    updatesSkipped: number;
+    confirmedCount: number;
     batchesCount: number;
+    discoveredAt: string;
+    manifestPath?: string;
+    rollbackSql?: string;
   };
+}
+
+/**
+ * Generates the idempotent rollback SQL statement for deleting exclusively the rows
+ * inserted in a specific ingestion run, matching both discovered_at and the exact
+ * (source, source_job_id) composite pairs.
+ *
+ * Never executed automatically; printed for manual audit and verification.
+ */
+export function generateRollbackSql(
+  rows: Array<{ source: string; source_job_id: string }>,
+  discoveredAt: string
+): string {
+  if (rows.length === 0) {
+    return `-- No rows to rollback for discovered_at = '${discoveredAt}'\n`;
+  }
+
+  const tupleValues = rows
+    .map((r) => `  ('${r.source.replace(/'/g, "''")}', '${r.source_job_id.replace(/'/g, "''")}')`)
+    .join(',\n');
+
+  return [
+    `-- ==============================================================================`,
+    `-- ROLLBACK SQL (DO NOT RUN AUTOMATICALLY - MANUAL VERIFICATION ONLY)`,
+    `-- Target: DELETE rows inserted in run discovered_at = '${discoveredAt}'`,
+    `-- Total Keys: ${rows.length}`,
+    `-- ==============================================================================`,
+    `DELETE FROM jobs`,
+    `WHERE discovered_at = '${discoveredAt}'`,
+    `  AND (source, source_job_id) IN (`,
+    tupleValues,
+    `  );`,
+    `-- ==============================================================================`,
+  ].join('\n');
 }
 
 /**
@@ -844,6 +900,8 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
     confirmProdWrite = false,
     dryPlan = false,
     allowLarge = false,
+    allowUpdates = false,
+    manifestPath: customManifestPath,
     maxJobs,
     boardsLimit,
     limit,
@@ -866,6 +924,7 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
   console.log('🚀 CareerMonke ATS Board Ingestion Engine');
   console.log('======================================================');
   console.log(`Execution Mode: ${isActualLiveWrite ? '🔴 PRODUCTION LIVE-WRITE' : dryPlan ? '📋 DRY-PLAN' : '🟢 DRY-RUN (Safe)'}`);
+  console.log(`Update Mode:    ${allowUpdates ? 'OPT-IN (Updates enabled)' : 'OFF (Insert-only: skipping existing rows, updates disabled)'}`);
   console.log(`Rate Pacing:    1 req/s per host (MIN_DOMAIN_INTERVAL_MS = 1000)`);
   console.log(`ATS Filter:     ${atsFilter}`);
   if (companyFilter) console.log(`Company Filter: ${companyFilter}`);
@@ -1116,6 +1175,7 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
   let rowsToUpdate: NormalizedJob[] = [];
   let dedupSkipped = 0;
   const nowIso = new Date().toISOString();
+  const runDiscoveredAt = nowIso;
 
   if (supabase && allAcceptedJobs.length > 0) {
     const uniqueCompanyNames = Array.from(new Set(allAcceptedJobs.map((j) => j.company)));
@@ -1169,11 +1229,11 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
         dedupSkipped++;
       } else {
         // Brand new job -> INSERT
-        // discovered_at only set on insert
+        // discovered_at only set on insert to runDiscoveredAt
         const newJob: NormalizedJob = {
           ...job,
           posted_at: job.posted_at || null,
-          discovered_at: nowIso,
+          discovered_at: runDiscoveredAt,
           last_seen_at: nowIso,
         };
         rowsToInsert.push(newJob);
@@ -1182,7 +1242,11 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
     }
   } else {
     // In offline dry-run without DB client: treat accepted jobs as new
-    rowsToInsert = allAcceptedJobs;
+    rowsToInsert = allAcceptedJobs.map((j) => ({
+      ...j,
+      discovered_at: runDiscoveredAt,
+      last_seen_at: nowIso,
+    }));
   }
 
   // Safety sizing calculations (conservative 4096 bytes per new row including indexes)
@@ -1194,6 +1258,7 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
     totalAccepted: allAcceptedJobs.length,
     rowsToInsert: rowsToInsert.length,
     rowsToUpdate: rowsToUpdate.length,
+    updatesSkipped: allowUpdates ? 0 : rowsToUpdate.length,
     dedupSkipped,
     estimatedGrowthMB: Math.round(estimatedGrowthMB * 100) / 100,
   };
@@ -1205,7 +1270,7 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
   console.log(`Target Boards Processed:    ${targets.length}`);
   console.log(`Total Jobs Accepted:        ${allAcceptedJobs.length}`);
   console.log(`New Rows to Insert:         ${rowsToInsert.length}`);
-  console.log(`Existing Rows to Update:    ${rowsToUpdate.length}`);
+  console.log(`Existing Rows to Update:    ${rowsToUpdate.length} ${allowUpdates ? '(Will be updated)' : '(SKIPPED: updates disabled)'}`);
   console.log(`Cross-Role Dupes Skipped:   ${dedupSkipped}`);
   console.log(`Estimated DB Growth:        ${stats.planStats.estimatedGrowthMB} MB`);
   console.log(`Safety Threshold:           150.00 MB`);
@@ -1219,11 +1284,48 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
   }
 
   // ---------------------------------------------------------------------------
+  // Pre-Write Manifest & Run Timestamp
+  // ---------------------------------------------------------------------------
+  console.log(`🕒 Ingestion run discovered_at: ${runDiscoveredAt}`);
+
+  let savedManifestPath: string | undefined = undefined;
+  if (isActualLiveWrite || (dryPlan && rowsToInsert.length > 0)) {
+    const sanitizedTimestamp = runDiscoveredAt.replace(/[:.]/g, '-');
+    const defaultManifestPath = path.resolve(process.cwd(), 'reports', `ingest-manifest-${sanitizedTimestamp}.json`);
+    const manifestPath = customManifestPath ? path.resolve(customManifestPath) : defaultManifestPath;
+    const manifestDir = path.dirname(manifestPath);
+    if (!fs.existsSync(manifestDir)) {
+      fs.mkdirSync(manifestDir, { recursive: true });
+    }
+
+    const manifestData: IngestManifest = {
+      run_discovered_at: runDiscoveredAt,
+      generated_at: new Date().toISOString(),
+      total_rows: rowsToInsert.length,
+      rows: rowsToInsert.map((j) => ({
+        source: j.source,
+        source_job_id: j.source_job_id,
+      })),
+    };
+
+    fs.writeFileSync(manifestPath, JSON.stringify(manifestData, null, 2), 'utf-8');
+    savedManifestPath = manifestPath;
+    console.log(`📝 Pre-write manifest saved: ${manifestPath} (${rowsToInsert.length} insert rows queued)`);
+  }
+
+  // ---------------------------------------------------------------------------
   // Live Production Writes (Batches of 500)
   // ---------------------------------------------------------------------------
   if (isActualLiveWrite && supabase) {
-    const jobsToWrite = [...rowsToUpdate, ...rowsToInsert];
-    console.log(`🚀 Executing LIVE WRITE for ${jobsToWrite.length} jobs in batches of 500...\n`);
+    const jobsToWrite = allowUpdates ? [...rowsToUpdate, ...rowsToInsert] : rowsToInsert;
+    const insertCount = rowsToInsert.length;
+    const updateCount = allowUpdates ? rowsToUpdate.length : 0;
+    const skippedUpdateCount = allowUpdates ? 0 : rowsToUpdate.length;
+
+    console.log(`🚀 Executing LIVE WRITE for ${jobsToWrite.length} jobs in batches of 500 (mode: ${allowUpdates ? 'UPSERT' : 'INSERT-ONLY'})...\n`);
+    if (skippedUpdateCount > 0) {
+      console.log(`🛡️ [Insert-Only] ${skippedUpdateCount} existing rows skipped (pass --allow-updates to enable updates).\n`);
+    }
 
     const BATCH_SIZE = 500;
     let totalWritten = 0;
@@ -1257,7 +1359,7 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
         verified: true,
         verified_at: nowIso,
         source_type: 'ats',
-        discovered_at: j.discovered_at || null,
+        discovered_at: j.discovered_at || runDiscoveredAt,
         country_code: j.country_code || null,
         country: j.country_code && COUNTRY_NAMES[j.country_code] && !j.remote ? COUNTRY_NAMES[j.country_code] : null,
         remote_eligibility: j.remote_eligibility || 'unknown',
@@ -1265,24 +1367,86 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
         salary_period: j.salary_period || null,
       }));
 
-      const { error: upsertErr } = await supabase
-        .from('jobs')
-        .upsert(payload, { onConflict: 'source,source_job_id' });
+      const { error: writeErr } = allowUpdates
+        ? await supabase.from('jobs').upsert(payload, { onConflict: 'source,source_job_id' })
+        : await supabase.from('jobs').upsert(payload, { onConflict: 'source,source_job_id', ignoreDuplicates: true });
 
-      if (upsertErr) {
-        throw new Error(`Database upsert error in batch ${batchesCount}: ${upsertErr.message}`);
+      if (writeErr) {
+        throw new Error(`Database write error in batch ${batchesCount}: ${writeErr.message}`);
       }
 
       totalWritten += chunk.length;
-      console.log(`   ✅ Batch ${batchesCount}: Upserted ${chunk.length} jobs (Total: ${totalWritten}/${jobsToWrite.length})`);
+      console.log(`   ✅ Batch ${batchesCount}: Synced ${chunk.length} jobs (Total: ${totalWritten}/${jobsToWrite.length})`);
+    }
+
+    console.log(`\n📊 Live-Write Result:`);
+    console.log(`   Total rows written:    ${totalWritten}`);
+    console.log(`   New rows inserted:     ${insertCount}`);
+    console.log(`   Existing rows updated: ${updateCount}`);
+    console.log(`   Existing rows skipped: ${skippedUpdateCount}`);
+
+    let confirmedCount = 0;
+    if (rowsToInsert.length > 0) {
+      console.log(`\n🔍 Re-selecting inserted keys from database to confirm...`);
+      const CHECK_BATCH_SIZE = 200;
+      const confirmedKeys = new Set<string>();
+
+      for (let i = 0; i < rowsToInsert.length; i += CHECK_BATCH_SIZE) {
+        const chunk = rowsToInsert.slice(i, i + CHECK_BATCH_SIZE);
+        const chunkIds = chunk.map((c) => c.source_job_id);
+
+        const { data: confirmedRows, error: confirmErr } = await supabase
+          .from('jobs')
+          .select('source, source_job_id, discovered_at')
+          .in('source_job_id', chunkIds)
+          .eq('discovered_at', runDiscoveredAt);
+
+        if (confirmErr) {
+          console.warn(`   ⚠️ Warning: Confirmation select query failed: ${confirmErr.message}`);
+        } else if (Array.isArray(confirmedRows)) {
+          for (const row of confirmedRows) {
+            const key = `${row.source}:${row.source_job_id}`;
+            if (!confirmedKeys.has(key)) {
+              confirmedKeys.add(key);
+              confirmedCount++;
+            }
+          }
+        }
+      }
+
+      console.log(`   ✅ Confirmation verified: ${confirmedCount}/${rowsToInsert.length} keys confirmed in database.`);
+      if (confirmedCount !== rowsToInsert.length) {
+        console.warn(`   ⚠️ Warning: Confirmed count (${confirmedCount}) does not match expected insert count (${rowsToInsert.length}).`);
+      }
+    }
+
+    // 4) Print the rollback SQL: DELETE only for exactly those (source, source_job_id) pairs AND discovered_at = that run value. Never run it, only print.
+    const rollbackSql = generateRollbackSql(rowsToInsert, runDiscoveredAt);
+    console.log('\n======================================================');
+    console.log('↩️ ROLLBACK SQL (DO NOT RUN AUTOMATICALLY - MANUAL ONLY)');
+    console.log('======================================================');
+    console.log(rollbackSql);
+    console.log('======================================================\n');
+
+    if (savedManifestPath) {
+      const rollbackSqlPath = savedManifestPath.replace(/\.json$/, '.sql');
+      fs.writeFileSync(rollbackSqlPath, rollbackSql, 'utf-8');
+      console.log(`💾 Rollback SQL saved: ${rollbackSqlPath}\n`);
     }
 
     stats.liveWriteStats = {
       rowsWritten: totalWritten,
+      rowsInserted: insertCount,
+      rowsUpdated: updateCount,
+      updatesSkipped: skippedUpdateCount,
+      confirmedCount,
       batchesCount,
+      discoveredAt: runDiscoveredAt,
+      manifestPath: savedManifestPath,
+      rollbackSql,
     };
 
-    console.log(`\n🎉 Live-Write Complete: ${totalWritten} jobs successfully synced to database across ${batchesCount} batches.\n`);
+    console.log(`🎉 Live-Write Complete: ${totalWritten} jobs successfully synced to database across ${batchesCount} batches.\n`);
   }
 
   // Sort top companies
@@ -1299,6 +1463,10 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(__filename
   const confirmProdWrite = args.includes('--confirm-prod-write');
   const dryPlan = args.includes('--dry-plan');
   const allowLarge = args.includes('--allow-large');
+  const allowUpdates = args.includes('--allow-updates') || args.includes('--update-existing');
+
+  const manifestIdx = args.findIndex((a) => a === '--manifest-path');
+  const manifestPath = manifestIdx !== -1 && args[manifestIdx + 1] && !args[manifestIdx + 1].startsWith('--') ? args[manifestIdx + 1] : undefined;
 
   const atsIdx = args.findIndex((a) => a === '--ats');
   const atsFilter = atsIdx !== -1 ? args[atsIdx + 1] : 'all';
@@ -1327,6 +1495,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(__filename
     confirmProdWrite,
     dryPlan,
     allowLarge,
+    allowUpdates,
+    manifestPath,
     maxJobs,
     boardsLimit: boardsLimit || limit,
     atsFilter,
