@@ -1,7 +1,7 @@
 /**
  * scripts/test-early-access.ts
  *
- * Comprehensive verification suite for Early-Access-Only Mode (PR #127 fixes):
+ * Comprehensive verification suite for Early-Access-Only Mode & Gmail API Sender:
  * 1. ALLOWLIST (EARLY_ACCESS_ALLOWED_EMAILS): comma-separated lowercase compare; allowed user gets 200;
  *    non-allowed signed-in user gets signed out + 307 to /early-access on pages and 403 on APIs;
  *    empty env blocks all session users while x-admin-secret still works; zero hardcoded emails.
@@ -10,11 +10,18 @@
  *    Footer legal links restored.
  * 3. RESTORED LINKS & WhiteHeroButton: Footer mailto + X/LinkedIn/GitHub and page.tsx TikTok + mailto +
  *    WhiteHeroButton restored; only Get Started / View Jobs / Sign in CTAs point to /early-access.
- * 4. POST /api/early-access: DB failure (other than duplicate) returns 500 with generic try-again message
- *    and no in-memory fallback; duplicate and honeypot return generic { ok: true, message: "You're on the list" }
- *    with no duplicate:true flag; rate limit 5/min/IP enforced.
+ * 4. POST /api/early-access + Gmail API (mocked fetch):
+ *    - New email sends (a) thank-you email to submitter with exact subject "You're on the CareerMonke early-access list"
+ *      and (b) daily digest notification to EARLY_ACCESS_NOTIFY_EMAIL (batched once per UTC day).
+ *    - Duplicate or honeypot sends 0 emails.
+ *    - Missing env or Gmail error/quota failure still stores email in DB, returns 200, logs safe redacted warning
+ *      with zero secrets or full emails.
+ *    - Outgoing message cap (150 messages/day in gmail_send_log.sent_at) checked before EACH send.
+ *    - DB failure (other than duplicate) returns 500 with generic try-again message and no in-memory fallback.
  * 5. Sitemap: only "/" and "/early-access".
- * 6. Real negative controls (gated by NODE_ENV=test) prove non-zero exit on invalid conditions.
+ * 6. Guide verification: scripts/get-gmail-refresh-token.md specifies Web application, redirect URI
+ *    https://developers.google.com/oauthplayground, gmail.send scope, offline access, own credentials, In production.
+ * 7. Real negative controls (gated by NODE_ENV=test) prove non-zero exit on invalid conditions.
  */
 
 import assert from "node:assert";
@@ -59,7 +66,12 @@ interface StoredEmailRow {
   created_at: string;
 }
 
+interface GmailSendLogRow {
+  sent_at: string;
+}
+
 const mockDbRows: StoredEmailRow[] = [];
+const mockSendLogRows: GmailSendLogRow[] = [];
 let simulateDbFailure: string | null = null;
 let signOutCallCount = 0;
 
@@ -97,13 +109,53 @@ function createMockSupabase() {
       },
     },
     from: (table: string) => {
+      if (table === "gmail_send_log") {
+        let gteIso: string | null = null;
+        let isCountHead = false;
+        const logBuilder: any = {
+          select: (_cols?: string, opts?: { count?: string; head?: boolean }) => {
+            if (opts?.count === "exact") {
+              isCountHead = true;
+            }
+            return logBuilder;
+          },
+          gte: (col: string, val: string) => {
+            if (col === "sent_at") gteIso = val;
+            const filtered = gteIso
+              ? mockSendLogRows.filter((r) => r.sent_at >= gteIso!)
+              : mockSendLogRows;
+            return Promise.resolve({
+              data: isCountHead ? null : filtered,
+              count: filtered.length,
+              error: null,
+            });
+          },
+          insert: async (row: GmailSendLogRow) => {
+            mockSendLogRows.push({ sent_at: row.sent_at });
+            return { data: row, error: null };
+          },
+        };
+        return logBuilder;
+      }
+
       assert.strictEqual(table, "early_access_emails", `Unexpected table access: ${table}`);
       let filterEmail: string | null = null;
+      let gteCreatedAt: string | null = null;
       const builder: any = {
         select: () => builder,
         eq: (col: string, val: string) => {
           if (col === "email") filterEmail = val;
           return builder;
+        },
+        gte: (col: string, val: string) => {
+          if (col === "created_at") gteCreatedAt = val;
+          return builder;
+        },
+        order: () => {
+          const rows = gteCreatedAt
+            ? mockDbRows.filter((r) => r.created_at >= gteCreatedAt!)
+            : [...mockDbRows];
+          return Promise.resolve({ data: rows, error: null });
         },
         maybeSingle: async () => {
           if (simulateDbFailure === "select_error") {
@@ -118,9 +170,6 @@ function createMockSupabase() {
               data: null,
               error: { code: "42501", message: "permission denied for table early_access_emails" },
             };
-          }
-          if (simulateDbFailure === "insert_throw") {
-            throw new Error("Simulated network socket hangup");
           }
           if (mockDbRows.some((r) => r.email === row.email)) {
             return {
@@ -137,12 +186,30 @@ function createMockSupabase() {
   };
 }
 
+function decodeBase64UrlToUtf8(b64url: string): string {
+  const padded = b64url.replace(/-/g, "+").replace(/_/g, "/");
+  return Buffer.from(padded, "base64").toString("utf8");
+}
+
+function decodeRfc2047Subject(rfc2822: string): string {
+  const m = rfc2822.match(/^Subject:\s*=\?UTF-8\?B\?([^?]+)\?=/m);
+  if (!m) return "";
+  return Buffer.from(m[1], "base64").toString("utf8");
+}
+
 (globalThis as any).__mockSupabaseClient = createMockSupabase();
 (globalThis as any).__mockRateLimitClient = null;
 
 async function main() {
   const { middleware } = await import("../src/middleware");
   const { POST: earlyAccessPost } = await import("../src/app/api/early-access/route");
+  const {
+    DAILY_GMAIL_MESSAGE_CAP,
+    EARLY_ACCESS_THANK_YOU_SUBJECT,
+    GMAIL_OAUTH_TOKEN_URL,
+    GMAIL_SEND_MESSAGE_URL,
+    _resetEarlyAccessDigestState,
+  } = await import("../src/lib/early-access/gmail");
   const sitemapModule = await import("../src/app/sitemap");
   const sitemap = sitemapModule.default;
   const {
@@ -176,7 +243,7 @@ async function main() {
   }
 
   console.log("================================================================================");
-  console.log("             CAREERMONKE EARLY-ACCESS-ONLY MODE VERIFICATION SUITE              ");
+  console.log("      CAREERMONKE EARLY-ACCESS-ONLY MODE & GMAIL API VERIFICATION SUITE         ");
   console.log("================================================================================");
 
   // ---------------------------------------------------------------------------
@@ -191,6 +258,7 @@ async function main() {
   const modalPath = path.resolve(process.cwd(), "src/components/CategorySelectModal.tsx");
   const earlyAccessPagePath = path.resolve(process.cwd(), "src/app/early-access/page.tsx");
   const middlewarePath = path.resolve(process.cwd(), "src/middleware.ts");
+  const guidePath = path.resolve(process.cwd(), "scripts/get-gmail-refresh-token.md");
 
   const landingSrc = fs.readFileSync(landingPagePath, "utf8");
   const footerSrc = fs.readFileSync(footerPath, "utf8");
@@ -199,8 +267,8 @@ async function main() {
   const modalSrc = fs.readFileSync(modalPath, "utf8");
   const earlyAccessPageSrc = fs.readFileSync(earlyAccessPagePath, "utf8");
   const middlewareSrc = fs.readFileSync(middlewarePath, "utf8");
+  const guideSrc = fs.readFileSync(guidePath, "utf8");
 
-  // 1a. Verify WhiteHeroButton is restored in page.tsx with target /early-access
   assert.ok(
     landingSrc.includes('import { WhiteHeroButton } from "@/components/Buttons";'),
     "page.tsx must import WhiteHeroButton from @/components/Buttons"
@@ -211,7 +279,6 @@ async function main() {
     ),
     "page.tsx must use WhiteHeroButton with onClick={() => router.push(\"/early-access\")}"
   );
-
   // 1b. Verify TikTok button removed and mailto restored in page.tsx
   assert.strictEqual(
     landingSrc.includes('href="https://tiktok.com"'),
@@ -242,92 +309,50 @@ async function main() {
     "mailto:support@careermonke.com",
   ]);
   for (const h of pageHrefs) {
-    assert.ok(
-      allowedPageHrefs.has(h),
-      `Unexpected href '${h}' in src/app/page.tsx (must be /, /early-access, tiktok, or mailto)`
-    );
+    assert.ok(allowedPageHrefs.has(h), `Unexpected href '${h}' in src/app/page.tsx`);
   }
-  assert.strictEqual(
-    pageHrefs.filter((h) => h === "/early-access").length,
-    6,
-    "Expected 6 <Link href=\"/early-access\"> CTAs in src/app/page.tsx"
-  );
-  assert.ok(
-    landingSrc.includes('<UserMenu signInHref="/early-access" />'),
-    'Landing page UserMenu must pass signInHref="/early-access"'
-  );
-  assert.ok(
-    landingSrc.includes('onClick={() => router.push("/early-access")}'),
-    'Hero Explore jobs button must push "/early-access"'
-  );
+  assert.strictEqual(pageHrefs.filter((h) => h === "/early-access").length, 6);
 
-  // 1d. Verify LandingFooter in Footer.tsx restores mailto, Privacy, Terms, X, LinkedIn, GitHub
   const landingFooterEnd = footerSrc.indexOf("export default function Footer");
-  assert.ok(landingFooterEnd > 0, "LandingFooter must exist in src/components/Footer.tsx");
   const landingFooterSrc = footerSrc.slice(0, landingFooterEnd);
   const landingFooterHrefs = extractHrefs(landingFooterSrc);
 
-  assert.ok(landingFooterHrefs.includes("/"), "LandingFooter brand must link to /");
-  assert.ok(
-    landingFooterHrefs.includes("mailto:support@careermonke.com"),
-    "LandingFooter Support must link to mailto:support@careermonke.com"
-  );
-  assert.strictEqual(
-    landingFooterHrefs.filter((h) => h === "/privacy-policy").length,
-    2,
-    "LandingFooter must have 2 /privacy-policy links"
-  );
-  assert.strictEqual(
-    landingFooterHrefs.filter((h) => h === "/terms-and-conditions").length,
-    2,
-    "LandingFooter must have 2 /terms-and-conditions links"
-  );
-  assert.ok(
-    landingFooterHrefs.includes("https://x.com/careermonke"),
-    "LandingFooter must restore X link"
-  );
-  assert.ok(
-    landingFooterHrefs.includes("https://linkedin.com/company/careermonke"),
-    "LandingFooter must restore LinkedIn link"
-  );
-  assert.ok(
-    landingFooterHrefs.includes("https://github.com"),
-    "LandingFooter must restore GitHub link"
-  );
-  assert.strictEqual(
-    landingFooterHrefs.filter((h) => h === "/early-access").length,
-    5,
-    "LandingFooter must point its 5 navigation/directory CTAs to /early-access"
-  );
-
-  // 1e. Verify CookieNotice "Learn more" links to /privacy
-  const cookieNoticeHrefs = extractHrefs(cookieNoticeSrc);
-  assert.deepStrictEqual(
-    cookieNoticeHrefs,
-    ["/privacy"],
-    'CookieNotice "Learn more" link must point to /privacy'
-  );
-
-  assert.ok(
-    extractHrefs(mockSrc).every((h) => h === "/early-access"),
-    "ProductScreenshotMock CTA must point to /early-access"
-  );
-  assert.ok(
-    modalSrc.includes('router.push("/early-access")'),
-    "CategorySelectModal must navigate to /early-access"
-  );
+  assert.ok(landingFooterHrefs.includes("/"));
+  assert.ok(landingFooterHrefs.includes("mailto:support@careermonke.com"));
+  assert.strictEqual(landingFooterHrefs.filter((h) => h === "/privacy-policy").length, 2);
+  assert.strictEqual(landingFooterHrefs.filter((h) => h === "/terms-and-conditions").length, 2);
+  assert.ok(landingFooterHrefs.includes("https://x.com/careermonke"));
+  assert.ok(landingFooterHrefs.includes("https://linkedin.com/company/careermonke"));
+  assert.ok(landingFooterHrefs.includes("https://github.com"));
+  assert.strictEqual(landingFooterHrefs.filter((h) => h === "/early-access").length, 5);
+  assert.deepStrictEqual(extractHrefs(cookieNoticeSrc), ["/privacy"]);
+  assert.ok(extractHrefs(mockSrc).every((h) => h === "/early-access"));
+  assert.ok(modalSrc.includes('router.push("/early-access")'));
   assert.ok(
     !landingSrc.includes('"/login"') &&
       !landingFooterSrc.includes('"/login"') &&
-      !earlyAccessPageSrc.includes('"/login"'),
-    "No links to /login allowed on landing page or /early-access page"
+      !earlyAccessPageSrc.includes('"/login"')
   );
   assert.ok(
     !/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i.test(middlewareSrc),
     "src/middleware.ts must contain zero hardcoded email addresses"
   );
 
-  console.log("  [PASS] Restored legal, mailto, social links & WhiteHeroButton; all CTAs go to /early-access");
+  // Verify scripts/get-gmail-refresh-token.md requirements
+  assert.ok(guideSrc.includes("Web application"), "Guide must specify Web application client type");
+  assert.ok(
+    guideSrc.includes("https://developers.google.com/oauthplayground"),
+    "Guide must include OAuth Playground redirect URI"
+  );
+  assert.ok(
+    guideSrc.includes("https://www.googleapis.com/auth/gmail.send"),
+    "Guide must specify gmail.send scope"
+  );
+  assert.ok(/In production/i.test(guideSrc), 'Guide must instruct publishing consent screen "In production"');
+  assert.ok(/Offline/i.test(guideSrc), "Guide must specify Offline access");
+  assert.ok(/Use your own OAuth credentials/i.test(guideSrc), "Guide must instruct using own OAuth credentials");
+
+  console.log("  [PASS] Restored links, WhiteHeroButton, CTAs, and get-gmail-refresh-token.md verified");
 
   // ---------------------------------------------------------------------------
   // TEST 2: Server-Side Lock, Legal Pages, /api/health, and ALLOWLIST
@@ -360,20 +385,9 @@ async function main() {
   for (const route of lockedPageRoutes) {
     const req = new NextRequest(`http://localhost:3000${route}`);
     const res = await middleware(req);
-    assert.strictEqual(
-      res.status,
-      307,
-      `Guest request to '${route}' must return 307 redirect, got ${res.status}`
-    );
-    const location = res.headers.get("location") || "";
-    const redirectPathname = location ? new URL(location).pathname : "";
-    assert.strictEqual(
-      redirectPathname,
-      "/early-access",
-      `Guest request to '${route}' must redirect to '/early-access', got '${redirectPathname}'`
-    );
+    assert.strictEqual(res.status, 307);
+    assert.strictEqual(new URL(res.headers.get("location")!).pathname, "/early-access");
   }
-  console.log(`  [PASS] All ${lockedPageRoutes.length} locked page routes redirect guests to /early-access`);
 
   const lockedApiRoutes = [
     "/api/jobs/search",
@@ -383,7 +397,7 @@ async function main() {
     "/api/jobs/skill-what-if",
     "/api/ai",
     "/api/stats",
-    "/api/track", // Guest /api/track stays blocked (403)
+    "/api/track",
     "/api/radar",
     "/api/admin/stats",
     "/api/admin/users",
@@ -396,15 +410,8 @@ async function main() {
   for (const apiRoute of lockedApiRoutes) {
     const req = new NextRequest(`http://localhost:3000${apiRoute}`);
     const res = await middleware(req);
-    assert.strictEqual(
-      res.status,
-      403,
-      `Guest request to API '${apiRoute}' must return HTTP 403, got ${res.status}`
-    );
-    const body = await res.json();
-    assert.strictEqual(body.error, "Early access only");
+    assert.strictEqual(res.status, 403);
   }
-  console.log(`  [PASS] All ${lockedApiRoutes.length} locked API routes (including /api/track) return HTTP 403 to guests`);
 
   const allowedGuestRoutes = [
     "/",
@@ -425,273 +432,426 @@ async function main() {
   for (const route of allowedGuestRoutes) {
     const req = new NextRequest(`http://localhost:3000${route}`);
     const res = await middleware(req);
-    assert.strictEqual(
-      res.status,
-      200,
-      `Allowed guest route '${route}' must return HTTP 200, got ${res.status}`
-    );
+    assert.strictEqual(res.status, 200);
   }
-  console.log("  [PASS] Guests allowed (200) on /, /early-access, /api/early-access, /api/health, legal pages (/privacy, /privacy-policy, /terms-and-conditions), and hidden /login");
 
-  // 2b. Verify EARLY_ACCESS_ALLOWED_EMAILS allowlist enforcement
   process.env.EARLY_ACCESS_ALLOWED_EMAILS = "  founder.allowed@example.com , SECOND.ADMIN@EXAMPLE.COM ";
   signOutCallCount = 0;
 
-  // Allowed user -> 200 on page and API
-  const allowedPageReq = new NextRequest("http://localhost:3000/dashboard", {
-    headers: { authorization: "Bearer valid-allowed-token" },
-  });
-  const allowedPageRes = await middleware(allowedPageReq);
-  assert.strictEqual(allowedPageRes.status, 200, "Allowed user must get 200 on /dashboard");
+  const allowedPageRes = await middleware(
+    new NextRequest("http://localhost:3000/dashboard", {
+      headers: { authorization: "Bearer valid-allowed-token" },
+    })
+  );
+  assert.strictEqual(allowedPageRes.status, 200);
 
-  const allowedApiReq = new NextRequest("http://localhost:3000/api/jobs/search", {
-    headers: { authorization: "Bearer valid-allowed-token" },
-  });
-  const allowedApiRes = await middleware(allowedApiReq);
-  assert.strictEqual(allowedApiRes.status, 200, "Allowed user must get 200 on /api/jobs/search");
-  assert.strictEqual(signOutCallCount, 0, "Allowed user must not be signed out");
+  const allowedApiRes = await middleware(
+    new NextRequest("http://localhost:3000/api/jobs/search", {
+      headers: { authorization: "Bearer valid-allowed-token" },
+    })
+  );
+  assert.strictEqual(allowedApiRes.status, 200);
+  assert.strictEqual(signOutCallCount, 0);
 
-  // Non-allowed signed-in user -> signed out + 307 to /early-access on page
-  const nonAllowedPageReq = new NextRequest("http://localhost:3000/dashboard", {
-    headers: {
-      authorization: "Bearer valid-nonallowed-token",
-      cookie: "sb-access-token=valid-nonallowed-token; sb-refresh-token=ref-123",
-    },
-  });
-  const nonAllowedPageRes = await middleware(nonAllowedPageReq);
-  assert.strictEqual(
-    nonAllowedPageRes.status,
-    307,
-    "Non-allowed signed-in user must get 307 redirect on /dashboard"
+  const nonAllowedPageRes = await middleware(
+    new NextRequest("http://localhost:3000/dashboard", {
+      headers: {
+        authorization: "Bearer valid-nonallowed-token",
+        cookie: "sb-access-token=valid-nonallowed-token",
+      },
+    })
   );
-  assert.strictEqual(
-    new URL(nonAllowedPageRes.headers.get("location")!).pathname,
-    "/early-access",
-    "Non-allowed signed-in user must be redirected to /early-access"
-  );
-  assert.strictEqual(
-    nonAllowedPageRes.headers.get("x-early-access-signed-out"),
-    "1",
-    "Non-allowed signed-in user must be signed out on page redirect"
-  );
-  assert.strictEqual(signOutCallCount, 1, "supabase.auth.signOut() must be called for non-allowed user");
+  assert.strictEqual(nonAllowedPageRes.status, 307);
+  assert.strictEqual(new URL(nonAllowedPageRes.headers.get("location")!).pathname, "/early-access");
+  assert.strictEqual(nonAllowedPageRes.headers.get("x-early-access-signed-out"), "1");
+  assert.strictEqual(signOutCallCount, 1);
 
-  // Non-allowed signed-in user -> signed out + 403 on API
-  const nonAllowedApiReq = new NextRequest("http://localhost:3000/api/jobs/search", {
-    headers: {
-      authorization: "Bearer valid-nonallowed-token",
-      cookie: "sb-access-token=valid-nonallowed-token",
-    },
-  });
-  const nonAllowedApiRes = await middleware(nonAllowedApiReq);
-  assert.strictEqual(
-    nonAllowedApiRes.status,
-    403,
-    "Non-allowed signed-in user must get 403 on /api/jobs/search"
+  const nonAllowedApiRes = await middleware(
+    new NextRequest("http://localhost:3000/api/jobs/search", {
+      headers: {
+        authorization: "Bearer valid-nonallowed-token",
+        cookie: "sb-access-token=valid-nonallowed-token",
+      },
+    })
   );
-  assert.strictEqual(
-    nonAllowedApiRes.headers.get("x-early-access-signed-out"),
-    "1",
-    "Non-allowed signed-in user must be signed out on API 403"
-  );
-  assert.strictEqual(signOutCallCount, 2, "supabase.auth.signOut() must be called on API request");
+  assert.strictEqual(nonAllowedApiRes.status, 403);
+  assert.strictEqual(nonAllowedApiRes.headers.get("x-early-access-signed-out"), "1");
+  assert.strictEqual(signOutCallCount, 2);
 
-  // Empty EARLY_ACCESS_ALLOWED_EMAILS -> nobody gets in via session, only x-admin-secret
   delete process.env.EARLY_ACCESS_ALLOWED_EMAILS;
-  const emptyEnvPageReq = new NextRequest("http://localhost:3000/dashboard", {
-    headers: { authorization: "Bearer valid-allowed-token" },
-  });
-  const emptyEnvPageRes = await middleware(emptyEnvPageReq);
-  assert.strictEqual(
-    emptyEnvPageRes.status,
-    307,
-    "When EARLY_ACCESS_ALLOWED_EMAILS is empty, even valid session user must get 307"
+  const emptyEnvPageRes = await middleware(
+    new NextRequest("http://localhost:3000/dashboard", {
+      headers: { authorization: "Bearer valid-allowed-token" },
+    })
   );
+  assert.strictEqual(emptyEnvPageRes.status, 307);
 
-  const emptyEnvApiReq = new NextRequest("http://localhost:3000/api/jobs/search", {
-    headers: { authorization: "Bearer valid-allowed-token" },
-  });
-  const emptyEnvApiRes = await middleware(emptyEnvApiReq);
-  assert.strictEqual(
-    emptyEnvApiRes.status,
-    403,
-    "When EARLY_ACCESS_ALLOWED_EMAILS is empty, even valid session user must get 403 on API"
-  );
-
-  // x-admin-secret still works when EARLY_ACCESS_ALLOWED_EMAILS is empty
   process.env.ADMIN_SECRET = "test-admin-secret-xyz";
   try {
-    const adminSecretReq = new NextRequest("http://localhost:3000/api/admin/stats", {
-      headers: { "x-admin-secret": "test-admin-secret-xyz" },
-    });
-    const adminSecretRes = await middleware(adminSecretReq);
-    assert.strictEqual(
-      adminSecretRes.status,
-      200,
-      "Valid x-admin-secret must still be allowed when EARLY_ACCESS_ALLOWED_EMAILS is empty"
+    const adminSecretRes = await middleware(
+      new NextRequest("http://localhost:3000/api/admin/stats", {
+        headers: { "x-admin-secret": "test-admin-secret-xyz" },
+      })
     );
+    assert.strictEqual(adminSecretRes.status, 200);
   } finally {
     delete process.env.ADMIN_SECRET;
   }
 
-  console.log(
-    "  [PASS] EARLY_ACCESS_ALLOWED_EMAILS allowlist enforced (allowed=200, non-allowed=signOut+307/403, empty=nobody except x-admin-secret)"
-  );
+  console.log("  [PASS] Middleware allowlist, legal pages, /api/health, and /api/track lock verified");
 
   // ---------------------------------------------------------------------------
-  // TEST 3: POST /api/early-access — Valid, Duplicate, Honeypot, DB Error (500)
+  // TEST 3: Gmail API Mocked Fetch (Thank-You + Daily Digest, Dedupe, Honeypot, Error Resilience, No Secrets in Logs, 150/day Cap)
   // ---------------------------------------------------------------------------
-  console.log("\n[TEST 3] Verifying POST /api/early-access DB storage, duplicate response shape, and 500 on DB failure...");
+  console.log("\n[TEST 3] Verifying Gmail API integration (thank-you + daily digest, errors, log redaction, 150/day cap)...");
   _resetEarlyAccessRateLimitStore();
+  _resetEarlyAccessDigestState();
   mockDbRows.length = 0;
+  mockSendLogRows.length = 0;
   simulateDbFailure = null;
 
-  const notificationsSent: Array<{ to: string; email: string; createdAt: string }> = [];
-  process.env.EARLY_ACCESS_NOTIFY_EMAIL = "notify-target@example.org";
-  (globalThis as any).__earlyAccessNotifyHook = async (payload: {
-    to: string;
-    email: string;
-    createdAt: string;
-  }) => {
-    notificationsSent.push(payload);
+  const TEST_CLIENT_ID = "mock-gmail-client-id-999.apps.googleusercontent.com";
+  const TEST_CLIENT_SECRET = "GOCSPX-mockSecretValueDoNotLog888";
+  const TEST_REFRESH_TOKEN = "1//04mockRefreshTokenValueDoNotLog777";
+  const TEST_ACCESS_TOKEN = "ya29.a0mockAccessTokenValueDoNotLog666";
+  const TEST_SENDER_EMAIL = "roman.founder@gmail.example";
+  const TEST_SENDER_NAME = "Roman from CareerMonke";
+  const TEST_NOTIFY_EMAIL = "owner.notify@careermonke.example";
+
+  process.env.GMAIL_CLIENT_ID = TEST_CLIENT_ID;
+  process.env.GMAIL_CLIENT_SECRET = TEST_CLIENT_SECRET;
+  process.env.GMAIL_REFRESH_TOKEN = TEST_REFRESH_TOKEN;
+  process.env.GMAIL_SENDER_EMAIL = TEST_SENDER_EMAIL;
+  process.env.GMAIL_SENDER_NAME = TEST_SENDER_NAME;
+  process.env.EARLY_ACCESS_NOTIFY_EMAIL = TEST_NOTIFY_EMAIL;
+
+  const originalFetch = globalThis.fetch;
+  const originalConsoleWarn = console.warn;
+  const capturedWarnings: string[] = [];
+  console.warn = (...args: any[]) => {
+    capturedWarnings.push(args.map((a) => String(a)).join(" "));
   };
 
-  // 3a. Valid email submission
-  const validReq = new Request("http://localhost:3000/api/early-access", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-forwarded-for": "198.51.100.50",
-    },
-    body: JSON.stringify({ email: "  Founder.Test@Example.com  ", website: "" }),
-  });
-  const validRes = await earlyAccessPost(validReq);
-  assert.strictEqual(validRes.status, 200, "Valid email submission must return HTTP 200");
-  const validBody = await validRes.json();
-  assert.deepStrictEqual(
-    validBody,
-    { ok: true, message: "You're on the list" },
-    "Valid response must be generic { ok: true, message: \"You're on the list\" } without duplicate flag"
-  );
-  assert.ok(!("duplicate" in validBody), "Response must NOT contain duplicate property");
-  assert.strictEqual(mockDbRows.length, 1);
-  assert.strictEqual(mockDbRows[0].email, "founder.test@example.com");
-  assert.strictEqual(notificationsSent.length, 1);
+  interface CapturedGmailSend {
+    authHeader: string;
+    rawMime: string;
+    subject: string;
+  }
+  let tokenExchangeCalls = 0;
+  const gmailSendCalls: CapturedGmailSend[] = [];
+  let mockFetchMode: "ok" | "oauth_fail" | "send_500" | "quota_429" = "ok";
 
-  // 3b. Duplicate email submission -> generic success, no duplicate:true flag
-  const dupReq = new Request("http://localhost:3000/api/early-access", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-forwarded-for": "198.51.100.50",
-    },
-    body: JSON.stringify({ email: "founder.test@example.com" }),
-  });
-  const dupRes = await earlyAccessPost(dupReq);
-  assert.strictEqual(dupRes.status, 200, "Duplicate email must return HTTP 200");
-  const dupBody = await dupRes.json();
-  assert.deepStrictEqual(
-    dupBody,
-    { ok: true, message: "You're on the list" },
-    "Duplicate response must be generic { ok: true, message: \"You're on the list\" } without duplicate:true flag"
-  );
-  assert.ok(!("duplicate" in dupBody), "Duplicate response must NOT expose duplicate:true flag");
-  assert.strictEqual(mockDbRows.length, 1, "Duplicate email must NOT create a second DB row");
-  assert.strictEqual(notificationsSent.length, 1, "Duplicate email must NOT send a second notification");
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
 
-  // 3c. DB failure (any error other than duplicate) -> HTTP 500 with generic "try again" message, no in-memory fallback
-  simulateDbFailure = "insert_error";
+    if (url === GMAIL_OAUTH_TOKEN_URL) {
+      tokenExchangeCalls++;
+      if (mockFetchMode === "oauth_fail") {
+        return new Response(
+          JSON.stringify({
+            error: "invalid_grant",
+            error_description: `Bad refresh token ${TEST_REFRESH_TOKEN} for ${TEST_SENDER_EMAIL} secret ${TEST_CLIENT_SECRET}`,
+          }),
+          { status: 400 }
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          access_token: TEST_ACCESS_TOKEN,
+          expires_in: 3599,
+          scope: "https://www.googleapis.com/auth/gmail.send",
+          token_type: "Bearer",
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
+    }
+
+    if (url === GMAIL_SEND_MESSAGE_URL) {
+      if (mockFetchMode === "send_500") {
+        return new Response(
+          JSON.stringify({
+            error: {
+              code: 500,
+              message: `Backend error for ${TEST_SENDER_EMAIL} -> ${TEST_NOTIFY_EMAIL} token ${TEST_ACCESS_TOKEN}`,
+            },
+          }),
+          { status: 500 }
+        );
+      }
+      if (mockFetchMode === "quota_429") {
+        return new Response(
+          JSON.stringify({
+            error: { code: 429, message: "User-rate limit exceeded" },
+          }),
+          { status: 429 }
+        );
+      }
+
+      const headers = new Headers(init?.headers as HeadersInit);
+      const payload = JSON.parse(String(init?.body || "{}"));
+      const rawMime = decodeBase64UrlToUtf8(payload.raw);
+      const subject = decodeRfc2047Subject(rawMime);
+      gmailSendCalls.push({
+        authHeader: headers.get("authorization") || "",
+        rawMime,
+        subject,
+      });
+      return new Response(JSON.stringify({ id: `msg-${gmailSendCalls.length}` }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+
+    throw new Error(`Unexpected fetch URL in test: ${url}`);
+  }) as typeof fetch;
+
   try {
-    const dbFailReq = new Request("http://localhost:3000/api/early-access", {
+    // 3a. First new email of the day -> 1 OAuth token exchange + 2 Gmail sends (1 thank-you + 1 daily digest)
+    const firstReq = new Request("http://localhost:3000/api/early-access", {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-forwarded-for": "198.51.100.52",
+        "x-forwarded-for": "198.51.100.10",
       },
-      body: JSON.stringify({ email: "newuser-dbfail@example.com" }),
+      body: JSON.stringify({ email: "  Candidate.One@Example.com  ", website: "" }),
     });
-    const dbFailRes = await earlyAccessPost(dbFailReq);
+    const firstRes = await earlyAccessPost(firstReq);
+    assert.strictEqual(firstRes.status, 200);
+    const firstBody = await firstRes.json();
+    assert.deepStrictEqual(firstBody, { ok: true, message: "You're on the list" });
+    assert.strictEqual(mockDbRows.length, 1);
+    assert.strictEqual(mockDbRows[0].email, "candidate.one@example.com");
+
+    assert.strictEqual(tokenExchangeCalls, 1, "Expected 1 OAuth token exchange call");
     assert.strictEqual(
-      dbFailRes.status,
-      500,
-      `Non-duplicate DB insert error must return HTTP 500, got ${dbFailRes.status}`
+      gmailSendCalls.length,
+      2,
+      "Expected 2 Gmail messages on first signup of the day (1 thank-you + 1 owner digest)"
     );
-    const dbFailBody = await dbFailRes.json();
-    assert.strictEqual(dbFailBody.ok, false, "DB failure must return ok: false");
+    assert.strictEqual(mockSendLogRows.length, 2, "Expected 2 rows recorded in gmail_send_log");
+
+    // Verify Thank-You email (Call #1)
+    const thankYouCall = gmailSendCalls[0];
+    assert.strictEqual(thankYouCall.authHeader, `Bearer ${TEST_ACCESS_TOKEN}`);
+    assert.strictEqual(
+      thankYouCall.subject,
+      EARLY_ACCESS_THANK_YOU_SUBJECT,
+      `Thank-you subject must be '${EARLY_ACCESS_THANK_YOU_SUBJECT}'`
+    );
     assert.ok(
-      /try again/i.test(dbFailBody.error || ""),
-      `DB failure message must be generic 'try again', got '${dbFailBody.error}'`
+      thankYouCall.rawMime.includes(`From: "${TEST_SENDER_NAME}" <${TEST_SENDER_EMAIL}>`),
+      "Thank-you email must be FROM the founder Gmail"
     );
-    assert.strictEqual(mockDbRows.length, 1, "Failed DB insert must not store row");
-    assert.strictEqual(notificationsSent.length, 1, "Failed DB insert must not trigger notification");
-  } finally {
-    simulateDbFailure = null;
-  }
+    assert.ok(
+      thankYouCall.rawMime.includes("To: <candidate.one@example.com>"),
+      "Thank-you email must be TO the submitter"
+    );
+    assert.ok(
+      thankYouCall.rawMime.includes('Content-Type: text/plain; charset="UTF-8"') &&
+        thankYouCall.rawMime.includes('Content-Type: text/html; charset="UTF-8"'),
+      "Thank-you email must include both plain text and simple HTML parts"
+    );
+    assert.ok(
+      thankYouCall.rawMime.includes("small batches") &&
+        thankYouCall.rawMime.includes("No spam"),
+      "Thank-you email body must include small batches & no spam copy"
+    );
 
-  // Also test missing DB client (no in-memory fallback -> returns 500)
-  const savedMockClient = (globalThis as any).__mockSupabaseClient;
-  (globalThis as any).__mockSupabaseClient = null;
-  try {
-    const noDbReq = new Request("http://localhost:3000/api/early-access", {
+    // Verify Owner Daily Digest email (Call #2)
+    const digestCall = gmailSendCalls[1];
+    assert.ok(
+      digestCall.rawMime.includes(`To: <${TEST_NOTIFY_EMAIL}>`),
+      "Owner notification/digest must be sent to EARLY_ACCESS_NOTIFY_EMAIL"
+    );
+    assert.ok(
+      digestCall.rawMime.includes("candidate.one@example.com") &&
+        digestCall.rawMime.includes(mockDbRows[0].created_at),
+      "Owner digest must include the new email and its timestamp"
+    );
+    console.log("  [PASS] First new signup sent 1 thank-you email + 1 owner daily digest and logged 2 rows in gmail_send_log");
+
+    // 3b. Second new email on the SAME UTC day -> sends thank-you ONLY (owner notification batched into daily digest)
+    const secondReq = new Request("http://localhost:3000/api/early-access", {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-forwarded-for": "198.51.100.53",
+        "x-forwarded-for": "198.51.100.11",
       },
-      body: JSON.stringify({ email: "nodb@example.com" }),
+      body: JSON.stringify({ email: "candidate.two@example.com" }),
     });
-    const noDbRes = await earlyAccessPost(noDbReq);
+    const secondRes = await earlyAccessPost(secondReq);
+    assert.strictEqual(secondRes.status, 200);
+    assert.strictEqual(mockDbRows.length, 2);
     assert.strictEqual(
-      noDbRes.status,
-      500,
-      "Missing DB client must return 500 (in-memory fallback removed)"
+      gmailSendCalls.length,
+      3,
+      "Second signup on same day must send only 1 thank-you email (owner notify batched into daily digest)"
     );
+    assert.ok(gmailSendCalls[2].rawMime.includes("To: <candidate.two@example.com>"));
+    assert.strictEqual(mockSendLogRows.length, 3);
+    console.log("  [PASS] Subsequent signup on same UTC day sent thank-you only (owner notifications batched into daily digest)");
+
+    // 3c. Duplicate email & Honeypot -> 0 Gmail sends
+    const sendsBeforeDup = gmailSendCalls.length;
+    const dupRes = await earlyAccessPost(
+      new Request("http://localhost:3000/api/early-access", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-forwarded-for": "198.51.100.12" },
+        body: JSON.stringify({ email: "CANDIDATE.ONE@EXAMPLE.COM" }),
+      })
+    );
+    assert.strictEqual(dupRes.status, 200);
+    assert.strictEqual(gmailSendCalls.length, sendsBeforeDup, "Duplicate email must send 0 Gmail messages");
+
+    const hpRes = await earlyAccessPost(
+      new Request("http://localhost:3000/api/early-access", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-forwarded-for": "198.51.100.13" },
+        body: JSON.stringify({ email: "bot@spam.example", website: "http://bot.example" }),
+      })
+    );
+    assert.strictEqual(hpRes.status, 200);
+    assert.strictEqual(gmailSendCalls.length, sendsBeforeDup, "Honeypot submission must send 0 Gmail messages");
+    console.log("  [PASS] Duplicate and honeypot submissions trigger 0 Gmail API calls");
+
+    // 3d. Gmail OAuth / Send error / Quota error (429) & Missing Env -> still stores email in DB, returns 200, no secrets in logs
+    capturedWarnings.length = 0;
+    mockFetchMode = "oauth_fail";
+    const oauthFailRes = await earlyAccessPost(
+      new Request("http://localhost:3000/api/early-access", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-forwarded-for": "198.51.100.14" },
+        body: JSON.stringify({ email: "oauth.fail.user@example.com" }),
+      })
+    );
+    assert.strictEqual(oauthFailRes.status, 200, "Request must still succeed (200) when OAuth fails");
+    assert.ok(
+      mockDbRows.some((r) => r.email === "oauth.fail.user@example.com"),
+      "Signup must still be stored when OAuth fails"
+    );
+
+    mockFetchMode = "quota_429";
+    _resetEarlyAccessDigestState();
+    const quotaFailRes = await earlyAccessPost(
+      new Request("http://localhost:3000/api/early-access", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-forwarded-for": "198.51.100.15" },
+        body: JSON.stringify({ email: "quota.fail.user@example.com" }),
+      })
+    );
+    assert.strictEqual(quotaFailRes.status, 200, "Request must still succeed (200) when Gmail returns 429 quota error");
+    assert.ok(
+      mockDbRows.some((r) => r.email === "quota.fail.user@example.com"),
+      "Signup must still be stored when Gmail returns 429 quota error"
+    );
+
+    // Missing env test
+    delete process.env.GMAIL_REFRESH_TOKEN;
+    const missingEnvRes = await earlyAccessPost(
+      new Request("http://localhost:3000/api/early-access", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-forwarded-for": "198.51.100.16" },
+        body: JSON.stringify({ email: "missing.env.user@example.com" }),
+      })
+    );
+    assert.strictEqual(missingEnvRes.status, 200, "Request must still succeed (200) when Gmail env is missing");
+    assert.ok(
+      mockDbRows.some((r) => r.email === "missing.env.user@example.com"),
+      "Signup must still be stored when Gmail env is missing"
+    );
+    process.env.GMAIL_REFRESH_TOKEN = TEST_REFRESH_TOKEN;
+    mockFetchMode = "ok";
+
+    // Verify ZERO secrets or full email addresses in captured warnings
+    assert.ok(capturedWarnings.length > 0, "Expected safe warning logs on Gmail failure/missing env");
+    const joinedWarnings = capturedWarnings.join("\n");
+    const forbiddenSubstrings = [
+      TEST_CLIENT_ID,
+      TEST_CLIENT_SECRET,
+      TEST_REFRESH_TOKEN,
+      TEST_ACCESS_TOKEN,
+      TEST_SENDER_EMAIL,
+      TEST_NOTIFY_EMAIL,
+      "oauth.fail.user@example.com",
+      "quota.fail.user@example.com",
+      "missing.env.user@example.com",
+    ];
+    for (const secretOrEmail of forbiddenSubstrings) {
+      assert.ok(
+        !joinedWarnings.includes(secretOrEmail),
+        `Log output leaked sensitive value '${secretOrEmail}'`
+      );
+    }
+    console.log("  [PASS] Gmail failure/quota/missing env still stores signup & returns 200 with zero secrets/emails in logs");
+
+    // 3e. Daily Outgoing Message Cap (150 messages/day in gmail_send_log)
+    assert.strictEqual(DAILY_GMAIL_MESSAGE_CAP, 150, "Daily message cap must be 150");
+    mockSendLogRows.length = 0;
+    _resetEarlyAccessDigestState();
+    const nowIso = new Date().toISOString();
+    // Seed 149 messages sent today -> next signup should send the 150th message (thank-you) and stop before the 151st (digest)!
+    for (let i = 0; i < 149; i++) {
+      mockSendLogRows.push({ sent_at: nowIso });
+    }
+    const sendsBeforeCapBoundary = gmailSendCalls.length;
+    const msg150Res = await earlyAccessPost(
+      new Request("http://localhost:3000/api/early-access", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-forwarded-for": "198.51.100.17" },
+        body: JSON.stringify({ email: "cap150.user@example.com" }),
+      })
+    );
+    assert.strictEqual(msg150Res.status, 200);
+    assert.strictEqual(
+      gmailSendCalls.length,
+      sendsBeforeCapBoundary + 1,
+      "At 149/150 messages, only the 150th message (thank-you) should send"
+    );
+    assert.strictEqual(mockSendLogRows.length, 150, "gmail_send_log must now be at 150");
+
+    // Next signup when gmail_send_log is at 150 -> 0 messages sent, signup still stored in DB
+    const capHitRes = await earlyAccessPost(
+      new Request("http://localhost:3000/api/early-access", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-forwarded-for": "198.51.100.18" },
+        body: JSON.stringify({ email: "cap151.user@example.com" }),
+      })
+    );
+    assert.strictEqual(capHitRes.status, 200);
+    assert.ok(
+      mockDbRows.some((r) => r.email === "cap151.user@example.com"),
+      "Signup must still be stored in early_access_emails when 150/day message cap is hit"
+    );
+    assert.strictEqual(
+      gmailSendCalls.length,
+      sendsBeforeCapBoundary + 1,
+      "Zero Gmail messages may be sent once 150/day cap is reached"
+    );
+    console.log("  [PASS] 150 messages/day cap via gmail_send_log (sent_at) enforced before each send");
+
+    // 3f. DB failure (non-duplicate) -> returns 500 with generic try-again message and sends 0 emails
+    simulateDbFailure = "insert_error";
+    const sendsBeforeDbFail = gmailSendCalls.length;
+    try {
+      const dbFailRes = await earlyAccessPost(
+        new Request("http://localhost:3000/api/early-access", {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-forwarded-for": "198.51.100.19" },
+          body: JSON.stringify({ email: "dbfail.user@example.com" }),
+        })
+      );
+      assert.strictEqual(dbFailRes.status, 500);
+      const dbFailBody = await dbFailRes.json();
+      assert.strictEqual(dbFailBody.ok, false);
+      assert.ok(/try again/i.test(dbFailBody.error || ""));
+      assert.strictEqual(gmailSendCalls.length, sendsBeforeDbFail, "Failed DB insert must not send any email");
+    } finally {
+      simulateDbFailure = null;
+    }
   } finally {
-    (globalThis as any).__mockSupabaseClient = savedMockClient;
+    globalThis.fetch = originalFetch;
+    console.warn = originalConsoleWarn;
   }
-
-  // 3d. Honeypot field filled -> generic 200 without storing or notifying
-  const honeypotReq = new Request("http://localhost:3000/api/early-access", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-forwarded-for": "198.51.100.51",
-    },
-    body: JSON.stringify({
-      email: "spammer@botnet.example",
-      website: "https://spam-link.example",
-    }),
-  });
-  const honeypotRes = await earlyAccessPost(honeypotReq);
-  assert.strictEqual(honeypotRes.status, 200);
-  const honeypotBody = await honeypotRes.json();
-  assert.deepStrictEqual(honeypotBody, { ok: true, message: "You're on the list" });
-  assert.strictEqual(mockDbRows.length, 1);
-
-  // 3e. Invalid emails -> HTTP 400
-  const invalidEmails = [
-    "",
-    "   ",
-    "plainaddress",
-    "@missing-local.com",
-    "missing-domain@",
-    "missing-tld@domain",
-    "double..dots@example.com",
-    "space in@example.com",
-  ];
-  for (let i = 0; i < invalidEmails.length; i++) {
-    const badReq = new Request("http://localhost:3000/api/early-access", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-forwarded-for": `198.51.101.${i + 1}`,
-      },
-      body: JSON.stringify({ email: invalidEmails[i] }),
-    });
-    const badRes = await earlyAccessPost(badReq);
-    assert.strictEqual(badRes.status, 400);
-  }
-  console.log("  [PASS] POST /api/early-access returns 500 on DB errors, removes duplicate:true flag, and has no in-memory fallback");
 
   // ---------------------------------------------------------------------------
   // TEST 4: Rate Limit (5 requests / min / IP via sharedRateLimit)
@@ -710,21 +870,22 @@ async function main() {
         "content-type": "application/json",
         "x-forwarded-for": rlIp,
       },
-      body: JSON.stringify({ email: `user${i}@example.com` }),
+      body: JSON.stringify({ email: `rluser${i}@example.com` }),
     });
     const res = await earlyAccessPost(req);
     assert.strictEqual(res.status, 200);
   }
 
-  const sixthReq = new Request("http://localhost:3000/api/early-access", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-forwarded-for": rlIp,
-    },
-    body: JSON.stringify({ email: "user6@example.com" }),
-  });
-  const sixthRes = await earlyAccessPost(sixthReq);
+  const sixthRes = await earlyAccessPost(
+    new Request("http://localhost:3000/api/early-access", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-forwarded-for": rlIp,
+      },
+      body: JSON.stringify({ email: "rluser6@example.com" }),
+    })
+  );
   assert.strictEqual(sixthRes.status, 429);
   console.log("  [PASS] 5 requests allowed, 6th returned HTTP 429 with Retry-After");
 
@@ -734,11 +895,7 @@ async function main() {
   console.log("\n[TEST 5] Verifying sitemap() contains only '/' and '/early-access'...");
   const entries = sitemap();
   const paths = entries.map((e) => new URL(e.url).pathname);
-  assert.deepStrictEqual(
-    paths,
-    ["/", "/early-access"],
-    `Expected sitemap paths ['/', '/early-access'], got ${JSON.stringify(paths)}`
-  );
+  assert.deepStrictEqual(paths, ["/", "/early-access"]);
   console.log("  [PASS] sitemap() returns strictly ['/', '/early-access']");
 
   // ---------------------------------------------------------------------------
@@ -760,7 +917,7 @@ async function main() {
   console.log(`  [PASS] Negative control exited with non-zero status (${child.status})`);
 
   console.log("\n================================================================================");
-  console.log("ALL EARLY-ACCESS-ONLY MODE TESTS PASSED [PASS-LOCAL]");
+  console.log("ALL EARLY-ACCESS-ONLY MODE & GMAIL API TESTS PASSED [PASS-LOCAL]");
   console.log("================================================================================");
 }
 

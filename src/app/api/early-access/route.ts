@@ -11,6 +11,7 @@ import {
   getSupabaseAdminClient,
   getRuntimeEnv,
 } from "@/lib/ai/serviceHandler";
+import { dispatchEarlyAccessEmails } from "@/lib/early-access/gmail";
 
 export const runtime = "edge";
 
@@ -193,7 +194,7 @@ export async function POST(req: Request) {
           .insert({ email, created_at: createdAt });
 
         if (insertError) {
-          // Postgres unique constraint violation (23505) -> generic idempotent success
+          // Postgres unique constraint violation (23505) -> generic idempotent success, no email sent
           if (
             !isLegacy &&
             (insertError.code === "23505" || /duplicate key/i.test(insertError.message || ""))
@@ -220,22 +221,14 @@ export async function POST(req: Request) {
       }
     }
 
-    // Notification target read strictly from EARLY_ACCESS_NOTIFY_EMAIL env var (never hardcoded)
-    const notifyEmail = (
-      getRuntimeEnv("EARLY_ACCESS_NOTIFY_EMAIL", cfEnv) ||
-      process.env.EARLY_ACCESS_NOTIFY_EMAIL ||
-      ""
-    ).trim();
-
-    if (notifyEmail && typeof (globalThis as any).__earlyAccessNotifyHook === "function") {
-      try {
-        await (globalThis as any).__earlyAccessNotifyHook({
-          to: notifyEmail,
-          email,
-          createdAt,
-        });
-      } catch {}
-    }
+    // Send (a) thank-you email to submitter + (b) daily digest notification to EARLY_ACCESS_NOTIFY_EMAIL
+    // Any missing env, cap hit (150 messages/day), or Gmail error logs safely and still returns success.
+    await dispatchEarlyAccessEmails({
+      subscriberEmail: email,
+      createdAt,
+      supabaseClient,
+      cfEnv,
+    });
 
     return NextResponse.json({
       ok: true,
