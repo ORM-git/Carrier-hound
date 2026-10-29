@@ -284,6 +284,15 @@ export function extractCandidateRelevanceTerms(
 const PUBLIC_SELECT_COLUMNS =
   "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at";
 
+const DEGRADED_JOBS_RESULT: GetJobsResult = {
+  jobs: [],
+  totalCount: 0,
+  nextCursor: null,
+  hasNextPage: false,
+  isDegraded: true,
+  error: "degraded",
+};
+
 /**
  * Fetches live active jobs from Supabase with strict server/payload-level Pro gating.
  * When isPro is false, gated fields (company, salary, apply_url, description, skills)
@@ -355,17 +364,6 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       if (cursor) params.set("cursor", cursor);
 
       const res = await fetch(`/api/jobs/search?${params.toString()}`, { headers });
-      if (res.status === 503) {
-        const json = await res.json().catch(() => ({}));
-        return {
-          jobs: [],
-          totalCount: 0,
-          nextCursor: null,
-          hasNextPage: false,
-          isDegraded: true,
-          error: "degraded",
-        };
-      }
       if (res.ok) {
         const json = await res.json();
         return {
@@ -374,7 +372,10 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
           nextCursor: json.nextCursor ?? null,
           hasNextPage: Boolean(json.hasNextPage),
           isDegraded: Boolean(json.degraded),
+          ...(json.degraded ? { error: "degraded" } : {}),
         };
+      } else {
+        console.warn(`Server search responded with status ${res.status}, falling back to public preview query.`);
       }
     } catch (searchErr) {
       console.warn("Server search failed, falling back to public preview query:", searchErr);
@@ -563,6 +564,9 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         .range(0, 249);
 
       const res = await matchQuery;
+      if (res.error) {
+        return DEGRADED_JOBS_RESULT;
+      }
       let candidatePool = res.data || [];
       count = res.count;
 
@@ -660,6 +664,9 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
           .order("posted_at", { ascending: false, nullsFirst: false })
           .range(0, 249);
         const catRes = await catQuery;
+        if (catRes.error) {
+          return DEGRADED_JOBS_RESULT;
+        }
         candidatePool = catRes.data || [];
         count = catRes.count;
       }
@@ -668,6 +675,9 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         const fallbackRes = await query
           .order("posted_at", { ascending: false, nullsFirst: false })
           .range(from, to);
+        if (fallbackRes.error) {
+          return DEGRADED_JOBS_RESULT;
+        }
         data = fallbackRes.data;
         count = fallbackRes.count;
       } else {
@@ -703,6 +713,9 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         .order("verified", { ascending: false })
         .order("posted_at", { ascending: false, nullsFirst: false })
         .range(from, to);
+      if (res.error) {
+        return DEGRADED_JOBS_RESULT;
+      }
       data = res.data;
       count = res.count;
     } else {
@@ -710,8 +723,15 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       const res = await query
         .order("posted_at", { ascending: false, nullsFirst: false })
         .range(from, to);
+      if (res.error) {
+        return DEGRADED_JOBS_RESULT;
+      }
       data = res.data;
       count = res.count;
+    }
+
+    if (!data) {
+      return DEGRADED_JOBS_RESULT;
     }
 
     if (data) {
@@ -822,6 +842,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
     }
   } catch (err) {
     console.warn("Supabase live jobs fetch error, falling back:", err);
+    return DEGRADED_JOBS_RESULT;
   }
 
 
