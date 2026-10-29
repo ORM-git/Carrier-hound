@@ -328,7 +328,7 @@ export default function HomePage() {
               <div className="relative w-28 h-28 rounded-full overflow-hidden border-2 border-blue-500 shadow-md">
                 <Image
                   src="/owner.jpg"
-                  alt="Orissa Lee Patnaik"
+                  alt="Orissa Lee Patnaik, Founder"
                   fill
                   className="object-cover"
                   sizes="112px"
