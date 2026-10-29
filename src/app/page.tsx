@@ -10,6 +10,7 @@ import DotPattern from "@/components/DotPattern";
 import AvatarStack from "@/components/AvatarStack";
 import ProductScreenshotMock from "@/components/ProductScreenshotMock";
 import { FaqHomeItem } from "@/components/FaqItems";
+import { WhiteHeroButton } from "@/components/Buttons";
 import CategorySelectModal from "@/components/CategorySelectModal";
 import Footer from "@/components/Footer";
 import GlobeLiveStats from "@/components/GlobeLiveStats";
@@ -68,7 +69,7 @@ export default function HomePage() {
         <div className="w-full max-w-[1340px] mx-auto px-4 sm:px-10 lg:px-14 xl:px-16 pt-4 sm:pt-6 mb-8 sm:mb-14 lg:mb-16 flex items-center justify-between relative z-20">
           {/* Left: Round white logo circle */}
           <Link
-            href="/early-access"
+            href="/"
             aria-label="CareerMonke Home"
             className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-white flex items-center justify-center shadow-lg transition-transform hover:scale-105 p-1.5 min-h-[44px] min-w-[44px]"
           >
@@ -90,13 +91,13 @@ export default function HomePage() {
           </p>
 
           <div className="mt-6 flex flex-wrap items-center justify-center gap-3 w-full max-w-md sm:max-w-none">
-            <Link
-              href="/early-access"
+            <button
+              onClick={() => router.push("/early-access")}
               className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 bg-white text-[#09090B] font-bold text-base sm:text-lg px-8 sm:px-10 py-3.5 sm:py-4 min-h-[48px] rounded-xl shadow-lg hover:shadow-xl hover:scale-105 transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
             >
               <span>Explore jobs</span>
               <ArrowRight className="w-5 h-5 ml-0.5 stroke-[2.5]" />
-            </Link>
+            </button>
             <Link
               href="/early-access"
               className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-blue-700/80 hover:bg-blue-700 text-white font-bold text-base sm:text-lg px-7 sm:px-8 py-3.5 sm:py-4 min-h-[48px] rounded-xl border border-white/30 shadow-md hover:shadow-lg transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
@@ -284,13 +285,9 @@ export default function HomePage() {
             No commitment. Just window shopping for your dream job. Job maxxing starts here.
           </p>
           <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
-            <Link
-              href="/early-access"
-              className="inline-flex items-center justify-center gap-2 bg-white text-[#09090B] font-semibold text-base px-8 h-[56px] min-h-[48px] min-w-[200px] rounded-[6px] shadow-sm transition-all duration-150 ease-in-out hover:bg-gray-100 hover:text-black active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-blue-600 cursor-pointer"
-            >
-              <span>View Jobs</span>
-              <ArrowRight className="w-5 h-5 ml-1 transition-transform group-hover:translate-x-1" />
-            </Link>
+            <WhiteHeroButton onClick={() => router.push("/early-access")} className="px-8 min-w-[200px]">
+              View Jobs
+            </WhiteHeroButton>
             <Link
               href="/early-access"
               className="inline-flex items-center justify-center gap-2 bg-blue-700 hover:bg-blue-800 text-white border border-white/30 font-bold text-sm sm:text-base px-6 py-3.5 min-h-[44px] rounded-xl shadow-md transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
@@ -365,13 +362,15 @@ export default function HomePage() {
                   sizes="112px"
                 />
               </div>
-              <Link
-                href="/early-access"
+              <a
+                href="https://tiktok.com"
+                target="_blank"
+                rel="noreferrer"
                 className="inline-flex items-center justify-center gap-1.5 text-xs font-semibold text-gray-700 hover:text-black border border-gray-300 px-3.5 py-2 min-h-[44px] rounded-md hover:bg-gray-50 transition-colors"
               >
                 <span>My TikTok Videos</span>
                 <ArrowRight className="w-3.5 h-3.5" />
-              </Link>
+              </a>
             </div>
 
             {/* Right: Name, role, story, 3 stats */}
@@ -458,12 +457,12 @@ export default function HomePage() {
             We&apos;ll try to respond the same day.
           </p>
           <div className="pt-2">
-            <Link
-              href="/early-access"
+            <a
+              href="mailto:support@careermonke.com"
               className="w-full sm:w-auto inline-flex items-center justify-center bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-medium px-8 py-3.5 min-h-[48px] rounded-lg text-sm sm:text-base transition-colors shadow-sm"
             >
               <span>support@careermonke.com</span>
-            </Link>
+            </a>
           </div>
         </div>
       </section>

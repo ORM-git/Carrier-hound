@@ -80,7 +80,6 @@ export const EARLY_ACCESS_RATE_LIMIT = {
 export const searchRateLimitStore = new Map<string, { count: number; resetAt: number }>();
 export const trackRateLimitStore = new Map<string, { count: number; resetAt: number }>();
 export const earlyAccessRateLimitStore = new Map<string, { count: number; resetAt: number }>();
-export const earlyAccessEmailStore = new Map<string, { email: string; created_at: string }>();
 
 export function _resetSearchRateLimitStore() {
   searchRateLimitStore.clear();
@@ -92,8 +91,4 @@ export function _resetTrackRateLimitStore() {
 
 export function _resetEarlyAccessRateLimitStore() {
   earlyAccessRateLimitStore.clear();
-}
-
-export function _resetEarlyAccessEmailStore() {
-  earlyAccessEmailStore.clear();
 }

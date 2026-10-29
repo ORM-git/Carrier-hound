@@ -4,7 +4,6 @@ import {
   checkSharedRateLimit,
   EARLY_ACCESS_RATE_LIMIT,
   earlyAccessRateLimitStore,
-  earlyAccessEmailStore,
 } from "@/lib/api/sharedRateLimit";
 import {
   getClientIpFromRequest,
@@ -17,6 +16,8 @@ export const runtime = "edge";
 
 const EMAIL_REGEX =
   /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i;
+
+const GENERIC_TRY_AGAIN_MESSAGE = "Could not save your email right now. Please try again.";
 
 function validateEarlyAccessEmail(raw: unknown): {
   valid: boolean;
@@ -112,7 +113,6 @@ export async function POST(req: Request) {
     if (!isLegacy && honeypotValue.trim().length > 0) {
       return NextResponse.json({
         ok: true,
-        honeypot: true,
         message: "You're on the list",
       });
     }
@@ -136,18 +136,9 @@ export async function POST(req: Request) {
       }
     } catch {}
 
-    // 1. In-memory deduplication check
-    if (!isLegacy && earlyAccessEmailStore.has(email)) {
-      return NextResponse.json({
-        ok: true,
-        duplicate: true,
-        message: "You're on the list",
-      });
-    }
-
-    // 2. Supabase storage & deduplication check
+    // Supabase storage & deduplication check (no in-memory fallback)
     let supabaseClient: any = null;
-    if (process.env.NODE_ENV === "test" && (globalThis as any).__mockSupabaseClient) {
+    if (process.env.NODE_ENV === "test" && (globalThis as any).__mockSupabaseClient !== undefined) {
       supabaseClient = (globalThis as any).__mockSupabaseClient;
     } else {
       const hasUrl = Boolean(
@@ -168,19 +159,31 @@ export async function POST(req: Request) {
       }
     }
 
-    if (supabaseClient?.from) {
+    if (!supabaseClient?.from) {
+      if (!isLegacy) {
+        return NextResponse.json(
+          { ok: false, error: GENERIC_TRY_AGAIN_MESSAGE },
+          { status: 500 }
+        );
+      }
+    } else {
       try {
-        const { data: existingRow } = await supabaseClient
+        const { data: existingRow, error: selectError } = await supabaseClient
           .from("early_access_emails")
           .select("email")
           .eq("email", email)
           .maybeSingle();
 
+        if (!isLegacy && selectError) {
+          return NextResponse.json(
+            { ok: false, error: GENERIC_TRY_AGAIN_MESSAGE },
+            { status: 500 }
+          );
+        }
+
         if (!isLegacy && existingRow?.email) {
-          earlyAccessEmailStore.set(email, { email, created_at: createdAt });
           return NextResponse.json({
             ok: true,
-            duplicate: true,
             message: "You're on the list",
           });
         }
@@ -190,24 +193,34 @@ export async function POST(req: Request) {
           .insert({ email, created_at: createdAt });
 
         if (insertError) {
-          // Postgres unique constraint violation (23505) -> treat as idempotent duplicate
-          if (!isLegacy && (insertError.code === "23505" || /duplicate key/i.test(insertError.message || ""))) {
-            earlyAccessEmailStore.set(email, { email, created_at: createdAt });
+          // Postgres unique constraint violation (23505) -> generic idempotent success
+          if (
+            !isLegacy &&
+            (insertError.code === "23505" || /duplicate key/i.test(insertError.message || ""))
+          ) {
             return NextResponse.json({
               ok: true,
-              duplicate: true,
               message: "You're on the list",
             });
           }
+          if (!isLegacy) {
+            return NextResponse.json(
+              { ok: false, error: GENERIC_TRY_AGAIN_MESSAGE },
+              { status: 500 }
+            );
+          }
         }
       } catch {
-        // Fall through to in-memory store if table is not yet migrated
+        if (!isLegacy) {
+          return NextResponse.json(
+            { ok: false, error: GENERIC_TRY_AGAIN_MESSAGE },
+            { status: 500 }
+          );
+        }
       }
     }
 
-    earlyAccessEmailStore.set(email, { email, created_at: createdAt });
-
-    // 3. Notification target read strictly from EARLY_ACCESS_NOTIFY_EMAIL env var (never hardcoded)
+    // Notification target read strictly from EARLY_ACCESS_NOTIFY_EMAIL env var (never hardcoded)
     const notifyEmail = (
       getRuntimeEnv("EARLY_ACCESS_NOTIFY_EMAIL", cfEnv) ||
       process.env.EARLY_ACCESS_NOTIFY_EMAIL ||
@@ -226,12 +239,11 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       ok: true,
-      duplicate: false,
       message: "You're on the list",
     });
   } catch {
     return NextResponse.json(
-      { ok: false, error: "Something went wrong. Please try again." },
+      { ok: false, error: GENERIC_TRY_AGAIN_MESSAGE },
       { status: 500 }
     );
   }

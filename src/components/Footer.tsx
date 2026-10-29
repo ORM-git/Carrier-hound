@@ -23,7 +23,7 @@ function LandingFooter() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-tk-4 pb-tk-4 border-b border-line">
           {/* Brand + Tagline */}
           <div className="lg:col-span-4 space-y-tk-2">
-            <Link href="/early-access" className="inline-flex items-center gap-2.5 min-h-[44px] rounded-tk-lg">
+            <Link href="/" className="inline-flex items-center gap-2.5 min-h-[44px] rounded-tk-lg">
               <div className="w-9 h-9 rounded-tk-full bg-surface flex items-center justify-center p-1 shadow-tk-xs border border-line overflow-hidden">
                 <BrandIcon className="w-7 h-7" />
               </div>
@@ -68,17 +68,17 @@ function LandingFooter() {
               <h2 className={landingColumnHeadingClass}>Links</h2>
               <ul className="space-y-0.5">
                 <li>
-                  <Link href="/early-access" className={landingFooterLinkClass}>
+                  <a href="mailto:support@careermonke.com" className={landingFooterLinkClass}>
                     Support
-                  </Link>
+                  </a>
                 </li>
                 <li>
-                  <Link href="/early-access" prefetch={false} className={landingFooterLinkClass}>
+                  <Link href="/privacy-policy" prefetch={false} className={landingFooterLinkClass}>
                     Privacy Policy
                   </Link>
                 </li>
                 <li>
-                  <Link href="/early-access" prefetch={false} className={landingFooterLinkClass}>
+                  <Link href="/terms-and-conditions" prefetch={false} className={landingFooterLinkClass}>
                     Terms & Conditions
                   </Link>
                 </li>
@@ -90,31 +90,37 @@ function LandingFooter() {
               <h2 className={landingColumnHeadingClass}>Social</h2>
               <ul className="space-y-0.5">
                 <li>
-                  <Link
-                    href="/early-access"
+                  <a
+                    href="https://x.com/careermonke"
+                    target="_blank"
+                    rel="noreferrer"
                     aria-label="Twitter / X"
                     className={landingFooterLinkClass}
                   >
                     X (Twitter)
-                  </Link>
+                  </a>
                 </li>
                 <li>
-                  <Link
-                    href="/early-access"
+                  <a
+                    href="https://linkedin.com/company/careermonke"
+                    target="_blank"
+                    rel="noreferrer"
                     aria-label="LinkedIn"
                     className={landingFooterLinkClass}
                   >
                     LinkedIn
-                  </Link>
+                  </a>
                 </li>
                 <li>
-                  <Link
-                    href="/early-access"
+                  <a
+                    href="https://github.com"
+                    target="_blank"
+                    rel="noreferrer"
                     aria-label="GitHub"
                     className={landingFooterLinkClass}
                   >
                     GitHub
-                  </Link>
+                  </a>
                 </li>
               </ul>
             </div>
@@ -125,10 +131,10 @@ function LandingFooter() {
         <div className="pt-tk-3 flex flex-col sm:flex-row items-center justify-between gap-tk-2 text-center sm:text-left">
           <p className="text-tk-caption text-ink-subtle">© {new Date().getFullYear()} CareerMonke Inc. All rights reserved.</p>
           <div className="flex flex-wrap items-center justify-center gap-x-tk-3">
-            <Link href="/early-access" className={landingBottomLinkClass}>
+            <Link href="/privacy-policy" className={landingBottomLinkClass}>
               Privacy
             </Link>
-            <Link href="/early-access" className={landingBottomLinkClass}>
+            <Link href="/terms-and-conditions" className={landingBottomLinkClass}>
               Terms
             </Link>
             <Link href="/early-access" className={landingBottomLinkClass}>
