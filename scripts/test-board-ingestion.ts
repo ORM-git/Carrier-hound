@@ -61,7 +61,10 @@ const isNegativeControl = process.argv.includes('--negative-control');
 // ---------------------------------------------------------------------------
 // Mock Supabase Factory for Ingestion & Cleanup Tests
 // ---------------------------------------------------------------------------
-export function createMockSupabase(initialDbJobs: any[] = []) {
+export function createMockSupabase(
+  initialDbJobs: any[] = [],
+  mockOptions: { failOnUpsertCall?: number } = {}
+) {
   const dbJobs = [...initialDbJobs];
   const upsertCalls: Array<{ payload: any[]; options: any }> = [];
   const updateCalls: Array<{ payload: any; ids: string[] }> = [];
@@ -133,6 +136,12 @@ export function createMockSupabase(initialDbJobs: any[] = []) {
         },
         upsert: (payload: any[], options: any) => {
           upsertCalls.push({ payload, options });
+          if (mockOptions.failOnUpsertCall && upsertCalls.length === mockOptions.failOnUpsertCall) {
+            return Promise.resolve({
+              data: null,
+              error: { message: `Simulated database write error on batch ${mockOptions.failOnUpsertCall}` },
+            });
+          }
           for (const item of payload) {
             const idx = dbJobs.findIndex(
               (j) => j.source === item.source && j.source_job_id === item.source_job_id
@@ -869,6 +878,76 @@ async function runTests() {
     }
     assert(descriptionsValid, 'All upserted descriptions are truncated to <= 1500 chars, plain text only');
     assert(applyUrlsValid, 'All upserted jobs have HTTPS-only apply_url');
+
+    // -------------------------------------------------------------------------
+    // RUN 4: Simulate Batch 2 Failing -> Assert Rollback SQL Saved & Printed Before Failure
+    // -------------------------------------------------------------------------
+    const tempManifestFailPath = path.resolve(__dirname, 'fixtures/temp-manifest-fail.json');
+    const tempSqlFailPath = tempManifestFailPath.replace(/\.json$/, '.sql');
+    const failingMockSupabase = createMockSupabase(mockInitialDb, { failOnUpsertCall: 2 });
+
+    const capturedLogs: string[] = [];
+    const origLog = console.log;
+    const origError = console.error;
+    console.log = (...args: any[]) => {
+      capturedLogs.push(args.map(String).join(' '));
+      origLog(...args);
+    };
+    console.error = (...args: any[]) => {
+      capturedLogs.push(args.map(String).join(' '));
+      origError(...args);
+    };
+
+    let batch2Threw = false;
+    try {
+      await runBoardIngestion({
+        liveWrite: true,
+        confirmProdWrite: true,
+        maxJobs: 100,
+        batchSize: 1, // With 2 new insert rows, batch 1 writes 1 row and batch 2 fails
+        expectHost: 'szakevhxhwpeskidvtfs.supabase.co',
+        supabaseClient: failingMockSupabase,
+        fixtureMode: true,
+        fixtureDir: path.resolve(__dirname, 'fixtures'),
+        limit: 3,
+        manifestPath: tempManifestFailPath,
+      });
+    } catch (err: any) {
+      if (err.message.includes('Simulated database write error on batch 2') || err.message.includes('batch 2')) {
+        batch2Threw = true;
+      }
+    } finally {
+      console.log = origLog;
+      console.error = origError;
+    }
+
+    assert(batch2Threw === true, 'Batch 2 failure was caught');
+    assert(fs.existsSync(tempManifestFailPath), 'Manifest file was saved before first DB write and persists after failure');
+    assert(fs.existsSync(tempSqlFailPath), 'Rollback SQL file was saved before first DB write and persists after failure');
+
+    const failManifest = JSON.parse(fs.readFileSync(tempManifestFailPath, 'utf-8'));
+    const failRollbackSql = fs.readFileSync(tempSqlFailPath, 'utf-8');
+
+    assert(failManifest.total_rows >= 2, `Manifest covers all queued rows before failure (got: ${failManifest.total_rows})`);
+    assert(failRollbackSql.includes('DELETE FROM jobs'), 'Saved rollback SQL contains DELETE statement');
+    assert(failRollbackSql.includes(failManifest.run_discovered_at), 'Saved rollback SQL targets run discovered_at');
+
+    for (const row of failManifest.rows) {
+      assert(
+        failRollbackSql.includes(row.source_job_id),
+        `Saved rollback SQL covers all queued rows including batch 2 that failed (${row.source_job_id})`
+      );
+    }
+
+    const allCapturedOutput = capturedLogs.join('\n');
+    assert(
+      allCapturedOutput.includes('PRE-WRITE ROLLBACK SQL'),
+      'Rollback SQL was printed before first DB write'
+    );
+    assert(
+      allCapturedOutput.includes('BATCH 2 FAILED') || allCapturedOutput.includes('ROLLBACK SQL (USE TO RESTORE DATABASE STATE)'),
+      'Rollback SQL was printed again when batch 2 threw'
+    );
   } finally {
     if (fs.existsSync(tempManifestPath1)) fs.unlinkSync(tempManifestPath1);
     const tempSqlPath1 = tempManifestPath1.replace(/\.json$/, '.sql');
@@ -877,6 +956,11 @@ async function runTests() {
     if (fs.existsSync(tempManifestPath2)) fs.unlinkSync(tempManifestPath2);
     const tempSqlPath2 = tempManifestPath2.replace(/\.json$/, '.sql');
     if (fs.existsSync(tempSqlPath2)) fs.unlinkSync(tempSqlPath2);
+
+    const tempManifestFailPath = path.resolve(__dirname, 'fixtures/temp-manifest-fail.json');
+    if (fs.existsSync(tempManifestFailPath)) fs.unlinkSync(tempManifestFailPath);
+    const tempSqlFailPath = tempManifestFailPath.replace(/\.json$/, '.sql');
+    if (fs.existsSync(tempSqlFailPath)) fs.unlinkSync(tempSqlFailPath);
   }
 
   // Test that when incoming job has posted_at = null, it stays null in the DB payload (never nowIso)
