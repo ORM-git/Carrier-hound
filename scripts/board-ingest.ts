@@ -1390,7 +1390,7 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
       try {
         const { error: writeErr } = allowUpdates
           ? await supabase.from('jobs').upsert(payload, { onConflict: 'source,source_job_id' })
-          : await supabase.from('jobs').upsert(payload, { onConflict: 'source,source_job_id', ignoreDuplicates: true });
+          : await supabase.from('jobs').upsert(payload, { ignoreDuplicates: true });
 
         if (writeErr) {
           throw new Error(`Database write error in batch ${batchesCount}: ${writeErr.message}`);
@@ -1410,12 +1410,6 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
       totalWritten += chunk.length;
       console.log(`   ✅ Batch ${batchesCount}: Synced ${chunk.length} jobs (Total: ${totalWritten}/${jobsToWrite.length})`);
     }
-
-    console.log(`\n📊 Live-Write Result:`);
-    console.log(`   Total rows written:    ${totalWritten}`);
-    console.log(`   New rows inserted:     ${insertCount}`);
-    console.log(`   Existing rows updated: ${updateCount}`);
-    console.log(`   Existing rows skipped: ${skippedUpdateCount}`);
 
     let confirmedCount = 0;
     if (rowsToInsert.length > 0) {
@@ -1447,10 +1441,18 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
       }
 
       console.log(`   ✅ Confirmation verified: ${confirmedCount}/${rowsToInsert.length} keys confirmed in database.`);
-      if (confirmedCount !== rowsToInsert.length) {
-        console.warn(`   ⚠️ Warning: Confirmed count (${confirmedCount}) does not match expected insert count (${rowsToInsert.length}).`);
+      if (confirmedCount < rowsToInsert.length) {
+        console.warn(`   ⚠️ Warning: Confirmed count (${confirmedCount}) is less than queued insert rows (${rowsToInsert.length}). Some rows may have been skipped due to duplicates or constraints.`);
       }
     }
+
+    const actualInserted = allowUpdates ? insertCount : confirmedCount;
+
+    console.log(`\n📊 Live-Write Result:`);
+    console.log(`   Total rows written:    ${totalWritten}`);
+    console.log(`   New rows inserted:     ${actualInserted}`);
+    console.log(`   Existing rows updated: ${updateCount}`);
+    console.log(`   Existing rows skipped: ${skippedUpdateCount}`);
 
     if (savedRollbackSqlPath) {
       console.log(`💾 Rollback SQL ready: ${savedRollbackSqlPath}\n`);
@@ -1458,7 +1460,7 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
 
     stats.liveWriteStats = {
       rowsWritten: totalWritten,
-      rowsInserted: insertCount,
+      rowsInserted: actualInserted,
       rowsUpdated: updateCount,
       updatesSkipped: skippedUpdateCount,
       confirmedCount,
