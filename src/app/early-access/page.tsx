@@ -136,10 +136,10 @@ export default function EarlyAccessPage() {
 
             <div className="space-y-3">
               <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-[#0F172A] leading-[1.15]">
-                Find direct company career-page jobs before they hit the job boards.
+                Find jobs straight from company career pages.
               </h1>
               <p className="text-base sm:text-lg text-[#475569] max-w-xl leading-relaxed">
-                We crawl official employer career boards directly so you can apply ahead of the aggregator crowd, score your resume for ATS filters, and manage your search in one place.
+                We crawl official employer career boards directly so you can apply without the aggregator middleman, score your resume for ATS filters, and manage your search in one place.
               </p>
             </div>
 
@@ -251,7 +251,7 @@ export default function EarlyAccessPage() {
 
                   <div className="pt-1 flex items-center gap-2 text-xs text-[#64748B]">
                     <ShieldCheck className="w-3.5 h-3.5 text-[#2563EB] shrink-0" />
-                    <span>No spam. We email you once when your spot opens.</span>
+                    <span>We&apos;ll use your email only for early-access updates.</span>
                   </div>
                 </form>
               )}
@@ -290,15 +290,19 @@ export default function EarlyAccessPage() {
 
             {/* Clean product preview card */}
             <div className="relative w-full max-w-[400px] bg-white rounded-2xl border border-slate-200/90 p-5 sm:p-6 shadow-xl shadow-blue-500/5 space-y-3.5">
+              <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider text-center">
+                Example preview
+              </div>
+
               {/* Feature 1: Jobs (Direct ATS Feeds) */}
               <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-between gap-3 shadow-2xs">
                 <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-8 h-8 rounded-lg bg-[#2563EB] text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs">
-                    S
+                  <div className="w-8 h-8 rounded-lg bg-slate-100 border border-slate-200 text-slate-600 flex items-center justify-center font-bold text-[11px] shrink-0 shadow-2xs">
+                    EC
                   </div>
                   <div className="min-w-0">
                     <div className="text-xs font-bold text-slate-900 truncate">Senior Frontend Engineer</div>
-                    <div className="text-[11px] text-slate-500 truncate">Stripe • Remote (Worldwide)</div>
+                    <div className="text-[11px] text-slate-500 truncate">Example Company • Remote (Worldwide)</div>
                   </div>
                 </div>
                 <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/70 shrink-0">
@@ -311,13 +315,17 @@ export default function EarlyAccessPage() {
                 <div className="space-y-0.5 min-w-0">
                   <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5 text-[#2563EB]" />
-                    <span>Resume ATS Match</span>
+                    <span>Resume match</span>
                   </div>
                   <div className="text-[11px] text-slate-600 truncate">Action verbs &amp; keyword alignment</div>
                 </div>
-                <div className="text-right shrink-0">
-                  <span className="text-base font-extrabold text-[#2563EB]">88</span>
-                  <span className="text-[11px] text-slate-500 font-medium">/100</span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <div className="w-14 h-2 rounded-full bg-blue-100 overflow-hidden" aria-hidden="true">
+                    <div className="w-4/5 h-full bg-[#2563EB] rounded-full" />
+                  </div>
+                  <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-blue-100/80 text-[#2563EB]">
+                    High match
+                  </span>
                 </div>
               </div>
 
