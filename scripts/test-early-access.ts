@@ -212,10 +212,11 @@ async function main() {
     "page.tsx must use WhiteHeroButton with onClick={() => router.push(\"/early-access\")}"
   );
 
-  // 1b. Verify TikTok and mailto restored in page.tsx
-  assert.ok(
+  // 1b. Verify TikTok button removed and mailto restored in page.tsx
+  assert.strictEqual(
     landingSrc.includes('href="https://tiktok.com"'),
-    "page.tsx must restore Founder TikTok link"
+    false,
+    "page.tsx must NOT contain Founder TikTok link"
   );
   assert.ok(
     landingSrc.includes('href="mailto:support@careermonke.com"'),
