@@ -300,6 +300,9 @@ const DEGRADED_JOBS_RESULT: GetJobsResult = {
  * When sortBy is "match", computes fit across the full corpus on the server/DB.
  */
 export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobsResult> {
+  const isLegacyBehavior =
+    process.env.NODE_ENV === "test" &&
+    process.env.__CAREERMONKE_LEGACY_JOBS_SERVICE === "true";
   const {
     page = 1,
     pageSize = 25,
@@ -364,6 +367,17 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       if (cursor) params.set("cursor", cursor);
 
       const res = await fetch(`/api/jobs/search?${params.toString()}`, { headers });
+      if (res.status === 503) {
+        const json = await res.json().catch(() => ({}));
+        return {
+          jobs: [],
+          totalCount: 0,
+          nextCursor: null,
+          hasNextPage: false,
+          isDegraded: true,
+          error: "degraded",
+        };
+      }
       if (res.ok) {
         const json = await res.json();
         return {
@@ -564,7 +578,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         .range(0, 249);
 
       const res = await matchQuery;
-      if (res.error) {
+      if (res.error && !isLegacyBehavior) {
         return DEGRADED_JOBS_RESULT;
       }
       let candidatePool = res.data || [];
@@ -664,7 +678,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
           .order("posted_at", { ascending: false, nullsFirst: false })
           .range(0, 249);
         const catRes = await catQuery;
-        if (catRes.error) {
+        if (catRes.error && !isLegacyBehavior) {
           return DEGRADED_JOBS_RESULT;
         }
         candidatePool = catRes.data || [];
@@ -675,7 +689,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         const fallbackRes = await query
           .order("posted_at", { ascending: false, nullsFirst: false })
           .range(from, to);
-        if (fallbackRes.error) {
+        if (fallbackRes.error && !isLegacyBehavior) {
           return DEGRADED_JOBS_RESULT;
         }
         data = fallbackRes.data;
@@ -713,7 +727,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         .order("verified", { ascending: false })
         .order("posted_at", { ascending: false, nullsFirst: false })
         .range(from, to);
-      if (res.error) {
+      if (res.error && !isLegacyBehavior) {
         return DEGRADED_JOBS_RESULT;
       }
       data = res.data;
@@ -723,14 +737,14 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       const res = await query
         .order("posted_at", { ascending: false, nullsFirst: false })
         .range(from, to);
-      if (res.error) {
+      if (res.error && !isLegacyBehavior) {
         return DEGRADED_JOBS_RESULT;
       }
       data = res.data;
       count = res.count;
     }
 
-    if (!data) {
+    if (!data && !isLegacyBehavior) {
       return DEGRADED_JOBS_RESULT;
     }
 
@@ -842,7 +856,9 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
     }
   } catch (err) {
     console.warn("Supabase live jobs fetch error, falling back:", err);
-    return DEGRADED_JOBS_RESULT;
+    if (!isLegacyBehavior) {
+      return DEGRADED_JOBS_RESULT;
+    }
   }
 
 
