@@ -290,8 +290,8 @@ export default function JobDetailView({
 
   return (
     <div
-      style={{ paddingBottom: `calc(${cookieNoticeHeight}px + 7rem)` }}
-      className="max-w-[880px] w-full mx-auto space-y-4 sm:space-y-3 md:pb-12"
+      style={cookieNoticeHeight > 0 ? { paddingBottom: `calc(${cookieNoticeHeight}px + 6rem)` } : undefined}
+      className="max-w-[880px] w-full mx-auto space-y-4 sm:space-y-3 pb-24 md:pb-0"
     >
       {/* Expired Job Banner */}
       {(isExpired || job.isExpired) && (

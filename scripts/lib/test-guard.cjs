@@ -60,6 +60,7 @@ const SUITE_CLASSIFICATIONS = Object.freeze({
   "scripts/test-compact-spacing.ts": "offline",
   "scripts/test-card-menu.ts": "offline",
   "scripts/test-search-track-rate-limits.ts": "offline",
+  "scripts/test-candidate-profile-isolation.ts": "offline",
 
   // DB-capable suites: read operations
   "scripts/test-enhanced-scoring.ts": "db-read",

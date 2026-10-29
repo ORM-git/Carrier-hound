@@ -35,6 +35,8 @@ export interface CandidateProfile {
   rawText?: string;
   confirmedAt?: string;
   updatedAt: string;
+  ownerUserId?: string | null;
+  userId?: string | null;
 }
 
 export interface ExtractedFact {

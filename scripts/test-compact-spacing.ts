@@ -138,7 +138,7 @@ function runAudit(corruptions: {
   const hasPricingMobileBase = pricingCode.includes("p-tk-4 sm:p-tk-3") &&
     pricingCode.includes("gap-tk-4 sm:gap-tk-3") &&
     pricingCode.includes("space-y-tk-4 sm:space-y-tk-3");
-  const hasDetailMobileBase = detailCode.includes("space-y-4 sm:space-y-3 md:pb-12") &&
+  const hasDetailMobileBase = (detailCode.includes("space-y-4 sm:space-y-3 pb-24 md:pb-0") || detailCode.includes("space-y-4 sm:space-y-3 md:pb-12")) &&
     detailCode.includes("p-5 sm:p-4 shadow-none space-y-4 sm:space-y-3");
   const hasTrackerMobileBase = trackerCode.includes("py-5 sm:py-4 space-y-5 sm:space-y-3.5") &&
     trackerCode.includes("p-6 sm:p-5 space-y-4 sm:space-y-3");
