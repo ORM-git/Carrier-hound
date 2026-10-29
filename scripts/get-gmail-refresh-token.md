@@ -2,7 +2,7 @@
 
 This guide walks the founder step-by-step through setting up a Google Cloud OAuth 2.0 **Web application** client, enabling the **Gmail API**, publishing the consent screen to **"In production"**, and generating a long-lived `GMAIL_REFRESH_TOKEN` using Google OAuth 2.0 Playground so CareerMonke can send early-access thank-you and daily digest emails from your personal Gmail account.
 
-> **Security Rule**: Never commit your Client ID, Client Secret, Refresh Token, or email addresses to the repository. Store them only in Cloudflare Pages environment variables (and `.env.local` if testing locally).
+> **Security Rule**: Never commit your Client ID, Client Secret, Refresh Token, or email addresses to the repository. Store them only in Cloudflare Pages and GitHub Actions environment secrets (and `.env.local` if testing locally).
 
 ---
 
@@ -78,9 +78,9 @@ This guide walks the founder step-by-step through setting up a Google Cloud OAut
 
 ---
 
-## Step 5: Set Environment Variables in Cloudflare Pages
+## Step 5: Set Environment Variables in Cloudflare Pages & GitHub Actions Secrets
 
-Add the following environment variables in your **Cloudflare Pages → Settings → Environment variables** (Production & Preview):
+Add the following environment variables in **Cloudflare Pages → Settings → Environment variables** AND **GitHub Repository → Settings → Secrets and variables → Actions**:
 
 | Variable | Description |
 | :--- | :--- |
@@ -89,7 +89,7 @@ Add the following environment variables in your **Cloudflare Pages → Settings 
 | `GMAIL_REFRESH_TOKEN` | Refresh token obtained in Step 4 (`offline` access) |
 | `GMAIL_SENDER_EMAIL` | Your personal Gmail address that authorized the token |
 | `GMAIL_SENDER_NAME` | Display name for the `From` header (e.g., `Roman from CareerMonke`) |
-| `EARLY_ACCESS_NOTIFY_EMAIL` | Destination email address for the daily early-access signup digest |
+| `EARLY_ACCESS_NOTIFY_EMAIL` | Destination email address for the scheduled daily early-access signup digest |
 
 ---
 
@@ -104,9 +104,12 @@ CREATE TABLE IF NOT EXISTS public.early_access_emails (
 );
 
 CREATE TABLE IF NOT EXISTS public.gmail_send_log (
-  sent_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  id              BIGSERIAL PRIMARY KEY,
+  recipient_email TEXT,
+  kind            TEXT NOT NULL DEFAULT 'thank_you' CHECK (kind IN ('thank_you', 'digest')),
+  sent_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ```
 
-- `POST /api/early-access` checks `gmail_send_log` before each outgoing message and caps total sends at **150 messages/day** so your personal Gmail account always keeps generous headroom below Google's daily sending limit.
-- Owner notifications are batched into **one daily digest email** rather than sending a separate owner notification per signup.
+- `POST /api/early-access` sends at most **one thank-you email per distinct address ever**, checks `gmail_send_log` before each send (failing closed if the log cannot be read), and caps total outgoing messages at **150 messages/day**.
+- The scheduled GitHub Actions workflow (`.github/workflows/early-access-digest-cron.yml` → `scripts/early-access-digest-cron.ts`) runs once a day and sends **one digest email** containing all new `early_access_emails` rows since the last digest (or sends nothing if there are no new rows).

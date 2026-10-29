@@ -1,0 +1,50 @@
+name: Daily Early-Access Signup Digest Cron
+
+on:
+  schedule:
+    # Runs once a day at 18:00 UTC (11:30 PM IST)
+    - cron: '0 18 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Run in dry-run mode (no digest email sent, no gmail_send_log write)'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  early-access-digest:
+    name: Send Daily Early-Access Signup Digest
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Execute Early-Access Daily Digest Cron
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
+          GMAIL_CLIENT_SECRET: ${{ secrets.GMAIL_CLIENT_SECRET }}
+          GMAIL_REFRESH_TOKEN: ${{ secrets.GMAIL_REFRESH_TOKEN }}
+          GMAIL_SENDER_EMAIL: ${{ secrets.GMAIL_SENDER_EMAIL }}
+          GMAIL_SENDER_NAME: ${{ secrets.GMAIL_SENDER_NAME }}
+          EARLY_ACCESS_NOTIFY_EMAIL: ${{ secrets.EARLY_ACCESS_NOTIFY_EMAIL }}
+        run: |
+          ARGS=""
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry"
+          fi
+          echo "Executing: npx tsx scripts/early-access-digest-cron.ts $ARGS"
+          npx tsx scripts/early-access-digest-cron.ts $ARGS

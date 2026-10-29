@@ -1,20 +1,15 @@
-import { getRuntimeEnv } from "@/lib/ai/serviceHandler";
+import { getRuntimeEnv, getSupabaseAdminClient } from "@/lib/ai/serviceHandler";
 
 export const GMAIL_OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
 export const GMAIL_SEND_MESSAGE_URL =
   "https://gmail.googleapis.com/gmail/v1/users/me/messages/send";
 export const GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send";
 export const GMAIL_TIMEOUT_MS = 5000;
+export const THANK_YOU_HARD_CAP_MS = 2000;
 export const DAILY_GMAIL_MESSAGE_CAP = 150;
 
 export const EARLY_ACCESS_THANK_YOU_SUBJECT =
   "You're on the CareerMonke early-access list";
-
-let lastOwnerDigestDayUtc: string | null = null;
-
-export function _resetEarlyAccessDigestState(): void {
-  lastOwnerDigestDayUtc = null;
-}
 
 interface GmailEnvConfig {
   clientId: string;
@@ -42,7 +37,11 @@ function readGmailConfig(cfEnv?: Record<string, any>): GmailEnvConfig {
 /**
  * Redacts any email addresses or potential tokens/secrets from a string before logging.
  */
-export function sanitizeLogMessage(raw: string, config?: Partial<GmailEnvConfig>, accessToken?: string): string {
+export function sanitizeLogMessage(
+  raw: string,
+  config?: Partial<GmailEnvConfig>,
+  accessToken?: string
+): string {
   let out = String(raw || "unknown error");
   const secrets = [
     config?.clientId,
@@ -57,13 +56,11 @@ export function sanitizeLogMessage(raw: string, config?: Partial<GmailEnvConfig>
     out = out.split(secret).join("[REDACTED]");
   }
 
-  // Redact any email pattern that might appear in upstream error strings
   out = out.replace(
     /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g,
     "[REDACTED_EMAIL]"
   );
 
-  // Redact any long token-like sequence
   out = out.replace(/\b(?:ya29|1\/\/)[A-Za-z0-9._-]+\b/g, "[REDACTED_TOKEN]");
 
   return out.slice(0, 240);
@@ -94,8 +91,14 @@ function encodeUtf8SubjectHeader(subject: string): string {
   return `=?UTF-8?B?${bytesToBase64(bytes)}?=`;
 }
 
+function assertNoHeaderInjection(val: string, fieldName: string): void {
+  if (/[\r\n\0]/.test(val) || /%0[ad]/i.test(val)) {
+    throw new Error(`CRLF header injection rejected in ${fieldName}`);
+  }
+}
+
 function sanitizeHeaderValue(val: string): string {
-  return val.replace(/[\r\n"]/g, "").trim();
+  return val.replace(/[\r\n\0"]/g, "").trim();
 }
 
 function escapeHtml(input: string): string {
@@ -119,6 +122,20 @@ export function buildRfc2822Base64UrlMessage(params: {
   textBody: string;
   htmlBody: string;
 }): string {
+  if (
+    process.env.NODE_ENV === "test" &&
+    typeof (globalThis as any).__onMessageBuilderInvoked === "function"
+  ) {
+    (globalThis as any).__onMessageBuilderInvoked(params);
+  }
+
+  assertNoHeaderInjection(params.fromEmail, "fromEmail");
+  assertNoHeaderInjection(params.toEmail, "toEmail");
+  assertNoHeaderInjection(params.subject, "subject");
+  if (params.fromName) {
+    assertNoHeaderInjection(params.fromName, "fromName");
+  }
+
   const boundary = "cm_early_access_mime_boundary_2026";
   const cleanName = sanitizeHeaderValue(params.fromName || "CareerMonke");
   const cleanFromEmail = sanitizeHeaderValue(params.fromEmail);
@@ -231,9 +248,18 @@ export function buildOwnerDigestEmailContent(
 async function fetchWithTimeout(
   url: string,
   init: RequestInit,
-  timeoutMs: number = GMAIL_TIMEOUT_MS
+  timeoutMs: number = GMAIL_TIMEOUT_MS,
+  parentSignal?: AbortSignal
 ): Promise<Response> {
   const controller = new AbortController();
+  const onParentAbort = () => controller.abort();
+  if (parentSignal) {
+    if (parentSignal.aborted) {
+      controller.abort();
+    } else {
+      parentSignal.addEventListener("abort", onParentAbort, { once: true });
+    }
+  }
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(url, {
@@ -242,46 +268,85 @@ async function fetchWithTimeout(
     });
   } finally {
     clearTimeout(timer);
+    if (parentSignal) {
+      parentSignal.removeEventListener("abort", onParentAbort);
+    }
   }
 }
 
+/**
+ * Reads today's outgoing message count from gmail_send_log.
+ * Returns ok: false if the count cannot be read (missing table, grant error, network failure).
+ */
 async function getTodaySentMessageCount(
   supabaseClient: any,
   startOfDayIso: string
-): Promise<{ count: number; error: boolean }> {
+): Promise<{ count: number; ok: boolean }> {
   if (!supabaseClient?.from) {
-    return { count: 0, error: false };
+    return { count: 0, ok: false };
   }
   try {
-    const query = supabaseClient
+    const { count, error } = await supabaseClient
       .from("gmail_send_log")
       .select("sent_at", { count: "exact", head: true })
       .gte("sent_at", startOfDayIso);
 
-    const { count, error } = await query;
-    if (error) {
-      return { count: 0, error: true };
+    if (error || typeof count !== "number") {
+      return { count: 0, ok: false };
     }
-    return { count: typeof count === "number" ? count : 0, error: false };
+    return { count, ok: true };
   } catch {
-    return { count: 0, error: true };
+    return { count: 0, ok: false };
+  }
+}
+
+/**
+ * Double opt-in-light check: checks whether a thank-you email has EVER been sent
+ * to this distinct recipient_email in gmail_send_log.
+ * Fails closed (ok: false) if gmail_send_log cannot be read.
+ */
+async function hasThankYouEverBeenSent(
+  supabaseClient: any,
+  recipientEmail: string
+): Promise<{ alreadySent: boolean; ok: boolean }> {
+  if (!supabaseClient?.from) {
+    return { alreadySent: false, ok: false };
+  }
+  try {
+    const { count, error } = await supabaseClient
+      .from("gmail_send_log")
+      .select("sent_at", { count: "exact", head: true })
+      .eq("kind", "thank_you")
+      .eq("recipient_email", recipientEmail);
+
+    if (error || typeof count !== "number") {
+      return { alreadySent: false, ok: false };
+    }
+    return { alreadySent: count > 0, ok: true };
+  } catch {
+    return { alreadySent: false, ok: false };
   }
 }
 
 async function recordSentMessage(
   supabaseClient: any,
-  sentAtIso: string
+  row: { recipient_email: string; kind: "thank_you" | "digest"; sent_at: string }
 ): Promise<void> {
   if (!supabaseClient?.from) return;
   try {
-    await supabaseClient.from("gmail_send_log").insert({ sent_at: sentAtIso });
+    const { error } = await supabaseClient.from("gmail_send_log").insert(row);
+    if (error) {
+      safeWarn("Failed to record outgoing message in gmail_send_log");
+    }
   } catch {
     safeWarn("Failed to record outgoing message in gmail_send_log");
   }
 }
 
 async function exchangeRefreshTokenForAccessToken(
-  config: GmailEnvConfig
+  config: GmailEnvConfig,
+  timeoutMs: number = GMAIL_TIMEOUT_MS,
+  parentSignal?: AbortSignal
 ): Promise<string | null> {
   try {
     const params = new URLSearchParams({
@@ -300,7 +365,8 @@ async function exchangeRefreshTokenForAccessToken(
         },
         body: params.toString(),
       },
-      GMAIL_TIMEOUT_MS
+      timeoutMs,
+      parentSignal
     );
 
     if (!response.ok) {
@@ -320,7 +386,10 @@ async function exchangeRefreshTokenForAccessToken(
     return data.access_token;
   } catch (err: any) {
     safeWarn(
-      `OAuth token exchange error: ${sanitizeLogMessage(err?.message || String(err), config)}`
+      `OAuth token exchange error: ${sanitizeLogMessage(
+        err?.message || String(err),
+        config
+      )}`
     );
     return null;
   }
@@ -330,6 +399,8 @@ async function sendSingleGmailMessage(params: {
   accessToken: string;
   rawBase64Url: string;
   config: GmailEnvConfig;
+  timeoutMs?: number;
+  parentSignal?: AbortSignal;
 }): Promise<{ sent: boolean; quotaExceeded: boolean }> {
   try {
     const response = await fetchWithTimeout(
@@ -342,7 +413,8 @@ async function sendSingleGmailMessage(params: {
         },
         body: JSON.stringify({ raw: params.rawBase64Url }),
       },
-      GMAIL_TIMEOUT_MS
+      params.timeoutMs ?? GMAIL_TIMEOUT_MS,
+      params.parentSignal
     );
 
     if (!response.ok) {
@@ -368,58 +440,42 @@ async function sendSingleGmailMessage(params: {
   }
 }
 
-async function fetchDigestRowsFromToday(
-  supabaseClient: any,
-  sinceIso: string,
-  fallbackRow: { email: string; created_at: string }
-): Promise<Array<{ email: string; created_at: string }>> {
-  if (!supabaseClient?.from) {
-    return [fallbackRow];
-  }
-  try {
-    const query = supabaseClient
-      .from("early_access_emails")
-      .select("email, created_at")
-      .gte("created_at", sinceIso);
-
-    const { data, error } =
-      typeof query.order === "function"
-        ? await query.order("created_at", { ascending: true })
-        : await query;
-
-    if (!error && Array.isArray(data) && data.length > 0) {
-      const hasCurrent = data.some((r: any) => r.email === fallbackRow.email);
-      return hasCurrent ? data : [...data, fallbackRow];
-    }
-  } catch {}
-  return [fallbackRow];
-}
-
 /**
- * Dispatches early-access emails after a NEW email is stored in early_access_emails:
- *  (a) Thank-you email to the submitter FROM the founder's Gmail
- *  (b) Batched daily digest notification to EARLY_ACCESS_NOTIFY_EMAIL (once per UTC day)
- *
- * Checks gmail_send_log (sent_at) before EACH outgoing message against DAILY_GMAIL_MESSAGE_CAP (150/day).
- * On missing env, cap hit, quota error, or network/timeout error: stops sending, logs safely, never throws.
+ * Sends ONLY the thank-you email to a new early-access subscriber (never sends the owner digest on the request path).
+ * - Enforces a hard 2s cap (THANK_YOU_HARD_CAP_MS) so it never hangs.
+ * - Fails closed if gmail_send_log cannot be read (error, missing table, grant problem).
+ * - Sends at most ONE thank-you per distinct address ever (checked via gmail_send_log).
+ * - Caps total outgoing messages at 150/day across gmail_send_log.
  */
-export async function dispatchEarlyAccessEmails(params: {
+export async function sendEarlyAccessThankYouEmail(params: {
   subscriberEmail: string;
   createdAt: string;
   supabaseClient: any;
   cfEnv?: Record<string, any>;
+  hardCapMs?: number;
 }): Promise<{
   thankYouSent: boolean;
-  digestSent: boolean;
   capHit: boolean;
+  failedClosed: boolean;
+  alreadyThanked: boolean;
 }> {
   const isLegacy =
     process.env.NODE_ENV === "test" &&
     process.env.__CAREERMONKE_LEGACY_EARLY_ACCESS === "true";
 
   if (isLegacy) {
-    return { thankYouSent: false, digestSent: false, capHit: false };
+    return {
+      thankYouSent: false,
+      capHit: false,
+      failedClosed: false,
+      alreadyThanked: false,
+    };
   }
+
+  // Legacy negative-control flag strictly gated to NODE_ENV === "test"
+  const isLegacyFailOpen =
+    process.env.NODE_ENV === "test" &&
+    process.env.__CAREERMONKE_LEGACY_CAP_FAIL_OPEN === "true";
 
   const config = readGmailConfig(params.cfEnv);
 
@@ -429,10 +485,16 @@ export async function dispatchEarlyAccessEmails(params: {
     !config.refreshToken ||
     !config.senderEmail
   ) {
-    safeWarn("Missing Gmail OAuth environment configuration; skipping email send");
-    return { thankYouSent: false, digestSent: false, capHit: false };
+    safeWarn("Missing Gmail OAuth environment configuration; skipping thank-you send");
+    return {
+      thankYouSent: false,
+      capHit: false,
+      failedClosed: false,
+      alreadyThanked: false,
+    };
   }
 
+  const normalizedEmail = params.subscriberEmail.trim().toLowerCase();
   const now = new Date(params.createdAt || Date.now());
   const validNow = Number.isNaN(now.getTime()) ? new Date() : now;
   const startOfDayUtc = new Date(
@@ -442,85 +504,372 @@ export async function dispatchEarlyAccessEmails(params: {
       validNow.getUTCDate()
     )
   ).toISOString();
-  const todayKey = startOfDayUtc.slice(0, 10);
 
-  // 1. Check gmail_send_log before sending the thank-you email
-  const beforeThankYou = await getTodaySentMessageCount(
+  // 1. Check daily outgoing message cap in gmail_send_log (MUST fail closed on read error)
+  const todayCount = await getTodaySentMessageCount(
     params.supabaseClient,
     startOfDayUtc
   );
 
-  if (beforeThankYou.count >= DAILY_GMAIL_MESSAGE_CAP) {
+  if (!todayCount.ok && !isLegacyFailOpen) {
     safeWarn(
-      `Daily outgoing message cap (${DAILY_GMAIL_MESSAGE_CAP}) reached; skipping thank-you and digest send`
+      "Could not read gmail_send_log daily count (failing closed); skipping thank-you send"
     );
-    return { thankYouSent: false, digestSent: false, capHit: true };
+    return {
+      thankYouSent: false,
+      capHit: false,
+      failedClosed: true,
+      alreadyThanked: false,
+    };
   }
 
-  // 2. Exchange refresh token for access token (5s timeout)
-  const accessToken = await exchangeRefreshTokenForAccessToken(config);
+  if (todayCount.ok && todayCount.count >= DAILY_GMAIL_MESSAGE_CAP) {
+    safeWarn(
+      `Daily outgoing message cap (${DAILY_GMAIL_MESSAGE_CAP}) reached; skipping thank-you send`
+    );
+    return {
+      thankYouSent: false,
+      capHit: true,
+      failedClosed: false,
+      alreadyThanked: false,
+    };
+  }
+
+  // 2. Double opt-in-light: only one thank-you email per distinct address ever (MUST fail closed on read error)
+  const everSent = await hasThankYouEverBeenSent(
+    params.supabaseClient,
+    normalizedEmail
+  );
+
+  if (!everSent.ok && !isLegacyFailOpen) {
+    safeWarn(
+      "Could not verify prior thank-you history in gmail_send_log (failing closed); skipping thank-you send"
+    );
+    return {
+      thankYouSent: false,
+      capHit: false,
+      failedClosed: true,
+      alreadyThanked: false,
+    };
+  }
+
+  if (everSent.ok && everSent.alreadySent) {
+    safeWarn("Thank-you email already sent to this address previously; skipping");
+    return {
+      thankYouSent: false,
+      capHit: false,
+      failedClosed: false,
+      alreadyThanked: true,
+    };
+  }
+
+  // 3. Execute OAuth token exchange + Gmail send under a hard 2s cap
+  const hardCapMs = params.hardCapMs ?? THANK_YOU_HARD_CAP_MS;
+  const hardCapController = new AbortController();
+  const hardCapTimer = setTimeout(() => hardCapController.abort(), hardCapMs);
+
+  try {
+    const accessToken = await exchangeRefreshTokenForAccessToken(
+      config,
+      hardCapMs,
+      hardCapController.signal
+    );
+    if (!accessToken) {
+      return {
+        thankYouSent: false,
+        capHit: false,
+        failedClosed: false,
+        alreadyThanked: false,
+      };
+    }
+
+    const thankYouContent = buildThankYouEmailContent();
+    const thankYouRaw = buildRfc2822Base64UrlMessage({
+      fromEmail: config.senderEmail,
+      fromName: config.senderName,
+      toEmail: normalizedEmail,
+      subject: thankYouContent.subject,
+      textBody: thankYouContent.textBody,
+      htmlBody: thankYouContent.htmlBody,
+    });
+
+    const thankYouResult = await sendSingleGmailMessage({
+      accessToken,
+      rawBase64Url: thankYouRaw,
+      config,
+      timeoutMs: hardCapMs,
+      parentSignal: hardCapController.signal,
+    });
+
+    if (!thankYouResult.sent) {
+      return {
+        thankYouSent: false,
+        capHit: false,
+        failedClosed: false,
+        alreadyThanked: false,
+      };
+    }
+
+    await recordSentMessage(params.supabaseClient, {
+      recipient_email: normalizedEmail,
+      kind: "thank_you",
+      sent_at: new Date().toISOString(),
+    });
+
+    return {
+      thankYouSent: true,
+      capHit: false,
+      failedClosed: false,
+      alreadyThanked: false,
+    };
+  } catch (err: any) {
+    safeWarn(
+      `Thank-you dispatch aborted or failed: ${sanitizeLogMessage(
+        err?.message || String(err),
+        config
+      )}`
+    );
+    return {
+      thankYouSent: false,
+      capHit: false,
+      failedClosed: false,
+      alreadyThanked: false,
+    };
+  } finally {
+    clearTimeout(hardCapTimer);
+  }
+}
+
+export interface EarlyAccessDigestCronResult {
+  status: "success" | "failed";
+  sent: boolean;
+  reason:
+    | "sent"
+    | "no_new_rows"
+    | "dry_run"
+    | "cap_hit"
+    | "log_read_error"
+    | "emails_read_error"
+    | "missing_env"
+    | "send_error";
+  rowCount: number;
+  lastDigestAt: string | null;
+}
+
+/**
+ * Scheduled Daily Digest Cron Runner:
+ * - Reads last_digest_at from gmail_send_log (MAX(sent_at) WHERE kind = 'digest').
+ * - Fetches all rows in early_access_emails with created_at > last_digest_at.
+ * - Sends NO email if there are no new rows.
+ * - Checks the 150/day cap in gmail_send_log (failing closed on read errors).
+ * - Sends ONE digest email to EARLY_ACCESS_NOTIFY_EMAIL with all new rows and records kind = 'digest' in gmail_send_log.
+ */
+export async function runEarlyAccessDigestCron(options?: {
+  supabaseClient?: any;
+  cfEnv?: Record<string, any>;
+  dryRun?: boolean;
+  nowIso?: string;
+}): Promise<EarlyAccessDigestCronResult> {
+  const dryRun = Boolean(options?.dryRun);
+  const config = readGmailConfig(options?.cfEnv);
+
+  const isLegacySendEmpty =
+    process.env.NODE_ENV === "test" &&
+    process.env.__CAREERMONKE_LEGACY_DIGEST_SEND_EMPTY === "true";
+
+  const isLegacyFailOpen =
+    process.env.NODE_ENV === "test" &&
+    process.env.__CAREERMONKE_LEGACY_CAP_FAIL_OPEN === "true";
+
+  let supabaseClient = options?.supabaseClient;
+  if (!supabaseClient) {
+    if (
+      process.env.NODE_ENV === "test" &&
+      (globalThis as any).__mockSupabaseClient !== undefined
+    ) {
+      supabaseClient = (globalThis as any).__mockSupabaseClient;
+    } else {
+      try {
+        supabaseClient = getSupabaseAdminClient(options?.cfEnv, true);
+      } catch {
+        supabaseClient = null;
+      }
+    }
+  }
+
+  if (!supabaseClient?.from) {
+    safeWarn("Missing Supabase client in digest cron (failing closed)");
+    return {
+      status: "failed",
+      sent: false,
+      reason: "log_read_error",
+      rowCount: 0,
+      lastDigestAt: null,
+    };
+  }
+
+  // 1. Read last_digest_at from gmail_send_log (where kind = 'digest')
+  let lastDigestAt: string | null = null;
+  try {
+    const { data: lastDigestRow, error: digestLookupErr } = await supabaseClient
+      .from("gmail_send_log")
+      .select("sent_at")
+      .eq("kind", "digest")
+      .order("sent_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (digestLookupErr && !isLegacyFailOpen) {
+      safeWarn("Failed to read last_digest_at from gmail_send_log (failing closed)");
+      return {
+        status: "failed",
+        sent: false,
+        reason: "log_read_error",
+        rowCount: 0,
+        lastDigestAt: null,
+      };
+    }
+
+    if (lastDigestRow?.sent_at && typeof lastDigestRow.sent_at === "string") {
+      lastDigestAt = lastDigestRow.sent_at;
+    }
+  } catch {
+    if (!isLegacyFailOpen) {
+      safeWarn("Exception reading last_digest_at from gmail_send_log (failing closed)");
+      return {
+        status: "failed",
+        sent: false,
+        reason: "log_read_error",
+        rowCount: 0,
+        lastDigestAt: null,
+      };
+    }
+  }
+
+  // 2. Fetch all early_access_emails rows created since last_digest_at
+  let newRows: Array<{ email: string; created_at: string }> = [];
+  try {
+    let query = supabaseClient
+      .from("early_access_emails")
+      .select("email, created_at");
+
+    if (lastDigestAt) {
+      query = query.gt("created_at", lastDigestAt);
+    }
+
+    const { data, error } = await query.order("created_at", { ascending: true });
+    if (error || !Array.isArray(data)) {
+      safeWarn("Failed to query new rows from early_access_emails");
+      return {
+        status: "failed",
+        sent: false,
+        reason: "emails_read_error",
+        rowCount: 0,
+        lastDigestAt,
+      };
+    }
+    newRows = data;
+  } catch {
+    safeWarn("Exception querying new rows from early_access_emails");
+    return {
+      status: "failed",
+      sent: false,
+      reason: "emails_read_error",
+      rowCount: 0,
+      lastDigestAt,
+    };
+  }
+
+  // 3. No digest if no new rows
+  if (newRows.length === 0 && !isLegacySendEmpty) {
+    return {
+      status: "success",
+      sent: false,
+      reason: "no_new_rows",
+      rowCount: 0,
+      lastDigestAt,
+    };
+  }
+
+  if (dryRun) {
+    return {
+      status: "success",
+      sent: false,
+      reason: "dry_run",
+      rowCount: newRows.length,
+      lastDigestAt,
+    };
+  }
+
+  // 4. Verify Gmail env config
+  if (
+    !config.clientId ||
+    !config.clientSecret ||
+    !config.refreshToken ||
+    !config.senderEmail ||
+    !config.notifyEmail
+  ) {
+    safeWarn("Missing Gmail or EARLY_ACCESS_NOTIFY_EMAIL configuration for digest cron");
+    return {
+      status: "failed",
+      sent: false,
+      reason: "missing_env",
+      rowCount: newRows.length,
+      lastDigestAt,
+    };
+  }
+
+  // 5. Check 150/day outgoing message cap in gmail_send_log (fail closed if count cannot be read)
+  const nowDate = options?.nowIso ? new Date(options.nowIso) : new Date();
+  const validNow = Number.isNaN(nowDate.getTime()) ? new Date() : nowDate;
+  const startOfDayUtc = new Date(
+    Date.UTC(
+      validNow.getUTCFullYear(),
+      validNow.getUTCMonth(),
+      validNow.getUTCDate()
+    )
+  ).toISOString();
+
+  const todayCount = await getTodaySentMessageCount(supabaseClient, startOfDayUtc);
+  if (!todayCount.ok && !isLegacyFailOpen) {
+    safeWarn(
+      "Could not read gmail_send_log daily count in digest cron (failing closed); skipping digest send"
+    );
+    return {
+      status: "failed",
+      sent: false,
+      reason: "log_read_error",
+      rowCount: newRows.length,
+      lastDigestAt,
+    };
+  }
+
+  if (todayCount.ok && todayCount.count >= DAILY_GMAIL_MESSAGE_CAP) {
+    safeWarn(
+      `Daily outgoing message cap (${DAILY_GMAIL_MESSAGE_CAP}) reached; skipping digest send`
+    );
+    return {
+      status: "success",
+      sent: false,
+      reason: "cap_hit",
+      rowCount: newRows.length,
+      lastDigestAt,
+    };
+  }
+
+  // 6. Exchange refresh token and send ONE digest email with all new rows
+  const accessToken = await exchangeRefreshTokenForAccessToken(config, GMAIL_TIMEOUT_MS);
   if (!accessToken) {
-    return { thankYouSent: false, digestSent: false, capHit: false };
+    return {
+      status: "failed",
+      sent: false,
+      reason: "send_error",
+      rowCount: newRows.length,
+      lastDigestAt,
+    };
   }
 
-  // 3. Build and send (a) Thank-you email to the submitter
-  const thankYouContent = buildThankYouEmailContent();
-  const thankYouRaw = buildRfc2822Base64UrlMessage({
-    fromEmail: config.senderEmail,
-    fromName: config.senderName,
-    toEmail: params.subscriberEmail,
-    subject: thankYouContent.subject,
-    textBody: thankYouContent.textBody,
-    htmlBody: thankYouContent.htmlBody,
-  });
-
-  const thankYouResult = await sendSingleGmailMessage({
-    accessToken,
-    rawBase64Url: thankYouRaw,
-    config,
-  });
-
-  if (!thankYouResult.sent) {
-    // Stop sending immediately on quota error or send failure
-    return { thankYouSent: false, digestSent: false, capHit: false };
-  }
-
-  await recordSentMessage(params.supabaseClient, new Date().toISOString());
-
-  // 4. Send (b) Owner notification batched into one daily digest email per UTC day
-  if (!config.notifyEmail) {
-    safeWarn("EARLY_ACCESS_NOTIFY_EMAIL is not configured; skipping owner digest send");
-    return { thankYouSent: true, digestSent: false, capHit: false };
-  }
-
-  const digestAlreadySentToday =
-    beforeThankYou.count > 0 || lastOwnerDigestDayUtc === todayKey;
-
-  if (digestAlreadySentToday) {
-    return { thankYouSent: true, digestSent: false, capHit: false };
-  }
-
-  // Re-check gmail_send_log before sending the second message (owner daily digest)
-  const beforeDigest = await getTodaySentMessageCount(
-    params.supabaseClient,
-    startOfDayUtc
-  );
-
-  if (beforeDigest.count >= DAILY_GMAIL_MESSAGE_CAP) {
-    safeWarn(
-      `Daily outgoing message cap (${DAILY_GMAIL_MESSAGE_CAP}) reached before owner digest; skipping digest send`
-    );
-    return { thankYouSent: true, digestSent: false, capHit: true };
-  }
-
-  const since24hIso = new Date(validNow.getTime() - 24 * 60 * 60 * 1000).toISOString();
-  const digestRows = await fetchDigestRowsFromToday(
-    params.supabaseClient,
-    since24hIso,
-    { email: params.subscriberEmail, created_at: params.createdAt }
-  );
-
-  const digestContent = buildOwnerDigestEmailContent(digestRows);
+  const digestContent = buildOwnerDigestEmailContent(newRows);
   const digestRaw = buildRfc2822Base64UrlMessage({
     fromEmail: config.senderEmail,
     fromName: config.senderName,
@@ -534,14 +883,41 @@ export async function dispatchEarlyAccessEmails(params: {
     accessToken,
     rawBase64Url: digestRaw,
     config,
+    timeoutMs: GMAIL_TIMEOUT_MS,
   });
 
   if (!digestResult.sent) {
-    return { thankYouSent: true, digestSent: false, capHit: false };
+    return {
+      status: "failed",
+      sent: false,
+      reason: "send_error",
+      rowCount: newRows.length,
+      lastDigestAt,
+    };
   }
 
-  lastOwnerDigestDayUtc = todayKey;
-  await recordSentMessage(params.supabaseClient, new Date().toISOString());
+  // Ensure recorded digest timestamp is >= max(created_at) of included rows so next run only picks strictly newer rows
+  const latestRowCreatedAt = newRows.reduce(
+    (maxIso, r) => (r.created_at > maxIso ? r.created_at : maxIso),
+    ""
+  );
+  const currentIso = options?.nowIso || new Date().toISOString();
+  const digestSentAt =
+    latestRowCreatedAt && latestRowCreatedAt > currentIso
+      ? latestRowCreatedAt
+      : currentIso;
 
-  return { thankYouSent: true, digestSent: true, capHit: false };
+  await recordSentMessage(supabaseClient, {
+    recipient_email: config.notifyEmail,
+    kind: "digest",
+    sent_at: digestSentAt,
+  });
+
+  return {
+    status: "success",
+    sent: true,
+    reason: "sent",
+    rowCount: newRows.length,
+    lastDigestAt: digestSentAt,
+  };
 }
