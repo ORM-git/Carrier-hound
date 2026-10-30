@@ -11,8 +11,8 @@ export function getLandingCards(_rolesCount?: string): LandingCard[] {
   return [
     {
       id: "card-1",
-      title: "Unindexed Career Roles",
-      body: "Scrapes engineering and product openings directly from employer hiring pages before they hit aggregators.",
+      title: "Employer Career Pages",
+      body: "Pulls openings directly from employer career pages.",
       tag: "Example",
       initials: "JS",
       avatarBg: "bg-blue-600",
@@ -35,8 +35,8 @@ export function getLandingCards(_rolesCount?: string): LandingCard[] {
     },
     {
       id: "card-4",
-      title: "Verified Remote Filters",
-      body: "Filters positions by worldwide eligibility, regional remote availability, and transparent salary data.",
+      title: "Remote & Location Filters",
+      body: "Filters positions by worldwide eligibility, regional remote availability, and posted salary ranges.",
       tag: "Example",
       initials: "RT",
       avatarBg: "bg-amber-600",
@@ -59,8 +59,8 @@ export function getLandingCards(_rolesCount?: string): LandingCard[] {
     },
     {
       id: "card-7",
-      title: "Off-the-Radar Roles",
-      body: "Surfaces direct hiring posts not yet indexed on mainstream boards like LinkedIn or Indeed.",
+      title: "Direct Application Links",
+      body: "Links to the employer's own application page.",
       tag: "Example",
       initials: "EP",
       avatarBg: "bg-rose-600",
@@ -92,15 +92,15 @@ export function getLandingCards(_rolesCount?: string): LandingCard[] {
     {
       id: "card-11",
       title: "Application Pipeline",
-      body: "Tracks target companies, applied positions, and interview milestones without third-party clutter.",
+      body: "Tracks target companies, applied positions, and interview milestones in a structured workflow.",
       tag: "Example",
       initials: "VR",
       avatarBg: "bg-orange-600",
     },
     {
       id: "card-12",
-      title: "Verified Employer Sources",
-      body: "Discovers authentic openings directly on primary hiring portals without recruiter spam.",
+      title: "Primary Employer Sources",
+      body: "Discovers openings directly on primary company hiring portals and ATS endpoints.",
       tag: "Example",
       initials: "OG",
       avatarBg: "bg-slate-700",

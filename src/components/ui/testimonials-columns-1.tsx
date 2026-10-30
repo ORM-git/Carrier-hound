@@ -78,9 +78,9 @@ export const TestimonialsColumn = (props: {
                     {item.handle || item.role || "Example"}
                   </span>
 
-                  {/* 4. Quote text on real product capability */}
+                  {/* 4. Feature note on real product capability */}
                   <p className="text-xs sm:text-[13px] text-gray-700 leading-relaxed font-normal">
-                    &ldquo;{item.text}&rdquo;
+                    {item.text}
                   </p>
                 </div>
               ))}
