@@ -10,9 +10,8 @@ export const Testimonials = () => {
 
   const mappedCards: Testimonial[] = cards.map((card) => ({
     text: card.body,
-    name: card.authorName || card.title,
-    title: card.title,
-    role: card.title,
+    name: card.authorName,
+    role: card.location,
     initials: card.initials,
     avatarBg: card.avatarBg,
     avatar: card.avatar,
