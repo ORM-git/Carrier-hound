@@ -422,11 +422,42 @@ async function main() {
     assert.strictEqual(res.status, 403);
   }
 
-  for (const guestRoute of ["/", "/early-access", "/api/early-access", "/api/health", "/privacy", "/privacy-policy", "/terms-and-conditions", "/login"]) {
+  for (const guestRoute of ["/", "/early-access", "/api/early-access", "/api/health", "/privacy", "/privacy-policy", "/terms-and-conditions", "/login", "/data/ne_110m_land.json"]) {
     const res = await middleware(new NextRequest(`http://localhost:3000${guestRoute}`));
     assert.strictEqual(res.status, 200);
   }
 
+  // Negative assertions: other .json paths (/data/radar.json -> 307 to /early-access, /api/*.json -> 403)
+  const blockedDataReq = new NextRequest("http://localhost:3000/data/radar.json");
+  const blockedDataRes = await middleware(blockedDataReq);
+  assert.strictEqual(
+    blockedDataRes.status,
+    307,
+    `Guest request to '/data/radar.json' must return 307 redirect, got ${blockedDataRes.status}`
+  );
+  const dataLocation = blockedDataRes.headers.get("location") || "";
+  assert.strictEqual(
+    dataLocation ? new URL(dataLocation).pathname : "",
+    "/early-access",
+    `Guest request to '/data/radar.json' must redirect to '/early-access'`
+  );
+
+  const blockedApiJsonReq = new NextRequest("http://localhost:3000/api/jobs.json");
+  const blockedApiJsonRes = await middleware(blockedApiJsonReq);
+  assert.strictEqual(
+    blockedApiJsonRes.status,
+    403,
+    `Guest request to '/api/jobs.json' must return HTTP 403, got ${blockedApiJsonRes.status}`
+  );
+  const blockedApiJsonBody = await blockedApiJsonRes.json();
+  assert.strictEqual(
+    blockedApiJsonBody.error,
+    "Early access only",
+    `Guest request to '/api/jobs.json' must return 'Early access only' error`
+  );
+  console.log("  [PASS] Negative assertions verified: /data/radar.json redirects to /early-access and /api/jobs.json returns 403");
+
+  // 2b. Verify EARLY_ACCESS_ALLOWED_EMAILS allowlist enforcement
   process.env.EARLY_ACCESS_ALLOWED_EMAILS = "  founder.allowed@example.com , SECOND.ADMIN@EXAMPLE.COM ";
   signOutCallCount = 0;
 
