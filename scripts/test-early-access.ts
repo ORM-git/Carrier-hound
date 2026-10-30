@@ -257,6 +257,7 @@ async function main() {
   const { middleware } = await import("../src/middleware");
   const { POST: earlyAccessPost } = await import("../src/app/api/early-access/route");
   const {
+    DAILY_THANK_YOU_CAP,
     DAILY_GMAIL_MESSAGE_CAP,
     EARLY_ACCESS_THANK_YOU_SUBJECT,
     GMAIL_OAUTH_TOKEN_URL,
@@ -289,20 +290,14 @@ async function main() {
 
   if (isNegativeControlCap) {
     process.env.__CAREERMONKE_LEGACY_CAP_FAIL_OPEN = "true";
-    process.env.GMAIL_CLIENT_ID = "nc-id";
-    process.env.GMAIL_CLIENT_SECRET = "nc-secret";
-    process.env.GMAIL_REFRESH_TOKEN = "nc-refresh";
-    process.env.GMAIL_SENDER_EMAIL = "nc@sender.example";
+    process.env.APPS_SCRIPT_MAIL_URL = "https://script.google.com/macros/s/nc-script/exec";
+    process.env.APPS_SCRIPT_MAIL_SECRET = "nc-secret";
     simulateSendLogReadFailure = true;
 
     let sentCount = 0;
-    globalThis.fetch = (async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url === GMAIL_OAUTH_TOKEN_URL) {
-        return new Response(JSON.stringify({ access_token: "nc-token" }), { status: 200 });
-      }
+    globalThis.fetch = (async (_input: RequestInfo | URL) => {
       sentCount++;
-      return new Response(JSON.stringify({ id: "nc-msg" }), { status: 200 });
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
     }) as typeof fetch;
 
     await sendEarlyAccessThankYouEmail({
@@ -583,12 +578,25 @@ async function main() {
   process.env.GMAIL_SENDER_NAME = TEST_SENDER_NAME;
   process.env.EARLY_ACCESS_NOTIFY_EMAIL = TEST_NOTIFY_EMAIL;
 
+  const TEST_APPS_SCRIPT_URL = "https://script.google.com/macros/s/mock-apps-script-id/exec";
+  const TEST_APPS_SCRIPT_SECRET = "mock-apps-script-secret-key-123";
+  process.env.APPS_SCRIPT_MAIL_URL = TEST_APPS_SCRIPT_URL;
+  process.env.APPS_SCRIPT_MAIL_SECRET = TEST_APPS_SCRIPT_SECRET;
+
   const originalFetch = globalThis.fetch;
   const originalConsoleWarn = console.warn;
   const capturedWarnings: string[] = [];
   console.warn = (...args: any[]) => {
     capturedWarnings.push(args.map((a) => String(a)).join(" "));
   };
+
+  interface CapturedAppsScriptCall {
+    url: string;
+    method: string;
+    redirect?: string;
+    body: { secret: string; email: string };
+  }
+  const appsScriptCalls: CapturedAppsScriptCall[] = [];
 
   interface CapturedGmailSend {
     authHeader: string;
@@ -602,6 +610,36 @@ async function main() {
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
 
+    if (url === TEST_APPS_SCRIPT_URL) {
+      if (mockFetchMode === "slow_3s") {
+        return await new Promise<Response>((resolve, reject) => {
+          const timer = setTimeout(() => {
+            resolve(new Response("ok", { status: 200, headers: { "content-type": "text/plain" } }));
+          }, 3000);
+          init?.signal?.addEventListener(
+            "abort",
+            () => {
+              clearTimeout(timer);
+              slowFetchAborted = true;
+              reject(new Error("AbortError: 8s timeout reached"));
+            },
+            { once: true }
+          );
+        });
+      }
+      const body = JSON.parse(String(init?.body || "{}"));
+      appsScriptCalls.push({
+        url,
+        method: init?.method || "POST",
+        redirect: init?.redirect,
+        body,
+      });
+      return new Response("ok", {
+        status: 200,
+        headers: { "content-type": "text/plain" },
+      });
+    }
+
     if (mockFetchMode === "slow_3s") {
       return await new Promise<Response>((resolve, reject) => {
         const timer = setTimeout(() => {
@@ -612,7 +650,7 @@ async function main() {
           () => {
             clearTimeout(timer);
             slowFetchAborted = true;
-            reject(new Error("AbortError: hard 2s cap reached"));
+            reject(new Error("AbortError: timeout reached"));
           },
           { once: true }
         );
@@ -671,16 +709,18 @@ async function main() {
     assert.strictEqual(firstRes.status, 200);
     assert.strictEqual(mockDbRows.length, 1);
     assert.strictEqual(
-      gmailSendCalls.length,
+      appsScriptCalls.length,
       1,
-      "POST /api/early-access must send ONLY 1 thank-you email (no digest on request path)"
+      "POST /api/early-access must send ONLY 1 thank-you call via Apps Script (no digest on request path)"
     );
-    assert.strictEqual(gmailSendCalls[0].subject, EARLY_ACCESS_THANK_YOU_SUBJECT);
-    assert.ok(gmailSendCalls[0].rawMime.includes("To: <alice@example.com>"));
+    assert.strictEqual(appsScriptCalls[0].method, "POST");
+    assert.strictEqual(appsScriptCalls[0].redirect, "follow", "Must follow redirects for Apps Script /exec");
+    assert.strictEqual(appsScriptCalls[0].body.email, "alice@example.com");
+    assert.strictEqual(appsScriptCalls[0].body.secret, TEST_APPS_SCRIPT_SECRET);
     assert.strictEqual(mockSendLogRows.length, 1);
     assert.strictEqual(mockSendLogRows[0].kind, "thank_you");
     assert.strictEqual(mockSendLogRows[0].recipient_email, "alice@example.com");
-    console.log("  [PASS] Request path sends ONLY thank-you email (digest removed from request path)");
+    console.log("  [PASS] Request path sends ONLY thank-you email via Apps Script (digest removed from request path)");
 
     // 4b. Thank-you is NEVER repeated for the same address ever (even if early_access_emails row were cleared)
     mockDbRows.length = 0; // Simulate row deleted from early_access_emails while gmail_send_log retains history
@@ -693,11 +733,39 @@ async function main() {
     );
     assert.strictEqual(repeatRes.status, 200);
     assert.strictEqual(
-      gmailSendCalls.length,
+      appsScriptCalls.length,
       1,
       "Thank-you email must NEVER be sent a second time to the same address (checked via gmail_send_log)"
     );
     console.log("  [PASS] Double opt-in-light: thank-you never repeated for the same address ever");
+
+    // 4b-ii. Verify text reply parsing for "already" and "forbidden"
+    const originalFetchForReplies = globalThis.fetch;
+    try {
+      globalThis.fetch = (async () => {
+        return new Response("already", { status: 200, headers: { "content-type": "text/plain" } });
+      }) as typeof fetch;
+      const alreadyReplyResult = await sendEarlyAccessThankYouEmail({
+        subscriberEmail: "external.already@example.com",
+        createdAt: new Date().toISOString(),
+        supabaseClient: (globalThis as any).__mockSupabaseClient,
+      });
+      assert.strictEqual(alreadyReplyResult.alreadyThanked, true, "Apps Script 'already' reply must set alreadyThanked: true");
+      assert.strictEqual(alreadyReplyResult.thankYouSent, false);
+
+      globalThis.fetch = (async () => {
+        return new Response("forbidden", { status: 403, headers: { "content-type": "text/plain" } });
+      }) as typeof fetch;
+      const forbiddenReplyResult = await sendEarlyAccessThankYouEmail({
+        subscriberEmail: "external.forbidden@example.com",
+        createdAt: new Date().toISOString(),
+        supabaseClient: (globalThis as any).__mockSupabaseClient,
+      });
+      assert.strictEqual(forbiddenReplyResult.thankYouSent, false);
+      assert.strictEqual(forbiddenReplyResult.alreadyThanked, false);
+    } finally {
+      globalThis.fetch = originalFetchForReplies;
+    }
 
     // 4c. Cap fails closed when gmail_send_log read errors (missing table / grant problem)
     simulateSendLogReadFailure = true;
@@ -715,7 +783,7 @@ async function main() {
         "Signup must remain stored in early_access_emails when gmail_send_log read fails"
       );
       assert.strictEqual(
-        gmailSendCalls.length,
+        appsScriptCalls.length,
         1,
         "Cap MUST fail closed: 0 emails sent when gmail_send_log count cannot be read"
       );
@@ -724,7 +792,7 @@ async function main() {
     }
     console.log("  [PASS] Cap fails closed when gmail_send_log cannot be read (signup stored, 0 emails sent)");
 
-    // 4d. Do not block submit beyond ~1s + hard 2s cap on background thank-you send
+    // 4d. Do not block submit beyond ~1s + fire-and-forget via waitUntil
     mockFetchMode = "slow_3s";
     slowFetchAborted = false;
     const t0 = Date.now();
@@ -741,11 +809,61 @@ async function main() {
       elapsedMs < 1200,
       `POST /api/early-access must not block beyond ~1s, took ${elapsedMs}ms`
     );
-    // Wait for the 2s hard cap to abort the hanging 3s fetch
-    await new Promise((r) => setTimeout(r, 1400));
-    assert.strictEqual(slowFetchAborted, true, "Hanging Gmail fetch must be aborted by hard 2s cap");
     mockFetchMode = "ok";
-    console.log(`  [PASS] Submit responded in ${elapsedMs}ms (< ~1s) and aborted slow send at hard 2s cap`);
+    console.log(`  [PASS] Submit responded in ${elapsedMs}ms (< ~1s) without blocking for Apps Script`);
+
+    // 4e. Test timeout=UNKNOWN-no-resend: hanging Apps Script request aborts, logs UNKNOWN, and NEVER resends
+    capturedWarnings.length = 0;
+    let timeoutFetchAttempts = 0;
+    const originalFetchForTimeout = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      timeoutFetchAttempts++;
+      return await new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          const err = new Error("AbortError");
+          err.name = "AbortError";
+          reject(err);
+        });
+      });
+    }) as typeof fetch;
+
+    const timeoutResult = await sendEarlyAccessThankYouEmail({
+      subscriberEmail: "timeout.test@example.com",
+      createdAt: new Date().toISOString(),
+      supabaseClient: (globalThis as any).__mockSupabaseClient,
+      hardCapMs: 50,
+    });
+    globalThis.fetch = originalFetchForTimeout;
+
+    assert.strictEqual(timeoutResult.thankYouSent, false, "Thank-you must not be marked sent on timeout");
+    assert.strictEqual(timeoutFetchAttempts, 1, "Timed-out request must NEVER be automatically resent");
+    const timeoutLogText = capturedWarnings.join("\n");
+    assert.ok(timeoutLogText.includes("UNKNOWN"), "Timeout must be logged as UNKNOWN");
+    assert.ok(!timeoutLogText.includes("timeout.test@example.com"), "Email must not be logged");
+    assert.ok(!timeoutLogText.includes(TEST_APPS_SCRIPT_URL), "URL must not be logged");
+    assert.ok(!timeoutLogText.includes(TEST_APPS_SCRIPT_SECRET), "Secret must not be logged");
+    console.log("  [PASS] timeout=UNKNOWN-no-resend verified: logged as UNKNOWN and never resent");
+
+    // 4f. Test non-OK result: reply 'invalid', 'forbidden', 'busy' logs UNKNOWN and is NEVER resent
+    capturedWarnings.length = 0;
+    let nonOkAttempts = 0;
+    const originalFetchForNonOk = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      nonOkAttempts++;
+      return new Response("busy", { status: 200, headers: { "content-type": "text/plain" } });
+    }) as typeof fetch;
+
+    const nonOkResult = await sendEarlyAccessThankYouEmail({
+      subscriberEmail: "nonok.test@example.com",
+      createdAt: new Date().toISOString(),
+      supabaseClient: (globalThis as any).__mockSupabaseClient,
+    });
+    globalThis.fetch = originalFetchForNonOk;
+
+    assert.strictEqual(nonOkResult.thankYouSent, false);
+    assert.strictEqual(nonOkAttempts, 1, "Non-OK result must NEVER be automatically resent");
+    assert.ok(capturedWarnings.some((w) => w.includes("UNKNOWN")), "Non-OK result must be logged as UNKNOWN");
+    console.log("  [PASS] non-OK result logged as UNKNOWN and never resent");
 
     // ---------------------------------------------------------------------------
     // TEST 5: Scheduled Owner Digest Cron (runEarlyAccessDigestCron)
@@ -815,28 +933,29 @@ async function main() {
     );
     console.log("  [PASS] Digest cron sends once with all rows since last_digest_at and skips when no new rows");
 
-    // 5e. Verify 150/day cap across gmail_send_log
+    // 5e. Verify 80/day thank-you cap across gmail_send_log
+    assert.strictEqual(DAILY_THANK_YOU_CAP, 80);
     assert.strictEqual(DAILY_GMAIL_MESSAGE_CAP, 150);
     mockSendLogRows.length = 0;
     const todayIso = new Date().toISOString();
-    for (let i = 0; i < 150; i++) {
+    for (let i = 0; i < 80; i++) {
       mockSendLogRows.push({
         recipient_email: `u${i}@example.com`,
         kind: "thank_you",
         sent_at: todayIso,
       });
     }
-    const sendsBeforeCap = gmailSendCalls.length;
+    const sendsBeforeCap = appsScriptCalls.length;
     const cappedRes = await earlyAccessPost(
       new Request("http://localhost:3000/api/early-access", {
         method: "POST",
         headers: { "content-type": "application/json", "x-forwarded-for": "198.51.100.20" },
-        body: JSON.stringify({ email: "over150@example.com" }),
+        body: JSON.stringify({ email: "over80@example.com" }),
       })
     );
     assert.strictEqual(cappedRes.status, 200);
-    assert.strictEqual(gmailSendCalls.length, sendsBeforeCap, "0 sends allowed when 150/day cap is reached");
-    console.log("  [PASS] 150 messages/day total cap enforced");
+    assert.strictEqual(appsScriptCalls.length, sendsBeforeCap, "0 sends allowed when 80/day cap is reached");
+    console.log("  [PASS] 80 messages/day thank-you cap enforced");
 
     // 5f. Verify zero secrets or full emails in warning logs
     capturedWarnings.length = 0;
@@ -851,6 +970,8 @@ async function main() {
     );
     const allLogs = capturedWarnings.join("\n");
     for (const secret of [
+      TEST_APPS_SCRIPT_URL,
+      TEST_APPS_SCRIPT_SECRET,
       TEST_CLIENT_ID,
       TEST_CLIENT_SECRET,
       TEST_REFRESH_TOKEN,
@@ -871,6 +992,8 @@ async function main() {
     delete process.env.GMAIL_SENDER_EMAIL;
     delete process.env.GMAIL_SENDER_NAME;
     delete process.env.EARLY_ACCESS_NOTIFY_EMAIL;
+    delete process.env.APPS_SCRIPT_MAIL_URL;
+    delete process.env.APPS_SCRIPT_MAIL_SECRET;
   }
 
   // ---------------------------------------------------------------------------
