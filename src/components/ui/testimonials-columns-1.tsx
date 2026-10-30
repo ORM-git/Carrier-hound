@@ -2,48 +2,14 @@
 
 import React, { useEffect, useRef } from "react";
 import { useAnimate } from "motion/react";
-import {
-  ExternalLink,
-  Layers,
-  Sparkles,
-  FileText,
-  Globe,
-  BookmarkCheck,
-  Link2,
-  Briefcase,
-  CheckCircle2,
-  Compass,
-  Kanban,
-  FileEdit,
-  type LucideIcon,
-} from "lucide-react";
-
-const ICON_MAP: Record<string, LucideIcon> = {
-  ExternalLink,
-  Layers,
-  Sparkles,
-  FileText,
-  Globe,
-  BookmarkCheck,
-  Link2,
-  Briefcase,
-  CheckCircle2,
-  Compass,
-  Kanban,
-  FileEdit,
-};
-
-function CardIcon({ name, className }: { name?: string; className?: string }) {
-  const Icon = (name && ICON_MAP[name]) || CheckCircle2;
-  return <Icon className={className} />;
-}
 
 export type Testimonial = {
   text: string;
   name: string;
   role?: string;
   handle?: string;
-  iconName?: string;
+  initials?: string;
+  avatarBg?: string;
 };
 
 export const TestimonialsColumn = (props: {
@@ -94,24 +60,27 @@ export const TestimonialsColumn = (props: {
                   key={`${index}-${i}`}
                   className="bg-white border border-gray-200/90 rounded-2xl p-6 flex flex-col items-center text-center shadow-sm hover:shadow-md hover:border-gray-300 transition-all duration-150 w-[270px] sm:w-[280px] shrink-0"
                 >
-                  {/* 1. Lucide Icon Circle */}
-                  <div className="w-12 h-12 rounded-full bg-blue-50 border border-blue-100/80 flex items-center justify-center text-[#2563EB] mb-3.5 shadow-xs flex-shrink-0">
-                    <CardIcon name={item.iconName} className="w-5 h-5 text-[#2563EB]" />
+                  {/* 1. Initials Avatar Circle on Coloured Background */}
+                  <div
+                    className={`w-14 h-14 rounded-full flex items-center justify-center font-bold text-white text-base shadow-sm ring-2 ring-slate-100 flex-shrink-0 mb-3 select-none ${item.avatarBg || "bg-blue-600"}`}
+                    aria-hidden="true"
+                  >
+                    <span>{item.initials}</span>
                   </div>
 
-                  {/* 2. Card Title */}
+                  {/* 2. Short Title */}
                   <h3 className="text-sm sm:text-base font-bold text-[#09090B] leading-tight">
                     {item.name}
                   </h3>
 
-                  {/* 3. Category / Tag */}
-                  <span className="text-xs text-blue-600 font-semibold bg-blue-50 border border-blue-100/80 px-2.5 py-0.5 rounded-full mt-1.5 mb-3">
-                    {item.handle || item.role}
+                  {/* 3. Tiny "Example" Tag */}
+                  <span className="text-[11px] font-semibold text-gray-500 bg-gray-100 border border-gray-200/80 px-2.5 py-0.5 rounded-full mt-1.5 mb-2.5">
+                    {item.handle || item.role || "Example"}
                   </span>
 
-                  {/* 4. Statement body text */}
+                  {/* 4. Quote text on real product capability */}
                   <p className="text-xs sm:text-[13px] text-gray-700 leading-relaxed font-normal">
-                    {item.text}
+                    &ldquo;{item.text}&rdquo;
                   </p>
                 </div>
               ))}

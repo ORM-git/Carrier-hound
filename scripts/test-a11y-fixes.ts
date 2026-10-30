@@ -45,16 +45,32 @@ function runAudit() {
 
   if (isNegativeControl) {
     psmContent = psmContent.replace(/<h2/g, '<h3');
+    footerContent = footerContent.replace(/<h2/g, '<h3');
   }
 
-  const psmHasH2 = psmContent.includes('<h2');
+  const psmHasH2 = psmContent.includes('<h2 className="text-xs sm:text-sm md:text-[15px]');
   const reviewCardsHasH3 = reviewCardsContent.includes('<h3');
-  const footerHasH2 = footerContent.includes('<h2');
+  const footerHasH2 = footerContent.includes('<h2 className={landingColumnHeadingClass}>Navigation</h2>') || footerContent.includes('<h2 className="text-sm font-semibold uppercase tracking-wider text-slate-200">Navigation</h2>');
 
   if (!psmHasH2 || !reviewCardsHasH3 || !footerHasH2) {
-    failures.push('FIX 3 FAIL: Heading hierarchy broken (expected h2 in ProductScreenshotMock/Footer and h3 in ReviewCards).');
+    failures.push('FIX 3 FAIL: Heading hierarchy broken (expected specific h2 in ProductScreenshotMock/Footer and h3 in ReviewCards).');
   } else {
     console.log('  [PASS] FIX 3: Heading hierarchy validated across ProductScreenshotMock (h2), ReviewCards (h3), and Footer (h2)');
+  }
+
+  // TEST 4: Landing page has <main> outer wrapper
+  const landingPath = path.join(__dirname, '..', 'src', 'app', 'page.tsx');
+  let landingContent = fs.readFileSync(landingPath, 'utf8');
+
+  if (isNegativeControl) {
+    landingContent = landingContent.replace(/<main className="min-h-screen/g, '<div className="min-h-screen');
+  }
+
+  const landingHasMain = landingContent.includes('<main className="min-h-screen') && landingContent.includes('</main>');
+  if (!landingHasMain) {
+    failures.push('FIX 4 FAIL: src/app/page.tsx missing semantic <main> outer wrapper.');
+  } else {
+    console.log('  [PASS] FIX 4: src/app/page.tsx outer wrapper is semantic <main>');
   }
 
   // Final Verdict

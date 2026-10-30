@@ -382,7 +382,7 @@ export default function HomePage() {
       </section>
 
       {/* ========================================================================= */}
-      {/* 6. WHY PEOPLE JOIN THE WAITLIST (12 honest value cards)     */}
+      {/* 6. EXAMPLE FEEDBACK (12 scrolling sample cards)                           */}
       {/* ========================================================================= */}
       <Testimonials />
 

@@ -4,19 +4,17 @@ import React from "react";
 import { motion } from "motion/react";
 import { TestimonialsColumn, Testimonial } from "@/components/ui/testimonials-columns-1";
 import { getLandingCards } from "@/data/landingCards";
-import { useLiveStats } from "@/lib/api/stats";
 
 export const Testimonials = () => {
-  const { totalJobs } = useLiveStats();
-  const countStr = totalJobs !== null && totalJobs > 0 ? `${totalJobs.toLocaleString()}+` : undefined;
-  const cards = getLandingCards(countStr);
+  const cards = getLandingCards();
 
   const mappedCards: Testimonial[] = cards.map((card) => ({
     text: card.body,
     name: card.title,
-    handle: card.tag,
-    role: card.tag,
-    iconName: card.iconName,
+    handle: card.tag || "Example",
+    role: card.tag || "Example",
+    initials: card.initials,
+    avatarBg: card.avatarBg,
   }));
 
   // Arrange into 4 columns (3 cards each) matching layout
@@ -37,8 +35,11 @@ export const Testimonials = () => {
           className="text-center max-w-3xl mx-auto mb-10 sm:mb-14"
         >
           <h2 className="text-3xl font-semibold tracking-tight text-[#142033] sm:text-4xl lg:whitespace-nowrap">
-            Why people join the waitlist
+            Example feedback
           </h2>
+          <p className="mt-2 text-sm sm:text-base text-gray-600 font-normal">
+            Example feedback - real user reviews coming soon
+          </p>
         </motion.div>
 
         {/* 4 Moving Vertical Columns with Smooth Mask Fade */}
