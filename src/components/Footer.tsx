@@ -25,7 +25,7 @@ function LandingFooter() {
           <div className="lg:col-span-4 space-y-tk-2">
             <Link href="/" className="inline-flex items-center gap-2.5 min-h-[44px] rounded-tk-lg">
               <div className="w-9 h-9 rounded-tk-full bg-surface flex items-center justify-center p-1 shadow-tk-xs border border-line overflow-hidden">
-                <BrandIcon className="w-7 h-7" />
+                <BrandIcon variant="new" className="w-7 h-7" />
               </div>
               <span className="text-xl font-black tracking-tight text-brand-600">CareerMonke</span>
             </Link>
