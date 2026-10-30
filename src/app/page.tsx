@@ -14,7 +14,7 @@ import CategorySelectModal from "@/components/CategorySelectModal";
 import Footer from "@/components/Footer";
 import GlobeLiveStats from "@/components/GlobeLiveStats";
 import { useLiveStats } from "@/lib/api/stats";
-import { X, Check, ArrowRight } from "lucide-react";
+import { X, Check, ArrowRight, Instagram, Linkedin, Mail } from "lucide-react";
 
 const WireframeDottedGlobe = dynamic(
   () => import("@/components/ui/wireframe-dotted-globe"),
@@ -361,6 +361,34 @@ export default function HomePage() {
                 </p>
               </div>
 
+              {/* Founder social links */}
+              <div className="flex items-center justify-center sm:justify-start gap-3 pt-2">
+                <a
+                  href="https://www.instagram.com/orissa.patnaik"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="Instagram"
+                  className="text-gray-500 hover:text-gray-900 transition-colors p-1.5 rounded-full hover:bg-gray-100"
+                >
+                  <Instagram className="w-4 h-4" />
+                </a>
+                <a
+                  href="https://www.linkedin.com/in/orissa-patnaik-85071a1aa/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="LinkedIn"
+                  className="text-gray-500 hover:text-gray-900 transition-colors p-1.5 rounded-full hover:bg-gray-100"
+                >
+                  <Linkedin className="w-4 h-4" />
+                </a>
+                <a
+                  href="mailto:orissaleepatnaik@gmail.com"
+                  aria-label="Email"
+                  className="text-gray-500 hover:text-gray-900 transition-colors p-1.5 rounded-full hover:bg-gray-100"
+                >
+                  <Mail className="w-4 h-4" />
+                </a>
+              </div>
             </div>
           </div>
         </div>
