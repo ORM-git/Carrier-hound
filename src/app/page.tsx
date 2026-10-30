@@ -361,21 +361,6 @@ export default function HomePage() {
                 </p>
               </div>
 
-              {/* 3 Stats: 17M+ Views / 70K+ Followers / 900k+ Likes */}
-              <div className="pt-2 border-t border-gray-100 grid grid-cols-3 gap-3 text-center sm:text-left">
-                <div>
-                  <div className="text-lg font-bold text-[#09090B]">17M+</div>
-                  <div className="text-xs text-gray-500">Views</div>
-                </div>
-                <div>
-                  <div className="text-lg font-bold text-[#09090B]">70K+</div>
-                  <div className="text-xs text-gray-500">Followers</div>
-                </div>
-                <div>
-                  <div className="text-lg font-bold text-[#09090B]">900k+</div>
-                  <div className="text-xs text-gray-500">Likes</div>
-                </div>
-              </div>
             </div>
           </div>
         </div>
