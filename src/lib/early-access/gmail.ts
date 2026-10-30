@@ -5,8 +5,10 @@ export const GMAIL_SEND_MESSAGE_URL =
   "https://gmail.googleapis.com/gmail/v1/users/me/messages/send";
 export const GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send";
 export const GMAIL_TIMEOUT_MS = 5000;
+export const APPS_SCRIPT_TIMEOUT_MS = 8000;
 export const THANK_YOU_HARD_CAP_MS = 2000;
 export const THANK_YOU_WAIT_UNTIL_HARD_CAP_MS = 8000;
+export const DAILY_THANK_YOU_CAP = 80;
 export const DAILY_GMAIL_MESSAGE_CAP = 150;
 
 export const EARLY_ACCESS_THANK_YOU_SUBJECT =
@@ -35,6 +37,21 @@ function readGmailConfig(cfEnv?: Record<string, any>): GmailEnvConfig {
   };
 }
 
+export interface AppsScriptMailConfig {
+  url: string;
+  secret: string;
+}
+
+export function readAppsScriptConfig(cfEnv?: Record<string, any>): AppsScriptMailConfig {
+  const read = (key: string): string =>
+    (getRuntimeEnv(key, cfEnv) || process.env[key] || "").trim();
+
+  return {
+    url: read("APPS_SCRIPT_MAIL_URL"),
+    secret: read("APPS_SCRIPT_MAIL_SECRET"),
+  };
+}
+
 /**
  * Redacts any email addresses or potential tokens/secrets from a string before logging.
  */
@@ -51,6 +68,8 @@ export function sanitizeLogMessage(
     config?.senderEmail,
     config?.notifyEmail,
     accessToken,
+    process.env.APPS_SCRIPT_MAIL_URL,
+    process.env.APPS_SCRIPT_MAIL_SECRET,
   ].filter((val): val is string => Boolean(val && val.length >= 3));
 
   for (const secret of secrets) {
@@ -537,15 +556,10 @@ export async function sendEarlyAccessThankYouEmail(params: {
     process.env.NODE_ENV === "test" &&
     process.env.__CAREERMONKE_LEGACY_CAP_FAIL_OPEN === "true";
 
-  const config = readGmailConfig(params.cfEnv);
+  const config = readAppsScriptConfig(params.cfEnv);
 
-  if (
-    !config.clientId ||
-    !config.clientSecret ||
-    !config.refreshToken ||
-    !config.senderEmail
-  ) {
-    safeWarn("Missing Gmail OAuth environment configuration; skipping thank-you send");
+  if (!config.url || !config.secret) {
+    safeWarn("missing_env");
     return {
       thankYouSent: false,
       capHit: false,
@@ -565,16 +579,14 @@ export async function sendEarlyAccessThankYouEmail(params: {
     )
   ).toISOString();
 
-  // 1. Check daily outgoing message cap in gmail_send_log (MUST fail closed on read error)
+  // 1. Check daily outgoing thank-you cap (100/day) in gmail_send_log (MUST fail closed on read error)
   const todayCount = await getTodaySentMessageCount(
     params.supabaseClient,
     startOfDayUtc
   );
 
   if (!todayCount.ok && !isLegacyFailOpen) {
-    safeWarn(
-      "Could not read gmail_send_log daily count (failing closed); skipping thank-you send"
-    );
+    safeWarn("log_read_error");
     return {
       thankYouSent: false,
       capHit: false,
@@ -583,10 +595,8 @@ export async function sendEarlyAccessThankYouEmail(params: {
     };
   }
 
-  if (todayCount.ok && todayCount.count >= DAILY_GMAIL_MESSAGE_CAP) {
-    safeWarn(
-      `Daily outgoing message cap (${DAILY_GMAIL_MESSAGE_CAP}) reached; skipping thank-you send`
-    );
+  if (todayCount.ok && todayCount.count >= DAILY_THANK_YOU_CAP) {
+    safeWarn("cap_reached");
     return {
       thankYouSent: false,
       capHit: true,
@@ -602,9 +612,7 @@ export async function sendEarlyAccessThankYouEmail(params: {
   );
 
   if (!everSent.ok && !isLegacyFailOpen) {
-    safeWarn(
-      "Could not verify prior thank-you history in gmail_send_log (failing closed); skipping thank-you send"
-    );
+    safeWarn("log_read_error");
     return {
       thankYouSent: false,
       capHit: false,
@@ -614,7 +622,7 @@ export async function sendEarlyAccessThankYouEmail(params: {
   }
 
   if (everSent.ok && everSent.alreadySent) {
-    safeWarn("Thank-you email already sent to this address previously; skipping");
+    safeWarn("already");
     return {
       thankYouSent: false,
       capHit: false,
@@ -623,94 +631,75 @@ export async function sendEarlyAccessThankYouEmail(params: {
     };
   }
 
-  // 3. Execute OAuth token exchange + Gmail send with separate timeouts
-  const timeoutMs = params.hardCapMs ?? THANK_YOU_HARD_CAP_MS;
+  // 3. Dispatch POST to Apps Script web app with 8s timeout
+  const timeoutMs = params.hardCapMs ?? APPS_SCRIPT_TIMEOUT_MS;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const oauthController = new AbortController();
-    const oauthTimer = setTimeout(() => oauthController.abort(), timeoutMs);
-    let accessToken: string | null = null;
-    try {
-      accessToken = await exchangeRefreshTokenForAccessToken(
-        config,
-        timeoutMs,
-        oauthController.signal
-      );
-    } finally {
-      clearTimeout(oauthTimer);
-    }
-
-    if (!accessToken) {
-      return {
-        thankYouSent: false,
-        capHit: false,
-        failedClosed: false,
-        alreadyThanked: false,
-      };
-    }
-
-    const thankYouContent = buildThankYouEmailContent();
-    const thankYouRaw = buildRfc2822Base64UrlMessage({
-      fromEmail: config.senderEmail,
-      fromName: config.senderName,
-      toEmail: normalizedEmail,
-      subject: thankYouContent.subject,
-      textBody: thankYouContent.textBody,
-      htmlBody: thankYouContent.htmlBody,
+    const response = await fetch(config.url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        secret: config.secret,
+        email: normalizedEmail,
+      }),
+      redirect: "follow",
+      signal: controller.signal,
     });
 
-    const sendController = new AbortController();
-    const sendTimer = setTimeout(() => sendController.abort(), timeoutMs);
-    let thankYouResult: { sent: boolean; quotaExceeded: boolean };
-    try {
-      thankYouResult = await sendSingleGmailMessage({
-        accessToken,
-        rawBase64Url: thankYouRaw,
-        config,
-        timeoutMs,
-        parentSignal: sendController.signal,
+    const reply = (await response.text().catch(() => "")).trim().toLowerCase();
+
+    if (reply === "ok") {
+      safeWarn("ok");
+      await recordSentMessage(params.supabaseClient, {
+        recipient_email: normalizedEmail,
+        kind: "thank_you",
+        sent_at: new Date().toISOString(),
       });
-    } finally {
-      clearTimeout(sendTimer);
-    }
-
-    if (!thankYouResult.sent) {
       return {
-        thankYouSent: false,
+        thankYouSent: true,
         capHit: false,
         failedClosed: false,
         alreadyThanked: false,
       };
     }
 
-    await recordSentMessage(params.supabaseClient, {
-      recipient_email: normalizedEmail,
-      kind: "thank_you",
-      sent_at: new Date().toISOString(),
-    });
+    if (reply === "already") {
+      safeWarn("already");
+      return {
+        thankYouSent: false,
+        capHit: false,
+        failedClosed: false,
+        alreadyThanked: true,
+      };
+    }
 
+    // Non-OK result (invalid, forbidden, busy, or unexpected status):
+    // Logged as UNKNOWN (status words only, no email, no URL, no script error text)
+    // and is NEVER automatically resent.
+    safeWarn("UNKNOWN");
     return {
-      thankYouSent: true,
-      capHit: false,
+      thankYouSent: false,
+      capHit: reply === "busy",
       failedClosed: false,
       alreadyThanked: false,
     };
-  } catch (err: any) {
-    safeWarn(
-      `Thank-you dispatch aborted or failed: ${sanitizeLogMessage(
-        err?.message || String(err),
-        config
-      )}`
-    );
+  } catch (_err) {
+    // Timeout or network failure: logged as UNKNOWN, never automatically resent.
+    safeWarn("UNKNOWN");
     return {
       thankYouSent: false,
       capHit: false,
       failedClosed: false,
       alreadyThanked: false,
     };
+  } finally {
+    clearTimeout(timer);
   }
 }
-
 export interface EarlyAccessDigestCronResult {
   status: "success" | "failed";
   sent: boolean;
