@@ -11,6 +11,10 @@ import {
   getSupabaseAdminClient,
   getRuntimeEnv,
 } from "@/lib/ai/serviceHandler";
+import {
+  sendEarlyAccessThankYouEmail,
+  THANK_YOU_HARD_CAP_MS,
+} from "@/lib/early-access/gmail";
 
 export const runtime = "edge";
 
@@ -18,6 +22,12 @@ const EMAIL_REGEX =
   /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i;
 
 const GENERIC_TRY_AGAIN_MESSAGE = "Could not save your email right now. Please try again.";
+
+/**
+ * Maximum time (ms) the submit request will wait for the fire-and-forget thank-you send
+ * when the runtime does not provide ctx.waitUntil (~0.8s < 1s, while the send itself has a hard 2s cap).
+ */
+const NON_BLOCKING_SUBMIT_WAIT_MS = 800;
 
 function validateEarlyAccessEmail(raw: unknown): {
   valid: boolean;
@@ -27,6 +37,12 @@ function validateEarlyAccessEmail(raw: unknown): {
   if (typeof raw !== "string") {
     return { valid: false, email: "", error: "Please enter a valid email address." };
   }
+
+  // Reject any CRLF, null byte, or percent-encoded CR/LF injection attempts BEFORE trimming
+  if (/[\r\n\0]/.test(raw) || /%0[ad]/i.test(raw)) {
+    return { valid: false, email: "", error: "Please enter a valid email address." };
+  }
+
   const normalized = raw.trim().toLowerCase();
   if (!normalized) {
     return { valid: false, email: "", error: "Please enter your email address." };
@@ -129,10 +145,14 @@ export async function POST(req: Request) {
     const createdAt = new Date().toISOString();
 
     let cfEnv: Record<string, any> | undefined;
+    let cfWaitUntil: ((promise: Promise<unknown>) => void) | undefined;
     try {
       const ctx = getRequestContext();
       if (ctx?.env) {
         cfEnv = ctx.env as Record<string, any>;
+      }
+      if (ctx?.ctx && typeof ctx.ctx.waitUntil === "function") {
+        cfWaitUntil = ctx.ctx.waitUntil.bind(ctx.ctx);
       }
     } catch {}
 
@@ -193,7 +213,7 @@ export async function POST(req: Request) {
           .insert({ email, created_at: createdAt });
 
         if (insertError) {
-          // Postgres unique constraint violation (23505) -> generic idempotent success
+          // Postgres unique constraint violation (23505) -> generic idempotent success, no email sent
           if (
             !isLegacy &&
             (insertError.code === "23505" || /duplicate key/i.test(insertError.message || ""))
@@ -220,21 +240,23 @@ export async function POST(req: Request) {
       }
     }
 
-    // Notification target read strictly from EARLY_ACCESS_NOTIFY_EMAIL env var (never hardcoded)
-    const notifyEmail = (
-      getRuntimeEnv("EARLY_ACCESS_NOTIFY_EMAIL", cfEnv) ||
-      process.env.EARLY_ACCESS_NOTIFY_EMAIL ||
-      ""
-    ).trim();
+    // Dispatch thank-you email (with a hard 2s cap inside sendEarlyAccessThankYouEmail)
+    // without blocking the response beyond ~1s (uses waitUntil on Edge runtime if available).
+    const thankYouPromise = sendEarlyAccessThankYouEmail({
+      subscriberEmail: email,
+      createdAt,
+      supabaseClient,
+      cfEnv,
+      hardCapMs: THANK_YOU_HARD_CAP_MS,
+    }).catch(() => {});
 
-    if (notifyEmail && typeof (globalThis as any).__earlyAccessNotifyHook === "function") {
-      try {
-        await (globalThis as any).__earlyAccessNotifyHook({
-          to: notifyEmail,
-          email,
-          createdAt,
-        });
-      } catch {}
+    if (cfWaitUntil) {
+      cfWaitUntil(thankYouPromise);
+    } else {
+      await Promise.race([
+        thankYouPromise,
+        new Promise<void>((resolve) => setTimeout(resolve, NON_BLOCKING_SUBMIT_WAIT_MS)),
+      ]);
     }
 
     return NextResponse.json({
