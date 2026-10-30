@@ -6,6 +6,7 @@ export const GMAIL_SEND_MESSAGE_URL =
 export const GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send";
 export const GMAIL_TIMEOUT_MS = 5000;
 export const THANK_YOU_HARD_CAP_MS = 2000;
+export const THANK_YOU_WAIT_UNTIL_HARD_CAP_MS = 8000;
 export const DAILY_GMAIL_MESSAGE_CAP = 150;
 
 export const EARLY_ACCESS_THANK_YOU_SUBJECT =
@@ -370,7 +371,18 @@ async function exchangeRefreshTokenForAccessToken(
     );
 
     if (!response.ok) {
-      safeWarn(`OAuth token exchange failed with status ${response.status}`);
+      let errField = "";
+      try {
+        const errJson = (await response.json().catch(() => null)) as {
+          error?: unknown;
+        } | null;
+        if (typeof errJson?.error === "string") {
+          errField = sanitizeLogMessage(errJson.error, config);
+        }
+      } catch {}
+      safeWarn(
+        `OAuth token exchange failed with status ${response.status}${errField ? ` (error: ${errField})` : ""}`
+      );
       return null;
     }
 
@@ -418,10 +430,58 @@ async function sendSingleGmailMessage(params: {
     );
 
     if (!response.ok) {
-      const isQuota = response.status === 429 || response.status === 403;
+      let errField = "";
+      let isQuota = response.status === 429;
+      try {
+        const data = (await response.json().catch(() => null)) as {
+          error?:
+            | string
+            | {
+                status?: string;
+                message?: string;
+                errors?: Array<{ reason?: string; message?: string }>;
+              };
+        } | null;
+
+        if (data?.error) {
+          if (typeof data.error === "string") {
+            errField = sanitizeLogMessage(data.error, params.config, params.accessToken);
+          } else if (typeof data.error === "object") {
+            const errorStatus =
+              typeof data.error.status === "string" ? data.error.status : "";
+            const errorReason =
+              Array.isArray(data.error.errors) &&
+              typeof data.error.errors[0]?.reason === "string"
+                ? data.error.errors[0].reason
+                : "";
+
+            if (
+              errorStatus === "RESOURCE_EXHAUSTED" ||
+              /rate.*limit|quota/i.test(errorReason) ||
+              /rate.*limit|quota/i.test(data.error.message || "")
+            ) {
+              isQuota = true;
+            }
+
+            const rawField =
+              [errorStatus, errorReason].filter(Boolean).join("/") ||
+              (typeof data.error.message === "string" ? data.error.message.slice(0, 80) : "");
+            if (rawField) {
+              errField = sanitizeLogMessage(rawField, params.config, params.accessToken);
+            }
+          }
+        }
+      } catch {}
+
+      const label = isQuota
+        ? " (quota/rate limit)"
+        : response.status === 403
+        ? " (forbidden/permission denied)"
+        : "";
+
       safeWarn(
-        `Gmail send failed with status ${response.status}${
-          isQuota ? " (quota/rate limit)" : ""
+        `Gmail send failed with status ${response.status}${label}${
+          errField ? ` (error: ${errField})` : ""
         }`
       );
       return { sent: false, quotaExceeded: isQuota };
@@ -563,17 +623,23 @@ export async function sendEarlyAccessThankYouEmail(params: {
     };
   }
 
-  // 3. Execute OAuth token exchange + Gmail send under a hard 2s cap
-  const hardCapMs = params.hardCapMs ?? THANK_YOU_HARD_CAP_MS;
-  const hardCapController = new AbortController();
-  const hardCapTimer = setTimeout(() => hardCapController.abort(), hardCapMs);
+  // 3. Execute OAuth token exchange + Gmail send with separate timeouts
+  const timeoutMs = params.hardCapMs ?? THANK_YOU_HARD_CAP_MS;
 
   try {
-    const accessToken = await exchangeRefreshTokenForAccessToken(
-      config,
-      hardCapMs,
-      hardCapController.signal
-    );
+    const oauthController = new AbortController();
+    const oauthTimer = setTimeout(() => oauthController.abort(), timeoutMs);
+    let accessToken: string | null = null;
+    try {
+      accessToken = await exchangeRefreshTokenForAccessToken(
+        config,
+        timeoutMs,
+        oauthController.signal
+      );
+    } finally {
+      clearTimeout(oauthTimer);
+    }
+
     if (!accessToken) {
       return {
         thankYouSent: false,
@@ -593,13 +659,20 @@ export async function sendEarlyAccessThankYouEmail(params: {
       htmlBody: thankYouContent.htmlBody,
     });
 
-    const thankYouResult = await sendSingleGmailMessage({
-      accessToken,
-      rawBase64Url: thankYouRaw,
-      config,
-      timeoutMs: hardCapMs,
-      parentSignal: hardCapController.signal,
-    });
+    const sendController = new AbortController();
+    const sendTimer = setTimeout(() => sendController.abort(), timeoutMs);
+    let thankYouResult: { sent: boolean; quotaExceeded: boolean };
+    try {
+      thankYouResult = await sendSingleGmailMessage({
+        accessToken,
+        rawBase64Url: thankYouRaw,
+        config,
+        timeoutMs,
+        parentSignal: sendController.signal,
+      });
+    } finally {
+      clearTimeout(sendTimer);
+    }
 
     if (!thankYouResult.sent) {
       return {
@@ -635,8 +708,6 @@ export async function sendEarlyAccessThankYouEmail(params: {
       failedClosed: false,
       alreadyThanked: false,
     };
-  } finally {
-    clearTimeout(hardCapTimer);
   }
 }
 
