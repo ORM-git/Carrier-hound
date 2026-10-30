@@ -282,7 +282,7 @@ export default function EarlyAccessPage() {
                 src="/mascot.png"
                 alt="CareerMonke Mascot"
                 width={140}
-                height={118}
+                height={140}
                 priority
                 className="w-24 sm:w-32 lg:w-36 h-auto drop-shadow-md select-none transition-transform hover:scale-105"
               />
