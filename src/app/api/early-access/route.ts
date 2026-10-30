@@ -14,6 +14,7 @@ import {
 import {
   sendEarlyAccessThankYouEmail,
   THANK_YOU_HARD_CAP_MS,
+  THANK_YOU_WAIT_UNTIL_HARD_CAP_MS,
 } from "@/lib/early-access/gmail";
 
 export const runtime = "edge";
@@ -202,6 +203,7 @@ export async function POST(req: Request) {
         }
 
         if (!isLegacy && existingRow?.email) {
+          console.log("[early-access] Existing subscriber submitted; duplicate skipped without send");
           return NextResponse.json({
             ok: true,
             message: "You're on the list",
@@ -218,6 +220,7 @@ export async function POST(req: Request) {
             !isLegacy &&
             (insertError.code === "23505" || /duplicate key/i.test(insertError.message || ""))
           ) {
+            console.log("[early-access] Duplicate subscriber unique constraint (23505); skipped without send");
             return NextResponse.json({
               ok: true,
               message: "You're on the list",
@@ -242,12 +245,13 @@ export async function POST(req: Request) {
 
     // Dispatch thank-you email (with a hard 2s cap inside sendEarlyAccessThankYouEmail)
     // without blocking the response beyond ~1s (uses waitUntil on Edge runtime if available).
+    const hardCapMs = cfWaitUntil ? THANK_YOU_WAIT_UNTIL_HARD_CAP_MS : THANK_YOU_HARD_CAP_MS;
     const thankYouPromise = sendEarlyAccessThankYouEmail({
       subscriberEmail: email,
       createdAt,
       supabaseClient,
       cfEnv,
-      hardCapMs: THANK_YOU_HARD_CAP_MS,
+      hardCapMs,
     }).catch(() => {});
 
     if (cfWaitUntil) {
