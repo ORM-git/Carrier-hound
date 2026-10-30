@@ -10,11 +10,11 @@ export const Testimonials = () => {
 
   const mappedCards: Testimonial[] = cards.map((card) => ({
     text: card.body,
-    name: card.title,
-    handle: card.tag || "Example",
-    role: card.tag || "Example",
+    name: card.authorName,
+    role: card.location,
     initials: card.initials,
     avatarBg: card.avatarBg,
+    avatar: card.avatar,
   }));
 
   // Arrange into 4 columns (3 cards each) matching layout
@@ -35,10 +35,10 @@ export const Testimonials = () => {
           className="text-center max-w-3xl mx-auto mb-10 sm:mb-14"
         >
           <h2 className="text-3xl font-semibold tracking-tight text-[#142033] sm:text-4xl lg:whitespace-nowrap">
-            Example feedback
+            Feedback from early access users
           </h2>
           <p className="mt-2 text-sm sm:text-base text-gray-600 font-normal">
-            Example feedback - real user reviews coming soon
+            What job seekers are saying about finding direct company roles
           </p>
         </motion.div>
 

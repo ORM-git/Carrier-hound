@@ -2,14 +2,17 @@
 
 import React, { useEffect, useRef } from "react";
 import { useAnimate } from "motion/react";
+import Image from "next/image";
 
 export type Testimonial = {
   text: string;
   name: string;
+  title?: string;
   role?: string;
   handle?: string;
   initials?: string;
   avatarBg?: string;
+  avatar?: string;
 };
 
 export const TestimonialsColumn = (props: {
@@ -58,30 +61,53 @@ export const TestimonialsColumn = (props: {
               {props.testimonials.map((item, i) => (
                 <div
                   key={`${index}-${i}`}
-                  className="bg-white border border-gray-200/90 rounded-2xl p-6 flex flex-col items-center text-center shadow-sm hover:shadow-md hover:border-gray-300 transition-all duration-150 w-[270px] sm:w-[280px] shrink-0"
+                  className="bg-white border border-slate-200/80 rounded-2xl p-5 sm:p-6 flex flex-col justify-between shadow-xs hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 w-[270px] sm:w-[285px] shrink-0 text-left"
                 >
-                  {/* 1. Initials Avatar Circle on Coloured Background */}
-                  <div
-                    className={`w-14 h-14 rounded-full flex items-center justify-center font-bold text-white text-base shadow-sm ring-2 ring-slate-100 flex-shrink-0 mb-3 select-none ${item.avatarBg || "bg-blue-600"}`}
-                    aria-hidden="true"
-                  >
-                    <span>{item.initials}</span>
+                  <div>
+                    {/* Decorative large soft quote-mark icon */}
+                    <svg
+                      className="w-7 h-7 text-blue-500/25 fill-blue-500/15 mb-3"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                      aria-hidden="true"
+                    >
+                      <path d="M14.017 21v-7.391c0-5.704 3.731-9.57 8.983-10.609l.995 2.151c-2.432.917-3.995 3.638-3.995 5.849h4v10h-9.983zm-14.017 0v-7.391c0-5.704 3.748-9.57 9-10.609l.996 2.151c-2.433.917-3.996 3.638-3.996 5.849h3.983v10h-9.983z" />
+                    </svg>
+
+                    {/* Readable, italic-free body text */}
+                    <p className="text-[13px] sm:text-sm text-slate-700 leading-relaxed font-normal mb-5">
+                      {item.text}
+                    </p>
                   </div>
 
-                  {/* 2. Short Title */}
-                  <h3 className="text-sm sm:text-base font-bold text-[#09090B] leading-tight">
-                    {item.name}
-                  </h3>
+                  {/* Testimonial footer row */}
+                  <div className="flex items-center pt-3.5 border-t border-slate-100 gap-2.5 min-w-0">
+                    {item.avatar ? (
+                      <Image
+                        src={item.avatar}
+                        alt={item.name}
+                        width={36}
+                        height={36}
+                        className="w-9 h-9 rounded-full object-cover border border-slate-200/80 flex-shrink-0"
+                      />
+                    ) : (
+                      <div
+                        className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-white text-xs shadow-2xs flex-shrink-0 select-none ${item.avatarBg || "bg-blue-600"}`}
+                        aria-hidden="true"
+                      >
+                        <span>{item.initials}</span>
+                      </div>
+                    )}
 
-                  {/* 3. Tiny "Example" Tag */}
-                  <span className="text-[11px] font-semibold text-gray-500 bg-gray-100 border border-gray-200/80 px-2.5 py-0.5 rounded-full mt-1.5 mb-2.5">
-                    {item.handle || item.role || "Example"}
-                  </span>
-
-                  {/* 4. Feature note on real product capability */}
-                  <p className="text-xs sm:text-[13px] text-gray-700 leading-relaxed font-normal">
-                    {item.text}
-                  </p>
+                    <div className="min-w-0">
+                      <h3 className="text-xs sm:text-[13px] font-bold text-[#0F172A] leading-tight truncate">
+                        {item.name}
+                      </h3>
+                      <p className="text-[11px] text-slate-500 font-medium truncate">
+                        {item.role || item.title}
+                      </p>
+                    </div>
+                  </div>
                 </div>
               ))}
             </React.Fragment>
