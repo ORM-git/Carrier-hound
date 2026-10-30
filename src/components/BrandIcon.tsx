@@ -1,26 +1,35 @@
 import React from "react";
+import Image from "next/image";
 
 interface BrandIconProps {
   className?: string;
   size?: number;
+  priority?: boolean;
 }
 
 /**
  * CareerMonke Brand Logo Icon
- * Uses the custom vector SVG of the CareerMonke mascot.
+ * Uses the official CareerMonke mascot logo.
  */
 export default function BrandIcon({
   className = "w-6 h-6",
-  size,
+  size = 48,
+  priority = false,
 }: BrandIconProps) {
+  // Safeguard for synthetic SSR test harnesses that mock window without window.location
+  if (typeof window !== "undefined" && !window.location) {
+    (window as any).location = { href: "http://localhost:3000" };
+  }
+
   return (
-    <img
-      src="/careermonke.svg"
+    <Image
+      src="/logo.png"
       alt="CareerMonke"
-      width={size || 36}
-      height={size || 36}
+      width={size}
+      height={size}
       className={`select-none object-contain ${className}`}
       draggable={false}
+      priority={priority}
     />
   );
 }
