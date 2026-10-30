@@ -106,7 +106,7 @@ export default function EarlyAccessPage() {
             className="inline-flex items-center gap-2.5 min-h-[44px] rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
           >
             <span className="w-9 h-9 rounded-full bg-white border border-slate-200/80 flex items-center justify-center p-1 shadow-2xs">
-              <BrandIcon className="w-7 h-7" />
+              <BrandIcon variant="new" className="w-7 h-7" priority />
             </span>
             <span className="text-lg font-extrabold tracking-tight text-[#0F172A]">
               Career<span className="text-[#2563EB]">Monke</span>

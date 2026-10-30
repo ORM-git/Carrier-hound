@@ -71,7 +71,7 @@ export default function HomePage() {
             aria-label="CareerMonke Home"
             className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-white flex items-center justify-center shadow-lg transition-transform hover:scale-105 p-1.5 min-h-[44px] min-w-[44px]"
           >
-            <BrandIcon className="w-11 h-11 sm:w-12 sm:h-12" />
+            <BrandIcon variant="new" className="w-11 h-11 sm:w-12 sm:h-12" priority />
           </Link>
 
           {/* Right: Auth-aware Sign In / User Menu */}
