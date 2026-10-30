@@ -420,6 +420,7 @@ async function main() {
     "/careermonke.svg",
     "/careermonke.png",
     "/favicon.ico",
+    "/data/ne_110m_land.json",
   ];
 
   for (const route of allowedGuestRoutes) {

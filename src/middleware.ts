@@ -53,10 +53,14 @@ export function isPublicRoute(pathname: string): boolean {
 }
 
 function isStaticAssetPath(pathname: string): boolean {
-  if (pathname.startsWith("/_next") || pathname === "/favicon.ico") {
+  if (
+    pathname.startsWith("/_next") ||
+    pathname.startsWith("/data/") ||
+    pathname === "/favicon.ico"
+  ) {
     return true;
   }
-  return /\.(?:svg|png|jpg|jpeg|gif|webp|ico|txt|xml|css|js|map|woff|woff2|ttf|eot|webmanifest)$/i.test(
+  return /\.(?:svg|png|jpg|jpeg|gif|webp|ico|txt|xml|css|js|map|woff|woff2|ttf|eot|webmanifest|json)$/i.test(
     pathname
   );
 }
@@ -347,6 +351,6 @@ export const config = {
      * - favicon.ico (favicon file)
      * - public files with extensions (.svg, .png, .jpg, .ico, etc.)
      */
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|txt|xml)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|data/|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|txt|xml|json)$).*)",
   ],
 };
