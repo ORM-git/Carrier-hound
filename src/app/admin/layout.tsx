@@ -71,13 +71,13 @@ export default function AdminLayout({
       {/* Admin Top Navigation Header */}
       <AdminNav adminEmail={adminUser?.email || ADMIN_EMAIL} />
 
-      {/* Main Admin Content Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      {/* Main Admin Content Container: Accommodates bottom-fixed cookie notice with bottom padding */}
+      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-6 sm:py-8 pb-36 sm:pb-24">
         {children}
       </main>
 
-      {/* Admin Footer */}
-      <footer className="border-t border-slate-200 bg-white py-4 text-center text-xs text-slate-500">
+      {/* Admin Footer: Offset above fixed cookie notice */}
+      <footer className="border-t border-slate-200 bg-white py-4 mb-24 sm:mb-16 text-center text-xs text-slate-500">
         CareerMonke Internal Admin Console • Restricted to {ADMIN_EMAIL}
       </footer>
     </div>

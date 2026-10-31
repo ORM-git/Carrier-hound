@@ -53,9 +53,22 @@ export interface UserManagementItem {
   lastSignInAt?: string;
   isPro: boolean;
   isBlocked: boolean;
-  totalViews: number;
+  totalViews: number | null;
   blockedAt?: string;
   blockedReason?: string;
+}
+
+export interface PaginatedUsersResult {
+  users: UserManagementItem[];
+  pagination: {
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+    hasNextPage: boolean;
+    hasPrevPage: boolean;
+  };
+  searchNotice?: string | null;
 }
 
 // In-memory buffer to supplement storage (Edge/Worker safe, max 5,000 records)
@@ -538,6 +551,180 @@ export async function getUsersManagementList(
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   return userItems;
+}
+
+/**
+ * Performs strictly bounded server-side page reads for user management.
+ * Fetches exactly one page of users natively via adminClient.auth.admin.listUsers({ page, perPage: pageSize }).
+ * All supplementary data queries (subscriptions, blocked_users, page_views) are bounded strictly to
+ * the user IDs present on the requested page using in-clause filters (.in('user_id', pageUserIds)).
+ */
+export async function getPaginatedUsersManagementList(options: {
+  page: number;
+  pageSize: number;
+  searchQuery?: string;
+  adminClient?: any;
+}): Promise<PaginatedUsersResult> {
+  const admin = options.adminClient || getSupabaseAdmin();
+  const page = Math.max(1, options.page);
+  const pageSize = Math.min(100, Math.max(1, options.pageSize));
+  const query = (options.searchQuery || '').trim().toLowerCase();
+  const now = new Date();
+
+  // 1. Fetch exactly one page natively from Supabase Auth
+  const { data, error } = await admin.auth.admin.listUsers({
+    page,
+    perPage: pageSize,
+  });
+
+  if (error) {
+    throw new Error(error.message || `Failed to list users on page ${page}`);
+  }
+
+  const rawUsers: any[] = data?.users || [];
+  const total = typeof data?.total === 'number' ? data.total : rawUsers.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const hasNextPage = page < totalPages;
+  const hasPrevPage = page > 1;
+
+  if (rawUsers.length === 0) {
+    return {
+      users: [],
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages,
+        hasNextPage: false,
+        hasPrevPage,
+      },
+      searchNotice: query
+        ? 'Email search filters users on the current page. Global search across all accounts requires server-side index configuration.'
+        : null,
+    };
+  }
+
+  const pageUserIds = rawUsers.map((u: any) => u.id);
+
+  // 2. Bounded supplementary queries: strictly scoped to pageUserIds
+  // A. Subscriptions for page user IDs only
+  const activeSubs = new Set<string>();
+  try {
+    const { data: subsData } = await admin
+      .from('subscriptions')
+      .select('user_id, status, current_period_end')
+      .in('user_id', pageUserIds);
+
+    if (Array.isArray(subsData)) {
+      for (const s of subsData) {
+        if (s.status === 'active' && (!s.current_period_end || new Date(s.current_period_end) > now)) {
+          activeSubs.add(s.user_id);
+        }
+      }
+    }
+  } catch (_) {}
+
+  // B. Blocked status for page user IDs only
+  const blockedUsersMap = new Map<string, { blockedAt?: string; reason?: string }>();
+  try {
+    const { data: blockedRows } = await admin
+      .from('blocked_users')
+      .select('user_id, blocked_at, reason')
+      .in('user_id', pageUserIds);
+
+    if (Array.isArray(blockedRows)) {
+      for (const b of blockedRows) {
+        blockedUsersMap.set(b.user_id, {
+          blockedAt: b.blocked_at,
+          reason: b.reason,
+        });
+      }
+    }
+  } catch (_) {}
+
+  // C. Page views count via bounded count-only queries (0 row data downloaded, head: true)
+  // Direct multi-user aggregate grouping (GROUP BY user_id) in a single request requires an elevated
+  // PostgreSQL RPC function or view (locked in Phase A1c). Bounded count-only queries prevent row downloading.
+  // When a count query fails or errors for an individual user, totalViews is explicitly set to null
+  // (rendered as "Unavailable" / "—" in UI) rather than falsely reporting 0. True successful zeroes remain 0.
+  const userViewsCount = new Map<string, number | null>();
+  const BATCH_SIZE = 5;
+  for (let i = 0; i < pageUserIds.length; i += BATCH_SIZE) {
+    const batch = pageUserIds.slice(i, i + BATCH_SIZE);
+    await Promise.all(
+      batch.map(async (uid: string) => {
+        try {
+          const { count, error } = await admin
+            .from('page_views')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', uid);
+
+          if (error || typeof count !== 'number') {
+            userViewsCount.set(uid, null);
+          } else {
+            userViewsCount.set(uid, count);
+          }
+        } catch (_) {
+          userViewsCount.set(uid, null);
+        }
+      })
+    );
+  }
+
+  // Supplement with in-memory fallback views buffer count for page user IDs only if count query succeeded
+  for (const row of inMemoryViews) {
+    if (row.user_id && pageUserIds.includes(row.user_id)) {
+      const current = userViewsCount.get(row.user_id);
+      if (typeof current === 'number') {
+        userViewsCount.set(row.user_id, current + 1);
+      }
+    }
+  }
+
+  // 3. Filter current bounded page by email search query if provided
+  let filteredUsers = rawUsers;
+  let searchNotice: string | null = null;
+  if (query) {
+    filteredUsers = rawUsers.filter((u: any) => (u.email || '').toLowerCase().includes(query));
+    searchNotice =
+      'Email search filters users on the current page. Global search across all accounts requires server-side index configuration.';
+  }
+
+  const userItems: UserManagementItem[] = filteredUsers.map((u: any) => {
+    const isPro = activeSubs.has(u.id) || u.user_metadata?.is_pro === true;
+    const blockedRecord = blockedUsersMap.get(u.id);
+    const isBlocked =
+      Boolean(u.banned_until && new Date(u.banned_until) > now) ||
+      u.user_metadata?.is_blocked === true ||
+      Boolean(blockedRecord);
+
+    const totalViews = userViewsCount.has(u.id) ? userViewsCount.get(u.id)! : null;
+
+    return {
+      id: u.id,
+      email: u.email || 'anonymous',
+      createdAt: u.created_at,
+      lastSignInAt: u.last_sign_in_at,
+      isPro,
+      isBlocked,
+      totalViews,
+      blockedAt: blockedRecord?.blockedAt || u.user_metadata?.blocked_at,
+      blockedReason: blockedRecord?.reason || u.user_metadata?.blocked_reason,
+    };
+  });
+
+  return {
+    users: userItems,
+    pagination: {
+      page,
+      pageSize,
+      total,
+      totalPages,
+      hasNextPage,
+      hasPrevPage,
+    },
+    searchNotice,
+  };
 }
 
 /**

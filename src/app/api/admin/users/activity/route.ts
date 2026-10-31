@@ -25,10 +25,38 @@ export async function GET(req: Request) {
 
   try {
     const activity = await getUserActivityLogs(userId);
-    return NextResponse.json({ ok: true, activity });
+
+    // Compute read-only usage summary for 24h and 7d from recorded page views
+    const now = Date.now();
+    const oneDayAgo = now - 24 * 60 * 60 * 1000;
+    const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
+    let views24h = 0;
+    let views7d = 0;
+
+    for (const item of activity) {
+      const itemTime = new Date(item.created_at).getTime();
+      if (itemTime >= oneDayAgo) views24h++;
+      if (itemTime >= sevenDaysAgo) views7d++;
+    }
+
+    return NextResponse.json({
+      ok: true,
+      activity,
+      summary: {
+        views24h,
+        views7d,
+        totalRecordedViews: activity.length,
+      },
+      telemetryNotice: {
+        untrackedSearches: "Searches are executed stateless or by IP rate limiter; per-user search events are not tracked in database.",
+        untrackedApplyClicks: "Job external apply clicks are not logged to a user-associated table.",
+        untrackedAiCalls: "Granular AI prompt/completion histories are not tracked in page_views schema.",
+      },
+    });
   } catch (err: any) {
+    console.error("[Admin API /users/activity] Error:", err?.message || err);
     return NextResponse.json(
-      { error: err?.message || "Failed to retrieve user activity" },
+      { error: "Failed to retrieve user activity" },
       { status: 500 }
     );
   }

@@ -21,8 +21,9 @@ export async function GET(req: Request) {
     const stats = await getAnalyticsStats(days);
     return NextResponse.json({ ok: true, stats });
   } catch (err: any) {
+    console.error("[Admin API /stats] Error:", err?.message || err);
     return NextResponse.json(
-      { error: err?.message || "Failed to retrieve analytics stats" },
+      { error: "Failed to retrieve analytics stats" },
       { status: 500 }
     );
   }
