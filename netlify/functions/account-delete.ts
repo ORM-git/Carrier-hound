@@ -130,6 +130,13 @@ export function createHandler(deps: AccountDeleteDeps = {}) {
 
       if (subError) {
         safeLog.warn("[Netlify /account-delete] Subscription query error", subError);
+        return {
+          statusCode: 500,
+          headers,
+          body: JSON.stringify({
+            error: `Failed to reconcile subscription: ${subError.message || String(subError)}`,
+          }),
+        };
       }
 
       if (
@@ -153,13 +160,27 @@ export function createHandler(deps: AccountDeleteDeps = {}) {
           .eq("id", sub.id);
 
         if (cancelSubError) {
-          safeLog.warn("[Netlify /account-delete] Billing reconciliation warning", cancelSubError);
+          safeLog.warn("[Netlify /account-delete] Billing reconciliation error", cancelSubError);
+          return {
+            statusCode: 500,
+            headers,
+            body: JSON.stringify({
+              error: `Failed to reconcile subscription: ${cancelSubError.message || String(cancelSubError)}`,
+            }),
+          };
         } else {
           billingReconciled = true;
         }
       }
-    } catch (billingErr) {
-      safeLog.warn("[Netlify /account-delete] Billing reconciliation warning", billingErr);
+    } catch (billingErr: any) {
+      safeLog.warn("[Netlify /account-delete] Billing reconciliation error", billingErr);
+      return {
+        statusCode: 500,
+        headers,
+        body: JSON.stringify({
+          error: `Failed to reconcile subscription: ${billingErr?.message || String(billingErr)}`,
+        }),
+      };
     }
 
     // 2. Delete user-owned data across all tables with individual error checking in bounded parallel groups of 4
