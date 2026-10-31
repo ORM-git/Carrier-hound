@@ -145,12 +145,10 @@ export default function GuideHeader() {
           {/* Left: Brand Logo */}
           <Link
             href={user ? "/dashboard" : "/"}
-            className="flex items-center gap-2.5 shrink-0 min-h-[44px] rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
+            aria-label="CareerMonke Home"
+            className="flex items-center shrink-0 min-h-[44px] rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
           >
-            <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center p-0.5 border border-[#E2E8F0] shadow-xs shrink-0">
-              <BrandIcon className="w-7 h-7" />
-            </div>
-            <span className="text-xl font-bold text-[#2563EB] tracking-tight">CareerMonke</span>
+            <BrandIcon variant="full" width={140} height={56} className="h-9 w-auto" priority />
           </Link>
 
           {/* Centre / Left Nav Links: Desktop */}
@@ -365,12 +363,10 @@ export default function GuideHeader() {
             <Link
               href={user ? "/dashboard" : "/"}
               onClick={() => setDrawerOpen(false)}
-              className="flex items-center gap-2"
+              aria-label="CareerMonke Home"
+              className="flex items-center"
             >
-              <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center p-0.5 border border-[#E2E8F0]">
-                <BrandIcon className="w-6 h-6" />
-              </div>
-              <span className="text-lg font-bold text-[#2563EB] tracking-tight">CareerMonke</span>
+              <BrandIcon variant="full" width={125} height={50} className="h-8 w-auto" />
             </Link>
             <button
               type="button"

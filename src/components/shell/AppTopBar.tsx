@@ -374,12 +374,10 @@ export default function AppTopBar({
             <Link
               href="/dashboard"
               onClick={() => setDrawerOpen(false)}
-              className="flex items-center gap-2 min-h-[44px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
+              aria-label="CareerMonke Dashboard"
+              className="flex items-center min-h-[44px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
             >
-              <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center p-0.5 border border-[#E2E8F0] shadow-xs">
-                <BrandIcon className="w-6 h-6" />
-              </div>
-              <span className="text-lg font-bold text-[#2563EB] tracking-tight">CareerMonke</span>
+              <BrandIcon variant="full" width={125} height={50} className="h-8 w-auto" />
             </Link>
             <button
               type="button"

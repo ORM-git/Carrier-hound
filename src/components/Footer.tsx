@@ -23,11 +23,8 @@ function LandingFooter() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-tk-4 pb-tk-4 border-b border-line">
           {/* Brand + Tagline */}
           <div className="lg:col-span-4 space-y-tk-2">
-            <Link href="/" className="inline-flex items-center gap-2.5 min-h-[44px] rounded-tk-lg">
-              <div className="w-9 h-9 rounded-tk-full bg-surface flex items-center justify-center p-1 shadow-tk-xs border border-line overflow-hidden">
-                <BrandIcon variant="new" className="w-7 h-7" />
-              </div>
-              <span className="text-xl font-black tracking-tight text-brand-600">CareerMonke</span>
+            <Link href="/" aria-label="CareerMonke Home" className="inline-flex items-center min-h-[44px] rounded-tk-lg">
+              <BrandIcon variant="full" width={140} height={56} className="h-9 w-auto" />
             </Link>
             <p className="text-tk-body-sm text-ink-muted max-w-sm">
               We find jobs posted on company websites. Real-time radar for unindexed remote engineering, design, data, and product jobs directly from verified company ATS endpoints.
@@ -268,13 +265,8 @@ export default function Footer({ isGuide = false }: FooterProps) {
 
         {/* Bottom row: Brand & Copyright line */}
         <div className="pt-6 border-t border-[#E2E8F0] flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-full bg-white flex items-center justify-center p-0.5 border border-[#E2E8F0]">
-              <BrandIcon className="w-5 h-5" />
-            </div>
-            <span className="text-sm font-bold text-[#2563EB] tracking-tight">
-              CareerMonke
-            </span>
+          <div className="flex items-center">
+            <BrandIcon variant="full" width={110} height={44} className="h-7 w-auto" />
           </div>
           <p className="text-xs text-[#94A3B8]">
             © {new Date().getFullYear()} CareerMonke Inc. All rights reserved.
