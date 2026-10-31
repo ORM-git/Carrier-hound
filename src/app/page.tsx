@@ -329,9 +329,10 @@ export default function HomePage() {
                 <Image
                   src="/owner.jpg"
                   alt="Orissa Lee Patnaik, Founder"
-                  fill
-                  className="object-cover"
-                  sizes="112px"
+                  width={112}
+                  height={112}
+                  className="w-full h-full object-cover"
+                  priority
                 />
               </div>
             </div>
