@@ -184,66 +184,12 @@ export default function HomePage() {
             </ul>
           </div>
         </div>
-
-        {/* AI Resume Monke Section */}
-        <div className="mt-12 p-6 sm:p-8 bg-slate-50 border border-slate-200 rounded-2xl max-w-4xl mx-auto shadow-2xs">
-          <div className="text-center mb-6">
-            <span className="text-xs font-bold text-[#2563EB] uppercase tracking-wider bg-blue-50 px-2.5 py-1 rounded-full border border-blue-100">
-              AI Resume Monke
-            </span>
-            <h3 className="text-xl sm:text-2xl font-bold text-slate-900 mt-2">
-              Meet the monke that fixes your resume.
-            </h3>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-center">
-            <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
-              <div>
-                <div className="w-8 h-8 mx-auto rounded-full bg-blue-100 text-blue-700 font-extrabold text-xs flex items-center justify-center mb-2.5">
-                  1
-                </div>
-                <div className="text-sm font-bold text-slate-900">Upload your resume</div>
-                <p className="text-xs text-slate-500 mt-1">PDF or Word, the monke isn&apos;t picky.</p>
-              </div>
-            </div>
-            <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
-              <div>
-                <div className="w-8 h-8 mx-auto rounded-full bg-blue-100 text-blue-700 font-extrabold text-xs flex items-center justify-center mb-2.5">
-                  2
-                </div>
-                <div className="text-sm font-bold text-slate-900">Check the details</div>
-                <p className="text-xs text-slate-500 mt-1">It reads fast, but you know your career best. Fix anything it got wrong.</p>
-              </div>
-            </div>
-            <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
-              <div>
-                <div className="w-8 h-8 mx-auto rounded-full bg-blue-100 text-blue-700 font-extrabold text-xs flex items-center justify-center mb-2.5">
-                  3
-                </div>
-                <div className="text-sm font-bold text-slate-900">Download a clean version</div>
-                <p className="text-xs text-slate-500 mt-1">Simple, single-column, recruiter-friendly.</p>
-              </div>
-            </div>
-            <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
-              <div>
-                <div className="w-8 h-8 mx-auto rounded-full bg-blue-100 text-blue-700 font-extrabold text-xs flex items-center justify-center mb-2.5">
-                  4
-                </div>
-                <div className="text-sm font-bold text-slate-900">Check the fit</div>
-                <p className="text-xs text-slate-500 mt-1">See where you match and what&apos;s missing, before you hit apply.</p>
-              </div>
-            </div>
-          </div>
-          <div className="mt-6 text-center">
-            <Link
-              href="/early-access"
-              className="inline-flex items-center justify-center gap-2 bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-sm sm:text-base px-6 py-3 min-h-[44px] rounded-xl shadow-sm transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
-            >
-              <span>Try AI resume tools</span>
-              <ArrowRight className="w-4 h-4" />
-            </Link>
-          </div>
-        </div>
       </section>
+
+      {/* ========================================================================= */}
+      {/* 4. INTERACTIVE PRODUCT DEMO SECTION                                       */}
+      {/* ========================================================================= */}
+      <LandingInteractiveDemoSection />
 
       {/* ========================================================================= */}
       {/* 5. CTA BAND (Blue #2563EB, Free Preview style)                            */}
@@ -457,11 +403,6 @@ export default function HomePage() {
           </div>
         </div>
       </section>
-
-      {/* ========================================================================= */}
-      {/* 11. INTERACTIVE PRODUCT DEMO SECTION                                      */}
-      {/* ========================================================================= */}
-      <LandingInteractiveDemoSection />
 
       {/* ========================================================================= */}
       {/* 13. FOOTER (Navy #090E34) & BackToTop Button                              */}

@@ -55,8 +55,8 @@ function main() {
     "Comparison section must remain untouched"
   );
   assert.ok(
-    pageSrc.includes("Meet the monke that fixes your resume."),
-    "AI Resume Monke subsection must remain untouched"
+    !pageSrc.includes("Meet the monke that fixes your resume."),
+    "Old static AI Resume Monke card must be replaced by LandingInteractiveDemoSection"
   );
   assert.ok(
     pageSrc.includes("Your next role might be in a city you haven&apos;t thought of yet."),
@@ -82,14 +82,14 @@ function main() {
     pageSrc.includes("<LandingInteractiveDemoSection />"),
     "LandingInteractiveDemoSection must be rendered in src/app/page.tsx"
   );
-  const contactIdx = pageSrc.indexOf('id="contact"');
+  const comparisonIdx = pageSrc.indexOf("Tired of getting auto-rejections?");
   const demoIdx = pageSrc.indexOf("<LandingInteractiveDemoSection />");
-  const footerIdx = pageSrc.indexOf("<Footer />");
+  const freePreviewIdx = pageSrc.indexOf("Free preview");
   assert.ok(
-    contactIdx > -1 && demoIdx > contactIdx && footerIdx > demoIdx,
-    "LandingInteractiveDemoSection must be placed below the existing sections and above Footer"
+    comparisonIdx > -1 && demoIdx > comparisonIdx && freePreviewIdx > demoIdx,
+    "LandingInteractiveDemoSection must replace the AI Resume Monke section between Comparison and Free preview"
   );
-  console.log("  [PASS] Existing landing sections preserved and new section placed below them");
+  console.log("  [PASS] Static AI Resume Monke card replaced by LandingInteractiveDemoSection in exact position");
 
   // 2. 4-step interactive walkthrough structure & data
   assert.strictEqual(DEMO_ROLES.length, 4, "Expected 4 interactive role presets");
