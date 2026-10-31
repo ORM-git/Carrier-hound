@@ -1,8 +1,22 @@
 import { createClient as createAdminSupabaseClient } from "@supabase/supabase-js";
 import type { User } from "@supabase/supabase-js";
-import { ADMIN_EMAIL } from "./constants";
+import {
+  ADMIN_EMAIL,
+  ADMIN_EMAIL_LIST,
+  getAdminEmailSet,
+  isEmailInAdminList,
+  isUserEmailVerified,
+  isVerifiedAdminUser,
+} from "./constants";
 
-export { ADMIN_EMAIL };
+export {
+  ADMIN_EMAIL,
+  ADMIN_EMAIL_LIST,
+  getAdminEmailSet,
+  isEmailInAdminList,
+  isUserEmailVerified,
+  isVerifiedAdminUser,
+};
 
 /**
  * Returns a server-side Supabase admin client using the service role key.
@@ -38,7 +52,7 @@ export function extractToken(req?: Request): string | null {
   const cookieHeader = req.headers.get("cookie");
   if (cookieHeader) {
     const cookiePairs = cookieHeader.split(";").map((c) => c.trim());
-    
+
     // Check for combined or chunked sb-*-auth-token cookies
     const chunkMap: { [key: number]: string } = {};
     let singleVal: string | null = null;
@@ -89,7 +103,9 @@ export function extractToken(req?: Request): string | null {
 }
 
 /**
- * Verifies if the request or current session is authorized as the Admin (xbsuryakant@gmail.com).
+ * Verifies if the request is authorized as a verified Admin:
+ * - Signed-in user's email must be in the admin list (case-insensitive)
+ * - Signed-in user's email must be verified (email_confirmed_at / confirmed_at)
  */
 export async function verifyAdminSession(req?: Request): Promise<{
   isAdmin: boolean;
@@ -101,14 +117,16 @@ export async function verifyAdminSession(req?: Request): Promise<{
     const token = extractToken(req);
 
     if (token) {
-      const { data: { user }, error } = await adminClient.auth.getUser(token);
-      if (!error && user && user.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
+      const {
+        data: { user },
+        error,
+      } = await adminClient.auth.getUser(token);
+      if (!error && user && isVerifiedAdminUser(user)) {
         return { isAdmin: true, user };
       }
     }
 
-
-    return { isAdmin: false, user: null, error: "Unauthorized: Admin access required." };
+    return { isAdmin: false, user: null, error: "Forbidden: Verified admin access required." };
   } catch (err: any) {
     return { isAdmin: false, user: null, error: err?.message || "Internal auth check failure" };
   }
@@ -190,4 +208,3 @@ export async function isUserBlocked(userId: string): Promise<boolean> {
     return false;
   }
 }
-

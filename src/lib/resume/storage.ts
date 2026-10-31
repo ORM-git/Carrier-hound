@@ -562,3 +562,81 @@ export async function getTailoredCoverLetterAsync(
   return null;
 }
 
+export const RESUME_STORAGE_BUCKET = "resumes";
+export const RESUME_BUCKET_CONFIG = {
+  id: RESUME_STORAGE_BUCKET,
+  public: false,
+} as const;
+
+export function isOwnerScopedResumePath(objectPath: string, userId: string): boolean {
+  if (!objectPath || !userId) return false;
+  const trimmedPath = objectPath.trim();
+  const trimmedUserId = userId.trim();
+  if (!trimmedPath || !trimmedUserId) return false;
+  if (trimmedPath.includes("..") || trimmedPath.startsWith("/")) return false;
+  return trimmedPath.startsWith(`${trimmedUserId}/`) && trimmedPath.length > trimmedUserId.length + 1;
+}
+
+/**
+ * Uploads a resume file to the private `resumes` storage bucket under `${user.id}/${sanitizedFileName}`.
+ * Never creates or returns a public URL.
+ */
+export async function uploadResumeFile(
+  file: Blob | File | ArrayBuffer | Uint8Array,
+  fileName: string,
+  clientOverride?: any
+): Promise<{ path: string; signedUrl: string }> {
+  const supabase = clientOverride || createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user?.id) {
+    throw new Error("Unauthorized: signed-in user required to upload resume file.");
+  }
+
+  const safeName = (fileName || "resume.pdf").replace(/[^a-zA-Z0-9._-]/g, "_");
+  const objectPath = `${user.id}/${Date.now()}_${safeName}`;
+  if (!isOwnerScopedResumePath(objectPath, user.id)) {
+    throw new Error("Forbidden: invalid resume storage path.");
+  }
+
+  const bucket = supabase.storage.from(RESUME_STORAGE_BUCKET);
+  const { error: uploadError } = await bucket.upload(objectPath, file, {
+    upsert: true,
+  });
+  if (uploadError) {
+    throw new Error(`Failed to upload resume file: ${uploadError.message}`);
+  }
+
+  const signedUrl = await getResumeSignedUrl(objectPath, 300, supabase);
+  return { path: objectPath, signedUrl };
+}
+
+/**
+ * Generates a short-lived signed URL for a resume file in the private `resumes` bucket.
+ * Strictly enforces owner-only access (`${user.id}/...`) and never uses public URLs.
+ */
+export async function getResumeSignedUrl(
+  objectPath: string,
+  expiresInSeconds = 300,
+  clientOverride?: any
+): Promise<string> {
+  const supabase = clientOverride || createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user?.id) {
+    throw new Error("Unauthorized: signed-in user required to access resume file.");
+  }
+
+  if (!isOwnerScopedResumePath(objectPath, user.id)) {
+    throw new Error("Forbidden: resume file access is restricted to its owner.");
+  }
+
+  const boundedExpiry = Math.max(30, Math.min(3600, Math.floor(expiresInSeconds)));
+  const bucket = supabase.storage.from(RESUME_STORAGE_BUCKET);
+  const { data, error } = await bucket.createSignedUrl(objectPath, boundedExpiry);
+  if (error || !data?.signedUrl) {
+    throw new Error(error?.message || "Failed to create signed URL for resume file.");
+  }
+
+  return data.signedUrl;
+}
+
+

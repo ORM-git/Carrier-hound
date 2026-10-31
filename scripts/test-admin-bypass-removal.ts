@@ -118,6 +118,7 @@ async function runAdminBypassRemovalSuite() {
           JSON.stringify({
             id: "admin_user_id",
             email: ADMIN_EMAIL,
+            email_confirmed_at: "2026-10-30T00:00:00.000Z",
           }),
           { status: 200, headers: { "Content-Type": "application/json" } }
         );

@@ -251,21 +251,46 @@ async function run() {
     const bodyGarbage = await resGarbageNonPro.json();
     assert.strictEqual(bodyGarbage.code, "PRO_REQUIRED", "Must return code PRO_REQUIRED");
 
-    // 9d. Valid Pro token -> 200
-    const reqPro = new Request("http://localhost:3000/api/jobs/skill-what-if?jobId=test_pro", {
+    // 9d. Valid Pro token without real AI generator -> 503 not_available_yet (never sample data as if real)
+    const reqProNoAi = new Request("http://localhost:3000/api/jobs/skill-what-if?jobId=test_pro", {
+      headers: { Authorization: "Bearer valid_pro_token" },
+    });
+    const resProNoAi = await handleSkillWhatIfRequest(reqProNoAi, {
+      getSupabaseAdmin: () => mockAdmin("usr_pro_what_if"),
+      getServerEntitlement: async () => ({ isPro: true }),
+    });
+    assert.strictEqual(resProNoAi.status, 503, "Valid Pro token without real AI result must yield 503 not_available_yet");
+    const bodyProNoAi = await resProNoAi.json();
+    assert.strictEqual(bodyProNoAi.simulation, null, "Must never return sample simulation as if real");
+    assert.strictEqual(bodyProNoAi.available, false);
+    assert.strictEqual(bodyProNoAi.status, "not_available_yet");
+
+    // 9e. Valid Pro token with real AI result -> 200
+    const reqPro = new Request("http://localhost:3000/api/jobs/skill-what-if?jobId=job_real_456", {
       headers: { Authorization: "Bearer valid_pro_token" },
     });
     const resPro = await handleSkillWhatIfRequest(reqPro, {
       getSupabaseAdmin: () => mockAdmin("usr_pro_what_if"),
       getServerEntitlement: async () => ({ isPro: true }),
+      generateSkillWhatIf: async ({ jobId }) => ({
+        jobId,
+        jobTitle: "Senior Platform Engineer",
+        companyName: "Linear",
+        baseMatch: 72,
+        threshold: 75,
+        missingSkills: [{ id: "s1", name: "Rust", matchGain: 10, category: "backend" }],
+        additionalJobs: [],
+        skillsWorthLearning: [],
+      }),
     });
-    assert.strictEqual(resPro.status, 200, "Valid Pro token must yield status 200");
+    assert.strictEqual(resPro.status, 200, "Valid Pro token with real AI result must yield status 200");
     const bodyPro = await resPro.json();
-    assert.ok(bodyPro.simulation, "Must return simulation payload");
+    assert.ok(bodyPro.simulation, "Must return real simulation payload");
+    assert.strictEqual(bodyPro.available, true);
     assert.strictEqual(bodyPro.isPro, true);
 
     console.log(
-      "  [PASS] Endpoint Live Execution: Missing token -> 401, Invalid token -> 401, Non-Pro token -> 403, Pro token -> 200"
+      "  [PASS] Endpoint Live Execution: Missing token -> 401, Invalid token -> 401, Non-Pro -> 403, No real AI -> 503 not_available_yet, Real AI -> 200"
     );
   } catch (err: any) {
     failures.push(`API EXECUTION FAIL: ${err.message}`);

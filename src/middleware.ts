@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
+import { isVerifiedAdminUser } from "@/lib/admin/constants";
 
 /**
  * App routes that strictly require an authenticated Supabase session.
@@ -50,6 +51,15 @@ export function isPublicRoute(pathname: string): boolean {
   if (pathname.startsWith("/.netlify")) return true;
   return PUBLIC_ROUTES.some(
     (route) => pathname === route || pathname.startsWith(`${route}/`)
+  );
+}
+
+export function isAdminRouteOrApi(pathname: string): boolean {
+  return (
+    pathname === "/admin" ||
+    pathname.startsWith("/admin/") ||
+    pathname === "/api/admin" ||
+    pathname.startsWith("/api/admin/")
   );
 }
 
@@ -237,6 +247,7 @@ function clearAuthCookiesOnResponse(request: NextRequest, response: NextResponse
 interface AuthVerificationResult {
   hasValidSession: boolean;
   isAllowedEarlyAccess: boolean;
+  isVerifiedAdmin: boolean;
   signedOutNonAllowedUser: boolean;
   response: NextResponse;
 }
@@ -250,13 +261,19 @@ async function verifyAuthenticatedRequest(
     },
   });
 
-  // 1. Check x-admin-secret header for owner/admin API access
+  // 1. Check x-admin-secret header for non-admin early-access API checks
   const adminSecret = getServerEnv("ADMIN_SECRET");
   const reqAdminSecret = request.headers.get("x-admin-secret")?.trim();
-  if (adminSecret && reqAdminSecret && reqAdminSecret === adminSecret) {
+  if (
+    adminSecret &&
+    reqAdminSecret &&
+    reqAdminSecret === adminSecret &&
+    !isAdminRouteOrApi(request.nextUrl.pathname)
+  ) {
     return {
       hasValidSession: true,
       isAllowedEarlyAccess: true,
+      isVerifiedAdmin: false,
       signedOutNonAllowedUser: false,
       response,
     };
@@ -275,6 +292,7 @@ async function verifyAuthenticatedRequest(
         const { data, error } = await mockAuth.getUser(bearerToken);
         if (!error && data?.user) {
           const userEmail = String(data.user.email || "").trim().toLowerCase();
+          const verifiedAdmin = isVerifiedAdminUser(data.user);
 
           // Rule 5: Google login only, no magic links
           if (!isGoogleProvider(data.user)) {
@@ -284,6 +302,7 @@ async function verifyAuthenticatedRequest(
             return {
               hasValidSession: true,
               isAllowedEarlyAccess: false,
+              isVerifiedAdmin: false,
               signedOutNonAllowedUser: true,
               response,
             };
@@ -294,6 +313,7 @@ async function verifyAuthenticatedRequest(
             return {
               hasValidSession: true,
               isAllowedEarlyAccess: true,
+              isVerifiedAdmin: verifiedAdmin,
               signedOutNonAllowedUser: false,
               response,
             };
@@ -305,6 +325,7 @@ async function verifyAuthenticatedRequest(
           return {
             hasValidSession: true,
             isAllowedEarlyAccess: false,
+            isVerifiedAdmin: verifiedAdmin,
             signedOutNonAllowedUser: true,
             response,
           };
@@ -359,6 +380,7 @@ async function verifyAuthenticatedRequest(
 
       if (verifiedUser) {
         const userEmail = String(verifiedUser.email || "").trim().toLowerCase();
+        const verifiedAdmin = isVerifiedAdminUser(verifiedUser);
 
         // Rule 5: Google login only, no magic links
         if (!isGoogleProvider(verifiedUser)) {
@@ -366,6 +388,7 @@ async function verifyAuthenticatedRequest(
           return {
             hasValidSession: true,
             isAllowedEarlyAccess: false,
+            isVerifiedAdmin: false,
             signedOutNonAllowedUser: true,
             response,
           };
@@ -376,6 +399,7 @@ async function verifyAuthenticatedRequest(
           return {
             hasValidSession: true,
             isAllowedEarlyAccess: true,
+            isVerifiedAdmin: verifiedAdmin,
             signedOutNonAllowedUser: false,
             response,
           };
@@ -386,6 +410,7 @@ async function verifyAuthenticatedRequest(
         return {
           hasValidSession: true,
           isAllowedEarlyAccess: false,
+          isVerifiedAdmin: verifiedAdmin,
           signedOutNonAllowedUser: true,
           response,
         };
@@ -394,6 +419,7 @@ async function verifyAuthenticatedRequest(
       return {
         hasValidSession: false,
         isAllowedEarlyAccess: false,
+        isVerifiedAdmin: false,
         signedOutNonAllowedUser: false,
         response,
       };
@@ -403,6 +429,7 @@ async function verifyAuthenticatedRequest(
   return {
     hasValidSession: false,
     isAllowedEarlyAccess: false,
+    isVerifiedAdmin: false,
     signedOutNonAllowedUser: false,
     response,
   };
@@ -414,6 +441,23 @@ export async function middleware(request: NextRequest) {
   // 1. Always allow static assets and internal _next paths
   if (isStaticAssetPath(pathname)) {
     return NextResponse.next();
+  }
+
+  // 2. Server-side Admin Route & API Gate:
+  // Signed-in user's email must be in the admin list AND email must be verified; otherwise 403.
+  if (isAdminRouteOrApi(pathname)) {
+    const { hasValidSession, isVerifiedAdmin } = await verifyAuthenticatedRequest(request);
+    if (!hasValidSession || !isVerifiedAdmin) {
+      return NextResponse.json(
+        { error: "Forbidden: Admin access only." },
+        { status: 403 }
+      );
+    }
+    return NextResponse.next({
+      request: {
+        headers: request.headers,
+      },
+    });
   }
 
   // Legacy unlock flag strictly gated to NODE_ENV === "test" for negative control & legacy auth-guard tests

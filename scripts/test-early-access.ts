@@ -584,13 +584,13 @@ async function main() {
   console.log("\n[TEST 2] Verifying guest lock, public legal pages + /api/health, and EARLY_ACCESS_ALLOWED_EMAILS allowlist...");
   delete process.env.__CAREERMONKE_LEGACY_EARLY_ACCESS_UNLOCK;
 
-  for (const route of ["/jobs", "/dashboard", "/resume", "/tracker", "/pricing", "/admin", "/remote", "/worldwide", "/signup"]) {
+  for (const route of ["/jobs", "/dashboard", "/resume", "/tracker", "/pricing", "/remote", "/worldwide", "/signup"]) {
     const res = await middleware(new NextRequest(`http://localhost:3000${route}`));
     assert.strictEqual(res.status, 307);
     assert.strictEqual(new URL(res.headers.get("location")!).pathname, "/early-access");
   }
 
-  for (const apiRoute of ["/api/jobs/search", "/api/jobs/pro", "/api/ai", "/api/stats", "/api/track", "/api/admin/stats"]) {
+  for (const apiRoute of ["/admin", "/api/jobs/search", "/api/jobs/pro", "/api/ai", "/api/stats", "/api/track", "/api/admin/stats"]) {
     const res = await middleware(new NextRequest(`http://localhost:3000${apiRoute}`));
     assert.strictEqual(res.status, 403);
   }

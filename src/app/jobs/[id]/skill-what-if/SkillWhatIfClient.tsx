@@ -79,20 +79,28 @@ export default function SkillWhatIfClient({ jobId }: SkillWhatIfClientProps) {
         },
       });
 
+      const json = await res.json().catch(() => ({}));
       if (!res.ok) {
         if (res.status === 403) {
           setIsPro(false);
           setLoadingSimulation(false);
           return;
         }
-        throw new Error(`Failed to load skill simulation (status ${res.status})`);
+        throw new Error(
+          json?.message ||
+            json?.error ||
+            "Skill What-If simulation is not available yet for this role."
+        );
       }
 
-      const json = await res.json();
-      if (json.simulation) {
+      if (json.simulation && json.available !== false) {
         setSimulation(json.simulation);
       } else {
-        throw new Error("Invalid skill simulation response from server");
+        throw new Error(
+          json?.message ||
+            json?.error ||
+            "Skill What-If simulation is not available yet for this role."
+        );
       }
     } catch (err: any) {
       console.warn("Error fetching simulation from server:", err);

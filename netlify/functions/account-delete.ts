@@ -163,10 +163,13 @@ export function createHandler(deps: AccountDeleteDeps = {}) {
     const tablesToDelete = [
       "candidate_profiles",
       "user_preferences",
+      "resumes",
+      "saved_jobs",
       "search_alerts",
       "applications",
       "job_applications",
       "tailored_resumes",
+      "subscriptions",
       "daily_digests",
       "ai_usage_quotas",
       "ai_usage_ledger",
@@ -206,6 +209,17 @@ export function createHandler(deps: AccountDeleteDeps = {}) {
             errors.push(`${table}: ${error?.message || JSON.stringify(error)}`);
           }
         }
+      }
+    }
+
+    const normalizedEmail = String(user.email || "").trim().toLowerCase();
+    if (normalizedEmail) {
+      const { error: eaError } = await supabaseAdmin
+        .from("early_access_emails")
+        .delete()
+        .eq("email", normalizedEmail);
+      if (!isIgnorableDeleteError(eaError)) {
+        errors.push(`early_access_emails: ${eaError?.message || JSON.stringify(eaError)}`);
       }
     }
 

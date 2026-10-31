@@ -3,7 +3,23 @@ import { createClient } from "@supabase/supabase-js";
 import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
 import { verifyUserNotBanned } from "@/lib/admin/auth";
 import { checkRequiredEnv } from "@/lib/api/envCheck";
-import { SAMPLE_INTERVIEW_PACK } from "@/data/interviewPackFixture";
+import type { InterviewPackData } from "@/data/interviewPackFixture";
+
+export const INTERVIEW_PACK_NOT_AVAILABLE_MESSAGE =
+  "Interview Pack is not available yet for this role.";
+
+function isRealInterviewPackResult(
+  pack: InterviewPackData | null | undefined,
+  requestedJobId: string
+): pack is InterviewPackData {
+  if (!pack || typeof pack !== "object") return false;
+  if (!requestedJobId || requestedJobId === "sample" || requestedJobId === "preview" || requestedJobId === "default") {
+    return false;
+  }
+  if (!pack.jobId || pack.jobId === "sample") return false;
+  if (pack.companyName === "Cloud Infrastructure Technologies") return false;
+  return Boolean(pack.jobTitle && pack.companyName && Array.isArray(pack.cards));
+}
 
 function getSupabaseAdmin() {
   const supabaseUrl =
@@ -34,6 +50,10 @@ function getSupabaseAdmin() {
 export interface InterviewPackDeps {
   getSupabaseAdmin?: () => any;
   getServerEntitlement?: (userId: string) => Promise<{ isPro: boolean }>;
+  generateInterviewPack?: (params: {
+    userId: string;
+    jobId: string;
+  }) => Promise<InterviewPackData | null>;
 }
 
 export async function handleInterviewPackRequest(
@@ -95,20 +115,51 @@ export async function handleInterviewPackRequest(
     );
   }
 
-  // 3. Return Pack for Pro Member
+  // 3. Return only a real AI result for Pro Member; never return sample fixture data as if real
   const url = new URL(req.url);
-  const jobId = url.searchParams.get("jobId") || "sample";
+  const jobId = (url.searchParams.get("jobId") || "").trim();
+
+  if (deps.generateInterviewPack && jobId) {
+    try {
+      const generated = await deps.generateInterviewPack({
+        userId: user.id,
+        jobId,
+      });
+      if (isRealInterviewPackResult(generated, jobId)) {
+        return NextResponse.json(
+          {
+            pack: {
+              ...generated,
+              jobId,
+            },
+            available: true,
+            isPro: true,
+          },
+          {
+            status: 200,
+            headers: {
+              "Cache-Control": "private, no-cache, no-store, must-revalidate",
+            },
+          }
+        );
+      }
+    } catch {
+      // Fall through to explicit not_available_yet state
+    }
+  }
 
   return NextResponse.json(
     {
-      pack: {
-        ...SAMPLE_INTERVIEW_PACK,
-        jobId,
-      },
+      pack: null,
+      available: false,
+      status: "not_available_yet",
+      code: "NOT_AVAILABLE_YET",
+      error: INTERVIEW_PACK_NOT_AVAILABLE_MESSAGE,
+      message: INTERVIEW_PACK_NOT_AVAILABLE_MESSAGE,
       isPro: true,
     },
     {
-      status: 200,
+      status: 503,
       headers: {
         "Cache-Control": "private, no-cache, no-store, must-revalidate",
       },

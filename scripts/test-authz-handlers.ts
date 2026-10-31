@@ -34,6 +34,7 @@ global.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
         JSON.stringify({
           id: "00000000-0000-4000-a000-000000000001",
           email: "xbsuryakant@gmail.com",
+          email_confirmed_at: "2026-10-30T00:00:00.000Z",
           user_metadata: { role: "admin" },
         }),
         { status: 200, headers: { "Content-Type": "application/json" } }

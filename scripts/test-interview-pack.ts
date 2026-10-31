@@ -188,20 +188,57 @@ async function run() {
     assert.strictEqual(statusGarbage, 403, "Garbage non-Pro token must yield status 403");
     assert.strictEqual(bodyGarbage.code, "PRO_REQUIRED", "Must return code PRO_REQUIRED");
 
-    // 4c. Valid Pro token -> 200
-    const reqPro = new Request("http://localhost:3000/api/jobs/interview-pack?jobId=test_pro", {
+    // 4c. Valid Pro token without real AI generator -> 503 not_available_yet (never sample data as if real)
+    const reqProNoAi = new Request("http://localhost:3000/api/jobs/interview-pack?jobId=test_pro", {
+      headers: { Authorization: "Bearer valid_pro_token" },
+    });
+    const resProNoAi = await handleInterviewPackRequest(reqProNoAi, {
+      getSupabaseAdmin: () => mockAdmin("usr_pro_test"),
+      getServerEntitlement: async () => ({ isPro: true }),
+    });
+    assert.strictEqual(resProNoAi.status, 503, "Valid Pro token without real AI result must yield 503 not_available_yet");
+    const bodyProNoAi = await resProNoAi.json();
+    assert.strictEqual(bodyProNoAi.pack, null, "Must never return sample pack as if real");
+    assert.strictEqual(bodyProNoAi.available, false);
+    assert.strictEqual(bodyProNoAi.status, "not_available_yet");
+
+    // 4d. Valid Pro token with real AI result -> 200
+    const reqPro = new Request("http://localhost:3000/api/jobs/interview-pack?jobId=job_real_123", {
       headers: { Authorization: "Bearer valid_pro_token" },
     });
     const resPro = await handleInterviewPackRequest(reqPro, {
       getSupabaseAdmin: () => mockAdmin("usr_pro_test"),
       getServerEntitlement: async () => ({ isPro: true }),
+      generateInterviewPack: async ({ jobId }) => ({
+        jobId,
+        jobTitle: "Senior Backend Engineer",
+        companyName: "Linear",
+        department: "Engineering",
+        location: "Remote",
+        isThinResearch: false,
+        fearQuestionOptions: [],
+        brief: {
+          summary: "Real AI summary",
+          mission: "Real AI mission",
+          marketContext: "Real AI context",
+          recentNews: [],
+          cultureSignals: [],
+        },
+        process: { overview: "Real overview", stages: [] },
+        cards: [],
+        gaps: [],
+        askThem: [],
+        quiz: [],
+        sources: [],
+      }),
     });
-    assert.strictEqual(resPro.status, 200, "Valid Pro token must yield status 200");
+    assert.strictEqual(resPro.status, 200, "Valid Pro token with real AI result must yield status 200");
     const bodyPro = await resPro.json();
-    assert.ok(bodyPro.pack, "Must return interview pack");
+    assert.ok(bodyPro.pack, "Must return real interview pack");
+    assert.strictEqual(bodyPro.available, true);
     assert.strictEqual(bodyPro.isPro, true);
 
-    console.log("  [PASS] Endpoint Live Execution: Missing token -> 401, Garbage non-Pro token -> 403, Pro token -> 200");
+    console.log("  [PASS] Endpoint Live Execution: Missing token -> 401, Non-Pro -> 403, No real AI -> 503 not_available_yet, Real AI -> 200");
   } catch (err: any) {
     failures.push(`API EXECUTION FAIL: ${err.message}`);
   }
