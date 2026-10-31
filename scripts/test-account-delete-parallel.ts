@@ -23,7 +23,6 @@ const TABLES_TO_DELETE = [
   "applications",
   "job_applications",
   "tailored_resumes",
-  "subscriptions",
   "daily_digests",
   "ai_usage_quotas",
   "ai_usage_ledger",
@@ -223,8 +222,8 @@ async function runTests() {
     console.error("FAIL: Expected 200 OK on happy path");
     process.exit(1);
   }
-  if (happyDb.getDeleteCallsCount() !== 16) {
-    console.error(`FAIL: Expected 16 table deletions, got ${happyDb.getDeleteCallsCount()}`);
+  if (happyDb.getDeleteCallsCount() !== 15) {
+    console.error(`FAIL: Expected 15 table deletions (subscriptions kept), got ${happyDb.getDeleteCallsCount()}`);
     process.exit(1);
   }
   if (happyDb.getDeleteUserCalls() !== 1) {

@@ -33,7 +33,8 @@ export function isEmailInAdminList(email?: string | null): boolean {
 }
 
 /**
- * Checks whether a Supabase Auth user has a verified email address.
+ * Checks whether a Supabase Auth user has a verified email address via server-owned
+ * `email_confirmed_at` or `confirmed_at` timestamps only (never user_metadata).
  */
 export function isUserEmailVerified(user: any): boolean {
   if (!user || typeof user !== "object") return false;
@@ -43,16 +44,45 @@ export function isUserEmailVerified(user: any): boolean {
   if (typeof user.confirmed_at === "string" && user.confirmed_at.trim().length > 0) {
     return true;
   }
-  if (user.user_metadata?.email_verified === true) {
-    return true;
-  }
   return false;
 }
 
 /**
- * Server-side admin check: user's email must be in the admin list AND email must be verified.
+ * Validates whether the authenticated Supabase user authenticated with Google
+ * (same provider/providers check as the early-access gate).
+ */
+export function hasAdminGoogleProvider(user: any): boolean {
+  if (!user || typeof user !== "object") return false;
+  const provider = user.app_metadata?.provider;
+  if (provider === "email") return false;
+  if (provider === "google") return true;
+
+  if (Array.isArray(user.app_metadata?.providers)) {
+    if (user.app_metadata.providers.includes("google")) return true;
+    if (user.app_metadata.providers.includes("email")) return false;
+  }
+
+  if (Array.isArray(user.identities) && user.identities.length > 0) {
+    const hasGoogle = user.identities.some((id: any) => id?.provider === "google");
+    const hasEmailOnly = user.identities.every((id: any) => id?.provider === "email");
+    if (hasGoogle) return true;
+    if (hasEmailOnly) return false;
+  }
+
+  return false;
+}
+
+/**
+ * Server-side admin check:
+ * - user's email must be in the admin list
+ * - email_confirmed_at / confirmed_at must be set (never user_metadata)
+ * - app_metadata provider/providers (or identities) must include google
  */
 export function isVerifiedAdminUser(user: any): boolean {
   if (!user) return false;
-  return isEmailInAdminList(user.email) && isUserEmailVerified(user);
+  return (
+    isEmailInAdminList(user.email) &&
+    isUserEmailVerified(user) &&
+    hasAdminGoogleProvider(user)
+  );
 }

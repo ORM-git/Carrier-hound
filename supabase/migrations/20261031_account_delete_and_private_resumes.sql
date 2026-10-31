@@ -3,9 +3,12 @@
 -- Purpose:
 --   1. Ensure `saved_jobs` and `resumes` metadata tables exist with owner-only RLS
 --      and ON DELETE CASCADE to auth.users(id).
---   2. Enforce private `resumes` storage bucket (`public = FALSE`) with owner-only
+--   2. Change `public.subscriptions.user_id` FK from ON DELETE CASCADE to
+--      ON DELETE SET NULL (nullable) so reconciled subscription audit rows are
+--      preserved when the auth user is deleted.
+--   3. Enforce private `resumes` storage bucket (`public = FALSE`) with owner-only
 --      storage.objects RLS policies (access strictly via signed URLs, never public URLs).
---   3. Document exact SQL / steps executed during account deletion before auth.users removal.
+--   4. Document exact SQL / steps executed during account deletion before auth.users removal.
 -- =============================================================================
 
 -- 1. Saved Jobs table (owner-only RLS)
@@ -59,7 +62,21 @@ CREATE POLICY "Users can manage own resumes"
 
 REVOKE ALL ON TABLE public.resumes FROM anon;
 
--- 3. Private `resumes` Storage Bucket (`public = FALSE`, owner-only access via signed URLs)
+-- 3. Preserve `public.subscriptions` rows on account deletion:
+--    Make `user_id` nullable and change foreign key from ON DELETE CASCADE to ON DELETE SET NULL
+ALTER TABLE public.subscriptions
+  ALTER COLUMN user_id DROP NOT NULL;
+
+ALTER TABLE public.subscriptions
+  DROP CONSTRAINT IF EXISTS subscriptions_user_id_fkey;
+
+ALTER TABLE public.subscriptions
+  ADD CONSTRAINT subscriptions_user_id_fkey
+  FOREIGN KEY (user_id)
+  REFERENCES auth.users(id)
+  ON DELETE SET NULL;
+
+-- 4. Private `resumes` Storage Bucket (`public = FALSE`, owner-only access via signed URLs)
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 VALUES (
   'resumes',
@@ -128,15 +145,19 @@ CREATE POLICY "Owner can delete own resume files"
 
 -- =============================================================================
 -- Reference Account Deletion SQL Steps (executed via service_role in /api/account/delete):
---   Step 1 (Profile):       DELETE FROM public.candidate_profiles WHERE user_id = :uid;
+--   Step 1 (Subscriptions): UPDATE public.subscriptions
+--                              SET status = 'canceled', cancel_at_period_end = TRUE, canceled_at = now(), updated_at = now()
+--                            WHERE user_id = :uid AND status IN ('active', 'trialing', 'in_grace_period');
+--                           (Rows are kept; FK ON DELETE SET NULL clears user_id when auth user is deleted)
+--   Step 2 (Profile):       DELETE FROM public.candidate_profiles WHERE user_id = :uid;
 --                           DELETE FROM public.user_preferences   WHERE user_id = :uid;
---   Step 2 (Resumes):       DELETE FROM public.resumes            WHERE user_id = :uid;
+--   Step 3 (Resumes):       DELETE FROM public.resumes            WHERE user_id = :uid;
 --                           DELETE FROM public.tailored_resumes   WHERE user_id = :uid;
---   Step 3 (Saved Jobs):    DELETE FROM public.saved_jobs         WHERE user_id = :uid;
---   Step 4 (Applications):  DELETE FROM public.applications       WHERE user_id = :uid;
+--   Step 4 (Saved Jobs):    DELETE FROM public.saved_jobs         WHERE user_id = :uid;
+--   Step 5 (Applications):  DELETE FROM public.applications       WHERE user_id = :uid;
 --                           DELETE FROM public.job_applications   WHERE user_id = :uid;
---   Step 5 (Subscriptions): DELETE FROM public.subscriptions      WHERE user_id = :uid;
---   Step 6 (Early Access):  DELETE FROM public.early_access_emails   WHERE lower(email) = lower(:email);
---   Step 7 (Storage Files): Remove all objects under `resumes/:uid/*` via Supabase Storage API
+--   Step 6 (Early Access):  DELETE FROM public.early_access_emails WHERE lower(email) = lower(:email);
+--   Step 7 (Storage Files): Recursively list (with pagination, 100 per page) and remove all objects
+--                           under `resumes/:uid/**` via Supabase Storage API
 --   Step 8 (Auth User):     Delete user `:uid` from `auth.users` via `auth.admin.deleteUser(:uid)`
 -- =============================================================================

@@ -94,7 +94,6 @@ async function executeAccountDeletion(
     "saved_jobs",
     "applications",
     "job_applications",
-    "subscriptions",
     "search_alerts",
     "daily_digests",
     "ai_usage_quotas",

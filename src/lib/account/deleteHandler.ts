@@ -14,7 +14,6 @@ export const ACCOUNT_DELETE_USER_ID_TABLES = [
   "saved_jobs",
   "applications",
   "job_applications",
-  "subscriptions",
   "search_alerts",
   "daily_digests",
   "ai_usage_quotas",
@@ -27,6 +26,90 @@ export const ACCOUNT_DELETE_USER_ID_TABLES = [
 export const ACCOUNT_DELETE_EMAIL_TABLES = [
   "early_access_emails",
 ] as const;
+
+export const RECONCILABLE_SUBSCRIPTION_STATUSES = [
+  "active",
+  "trialing",
+  "in_grace_period",
+] as const;
+
+export const STORAGE_LIST_PAGE_SIZE = 100;
+
+/**
+ * Recursively lists all file paths under `rootPrefix` in a storage bucket using
+ * pagination (`limit: 100, offset`).
+ */
+export async function listBucketFilesRecursively(
+  bucketApi: any,
+  rootPrefix: string
+): Promise<{ paths: string[]; error: any }> {
+  const collectedPaths: string[] = [];
+  if (!bucketApi || typeof bucketApi.list !== "function") {
+    return { paths: collectedPaths, error: null };
+  }
+
+  const queue: string[] = [rootPrefix.replace(/\/+$/, "")];
+  const visitedPrefixes = new Set<string>();
+
+  while (queue.length > 0) {
+    const currentPrefix = queue.shift()!;
+    if (!currentPrefix || visitedPrefixes.has(currentPrefix)) continue;
+    visitedPrefixes.add(currentPrefix);
+
+    let offset = 0;
+    let firstPageFirstItemName: string | null = null;
+
+    while (true) {
+      const { data: items, error: listErr } = await bucketApi.list(currentPrefix, {
+        limit: STORAGE_LIST_PAGE_SIZE,
+        offset,
+      });
+
+      if (listErr) {
+        return { paths: collectedPaths, error: listErr };
+      }
+
+      if (!Array.isArray(items) || items.length === 0) {
+        break;
+      }
+
+      if (offset === 0) {
+        firstPageFirstItemName = typeof items[0]?.name === "string" ? items[0].name : null;
+      } else if (
+        firstPageFirstItemName &&
+        typeof items[0]?.name === "string" &&
+        items[0].name === firstPageFirstItemName
+      ) {
+        // Guard against naive test mocks that ignore offset and return identical page 0
+        break;
+      }
+
+      for (const item of items) {
+        if (!item || typeof item.name !== "string") continue;
+        const cleanName = item.name.replace(/^\/+|\/+$/g, "");
+        if (!cleanName || cleanName === ".emptyFolderPlaceholder") continue;
+
+        const isFolderEntry =
+          item.isFolder === true ||
+          item.name.endsWith("/") ||
+          (item.id === null && !item.metadata);
+
+        if (isFolderEntry) {
+          queue.push(`${currentPrefix}/${cleanName}`);
+        } else {
+          collectedPaths.push(`${currentPrefix}/${cleanName}`);
+        }
+      }
+
+      if (items.length < STORAGE_LIST_PAGE_SIZE) {
+        break;
+      }
+      offset += STORAGE_LIST_PAGE_SIZE;
+    }
+  }
+
+  return { paths: collectedPaths, error: null };
+}
 
 function getSupabaseAdmin() {
   const supabaseUrl =
@@ -56,16 +139,18 @@ function getSupabaseAdmin() {
  * Server-owned, authenticated account deletion workflow:
  * 1. Authenticates caller via Bearer access token.
  * 2. Refuses deletion if user is banned in `blocked_users` (fail-closed on DB error).
- * 3. Reconciles any active subscription, then removes all user rows:
+ * 3. Reconciles `active`, `trialing`, and `in_grace_period` subscriptions to `canceled`
+ *    and preserves the `subscriptions` rows (FK `ON DELETE SET NULL` on `auth.users`).
+ * 4. Removes all user-owned rows:
  *    - profile (`candidate_profiles`, `user_preferences`)
  *    - resumes (`resumes`, `tailored_resumes`)
  *    - saved jobs (`saved_jobs`)
  *    - applications (`applications`, `job_applications`)
- *    - subscriptions (`subscriptions`)
  *    - early_access link (`early_access_emails` by lowercase email)
  *    - auxiliary user tables (`search_alerts`, `daily_digests`, `ai_usage_quotas`, `ai_usage_ledger`, `page_views`, `user_roles`, `user_consents`)
- * 4. Removes stored resume files from the private `resumes` bucket (`<userId>/*`) and any other storage buckets.
- * 5. Deletes the auth identity from Supabase Auth (`auth.users`).
+ * 5. Recursively lists (with pagination, 100 per page) and removes stored resume files
+ *    from the private `resumes` bucket (`<userId>/**`) and any other storage buckets.
+ * 6. Deletes the auth identity from Supabase Auth (`auth.users`).
  */
 export async function handleAccountDeleteRequest(
   req: Request,
@@ -137,37 +222,48 @@ export async function handleAccountDeleteRequest(
       );
     }
 
-    // 3. Reconcile active subscription before removing user rows
+    // 3. Reconcile active, trialing, and in_grace_period subscriptions to canceled and keep the rows
     let billingReconciled = false;
     try {
-      const { data: sub } = await supabaseAdmin
+      const { data: subData } = await supabaseAdmin
         .from("subscriptions")
         .select("*")
         .eq("user_id", userId)
         .order("created_at", { ascending: false })
-        .limit(1)
+        .limit(100)
         .maybeSingle();
 
-      if (sub && sub.status === "active") {
-        await supabaseAdmin
-          .from("subscriptions")
-          .update({
-            status: "canceled",
-            cancel_at_period_end: true,
-            canceled_at: new Date().toISOString(),
-            metadata: {
-              ...(sub.metadata || {}),
-              account_deleted_at: new Date().toISOString(),
-            },
-          })
-          .eq("id", sub.id);
-        billingReconciled = true;
+      const subs = Array.isArray(subData) ? subData : subData ? [subData] : [];
+      for (const sub of subs) {
+        if (
+          sub &&
+          RECONCILABLE_SUBSCRIPTION_STATUSES.includes(
+            sub.status as (typeof RECONCILABLE_SUBSCRIPTION_STATUSES)[number]
+          )
+        ) {
+          const nowIso = new Date().toISOString();
+          await supabaseAdmin
+            .from("subscriptions")
+            .update({
+              status: "canceled",
+              cancel_at_period_end: true,
+              canceled_at: nowIso,
+              updated_at: nowIso,
+              metadata: {
+                ...(sub.metadata || {}),
+                canceled_at: nowIso,
+                account_deleted_at: nowIso,
+              },
+            })
+            .eq("id", sub.id);
+          billingReconciled = true;
+        }
       }
     } catch (billingErr) {
       console.warn("Billing reconciliation warning:", billingErr);
     }
 
-    // 4. Delete user-owned rows across all user_id tables + early_access link
+    // 4. Delete user-owned rows across all user_id tables (excluding subscriptions) + early_access link
     const errors: string[] = [];
 
     const isIgnorableDeleteError = (err: any) => {
@@ -205,7 +301,7 @@ export async function handleAccountDeleteRequest(
       }
     }
 
-    // 5. Remove stored resume files from private `resumes` bucket and any additional buckets
+    // 5. Recursively list (with pagination) and remove stored resume files before deleting auth user
     const deletedStoragePaths: string[] = [];
     try {
       const bucketNames = new Set<string>(["resumes"]);
@@ -221,18 +317,21 @@ export async function handleAccountDeleteRequest(
       for (const bucketName of Array.from(bucketNames)) {
         const bucketApi = supabaseAdmin.storage?.from?.(bucketName);
         if (!bucketApi || typeof bucketApi.list !== "function") continue;
-        const { data: files, error: listErr } = await bucketApi.list(userId);
+
+        const { paths: filePaths, error: listErr } = await listBucketFilesRecursively(
+          bucketApi,
+          userId
+        );
         if (listErr) continue;
-        if (Array.isArray(files) && files.length > 0) {
-          const filePaths = files
-            .filter((f: any) => f && typeof f.name === "string" && f.name.length > 0)
-            .map((f: any) => `${userId}/${f.name}`);
-          if (filePaths.length > 0) {
-            const { error: removeErr } = await bucketApi.remove(filePaths);
+
+        if (filePaths.length > 0) {
+          for (let i = 0; i < filePaths.length; i += STORAGE_LIST_PAGE_SIZE) {
+            const chunk = filePaths.slice(i, i + STORAGE_LIST_PAGE_SIZE);
+            const { error: removeErr } = await bucketApi.remove(chunk);
             if (removeErr) {
               errors.push(`storage.${bucketName}: ${removeErr.message || String(removeErr)}`);
             } else {
-              deletedStoragePaths.push(...filePaths.map((p: string) => `${bucketName}/${p}`));
+              deletedStoragePaths.push(...chunk.map((p: string) => `${bucketName}/${p}`));
             }
           }
         }
