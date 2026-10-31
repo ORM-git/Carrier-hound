@@ -13,6 +13,7 @@ import { WhiteHeroButton } from "@/components/Buttons";
 import CategorySelectModal from "@/components/CategorySelectModal";
 import Footer from "@/components/Footer";
 import GlobeLiveStats from "@/components/GlobeLiveStats";
+import LandingInteractiveDemoSection from "@/components/LandingInteractiveDemoSection";
 import { useLiveStats } from "@/lib/api/stats";
 import { X, Check, ArrowRight, Instagram, Linkedin, Mail } from "lucide-react";
 
@@ -448,6 +449,11 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      {/* ========================================================================= */}
+      {/* 11. INTERACTIVE PRODUCT DEMO SECTION                                      */}
+      {/* ========================================================================= */}
+      <LandingInteractiveDemoSection />
 
       {/* ========================================================================= */}
       {/* 13. FOOTER (Navy #090E34) & BackToTop Button                              */}
