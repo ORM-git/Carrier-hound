@@ -56,6 +56,78 @@ const isNegativeControlLock = process.argv.includes("--negative-control");
 const isNegativeControlCap = process.argv.includes("--negative-control-cap");
 const isNegativeControlDigest = process.argv.includes("--negative-control-digest");
 const isNegativeControlApproval = process.argv.includes("--negative-control-approval");
+const isNegativeControlSelfApprove = process.argv.includes("--negative-control-self-approve");
+
+function collectNonTestSrcFiles(dirPath: string): Array<{ filePath: string; content: string }> {
+  const results: Array<{ filePath: string; content: string }> = [];
+  for (const entry of fs.readdirSync(dirPath, { withFileTypes: true })) {
+    const fullPath = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name === "__tests__" || entry.name === "node_modules" || entry.name.startsWith(".")) {
+        continue;
+      }
+      results.push(...collectNonTestSrcFiles(fullPath));
+    } else if (entry.isFile()) {
+      if (!/\.(ts|tsx|js|jsx|mjs|cjs|sql)$/i.test(entry.name)) continue;
+      if (/\.(test|spec)\.[jt]sx?$/i.test(entry.name)) continue;
+      results.push({
+        filePath: path.relative(process.cwd(), fullPath).replace(/\\/g, "/"),
+        content: fs.readFileSync(fullPath, "utf-8"),
+      });
+    }
+  }
+  return results;
+}
+
+function stripComments(source: string): string {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/\/\/.*$/gm, " ");
+}
+
+function verifyNoSelfApproveInSrc(
+  injectedFiles: Array<{ filePath: string; content: string }> = []
+): void {
+  const srcDir = path.resolve(process.cwd(), "src");
+  const files = [...collectNonTestSrcFiles(srcDir), ...injectedFiles];
+  assert.ok(files.length > 0, "Expected non-test files in src/ to scan");
+
+  let selectUseCount = 0;
+
+  for (const { filePath, content } of files) {
+    const codeOnly = stripComments(content);
+    if (!codeOnly.includes("early_access_approved")) {
+      continue;
+    }
+
+    const mutationPattern =
+      /early_access_approved[\s\S]{0,200}?\b(insert|update|upsert|delete|rpc)\b|\b(insert|update|upsert|delete|rpc)\b[\s\S]{0,200}?early_access_approved/i;
+    assert.ok(
+      !mutationPattern.test(codeOnly),
+      `Prohibited mutation (insert/update/upsert/delete) with early_access_approved detected in ${filePath}`
+    );
+
+    const allOccurrences = [...codeOnly.matchAll(/early_access_approved/g)];
+    const validSelectCalls = [
+      ...codeOnly.matchAll(
+        /\.from\(\s*["'`]early_access_approved["'`]\s*\)\s*\.select\s*\(/g
+      ),
+    ];
+
+    assert.strictEqual(
+      allOccurrences.length,
+      validSelectCalls.length,
+      `Non-select use of early_access_approved detected in ${filePath} (found ${allOccurrences.length} occurrence(s), but ${validSelectCalls.length} valid .from("early_access_approved").select(...) call(s))`
+    );
+
+    selectUseCount += validSelectCalls.length;
+  }
+
+  assert.ok(
+    selectUseCount > 0,
+    "Expected at least one valid .from('early_access_approved').select(...) in src/"
+  );
+}
 
 interface StoredEmailRow {
   email: string;
@@ -261,20 +333,6 @@ function createMockSupabase() {
             const found = mockApprovedTable.find((r) => r.email === filterEmail) || null;
             return { data: found ? { approved: found.approved } : null, error: null };
           },
-          insert: async () => {
-            // Rule 2: user cannot mutate table - RLS denies insert
-            return {
-              data: null,
-              error: { code: "42501", message: "permission denied for table early_access_approved" },
-            };
-          },
-          update: async () => {
-            // Rule 2: user cannot mutate table - RLS denies update
-            return {
-              data: null,
-              error: { code: "42501", message: "permission denied for table early_access_approved" },
-            };
-          },
         };
         return approvedBuilder;
       }
@@ -452,6 +510,17 @@ async function main() {
       200,
       `Negative control (approval gate) expected failure: unapproved user was not blocked (got status ${unapprovedRes.status})`
     );
+    process.exit(1);
+  }
+
+  if (isNegativeControlSelfApprove) {
+    // Inject a prohibited mutation line on early_access_approved; static scanner must fail
+    verifyNoSelfApproveInSrc([
+      {
+        filePath: "src/app/api/early-access/route.ts",
+        content: 'await supabase.from("early_access_approved").upsert({ email, approved: true });',
+      },
+    ]);
     process.exit(1);
   }
 
@@ -733,19 +802,26 @@ async function main() {
   console.log("  [PASS] DB error blocked: Fails closed to /early-access and 403 on database lookup failure");
 
   // 4. User cannot self-approve:
-  const mockClient = (globalThis as any).__mockSupabaseClient;
-  const insertAttempt = await mockClient.from("early_access_approved").insert({
-    email: "attacker@example.com",
-    approved: true,
-  });
-  assert.ok(insertAttempt.error, "Insert attempt by user must return error");
-  assert.strictEqual(insertAttempt.error.code, "42501", "Insert attempt must be rejected with 42501 (permission denied)");
+  // Static scan of src/ (non-test files): fails if early_access_approved appears with insert/update/upsert/delete or any non-select use
+  verifyNoSelfApproveInSrc();
 
-  const updateAttempt = await mockClient.from("early_access_approved").update({
-    approved: true,
-  });
-  assert.ok(updateAttempt.error, "Update attempt by user must return error");
-  assert.strictEqual(updateAttempt.error.code, "42501", "Update attempt must be rejected with 42501 (permission denied)");
+  // Negative control: injecting insert/update/upsert/delete or non-select use on early_access_approved must make the static check fail
+  for (const injectedLine of [
+    'await supabase.from("early_access_approved").insert({ email: "attacker@example.com", approved: true });',
+    'await supabase.from("early_access_approved").update({ approved: true }).eq("email", "attacker@example.com");',
+    'await supabase.from("early_access_approved").upsert({ email: "attacker@example.com", approved: true });',
+    'await supabase.from("early_access_approved").delete().eq("email", "attacker@example.com");',
+    'const tableRef = supabase.from("early_access_approved");',
+  ]) {
+    assert.throws(
+      () =>
+        verifyNoSelfApproveInSrc([
+          { filePath: "src/app/api/early-access/route.ts", content: injectedLine },
+        ]),
+      /early_access_approved/,
+      `Static self-approve check must fail when injected with: ${injectedLine}`
+    );
+  }
 
   // Migration file inspection: RLS enabled, revoked from anon and authenticated, deny policy present
   const migrationPath = path.resolve(process.cwd(), "supabase/migrations/20261030_early_access_approved.sql");
@@ -755,7 +831,7 @@ async function main() {
   assert.ok(migrationSql.includes("REVOKE ALL ON public.early_access_approved FROM PUBLIC, anon, authenticated"), "Migration must revoke untrusted permissions");
   assert.ok(migrationSql.includes("GRANT SELECT, INSERT, UPDATE, DELETE ON public.early_access_approved TO service_role"), "Migration must grant only service_role");
   assert.ok(migrationSql.includes("CREATE POLICY"), "Migration must declare RLS deny policy");
-  console.log("  [PASS] User cannot self-approve: Client mutations return 42501 permission denied and migration locks RLS");
+  console.log("  [PASS] User cannot self-approve: Static scan of src/ confirms select-only use (negative controls fail as expected) and migration locks RLS");
 
   // 5. Google login only, no magic links:
   const magicLinkRes = await middleware(
@@ -1306,7 +1382,7 @@ async function main() {
   console.log("\n[TEST 7] Verifying real negative controls (lock, cap fail-closed, and digest) exit non-zero...");
   const scriptPath = path.resolve(__dirname, "test-early-access.ts");
 
-  for (const flag of ["--negative-control", "--negative-control-cap", "--negative-control-digest", "--negative-control-approval"]) {
+  for (const flag of ["--negative-control", "--negative-control-cap", "--negative-control-digest", "--negative-control-approval", "--negative-control-self-approve"]) {
     const child = spawnSync("npx", ["tsx", scriptPath, flag], {
       shell: true,
       stdio: "pipe",
