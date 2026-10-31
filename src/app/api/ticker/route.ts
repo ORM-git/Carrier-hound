@@ -48,6 +48,8 @@ export interface TickerJobItem {
  * strictly company + title + posted_at + logo_url only.
  * No ids, emails, or apply links.
  * Cache 60s, no-store and 503 on error.
+ * Drops rows without posted_at or created_at.
+ * Clamps future-dated timestamps within 5 minutes; drops rows further in the future.
  */
 export async function GET(req: Request) {
   try {
@@ -85,14 +87,14 @@ export async function GET(req: Request) {
 
     const supabase = getSupabaseAdmin();
 
-    // Query up to 20 active jobs ordered by posted_at desc with optional foreign company logo
+    // Query active jobs ordered by posted_at desc with optional foreign company logo
     const { data, error } = await supabase
       .from("jobs")
       .select("company, title, posted_at, created_at, companies(logo_url)")
       .eq("status", "active")
       .eq("is_active", true)
       .order("posted_at", { ascending: false, nullsFirst: false })
-      .limit(20);
+      .limit(50);
 
     let rows: any[] | null = (data as any) || null;
 
@@ -104,7 +106,7 @@ export async function GET(req: Request) {
         .eq("status", "active")
         .eq("is_active", true)
         .order("posted_at", { ascending: false, nullsFirst: false })
-        .limit(20);
+        .limit(50);
 
       if (fallback.error || !fallback.data) {
         return NextResponse.json(
@@ -132,8 +134,30 @@ export async function GET(req: Request) {
       );
     }
 
-    // Strictly map to company + title + posted_at + logo_url only (max 20 rows, NO other fields)
-    const tickerItems: TickerJobItem[] = rows.slice(0, 20).map((row: any) => {
+    const nowMs = Date.now();
+    const MAX_FUTURE_SKEW_MS = 5 * 60 * 1000; // 5 minutes
+
+    const tickerItems: TickerJobItem[] = [];
+
+    for (const row of rows) {
+      if (tickerItems.length >= 20) break;
+
+      // Drop rows that have neither posted_at nor created_at instead of falling back to now()
+      const rawTimestamp = row.posted_at || row.created_at;
+      if (!rawTimestamp) {
+        continue;
+      }
+
+      const timeMs = new Date(rawTimestamp).getTime();
+      if (isNaN(timeMs)) {
+        continue;
+      }
+
+      // Drop rows further than 5 minutes in the future
+      if (timeMs > nowMs + MAX_FUTURE_SKEW_MS) {
+        continue;
+      }
+
       let logoUrl: string | null = null;
       if (row.companies) {
         if (Array.isArray(row.companies) && row.companies.length > 0) {
@@ -145,13 +169,13 @@ export async function GET(req: Request) {
         logoUrl = row.logo_url;
       }
 
-      return {
+      tickerItems.push({
         company: String(row.company || "").trim(),
         title: String(row.title || "").trim(),
-        posted_at: row.posted_at || row.created_at || new Date().toISOString(),
+        posted_at: new Date(rawTimestamp).toISOString(),
         logo_url: logoUrl || null,
-      };
-    });
+      });
+    }
 
     return NextResponse.json(tickerItems, {
       headers: {

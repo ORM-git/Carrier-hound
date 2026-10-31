@@ -55,7 +55,7 @@ export async function handler(event?: any) {
       .eq("status", "active")
       .eq("is_active", true)
       .order("posted_at", { ascending: false, nullsFirst: false })
-      .limit(20);
+      .limit(50);
 
     let rows: any[] | null = (data as any) || null;
 
@@ -66,7 +66,7 @@ export async function handler(event?: any) {
         .eq("status", "active")
         .eq("is_active", true)
         .order("posted_at", { ascending: false, nullsFirst: false })
-        .limit(20);
+        .limit(50);
 
       if (fallback.error || !fallback.data) {
         return {
@@ -92,7 +92,35 @@ export async function handler(event?: any) {
       };
     }
 
-    const tickerItems = rows.slice(0, 20).map((row: any) => {
+    const nowMs = Date.now();
+    const MAX_FUTURE_SKEW_MS = 5 * 60 * 1000; // 5 minutes
+
+    const tickerItems: Array<{
+      company: string;
+      title: string;
+      posted_at: string;
+      logo_url: string | null;
+    }> = [];
+
+    for (const row of rows) {
+      if (tickerItems.length >= 20) break;
+
+      // Drop rows that have neither posted_at nor created_at instead of falling back to now()
+      const rawTimestamp = row.posted_at || row.created_at;
+      if (!rawTimestamp) {
+        continue;
+      }
+
+      const timeMs = new Date(rawTimestamp).getTime();
+      if (isNaN(timeMs)) {
+        continue;
+      }
+
+      // Drop rows further than 5 minutes in the future
+      if (timeMs > nowMs + MAX_FUTURE_SKEW_MS) {
+        continue;
+      }
+
       let logoUrl: string | null = null;
       if (row.companies) {
         if (Array.isArray(row.companies) && row.companies.length > 0) {
@@ -104,13 +132,13 @@ export async function handler(event?: any) {
         logoUrl = row.logo_url;
       }
 
-      return {
+      tickerItems.push({
         company: String(row.company || "").trim(),
         title: String(row.title || "").trim(),
-        posted_at: row.posted_at || row.created_at || new Date().toISOString(),
+        posted_at: new Date(rawTimestamp).toISOString(),
         logo_url: logoUrl || null,
-      };
-    });
+      });
+    }
 
     return {
       statusCode: 200,
