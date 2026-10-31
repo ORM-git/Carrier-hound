@@ -16,8 +16,7 @@ function getSupabaseAdmin() {
     process.env.SUPABASE_URL;
   const serviceKey =
     process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.SUPABASE_SERVICE_KEY ||
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    process.env.SUPABASE_SERVICE_KEY;
 
   const missing = checkRequiredEnv(
     {
@@ -81,26 +80,62 @@ export async function GET(req: Request) {
     const supabase = getSupabaseAdmin();
 
     // 1. Total active jobs
-    const { count: totalActive } = await supabase
+    const { count: totalActive, error: activeErr } = await supabase
       .from("jobs_public")
       .select("id", { count: "exact", head: true })
       .eq("is_active", true)
       .eq("status", "active");
 
+    if (activeErr) {
+      return NextResponse.json(
+        { error: "Service unavailable" },
+        {
+          status: 503,
+          headers: {
+            "Cache-Control": "no-store",
+          },
+        }
+      );
+    }
+
     // 2. Total companies registered
-    const { count: companyCount } = await supabase
+    const { count: companyCount, error: companyErr } = await supabase
       .from("companies")
       .select("id", { count: "exact", head: true });
+
+    if (companyErr) {
+      return NextResponse.json(
+        { error: "Service unavailable" },
+        {
+          status: 503,
+          headers: {
+            "Cache-Control": "no-store",
+          },
+        }
+      );
+    }
 
     // 3. Jobs posted/created today (UTC midnight to now)
     const todayMidnight = new Date();
     todayMidnight.setUTCHours(0, 0, 0, 0);
-    const { count: recentJobs } = await supabase
+    const { count: recentJobs, error: recentErr } = await supabase
       .from("jobs_public")
       .select("id", { count: "exact", head: true })
       .eq("is_active", true)
       .eq("status", "active")
       .gte("created_at", todayMidnight.toISOString());
+
+    if (recentErr) {
+      return NextResponse.json(
+        { error: "Service unavailable" },
+        {
+          status: 503,
+          headers: {
+            "Cache-Control": "no-store",
+          },
+        }
+      );
+    }
 
     const activeJobs = totalActive ?? 0;
     const companies = companyCount ?? 0;
@@ -130,15 +165,14 @@ export async function GET(req: Request) {
     } catch {}
     return NextResponse.json(
       {
-        activeJobs: 0,
-        companies: 0,
-        totalJobs: 0,
-        companiesScanned: 0,
-        jobsToday: 0,
-        updatedAt: new Date().toISOString(),
-        error: err?.message || "Internal server error",
+        error: "temporarily unavailable",
       },
-      { status: 500 }
+      {
+        status: 500,
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      }
     );
   }
 }

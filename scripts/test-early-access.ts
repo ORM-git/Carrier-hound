@@ -646,12 +646,19 @@ async function main() {
     assert.strictEqual(new URL(res.headers.get("location")!).pathname, "/early-access");
   }
 
-  for (const apiRoute of ["/admin", "/api/jobs/search", "/api/jobs/pro", "/api/ai", "/api/stats", "/api/track", "/api/admin/stats"]) {
+  for (const apiRoute of ["/admin", "/api/jobs/search", "/api/jobs/pro", "/api/ai", "/api/track", "/api/admin/stats"]) {
     const res = await middleware(new NextRequest(`http://localhost:3000${apiRoute}`));
     assert.strictEqual(res.status, 403);
   }
 
-  for (const guestRoute of ["/", "/early-access", "/api/early-access", "/api/health", "/privacy", "/privacy-policy", "/terms-and-conditions", "/login", "/data/ne_110m_land.json"]) {
+  // Signed-out GET /api/stats passes; signed-out POST /api/stats returns 403
+  const signedOutStatsGet = await middleware(new NextRequest("http://localhost:3000/api/stats", { method: "GET" }));
+  assert.strictEqual(signedOutStatsGet.status, 200, "Signed-out GET /api/stats must pass middleware (200)");
+
+  const signedOutStatsPost = await middleware(new NextRequest("http://localhost:3000/api/stats", { method: "POST" }));
+  assert.strictEqual(signedOutStatsPost.status, 403, "Signed-out POST /api/stats must return 403");
+
+  for (const guestRoute of ["/", "/early-access", "/api/early-access", "/api/health", "/api/stats", "/privacy", "/privacy-policy", "/terms-and-conditions", "/login", "/data/ne_110m_land.json"]) {
     const res = await middleware(new NextRequest(`http://localhost:3000${guestRoute}`));
     assert.strictEqual(res.status, 200);
   }

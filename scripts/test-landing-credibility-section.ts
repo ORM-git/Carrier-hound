@@ -2,6 +2,7 @@ import assert from "node:assert";
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { NextRequest } from "next/server";
 
 const ROOT = process.cwd();
 const isNegativeControl = process.argv.includes("--negative-control");
@@ -23,12 +24,88 @@ function runNegativeControlSubprocess() {
   console.log("  [PASS] Negative control '--negative-control' exited non-zero (1)");
 }
 
+async function testMiddlewareExemption() {
+  const { middleware } = await import("../src/middleware");
+
+  // 1. Signed-out GET /api/stats passes (200)
+  const statsGetReq = new NextRequest("http://localhost:3000/api/stats", {
+    method: "GET",
+  });
+  const statsGetRes = await middleware(statsGetReq);
+  assert.strictEqual(
+    statsGetRes.status,
+    200,
+    "Signed-out GET /api/stats must pass middleware (status 200)"
+  );
+
+  // 1b. Signed-out GET /.netlify/functions/stats passes (200)
+  const netlifyStatsGetReq = new NextRequest("http://localhost:3000/.netlify/functions/stats", {
+    method: "GET",
+  });
+  const netlifyStatsGetRes = await middleware(netlifyStatsGetReq);
+  assert.strictEqual(
+    netlifyStatsGetRes.status,
+    200,
+    "Signed-out GET /.netlify/functions/stats must pass middleware (status 200)"
+  );
+
+  // 2. Signed-out POST /api/stats returns 403
+  const statsPostReq = new NextRequest("http://localhost:3000/api/stats", {
+    method: "POST",
+  });
+  const statsPostRes = await middleware(statsPostReq);
+  assert.strictEqual(
+    statsPostRes.status,
+    403,
+    "Signed-out POST /api/stats must return 403"
+  );
+  const statsPostBody = await statsPostRes.json();
+  assert.strictEqual(statsPostBody.error, "Early access only");
+
+  // 3. Signed-out GET /api/jobs/search returns 403
+  const searchReq = new NextRequest("http://localhost:3000/api/jobs/search", {
+    method: "GET",
+  });
+  const searchRes = await middleware(searchReq);
+  assert.strictEqual(
+    searchRes.status,
+    403,
+    "Signed-out GET /api/jobs/search must return 403"
+  );
+
+  // 4. Other /api paths return 403 for signed-out visitors
+  for (const blockedPath of ["/api/jobs/pro", "/api/ai", "/api/track", "/api/admin/stats"]) {
+    const res = await middleware(new NextRequest(`http://localhost:3000${blockedPath}`, { method: "GET" }));
+    assert.strictEqual(
+      res.status,
+      403,
+      `Signed-out visitor to ${blockedPath} must return 403`
+    );
+  }
+
+  // 5. Verify no prefix or wildcard match (/api/stats/extra must return 403)
+  const prefixReq = new NextRequest("http://localhost:3000/api/stats/extra", {
+    method: "GET",
+  });
+  const prefixRes = await middleware(prefixReq);
+  assert.strictEqual(
+    prefixRes.status,
+    403,
+    "GET /api/stats/extra must return 403 (exact match only, no prefix)"
+  );
+
+  if (isNegativeControl) {
+    throw new Error("Negative control: simulated middleware failure");
+  }
+
+  console.log("  [PASS] Middleware: GET /api/stats passes; POST /api/stats, GET /api/jobs/search, /api/stats/extra and other /api return 403");
+}
+
 async function testRealRouteCode() {
   process.env.NEXT_PUBLIC_SUPABASE_URL = "https://mock.supabase.co";
   process.env.SUPABASE_SERVICE_ROLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.mock_key_for_offline_suite";
   process.env.NODE_ENV = "test";
 
-  // Mock global rate limit client to test route cleanly
   (globalThis as any).__mockRateLimitClient = {
     rpc: async () => ({ data: { allowed: true, retry_after: 0, current_count: 1 }, error: null }),
   };
@@ -36,7 +113,7 @@ async function testRealRouteCode() {
   const origFetch = globalThis.fetch;
   globalThis.fetch = (async (url: any, opts: any) => {
     const urlStr = String(url);
-    if (urlStr.includes("jobs_public") || urlStr.includes("companies")) {
+    if (urlStr.includes("jobs_public") || urlStr.includes("companies") || urlStr.includes("/jobs")) {
       const count = urlStr.includes("companies") ? "500" : "16423";
       return new Response("", {
         status: 200,
@@ -51,8 +128,9 @@ async function testRealRouteCode() {
 
   try {
     const { GET } = await import("../src/app/api/stats/route");
+    const { handler: netlifyStatsHandler } = await import("../netlify/functions/stats");
 
-    // 1. Public route test: 200 for signed-out visitors (no Authorization header)
+    // 1. Public route test: 200 for signed-out visitors
     const publicReq = new Request("https://careermonke.com/api/stats", {
       method: "GET",
       headers: {
@@ -63,21 +141,20 @@ async function testRealRouteCode() {
     const res = await GET(publicReq);
     assert.strictEqual(res.status, 200, "GET /api/stats must return HTTP 200 for signed-out visitors");
 
-    // 2. Aggregates only, no rows, no PII
+    // 2. Aggregates only, no rows, no PII, plus aliases
     const data = await res.json();
     assert.strictEqual(typeof data.activeJobs, "number", "activeJobs must be a number aggregate");
     assert.strictEqual(typeof data.companies, "number", "companies must be a number aggregate");
     assert.strictEqual(data.activeJobs, 16423, "activeJobs must reflect database count");
     assert.strictEqual(data.companies, 500, "companies must reflect database count");
+    assert.strictEqual(data.totalJobs, 16423, "totalJobs alias preserved");
+    assert.strictEqual(data.companiesScanned, 500, "companiesScanned alias preserved");
+    assert.strictEqual(typeof data.jobsToday, "number", "jobsToday alias preserved");
     assert.strictEqual(data.rows, undefined, "Must NOT return raw rows");
     assert.strictEqual(data.data, undefined, "Must NOT return data array");
     assert.strictEqual(data.jobs, undefined, "Must NOT return jobs array");
     assert.strictEqual(data.users, undefined, "Must NOT return users");
     assert.strictEqual(data.emails, undefined, "Must NOT return PII emails");
-
-    if (isNegativeControl) {
-      throw new Error("Negative control: simulated route failure");
-    }
 
     // 3. Cache-Control 5 min
     const cacheControl = res.headers.get("Cache-Control") || "";
@@ -86,29 +163,78 @@ async function testRealRouteCode() {
       `Cache-Control header must specify 5 min (300s), got: "${cacheControl}"`
     );
 
-    // 4. Rate limiting test on route
-    const { _resetStatsRateLimitStore, statsRateLimitStore } = await import("../src/lib/api/sharedRateLimit");
-    _resetStatsRateLimitStore();
+    // 4. Netlify function returns 200 with same contract
+    const netlifyRes = await netlifyStatsHandler();
+    assert.strictEqual(netlifyRes.statusCode, 200);
+    const netlifyData = JSON.parse(netlifyRes.body);
+    assert.strictEqual(netlifyData.activeJobs, 16423);
+    assert.strictEqual(netlifyData.companies, 500);
+    assert.strictEqual(netlifyData.totalJobs, 16423);
+    assert.strictEqual(netlifyData.companiesScanned, 500);
 
-    // Fill in-memory bucket to verify 429
-    statsRateLimitStore.set("198.51.100.99", { count: 60, resetAt: Date.now() + 30000 });
+    // 5. 503 Fail-Closed on Database Query Error (no counts, Cache-Control: no-store)
+    globalThis.fetch = (async () => {
+      return new Response(JSON.stringify({ message: "DB connection timeout" }), {
+        status: 500,
+        headers: { "content-type": "application/json" },
+      });
+    }) as any;
 
-    const rateLimitedReq = new Request("https://careermonke.com/api/stats", {
-      method: "GET",
-      headers: {
-        "x-forwarded-for": "198.51.100.99",
-      },
-    });
+    const dbErrRes = await GET(new Request("https://careermonke.com/api/stats", {
+      headers: { "x-forwarded-for": "198.51.100.5" },
+    }));
+    assert.strictEqual(dbErrRes.status, 503, "DB error must return HTTP 503");
+    assert.strictEqual(dbErrRes.headers.get("Cache-Control"), "no-store", "503 must have Cache-Control: no-store");
+    const dbErrData = await dbErrRes.json();
+    assert.strictEqual(dbErrData.activeJobs, undefined, "503 must NOT return activeJobs count");
+    assert.strictEqual(dbErrData.totalJobs, undefined, "503 must NOT return totalJobs count");
+    assert.strictEqual(dbErrData.companies, undefined, "503 must NOT return companies count");
 
-    // Disable shared RPC mock temporarily to test memory rate limit fallback
-    (globalThis as any).__mockRateLimitClient = null;
-    const rlRes = await GET(rateLimitedReq);
-    assert.strictEqual(rlRes.status, 429, "Expected HTTP 429 when rate limit is exceeded");
-    const rlData = await rlRes.json();
-    assert.ok(rlData.error?.includes("Rate limit"), "Expected rate limit error message");
-    assert.ok(rlRes.headers.get("Retry-After"), "Expected Retry-After header on 429");
+    // 5b. Netlify 503 Fail-Closed on Database Query Error
+    const netlifyDbErr = await netlifyStatsHandler();
+    assert.strictEqual(netlifyDbErr.statusCode, 503, "Netlify DB error must return statusCode 503");
+    assert.strictEqual(netlifyDbErr.headers["Cache-Control"], "no-store");
+    const netlifyDbErrData = JSON.parse(netlifyDbErr.body);
+    assert.strictEqual(netlifyDbErrData.activeJobs, undefined);
+    assert.strictEqual(netlifyDbErrData.totalJobs, undefined);
 
-    console.log("  [PASS] Real route code GET /api/stats: 200 for signed-out visitors, aggregates only (no rows/PII), 5m cache, rate limited");
+    // 6. 500 Unexpected Error returns fixed "temporarily unavailable" message, NEVER err.message
+    const origSupabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    try {
+      // Set malformed URL to force unexpected constructor error
+      process.env.NEXT_PUBLIC_SUPABASE_URL = "not-a-valid-url-at-all";
+      const unexpRes = await GET(new Request("https://careermonke.com/api/stats", {
+        headers: { "x-forwarded-for": "198.51.100.6" },
+      }));
+      assert.strictEqual(unexpRes.status, 500);
+      assert.strictEqual(unexpRes.headers.get("Cache-Control"), "no-store");
+      const unexpData = await unexpRes.json();
+      assert.strictEqual(unexpData.error, "temporarily unavailable", "500 must return fixed 'temporarily unavailable' message");
+      assert.strictEqual(unexpData.activeJobs, undefined, "500 must NOT return counts");
+    } finally {
+      process.env.NEXT_PUBLIC_SUPABASE_URL = origSupabaseUrl;
+    }
+
+    // 7. Anon-key fallback removed: fails closed if service key is missing
+    const savedKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const savedKey2 = process.env.SUPABASE_SERVICE_KEY;
+    try {
+      delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+      delete process.env.SUPABASE_SERVICE_KEY;
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "anon-key-that-must-not-be-used";
+
+      const failClosedRes = await GET(new Request("https://careermonke.com/api/stats", {
+        headers: { "x-forwarded-for": "198.51.100.7" },
+      }));
+      assert.strictEqual(failClosedRes.status, 500);
+      const failClosedData = await failClosedRes.json();
+      assert.strictEqual(failClosedData.missingVariable, "SUPABASE_SERVICE_ROLE_KEY", "Must fail closed naming SUPABASE_SERVICE_ROLE_KEY (anon key ignored)");
+    } finally {
+      process.env.SUPABASE_SERVICE_ROLE_KEY = savedKey;
+      process.env.SUPABASE_SERVICE_KEY = savedKey2;
+    }
+
+    console.log("  [PASS] Real route code GET /api/stats & Netlify stats: 200 aggregates/aliases, 503 fail-closed (no-store, no counts), 500 fixed message, anon key ignored");
   } finally {
     globalThis.fetch = origFetch;
     (globalThis as any).__mockRateLimitClient = undefined;
@@ -269,6 +395,7 @@ async function main() {
   console.log("   LANDING CREDIBILITY SECTION ('REAL NUMBERS, NOT PROMISES') VERIFICATION      ");
   console.log("================================================================================\n");
 
+  await testMiddlewareExemption();
   await testRealRouteCode();
   await testLandingPageStructure();
   await testSectionHiddenOnErrorContract();

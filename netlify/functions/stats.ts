@@ -6,8 +6,7 @@ function getSupabaseAdmin() {
     process.env.SUPABASE_URL;
   const serviceKey =
     process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.SUPABASE_SERVICE_KEY ||
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    process.env.SUPABASE_SERVICE_KEY;
 
   if (!supabaseUrl) {
     safeLog.error("[Netlify /stats] Missing required environment variable: NEXT_PUBLIC_SUPABASE_URL");
@@ -48,31 +47,63 @@ export async function handler(event?: any) {
     ...buildCorsHeaders(event, CORS_OPTIONS),
   };
 
-
   try {
     const supabase = getSupabaseAdmin();
 
     // 1. Real active jobs count
-    const { count: totalActive } = await supabase
+    const { count: totalActive, error: activeErr } = await supabase
       .from("jobs")
       .select("id", { count: "exact", head: true })
       .eq("is_active", true)
       .eq("status", "active");
 
+    if (activeErr) {
+      return {
+        statusCode: 503,
+        headers: {
+          ...headers,
+          "Cache-Control": "no-store",
+        },
+        body: JSON.stringify({ error: "Service unavailable" }),
+      };
+    }
+
     // 2. Real companies count from companies table
-    const { count: companyCount } = await supabase
+    const { count: companyCount, error: companyErr } = await supabase
       .from("companies")
       .select("id", { count: "exact", head: true });
+
+    if (companyErr) {
+      return {
+        statusCode: 503,
+        headers: {
+          ...headers,
+          "Cache-Control": "no-store",
+        },
+        body: JSON.stringify({ error: "Service unavailable" }),
+      };
+    }
 
     // 3. Real jobs posted/created today (UTC midnight to now)
     const todayMidnight = new Date();
     todayMidnight.setUTCHours(0, 0, 0, 0);
-    const { count: recentJobs } = await supabase
+    const { count: recentJobs, error: recentErr } = await supabase
       .from("jobs")
       .select("id", { count: "exact", head: true })
       .eq("is_active", true)
       .eq("status", "active")
       .gte("created_at", todayMidnight.toISOString());
+
+    if (recentErr) {
+      return {
+        statusCode: 503,
+        headers: {
+          ...headers,
+          "Cache-Control": "no-store",
+        },
+        body: JSON.stringify({ error: "Service unavailable" }),
+      };
+    }
 
     return {
       statusCode: 200,
@@ -100,14 +131,12 @@ export async function handler(event?: any) {
     } catch {}
     return {
       statusCode: 500,
-      headers,
+      headers: {
+        ...headers,
+        "Cache-Control": "no-store",
+      },
       body: JSON.stringify({
-        activeJobs: 0,
-        companies: 0,
-        jobsToday: 0,
-        totalJobs: 0,
-        companiesScanned: 0,
-        error: err?.message,
+        error: "temporarily unavailable",
       }),
     };
   }

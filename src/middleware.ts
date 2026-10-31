@@ -497,6 +497,13 @@ export async function middleware(request: NextRequest) {
   }
 
   if (
+    request.method === "GET" &&
+    (pathname === "/api/stats" || pathname === "/.netlify/functions/stats")
+  ) {
+    return NextResponse.next();
+  }
+
+  if (
     pathname === "/api/early-access" ||
     pathname.startsWith("/api/early-access/") ||
     pathname === "/.netlify/functions/early-access"
