@@ -14,6 +14,7 @@ import Footer from "@/components/Footer";
 import GlobeLiveStats from "@/components/GlobeLiveStats";
 import LandingInteractiveDemoSection from "@/components/LandingInteractiveDemoSection";
 import LandingFeaturesSection from "@/components/LandingFeaturesSection";
+import LandingCredibilitySection from "@/components/LandingCredibilitySection";
 import { useLiveStats } from "@/lib/api/stats";
 import { X, Check, ArrowRight, Instagram, Linkedin, Mail } from "lucide-react";
 
@@ -451,6 +452,11 @@ export default function HomePage() {
       </section>
 
 
+
+      {/* ========================================================================= */}
+      {/* 11. CREDIBILITY SECTION "Real numbers, not promises"                      */}
+      {/* ========================================================================= */}
+      <LandingCredibilitySection />
 
       {/* 12. PRODUCT FEATURES SECTION */}
       <LandingFeaturesSection />

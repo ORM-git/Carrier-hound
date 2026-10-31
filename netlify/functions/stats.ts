@@ -44,7 +44,7 @@ export async function handler(event?: any) {
 
   const headers = {
     "Content-Type": "application/json",
-    "Cache-Control": "public, s-maxage=60, stale-while-revalidate=120",
+    "Cache-Control": "public, max-age=300, s-maxage=300, stale-while-revalidate=600",
     ...buildCorsHeaders(event, CORS_OPTIONS),
   };
 
@@ -78,6 +78,8 @@ export async function handler(event?: any) {
       statusCode: 200,
       headers,
       body: JSON.stringify({
+        activeJobs: totalActive ?? 0,
+        companies: companyCount ?? 0,
         jobsToday: recentJobs ?? 0,
         totalJobs: totalActive ?? 0,
         companiesScanned: companyCount ?? 0,
@@ -100,6 +102,8 @@ export async function handler(event?: any) {
       statusCode: 500,
       headers,
       body: JSON.stringify({
+        activeJobs: 0,
+        companies: 0,
         jobsToday: 0,
         totalJobs: 0,
         companiesScanned: 0,

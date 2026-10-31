@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { checkRequiredEnv } from "@/lib/api/envCheck";
+import { getClientIpFromRequest, checkRateLimit } from "@/lib/ai/serviceHandler";
+import {
+  checkSharedRateLimit,
+  STATS_RATE_LIMIT,
+  statsRateLimitStore,
+} from "@/lib/api/sharedRateLimit";
 
 export const runtime = "edge";
 
@@ -32,14 +38,46 @@ function getSupabaseAdmin() {
 /**
  * GET /api/stats
  * 
- * Computes strictly real counts from active jobs and companies:
- * - totalJobs: Real exact active jobs from jobs_public
- * - companiesScanned: Real count from companies table
- * - jobsToday: Real count of jobs created/ingested today (UTC midnight to now)
+ * Public read-only endpoint returning strictly real counts:
+ * - activeJobs: Real exact active jobs from jobs_public
+ * - companies: Real count from companies table
  * ZERO invented activity numbers, zero fake multipliers, and zero fabricated fallbacks.
+ * Publicly accessible to signed-out visitors, rate limited, Cache-Control 5 min.
  */
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    if (req) {
+      const clientIp = getClientIpFromRequest(req);
+      const ipLimit = await checkSharedRateLimit(
+        `stats:ip:${clientIp}`,
+        STATS_RATE_LIMIT.maxRequests,
+        STATS_RATE_LIMIT.windowSeconds,
+        () =>
+          checkRateLimit(
+            clientIp,
+            statsRateLimitStore,
+            STATS_RATE_LIMIT.maxRequests,
+            STATS_RATE_LIMIT.windowSeconds * 1000
+          )
+      );
+
+      if (!ipLimit.allowed) {
+        return NextResponse.json(
+          {
+            error: "Rate limit exceeded. Please try again shortly.",
+            retryAfter: ipLimit.retryAfter,
+          },
+          {
+            status: 429,
+            headers: {
+              "Retry-After": String(ipLimit.retryAfter),
+              "Cache-Control": "no-store",
+            },
+          }
+        );
+      }
+    }
+
     const supabase = getSupabaseAdmin();
 
     // 1. Total active jobs
@@ -64,21 +102,22 @@ export async function GET() {
       .eq("status", "active")
       .gte("created_at", todayMidnight.toISOString());
 
-    const totalJobs = totalActive ?? 0;
-    const companiesScanned = companyCount ?? 0;
-    // Strictly real count computed from database
+    const activeJobs = totalActive ?? 0;
+    const companies = companyCount ?? 0;
     const jobsToday = recentJobs ?? 0;
 
     return NextResponse.json(
       {
+        activeJobs,
+        companies,
+        totalJobs: activeJobs,
+        companiesScanned: companies,
         jobsToday,
-        totalJobs,
-        companiesScanned,
         updatedAt: new Date().toISOString(),
       },
       {
         headers: {
-          "Cache-Control": "public, s-maxage=60, stale-while-revalidate=120",
+          "Cache-Control": "public, max-age=300, s-maxage=300, stale-while-revalidate=600",
         },
       }
     );
@@ -91,9 +130,11 @@ export async function GET() {
     } catch {}
     return NextResponse.json(
       {
-        jobsToday: 0,
+        activeJobs: 0,
+        companies: 0,
         totalJobs: 0,
         companiesScanned: 0,
+        jobsToday: 0,
         updatedAt: new Date().toISOString(),
         error: err?.message || "Internal server error",
       },
