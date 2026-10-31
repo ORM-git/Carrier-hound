@@ -1195,16 +1195,22 @@ export function detectCategory(title: string = '', tags: string[] = []): string 
   }
   if (
     combined.includes('design') ||
-    combined.includes('ui') ||
-    combined.includes('ux') ||
-    combined.includes('product design')
+    /\b(ui|ux)\b/i.test(combined) ||
+    combined.includes('product design') ||
+    combined.includes('graphic design')
   ) {
     return 'design';
   }
   if (
     combined.includes('product manager') ||
     combined.includes('product management') ||
-    combined.includes('head of product')
+    combined.includes('head of product') ||
+    combined.includes('program manager') ||
+    combined.includes('program management') ||
+    combined.includes('project manager') ||
+    combined.includes('project management') ||
+    combined.includes('tpm') ||
+    combined.includes('scrum master')
   ) {
     return 'product';
   }
@@ -1212,11 +1218,18 @@ export function detectCategory(title: string = '', tags: string[] = []): string 
     combined.includes('marketing') ||
     combined.includes('growth') ||
     combined.includes('content') ||
-    combined.includes('seo')
+    combined.includes('seo') ||
+    combined.includes('influencer') ||
+    combined.includes('social') ||
+    combined.includes('culture') ||
+    combined.includes('community') ||
+    combined.includes('brand') ||
+    combined.includes('public relations')
   ) {
     return 'marketing';
   }
   if (
+    combined.includes('data ') ||
     combined.includes('data engineer') ||
     combined.includes('analytics') ||
     combined.includes('database') ||

@@ -298,7 +298,7 @@ export function createHandler(deps: JobsSearchDeps = {}) {
 
     let query = supabaseAdmin
       .from(targetTable)
-      .select(selectColumns, { count: "estimated" })
+      .select(selectColumns, { count: "exact" })
       .eq("is_active", true)
       .eq("status", "active");
 
@@ -308,6 +308,12 @@ export function createHandler(deps: JobsSearchDeps = {}) {
         query = query.in("category", ["ai", "engineering", "devops"]);
       } else if (c === "tech") {
         query = query.in("category", ["engineering", "devops", "ai", "software"]);
+      } else if (c === "ai" || c === "ai-ml" || c === "ai-machine-learning" || c === "machine-learning") {
+        query = query.or("category.eq.ai,category.eq.ai-ml,title.ilike.%ai %,title.ilike.% ai%,title.ilike.%machine learning%,title.ilike.%deep learning%,title.ilike.%llm%,title.ilike.%nlp%");
+      } else if (c === "data" || c === "data-analytics" || c === "data-science") {
+        query = query.or("category.eq.data,category.eq.data-analytics,title.ilike.%data %,title.ilike.%analytics%,title.ilike.%database%");
+      } else if (c === "engineering" || c === "software") {
+        query = query.in("category", ["engineering", "software"]);
       } else if (c === "internships") {
         query = query.or("job_type.eq.internship,title.ilike.%internship%,title.ilike.%internships%,title.ilike.% intern %,title.ilike.intern %,title.ilike.% intern,title.ilike.%-intern%,title.ilike.%(intern)%,title.ilike.%co-op%,title.ilike.%coop%");
       } else if (c === "remote") {
@@ -634,7 +640,7 @@ export function createHandler(deps: JobsSearchDeps = {}) {
       headers,
       body: JSON.stringify({
         jobs: formattedJobs,
-        totalCount: count ?? (rows.length > 0 ? (page ? Math.max(rows.length, page * pageSize) : 100000) : 0),
+        totalCount: count ?? rows.length,
         nextCursor,
         hasNextPage,
         page,

@@ -4,6 +4,7 @@ import React, { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { getValidReturnUrl } from "@/lib/auth/session";
+import { clearCandidateProfileMemoryCache } from "@/lib/resume/storage";
 import BrandIcon from "@/components/BrandIcon";
 import { Card } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
@@ -28,6 +29,12 @@ export default function AuthCallbackPage() {
     const finish = (destination: string) => {
       if (!resolved) {
         resolved = true;
+        clearCandidateProfileMemoryCache();
+        if (typeof window !== "undefined") {
+          try {
+            localStorage.removeItem("careermonke_candidate_profile");
+          } catch {}
+        }
         router.replace(destination);
       }
     };

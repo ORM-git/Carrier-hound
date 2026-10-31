@@ -23,7 +23,7 @@ export const CANONICAL_CATEGORIES: CanonicalCategory[] = [
   {
     slug: "ai-ml",
     name: "AI & Machine Learning",
-    aliases: ["ai", "ml", "artificial-intelligence", "deep-learning", "nlp"],
+    aliases: ["ai", "ml", "artificial-intelligence", "deep-learning", "nlp", "ai-machine-learning", "machine-learning"],
   },
   {
     slug: "data-analytics",
@@ -105,6 +105,9 @@ export const CANONICAL_CATEGORIES: CanonicalCategory[] = [
 /** Quick pill mappings resolving to canonical slugs */
 export const PILL_TO_CANONICAL: Record<string, string[]> = {
   tech: ["software", "devops", "ai-ml", "mobile-dev"],
+  ai: ["ai-ml"],
+  "ai-ml": ["ai-ml"],
+  "ai-machine-learning": ["ai-ml"],
   design: ["design"],
   marketing: ["marketing"],
   finance: ["finance"],

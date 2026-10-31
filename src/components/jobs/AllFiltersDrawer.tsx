@@ -497,6 +497,7 @@ export default function AllFiltersDrawer({
                     className="w-full h-11 px-3 rounded-xl border border-[#CBD5E1] bg-white text-xs font-medium text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#93C5FD]"
                   >
                     <option value="">All Categories</option>
+                    <option value="ai">AI & Machine Learning</option>
                     <option value="engineering">Engineering & Software</option>
                     <option value="product">Product Management</option>
                     <option value="design">Design & Creative</option>
