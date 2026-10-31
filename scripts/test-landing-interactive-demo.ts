@@ -27,20 +27,22 @@ function runNegativeControlSubprocess() {
 async function main() {
   const pagePath = path.join(ROOT, "src", "app", "page.tsx");
   const demoPath = path.join(ROOT, "src", "components", "LandingInteractiveDemoSection.tsx");
+  const oldMockPath = path.join(ROOT, "src", "components", "ProductScreenshotMock.tsx");
 
   assert.ok(fs.existsSync(pagePath), "src/app/page.tsx must exist");
   assert.ok(fs.existsSync(demoPath), "src/components/LandingInteractiveDemoSection.tsx must exist");
+  assert.ok(!fs.existsSync(oldMockPath), "ProductScreenshotMock.tsx must be removed");
 
   const pageSrc = fs.readFileSync(pagePath, "utf8");
   let demoSrc = fs.readFileSync(demoPath, "utf8");
 
   if (isNegativeControl) {
-    // Inject prohibited price and remove Coming soon badge to prove negative control fails
-    demoSrc = demoSrc.replace(/Coming soon/g, "Live now") + "\nPrice: $19/month";
+    // Inject prohibited price to prove negative control fails
+    demoSrc += "\nPrice: $19/month";
   }
 
   console.log("================================================================================");
-  console.log("       LANDING PAGE INTERACTIVE DEMO SECTION VERIFICATION SUITE                 ");
+  console.log("       LANDING PAGE HERO INTERACTIVE DEMO VERIFICATION SUITE                    ");
   console.log("================================================================================\n");
 
   // 1. Existing sections in src/app/page.tsx remain intact
@@ -77,19 +79,34 @@ async function main() {
     "Contact section must remain untouched"
   );
   assert.ok(
+    pageSrc.includes("<LandingFeaturesSection />"),
+    "Features section must remain untouched"
+  );
+
+  // Hero placement and duplicate removal
+  assert.ok(
     pageSrc.includes("<LandingInteractiveDemoSection />"),
     "LandingInteractiveDemoSection must be rendered in src/app/page.tsx"
   );
-  const contactIdx = pageSrc.indexOf('id="contact"');
+  const heroHeadlineIdx = pageSrc.indexOf("Find jobs not on LinkedIn/Indeed");
+  const comparisonIdx = pageSrc.indexOf("Tired of getting auto-rejections?");
   const demoIdx = pageSrc.indexOf("<LandingInteractiveDemoSection />");
-  const footerIdx = pageSrc.indexOf("<Footer />");
   assert.ok(
-    contactIdx > -1 && demoIdx > contactIdx && footerIdx > demoIdx,
-    "LandingInteractiveDemoSection must be placed below the existing sections and above Footer"
+    heroHeadlineIdx > -1 && demoIdx > heroHeadlineIdx && comparisonIdx > demoIdx,
+    "LandingInteractiveDemoSection must be rendered in the Hero section, replacing the static mockup"
   );
-  console.log("  [PASS] Existing landing sections preserved and compact demo section placed below them");
+  assert.strictEqual(
+    pageSrc.split("<LandingInteractiveDemoSection />").length - 1,
+    1,
+    "LandingInteractiveDemoSection must appear exactly once in src/app/page.tsx (no duplicates)"
+  );
+  assert.ok(
+    !pageSrc.includes("ProductScreenshotMock"),
+    "ProductScreenshotMock must be completely removed from src/app/page.tsx"
+  );
+  console.log("  [PASS] Hero demo placement verified and duplicate lower demo section removed cleanly");
 
-  // 2. Compact browser-style card + 4 step tabs (Find, Match, Tailor, Send) + progress bar
+  // 2. Compact browser-style card + 4 step tabs (Find, Match, Tailor, Send) + progress line
   assert.strictEqual(STEP_TABS.length, 4, "Expected 4 step tabs");
   assert.deepStrictEqual(
     STEP_TABS.map((t) => t.label),
@@ -97,8 +114,16 @@ async function main() {
     "Step tabs must be Find, Match, Tailor, Send"
   );
   assert.ok(
-    demoSrc.includes("max-w-[460px]"),
-    "Compact browser-style card must be 420-480px wide on desktop (max-w-[460px])"
+    demoSrc.includes("max-w-[880px]"),
+    "Compact browser-style card must be max-width about 880px on desktop (max-w-[880px])"
+  );
+  assert.ok(
+    demoSrc.includes("careermonke.com"),
+    "Compact browser-style card must have 'careermonke.com' pill"
+  );
+  assert.ok(
+    demoSrc.includes("shadow-[0_24px_60px_rgba(15,23,42,0.25)]"),
+    "Card must feature soft layered shadow 0 24px 60px rgba(15,23,42,.25)"
   );
   assert.ok(
     demoSrc.includes('data-testid="demo-progress-bar"'),
@@ -127,28 +152,28 @@ async function main() {
   }
   console.log("  [PASS] Compact browser-style card with Find, Match, Tailor, Send tabs & progress bar verified");
 
-  // 3. Live features vs Coming soon badges
+  // 3. Motion & accessibility
   assert.ok(
-    demoSrc.includes("Direct Career-Page Search · Live"),
-    "Direct Career-Page Search must be shown as Live"
+    demoSrc.includes("4500"),
+    "Must auto-advance steps every 4.5s (4500ms) until user interaction"
   );
   assert.ok(
-    demoSrc.includes("Personalised Match Scores · Live"),
-    "Personalised Match Scores must be shown as Live"
+    demoSrc.includes("prefers-reduced-motion"),
+    "Must respect prefers-reduced-motion"
   );
   assert.ok(
-    demoSrc.includes("Resume &amp; Cover Letter Tailoring · Live"),
-    "Resume & Cover Letter Tailoring must be shown as Live"
+    demoSrc.includes('role="tab"'),
+    "Tabs must be real buttons with role='tab'"
   );
   assert.ok(
-    demoSrc.includes("Autofill Extension · Coming soon"),
-    "Autofill Extension must carry a 'Coming soon' badge"
+    demoSrc.includes("aria-selected="),
+    "Tabs must include aria-selected attribute"
   );
   assert.ok(
-    demoSrc.includes("AI Interview Prep · Coming soon"),
-    "AI Interview Prep must carry a 'Coming soon' badge"
+    demoSrc.includes("min-h-[44px]"),
+    "Mobile tap targets must be at least 44px (min-h-[44px])"
   );
-  console.log("  [PASS] Live features and 'Coming soon' badges (Autofill Extension, AI Interview Prep) verified");
+  console.log("  [PASS] Auto-advance (4.5s), prefers-reduced-motion, and tab accessibility verified");
 
   // 4. 'Illustration - sample companies and scores' caption under card & 'Illustration - sample data' badge
   assert.ok(
@@ -161,13 +186,16 @@ async function main() {
   );
   console.log("  [PASS] 'Illustration - sample companies and scores' label under card verified");
 
-  // 5. No fake testimonials, member counts, ratings, prices, or auto-apply claims
+  // 5. No fake testimonials, member counts, ratings, prices, auto-apply claims, or 'Verified Employer'
   const prohibitedPatterns: Array<{ pattern: RegExp; reason: string }> = [
     { pattern: /\$\d+/i, reason: "No dollar prices allowed in demo section" },
     { pattern: /₹\s*\d+/i, reason: "No rupee prices allowed in demo section" },
     { pattern: /\b4\.[89]\s*\/?\s*5\b/i, reason: "No fake star ratings allowed" },
     { pattern: /\b\d{1,3}(,\d{3})+\+?\s*(users|members|engineers|candidates)\b/i, reason: "No fake member counts allowed" },
     { pattern: /we apply for you|send your resume straight to the hiring team|auto-apply for you/i, reason: "Must not claim we apply for the user or send resumes to hiring teams" },
+    { pattern: /"Verified Employer"/i, reason: "No 'Verified Employer' label allowed in hero demo" },
+    { pattern: /\bApply Now\b/i, reason: "No 'Apply Now' button allowed" },
+    { pattern: /\bDislike\b/i, reason: "No 'Dislike' button allowed" },
   ];
 
   for (const { pattern, reason } of prohibitedPatterns) {
@@ -177,7 +205,7 @@ async function main() {
     demoSrc.includes("official career site"),
     "Must explicitly state that the user applies on the company's official career site"
   );
-  console.log("  [PASS] Zero prices, ratings, member counts, or auto-apply claims verified");
+  console.log("  [PASS] Zero prices, ratings, member counts, 'Verified Employer', or auto-apply claims verified");
 
   // 6. Inline email capture -> existing /api/early-access + /early-access flow
   assert.ok(

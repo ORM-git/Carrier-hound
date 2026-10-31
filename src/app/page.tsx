@@ -7,7 +7,6 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import BrandIcon from "@/components/BrandIcon";
 import DotPattern from "@/components/DotPattern";
-import ProductScreenshotMock from "@/components/ProductScreenshotMock";
 import { FaqHomeItem } from "@/components/FaqItems";
 import { WhiteHeroButton } from "@/components/Buttons";
 import CategorySelectModal from "@/components/CategorySelectModal";
@@ -61,7 +60,7 @@ export default function HomePage() {
       {/* ========================================================================= */}
       {/* 1. HERO SECTION (Blue #2563EB, centered) with overlay header              */}
       {/* ========================================================================= */}
-      <section className="relative bg-[#2563EB] text-white pt-6 overflow-hidden">
+      <section className="relative bg-[#2563EB] text-white pt-6 pb-6 sm:pb-8 overflow-visible">
         {/* Background Subtle Gradient & Dots */}
         <div className="absolute inset-0 pointer-events-none opacity-10 bg-[radial-gradient(#fff_1px,transparent_1px)] [background-size:24px_24px]" />
 
@@ -107,8 +106,8 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Product Screenshot Mock nested inside hero on blue background, flush with section bottom (32px mt-8 below social-proof line) */}
-        <div className="mt-8 max-w-[960px] mx-auto px-3 sm:px-6 relative z-20 pb-0">
+        {/* Hero Interactive Demo Card nested inside hero on blue background, overlapping next section by 48px */}
+        <div className="mt-8 sm:mt-10 max-w-[880px] mx-auto px-4 sm:px-6 relative z-20 -mb-12">
           {/* Dotted grid pattern behind top-right corner */}
           <div className="absolute -top-6 -right-1 sm:-top-8 sm:-right-4 pointer-events-none z-0">
             <DotPattern width={160} height={100} dotColor="rgba(255, 255, 255, 0.45)" rows={5} cols={8} />
@@ -120,7 +119,7 @@ export default function HomePage() {
           </div>
 
           <div className="relative z-10">
-            <ProductScreenshotMock />
+            <LandingInteractiveDemoSection />
           </div>
         </div>
       </section>
@@ -128,7 +127,7 @@ export default function HomePage() {
       {/* ========================================================================= */}
       {/* 3. PROBLEM VS SOLUTION (Comparison)                                       */}
       {/* ========================================================================= */}
-      <section className="pt-20 pb-12 lg:pt-[120px] lg:pb-[90px] max-w-content mx-auto px-6">
+      <section className="pt-24 pb-12 lg:pt-28 lg:pb-[90px] max-w-content mx-auto px-6">
         <div className="text-center max-w-2xl mx-auto mb-10 sm:mb-12">
           <span className="text-xs font-bold text-[#2563EB] uppercase tracking-wider bg-blue-50 px-3 py-1 rounded-full border border-blue-100">
             Comparison
@@ -451,10 +450,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ========================================================================= */}
-      {/* 11. INTERACTIVE PRODUCT DEMO SECTION                                      */}
-      {/* ========================================================================= */}
-      <LandingInteractiveDemoSection />
+
 
       {/* 12. PRODUCT FEATURES SECTION */}
       <LandingFeaturesSection />

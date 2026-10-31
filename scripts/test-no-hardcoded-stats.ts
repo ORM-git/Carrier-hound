@@ -188,12 +188,12 @@ check("Top 10 server routes compute real active corpus dynamically from jobs_pub
   );
 });
 
-check("Landing source contains no hardcoded sample jobs (Tenable, 106,000, 141,333) and fetches from jobs_public", () => {
+check("Landing source contains no hardcoded sample jobs (Tenable, 106,000, 141,333) and uses clear sample illustration", () => {
   const landingPath = path.resolve(process.cwd(), "src", "app", "page.tsx");
-  const mockPath = path.resolve(process.cwd(), "src", "components", "ProductScreenshotMock.tsx");
+  const demoPath = path.resolve(process.cwd(), "src", "components", "LandingInteractiveDemoSection.tsx");
   const landingContent = fs.readFileSync(landingPath, "utf8");
-  const mockContent = fs.readFileSync(mockPath, "utf8");
-  const combined = `${landingContent}\n${mockContent}`;
+  const demoContent = fs.readFileSync(demoPath, "utf8");
+  const combined = `${landingContent}\n${demoContent}`;
 
   for (const forbidden of ["Tenable", "106,000", "141,333", "Cribl", "Interface AI", "November 14, 2024"]) {
     assert.strictEqual(
@@ -204,12 +204,12 @@ check("Landing source contains no hardcoded sample jobs (Tenable, 106,000, 141,3
   }
 
   assert.ok(
-    mockContent.includes('.from("jobs_public")'),
-    "ProductScreenshotMock must fetch guest jobs from jobs_public"
+    demoContent.includes("Illustration - sample data"),
+    "Landing demo must clearly label sample data as illustration"
   );
   assert.ok(
-    mockContent.includes('"Verified Employer"'),
-    "ProductScreenshotMock must keep company name masked as 'Verified Employer'"
+    !demoContent.includes('"Verified Employer"'),
+    "Landing demo must not contain 'Verified Employer'"
   );
 });
 

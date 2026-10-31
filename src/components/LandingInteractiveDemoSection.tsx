@@ -1,17 +1,17 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   ArrowRight,
   Check,
   CheckCircle2,
-  Clock,
   ExternalLink,
   FileText,
   Loader2,
   Mail,
   Sparkles,
+  Lock,
 } from "lucide-react";
 
 export interface DemoJobSample {
@@ -40,13 +40,13 @@ export interface DemoRolePreset {
 export const DEMO_ROLES: DemoRolePreset[] = [
   {
     id: "backend",
-    label: "Backend & Systems Engineer",
+    label: "Backend & Systems",
     subtitle: "TypeScript · Node.js · PostgreSQL · Docker",
     coreSkills: ["TypeScript", "Node.js", "PostgreSQL", "Docker"],
     jobs: [
       {
         id: "be-1",
-        title: "Senior Backend Engineer — Core Platform",
+        title: "Senior Backend Engineer",
         company: "Sample Cloud Systems",
         monogram: "SC",
         location: "Remote (Worldwide)",
@@ -62,10 +62,10 @@ export const DEMO_ROLES: DemoRolePreset[] = [
       },
       {
         id: "be-2",
-        title: "Distributed Systems Engineer (Node/TS)",
+        title: "Distributed Systems Engineer",
         company: "Sample Payments Infra",
         monogram: "SP",
-        location: "Remote (US / EU / India)",
+        location: "Remote (Global)",
         workSetup: "Direct Career Page",
         sourceLabel: "Direct Career Page",
         matchScore: 89,
@@ -80,13 +80,13 @@ export const DEMO_ROLES: DemoRolePreset[] = [
   },
   {
     id: "frontend",
-    label: "Frontend & UI Engineer",
-    subtitle: "React · Next.js · TypeScript · Tailwind CSS",
+    label: "Frontend & UI",
+    subtitle: "React · Next.js · TypeScript · Tailwind",
     coreSkills: ["React", "TypeScript", "Next.js", "Tailwind CSS"],
     jobs: [
       {
         id: "fe-1",
-        title: "Senior Frontend Engineer — Design Systems",
+        title: "Senior Frontend Engineer",
         company: "Sample Workspace Studio",
         monogram: "SW",
         location: "Remote (Global)",
@@ -102,10 +102,10 @@ export const DEMO_ROLES: DemoRolePreset[] = [
       },
       {
         id: "fe-2",
-        title: "Product UI Engineer (React / Next.js)",
+        title: "Product UI Engineer",
         company: "Sample Analytics Hub",
         monogram: "SA",
-        location: "Remote (Americas & Europe)",
+        location: "Remote (Global)",
         workSetup: "Direct Career Page",
         sourceLabel: "Direct Career Page",
         matchScore: 88,
@@ -120,8 +120,8 @@ export const DEMO_ROLES: DemoRolePreset[] = [
   },
   {
     id: "data",
-    label: "Data & ML Engineer",
-    subtitle: "Python · SQL · PostgreSQL · Data Pipelines",
+    label: "Data & ML",
+    subtitle: "Python · SQL · PostgreSQL · Pipelines",
     coreSkills: ["Python", "SQL", "PostgreSQL", "Data Pipelines"],
     jobs: [
       {
@@ -142,7 +142,7 @@ export const DEMO_ROLES: DemoRolePreset[] = [
       },
       {
         id: "da-2",
-        title: "Applied ML Infrastructure Engineer",
+        title: "Applied ML Infra Engineer",
         company: "Sample Search Labs",
         monogram: "SS",
         location: "Remote (Global)",
@@ -160,13 +160,13 @@ export const DEMO_ROLES: DemoRolePreset[] = [
   },
   {
     id: "design",
-    label: "Product Designer",
-    subtitle: "Product Design · Design Systems · Prototyping",
+    label: "Product Design",
+    subtitle: "Product Design · Systems · Prototyping",
     coreSkills: ["Product Design", "Design Systems", "Prototyping", "Accessibility"],
     jobs: [
       {
         id: "pd-1",
-        title: "Staff Product Designer — Core Workflows",
+        title: "Staff Product Designer",
         company: "Sample Collab Docs",
         monogram: "SC",
         location: "Remote (Global)",
@@ -185,7 +185,7 @@ export const DEMO_ROLES: DemoRolePreset[] = [
         title: "Senior Systems Designer",
         company: "Sample Developer Platform",
         monogram: "SD",
-        location: "Remote (US / EU / APAC)",
+        location: "Remote (Global)",
         workSetup: "Direct Career Page",
         sourceLabel: "Direct Career Page",
         matchScore: 90,
@@ -213,7 +213,7 @@ export function IllustrationSampleBadge({ className = "" }: { className?: string
   return (
     <span
       data-testid="illustration-sample-badge"
-      className={`inline-flex w-fit self-start items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200/90 leading-tight ${className}`}
+      className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-normal bg-slate-100 text-slate-500 border border-slate-200/80 leading-tight ${className}`}
     >
       Illustration - sample data
     </span>
@@ -225,8 +225,10 @@ export default function LandingInteractiveDemoSection() {
   const [selectedRoleId, setSelectedRoleId] = useState<string>(DEMO_ROLES[0].id);
   const [selectedJobId, setSelectedJobId] = useState<string>(DEMO_ROLES[0].jobs[0].id);
   const [docTab, setDocTab] = useState<"resume" | "coverLetter">("resume");
+  const [userInteracted, setUserInteracted] = useState(false);
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
 
-  // Shared inline email capture state inside Step 4 ("Send")
+  // Email capture state inside Step 4 ("Send")
   const [email, setEmail] = useState<string>("");
   const [website, setWebsite] = useState<string>(""); // Honeypot
   const [submitStatus, setSubmitStatus] = useState<"idle" | "submitting" | "success" | "error">("idle");
@@ -237,34 +239,53 @@ export default function LandingInteractiveDemoSection() {
   const currentJob =
     currentRole.jobs.find((j) => j.id === selectedJobId) || currentRole.jobs[0];
 
+  // Detect prefers-reduced-motion
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+      setPrefersReducedMotion(mediaQuery.matches);
+      const listener = (e: MediaQueryListEvent) => setPrefersReducedMotion(e.matches);
+      mediaQuery.addEventListener("change", listener);
+      return () => mediaQuery.removeEventListener("change", listener);
+    }
+  }, []);
+
+  // Auto-advance every 4.5s until user interaction or if reduced motion is requested
+  useEffect(() => {
+    if (userInteracted || prefersReducedMotion) return;
+
+    const timer = setInterval(() => {
+      setActiveStep((prev) => (prev === 4 ? 1 : ((prev + 1) as 1 | 2 | 3 | 4)));
+    }, 4500);
+
+    return () => clearInterval(timer);
+  }, [userInteracted, prefersReducedMotion]);
+
+  const handleStepClick = (step: 1 | 2 | 3 | 4) => {
+    setUserInteracted(true);
+    setActiveStep(step);
+  };
+
   const handleSelectRole = (roleId: string) => {
+    setUserInteracted(true);
     const found = DEMO_ROLES.find((r) => r.id === roleId) || DEMO_ROLES[0];
     setSelectedRoleId(found.id);
     setSelectedJobId(found.jobs[0].id);
   };
 
-  const handleOpenEmailCapture = () => {
-    setActiveStep(4);
-    setTimeout(() => {
-      const inputEl = document.getElementById("landing-demo-email-input");
-      if (inputEl) {
-        inputEl.focus();
-      }
-    }, 50);
+  const handleSelectJob = (jobId: string) => {
+    setUserInteracted(true);
+    setSelectedJobId(jobId);
   };
 
-  const handlePrimaryCardAction = () => {
-    if (activeStep === 1) {
-      setActiveStep(2);
-    } else if (activeStep === 2) {
-      setActiveStep(3);
-    } else if (activeStep === 3) {
-      handleOpenEmailCapture();
-    }
+  const handleDocTabChange = (tab: "resume" | "coverLetter") => {
+    setUserInteracted(true);
+    setDocTab(tab);
   };
 
   const handleEmailSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    setUserInteracted(true);
 
     const trimmed = email.trim().toLowerCase();
     if (!trimmed) {
@@ -317,148 +338,131 @@ export default function LandingInteractiveDemoSection() {
     }
   };
 
-  const progressPercent = activeStep * 25;
-
   return (
-    <section
-      id="interactive-product-demo"
+    <div
       data-testid="landing-interactive-demo-section"
-      aria-labelledby="interactive-demo-heading"
-      className="py-12 sm:py-16 bg-[#F8FAFC] border-t border-[#E4E4E7]"
+      className="w-full max-w-[880px] mx-auto text-left"
     >
-      <div className="max-w-5xl mx-auto px-4 sm:px-6">
-        <div className="grid grid-cols-1 lg:grid-cols-12 items-center gap-8 lg:gap-10">
-          {/* Left Side (Desktop) / Top (Mobile): Short Heading + One Line of Text + Feature Badges */}
-          <div className="lg:col-span-6 space-y-4 text-center lg:text-left">
-            <h2
-              id="interactive-demo-heading"
-              className="text-2xl sm:text-3xl md:text-[34px] font-bold tracking-tight text-[#09090B] leading-tight"
-            >
-              From hidden role to tailored resume in four steps.
-            </h2>
-            <p className="text-sm sm:text-base text-[#4B5563] leading-relaxed max-w-lg mx-auto lg:mx-0">
-              Pick a role, check your match score, and preview a tailored resume before applying on the company&apos;s own career page.
-            </p>
+      <style>{`
+        @keyframes demoStepFadeSlide {
+          0% {
+            opacity: 0;
+            transform: translateY(8px);
+          }
+          100% {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        .animate-demo-step {
+          animation: demoStepFadeSlide 200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+      `}</style>
 
-            {/* Live vs Coming Soon feature badges */}
-            <div
-              data-testid="demo-feature-status-bar"
-              className="flex flex-wrap items-center justify-center lg:justify-start gap-2 pt-1"
-            >
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                Direct Career-Page Search · Live
-              </span>
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                Personalised Match Scores · Live
-              </span>
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                Resume &amp; Cover Letter Tailoring · Live
-              </span>
-              <span
-                data-testid="coming-soon-autofill"
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-800 border border-amber-200"
-              >
-                <Clock className="w-3 h-3 text-amber-600" />
-                Autofill Extension · Coming soon
-              </span>
-              <span
-                data-testid="coming-soon-interview-prep"
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-800 border border-amber-200"
-              >
-                <Clock className="w-3 h-3 text-amber-600" />
-                AI Interview Prep · Coming soon
-              </span>
+      {/* Compact browser-style card */}
+      <div
+        data-testid="compact-browser-demo-card"
+        className="w-full bg-white rounded-[20px] sm:rounded-[24px] border border-white/20 shadow-[0_24px_60px_rgba(15,23,42,0.25)] overflow-hidden"
+      >
+        {/* Browser Top Chrome */}
+        <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-100 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            {/* 3 Window Control Dots */}
+            <div className="flex items-center gap-1.5" aria-hidden="true">
+              <span className="w-2.5 h-2.5 rounded-full bg-slate-300" />
+              <span className="w-2.5 h-2.5 rounded-full bg-slate-300" />
+              <span className="w-2.5 h-2.5 rounded-full bg-slate-300" />
+            </div>
+
+            {/* careermonke.com pill */}
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white border border-slate-200/80 text-[11px] font-normal text-slate-500">
+              <Lock className="w-3 h-3 text-slate-400 stroke-[1.75]" />
+              <span>careermonke.com</span>
             </div>
           </div>
 
-          {/* Right Side (Desktop) / Bottom (Mobile): Compact Browser-Style Card (420-480px on desktop, full width on mobile) */}
-          <div className="lg:col-span-6 w-full max-w-[460px] mx-auto lg:mr-0">
-            <div
-              data-testid="compact-browser-demo-card"
-              className="bg-white border border-[#E2E8F0] rounded-2xl shadow-sm overflow-hidden"
-            >
-              {/* Browser top bar */}
-              <div className="px-3.5 py-2.5 bg-slate-50 border-b border-[#E2E8F0] flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-slate-300" />
-                  <span className="w-2.5 h-2.5 rounded-full bg-slate-300" />
-                  <span className="w-2.5 h-2.5 rounded-full bg-slate-300" />
-                  <span className="ml-1.5 text-[11px] font-medium text-slate-500">
-                    careermonke.com
-                  </span>
-                </div>
-                <IllustrationSampleBadge />
-              </div>
+          {/* Small Illustration - sample data tag */}
+          <IllustrationSampleBadge />
+        </div>
 
-              {/* 4 Step Tabs: Find, Match, Tailor, Send */}
-              <div
-                role="tablist"
-                aria-label="Interactive walkthrough steps"
-                className="grid grid-cols-4 bg-white border-b border-slate-100"
+        {/* 4 Step Tabs (Real buttons with aria-selected) */}
+        <div
+          role="tablist"
+          aria-label="Interactive demo steps"
+          className="grid grid-cols-4 bg-slate-50/80 border-b border-slate-100"
+        >
+          {STEP_TABS.map((t) => {
+            const isActive = activeStep === t.step;
+            return (
+              <button
+                key={t.step}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                data-testid={`demo-step-tab-${t.step}`}
+                onClick={() => handleStepClick(t.step)}
+                className={`relative min-h-[44px] py-2 px-2 text-xs sm:text-[13px] transition-colors flex items-center justify-center gap-1.5 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] focus-visible:ring-offset-2 ${
+                  isActive
+                    ? "text-[#2563EB] font-semibold bg-white"
+                    : "text-slate-500 font-normal hover:text-slate-700 hover:bg-slate-100/60"
+                }`}
               >
-                {STEP_TABS.map((t) => {
-                  const isActive = activeStep === t.step;
-                  const isCompleted = activeStep > t.step;
-                  return (
-                    <button
-                      key={t.step}
-                      type="button"
-                      role="tab"
-                      aria-selected={isActive}
-                      data-testid={`demo-step-tab-${t.step}`}
-                      onClick={() => setActiveStep(t.step)}
-                      className={`py-2.5 px-2 text-xs font-bold transition-colors flex items-center justify-center gap-1.5 cursor-pointer ${
-                        isActive
-                          ? "text-[#2563EB] bg-blue-50/50"
-                          : isCompleted
-                          ? "text-slate-700 hover:bg-slate-50"
-                          : "text-slate-400 hover:text-slate-600 hover:bg-slate-50"
-                      }`}
-                    >
-                      <span
-                        className={`w-4 h-4 rounded-full text-[10px] font-bold flex items-center justify-center ${
-                          isActive
-                            ? "bg-[#2563EB] text-white"
-                            : isCompleted
-                            ? "bg-emerald-100 text-emerald-700"
-                            : "bg-slate-100 text-slate-500"
-                        }`}
-                      >
-                        {isCompleted ? <Check className="w-2.5 h-2.5 stroke-[3]" /> : t.step}
-                      </span>
-                      <span>{t.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
+                <span
+                  className={`w-5 h-5 rounded-full text-[11px] font-semibold flex items-center justify-center transition-colors ${
+                    isActive
+                      ? "bg-[#2563EB] text-white"
+                      : "bg-slate-200/90 text-slate-600"
+                  }`}
+                >
+                  {t.step}
+                </span>
+                {/* Mobile: active tab shows label, inactive shows number only. Desktop: all show label */}
+                <span className={isActive ? "inline" : "hidden sm:inline"}>
+                  {t.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
 
-              {/* Progress Bar */}
+        {/* Progress Line Under Active Tab */}
+        <div
+          data-testid="demo-progress-bar"
+          className="w-full h-0.5 bg-slate-100 relative overflow-hidden"
+        >
+          <div
+            className={`h-full bg-[#2563EB] ${prefersReducedMotion ? "" : "transition-all duration-300 ease-out"}`}
+            style={{
+              marginLeft: `${(activeStep - 1) * 25}%`,
+              width: "25%",
+            }}
+          />
+        </div>
+
+        {/* 2-Column Desktop Body / 1-Column Mobile Body (Fixed height eliminates layout shift, CLS 0) */}
+        <div className="p-4 sm:p-6 h-[300px] sm:h-[268px] overflow-hidden">
+          <div
+            key={activeStep}
+            className={`h-full ${prefersReducedMotion ? "" : "animate-demo-step"}`}
+          >
+            {/* STEP 1: FIND */}
+            {activeStep === 1 && (
               <div
-                data-testid="demo-progress-bar"
-                className="w-full h-1 bg-slate-100 overflow-hidden"
+                data-testid="demo-step-1-panel"
+                className="grid grid-cols-1 sm:grid-cols-12 gap-4 sm:gap-6 h-full items-stretch"
               >
-                <div
-                  className="h-full bg-[#2563EB] transition-all duration-300"
-                  style={{ width: `${progressPercent}%` }}
-                />
-              </div>
+                {/* Left Column: Step Content */}
+                <div className="sm:col-span-6 flex flex-col justify-between h-full min-w-0">
+                  <div>
+                    <h2 className="text-base font-semibold text-slate-900 leading-snug">
+                      Target unindexed roles
+                    </h2>
+                    <p className="text-[13px] font-normal text-slate-500 mt-0.5 leading-normal">
+                      Sourced directly from employer career sites before aggregators.
+                    </p>
 
-              {/* Compact Step Body */}
-              <div className="p-4 sm:p-5">
-                {/* STEP 1: FIND */}
-                {activeStep === 1 && (
-                  <div data-testid="demo-step-1-panel" className="space-y-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-sm font-bold text-[#09090B]">
-                        What role are you targeting?
-                      </p>
-                      <IllustrationSampleBadge />
-                    </div>
-
-                    <div className="space-y-2">
+                    {/* Role Presets */}
+                    <div className="grid grid-cols-2 gap-2 mt-2.5">
                       {DEMO_ROLES.map((role) => {
                         const isSelected = role.id === currentRole.id;
                         return (
@@ -467,57 +471,98 @@ export default function LandingInteractiveDemoSection() {
                             type="button"
                             data-testid={`demo-role-card-${role.id}`}
                             onClick={() => handleSelectRole(role.id)}
-                            className={`w-full text-left px-3.5 py-2.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                            className={`px-3 py-1.5 rounded-xl text-left transition-all cursor-pointer min-h-[44px] flex flex-col justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] focus-visible:ring-offset-1 ${
                               isSelected
-                                ? "border-[#2563EB] bg-blue-50/40 ring-1 ring-[#2563EB]/20"
-                                : "border-slate-200 bg-white hover:border-slate-300"
+                                ? "bg-blue-50 border border-[#2563EB] text-[#2563EB]"
+                                : "bg-slate-50/70 border border-slate-200/80 text-slate-700 hover:border-slate-300 hover:bg-slate-50"
                             }`}
                           >
-                            <div className="min-w-0">
-                              <div className="text-xs sm:text-sm font-bold text-[#09090B] truncate">
-                                {role.label}
-                              </div>
-                              <div className="text-[11px] text-slate-500 truncate">
-                                {role.subtitle}
-                              </div>
-                            </div>
-                            <span
-                              className={`w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 ${
-                                isSelected
-                                  ? "bg-[#2563EB] text-white"
-                                  : "border border-slate-300"
-                              }`}
-                            >
-                              {isSelected && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                            <span className="text-[13px] font-semibold truncate leading-tight block">
+                              {role.label}
+                            </span>
+                            <span className="text-[11px] font-normal text-slate-500 truncate block mt-0.5 hidden sm:block">
+                              {role.coreSkills.slice(0, 2).join(" · ")}
+                            </span>
+                            <span className="text-[11px] font-normal text-slate-500 truncate block sm:hidden">
+                              {role.coreSkills[0]}
                             </span>
                           </button>
                         );
                       })}
                     </div>
-
-                    <button
-                      type="button"
-                      data-testid="demo-step-1-next"
-                      onClick={handlePrimaryCardAction}
-                      className="w-full mt-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-[#2563EB] hover:bg-[#1D4ED8] text-white shadow-xs transition-all cursor-pointer"
-                    >
-                      <span>See matched jobs</span>
-                      <ArrowRight className="w-4 h-4" />
-                    </button>
                   </div>
-                )}
 
-                {/* STEP 2: MATCH */}
-                {activeStep === 2 && (
-                  <div data-testid="demo-step-2-panel" className="space-y-3">
+                  {/* Primary Action Button */}
+                  <button
+                    type="button"
+                    data-testid="demo-step-1-next"
+                    onClick={() => handleStepClick(2)}
+                    className="w-full mt-2 inline-flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] rounded-xl text-sm font-semibold bg-[#2563EB] hover:bg-[#1D4ED8] text-white shadow-xs transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] focus-visible:ring-offset-2"
+                  >
+                    <span>See matched jobs</span>
+                    <ArrowRight className="w-4 h-4 stroke-[1.75]" />
+                  </button>
+                </div>
+
+                {/* Right Column: Sample Result (Desktop) */}
+                <div className="hidden sm:flex sm:col-span-6 flex-col justify-between h-full min-w-0 bg-slate-50/80 border border-slate-200/80 rounded-2xl p-4">
+                  <div>
                     <div className="flex items-center justify-between gap-2">
-                      <p className="text-sm font-bold text-[#09090B]">
-                        Matched openings for {currentRole.label}
-                      </p>
+                      <span className="text-[13px] font-semibold text-slate-700">
+                        Sample unindexed opening
+                      </span>
                       <IllustrationSampleBadge />
                     </div>
 
-                    <div className="space-y-2">
+                    <div className="mt-2.5">
+                      <p className="text-sm font-semibold text-slate-900 truncate">
+                        {currentJob.title}
+                      </p>
+                      <p className="text-[13px] font-normal text-slate-500 truncate mt-0.5">
+                        {currentJob.company} · {currentJob.location}
+                      </p>
+                    </div>
+
+                    <div className="mt-2.5">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-blue-50 text-[#2563EB] border border-blue-200/80">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#2563EB]" />
+                        Direct career page · Live search
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-200/60 flex flex-wrap gap-1.5">
+                    {currentRole.coreSkills.map((skill) => (
+                      <span
+                        key={skill}
+                        className="px-2 py-0.5 rounded-full text-[11px] font-normal bg-white border border-slate-200 text-slate-600"
+                      >
+                        {skill}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 2: MATCH */}
+            {activeStep === 2 && (
+              <div
+                data-testid="demo-step-2-panel"
+                className="grid grid-cols-1 sm:grid-cols-12 gap-4 sm:gap-6 h-full items-stretch"
+              >
+                {/* Left Column: Step Content */}
+                <div className="sm:col-span-6 flex flex-col justify-between h-full min-w-0">
+                  <div>
+                    <h2 className="text-base font-semibold text-slate-900 leading-snug">
+                      Candidate match analysis
+                    </h2>
+                    <p className="text-[13px] font-normal text-slate-500 mt-0.5 leading-normal">
+                      Grounded fit score against verified job requirements.
+                    </p>
+
+                    {/* Job Openings Selection */}
+                    <div className="space-y-2 mt-2.5">
                       {currentRole.jobs.map((job) => {
                         const isSelected = job.id === currentJob.id;
                         return (
@@ -525,274 +570,340 @@ export default function LandingInteractiveDemoSection() {
                             key={job.id}
                             type="button"
                             data-testid={`demo-job-card-${job.id}`}
-                            onClick={() => setSelectedJobId(job.id)}
-                            className={`w-full text-left p-3 rounded-xl border transition-all cursor-pointer ${
+                            onClick={() => handleSelectJob(job.id)}
+                            className={`w-full text-left px-3 py-1.5 rounded-xl transition-all cursor-pointer min-h-[44px] flex items-center justify-between gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] focus-visible:ring-offset-1 ${
                               isSelected
-                                ? "border-[#2563EB] bg-blue-50/40 ring-1 ring-[#2563EB]/20"
-                                : "border-slate-200 bg-white hover:border-slate-300"
+                                ? "bg-blue-50 border border-[#2563EB]"
+                                : "bg-slate-50/70 border border-slate-200/80 hover:border-slate-300 hover:bg-slate-50"
                             }`}
                           >
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="flex items-center gap-2.5 min-w-0">
-                                <div className="w-8 h-8 rounded-lg bg-slate-900 text-white font-bold text-xs flex items-center justify-center flex-shrink-0">
-                                  {job.monogram}
-                                </div>
-                                <div className="min-w-0">
-                                  <div className="text-xs sm:text-sm font-bold text-[#09090B] truncate">
-                                    {job.title}
-                                  </div>
-                                  <div className="text-[11px] text-slate-500 truncate">
-                                    {job.company} · {job.location}
-                                  </div>
-                                </div>
-                              </div>
-                              <span className="px-2 py-0.5 rounded-full text-xs font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200 flex-shrink-0">
-                                {job.matchScore}% match
-                              </span>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-[13px] font-semibold text-slate-900 truncate leading-tight">
+                                {job.title}
+                              </p>
+                              <p className="text-[11px] font-normal text-slate-500 truncate mt-0.5">
+                                {job.company}
+                              </p>
                             </div>
-                            <div className="mt-2 flex items-center justify-between gap-2">
-                              <span className="text-[11px] text-slate-500">
-                                Matched: {job.matchedSkills.slice(0, 3).join(", ")}
-                              </span>
-                              <IllustrationSampleBadge />
-                            </div>
+                            <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 flex-shrink-0">
+                              {job.matchScore}%
+                            </span>
                           </button>
                         );
                       })}
                     </div>
-
-                    <button
-                      type="button"
-                      data-testid="demo-step-2-next"
-                      onClick={handlePrimaryCardAction}
-                      className="w-full mt-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-[#2563EB] hover:bg-[#1D4ED8] text-white shadow-xs transition-all cursor-pointer"
-                    >
-                      <span>Tailor resume for this role</span>
-                      <ArrowRight className="w-4 h-4" />
-                    </button>
                   </div>
-                )}
 
-                {/* STEP 3: TAILOR */}
-                {activeStep === 3 && (
-                  <div data-testid="demo-step-3-panel" className="space-y-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-sm font-bold text-[#09090B]">
-                        Tailored for {currentJob.company}
-                      </p>
-                      <div className="inline-flex rounded-lg bg-slate-100 p-0.5 border border-slate-200">
-                        <button
-                          type="button"
-                          data-testid="demo-doc-tab-resume"
-                          onClick={() => setDocTab("resume")}
-                          className={`px-2 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
-                            docTab === "resume"
-                              ? "bg-white text-[#09090B] shadow-2xs"
-                              : "text-slate-600"
-                          }`}
-                        >
-                          Resume
-                        </button>
-                        <button
-                          type="button"
-                          data-testid="demo-doc-tab-cover-letter"
-                          onClick={() => setDocTab("coverLetter")}
-                          className={`px-2 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
-                            docTab === "coverLetter"
-                              ? "bg-white text-[#09090B] shadow-2xs"
-                              : "text-slate-600"
-                          }`}
-                        >
-                          Cover Letter
-                        </button>
-                      </div>
-                    </div>
-
-                    <div
-                      data-testid={
-                        docTab === "resume"
-                          ? "demo-resume-preview"
-                          : "demo-cover-letter-preview"
-                      }
-                      className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-2"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#2563EB]">
-                          <FileText className="w-3.5 h-3.5" />
-                          {docTab === "resume"
-                            ? "ATS-Ready Summary"
-                            : "Grounded Cover Letter"}
-                        </span>
-                        <IllustrationSampleBadge />
-                      </div>
-                      <p className="text-xs text-slate-700 leading-relaxed">
-                        {docTab === "resume"
-                          ? currentJob.tailoredSummary
-                          : currentJob.coverLetterExcerpt}
-                      </p>
-                      <div className="flex flex-wrap gap-1 pt-0.5">
-                        {currentJob.matchedSkills.map((skill) => (
-                          <span
-                            key={skill}
-                            className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200"
-                          >
-                            ✓ {skill}
-                          </span>
-                        ))}
-                        <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-amber-50 text-amber-800 border border-amber-200">
-                          Gap noted: {currentJob.missingSkill}
-                        </span>
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      data-testid="demo-step-3-next"
-                      onClick={handlePrimaryCardAction}
-                      className="w-full mt-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-[#2563EB] hover:bg-[#1D4ED8] text-white shadow-xs transition-all cursor-pointer"
-                    >
-                      <span>Continue to apply</span>
-                      <ArrowRight className="w-4 h-4" />
-                    </button>
-                  </div>
-                )}
-
-                {/* STEP 4: SEND (Direct Employer Career Site + Inline Email Capture -> Early-Access Flow) */}
-                {activeStep === 4 && (
-                  <div
-                    id="landing-demo-email-capture"
-                    data-testid="demo-step-4-panel"
-                    className="space-y-3"
+                  {/* Primary Action Button */}
+                  <button
+                    type="button"
+                    data-testid="demo-step-2-next"
+                    onClick={() => handleStepClick(3)}
+                    className="w-full mt-2 inline-flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] rounded-xl text-sm font-semibold bg-[#2563EB] hover:bg-[#1D4ED8] text-white shadow-xs transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] focus-visible:ring-offset-2"
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-sm font-bold text-[#09090B]">
-                        Apply on the company&apos;s career site
-                      </p>
-                      <IllustrationSampleBadge />
-                    </div>
+                    <span>Tailor resume for this role</span>
+                    <ArrowRight className="w-4 h-4 stroke-[1.75]" />
+                  </button>
+                </div>
 
-                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="text-xs font-bold text-[#09090B] truncate">
-                          {currentJob.title}
-                        </div>
-                        <div className="text-[11px] text-slate-500 flex items-center gap-1">
-                          <ExternalLink className="w-3 h-3 text-[#2563EB] flex-shrink-0" />
-                          <span className="truncate">
-                            You apply directly on {currentJob.company}&apos;s official career site
-                          </span>
-                        </div>
-                      </div>
-                      <span className="px-2 py-0.5 rounded-full text-xs font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200 flex-shrink-0">
-                        {currentJob.matchScore}%
+                {/* Right Column: Sample Result (Desktop) */}
+                <div className="hidden sm:flex sm:col-span-6 flex-col justify-between h-full min-w-0 bg-slate-50/80 border border-slate-200/80 rounded-2xl p-4">
+                  <div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[13px] font-semibold text-slate-700">
+                        Match breakdown
+                      </span>
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        {currentJob.matchScore}% match
                       </span>
                     </div>
 
-                    {submitStatus === "success" ? (
+                    {/* Match Bar */}
+                    <div className="w-full h-1.5 bg-slate-200/80 rounded-full overflow-hidden mt-2.5">
                       <div
-                        data-testid="landing-demo-email-success"
-                        className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 space-y-2"
-                      >
-                        <div className="flex items-center gap-2 text-emerald-900 font-bold text-xs">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                          <span>You&apos;re on the early-access list!</span>
-                        </div>
-                        <Link
-                          href="/early-access"
-                          className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold bg-[#2563EB] hover:bg-[#1D4ED8] text-white transition-all"
+                        className="h-full bg-emerald-600 rounded-full transition-all duration-300"
+                        style={{ width: `${currentJob.matchScore}%` }}
+                      />
+                    </div>
+
+                    {/* Matched Skills */}
+                    <div className="mt-2.5 flex flex-wrap gap-1.5">
+                      {currentJob.matchedSkills.map((skill) => (
+                        <span
+                          key={skill}
+                          className="px-2 py-0.5 rounded-full text-[11px] font-normal bg-emerald-50 text-emerald-700 border border-emerald-200"
                         >
-                          <span>Continue to early-access page</span>
-                          <ArrowRight className="w-3.5 h-3.5" />
-                        </Link>
-                      </div>
-                    ) : (
-                      <form
-                        onSubmit={handleEmailSubmit}
-                        noValidate
-                        data-testid="landing-demo-email-capture"
-                        className="space-y-2"
-                      >
-                        {/* Honeypot */}
-                        <div className="hidden" aria-hidden="true">
-                          <label htmlFor="landing-demo-website">Website</label>
-                          <input
-                            id="landing-demo-website"
-                            type="text"
-                            name="website"
-                            tabIndex={-1}
-                            autoComplete="off"
-                            value={website}
-                            onChange={(e) => setWebsite(e.target.value)}
-                          />
-                        </div>
-
-                        <div className="relative">
-                          <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                          <input
-                            id="landing-demo-email-input"
-                            data-testid="landing-demo-email-input"
-                            type="email"
-                            required
-                            aria-label="Email address for early access"
-                            placeholder="you@example.com"
-                            value={email}
-                            onChange={(e) => {
-                              setEmail(e.target.value);
-                              if (submitStatus === "error") {
-                                setSubmitStatus("idle");
-                                setErrorMessage("");
-                              }
-                            }}
-                            disabled={submitStatus === "submitting"}
-                            className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-300 bg-white text-[#09090B] placeholder:text-slate-400 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:border-transparent"
-                          />
-                        </div>
-
-                        {submitStatus === "error" && errorMessage && (
-                          <p
-                            role="alert"
-                            className="text-[11px] font-medium text-red-600"
-                          >
-                            {errorMessage}
-                          </p>
-                        )}
-
-                        <button
-                          type="submit"
-                          data-testid="landing-demo-email-submit"
-                          disabled={submitStatus === "submitting"}
-                          className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-[#2563EB] hover:bg-[#1D4ED8] text-white shadow-xs transition-all cursor-pointer disabled:opacity-60"
-                        >
-                          {submitStatus === "submitting" ? (
-                            <>
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                              <span>Joining...</span>
-                            </>
-                          ) : (
-                            <>
-                              <Sparkles className="w-3.5 h-3.5" />
-                              <span>Get early access</span>
-                              <ArrowRight className="w-4 h-4" />
-                            </>
-                          )}
-                        </button>
-                      </form>
-                    )}
+                          ✓ {skill}
+                        </span>
+                      ))}
+                    </div>
                   </div>
-                )}
-              </div>
-            </div>
 
-            {/* Required caption directly under the card */}
-            <p
-              data-testid="illustration-card-caption"
-              className="mt-2.5 text-center lg:text-right text-[11px] font-medium text-slate-500"
-            >
-              Illustration - sample companies and scores
-            </p>
+                  <div className="pt-2 border-t border-slate-200/60">
+                    <p className="text-[11px] font-normal text-slate-500">
+                      Gap noted: {currentJob.missingSkill} (sample illustration)
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 3: TAILOR */}
+            {activeStep === 3 && (
+              <div
+                data-testid="demo-step-3-panel"
+                className="grid grid-cols-1 sm:grid-cols-12 gap-4 sm:gap-6 h-full items-stretch"
+              >
+                {/* Left Column: Step Content */}
+                <div className="sm:col-span-6 flex flex-col justify-between h-full min-w-0">
+                  <div>
+                    <h2 className="text-base font-semibold text-slate-900 leading-snug">
+                      AI resume &amp; letter tuning
+                    </h2>
+                    <p className="text-[13px] font-normal text-slate-500 mt-0.5 leading-normal">
+                      Aligns your experience to the employer stack.
+                    </p>
+
+                    {/* Document Selector Pills */}
+                    <div className="inline-flex rounded-full bg-slate-100 p-0.5 border border-slate-200/80 mt-2.5">
+                      <button
+                        type="button"
+                        data-testid="demo-doc-tab-resume"
+                        onClick={() => handleDocTabChange("resume")}
+                        className={`min-h-[36px] px-3 py-1 rounded-full text-xs transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] ${
+                          docTab === "resume"
+                            ? "bg-white text-slate-900 font-semibold shadow-xs"
+                            : "text-slate-500 font-normal hover:text-slate-700"
+                        }`}
+                      >
+                        Resume Summary
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="demo-doc-tab-cover-letter"
+                        onClick={() => handleDocTabChange("coverLetter")}
+                        className={`min-h-[36px] px-3 py-1 rounded-full text-xs transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] ${
+                          docTab === "coverLetter"
+                            ? "bg-white text-slate-900 font-semibold shadow-xs"
+                            : "text-slate-500 font-normal hover:text-slate-700"
+                        }`}
+                      >
+                        Cover Letter
+                      </button>
+                    </div>
+
+                    <p className="text-[11px] font-normal text-slate-500 mt-1.5">
+                      Tailored for {currentJob.company}
+                    </p>
+                  </div>
+
+                  {/* Primary Action Button */}
+                  <button
+                    type="button"
+                    data-testid="demo-step-3-next"
+                    onClick={() => handleStepClick(4)}
+                    className="w-full mt-2 inline-flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] rounded-xl text-sm font-semibold bg-[#2563EB] hover:bg-[#1D4ED8] text-white shadow-xs transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] focus-visible:ring-offset-2"
+                  >
+                    <span>Continue to apply</span>
+                    <ArrowRight className="w-4 h-4 stroke-[1.75]" />
+                  </button>
+                </div>
+
+                {/* Right Column: Sample Result (Desktop) */}
+                <div
+                  data-testid={
+                    docTab === "resume"
+                      ? "demo-resume-preview"
+                      : "demo-cover-letter-preview"
+                  }
+                  className="hidden sm:flex sm:col-span-6 flex-col justify-between h-full min-w-0 bg-slate-50/80 border border-slate-200/80 rounded-2xl p-4"
+                >
+                  <div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#2563EB]">
+                        <FileText className="w-3.5 h-3.5 stroke-[1.75]" />
+                        {docTab === "resume" ? "ATS-Ready Summary" : "Grounded Cover Letter"}
+                      </span>
+                      <IllustrationSampleBadge />
+                    </div>
+
+                    <p className="text-[13px] font-normal text-slate-700 leading-relaxed mt-2 line-clamp-4">
+                      {docTab === "resume"
+                        ? currentJob.tailoredSummary
+                        : currentJob.coverLetterExcerpt}
+                    </p>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-200/60 flex flex-wrap gap-1.5">
+                    {currentJob.matchedSkills.slice(0, 3).map((skill) => (
+                      <span
+                        key={skill}
+                        className="px-2 py-0.5 rounded-full text-[11px] font-normal bg-emerald-50 text-emerald-700 border border-emerald-200"
+                      >
+                        ✓ {skill}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 4: SEND */}
+            {activeStep === 4 && (
+              <div
+                id="landing-demo-email-capture"
+                data-testid="demo-step-4-panel"
+                className="grid grid-cols-1 sm:grid-cols-12 gap-4 sm:gap-6 h-full items-stretch"
+              >
+                {/* Left Column: Step Content */}
+                <div className="sm:col-span-6 flex flex-col justify-between h-full min-w-0">
+                  <div>
+                    <h2 className="text-base font-semibold text-slate-900 leading-snug">
+                      Apply on official career site
+                    </h2>
+                    <p className="text-[13px] font-normal text-slate-500 mt-0.5 leading-normal">
+                      Direct submission to the employer with zero middleman.
+                    </p>
+
+                    {/* Email Capture / Success State */}
+                    <div className="mt-2">
+                      {submitStatus === "success" ? (
+                        <div
+                          data-testid="landing-demo-email-success"
+                          className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 space-y-2"
+                        >
+                          <div className="flex items-center gap-2 text-emerald-900 font-semibold text-xs">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0 stroke-[1.75]" />
+                            <span>You&apos;re on the early-access list!</span>
+                          </div>
+                          <Link
+                            href="/early-access"
+                            className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2 min-h-[44px] rounded-lg text-xs font-semibold bg-[#2563EB] hover:bg-[#1D4ED8] text-white transition-colors"
+                          >
+                            <span>Continue to early access</span>
+                            <ArrowRight className="w-3.5 h-3.5 stroke-[1.75]" />
+                          </Link>
+                        </div>
+                      ) : (
+                        <form
+                          onSubmit={handleEmailSubmit}
+                          noValidate
+                          data-testid="landing-demo-email-capture"
+                          className="space-y-2"
+                        >
+                          {/* Honeypot */}
+                          <div className="hidden" aria-hidden="true">
+                            <label htmlFor="landing-demo-website">Website</label>
+                            <input
+                              id="landing-demo-website"
+                              type="text"
+                              name="website"
+                              tabIndex={-1}
+                              autoComplete="off"
+                              value={website}
+                              onChange={(e) => setWebsite(e.target.value)}
+                            />
+                          </div>
+
+                          <div className="relative">
+                            <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none stroke-[1.75]" />
+                            <input
+                              id="landing-demo-email-input"
+                              data-testid="landing-demo-email-input"
+                              type="email"
+                              required
+                              aria-label="Email address for early access"
+                              placeholder="you@example.com"
+                              value={email}
+                              onChange={(e) => {
+                                setEmail(e.target.value);
+                                if (submitStatus === "error") {
+                                  setSubmitStatus("idle");
+                                  setErrorMessage("");
+                                }
+                              }}
+                              disabled={submitStatus === "submitting"}
+                              className="w-full pl-9 pr-3 py-2 min-h-[44px] rounded-xl border border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:border-transparent"
+                            />
+                          </div>
+
+                          {submitStatus === "error" && errorMessage && (
+                            <p
+                              role="alert"
+                              className="text-[11px] font-normal text-red-600"
+                            >
+                              {errorMessage}
+                            </p>
+                          )}
+
+                          <button
+                            type="submit"
+                            data-testid="landing-demo-email-submit"
+                            disabled={submitStatus === "submitting"}
+                            className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] rounded-xl text-sm font-semibold bg-[#2563EB] hover:bg-[#1D4ED8] text-white shadow-xs transition-colors cursor-pointer disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] focus-visible:ring-offset-2"
+                          >
+                            {submitStatus === "submitting" ? (
+                              <>
+                                <Loader2 className="w-4 h-4 animate-spin stroke-[1.75]" />
+                                <span>Joining...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Sparkles className="w-4 h-4 stroke-[1.75]" />
+                                <span>Get early access</span>
+                                <ArrowRight className="w-4 h-4 stroke-[1.75]" />
+                              </>
+                            )}
+                          </button>
+                        </form>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right Column: Sample Result (Desktop) */}
+                <div className="hidden sm:flex sm:col-span-6 flex-col justify-between h-full min-w-0 bg-slate-50/80 border border-slate-200/80 rounded-2xl p-4">
+                  <div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#2563EB]">
+                        <ExternalLink className="w-3.5 h-3.5 stroke-[1.75]" />
+                        Official Career Site
+                      </span>
+                      <IllustrationSampleBadge />
+                    </div>
+
+                    <div className="mt-2.5 space-y-1">
+                      <p className="text-sm font-semibold text-slate-900 truncate">
+                        {currentJob.title}
+                      </p>
+                      <p className="text-[13px] font-normal text-slate-600">
+                        You apply directly on {currentJob.company}&apos;s official career site.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-200/60 space-y-1">
+                    <p className="flex items-center gap-1.5 text-[11px] font-normal text-slate-600">
+                      <span className="text-emerald-600 font-semibold">✓</span> Sourced from company career page
+                    </p>
+                    <p className="flex items-center gap-1.5 text-[11px] font-normal text-slate-600">
+                      <span className="text-emerald-600 font-semibold">✓</span> Direct employer ATS application
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
-    </section>
+
+      {/* Caption directly under the card */}
+      <p
+        data-testid="illustration-card-caption"
+        className="mt-3 text-center text-[13px] font-normal text-slate-500"
+      >
+        Illustration - sample companies and scores
+      </p>
+    </div>
   );
 }

@@ -37,25 +37,25 @@ function runAudit() {
     console.log('  [PASS] FIX 2: ReviewCards has role="img" on star groups and aria-hidden on stars');
   }
 
-  // TEST 3: Heading order fixes (ProductScreenshotMock h2, ReviewCards h3, Footer h2)
-  const psmPath = path.join(__dirname, '..', 'src', 'components', 'ProductScreenshotMock.tsx');
-  let psmContent = fs.readFileSync(psmPath, 'utf8');
+  // TEST 3: Heading order fixes (LandingInteractiveDemoSection h2, ReviewCards h3, Footer h2)
+  const demoPath = path.join(__dirname, '..', 'src', 'components', 'LandingInteractiveDemoSection.tsx');
+  let demoContent = fs.readFileSync(demoPath, 'utf8');
   const footerPath = path.join(__dirname, '..', 'src', 'components', 'Footer.tsx');
   let footerContent = fs.readFileSync(footerPath, 'utf8');
 
   if (isNegativeControl) {
-    psmContent = psmContent.replace(/<h2/g, '<h3');
+    demoContent = demoContent.replace(/<h2/g, '<h3');
     footerContent = footerContent.replace(/<h2/g, '<h3');
   }
 
-  const psmHasH2 = psmContent.includes('<h2 className="text-xs sm:text-sm md:text-[15px]');
+  const demoHasH2 = demoContent.includes('<h2 className="text-base font-semibold text-slate-900');
   const reviewCardsHasH3 = reviewCardsContent.includes('<h3');
   const footerHasH2 = footerContent.includes('<h2 className={landingColumnHeadingClass}>Navigation</h2>') || footerContent.includes('<h2 className="text-sm font-semibold uppercase tracking-wider text-slate-200">Navigation</h2>');
 
-  if (!psmHasH2 || !reviewCardsHasH3 || !footerHasH2) {
-    failures.push('FIX 3 FAIL: Heading hierarchy broken (expected specific h2 in ProductScreenshotMock/Footer and h3 in ReviewCards).');
+  if (!demoHasH2 || !reviewCardsHasH3 || !footerHasH2) {
+    failures.push('FIX 3 FAIL: Heading hierarchy broken (expected specific h2 in LandingInteractiveDemoSection/Footer and h3 in ReviewCards).');
   } else {
-    console.log('  [PASS] FIX 3: Heading hierarchy validated across ProductScreenshotMock (h2), ReviewCards (h3), and Footer (h2)');
+    console.log('  [PASS] FIX 3: Heading hierarchy validated across LandingInteractiveDemoSection (h2), ReviewCards (h3), and Footer (h2)');
   }
 
   // TEST 4: Landing page has <main> outer wrapper
