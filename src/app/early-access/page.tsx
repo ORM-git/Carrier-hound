@@ -103,14 +103,9 @@ export default function EarlyAccessPage() {
           <Link
             href="/early-access"
             aria-label="CareerMonke Early Access"
-            className="inline-flex items-center gap-2.5 min-h-[44px] rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+            className="inline-flex items-center min-h-[44px] rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
           >
-            <span className="w-9 h-9 rounded-full bg-white border border-slate-200/80 flex items-center justify-center p-1 shadow-2xs">
-              <BrandIcon variant="new" className="w-7 h-7" priority />
-            </span>
-            <span className="text-lg font-extrabold tracking-tight text-[#0F172A]">
-              Career<span className="text-[#2563EB]">Monke</span>
-            </span>
+            <BrandIcon variant="full" width={140} height={56} className="h-9 w-auto" priority />
           </Link>
 
           <button
