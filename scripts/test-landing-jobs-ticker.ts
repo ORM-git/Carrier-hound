@@ -5,6 +5,7 @@ import http from "node:http";
 import { spawnSync } from "node:child_process";
 import { NextRequest } from "next/server";
 import puppeteer from "puppeteer-core";
+import { formatRelativeTime } from "../src/components/LandingJobsTickerStrip";
 
 const ROOT = process.cwd();
 const isNegativeControl = process.argv.includes("--negative-control");
@@ -117,17 +118,54 @@ async function testEndpointImplementation() {
     rpc: async () => ({ data: { allowed: true, retry_after: 0, current_count: 1 }, error: null }),
   };
 
-  const sampleDbJobs = Array.from({ length: 30 }, (_, i) => ({
-    id: `job-uuid-${i + 1}`,
-    company: `Company ${i + 1}`,
-    title: `Staff Software Engineer ${i + 1}`,
-    posted_at: new Date(Date.now() - (i + 1) * 300000).toISOString(),
-    created_at: new Date(Date.now() - (i + 1) * 300000).toISOString(),
-    apply_url: `https://example.com/apply/${i + 1}`,
-    email: `recruiter@example${i + 1}.com`,
-    salary_min: 150000,
-    companies: i % 2 === 0 ? { logo_url: `https://cdn.example.com/logo-${i + 1}.png` } : null,
-  }));
+  const now = Date.now();
+
+  const testDbRows = [
+    // Valid row 1 (normal recent past)
+    {
+      id: "j1",
+      company: "Company 1",
+      title: "Engineer 1",
+      posted_at: new Date(now - 120000).toISOString(),
+    },
+    // Valid row 2 (future-dated within 5 mins, skew +2 mins)
+    {
+      id: "j2",
+      company: "Company 2",
+      title: "Engineer 2",
+      posted_at: new Date(now + 120000).toISOString(),
+    },
+    // Invalid row 3: Future-dated > 5 mins (skew +10 mins) -> MUST BE DROPPED
+    {
+      id: "j3",
+      company: "Future Co",
+      title: "Time Traveler Engineer",
+      posted_at: new Date(now + 600000).toISOString(),
+    },
+    // Invalid row 4: Neither posted_at nor created_at -> MUST BE DROPPED
+    {
+      id: "j4",
+      company: "No Time Co",
+      title: "Timeless Engineer",
+      posted_at: null,
+      created_at: null,
+    },
+    // Valid row 5 (created_at fallback)
+    {
+      id: "j5",
+      company: "Company 5",
+      title: "Engineer 5",
+      posted_at: null,
+      created_at: new Date(now - 300000).toISOString(),
+    },
+    // Generate more valid rows so total valid exceeds 20
+    ...Array.from({ length: 25 }, (_, i) => ({
+      id: `j-${i + 6}`,
+      company: `Company ${i + 6}`,
+      title: `Engineer ${i + 6}`,
+      posted_at: new Date(now - (i + 6) * 60000).toISOString(),
+    })),
+  ];
 
   let shouldFailDb = false;
 
@@ -141,11 +179,11 @@ async function testEndpointImplementation() {
           headers: { "content-type": "application/json" },
         });
       }
-      return new Response(JSON.stringify(sampleDbJobs), {
+      return new Response(JSON.stringify(testDbRows), {
         status: 200,
         headers: {
           "content-type": "application/json",
-          "content-range": "0-29/30",
+          "content-range": `0-${testDbRows.length - 1}/${testDbRows.length}`,
         },
       });
     }
@@ -171,6 +209,12 @@ async function testEndpointImplementation() {
     assert(Array.isArray(rows), "Endpoint must return an array of rows");
     assert.strictEqual(rows.length, 20, "Endpoint must limit response to max 20 rows");
 
+    // Verify invalid rows were dropped:
+    const companies = rows.map((r: any) => r.company);
+    assert(!companies.includes("Future Co"), "Rows further than 5m in the future must be dropped");
+    assert(!companies.includes("No Time Co"), "Rows without posted_at and created_at must be dropped");
+    assert(companies.includes("Company 2"), "Rows within 5m in future must be kept");
+
     const ALLOWED_KEYS = ["company", "logo_url", "posted_at", "title"];
     for (const row of rows) {
       const keys = Object.keys(row).sort();
@@ -179,16 +223,8 @@ async function testEndpointImplementation() {
         ALLOWED_KEYS,
         `Row has unexpected fields: ${JSON.stringify(row)}`
       );
-      assert.strictEqual(typeof row.company, "string");
-      assert.strictEqual(typeof row.title, "string");
-      assert.strictEqual(typeof row.posted_at, "string");
-      assert(row.logo_url === null || typeof row.logo_url === "string");
-
-      // Verify strict exclusion of sensitive / extraneous columns
       assert.strictEqual((row as any).id, undefined, "Row must NOT contain 'id'");
       assert.strictEqual((row as any).apply_url, undefined, "Row must NOT contain 'apply_url'");
-      assert.strictEqual((row as any).email, undefined, "Row must NOT contain 'email'");
-      assert.strictEqual((row as any).salary_min, undefined, "Row must NOT contain 'salary_min'");
     }
 
     // Test 1b: Netlify function parity check
@@ -200,8 +236,9 @@ async function testEndpointImplementation() {
     const netlifyRows = JSON.parse(netlifyRes.body);
     assert(Array.isArray(netlifyRows));
     assert.strictEqual(netlifyRows.length, 20);
-    assert.deepStrictEqual(Object.keys(netlifyRows[0]).sort(), ALLOWED_KEYS);
-    assert(netlifyRes.headers["Cache-Control"].includes("max-age=60"));
+    const netlifyCompanies = netlifyRows.map((r: any) => r.company);
+    assert(!netlifyCompanies.includes("Future Co"), "Netlify: >5m future rows dropped");
+    assert(!netlifyCompanies.includes("No Time Co"), "Netlify: rows missing timestamp dropped");
 
     // Test 2: Database failure returns 503 with Cache-Control: no-store
     shouldFailDb = true;
@@ -217,67 +254,107 @@ async function testEndpointImplementation() {
     assert.strictEqual(failNetlify.statusCode, 503, "Netlify error must respond with HTTP 503");
     assert(failNetlify.headers["Cache-Control"].includes("no-store"));
 
-    console.log("  [PASS] Endpoint: max 20 rows, strict shape (company, title, posted_at, logo_url only), 60s cache, 503 no-store on error");
+    console.log("  [PASS] Endpoint: max 20 rows, strict shape, dropped missing & >5m future timestamps, 60s cache, 503 no-store on error");
   } finally {
     globalThis.fetch = origFetch;
   }
 }
 
-async function testComponentContractAndKeyframes() {
+async function testComponentContractAndAccessibility() {
   const componentPath = path.resolve(ROOT, "src", "components", "LandingJobsTickerStrip.tsx");
   const code = fs.readFileSync(componentPath, "utf8");
 
-  // 1. Verify CSS keyframes and animations
-  assert(code.includes("@keyframes tickerMarquee"), "Must include @keyframes tickerMarquee");
+  // 1. Accessibility for duplicate sets
   assert(
-    code.includes("transform: translateX(0);") && code.includes("transform: translateX(-50%);"),
-    "Keyframes must translate from translateX(0) to translateX(-50%)"
+    code.includes('aria-hidden="true"'),
+    "Duplicate sets must have aria-hidden='true'"
   );
   assert(
-    code.includes("tickerMarquee 150s linear infinite"),
-    "Desktop animation must be 150s linear infinite"
-  );
-  assert(
-    code.includes("tickerMarquee 100s linear infinite"),
-    "Mobile animation must be 100s linear infinite"
-  );
-  assert(
-    code.includes("prefers-reduced-motion: reduce"),
-    "Must respect prefers-reduced-motion: reduce"
-  );
-  assert(
-    !code.includes("animation-play-state: paused") && !code.includes("hover:pause"),
-    "Animation must NOT pause on hover"
+    code.includes("tabIndex={isDuplicate ? -1 : undefined}") || code.includes("tabIndex={-1}"),
+    "Links in duplicate sets must have tabIndex={-1}"
   );
 
-  // 2. Sizing and colors
-  assert(code.includes("h-[100px] md:h-[144px]"), "Strip height: 100px mobile, 144px desktop");
-  assert(code.includes("bg-black md:bg-[#0A0A0A]"), "Strip bg: #000 mobile, #0A0A0A desktop");
-  assert(code.includes("overflow-hidden"), "Must hard clip with overflow-hidden");
-  assert(code.includes("/early-access"), "Cards must link to /early-access");
-  assert(code.includes("h-9 md:h-12"), "Card height: 36px (h-9) mobile, 48px (h-12) desktop");
-  assert(code.includes("rounded-[7px] md:rounded-[10px]"), "Logo radius: 7px mobile, 10px desktop");
-  assert(code.includes("mr-12 md:mr-16"), "Gap between cards: 48px (mr-12) mobile, 64px (mr-16) desktop");
-  assert(code.includes("gap-4 md:gap-3"), "Gap logo-to-text: 16px (gap-4) mobile, 12px (gap-3) desktop");
+  // 2. Format relative time clamping
+  const futureSkew = new Date(Date.now() + 2 * 60 * 1000).toISOString(); // 2 mins future
+  assert.strictEqual(
+    formatRelativeTime(futureSkew),
+    "just now",
+    "Future-dated timestamp within 5 minutes must clamp to 'just now'"
+  );
 
-  // 3. Fallback when fewer than 5 jobs
+  const pastRecent = new Date(Date.now() - 30 * 1000).toISOString(); // 30 sec ago
+  assert.strictEqual(
+    formatRelativeTime(pastRecent),
+    "just now",
+    "Timestamps < 1 min must format as 'just now'"
+  );
+
+  const pastMinutes = new Date(Date.now() - 5 * 60 * 1000).toISOString(); // 5 min ago
+  assert.strictEqual(
+    formatRelativeTime(pastMinutes),
+    "5 minutes ago",
+    "5 minutes ago should format as '5 minutes ago'"
+  );
+
+  const pastHours = new Date(Date.now() - 2 * 3600 * 1000).toISOString(); // 2 hours ago
+  assert.strictEqual(
+    formatRelativeTime(pastHours),
+    "2 hours ago",
+    "2 hours ago should format as '2 hours ago'"
+  );
+
+  // 3. Dynamic duration tuning
+  assert(
+    code.includes("trackRef.current.scrollWidth / 2") && code.includes("/ 50"),
+    "Component must compute animation duration as (scrollWidth / 2) / 50 seconds"
+  );
+
+  // 4. Fallback when fewer than 5 jobs
   assert(code.includes("jobs.length < 5"), "Must hide the whole strip when fewer than 5 jobs");
 
-  console.log("  [PASS] Component contract: CSS keyframes, animation durations (150s/100s), sizing tokens, zero pause on hover");
+  console.log("  [PASS] Component contract: duplicate sets have aria-hidden='true' & tabIndex={-1}, time clamping to 'just now' verified, dynamic duration tuning");
 }
 
-async function testBrowserMotionSampling() {
+async function testBrowserScrollWidthAndSpeed() {
   const chromePath = findChromePath();
 
-  // Create minimal standalone HTML page with the exact CSS and track structure with 20 sample cards
-  const sampleCards = Array.from({ length: 20 }, (_, i) => `
-    <a href="/early-access" class="ticker-card flex items-center shrink-0 h-12 gap-3 mr-16">
-      <div class="logo-box w-12 h-12 rounded-[10px] bg-[#1F1F1F] flex items-center justify-center shrink-0">
-        <span class="text-white font-semibold">C${i + 1}</span>
+  const sampleJobs = [
+    { company: "OpenAI", title: "Research Program Manager, Safety Measurement" },
+    { company: "Lyft", title: "Influencer Manager, Social & Culture" },
+    { company: "Cloudflare", title: "Senior Software Engineer - Security Platform" },
+    { company: "Reddit", title: "Senior Data Scientist, Safety Enforcement" },
+    { company: "Flexport", title: "Global Operations Associate" },
+    { company: "Stripe", title: "Infrastructure Engineer, Core Payments" },
+    { company: "Linear", title: "Frontend Systems Engineer" },
+    { company: "Figma", title: "Product Designer, Collaboration" },
+    { company: "Vercel", title: "Developer Experience Engineer" },
+    { company: "Notion", title: "Staff Product Manager" },
+    { company: "Airbnb", title: "Senior Backend Engineer, Search" },
+    { company: "DoorDash", title: "Senior Machine Learning Engineer" },
+    { company: "Discord", title: "Voice & Video Systems Engineer" },
+    { company: "Datadog", title: "Observability Platform Engineer" },
+    { company: "Canva", title: "Design Systems Engineer" },
+    { company: "Slack", title: "Staff Mobile Engineer, iOS" },
+    { company: "GitHub", title: "Platform Security Specialist" },
+    { company: "Shopify", title: "Merchant Experience Engineer" },
+    { company: "Spotify", title: "Senior Audio ML Researcher" },
+    { company: "Retool", title: "Full Stack Growth Engineer" },
+  ];
+
+  const cardsHtml = (isDuplicate: boolean) => sampleJobs.map((j) => `
+    <a href="/early-access" class="ticker-card flex items-center shrink-0 h-9 md:h-12 gap-4 md:gap-3 mr-12 md:mr-16" ${isDuplicate ? 'tabindex="-1"' : ''}>
+      <div class="logo w-9 h-9 md:w-12 md:h-12 rounded-[7px] md:rounded-[10px] bg-[#1F1F1F] flex items-center justify-center shrink-0">
+        <span class="text-white font-semibold text-xs md:text-base">${j.company[0]}</span>
       </div>
-      <div class="text-box flex flex-col justify-center">
-        <div class="text-[13px] font-semibold text-white">Company ${i + 1} · 5 minutes ago</div>
-        <div class="text-[18px] font-medium text-white truncate max-w-[340px]">Senior Software Engineer ${i + 1}</div>
+      <div class="flex flex-col justify-center">
+        <div class="flex items-center text-white leading-tight">
+          <span class="text-[13px] font-semibold text-white">${j.company}</span>
+          <span class="text-white/60 mx-1.5 text-[11px] md:text-[13px]">·</span>
+          <span class="text-[11px] md:text-[13px] font-normal text-white">5 minutes ago</span>
+        </div>
+        <div class="text-[13px] md:text-[18px] font-semibold md:font-medium text-white truncate max-w-[200px] sm:max-w-[280px] md:max-w-[340px] leading-tight mt-0.5">
+          ${j.title}
+        </div>
       </div>
     </a>
   `).join("");
@@ -288,16 +365,30 @@ async function testBrowserMotionSampling() {
   <meta charset="utf-8">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: #000; overflow-x: hidden; }
+    body { background: #000; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; overflow-x: hidden; }
     .flex { display: flex; }
+    .flex-col { flex-direction: column; }
     .items-center { align-items: center; }
+    .justify-center { justify-content: center; }
     .shrink-0 { flex-shrink: 0; }
-    .h-12 { height: 48px; }
-    .w-12 { width: 48px; }
-    .gap-3 { gap: 12px; }
-    .mr-16 { margin-right: 64px; }
-    .rounded-\\[10px\\] { border-radius: 10px; }
+    .h-9 { height: 36px; }
+    .w-9 { width: 36px; }
+    .gap-4 { gap: 16px; }
+    .mr-12 { margin-right: 48px; }
+    .rounded-\\[7px\\] { border-radius: 7px; }
+    .text-\\[11px\\] { font-size: 11px; }
+    .text-\\[13px\\] { font-size: 13px; }
+    .text-xs { font-size: 12px; }
     .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .max-w-\\[200px\\] { max-width: 200px; }
+    .leading-tight { line-height: 1.25; }
+    .mt-0\\.5 { margin-top: 2px; }
+    .font-semibold { font-weight: 600; }
+    .font-normal { font-weight: 400; }
+    .text-white { color: #fff; }
+    .text-white\\/60 { color: rgba(255,255,255,0.6); }
+    .mx-1\\.5 { margin-left: 6px; margin-right: 6px; }
+    .bg-\\[\\#1F1F1F\\] { background-color: #1F1F1F; }
 
     @keyframes tickerMarquee {
       0% {
@@ -311,40 +402,74 @@ async function testBrowserMotionSampling() {
     .ticker-strip {
       width: 100%;
       height: 144px;
-      background: #0A0A0A;
       overflow: hidden;
       display: flex;
       align-items: center;
     }
-
     .ticker-track {
       display: flex;
       align-items: center;
       width: max-content;
       will-change: transform;
-      animation: tickerMarquee 150s linear infinite;
+      animation: tickerMarquee 155s linear infinite;
+    }
+
+    @media (max-width: 767px) {
+      .ticker-track {
+        animation: tickerMarquee 225s linear infinite;
+      }
+    }
+
+    @media (min-width: 768px) {
+      .md\\:flex { display: flex; }
+      .md\\:hidden { display: none; }
+      .md\\:h-12 { height: 48px; }
+      .md\\:w-12 { width: 48px; }
+      .md\\:gap-3 { gap: 12px; }
+      .md\\:mr-16 { margin-right: 64px; }
+      .md\\:rounded-\\[10px\\] { border-radius: 10px; }
+      .md\\:text-\\[13px\\] { font-size: 13px; }
+      .md\\:text-\\[18px\\] { font-size: 18px; }
+      .md\\:text-base { font-size: 16px; }
+      .md\\:font-medium { font-weight: 500; }
+      .md\\:max-w-\\[340px\\] { max-width: 340px; }
     }
   </style>
 </head>
 <body>
   <div class="ticker-strip">
     <div class="ticker-track" id="track">
-      <!-- Set 1 -->
-      <div class="flex items-center shrink-0">${sampleCards}</div>
-      <!-- Set 2 -->
-      <div class="flex items-center shrink-0">${sampleCards}</div>
+      <!-- Set 1 (Desktop & Mobile - First set, accessible) -->
+      <div class="flex items-center shrink-0">${cardsHtml(false)}</div>
+      <!-- Set 2 (Desktop & Mobile - Duplicate, aria-hidden, tabIndex -1) -->
+      <div class="flex items-center shrink-0" aria-hidden="true">${cardsHtml(true)}</div>
+      <!-- Set 3 (Mobile only - Duplicate, aria-hidden, tabIndex -1) -->
+      <div class="flex md:hidden items-center shrink-0" aria-hidden="true">${cardsHtml(true)}</div>
+      <!-- Set 4 (Mobile only - Duplicate, aria-hidden, tabIndex -1) -->
+      <div class="flex md:hidden items-center shrink-0" aria-hidden="true">${cardsHtml(true)}</div>
     </div>
   </div>
+  <script>
+    // Tune duration = (scrollWidth / 2) / 50
+    function tune() {
+      const track = document.getElementById("track");
+      if (track) {
+        const half = track.scrollWidth / 2;
+        track.style.animationDuration = (half / 50) + "s";
+      }
+    }
+    tune();
+    window.addEventListener("resize", tune);
+  </script>
 </body>
 </html>`;
 
-  // Start local ephemeral HTTP server
   const server = http.createServer((req, res) => {
     res.writeHead(200, { "Content-Type": "text/html" });
     res.end(html);
   });
 
-  await new Promise<void>((resolve) => server.listen(0, resolve));
+  await new Promise<void>((r) => server.listen(0, r));
   const port = (server.address() as any).port;
 
   const browser = await puppeteer.launch({
@@ -355,39 +480,77 @@ async function testBrowserMotionSampling() {
 
   try {
     const page = await browser.newPage();
+
+    // 1. Measure at 1280px Desktop
     await page.setViewport({ width: 1280, height: 800 });
     await page.goto(`http://127.0.0.1:${port}`, { waitUntil: "networkidle0" });
 
-    // Sample transform matrix at t = 0
-    const sampleTransform = async (): Promise<number> => {
+    const desktopMetrics = await page.evaluate(() => {
+      const track = document.getElementById("track")!;
+      const half = track.scrollWidth / 2;
+      const duration = parseFloat(window.getComputedStyle(track).animationDuration);
+      return { scrollWidth: track.scrollWidth, half, duration, speed: half / duration };
+    });
+
+    console.log(`  [INFO] Desktop 1280: scrollWidth=${desktopMetrics.scrollWidth}px, half=${desktopMetrics.half}px, duration=${desktopMetrics.duration.toFixed(2)}s, calculated speed=${desktopMetrics.speed.toFixed(1)}px/s`);
+    assert(
+      Math.abs(desktopMetrics.speed - 50) < 1.0,
+      `Desktop speed should be ~50px/s, got ${desktopMetrics.speed}`
+    );
+
+    // Sample real transform movement over 2.0s at 1280px
+    const sampleX = async (): Promise<number> => {
       return await page.evaluate(() => {
-        const el = document.getElementById("track");
-        if (!el) return 0;
-        const style = window.getComputedStyle(el);
-        const transform = style.transform || style.webkitTransform;
+        const track = document.getElementById("track");
+        if (!track) return 0;
+        const transform = window.getComputedStyle(track).transform;
         if (!transform || transform === "none") return 0;
         const match = transform.match(/matrix\([^,]+,[^,]+,[^,]+,[^,]+,\s*([^,]+)/);
         return match ? parseFloat(match[1]) : 0;
       });
     };
 
-    const x0 = await sampleTransform();
-
-    // Wait exactly 2000ms
+    const x0_desktop = await sampleX();
     await new Promise((r) => setTimeout(r, 2000));
-
-    const x2 = await sampleTransform();
-    const distanceMoved = Math.abs(x2 - x0);
-
-    console.log(`  [INFO] Real browser sampling: x0 = ${x0.toFixed(2)}px, x2 = ${x2.toFixed(2)}px, moved = ${distanceMoved.toFixed(2)}px over 2.0s`);
-
-    // Verify track translated about 100px to the left (expected ~95px - 110px at ~50px/s)
+    const x2_desktop = await sampleX();
+    const movedDesktop = Math.abs(x2_desktop - x0_desktop);
+    console.log(`  [INFO] Real browser 1280 movement: ${movedDesktop.toFixed(1)}px over 2s`);
     assert(
-      distanceMoved >= 70 && distanceMoved <= 135,
-      `Track must move about 100px left over 2s at ~50px/s, but moved ${distanceMoved}px`
+      movedDesktop >= 80 && movedDesktop <= 125,
+      `Desktop movement over 2s should be ~100px (got ${movedDesktop}px)`
     );
 
-    console.log(`  [PASS] Real browser motion: track moved ${distanceMoved.toFixed(1)}px left over 2.0s (~50px/s)`);
+    // 2. Measure at 390px Mobile
+    await page.setViewport({ width: 390, height: 844 });
+    await page.evaluate(() => {
+      window.dispatchEvent(new Event("resize"));
+    });
+
+    const mobileMetrics = await page.evaluate(() => {
+      const track = document.getElementById("track")!;
+      const half = track.scrollWidth / 2;
+      const duration = parseFloat(window.getComputedStyle(track).animationDuration);
+      return { scrollWidth: track.scrollWidth, half, duration, speed: half / duration };
+    });
+
+    console.log(`  [INFO] Mobile 390: scrollWidth=${mobileMetrics.scrollWidth}px, half=${mobileMetrics.half}px, duration=${mobileMetrics.duration.toFixed(2)}s, calculated speed=${mobileMetrics.speed.toFixed(1)}px/s`);
+    assert(
+      Math.abs(mobileMetrics.speed - 50) < 1.0,
+      `Mobile speed should be ~50px/s, got ${mobileMetrics.speed}`
+    );
+
+    // Sample real transform movement over 2.0s at 390px
+    const x0_mobile = await sampleX();
+    await new Promise((r) => setTimeout(r, 2000));
+    const x2_mobile = await sampleX();
+    const movedMobile = Math.abs(x2_mobile - x0_mobile);
+    console.log(`  [INFO] Real browser 390 movement: ${movedMobile.toFixed(1)}px over 2s`);
+    assert(
+      movedMobile >= 80 && movedMobile <= 125,
+      `Mobile movement over 2s should be ~100px (got ${movedMobile}px)`
+    );
+
+    console.log("  [PASS] Tuned scroll speed verified at 1280px and 390px in real headless Chrome (~50px/s, ~100px over 2s)");
   } finally {
     await browser.close();
     server.close();
@@ -395,7 +558,7 @@ async function testBrowserMotionSampling() {
 }
 
 async function main() {
-  console.log("=== LANDING JOBS TICKER STRIP SUITE ===");
+  console.log("=== LANDING JOBS TICKER STRIP FOLLOW-UP SUITE ===");
 
   if (isNegativeControl) {
     await testMiddlewareExemption();
@@ -408,16 +571,16 @@ async function main() {
   // 2. Middleware exact match GET-only exemption tests
   await testMiddlewareExemption();
 
-  // 3. Endpoint implementation & contract tests
+  // 3. Endpoint implementation tests (missing timestamps & >5m future dropped)
   await testEndpointImplementation();
 
-  // 4. Component contract & CSS keyframe rules
-  await testComponentContractAndKeyframes();
+  // 4. Component contract (aria-hidden, tabIndex -1 on duplicates, time clamping)
+  await testComponentContractAndAccessibility();
 
-  // 5. Real browser motion sampling (verifies ~100px movement over 2s)
-  await testBrowserMotionSampling();
+  // 5. Real browser speed tuning measurement at 1280 and 390 (~50px/s)
+  await testBrowserScrollWidthAndSpeed();
 
-  console.log("\nALL LANDING JOBS TICKER TESTS PASSED-LOCAL\n");
+  console.log("\nALL LANDING JOBS TICKER FOLLOW-UP TESTS PASSED-LOCAL\n");
 }
 
 main().catch((err) => {

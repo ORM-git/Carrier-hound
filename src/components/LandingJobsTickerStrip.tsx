@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 
 export interface TickerJobItem {
@@ -16,14 +16,30 @@ export interface LandingJobsTickerStripProps {
 
 export function formatRelativeTime(dateString: string | number | Date): string {
   const date = new Date(dateString);
+  const timeMs = date.getTime();
+  if (isNaN(timeMs)) {
+    return "just now";
+  }
+
   const now = Date.now();
-  const diffSec = Math.max(0, Math.floor((now - date.getTime()) / 1000));
+  const diffMs = now - timeMs;
+
+  // Clamp future-dated times within 5 minutes in the future to "just now"
+  if (diffMs < 0) {
+    const futureSkewMs = -diffMs;
+    if (futureSkewMs <= 5 * 60 * 1000) {
+      return "just now";
+    }
+    return "just now";
+  }
+
+  const diffSec = Math.floor(diffMs / 1000);
   const diffMin = Math.floor(diffSec / 60);
   const diffHours = Math.floor(diffMin / 60);
   const diffDays = Math.floor(diffHours / 24);
 
   if (diffMin < 1) {
-    return "1 minute ago";
+    return "just now";
   }
   if (diffMin < 60) {
     return `${diffMin} minute${diffMin === 1 ? "" : "s"} ago`;
@@ -38,9 +54,10 @@ interface TickerCardProps {
   job: TickerJobItem;
   keyPrefix?: string;
   index: number;
+  isDuplicate?: boolean;
 }
 
-function TickerCard({ job, keyPrefix = "", index }: TickerCardProps) {
+function TickerCard({ job, keyPrefix = "", index, isDuplicate = false }: TickerCardProps) {
   const [imgError, setImgError] = useState(false);
   const letter = (job.company || "?").trim().charAt(0).toUpperCase() || "?";
   const relativeTime = formatRelativeTime(job.posted_at);
@@ -49,6 +66,7 @@ function TickerCard({ job, keyPrefix = "", index }: TickerCardProps) {
     <Link
       href="/early-access"
       aria-label={`${job.title} at ${job.company}`}
+      tabIndex={isDuplicate ? -1 : undefined}
       className="ticker-card flex items-center shrink-0 h-9 md:h-12 gap-4 md:gap-3 mr-12 md:mr-16 group cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-lg select-none"
     >
       {/* Logo square or neutral letter tile */}
@@ -90,6 +108,7 @@ function TickerCard({ job, keyPrefix = "", index }: TickerCardProps) {
 export default function LandingJobsTickerStrip({ initialJobs }: LandingJobsTickerStripProps) {
   const [jobs, setJobs] = useState<TickerJobItem[] | null>(initialJobs || null);
   const [loading, setLoading] = useState(!initialJobs);
+  const trackRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (initialJobs && initialJobs.length > 0) {
@@ -133,6 +152,24 @@ export default function LandingJobsTickerStrip({ initialJobs }: LandingJobsTicke
     };
   }, [initialJobs]);
 
+  // Dynamically tune duration to ensure real scroll speed is exactly ~50px/s: duration = (scrollWidth / 2) / 50
+  useEffect(() => {
+    if (!jobs || jobs.length < 5 || !trackRef.current) return;
+
+    const tuneDuration = () => {
+      if (!trackRef.current) return;
+      const scrollHalf = trackRef.current.scrollWidth / 2;
+      if (scrollHalf > 0) {
+        const calculatedSeconds = scrollHalf / 50;
+        trackRef.current.style.animationDuration = `${calculatedSeconds.toFixed(2)}s`;
+      }
+    };
+
+    tuneDuration();
+    window.addEventListener("resize", tuneDuration);
+    return () => window.removeEventListener("resize", tuneDuration);
+  }, [jobs]);
+
   // If fewer than 5 real jobs, loading without initial data, or fetch failed: hide the whole strip
   if (!jobs || jobs.length < 5) {
     return null;
@@ -158,12 +195,12 @@ export default function LandingJobsTickerStrip({ initialJobs }: LandingJobsTicke
           align-items: center;
           width: max-content;
           will-change: transform;
-          animation: tickerMarquee 150s linear infinite;
+          animation: tickerMarquee 155s linear infinite;
         }
 
         @media (max-width: 767px) {
           .ticker-track {
-            animation: tickerMarquee 100s linear infinite;
+            animation: tickerMarquee 225s linear infinite;
           }
         }
 
@@ -177,10 +214,11 @@ export default function LandingJobsTickerStrip({ initialJobs }: LandingJobsTicke
 
       {/* Track: flex row continuously translated from 0 to -50% */}
       <div
+        ref={trackRef}
         className="ticker-track flex items-center shrink-0 w-max"
         data-testid="ticker-track"
       >
-        {/* Set 1: Visible Desktop & Mobile */}
+        {/* Set 1: Visible Desktop & Mobile (Primary, Accessible, Focusable) */}
         <div className="flex items-center shrink-0">
           {jobs.map((job, idx) => (
             <TickerCard
@@ -188,42 +226,46 @@ export default function LandingJobsTickerStrip({ initialJobs }: LandingJobsTicke
               job={job}
               keyPrefix="set1"
               index={idx}
+              isDuplicate={false}
             />
           ))}
         </div>
 
-        {/* Set 2: Visible Desktop & Mobile (Seamless loop at -50% translation) */}
-        <div className="flex items-center shrink-0">
+        {/* Set 2: Duplicate Set (aria-hidden="true", links tabIndex={-1}) */}
+        <div className="flex items-center shrink-0" aria-hidden="true">
           {jobs.map((job, idx) => (
             <TickerCard
               key={`set2-${idx}`}
               job={job}
               keyPrefix="set2"
               index={idx}
+              isDuplicate={true}
             />
           ))}
         </div>
 
-        {/* Set 3: Mobile only (renders 4x on mobile for seamless loop) */}
-        <div className="flex md:hidden items-center shrink-0">
+        {/* Set 3: Duplicate Set (Mobile only, aria-hidden="true", links tabIndex={-1}) */}
+        <div className="flex md:hidden items-center shrink-0" aria-hidden="true">
           {jobs.map((job, idx) => (
             <TickerCard
               key={`set3-${idx}`}
               job={job}
               keyPrefix="set3"
               index={idx}
+              isDuplicate={true}
             />
           ))}
         </div>
 
-        {/* Set 4: Mobile only (renders 4x on mobile for seamless loop) */}
-        <div className="flex md:hidden items-center shrink-0">
+        {/* Set 4: Duplicate Set (Mobile only, aria-hidden="true", links tabIndex={-1}) */}
+        <div className="flex md:hidden items-center shrink-0" aria-hidden="true">
           {jobs.map((job, idx) => (
             <TickerCard
               key={`set4-${idx}`}
               job={job}
               keyPrefix="set4"
               index={idx}
+              isDuplicate={true}
             />
           ))}
         </div>
