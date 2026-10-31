@@ -55,6 +55,79 @@ process.env.NODE_ENV = "test";
 const isNegativeControlLock = process.argv.includes("--negative-control");
 const isNegativeControlCap = process.argv.includes("--negative-control-cap");
 const isNegativeControlDigest = process.argv.includes("--negative-control-digest");
+const isNegativeControlApproval = process.argv.includes("--negative-control-approval");
+const isNegativeControlSelfApprove = process.argv.includes("--negative-control-self-approve");
+
+function collectNonTestSrcFiles(dirPath: string): Array<{ filePath: string; content: string }> {
+  const results: Array<{ filePath: string; content: string }> = [];
+  for (const entry of fs.readdirSync(dirPath, { withFileTypes: true })) {
+    const fullPath = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name === "__tests__" || entry.name === "node_modules" || entry.name.startsWith(".")) {
+        continue;
+      }
+      results.push(...collectNonTestSrcFiles(fullPath));
+    } else if (entry.isFile()) {
+      if (!/\.(ts|tsx|js|jsx|mjs|cjs|sql)$/i.test(entry.name)) continue;
+      if (/\.(test|spec)\.[jt]sx?$/i.test(entry.name)) continue;
+      results.push({
+        filePath: path.relative(process.cwd(), fullPath).replace(/\\/g, "/"),
+        content: fs.readFileSync(fullPath, "utf-8"),
+      });
+    }
+  }
+  return results;
+}
+
+function stripComments(source: string): string {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/\/\/.*$/gm, " ");
+}
+
+function verifyNoSelfApproveInSrc(
+  injectedFiles: Array<{ filePath: string; content: string }> = []
+): void {
+  const srcDir = path.resolve(process.cwd(), "src");
+  const files = [...collectNonTestSrcFiles(srcDir), ...injectedFiles];
+  assert.ok(files.length > 0, "Expected non-test files in src/ to scan");
+
+  let selectUseCount = 0;
+
+  for (const { filePath, content } of files) {
+    const codeOnly = stripComments(content);
+    if (!codeOnly.includes("early_access_approved")) {
+      continue;
+    }
+
+    const mutationPattern =
+      /early_access_approved[\s\S]{0,200}?\b(insert|update|upsert|delete|rpc)\b|\b(insert|update|upsert|delete|rpc)\b[\s\S]{0,200}?early_access_approved/i;
+    assert.ok(
+      !mutationPattern.test(codeOnly),
+      `Prohibited mutation (insert/update/upsert/delete) with early_access_approved detected in ${filePath}`
+    );
+
+    const allOccurrences = [...codeOnly.matchAll(/early_access_approved/g)];
+    const validSelectCalls = [
+      ...codeOnly.matchAll(
+        /\.from\(\s*["'`]early_access_approved["'`]\s*\)\s*\.select\s*\(/g
+      ),
+    ];
+
+    assert.strictEqual(
+      allOccurrences.length,
+      validSelectCalls.length,
+      `Non-select use of early_access_approved detected in ${filePath} (found ${allOccurrences.length} occurrence(s), but ${validSelectCalls.length} valid .from("early_access_approved").select(...) call(s))`
+    );
+
+    selectUseCount += validSelectCalls.length;
+  }
+
+  assert.ok(
+    selectUseCount > 0,
+    "Expected at least one valid .from('early_access_approved').select(...) in src/"
+  );
+}
 
 interface StoredEmailRow {
   email: string;
@@ -67,10 +140,17 @@ interface GmailSendLogRow {
   sent_at: string;
 }
 
+interface MockApprovedRow {
+  email: string;
+  approved: boolean;
+}
+
 const mockDbRows: StoredEmailRow[] = [];
 const mockSendLogRows: GmailSendLogRow[] = [];
+const mockApprovedTable: MockApprovedRow[] = [];
 let simulateDbFailure: string | null = null;
 let simulateSendLogReadFailure = false;
+let simulateApprovedDbFailure: string | null = null;
 let signOutCallCount = 0;
 
 function createMockSupabase() {
@@ -94,6 +174,54 @@ function createMockSupabase() {
               user: {
                 id: "nonallowed-user-id-2",
                 email: "intruder@outsider.example",
+              },
+            },
+            error: null,
+          };
+        }
+        if (token === "valid-approved-google-token") {
+          return {
+            data: {
+              user: {
+                id: "approved-user-id-1",
+                email: "Approved.Google@Example.com",
+                app_metadata: { provider: "google" },
+              },
+            },
+            error: null,
+          };
+        }
+        if (token === "valid-not-approved-google-token") {
+          return {
+            data: {
+              user: {
+                id: "not-approved-user-id-2",
+                email: "NotApproved.Google@Example.com",
+                app_metadata: { provider: "google" },
+              },
+            },
+            error: null,
+          };
+        }
+        if (token === "valid-magic-link-token") {
+          return {
+            data: {
+              user: {
+                id: "magic-user-id-3",
+                email: "Approved.Google@Example.com",
+                app_metadata: { provider: "email" },
+              },
+            },
+            error: null,
+          };
+        }
+        if (token === "valid-db-error-token") {
+          return {
+            data: {
+              user: {
+                id: "db-error-user-id-4",
+                email: "db.error.user@example.com",
+                app_metadata: { provider: "google" },
               },
             },
             error: null,
@@ -188,6 +316,25 @@ function createMockSupabase() {
           },
         };
         return logBuilder;
+      }
+
+      if (table === "early_access_approved") {
+        let filterEmail: string | null = null;
+        const approvedBuilder: any = {
+          select: () => approvedBuilder,
+          eq: (col: string, val: string) => {
+            if (col === "email") filterEmail = String(val).trim().toLowerCase();
+            return approvedBuilder;
+          },
+          maybeSingle: async () => {
+            if (simulateApprovedDbFailure) {
+              return { data: null, error: { code: "08006", message: "DB query error" } };
+            }
+            const found = mockApprovedTable.find((r) => r.email === filterEmail) || null;
+            return { data: found ? { approved: found.approved } : null, error: null };
+          },
+        };
+        return approvedBuilder;
       }
 
       assert.strictEqual(table, "early_access_emails", `Unexpected table access: ${table}`);
@@ -343,6 +490,37 @@ async function main() {
       false,
       "Negative control (digest) expected failure: digest was sent even when there were 0 new rows"
     );
+    process.exit(1);
+  }
+
+  if (isNegativeControlApproval) {
+    mockApprovedTable.length = 0;
+    mockApprovedTable.push({
+      email: "unapproved@example.com",
+      approved: false,
+    });
+    const unapprovedRes = await middleware(
+      new NextRequest("http://localhost:3000/dashboard", {
+        headers: { authorization: "Bearer valid-not-approved-google-token" },
+      })
+    );
+    // Deliberately assert that unapproved user is allowed to access /dashboard (must fail)
+    assert.strictEqual(
+      unapprovedRes.status,
+      200,
+      `Negative control (approval gate) expected failure: unapproved user was not blocked (got status ${unapprovedRes.status})`
+    );
+    process.exit(1);
+  }
+
+  if (isNegativeControlSelfApprove) {
+    // Inject a prohibited mutation line on early_access_approved; static scanner must fail
+    verifyNoSelfApproveInSrc([
+      {
+        filePath: "src/app/api/early-access/route.ts",
+        content: 'await supabase.from("early_access_approved").upsert({ email, approved: true });',
+      },
+    ]);
     process.exit(1);
   }
 
@@ -503,6 +681,176 @@ async function main() {
   delete process.env.EARLY_ACCESS_ALLOWED_EMAILS;
 
   console.log("  [PASS] Middleware allowlist, legal pages, /api/health, and /api/track lock verified");
+
+  // ---------------------------------------------------------------------------
+  // TEST 2c: Manual Early-Access Approval Gate Verification (Database, RLS & Middleware)
+  // ---------------------------------------------------------------------------
+  console.log("\n[TEST 2c] Verifying Manual Early-Access Approval Gate & RLS Security...");
+  mockApprovedTable.length = 0;
+  mockApprovedTable.push({
+    email: "approved.google@example.com",
+    approved: true,
+  });
+  mockApprovedTable.push({
+    email: "notapproved.google@example.com",
+    approved: false,
+  });
+
+  // 1. Not approved blocked:
+  // Logged-in not approved accessing /dashboard -> 307 to /early-access
+  const notApprovedDashRes = await middleware(
+    new NextRequest("http://localhost:3000/dashboard", {
+      headers: { authorization: "Bearer valid-not-approved-google-token" },
+    })
+  );
+  assert.strictEqual(notApprovedDashRes.status, 307, "Not-approved user on /dashboard must redirect");
+  assert.strictEqual(
+    new URL(notApprovedDashRes.headers.get("location")!).pathname,
+    "/early-access",
+    "Not-approved user on /dashboard must redirect to /early-access"
+  );
+
+  // Logged-in not approved calling API -> 403 Forbidden
+  const notApprovedApiRes = await middleware(
+    new NextRequest("http://localhost:3000/api/jobs/search", {
+      headers: { authorization: "Bearer valid-not-approved-google-token" },
+    })
+  );
+  assert.strictEqual(notApprovedApiRes.status, 403, "Not-approved user API request must return 403");
+
+  // Logged-in not approved visiting / -> 307 to /early-access
+  const notApprovedRootRes = await middleware(
+    new NextRequest("http://localhost:3000/", {
+      headers: { authorization: "Bearer valid-not-approved-google-token" },
+    })
+  );
+  assert.strictEqual(notApprovedRootRes.status, 307, "Not-approved user on / must redirect to /early-access");
+
+  // Logged-in not approved visiting /early-access -> 200 (allowed to view early-access page)
+  const notApprovedEarlyRes = await middleware(
+    new NextRequest("http://localhost:3000/early-access", {
+      headers: { authorization: "Bearer valid-not-approved-google-token" },
+    })
+  );
+  assert.strictEqual(notApprovedEarlyRes.status, 200, "Not-approved user on /early-access must view page");
+  console.log("  [PASS] Not approved blocked: /dashboard & / redirect to /early-access, API returns 403, /early-access returns 200");
+
+  // 2. Approved allowed:
+  // Logged-in approved accessing /dashboard -> 200 (allowed!)
+  const approvedDashRes = await middleware(
+    new NextRequest("http://localhost:3000/dashboard", {
+      headers: { authorization: "Bearer valid-approved-google-token" },
+    })
+  );
+  assert.strictEqual(approvedDashRes.status, 200, "Approved user on /dashboard must be allowed (200)");
+
+  // Logged-in approved accessing /api/jobs/search -> 200 (allowed!)
+  const approvedApiRes = await middleware(
+    new NextRequest("http://localhost:3000/api/jobs/search", {
+      headers: { authorization: "Bearer valid-approved-google-token" },
+    })
+  );
+  assert.strictEqual(approvedApiRes.status, 200, "Approved user on /api/jobs/search must be allowed (200)");
+
+  // Logged-in approved visiting /early-access -> skips early-access page and redirects (307) to /dashboard!
+  const approvedEarlyRes = await middleware(
+    new NextRequest("http://localhost:3000/early-access", {
+      headers: { authorization: "Bearer valid-approved-google-token" },
+    })
+  );
+  assert.strictEqual(approvedEarlyRes.status, 307, "Approved user on /early-access must redirect to /dashboard");
+  assert.strictEqual(
+    new URL(approvedEarlyRes.headers.get("location")!).pathname,
+    "/dashboard",
+    "Approved user on /early-access must redirect to /dashboard"
+  );
+
+  // Logged-in approved visiting / -> redirects (307) straight to /dashboard!
+  const approvedRootRes = await middleware(
+    new NextRequest("http://localhost:3000/", {
+      headers: { authorization: "Bearer valid-approved-google-token" },
+    })
+  );
+  assert.strictEqual(approvedRootRes.status, 307, "Approved user on / must redirect to /dashboard");
+  assert.strictEqual(
+    new URL(approvedRootRes.headers.get("location")!).pathname,
+    "/dashboard",
+    "Approved user on / must redirect to /dashboard"
+  );
+  console.log("  [PASS] Approved allowed: /dashboard & API allowed (200), /early-access & / redirect straight to /dashboard");
+
+  // 3. DB error blocked (fail-closed):
+  simulateApprovedDbFailure = "connection_error";
+  const dbErrorDashRes = await middleware(
+    new NextRequest("http://localhost:3000/dashboard", {
+      headers: { authorization: "Bearer valid-db-error-token" },
+    })
+  );
+  assert.strictEqual(dbErrorDashRes.status, 307, "DB error must fail closed and redirect to /early-access");
+  assert.strictEqual(
+    new URL(dbErrorDashRes.headers.get("location")!).pathname,
+    "/early-access",
+    "DB error redirect target must be /early-access"
+  );
+  const dbErrorApiRes = await middleware(
+    new NextRequest("http://localhost:3000/api/jobs/search", {
+      headers: { authorization: "Bearer valid-db-error-token" },
+    })
+  );
+  assert.strictEqual(dbErrorApiRes.status, 403, "DB error on API must return 403");
+  simulateApprovedDbFailure = null;
+  console.log("  [PASS] DB error blocked: Fails closed to /early-access and 403 on database lookup failure");
+
+  // 4. User cannot self-approve:
+  // Static scan of src/ (non-test files): fails if early_access_approved appears with insert/update/upsert/delete or any non-select use
+  verifyNoSelfApproveInSrc();
+
+  // Negative control: injecting insert/update/upsert/delete or non-select use on early_access_approved must make the static check fail
+  for (const injectedLine of [
+    'await supabase.from("early_access_approved").insert({ email: "attacker@example.com", approved: true });',
+    'await supabase.from("early_access_approved").update({ approved: true }).eq("email", "attacker@example.com");',
+    'await supabase.from("early_access_approved").upsert({ email: "attacker@example.com", approved: true });',
+    'await supabase.from("early_access_approved").delete().eq("email", "attacker@example.com");',
+    'const tableRef = supabase.from("early_access_approved");',
+  ]) {
+    assert.throws(
+      () =>
+        verifyNoSelfApproveInSrc([
+          { filePath: "src/app/api/early-access/route.ts", content: injectedLine },
+        ]),
+      /early_access_approved/,
+      `Static self-approve check must fail when injected with: ${injectedLine}`
+    );
+  }
+
+  // Migration file inspection: RLS enabled, revoked from anon and authenticated, deny policy present
+  const migrationPath = path.resolve(process.cwd(), "supabase/migrations/20261030_early_access_approved.sql");
+  assert.ok(fs.existsSync(migrationPath), "Migration file 20261030_early_access_approved.sql must exist");
+  const migrationSql = fs.readFileSync(migrationPath, "utf-8");
+  assert.ok(migrationSql.includes("ENABLE ROW LEVEL SECURITY"), "Migration must enable RLS");
+  assert.ok(migrationSql.includes("REVOKE ALL ON public.early_access_approved FROM PUBLIC, anon, authenticated"), "Migration must revoke untrusted permissions");
+  assert.ok(migrationSql.includes("GRANT SELECT, INSERT, UPDATE, DELETE ON public.early_access_approved TO service_role"), "Migration must grant only service_role");
+  assert.ok(migrationSql.includes("CREATE POLICY"), "Migration must declare RLS deny policy");
+  console.log("  [PASS] User cannot self-approve: Static scan of src/ confirms select-only use (negative controls fail as expected) and migration locks RLS");
+
+  // 5. Google login only, no magic links:
+  const magicLinkRes = await middleware(
+    new NextRequest("http://localhost:3000/dashboard", {
+      headers: { authorization: "Bearer valid-magic-link-token" },
+    })
+  );
+  assert.strictEqual(magicLinkRes.status, 307, "Magic link login must be blocked (redirected)");
+  assert.strictEqual(new URL(magicLinkRes.headers.get("location")!).pathname, "/early-access");
+  console.log("  [PASS] Google login only: Magic link auth (provider=email) blocked even if email is marked approved");
+
+  // 6. Case-insensitive email matching:
+  const caseInsensitiveRes = await middleware(
+    new NextRequest("http://localhost:3000/dashboard", {
+      headers: { authorization: "Bearer valid-approved-google-token" },
+    })
+  );
+  assert.strictEqual(caseInsensitiveRes.status, 200, "Case-insensitive email match must be allowed");
+  console.log("  [PASS] Case-insensitive matching: DB lowercase matches mixed-case token");
 
   // ---------------------------------------------------------------------------
   // TEST 3: CRLF Injection Rejection (Never Reaches Message Builder)
@@ -1034,7 +1382,7 @@ async function main() {
   console.log("\n[TEST 7] Verifying real negative controls (lock, cap fail-closed, and digest) exit non-zero...");
   const scriptPath = path.resolve(__dirname, "test-early-access.ts");
 
-  for (const flag of ["--negative-control", "--negative-control-cap", "--negative-control-digest"]) {
+  for (const flag of ["--negative-control", "--negative-control-cap", "--negative-control-digest", "--negative-control-approval", "--negative-control-self-approve"]) {
     const child = spawnSync("npx", ["tsx", scriptPath, flag], {
       shell: true,
       stdio: "pipe",
