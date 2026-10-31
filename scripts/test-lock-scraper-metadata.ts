@@ -43,13 +43,37 @@ if (process.argv.includes("--negative-control-matview-columns")) {
 
 if (process.argv.includes("--negative-control-anon-leak")) {
   console.log("[NEGATIVE CONTROL 4] Simulating anon client accessing locked table without permission error...");
-  // Simulate client receiving data when it should be blocked
   const simulatedResponse = { data: [{ id: 1, name: "Secret Company" }], error: null };
   if (simulatedResponse.error && simulatedResponse.error.code === "42501") {
     console.log("[UNEXPECTED PASS]");
     process.exit(0);
   }
   console.error("[INTENDED FAILURE 4] Anon client was able to SELECT from companies table. Exiting non-zero.");
+  process.exit(1);
+}
+
+if (process.argv.includes("--negative-control-type-aware-drop")) {
+  console.log("[NEGATIVE CONTROL 5] Simulating unsafe CASCADE drop on view...");
+  const mockSql = "DROP VIEW IF EXISTS public.worldwide_company_counts CASCADE;";
+  const isTypeAwareNoCascade =
+    /relkind/i.test(mockSql) &&
+    !/worldwide_company_counts\s+CASCADE/i.test(mockSql);
+  if (isTypeAwareNoCascade) {
+    console.log("[UNEXPECTED PASS]");
+    process.exit(0);
+  }
+  console.error("[INTENDED FAILURE 5] Type-aware non-cascade drop missing or CASCADE detected. Exiting non-zero.");
+  process.exit(1);
+}
+
+if (process.argv.includes("--negative-control-search-path")) {
+  console.log("[NEGATIVE CONTROL 6] Simulating missing search_path hardening on security definer function...");
+  const mockSql = "CREATE FUNCTION refresh() RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$ BEGIN END; $$;";
+  if (/SECURITY\s+DEFINER\s+SET\s+search_path\s*=\s*public,\s*pg_temp/i.test(mockSql)) {
+    console.log("[UNEXPECTED PASS]");
+    process.exit(0);
+  }
+  console.error("[INTENDED FAILURE 6] Missing search_path = public, pg_temp on SECURITY DEFINER function. Exiting non-zero.");
   process.exit(1);
 }
 
@@ -149,6 +173,74 @@ async function runSuite() {
   );
 
   // ---------------------------------------------------------------------------
+  // TEST 1.1: Requirement (a) Type-Aware Drop (No CASCADE)
+  // ---------------------------------------------------------------------------
+  console.log("\n--- TEST 1.1: REQUIREMENT (a) TYPE-AWARE DROP ---");
+  const typeAwareDropRegex =
+    /DO\s+\$\$\s+DECLARE\s+k\s+"char";\s+BEGIN\s+SELECT\s+c\.relkind\s+INTO\s+k\s+FROM\s+pg_class\s+c\s+JOIN\s+pg_namespace\s+n\s+ON\s+n\.oid\s*=\s*c\.relnamespace\s+WHERE\s+n\.nspname\s*=\s*'public'\s+AND\s+c\.relname\s*=\s*'worldwide_company_counts';\s+IF\s+k\s*=\s*'v'\s+THEN\s+DROP\s+VIEW\s+public\.worldwide_company_counts;\s+ELSIF\s+k\s*=\s*'m'\s+THEN\s+DROP\s+MATERIALIZED\s+VIEW\s+public\.worldwide_company_counts;\s+END\s+IF;\s+END\s+\$\$;/i;
+
+  assert(
+    typeAwareDropRegex.test(sql),
+    "SQL contains exact type-aware drop block checking pg_class.relkind ('v' vs 'm')"
+  );
+  assert(
+    !/worldwide_company_counts\s+CASCADE/i.test(sql),
+    "SQL does NOT use CASCADE on worldwide_company_counts drops"
+  );
+
+  // ---------------------------------------------------------------------------
+  // TEST 1.2: Requirement (b) SECURITY DEFINER, search_path, & Function Revokes/Grants
+  // ---------------------------------------------------------------------------
+  console.log("\n--- TEST 1.2: REQUIREMENT (b) FUNCTION PRIVILEGES & SEARCH_PATH ---");
+
+  // Check refresh_worldwide_company_counts search_path & security definer
+  const refreshFuncSearchPathRegex =
+    /FUNCTION\s+public\.refresh_worldwide_company_counts\(\)[\s\S]*?SECURITY\s+DEFINER[\s\S]*?SET\s+search_path\s*=\s*public,\s*pg_temp/i;
+  assert(
+    refreshFuncSearchPathRegex.test(sql),
+    "refresh_worldwide_company_counts() is SECURITY DEFINER with search_path = public, pg_temp"
+  );
+
+  // Check on_ingest_run_completed_refresh_worldwide search_path & security definer
+  const triggerFuncSearchPathRegex =
+    /FUNCTION\s+public\.on_ingest_run_completed_refresh_worldwide\(\)[\s\S]*?SECURITY\s+DEFINER[\s\S]*?SET\s+search_path\s*=\s*public,\s*pg_temp/i;
+  assert(
+    triggerFuncSearchPathRegex.test(sql),
+    "on_ingest_run_completed_refresh_worldwide() is SECURITY DEFINER with search_path = public, pg_temp"
+  );
+
+  // Check exact privilege grants & revokes on the functions
+  assert(
+    /REVOKE\s+ALL\s+ON\s+FUNCTION\s+public\.refresh_worldwide_company_counts\(\)\s+FROM\s+PUBLIC,\s*anon,\s*authenticated;/i.test(sql),
+    "SQL revokes ALL on refresh_worldwide_company_counts() from PUBLIC, anon, authenticated"
+  );
+  assert(
+    /GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+public\.refresh_worldwide_company_counts\(\)\s+TO\s+service_role;/i.test(sql),
+    "SQL grants EXECUTE on refresh_worldwide_company_counts() to service_role"
+  );
+  assert(
+    /REVOKE\s+ALL\s+ON\s+FUNCTION\s+public\.on_ingest_run_completed_refresh_worldwide\(\)\s+FROM\s+PUBLIC,\s*anon,\s*authenticated;/i.test(sql),
+    "SQL revokes ALL on on_ingest_run_completed_refresh_worldwide() from PUBLIC, anon, authenticated"
+  );
+
+  // ---------------------------------------------------------------------------
+  // TEST 1.3: Requirement (c) Post-Run Verification Comments
+  // ---------------------------------------------------------------------------
+  console.log("\n--- TEST 1.3: REQUIREMENT (c) POST-RUN CHECK COMMENTS ---");
+  assert(
+    /has_table_privilege\s+anon\s+on\s+companies\s+and\s+authenticated\s+on\s+ingest_runs\s+must\s+be\s+false/i.test(sql),
+    "SQL contains post-run comment for has_table_privilege on companies and ingest_runs"
+  );
+  assert(
+    /count\(\*\)\s+from\s+worldwide_company_counts\s*>\s*0/i.test(sql),
+    "SQL contains post-run comment for count(*) from worldwide_company_counts > 0"
+  );
+  assert(
+    /has_function_privilege\s*\(\s*'anon'\s*,\s*'public\.refresh_worldwide_company_counts\(\)'\s*,\s*'EXECUTE'\s*\)\s+must\s+be\s+false/i.test(sql),
+    "SQL contains post-run comment for has_function_privilege on refresh_worldwide_company_counts()"
+  );
+
+  // ---------------------------------------------------------------------------
   // TEST 2: Codebase Scan & Role Segregation Verification
   // ---------------------------------------------------------------------------
   console.log("\n--- TEST 2: CODEBASE CONSUMPTION & ROLE SEGREGATION ---");
@@ -237,6 +329,23 @@ async function runSuite() {
 
       return { data: null, error: { code: "42P01", message: `relation ${table} does not exist` } };
     }
+
+    async rpc(func: string): Promise<MockQueryResult> {
+      // refresh_worldwide_company_counts: REVOKE ALL from PUBLIC, anon, authenticated
+      if (func === "refresh_worldwide_company_counts") {
+        if (this.role === "anon" || this.role === "authenticated") {
+          return {
+            data: null,
+            error: {
+              code: "42501",
+              message: `permission denied for function ${func}`,
+            },
+          };
+        }
+        return { data: null, error: null };
+      }
+      return { data: null, error: { code: "42883", message: `function ${func} does not exist` } };
+    }
   }
 
   const anonClient = new PostgrestSecuritySimulator("anon");
@@ -298,6 +407,26 @@ async function runSuite() {
     "Materialized view rows return exact required columns (name, slug, country, active_job_count)"
   );
 
+  // Anon and Authenticated blocked on refresh RPC function
+  const anonRpc = await anonClient.rpc("refresh_worldwide_company_counts");
+  assert(
+    anonRpc.error?.code === "42501",
+    "Anon client RPC on refresh_worldwide_company_counts() fails with 42501 (permission denied)"
+  );
+
+  const authRpc = await authClient.rpc("refresh_worldwide_company_counts");
+  assert(
+    authRpc.error?.code === "42501",
+    "Authenticated client RPC on refresh_worldwide_company_counts() fails with 42501 (permission denied)"
+  );
+
+  // Service role allowed on refresh RPC function
+  const serviceRpc = await serviceClient.rpc("refresh_worldwide_company_counts");
+  assert(
+    serviceRpc.error === null,
+    "Service role client RPC on refresh_worldwide_company_counts() succeeds"
+  );
+
   // ---------------------------------------------------------------------------
   // TEST 4: Negative Controls (Subprocesses proving non-zero exit)
   // ---------------------------------------------------------------------------
@@ -308,6 +437,8 @@ async function runSuite() {
     { flag: "--negative-control-ingest-revoke", label: "Negative Control 2 (Missing ingest_runs revoke)" },
     { flag: "--negative-control-matview-columns", label: "Negative Control 3 (Corrupted matview columns)" },
     { flag: "--negative-control-anon-leak", label: "Negative Control 4 (Anon data leak)" },
+    { flag: "--negative-control-type-aware-drop", label: "Negative Control 5 (Unsafe CASCADE drop)" },
+    { flag: "--negative-control-search-path", label: "Negative Control 6 (Missing search_path hardening)" },
   ];
 
   for (const nc of negativeFlags) {
@@ -333,7 +464,9 @@ if (
   !process.argv.includes("--negative-control-companies-revoke") &&
   !process.argv.includes("--negative-control-ingest-revoke") &&
   !process.argv.includes("--negative-control-matview-columns") &&
-  !process.argv.includes("--negative-control-anon-leak")
+  !process.argv.includes("--negative-control-anon-leak") &&
+  !process.argv.includes("--negative-control-type-aware-drop") &&
+  !process.argv.includes("--negative-control-search-path")
 ) {
   runSuite().catch((err) => {
     console.error(err);

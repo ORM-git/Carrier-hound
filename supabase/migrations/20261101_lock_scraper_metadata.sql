@@ -77,9 +77,8 @@ CREATE POLICY "ingest_runs_service_role_access"
 -- 3. CONVERT public.worldwide_company_counts TO MATERIALIZED VIEW
 -- ------------------------------------------------------------------------------
 
--- Drop existing dynamic view or previous materialized view
-DROP VIEW IF EXISTS public.worldwide_company_counts CASCADE;
-DROP MATERIALIZED VIEW IF EXISTS public.worldwide_company_counts CASCADE;
+-- Type-aware drop (no CASCADE) handling prior view or materialized view
+DO $$ DECLARE k "char"; BEGIN SELECT c.relkind INTO k FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname='worldwide_company_counts'; IF k='v' THEN DROP VIEW public.worldwide_company_counts; ELSIF k='m' THEN DROP MATERIALIZED VIEW public.worldwide_company_counts; END IF; END $$;
 
 -- Create Materialized View preserving identical output columns:
 -- (name, slug, country, active_job_count)
@@ -134,7 +133,11 @@ GRANT SELECT ON public.worldwide_company_counts TO anon, authenticated, service_
 
 -- Callable helper function to refresh the materialized view
 CREATE OR REPLACE FUNCTION public.refresh_worldwide_company_counts()
-RETURNS void AS $$
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
 BEGIN
   -- Attempt concurrent refresh first so existing readers are never blocked
   REFRESH MATERIALIZED VIEW CONCURRENTLY public.worldwide_company_counts;
@@ -148,16 +151,25 @@ EXCEPTION
         RAISE WARNING 'worldwide_company_counts refresh failed: %', SQLERRM;
     END;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
 -- Trigger function executed at the conclusion of an ingestion run
 CREATE OR REPLACE FUNCTION public.on_ingest_run_completed_refresh_worldwide()
-RETURNS trigger AS $$
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
 BEGIN
   PERFORM public.refresh_worldwide_company_counts();
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
+
+-- Secure execution privileges on the refresh functions
+REVOKE ALL ON FUNCTION public.refresh_worldwide_company_counts() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.refresh_worldwide_company_counts() TO service_role;
+REVOKE ALL ON FUNCTION public.on_ingest_run_completed_refresh_worldwide() FROM PUBLIC, anon, authenticated;
 
 -- Trigger firing whenever an ingest run finishes (finished_at set and status logged)
 DROP TRIGGER IF EXISTS trigger_refresh_worldwide_company_counts ON public.ingest_runs;
@@ -166,3 +178,16 @@ CREATE TRIGGER trigger_refresh_worldwide_company_counts
   FOR EACH ROW
   WHEN (NEW.finished_at IS NOT NULL)
   EXECUTE FUNCTION public.on_ingest_run_completed_refresh_worldwide();
+
+-- ==============================================================================
+-- 5. READ-ONLY POST-RUN VERIFICATION CHECKS
+-- ==============================================================================
+-- has_table_privilege anon on companies and authenticated on ingest_runs must be false;
+-- count(*) from worldwide_company_counts > 0;
+-- has_function_privilege('anon','public.refresh_worldwide_company_counts()','EXECUTE') must be false.
+--
+-- Verification queries (run in SQL Editor):
+-- SELECT has_table_privilege('anon', 'public.companies', 'SELECT') AS anon_companies_select; -- Must be: false
+-- SELECT has_table_privilege('authenticated', 'public.ingest_runs', 'SELECT') AS auth_ingest_runs_select; -- Must be: false
+-- SELECT count(*) > 0 AS count_gt_zero FROM public.worldwide_company_counts; -- Must be: true
+-- SELECT has_function_privilege('anon', 'public.refresh_worldwide_company_counts()', 'EXECUTE') AS anon_refresh_exec; -- Must be: false
