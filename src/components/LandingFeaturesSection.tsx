@@ -4,7 +4,7 @@ import Link from "next/link";
 interface FeatureRow {
   id: string;
   title: string;
-  description: string;
+  description?: string;
   image: string;
   buttonText?: string;
   href?: string;
@@ -18,7 +18,7 @@ const FEATURE_ROWS: FeatureRow[] = [
     description: "Search roles posted directly on employer career sites.",
     image: "/features/job-search.webp",
     buttonText: "Explore jobs",
-    href: "/jobs",
+    href: "/early-access",
   },
   {
     id: "tailored-resume",
@@ -26,29 +26,27 @@ const FEATURE_ROWS: FeatureRow[] = [
     description: "Get a resume and cover letter draft matched to the job.",
     image: "/features/tailored-resume.webp",
     buttonText: "Try AI resume tools",
-    href: "/resume",
+    href: "/early-access",
   },
   {
     id: "autofill-extension",
     title: "Autofill applications",
-    description: "Coming soon.",
     image: "/features/autofill-extension.webp",
     badge: "Coming soon",
   },
   {
     id: "interview-prep",
     title: "AI interview prep",
-    description: "Coming soon.",
     image: "/features/interview-prep.webp",
     badge: "Coming soon",
   },
   {
     id: "personalized-matches",
-    title: "Personalized AI job matches",
+    title: "Personalized job matches",
     description: "See how well your skills fit each role.",
     image: "/features/personalized-matches.webp",
     buttonText: "Find my matches",
-    href: "/jobs",
+    href: "/early-access",
   },
 ];
 
@@ -72,9 +70,11 @@ export default function LandingFeaturesSection() {
                 <h3 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#09090B]">
                   {row.title}
                 </h3>
-                <p className="text-base sm:text-lg text-gray-600 leading-relaxed">
-                  {row.description}
-                </p>
+                {row.description && (
+                  <p className="text-base sm:text-lg text-gray-600 leading-relaxed">
+                    {row.description}
+                  </p>
+                )}
                 {row.badge ? (
                   <div className="pt-2">
                     <span className="inline-flex items-center px-3.5 py-1.5 rounded-full text-xs sm:text-sm font-medium bg-gray-100 text-gray-600 border border-gray-200">
@@ -94,7 +94,7 @@ export default function LandingFeaturesSection() {
               </div>
 
               {/* Image Column (Bottom on mobile, Right on desktop) */}
-              <div className="lg:col-span-7">
+              <div className="lg:col-span-7 space-y-2">
                 <div className="bg-[#F8FAFC] rounded-2xl border border-gray-200/80 shadow-sm p-3 sm:p-5 flex items-center justify-center overflow-hidden">
                   <Image
                     src={row.image}
@@ -105,15 +105,13 @@ export default function LandingFeaturesSection() {
                     className="w-full h-auto rounded-xl object-contain"
                   />
                 </div>
+                <p className="text-center text-xs text-gray-400">
+                  Illustration - sample data
+                </p>
               </div>
             </div>
           ))}
         </div>
-
-        {/* Small caption under the section */}
-        <p className="text-center text-xs text-gray-400 mt-12 sm:mt-16">
-          Illustration - sample data
-        </p>
       </div>
     </section>
   );
