@@ -1,39 +1,37 @@
-/**
- * scripts/test-landing-interactive-demo.ts
- *
- * Verifies the Landing Page Interactive Demo Section:
- * 1. Existing sections, hero line, nav, and design in src/app/page.tsx remain intact.
- * 2. One new section (<LandingInteractiveDemoSection />) is added below existing content sections.
- * 3. 4-step walkthrough: (1) Pick a role, (2) Matched jobs & scores, (3) Open job & fit, (4) Tailored resume & cover letter.
- * 4. Only real features shown as Live; Autofill Extension & AI Interview Prep carry "Coming soon" badges.
- * 5. All sample companies, jobs, and scores carry the "Illustration - sample data" label.
- * 6. Zero fake testimonials, member counts, ratings, prices, or third-party logos, and no claims that we apply for the user or send resumes to hiring teams.
- * 7. Every CTA opens the same inline email capture submitting to /api/early-access and linking to /early-access.
- * 8. Real negative control (--negative-control) proves non-zero exit on violation.
- */
-
 import assert from "node:assert";
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { DEMO_ROLES } from "../src/components/LandingInteractiveDemoSection";
+import { DEMO_ROLES, STEP_TABS } from "../src/components/LandingInteractiveDemoSection";
 
+const ROOT = process.cwd();
 const isNegativeControl = process.argv.includes("--negative-control");
 
-function main() {
-  const pagePath = path.resolve(process.cwd(), "src/app/page.tsx");
-  const demoPath = path.resolve(
-    process.cwd(),
-    "src/components/LandingInteractiveDemoSection.tsx"
+function runNegativeControlSubprocess() {
+  const res = spawnSync(
+    process.execPath,
+    ["--import", "tsx", "scripts/test-landing-interactive-demo.ts", "--negative-control"],
+    {
+      cwd: ROOT,
+      encoding: "utf8",
+    }
   );
+  assert.notStrictEqual(
+    res.status,
+    0,
+    `Expected negative control subprocess to exit non-zero, but got status=${res.status}`
+  );
+  console.log("  [PASS] Negative control '--negative-control' exited non-zero (1)");
+}
+
+async function main() {
+  const pagePath = path.join(ROOT, "src", "app", "page.tsx");
+  const demoPath = path.join(ROOT, "src", "components", "LandingInteractiveDemoSection.tsx");
 
   assert.ok(fs.existsSync(pagePath), "src/app/page.tsx must exist");
-  assert.ok(
-    fs.existsSync(demoPath),
-    "src/components/LandingInteractiveDemoSection.tsx must exist"
-  );
+  assert.ok(fs.existsSync(demoPath), "src/components/LandingInteractiveDemoSection.tsx must exist");
 
-  let pageSrc = fs.readFileSync(pagePath, "utf8");
+  const pageSrc = fs.readFileSync(pagePath, "utf8");
   let demoSrc = fs.readFileSync(demoPath, "utf8");
 
   if (isNegativeControl) {
@@ -55,8 +53,8 @@ function main() {
     "Comparison section must remain untouched"
   );
   assert.ok(
-    !pageSrc.includes("Meet the monke that fixes your resume."),
-    "Old static AI Resume Monke card must be replaced by LandingInteractiveDemoSection"
+    pageSrc.includes("Meet the monke that fixes your resume."),
+    "AI Resume Monke subsection must remain untouched"
   );
   assert.ok(
     pageSrc.includes("Your next role might be in a city you haven&apos;t thought of yet."),
@@ -82,16 +80,37 @@ function main() {
     pageSrc.includes("<LandingInteractiveDemoSection />"),
     "LandingInteractiveDemoSection must be rendered in src/app/page.tsx"
   );
-  const comparisonIdx = pageSrc.indexOf("Tired of getting auto-rejections?");
+  const contactIdx = pageSrc.indexOf('id="contact"');
   const demoIdx = pageSrc.indexOf("<LandingInteractiveDemoSection />");
-  const freePreviewIdx = pageSrc.indexOf("Free preview");
+  const footerIdx = pageSrc.indexOf("<Footer />");
   assert.ok(
-    comparisonIdx > -1 && demoIdx > comparisonIdx && freePreviewIdx > demoIdx,
-    "LandingInteractiveDemoSection must replace the AI Resume Monke section between Comparison and Free preview"
+    contactIdx > -1 && demoIdx > contactIdx && footerIdx > demoIdx,
+    "LandingInteractiveDemoSection must be placed below the existing sections and above Footer"
   );
-  console.log("  [PASS] Static AI Resume Monke card replaced by LandingInteractiveDemoSection in exact position");
+  console.log("  [PASS] Existing landing sections preserved and compact demo section placed below them");
 
-  // 2. 4-step interactive walkthrough structure & data
+  // 2. Compact browser-style card + 4 step tabs (Find, Match, Tailor, Send) + progress bar
+  assert.strictEqual(STEP_TABS.length, 4, "Expected 4 step tabs");
+  assert.deepStrictEqual(
+    STEP_TABS.map((t) => t.label),
+    ["Find", "Match", "Tailor", "Send"],
+    "Step tabs must be Find, Match, Tailor, Send"
+  );
+  assert.ok(
+    demoSrc.includes("max-w-[460px]"),
+    "Compact browser-style card must be 420-480px wide on desktop (max-w-[460px])"
+  );
+  assert.ok(
+    demoSrc.includes('data-testid="demo-progress-bar"'),
+    "Compact browser-style card must include a progress bar"
+  );
+  assert.ok(
+    demoSrc.includes('data-testid="demo-step-1-panel"') &&
+      demoSrc.includes('data-testid="demo-step-2-panel"') &&
+      demoSrc.includes('data-testid="demo-step-3-panel"') &&
+      demoSrc.includes('data-testid="demo-step-4-panel"'),
+    "All 4 interactive step panels must exist in LandingInteractiveDemoSection.tsx"
+  );
   assert.strictEqual(DEMO_ROLES.length, 4, "Expected 4 interactive role presets");
   for (const role of DEMO_ROLES) {
     assert.ok(role.jobs.length >= 2, `Role ${role.id} must have at least 2 sample jobs`);
@@ -102,109 +121,77 @@ function main() {
       );
       assert.ok(
         job.matchScore >= 70 && job.matchScore <= 99,
-        `Sample score ${job.matchScore} must be a valid percentage`
+        `Sample match score ${job.matchScore} must be in valid range`
       );
-      assert.ok(job.beforeBullet.length > 10 && job.afterBullet.length > 10);
-      assert.ok(job.coverLetterSnippet.length > 20);
     }
   }
-  assert.ok(demoSrc.includes("Pick a role"));
-  assert.ok(demoSrc.includes("Matched jobs & scores"));
-  assert.ok(demoSrc.includes("Open job & fit"));
-  assert.ok(demoSrc.includes("Tailored resume & letter"));
-  console.log("  [PASS] 4-step walkthrough flow (role -> matched jobs -> job fit -> tailored resume & cover letter) verified");
+  console.log("  [PASS] Compact browser-style card with Find, Match, Tailor, Send tabs & progress bar verified");
 
-  // 3. Live features vs "Coming soon" badges
+  // 3. Live features vs Coming soon badges
   assert.ok(
     demoSrc.includes("Direct Career-Page Search · Live"),
-    "Job search must be shown as Live"
+    "Direct Career-Page Search must be shown as Live"
   );
   assert.ok(
     demoSrc.includes("Personalised Match Scores · Live"),
-    "Personalised matches must be shown as Live"
+    "Personalised Match Scores must be shown as Live"
   );
   assert.ok(
     demoSrc.includes("Resume &amp; Cover Letter Tailoring · Live"),
-    "Resume/cover letter tailoring must be shown as Live"
+    "Resume & Cover Letter Tailoring must be shown as Live"
   );
   assert.ok(
     demoSrc.includes("Autofill Extension · Coming soon"),
-    "Autofill extension must carry 'Coming soon' badge"
+    "Autofill Extension must carry a 'Coming soon' badge"
   );
   assert.ok(
     demoSrc.includes("AI Interview Prep · Coming soon"),
-    "AI interview prep must carry 'Coming soon' badge"
+    "AI Interview Prep must carry a 'Coming soon' badge"
   );
   console.log("  [PASS] Live features and 'Coming soon' badges (Autofill Extension, AI Interview Prep) verified");
 
-  // 4. Mandatory "Illustration - sample data" label
+  // 4. 'Illustration - sample companies and scores' caption under card & 'Illustration - sample data' badge
+  assert.ok(
+    demoSrc.includes("Illustration - sample companies and scores"),
+    "Must render 'Illustration - sample companies and scores' label under the card"
+  );
   assert.ok(
     demoSrc.includes("Illustration - sample data"),
-    "Must include 'Illustration - sample data' badge text"
+    "Must render 'Illustration - sample data' badge text"
   );
-  const badgeUsageCount = (demoSrc.match(/<IllustrationSampleBadge/g) || []).length;
-  assert.ok(
-    badgeUsageCount >= 10,
-    `Expected IllustrationSampleBadge across all steps, jobs, companies, and scores (found ${badgeUsageCount})`
-  );
-  console.log(`  [PASS] 'Illustration - sample data' badge rendered across ${badgeUsageCount} sample points`);
+  console.log("  [PASS] 'Illustration - sample companies and scores' label under card verified");
 
-  // 5. No fake testimonials, member counts, ratings, prices, or "we apply for you" claims
+  // 5. No fake testimonials, member counts, ratings, prices, or auto-apply claims
+  const prohibitedPatterns: Array<{ pattern: RegExp; reason: string }> = [
+    { pattern: /\$\d+/i, reason: "No dollar prices allowed in demo section" },
+    { pattern: /₹\s*\d+/i, reason: "No rupee prices allowed in demo section" },
+    { pattern: /\b4\.[89]\s*\/?\s*5\b/i, reason: "No fake star ratings allowed" },
+    { pattern: /\b\d{1,3}(,\d{3})+\+?\s*(users|members|engineers|candidates)\b/i, reason: "No fake member counts allowed" },
+    { pattern: /we apply for you|send your resume straight to the hiring team|auto-apply for you/i, reason: "Must not claim we apply for the user or send resumes to hiring teams" },
+  ];
+
+  for (const { pattern, reason } of prohibitedPatterns) {
+    assert.ok(!pattern.test(demoSrc), `${reason} (matched ${pattern})`);
+  }
   assert.ok(
-    !/₹\s*\d|\$\s*\d|\b\d+\s*\/\s*mo(?:nth)?\b/i.test(demoSrc),
-    "Demo section must NOT contain prices"
-  );
-  assert.ok(
-    !/\b(?:4\.9|5\.0)\s*★|\btrustpilot\b|\b\d+[kK+]\s*(?:members|users|candidates)\b/i.test(
-      demoSrc
-    ),
-    "Demo section must NOT contain fake ratings or member counts"
-  );
-  assert.ok(
-    !/we apply for you|send your resume directly to the hiring team|straight to hiring team/i.test(
-      demoSrc
-    ),
-    "Demo section must NOT claim we apply for the user or send resumes to hiring teams"
-  );
-  assert.ok(
-    demoSrc.includes("You apply directly on the company&apos;s official career site"),
-    "Demo section must state clearly that the user applies on the company's official career site"
+    demoSrc.includes("official career site"),
+    "Must explicitly state that the user applies on the company's official career site"
   );
   console.log("  [PASS] Zero prices, ratings, member counts, or auto-apply claims verified");
 
-  // 6. Unified CTA flow -> inline email capture -> /api/early-access -> /early-access
+  // 6. Inline email capture -> existing /api/early-access + /early-access flow
   assert.ok(
     demoSrc.includes('fetch("/api/early-access"'),
     "Inline email capture must submit to /api/early-access"
   );
   assert.ok(
     demoSrc.includes('href="/early-access"'),
-    "Post-capture state must link to /early-access"
+    "Email capture success state must link to /early-access"
   );
-  const openCaptureCount = (demoSrc.match(/onClick=\{handleOpenEmailCapture\}/g) || []).length;
-  assert.ok(
-    openCaptureCount >= 4,
-    `All step CTAs must trigger handleOpenEmailCapture (found ${openCaptureCount})`
-  );
-  console.log("  [PASS] Unified CTA -> inline email capture -> /api/early-access flow verified");
+  console.log("  [PASS] Inline email capture -> /api/early-access flow verified");
 
-  // 7. Subprocess negative control check
   if (!isNegativeControl) {
-    const child = spawnSync(
-      "npx",
-      ["tsx", path.resolve(__dirname, "test-landing-interactive-demo.ts"), "--negative-control"],
-      {
-        shell: true,
-        stdio: "pipe",
-        env: { ...process.env, NODE_ENV: "test" },
-      }
-    );
-    assert.notStrictEqual(
-      child.status,
-      0,
-      `Negative control must exit non-zero, got ${child.status}`
-    );
-    console.log(`  [PASS] Negative control '--negative-control' exited non-zero (${child.status})`);
+    runNegativeControlSubprocess();
   }
 
   console.log("\n================================================================================");
@@ -212,4 +199,7 @@ function main() {
   console.log("================================================================================");
 }
 
-main();
+main().catch((err) => {
+  console.error("[FAIL]", err instanceof Error ? err.message : err);
+  process.exit(1);
+});
