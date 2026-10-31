@@ -112,6 +112,10 @@ export async function listBucketFilesRecursively(
 }
 
 function getSupabaseAdmin() {
+  if (process.env.NODE_ENV === "test" && (globalThis as any).__mockSupabaseClient) {
+    return (globalThis as any).__mockSupabaseClient;
+  }
+
   const supabaseUrl =
     process.env.NEXT_PUBLIC_SUPABASE_URL ||
     process.env.SUPABASE_URL ||
@@ -225,13 +229,23 @@ export async function handleAccountDeleteRequest(
     // 3. Reconcile active, trialing, and in_grace_period subscriptions to canceled and keep the rows
     let billingReconciled = false;
     try {
-      const { data: subData } = await supabaseAdmin
+      const { data: subData, error: subQueryError } = await supabaseAdmin
         .from("subscriptions")
         .select("*")
         .eq("user_id", userId)
         .order("created_at", { ascending: false })
         .limit(100)
         .maybeSingle();
+
+      if (subQueryError) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Failed to reconcile subscription: ${subQueryError.message || String(subQueryError)}`,
+          },
+          { status: 500 }
+        );
+      }
 
       const subs = Array.isArray(subData) ? subData : subData ? [subData] : [];
       for (const sub of subs) {
@@ -242,7 +256,7 @@ export async function handleAccountDeleteRequest(
           )
         ) {
           const nowIso = new Date().toISOString();
-          await supabaseAdmin
+          const { error: cancelSubError } = await supabaseAdmin
             .from("subscriptions")
             .update({
               status: "canceled",
@@ -256,11 +270,28 @@ export async function handleAccountDeleteRequest(
               },
             })
             .eq("id", sub.id);
+
+          if (cancelSubError) {
+            return NextResponse.json(
+              {
+                success: false,
+                error: `Failed to reconcile subscription: ${cancelSubError.message || String(cancelSubError)}`,
+              },
+              { status: 500 }
+            );
+          }
           billingReconciled = true;
         }
       }
-    } catch (billingErr) {
-      console.warn("Billing reconciliation warning:", billingErr);
+    } catch (billingErr: any) {
+      console.warn("Billing reconciliation error:", billingErr);
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Failed to reconcile subscription: ${billingErr?.message || String(billingErr)}`,
+        },
+        { status: 500 }
+      );
     }
 
     // 4. Delete user-owned rows across all user_id tables (excluding subscriptions) + early_access link

@@ -82,8 +82,14 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}));
     const { path, referrer } = body;
 
-    if (!path || typeof path !== "string") {
+    if (!path || typeof path !== "string" || !path.startsWith("/") || path.length > 200) {
       return NextResponse.json({ ok: false, error: "Invalid path" }, { status: 400 });
+    }
+
+    if (referrer !== undefined && referrer !== null) {
+      if (typeof referrer !== "string" || referrer.length > 300) {
+        return NextResponse.json({ ok: false, error: "Invalid referrer" }, { status: 400 });
+      }
     }
 
     // In /api/track ignore any client-supplied userId from the body (derive from the session only)
