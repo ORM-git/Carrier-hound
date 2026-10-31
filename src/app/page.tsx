@@ -320,8 +320,8 @@ export default function HomePage() {
       {/* ========================================================================= */}
       {/* 6. FOUNDER CARD (Centered bordered card ~670px)                           */}
       {/* ========================================================================= */}
-      <section className="pt-16 pb-12 lg:pt-20 lg:pb-16 max-w-content mx-auto px-6 w-full">
-        <div className="max-w-[670px] mx-auto bg-white border border-[#E4E4E7] rounded-xl p-8 sm:p-10 shadow-sm">
+      <section className="pt-10 pb-8 sm:pt-12 sm:pb-10 lg:pt-14 lg:pb-12 max-w-content mx-auto px-6 w-full">
+        <div className="max-w-[670px] mx-auto bg-white border border-[#E4E4E7] rounded-xl p-6 sm:p-8 shadow-sm">
           <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 text-center sm:text-left">
             {/* Left: Round photo */}
             <div className="flex flex-col items-center flex-shrink-0">
@@ -337,32 +337,23 @@ export default function HomePage() {
             </div>
 
             {/* Right: Name, role, story, 3 stats */}
-            <div className="space-y-4">
+            <div className="space-y-3">
               <div>
-                <h3 className="text-2xl font-bold text-[#09090B]">Orissa Lee Patnaik</h3>
-                <p className="text-sm font-medium text-gray-500">Founder CareerMonke</p>
+                <h3 className="text-2xl font-bold text-[#09090B]">Orissa here!</h3>
+                <p className="text-sm font-medium text-gray-500">Creator of CareerMonke</p>
               </div>
 
-              <div className="space-y-3 text-[#4B5563] text-base leading-relaxed">
+              <div className="space-y-2 text-[#4B5563] text-base leading-relaxed">
                 <p>
-                  I grew up in the US and eventually chose to make my life in India. Dealing with two completely different economic landscapes gave me a strange, useful vantage point: while work culture varies wildly across continents, the friction of finding a decent job is universal.
+                  Growing up in the US and living in India showed me the friction of job hunting is universal. Broken software discards qualified people, and legacy sites make every role a cattle call.
                 </p>
                 <p>
-                  Between automated Applicant Tracking Systems discarding qualified people for missing arbitrary keywords and legacy job boards turning every opening into a 3,000-person cattle call, modern search is exhausting.
-                </p>
-                <p>
-                  I started CareerMonke because I got fed up watching capable people lose their time and money to bad software.
-                </p>
-                <p>
-                  The idea is straightforward: beat the automated noise at both ends. We run scrapers to dig up off-the-radar roles before they get sucked into the algorithmic circus, and we give you an AI resume editor that benchmarks, scores, and refines your story so it actually survives the ATS filter and reaches an actual person at the other end.
-                </p>
-                <p>
-                  To put things bluntly, I don&apos;t believe in hollow LinkedIn hustle rhetoric, and I don&apos;t believe in generic career algos that cough up the same thing. I created CareerMonke to give candidates the asymmetry back.
+                  I built CareerMonke to cut through the noise, give candidates leverage back, and land your story directly with real people without the unnecessary hollow hustle rhetoric.
                 </p>
               </div>
 
               {/* Founder social links */}
-              <div className="flex items-center justify-center sm:justify-start gap-3 pt-2">
+              <div className="flex items-center justify-center sm:justify-start gap-3 pt-1">
                 <a
                   href="https://www.instagram.com/orissa.patnaik"
                   target="_blank"
