@@ -103,3 +103,14 @@ export const statsRateLimitStore = new Map<string, { count: number; resetAt: num
 export function _resetStatsRateLimitStore() {
   statsRateLimitStore.clear();
 }
+
+export const TICKER_RATE_LIMIT = {
+  maxRequests: 60,
+  windowSeconds: 60,
+};
+
+export const tickerRateLimitStore = new Map<string, { count: number; resetAt: number }>();
+
+export function _resetTickerRateLimitStore() {
+  tickerRateLimitStore.clear();
+}
