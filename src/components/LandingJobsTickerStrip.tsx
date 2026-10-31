@@ -75,6 +75,7 @@ function TickerCard({ job, keyPrefix = "", index, isDuplicate = false }: TickerC
           <img
             src={job.logo_url}
             alt={`${job.company} logo`}
+            referrerPolicy="no-referrer"
             className="w-full h-full object-contain p-1 rounded-[6px] md:rounded-[9px]"
             loading="lazy"
             onError={() => setImgError(true)}

@@ -50,6 +50,7 @@ export interface TickerJobItem {
  * Cache 60s, no-store and 503 on error.
  * Drops rows without posted_at or created_at.
  * Clamps future-dated timestamps within 5 minutes; drops rows further in the future.
+ * Merges self-hosted company logos from companies table via case-insensitive lookup.
  */
 export async function GET(req: Request) {
   try {
@@ -87,42 +88,16 @@ export async function GET(req: Request) {
 
     const supabase = getSupabaseAdmin();
 
-    // Query active jobs ordered by posted_at desc with optional foreign company logo
-    const { data, error } = await supabase
+    // 1. Query recent active jobs (no FK embed)
+    const { data: jobRows, error: jobsError } = await supabase
       .from("jobs")
-      .select("company, title, posted_at, created_at, companies(logo_url)")
+      .select("company, title, posted_at, created_at")
       .eq("status", "active")
       .eq("is_active", true)
       .order("posted_at", { ascending: false, nullsFirst: false })
       .limit(50);
 
-    let rows: any[] | null = (data as any) || null;
-
-    if (error) {
-      // If error was caused by relation embedding in certain environments, attempt fallback query without foreign relation
-      const fallback = await supabase
-        .from("jobs")
-        .select("company, title, posted_at, created_at")
-        .eq("status", "active")
-        .eq("is_active", true)
-        .order("posted_at", { ascending: false, nullsFirst: false })
-        .limit(50);
-
-      if (fallback.error || !fallback.data) {
-        return NextResponse.json(
-          { error: "Service unavailable" },
-          {
-            status: 503,
-            headers: {
-              "Cache-Control": "no-store",
-            },
-          }
-        );
-      }
-      rows = fallback.data as any;
-    }
-
-    if (!rows) {
+    if (jobsError || !jobRows) {
       return NextResponse.json(
         { error: "Service unavailable" },
         {
@@ -134,12 +109,58 @@ export async function GET(req: Request) {
       );
     }
 
+    // 2. Collect distinct company names and query companies for logo_url
+    const distinctCompanies = Array.from(
+      new Set(
+        jobRows
+          .map((r: any) => (r.company ? String(r.company).trim() : ""))
+          .filter(Boolean)
+      )
+    );
+
+    const logoMap = new Map<string, string>();
+
+    if (distinctCompanies.length > 0) {
+      const searchNames = new Set<string>();
+      for (const name of distinctCompanies) {
+        searchNames.add(name);
+        searchNames.add(name.toLowerCase());
+        searchNames.add(name.toUpperCase());
+        searchNames.add(name.charAt(0).toUpperCase() + name.slice(1).toLowerCase());
+      }
+
+      const { data: companyData, error: companiesError } = await supabase
+        .from("companies")
+        .select("name, logo_url")
+        .in("name", Array.from(searchNames));
+
+      if (companiesError) {
+        return NextResponse.json(
+          { error: "Service unavailable" },
+          {
+            status: 503,
+            headers: {
+              "Cache-Control": "no-store",
+            },
+          }
+        );
+      }
+
+      if (companyData) {
+        for (const c of companyData) {
+          if (c.name && c.logo_url) {
+            logoMap.set(c.name.trim().toLowerCase(), c.logo_url);
+          }
+        }
+      }
+    }
+
     const nowMs = Date.now();
     const MAX_FUTURE_SKEW_MS = 5 * 60 * 1000; // 5 minutes
 
     const tickerItems: TickerJobItem[] = [];
 
-    for (const row of rows) {
+    for (const row of jobRows) {
       if (tickerItems.length >= 20) break;
 
       // Drop rows that have neither posted_at nor created_at instead of falling back to now()
@@ -158,22 +179,14 @@ export async function GET(req: Request) {
         continue;
       }
 
-      let logoUrl: string | null = null;
-      if (row.companies) {
-        if (Array.isArray(row.companies) && row.companies.length > 0) {
-          logoUrl = row.companies[0]?.logo_url || null;
-        } else if (typeof row.companies === "object" && row.companies.logo_url) {
-          logoUrl = row.companies.logo_url;
-        }
-      } else if (row.logo_url) {
-        logoUrl = row.logo_url;
-      }
+      const cleanCompany = String(row.company || "").trim();
+      const logoUrl = logoMap.get(cleanCompany.toLowerCase()) || null;
 
       tickerItems.push({
-        company: String(row.company || "").trim(),
+        company: cleanCompany,
         title: String(row.title || "").trim(),
         posted_at: new Date(rawTimestamp).toISOString(),
-        logo_url: logoUrl || null,
+        logo_url: logoUrl,
       });
     }
 

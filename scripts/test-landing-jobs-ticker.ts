@@ -187,6 +187,32 @@ async function testEndpointImplementation() {
         },
       });
     }
+    if (urlStr.includes("companies")) {
+      if (shouldFailDb) {
+        return new Response(JSON.stringify({ message: "DB query failed" }), {
+          status: 500,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response(
+        JSON.stringify([
+          {
+            name: "Company 1",
+            logo_url: "https://mock.supabase.co/storage/v1/object/public/company-logos/comp1.png",
+          },
+          {
+            name: "Company 2",
+            logo_url: null,
+          },
+        ]),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+          },
+        }
+      );
+    }
     return origFetch(url, opts);
   }) as any;
 
@@ -215,6 +241,24 @@ async function testEndpointImplementation() {
     assert(!companies.includes("No Time Co"), "Rows without posted_at and created_at must be dropped");
     assert(companies.includes("Company 2"), "Rows within 5m in future must be kept");
 
+    // Verify company logo lookup:
+    // A job whose company has logo_url gets it in the response; unknown company gets null
+    const comp1 = rows.find((r: any) => r.company === "Company 1");
+    assert(comp1, "Company 1 must be present in ticker items");
+    assert.strictEqual(
+      comp1.logo_url,
+      "https://mock.supabase.co/storage/v1/object/public/company-logos/comp1.png",
+      "Company with logo_url in companies table must receive it in ticker response"
+    );
+
+    const comp2 = rows.find((r: any) => r.company === "Company 2");
+    assert(comp2, "Company 2 must be present in ticker items");
+    assert.strictEqual(comp2.logo_url, null, "Company with null logo_url must receive null");
+
+    const comp5 = rows.find((r: any) => r.company === "Company 5");
+    assert(comp5, "Company 5 must be present in ticker items");
+    assert.strictEqual(comp5.logo_url, null, "Unknown company must receive null for logo_url");
+
     const ALLOWED_KEYS = ["company", "logo_url", "posted_at", "title"];
     for (const row of rows) {
       const keys = Object.keys(row).sort();
@@ -239,6 +283,15 @@ async function testEndpointImplementation() {
     const netlifyCompanies = netlifyRows.map((r: any) => r.company);
     assert(!netlifyCompanies.includes("Future Co"), "Netlify: >5m future rows dropped");
     assert(!netlifyCompanies.includes("No Time Co"), "Netlify: rows missing timestamp dropped");
+
+    const netlifyComp1 = netlifyRows.find((r: any) => r.company === "Company 1");
+    assert.strictEqual(
+      netlifyComp1.logo_url,
+      "https://mock.supabase.co/storage/v1/object/public/company-logos/comp1.png",
+      "Netlify: Company with logo_url receives it in response"
+    );
+    const netlifyComp5 = netlifyRows.find((r: any) => r.company === "Company 5");
+    assert.strictEqual(netlifyComp5.logo_url, null, "Netlify: unknown company receives null for logo_url");
 
     // Test 2: Database failure returns 503 with Cache-Control: no-store
     shouldFailDb = true;
@@ -311,6 +364,12 @@ async function testComponentContractAndAccessibility() {
 
   // 4. Fallback when fewer than 5 jobs
   assert(code.includes("jobs.length < 5"), "Must hide the whole strip when fewer than 5 jobs");
+
+  // 5. Referrer policy on logo <img>
+  assert(
+    code.includes('referrerPolicy="no-referrer"'),
+    "Component logo <img> must have referrerPolicy='no-referrer'"
+  );
 
   console.log("  [PASS] Component contract: duplicate sets have aria-hidden='true' & tabIndex={-1}, time clamping to 'just now' verified, dynamic duration tuning");
 }
