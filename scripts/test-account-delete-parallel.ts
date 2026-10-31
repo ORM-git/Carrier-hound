@@ -17,6 +17,8 @@ import { createHandler } from "../netlify/functions/account-delete";
 const TABLES_TO_DELETE = [
   "candidate_profiles",
   "user_preferences",
+  "resumes",
+  "saved_jobs",
   "search_alerts",
   "applications",
   "job_applications",
@@ -220,8 +222,8 @@ async function runTests() {
     console.error("FAIL: Expected 200 OK on happy path");
     process.exit(1);
   }
-  if (happyDb.getDeleteCallsCount() !== 12) {
-    console.error(`FAIL: Expected 12 table deletions, got ${happyDb.getDeleteCallsCount()}`);
+  if (happyDb.getDeleteCallsCount() !== 15) {
+    console.error(`FAIL: Expected 15 table deletions (subscriptions kept), got ${happyDb.getDeleteCallsCount()}`);
     process.exit(1);
   }
   if (happyDb.getDeleteUserCalls() !== 1) {
@@ -296,12 +298,12 @@ async function runTests() {
   // STEP 5: Rejected Delete in a Group (Promise.allSettled verification)
   console.log("STEP 5: Rejected delete in a group (Promise.allSettled awaits all siblings)...");
   const rejectDb = createMockSupabase({
-    rejectTable: "search_alerts",
+    rejectTable: "resumes",
     delays: {
       candidate_profiles: 50,
       user_preferences: 50,
-      search_alerts: 0,
-      applications: 50,
+      resumes: 0,
+      saved_jobs: 50,
     },
   });
   const rejectHandler = createHandler({ getSupabaseAdmin: () => rejectDb });
@@ -319,7 +321,7 @@ async function runTests() {
     console.error(`FAIL: Expected 500 on rejected delete in group, got ${rejectRes.statusCode}`);
     process.exit(1);
   }
-  if (!rejectBody.error || !rejectBody.error.includes("search_alerts: Unhandled rejection on search_alerts")) {
+  if (!rejectBody.error || !rejectBody.error.includes("resumes: Unhandled rejection on resumes")) {
     console.error(`FAIL: Expected table-specific rejection failure message, got: ${rejectBody.error}`);
     process.exit(1);
   }

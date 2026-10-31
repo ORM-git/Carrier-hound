@@ -3,7 +3,25 @@ import { createClient } from "@supabase/supabase-js";
 import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
 import { verifyUserNotBanned } from "@/lib/admin/auth";
 import { checkRequiredEnv } from "@/lib/api/envCheck";
-import { SAMPLE_SKILL_WHAT_IF } from "@/data/skillWhatIfFixture";
+import type { SkillWhatIfData } from "@/data/skillWhatIfFixture";
+
+export const SKILL_WHAT_IF_NOT_AVAILABLE_MESSAGE =
+  "Skill What-If simulation is not available yet for this role.";
+
+function isRealSkillWhatIfResult(
+  simulation: SkillWhatIfData | null | undefined,
+  requestedJobId: string
+): simulation is SkillWhatIfData {
+  if (!simulation || typeof simulation !== "object") return false;
+  if (!requestedJobId || requestedJobId === "sample" || requestedJobId === "preview" || requestedJobId === "default") {
+    return false;
+  }
+  if (!simulation.jobId || simulation.jobId === "sample") return false;
+  if (simulation._serverProofSignature === "SERVER_ONLY_PROOF_CANARY_NEXUS_WHAT_IF_984") {
+    return false;
+  }
+  return Boolean(simulation.jobTitle && Array.isArray(simulation.missingSkills));
+}
 
 function getSupabaseAdmin() {
   const supabaseUrl =
@@ -34,6 +52,10 @@ function getSupabaseAdmin() {
 export interface SkillWhatIfDeps {
   getSupabaseAdmin?: () => any;
   getServerEntitlement?: (userId: string) => Promise<{ isPro: boolean }>;
+  generateSkillWhatIf?: (params: {
+    userId: string;
+    jobId: string;
+  }) => Promise<SkillWhatIfData | null>;
 }
 
 export async function handleSkillWhatIfRequest(
@@ -95,20 +117,51 @@ export async function handleSkillWhatIfRequest(
     );
   }
 
-  // 3. Return Simulation for Pro Member
+  // 3. Return only a real AI result for Pro Member; never return sample fixture data as if real
   const url = new URL(req.url);
-  const jobId = url.searchParams.get("jobId") || "sample";
+  const jobId = (url.searchParams.get("jobId") || "").trim();
+
+  if (deps.generateSkillWhatIf && jobId) {
+    try {
+      const generated = await deps.generateSkillWhatIf({
+        userId: user.id,
+        jobId,
+      });
+      if (isRealSkillWhatIfResult(generated, jobId)) {
+        return NextResponse.json(
+          {
+            simulation: {
+              ...generated,
+              jobId,
+            },
+            available: true,
+            isPro: true,
+          },
+          {
+            status: 200,
+            headers: {
+              "Cache-Control": "private, no-cache, no-store, must-revalidate",
+            },
+          }
+        );
+      }
+    } catch {
+      // Fall through to explicit not_available_yet state
+    }
+  }
 
   return NextResponse.json(
     {
-      simulation: {
-        ...SAMPLE_SKILL_WHAT_IF,
-        jobId,
-      },
+      simulation: null,
+      available: false,
+      status: "not_available_yet",
+      code: "NOT_AVAILABLE_YET",
+      error: SKILL_WHAT_IF_NOT_AVAILABLE_MESSAGE,
+      message: SKILL_WHAT_IF_NOT_AVAILABLE_MESSAGE,
       isPro: true,
     },
     {
-      status: 200,
+      status: 503,
       headers: {
         "Cache-Control": "private, no-cache, no-store, must-revalidate",
       },

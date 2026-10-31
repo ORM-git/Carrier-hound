@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getAuthUser } from "@/lib/auth/session";
-import { ADMIN_EMAIL } from "@/lib/admin/constants";
+import { ADMIN_EMAIL, isVerifiedAdminUser } from "@/lib/admin/constants";
 import AdminNav from "./AdminNav";
 import type { User } from "@supabase/supabase-js";
 
@@ -21,20 +21,10 @@ export default function AdminLayout({
     let isMounted = true;
 
     async function checkAuth() {
-      // 1. Instant Synchronous Pre-flight Check:
-      // If user email in local storage is not the admin email, redirect immediately in 0ms
-      if (typeof window !== "undefined") {
-        const cachedEmail = localStorage.getItem("careermonke_user_email");
-        if (!cachedEmail || cachedEmail.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
-          window.location.replace("/");
-          return;
-        }
-      }
-
-      // 2. Full Cryptographic Verification via Supabase Auth
+      // Cryptographic Verification via Supabase Auth (admin list + verified email)
       try {
         const user = await getAuthUser();
-        if (!user || user.email?.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+        if (!user || !isVerifiedAdminUser(user)) {
           if (typeof window !== "undefined") {
             window.location.replace("/");
           } else {

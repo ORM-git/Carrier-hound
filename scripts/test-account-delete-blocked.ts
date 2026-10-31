@@ -204,7 +204,11 @@ async function runTests() {
     assert.strictEqual(body.success, true, "Body success must be true");
     assert.strictEqual(body.billingReconciled, true, "Billing must be marked reconciled");
     assert.strictEqual(stats.deleteUserCalls, 1, "Auth admin deleteUser must be called exactly once");
-    assert.strictEqual(stats.deletedTables.size, 12, "All 12 user tables must be cleaned");
+    assert.strictEqual(stats.deletedTables.size, 15, "All 15 user/email tables must be cleaned (subscriptions preserved)");
+    assert(stats.deletedTables.has("early_access_emails"), "early_access_emails must be cleaned");
+    assert(stats.deletedTables.has("saved_jobs"), "saved_jobs must be cleaned");
+    assert(stats.deletedTables.has("resumes"), "resumes must be cleaned");
+    assert(!stats.deletedTables.has("subscriptions"), "subscriptions must NOT be deleted (reconciled & kept)");
     assert(!stats.deletedTables.has("blocked_users"), "blocked_users must never be deleted");
 
     console.log("[PASS] Normal user account deletion succeeded (HTTP 200, 12 tables cleaned, auth deleted).");

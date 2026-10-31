@@ -79,20 +79,28 @@ export default function InterviewPackClient({ jobId }: InterviewPackClientProps)
         },
       });
 
+      const json = await res.json().catch(() => ({}));
       if (!res.ok) {
         if (res.status === 403) {
           setIsPro(false);
           setLoadingPack(false);
           return;
         }
-        throw new Error(`Failed to load interview pack (status ${res.status})`);
+        throw new Error(
+          json?.message ||
+            json?.error ||
+            "Interview Pack is not available yet for this role."
+        );
       }
 
-      const json = await res.json();
-      if (json.pack) {
+      if (json.pack && json.available !== false) {
         setPack(json.pack);
       } else {
-        throw new Error("Invalid interview pack response from server");
+        throw new Error(
+          json?.message ||
+            json?.error ||
+            "Interview Pack is not available yet for this role."
+        );
       }
     } catch (err: any) {
       console.warn("Error fetching pack from server:", err);

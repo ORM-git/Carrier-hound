@@ -132,7 +132,12 @@ export function createHandler(deps: AccountDeleteDeps = {}) {
         safeLog.warn("[Netlify /account-delete] Subscription query error", subError);
       }
 
-      if (sub && sub.status === "active") {
+      if (
+        sub &&
+        (sub.status === "active" ||
+          sub.status === "trialing" ||
+          sub.status === "in_grace_period")
+      ) {
         const { error: cancelSubError } = await supabaseAdmin
           .from("subscriptions")
           .update({
@@ -163,6 +168,8 @@ export function createHandler(deps: AccountDeleteDeps = {}) {
     const tablesToDelete = [
       "candidate_profiles",
       "user_preferences",
+      "resumes",
+      "saved_jobs",
       "search_alerts",
       "applications",
       "job_applications",
@@ -209,25 +216,90 @@ export function createHandler(deps: AccountDeleteDeps = {}) {
       }
     }
 
-    // Clean up storage files
+    const normalizedEmail = String(user.email || "").trim().toLowerCase();
+    if (normalizedEmail) {
+      const { error: eaError } = await supabaseAdmin
+        .from("early_access_emails")
+        .delete()
+        .eq("email", normalizedEmail);
+      if (!isIgnorableDeleteError(eaError)) {
+        errors.push(`early_access_emails: ${eaError?.message || JSON.stringify(eaError)}`);
+      }
+    }
+
+    // Clean up storage files recursively with pagination (100 per page)
     try {
       const { data: buckets, error: bucketsError } = await supabaseAdmin.storage.listBuckets();
       if (bucketsError) {
         safeLog.warn("[Netlify /account-delete] List buckets warning", bucketsError);
       } else if (buckets && buckets.length > 0) {
+        const PAGE_SIZE = 100;
         for (const bucket of buckets) {
-          const { data: files, error: filesError } = await supabaseAdmin.storage
-            .from(bucket.name)
-            .list(userId);
-          if (filesError) {
-            safeLog.warn(`[Netlify /account-delete] List files in bucket ${bucket.name} warning`, filesError);
+          const bucketApi = supabaseAdmin.storage.from(bucket.name);
+          const queue: string[] = [userId];
+          const visited = new Set<string>();
+          const filePaths: string[] = [];
+          let bucketListErr: any = null;
+
+          while (queue.length > 0) {
+            const prefix = queue.shift()!;
+            if (!prefix || visited.has(prefix)) continue;
+            visited.add(prefix);
+
+            let offset = 0;
+            let firstPageFirstItemName: string | null = null;
+            while (true) {
+              const { data: items, error: filesError } = await bucketApi.list(prefix, {
+                limit: PAGE_SIZE,
+                offset,
+              });
+              if (filesError) {
+                bucketListErr = filesError;
+                break;
+              }
+              if (!Array.isArray(items) || items.length === 0) break;
+              if (offset === 0) {
+                firstPageFirstItemName = typeof items[0]?.name === "string" ? items[0].name : null;
+              } else if (
+                firstPageFirstItemName &&
+                typeof items[0]?.name === "string" &&
+                items[0].name === firstPageFirstItemName
+              ) {
+                break;
+              }
+
+              for (const item of items) {
+                if (!item || typeof item.name !== "string") continue;
+                const cleanName = item.name.replace(/^\/+|\/+$/g, "");
+                if (!cleanName || cleanName === ".emptyFolderPlaceholder") continue;
+                const isFolder =
+                  item.isFolder === true ||
+                  item.name.endsWith("/") ||
+                  (item.id === null && !item.metadata);
+                if (isFolder) {
+                  queue.push(`${prefix}/${cleanName}`);
+                } else {
+                  filePaths.push(`${prefix}/${cleanName}`);
+                }
+              }
+
+              if (items.length < PAGE_SIZE) break;
+              offset += PAGE_SIZE;
+            }
+            if (bucketListErr) break;
+          }
+
+          if (bucketListErr) {
+            safeLog.warn(`[Netlify /account-delete] List files in bucket ${bucket.name} warning`, bucketListErr);
             continue;
           }
-          if (files && files.length > 0) {
-            const filePaths = files.map((f: any) => `${userId}/${f.name}`);
-            const { error: removeError } = await supabaseAdmin.storage.from(bucket.name).remove(filePaths);
-            if (removeError) {
-              safeLog.warn(`[Netlify /account-delete] Remove files from bucket ${bucket.name} warning`, removeError);
+          if (filePaths.length > 0) {
+            for (let i = 0; i < filePaths.length; i += PAGE_SIZE) {
+              const chunk = filePaths.slice(i, i + PAGE_SIZE);
+              const { error: removeError } = await bucketApi.remove(chunk);
+              if (removeError) {
+                safeLog.warn(`[Netlify /account-delete] Remove files from bucket ${bucket.name} warning`, removeError);
+              }
             }
           }
         }
