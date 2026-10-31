@@ -14,6 +14,7 @@ import CategorySelectModal from "@/components/CategorySelectModal";
 import Footer from "@/components/Footer";
 import GlobeLiveStats from "@/components/GlobeLiveStats";
 import LandingInteractiveDemoSection from "@/components/LandingInteractiveDemoSection";
+import LandingFeaturesSection from "@/components/LandingFeaturesSection";
 import { useLiveStats } from "@/lib/api/stats";
 import { X, Check, ArrowRight, Instagram, Linkedin, Mail } from "lucide-react";
 
@@ -454,6 +455,9 @@ export default function HomePage() {
       {/* 11. INTERACTIVE PRODUCT DEMO SECTION                                      */}
       {/* ========================================================================= */}
       <LandingInteractiveDemoSection />
+
+      {/* 12. PRODUCT FEATURES SECTION */}
+      <LandingFeaturesSection />
 
       {/* ========================================================================= */}
       {/* 13. FOOTER (Navy #090E34) & BackToTop Button                              */}
