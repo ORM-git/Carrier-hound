@@ -1195,8 +1195,7 @@ export function detectCategory(title: string = '', tags: string[] = []): string 
   }
   if (
     combined.includes('design') ||
-    combined.includes('ui') ||
-    combined.includes('ux') ||
+    /\b(ui|ux)\b/i.test(combined) ||
     combined.includes('product design')
   ) {
     return 'design';
@@ -1207,6 +1206,17 @@ export function detectCategory(title: string = '', tags: string[] = []): string 
     combined.includes('head of product')
   ) {
     return 'product';
+  }
+  if (
+    combined.includes('copywriter') ||
+    combined.includes('copywriting') ||
+    combined.includes('technical writer') ||
+    combined.includes('technical writing') ||
+    combined.includes('content writer') ||
+    combined.includes('content creator') ||
+    combined.includes('content strategist')
+  ) {
+    return 'writing';
   }
   if (
     combined.includes('marketing') ||
@@ -1234,16 +1244,19 @@ export function detectCategory(title: string = '', tags: string[] = []): string 
   }
   if (
     combined.includes('finance') ||
+    combined.includes('financial') ||
     combined.includes('accountant') ||
+    combined.includes('accounting') ||
     combined.includes('payroll')
   ) {
     return 'finance';
   }
   if (
     combined.includes('recruiter') ||
+    combined.includes('recruiting') ||
     combined.includes('talent') ||
     combined.includes('human resources') ||
-    combined.includes('hr ')
+    /\bhr\b/i.test(combined)
   ) {
     return 'hr';
   }
@@ -1251,9 +1264,44 @@ export function detectCategory(title: string = '', tags: string[] = []): string 
     combined.includes('sales') ||
     combined.includes('account executive') ||
     combined.includes('business development') ||
-    combined.includes('bdr')
+    /\b(bdr|sdr)\b/i.test(combined)
   ) {
     return 'sales';
+  }
+  if (
+    combined.includes('operations') ||
+    combined.includes('bizops') ||
+    combined.includes('business operations') ||
+    combined.includes('revenue operations') ||
+    combined.includes('revops') ||
+    combined.includes('people operations') ||
+    combined.includes('sales operations') ||
+    combined.includes('sales ops') ||
+    /\bops\b/i.test(combined)
+  ) {
+    return 'operations';
+  }
+  if (
+    combined.includes('customer support') ||
+    combined.includes('customer success') ||
+    combined.includes('client success') ||
+    combined.includes('support specialist') ||
+    combined.includes('technical support') ||
+    combined.includes('customer service') ||
+    combined.includes('customer experience') ||
+    combined.includes('support agent') ||
+    combined.includes('help desk') ||
+    /\bsupport\b/i.test(combined)
+  ) {
+    return 'customer-support';
+  }
+  if (
+    combined.includes('legal') ||
+    combined.includes('counsel') ||
+    combined.includes('paralegal') ||
+    combined.includes('compliance')
+  ) {
+    return 'legal';
   }
 
   return 'engineering';
