@@ -120,33 +120,32 @@ function getAllowedEarlyAccessEmails(): Set<string> {
 
 /**
  * Rule 5: Google login only, no magic links.
- * Validates whether the authenticated Supabase user authenticated with Google.
- * Rejects email magic links / OTPs.
+ * Allows when the user has a linked Google identity (identities[].provider === "google",
+ * app_metadata.providers includes "google", or app_metadata.provider === "google")
+ * AND user.email_confirmed_at is set.
+ * Email-only accounts with no Google identity stay blocked.
  */
 function isGoogleProvider(user: any): boolean {
   if (!user) return false;
-  const provider = user.app_metadata?.provider;
-  if (provider === "email") return false;
-  if (provider === "google") return true;
 
-  if (Array.isArray(user.app_metadata?.providers)) {
-    if (user.app_metadata.providers.includes("google")) return true;
-    if (user.app_metadata.providers.includes("email")) return false;
+  const isEmailConfirmed =
+    typeof user.email_confirmed_at === "string" &&
+    user.email_confirmed_at.trim().length > 0;
+  if (!isEmailConfirmed) {
+    return false;
   }
 
-  if (Array.isArray(user.identities) && user.identities.length > 0) {
-    const hasGoogle = user.identities.some((id: any) => id?.provider === "google");
-    const hasEmailOnly = user.identities.every((id: any) => id?.provider === "email");
-    if (hasGoogle) return true;
-    if (hasEmailOnly) return false;
-  }
+  const hasGoogleIdentity =
+    Array.isArray(user.identities) &&
+    user.identities.some((id: any) => id?.provider === "google");
 
-  // Unit tests fallback: allow test-mode tokens when provider is unspecified
-  if (process.env.NODE_ENV === "test" && !provider) {
-    return true;
-  }
+  const hasGoogleInProviders =
+    Array.isArray(user.app_metadata?.providers) &&
+    user.app_metadata.providers.includes("google");
 
-  return false;
+  const hasGoogleProvider = user.app_metadata?.provider === "google";
+
+  return Boolean(hasGoogleIdentity || hasGoogleInProviders || hasGoogleProvider);
 }
 
 /**

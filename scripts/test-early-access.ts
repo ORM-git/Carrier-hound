@@ -163,6 +163,9 @@ function createMockSupabase() {
               user: {
                 id: "allowed-user-id-1",
                 email: "Founder.Allowed@Example.com",
+                email_confirmed_at: "2026-10-30T00:00:00Z",
+                app_metadata: { provider: "google", providers: ["google"] },
+                identities: [{ provider: "google" }],
               },
             },
             error: null,
@@ -174,6 +177,9 @@ function createMockSupabase() {
               user: {
                 id: "nonallowed-user-id-2",
                 email: "intruder@outsider.example",
+                email_confirmed_at: "2026-10-30T00:00:00Z",
+                app_metadata: { provider: "google", providers: ["google"] },
+                identities: [{ provider: "google" }],
               },
             },
             error: null,
@@ -185,7 +191,9 @@ function createMockSupabase() {
               user: {
                 id: "approved-user-id-1",
                 email: "Approved.Google@Example.com",
-                app_metadata: { provider: "google" },
+                email_confirmed_at: "2026-10-30T00:00:00Z",
+                app_metadata: { provider: "google", providers: ["google"] },
+                identities: [{ provider: "google" }],
               },
             },
             error: null,
@@ -197,7 +205,9 @@ function createMockSupabase() {
               user: {
                 id: "not-approved-user-id-2",
                 email: "NotApproved.Google@Example.com",
-                app_metadata: { provider: "google" },
+                email_confirmed_at: "2026-10-30T00:00:00Z",
+                app_metadata: { provider: "google", providers: ["google"] },
+                identities: [{ provider: "google" }],
               },
             },
             error: null,
@@ -209,7 +219,51 @@ function createMockSupabase() {
               user: {
                 id: "magic-user-id-3",
                 email: "Approved.Google@Example.com",
-                app_metadata: { provider: "email" },
+                email_confirmed_at: "2026-10-30T00:00:00Z",
+                app_metadata: { provider: "email", providers: ["email"] },
+                identities: [{ provider: "email" }],
+              },
+            },
+            error: null,
+          };
+        }
+        if (token === "valid-email-plus-google-confirmed-approved") {
+          return {
+            data: {
+              user: {
+                id: "linked-google-approved-id-5",
+                email: "Approved.Google@Example.com",
+                email_confirmed_at: "2026-10-31T00:00:00Z",
+                app_metadata: { provider: "email", providers: ["email", "google"] },
+                identities: [{ provider: "email" }, { provider: "google" }],
+              },
+            },
+            error: null,
+          };
+        }
+        if (token === "valid-google-linked-unconfirmed") {
+          return {
+            data: {
+              user: {
+                id: "linked-google-unconfirmed-id-6",
+                email: "Approved.Google@Example.com",
+                email_confirmed_at: null,
+                app_metadata: { provider: "email", providers: ["email", "google"] },
+                identities: [{ provider: "email" }, { provider: "google" }],
+              },
+            },
+            error: null,
+          };
+        }
+        if (token === "valid-email-plus-google-confirmed-unapproved") {
+          return {
+            data: {
+              user: {
+                id: "linked-google-unapproved-id-7",
+                email: "NotApproved.Google@Example.com",
+                email_confirmed_at: "2026-10-31T00:00:00Z",
+                app_metadata: { provider: "email", providers: ["email", "google"] },
+                identities: [{ provider: "email" }, { provider: "google" }],
               },
             },
             error: null,
@@ -221,7 +275,9 @@ function createMockSupabase() {
               user: {
                 id: "db-error-user-id-4",
                 email: "db.error.user@example.com",
-                app_metadata: { provider: "google" },
+                email_confirmed_at: "2026-10-30T00:00:00Z",
+                app_metadata: { provider: "google", providers: ["google"] },
+                identities: [{ provider: "google" }],
               },
             },
             error: null,
@@ -834,14 +890,81 @@ async function main() {
   console.log("  [PASS] User cannot self-approve: Static scan of src/ confirms select-only use (negative controls fail as expected) and migration locks RLS");
 
   // 5. Google login only, no magic links:
+  // (a) provider email + providers [email, google] + confirmed + approved -> allowed
+  const linkedGoogleAllowedRes = await middleware(
+    new NextRequest("http://localhost:3000/dashboard", {
+      headers: { authorization: "Bearer valid-email-plus-google-confirmed-approved" },
+    })
+  );
+  assert.strictEqual(
+    linkedGoogleAllowedRes.status,
+    200,
+    "Account with provider=email + providers=['email','google'] + confirmed email + approved=true must be allowed (200)"
+  );
+  const linkedGoogleEarlyAccessRedirect = await middleware(
+    new NextRequest("http://localhost:3000/early-access", {
+      headers: { authorization: "Bearer valid-email-plus-google-confirmed-approved" },
+    })
+  );
+  assert.strictEqual(linkedGoogleEarlyAccessRedirect.status, 307);
+  assert.strictEqual(new URL(linkedGoogleEarlyAccessRedirect.headers.get("location")!).pathname, "/dashboard");
+  console.log("  [PASS] (1) provider=email + providers=['email','google'] + email_confirmed_at set + approved=true -> allowed");
+
+  // (b) email-only -> blocked (even when email is marked approved)
   const magicLinkRes = await middleware(
     new NextRequest("http://localhost:3000/dashboard", {
       headers: { authorization: "Bearer valid-magic-link-token" },
     })
   );
-  assert.strictEqual(magicLinkRes.status, 307, "Magic link login must be blocked (redirected)");
+  assert.strictEqual(magicLinkRes.status, 307, "Email-only login must be blocked (redirected)");
   assert.strictEqual(new URL(magicLinkRes.headers.get("location")!).pathname, "/early-access");
-  console.log("  [PASS] Google login only: Magic link auth (provider=email) blocked even if email is marked approved");
+  const magicLinkApiRes = await middleware(
+    new NextRequest("http://localhost:3000/api/jobs/search", {
+      headers: { authorization: "Bearer valid-magic-link-token" },
+    })
+  );
+  assert.strictEqual(magicLinkApiRes.status, 403, "Email-only login on API must return 403");
+  console.log("  [PASS] (2) email-only (no google identity) -> blocked even if email is marked approved");
+
+  // (c) google linked but email not confirmed -> blocked (even when email is marked approved)
+  const unconfirmedGoogleRes = await middleware(
+    new NextRequest("http://localhost:3000/dashboard", {
+      headers: { authorization: "Bearer valid-google-linked-unconfirmed" },
+    })
+  );
+  assert.strictEqual(
+    unconfirmedGoogleRes.status,
+    307,
+    "Google-linked account without email_confirmed_at must be blocked (redirected)"
+  );
+  assert.strictEqual(new URL(unconfirmedGoogleRes.headers.get("location")!).pathname, "/early-access");
+  const unconfirmedGoogleApiRes = await middleware(
+    new NextRequest("http://localhost:3000/api/jobs/search", {
+      headers: { authorization: "Bearer valid-google-linked-unconfirmed" },
+    })
+  );
+  assert.strictEqual(unconfirmedGoogleApiRes.status, 403, "Unconfirmed Google-linked account on API must return 403");
+  console.log("  [PASS] (3) google linked + email_confirmed_at unset -> blocked even if email is marked approved");
+
+  // (d) approved flag still required for google-linked + confirmed account
+  const linkedGoogleUnapprovedRes = await middleware(
+    new NextRequest("http://localhost:3000/dashboard", {
+      headers: { authorization: "Bearer valid-email-plus-google-confirmed-unapproved" },
+    })
+  );
+  assert.strictEqual(
+    linkedGoogleUnapprovedRes.status,
+    307,
+    "Google-linked + confirmed account with approved=false must be blocked (redirected)"
+  );
+  assert.strictEqual(new URL(linkedGoogleUnapprovedRes.headers.get("location")!).pathname, "/early-access");
+  const linkedGoogleUnapprovedApiRes = await middleware(
+    new NextRequest("http://localhost:3000/api/jobs/search", {
+      headers: { authorization: "Bearer valid-email-plus-google-confirmed-unapproved" },
+    })
+  );
+  assert.strictEqual(linkedGoogleUnapprovedApiRes.status, 403, "Unapproved Google-linked account on API must return 403");
+  console.log("  [PASS] (4) provider=email + providers=['email','google'] + confirmed + approved=false -> blocked (approved flag still required)");
 
   // 6. Case-insensitive email matching:
   const caseInsensitiveRes = await middleware(
