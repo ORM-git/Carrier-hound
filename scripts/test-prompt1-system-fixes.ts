@@ -3,7 +3,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { spawnSync } from "child_process";
 import { NextRequest } from "next/server";
-import { verifyAdminSession } from "../src/lib/admin/auth";
+import { verifyAdminSession, isUserBlocked } from "../src/lib/admin/auth";
 import {
   isVerifiedAdminUser,
   isEmailInAdminList,
@@ -90,25 +90,87 @@ async function run() {
     assert.strictEqual(isUserEmailVerified({ email_confirmed_at: "2026-10-31T00:00:00.000Z" }), true);
     assert.strictEqual(isUserEmailVerified({ confirmed_at: "2026-10-31T00:00:00.000Z" }), true);
 
+    // Provider check rules:
+    // 1. provider email only fails
     assert.strictEqual(
       hasAdminGoogleProvider({ app_metadata: { provider: "email", providers: ["email"] } }),
-      false
+      false,
+      "provider email + providers [email] must fail hasAdminGoogleProvider"
     );
     assert.strictEqual(
-      hasAdminGoogleProvider({ app_metadata: { provider: "google", providers: ["google"] } }),
-      true
+      hasAdminGoogleProvider({ app_metadata: { provider: "email" } }),
+      false,
+      "provider email alone must fail hasAdminGoogleProvider"
+    );
+    assert.strictEqual(
+      hasAdminGoogleProvider({
+        app_metadata: { provider: "email" },
+        identities: [{ provider: "email" }],
+      }),
+      false,
+      "identities email only must fail hasAdminGoogleProvider"
     );
 
-    // Admin email without email_confirmed_at -> rejected
+    // 2. provider google or providers [email, google] or identities [google] passes
+    assert.strictEqual(
+      hasAdminGoogleProvider({ app_metadata: { provider: "google", providers: ["google"] } }),
+      true,
+      "provider google must pass hasAdminGoogleProvider"
+    );
+    assert.strictEqual(
+      hasAdminGoogleProvider({
+        app_metadata: { provider: "email", providers: ["email", "google"] },
+      }),
+      true,
+      "provider email + providers [email,google] must pass hasAdminGoogleProvider"
+    );
+    assert.strictEqual(
+      hasAdminGoogleProvider({
+        app_metadata: { provider: "email", providers: ["email"] },
+        identities: [{ provider: "email" }, { provider: "google" }],
+      }),
+      true,
+      "provider email + identities with google must pass hasAdminGoogleProvider"
+    );
+
+    // Metadata email_verified alone fails
+    assert.strictEqual(
+      isUserEmailVerified({
+        email: "xbsuryakant@gmail.com",
+        user_metadata: { email_verified: true },
+      }),
+      false,
+      "user_metadata.email_verified alone must fail isUserEmailVerified"
+    );
+    assert.strictEqual(
+      isUserEmailVerified({
+        email: "xbsuryakant@gmail.com",
+        app_metadata: { provider: "google", email_verified: true },
+      }),
+      false,
+      "app_metadata.email_verified alone must fail isUserEmailVerified"
+    );
     assert.strictEqual(
       isVerifiedAdminUser({
         email: "xbsuryakant@gmail.com",
         email_confirmed_at: null,
+        confirmed_at: null,
         app_metadata: { provider: "google", providers: ["google"] },
         user_metadata: { email_verified: true },
       }),
       false,
-      "Admin email without email_confirmed_at/confirmed_at must be rejected even if user_metadata.email_verified is true"
+      "metadata email_verified alone must fail isVerifiedAdminUser"
+    );
+    assert.strictEqual(
+      isVerifiedAdminUser({
+        email: "xbsuryakant@gmail.com",
+        email_confirmed_at: null,
+        confirmed_at: null,
+        app_metadata: { provider: "email", providers: ["email", "google"], email_verified: true },
+        user_metadata: { email_verified: true },
+      }),
+      false,
+      "metadata email_verified alone must fail isVerifiedAdminUser even with linked google provider"
     );
 
     // Admin email with email_confirmed_at but email-only provider (no google) -> rejected
@@ -121,6 +183,16 @@ async function run() {
       false,
       "Admin email with email-only provider (no google) must be rejected"
     );
+    assert.strictEqual(
+      isVerifiedAdminUser({
+        email: "xbsuryakant@gmail.com",
+        email_confirmed_at: "2026-10-31T00:00:00.000Z",
+        app_metadata: { provider: "email" },
+        identities: [{ provider: "email" }],
+      }),
+      false,
+      "Admin email with identities email only must be rejected"
+    );
 
     // Admin email with email_confirmed_at AND google provider -> accepted
     assert.strictEqual(
@@ -131,6 +203,27 @@ async function run() {
       }),
       true,
       "Admin email with email_confirmed_at AND google provider must be accepted"
+    );
+
+    // Admin email with email_confirmed_at AND linked google provider [email, google] -> accepted
+    assert.strictEqual(
+      isVerifiedAdminUser({
+        email: "xbsuryakant@gmail.com",
+        email_confirmed_at: "2026-10-31T00:00:00.000Z",
+        app_metadata: { provider: "email", providers: ["email", "google"] },
+      }),
+      true,
+      "provider email + providers [email,google] with confirmed email must pass isVerifiedAdminUser"
+    );
+    assert.strictEqual(
+      isVerifiedAdminUser({
+        email: "xbsuryakant@gmail.com",
+        email_confirmed_at: "2026-10-31T00:00:00.000Z",
+        app_metadata: { provider: "email" },
+        identities: [{ provider: "google" }],
+      }),
+      true,
+      "provider email + identities with google with confirmed email must pass isVerifiedAdminUser"
     );
 
     // 1. Admin API with unverified admin email -> 403
@@ -182,6 +275,34 @@ async function run() {
     );
     assert.strictEqual(emailOnlyAdminRes.status, 403, "Email-only admin without Google provider must receive HTTP 403");
 
+    // 1c. Admin API with provider: email + providers: [email, google] -> 200
+    global.fetch = async (input: any): Promise<Response> => {
+      const url = String(input);
+      if (url.includes("/auth/v1/user")) {
+        return new Response(
+          JSON.stringify({
+            id: "admin-email-plus-google",
+            email: "xbsuryakant@gmail.com",
+            email_confirmed_at: "2026-10-31T00:00:00.000Z",
+            app_metadata: { provider: "email", providers: ["email", "google"] },
+            identities: [{ provider: "email" }, { provider: "google" }],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      return new Response("Not found", { status: 404 });
+    };
+    const emailPlusGoogleAdminRes = await getAdminStats(
+      new Request("http://localhost:3000/api/admin/stats", {
+        headers: { Authorization: "Bearer token_email_plus_google_admin" },
+      })
+    );
+    assert.strictEqual(
+      emailPlusGoogleAdminRes.status,
+      200,
+      "provider email + providers [email,google] with confirmed email must receive HTTP 200"
+    );
+
     // 2. Middleware check on /admin and /api/admin/stats:
     const guestAdminPageRes = await middleware(new NextRequest("http://localhost:3000/admin"));
     assert.strictEqual(guestAdminPageRes.status, 403, "Guest request to /admin must return 403");
@@ -231,6 +352,70 @@ async function run() {
       "src/app/admin/layout.tsx must use isVerifiedAdminUser"
     );
     console.log("  [PASS] (a) Admin routes & APIs enforce admin list + email_confirmed_at/confirmed_at + Google provider (403 otherwise)");
+
+    // =========================================================================
+    // (a-fail-closed) Testing isUserBlocked Fail Closed on Error
+    // =========================================================================
+    console.log("\n--- (a-fail-closed) Testing isUserBlocked Fail Closed on Error ---");
+
+    // 1. Database error -> fails closed (true)
+    const dbErrAdmin = {
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            maybeSingle: async () => ({
+              data: null,
+              error: { message: "Database connection timeout" },
+            }),
+          }),
+        }),
+      }),
+    };
+    const blockedOnDbErr = await isUserBlocked("user-db-err", dbErrAdmin);
+    assert.strictEqual(blockedOnDbErr, true, "isUserBlocked must return true on database error (fail closed)");
+
+    // 2. Client exception thrown -> fails closed (true)
+    const crashAdmin = {
+      from: () => {
+        throw new Error("Network crash");
+      },
+    };
+    const blockedOnCrash = await isUserBlocked("user-crash", crashAdmin);
+    assert.strictEqual(blockedOnCrash, true, "isUserBlocked must return true on client exception (fail closed)");
+
+    // 3. getSupabaseAdmin() throws -> fails closed (true)
+    const savedRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const savedServiceKey = process.env.SUPABASE_SERVICE_KEY;
+    try {
+      delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+      delete process.env.SUPABASE_SERVICE_KEY;
+      const blockedOnMissingKey = await isUserBlocked("user-missing-key");
+      assert.strictEqual(
+        blockedOnMissingKey,
+        true,
+        "isUserBlocked must return true when getSupabaseAdmin throws (fail closed)"
+      );
+    } finally {
+      if (savedRoleKey) process.env.SUPABASE_SERVICE_ROLE_KEY = savedRoleKey;
+      if (savedServiceKey) process.env.SUPABASE_SERVICE_KEY = savedServiceKey;
+    }
+
+    // 4. Normal unblocked user without error -> false
+    const normalAdmin = {
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            maybeSingle: async () => ({
+              data: null,
+              error: null,
+            }),
+          }),
+        }),
+      }),
+    };
+    const unblockedNormal = await isUserBlocked("user-normal", normalAdmin);
+    assert.strictEqual(unblockedNormal, false, "isUserBlocked must return false for normal unblocked user without errors");
+    console.log("  [PASS] isUserBlocked fails closed (returns true) on error");
 
     // =========================================================================
     // (b) Account delete:

@@ -196,15 +196,17 @@ export async function verifyUserNotBanned(
 
 /**
  * Checks whether a given user is blocked or banned.
+ * Fails closed (returns true) on error to prevent unauthorized access.
  */
-export async function isUserBlocked(userId: string): Promise<boolean> {
+export async function isUserBlocked(userId: string, customAdmin?: any): Promise<boolean> {
   if (!userId) return false;
 
   try {
-    const admin = getSupabaseAdmin();
+    const admin = customAdmin || getSupabaseAdmin();
     const result = await verifyUserNotBanned(admin, userId);
     return result.isBlocked;
-  } catch (_) {
-    return false;
+  } catch (err) {
+    console.warn("[Ban Check] Error checking isUserBlocked; failing closed:", err);
+    return true;
   }
 }

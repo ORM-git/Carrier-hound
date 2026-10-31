@@ -48,25 +48,24 @@ export function isUserEmailVerified(user: any): boolean {
 }
 
 /**
- * Validates whether the authenticated Supabase user authenticated with Google
- * (same provider/providers check as the early-access gate).
+ * Validates whether the authenticated Supabase user authenticated with Google.
+ * Allows when the user has a linked Google identity (identities[].provider === "google",
+ * app_metadata.providers includes "google", or app_metadata.provider === "google").
+ * Confirmed email is still required by isVerifiedAdminUser.
+ * Email-only accounts stay blocked.
  */
 export function hasAdminGoogleProvider(user: any): boolean {
   if (!user || typeof user !== "object") return false;
   const provider = user.app_metadata?.provider;
-  if (provider === "email") return false;
   if (provider === "google") return true;
 
   if (Array.isArray(user.app_metadata?.providers)) {
     if (user.app_metadata.providers.includes("google")) return true;
-    if (user.app_metadata.providers.includes("email")) return false;
   }
 
   if (Array.isArray(user.identities) && user.identities.length > 0) {
     const hasGoogle = user.identities.some((id: any) => id?.provider === "google");
-    const hasEmailOnly = user.identities.every((id: any) => id?.provider === "email");
     if (hasGoogle) return true;
-    if (hasEmailOnly) return false;
   }
 
   return false;
