@@ -9,6 +9,8 @@ import { useState, useEffect } from "react";
  */
 
 export interface LiveStatsData {
+  activeJobs: number | null;
+  companies: number | null;
   jobsToday: number | null;
   totalJobs: number | null;
   companiesScanned: number | null;
@@ -29,14 +31,16 @@ export async function getLiveStats(): Promise<LiveStatsData | null> {
     const res = await fetch("/api/stats");
     if (!res.ok) return null;
     const data = await res.json();
-    if (
-      typeof data.totalJobs === "number" &&
-      typeof data.companiesScanned === "number"
-    ) {
+    const activeCount = typeof data.activeJobs === "number" ? data.activeJobs : (typeof data.totalJobs === "number" ? data.totalJobs : null);
+    const companyCount = typeof data.companies === "number" ? data.companies : (typeof data.companiesScanned === "number" ? data.companiesScanned : null);
+
+    if (activeCount !== null && companyCount !== null) {
       cachedStats = {
+        activeJobs: activeCount,
+        companies: companyCount,
         jobsToday: typeof data.jobsToday === "number" ? data.jobsToday : 0,
-        totalJobs: data.totalJobs,
-        companiesScanned: data.companiesScanned,
+        totalJobs: activeCount,
+        companiesScanned: companyCount,
         updatedAt: data.updatedAt,
       };
       lastFetchTime = now;
@@ -82,8 +86,10 @@ export function useLiveStats() {
   return {
     stats,
     loading,
-    totalJobs: stats?.totalJobs ?? null,
-    companiesScanned: stats?.companiesScanned ?? null,
+    activeJobs: stats?.activeJobs ?? stats?.totalJobs ?? null,
+    companies: stats?.companies ?? stats?.companiesScanned ?? null,
+    totalJobs: stats?.totalJobs ?? stats?.activeJobs ?? null,
+    companiesScanned: stats?.companiesScanned ?? stats?.companies ?? null,
     jobsToday: stats?.jobsToday ?? null,
   };
 }

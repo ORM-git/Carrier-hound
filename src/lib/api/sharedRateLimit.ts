@@ -92,3 +92,14 @@ export function _resetTrackRateLimitStore() {
 export function _resetEarlyAccessRateLimitStore() {
   earlyAccessRateLimitStore.clear();
 }
+
+export const STATS_RATE_LIMIT = {
+  maxRequests: 60,
+  windowSeconds: 60,
+};
+
+export const statsRateLimitStore = new Map<string, { count: number; resetAt: number }>();
+
+export function _resetStatsRateLimitStore() {
+  statsRateLimitStore.clear();
+}
