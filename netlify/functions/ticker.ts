@@ -82,39 +82,125 @@ export async function handler(event?: any) {
   try {
     const { supabase, supabaseUrl } = getSupabaseAdmin();
 
-    // 1. Query recent active jobs (including company_id for direct UUID lookup)
-    const { data: jobRows, error: jobsError } = await supabase
-      .from("jobs")
-      .select("company, company_id, title, posted_at, created_at")
-      .eq("status", "active")
-      .eq("is_active", true)
-      .order("posted_at", { ascending: false, nullsFirst: false })
-      .limit(100);
+    const TARGET_ITEMS = 20;
+    const MAX_PER_COMPANY = 2;
+    const PAGE_SIZE = 100;
+    const MAX_CANDIDATE_ROWS = 500;
+    const MAX_FUTURE_SKEW_MS = 5 * 60 * 1000; // 5 minutes
+    const nowMs = Date.now();
 
-    if (jobsError || !jobRows) {
-      return {
-        statusCode: 503,
-        headers: {
-          ...headers,
-          "Cache-Control": "no-store",
-        },
-        body: JSON.stringify({ error: "Service unavailable" }),
-      };
+    const selectedRows: Array<{
+      company: string;
+      cleanCompany: string;
+      company_id?: string | null;
+      title: string;
+      rawTimestamp: string;
+    }> = [];
+    const companyCounts = new Map<string, number>();
+    const seenJobKeys = new Set<string>();
+
+    let offset = 0;
+    while (selectedRows.length < TARGET_ITEMS && offset < MAX_CANDIDATE_ROWS) {
+      const from = offset;
+      const to = Math.min(offset + PAGE_SIZE - 1, MAX_CANDIDATE_ROWS - 1);
+
+      const { data: pageRows, error: jobsError } = await supabase
+        .from("jobs")
+        .select("id, company, company_id, title, posted_at, created_at")
+        .eq("status", "active")
+        .eq("is_active", true)
+        .order("posted_at", { ascending: false, nullsFirst: false })
+        .range(from, to);
+
+      if (jobsError || !pageRows) {
+        if (selectedRows.length === 0 && offset === 0) {
+          return {
+            statusCode: 503,
+            headers: {
+              ...headers,
+              "Cache-Control": "no-store",
+            },
+            body: JSON.stringify({ error: "Service unavailable" }),
+          };
+        }
+        break;
+      }
+
+      if (pageRows.length === 0) {
+        break;
+      }
+
+      let newRowsInBatch = 0;
+      for (const row of pageRows) {
+        const rowKey = row.id ? String(row.id) : `${row.company}-${row.title}-${row.posted_at || row.created_at}`;
+        if (seenJobKeys.has(rowKey)) {
+          continue;
+        }
+        seenJobKeys.add(rowKey);
+        newRowsInBatch++;
+
+        if (selectedRows.length >= TARGET_ITEMS) {
+          break;
+        }
+
+        const rawTimestamp = row.posted_at || row.created_at;
+        if (!rawTimestamp) {
+          continue;
+        }
+
+        const timeMs = new Date(rawTimestamp).getTime();
+        if (isNaN(timeMs)) {
+          continue;
+        }
+
+        if (timeMs > nowMs + MAX_FUTURE_SKEW_MS) {
+          continue;
+        }
+
+        const cleanCompany = String(row.company || "").trim();
+        const compKey = cleanCompany.toLowerCase();
+
+        if (compKey) {
+          const count = companyCounts.get(compKey) || 0;
+          if (count >= MAX_PER_COMPANY) {
+            continue;
+          }
+          companyCounts.set(compKey, count + 1);
+        }
+
+        selectedRows.push({
+          company: row.company,
+          cleanCompany,
+          company_id: row.company_id,
+          title: row.title,
+          rawTimestamp,
+        });
+      }
+
+      if (newRowsInBatch === 0) {
+        break;
+      }
+
+      if (pageRows.length < (to - from + 1)) {
+        break;
+      }
+
+      offset += pageRows.length;
     }
 
-    // 2. Collect company_ids and distinct company names
+    // 2. Collect company_ids and distinct company names for the selected rows
     const companyIds = Array.from(
       new Set(
-        jobRows
-          .map((r: any) => (r.company_id ? String(r.company_id).trim() : ""))
+        selectedRows
+          .map((r) => (r.company_id ? String(r.company_id).trim() : ""))
           .filter(Boolean)
       )
     );
 
     const distinctCompanyNames = Array.from(
       new Set(
-        jobRows
-          .map((r: any) => (r.company ? String(r.company).trim() : ""))
+        selectedRows
+          .map((r) => r.cleanCompany)
           .filter(Boolean)
       )
     );
@@ -194,48 +280,16 @@ export async function handler(event?: any) {
       }
     }
 
-    const nowMs = Date.now();
-    const MAX_FUTURE_SKEW_MS = 5 * 60 * 1000; // 5 minutes
-
     const tickerItems: Array<{
       company: string;
       title: string;
       posted_at: string;
       logo_url: string | null;
     }> = [];
-    const companyCounts = new Map<string, number>();
 
-    for (const row of jobRows) {
-      if (tickerItems.length >= 20) break;
-
-      // Drop rows that have neither posted_at nor created_at instead of falling back to now()
-      const rawTimestamp = row.posted_at || row.created_at;
-      if (!rawTimestamp) {
-        continue;
-      }
-
-      const timeMs = new Date(rawTimestamp).getTime();
-      if (isNaN(timeMs)) {
-        continue;
-      }
-
-      // Drop rows further than 5 minutes in the future
-      if (timeMs > nowMs + MAX_FUTURE_SKEW_MS) {
-        continue;
-      }
-
-      const cleanCompany = String(row.company || "").trim();
-      const compKey = cleanCompany.toLowerCase();
-
-      // Cap jobs per company: max 2 per company in the ticker's 20
-      if (compKey) {
-        const count = companyCounts.get(compKey) || 0;
-        if (count >= 2) {
-          continue;
-        }
-      }
-
+    for (const row of selectedRows) {
       const compId = row.company_id ? String(row.company_id).trim() : "";
+      const cleanCompany = row.cleanCompany;
 
       let resolvedLogo: string | null = null;
       if (compId && idToLogo.has(compId)) {
@@ -244,14 +298,10 @@ export async function handler(event?: any) {
         resolvedLogo = nameToLogo.get(cleanCompany.toLowerCase())!;
       }
 
-      if (compKey) {
-        companyCounts.set(compKey, (companyCounts.get(compKey) || 0) + 1);
-      }
-
       tickerItems.push({
         company: cleanCompany,
         title: String(row.title || "").trim(),
-        posted_at: new Date(rawTimestamp).toISOString(),
+        posted_at: new Date(row.rawTimestamp).toISOString(),
         logo_url: resolvedLogo,
       });
     }
