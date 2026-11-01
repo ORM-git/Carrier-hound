@@ -1173,9 +1173,9 @@ export function normalizeDate(input: string | number | Date | null | undefined):
 export function detectCategory(title: string = '', tags: string[] = []): string {
   const combined = `${title} ${tags.join(' ')}`.toLowerCase();
   if (
-    combined.includes('ai ') ||
+    /\bai\b/i.test(combined) ||
     combined.includes('machine learning') ||
-    combined.includes('ml ') ||
+    /\bml\b/i.test(combined) ||
     combined.includes('deep learning') ||
     combined.includes('nlp') ||
     combined.includes('llm') ||
@@ -1195,16 +1195,22 @@ export function detectCategory(title: string = '', tags: string[] = []): string 
   }
   if (
     combined.includes('design') ||
-    combined.includes('ui') ||
-    combined.includes('ux') ||
-    combined.includes('product design')
+    /\b(ui|ux)\b/i.test(combined) ||
+    combined.includes('product design') ||
+    combined.includes('graphic design')
   ) {
     return 'design';
   }
   if (
     combined.includes('product manager') ||
     combined.includes('product management') ||
-    combined.includes('head of product')
+    combined.includes('head of product') ||
+    combined.includes('program manager') ||
+    combined.includes('program management') ||
+    combined.includes('project manager') ||
+    combined.includes('project management') ||
+    /\btpm\b/i.test(combined) ||
+    combined.includes('scrum master')
   ) {
     return 'product';
   }
@@ -1212,11 +1218,18 @@ export function detectCategory(title: string = '', tags: string[] = []): string 
     combined.includes('marketing') ||
     combined.includes('growth') ||
     combined.includes('content') ||
-    combined.includes('seo')
+    combined.includes('seo') ||
+    /\binfluencer\b/i.test(combined) ||
+    /\bsocial\b/i.test(combined) ||
+    /\bculture\b/i.test(combined) ||
+    /\bcommunity\b/i.test(combined) ||
+    /\bbrand\b/i.test(combined) ||
+    combined.includes('public relations')
   ) {
     return 'marketing';
   }
   if (
+    combined.includes('data ') ||
     combined.includes('data engineer') ||
     combined.includes('analytics') ||
     combined.includes('database') ||

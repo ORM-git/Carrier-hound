@@ -420,20 +420,26 @@ export default function JobFilterBar({
                     >
                       All Functions
                     </button>
-                    {filteredRoles.map((r) => (
-                      <button
-                        key={r}
-                        type="button"
-                        onClick={() => setDraftFilters((prev) => ({ ...prev, category: r.toLowerCase().replace(/ & /g, "-").replace(/\s+/g, "-") }))}
-                        className={`w-full text-left px-2.5 py-1.5 rounded-lg transition text-[13px] ${
-                          draftFilters.category === r.toLowerCase().replace(/ & /g, "-").replace(/\s+/g, "-")
-                            ? "bg-[#EFF6FF] text-[#1D4ED8] font-bold"
-                            : "text-[#334155] hover:bg-slate-50"
-                        }`}
-                      >
-                        {r}
-                      </button>
-                    ))}
+                    {filteredRoles.map((r) => {
+                      const slug = r === "AI & Machine Learning" ? "ai" : r.toLowerCase().replace(/ & /g, "-").replace(/\s+/g, "-");
+                      const isSelected = r === "AI & Machine Learning"
+                        ? draftFilters.category === "ai" || draftFilters.category === "ai-ml" || draftFilters.category === "ai-machine-learning"
+                        : draftFilters.category === slug;
+                      return (
+                        <button
+                          key={r}
+                          type="button"
+                          onClick={() => setDraftFilters((prev) => ({ ...prev, category: slug }))}
+                          className={`w-full text-left px-2.5 py-1.5 rounded-lg transition text-[13px] ${
+                            isSelected
+                              ? "bg-[#EFF6FF] text-[#1D4ED8] font-bold"
+                              : "text-[#334155] hover:bg-slate-50"
+                          }`}
+                        >
+                          {r}
+                        </button>
+                      );
+                    })}
                   </div>
 
                   {/* Footer */}

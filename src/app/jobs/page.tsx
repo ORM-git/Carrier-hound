@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { motion, useReducedMotion, AnimatePresence } from "motion/react";
 import { getLiveJobs, getLiveJobById, LiveJob, isEarlyApplicant } from "@/lib/jobs/service";
 import { getAuthUser, getUserPreferences } from "@/lib/auth/session";
-import { getCandidateProfile } from "@/lib/resume/storage";
+import { getCandidateProfile, calculateProfileCompletion } from "@/lib/resume/storage";
 import { CandidateProfile } from "@/lib/resume/types";
 import { UserPreferences } from "@/lib/auth/types";
 import { TrackedApplication } from "@/lib/tracker/types";
@@ -94,7 +94,7 @@ const SAVED_PRESETS: SavedFilterPreset[] = [
   { name: "Full Stack Engineer, US", search: "Full Stack", remoteOnly: true },
   { name: "Senior React & Fullstack", search: "React", remoteOnly: true },
   { name: "Staff Distributed Systems", search: "Distributed", remoteOnly: true },
-  { name: "AI & Machine Learning", category: "data", remoteOnly: false },
+  { name: "AI & Machine Learning", category: "ai", remoteOnly: false },
   { name: "Product Design (Worldwide)", category: "design", remoteOnly: true },
 ];
 
@@ -1618,7 +1618,9 @@ function JobsPageInner() {
     {
       id: "recommended",
       label: "Recommended",
-      count: totalCount > 0 ? totalCount.toLocaleString() : liveJobs.length,
+      count: hasActiveFilters
+        ? (displayedJobs.length === 0 && !loadingJobs ? "0" : (totalCount > 0 ? totalCount.toLocaleString() : displayedJobs.length.toLocaleString()))
+        : (totalCount > 0 ? totalCount.toLocaleString() : liveJobs.length),
       active: activeTab === "recommended",
       onClick: () => {
         setActiveTab("recommended");
@@ -2560,63 +2562,73 @@ function JobsPageInner() {
                   </div>
 
                   {/* Card 2: Profile & Job Match Progress Card */}
-                  <div className="bg-blue-50/70 border border-blue-200/70 rounded-[16px] p-4 space-y-3">
-                    <div className="flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-full bg-blue-100 text-[#2563EB] flex items-center justify-center shrink-0">
-                        <Lightbulb className="w-4 h-4" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs font-bold text-[#0F172A] leading-tight">
-                          Complete Profile & Preferences
+                  {(() => {
+                    const { hasResume, hasPreferences, hasTracked, completionPercentage } = calculateProfileCompletion({
+                      candidate,
+                      preferences,
+                      savedJobIds,
+                    });
+
+                    return (
+                      <div className="bg-blue-50/70 border border-blue-200/70 rounded-[16px] p-4 space-y-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-full bg-blue-100 text-[#2563EB] flex items-center justify-center shrink-0">
+                            <Lightbulb className="w-4 h-4" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs font-bold text-[#0F172A] leading-tight">
+                              Complete Profile & Preferences
+                            </div>
+                          </div>
+                          <span className="text-xs font-bold text-[#2563EB]">
+                            {`${completionPercentage}%`}
+                          </span>
+                        </div>
+
+                        <div className="h-1.5 w-full bg-blue-200 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-[#2563EB] rounded-full transition-all duration-300"
+                            style={{ width: `${completionPercentage}%` }}
+                          />
+                        </div>
+
+                        <div className="space-y-2 pt-1 text-xs text-slate-700">
+                          <Link
+                            href="/resume"
+                            className="flex items-center justify-between p-2 rounded-lg bg-white/80 hover:bg-white transition border border-blue-100"
+                          >
+                            <span className="flex items-center gap-2">
+                              <CheckCircle2 className={`w-3.5 h-3.5 ${hasResume ? "text-emerald-600" : "text-slate-300"}`} />
+                              <span>1. Upload Your Resume</span>
+                            </span>
+                            <ArrowRight className="w-3 h-3 text-[#475569]" />
+                          </Link>
+
+                          <Link
+                            href="/settings?tab=preferences"
+                            className="flex items-center justify-between p-2 rounded-lg bg-white/80 hover:bg-white transition border border-blue-100"
+                          >
+                            <span className="flex items-center gap-2">
+                              <CheckCircle2 className={`w-3.5 h-3.5 ${hasPreferences ? "text-emerald-600" : "text-slate-300"}`} />
+                              <span>2. Set Job Preferences</span>
+                            </span>
+                            <ArrowRight className="w-3 h-3 text-[#475569]" />
+                          </Link>
+
+                          <Link
+                            href="/tracker"
+                            className="flex items-center justify-between p-2 rounded-lg bg-white/80 hover:bg-white transition border border-blue-100"
+                          >
+                            <span className="flex items-center gap-2">
+                              <CheckCircle2 className={`w-3.5 h-3.5 ${hasTracked ? "text-emerald-600" : "text-slate-300"}`} />
+                              <span>3. Track Liked Positions</span>
+                            </span>
+                            <ArrowRight className="w-3 h-3 text-[#475569]" />
+                          </Link>
                         </div>
                       </div>
-                      <span className="text-xs font-bold text-[#2563EB]">
-                        {candidate && preferences ? "100%" : candidate || preferences ? "75%" : "50%"}
-                      </span>
-                    </div>
-
-                    <div className="h-1.5 w-full bg-blue-200 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-[#2563EB] rounded-full transition-all duration-300"
-                        style={{ width: candidate && preferences ? "100%" : candidate || preferences ? "75%" : "50%" }}
-                      />
-                    </div>
-
-                    <div className="space-y-2 pt-1 text-xs text-slate-700">
-                      <Link
-                        href="/resume"
-                        className="flex items-center justify-between p-2 rounded-lg bg-white/80 hover:bg-white transition border border-blue-100"
-                      >
-                        <span className="flex items-center gap-2">
-                          <CheckCircle2 className={`w-3.5 h-3.5 ${candidate ? "text-emerald-600" : "text-slate-300"}`} />
-                          <span>1. Upload Your Resume</span>
-                        </span>
-                        <ArrowRight className="w-3 h-3 text-[#475569]" />
-                      </Link>
-
-                      <Link
-                        href="/settings?tab=preferences"
-                        className="flex items-center justify-between p-2 rounded-lg bg-white/80 hover:bg-white transition border border-blue-100"
-                      >
-                        <span className="flex items-center gap-2">
-                          <CheckCircle2 className={`w-3.5 h-3.5 ${preferences ? "text-emerald-600" : "text-slate-300"}`} />
-                          <span>2. Set Job Preferences</span>
-                        </span>
-                        <ArrowRight className="w-3 h-3 text-[#475569]" />
-                      </Link>
-
-                      <Link
-                        href="/tracker"
-                        className="flex items-center justify-between p-2 rounded-lg bg-white/80 hover:bg-white transition border border-blue-100"
-                      >
-                        <span className="flex items-center gap-2">
-                          <CheckCircle2 className={`w-3.5 h-3.5 ${savedJobIds.length > 0 ? "text-emerald-600" : "text-slate-300"}`} />
-                          <span>3. Track Liked Positions</span>
-                        </span>
-                        <ArrowRight className="w-3 h-3 text-[#475569]" />
-                      </Link>
-                    </div>
-                  </div>
+                    );
+                  })()}
                 </div>
               </div>
             </>
