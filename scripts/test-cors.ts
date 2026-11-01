@@ -24,9 +24,14 @@ interface TestCase {
 
 const TEST_CASES: TestCase[] = [
   { origin: "https://careermonke.com", desc: "Production Canonical", expectedAllowed: true },
-  { origin: "https://careermonke12.netlify.app", desc: "Netlify Production", expectedAllowed: true },
-  { origin: "https://carrier-hound.pages.dev", desc: "Cloudflare Preview", expectedAllowed: true },
+  { origin: "https://www.careermonke.com", desc: "Production Canonical WWW", expectedAllowed: true },
+  { origin: "https://careermonke.netlify.app", desc: "Netlify Production 1", expectedAllowed: true },
+  { origin: "https://careermonke12.netlify.app", desc: "Netlify Production 2", expectedAllowed: true },
+  { origin: "https://carrier-hound.pages.dev", desc: "Canonical Cloudflare Pages", expectedAllowed: true },
+  { origin: "https://careerhound.netlify.app", desc: "Canonical Careerhound Netlify", expectedAllowed: true },
   { origin: "http://localhost:3000", desc: "Local Dev (allowed in dev)", expectedAllowed: true },
+  { origin: "https://anything.carrier-hound.pages.dev", desc: "Stale Cloudflare Preview (Blocked)", expectedAllowed: false },
+  { origin: "https://stale-deploy.carrier-hound.pages.dev", desc: "Stale Preview Subdomain (Blocked)", expectedAllowed: false },
   { origin: "https://evil.example", desc: "Untrusted Origin", expectedAllowed: false },
   { origin: undefined, desc: "No Origin (server/direct)", expectedAllowed: false },
 ];

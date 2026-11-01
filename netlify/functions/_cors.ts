@@ -65,7 +65,7 @@ export function buildCorsHeaders(
 
   const normalizedOrigin = origin ? origin.trim().replace(/\/+$/, "") : null;
   const isAllowed = normalizedOrigin
-    ? allowedSet.has(normalizedOrigin) || /^https:\/\/[a-zA-Z0-9-]+\.carrier-hound\.pages\.dev$/.test(normalizedOrigin)
+    ? allowedSet.has(normalizedOrigin)
     : false;
 
   const headers: Record<string, string> = {
