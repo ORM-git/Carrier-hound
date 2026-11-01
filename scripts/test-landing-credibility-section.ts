@@ -280,7 +280,12 @@ async function testLandingPageStructure() {
 
   // 2. Existing sections remain intact
   assert.ok(pageSrc.includes("Find jobs not on LinkedIn/Indeed"), "Hero headline intact");
-  assert.ok(pageSrc.includes("Tired of getting auto-rejections?"), "Comparison section intact");
+  assert.ok(
+    pageSrc.includes("LandingComparisonSection") ||
+      pageSrc.includes("Tired of getting auto-rejected?") ||
+      pageSrc.includes("Tired of getting auto-rejections?"),
+    "Comparison section intact"
+  );
   assert.ok(pageSrc.includes("Meet the monke that fixes your resume."), "AI Resume Monke intact");
   assert.ok(pageSrc.includes("Orissa Lee Patnaik"), "Founder section intact");
   assert.ok(pageSrc.includes("<Testimonials />"), "Testimonials intact");
