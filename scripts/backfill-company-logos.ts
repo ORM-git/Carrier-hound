@@ -6,20 +6,26 @@
  * Requirements:
  * - Service role client (reads NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY).
  * - Dry-run by default. Pass `--write` to apply uploads and database updates.
- * - Fully idempotent (skips rows whose logo_url already points to 'company-logos').
- * - For each company row:
+ * - Fully idempotent.
+ * - Derives candidate board URLs:
  *     greenhouse: https://job-boards.greenhouse.io/<slug> (fallback: https://boards.greenhouse.io/<slug>)
  *     ashby:      https://jobs.ashbyhq.com/<slug>
  *     lever:      https://jobs.lever.co/<slug>
- * - Parse og:image meta tag from HTML.
- * - Download image validating content-type image/* and size <= 2MB (2,097,152 bytes).
+ * - Favicon / apple-touch-icon vs og:image preference:
+ *     If the page has a favicon or apple-touch-icon of at least 128px (width & height >= 128),
+ *     use that over og:image. Otherwise fallback to og:image.
+ * - Image dimensions check:
+ *     Skip when width / height > 1.6 (prefer square-ish images).
+ * - Generic default filter:
+ *     Skip any image URL shared by 3 or more companies.
+ * - Allowed formats: raster images only (png, jpeg/jpg, webp, gif). SVG is strictly excluded.
  * - In --write mode:
- *     Upload to 'company-logos' bucket at <company_id>.<ext> (upsert: true).
- *     Set companies.logo_url to the public storage URL.
- * - Print counts (found / missing / failed / already_set) per ats_type.
- * - Never throw on a single company error.
- * - No placeholders (no logo found means logo_url stays null).
- * - Prints rollback SQL at the end:
+ *     Uploads to 'company-logos' bucket at <company_id>.<ext> (upsert: true).
+ *     Deletes old file(s) when extension changes.
+ *     Sets companies.logo_url to the public storage URL.
+ * - In dry-run mode:
+ *     Prints company, ATS and candidate image URL per row.
+ * - Prints found/missing/failed per ats_type summary table and rollback SQL:
  *     UPDATE companies SET logo_url = null WHERE logo_url LIKE '%company-logos%';
  */
 
@@ -45,6 +51,29 @@ interface AtsStats {
   total: number;
 }
 
+interface CandidateLogo {
+  company: CompanyRow;
+  ats: string;
+  boardUrl: string;
+  imageUrl: string;
+  source: "icon" | "og:image";
+  buffer: Buffer;
+  contentType: string;
+  ext: string;
+  width: number;
+  height: number;
+}
+
+interface CompanyInspection {
+  company: CompanyRow;
+  ats: string;
+  boardUrl: string;
+  iconCandidate: CandidateLogo | null;
+  ogCandidate: CandidateLogo | null;
+  status: "inspected" | "already_set" | "missing" | "failed";
+  reason?: string;
+}
+
 const MAX_IMAGE_BYTES = 2097152; // 2MB
 const REQUEST_TIMEOUT_MS = 10000; // 10s
 const CONCURRENCY = 8;
@@ -61,51 +90,188 @@ function decodeHtmlEntities(str: string): string {
     .replace(/&#39;/g, "'");
 }
 
-function getExtension(contentType: string, url: string): string {
-  const cleanType = (contentType || "").toLowerCase().split(";")[0].trim();
-  switch (cleanType) {
-    case "image/png":
-      return "png";
-    case "image/jpeg":
-    case "image/jpg":
-      return "jpg";
-    case "image/webp":
-      return "webp";
-    case "image/gif":
-      return "gif";
-    case "image/svg+xml":
-      return "svg";
-  }
+export function getImageDimensions(buffer: Buffer): { width: number; height: number; type: string } | null {
+  if (!buffer || buffer.length < 8) return null;
 
-  try {
-    const pathname = new URL(url).pathname;
-    const match = pathname.match(/\.(png|jpe?g|webp|gif|svg)$/i);
-    if (match) {
-      const ext = match[1].toLowerCase();
-      return ext === "jpeg" ? "jpg" : ext;
+  // 1. PNG: 89 50 4E 47 0D 0A 1A 0A
+  if (
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47 &&
+    buffer[4] === 0x0d &&
+    buffer[5] === 0x0a &&
+    buffer[6] === 0x1a &&
+    buffer[7] === 0x0a
+  ) {
+    if (buffer.length >= 24) {
+      const width = buffer.readUInt32BE(16);
+      const height = buffer.readUInt32BE(20);
+      return { width, height, type: "png" };
     }
-  } catch {
-    // ignore
   }
 
-  return "png";
+  // 2. GIF: GIF87a or GIF89a
+  if (
+    buffer.length >= 10 &&
+    buffer[0] === 0x47 &&
+    buffer[1] === 0x49 &&
+    buffer[2] === 0x46 &&
+    buffer[3] === 0x38
+  ) {
+    const width = buffer.readUInt16LE(6);
+    const height = buffer.readUInt16LE(8);
+    return { width, height, type: "gif" };
+  }
+
+  // 3. JPEG: FF D8 ...
+  if (buffer[0] === 0xff && buffer[1] === 0xd8) {
+    let offset = 2;
+    while (offset < buffer.length - 1) {
+      if (buffer[offset] !== 0xff) {
+        offset++;
+        continue;
+      }
+      const marker = buffer[offset + 1];
+      // SOF markers: 0xC0 to 0xCF, except 0xC4, 0xC8, 0xCC
+      if (
+        marker >= 0xc0 &&
+        marker <= 0xcf &&
+        marker !== 0xc4 &&
+        marker !== 0xc8 &&
+        marker !== 0xcc
+      ) {
+        if (offset + 8 < buffer.length) {
+          const height = buffer.readUInt16BE(offset + 5);
+          const width = buffer.readUInt16BE(offset + 7);
+          return { width, height, type: "jpg" };
+        }
+      }
+      if (offset + 3 < buffer.length) {
+        const len = buffer.readUInt16BE(offset + 2);
+        offset += 2 + len;
+      } else {
+        break;
+      }
+    }
+  }
+
+  // 4. WebP: RIFF .... WEBP
+  if (
+    buffer.length >= 30 &&
+    buffer.toString("ascii", 0, 4) === "RIFF" &&
+    buffer.toString("ascii", 8, 12) === "WEBP"
+  ) {
+    const chunkHeader = buffer.toString("ascii", 12, 16);
+    if (chunkHeader === "VP8 " && buffer.length >= 30) {
+      const width = (buffer[26] | (buffer[27] << 8)) & 0x3fff;
+      const height = (buffer[28] | (buffer[29] << 8)) & 0x3fff;
+      return { width, height, type: "webp" };
+    }
+    if (chunkHeader === "VP8L" && buffer.length >= 25 && buffer[20] === 0x2f) {
+      const b0 = buffer[21],
+        b1 = buffer[22],
+        b2 = buffer[23],
+        b3 = buffer[24];
+      const width = 1 + (((b1 & 0x3f) << 8) | b0);
+      const height = 1 + (((b3 & 0xf) << 10) | (b2 << 2) | ((b1 & 0xc0) >> 6));
+      return { width, height, type: "webp" };
+    }
+    if (chunkHeader === "VP8X" && buffer.length >= 30) {
+      const width = 1 + buffer.readUIntLE(24, 3);
+      const height = 1 + buffer.readUIntLE(27, 3);
+      return { width, height, type: "webp" };
+    }
+  }
+
+  return null;
 }
 
-function parseOgImage(html: string, baseUrl: string): string | null {
-  const match =
+export function getCleanImageMeta(
+  rawContentType: string,
+  buffer: Buffer,
+  url: string
+): { contentType: string; ext: string } | null {
+  const dims = getImageDimensions(buffer);
+  if (!dims) {
+    // Explicitly reject SVGs and non-raster formats
+    return null;
+  }
+
+  switch (dims.type) {
+    case "png":
+      return { contentType: "image/png", ext: "png" };
+    case "jpg":
+      return { contentType: "image/jpeg", ext: "jpg" };
+    case "webp":
+      return { contentType: "image/webp", ext: "webp" };
+    case "gif":
+      return { contentType: "image/gif", ext: "gif" };
+    default:
+      return null;
+  }
+}
+
+export function parsePageImages(
+  html: string,
+  baseUrl: string
+): {
+  iconUrls: Array<{ url: string; declaredSize: number }>;
+  ogImageUrl: string | null;
+} {
+  const ogMatch =
     html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ||
     html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
 
-  if (!match || !match[1]) return null;
-
-  const rawUrl = decodeHtmlEntities(match[1].trim());
-  if (!rawUrl) return null;
-
-  try {
-    return new URL(rawUrl, baseUrl).toString();
-  } catch {
-    return null;
+  let ogImageUrl: string | null = null;
+  if (ogMatch && ogMatch[1]) {
+    try {
+      const raw = decodeHtmlEntities(ogMatch[1].trim());
+      if (raw && !raw.endsWith(".svg") && !raw.includes(".svg?")) {
+        ogImageUrl = new URL(raw, baseUrl).toString();
+      }
+    } catch {
+      ogImageUrl = null;
+    }
   }
+
+  // Parse candidate icons (<link rel="apple-touch-icon" ...>, <link rel="icon" ...>)
+  const iconUrls: Array<{ url: string; declaredSize: number }> = [];
+  const linkRegex = /<link[^>]+>/gi;
+  let match: RegExpExecArray | null;
+
+  while ((match = linkRegex.exec(html)) !== null) {
+    const tag = match[0];
+    const relMatch = tag.match(/rel=["']([^"']+)["']/i);
+    if (!relMatch) continue;
+    const rel = relMatch[1].toLowerCase();
+    if (!rel.includes("icon")) continue;
+
+    const hrefMatch = tag.match(/href=["']([^"']+)["']/i);
+    if (!hrefMatch) continue;
+    const href = decodeHtmlEntities(hrefMatch[1].trim());
+    if (!href || href.endsWith(".svg") || href.includes(".svg?")) continue;
+
+    let declaredSize = 0;
+    const sizesMatch = tag.match(/sizes=["'](\d+)x(\d+)["']/i);
+    if (sizesMatch) {
+      declaredSize = Math.min(parseInt(sizesMatch[1], 10), parseInt(sizesMatch[2], 10));
+    } else if (rel.includes("apple-touch-icon")) {
+      declaredSize = 180;
+    }
+
+    try {
+      const fullUrl = new URL(href, baseUrl).toString();
+      iconUrls.push({ url: fullUrl, declaredSize });
+    } catch {
+      // ignore
+    }
+  }
+
+  // Sort icons descending by declaredSize
+  iconUrls.sort((a, b) => b.declaredSize - a.declaredSize);
+
+  return { iconUrls, ogImageUrl };
 }
 
 async function fetchWithTimeout(url: string, timeoutMs: number = REQUEST_TIMEOUT_MS): Promise<Response> {
@@ -115,7 +281,7 @@ async function fetchWithTimeout(url: string, timeoutMs: number = REQUEST_TIMEOUT
     const res = await fetch(url, {
       headers: {
         "User-Agent": USER_AGENT,
-        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/*,*/*;q=0.8",
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/png,image/jpeg,image/webp,*/*;q=0.8",
       },
       signal: controller.signal,
     });
@@ -125,24 +291,71 @@ async function fetchWithTimeout(url: string, timeoutMs: number = REQUEST_TIMEOUT
   }
 }
 
-export async function processCompany(
-  company: CompanyRow,
-  supabase: any,
-  isWrite: boolean
-): Promise<{ status: "found" | "missing" | "failed" | "already_set"; reason?: string }> {
-  // 1. Skip rows already pointing at our bucket
+async function downloadAndValidateImage(url: string): Promise<{
+  buffer: Buffer;
+  contentType: string;
+  ext: string;
+  width: number;
+  height: number;
+} | null> {
+  try {
+    const imgRes = await fetchWithTimeout(url);
+    if (!imgRes.ok) return null;
+
+    const arrayBuf = await imgRes.arrayBuffer();
+    const buffer = Buffer.from(arrayBuf);
+
+    if (buffer.length === 0 || buffer.length > MAX_IMAGE_BYTES) {
+      return null;
+    }
+
+    const rawType = imgRes.headers.get("content-type") || "";
+    const meta = getCleanImageMeta(rawType, buffer, url);
+    if (!meta) return null;
+
+    const dims = getImageDimensions(buffer);
+    if (!dims || dims.width === 0 || dims.height === 0) return null;
+
+    return {
+      buffer,
+      contentType: meta.contentType,
+      ext: meta.ext,
+      width: dims.width,
+      height: dims.height,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function inspectCompany(company: CompanyRow): Promise<CompanyInspection> {
   if (company.logo_url && company.logo_url.includes("company-logos")) {
-    return { status: "already_set", reason: "Already backfilled" };
+    return {
+      company,
+      ats: company.ats_type || "unknown",
+      boardUrl: "",
+      iconCandidate: null,
+      ogCandidate: null,
+      status: "already_set",
+      reason: "Already pointing to bucket",
+    };
   }
 
   const ats = (company.ats_type || "unknown").toLowerCase().trim();
   const slug = (company.slug || "").trim();
 
   if (!slug) {
-    return { status: "missing", reason: "No slug" };
+    return {
+      company,
+      ats,
+      boardUrl: "",
+      iconCandidate: null,
+      ogCandidate: null,
+      status: "missing",
+      reason: "No slug",
+    };
   }
 
-  // 2. Derive candidate board URLs based on ATS type
   const candidateUrls: string[] = [];
   if (ats === "greenhouse") {
     candidateUrls.push(`https://job-boards.greenhouse.io/${slug}`);
@@ -152,13 +365,19 @@ export async function processCompany(
   } else if (ats === "lever") {
     candidateUrls.push(`https://jobs.lever.co/${slug}`);
   } else {
-    // Unsupported or unknown ATS for direct board derivation
-    return { status: "missing", reason: `Unsupported ats_type: ${ats}` };
+    return {
+      company,
+      ats,
+      boardUrl: "",
+      iconCandidate: null,
+      ogCandidate: null,
+      status: "missing",
+      reason: `Unsupported ats_type: ${ats}`,
+    };
   }
 
-  // 3. Fetch board page and extract og:image
-  let ogImageUrl: string | null = null;
-  let activeBoardUrl: string | null = null;
+  let html = "";
+  let activeBoardUrl = "";
   let lastError = "";
 
   for (const url of candidateUrls) {
@@ -168,135 +387,85 @@ export async function processCompany(
         lastError = `HTTP ${res.status}`;
         continue;
       }
-      const html = await res.text();
-      const parsed = parseOgImage(html, url);
-      if (parsed) {
-        ogImageUrl = parsed;
-        activeBoardUrl = url;
-        break;
-      } else {
-        lastError = "No og:image tag in HTML";
-      }
+      html = await res.text();
+      activeBoardUrl = url;
+      break;
     } catch (err: any) {
       lastError = err?.message || "Fetch failed";
     }
   }
 
-  if (!ogImageUrl || !activeBoardUrl) {
-    return { status: "missing", reason: lastError || "No logo found" };
+  if (!html || !activeBoardUrl) {
+    return {
+      company,
+      ats,
+      boardUrl: "",
+      iconCandidate: null,
+      ogCandidate: null,
+      status: "missing",
+      reason: lastError || "Board page not reachable",
+    };
   }
 
-  // 4. Download the image and validate Content-Type & size
-  let imageBuffer: Buffer;
-  let contentType: string;
-  try {
-    const imgRes = await fetchWithTimeout(ogImageUrl);
-    if (!imgRes.ok) {
-      return { status: "failed", reason: `Image download failed: HTTP ${imgRes.status}` };
-    }
+  const { iconUrls, ogImageUrl } = parsePageImages(html, activeBoardUrl);
 
-    const arrayBuf = await imgRes.arrayBuffer();
-    imageBuffer = Buffer.from(arrayBuf);
+  let iconCandidate: CandidateLogo | null = null;
+  let ogCandidate: CandidateLogo | null = null;
 
-    if (imageBuffer.length > MAX_IMAGE_BYTES) {
-      return {
-        status: "failed",
-        reason: `Image exceeds 2MB limit: ${imageBuffer.length} bytes`,
-      };
-    }
-    if (imageBuffer.length === 0) {
-      return { status: "failed", reason: "Empty image buffer (0 bytes)" };
-    }
-
-    const rawType = imgRes.headers.get("content-type") || "";
-    let cleanType = rawType.split(";")[0].trim().toLowerCase();
-
-    // If content-type is generic octet-stream (e.g. S3 sends application/octet-stream for Lever),
-    // sniff image magic bytes to validate image type:
-    if (!cleanType.startsWith("image/")) {
-      if (
-        imageBuffer.length >= 8 &&
-        imageBuffer[0] === 0x89 &&
-        imageBuffer[1] === 0x50 &&
-        imageBuffer[2] === 0x4e &&
-        imageBuffer[3] === 0x47
-      ) {
-        cleanType = "image/png";
-      } else if (
-        imageBuffer.length >= 3 &&
-        imageBuffer[0] === 0xff &&
-        imageBuffer[1] === 0xd8 &&
-        imageBuffer[2] === 0xff
-      ) {
-        cleanType = "image/jpeg";
-      } else if (
-        imageBuffer.length >= 4 &&
-        imageBuffer[0] === 0x47 &&
-        imageBuffer[1] === 0x49 &&
-        imageBuffer[2] === 0x46
-      ) {
-        cleanType = "image/gif";
-      } else if (
-        imageBuffer.length >= 12 &&
-        imageBuffer.toString("ascii", 0, 4) === "RIFF" &&
-        imageBuffer.toString("ascii", 8, 12) === "WEBP"
-      ) {
-        cleanType = "image/webp";
-      } else if (
-        imageBuffer.slice(0, 100).toString("utf8").toLowerCase().includes("<svg")
-      ) {
-        cleanType = "image/svg+xml";
+  // 1. Inspect icon candidates (favicon / apple-touch-icon of at least 128px)
+  for (const icon of iconUrls) {
+    const imgData = await downloadAndValidateImage(icon.url);
+    if (imgData && imgData.width >= 128 && imgData.height >= 128) {
+      const ratio = imgData.width / imgData.height;
+      if (ratio <= 1.6 && ratio >= 0.6) {
+        iconCandidate = {
+          company,
+          ats,
+          boardUrl: activeBoardUrl,
+          imageUrl: icon.url,
+          source: "icon",
+          buffer: imgData.buffer,
+          contentType: imgData.contentType,
+          ext: imgData.ext,
+          width: imgData.width,
+          height: imgData.height,
+        };
+        break;
       }
-    }
-
-    if (!cleanType.startsWith("image/")) {
-      return { status: "failed", reason: `Invalid content-type: ${rawType}` };
-    }
-    contentType = cleanType;
-  } catch (err: any) {
-    return { status: "failed", reason: `Image fetch error: ${err?.message}` };
-  }
-
-  const ext = getExtension(contentType, ogImageUrl);
-  const storagePath = `${company.id}.${ext}`;
-
-  // 5. In write mode: upload to Supabase Storage and update companies.logo_url
-  if (isWrite) {
-    try {
-      const { error: uploadError } = await supabase.storage
-        .from("company-logos")
-        .upload(storagePath, imageBuffer, {
-          contentType,
-          upsert: true,
-        });
-
-      if (uploadError) {
-        return { status: "failed", reason: `Storage upload error: ${uploadError.message}` };
-      }
-
-      const { data: publicUrlData } = supabase.storage
-        .from("company-logos")
-        .getPublicUrl(storagePath);
-
-      const publicUrl = publicUrlData?.publicUrl;
-      if (!publicUrl) {
-        return { status: "failed", reason: "Failed to generate public URL" };
-      }
-
-      const { error: updateError } = await supabase
-        .from("companies")
-        .update({ logo_url: publicUrl })
-        .eq("id", company.id);
-
-      if (updateError) {
-        return { status: "failed", reason: `DB update error: ${updateError.message}` };
-      }
-    } catch (err: any) {
-      return { status: "failed", reason: `Write operation error: ${err?.message}` };
     }
   }
 
-  return { status: "found" };
+  // 2. Inspect og:image candidate (aspect ratio <= 1.6)
+  if (ogImageUrl) {
+    const imgData = await downloadAndValidateImage(ogImageUrl);
+    if (imgData) {
+      const ratio = imgData.width / imgData.height;
+      if (ratio <= 1.6 && ratio >= 0.5) {
+        ogCandidate = {
+          company,
+          ats,
+          boardUrl: activeBoardUrl,
+          imageUrl: ogImageUrl,
+          source: "og:image",
+          buffer: imgData.buffer,
+          contentType: imgData.contentType,
+          ext: imgData.ext,
+          width: imgData.width,
+          height: imgData.height,
+        };
+      }
+    }
+  }
+
+  return {
+    company,
+    ats,
+    boardUrl: activeBoardUrl,
+    iconCandidate,
+    ogCandidate,
+    status: iconCandidate || ogCandidate ? "inspected" : "missing",
+    reason: iconCandidate || ogCandidate ? undefined : "No square-ish icon or og:image found",
+  };
 }
 
 async function runBackfill() {
@@ -304,11 +473,11 @@ async function runBackfill() {
   const limitIdx = process.argv.indexOf("--limit");
   const limitVal = limitIdx !== -1 ? parseInt(process.argv[limitIdx + 1], 10) : undefined;
 
-  console.log("=================================================");
-  console.log(`CAREERMONKE COMPANY LOGOS BACKFILL`);
+  console.log("=========================================================================");
+  console.log("CAREERMONKE COMPANY LOGOS BACKFILL");
   console.log(`Mode: ${isWrite ? "LIVE WRITE (--write)" : "DRY RUN (default)"}`);
   if (limitVal) console.log(`Limit: ${limitVal} companies`);
-  console.log("=================================================\n");
+  console.log("=========================================================================\n");
 
   const supabaseUrl =
     process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -326,7 +495,6 @@ async function runBackfill() {
     auth: { persistSession: false },
   });
 
-  // Query all companies
   console.log("Fetching companies from database...");
   let query = supabase
     .from("companies")
@@ -345,56 +513,175 @@ async function runBackfill() {
 
   console.log(`Found ${companies.length} companies to evaluate.\n`);
 
-  const statsByAts: Record<string, AtsStats> = {};
+  // Phase 1: Inspect all companies and gather candidates
+  console.log("Scanning board pages, icons, and og:image candidates...");
+  const inspections: CompanyInspection[] = [];
 
-  const getStats = (ats: string): AtsStats => {
-    const key = ats || "unknown";
-    if (!statsByAts[key]) {
-      statsByAts[key] = { found: 0, missing: 0, failed: 0, already_set: 0, total: 0 };
-    }
-    return statsByAts[key];
-  };
-
-  // Run with concurrency control
   let completed = 0;
   const total = companies.length;
 
   async function worker(items: CompanyRow[]) {
     for (const company of items) {
-      const ats = (company.ats_type || "unknown").toLowerCase().trim();
-      const stats = getStats(ats);
-      stats.total++;
-
       try {
-        const result = await processCompany(company, supabase, isWrite);
-        if (result.status === "found") {
-          stats.found++;
-        } else if (result.status === "already_set") {
-          stats.already_set++;
-        } else if (result.status === "missing") {
-          stats.missing++;
-        } else if (result.status === "failed") {
-          stats.failed++;
-        }
+        const result = await inspectCompany(company);
+        inspections.push(result);
       } catch (err: any) {
-        stats.failed++;
+        inspections.push({
+          company,
+          ats: company.ats_type || "unknown",
+          boardUrl: "",
+          iconCandidate: null,
+          ogCandidate: null,
+          status: "failed",
+          reason: err.message,
+        });
       }
 
       completed++;
       if (completed % 25 === 0 || completed === total) {
-        process.stdout.write(`Progress: ${completed}/${total} companies processed...\r`);
+        process.stdout.write(`Progress: ${completed}/${total} companies inspected...\r`);
       }
     }
   }
 
-  // Partition items into CONCURRENCY chunks
   const chunks: CompanyRow[][] = Array.from({ length: CONCURRENCY }, () => []);
   companies.forEach((item, index) => {
     chunks[index % CONCURRENCY].push(item);
   });
 
   await Promise.all(chunks.map((chunk) => worker(chunk)));
-  console.log("\n");
+  console.log(`\n\nPhase 1 complete. Inspected ${inspections.length} companies.`);
+
+  // Phase 2: Frequency analysis to detect generic default images shared across 3+ companies
+  const urlFrequency = new Map<string, number>();
+  for (const insp of inspections) {
+    if (insp.iconCandidate) {
+      const u = insp.iconCandidate.imageUrl;
+      urlFrequency.set(u, (urlFrequency.get(u) || 0) + 1);
+    }
+    if (insp.ogCandidate) {
+      const u = insp.ogCandidate.imageUrl;
+      urlFrequency.set(u, (urlFrequency.get(u) || 0) + 1);
+    }
+  }
+
+  const validCandidates: CandidateLogo[] = [];
+  const statusCounts: Record<string, AtsStats> = {};
+  let genericDefaultsSkipped = 0;
+
+  const getStats = (ats: string): AtsStats => {
+    const key = ats || "unknown";
+    if (!statusCounts[key]) {
+      statusCounts[key] = { found: 0, missing: 0, failed: 0, already_set: 0, total: 0 };
+    }
+    return statusCounts[key];
+  };
+
+  for (const insp of inspections) {
+    const ats = (insp.company.ats_type || "unknown").toLowerCase().trim();
+    const stats = getStats(ats);
+    stats.total++;
+
+    if (insp.status === "already_set") {
+      stats.already_set++;
+      continue;
+    }
+    if (insp.status === "failed") {
+      stats.failed++;
+      continue;
+    }
+
+    let chosen: CandidateLogo | null = null;
+
+    // Rule: Prefer favicon / apple-touch-icon >= 128px unless it is a shared generic default (count >= 3)
+    if (insp.iconCandidate) {
+      const count = urlFrequency.get(insp.iconCandidate.imageUrl) || 0;
+      if (count < 3) {
+        chosen = insp.iconCandidate;
+      }
+    }
+
+    // Fallback: If no icon or icon is a shared generic default, use og:image (if not shared by >= 3)
+    if (!chosen && insp.ogCandidate) {
+      const count = urlFrequency.get(insp.ogCandidate.imageUrl) || 0;
+      if (count < 3) {
+        chosen = insp.ogCandidate;
+      }
+    }
+
+    if (chosen) {
+      stats.found++;
+      validCandidates.push(chosen);
+    } else {
+      stats.missing++;
+      if (insp.iconCandidate || insp.ogCandidate) {
+        genericDefaultsSkipped++;
+      }
+    }
+  }
+
+  console.log(`Filtered out ${genericDefaultsSkipped} generic default images shared by 3+ companies.\n`);
+
+  // (1) Print company, ATS and the og:image/icon URL per row in dry-run mode
+  console.log("=== CANDIDATE LOGOS PER ROW (DRY RUN) ===");
+  for (const item of validCandidates) {
+    console.log(`[${item.ats.padEnd(10)}] ${item.company.name.padEnd(28)} | ${item.width}x${item.height} (${item.source}) | ${item.imageUrl}`);
+  }
+  console.log("=========================================\n");
+
+  // In write mode: upload and update
+  if (isWrite) {
+    console.log(`Uploading ${validCandidates.length} company logos to Supabase Storage...`);
+    let uploadCount = 0;
+
+    for (const item of validCandidates) {
+      const storagePath = `${item.company.id}.${item.ext}`;
+
+      try {
+        // (8) Delete the old file when the extension changes
+        const otherExts = ["png", "jpg", "jpeg", "webp", "gif"].filter((e) => e !== item.ext);
+        const oldPaths = otherExts.map((e) => `${item.company.id}.${e}`);
+        if (item.company.logo_url && item.company.logo_url.includes("/company-logos/")) {
+          try {
+            const oldPath = item.company.logo_url.split("/company-logos/")[1]?.split("?")[0];
+            if (oldPath && oldPath !== storagePath && !oldPaths.includes(oldPath)) {
+              oldPaths.push(oldPath);
+            }
+          } catch {}
+        }
+        await supabase.storage.from("company-logos").remove(oldPaths);
+
+        // Upload new image
+        const { error: uploadError } = await supabase.storage
+          .from("company-logos")
+          .upload(storagePath, item.buffer, {
+            contentType: item.contentType,
+            upsert: true,
+          });
+
+        if (uploadError) {
+          console.error(`Upload error for ${item.company.name}:`, uploadError.message);
+          continue;
+        }
+
+        const { data: publicUrlData } = supabase.storage
+          .from("company-logos")
+          .getPublicUrl(storagePath);
+
+        const publicUrl = publicUrlData?.publicUrl;
+        if (publicUrl) {
+          await supabase
+            .from("companies")
+            .update({ logo_url: publicUrl })
+            .eq("id", item.company.id);
+          uploadCount++;
+        }
+      } catch (err: any) {
+        console.error(`Write error for ${item.company.name}:`, err.message);
+      }
+    }
+    console.log(`Successfully uploaded and updated ${uploadCount} companies in database.\n`);
+  }
 
   // Summary Table
   console.log("-------------------------------------------------------------------------");
@@ -407,9 +694,9 @@ async function runBackfill() {
   let grandAlreadySet = 0;
   let grandTotal = 0;
 
-  const sortedAts = Object.keys(statsByAts).sort();
+  const sortedAts = Object.keys(statusCounts).sort();
   for (const ats of sortedAts) {
-    const s = statsByAts[ats];
+    const s = statusCounts[ats];
     grandFound += s.found;
     grandMissing += s.missing;
     grandFailed += s.failed;

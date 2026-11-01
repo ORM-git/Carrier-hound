@@ -121,10 +121,11 @@ async function testEndpointImplementation() {
   const now = Date.now();
 
   const testDbRows = [
-    // Valid row 1 (normal recent past)
+    // Valid row 1 (normal recent past, with company_id)
     {
       id: "j1",
       company: "Company 1",
+      company_id: "c-uuid-1",
       title: "Engineer 1",
       posted_at: new Date(now - 120000).toISOString(),
     },
@@ -197,12 +198,19 @@ async function testEndpointImplementation() {
       return new Response(
         JSON.stringify([
           {
+            id: "c-uuid-1",
             name: "Company 1",
             logo_url: "https://mock.supabase.co/storage/v1/object/public/company-logos/comp1.png",
           },
           {
+            id: "c-uuid-2",
             name: "Company 2",
             logo_url: null,
+          },
+          {
+            id: "c-uuid-ext",
+            name: "Company 6",
+            logo_url: "https://external-domain.com/untrusted-logo.png",
           },
         ]),
         {
@@ -258,6 +266,15 @@ async function testEndpointImplementation() {
     const comp5 = rows.find((r: any) => r.company === "Company 5");
     assert(comp5, "Company 5 must be present in ticker items");
     assert.strictEqual(comp5.logo_url, null, "Unknown company must receive null for logo_url");
+
+    // External logo URL rejection check: logo_url not pointing at project storage under /company-logos/ must be null
+    const comp6 = rows.find((r: any) => r.company === "Company 6");
+    assert(comp6, "Company 6 must be present in ticker items");
+    assert.strictEqual(
+      comp6.logo_url,
+      null,
+      "External logo URL not under /company-logos/ on project storage host must be sanitized to null"
+    );
 
     const ALLOWED_KEYS = ["company", "logo_url", "posted_at", "title"];
     for (const row of rows) {
