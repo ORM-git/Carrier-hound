@@ -10,6 +10,7 @@ export interface UserPreferences {
   salaryCurrency: string; // 'USD', 'INR', 'EUR', 'GBP'
   dailyDigestOptIn: boolean;
   onboardingCompleted: boolean;
+  eligibilityFilter?: boolean;
   updatedAt: string;
 }
 
@@ -25,5 +26,6 @@ export const DEFAULT_USER_PREFERENCES: UserPreferences = {
   salaryCurrency: "USD",
   dailyDigestOptIn: true,
   onboardingCompleted: false,
+  eligibilityFilter: true,
   updatedAt: new Date().toISOString(),
 };

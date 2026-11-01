@@ -129,9 +129,25 @@ export async function handler(event: any) {
 
     const supabaseAdmin = getSupabaseAdmin();
 
+    // Fetch user preferences for preferred currency (convert only when explicitly set, not default 'USD')
+    let userSalaryCurrency: string | undefined;
+
+    try {
+      const { data: prefs } = await supabaseAdmin
+        .from("user_preferences")
+        .select("salary_currency")
+        .eq("user_id", authCheck.user.id)
+        .maybeSingle();
+
+      if (prefs?.salary_currency && prefs.salary_currency.trim().toUpperCase() !== "USD") {
+        userSalaryCurrency = prefs.salary_currency.trim().toUpperCase();
+      }
+    } catch {}
+
     if (event.httpMethod === "GET") {
       const id = event.queryStringParameters?.id;
       const countryCodeParam = event.queryStringParameters?.country_code || event.queryStringParameters?.country;
+      const preferredCurrency = event.queryStringParameters?.currency || userSalaryCurrency || undefined;
 
       if (!id) {
         if (countryCodeParam) {
@@ -158,11 +174,21 @@ export async function handler(event: any) {
             };
           }
 
-          const formattedJobs = (jobs || []).map((j: any) => ({
-            ...j,
-            country: j.country_code || j.country || "",
-            salary_text: formatSalary(j.salary_min, j.salary_max, j.currency, j.salary_period) || j.salary_text,
-          }));
+          const rawJobs = jobs || [];
+
+          const formattedJobs = rawJobs.map((j: any) => {
+            const originalSalary = formatSalary(j.salary_min, j.salary_max, j.currency, j.salary_period) || j.salary_text || null;
+            const displaySalary = preferredCurrency
+              ? (formatSalary(j.salary_min, j.salary_max, j.currency, j.salary_period, { displayCurrency: preferredCurrency }) || j.salary_text || null)
+              : originalSalary;
+            return {
+              ...j,
+              country: j.country_code || j.country || "",
+              salary_text: displaySalary || originalSalary || "",
+              salary_display: displaySalary,
+              salary_original: originalSalary,
+            };
+          });
 
           return {
             statusCode: 200,
@@ -193,12 +219,17 @@ export async function handler(event: any) {
       }
 
       const row: any = job;
-      const formattedSalary = formatSalary(row.salary_min, job.salary_max, job.currency, job.salary_period) || job.salary_text;
+      const originalSalary = formatSalary(row.salary_min, job.salary_max, job.currency, job.salary_period) || job.salary_text || null;
+      const displaySalary = preferredCurrency
+        ? (formatSalary(row.salary_min, job.salary_max, job.currency, job.salary_period, { displayCurrency: preferredCurrency }) || job.salary_text || null)
+        : originalSalary;
       const isInactive = Boolean(row.is_active === false || row.status === "expired" || row.status === "closed");
       const formattedJob = {
         ...job,
         country: job.country_code || job.country || "",
-        salary_text: formattedSalary,
+        salary_text: displaySalary || originalSalary || "",
+        salary_display: displaySalary,
+        salary_original: originalSalary,
         isExpired: isInactive,
         is_expired: isInactive,
         status: isInactive ? "expired" : (row.status || "active"),
@@ -225,7 +256,7 @@ export async function handler(event: any) {
         };
       }
 
-      const { ids } = body;
+      const { ids, eligibility: bodyEligibility, currency: bodyCurrency } = body;
       if (!Array.isArray(ids) || ids.length === 0) {
         return {
           statusCode: 400,
@@ -233,6 +264,8 @@ export async function handler(event: any) {
           body: JSON.stringify({ error: "Missing 'ids' array" }),
         };
       }
+
+      const preferredCurrency = event.queryStringParameters?.currency || bodyCurrency || userSalaryCurrency || undefined;
 
       const { data: jobs, error }: any = await (supabaseAdmin as any)
         .from("jobs")
@@ -247,11 +280,21 @@ export async function handler(event: any) {
         };
       }
 
-      const formattedJobs = (jobs || []).map((j: any) => ({
-        ...j,
-        country: j.country_code || j.country || "",
-        salary_text: formatSalary(j.salary_min, j.salary_max, j.currency, j.salary_period) || j.salary_text,
-      }));
+      const rawJobs = jobs || [];
+
+      const formattedJobs = rawJobs.map((j: any) => {
+        const originalSalary = formatSalary(j.salary_min, j.salary_max, j.currency, j.salary_period) || j.salary_text || null;
+        const displaySalary = preferredCurrency
+          ? (formatSalary(j.salary_min, j.salary_max, j.currency, j.salary_period, { displayCurrency: preferredCurrency }) || j.salary_text || null)
+          : originalSalary;
+        return {
+          ...j,
+          country: j.country_code || j.country || "",
+          salary_text: displaySalary || originalSalary || "",
+          salary_display: displaySalary,
+          salary_original: originalSalary,
+        };
+      });
 
       return {
         statusCode: 200,

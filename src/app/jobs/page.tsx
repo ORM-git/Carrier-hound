@@ -480,6 +480,7 @@ function JobsPageInner() {
   // Live Supabase Jobs Data
   const [liveJobs, setLiveJobs] = useState<LiveJob[]>([]);
   const [totalCount, setTotalCount] = useState<number>(0);
+  const [appliedEligibility, setAppliedEligibility] = useState<{ countries: string[]; filteredOut: number } | null>(null);
   const [loadingJobs, setLoadingJobs] = useState<boolean>(true);
   const [isDegraded, setIsDegraded] = useState<boolean>(false);
   const [retryNonce, setRetryNonce] = useState<number>(0);
@@ -970,6 +971,7 @@ function JobsPageInner() {
           setNextCursor(res.nextCursor ?? null);
           setHasNextPage(Boolean(res.hasNextPage));
           setIsDegraded(Boolean(res.isDegraded || res.error === "degraded"));
+          setAppliedEligibility(res.appliedEligibility || null);
           setLoadingJobs(false);
         }
       })
@@ -1998,6 +2000,11 @@ function JobsPageInner() {
                   ) : (
                     /* Job Cards List (Single column, 12px gap) */
                     <div className="space-y-3">
+                      {appliedEligibility && appliedEligibility.countries && appliedEligibility.countries.length > 0 && (
+                        <div className="text-xs text-[#64748B] px-1 py-0.5" data-testid="eligibility-banner">
+                          Showing jobs eligible in {appliedEligibility.countries.join(", ")} (+ worldwide remote) - {appliedEligibility.filteredOut} hidden
+                        </div>
+                      )}
                       {displayedJobs.map((job, index) => {
                         const isSaved = savedJobIds.includes(job.id);
                         const staggerDelay = Math.min(index * 0.03, 0.3);
@@ -2145,11 +2152,19 @@ function JobsPageInner() {
                                   </div>
 
                                   {/* Row 1, Col 3: Salary (highlighted with stronger weight) */}
-                                  <div className="flex items-center gap-1.5 min-w-0 truncate">
+                                  <div
+                                    className="flex items-center gap-1.5 min-w-0 truncate"
+                                    title={isPro && job.salary_original && job.salary_original !== job.salary ? `Original: ${job.salary_original}` : undefined}
+                                  >
                                     <DollarSign className="w-4 h-4 text-[#475569] shrink-0" />
                                     <span className={`truncate ${job.salary ? "font-semibold text-[#0F172A]" : ""}`}>
                                       {job.salary ? (isPro ? job.salary : "••••••••") : "Salary unlisted"}
                                     </span>
+                                    {isPro && job.salary_original && job.salary_original !== job.salary && (
+                                      <span className="text-[11px] text-[#64748B] truncate hidden sm:inline">
+                                        ({job.salary_original})
+                                      </span>
+                                    )}
                                   </div>
 
                                   {/* Row 2, Col 1: Work mode */}
@@ -2384,7 +2399,10 @@ function JobsPageInner() {
                                   </span>
                                 )}
                                 {job.salary && (
-                                  <span className="h-6 px-2.5 py-0.5 rounded-md bg-[#F1F5F9] text-[#475569] text-[12px] font-medium inline-flex items-center gap-1">
+                                  <span
+                                    className="h-6 px-2.5 py-0.5 rounded-md bg-[#F1F5F9] text-[#475569] text-[12px] font-medium inline-flex items-center gap-1"
+                                    title={isPro && job.salary_original && job.salary_original !== job.salary ? `Original: ${job.salary_original}` : undefined}
+                                  >
                                     <DollarSign className="w-3 h-3 text-[#475569]" />
                                     {isPro ? job.salary : "••••••••"}
                                   </span>

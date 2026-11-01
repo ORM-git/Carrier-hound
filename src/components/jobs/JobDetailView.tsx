@@ -746,11 +746,17 @@ export default function JobDetailView({
                 )}
 
                 {Boolean(job.salary && String(job.salary).trim()) && (
-                  <div className="flex items-center gap-2 min-w-0 px-2.5 py-1.5 rounded-lg bg-[#F1F5F9] text-[#475569]">
+                  <div
+                    className="flex items-center gap-2 min-w-0 px-2.5 py-1.5 rounded-lg bg-[#F1F5F9] text-[#475569]"
+                    title={isUnlocked && job.salary_original && job.salary_original !== job.salary ? `Original: ${job.salary_original}` : undefined}
+                  >
                     <DollarSign className="w-4 h-4 text-[#166534] shrink-0" />
                     <span className="truncate font-medium text-[#0F172A]">
                       {isUnlocked ? job.salary : "••••••••"}
                     </span>
+                    {isUnlocked && job.salary_original && job.salary_original !== job.salary && (
+                      <span className="text-xs text-[#64748B] truncate">({job.salary_original})</span>
+                    )}
                   </div>
                 )}
 

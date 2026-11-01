@@ -7,6 +7,8 @@
  * (rejecting years 1990-2035, employee counts, user traffic, and corrupt ratios).
  */
 
+import { convertCurrency } from './fx';
+
 export type SalaryPeriod = 'yearly' | 'monthly' | 'hourly';
 
 export interface ParsedSalary {
@@ -38,11 +40,15 @@ export function formatSalary(
   max: number | null | undefined,
   currency: string = 'USD',
   period: SalaryPeriod | string = 'yearly',
-  options?: { omitSuffix?: boolean }
+  optionsOrDisplayCurrency?: { omitSuffix?: boolean; displayCurrency?: string } | string
 ): string | null {
   if ((min === null || min === undefined) && (max === null || max === undefined)) {
     return null;
   }
+
+  const options = typeof optionsOrDisplayCurrency === 'string'
+    ? { displayCurrency: optionsOrDisplayCurrency }
+    : optionsOrDisplayCurrency;
 
   const cleanPeriod = (period === 'monthly' || period === 'hourly' ? period : 'yearly') as SalaryPeriod;
   const periodSuffix = options?.omitSuffix
@@ -52,6 +58,56 @@ export function formatSalary(
       : cleanPeriod === 'monthly'
         ? ' /mo'
         : ' /yr';
+
+  const sourceCurr = (currency || 'USD').toUpperCase().trim();
+  const targetCurr = (options?.displayCurrency || sourceCurr).toUpperCase().trim();
+
+  let formattedMin: number | null | undefined = min;
+  let formattedMax: number | null | undefined = max;
+  let isConverted = false;
+
+  if (targetCurr && targetCurr !== sourceCurr) {
+    const convertedMin = min != null ? convertCurrency(min, sourceCurr, targetCurr) : null;
+    const convertedMax = max != null ? convertCurrency(max, sourceCurr, targetCurr) : null;
+
+    if (convertedMin !== null || convertedMax !== null) {
+      const roundConverted = (val: number | null): number | null => {
+        if (val === null) return null;
+        if (targetCurr === 'INR') {
+          if (cleanPeriod === 'hourly') {
+            // Nearest 10 for hourly INR
+            return Math.round(val / 10) * 10;
+          }
+          if (cleanPeriod === 'monthly') {
+            // Nearest 100 for monthly under 100k, nearest 1000 otherwise
+            return val < 100000
+              ? Math.round(val / 100) * 100
+              : Math.round(val / 1000) * 1000;
+          }
+          // Yearly INR to nearest thousand
+          return Math.round(val / 1000) * 1000;
+        }
+        if (cleanPeriod === 'hourly' && val < 500) {
+          // Keep whole integer for hourly rate under 500 to avoid rounding to 0
+          return Math.round(val);
+        }
+        // Others to nearest hundred
+        return Math.round(val / 100) * 100;
+      };
+
+      const roundedMin = roundConverted(convertedMin);
+      const roundedMax = roundConverted(convertedMax);
+
+      if (roundedMin !== null || roundedMax !== null) {
+        formattedMin = roundedMin;
+        formattedMax = roundedMax;
+        isConverted = true;
+      }
+    }
+  }
+
+  const activeCurrency = isConverted ? targetCurr : sourceCurr;
+  const approxPrefix = isConverted ? '~' : '';
 
   const formatNumber = (num: number, curr: string): string => {
     if (curr === 'INR') {
@@ -83,14 +139,14 @@ export function formatSalary(
     }
   };
 
-  const prefix = getCurrencyPrefix(currency);
+  const prefix = getCurrencyPrefix(activeCurrency);
 
-  if (min != null && max != null && min !== max) {
-    return `${prefix}${formatNumber(min, currency)} - ${prefix}${formatNumber(max, currency)}${periodSuffix}`;
+  if (formattedMin != null && formattedMax != null && formattedMin !== formattedMax) {
+    return `${approxPrefix}${prefix}${formatNumber(formattedMin, activeCurrency)} - ${prefix}${formatNumber(formattedMax, activeCurrency)}${periodSuffix}`;
   }
 
-  const singleVal = min != null ? min : max!;
-  return `${prefix}${formatNumber(singleVal, currency)}${periodSuffix}`;
+  const singleVal = formattedMin != null ? formattedMin : formattedMax!;
+  return `${approxPrefix}${prefix}${formatNumber(singleVal, activeCurrency)}${periodSuffix}`;
 }
 
 /**

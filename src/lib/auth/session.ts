@@ -152,6 +152,7 @@ export async function getUserPreferences(userId?: string): Promise<UserPreferenc
           salaryCurrency: data.salary_currency || "USD",
           dailyDigestOptIn: data.daily_digest_opt_in ?? true,
           onboardingCompleted: data.onboarding_completed ?? false,
+          eligibilityFilter: data.eligibility_filter ?? true,
           updatedAt: data.updated_at || new Date().toISOString(),
         };
         if (typeof window !== "undefined") {
@@ -216,6 +217,7 @@ export async function saveUserPreferences(prefs: UserPreferences, userId?: strin
         salary_currency: updatedPrefs.salaryCurrency || "USD",
         daily_digest_opt_in: updatedPrefs.dailyDigestOptIn ?? true,
         onboarding_completed: updatedPrefs.onboardingCompleted ?? false,
+        eligibility_filter: updatedPrefs.eligibilityFilter ?? true,
         updated_at: updatedPrefs.updatedAt,
       });
     } catch (_) {
