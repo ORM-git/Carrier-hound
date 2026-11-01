@@ -469,6 +469,7 @@ async function main() {
     GMAIL_OAUTH_TOKEN_URL,
     GMAIL_SEND_MESSAGE_URL,
     sendEarlyAccessThankYouEmail,
+    isAllowedGoogleRedirectHost,
     runEarlyAccessDigestCron,
   } = await import("../src/lib/early-access/gmail");
   const sitemapModule = await import("../src/app/sitemap");
@@ -1302,7 +1303,7 @@ async function main() {
       "POST /api/early-access must send ONLY 1 thank-you call via Apps Script (no digest on request path)"
     );
     assert.strictEqual(appsScriptCalls[0].method, "POST");
-    assert.strictEqual(appsScriptCalls[0].redirect, "follow", "Must follow redirects for Apps Script /exec");
+    assert.strictEqual(appsScriptCalls[0].redirect, "manual", "Must use manual redirect on initial request to preserve POST method across Apps Script redirect");
     assert.strictEqual(appsScriptCalls[0].body.email, "alice@example.com");
     assert.strictEqual(appsScriptCalls[0].body.secret, TEST_APPS_SCRIPT_SECRET);
     assert.strictEqual(mockSendLogRows.length, 1);
@@ -1452,6 +1453,198 @@ async function main() {
     assert.strictEqual(nonOkAttempts, 1, "Non-OK result must NEVER be automatically resent");
     assert.ok(capturedWarnings.some((w) => w.includes("UNKNOWN")), "Non-OK result must be logged as UNKNOWN");
     console.log("  [PASS] non-OK result logged as UNKNOWN and never resent");
+
+    // ---------------------------------------------------------------------------
+    // 4g. Apps Script POST redirect preservation, Google host validation, and budget
+    // ---------------------------------------------------------------------------
+    console.log("\n[TEST 4g] Verifying Apps Script POST redirect preservation, Google host validation, duplicate suppression, and timeout budget...");
+
+    // (a) Mocked fetch returns 302 + Location to script.googleusercontent.com -> re-issues POST with byte-identical body and records thank_you row
+    capturedWarnings.length = 0;
+    const redirectCalls: Array<{ url: string; method: string; redirect?: string; body: string; headers: any }> = [];
+    const ECHO_TARGET_URL = "https://script.googleusercontent.com/macros/echo?user_content_key=sig123abc";
+    const originalFetchForRedirect = globalThis.fetch;
+
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      redirectCalls.push({
+        url,
+        method: init?.method || "GET",
+        redirect: init?.redirect,
+        body: String(init?.body || ""),
+        headers: init?.headers,
+      });
+
+      if (url === TEST_APPS_SCRIPT_URL) {
+        return new Response("", {
+          status: 302,
+          headers: {
+            Location: ECHO_TARGET_URL,
+          },
+        });
+      }
+
+      if (url === ECHO_TARGET_URL) {
+        return new Response("ok", {
+          status: 200,
+          headers: { "content-type": "text/plain" },
+        });
+      }
+
+      throw new Error(`Unexpected fetch URL in redirect test: ${url}`);
+    }) as typeof fetch;
+
+    const preSendLogCount = mockSendLogRows.length;
+    const redirectTestResult = await sendEarlyAccessThankYouEmail({
+      subscriberEmail: "redirect.success@example.com",
+      createdAt: new Date().toISOString(),
+      supabaseClient: (globalThis as any).__mockSupabaseClient,
+    });
+
+    assert.strictEqual(redirectTestResult.thankYouSent, true, "Thank-you must be marked sent after successful 302 echo");
+    assert.strictEqual(redirectCalls.length, 2, "Must make exactly 2 calls (hop 1 to exec, hop 2 to echo)");
+    assert.strictEqual(redirectCalls[0].url, TEST_APPS_SCRIPT_URL);
+    assert.strictEqual(redirectCalls[0].method, "POST");
+    assert.strictEqual(redirectCalls[0].redirect, "manual");
+    assert.strictEqual(redirectCalls[1].url, ECHO_TARGET_URL);
+    assert.strictEqual(redirectCalls[1].method, "POST");
+    assert.strictEqual(redirectCalls[1].redirect, "manual");
+    assert.strictEqual(redirectCalls[1].body, redirectCalls[0].body, "Hop 2 body must be byte-identical to Hop 1");
+    assert.ok(redirectCalls[1].body.includes("redirect.success@example.com"));
+    assert.ok(redirectCalls[1].body.includes(TEST_APPS_SCRIPT_SECRET));
+    assert.strictEqual(mockSendLogRows.length, preSendLogCount + 1, "Must record 1 thank_you row in gmail_send_log");
+    assert.strictEqual(mockSendLogRows[mockSendLogRows.length - 1].recipient_email, "redirect.success@example.com");
+    assert.strictEqual(mockSendLogRows[mockSendLogRows.length - 1].kind, "thank_you");
+    console.log("  [PASS] 302 to googleusercontent host re-issues POST with byte-identical body and records thank_you");
+
+    // (b) 302 to a non-Google host -> no second request, logged failure, zero secrets in logs
+    capturedWarnings.length = 0;
+    const untrustedCalls: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      untrustedCalls.push(url);
+      return new Response("", {
+        status: 302,
+        headers: {
+          Location: "https://evil.attacker.example.com/macros/echo?phish=1",
+        },
+      });
+    }) as typeof fetch;
+
+    const untrustedResult = await sendEarlyAccessThankYouEmail({
+      subscriberEmail: "untrusted.redirect@example.com",
+      createdAt: new Date().toISOString(),
+      supabaseClient: (globalThis as any).__mockSupabaseClient,
+    });
+
+    assert.strictEqual(untrustedResult.thankYouSent, false, "Must not send thank-you when redirect is to untrusted host");
+    assert.strictEqual(untrustedCalls.length, 1, "Must NOT follow redirect to non-Google host");
+    assert.ok(capturedWarnings.some((w) => w.includes("untrusted_redirect_host") || w.includes("UNKNOWN")), "Failure must be logged");
+    const untrustedLogText = capturedWarnings.join("\n");
+    assert.ok(!untrustedLogText.includes(TEST_APPS_SCRIPT_SECRET), "Secret must NEVER appear in logs on untrusted redirect");
+    assert.ok(!untrustedLogText.includes("untrusted.redirect@example.com"), "Email must not appear in logs");
+    assert.ok(!untrustedLogText.includes("evil.attacker.example.com"), "Target URL must not appear in logs");
+    console.log("  [PASS] 302 to non-Google host blocks second request, logs failure with zero secrets");
+
+    // (c) Final reply "already" after 302 redirect does not insert a duplicate gmail_send_log row
+    capturedWarnings.length = 0;
+    const alreadyCalls: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      alreadyCalls.push(url);
+      if (url === TEST_APPS_SCRIPT_URL) {
+        return new Response("", {
+          status: 302,
+          headers: { Location: ECHO_TARGET_URL },
+        });
+      }
+      return new Response("already", {
+        status: 200,
+        headers: { "content-type": "text/plain" },
+      });
+    }) as typeof fetch;
+
+    const sendLogCountBeforeAlready = mockSendLogRows.length;
+    const alreadyResult = await sendEarlyAccessThankYouEmail({
+      subscriberEmail: "external.already.redirect@example.com",
+      createdAt: new Date().toISOString(),
+      supabaseClient: (globalThis as any).__mockSupabaseClient,
+    });
+
+    assert.strictEqual(alreadyResult.thankYouSent, false);
+    assert.strictEqual(alreadyResult.alreadyThanked, true, "Must set alreadyThanked: true on 'already' reply after redirect");
+    assert.strictEqual(mockSendLogRows.length, sendLogCountBeforeAlready, "Must NOT insert duplicate row in gmail_send_log on 'already' reply");
+    console.log("  [PASS] Final reply 'already' after 302 does not insert duplicate gmail_send_log row");
+
+    // (d) Timeout/abort across the two hops respects the hard cap
+    capturedWarnings.length = 0;
+    let hop2Aborted = false;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      if (url === TEST_APPS_SCRIPT_URL) {
+        await new Promise((r) => setTimeout(r, 20));
+        return new Response("", {
+          status: 302,
+          headers: { Location: ECHO_TARGET_URL },
+        });
+      }
+      return await new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          hop2Aborted = true;
+          const err = new Error("AbortError: timeout");
+          err.name = "AbortError";
+          reject(err);
+        });
+      });
+    }) as typeof fetch;
+
+    const tTimeoutStart = Date.now();
+    const twoHopTimeoutResult = await sendEarlyAccessThankYouEmail({
+      subscriberEmail: "twohop.timeout@example.com",
+      createdAt: new Date().toISOString(),
+      supabaseClient: (globalThis as any).__mockSupabaseClient,
+      hardCapMs: 60,
+    });
+    const twoHopElapsed = Date.now() - tTimeoutStart;
+
+    assert.strictEqual(twoHopTimeoutResult.thankYouSent, false);
+    assert.strictEqual(hop2Aborted, true, "Hop 2 must be aborted when overall timeout budget expires");
+    assert.ok(twoHopElapsed < 250, `Overall operation must abort near hardCapMs (60ms), took ${twoHopElapsed}ms`);
+    assert.ok(capturedWarnings.some((w) => w.includes("UNKNOWN")), "Timeout across two hops must be logged as UNKNOWN");
+    console.log("  [PASS] Timeout/abort across both hops respects the hard cap");
+
+    // (e) Bare 200 "ok" on the first hop (no redirect) works (also verified in 4a)
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      assert.strictEqual(init?.redirect, "manual", "Must use redirect: manual even when no redirect occurs");
+      return new Response("ok", {
+        status: 200,
+        headers: { "content-type": "text/plain" },
+      });
+    }) as typeof fetch;
+
+    const bare200Result = await sendEarlyAccessThankYouEmail({
+      subscriberEmail: "bare200.test@example.com",
+      createdAt: new Date().toISOString(),
+      supabaseClient: (globalThis as any).__mockSupabaseClient,
+    });
+    assert.strictEqual(bare200Result.thankYouSent, true, "Bare 200 'ok' without redirect must succeed");
+    console.log("  [PASS] Bare 200 'ok' on first hop (redirect: manual) succeeds");
+
+    // (f) Direct unit tests of isAllowedGoogleRedirectHost
+    assert.strictEqual(isAllowedGoogleRedirectHost("https://script.googleusercontent.com/macros/echo"), true);
+    assert.strictEqual(isAllowedGoogleRedirectHost("https://script.google.com/macros/s/id/exec"), true);
+    assert.strictEqual(isAllowedGoogleRedirectHost("https://sub.domain.googleusercontent.com/path"), true);
+    assert.strictEqual(isAllowedGoogleRedirectHost("https://google.com/"), true);
+    assert.strictEqual(isAllowedGoogleRedirectHost("https://evil.attacker.com/"), false);
+    assert.strictEqual(isAllowedGoogleRedirectHost("https://script.googleusercontent.com.evil.com/"), false);
+    assert.strictEqual(isAllowedGoogleRedirectHost("https://evilgoogle.com/"), false);
+    assert.strictEqual(isAllowedGoogleRedirectHost("https://evilgoogleusercontent.com/"), false);
+    assert.strictEqual(isAllowedGoogleRedirectHost("https://user:pass@script.googleusercontent.com/"), false);
+    assert.strictEqual(isAllowedGoogleRedirectHost("not-a-url"), false);
+    console.log("  [PASS] isAllowedGoogleRedirectHost validates Google domains and rejects spoofing");
+
+    globalThis.fetch = originalFetchForRedirect;
 
     // ---------------------------------------------------------------------------
     // TEST 5: Scheduled Owner Digest Cron (runEarlyAccessDigestCron)

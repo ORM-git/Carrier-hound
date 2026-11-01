@@ -519,6 +519,54 @@ async function sendSingleGmailMessage(params: {
   }
 }
 
+function isRedirectStatus(status: number): boolean {
+  return (
+    status === 301 ||
+    status === 302 ||
+    status === 303 ||
+    status === 307 ||
+    status === 308
+  );
+}
+
+/**
+ * Validates that a redirect URL's hostname belongs to Google Apps Script / Google services
+ * (script.googleusercontent.com or *.google.com / *.googleusercontent.com).
+ * Prevents credential leak of APPS_SCRIPT_MAIL_SECRET to unauthorized hosts.
+ */
+export function isAllowedGoogleRedirectHost(
+  targetUrlStr: string,
+  baseUrl?: string
+): boolean {
+  try {
+    const parsed = new URL(targetUrlStr, baseUrl);
+    const isHttps = parsed.protocol === "https:";
+    const isTestHttp = process.env.NODE_ENV === "test" && parsed.protocol === "http:";
+    if (!isHttps && !isTestHttp) {
+      return false;
+    }
+    if (parsed.username || parsed.password) {
+      return false;
+    }
+    if (
+      parsed.port &&
+      parsed.port !== "443" &&
+      (process.env.NODE_ENV !== "test" || (parsed.port !== "80" && parsed.port !== "3000"))
+    ) {
+      return false;
+    }
+    const host = parsed.hostname.toLowerCase();
+    return (
+      host === "google.com" ||
+      host.endsWith(".google.com") ||
+      host === "googleusercontent.com" ||
+      host.endsWith(".googleusercontent.com")
+    );
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Sends ONLY the thank-you email to a new early-access subscriber (never sends the owner digest on the request path).
  * - Enforces a hard 2s cap (THANK_YOU_HARD_CAP_MS) so it never hangs.
@@ -631,24 +679,90 @@ export async function sendEarlyAccessThankYouEmail(params: {
     };
   }
 
-  // 3. Dispatch POST to Apps Script web app with 8s timeout
+  // 3. Dispatch POST to Apps Script web app with timeout honoring hardCapMs.
+  // Uses redirect: "manual" to preserve POST method, body and credentials across Google Apps Script
+  // 302 redirect to script.googleusercontent.com (standard fetch redirect converts POST to GET and drops body).
   const timeoutMs = params.hardCapMs ?? APPS_SCRIPT_TIMEOUT_MS;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
+  const requestBody = JSON.stringify({
+    secret: config.secret,
+    email: normalizedEmail,
+  });
+  const headers = {
+    "Content-Type": "application/json",
+  };
+
   try {
-    const response = await fetch(config.url, {
+    let response = await fetch(config.url, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        secret: config.secret,
-        email: normalizedEmail,
-      }),
-      redirect: "follow",
+      headers,
+      body: requestBody,
+      redirect: "manual",
       signal: controller.signal,
     });
+
+    if (isRedirectStatus(response.status)) {
+      const location = response.headers.get("location");
+      if (!location) {
+        safeWarn("missing_redirect_location");
+        safeWarn("UNKNOWN");
+        return {
+          thankYouSent: false,
+          capHit: false,
+          failedClosed: false,
+          alreadyThanked: false,
+        };
+      }
+
+      let targetUrl: URL;
+      try {
+        targetUrl = new URL(location, config.url);
+      } catch {
+        safeWarn("invalid_redirect_url");
+        safeWarn("UNKNOWN");
+        return {
+          thankYouSent: false,
+          capHit: false,
+          failedClosed: false,
+          alreadyThanked: false,
+        };
+      }
+
+      if (!isAllowedGoogleRedirectHost(targetUrl.href)) {
+        safeWarn("untrusted_redirect_host");
+        safeWarn("UNKNOWN");
+        return {
+          thankYouSent: false,
+          capHit: false,
+          failedClosed: false,
+          alreadyThanked: false,
+        };
+      }
+
+      // Re-issue ONE follow-up request with SAME method (POST), SAME body and Content-Type.
+      // Shared timeout and controller.signal.
+      response = await fetch(targetUrl.href, {
+        method: "POST",
+        headers,
+        body: requestBody,
+        redirect: "manual",
+        signal: controller.signal,
+      });
+
+      // Allow at most this one hop; treat any further redirect as failure.
+      if (isRedirectStatus(response.status)) {
+        safeWarn("excessive_redirects");
+        safeWarn("UNKNOWN");
+        return {
+          thankYouSent: false,
+          capHit: false,
+          failedClosed: false,
+          alreadyThanked: false,
+        };
+      }
+    }
 
     const reply = (await response.text().catch(() => "")).trim().toLowerCase();
 
