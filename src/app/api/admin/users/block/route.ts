@@ -33,7 +33,7 @@ export async function POST(req: Request) {
     }
 
     // Safety guard: Cannot block the admin himself!
-    if (auth.user?.id === userId || auth.user?.email === "xbsuryakant@gmail.com" && userId === auth.user.id) {
+    if (auth.user?.id === userId) {
       return NextResponse.json(
         { error: "Admin cannot block themselves." },
         { status: 400 }

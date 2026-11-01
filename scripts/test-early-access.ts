@@ -151,6 +151,7 @@ const mockApprovedTable: MockApprovedRow[] = [];
 let simulateDbFailure: string | null = null;
 let simulateSendLogReadFailure = false;
 let simulateApprovedDbFailure: string | null = null;
+let approvedQueryCount = 0;
 let signOutCallCount = 0;
 
 function createMockSupabase() {
@@ -383,6 +384,7 @@ function createMockSupabase() {
             return approvedBuilder;
           },
           maybeSingle: async () => {
+            approvedQueryCount++;
             if (simulateApprovedDbFailure) {
               return { data: null, error: { code: "08006", message: "DB query error" } };
             }
@@ -457,7 +459,8 @@ function decodeRfc2047Subject(rfc2822: string): string {
 (globalThis as any).__mockRateLimitClient = null;
 
 async function main() {
-  const { middleware } = await import("../src/middleware");
+  const { middleware, _clearEarlyAccessCacheForTesting } = await import("../src/middleware");
+  const { GET: healthGet } = await import("../src/app/api/health/route");
   const { POST: earlyAccessPost } = await import("../src/app/api/early-access/route");
   const {
     DAILY_THANK_YOU_CAP,
@@ -658,6 +661,18 @@ async function main() {
   const signedOutStatsPost = await middleware(new NextRequest("http://localhost:3000/api/stats", { method: "POST" }));
   assert.strictEqual(signedOutStatsPost.status, 403, "Signed-out POST /api/stats must return 403");
 
+  // Test /api/health route handler returns 200 without any session or headers
+  const healthRes = await healthGet();
+  assert.strictEqual(healthRes.status, 200, "GET /api/health must return 200 without session");
+  const healthJson = await healthRes.json();
+  assert.deepStrictEqual(healthJson, { status: "ok" }, "GET /api/health must return { status: 'ok' }");
+  assert.strictEqual(
+    healthRes.headers.get("cache-control"),
+    "no-store, no-cache, must-revalidate",
+    "GET /api/health must return Cache-Control: no-store"
+  );
+  console.log("  [PASS] GET /api/health returns 200 { status: 'ok' } with Cache-Control: no-store without session or headers");
+
   for (const guestRoute of ["/", "/early-access", "/api/early-access", "/api/health", "/api/stats", "/privacy", "/privacy-policy", "/terms-and-conditions", "/login", "/data/ne_110m_land.json"]) {
     const res = await middleware(new NextRequest(`http://localhost:3000${guestRoute}`));
     assert.strictEqual(res.status, 200);
@@ -842,27 +857,122 @@ async function main() {
   );
   console.log("  [PASS] Approved allowed: /dashboard & API allowed (200), /early-access & / redirect straight to /dashboard");
 
-  // 3. DB error blocked (fail-closed):
+  // 3. Early-Access Caching & DB Error Grace (stopping fail-closed sign-outs):
+  _clearEarlyAccessCacheForTesting();
+  approvedQueryCount = 0;
+
+  // (a) First query: queries DB, caches verdict for 60s
+  const initialApprovedRes = await middleware(
+    new NextRequest("http://localhost:3000/dashboard", {
+      headers: { authorization: "Bearer valid-approved-google-token" },
+    })
+  );
+  assert.strictEqual(initialApprovedRes.status, 200, "Approved user on /dashboard must return 200");
+  assert.strictEqual(approvedQueryCount, 1, "Initial request must query DB once");
+
+  // Immediate second query within 60s: cache hit, DB not re-queried
+  const cachedApprovedRes = await middleware(
+    new NextRequest("http://localhost:3000/dashboard", {
+      headers: { authorization: "Bearer valid-approved-google-token" },
+    })
+  );
+  assert.strictEqual(cachedApprovedRes.status, 200, "Cached approved request must return 200");
+  assert.strictEqual(approvedQueryCount, 1, "Cache hit within 60s must NOT re-query DB");
+
+  // (b) Approved user stays signed in across a simulated DB error within grace window (5 min)
   simulateApprovedDbFailure = "connection_error";
-  const dbErrorDashRes = await middleware(
+  const errorGraceRes = await middleware(
+    new NextRequest("http://localhost:3000/dashboard", {
+      headers: { authorization: "Bearer valid-approved-google-token" },
+    })
+  );
+  assert.strictEqual(errorGraceRes.status, 200, "Approved user must stay signed in (200) across simulated DB error within grace");
+  assert.strictEqual(errorGraceRes.headers.get("x-early-access-signed-out"), null, "Must NOT sign out approved user on DB error");
+
+  const errorGraceApiRes = await middleware(
+    new NextRequest("http://localhost:3000/api/jobs/search", {
+      headers: { authorization: "Bearer valid-approved-google-token" },
+    })
+  );
+  assert.strictEqual(errorGraceApiRes.status, 200, "Approved user API request must stay 200 within grace on DB error");
+  assert.strictEqual(errorGraceApiRes.headers.get("x-early-access-signed-out"), null, "Must NOT sign out approved user on DB error for API");
+
+  // (c) Cache expires after 60s and re-queries DB
+  simulateApprovedDbFailure = null;
+  const originalDateNow = Date.now;
+  try {
+    Date.now = () => originalDateNow() + 65_000; // Fast-forward past 60s TTL
+    const expiredCacheRes = await middleware(
+      new NextRequest("http://localhost:3000/dashboard", {
+        headers: { authorization: "Bearer valid-approved-google-token" },
+      })
+    );
+    assert.strictEqual(expiredCacheRes.status, 200, "Approved user after 60s cache expiry must still access dashboard");
+    assert.strictEqual(approvedQueryCount, 2, "After 60s TTL expiry, middleware must re-query DB");
+  } finally {
+    Date.now = originalDateNow;
+  }
+
+  // (d) Definitively-unapproved user is still bounced and signed out
+  _clearEarlyAccessCacheForTesting();
+  const unapprovedRes2 = await middleware(
+    new NextRequest("http://localhost:3000/dashboard", {
+      headers: { authorization: "Bearer valid-not-approved-google-token" },
+    })
+  );
+  assert.strictEqual(unapprovedRes2.status, 307, "Definitively-unapproved user must bounce (307) to /early-access");
+  assert.strictEqual(
+    unapprovedRes2.headers.get("x-early-access-signed-out"),
+    "1",
+    "Definitively-unapproved user must be signed out (x-early-access-signed-out: 1)"
+  );
+
+  const unapprovedApiRes2 = await middleware(
+    new NextRequest("http://localhost:3000/api/jobs/search", {
+      headers: { authorization: "Bearer valid-not-approved-google-token" },
+    })
+  );
+  assert.strictEqual(unapprovedApiRes2.status, 403, "Definitively-unapproved user on API must return 403");
+  assert.strictEqual(
+    unapprovedApiRes2.headers.get("x-early-access-signed-out"),
+    "1",
+    "Definitively-unapproved user on API must be signed out"
+  );
+
+  // (e) Lookup ERROR with NO cached verdict bounces to /early-access without destroying session
+  _clearEarlyAccessCacheForTesting();
+  simulateApprovedDbFailure = "connection_error";
+  const noCacheErrorRes = await middleware(
     new NextRequest("http://localhost:3000/dashboard", {
       headers: { authorization: "Bearer valid-db-error-token" },
     })
   );
-  assert.strictEqual(dbErrorDashRes.status, 307, "DB error must fail closed and redirect to /early-access");
+  assert.strictEqual(noCacheErrorRes.status, 307, "DB error with no cache must bounce (307) to /early-access");
   assert.strictEqual(
-    new URL(dbErrorDashRes.headers.get("location")!).pathname,
+    new URL(noCacheErrorRes.headers.get("location")!).pathname,
     "/early-access",
     "DB error redirect target must be /early-access"
   );
-  const dbErrorApiRes = await middleware(
+  assert.strictEqual(
+    noCacheErrorRes.headers.get("x-early-access-signed-out"),
+    null,
+    "Must NOT sign out user when DB errors with no cached verdict"
+  );
+
+  const noCacheErrorApiRes = await middleware(
     new NextRequest("http://localhost:3000/api/jobs/search", {
       headers: { authorization: "Bearer valid-db-error-token" },
     })
   );
-  assert.strictEqual(dbErrorApiRes.status, 403, "DB error on API must return 403");
+  assert.strictEqual(noCacheErrorApiRes.status, 403, "DB error on API with no cache must return 403");
+  assert.strictEqual(
+    noCacheErrorApiRes.headers.get("x-early-access-signed-out"),
+    null,
+    "Must NOT sign out user on API when DB errors with no cached verdict"
+  );
   simulateApprovedDbFailure = null;
-  console.log("  [PASS] DB error blocked: Fails closed to /early-access and 403 on database lookup failure");
+
+  console.log("  [PASS] Early-access caching, 60s TTL, 5m grace window, and non-signing-out DB error behavior verified");
 
   // 4. User cannot self-approve:
   // Static scan of src/ (non-test files): fails if early_access_approved appears with insert/update/upsert/delete or any non-select use
