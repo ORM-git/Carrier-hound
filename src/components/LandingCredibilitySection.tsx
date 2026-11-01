@@ -114,10 +114,10 @@ export default function LandingCredibilitySection() {
     >
       <div className="max-w-[1000px] mx-auto px-4 sm:px-6">
         {/* Soft tinted rounded card with bottom-left speech-bubble tail */}
-        <div className="relative bg-[#ECFDF3] border border-[#D1FADF] rounded-2xl sm:rounded-3xl p-6 sm:p-10 lg:p-12 shadow-xs">
+        <div className="relative bg-[#EFF6FF] border border-[#BFDBFE] rounded-2xl sm:rounded-3xl p-6 sm:p-10 lg:p-12 shadow-xs">
           {/* Centered Monkey Mascot + Bold Uppercase Condensed Heading */}
           <div className="flex flex-col items-center justify-center text-center mb-8 sm:mb-10">
-            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-white p-1.5 shadow-xs border border-emerald-100 flex items-center justify-center flex-shrink-0 mb-3 sm:mb-4">
+            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-white p-1.5 shadow-xs border border-blue-100 flex items-center justify-center flex-shrink-0 mb-3 sm:mb-4">
               <BrandIcon size={48} className="w-full h-full object-contain" />
             </div>
 
@@ -163,7 +163,7 @@ export default function LandingCredibilitySection() {
 
           {/* Speech-bubble tail at bottom-left (CSS only) */}
           <div
-            className="absolute -bottom-3 sm:-bottom-3.5 left-8 sm:left-12 w-6 h-6 sm:w-7 sm:h-7 bg-[#ECFDF3] border-b border-r border-[#D1FADF] rotate-45 transform pointer-events-none"
+            className="absolute -bottom-3 sm:-bottom-3.5 left-8 sm:left-12 w-6 h-6 sm:w-7 sm:h-7 bg-[#EFF6FF] border-b border-r border-[#BFDBFE] rotate-45 transform pointer-events-none"
             aria-hidden="true"
           />
         </div>

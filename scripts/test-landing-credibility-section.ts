@@ -297,8 +297,8 @@ async function testLandingPageStructure() {
     "Must include bold large heading 'Real numbers, not promises'"
   );
   assert.ok(
-    compSrc.includes("#ECFDF3"),
-    "Must use soft green rounded panel with color #ECFDF3"
+    compSrc.includes("#EFF6FF"),
+    "Must use soft brand blue rounded panel with color #EFF6FF"
   );
   assert.ok(
     compSrc.includes("<BrandIcon"),
