@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 
-export const dynamic = "force-dynamic";
 export const runtime = "edge";
 
 const NO_CACHE_HEADERS = {
