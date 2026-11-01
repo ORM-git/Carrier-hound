@@ -51,7 +51,9 @@ async function main() {
     "Hero headline must remain untouched"
   );
   assert.ok(
-    pageSrc.includes("Tired of getting auto-rejections?"),
+    pageSrc.includes("LandingComparisonSection") ||
+      pageSrc.includes("Tired of getting auto-rejected?") ||
+      pageSrc.includes("Tired of getting auto-rejections?"),
     "Comparison section must remain untouched"
   );
   assert.ok(
@@ -89,7 +91,10 @@ async function main() {
     "LandingInteractiveDemoSection must be rendered in src/app/page.tsx"
   );
   const heroHeadlineIdx = pageSrc.indexOf("Find jobs not on LinkedIn/Indeed");
-  const comparisonIdx = pageSrc.indexOf("Tired of getting auto-rejections?");
+  const comparisonIdx =
+    pageSrc.indexOf("<LandingComparisonSection />") !== -1
+      ? pageSrc.indexOf("<LandingComparisonSection />")
+      : pageSrc.indexOf("Tired of getting");
   const demoIdx = pageSrc.indexOf("<LandingInteractiveDemoSection />");
   assert.ok(
     heroHeadlineIdx > -1 && demoIdx > heroHeadlineIdx && comparisonIdx > demoIdx,

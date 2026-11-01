@@ -15,6 +15,7 @@ import GlobeLiveStats from "@/components/GlobeLiveStats";
 import LandingInteractiveDemoSection from "@/components/LandingInteractiveDemoSection";
 import LandingFeaturesSection from "@/components/LandingFeaturesSection";
 import LandingCredibilitySection from "@/components/LandingCredibilitySection";
+import LandingComparisonSection from "@/components/LandingComparisonSection";
 import LandingJobsTickerStrip from "@/components/LandingJobsTickerStrip";
 import { useLiveStats } from "@/lib/api/stats";
 import { X, Check, ArrowRight, Instagram, Linkedin, Mail } from "lucide-react";
@@ -130,62 +131,7 @@ export default function HomePage() {
       {/* 3. PROBLEM VS SOLUTION (Comparison)                                       */}
       {/* ========================================================================= */}
       <section className="pt-24 pb-12 lg:pt-28 lg:pb-[90px] max-w-content mx-auto px-6">
-        <div className="text-center max-w-2xl mx-auto mb-10 sm:mb-12">
-          <span className="text-xs font-bold text-[#2563EB] uppercase tracking-wider bg-blue-50 px-3 py-1 rounded-full border border-blue-100">
-            Comparison
-          </span>
-          <h2 className="text-3xl font-bold text-[#09090B] sm:text-4xl md:text-[40px] md:leading-[1.2] mt-3">
-            Tired of getting auto-rejections?
-          </h2>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
-          {/* Left card: The usual grind */}
-          <div className="bg-white border border-[#E4E4E7] rounded-xl p-7 shadow-sm">
-            <span className="mb-5 block text-xl font-bold text-[#09090B] pb-4 border-b border-gray-100">
-              The usual grind
-            </span>
-            <ul className="space-y-4">
-              {[
-                "Scrolling the same feeds. Again.",
-                "\"Posted 1 hour ago, 200 applicants\"",
-                "Rewriting your resume. Again.",
-                "\"Am I even qualified for this?\"",
-                "Endless searching",
-              ].map((item, idx) => (
-                <li key={idx} className="flex items-start gap-3">
-                  <div className="w-5 h-5 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <X className="w-3.5 h-3.5 text-red-600 stroke-[3]" />
-                  </div>
-                  <span className="text-base text-gray-700 leading-snug">{item}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {/* Right card: The Monke way */}
-          <div className="bg-white border border-[#E4E4E7] rounded-xl p-7 shadow-sm">
-            <span className="mb-5 block text-xl font-bold text-[#09090B] pb-4 border-b border-gray-100">
-              The Monke way
-            </span>
-            <ul className="space-y-4">
-              {[
-                "Jobs straight from company career pages",
-                "Employers you didn't know existed",
-                "AI-refined resume",
-                "Resume score card",
-                "Browse roles worldwide and check each role's eligibility",
-              ].map((item, idx) => (
-                <li key={idx} className="flex items-start gap-3">
-                  <div className="w-5 h-5 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" />
-                  </div>
-                  <span className="text-base text-[#09090B] font-medium leading-snug">{item}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
+        <LandingComparisonSection />
 
         {/* AI Resume Monke Section */}
         <div className="mt-12 p-6 sm:p-8 bg-slate-50 border border-slate-200 rounded-2xl max-w-4xl mx-auto shadow-2xs">
