@@ -1017,6 +1017,8 @@ export async function runBackfill() {
   if (isWrite) {
     console.log(`Uploading ${validCandidates.length} company logos to Supabase Storage...`);
     let uploadCount = 0;
+    let failedCount = 0;
+    const sampleUploaded: Array<{ name: string; url: string }> = [];
 
     for (const item of validCandidates) {
       const storagePath = `${item.company.id}.${item.ext}`;
@@ -1044,6 +1046,7 @@ export async function runBackfill() {
 
         if (uploadError) {
           console.error(`Upload error for ${item.company.name}:`, uploadError.message);
+          failedCount++;
           continue;
         }
 
@@ -1058,12 +1061,27 @@ export async function runBackfill() {
             .update({ logo_url: publicUrl })
             .eq("id", item.company.id);
           uploadCount++;
+          if (sampleUploaded.length < 5) {
+            sampleUploaded.push({ name: item.company.name, url: publicUrl });
+          }
         }
       } catch (err: any) {
         console.error(`Write error for ${item.company.name}:`, err.message);
+        failedCount++;
       }
     }
     console.log(`Successfully uploaded and updated ${uploadCount} companies in database.\n`);
+    const candidateSkipped = validCandidates.length - uploadCount - failedCount;
+    console.log("=========================================");
+    console.log("REAL BACKFILL WRITE EXECUTION TOTALS:");
+    console.log(`  Uploaded: ${uploadCount}`);
+    console.log(`  Failed:   ${failedCount}`);
+    console.log(`  Skipped:  ${candidateSkipped}`);
+    console.log("5 Sample Uploaded Company Logos:");
+    for (const sample of sampleUploaded) {
+      console.log(`  - ${sample.name}: ${sample.url}`);
+    }
+    console.log("=========================================\n");
   }
 
   // Summary Table
