@@ -325,9 +325,9 @@ async function runSuite() {
     );
   }
   check(
-    headersContent.includes("Content-Security-Policy-Report-Only:") &&
+    !headersContent.includes("Content-Security-Policy-Report-Only:") &&
       netlifyContent.includes("Content-Security-Policy-Report-Only ="),
-    "Both public/_headers and netlify.toml configure Content-Security-Policy-Report-Only"
+    "public/_headers omits redundant Content-Security-Policy-Report-Only and netlify.toml configures it"
   );
   check(
     fs.existsSync(cspDocPath) && fs.readFileSync(cspDocPath, "utf8").includes("unsafe-inline"),
