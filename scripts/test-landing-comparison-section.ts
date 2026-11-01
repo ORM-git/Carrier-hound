@@ -111,17 +111,40 @@ async function runTests() {
       `Row ${idx + 1} monke caption mismatch: expected '${pair.monke}', got '${row.monke.caption}'`
     );
     assert.ok(
-      row.usual.image.startsWith("/images/comparison/"),
-      `Row ${idx + 1} usual image must point to comparison assets: ${row.usual.image}`
+      row.usual.image.startsWith("/images/comparison/") || row.usual.image.startsWith("/mascot/"),
+      `Row ${idx + 1} usual image must point to comparison or mascot assets: ${row.usual.image}`
     );
     assert.ok(
-      row.monke.image.startsWith("/images/comparison/"),
-      `Row ${idx + 1} monke image must point to comparison assets: ${row.monke.image}`
+      row.monke.image.startsWith("/images/comparison/") || row.monke.image.startsWith("/mascot/"),
+      `Row ${idx + 1} monke image must point to comparison or mascot assets: ${row.monke.image}`
     );
     assert.ok(row.usual.imageAlt.length > 5, `Row ${idx + 1} usual imageAlt must be descriptive`);
     assert.ok(row.monke.imageAlt.length > 5, `Row ${idx + 1} monke imageAlt must be descriptive`);
   });
-  console.log("  [PASS] Config-array driven architecture with all 5 rows verified");
+
+  // Verify Row 1 Mascot Images and Loop Animation Config
+  assert.strictEqual(
+    COMPARISON_ROWS[0].usual.image,
+    "/mascot/row1-sad.png",
+    "Row 1 usual image must be '/mascot/row1-sad.png'"
+  );
+  assert.strictEqual(
+    COMPARISON_ROWS[0].monke.image,
+    "/mascot/row1-happy.png",
+    "Row 1 monke image must be '/mascot/row1-happy.png'"
+  );
+  assert.strictEqual(
+    COMPARISON_ROWS[0].usual.loopAnimation,
+    "sad",
+    "Row 1 usual loopAnimation must be 'sad'"
+  );
+  assert.strictEqual(
+    COMPARISON_ROWS[0].monke.loopAnimation,
+    "happy",
+    "Row 1 monke loopAnimation must be 'happy'"
+  );
+
+  console.log("  [PASS] Config-array driven architecture with all 5 rows and row 1 mascot config verified");
 
   // 4. Card Styling & Round VS Badge
   assert.ok(
@@ -152,7 +175,15 @@ async function runTests() {
     "Must handle image load errors gracefully via fallback placeholder"
   );
 
-  // Verify that all 10 monkey illustration image files exist on disk
+  // Verify that mascot image files exist on disk
+  const sadFile = path.resolve(process.cwd(), "public/mascot/row1-sad.png");
+  const happyFile = path.resolve(process.cwd(), "public/mascot/row1-happy.png");
+  assert.ok(fs.existsSync(sadFile), "public/mascot/row1-sad.png must exist on disk");
+  assert.ok(fs.existsSync(happyFile), "public/mascot/row1-happy.png must exist on disk");
+  assert.ok(fs.statSync(sadFile).size > 1000, "row1-sad.png must not be empty");
+  assert.ok(fs.statSync(happyFile).size > 1000, "row1-happy.png must not be empty");
+
+  // Verify all 10 monkey illustration image files exist on disk
   for (let i = 1; i <= 5; i++) {
     const usualFile = path.resolve(process.cwd(), `public/images/comparison/row-${i}-usual.png`);
     const monkeFile = path.resolve(process.cwd(), `public/images/comparison/row-${i}-monke.png`);
@@ -161,7 +192,7 @@ async function runTests() {
     assert.ok(fs.statSync(usualFile).size > 1000, `row-${i}-usual.png must not be empty`);
     assert.ok(fs.statSync(monkeFile).size > 1000, `row-${i}-monke.png must not be empty`);
   }
-  console.log("  [PASS] next/image integration, all 10 asset files, and clean placeholder verified");
+  console.log("  [PASS] next/image integration, transparent mascot PNGs on disk, and clean placeholder verified");
 
   // 6. Animation, Stagger, and Reduced Motion
   assert.ok(
@@ -200,9 +231,40 @@ async function runTests() {
     compSrc.includes("y: 20") || compSrc.includes("y: 24"),
     "Each row must fade up"
   );
-  console.log("  [PASS] Animation specifications (fade up, slide in left/right, pop VS, 80ms stagger, reduced-motion) verified");
+  console.log("  [PASS] Entrance specifications (fade up, slide in left/right, pop VS, 80ms stagger, reduced-motion) verified");
 
-  // 7. Mobile 360px layout & zero unintended diffs
+  // 7. Mascot CSS Loop Keyframes, IntersectionObserver & GPU friendly
+  assert.ok(
+    compSrc.includes("mascot-sad-nod") && compSrc.includes("mascot-sad-breathe"),
+    "Must include CSS keyframes for sad mascot breathing and head-nod tilt"
+  );
+  assert.ok(
+    compSrc.includes("mascot-happy-swing") && compSrc.includes("mascot-happy-bounce"),
+    "Must include CSS keyframes for happy mascot pendulum swing and bounce"
+  );
+  assert.ok(
+    compSrc.includes("transform-origin: bottom center"),
+    "Sad mascot tilt must use transform-origin: bottom center"
+  );
+  assert.ok(
+    compSrc.includes("transform-origin: top left"),
+    "Happy mascot swing must use transform-origin: top left"
+  );
+  assert.ok(
+    compSrc.includes("IntersectionObserver"),
+    "Must use IntersectionObserver to start loops only while in view and pause off-screen"
+  );
+  assert.ok(
+    compSrc.includes("will-change: transform"),
+    "Must declare will-change: transform for GPU-friendly animation"
+  );
+  assert.ok(
+    compSrc.includes("prefers-reduced-motion"),
+    "Must declare @media (prefers-reduced-motion: reduce) rule to respect user preference"
+  );
+  console.log("  [PASS] Mascot CSS loop keyframes (sad: breathing/nod; happy: swing/bounce), IntersectionObserver, and reduced-motion verified");
+
+  // 8. Mobile 360px layout & zero unintended diffs
   assert.ok(
     compSrc.includes("grid-cols-2"),
     "Must maintain two-column stacked card layout on mobile matching reference"
@@ -214,7 +276,7 @@ async function runTests() {
   console.log("  [PASS] Mobile 360px stacked two-column layout verified");
 
   console.log("\n================================================================================");
-  console.log("ALL LANDING COMPARISON SECTION TESTS PASSED [PASS-LOCAL]");
+  console.log("ALL LANDING COMPARISON BLOCK TESTS PASSED [PASS-LOCAL]");
   console.log("================================================================================\n");
 }
 
