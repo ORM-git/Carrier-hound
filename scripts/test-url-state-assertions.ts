@@ -621,7 +621,22 @@ async function runSuite() {
           req.respond({
             status: 200,
             headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" },
-            body: JSON.stringify([sampleProfileA]),
+            body: JSON.stringify([{
+              id: "cp_mock_123",
+              user_id: "usr_mock_123",
+              name: sampleProfileA.name,
+              email: sampleProfileA.email,
+              phone: sampleProfileA.phone,
+              location: sampleProfileA.location,
+              headline: sampleProfileA.headline,
+              summary: sampleProfileA.summary,
+              skills: sampleProfileA.skills,
+              experience_json: sampleProfileA.experience,
+              education_json: sampleProfileA.education,
+              certifications: sampleProfileA.certifications,
+              confirmed_at: sampleProfileA.confirmedAt,
+              updated_at: new Date().toISOString(),
+            }]),
           });
           return;
         }
@@ -701,6 +716,9 @@ async function runSuite() {
       await modalPage.evaluateOnNewDocument(({ profile, session, keys }) => {
         localStorage.setItem("careermonke_cookie_consent", "accepted");
         localStorage.setItem("careermonke_candidate_profile", JSON.stringify(profile));
+        if (session && session.user && session.user.id) {
+          localStorage.setItem("careermonke_candidate_profile_" + session.user.id, JSON.stringify(profile));
+        }
         localStorage.setItem("careermonke_preferences", JSON.stringify({
           roles: ["Staff Software Engineer", "Platform Engineer"],
           categories: ["Software Development", "DevOps & Cloud"],
