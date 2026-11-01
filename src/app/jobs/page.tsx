@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, useReducedMotion, AnimatePresence } from "motion/react";
-import { getLiveJobs, getLiveJobById, LiveJob, isEarlyApplicant } from "@/lib/jobs/service";
+import { getLiveJobs, getLiveJobById, LiveJob, isEarlyApplicant, capJobsPerCompany } from "@/lib/jobs/service";
 import { getAuthUser, getUserPreferences } from "@/lib/auth/session";
 import { getCandidateProfile, calculateProfileCompletion } from "@/lib/resume/storage";
 import { CandidateProfile } from "@/lib/resume/types";
@@ -1194,6 +1194,10 @@ function JobsPageInner() {
       });
     }
 
+    if (activeTab === "recommended") {
+      result = capJobsPerCompany(result, 3, 30);
+    }
+
     return result;
   }, [
     liveJobs,
@@ -2044,6 +2048,7 @@ function JobsPageInner() {
                                   <CompanyLogo
                                     company={job.company}
                                     applyUrl={job.applyUrl}
+                                    logoUrl={job.logoUrl || (job as any).logo_url}
                                     className="w-[56px] h-[56px] sm:w-[72px] sm:h-[72px] rounded-lg shrink-0 object-contain p-1 border border-[#E2E8F0] bg-white"
                                   />
 
@@ -2303,6 +2308,7 @@ function JobsPageInner() {
                                   <CompanyLogo
                                     company={job.company}
                                     applyUrl={job.applyUrl}
+                                    logoUrl={job.logoUrl || (job as any).logo_url}
                                     className="w-8 h-8 rounded-lg shrink-0 object-contain p-0.5 border border-[#E2E8F0] bg-white"
                                   />
                                   <div className="min-w-0 flex-1">

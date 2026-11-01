@@ -30,6 +30,8 @@ export interface LiveJob {
   trackerNotes?: string;
   proUnlockError?: ProUnlockError;
   applicantCount?: number;
+  logoUrl?: string | null;
+  logo_url?: string | null;
 }
 
 export interface ProUnlockError {
@@ -283,6 +285,58 @@ export function extractCandidateRelevanceTerms(
 
 const PUBLIC_SELECT_COLUMNS =
   "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at";
+
+/**
+ * Caps jobs per company (maxPerCompany in any visible topWindow).
+ * Prevents mass postings from one employer from flooding the recommended list.
+ *
+ * Within the topWindow (default 30):
+ * - At most maxPerCompany (default 3) jobs are included per company.
+ * - Excess jobs from a capped company are deferred to positions >= topWindow.
+ * - Other companies' jobs from deeper in the list are promoted into the topWindow.
+ */
+export function capJobsPerCompany<T extends { company?: string | null }>(
+  jobs: T[],
+  maxPerCompany: number = 3,
+  topWindow: number = 30
+): T[] {
+  if (!Array.isArray(jobs) || jobs.length === 0) return jobs;
+
+  const topItems: T[] = [];
+  const deferredItems: T[] = [];
+  const companyCounts = new Map<string, number>();
+
+  for (const job of jobs) {
+    const rawCompany = (job.company || "").trim();
+    const compKey = rawCompany.toLowerCase();
+
+    // Anonymous / unrevealed employers are not grouped under a single company cap
+    if (!compKey || compKey === "verified employer" || compKey === "confidential employer") {
+      if (topItems.length < topWindow) {
+        topItems.push(job);
+      } else {
+        deferredItems.push(job);
+      }
+      continue;
+    }
+
+    const currentCount = companyCounts.get(compKey) || 0;
+    if (currentCount < maxPerCompany && topItems.length < topWindow) {
+      companyCounts.set(compKey, currentCount + 1);
+      topItems.push(job);
+    } else {
+      deferredItems.push(job);
+    }
+  }
+
+  // Any deferred jobs can only appear at index >= topWindow to guarantee that
+  // any visible top-30 slice contains at most maxPerCompany for every company.
+  if (topItems.length >= topWindow) {
+    return [...topItems, ...deferredItems];
+  }
+
+  return topItems;
+}
 
 const DEGRADED_JOBS_RESULT: GetJobsResult = {
   jobs: [],
@@ -725,18 +779,21 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
           return timeB - timeA;
         });
 
-        data = scoredPool.slice(from, to + 1).map((item) => item.row);
+        // Cap jobs per company: max 3 per company in visible top-30
+        const cappedPool = capJobsPerCompany(scoredPool.map((item) => item.row), 3, 30);
+        data = cappedPool.slice(from, to + 1);
       }
     } else if (isMatchSort && (!candidate || relevanceTerms.length === 0)) {
       // Guest or profile without confirmed resume: sensible global relevance (verified roles first, then newest)
       const res = await query
         .order("verified", { ascending: false })
         .order("posted_at", { ascending: false, nullsFirst: false })
-        .range(from, to);
+        .range(0, 99);
       if (res.error && !isLegacyBehavior) {
         return DEGRADED_JOBS_RESULT;
       }
-      data = res.data;
+      const cappedData = capJobsPerCompany(res.data || [], 3, 30);
+      data = cappedData.slice(from, to + 1);
       count = res.count;
     } else {
       // Default newest first
@@ -780,6 +837,8 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
           description: "",
           skills: [],
           postedAt: row.posted_at || row.created_at,
+          logoUrl: row.logo_url || row.logoUrl || null,
+          logo_url: row.logo_url || row.logoUrl || null,
         };
       });
 
@@ -823,6 +882,10 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
                       if (u.apply_url) job.applyUrl = sanitizeExternalUrl(u.apply_url) || "";
                       if (u.description) job.description = stripHtmlAndExecutableMarkup(u.description);
                       if (u.skills) job.skills = u.skills;
+                      if (u.logo_url || u.logoUrl) {
+                        job.logoUrl = u.logo_url || u.logoUrl;
+                        job.logo_url = u.logo_url || u.logoUrl;
+                      }
                     }
                   });
                 }
@@ -928,6 +991,8 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
                 postedAt: job.posted_at || job.first_seen_at || job.created_at,
                 isExpired: isInactive,
                 status: isInactive ? "expired" : (job.status || "active"),
+                logoUrl: job.logo_url || job.logoUrl || null,
+                logo_url: job.logo_url || job.logoUrl || null,
               };
             }
           } else {
