@@ -47,8 +47,10 @@ async function runPricingHeaderFirstRenderSuite() {
     console.log("\n[NEGATIVE CONTROL MODE] Intentionally asserting invalid condition (server HTML must NOT equal first client render)...\n");
     // Deliberately assert mismatch between server HTML and first client render
     delete (globalThis as any).window;
+    delete (globalThis as any).location;
     const serverHtml = renderWithRouter(React.createElement(PricingPage));
     (globalThis as any).window = globalThis;
+    (globalThis as any).location = new URL("http://localhost:3000/pricing");
     const clientMarkup = renderWithRouter(React.createElement(PricingPage));
 
     assert.notStrictEqual(
@@ -67,10 +69,12 @@ async function runPricingHeaderFirstRenderSuite() {
   // Render Server HTML (window is undefined, as in static export / SSR)
   delete (globalThis as any).window;
   delete (globalThis as any).localStorage;
+  delete (globalThis as any).location;
   const serverHtml = renderWithRouter(React.createElement(PricingPage));
 
   // Render First Client Render (window is defined, synchronous first pass before useEffect)
   (globalThis as any).window = globalThis;
+  (globalThis as any).location = new URL("http://localhost:3000/pricing");
   (globalThis as any).localStorage = {
     getItem: (key: string) => (key === "careermonke_user_email" ? "stale-cached@example.com" : null),
   };
