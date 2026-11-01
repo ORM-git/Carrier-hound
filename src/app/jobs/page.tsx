@@ -2048,7 +2048,7 @@ function JobsPageInner() {
                                   <CompanyLogo
                                     company={job.company}
                                     applyUrl={job.applyUrl}
-                                    logoUrl={job.logoUrl || (job as any).logo_url}
+                                    logoUrl={job.logoUrl}
                                     className="w-[56px] h-[56px] sm:w-[72px] sm:h-[72px] rounded-lg shrink-0 object-contain p-1 border border-[#E2E8F0] bg-white"
                                   />
 
@@ -2308,7 +2308,7 @@ function JobsPageInner() {
                                   <CompanyLogo
                                     company={job.company}
                                     applyUrl={job.applyUrl}
-                                    logoUrl={job.logoUrl || (job as any).logo_url}
+                                    logoUrl={job.logoUrl}
                                     className="w-8 h-8 rounded-lg shrink-0 object-contain p-0.5 border border-[#E2E8F0] bg-white"
                                   />
                                   <div className="min-w-0 flex-1">
