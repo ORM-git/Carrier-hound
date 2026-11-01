@@ -7,6 +7,7 @@ import { getRequestContext } from "@cloudflare/next-on-pages";
 import { COUNTRY_CODE_TO_NAME, getCountryFilterClause } from "@/lib/countries";
 import { decodeCursor, encodeCursor } from "@/lib/pagination/cursor";
 import { capJobsPerCompany } from "@/lib/jobs/capping";
+import { normalizeUserCountries, applyEligibilityFilter } from "@/lib/jobs/eligibility";
 
 export const runtime = "edge";
 
@@ -121,22 +122,64 @@ export async function GET(req: Request) {
     );
     const targetTable = hasServiceKey ? "jobs" : "jobs_public";
 
-    // Check optional Pro entitlement via Bearer token
+    // Check optional Pro entitlement and user preferences via Bearer token
     let isPro = false;
+    let userId: string | null = null;
+    let userLocations: string[] = [];
+    let userSalaryCurrency: string | undefined;
+    let userEligibilityPref = true;
+
     const authHeader = req.headers.get("authorization") || req.headers.get("Authorization");
     if (authHeader && authHeader.startsWith("Bearer ") && hasServiceKey) {
       const token = authHeader.replace("Bearer ", "").trim();
       try {
         const { data: { user } } = await supabaseAdmin.auth.getUser(token);
         if (user) {
+          userId = user.id;
           const entitlement = await getServerEntitlement(user.id);
           isPro = Boolean(entitlement.isPro);
+
+          // Fetch user preferences for eligibility filter and preferred currency
+          const { data: prefs } = await supabaseAdmin
+            .from("user_preferences")
+            .select("locations, eligibility_filter, salary_currency")
+            .eq("user_id", user.id)
+            .maybeSingle();
+
+          if (prefs) {
+            userLocations = Array.isArray(prefs.locations) ? prefs.locations : [];
+            userSalaryCurrency = prefs.salary_currency || undefined;
+            userEligibilityPref = prefs.eligibility_filter !== false;
+          }
         }
       } catch (authErr) {
         // Fall back to safe preview
         isPro = false;
       }
     }
+
+    const eligibilityQueryParam = searchParams.get("eligibility");
+    let isEligibilityActive = userEligibilityPref;
+    if (eligibilityQueryParam === "off") {
+      isEligibilityActive = false;
+      if (userId) {
+        // Persist opt-out to user_preferences
+        try {
+          await supabaseAdmin.from("user_preferences").update({ eligibility_filter: false }).eq("user_id", userId);
+        } catch {}
+      }
+    } else if (eligibilityQueryParam === "on") {
+      isEligibilityActive = true;
+      if (userId) {
+        // Persist opt-in to user_preferences
+        try {
+          await supabaseAdmin.from("user_preferences").update({ eligibility_filter: true }).eq("user_id", userId);
+        } catch {}
+      }
+    }
+
+    const preferredCurrency = searchParams.get("currency") || userSalaryCurrency || undefined;
+    const normalizedUserCountries = normalizeUserCountries(userLocations);
 
     const selectColumns = (isPro && hasServiceKey)
       ? "*, companies(name, logo_url)"
@@ -174,6 +217,11 @@ export async function GET(req: Request) {
       const jobRow: any = rawJobRow;
       const isInactive = Boolean(jobRow.is_active === false || jobRow.status === "expired" || jobRow.status === "closed");
       const resolvedLogo = jobRow.logo_url || jobRow.logoUrl || jobRow.companies?.logo_url || null;
+      const originalSalary = formatSalary(jobRow.salary_min, jobRow.salary_max, jobRow.currency, jobRow.salary_period) || jobRow.salary_text || null;
+      const displaySalary = preferredCurrency
+        ? (formatSalary(jobRow.salary_min, jobRow.salary_max, jobRow.currency, jobRow.salary_period, { displayCurrency: preferredCurrency }) || jobRow.salary_text || null)
+        : originalSalary;
+
       const formatted = {
         id: jobRow.id,
         title: jobRow.title || "Untitled Position",
@@ -189,7 +237,9 @@ export async function GET(req: Request) {
         type: jobRow.job_type === "internship" ? "Internship" : "Full-time",
         directSource: Boolean(jobRow.verified),
         applyUrl: isInactive || !isPro ? "" : (jobRow.apply_url || ""),
-        salary: isInactive || !isPro ? "" : (formatSalary(jobRow.salary_min, jobRow.salary_max, jobRow.currency, jobRow.salary_period) || jobRow.salary_text || ""),
+        salary: isInactive || !isPro ? "" : (displaySalary || originalSalary || ""),
+        salary_display: isInactive || !isPro ? null : displaySalary,
+        salary_original: isInactive || !isPro ? null : originalSalary,
         description: isInactive || !isPro ? "" : (jobRow.description || ""),
         skills: isPro ? (jobRow.skills || []) : [],
         postedAt: jobRow.posted_at || jobRow.created_at,
@@ -205,6 +255,7 @@ export async function GET(req: Request) {
         hasNextPage: false,
         hasMore: false,
         nextCursor: null,
+        appliedEligibility: null,
       });
     }
 
@@ -229,7 +280,9 @@ export async function GET(req: Request) {
 
     // Keyset cursor decoding
     const cursor = decodeCursor(cursorParam);
-    const fetchLimit = pageSize + 1; // fetch 1 extra to determine hasNextPage
+    const fetchLimit = (isEligibilityActive && normalizedUserCountries.codes.length > 0)
+      ? Math.min(100, Math.max(pageSize * 3, 50))
+      : pageSize + 1; // fetch 1 extra to determine hasNextPage
     const isMultiWord = cleanQuery && cleanQuery.includes(" ");
 
     const sortByParam = searchParams.get("sortBy") || "match";
@@ -567,6 +620,17 @@ export async function GET(req: Request) {
     let hasNextPage = false;
     let nextCursor: string | null = null;
 
+    // Country eligibility auto-filtering
+    let appliedEligibility: { countries: string[]; filteredOut: number } | null = null;
+    if (isEligibilityActive && normalizedUserCountries.codes.length > 0) {
+      const eligibilityResult = applyEligibilityFilter(rows, normalizedUserCountries.codes, { filterEnabled: true });
+      rows = eligibilityResult.eligibleJobs;
+      appliedEligibility = {
+        countries: normalizedUserCountries.names,
+        filteredOut: eligibilityResult.filteredOut,
+      };
+    }
+
     if (!isMultiWord) {
       if (rows.length > pageSize) {
         hasNextPage = true;
@@ -588,6 +652,10 @@ export async function GET(req: Request) {
     const formattedJobs = rows.map((row: any) => {
       const resolvedLogo =
         row.logo_url || row.logoUrl || row.companies?.logo_url || null;
+      const originalSalary = formatSalary(row.salary_min, row.salary_max, row.currency, row.salary_period) || row.salary_text || null;
+      const displaySalary = preferredCurrency
+        ? (formatSalary(row.salary_min, row.salary_max, row.currency, row.salary_period, { displayCurrency: preferredCurrency }) || row.salary_text || null)
+        : originalSalary;
 
       if (isPro && hasServiceKey) {
         return {
@@ -598,7 +666,9 @@ export async function GET(req: Request) {
           company_id: row.company_id || null,
           location: row.location || (row.remote ? "Remote (Worldwide)" : "Remote"),
           date: formatDate(row.posted_at || row.created_at),
-          salary: formatSalary(row.salary_min, row.salary_max, row.currency, row.salary_period) || row.salary_text || "",
+          salary: displaySalary || originalSalary || "",
+          salary_display: displaySalary,
+          salary_original: originalSalary,
           category: row.category || "engineering",
           remote: Boolean(row.remote),
           remoteScope: row.remote_scope || undefined,
@@ -625,6 +695,8 @@ export async function GET(req: Request) {
         location: row.location || (row.remote ? "Remote (Worldwide)" : "Remote"),
         date: formatDate(row.posted_at || row.created_at),
         salary: "",
+        salary_display: null,
+        salary_original: null,
         category: row.category || "engineering",
         remote: Boolean(row.remote),
         remoteScope: row.remote_scope || undefined,
@@ -652,6 +724,7 @@ export async function GET(req: Request) {
       page,
       pageSize,
       isPro: Boolean(isPro && hasServiceKey),
+      appliedEligibility,
     });
   } catch (err: any) {
     try {

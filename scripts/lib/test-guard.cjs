@@ -26,6 +26,7 @@ const DEFAULT_TEST_PROJECT_ALLOWLIST = Object.freeze([]);
 const SUITE_CLASSIFICATIONS = Object.freeze({
   // Pure offline unit & regression suites
   "scripts/test-ticker-paging-and-strip.ts": "offline",
+  "scripts/test-country-eligibility-and-currency.ts": "offline",
   "scripts/test-trust-acceptance.ts": "offline",
   "scripts/test-salary-parser.ts": "offline",
   "scripts/test-ingestion-safety.ts": "offline",

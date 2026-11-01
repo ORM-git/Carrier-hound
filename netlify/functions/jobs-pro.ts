@@ -3,6 +3,7 @@ import { formatSalary } from "../../src/lib/salary/parser";
 import { verifyUserNotBanned } from "../../src/lib/admin/auth";
 import { COUNTRY_CODE_TO_NAME, getCountryFilterClause } from "../../src/lib/countries";
 import { sanitizeSearchQuery } from "../../src/lib/api/jobs";
+import { normalizeUserCountries, applyEligibilityFilter } from "../../src/lib/jobs/eligibility";
 import { safeLog } from "./_logger";
 
 function getSupabaseAdmin() {
@@ -129,9 +130,43 @@ export async function handler(event: any) {
 
     const supabaseAdmin = getSupabaseAdmin();
 
+    // Fetch user preferences for eligibility filter and preferred currency
+    let userLocations: string[] = [];
+    let userSalaryCurrency: string | undefined;
+    let userEligibilityPref = true;
+
+    try {
+      const { data: prefs } = await supabaseAdmin
+        .from("user_preferences")
+        .select("locations, eligibility_filter, salary_currency")
+        .eq("user_id", authCheck.user.id)
+        .maybeSingle();
+
+      if (prefs) {
+        userLocations = Array.isArray(prefs.locations) ? prefs.locations : [];
+        userSalaryCurrency = prefs.salary_currency || undefined;
+        userEligibilityPref = prefs.eligibility_filter !== false;
+      }
+    } catch {}
+
     if (event.httpMethod === "GET") {
       const id = event.queryStringParameters?.id;
       const countryCodeParam = event.queryStringParameters?.country_code || event.queryStringParameters?.country;
+      const eligibilityParam = event.queryStringParameters?.eligibility;
+      let isEligibilityActive = userEligibilityPref;
+      if (eligibilityParam === "off") {
+        isEligibilityActive = false;
+        try {
+          await supabaseAdmin.from("user_preferences").update({ eligibility_filter: false }).eq("user_id", authCheck.user.id);
+        } catch {}
+      } else if (eligibilityParam === "on") {
+        isEligibilityActive = true;
+        try {
+          await supabaseAdmin.from("user_preferences").update({ eligibility_filter: true }).eq("user_id", authCheck.user.id);
+        } catch {}
+      }
+
+      const preferredCurrency = event.queryStringParameters?.currency || userSalaryCurrency || undefined;
 
       if (!id) {
         if (countryCodeParam) {
@@ -158,16 +193,32 @@ export async function handler(event: any) {
             };
           }
 
-          const formattedJobs = (jobs || []).map((j: any) => ({
-            ...j,
-            country: j.country_code || j.country || "",
-            salary_text: formatSalary(j.salary_min, j.salary_max, j.currency, j.salary_period) || j.salary_text,
-          }));
+          let rawJobs = jobs || [];
+          let appliedEligibility: { countries: string[]; filteredOut: number } | null = null;
+          if (isEligibilityActive && userLocations.length > 0) {
+            const filterRes = applyEligibilityFilter(rawJobs, userLocations, { filterEnabled: true });
+            rawJobs = filterRes.eligibleJobs;
+            appliedEligibility = filterRes.appliedEligibility;
+          }
+
+          const formattedJobs = rawJobs.map((j: any) => {
+            const originalSalary = formatSalary(j.salary_min, j.salary_max, j.currency, j.salary_period) || j.salary_text || null;
+            const displaySalary = preferredCurrency
+              ? (formatSalary(j.salary_min, j.salary_max, j.currency, j.salary_period, { displayCurrency: preferredCurrency }) || j.salary_text || null)
+              : originalSalary;
+            return {
+              ...j,
+              country: j.country_code || j.country || "",
+              salary_text: displaySalary || originalSalary || "",
+              salary_display: displaySalary,
+              salary_original: originalSalary,
+            };
+          });
 
           return {
             statusCode: 200,
             headers,
-            body: JSON.stringify({ jobs: formattedJobs, isPro: true }),
+            body: JSON.stringify({ jobs: formattedJobs, isPro: true, appliedEligibility }),
           };
         }
 
@@ -193,12 +244,17 @@ export async function handler(event: any) {
       }
 
       const row: any = job;
-      const formattedSalary = formatSalary(row.salary_min, job.salary_max, job.currency, job.salary_period) || job.salary_text;
+      const originalSalary = formatSalary(row.salary_min, job.salary_max, job.currency, job.salary_period) || job.salary_text || null;
+      const displaySalary = preferredCurrency
+        ? (formatSalary(row.salary_min, job.salary_max, job.currency, job.salary_period, { displayCurrency: preferredCurrency }) || job.salary_text || null)
+        : originalSalary;
       const isInactive = Boolean(row.is_active === false || row.status === "expired" || row.status === "closed");
       const formattedJob = {
         ...job,
         country: job.country_code || job.country || "",
-        salary_text: formattedSalary,
+        salary_text: displaySalary || originalSalary || "",
+        salary_display: displaySalary,
+        salary_original: originalSalary,
         isExpired: isInactive,
         is_expired: isInactive,
         status: isInactive ? "expired" : (row.status || "active"),
@@ -225,7 +281,7 @@ export async function handler(event: any) {
         };
       }
 
-      const { ids } = body;
+      const { ids, eligibility: bodyEligibility, currency: bodyCurrency } = body;
       if (!Array.isArray(ids) || ids.length === 0) {
         return {
           statusCode: 400,
@@ -233,6 +289,22 @@ export async function handler(event: any) {
           body: JSON.stringify({ error: "Missing 'ids' array" }),
         };
       }
+
+      const eligibilityParam = event.queryStringParameters?.eligibility || bodyEligibility;
+      let isEligibilityActive = userEligibilityPref;
+      if (eligibilityParam === "off") {
+        isEligibilityActive = false;
+        try {
+          await supabaseAdmin.from("user_preferences").update({ eligibility_filter: false }).eq("user_id", authCheck.user.id);
+        } catch {}
+      } else if (eligibilityParam === "on") {
+        isEligibilityActive = true;
+        try {
+          await supabaseAdmin.from("user_preferences").update({ eligibility_filter: true }).eq("user_id", authCheck.user.id);
+        } catch {}
+      }
+
+      const preferredCurrency = event.queryStringParameters?.currency || bodyCurrency || userSalaryCurrency || undefined;
 
       const { data: jobs, error }: any = await (supabaseAdmin as any)
         .from("jobs")
@@ -247,16 +319,32 @@ export async function handler(event: any) {
         };
       }
 
-      const formattedJobs = (jobs || []).map((j: any) => ({
-        ...j,
-        country: j.country_code || j.country || "",
-        salary_text: formatSalary(j.salary_min, j.salary_max, j.currency, j.salary_period) || j.salary_text,
-      }));
+      let rawJobs = jobs || [];
+      let appliedEligibility: { countries: string[]; filteredOut: number } | null = null;
+      if (isEligibilityActive && userLocations.length > 0) {
+        const filterRes = applyEligibilityFilter(rawJobs, userLocations, { filterEnabled: true });
+        rawJobs = filterRes.eligibleJobs;
+        appliedEligibility = filterRes.appliedEligibility;
+      }
+
+      const formattedJobs = rawJobs.map((j: any) => {
+        const originalSalary = formatSalary(j.salary_min, j.salary_max, j.currency, j.salary_period) || j.salary_text || null;
+        const displaySalary = preferredCurrency
+          ? (formatSalary(j.salary_min, j.salary_max, j.currency, j.salary_period, { displayCurrency: preferredCurrency }) || j.salary_text || null)
+          : originalSalary;
+        return {
+          ...j,
+          country: j.country_code || j.country || "",
+          salary_text: displaySalary || originalSalary || "",
+          salary_display: displaySalary,
+          salary_original: originalSalary,
+        };
+      });
 
       return {
         statusCode: 200,
         headers,
-        body: JSON.stringify({ jobs: formattedJobs, isPro: true }),
+        body: JSON.stringify({ jobs: formattedJobs, isPro: true, appliedEligibility }),
       };
     }
 

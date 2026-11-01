@@ -34,6 +34,8 @@ export interface LiveJob {
   companyId?: string | null;
   logoUrl?: string | null;
   logo_url?: string | null;
+  salary_display?: string | null;
+  salary_original?: string | null;
 }
 
 export interface ProUnlockError {
@@ -63,6 +65,8 @@ export interface GetJobsOptions {
   sourceType?: string | null;
   company?: string | null;
   cursor?: string | null;
+  eligibility?: "on" | "off" | string;
+  currency?: string;
 }
 
 export interface GetJobsResult {
@@ -72,6 +76,7 @@ export interface GetJobsResult {
   hasNextPage?: boolean;
   isDegraded?: boolean;
   error?: string | null;
+  appliedEligibility?: { countries: string[]; filteredOut: number } | null;
 }
 
 /**
@@ -379,6 +384,8 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       if (company && company !== "all") params.set("company", company);
       if (cursor) params.set("cursor", cursor);
       if (sortBy) params.set("sortBy", sortBy);
+      if (options.eligibility) params.set("eligibility", options.eligibility);
+      if (options.currency) params.set("currency", options.currency);
 
       const res = await fetch(`/api/jobs/search?${params.toString()}`, { headers });
       if (res.status === 503) {
@@ -400,6 +407,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
           nextCursor: json.nextCursor ?? null,
           hasNextPage: Boolean(json.hasNextPage),
           isDegraded: Boolean(json.degraded),
+          appliedEligibility: json.appliedEligibility || null,
           ...(json.degraded ? { error: "degraded" } : {}),
         };
       } else {
@@ -843,7 +851,9 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
                     if (u) {
                       if (u.company) job.company = stripHtmlAndExecutableMarkup(u.company);
                       if (u.salary_text || u.salary_min != null) {
-                        job.salary = stripHtmlAndExecutableMarkup(formatSalary(u.salary_min, u.salary_max, u.currency, u.salary_period) || u.salary_text || "");
+                        job.salary = stripHtmlAndExecutableMarkup(u.salary_display || formatSalary(u.salary_min, u.salary_max, u.currency, u.salary_period) || u.salary_text || "");
+                        job.salary_display = u.salary_display || null;
+                        job.salary_original = u.salary_original || null;
                       }
                       if (u.apply_url) job.applyUrl = sanitizeExternalUrl(u.apply_url) || "";
                       if (u.description) job.description = stripHtmlAndExecutableMarkup(u.description);
@@ -943,7 +953,9 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
                 company: stripHtmlAndExecutableMarkup(job.company || "Verified Employer"),
                 location: stripHtmlAndExecutableMarkup(job.location || (job.remote ? "Remote (Worldwide)" : "Remote")),
                 date: formatDate(job.posted_at || job.first_seen_at || job.created_at),
-                salary: stripHtmlAndExecutableMarkup(formatSalary(job.salary_min, job.salary_max, job.currency, job.salary_period) || job.salary_text || ""),
+                salary: stripHtmlAndExecutableMarkup(job.salary_display || formatSalary(job.salary_min, job.salary_max, job.currency, job.salary_period) || job.salary_text || ""),
+                salary_display: job.salary_display || null,
+                salary_original: job.salary_original || null,
                 category: stripHtmlAndExecutableMarkup(job.category || "engineering"),
                 remote: Boolean(job.remote),
                 remoteScope: job.remote_scope || undefined,

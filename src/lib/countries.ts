@@ -118,3 +118,13 @@ export function matchCountryWithStrictFallback(
   }
   return loc.includes(countryName);
 }
+
+export {
+  normalizeUserCountries,
+  isJobEligible,
+  applyEligibilityFilter,
+} from "./jobs/eligibility";
+export type {
+  NormalizedUserCountries,
+  JobEligibilityRecord,
+} from "./jobs/eligibility";

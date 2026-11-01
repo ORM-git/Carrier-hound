@@ -39,6 +39,7 @@ export { executeSuiteList };
 
 export const SUITES: SuiteSpec[] = [
   // Pure offline unit & regression suites (always safe to run locally and in CI)
+  { name: "scripts/test-country-eligibility-and-currency.ts", command: "npx tsx scripts/test-country-eligibility-and-currency.ts", classification: "offline" },
   { name: "scripts/test-trust-acceptance.ts", command: "npx tsx scripts/test-trust-acceptance.ts", classification: "offline" },
   { name: "scripts/test-salary-parser.ts", command: "npx tsx scripts/test-salary-parser.ts", classification: "offline" },
   { name: "scripts/test-ingestion-safety.ts", command: "npx tsx scripts/test-ingestion-safety.ts", classification: "offline" },

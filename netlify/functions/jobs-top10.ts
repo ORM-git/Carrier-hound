@@ -5,6 +5,7 @@ import { computeFitDiagnostics, StandardJobScoringInput } from "../../src/lib/ma
 import { formatSalary } from "../../src/lib/salary/parser";
 import { extractCandidateRelevanceTerms, LiveJob } from "../../src/lib/jobs/service";
 import { CandidateProfile } from "../../src/lib/resume/types";
+import { isJobEligible } from "../../src/lib/jobs/eligibility";
 import { safeLog } from "./_logger";
 
 function getSupabaseAdmin() {
@@ -63,12 +64,18 @@ interface Top10CacheEntry {
 const top10Cache = new Map<string, Top10CacheEntry>();
 const TOP10_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes in-memory cache
 
-function getTop10CacheKey(userId: string, candidate: CandidateProfile, limit: number): string {
+function getTop10CacheKey(
+  userId: string,
+  candidate: CandidateProfile,
+  limit: number,
+  currency?: string,
+  eligibility?: boolean
+): string {
   const headline = (candidate.headline || "").trim().toLowerCase();
   const skills = (candidate.skills || []).map((s) => s.trim().toLowerCase()).sort().join(",");
   const loc = (candidate.location || "").trim().toLowerCase();
   const expCount = (candidate.experience || []).length;
-  return `${userId}:${limit}:${headline}:${loc}:${expCount}:${skills}`;
+  return `${userId}:${limit}:${headline}:${loc}:${expCount}:${skills}:${currency || "default"}:${eligibility ?? true}`;
 }
 
 import { buildCorsHeaders, handleCorsPreflight } from "./_cors";
@@ -171,8 +178,43 @@ export async function handler(event: any) {
       };
     }
 
+    // Fetch user preferences for eligibility filter and preferred currency
+    let userLocations: string[] = [];
+    let userSalaryCurrency: string | undefined;
+    let userEligibilityPref = true;
+
+    try {
+      const { data: prefs } = await supabaseAdmin
+        .from("user_preferences")
+        .select("locations, eligibility_filter, salary_currency")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (prefs) {
+        userLocations = Array.isArray(prefs.locations) ? prefs.locations : [];
+        userSalaryCurrency = prefs.salary_currency || undefined;
+        userEligibilityPref = prefs.eligibility_filter !== false;
+      }
+    } catch {}
+
+    const eligibilityParam = event.queryStringParameters?.eligibility || body.eligibility;
+    let isEligibilityActive = userEligibilityPref;
+    if (eligibilityParam === "off") {
+      isEligibilityActive = false;
+      try {
+        await supabaseAdmin.from("user_preferences").update({ eligibility_filter: false }).eq("user_id", user.id);
+      } catch {}
+    } else if (eligibilityParam === "on") {
+      isEligibilityActive = true;
+      try {
+        await supabaseAdmin.from("user_preferences").update({ eligibility_filter: true }).eq("user_id", user.id);
+      } catch {}
+    }
+
+    const preferredCurrency = event.queryStringParameters?.currency || body.currency || userSalaryCurrency || undefined;
+
     // Check In-Memory Cache (reduces repeat latency from ~6s to <10ms)
-    const cacheKey = getTop10CacheKey(user.id, candidate, limit);
+    const cacheKey = getTop10CacheKey(user.id, candidate, limit, preferredCurrency, isEligibilityActive);
     const cached = top10Cache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < TOP10_CACHE_TTL_MS) {
       return {
@@ -212,7 +254,13 @@ export async function handler(event: any) {
       };
     }
 
-    let jobsToScore = candidatePool || [];
+    let rawPool = candidatePool || [];
+    // Apply country eligibility auto-filtering to candidate pool BEFORE scoring
+    if (isEligibilityActive && userLocations.length > 0) {
+      rawPool = rawPool.filter((j) => isJobEligible(j, userLocations, { filterEnabled: true }));
+    }
+
+    let jobsToScore = rawPool;
 
     // Fallback: If candidate terms returned fewer than 20 results, widen pool with active verified jobs
     if (jobsToScore.length < 20) {
@@ -229,16 +277,21 @@ export async function handler(event: any) {
       const existingIds = new Set(jobsToScore.map((j) => j.id));
       for (const f of fallbackPool || []) {
         if (!existingIds.has(f.id)) {
-          jobsToScore.push(f);
+          if (!isEligibilityActive || userLocations.length === 0 || isJobEligible(f, userLocations, { filterEnabled: true })) {
+            jobsToScore.push(f);
+          }
         }
       }
     }
 
     // 5. Score Candidates with Shared Unified Scoring Function
     const scoredJobs = jobsToScore.map((row) => {
-      const formattedSalary =
+      const originalSalary =
         formatSalary(row.salary_min, row.salary_max, row.currency, row.salary_period) ||
-        row.salary_text;
+        row.salary_text || null;
+      const displaySalary = preferredCurrency
+        ? (formatSalary(row.salary_min, row.salary_max, row.currency, row.salary_period, { displayCurrency: preferredCurrency }) || row.salary_text || null)
+        : originalSalary;
 
       const standardizedJob: StandardJobScoringInput = {
         id: row.id,
@@ -250,7 +303,7 @@ export async function handler(event: any) {
         category: row.category || "engineering",
         skills: Array.isArray(row.skills) ? row.skills : [],
         description: row.description || "",
-        salary_text: formattedSalary || "",
+        salary_text: displaySalary || originalSalary || "",
       };
 
       const diagnostics = computeFitDiagnostics(candidate, standardizedJob);
@@ -261,7 +314,9 @@ export async function handler(event: any) {
         company: row.company || "Verified Employer",
         location: row.location || (row.remote ? "Remote (Worldwide)" : "Remote"),
         date: formatDate(row.posted_at || row.first_seen_at),
-        salary: formattedSalary || "",
+        salary: displaySalary || originalSalary || "",
+        salary_display: displaySalary,
+        salary_original: originalSalary,
         category: row.category || "engineering",
         remote: Boolean(row.remote),
         remoteScope: row.remote_scope || undefined,
