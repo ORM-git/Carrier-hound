@@ -288,70 +288,8 @@ export function extractCandidateRelevanceTerms(
 const PUBLIC_SELECT_COLUMNS =
   "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at";
 
-/**
- * Caps jobs per company (maxPerCompany in any visible topWindow).
- * Prevents mass postings from one employer from flooding the recommended list.
- *
- * Uses company_id as primary cap key so unrevealed company names ("Verified Employer")
- * are correctly identified and capped without leaking company names to free users.
- *
- * Never drops jobs: always returns topItems plus deferredItems.
- */
-export function capJobsPerCompany<
-  T extends {
-    company?: string | null;
-    company_id?: string | null;
-    companyId?: string | null;
-  }
->(
-  jobs: T[],
-  maxPerCompany: number = 3,
-  topWindow: number = 30
-): T[] {
-  if (!Array.isArray(jobs) || jobs.length === 0) return jobs;
-
-  const topItems: T[] = [];
-  const deferredItems: T[] = [];
-  const companyCounts = new Map<string, number>();
-
-  for (const job of jobs) {
-    const rawCompanyId = (job.company_id || job.companyId || "").trim();
-    const rawCompanyName = (job.company || "").trim();
-
-    // Priority 1: company_id as primary cap key
-    let compKey = rawCompanyId.toLowerCase();
-    // Priority 2: company name fallback only when real name is revealed
-    if (
-      !compKey &&
-      rawCompanyName &&
-      rawCompanyName.toLowerCase() !== "verified employer" &&
-      rawCompanyName.toLowerCase() !== "confidential employer"
-    ) {
-      compKey = rawCompanyName.toLowerCase();
-    }
-
-    // If neither company_id nor a real company name is available, place directly
-    if (!compKey) {
-      if (topItems.length < topWindow) {
-        topItems.push(job);
-      } else {
-        deferredItems.push(job);
-      }
-      continue;
-    }
-
-    const currentCount = companyCounts.get(compKey) || 0;
-    if (currentCount < maxPerCompany && topItems.length < topWindow) {
-      companyCounts.set(compKey, currentCount + 1);
-      topItems.push(job);
-    } else {
-      deferredItems.push(job);
-    }
-  }
-
-  // Never drop jobs: always return topItems plus deferredItems
-  return [...topItems, ...deferredItems];
-}
+import { capJobsPerCompany } from "./capping";
+export { capJobsPerCompany };
 
 const DEGRADED_JOBS_RESULT: GetJobsResult = {
   jobs: [],
@@ -398,10 +336,16 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
-  // 1. Route text search through safe server endpoint so company and keywords can be searched
+  const isMatchSort = sortBy === "match";
+  const relevanceTerms = isMatchSort
+    ? extractCandidateRelevanceTerms(candidate, preferences)
+    : [];
+
+  // 1. Route text search and default list through safe server endpoint so company capping can use service-key company_id
   // without exposing raw database tables or leaking paid fields to guests
   const hasServerFilter = Boolean((search && search.trim()) || (company && company.trim()) || salaryMin || (sourceType && sourceType !== "all") || cursor);
-  if (hasServerFilter && typeof window !== "undefined") {
+  const shouldUseServer = typeof window !== "undefined" && (hasServerFilter || !candidate || relevanceTerms.length === 0);
+  if (shouldUseServer) {
     try {
       let token: string | undefined;
       try {
@@ -434,6 +378,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       if (sourceType && sourceType !== "all") params.set("sourceType", sourceType);
       if (company && company !== "all") params.set("company", company);
       if (cursor) params.set("cursor", cursor);
+      if (sortBy) params.set("sortBy", sortBy);
 
       const res = await fetch(`/api/jobs/search?${params.toString()}`, { headers });
       if (res.status === 503) {
@@ -833,7 +778,9 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         };
       }
       const mappedJobs: LiveJob[] = data.map((row: any) => {
-        const resolvedLogo = row.logo_url || row.logoUrl || row.companies?.logo_url || null;
+        const resolvedLogo = (isPro && row.company && row.company !== "Verified Employer")
+          ? (row.logo_url || row.logoUrl || row.companies?.logo_url || null)
+          : null;
         return {
           id: row.id,
           title: row.title || "Untitled Position",

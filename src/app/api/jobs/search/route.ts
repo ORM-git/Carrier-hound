@@ -6,6 +6,7 @@ import { checkSharedRateLimit, SEARCH_RATE_LIMIT, searchRateLimitStore } from "@
 import { getRequestContext } from "@cloudflare/next-on-pages";
 import { COUNTRY_CODE_TO_NAME, getCountryFilterClause } from "@/lib/countries";
 import { decodeCursor, encodeCursor } from "@/lib/pagination/cursor";
+import { capJobsPerCompany } from "@/lib/jobs/capping";
 
 export const runtime = "edge";
 
@@ -194,8 +195,8 @@ export async function GET(req: Request) {
         postedAt: jobRow.posted_at || jobRow.created_at,
         isExpired: isInactive,
         status: isInactive ? "expired" : (jobRow.status || "active"),
-        logoUrl: resolvedLogo,
-        logo_url: resolvedLogo,
+        logoUrl: (isPro && !isInactive) ? resolvedLogo : null,
+        logo_url: (isPro && !isInactive) ? resolvedLogo : null,
       };
 
       return NextResponse.json({
@@ -230,6 +231,8 @@ export async function GET(req: Request) {
     const cursor = decodeCursor(cursorParam);
     const fetchLimit = pageSize + 1; // fetch 1 extra to determine hasNextPage
     const isMultiWord = cleanQuery && cleanQuery.includes(" ");
+
+    const sortByParam = searchParams.get("sortBy") || "match";
 
     const buildSearchQuery = (countMode: "exact" | "estimated") => {
       let query = supabaseAdmin
@@ -466,12 +469,21 @@ export async function GET(req: Request) {
       } else {
         query = query.is("posted_at", null).lt("id", cursor.id);
       }
+      if (sortByParam === "match") {
+        query = query.order("verified", { ascending: false });
+      }
       query = query.order("posted_at", { ascending: false, nullsFirst: false }).order("id", { ascending: false }).limit(fetchLimit);
     } else if (page > 1 && !cursorParam) {
       // Legacy offset pagination fallback for backward compatibility
+      if (sortByParam === "match") {
+        query = query.order("verified", { ascending: false });
+      }
       query = query.order("posted_at", { ascending: false, nullsFirst: false }).order("id", { ascending: false }).range(from, to);
     } else {
       // Page 1 initial keyset query
+      if (sortByParam === "match") {
+        query = query.order("verified", { ascending: false });
+      }
       query = query.order("posted_at", { ascending: false, nullsFirst: false }).order("id", { ascending: false }).limit(fetchLimit);
     }
 
@@ -568,6 +580,11 @@ export async function GET(req: Request) {
         hasNextPage = (count ? from + rows.length < count : false);
       }
     }
+
+    // Cap jobs per company server-side (max 3 per company in visible top-30)
+    // Ensures mass postings are capped even for free users using opaque company_id
+    rows = capJobsPerCompany(rows, 3, 30);
+
     const formattedJobs = rows.map((row: any) => {
       const resolvedLogo =
         row.logo_url || row.logoUrl || row.companies?.logo_url || null;
@@ -619,8 +636,8 @@ export async function GET(req: Request) {
         description: "",
         skills: [],
         postedAt: row.posted_at || row.created_at,
-        logoUrl: resolvedLogo,
-        logo_url: resolvedLogo,
+        logoUrl: null,
+        logo_url: null,
       };
     });
 
