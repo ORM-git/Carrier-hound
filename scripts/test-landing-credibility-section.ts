@@ -305,22 +305,30 @@ async function testLandingPageStructure() {
     "Must include CareerMonke monkey mascot logo (BrandIcon)"
   );
 
-  // Exactly 3 stat rows
+  // Exactly 3 stat rows defined in config array and rendered via map
   assert.ok(
-    compSrc.includes("jobs straight from company career pages"),
-    "Row 1 caption must be 'jobs straight from company career pages'"
+    compSrc.includes("STAT_ROWS"),
+    "Must define stat rows in config array STAT_ROWS"
+  );
+  assert.ok(
+    compSrc.includes(".map("),
+    "Must render rows using a single map"
+  );
+  assert.ok(
+    compSrc.includes("live jobs"),
+    "Row 1 caption must be 'live jobs'"
   );
   assert.ok(
     compSrc.includes("companies scanned"),
     "Row 2 caption must be 'companies scanned'"
   );
   assert.ok(
-    compSrc.includes("Direct from employer sites"),
-    "Row 3 title must be 'Direct from employer sites'"
+    compSrc.includes("Worldwide roles"),
+    "Row 3 title must be 'Worldwide roles'"
   );
   assert.ok(
-    compSrc.includes("no reposted aggregator listings"),
-    "Row 3 caption must be 'no reposted aggregator listings'"
+    compSrc.includes("eligibility checked for your country"),
+    "Row 3 caption must be 'eligibility checked for your country'"
   );
   assert.ok(
     compSrc.includes("border-dotted"),
@@ -354,6 +362,9 @@ async function testLandingPageStructure() {
     { text: "running-man", desc: "running-man icon" },
     { text: "3x interviews", desc: "unbacked '3x interviews' figure" },
     { text: "80% time saved", desc: "unbacked '80% time saved' figure" },
+    { text: "aggregator", desc: "'aggregator' phrase" },
+    { text: "career pages", desc: "'career pages' phrase" },
+    { text: "employer sites", desc: "'employer sites' phrase" },
   ];
 
   for (const { text, desc } of prohibitedWords) {
