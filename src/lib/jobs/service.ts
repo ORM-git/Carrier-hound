@@ -416,7 +416,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       } else if (c === "tech") {
         query = query.in("category", ["engineering", "devops", "ai", "software"]);
       } else if (c === "ai" || c === "ai-ml" || c === "ai-machine-learning" || c === "machine-learning") {
-        query = query.or("category.eq.ai,category.eq.ai-ml,title.ilike.%ai %,title.ilike.% ai%,title.ilike.%machine learning%,title.ilike.%deep learning%,title.ilike.%llm%,title.ilike.%nlp%");
+        query = query.or("category.eq.ai,category.eq.ai-ml,title.ilike.%machine learning%,title.ilike.%deep learning%,title.ilike.%llm%,title.ilike.%nlp%,title.imatch.\\yAI\\y,title.ilike.ai %,title.ilike.% ai %,title.ilike.% ai,title.ilike.ai");
       } else if (c === "data" || c === "data-analytics" || c === "data-science") {
         query = query.or("category.eq.data,category.eq.data-analytics,title.ilike.%data %,title.ilike.%analytics%,title.ilike.%database%");
       } else if (c === "engineering" || c === "software") {

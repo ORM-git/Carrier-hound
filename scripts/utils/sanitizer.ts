@@ -1173,9 +1173,9 @@ export function normalizeDate(input: string | number | Date | null | undefined):
 export function detectCategory(title: string = '', tags: string[] = []): string {
   const combined = `${title} ${tags.join(' ')}`.toLowerCase();
   if (
-    combined.includes('ai ') ||
+    /\bai\b/i.test(combined) ||
     combined.includes('machine learning') ||
-    combined.includes('ml ') ||
+    /\bml\b/i.test(combined) ||
     combined.includes('deep learning') ||
     combined.includes('nlp') ||
     combined.includes('llm') ||
@@ -1209,7 +1209,7 @@ export function detectCategory(title: string = '', tags: string[] = []): string 
     combined.includes('program management') ||
     combined.includes('project manager') ||
     combined.includes('project management') ||
-    combined.includes('tpm') ||
+    /\btpm\b/i.test(combined) ||
     combined.includes('scrum master')
   ) {
     return 'product';
@@ -1219,11 +1219,11 @@ export function detectCategory(title: string = '', tags: string[] = []): string 
     combined.includes('growth') ||
     combined.includes('content') ||
     combined.includes('seo') ||
-    combined.includes('influencer') ||
-    combined.includes('social') ||
-    combined.includes('culture') ||
-    combined.includes('community') ||
-    combined.includes('brand') ||
+    /\binfluencer\b/i.test(combined) ||
+    /\bsocial\b/i.test(combined) ||
+    /\bculture\b/i.test(combined) ||
+    /\bcommunity\b/i.test(combined) ||
+    /\bbrand\b/i.test(combined) ||
     combined.includes('public relations')
   ) {
     return 'marketing';

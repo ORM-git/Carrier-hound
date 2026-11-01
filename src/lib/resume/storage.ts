@@ -89,7 +89,7 @@ export function clearCandidateProfileMemoryCache() {
  * In-flight calls are deduplicated and in-memory results are memoized by user ID.
  * Returns null if the user has not uploaded and confirmed a resume.
  */
-export async function getCandidateProfile(userId?: string): Promise<CandidateProfile | null> {
+export async function getCandidateProfile(userId?: string, clientOverride?: any): Promise<CandidateProfile | null> {
   // 1. Return in-memory memoized profile immediately if available for this specific user
   if (userId && memoizedUserId === userId && memoizedProfile && memoizedProfile.confirmedAt) {
     return memoizedProfile;
@@ -104,10 +104,12 @@ export async function getCandidateProfile(userId?: string): Promise<CandidatePro
     let resolvedUserId = userId;
     let userEmail: string | undefined = undefined;
 
+    const getSupabase = () => clientOverride || createClient();
+
     // Resolve active session user if userId was not provided
     try {
-      const supabase = createClient();
       if (!resolvedUserId) {
+        const supabase = getSupabase();
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
           resolvedUserId = session.user.id;
@@ -138,7 +140,7 @@ export async function getCandidateProfile(userId?: string): Promise<CandidatePro
 
     // 4. Try fetching from Supabase for this specific user
     try {
-      const supabase = createClient();
+      const supabase = getSupabase();
       const queryPromise = supabase
         .from("candidate_profiles")
         .select("*")
@@ -691,5 +693,12 @@ export async function getResumeSignedUrl(
 
   return data.signedUrl;
 }
+
+export {
+  calculateProfileCompletion,
+  type ProfileCompletionInput,
+  type ProfileCompletionResult,
+  type ProfileCompletionPreferences,
+} from "./completion";
 
 

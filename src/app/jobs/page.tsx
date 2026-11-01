@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { motion, useReducedMotion, AnimatePresence } from "motion/react";
 import { getLiveJobs, getLiveJobById, LiveJob, isEarlyApplicant } from "@/lib/jobs/service";
 import { getAuthUser, getUserPreferences } from "@/lib/auth/session";
-import { getCandidateProfile } from "@/lib/resume/storage";
+import { getCandidateProfile, calculateProfileCompletion } from "@/lib/resume/storage";
 import { CandidateProfile } from "@/lib/resume/types";
 import { UserPreferences } from "@/lib/auth/types";
 import { TrackedApplication } from "@/lib/tracker/types";
@@ -2563,19 +2563,11 @@ function JobsPageInner() {
 
                   {/* Card 2: Profile & Job Match Progress Card */}
                   {(() => {
-                    const hasResume = Boolean(
-                      candidate?.confirmedAt &&
-                        ((candidate.skills && candidate.skills.length > 0) ||
-                          (candidate.experience && candidate.experience.length > 0) ||
-                          (candidate.rawText && candidate.rawText.trim().length > 0))
-                    );
-                    const hasPreferences = Boolean(
-                      preferences?.onboardingCompleted ||
-                        (preferences?.roles && preferences.roles.length > 0)
-                    );
-                    const hasTracked = Boolean(savedJobIds && savedJobIds.length > 0);
-                    const completedSteps = [hasResume, hasPreferences, hasTracked].filter(Boolean).length;
-                    const completionPercentage = Math.round((completedSteps / 3) * 100);
+                    const { hasResume, hasPreferences, hasTracked, completionPercentage } = calculateProfileCompletion({
+                      candidate,
+                      preferences,
+                      savedJobIds,
+                    });
 
                     return (
                       <div className="bg-blue-50/70 border border-blue-200/70 rounded-[16px] p-4 space-y-3">

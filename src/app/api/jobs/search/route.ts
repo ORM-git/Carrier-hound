@@ -161,13 +161,13 @@ export async function GET(req: Request) {
       if (singleError) {
         console.error("[/api/jobs/search] single query error:", singleError.message || singleError);
         return NextResponse.json(
-          { degraded: true, jobs: [], totalCount: 0, hasNextPage: false, nextCursor: null },
+          { degraded: true, jobs: [], totalCount: 0, hasNextPage: false, hasMore: false, nextCursor: null },
           { status: 503 }
         );
       }
 
       if (!rawJobRow) {
-        return NextResponse.json({ jobs: [], totalCount: 0, hasNextPage: false, nextCursor: null });
+        return NextResponse.json({ jobs: [], totalCount: 0, hasNextPage: false, hasMore: false, nextCursor: null });
       }
 
       const jobRow: any = rawJobRow;
@@ -197,26 +197,52 @@ export async function GET(req: Request) {
         jobs: [formatted],
         totalCount: 1,
         hasNextPage: false,
+        hasMore: false,
         nextCursor: null,
       });
     }
 
-    let query = supabaseAdmin
-      .from(targetTable)
-      .select(selectColumns, { count: "exact" })
-      .eq("is_active", true)
-      .eq("status", "active");
+    const hasActiveFilter = Boolean(
+      (category && category !== "all") ||
+      remoteOnly ||
+      (countryCodeParam && countryCodeParam.trim() && countryCodeParam.toLowerCase() !== "all") ||
+      (locationParam && locationParam.trim() && locationParam.toLowerCase() !== "all") ||
+      (jobTypeParam && jobTypeParam.trim() && jobTypeParam.toLowerCase() !== "all") ||
+      (levelParam && levelParam.trim() && levelParam.toLowerCase() !== "all") ||
+      (workModelParam && workModelParam.trim() && workModelParam.toLowerCase() !== "all") ||
+      (dateParam && dateParam.trim() && dateParam.toLowerCase() !== "all") ||
+      (companyParam && companyParam.trim() && companyParam.toLowerCase() !== "all") ||
+      (salaryMinParam && parseInt(salaryMinParam, 10) > 0) ||
+      (sourceTypeParam && sourceTypeParam.trim() && sourceTypeParam.toLowerCase() !== "all") ||
+      (experienceParam && experienceParam.trim() && experienceParam.toLowerCase() !== "all" && experienceParam.toLowerCase() !== "all experience") ||
+      cleanQuery
+    );
 
-    // Category filter matching getLiveJobs logic
-    if (category && category !== "all") {
-      const c = sanitizeSearchQuery(category).toLowerCase().trim();
-      if (c === "trending") {
-        query = query.in("category", ["ai", "engineering", "devops"]);
-      } else if (c === "tech") {
-        query = query.in("category", ["engineering", "devops", "ai", "software"]);
-      } else if (c === "ai" || c === "ai-ml" || c === "ai-machine-learning" || c === "machine-learning") {
-        query = query.or("category.eq.ai,category.eq.ai-ml,title.ilike.%ai %,title.ilike.% ai%,title.ilike.%machine learning%,title.ilike.%deep learning%,title.ilike.%llm%,title.ilike.%nlp%");
-      } else if (c === "data" || c === "data-analytics" || c === "data-science") {
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
+
+    // Keyset cursor decoding
+    const cursor = decodeCursor(cursorParam);
+    const fetchLimit = pageSize + 1; // fetch 1 extra to determine hasNextPage
+    const isMultiWord = cleanQuery && cleanQuery.includes(" ");
+
+    const buildSearchQuery = (countMode: "exact" | "estimated") => {
+      let query = supabaseAdmin
+        .from(targetTable)
+        .select(selectColumns, { count: countMode })
+        .eq("is_active", true)
+        .eq("status", "active");
+
+      // Category filter matching getLiveJobs logic
+      if (category && category !== "all") {
+        const c = sanitizeSearchQuery(category).toLowerCase().trim();
+        if (c === "trending") {
+          query = query.in("category", ["ai", "engineering", "devops"]);
+        } else if (c === "tech") {
+          query = query.in("category", ["engineering", "devops", "ai", "software"]);
+        } else if (c === "ai" || c === "ai-ml" || c === "ai-machine-learning" || c === "machine-learning") {
+          query = query.or("category.eq.ai,category.eq.ai-ml,title.ilike.%machine learning%,title.ilike.%deep learning%,title.ilike.%llm%,title.ilike.%nlp%,title.imatch.\\yAI\\y,title.ilike.ai %,title.ilike.% ai %,title.ilike.% ai,title.ilike.ai");
+        } else if (c === "data" || c === "data-analytics" || c === "data-science") {
         query = query.or("category.eq.data,category.eq.data-analytics,title.ilike.%data %,title.ilike.%analytics%,title.ilike.%database%");
       } else if (c === "engineering" || c === "software") {
         query = query.in("category", ["engineering", "software"]);
@@ -424,15 +450,6 @@ export async function GET(req: Request) {
       }
     }
 
-    const from = (page - 1) * pageSize;
-    const to = from + pageSize - 1;
-
-    // Keyset cursor decoding
-    const cursor = decodeCursor(cursorParam);
-    const fetchLimit = pageSize + 1; // fetch 1 extra to determine hasNextPage
-
-    // For multi-word text queries, pull pool to rank by relevance before pagination
-    const isMultiWord = cleanQuery && cleanQuery.includes(" ");
     if (isMultiWord) {
       query = query.order("posted_at", { ascending: false, nullsFirst: false }).limit(200);
     } else if (cursor) {
@@ -453,12 +470,35 @@ export async function GET(req: Request) {
       query = query.order("posted_at", { ascending: false, nullsFirst: false }).order("id", { ascending: false }).limit(fetchLimit);
     }
 
-    const { data, count, error } = await query;
+      return query;
+    };
+
+    const initialCountMode = hasActiveFilter ? "exact" : "estimated";
+    let queryResult = await buildSearchQuery(initialCountMode);
+
+    // Timeout (57014) fallback: if exact count timed out, fall back to estimated count
+    if (
+      queryResult.error &&
+      initialCountMode === "exact" &&
+      (
+        queryResult.error.code === "57014" ||
+        String(queryResult.error.code) === "57014" ||
+        (typeof queryResult.error.message === "string" && (
+          queryResult.error.message.includes("57014") ||
+          queryResult.error.message.toLowerCase().includes("timeout")
+        ))
+      )
+    ) {
+      console.warn("[/api/jobs/search] exact count query timed out (57014); falling back to estimated count");
+      queryResult = await buildSearchQuery("estimated");
+    }
+
+    const { data, count, error } = queryResult;
 
     if (error) {
       console.error("[/api/jobs/search] query error:", error.message || error);
       return NextResponse.json(
-        { degraded: true, jobs: [], totalCount: 0, hasNextPage: false, nextCursor: null },
+        { degraded: true, jobs: [], totalCount: 0, hasNextPage: false, hasMore: false, nextCursor: null },
         { status: 503 }
       );
     }
@@ -568,13 +608,14 @@ export async function GET(req: Request) {
       };
     });
 
-    const approximateTotalCount = count ?? rows.length;
+    const approximateTotalCount = count ?? (rows.length > 0 ? (page ? Math.max(rows.length, page * pageSize) : 100000) : 0);
 
     return NextResponse.json({
       jobs: formattedJobs,
       totalCount: approximateTotalCount,
       nextCursor,
       hasNextPage,
+      hasMore: hasNextPage,
       page,
       pageSize,
       isPro: Boolean(isPro && hasServiceKey),

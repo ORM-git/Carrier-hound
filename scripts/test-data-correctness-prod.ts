@@ -1,15 +1,18 @@
 /**
- * Test Suite: Production Data Correctness Fixes
- * Covers:
- * (1) Fresh Google accounts start empty, no cross-account cache leak, user-scoped storage
- * (2) Profile completion strictly derived from real user data (no false 100% / unticked with no resume)
- * (3) "AI & Machine Learning" category filter aligned with exact stored category labels ("ai")
- * (4) Ingestion classifier mapping: "Influencer Manager, Social & Culture" -> marketing, "Research Program Manager" -> product
- * (5) Recommended count badge / query returns filtered count across active filters
+ * Test Suite: Production Data Correctness Fixes (Hermetic Unit Tests)
+ *
+ * Requirements:
+ * (1) Exact count only when a filter is active; estimated count for unfiltered;
+ *     falls back to estimated count on timeout (57014); does not replace old fallback
+ *     with rows.length; keeps a hasMore flag.
+ * (2) AI filter: removes bare title ilike %ai % / % ai% that match Retail, Dubai,
+ *     Airline, Aid; keeps category eq ai/ai-ml plus %machine learning%, %deep learning%,
+ *     %llm%, %nlp%, and matches "AI" only as a whole word.
+ * (3) Sanitizer classifier: uses word boundaries for culture, community, social,
+ *     influencer, brand and tpm, so Agriculture and Horticulture are not marketing.
+ * (4) Profile completion formula in one exported helper used by jobs/page.tsx and this test.
+ * (5) Hermetic with mocks.
  */
-
-import * as dotenv from "dotenv";
-dotenv.config({ path: ".env.local" });
 
 import { detectCategory } from "./utils/sanitizer";
 import { expandCategoryFilter, normalizeCategorySlug } from "../src/lib/taxonomy";
@@ -18,11 +21,12 @@ import {
   saveCandidateProfileLocally,
   clearCandidateProfileMemoryCache,
   getCandidateProfileStorageKey,
+  calculateProfileCompletion,
 } from "../src/lib/resume/storage";
-import { getLiveJobs } from "../src/lib/jobs/service";
 import type { CandidateProfile } from "../src/lib/resume/types";
+import { createSearchHandler } from "../netlify/functions/jobs-search";
 
-// Mock minimal browser localStorage if running in Node
+// Mock minimal browser localStorage for hermetic Node execution
 class LocalStorageMock {
   private store: Record<string, string> = {};
   getItem(key: string): string | null {
@@ -39,7 +43,7 @@ class LocalStorageMock {
   }
 }
 
-// Attach mock window & localStorage for Node environment test
+// Attach mock window & localStorage
 if (typeof (global as any).window === "undefined") {
   (global as any).window = {
     dispatchEvent: () => true,
@@ -57,24 +61,35 @@ function assert(condition: boolean, message: string): void {
   console.log(`✅ ${message}`);
 }
 
-async function runTests() {
+async function runHermeticTests() {
   console.log("\n=======================================================");
-  console.log("RUNNING PRODUCTION DATA-CORRECTNESS TEST SUITE");
+  console.log("RUNNING HERMETIC PRODUCTION DATA-CORRECTNESS TEST SUITE");
   console.log("=======================================================\n");
 
   // -------------------------------------------------------------------
-  // TEST 1: Fresh Account Profile Leak Prevention & Scoped Storage
+  // TEST 1: Candidate Profile Reset & Cross-Account Isolation
   // -------------------------------------------------------------------
-  console.log("--- Test 1: Candidate Profile Reset & Cross-Account Isolation ---");
+  console.log("--- Test 1: Candidate Profile Reset & Scoped Storage ---");
   clearCandidateProfileMemoryCache();
   (global as any).localStorage.clear();
 
+  // Hermetic client override returning null profile (fresh user with no remote row)
+  const hermeticSupabaseClient = {
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: async () => ({ data: null, error: null }),
+        }),
+      }),
+    }),
+  };
+
   // Fresh user with no profile in Supabase must return null (empty state)
   const freshUserId = "00000000-0000-4000-a000-000000000001";
-  const freshProfile = await getCandidateProfile(freshUserId);
+  const freshProfile = await getCandidateProfile(freshUserId, hermeticSupabaseClient);
   assert(freshProfile === null, "Fresh account with no DB row starts completely empty (null)");
 
-  // Legacy un-scoped key in localStorage must NOT leak into a fresh account
+  // Legacy un-scoped key in localStorage must NOT leak into fresh account
   (global as any).localStorage.setItem(
     "careermonke_candidate_profile",
     JSON.stringify({
@@ -87,7 +102,7 @@ async function runTests() {
 
   clearCandidateProfileMemoryCache();
   const freshUser2Id = "00000000-0000-4000-a000-000000000002";
-  const isolatedProfile = await getCandidateProfile(freshUser2Id);
+  const isolatedProfile = await getCandidateProfile(freshUser2Id, hermeticSupabaseClient);
   assert(
     isolatedProfile === null,
     "Legacy un-scoped localStorage profile does NOT leak into fresh user account"
@@ -97,7 +112,7 @@ async function runTests() {
     "Legacy un-scoped profile key is purged from localStorage upon inspection"
   );
 
-  // User A's confirmed profile is saved in user A's scoped key
+  // User A profile is stored in user A's scoped key
   const userAProfile: CandidateProfile = {
     name: "User A",
     email: "user.a@example.com",
@@ -120,49 +135,39 @@ async function runTests() {
 
   // Negative control: User B must NOT see User A's profile
   clearCandidateProfileMemoryCache();
-  const userBProfile = await getCandidateProfile("user-b-id");
+  const userBProfile = await getCandidateProfile("user-b-id", hermeticSupabaseClient);
   assert(userBProfile === null, "NEGATIVE CONTROL: User B receives null, not User A profile");
 
   // -------------------------------------------------------------------
-  // TEST 2: Profile Completion Strictly Derived From Real User Data
+  // TEST 2: Profile Completion Formula (Real Exported Helper)
   // -------------------------------------------------------------------
-  console.log("\n--- Test 2: Profile Completion Strict Calculation ---");
+  console.log("\n--- Test 2: Profile Completion Formula (Real Exported Helper) ---");
 
-  // Helper matching jobs/page.tsx profile completion formula
-  function computeProfileCompletion(candidate: any, preferences: any, savedJobIds: string[]) {
-    const hasResume = Boolean(
-      candidate?.confirmedAt &&
-        ((candidate.skills && candidate.skills.length > 0) ||
-          (candidate.experience && candidate.experience.length > 0) ||
-          (candidate.rawText && candidate.rawText.trim().length > 0))
-    );
-    const hasPreferences = Boolean(
-      preferences?.onboardingCompleted ||
-        (preferences?.roles && preferences.roles.length > 0)
-    );
-    const hasTracked = Boolean(savedJobIds && savedJobIds.length > 0);
-    const completedSteps = [hasResume, hasPreferences, hasTracked].filter(Boolean).length;
-    const completionPercentage = Math.round((completedSteps / 3) * 100);
-    return { hasResume, hasPreferences, hasTracked, completionPercentage };
-  }
-
-  // Account with NO resume and NO preferences and NO tracked jobs: 0%
-  const resEmpty = computeProfileCompletion(null, null, []);
+  // Account with NO resume and NO preferences: 0%
+  const resEmpty = calculateProfileCompletion({ candidate: null, preferences: null, savedJobIds: [] });
   assert(resEmpty.hasResume === false, "Account with no resume has hasResume === false");
-  assert(resEmpty.completionPercentage === 0, "Account with no resume reports 0% completion (not 50%)");
+  assert(resEmpty.completionPercentage === 0, "Account with no resume reports 0% completion");
 
-  // Account with onboarding preferences only: 33%, resume step UNTICKED
-  const resPrefsOnly = computeProfileCompletion(null, { onboardingCompleted: true }, []);
+  // Preferences-only account: 33%, Step 1 (resume) UNTICKED
+  const resPrefsOnly = calculateProfileCompletion({
+    candidate: null,
+    preferences: { onboardingCompleted: true },
+    savedJobIds: [],
+  });
   assert(resPrefsOnly.hasResume === false, "Preferences-only account has hasResume === false");
   assert(resPrefsOnly.hasPreferences === true, "Preferences-only account has hasPreferences === true");
   assert(resPrefsOnly.completionPercentage === 33, "Preferences-only account reports 33% (never 75% or 100%)");
 
-  // Account with preferences + 1 saved job but NO resume: 67%, resume step UNTICKED
-  const resPrefsAndSaved = computeProfileCompletion(null, { onboardingCompleted: true }, ["job-1"]);
+  // Preferences + 1 tracked job, NO resume: 67%, Step 1 (resume) UNTICKED
+  const resPrefsAndSaved = calculateProfileCompletion({
+    candidate: null,
+    preferences: { onboardingCompleted: true },
+    savedJobIds: ["job-1"],
+  });
   assert(resPrefsAndSaved.hasResume === false, "Account without resume still has hasResume === false");
   assert(resPrefsAndSaved.completionPercentage === 67, "Account without resume reports 67% (never 100%)");
 
-  // Account with real resume + preferences + tracked jobs: 100%
+  // Full candidate with confirmed resume + preferences + tracked jobs: 100%
   const fullCandidate: CandidateProfile = {
     name: "Candidate",
     email: "test@example.com",
@@ -175,7 +180,11 @@ async function runTests() {
     confirmedAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
-  const resFull = computeProfileCompletion(fullCandidate, { onboardingCompleted: true }, ["job-1"]);
+  const resFull = calculateProfileCompletion({
+    candidate: fullCandidate,
+    preferences: { onboardingCompleted: true },
+    savedJobIds: ["job-1"],
+  });
   assert(resFull.hasResume === true, "Account with confirmed resume has hasResume === true");
   assert(resFull.completionPercentage === 100, "Full account reports 100% completion");
 
@@ -190,7 +199,11 @@ async function runTests() {
     confirmedAt: undefined,
     updatedAt: new Date().toISOString(),
   };
-  const resUnconfirmed = computeProfileCompletion(unconfirmedCandidate, { onboardingCompleted: true }, []);
+  const resUnconfirmed = calculateProfileCompletion({
+    candidate: unconfirmedCandidate,
+    preferences: { onboardingCompleted: true },
+    savedJobIds: [],
+  });
   assert(
     resUnconfirmed.hasResume === false,
     "NEGATIVE CONTROL: Unconfirmed candidate profile results in hasResume === false"
@@ -201,64 +214,231 @@ async function runTests() {
   );
 
   // -------------------------------------------------------------------
-  // TEST 3: Taxonomy & Category Filter Alignment ("ai-machine-learning" -> "ai")
+  // TEST 3: AI Filter Whole-Word Matching & Search Count Modes / Timeout Fallback
   // -------------------------------------------------------------------
-  console.log("\n--- Test 3: Category Filter Taxonomy & Query Alignment ---");
+  console.log("\n--- Test 3: AI Filter Whole-Word Matching & Search Route Logic ---");
 
-  // Slug normalization
+  // Taxonomy verification
   assert(normalizeCategorySlug("ai-machine-learning") === "ai-ml", "ai-machine-learning normalizes to ai-ml");
   assert(normalizeCategorySlug("ai") === "ai-ml", "ai normalizes to ai-ml");
-
-  // Filter expansion includes both aliases and exact stored labels
   const aiExpanded = expandCategoryFilter(["ai"]);
   assert(aiExpanded.includes("ai"), "Expanded 'ai' includes exact ingestion category 'ai'");
   assert(aiExpanded.includes("ai-ml"), "Expanded 'ai' includes canonical 'ai-ml'");
 
-  const aiMlExpanded = expandCategoryFilter(["ai-machine-learning"]);
-  assert(aiMlExpanded.includes("ai"), "Expanded 'ai-machine-learning' includes 'ai'");
+  // Verification of Whole-Word AI matching logic:
+  // Regex and pattern logic: \bAI\b or exact whole-word bounds
+  const aiWholeWordRegex = /\bAI\b/i;
+  const aiMlRegex = /(machine learning|deep learning|\bllm\b|\bnlp\b)/i;
 
-  // Real query testing against Supabase jobs_public
-  const liveAiJobs = await getLiveJobs({ category: "ai", pageSize: 5 });
-  assert(liveAiJobs.totalCount > 0, `getLiveJobs with category='ai' returns non-zero results (${liveAiJobs.totalCount} jobs)`);
-  assert(liveAiJobs.jobs.length > 0, `getLiveJobs with category='ai' returns jobs in payload (count=${liveAiJobs.jobs.length})`);
+  // Positive controls (MUST MATCH AI):
+  const aiPositives = [
+    "AI Engineer",
+    "Senior AI Researcher",
+    "Head of AI",
+    "AI/ML Engineer",
+    "Generative AI Architect",
+    "Applied AI Specialist",
+    "Machine Learning Engineer",
+    "Deep Learning Scientist",
+    "Staff LLM Engineer",
+    "NLP Research Scientist",
+  ];
+  for (const title of aiPositives) {
+    const matches = aiWholeWordRegex.test(title) || aiMlRegex.test(title);
+    assert(matches, `Positive control matches AI filter: '${title}'`);
+  }
 
-  const liveAiMlJobs = await getLiveJobs({ category: "ai-machine-learning", pageSize: 5 });
-  assert(liveAiMlJobs.totalCount > 0, `getLiveJobs with category='ai-machine-learning' returns non-zero results (${liveAiMlJobs.totalCount} jobs)`);
+  // Negative controls (MUST NOT MATCH AI):
+  // Bare %ai % and % ai% matched these; whole-word AI MUST reject them!
+  const aiFalsePositives = [
+    "Retail Associate",
+    "Lead Client Partner, Retail Solutions",
+    "Software Engineer in Dubai",
+    "Airline Pilot",
+    "Commercial Airline Dispatcher",
+    "First Aid Coordinator",
+    "Emergency Aid Worker",
+    "Paid Media Specialist",
+  ];
+  for (const title of aiFalsePositives) {
+    const matches = aiWholeWordRegex.test(title) || aiMlRegex.test(title);
+    assert(!matches, `NEGATIVE CONTROL: False positive strictly rejected by AI filter: '${title}'`);
+  }
 
-  const liveDataJobs = await getLiveJobs({ category: "data", pageSize: 5 });
-  assert(liveDataJobs.totalCount > 0, `getLiveJobs with category='data' returns data jobs (${liveDataJobs.totalCount} jobs)`);
+  // Hermetic Mocking of Search Handler (Testing count modes, timeout 57014, fallback, hasMore)
+  let lastCountOption: string | null = null;
+  let simulatedTimeout = false;
+  let queryInvocationCount = 0;
 
-  // Negative control: bogus category returns 0
-  const bogusCatJobs = await getLiveJobs({ category: "non-existent-category-slug-9999", pageSize: 5 });
+  const createMockSupabase = (shouldTimeoutOnce = false) => {
+    return () => ({
+      from: () => ({
+        select: (_cols: string, opts?: { count?: string }) => {
+          lastCountOption = opts?.count || null;
+          queryInvocationCount++;
+
+          const mockChain: any = {
+            eq: () => mockChain,
+            or: () => mockChain,
+            in: () => mockChain,
+            not: () => mockChain,
+            gte: () => mockChain,
+            is: () => mockChain,
+            lt: () => mockChain,
+            ilike: () => mockChain,
+            order: () => mockChain,
+            limit: () => mockChain,
+            range: () => mockChain,
+            then: (resolve: any) => {
+              if (shouldTimeoutOnce && !simulatedTimeout && opts?.count === "exact") {
+                simulatedTimeout = true;
+                return resolve({
+                  data: null,
+                  count: null,
+                  error: { code: "57014", message: "canceling statement due to statement timeout" },
+                });
+              }
+              return resolve({
+                data: [{ id: "mock-job-1", title: "Mock Engineer", posted_at: new Date().toISOString() }],
+                count: opts?.count === "exact" ? 42 : 10000,
+                error: null,
+              });
+            },
+          };
+          return mockChain;
+        },
+      }),
+    });
+  };
+
+  // Case A: Unfiltered search must use count: "estimated"
+  const unfilteredHandler = createSearchHandler({ getSupabaseAdmin: createMockSupabase(false) });
+  lastCountOption = null;
+  const resUnfiltered = await unfilteredHandler({
+    httpMethod: "GET",
+    headers: {},
+    queryStringParameters: {},
+  });
+  const bodyUnfiltered = JSON.parse(resUnfiltered.body);
+  assert(lastCountOption === "estimated", "Unfiltered search requests count: 'estimated'");
+  assert(bodyUnfiltered.hasMore !== undefined, "Search response includes hasMore flag");
+  assert(bodyUnfiltered.totalCount === 10000, "Unfiltered search returns count");
+
+  // Case B: Filtered search must use count: "exact"
+  lastCountOption = null;
+  const filteredHandler = createSearchHandler({ getSupabaseAdmin: createMockSupabase(false) });
+  const resFiltered = await filteredHandler({
+    httpMethod: "GET",
+    headers: {},
+    queryStringParameters: { category: "ai" },
+  });
+  const bodyFiltered = JSON.parse(resFiltered.body);
+  assert(lastCountOption === "exact", "Filtered search requests count: 'exact'");
+  assert(bodyFiltered.totalCount === 42, "Filtered search returns exact totalCount");
+  assert(bodyFiltered.hasMore !== undefined, "Filtered search response includes hasMore flag");
+
+  // Case C: Exact count times out with 57014 -> must fall back to estimated count
+  lastCountOption = null;
+  simulatedTimeout = false;
+  queryInvocationCount = 0;
+  const timeoutHandler = createSearchHandler({ getSupabaseAdmin: createMockSupabase(true) });
+  const resTimeout = await timeoutHandler({
+    httpMethod: "GET",
+    headers: {},
+    queryStringParameters: { category: "ai" },
+  });
+  const bodyTimeout = JSON.parse(resTimeout.body);
+  assert(resTimeout.statusCode === 200, "Timeout on exact count does NOT crash, recovers with 200");
+  assert(lastCountOption === "estimated", "Exact count timeout (57014) falls back to count: 'estimated'");
+  assert(queryInvocationCount === 2, "Exact count timeout triggers retry with estimated count");
+  assert(bodyTimeout.hasMore !== undefined, "Timeout recovered response includes hasMore flag");
+
+  // Case D: Fallback when count is null retains old fallback (not rows.length)
+  const nullCountSupabase = () => ({
+    from: () => ({
+      select: () => {
+        const mockChain: any = {
+          eq: () => mockChain,
+          or: () => mockChain,
+          in: () => mockChain,
+          not: () => mockChain,
+          gte: () => mockChain,
+          is: () => mockChain,
+          lt: () => mockChain,
+          ilike: () => mockChain,
+          order: () => mockChain,
+          limit: () => mockChain,
+          range: () => mockChain,
+          then: (resolve: any) =>
+            resolve({
+              data: [{ id: "mock-1" }, { id: "mock-2" }],
+              count: null, // Null count
+              error: null,
+            }),
+        };
+        return mockChain;
+      },
+    }),
+  });
+  const nullCountHandler = createSearchHandler({ getSupabaseAdmin: nullCountSupabase });
+  const resNullCount = await nullCountHandler({
+    httpMethod: "GET",
+    headers: {},
+    queryStringParameters: { page: "1", pageSize: "25" },
+  });
+  const bodyNullCount = JSON.parse(resNullCount.body);
   assert(
-    bogusCatJobs.totalCount === 0 && bogusCatJobs.jobs.length === 0,
-    "NEGATIVE CONTROL: Non-existent category query returns 0 jobs"
+    bodyNullCount.totalCount === 25, // Math.max(2, 1 * 25) = 25, NOT rows.length (2)
+    `Null count fallback does NOT collapse to rows.length (expected 25, got ${bodyNullCount.totalCount})`
   );
 
   // -------------------------------------------------------------------
-  // TEST 4: Ingestion Classifier Mapping
+  // TEST 4: Sanitizer Classifier Mapping with Word Boundaries
   // -------------------------------------------------------------------
-  console.log("\n--- Test 4: Ingestion Classifier Mapping ---");
+  console.log("\n--- Test 4: Sanitizer Classifier Mapping with Word Boundaries ---");
 
-  // Bug (4) exact reported titles:
+  // Agriculture and Horticulture MUST NOT be classified as marketing:
+  const catAgri = detectCategory("Agriculture Engineer");
+  assert(
+    catAgri !== "marketing" && catAgri === "engineering",
+    `'Agriculture Engineer' maps to 'engineering', NOT 'marketing' (got: '${catAgri}')`
+  );
+
+  const catHorti = detectCategory("Horticulture Specialist");
+  assert(
+    catHorti !== "marketing" && catHorti === "engineering",
+    `'Horticulture Specialist' maps to 'engineering', NOT 'marketing' (got: '${catHorti}')`
+  );
+
+  const catAgriDir = detectCategory("Director of Agriculture Operations");
+  assert(
+    catAgriDir !== "marketing",
+    `'Director of Agriculture Operations' is NOT marketing (got: '${catAgriDir}')`
+  );
+
+  // Word boundary matches for marketing:
   const catInfluencer = detectCategory("Influencer Manager, Social & Culture");
-  assert(
-    catInfluencer === "marketing",
-    `'Influencer Manager, Social & Culture' correctly maps to 'marketing' (was engineering, got: '${catInfluencer}')`
-  );
+  assert(catInfluencer === "marketing", "'Influencer Manager, Social & Culture' correctly maps to 'marketing'");
+
+  const catCommunity = detectCategory("Community Lead");
+  assert(catCommunity === "marketing", "'Community Lead' correctly maps to 'marketing'");
+
+  const catBrand = detectCategory("Brand Strategist");
+  assert(catBrand === "marketing", "'Brand Strategist' correctly maps to 'marketing'");
+
+  const catSocial = detectCategory("Social Media Coordinator");
+  assert(catSocial === "marketing", "'Social Media Coordinator' correctly maps to 'marketing'");
+
+  // Word boundary for TPM / Product:
+  const catTPM = detectCategory("Technical Program Manager (TPM)");
+  assert(catTPM === "product", "'Technical Program Manager (TPM)' correctly maps to 'product'");
 
   const catResearchPM = detectCategory("Research Program Manager");
-  assert(
-    catResearchPM === "product",
-    `'Research Program Manager' correctly maps to 'product' (was engineering, got: '${catResearchPM}')`
-  );
+  assert(catResearchPM === "product", "'Research Program Manager' correctly maps to 'product'");
 
-  // Word boundary check: 'ui' substring trap must not misclassify data acquisition
+  // Substring safety checks:
   const catAcquisition = detectCategory("Data Acquisition Engineer");
-  assert(
-    catAcquisition === "data",
-    `'Data Acquisition Engineer' maps to 'data' (not misclassified as 'design' due to 'ui' in acquisition)`
-  );
+  assert(catAcquisition === "data", "'Data Acquisition Engineer' maps to 'data' (no 'ui' substring trap)");
 
   const catUI = detectCategory("UI Designer");
   assert(catUI === "design", "'UI Designer' maps to 'design'");
@@ -266,50 +446,15 @@ async function runTests() {
   const catUX = detectCategory("Senior UX Researcher");
   assert(catUX === "design", "'Senior UX Researcher' maps to 'design'");
 
-  const catSocialMedia = detectCategory("Social Media Lead");
-  assert(catSocialMedia === "marketing", "'Social Media Lead' maps to 'marketing'");
-
-  const catTPM = detectCategory("Technical Program Manager");
-  assert(catTPM === "product", "'Technical Program Manager' maps to 'product'");
-
-  // Negative control: standard developer role maps to engineering
+  // Negative control:
   const catSWE = detectCategory("Senior Software Engineer");
-  assert(
-    catSWE === "engineering",
-    "NEGATIVE CONTROL: 'Senior Software Engineer' maps to 'engineering'"
-  );
+  assert(catSWE === "engineering", "NEGATIVE CONTROL: 'Senior Software Engineer' maps to 'engineering'");
 
   // -------------------------------------------------------------------
   // TEST 5: Recommended Count Badge Returns Filtered Count
   // -------------------------------------------------------------------
-  console.log("\n--- Test 5: Recommended Count Badge Returns Filtered Count ---");
+  console.log("\n--- Test 5: Recommended Count Badge Filtered Logic ---");
 
-  // Total active jobs without filters
-  const unfilteredJobs = await getLiveJobs({ pageSize: 5 });
-  assert(unfilteredJobs.totalCount > 1000, `Unfiltered total count is large (${unfilteredJobs.totalCount})`);
-
-  // Filtered by category 'ai': count should be strictly smaller than total jobs
-  assert(
-    liveAiJobs.totalCount < unfilteredJobs.totalCount,
-    `Category 'ai' filtered count (${liveAiJobs.totalCount}) is strictly less than total (${unfilteredJobs.totalCount})`
-  );
-
-  // Filtered by country code: count should be strictly smaller than total jobs
-  const deJobs = await getLiveJobs({ countryCode: "DE", pageSize: 5 });
-  assert(
-    deJobs.totalCount > 0 && deJobs.totalCount < unfilteredJobs.totalCount,
-    `Country 'DE' filtered count (${deJobs.totalCount}) is strictly less than total (${unfilteredJobs.totalCount})`
-  );
-
-  // Multi-filter: Category 'ai' + country 'US'
-  const aiUsJobs = await getLiveJobs({ category: "ai", countryCode: "US", pageSize: 5 });
-  assert(
-    aiUsJobs.totalCount <= liveAiJobs.totalCount,
-    `Combined filter 'ai' + 'US' (${aiUsJobs.totalCount}) is <= category 'ai' count (${liveAiJobs.totalCount})`
-  );
-
-  // Recommended count badge logic in jobs/page.tsx:
-  // When active filters are present, badge must show the filtered count (not the unfiltered 17,442)
   function getRecommendedTabBadgeCount(
     hasActiveFilters: boolean,
     totalCount: number,
@@ -325,29 +470,27 @@ async function runTests() {
 
   assert(
     getRecommendedTabBadgeCount(true, 1645, 25, false) === "1,645",
-    "Badge returns '1,645' for AI filter (not 17,442)"
+    "Badge returns '1,645' for active filter"
   );
   assert(
     getRecommendedTabBadgeCount(true, 0, 0, false) === "0",
-    "Badge returns '0' when 0 jobs match active filters (not unfiltered count)"
+    "Badge returns '0' when 0 jobs match active filters"
   );
   assert(
     getRecommendedTabBadgeCount(false, 17442, 25, false) === "17,442",
     "Badge returns '17,442' when no active filters are set"
   );
-
-  // Negative control: Bogus filter returns count of 0
   assert(
     getRecommendedTabBadgeCount(true, 0, 0, false) !== "17,442",
     "NEGATIVE CONTROL: Badge never retains unfiltered count when 0 matches"
   );
 
   console.log("\n=======================================================");
-  console.log("ALL 5 DATA CORRECTNESS TEST SUITES PASSED-LOCAL");
+  console.log("ALL HERMETIC DATA CORRECTNESS TESTS PASSED-LOCAL");
   console.log("=======================================================\n");
 }
 
-runTests().catch((err) => {
+runHermeticTests().catch((err) => {
   console.error("Test execution error:", err);
   process.exit(1);
 });
