@@ -1,50 +1,84 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 
-interface CompanyLogoProps {
+export interface CompanyLogoProps {
   company: string;
   applyUrl?: string;
+  sourceUrl?: string;
+  logoUrl?: string | null;
   className?: string;
+}
+
+const ATS_HOSTS = [
+  "greenhouse.io",
+  "ashbyhq.com",
+  "lever.co",
+  "workable.com",
+  "smartrecruiters.com",
+  "recruitee.com",
+  "jobvite.com",
+  "bamboohr.com",
+  "rippling.com",
+  "icims.com",
+  "myworkdayjobs.com",
+  "workday.com",
+  "taleo.net",
+  "successfactors.com",
+  "breezy.hr",
+  "applytojob.com",
+  "pinpointhq.com",
+  "careermonke.com",
+  "netlify.app",
+  "netlify.com",
+  "localhost",
+];
+
+export function extractDomainFromUrl(urlStr?: string): string {
+  if (!urlStr) return "";
+  try {
+    const parsed = new URL(urlStr);
+    const hostname = parsed.hostname.toLowerCase().replace(/^www\./, "");
+    if (!hostname || hostname.length < 3 || !hostname.includes(".")) return "";
+
+    const isAts = ATS_HOSTS.some(
+      (ats) => hostname === ats || hostname.endsWith(`.${ats}`)
+    );
+    if (isAts) return "";
+
+    return hostname;
+  } catch {
+    return "";
+  }
 }
 
 export default function CompanyLogo({
   company,
   applyUrl,
+  sourceUrl,
+  logoUrl,
   className = "w-10 h-10",
 }: CompanyLogoProps) {
-  const [imgStage, setImgStage] = useState<"primary" | "secondary" | "fallback">("primary");
-
   const cleanCompany = (company || "").trim();
   const initial = cleanCompany ? cleanCompany.charAt(0).toUpperCase() : "?";
 
-  // Derive domain from applyUrl or company name
-  let domain = "";
-  if (applyUrl) {
-    try {
-      const u = new URL(applyUrl);
-      const host = u.hostname.toLowerCase();
-      if (host.includes("ashbyhq.com") || host.includes("greenhouse.io") || host.includes("lever.co")) {
-        const parts = u.pathname.split("/").filter(Boolean);
-        if (parts[0]) {
-          domain = `${parts[0].toLowerCase().replace(/[^a-z0-9]/g, "")}.com`;
-        }
-      } else if (!host.includes("careermonke") && !host.includes("netlify")) {
-        domain = host.replace(/^www\./, "");
-      }
-    } catch {}
-  }
+  // Derive domain strictly from a real apply or source URL that is not an ATS host
+  // ZERO name-slug guessing
+  const domain = extractDomainFromUrl(applyUrl) || extractDomainFromUrl(sourceUrl);
+  const unavatarUrl = domain ? `https://unavatar.io/${domain}?fallback=false` : null;
 
-  if (!domain && cleanCompany) {
-    const slug = cleanCompany
-      .toLowerCase()
-      .replace(/\b(inc|llc|corp|corporation|technologies|technology|tech|ltd|co|group|holdings|labs)\b/gi, "")
-      .trim()
-      .replace(/[^a-z0-9]/g, "");
-    if (slug) {
-      domain = `${slug}.com`;
-    }
-  }
+  // Stages: self-hosted (companies.logo_url) -> unavatar.io -> fallback (letter tile)
+  const initialStage: "self-hosted" | "unavatar" | "fallback" = logoUrl
+    ? "self-hosted"
+    : unavatarUrl
+    ? "unavatar"
+    : "fallback";
+
+  const [imgStage, setImgStage] = useState<"self-hosted" | "unavatar" | "fallback">(initialStage);
+
+  useEffect(() => {
+    setImgStage(logoUrl ? "self-hosted" : unavatarUrl ? "unavatar" : "fallback");
+  }, [logoUrl, unavatarUrl]);
 
   // Deterministic gradient for fallback
   const gradients = [
@@ -57,7 +91,7 @@ export default function CompanyLogo({
   const charCode = (cleanCompany.charCodeAt(0) || 0) + (cleanCompany.charCodeAt(1) || 0);
   const gradient = gradients[charCode % gradients.length];
 
-  if (!domain || imgStage === "fallback") {
+  if (imgStage === "fallback" || (!logoUrl && !domain)) {
     return (
       <div
         className={`rounded-xl bg-gradient-to-br ${gradient} text-white font-black flex items-center justify-center shrink-0 shadow-2xs select-none border border-white/20 ${className}`}
@@ -67,9 +101,7 @@ export default function CompanyLogo({
     );
   }
 
-  const primaryUrl = `https://unavatar.io/${domain}?fallback=false`;
-  const secondaryUrl = `https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://${domain}&size=128`;
-  const src = imgStage === "primary" ? primaryUrl : secondaryUrl;
+  const src = imgStage === "self-hosted" && logoUrl ? logoUrl : unavatarUrl!;
 
   return (
     <div
@@ -81,8 +113,8 @@ export default function CompanyLogo({
         className="w-full h-full object-contain rounded-lg"
         loading="lazy"
         onError={() => {
-          if (imgStage === "primary") {
-            setImgStage("secondary");
+          if (imgStage === "self-hosted") {
+            setImgStage(unavatarUrl ? "unavatar" : "fallback");
           } else {
             setImgStage("fallback");
           }

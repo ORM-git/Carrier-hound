@@ -375,6 +375,7 @@ export default function JobDetailView({
                 <CompanyLogo
                   company={job.company}
                   applyUrl={job.applyUrl}
+                  logoUrl={job.logoUrl || (job as any).logo_url}
                   className="w-6 h-6 rounded object-contain p-0.5 border border-[#E2E8F0] bg-white shrink-0"
                 />
                 <span className="text-xs sm:text-sm font-bold text-[#0F172A] truncate">
@@ -568,6 +569,7 @@ export default function JobDetailView({
               <CompanyLogo
                 company={job.company}
                 applyUrl={job.applyUrl}
+                logoUrl={job.logoUrl || (job as any).logo_url}
                 className="w-7 h-7 rounded-lg object-contain p-0.5 border border-[#E2E8F0] bg-white shrink-0"
               />
               <span className={`text-xs font-bold text-[#0F172A] truncate max-w-[120px] ${!isUnlocked ? "filter blur-[3.5px] select-none" : ""}`}>
@@ -663,6 +665,7 @@ export default function JobDetailView({
               <CompanyLogo
                 company={job.company}
                 applyUrl={job.applyUrl}
+                logoUrl={job.logoUrl || (job as any).logo_url}
                 className="w-12 h-12 rounded-xl shrink-0 object-contain p-1 border border-[#E2E8F0] bg-white"
               />
               <div className="min-w-0 flex-1">
@@ -1017,6 +1020,7 @@ export default function JobDetailView({
               <CompanyLogo
                 company={job.company}
                 applyUrl={job.applyUrl}
+                logoUrl={job.logoUrl || (job as any).logo_url}
                 className="w-12 h-12 rounded-xl shrink-0 object-contain p-1 border border-[#E2E8F0] bg-white"
               />
               <div className="space-y-1 min-w-0 flex-1">
@@ -1192,6 +1196,7 @@ export default function JobDetailView({
                     <CompanyLogo
                       company={simJob.company}
                       applyUrl={simJob.applyUrl}
+                      logoUrl={simJob.logoUrl || (simJob as any).logo_url}
                       className="w-9 h-9 rounded-lg shrink-0 object-contain p-1 border border-[#E2E8F0] bg-white"
                     />
                     <div className="min-w-0 flex-1">

@@ -30,6 +30,10 @@ export interface LiveJob {
   trackerNotes?: string;
   proUnlockError?: ProUnlockError;
   applicantCount?: number;
+  company_id?: string | null;
+  companyId?: string | null;
+  logoUrl?: string | null;
+  logo_url?: string | null;
 }
 
 export interface ProUnlockError {
@@ -284,6 +288,9 @@ export function extractCandidateRelevanceTerms(
 const PUBLIC_SELECT_COLUMNS =
   "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at";
 
+import { capJobsPerCompany } from "./capping";
+export { capJobsPerCompany };
+
 const DEGRADED_JOBS_RESULT: GetJobsResult = {
   jobs: [],
   totalCount: 0,
@@ -329,10 +336,16 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
-  // 1. Route text search through safe server endpoint so company and keywords can be searched
+  const isMatchSort = sortBy === "match";
+  const relevanceTerms = isMatchSort
+    ? extractCandidateRelevanceTerms(candidate, preferences)
+    : [];
+
+  // 1. Route text search and default list through safe server endpoint so company capping can use service-key company_id
   // without exposing raw database tables or leaking paid fields to guests
   const hasServerFilter = Boolean((search && search.trim()) || (company && company.trim()) || salaryMin || (sourceType && sourceType !== "all") || cursor);
-  if (hasServerFilter && typeof window !== "undefined") {
+  const shouldUseServer = typeof window !== "undefined" && (hasServerFilter || !candidate || relevanceTerms.length === 0);
+  if (shouldUseServer) {
     try {
       let token: string | undefined;
       try {
@@ -365,6 +378,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       if (sourceType && sourceType !== "all") params.set("sourceType", sourceType);
       if (company && company !== "all") params.set("company", company);
       if (cursor) params.set("cursor", cursor);
+      if (sortBy) params.set("sortBy", sortBy);
 
       const res = await fetch(`/api/jobs/search?${params.toString()}`, { headers });
       if (res.status === 503) {
@@ -725,7 +739,9 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
           return timeB - timeA;
         });
 
-        data = scoredPool.slice(from, to + 1).map((item) => item.row);
+        // Cap jobs per company: max 3 per company in visible top-30
+        const cappedPool = capJobsPerCompany(scoredPool.map((item) => item.row), 3, 30);
+        data = cappedPool.slice(from, to + 1);
       }
     } else if (isMatchSort && (!candidate || relevanceTerms.length === 0)) {
       // Guest or profile without confirmed resume: sensible global relevance (verified roles first, then newest)
@@ -736,7 +752,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       if (res.error && !isLegacyBehavior) {
         return DEGRADED_JOBS_RESULT;
       }
-      data = res.data;
+      data = capJobsPerCompany(res.data || [], 3, 30);
       count = res.count;
     } else {
       // Default newest first
@@ -762,10 +778,17 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         };
       }
       const mappedJobs: LiveJob[] = data.map((row: any) => {
+        const resolvedLogo = (isPro && row.company && row.company !== "Verified Employer")
+          ? (row.logo_url || row.logoUrl || row.companies?.logo_url || null)
+          : null;
         return {
           id: row.id,
           title: row.title || "Untitled Position",
-          company: "Verified Employer",
+          company: (isPro && row.company && row.company !== "Verified Employer")
+            ? row.company
+            : "Verified Employer",
+          companyId: row.company_id || row.companyId || null,
+          company_id: row.company_id || row.companyId || null,
           location: row.location || (row.remote ? "Remote (Worldwide)" : "Remote"),
           date: formatDate(row.posted_at || row.created_at),
           salary: "",
@@ -780,6 +803,8 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
           description: "",
           skills: [],
           postedAt: row.posted_at || row.created_at,
+          logoUrl: resolvedLogo,
+          logo_url: resolvedLogo,
         };
       });
 
@@ -823,6 +848,10 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
                       if (u.apply_url) job.applyUrl = sanitizeExternalUrl(u.apply_url) || "";
                       if (u.description) job.description = stripHtmlAndExecutableMarkup(u.description);
                       if (u.skills) job.skills = u.skills;
+                      if (u.logo_url || u.logoUrl) {
+                        job.logoUrl = u.logo_url || u.logoUrl;
+                        job.logo_url = u.logo_url || u.logoUrl;
+                      }
                     }
                   });
                 }
@@ -928,6 +957,8 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
                 postedAt: job.posted_at || job.first_seen_at || job.created_at,
                 isExpired: isInactive,
                 status: isInactive ? "expired" : (job.status || "active"),
+                logoUrl: job.logo_url || job.logoUrl || null,
+                logo_url: job.logo_url || job.logoUrl || null,
               };
             }
           } else {

@@ -89,7 +89,7 @@ export async function handler(event?: any) {
       .eq("status", "active")
       .eq("is_active", true)
       .order("posted_at", { ascending: false, nullsFirst: false })
-      .limit(50);
+      .limit(100);
 
     if (jobsError || !jobRows) {
       return {
@@ -203,6 +203,7 @@ export async function handler(event?: any) {
       posted_at: string;
       logo_url: string | null;
     }> = [];
+    const companyCounts = new Map<string, number>();
 
     for (const row of jobRows) {
       if (tickerItems.length >= 20) break;
@@ -224,6 +225,16 @@ export async function handler(event?: any) {
       }
 
       const cleanCompany = String(row.company || "").trim();
+      const compKey = cleanCompany.toLowerCase();
+
+      // Cap jobs per company: max 2 per company in the ticker's 20
+      if (compKey) {
+        const count = companyCounts.get(compKey) || 0;
+        if (count >= 2) {
+          continue;
+        }
+      }
+
       const compId = row.company_id ? String(row.company_id).trim() : "";
 
       let resolvedLogo: string | null = null;
@@ -231,6 +242,10 @@ export async function handler(event?: any) {
         resolvedLogo = idToLogo.get(compId)!;
       } else if (cleanCompany && nameToLogo.has(cleanCompany.toLowerCase())) {
         resolvedLogo = nameToLogo.get(cleanCompany.toLowerCase())!;
+      }
+
+      if (compKey) {
+        companyCounts.set(compKey, (companyCounts.get(compKey) || 0) + 1);
       }
 
       tickerItems.push({

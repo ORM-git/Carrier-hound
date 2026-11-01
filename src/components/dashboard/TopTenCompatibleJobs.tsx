@@ -206,7 +206,7 @@ export default function TopTenCompatibleJobs({
                   {/* Main Role Info */}
                   <div className="space-y-1.5 flex-1 min-w-0">
                     <div className="flex items-center gap-2.5">
-                      <CompanyLogo company={job.company} applyUrl={job.applyUrl} className="w-8 h-8 shrink-0" />
+                      <CompanyLogo company={job.company} applyUrl={job.applyUrl} logoUrl={job.logoUrl || (job as any).logo_url} className="w-8 h-8 shrink-0" />
                       <Link
                         href={`/job-detail?id=${encodeURIComponent(job.id)}`}
                         className="text-base sm:text-lg font-bold text-slate-900 hover:text-blue-600 transition-colors break-words line-clamp-1"

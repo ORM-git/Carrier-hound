@@ -58,9 +58,15 @@ interface TickerCardProps {
 }
 
 function TickerCard({ job, keyPrefix = "", index, isDuplicate = false }: TickerCardProps) {
-  const [imgError, setImgError] = useState(false);
-  const letter = (job.company || "?").trim().charAt(0).toUpperCase() || "?";
+  const cleanCompany = (job.company || "").trim();
+  const letter = cleanCompany.charAt(0).toUpperCase() || "?";
   const relativeTime = formatRelativeTime(job.posted_at);
+
+  const [imgError, setImgError] = useState(false);
+
+  useEffect(() => {
+    setImgError(false);
+  }, [job.logo_url]);
 
   return (
     <Link
