@@ -276,6 +276,52 @@ async function computeSha256Hex(value: string): Promise<string> {
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
+/**
+ * Restricts early-access bypass to an explicit allowlist of read-only, non-personal API paths.
+ * Excludes all admin routes/APIs and any personal or protected routes.
+ */
+export function isEarlyAccessSecretBypassAllowed(request: NextRequest): boolean {
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    return false;
+  }
+  const { pathname } = request.nextUrl;
+  if (isAdminRouteOrApi(pathname)) {
+    return false;
+  }
+  if (
+    pathname === "/api/health" ||
+    pathname.startsWith("/api/health/") ||
+    pathname === "/api/ticker" ||
+    pathname === "/.netlify/functions/ticker" ||
+    pathname === "/api/jobs/search" ||
+    pathname === "/.netlify/functions/jobs-search"
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Validates x-admin-secret header against ADMIN_SECRET using SHA-256 digest
+ * and constant-time comparison. Disabled if ADMIN_SECRET is unset or empty.
+ */
+export async function isValidAdminSecret(request: NextRequest): Promise<boolean> {
+  const adminSecret = getServerEnv("ADMIN_SECRET");
+  const reqAdminSecret = request.headers.get("x-admin-secret")?.trim();
+  if (!adminSecret || !reqAdminSecret) {
+    return false;
+  }
+  try {
+    const [reqDigest, adminDigest] = await Promise.all([
+      computeSha256Hex(reqAdminSecret),
+      computeSha256Hex(adminSecret),
+    ]);
+    return constantTimeEqual(reqDigest, adminDigest);
+  } catch {
+    return false;
+  }
+}
+
 async function verifyAuthenticatedRequest(
   request: NextRequest
 ): Promise<AuthVerificationResult> {
@@ -285,34 +331,7 @@ async function verifyAuthenticatedRequest(
     },
   });
 
-  // 1. Check x-admin-secret header for non-admin early-access API checks
-  const adminSecret = getServerEnv("ADMIN_SECRET");
-  const reqAdminSecret = request.headers.get("x-admin-secret")?.trim();
-  if (
-    adminSecret &&
-    reqAdminSecret &&
-    !isAdminRouteOrApi(request.nextUrl.pathname)
-  ) {
-    try {
-      const [reqDigest, adminDigest] = await Promise.all([
-        computeSha256Hex(reqAdminSecret),
-        computeSha256Hex(adminSecret),
-      ]);
-      if (constantTimeEqual(reqDigest, adminDigest)) {
-        return {
-          hasValidSession: true,
-          isAllowedEarlyAccess: true,
-          isVerifiedAdmin: false,
-          signedOutNonAllowedUser: false,
-          response,
-        };
-      }
-    } catch {
-      // Fail closed to normal session verification on crypto error
-    }
-  }
-
-  // 2. Test-mode mock client support (strictly gated by NODE_ENV === "test")
+  // 1. Test-mode mock client support (strictly gated by NODE_ENV === "test")
   if (process.env.NODE_ENV === "test" && (globalThis as any).__mockSupabaseClient?.auth?.getUser) {
     try {
       const authHeader =
@@ -554,6 +573,15 @@ export async function middleware(request: NextRequest) {
 
   if (isLegalPath(pathname)) {
     return NextResponse.next();
+  }
+
+  // Scoped smoke-test early-access bypass for read-only non-personal APIs
+  if (isEarlyAccessSecretBypassAllowed(request) && (await isValidAdminSecret(request))) {
+    return NextResponse.next({
+      request: {
+        headers: request.headers,
+      },
+    });
   }
 
   // Server-side authentication and early-access approval check
