@@ -251,6 +251,31 @@ interface AuthVerificationResult {
   response: NextResponse;
 }
 
+/**
+ * Constant-time string comparison preventing timing oracles.
+ * Always compares every character without early exit.
+ */
+function constantTimeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) {
+    return false;
+  }
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
+/**
+ * Computes a fixed-length SHA-256 hex digest using Web Crypto.
+ */
+async function computeSha256Hex(value: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(value);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+}
 async function verifyAuthenticatedRequest(
   request: NextRequest
 ): Promise<AuthVerificationResult> {
@@ -266,16 +291,25 @@ async function verifyAuthenticatedRequest(
   if (
     adminSecret &&
     reqAdminSecret &&
-    reqAdminSecret === adminSecret &&
     !isAdminRouteOrApi(request.nextUrl.pathname)
   ) {
-    return {
-      hasValidSession: true,
-      isAllowedEarlyAccess: true,
-      isVerifiedAdmin: false,
-      signedOutNonAllowedUser: false,
-      response,
-    };
+    try {
+      const [reqDigest, adminDigest] = await Promise.all([
+        computeSha256Hex(reqAdminSecret),
+        computeSha256Hex(adminSecret),
+      ]);
+      if (constantTimeEqual(reqDigest, adminDigest)) {
+        return {
+          hasValidSession: true,
+          isAllowedEarlyAccess: true,
+          isVerifiedAdmin: false,
+          signedOutNonAllowedUser: false,
+          response,
+        };
+      }
+    } catch {
+      // Fail closed to normal session verification on crypto error
+    }
   }
 
   // 2. Test-mode mock client support (strictly gated by NODE_ENV === "test")
