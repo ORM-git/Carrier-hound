@@ -243,7 +243,7 @@ async function queryEarlyAccessApprovalFromDb(
  * 2. In-memory per-email TTL cache (60s) around approval verdicts.
  * 3. Error hygiene: a definitive "not approved" bounces and signs out;
  *    a lookup ERROR never signs the user out - serves last-known-good within 5m grace,
- *    or allows request through this once (warning logged) without destroying session.
+ *    or bounces to /early-access without signing out if there is no cached verdict.
  */
 export async function checkEarlyAccessApproval(
   email: string
@@ -297,12 +297,12 @@ export async function checkEarlyAccessApproval(
     return { approved: false, shouldSignOut: false };
   }
 
-  // No cached verdict (or past grace window): allow through this once with a warning instead of destroying session
+  // No cached verdict (or past grace window): bounce to /early-access without signing out (session stays intact)
   console.warn(
-    `[middleware] approval query error for ${normalized} with no cached verdict; allowing request through once without sign-out:`,
+    `[middleware] approval query error for ${normalized} with no cached verdict; bouncing without sign-out:`,
     result.error?.message || result.error
   );
-  return { approved: true, shouldSignOut: false };
+  return { approved: false, shouldSignOut: false };
 }
 
 function clearAuthCookiesOnResponse(request: NextRequest, response: NextResponse): void {

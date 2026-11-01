@@ -939,7 +939,7 @@ async function main() {
     "Definitively-unapproved user on API must be signed out"
   );
 
-  // (e) Lookup ERROR with NO cached verdict allows request through once without destroying session
+  // (e) Lookup ERROR with NO cached verdict bounces to /early-access without destroying session
   _clearEarlyAccessCacheForTesting();
   simulateApprovedDbFailure = "connection_error";
   const noCacheErrorRes = await middleware(
@@ -947,8 +947,29 @@ async function main() {
       headers: { authorization: "Bearer valid-db-error-token" },
     })
   );
-  assert.strictEqual(noCacheErrorRes.status, 200, "DB error with no cache must allow request through once (200) instead of destroying session");
-  assert.strictEqual(noCacheErrorRes.headers.get("x-early-access-signed-out"), null, "Must NOT sign out user when DB errors with no cached verdict");
+  assert.strictEqual(noCacheErrorRes.status, 307, "DB error with no cache must bounce (307) to /early-access");
+  assert.strictEqual(
+    new URL(noCacheErrorRes.headers.get("location")!).pathname,
+    "/early-access",
+    "DB error redirect target must be /early-access"
+  );
+  assert.strictEqual(
+    noCacheErrorRes.headers.get("x-early-access-signed-out"),
+    null,
+    "Must NOT sign out user when DB errors with no cached verdict"
+  );
+
+  const noCacheErrorApiRes = await middleware(
+    new NextRequest("http://localhost:3000/api/jobs/search", {
+      headers: { authorization: "Bearer valid-db-error-token" },
+    })
+  );
+  assert.strictEqual(noCacheErrorApiRes.status, 403, "DB error on API with no cache must return 403");
+  assert.strictEqual(
+    noCacheErrorApiRes.headers.get("x-early-access-signed-out"),
+    null,
+    "Must NOT sign out user on API when DB errors with no cached verdict"
+  );
   simulateApprovedDbFailure = null;
 
   console.log("  [PASS] Early-access caching, 60s TTL, 5m grace window, and non-signing-out DB error behavior verified");

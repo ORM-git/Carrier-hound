@@ -329,6 +329,17 @@ async function runSuite() {
       netlifyContent.includes("Content-Security-Policy-Report-Only ="),
     "public/_headers omits redundant Content-Security-Policy-Report-Only and netlify.toml configures it"
   );
+  for (const removedHost of [
+    "images.unsplash.com",
+    "randomuser.me",
+    "avatar.iran.liara.run",
+    "i.pravatar.cc",
+  ]) {
+    check(
+      !headersContent.includes(removedHost) && !netlifyContent.includes(removedHost),
+      `Placeholder image host '${removedHost}' removed from both public/_headers and netlify.toml`
+    );
+  }
   check(
     fs.existsSync(cspDocPath) && fs.readFileSync(cspDocPath, "utf8").includes("unsafe-inline"),
     "docs/security/csp.md documents why 'unsafe-inline' is required for static export and what to watch in console"
