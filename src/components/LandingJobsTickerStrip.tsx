@@ -62,29 +62,11 @@ function TickerCard({ job, keyPrefix = "", index, isDuplicate = false }: TickerC
   const letter = cleanCompany.charAt(0).toUpperCase() || "?";
   const relativeTime = formatRelativeTime(job.posted_at);
 
-  const slug = cleanCompany
-    .toLowerCase()
-    .replace(/\b(inc|llc|corp|corporation|technologies|technology|tech|ltd|co|group|holdings|labs)\b/gi, "")
-    .trim()
-    .replace(/[^a-z0-9]/g, "");
-  const domain = slug ? `${slug}.com` : "";
-  const unavatarUrl = domain ? `https://unavatar.io/${domain}?fallback=false` : null;
-
-  const initialStage: "self-hosted" | "unavatar" | "tile" = job.logo_url
-    ? "self-hosted"
-    : unavatarUrl
-    ? "unavatar"
-    : "tile";
-
-  const [imgStage, setImgStage] = useState<"self-hosted" | "unavatar" | "tile">(initialStage);
+  const [imgError, setImgError] = useState(false);
 
   useEffect(() => {
-    setImgStage(job.logo_url ? "self-hosted" : unavatarUrl ? "unavatar" : "tile");
-  }, [job.logo_url, unavatarUrl]);
-
-  const imgSrc = imgStage === "self-hosted" && job.logo_url
-    ? job.logo_url
-    : (imgStage === "unavatar" ? unavatarUrl : null);
+    setImgError(false);
+  }, [job.logo_url]);
 
   return (
     <Link
@@ -95,20 +77,14 @@ function TickerCard({ job, keyPrefix = "", index, isDuplicate = false }: TickerC
     >
       {/* Logo square or neutral letter tile */}
       <div className="w-9 h-9 md:w-12 md:h-12 min-w-[36px] min-h-[36px] md:min-w-[48px] md:min-h-[48px] rounded-[7px] md:rounded-[10px] overflow-hidden bg-[#1F1F1F] border border-white/10 flex items-center justify-center shrink-0 transition-transform group-hover:scale-105">
-        {imgSrc && imgStage !== "tile" ? (
+        {job.logo_url && !imgError ? (
           <img
-            src={imgSrc}
+            src={job.logo_url}
             alt={`${job.company} logo`}
             referrerPolicy="no-referrer"
             className="w-full h-full object-contain p-1 rounded-[6px] md:rounded-[9px]"
             loading="lazy"
-            onError={() => {
-              if (imgStage === "self-hosted") {
-                setImgStage(unavatarUrl ? "unavatar" : "tile");
-              } else {
-                setImgStage("tile");
-              }
-            }}
+            onError={() => setImgError(true)}
           />
         ) : (
           <span className="text-white text-xs md:text-base font-semibold leading-none select-none">

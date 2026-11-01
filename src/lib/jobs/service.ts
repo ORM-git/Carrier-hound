@@ -30,6 +30,8 @@ export interface LiveJob {
   trackerNotes?: string;
   proUnlockError?: ProUnlockError;
   applicantCount?: number;
+  company_id?: string | null;
+  companyId?: string | null;
   logoUrl?: string | null;
   logo_url?: string | null;
 }
@@ -290,12 +292,18 @@ const PUBLIC_SELECT_COLUMNS =
  * Caps jobs per company (maxPerCompany in any visible topWindow).
  * Prevents mass postings from one employer from flooding the recommended list.
  *
- * Within the topWindow (default 30):
- * - At most maxPerCompany (default 3) jobs are included per company.
- * - Excess jobs from a capped company are deferred to positions >= topWindow.
- * - Other companies' jobs from deeper in the list are promoted into the topWindow.
+ * Uses company_id as primary cap key so unrevealed company names ("Verified Employer")
+ * are correctly identified and capped without leaking company names to free users.
+ *
+ * Never drops jobs: always returns topItems plus deferredItems.
  */
-export function capJobsPerCompany<T extends { company?: string | null }>(
+export function capJobsPerCompany<
+  T extends {
+    company?: string | null;
+    company_id?: string | null;
+    companyId?: string | null;
+  }
+>(
   jobs: T[],
   maxPerCompany: number = 3,
   topWindow: number = 30
@@ -307,11 +315,23 @@ export function capJobsPerCompany<T extends { company?: string | null }>(
   const companyCounts = new Map<string, number>();
 
   for (const job of jobs) {
-    const rawCompany = (job.company || "").trim();
-    const compKey = rawCompany.toLowerCase();
+    const rawCompanyId = (job.company_id || job.companyId || "").trim();
+    const rawCompanyName = (job.company || "").trim();
 
-    // Anonymous / unrevealed employers are not grouped under a single company cap
-    if (!compKey || compKey === "verified employer" || compKey === "confidential employer") {
+    // Priority 1: company_id as primary cap key
+    let compKey = rawCompanyId.toLowerCase();
+    // Priority 2: company name fallback only when real name is revealed
+    if (
+      !compKey &&
+      rawCompanyName &&
+      rawCompanyName.toLowerCase() !== "verified employer" &&
+      rawCompanyName.toLowerCase() !== "confidential employer"
+    ) {
+      compKey = rawCompanyName.toLowerCase();
+    }
+
+    // If neither company_id nor a real company name is available, place directly
+    if (!compKey) {
       if (topItems.length < topWindow) {
         topItems.push(job);
       } else {
@@ -329,13 +349,8 @@ export function capJobsPerCompany<T extends { company?: string | null }>(
     }
   }
 
-  // Any deferred jobs can only appear at index >= topWindow to guarantee that
-  // any visible top-30 slice contains at most maxPerCompany for every company.
-  if (topItems.length >= topWindow) {
-    return [...topItems, ...deferredItems];
-  }
-
-  return topItems;
+  // Never drop jobs: always return topItems plus deferredItems
+  return [...topItems, ...deferredItems];
 }
 
 const DEGRADED_JOBS_RESULT: GetJobsResult = {
@@ -788,12 +803,11 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       const res = await query
         .order("verified", { ascending: false })
         .order("posted_at", { ascending: false, nullsFirst: false })
-        .range(0, 99);
+        .range(from, to);
       if (res.error && !isLegacyBehavior) {
         return DEGRADED_JOBS_RESULT;
       }
-      const cappedData = capJobsPerCompany(res.data || [], 3, 30);
-      data = cappedData.slice(from, to + 1);
+      data = capJobsPerCompany(res.data || [], 3, 30);
       count = res.count;
     } else {
       // Default newest first
@@ -819,10 +833,15 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         };
       }
       const mappedJobs: LiveJob[] = data.map((row: any) => {
+        const resolvedLogo = row.logo_url || row.logoUrl || row.companies?.logo_url || null;
         return {
           id: row.id,
           title: row.title || "Untitled Position",
-          company: "Verified Employer",
+          company: (isPro && row.company && row.company !== "Verified Employer")
+            ? row.company
+            : "Verified Employer",
+          companyId: row.company_id || row.companyId || null,
+          company_id: row.company_id || row.companyId || null,
           location: row.location || (row.remote ? "Remote (Worldwide)" : "Remote"),
           date: formatDate(row.posted_at || row.created_at),
           salary: "",
@@ -837,8 +856,8 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
           description: "",
           skills: [],
           postedAt: row.posted_at || row.created_at,
-          logoUrl: row.logo_url || row.logoUrl || null,
-          logo_url: row.logo_url || row.logoUrl || null,
+          logoUrl: resolvedLogo,
+          logo_url: resolvedLogo,
         };
       });
 

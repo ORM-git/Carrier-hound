@@ -224,18 +224,18 @@ export function createHandler(deps: JobsSearchDeps = {}) {
     }
 
     const selectColumns = (isPro && hasServiceKey)
-      ? "*"
+      ? "*, companies(name, logo_url)"
       : hasServiceKey
-      ? "id, title, company, location, category, remote, remote_scope, remote_eligibility, country_code, country, job_type, verified, posted_at, created_at, salary_min, salary_max, currency, salary_period, salary_text, source_type, source"
+      ? "id, title, company, location, category, remote, remote_scope, remote_eligibility, country_code, country, job_type, verified, posted_at, created_at, salary_min, salary_max, currency, salary_period, salary_text, source_type, source, company_id, companies(name, logo_url)"
       : "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at";
 
     const idParam = params.id;
     if (idParam) {
       const cleanId = sanitizeSearchQuery(idParam).trim();
       const singleColumns = (isPro && hasServiceKey)
-        ? "*"
+        ? "*, companies(name, logo_url)"
         : hasServiceKey
-        ? "id, title, company, location, category, remote, remote_scope, remote_eligibility, country_code, country, job_type, verified, posted_at, created_at, status, is_active"
+        ? "id, title, company, location, category, remote, remote_scope, remote_eligibility, country_code, country, job_type, verified, posted_at, created_at, status, is_active, company_id, companies(name, logo_url)"
         : "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at, status, is_active";
 
       const { data: rawJobRow, error: singleError } = await (supabaseAdmin
@@ -263,10 +263,13 @@ export function createHandler(deps: JobsSearchDeps = {}) {
 
       const jobRow: any = rawJobRow;
       const isInactive = Boolean(jobRow.is_active === false || jobRow.status === "expired" || jobRow.status === "closed");
+      const resolvedLogo = jobRow.logo_url || jobRow.logoUrl || jobRow.companies?.logo_url || null;
       const formatted = {
         id: jobRow.id,
         title: jobRow.title || "Untitled Position",
         company: isPro && !isInactive ? (jobRow.company || "Verified Employer") : "Verified Employer",
+        companyId: jobRow.company_id || null,
+        company_id: jobRow.company_id || null,
         location: jobRow.location || (jobRow.remote ? "Remote (Worldwide)" : "Remote"),
         category: jobRow.category || "engineering",
         remote: Boolean(jobRow.remote),
@@ -282,6 +285,8 @@ export function createHandler(deps: JobsSearchDeps = {}) {
         postedAt: jobRow.posted_at || jobRow.created_at,
         isExpired: isInactive,
         status: isInactive ? "expired" : (jobRow.status || "active"),
+        logoUrl: resolvedLogo,
+        logo_url: resolvedLogo,
       };
 
       return {
@@ -630,11 +635,16 @@ export function createHandler(deps: JobsSearchDeps = {}) {
       }
     }
     const formattedJobs = rows.map((row: any) => {
+      const resolvedLogo =
+        row.logo_url || row.logoUrl || row.companies?.logo_url || null;
+
       if (isPro) {
         return {
           id: row.id,
           title: row.title || "Untitled Position",
-          company: row.company || "Verified Employer",
+          company: row.company || row.companies?.name || "Verified Employer",
+          companyId: row.company_id || null,
+          company_id: row.company_id || null,
           location: row.location || (row.remote ? "Remote (Worldwide)" : "Remote"),
           date: formatDate(row.posted_at || row.created_at),
           salary: formatSalary(row.salary_min, row.salary_max, row.currency, row.salary_period) || row.salary_text || "",
@@ -649,6 +659,8 @@ export function createHandler(deps: JobsSearchDeps = {}) {
           description: row.description || "",
           skills: row.skills || [],
           postedAt: row.posted_at || row.created_at,
+          logoUrl: resolvedLogo,
+          logo_url: resolvedLogo,
         };
       }
 
@@ -656,6 +668,8 @@ export function createHandler(deps: JobsSearchDeps = {}) {
         id: row.id,
         title: row.title || "Untitled Position",
         company: "Verified Employer",
+        companyId: row.company_id || null,
+        company_id: row.company_id || null,
         location: row.location || (row.remote ? "Remote (Worldwide)" : "Remote"),
         date: formatDate(row.posted_at || row.created_at),
         salary: "",
@@ -670,6 +684,8 @@ export function createHandler(deps: JobsSearchDeps = {}) {
         description: "",
         skills: [],
         postedAt: row.posted_at || row.created_at,
+        logoUrl: resolvedLogo,
+        logo_url: resolvedLogo,
       };
     });
 
