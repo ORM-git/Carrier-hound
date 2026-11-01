@@ -51,6 +51,10 @@ async function main() {
     "Hero headline must remain untouched"
   );
   assert.ok(
+    pageSrc.includes("#FACC15") && pageSrc.includes("not on LinkedIn/Indeed"),
+    "Hero headline must include amber (#FACC15) highlight for 'not on LinkedIn/Indeed'"
+  );
+  assert.ok(
     pageSrc.includes("Tired of getting auto-rejections?"),
     "Comparison section must remain untouched"
   );
