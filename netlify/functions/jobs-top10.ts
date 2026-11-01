@@ -192,7 +192,9 @@ export async function handler(event: any) {
 
       if (prefs) {
         userLocations = Array.isArray(prefs.locations) ? prefs.locations : [];
-        userSalaryCurrency = prefs.salary_currency || undefined;
+        userSalaryCurrency = (prefs.salary_currency && prefs.salary_currency.trim().toUpperCase() !== "USD")
+          ? prefs.salary_currency.trim().toUpperCase()
+          : undefined;
         userEligibilityPref = prefs.eligibility_filter !== false;
       }
     } catch {}

@@ -187,7 +187,16 @@ async function runTests() {
   );
   console.log("  [PASS] 1b. Strict Indiana/India and New Mexico/Mexico guards verified");
 
-  // 1c. Multi-country matching
+  // 1c. Multi-country matching and European Union 27 member states
+  const euNorm = normalizeUserCountries(["European Union"]);
+  assert.strictEqual(euNorm.codes.length, 27, "European Union alias must cover all 27 EU member states");
+  const euCodes = ["AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IE", "IT", "LV", "LT", "LU", "MT", "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE"];
+  for (const code of euCodes) {
+    assert(euNorm.codes.includes(code), `EU alias must include ${code}`);
+    assert.strictEqual(isJobEligible({ country_code: code, location: code }, ["European Union"]), true, `Job in ${code} must be eligible for EU candidate`);
+  }
+  console.log("  [PASS] 1c. European Union alias covers all 27 member states");
+
   const multiLocations = ["India", "Canada"];
   const jobInIndia = { title: "Lead Engineer", country_code: "IN", location: "Delhi, India" };
   const jobInCanada = { title: "Staff Architect", country_code: "CA", location: "Toronto, Canada" };
@@ -199,7 +208,7 @@ async function runTests() {
   assert.strictEqual(isJobEligible(worldwideJob1, multiLocations), true, "Worldwide job matches multi-country [India, Canada]");
   assert.strictEqual(isJobEligible(jobInGermany, multiLocations), false, "Germany job excluded for [India, Canada]");
   assert.strictEqual(isJobEligible(jobInUS, multiLocations), false, "US job excluded for [India, Canada]");
-  console.log("  [PASS] 1c. Multi-country matching and foreign exclusions verified");
+  console.log("  [PASS] 1d. Multi-country matching and foreign exclusions verified");
 
   // 1d. Filter OFF (opt-out)
   assert.strictEqual(
@@ -284,14 +293,27 @@ async function runTests() {
   assert.strictEqual(sameCurrency, "$120,000 - $160,000 /yr", "Same currency must NOT add '~' or alter values");
   console.log("  [PASS] 3c. Same-currency passthrough verified (no approximate marker)");
 
-  // 3d. Preserves salary period (/yr, /mo, /hr)
-  const hourlyInr = formatSalary(50, 75, "USD", "hourly", { displayCurrency: "INR" });
-  // 50 * 84 = 4200 -> 4000, 75 * 84 = 6300 -> 6000
-  assert.strictEqual(hourlyInr, "~₹4,000 - ₹6,000 /hr", "Hourly rate converted to INR must preserve '/hr'");
+  // 3d. Hourly and monthly INR rounding: nearest 10 for hourly, nearest 100 for monthly under 100k; add tests with $15/hr and $20/hr
+  const hourlyInr15 = formatSalary(15, 15, "USD", "hourly", { displayCurrency: "INR" });
+  assert.strictEqual(hourlyInr15, "~₹1,260 /hr", "$15/hr converted to INR must round to nearest 10 (~₹1,260 /hr)");
+
+  const hourlyInr20 = formatSalary(20, 20, "USD", "hourly", { displayCurrency: "INR" });
+  assert.strictEqual(hourlyInr20, "~₹1,680 /hr", "$20/hr converted to INR must round to nearest 10 (~₹1,680 /hr)");
+
+  const hourlyInrRange = formatSalary(15, 20, "USD", "hourly", { displayCurrency: "INR" });
+  assert.strictEqual(hourlyInrRange, "~₹1,260 - ₹1,680 /hr", "$15-$20/hr converted to INR must round to nearest 10");
+
+  const monthlyUnder100k = formatSalary(755, 755, "USD", "monthly", { displayCurrency: "INR" });
+  // 755 * 84 = 63,420 -> nearest 100 is 63,400
+  assert.strictEqual(monthlyUnder100k, "~₹63,400 /mo", "Monthly under 100k INR must round to nearest 100");
+
+  const monthlyOver100k = formatSalary(2000, 2000, "USD", "monthly", { displayCurrency: "INR" });
+  // 2000 * 84 = 168,000 -> nearest 1000 is 168,000
+  assert.strictEqual(monthlyOver100k, "~₹1,68,000 /mo", "Monthly >= 100k INR must round to nearest 1000");
 
   const monthlyEur = formatSalary(5000, 8000, "USD", "monthly", { displayCurrency: "EUR" });
   assert.strictEqual(monthlyEur, "~€4,600 - €7,400 /mo", "Monthly salary converted to EUR must preserve '/mo'");
-  console.log("  [PASS] 3d. Salary periods (/hr, /mo, /yr) strictly preserved during conversion\n");
+  console.log("  [PASS] 3d. Hourly (nearest 10 with $15/$20) and monthly (nearest 100 under 100k) INR rounding verified\n");
 
   // ==============================================================================
   // SECTION 4: APPLY ELIGIBILITY FILTER BATCH & METADATA TESTS

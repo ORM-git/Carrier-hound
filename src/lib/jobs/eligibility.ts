@@ -26,10 +26,17 @@ export interface JobEligibilityRecord {
   remote_eligibility?: string | null;
 }
 
+// All 27 European Union member states (ISO 3166-1 alpha-2)
+export const EU_27_COUNTRY_CODES: string[] = [
+  "AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR",
+  "DE", "GR", "HU", "IE", "IT", "LV", "LT", "LU", "MT", "NL",
+  "PL", "PT", "RO", "SK", "SI", "ES", "SE",
+];
+
 // Common aliases and regions from onboarding/UI
 const REGION_TO_CODES: Record<string, string[]> = {
-  "EUROPEAN UNION": ["DE", "FR", "NL", "ES", "IE", "IT", "PL", "AT", "DK", "SE", "FI", "PT"],
-  "EU": ["DE", "FR", "NL", "ES", "IE", "IT", "PL", "AT", "DK", "SE", "FI", "PT"],
+  "EUROPEAN UNION": EU_27_COUNTRY_CODES,
+  "EU": EU_27_COUNTRY_CODES,
   "AUSTRALIA / APAC": ["AU", "SG", "JP", "NZ", "PH"],
   "APAC": ["AU", "SG", "JP", "NZ", "PH"],
   "LATIN AMERICA": ["BR", "MX"],

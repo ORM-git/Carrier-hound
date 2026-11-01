@@ -74,7 +74,17 @@ export function formatSalary(
       const roundConverted = (val: number | null): number | null => {
         if (val === null) return null;
         if (targetCurr === 'INR') {
-          // INR to nearest thousand
+          if (cleanPeriod === 'hourly') {
+            // Nearest 10 for hourly INR
+            return Math.round(val / 10) * 10;
+          }
+          if (cleanPeriod === 'monthly') {
+            // Nearest 100 for monthly under 100k, nearest 1000 otherwise
+            return val < 100000
+              ? Math.round(val / 100) * 100
+              : Math.round(val / 1000) * 1000;
+          }
+          // Yearly INR to nearest thousand
           return Math.round(val / 1000) * 1000;
         }
         if (cleanPeriod === 'hourly' && val < 500) {

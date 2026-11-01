@@ -3,7 +3,7 @@ import { formatSalary } from "../../src/lib/salary/parser";
 import { COUNTRY_CODE_TO_NAME, getCountryFilterClause } from "../../src/lib/countries";
 import { decodeCursor, encodeCursor } from "../../src/lib/pagination/cursor";
 import { capJobsPerCompany } from "../../src/lib/jobs/capping";
-import { normalizeUserCountries, applyEligibilityFilter } from "../../src/lib/jobs/eligibility";
+import { normalizeUserCountries, applyEligibilityFilter, isJobEligible } from "../../src/lib/jobs/eligibility";
 import { safeLog } from "./_logger";
 
 function getSupabaseAdmin() {
@@ -234,7 +234,9 @@ export function createHandler(deps: JobsSearchDeps = {}) {
 
           if (prefs) {
             userLocations = Array.isArray(prefs.locations) ? prefs.locations : [];
-            userSalaryCurrency = prefs.salary_currency || undefined;
+            userSalaryCurrency = (prefs.salary_currency && prefs.salary_currency.trim().toUpperCase() !== "USD")
+              ? prefs.salary_currency.trim().toUpperCase()
+              : undefined;
             userEligibilityPref = prefs.eligibility_filter !== false;
           }
         }
@@ -372,16 +374,21 @@ export function createHandler(deps: JobsSearchDeps = {}) {
 
     // Keyset cursor decoding
     const cursor = decodeCursor(cursorParam);
-    const fetchLimit = (isEligibilityActive && normalizedUserCountries.codes.length > 0)
-      ? Math.min(100, Math.max(pageSize * 3, 50))
-      : pageSize + 1; // fetch 1 extra to determine hasNextPage
+    const isEligibilityFilterActive = Boolean(isEligibilityActive && normalizedUserCountries.codes.length > 0);
+    const initialCountMode: "exact" | "estimated" = (hasActiveFilter && !isEligibilityFilterActive) ? "exact" : "estimated";
+    const fetchLimit = pageSize + 1; // fetch 1 extra to determine hasNextPage
     const isMultiWord = cleanQuery && cleanQuery.includes(" ");
     const sortByParam = params.sortBy || "match";
 
-    const buildSearchQuery = (countMode: "exact" | "estimated") => {
+    const buildSearchQuery = (
+      countMode: "exact" | "estimated" | null,
+      activeCursor?: { posted_at: string | null; id: string | number } | null,
+      activeFrom?: number,
+      activeLimit?: number
+    ) => {
       let query = supabaseAdmin
         .from(targetTable)
-        .select(selectColumns, { count: countMode })
+        .select(selectColumns, countMode ? { count: countMode } : undefined)
         .eq("is_active", true)
         .eq("status", "active");
 
@@ -573,139 +580,243 @@ export function createHandler(deps: JobsSearchDeps = {}) {
         }
       }
 
+      const winLimit = activeLimit ?? fetchLimit;
+      const winCursor = activeCursor !== undefined ? activeCursor : cursor;
+      const winFrom = activeFrom !== undefined ? activeFrom : from;
+
       if (isMultiWord) {
         query = query.order("posted_at", { ascending: false, nullsFirst: false }).limit(200);
-      } else if (cursor) {
+      } else if (winCursor) {
         // Keyset cursor pagination (no OFFSET, 0ms on 100k+ rows)
-        if (cursor.posted_at) {
+        if (winCursor.posted_at) {
           query = query.or(
-            `posted_at.lt.${cursor.posted_at},and(posted_at.eq.${cursor.posted_at},id.lt.${cursor.id}),posted_at.is.null`
+            `posted_at.lt.${winCursor.posted_at},and(posted_at.eq.${winCursor.posted_at},id.lt.${winCursor.id}),posted_at.is.null`
           );
         } else {
-          query = query.is("posted_at", null).lt("id", cursor.id);
+          query = query.is("posted_at", null).lt("id", winCursor.id);
         }
         if (sortByParam === "match") {
           query = query.order("verified", { ascending: false });
         }
-        query = query.order("posted_at", { ascending: false, nullsFirst: false }).order("id", { ascending: false }).limit(fetchLimit);
-      } else if (page > 1 && !cursorParam) {
+        query = query.order("posted_at", { ascending: false, nullsFirst: false }).order("id", { ascending: false }).limit(winLimit);
+      } else if (page > 1 && !cursorParam && winFrom > 0) {
         // Legacy offset pagination fallback for backward compatibility
         if (sortByParam === "match") {
           query = query.order("verified", { ascending: false });
         }
-        query = query.order("posted_at", { ascending: false, nullsFirst: false }).order("id", { ascending: false }).range(from, to);
+        query = query.order("posted_at", { ascending: false, nullsFirst: false }).order("id", { ascending: false }).range(winFrom, winFrom + winLimit - 1);
       } else {
         // Page 1 initial keyset query
         if (sortByParam === "match") {
           query = query.order("verified", { ascending: false });
         }
-        query = query.order("posted_at", { ascending: false, nullsFirst: false }).order("id", { ascending: false }).limit(fetchLimit);
+        query = query.order("posted_at", { ascending: false, nullsFirst: false }).order("id", { ascending: false }).limit(winLimit);
       }
 
       return query;
     };
 
-    const initialCountMode = hasActiveFilter ? "exact" : "estimated";
-    let queryResult = await buildSearchQuery(initialCountMode);
-
-    // Timeout (57014) fallback: if exact count timed out, fall back to estimated count
-    if (
-      queryResult.error &&
-      initialCountMode === "exact" &&
-      (
-        queryResult.error.code === "57014" ||
-        String(queryResult.error.code) === "57014" ||
-        (typeof queryResult.error.message === "string" && (
-          queryResult.error.message.includes("57014") ||
-          queryResult.error.message.toLowerCase().includes("timeout")
-        ))
-      )
-    ) {
-      safeLog.warn("[Netlify /jobs-search] exact count query timed out (57014); falling back to estimated count");
-      queryResult = await buildSearchQuery("estimated");
-    }
-
-    const { data, count, error } = queryResult;
-
-    if (error) {
-      safeLog.error("[Netlify /jobs-search] query error:", error.message || error);
-      return {
-        statusCode: 503,
-        headers,
-        body: JSON.stringify({ degraded: true, jobs: [], totalCount: 0, hasNextPage: false, hasMore: false, nextCursor: null }),
-      };
-    }
-
-    let rows = data || [];
-
-    if (isMultiWord && cleanQuery) {
-      const lowerQuery = cleanQuery.toLowerCase();
-      const parts = lowerQuery.split(" ").filter(Boolean);
-
-      const computeRelevance = (row: any): number => {
-        let score = 0;
-        const lowerTitle = (row.title || "").toLowerCase();
-        const lowerCompany = (row.company || "").toLowerCase();
-        const lowerCategory = (row.category || "").toLowerCase();
-        const lowerDesc = (row.description || "").toLowerCase();
-
-        // Exact phrase match in title or company
-        if (lowerTitle.includes(lowerQuery)) score += 100;
-        else if (lowerCompany.includes(lowerQuery)) score += 80;
-
-        // Individual search words in title
-        let titleTokens = 0;
-        let descTokens = 0;
-        for (const p of parts) {
-          if (lowerTitle.includes(p)) titleTokens++;
-          if (lowerDesc.includes(p)) descTokens++;
-        }
-        score += titleTokens * 25;
-        score += descTokens * 5;
-
-        if (lowerCategory.includes(lowerQuery)) score += 15;
-        return score;
-      };
-
-      rows.sort((a: any, b: any) => {
-        const relA = computeRelevance(a);
-        const relB = computeRelevance(b);
-        if (relB !== relA) return relB - relA;
-        const timeA = new Date(a.posted_at || a.created_at || 0).getTime();
-        const timeB = new Date(b.posted_at || b.created_at || 0).getTime();
-        return timeB - timeA;
-      });
-
-      // Slice to page window
-      rows = rows.slice(from, to + 1);
-    }
-
+    let rows: any[] = [];
     let hasNextPage = false;
     let nextCursor: string | null = null;
-
-    // Country eligibility auto-filtering
     let appliedEligibility: { countries: string[]; filteredOut: number } | null = null;
-    if (isEligibilityActive && normalizedUserCountries.codes.length > 0) {
-      const eligibilityResult = applyEligibilityFilter(rows, normalizedUserCountries.codes, { filterEnabled: true });
-      rows = eligibilityResult.eligibleJobs;
+    let approximateTotalCount = 0;
+
+    if (isEligibilityFilterActive && !isMultiWord) {
+      // (1) Search windowed fetching: keep fetching windows until pageSize eligible rows or a 5-window cap
+      let accumulatedEligible: any[] = [];
+      let totalFilteredOut = 0;
+      let curCursor = cursor;
+      let curFrom = from;
+      let windowCount = 0;
+      let rawHasMore = false;
+      let estimatedCountVal: number | null = null;
+
+      while (windowCount < 5 && accumulatedEligible.length < pageSize) {
+        windowCount++;
+        const isFirst = windowCount === 1;
+        const countMode = isFirst ? initialCountMode : null;
+        const winLimit = pageSize + 1; // +1 to determine if raw rows have more
+
+        let queryResult = await buildSearchQuery(countMode, curCursor, curFrom, winLimit);
+        if (
+          isFirst &&
+          queryResult.error &&
+          (queryResult.error.code === "57014" ||
+            String(queryResult.error.code) === "57014" ||
+            (typeof queryResult.error.message === "string" && queryResult.error.message.includes("57014")))
+        ) {
+          safeLog.warn("[Netlify /jobs-search] count query timed out (57014); falling back to estimated");
+          queryResult = await buildSearchQuery("estimated", curCursor, curFrom, winLimit);
+        }
+
+        if (queryResult.error) {
+          if (isFirst) {
+            safeLog.error("[Netlify /jobs-search] query error:", queryResult.error.message || queryResult.error);
+            return {
+              statusCode: 503,
+              headers,
+              body: JSON.stringify({ degraded: true, jobs: [], totalCount: 0, hasNextPage: false, hasMore: false, nextCursor: null }),
+            };
+          }
+          break;
+        }
+
+        if (isFirst && queryResult.count !== undefined) {
+          estimatedCountVal = queryResult.count;
+        }
+
+        const rawBatch = queryResult.data || [];
+        if (rawBatch.length === 0) {
+          rawHasMore = false;
+          break;
+        }
+
+        const hasMoreInBatch = rawBatch.length > pageSize;
+        const candidateRows = hasMoreInBatch ? rawBatch.slice(0, pageSize) : rawBatch;
+        rawHasMore = hasMoreInBatch;
+
+        // Filter candidate rows for eligibility
+        let batchFiltered = 0;
+        for (const item of candidateRows) {
+          if (isJobEligible(item, normalizedUserCountries.codes, { filterEnabled: true })) {
+            accumulatedEligible.push(item);
+          } else {
+            batchFiltered++;
+          }
+        }
+        totalFilteredOut += batchFiltered;
+
+        const lastRawItem = candidateRows[candidateRows.length - 1];
+        if (lastRawItem) {
+          curCursor = {
+            posted_at: lastRawItem.posted_at || null,
+            id: lastRawItem.id,
+          };
+          curFrom += candidateRows.length;
+        }
+
+        if (!hasMoreInBatch) {
+          rawHasMore = false;
+          break;
+        }
+      }
+
+      if (accumulatedEligible.length > pageSize) {
+        hasNextPage = true;
+        rows = accumulatedEligible.slice(0, pageSize);
+        const lastEligible = rows[rows.length - 1];
+        nextCursor = lastEligible ? encodeCursor(lastEligible.posted_at, lastEligible.id) : null;
+      } else {
+        rows = accumulatedEligible;
+        // Compute hasNextPage from raw fetched rows, not post-filter rows
+        hasNextPage = rawHasMore;
+        if (hasNextPage && curCursor) {
+          nextCursor = encodeCursor(curCursor.posted_at, curCursor.id);
+        }
+      }
+
       appliedEligibility = {
         countries: normalizedUserCountries.names,
-        filteredOut: eligibilityResult.filteredOut,
+        filteredOut: totalFilteredOut,
       };
-    }
 
-    if (!isMultiWord) {
-      if (rows.length > pageSize) {
-        hasNextPage = true;
-        rows = rows.slice(0, pageSize);
-        const lastItem = rows[rows.length - 1] as any;
-        if (lastItem) {
-          nextCursor = encodeCursor(lastItem.posted_at, lastItem.id);
-        }
-      } else if (page > 1 && !cursorParam) {
-        // Offset pagination: check if count exceeds current window
-        hasNextPage = (count ? from + rows.length < count : false);
+      // Never show an exact total when filtered; use estimated count from PostgreSQL
+      approximateTotalCount = estimatedCountVal ?? (rows.length > 0 ? (page ? Math.max(rows.length, page * pageSize) : 100000) : 0);
+    } else {
+      let queryResult = await buildSearchQuery(initialCountMode);
+
+      if (
+        queryResult.error &&
+        initialCountMode === "exact" &&
+        (
+          queryResult.error.code === "57014" ||
+          String(queryResult.error.code) === "57014" ||
+          (typeof queryResult.error.message === "string" && (
+            queryResult.error.message.includes("57014") ||
+            queryResult.error.message.toLowerCase().includes("timeout")
+          ))
+        )
+      ) {
+        safeLog.warn("[Netlify /jobs-search] exact count query timed out (57014); falling back to estimated count");
+        queryResult = await buildSearchQuery("estimated");
       }
+
+      const { data, count, error } = queryResult;
+
+      if (error) {
+        safeLog.error("[Netlify /jobs-search] query error:", error.message || error);
+        return {
+          statusCode: 503,
+          headers,
+          body: JSON.stringify({ degraded: true, jobs: [], totalCount: 0, hasNextPage: false, hasMore: false, nextCursor: null }),
+        };
+      }
+
+      rows = data || [];
+
+      if (isMultiWord && cleanQuery) {
+        const lowerQuery = cleanQuery.toLowerCase();
+        const parts = lowerQuery.split(" ").filter(Boolean);
+
+        const computeRelevance = (row: any): number => {
+          let score = 0;
+          const lowerTitle = (row.title || "").toLowerCase();
+          const lowerCompany = (row.company || "").toLowerCase();
+          const lowerCategory = (row.category || "").toLowerCase();
+          const lowerDesc = (row.description || "").toLowerCase();
+
+          if (lowerTitle.includes(lowerQuery)) score += 100;
+          else if (lowerCompany.includes(lowerQuery)) score += 80;
+
+          let titleTokens = 0;
+          let descTokens = 0;
+          for (const p of parts) {
+            if (lowerTitle.includes(p)) titleTokens++;
+            if (lowerDesc.includes(p)) descTokens++;
+          }
+          score += titleTokens * 25;
+          score += descTokens * 5;
+
+          if (lowerCategory.includes(lowerQuery)) score += 15;
+          return score;
+        };
+
+        rows.sort((a: any, b: any) => {
+          const relA = computeRelevance(a);
+          const relB = computeRelevance(b);
+          if (relB !== relA) return relB - relA;
+          const timeA = new Date(a.posted_at || a.created_at || 0).getTime();
+          const timeB = new Date(b.posted_at || b.created_at || 0).getTime();
+          return timeB - timeA;
+        });
+
+        rows = rows.slice(from, to + 1);
+
+        if (isEligibilityFilterActive) {
+          const eligibilityResult = applyEligibilityFilter(rows, normalizedUserCountries.codes, { filterEnabled: true });
+          rows = eligibilityResult.eligibleJobs;
+          appliedEligibility = {
+            countries: normalizedUserCountries.names,
+            filteredOut: eligibilityResult.filteredOut,
+          };
+        }
+      }
+
+      if (!isMultiWord) {
+        if (rows.length > pageSize) {
+          hasNextPage = true;
+          rows = rows.slice(0, pageSize);
+          const lastItem = rows[rows.length - 1] as any;
+          if (lastItem) {
+            nextCursor = encodeCursor(lastItem.posted_at, lastItem.id);
+          }
+        } else if (page > 1 && !cursorParam) {
+          hasNextPage = (count ? from + rows.length < count : false);
+        }
+      }
+
+      approximateTotalCount = count ?? (rows.length > 0 ? (page ? Math.max(rows.length, page * pageSize) : 100000) : 0);
     }
 
     // Cap jobs per company server-side (max 3 per company in visible top-30)
@@ -775,14 +886,12 @@ export function createHandler(deps: JobsSearchDeps = {}) {
       };
     });
 
-    const totalCount = count ?? (rows.length > 0 ? (page ? Math.max(rows.length, page * pageSize) : 100000) : 0);
-
     return {
       statusCode: 200,
       headers,
       body: JSON.stringify({
         jobs: formattedJobs,
-        totalCount,
+        totalCount: approximateTotalCount,
         nextCursor,
         hasNextPage,
         hasMore: hasNextPage,

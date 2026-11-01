@@ -3,7 +3,6 @@ import { formatSalary } from "../../src/lib/salary/parser";
 import { verifyUserNotBanned } from "../../src/lib/admin/auth";
 import { COUNTRY_CODE_TO_NAME, getCountryFilterClause } from "../../src/lib/countries";
 import { sanitizeSearchQuery } from "../../src/lib/api/jobs";
-import { normalizeUserCountries, applyEligibilityFilter } from "../../src/lib/jobs/eligibility";
 import { safeLog } from "./_logger";
 
 function getSupabaseAdmin() {
@@ -130,42 +129,24 @@ export async function handler(event: any) {
 
     const supabaseAdmin = getSupabaseAdmin();
 
-    // Fetch user preferences for eligibility filter and preferred currency
-    let userLocations: string[] = [];
+    // Fetch user preferences for preferred currency (convert only when explicitly set, not default 'USD')
     let userSalaryCurrency: string | undefined;
-    let userEligibilityPref = true;
 
     try {
       const { data: prefs } = await supabaseAdmin
         .from("user_preferences")
-        .select("locations, eligibility_filter, salary_currency")
+        .select("salary_currency")
         .eq("user_id", authCheck.user.id)
         .maybeSingle();
 
-      if (prefs) {
-        userLocations = Array.isArray(prefs.locations) ? prefs.locations : [];
-        userSalaryCurrency = prefs.salary_currency || undefined;
-        userEligibilityPref = prefs.eligibility_filter !== false;
+      if (prefs?.salary_currency && prefs.salary_currency.trim().toUpperCase() !== "USD") {
+        userSalaryCurrency = prefs.salary_currency.trim().toUpperCase();
       }
     } catch {}
 
     if (event.httpMethod === "GET") {
       const id = event.queryStringParameters?.id;
       const countryCodeParam = event.queryStringParameters?.country_code || event.queryStringParameters?.country;
-      const eligibilityParam = event.queryStringParameters?.eligibility;
-      let isEligibilityActive = userEligibilityPref;
-      if (eligibilityParam === "off") {
-        isEligibilityActive = false;
-        try {
-          await supabaseAdmin.from("user_preferences").update({ eligibility_filter: false }).eq("user_id", authCheck.user.id);
-        } catch {}
-      } else if (eligibilityParam === "on") {
-        isEligibilityActive = true;
-        try {
-          await supabaseAdmin.from("user_preferences").update({ eligibility_filter: true }).eq("user_id", authCheck.user.id);
-        } catch {}
-      }
-
       const preferredCurrency = event.queryStringParameters?.currency || userSalaryCurrency || undefined;
 
       if (!id) {
@@ -193,13 +174,7 @@ export async function handler(event: any) {
             };
           }
 
-          let rawJobs = jobs || [];
-          let appliedEligibility: { countries: string[]; filteredOut: number } | null = null;
-          if (isEligibilityActive && userLocations.length > 0) {
-            const filterRes = applyEligibilityFilter(rawJobs, userLocations, { filterEnabled: true });
-            rawJobs = filterRes.eligibleJobs;
-            appliedEligibility = filterRes.appliedEligibility;
-          }
+          const rawJobs = jobs || [];
 
           const formattedJobs = rawJobs.map((j: any) => {
             const originalSalary = formatSalary(j.salary_min, j.salary_max, j.currency, j.salary_period) || j.salary_text || null;
@@ -218,7 +193,7 @@ export async function handler(event: any) {
           return {
             statusCode: 200,
             headers,
-            body: JSON.stringify({ jobs: formattedJobs, isPro: true, appliedEligibility }),
+            body: JSON.stringify({ jobs: formattedJobs, isPro: true }),
           };
         }
 
@@ -290,20 +265,6 @@ export async function handler(event: any) {
         };
       }
 
-      const eligibilityParam = event.queryStringParameters?.eligibility || bodyEligibility;
-      let isEligibilityActive = userEligibilityPref;
-      if (eligibilityParam === "off") {
-        isEligibilityActive = false;
-        try {
-          await supabaseAdmin.from("user_preferences").update({ eligibility_filter: false }).eq("user_id", authCheck.user.id);
-        } catch {}
-      } else if (eligibilityParam === "on") {
-        isEligibilityActive = true;
-        try {
-          await supabaseAdmin.from("user_preferences").update({ eligibility_filter: true }).eq("user_id", authCheck.user.id);
-        } catch {}
-      }
-
       const preferredCurrency = event.queryStringParameters?.currency || bodyCurrency || userSalaryCurrency || undefined;
 
       const { data: jobs, error }: any = await (supabaseAdmin as any)
@@ -319,13 +280,7 @@ export async function handler(event: any) {
         };
       }
 
-      let rawJobs = jobs || [];
-      let appliedEligibility: { countries: string[]; filteredOut: number } | null = null;
-      if (isEligibilityActive && userLocations.length > 0) {
-        const filterRes = applyEligibilityFilter(rawJobs, userLocations, { filterEnabled: true });
-        rawJobs = filterRes.eligibleJobs;
-        appliedEligibility = filterRes.appliedEligibility;
-      }
+      const rawJobs = jobs || [];
 
       const formattedJobs = rawJobs.map((j: any) => {
         const originalSalary = formatSalary(j.salary_min, j.salary_max, j.currency, j.salary_period) || j.salary_text || null;
@@ -344,7 +299,7 @@ export async function handler(event: any) {
       return {
         statusCode: 200,
         headers,
-        body: JSON.stringify({ jobs: formattedJobs, isPro: true, appliedEligibility }),
+        body: JSON.stringify({ jobs: formattedJobs, isPro: true }),
       };
     }
 

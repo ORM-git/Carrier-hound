@@ -58,6 +58,21 @@ export const COUNTRY_CODE_TO_NAME: Record<string, string> = {
   NZ: "New Zealand",
   PT: "Portugal",
   PH: "Philippines",
+  BE: "Belgium",
+  BG: "Bulgaria",
+  HR: "Croatia",
+  CY: "Cyprus",
+  CZ: "Czechia",
+  EE: "Estonia",
+  GR: "Greece",
+  HU: "Hungary",
+  LV: "Latvia",
+  LT: "Lithuania",
+  LU: "Luxembourg",
+  MT: "Malta",
+  RO: "Romania",
+  SK: "Slovakia",
+  SI: "Slovenia",
 };
 
 /**

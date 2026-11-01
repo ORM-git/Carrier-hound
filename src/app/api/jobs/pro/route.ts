@@ -5,7 +5,6 @@ import { formatSalary } from "@/lib/salary/parser";
 import { verifyUserNotBanned } from "@/lib/admin/auth";
 import { COUNTRY_CODE_TO_NAME, getCountryFilterClause } from "@/lib/countries";
 import { sanitizeSearchQuery } from "@/lib/api/jobs";
-import { normalizeUserCountries, applyEligibilityFilter } from "@/lib/jobs/eligibility";
 
 import { checkRequiredEnv } from "@/lib/api/envCheck";
 
@@ -95,38 +94,20 @@ export async function GET(req: Request) {
 
     const supabaseAdmin = getSupabaseAdmin();
 
-    // Fetch user preferences for eligibility filter and preferred currency
-    let userLocations: string[] = [];
+    // Fetch user preferences for preferred currency (convert only when explicitly set, not default 'USD')
     let userSalaryCurrency: string | undefined;
-    let userEligibilityPref = true;
 
     try {
       const { data: prefs } = await supabaseAdmin
         .from("user_preferences")
-        .select("locations, eligibility_filter, salary_currency")
+        .select("salary_currency")
         .eq("user_id", authCheck.user.id)
         .maybeSingle();
 
-      if (prefs) {
-        userLocations = Array.isArray(prefs.locations) ? prefs.locations : [];
-        userSalaryCurrency = prefs.salary_currency || undefined;
-        userEligibilityPref = prefs.eligibility_filter !== false;
+      if (prefs?.salary_currency && prefs.salary_currency.trim().toUpperCase() !== "USD") {
+        userSalaryCurrency = prefs.salary_currency.trim().toUpperCase();
       }
     } catch {}
-
-    const eligibilityQueryParam = searchParams.get("eligibility");
-    let isEligibilityActive = userEligibilityPref;
-    if (eligibilityQueryParam === "off") {
-      isEligibilityActive = false;
-      try {
-        await supabaseAdmin.from("user_preferences").update({ eligibility_filter: false }).eq("user_id", authCheck.user.id);
-      } catch {}
-    } else if (eligibilityQueryParam === "on") {
-      isEligibilityActive = true;
-      try {
-        await supabaseAdmin.from("user_preferences").update({ eligibility_filter: true }).eq("user_id", authCheck.user.id);
-      } catch {}
-    }
 
     const preferredCurrency = searchParams.get("currency") || userSalaryCurrency || undefined;
 
@@ -151,13 +132,7 @@ export async function GET(req: Request) {
           return NextResponse.json({ error: "Failed to query jobs" }, { status: 500 });
         }
 
-        let rawJobs = jobs || [];
-        let appliedEligibility: { countries: string[]; filteredOut: number } | null = null;
-        if (isEligibilityActive && userLocations.length > 0) {
-          const filterRes = applyEligibilityFilter(rawJobs, userLocations, { filterEnabled: true });
-          rawJobs = filterRes.eligibleJobs;
-          appliedEligibility = filterRes.appliedEligibility;
-        }
+        const rawJobs = jobs || [];
 
         const formattedJobs = rawJobs.map((j: any) => {
           const originalSalary = formatSalary(j.salary_min, j.salary_max, j.currency, j.salary_period) || j.salary_text || null;
@@ -173,7 +148,7 @@ export async function GET(req: Request) {
           };
         });
 
-        return NextResponse.json({ jobs: formattedJobs, isPro: true, appliedEligibility });
+        return NextResponse.json({ jobs: formattedJobs, isPro: true });
       }
 
       return NextResponse.json({ error: "Missing required query parameter: id" }, { status: 400 });
@@ -232,7 +207,7 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json().catch(() => ({}));
-    const { ids, eligibility: bodyEligibility, currency: bodyCurrency } = body;
+    const { ids, currency: bodyCurrency } = body;
 
     if (!Array.isArray(ids) || ids.length === 0) {
       return NextResponse.json(
@@ -243,40 +218,22 @@ export async function POST(req: Request) {
 
     const supabaseAdmin = getSupabaseAdmin();
 
-    // Fetch user preferences
-    let userLocations: string[] = [];
+    // Fetch user preferences for preferred currency (convert only when explicitly set, not default 'USD')
     let userSalaryCurrency: string | undefined;
-    let userEligibilityPref = true;
 
     try {
       const { data: prefs } = await supabaseAdmin
         .from("user_preferences")
-        .select("locations, eligibility_filter, salary_currency")
+        .select("salary_currency")
         .eq("user_id", authCheck.user.id)
         .maybeSingle();
 
-      if (prefs) {
-        userLocations = Array.isArray(prefs.locations) ? prefs.locations : [];
-        userSalaryCurrency = prefs.salary_currency || undefined;
-        userEligibilityPref = prefs.eligibility_filter !== false;
+      if (prefs?.salary_currency && prefs.salary_currency.trim().toUpperCase() !== "USD") {
+        userSalaryCurrency = prefs.salary_currency.trim().toUpperCase();
       }
     } catch {}
 
     const { searchParams } = new URL(req.url);
-    const eligibilityParam = searchParams.get("eligibility") || bodyEligibility;
-    let isEligibilityActive = userEligibilityPref;
-    if (eligibilityParam === "off") {
-      isEligibilityActive = false;
-      try {
-        await supabaseAdmin.from("user_preferences").update({ eligibility_filter: false }).eq("user_id", authCheck.user.id);
-      } catch {}
-    } else if (eligibilityParam === "on") {
-      isEligibilityActive = true;
-      try {
-        await supabaseAdmin.from("user_preferences").update({ eligibility_filter: true }).eq("user_id", authCheck.user.id);
-      } catch {}
-    }
-
     const preferredCurrency = searchParams.get("currency") || bodyCurrency || userSalaryCurrency || undefined;
 
     const { data: jobs, error }: any = await (supabaseAdmin as any)
@@ -288,13 +245,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Failed to retrieve unlocked jobs" }, { status: 500 });
     }
 
-    let rawJobs = jobs || [];
-    let appliedEligibility: { countries: string[]; filteredOut: number } | null = null;
-    if (isEligibilityActive && userLocations.length > 0) {
-      const filterRes = applyEligibilityFilter(rawJobs, userLocations, { filterEnabled: true });
-      rawJobs = filterRes.eligibleJobs;
-      appliedEligibility = filterRes.appliedEligibility;
-    }
+    const rawJobs = jobs || [];
 
     const formattedJobs = rawJobs.map((j: any) => {
       const originalSalary = formatSalary(j.salary_min, j.salary_max, j.currency, j.salary_period) || j.salary_text || null;
@@ -310,7 +261,7 @@ export async function POST(req: Request) {
       };
     });
 
-    return NextResponse.json({ jobs: formattedJobs, isPro: true, appliedEligibility });
+    return NextResponse.json({ jobs: formattedJobs, isPro: true });
   } catch (err: any) {
     try {
       const parsed = JSON.parse(err?.message);
