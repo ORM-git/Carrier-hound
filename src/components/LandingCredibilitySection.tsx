@@ -28,7 +28,7 @@ export const STAT_ROWS: StatRowConfig[] = [
   },
   {
     value: "Worldwide roles",
-    caption: "eligibility checked for your country",
+    caption: "Filter roles by country",
     icon: Globe,
   },
 ];
