@@ -3,6 +3,7 @@ import { formatSalary } from "../../src/lib/salary/parser";
 import { verifyUserNotBanned } from "../../src/lib/admin/auth";
 import { COUNTRY_CODE_TO_NAME, getCountryFilterClause } from "../../src/lib/countries";
 import { sanitizeSearchQuery } from "../../src/lib/api/jobs";
+import { computeFitDiagnostics } from "../../src/lib/matcher/scoring";
 import { safeLog } from "./_logger";
 
 function getSupabaseAdmin() {
@@ -205,6 +206,36 @@ export async function handler(event: any) {
         apply_url: isInactive ? "" : job.apply_url,
       };
 
+      const candidateParam = event.queryStringParameters?.candidate;
+      let candidate: any = null;
+      if (candidateParam) {
+        try {
+          candidate = JSON.parse(candidateParam);
+        } catch {}
+      }
+
+      if (candidate && candidate.confirmedAt) {
+        try {
+          const diag = computeFitDiagnostics(candidate, {
+            id: formattedJob.id,
+            title: formattedJob.title,
+            company: formattedJob.company,
+            location: formattedJob.location,
+            remote_scope: formattedJob.remote_scope,
+            category: formattedJob.category,
+            skills: formattedJob.skills,
+            description: formattedJob.description,
+            salary_text: formattedJob.salary_text,
+            apply_url: formattedJob.apply_url,
+          });
+          if (diag && typeof diag.score === "number") {
+            formattedJob.match_score = diag.score;
+            formattedJob.matchScore = diag.score;
+            formattedJob.fit_diagnostics = diag;
+          }
+        } catch {}
+      }
+
       return {
         statusCode: 200,
         headers,
@@ -225,7 +256,7 @@ export async function handler(event: any) {
         };
       }
 
-      const { ids } = body;
+      const { ids, candidate } = body;
       if (!Array.isArray(ids) || ids.length === 0) {
         return {
           statusCode: 400,
@@ -247,11 +278,35 @@ export async function handler(event: any) {
         };
       }
 
-      const formattedJobs = (jobs || []).map((j: any) => ({
-        ...j,
-        country: j.country_code || j.country || "",
-        salary_text: formatSalary(j.salary_min, j.salary_max, j.currency, j.salary_period) || j.salary_text,
-      }));
+      const formattedJobs = (jobs || []).map((j: any) => {
+        const item: any = {
+          ...j,
+          country: j.country_code || j.country || "",
+          salary_text: formatSalary(j.salary_min, j.salary_max, j.currency, j.salary_period) || j.salary_text,
+        };
+        if (candidate && candidate.confirmedAt) {
+          try {
+            const diag = computeFitDiagnostics(candidate, {
+              id: item.id,
+              title: item.title,
+              company: item.company,
+              location: item.location,
+              remote_scope: item.remote_scope,
+              category: item.category,
+              skills: item.skills,
+              description: item.description,
+              salary_text: item.salary_text,
+              apply_url: item.apply_url,
+            });
+            if (diag && typeof diag.score === "number") {
+              item.match_score = diag.score;
+              item.matchScore = diag.score;
+              item.fit_diagnostics = diag;
+            }
+          } catch {}
+        }
+        return item;
+      });
 
       return {
         statusCode: 200,

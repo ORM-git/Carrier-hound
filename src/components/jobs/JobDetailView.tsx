@@ -195,7 +195,9 @@ export default function JobDetailView({
     }
   }, [hasConfirmedResume, candidate, job]);
 
-  const matchScore = diagnostics ? Math.max(10, Math.min(99, Math.round(diagnostics.score))) : null;
+  const matchScore = typeof job.matchScore === "number"
+    ? job.matchScore
+    : (diagnostics ? Math.max(10, Math.min(99, Math.round(diagnostics.score))) : null);
 
   const expSubScore = diagnostics
     ? Math.min(100, Math.max(0, Math.round((diagnostics.breakdown.experienceScore / 15) * 100)))
@@ -763,7 +765,7 @@ export default function JobDetailView({
 
           {/* Right: Match card on the right with total % and sub-scores (Desktop) */}
           <div className="hidden lg:block w-[280px] shrink-0">
-            {hasConfirmedResume && matchScore !== null ? (
+            {isUnlocked && hasConfirmedResume && matchScore !== null ? (
               <div className="p-4 rounded-[14px] bg-[#F8FAFC] border border-[#E2E8F0] space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="text-xs font-bold text-[#64748B] uppercase tracking-wider">
@@ -778,16 +780,12 @@ export default function JobDetailView({
                         : "bg-slate-100 text-slate-700 border border-slate-200"
                     }`}
                   >
-                    {isUnlocked ? matchLabel : "Pro Match"}
+                    {matchLabel}
                   </span>
                 </div>
 
                 <div className="text-2xl font-black text-[#0F172A] leading-none">
-                  {isUnlocked ? (
-                    `${matchScore}%`
-                  ) : (
-                    <span className="filter blur-[3px] select-none text-slate-400">85%</span>
-                  )}
+                  {`${matchScore}%`}
                 </div>
 
                 {/* Sub-scores */}
@@ -795,19 +793,19 @@ export default function JobDetailView({
                   <div className="flex items-center justify-between text-[#475569]">
                     <span>Experience Level</span>
                     <span className="font-semibold text-[#0F172A]">
-                      {isUnlocked ? (expSubScore !== null ? `${expSubScore}%` : "—") : "••%"}
+                      {expSubScore !== null ? `${expSubScore}%` : "—"}
                     </span>
                   </div>
                   <div className="flex items-center justify-between text-[#475569]">
                     <span>Skill</span>
                     <span className="font-semibold text-[#0F172A]">
-                      {isUnlocked ? (skillSubScore !== null ? `${skillSubScore}%` : "—") : "••%"}
+                      {skillSubScore !== null ? `${skillSubScore}%` : "—"}
                     </span>
                   </div>
                   <div className="flex items-center justify-between text-[#475569]">
                     <span>Industry Exp.</span>
                     <span className="font-semibold text-[#0F172A]">
-                      {isUnlocked ? (industrySubScore !== null ? `${industrySubScore}%` : "—") : "••%"}
+                      {industrySubScore !== null ? `${industrySubScore}%` : "—"}
                     </span>
                   </div>
                 </div>
@@ -830,7 +828,7 @@ export default function JobDetailView({
         </div>
 
         {/* Match score on Mobile: compact cards in ONE ROW */}
-        {hasConfirmedResume && matchScore !== null && (
+        {isUnlocked && hasConfirmedResume && matchScore !== null && (
           <div className="lg:hidden pt-3 border-t border-[#E2E8F0] space-y-2">
             <div className="text-[11px] font-bold uppercase tracking-wider text-[#64748B]">
               Match Score
@@ -838,27 +836,27 @@ export default function JobDetailView({
             <div className="grid grid-cols-4 gap-2">
               <div className="p-2 sm:p-2.5 rounded-xl bg-emerald-50/70 border border-emerald-200 text-center space-y-0.5 min-w-0">
                 <div className="text-base font-black text-[#0F172A]">
-                  {isUnlocked ? `${matchScore}%` : "••%"}
+                  {`${matchScore}%`}
                 </div>
                 <div className="text-[9px] sm:text-[10px] font-bold text-emerald-800 uppercase tracking-tight leading-tight break-words line-clamp-2">
-                  {isUnlocked ? matchLabel : "Match"}
+                  {matchLabel}
                 </div>
               </div>
               <div className="p-2 sm:p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-center space-y-0.5 min-w-0">
                 <div className="text-base font-bold text-[#0F172A]">
-                  {isUnlocked ? (expSubScore !== null ? `${expSubScore}%` : "—") : "••%"}
+                  {expSubScore !== null ? `${expSubScore}%` : "—"}
                 </div>
                 <div className="text-[9px] sm:text-[10px] text-[#64748B] leading-tight break-words truncate">Experience</div>
               </div>
               <div className="p-2 sm:p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-center space-y-0.5 min-w-0">
                 <div className="text-base font-bold text-[#0F172A]">
-                  {isUnlocked ? (skillSubScore !== null ? `${skillSubScore}%` : "—") : "••%"}
+                  {skillSubScore !== null ? `${skillSubScore}%` : "—"}
                 </div>
                 <div className="text-[9px] sm:text-[10px] text-[#64748B] leading-tight break-words truncate">Skill</div>
               </div>
               <div className="p-2 sm:p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-center space-y-0.5 min-w-0">
                 <div className="text-base font-bold text-[#0F172A]">
-                  {isUnlocked ? (industrySubScore !== null ? `${industrySubScore}%` : "—") : "••%"}
+                  {industrySubScore !== null ? `${industrySubScore}%` : "—"}
                 </div>
                 <div className="text-[9px] sm:text-[10px] text-[#64748B] leading-tight break-words truncate">Industry</div>
               </div>

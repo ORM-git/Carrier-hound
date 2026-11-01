@@ -10,6 +10,7 @@ export interface FitDiagnosticsResult {
   whyYouFit: string[];
   gaps: string[];
   jobRequiredSkills: string[];
+  hasConfirmedResume?: boolean;
   breakdown: {
     skillScore: number;
     titleScore: number;
@@ -389,6 +390,12 @@ export function computeFitDiagnostics(
   candidate: CandidateProfile,
   job: StandardJobScoringInput
 ): FitDiagnosticsResult {
+  const hasConfirmedResume = Boolean(
+    candidate &&
+    candidate.confirmedAt &&
+    ((candidate.skills && candidate.skills.length > 0) ||
+      (candidate.experience && candidate.experience.length > 0))
+  );
   const normalizedJob: StandardJobScoringInput = {
     id: job.id,
     title: job.title || "Untitled Position",
@@ -402,7 +409,9 @@ export function computeFitDiagnostics(
     salary_text: job.salary_text || job.salary || "",
   };
 
-  const candidateSkillTokens = (candidate.skills || []).map(normalizeSkillToTokens);
+  const candidateSkillTokens = hasConfirmedResume
+    ? (candidate.skills || []).map(normalizeSkillToTokens)
+    : [];
   const jobEvidencedSkills = extractSkillsFromJob(normalizedJob);
   const inferredSignals = extractInferredDomainSignals(normalizedJob);
   const jobTitleLower = (normalizedJob.title || "").toLowerCase();
@@ -506,7 +515,7 @@ export function computeFitDiagnostics(
   // Seniority Alignment Adjustments
   const candSeniority = detectCandidateSeniority(candidate);
   const jobSeniority = detectJobSeniority(normalizedJob.title);
-  const yearsOfExperience = calculateYearsOfExperience(candidate.experience);
+  const yearsOfExperience = hasConfirmedResume ? calculateYearsOfExperience(candidate.experience) : 0;
   const hasDomainAlignment = skillScore > 0 || titleScore > 0;
   let seniorityAdjustment = 0;
 
@@ -665,6 +674,7 @@ export function computeFitDiagnostics(
     whyYouFit,
     gaps,
     jobRequiredSkills: jobEvidencedSkills,
+    hasConfirmedResume,
     breakdown: {
       skillScore,
       titleScore,
@@ -684,8 +694,12 @@ export const calculateConsistentJobMatchScore = computeFitDiagnostics;
 /**
  * Constructs a factual, 1-2 line summary built strictly from real diagnostics
  * (matched skills, years of experience) with zero invented claims or marketing fluff.
+ * If there is no confirmed resume or no real evidence, returns an empty string (renders nothing).
  */
-export function getDiagnosticsSummary(diagnostics: FitDiagnosticsResult): string {
+export function getDiagnosticsSummary(diagnostics?: FitDiagnosticsResult | null): string {
+  if (!diagnostics || !diagnostics.hasConfirmedResume) {
+    return "";
+  }
   const matched = diagnostics.matchedSkills || [];
   const years = diagnostics.breakdown?.yearsOfExperience ?? 0;
 
@@ -702,6 +716,6 @@ export function getDiagnosticsSummary(diagnostics: FitDiagnosticsResult): string
   if (years > 0) {
     return `Aligns with your ${years}+ years of confirmed experience in this opening.`;
   }
-  return "Evaluated against your confirmed resume facts and requirements.";
+  return "";
 }
 

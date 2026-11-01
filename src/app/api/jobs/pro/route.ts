@@ -5,10 +5,17 @@ import { formatSalary } from "@/lib/salary/parser";
 import { verifyUserNotBanned } from "@/lib/admin/auth";
 import { COUNTRY_CODE_TO_NAME, getCountryFilterClause } from "@/lib/countries";
 import { sanitizeSearchQuery } from "@/lib/api/jobs";
+import { computeFitDiagnostics } from "@/lib/matcher/scoring";
+import type { CandidateProfile } from "@/lib/resume/types";
 
 import { checkRequiredEnv } from "@/lib/api/envCheck";
 
 export const runtime = "edge";
+
+export interface JobsProDeps {
+  getSupabaseAdmin?: () => any;
+  getServerEntitlement?: (userId: string) => Promise<{ isPro: boolean }>;
+}
 
 function getSupabaseAdmin() {
   const supabaseUrl =
@@ -34,14 +41,15 @@ function getSupabaseAdmin() {
   });
 }
 
-async function verifyProUser(req: Request) {
+async function verifyProUser(req: Request, deps: JobsProDeps = {}) {
   const authHeader = req.headers.get("authorization") || req.headers.get("Authorization");
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     return { error: "Missing or invalid authorization token", status: 401, user: null };
   }
 
   const token = authHeader.replace("Bearer ", "").trim();
-  const supabaseAdmin = getSupabaseAdmin();
+  const getAdmin = deps.getSupabaseAdmin || getSupabaseAdmin;
+  const supabaseAdmin = getAdmin();
 
   const {
     data: { user },
@@ -64,7 +72,8 @@ async function verifyProUser(req: Request) {
   }
 
   // Server-managed subscription check — ONLY source of truth
-  const entitlement = await getServerEntitlement(user.id);
+  const getEntitlement = deps.getServerEntitlement || getServerEntitlement;
+  const entitlement = await getEntitlement(user.id);
   if (!entitlement.isPro) {
     return {
       error: "Pro subscription required to access full job details.",
@@ -78,9 +87,10 @@ async function verifyProUser(req: Request) {
 }
 
 // GET: Unlocks a single job by id for a verified Pro subscriber
-export async function GET(req: Request) {
+export async function GET(req: Request, contextOrDeps?: any) {
+  const deps: JobsProDeps = (contextOrDeps && (contextOrDeps.getServerEntitlement || contextOrDeps.getSupabaseAdmin)) ? contextOrDeps : {};
   try {
-    const authCheck = await verifyProUser(req);
+    const authCheck = await verifyProUser(req, deps);
     if (authCheck.error || !authCheck.user) {
       return NextResponse.json(
         { error: authCheck.error, isPro: false },
@@ -91,8 +101,17 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
     const countryCodeParam = searchParams.get("country_code") || searchParams.get("country");
+    const candidateParam = searchParams.get("candidate");
 
-    const supabaseAdmin = getSupabaseAdmin();
+    let candidate: CandidateProfile | null = null;
+    if (candidateParam) {
+      try {
+        candidate = JSON.parse(candidateParam);
+      } catch {}
+    }
+
+    const getAdmin = deps.getSupabaseAdmin || getSupabaseAdmin;
+    const supabaseAdmin = getAdmin();
 
     if (!id) {
       if (countryCodeParam) {
@@ -140,7 +159,7 @@ export async function GET(req: Request) {
     const row: any = job;
     const formattedSalary = formatSalary(row.salary_min, job.salary_max, job.currency, job.salary_period) || job.salary_text;
     const isInactive = Boolean(row.is_active === false || row.status === "expired" || row.status === "closed");
-    const formattedJob = {
+    const formattedJob: any = {
       ...job,
       country: job.country_code || job.country || "",
       salary_text: formattedSalary,
@@ -149,6 +168,28 @@ export async function GET(req: Request) {
       status: isInactive ? "expired" : (row.status || "active"),
       apply_url: isInactive ? "" : job.apply_url,
     };
+
+    if (candidate && candidate.confirmedAt) {
+      try {
+        const diag = computeFitDiagnostics(candidate, {
+          id: formattedJob.id,
+          title: formattedJob.title,
+          company: formattedJob.company,
+          location: formattedJob.location,
+          remote_scope: formattedJob.remote_scope,
+          category: formattedJob.category,
+          skills: formattedJob.skills,
+          description: formattedJob.description,
+          salary_text: formattedJob.salary_text,
+          apply_url: formattedJob.apply_url,
+        });
+        if (diag && typeof diag.score === "number") {
+          formattedJob.match_score = diag.score;
+          formattedJob.matchScore = diag.score;
+          formattedJob.fit_diagnostics = diag;
+        }
+      } catch {}
+    }
 
     return NextResponse.json({ job: formattedJob, isPro: true });
   } catch (err: any) {
@@ -164,9 +205,10 @@ export async function GET(req: Request) {
 }
 
 // POST: Unlocks a list of jobs by IDs for a verified Pro subscriber
-export async function POST(req: Request) {
+export async function POST(req: Request, contextOrDeps?: any) {
+  const deps: JobsProDeps = (contextOrDeps && (contextOrDeps.getServerEntitlement || contextOrDeps.getSupabaseAdmin)) ? contextOrDeps : {};
   try {
-    const authCheck = await verifyProUser(req);
+    const authCheck = await verifyProUser(req, deps);
     if (authCheck.error || !authCheck.user) {
       return NextResponse.json(
         { error: authCheck.error, isPro: false },
@@ -175,7 +217,7 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json().catch(() => ({}));
-    const { ids } = body;
+    const { ids, candidate } = body;
 
     if (!Array.isArray(ids) || ids.length === 0) {
       return NextResponse.json(
@@ -184,7 +226,8 @@ export async function POST(req: Request) {
       );
     }
 
-    const supabaseAdmin = getSupabaseAdmin();
+    const getAdmin = deps.getSupabaseAdmin || getSupabaseAdmin;
+    const supabaseAdmin = getAdmin();
     const { data: jobs, error }: any = await (supabaseAdmin as any)
       .from("jobs")
       .select("id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, country_code, posted_at, first_seen_at, status, is_active")
@@ -194,11 +237,35 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Failed to retrieve unlocked jobs" }, { status: 500 });
     }
 
-    const formattedJobs = (jobs || []).map((j: any) => ({
-      ...j,
-      country: j.country_code || j.country || "",
-      salary_text: formatSalary(j.salary_min, j.salary_max, j.currency, j.salary_period) || j.salary_text,
-    }));
+    const formattedJobs = (jobs || []).map((j: any) => {
+      const item: any = {
+        ...j,
+        country: j.country_code || j.country || "",
+        salary_text: formatSalary(j.salary_min, j.salary_max, j.currency, j.salary_period) || j.salary_text,
+      };
+      if (candidate && candidate.confirmedAt) {
+        try {
+          const diag = computeFitDiagnostics(candidate, {
+            id: item.id,
+            title: item.title,
+            company: item.company,
+            location: item.location,
+            remote_scope: item.remote_scope,
+            category: item.category,
+            skills: item.skills,
+            description: item.description,
+            salary_text: item.salary_text,
+            apply_url: item.apply_url,
+          });
+          if (diag && typeof diag.score === "number") {
+            item.match_score = diag.score;
+            item.matchScore = diag.score;
+            item.fit_diagnostics = diag;
+          }
+        } catch {}
+      }
+      return item;
+    });
 
     return NextResponse.json({ jobs: formattedJobs, isPro: true });
   } catch (err: any) {

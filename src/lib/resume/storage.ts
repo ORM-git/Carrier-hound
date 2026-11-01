@@ -5,46 +5,7 @@ import type { TailoredCoverLetterResult } from "./tailor";
 
 const PROFILE_STORAGE_KEY = "careermonke_candidate_profile";
 
-/**
- * Default sample profile when a candidate hasn't uploaded a resume yet.
- */
-export const DEFAULT_CANDIDATE_PROFILE: CandidateProfile = {
-  name: "Software Engineer",
-  email: "",
-  phone: "",
-  location: "Remote / Global",
-  headline: "Full-Stack Software Engineer",
-  summary: "Results-driven Software Engineer experienced in building resilient web applications, designing backend APIs, and deploying modern cloud systems. Passionate about clean code, high performance, and rapid product delivery.",
-  skills: [
-    "JavaScript", "TypeScript", "React", "Next.js", "Node.js", "PostgreSQL", "SQL", "Git", "REST API", "Docker", "Tailwind CSS"
-  ],
-  experience: [
-    {
-      id: "exp-sample-1",
-      company: "Tech Systems",
-      role: "Full-Stack Developer",
-      startDate: "2022",
-      endDate: "Present",
-      bullets: [
-        "Architected scalable web applications using React, TypeScript, and Node.js microservices.",
-        "Optimized database queries and API response times, improving page performance by 35%.",
-        "Collaborated with cross-functional product and design teams to deliver weekly releases."
-      ],
-      needsReview: false
-    }
-  ],
-  education: [
-    {
-      id: "edu-sample-1",
-      degree: "Bachelor of Science in Computer Science",
-      institution: "State University",
-      year: "2022",
-      needsReview: false
-    }
-  ],
-  certifications: ["AWS Certified Cloud Practitioner"],
-  updatedAt: new Date().toISOString()
-};
+
 
 export function getCandidateProfileStorageKey(userId?: string | null): string {
   if (userId && userId.trim()) {
