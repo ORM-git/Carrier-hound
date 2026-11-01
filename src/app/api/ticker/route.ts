@@ -29,9 +29,12 @@ function getSupabaseAdmin() {
     throw new Error(JSON.stringify(missing));
   }
 
-  return createClient(supabaseUrl!, serviceKey!, {
-    auth: { persistSession: false },
-  });
+  return {
+    supabase: createClient(supabaseUrl!, serviceKey!, {
+      auth: { persistSession: false },
+    }),
+    supabaseUrl: supabaseUrl!,
+  };
 }
 
 export interface TickerJobItem {
@@ -39,6 +42,40 @@ export interface TickerJobItem {
   title: string;
   posted_at: string;
   logo_url: string | null;
+}
+
+/**
+ * Validates that logo_url strictly points to the project storage host under /company-logos/.
+ * Rejects external logos, javascript: schemes, or other buckets.
+ */
+function sanitizeLogoUrl(rawLogoUrl: string | null | undefined, supabaseUrl?: string): string | null {
+  if (!rawLogoUrl || typeof rawLogoUrl !== "string") return null;
+  try {
+    const parsed = new URL(rawLogoUrl);
+    if (supabaseUrl) {
+      try {
+        const expectedHost = new URL(supabaseUrl).host;
+        if (parsed.host !== expectedHost && !parsed.host.endsWith(".supabase.co")) {
+          return null;
+        }
+      } catch {
+        if (!parsed.host.endsWith(".supabase.co")) {
+          return null;
+        }
+      }
+    } else {
+      if (!parsed.host.endsWith(".supabase.co")) {
+        return null;
+      }
+    }
+
+    if (!parsed.pathname.includes("/company-logos/")) {
+      return null;
+    }
+    return rawLogoUrl;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -50,6 +87,8 @@ export interface TickerJobItem {
  * Cache 60s, no-store and 503 on error.
  * Drops rows without posted_at or created_at.
  * Clamps future-dated timestamps within 5 minutes; drops rows further in the future.
+ * Matches companies by company_id where available, with case-insensitive name fallback.
+ * Returns logo_url only if it points to the project storage host under /company-logos/.
  */
 export async function GET(req: Request) {
   try {
@@ -85,44 +124,18 @@ export async function GET(req: Request) {
       }
     }
 
-    const supabase = getSupabaseAdmin();
+    const { supabase, supabaseUrl } = getSupabaseAdmin();
 
-    // Query active jobs ordered by posted_at desc with optional foreign company logo
-    const { data, error } = await supabase
+    // 1. Query recent active jobs (select company_id for direct UUID lookup)
+    const { data: jobRows, error: jobsError } = await supabase
       .from("jobs")
-      .select("company, title, posted_at, created_at, companies(logo_url)")
+      .select("company, company_id, title, posted_at, created_at")
       .eq("status", "active")
       .eq("is_active", true)
       .order("posted_at", { ascending: false, nullsFirst: false })
       .limit(50);
 
-    let rows: any[] | null = (data as any) || null;
-
-    if (error) {
-      // If error was caused by relation embedding in certain environments, attempt fallback query without foreign relation
-      const fallback = await supabase
-        .from("jobs")
-        .select("company, title, posted_at, created_at")
-        .eq("status", "active")
-        .eq("is_active", true)
-        .order("posted_at", { ascending: false, nullsFirst: false })
-        .limit(50);
-
-      if (fallback.error || !fallback.data) {
-        return NextResponse.json(
-          { error: "Service unavailable" },
-          {
-            status: 503,
-            headers: {
-              "Cache-Control": "no-store",
-            },
-          }
-        );
-      }
-      rows = fallback.data as any;
-    }
-
-    if (!rows) {
+    if (jobsError || !jobRows) {
       return NextResponse.json(
         { error: "Service unavailable" },
         {
@@ -134,12 +147,106 @@ export async function GET(req: Request) {
       );
     }
 
+    // 2. Collect company_ids and distinct company names
+    const companyIds = Array.from(
+      new Set(
+        jobRows
+          .map((r: any) => (r.company_id ? String(r.company_id).trim() : ""))
+          .filter(Boolean)
+      )
+    );
+
+    const distinctCompanyNames = Array.from(
+      new Set(
+        jobRows
+          .map((r: any) => (r.company ? String(r.company).trim() : ""))
+          .filter(Boolean)
+      )
+    );
+
+    const idToLogo = new Map<string, string>();
+    const nameToLogo = new Map<string, string>();
+
+    // 2a. Match by company_id where available
+    if (companyIds.length > 0) {
+      const { data: idData, error: idError } = await supabase
+        .from("companies")
+        .select("id, name, logo_url")
+        .in("id", companyIds);
+
+      if (idError) {
+        return NextResponse.json(
+          { error: "Service unavailable" },
+          {
+            status: 503,
+            headers: {
+              "Cache-Control": "no-store",
+            },
+          }
+        );
+      }
+
+      if (idData) {
+        for (const c of idData) {
+          const validLogo = sanitizeLogoUrl(c.logo_url, supabaseUrl);
+          if (validLogo) {
+            idToLogo.set(String(c.id), validLogo);
+            if (c.name) {
+              nameToLogo.set(String(c.name).trim().toLowerCase(), validLogo);
+            }
+          }
+        }
+      }
+    }
+
+    // 2b. Match by name case variants for companies without company_id or not yet matched
+    if (distinctCompanyNames.length > 0) {
+      const searchNames = new Set<string>();
+      for (const name of distinctCompanyNames) {
+        searchNames.add(name);
+        searchNames.add(name.toLowerCase());
+        searchNames.add(name.toUpperCase());
+        searchNames.add(name.charAt(0).toUpperCase() + name.slice(1).toLowerCase());
+      }
+
+      const { data: nameData, error: nameError } = await supabase
+        .from("companies")
+        .select("id, name, logo_url")
+        .in("name", Array.from(searchNames));
+
+      if (nameError) {
+        return NextResponse.json(
+          { error: "Service unavailable" },
+          {
+            status: 503,
+            headers: {
+              "Cache-Control": "no-store",
+            },
+          }
+        );
+      }
+
+      if (nameData) {
+        for (const c of nameData) {
+          const validLogo = sanitizeLogoUrl(c.logo_url, supabaseUrl);
+          if (validLogo) {
+            if (c.id && !idToLogo.has(String(c.id))) {
+              idToLogo.set(String(c.id), validLogo);
+            }
+            if (c.name) {
+              nameToLogo.set(String(c.name).trim().toLowerCase(), validLogo);
+            }
+          }
+        }
+      }
+    }
+
     const nowMs = Date.now();
     const MAX_FUTURE_SKEW_MS = 5 * 60 * 1000; // 5 minutes
 
     const tickerItems: TickerJobItem[] = [];
 
-    for (const row of rows) {
+    for (const row of jobRows) {
       if (tickerItems.length >= 20) break;
 
       // Drop rows that have neither posted_at nor created_at instead of falling back to now()
@@ -158,22 +265,21 @@ export async function GET(req: Request) {
         continue;
       }
 
-      let logoUrl: string | null = null;
-      if (row.companies) {
-        if (Array.isArray(row.companies) && row.companies.length > 0) {
-          logoUrl = row.companies[0]?.logo_url || null;
-        } else if (typeof row.companies === "object" && row.companies.logo_url) {
-          logoUrl = row.companies.logo_url;
-        }
-      } else if (row.logo_url) {
-        logoUrl = row.logo_url;
+      const cleanCompany = String(row.company || "").trim();
+      const compId = row.company_id ? String(row.company_id).trim() : "";
+
+      let resolvedLogo: string | null = null;
+      if (compId && idToLogo.has(compId)) {
+        resolvedLogo = idToLogo.get(compId)!;
+      } else if (cleanCompany && nameToLogo.has(cleanCompany.toLowerCase())) {
+        resolvedLogo = nameToLogo.get(cleanCompany.toLowerCase())!;
       }
 
       tickerItems.push({
-        company: String(row.company || "").trim(),
+        company: cleanCompany,
         title: String(row.title || "").trim(),
         posted_at: new Date(rawTimestamp).toISOString(),
-        logo_url: logoUrl || null,
+        logo_url: resolvedLogo,
       });
     }
 
