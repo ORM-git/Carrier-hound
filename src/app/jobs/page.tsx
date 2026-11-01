@@ -2007,7 +2007,13 @@ function JobsPageInner() {
                               ? "Good match"
                               : "Fair match"
                             : "";
-                        const cardZeroSkills = Boolean(diagnostics && diagnostics.matchedSkills && diagnostics.matchedSkills.length === 0);
+                        const cardZeroSkills = Boolean(
+                          hasConfirmedResume &&
+                          diagnostics &&
+                          diagnostics.matchedSkills &&
+                          diagnostics.matchedSkills.length === 0 &&
+                          (diagnostics.breakdown?.yearsOfExperience ?? 0) > 0
+                        );
                         const isRecent = Boolean(job.postedAt && isPostedUnder24Hours(job.postedAt) && isEarlyApplicant(job) !== undefined);
                         const postedRelative = job.postedAt ? formatDesktopPillTime(job.postedAt) : null;
                         const companyPills = getCompanyTagPills(job.category);

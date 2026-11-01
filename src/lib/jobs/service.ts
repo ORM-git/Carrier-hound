@@ -30,6 +30,7 @@ export interface LiveJob {
   trackerNotes?: string;
   proUnlockError?: ProUnlockError;
   applicantCount?: number;
+  matchScore?: number;
 }
 
 export interface ProUnlockError {
@@ -928,6 +929,7 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
                 postedAt: job.posted_at || job.first_seen_at || job.created_at,
                 isExpired: isInactive,
                 status: isInactive ? "expired" : (job.status || "active"),
+                matchScore: typeof job.match_score === "number" ? job.match_score : (typeof job.matchScore === "number" ? job.matchScore : undefined),
               };
             }
           } else {
