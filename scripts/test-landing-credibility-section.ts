@@ -327,8 +327,8 @@ async function testLandingPageStructure() {
     "Row 3 title must be 'Worldwide roles'"
   );
   assert.ok(
-    compSrc.includes("eligibility checked for your country"),
-    "Row 3 caption must be 'eligibility checked for your country'"
+    compSrc.includes("Filter roles by country"),
+    "Row 3 caption must be 'Filter roles by country'"
   );
   assert.ok(
     compSrc.includes("border-dotted"),
