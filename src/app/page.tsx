@@ -83,8 +83,27 @@ export default function HomePage() {
 
         {/* Hero Content - centered with 16px rhythm and 32px gap above card panel */}
         <div className="max-w-4xl mx-auto px-4 sm:px-6 text-center relative z-20 flex flex-col items-center">
-          <h1 className="text-2xl sm:text-4xl md:text-5xl lg:text-[48px] font-bold leading-tight sm:leading-tight text-white max-w-3xl mx-auto tracking-tight">
-            Find jobs not on LinkedIn/Indeed
+          <h1
+            aria-label="Find jobs not on LinkedIn/Indeed"
+            className="text-[36px] sm:text-5xl lg:text-[60px] font-bold leading-[1.1] sm:leading-[1.1] text-white max-w-3xl mx-auto tracking-tight text-center"
+          >
+            Find jobs{" "}
+            <span className="relative inline-block">
+              <span className="relative z-10 text-white">not on LinkedIn/Indeed</span>
+              <svg
+                className="absolute -bottom-1.5 sm:-bottom-2.5 left-0 w-full h-2.5 sm:h-3.5 text-[#FACC15] pointer-events-none"
+                viewBox="0 0 255 12"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+                preserveAspectRatio="none"
+                aria-hidden="true"
+              >
+                <path
+                  d="M2.5 8.5C45.5 3.5 155.5 2 252.5 7C175.5 11 82.5 11.5 2.5 8.5Z"
+                  fill="#FACC15"
+                />
+              </svg>
+            </span>
           </h1>
 
           <p className="mt-4 text-white/90 text-sm sm:text-base md:text-lg max-w-xl mx-auto font-normal leading-relaxed">
