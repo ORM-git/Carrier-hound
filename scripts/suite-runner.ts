@@ -107,6 +107,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-ticker-paging-and-strip.ts", command: "npx tsx scripts/test-ticker-paging-and-strip.ts", classification: "offline" },
   { name: "scripts/test-lock-page-views-insert.ts", command: "npx tsx scripts/test-lock-page-views-insert.ts", classification: "offline" },
   { name: "scripts/test-admin-secret-bypass.ts", command: "npx tsx scripts/test-admin-secret-bypass.ts", classification: "offline" },
+  { name: "scripts/test-landing-features-section.ts", command: "npx tsx scripts/test-landing-features-section.ts", classification: "offline" },
 
   // DB-capable suites: read operations (BLOCKED by default unless authorized on test project)
   { name: "scripts/test-enhanced-scoring.ts", command: "npx tsx scripts/test-enhanced-scoring.ts", classification: "db-read", requiresSupabase: true },
