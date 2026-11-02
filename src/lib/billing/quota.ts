@@ -55,6 +55,108 @@ export const PLAN_DEFINITIONS: Record<PlanCode, PlanDefinition> = {
   },
 };
 
+export interface AddonPackDefinition {
+  code: string;
+  name: string;
+  price_paise: number;
+  sets: number;
+  validity_days: number;
+  is_active: boolean;
+}
+
+export const ADDON_PACK_DEFINITIONS: Record<string, AddonPackDefinition> = {
+  addon_10: {
+    code: "addon_10",
+    name: "10 Extra Sets",
+    price_paise: 14900,
+    sets: 10,
+    validity_days: 60,
+    is_active: true,
+  },
+  addon_30: {
+    code: "addon_30",
+    name: "30 Extra Sets",
+    price_paise: 39900,
+    sets: 30,
+    validity_days: 60,
+    is_active: true,
+  },
+  addon_60: {
+    code: "addon_60",
+    name: "60 Extra Sets",
+    price_paise: 69900,
+    sets: 60,
+    validity_days: 60,
+    is_active: true,
+  },
+};
+
+export interface ResolvedOrderPricing {
+  type: "plan" | "addon";
+  code: string;
+  name: string;
+  amount_paise: number;
+  currency: "INR";
+  duration_days?: number;
+  sets?: number;
+}
+
+/**
+ * Server-authoritative order price resolution.
+ * Ignores any client-supplied amount; retrieves exact price_paise from plans/addon_packs catalog.
+ */
+export function resolveOrderPricing(input: {
+  planCode?: string | null;
+  planId?: string | null;
+  addonCode?: string | null;
+}): ResolvedOrderPricing | null {
+  if (input.addonCode) {
+    const addon = ADDON_PACK_DEFINITIONS[input.addonCode];
+    if (!addon) return null;
+    return {
+      type: "addon",
+      code: addon.code,
+      name: addon.name,
+      amount_paise: addon.price_paise,
+      currency: "INR",
+      sets: addon.sets,
+    };
+  }
+
+  const rawPlan = input.planCode || input.planId;
+  if (rawPlan) {
+    const normalized = rawPlan.toLowerCase().trim();
+    let code: PlanCode | null = null;
+    if (normalized === "weekly" || normalized.includes("week")) {
+      code = "weekly";
+    } else if (normalized === "quarterly" || normalized.includes("quarter") || normalized.includes("3_month")) {
+      code = "quarterly";
+    } else if (
+      normalized === "monthly" ||
+      normalized.includes("month") ||
+      normalized === "domestic_monthly_199" ||
+      normalized === "intl_monthly_9"
+    ) {
+      code = "monthly";
+    } else {
+      return null;
+    }
+
+    const plan = PLAN_DEFINITIONS[code];
+    if (!plan) return null;
+    return {
+      type: "plan",
+      code: plan.code,
+      name: plan.name,
+      amount_paise: plan.price_paise,
+      currency: "INR",
+      duration_days: plan.duration_days,
+    };
+  }
+
+  return null;
+}
+
 export interface PlanQuotaResult {
   planCode: PlanCode | null;
   periodEnd: string | null;
