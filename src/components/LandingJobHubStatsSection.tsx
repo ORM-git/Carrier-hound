@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import BrandIcon from "@/components/BrandIcon";
-import { Building2, Globe } from "lucide-react";
+import { Building2, Briefcase, Sparkles, Clock } from "lucide-react";
 
 export interface RealStatsData {
   totalJobs?: number | null;
@@ -15,22 +15,116 @@ export interface LandingJobHubStatsSectionProps {
   initialStats?: RealStatsData;
 }
 
-function RunningPersonIcon({ className = "w-6 h-6" }: { className?: string }) {
+/**
+ * Dotted connector with bracket/curved split and arrowheads fanning out to stat rows.
+ * Hidden on mobile.
+ */
+function DottedConnector({ rowCount }: { rowCount: number }) {
+  if (rowCount <= 0) return null;
+
   return (
     <svg
-      viewBox="0 0 24 24"
+      viewBox="0 0 100 240"
       fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
+      xmlns="http://www.w3.org/2000/svg"
+      className="w-full h-full max-h-[260px] text-[#2563EB]"
       aria-hidden="true"
     >
-      <circle cx="16" cy="4" r="2" />
-      <path d="m7 21 3-4 2-2 3 3 4-1" />
-      <path d="M12 11V7l3 2 4-1" />
-      <path d="m6 13 4-2" />
+      {/* Root dot */}
+      <circle cx="6" cy="120" r="3.5" fill="#2563EB" />
+
+      {/* Trunk line from root dot to split point */}
+      <line
+        x1="6"
+        y1="120"
+        x2="32"
+        y2="120"
+        stroke="#2563EB"
+        strokeWidth="2"
+        strokeDasharray="3 3"
+        strokeLinecap="round"
+      />
+
+      {rowCount === 1 && (
+        <>
+          <line
+            x1="32"
+            y1="120"
+            x2="84"
+            y2="120"
+            stroke="#2563EB"
+            strokeWidth="2"
+            strokeDasharray="3 3"
+            strokeLinecap="round"
+          />
+          <polygon points="84,115 94,120 84,125" fill="#2563EB" />
+        </>
+      )}
+
+      {rowCount === 2 && (
+        <>
+          {/* Top branch */}
+          <path
+            d="M 32 120 C 54 120 58 65 84 65"
+            stroke="#2563EB"
+            strokeWidth="2"
+            strokeDasharray="3 3"
+            strokeLinecap="round"
+            fill="none"
+          />
+          <polygon points="84,60 94,65 84,70" fill="#2563EB" />
+
+          {/* Bottom branch */}
+          <path
+            d="M 32 120 C 54 120 58 175 84 175"
+            stroke="#2563EB"
+            strokeWidth="2"
+            strokeDasharray="3 3"
+            strokeLinecap="round"
+            fill="none"
+          />
+          <polygon points="84,170 94,175 84,180" fill="#2563EB" />
+        </>
+      )}
+
+      {rowCount >= 3 && (
+        <>
+          {/* Top branch */}
+          <path
+            d="M 32 120 C 56 120 60 40 84 40"
+            stroke="#2563EB"
+            strokeWidth="2"
+            strokeDasharray="3 3"
+            strokeLinecap="round"
+            fill="none"
+          />
+          <polygon points="84,35 94,40 84,45" fill="#2563EB" />
+
+          {/* Middle straight branch */}
+          <line
+            x1="32"
+            y1="120"
+            x2="84"
+            y2="120"
+            stroke="#2563EB"
+            strokeWidth="2"
+            strokeDasharray="3 3"
+            strokeLinecap="round"
+          />
+          <polygon points="84,115 94,120 84,125" fill="#2563EB" />
+
+          {/* Bottom branch */}
+          <path
+            d="M 32 120 C 56 120 60 200 84 200"
+            stroke="#2563EB"
+            strokeWidth="2"
+            strokeDasharray="3 3"
+            strokeLinecap="round"
+            fill="none"
+          />
+          <polygon points="84,195 94,200 84,205" fill="#2563EB" />
+        </>
+      )}
     </svg>
   );
 }
@@ -99,7 +193,7 @@ export default function LandingJobHubStatsSection({
     };
   }, [initialStats]);
 
-  // Count-up animation helper
+  // 2. Count-up animation helper (IntersectionObserver triggered)
   const runAnimation = (data: RealStatsData) => {
     const prefersReducedMotion =
       typeof window !== "undefined" &&
@@ -121,7 +215,6 @@ export default function LandingJobHubStatsSection({
     const targetTotal = data.totalJobs ?? 0;
     const targetToday = data.jobsToday ?? 0;
     const targetCompanies = data.companies ?? 0;
-    const targetCountries = data.countries ?? 0;
 
     const animate = (currentTime: number) => {
       const elapsed = currentTime - startTime;
@@ -141,10 +234,6 @@ export default function LandingJobHubStatsSection({
           data.companies !== null && data.companies !== undefined
             ? Math.round(targetCompanies * easeOut)
             : null,
-        countries:
-          data.countries !== null && data.countries !== undefined
-            ? Math.round(targetCountries * easeOut)
-            : null,
       });
 
       if (progress < 1) {
@@ -154,7 +243,6 @@ export default function LandingJobHubStatsSection({
           totalJobs: data.totalJobs ?? null,
           jobsToday: data.jobsToday ?? null,
           companies: data.companies ?? null,
-          countries: data.countries ?? null,
         });
       }
     };
@@ -162,7 +250,7 @@ export default function LandingJobHubStatsSection({
     requestAnimationFrame(animate);
   };
 
-  // IntersectionObserver trigger
+  // 3. IntersectionObserver trigger
   useEffect(() => {
     if (!stats) return;
 
@@ -201,8 +289,8 @@ export default function LandingJobHubStatsSection({
     return num.toLocaleString("en-US");
   };
 
-  // Block 1 rows config (hide row if value is missing or <= 0)
-  const block1Rows = [
+  // Rows config: Real data only from /api/stats (total jobs, companies scanned, new jobs today)
+  const rows = [
     {
       key: "companies",
       val:
@@ -214,20 +302,6 @@ export default function LandingJobHubStatsSection({
       icon: Building2,
     },
     {
-      key: "countries",
-      val:
-        displayValues.countries !== undefined
-          ? displayValues.countries
-          : stats.countries,
-      raw: stats.countries,
-      label: "Countries covered",
-      icon: Globe,
-    },
-  ].filter((r) => typeof r.raw === "number" && r.raw > 0);
-
-  // Block 2 rows config (hide row if value is missing or < 0)
-  const block2Rows = [
-    {
       key: "totalJobs",
       val:
         displayValues.totalJobs !== undefined
@@ -235,6 +309,7 @@ export default function LandingJobHubStatsSection({
           : stats.totalJobs,
       raw: stats.totalJobs,
       label: "Total jobs",
+      icon: Briefcase,
     },
     {
       key: "jobsToday",
@@ -244,11 +319,17 @@ export default function LandingJobHubStatsSection({
           : stats.jobsToday,
       raw: stats.jobsToday,
       label: "New jobs today",
+      icon: Sparkles,
     },
-  ].filter((r) => typeof r.raw === "number" && r.raw >= 0);
+  ];
+
+  // HIDE any row whose value is missing or 0 (new jobs today must not show 0)
+  const activeRows = rows.filter(
+    (r) => typeof r.raw === "number" && r.raw > 0
+  );
 
   // If all rows fail/missing, render nothing (no empty container)
-  if (block1Rows.length === 0 && block2Rows.length === 0) {
+  if (activeRows.length === 0) {
     return null;
   }
 
@@ -257,101 +338,79 @@ export default function LandingJobHubStatsSection({
       ref={containerRef}
       aria-label="Market Data & Job Hub Statistics"
       data-testid="landing-job-hub-stats-section"
-      className="py-12 sm:py-16 bg-[#EFF6FF]/40 border-b border-blue-100/60 overflow-hidden"
+      className="py-16 sm:py-20 lg:py-24 bg-[#EFF6FF]/40 border-b border-blue-100/50 overflow-hidden"
     >
-      <div className="max-w-6xl mx-auto px-4 sm:px-6">
+      <div className="max-w-6xl mx-auto px-6 lg:px-8">
         {/* Mascot Header Badge (Mascot appears once) */}
-        <div className="flex items-center justify-center gap-2.5 mb-8 sm:mb-10 select-none">
-          <div className="w-10 h-10 rounded-xl bg-white p-1 border border-blue-100 shadow-2xs flex items-center justify-center shrink-0">
-            <BrandIcon size={34} className="w-full h-full object-contain" />
+        <div className="flex items-center gap-2.5 mb-8 sm:mb-10 select-none">
+          <div className="w-9 h-9 rounded-xl bg-white p-1 border border-blue-100 shadow-2xs flex items-center justify-center shrink-0">
+            <BrandIcon size={28} className="w-full h-full object-contain" />
           </div>
           <span className="text-xs font-bold uppercase tracking-wider text-[#2563EB] bg-blue-50/80 px-3 py-1 rounded-full border border-blue-100">
             Live Market Data
           </span>
         </div>
 
-        {/* Two-column layout on desktop, single column on mobile */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8 w-full">
-          {/* Block 1: Real numbers, no promises */}
-          {block1Rows.length > 0 && (
-            <div className="bg-[#EFF6FF] border border-[#BFDBFE] rounded-2xl sm:rounded-3xl p-6 sm:p-8 lg:p-10 shadow-xs flex flex-col justify-between">
-              <h3 className="text-xl sm:text-2xl font-extrabold text-[#090E34] tracking-tight mb-6 sm:mb-8">
-                Real numbers, no promises
-              </h3>
+        {/* Single wide section layout: Left headline with dot, Center dotted connector, Right stat rows */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-8 lg:gap-12 w-full">
+          {/* Left Column: Big bold headline with dot on right edge */}
+          <div className="flex items-center justify-between lg:justify-start gap-4 shrink-0 lg:max-w-xs xl:max-w-sm">
+            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black text-[#090E34] uppercase tracking-tight leading-[1.05]">
+              Real numbers,
+              <br />
+              no promises
+            </h2>
+            {/* Small dot at right edge of headline */}
+            <div
+              className="hidden lg:block w-3.5 h-3.5 rounded-full bg-[#2563EB] ring-4 ring-blue-100 shrink-0"
+              aria-hidden="true"
+            />
+          </div>
 
-              <div className="flex flex-col space-y-6 sm:space-y-7 w-full">
-                {block1Rows.map((row) => {
-                  const Icon = row.icon;
-                  return (
-                    <div
-                      key={row.key}
-                      className="flex items-center justify-between gap-3 sm:gap-4 w-full"
-                    >
-                      <div className="flex flex-col text-left min-w-0 pr-1">
-                        <span className="text-[40px] sm:text-4xl lg:text-5xl font-extrabold text-[#090E34] tracking-tight leading-none">
-                          {formatNumber(row.val)}
-                        </span>
-                        <span className="text-xs sm:text-sm text-slate-600 font-medium mt-1 leading-snug">
-                          {row.label}
-                        </span>
-                      </div>
+          {/* Center Connector: Dotted bracket/curved split with arrowheads (desktop only) */}
+          <div
+            className="hidden lg:flex items-center justify-center shrink-0 w-24 xl:w-28 h-52 xl:h-60"
+            aria-hidden="true"
+          >
+            <DottedConnector rowCount={activeRows.length} />
+          </div>
 
-                      <div
-                        className="flex-1 border-b-2 border-dashed border-[#2563EB]/25 mx-2 sm:mx-6 min-w-[20px]"
-                        aria-hidden="true"
-                      />
-
-                      <div
-                        className="flex-shrink-0 flex items-center justify-center text-[#2563EB]"
-                        aria-hidden="true"
-                      >
-                        <Icon className="w-5 h-5 sm:w-6 sm:h-6 stroke-[1.5]" />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Block 2: Access a growing job hub */}
-          {block2Rows.length > 0 && (
-            <div className="bg-[#EFF6FF] border border-[#BFDBFE] rounded-2xl sm:rounded-3xl p-6 sm:p-8 lg:p-10 shadow-xs flex flex-col justify-between">
-              <h3 className="text-xl sm:text-2xl font-extrabold text-[#090E34] tracking-tight mb-6 sm:mb-8">
-                Access a growing job hub
-              </h3>
-
-              <div className="flex flex-col space-y-6 sm:space-y-7 w-full">
-                {block2Rows.map((row) => (
-                  <div
-                    key={row.key}
-                    className="flex items-center justify-between gap-3 sm:gap-4 w-full"
-                  >
-                    <div className="flex flex-col text-left min-w-0 pr-1">
-                      <span className="text-[40px] sm:text-4xl lg:text-5xl font-extrabold text-[#090E34] tracking-tight leading-none">
-                        {formatNumber(row.val)}
-                      </span>
-                      <span className="text-xs sm:text-sm text-slate-600 font-medium mt-1 leading-snug">
-                        {row.label}
-                      </span>
-                    </div>
-
-                    <div
-                      className="flex-1 border-b-2 border-dashed border-[#2563EB]/25 mx-2 sm:mx-6 min-w-[20px]"
-                      aria-hidden="true"
-                    />
-
-                    <div
-                      className="flex-shrink-0 flex items-center justify-center text-[#2563EB]"
-                      aria-hidden="true"
-                    >
-                      <RunningPersonIcon className="w-5 h-5 sm:w-6 sm:h-6 stroke-[1.5]" />
-                    </div>
+          {/* Right Column: Vertical stack of stat rows */}
+          <div className="flex-1 flex flex-col justify-center space-y-6 sm:space-y-8 w-full max-w-2xl">
+            {activeRows.map((row) => {
+              const Icon = row.icon;
+              return (
+                <div
+                  key={row.key}
+                  className="flex items-center justify-between gap-3 sm:gap-6 w-full"
+                >
+                  {/* Number + Label */}
+                  <div className="flex flex-col text-left shrink-0 min-w-[120px] sm:min-w-[150px]">
+                    <span className="text-[40px] sm:text-5xl lg:text-6xl font-black text-[#090E34] tracking-tight leading-none">
+                      {formatNumber(row.val)}
+                    </span>
+                    <span className="text-xs sm:text-sm text-slate-500 font-medium mt-1.5 leading-snug">
+                      {row.label}
+                    </span>
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
+
+                  {/* Long dotted horizontal leader line */}
+                  <div
+                    className="flex-1 border-b-2 border-dotted border-slate-300 mx-3 sm:mx-6 min-w-[24px]"
+                    aria-hidden="true"
+                  />
+
+                  {/* Blue outline icon at far right */}
+                  <div
+                    className="shrink-0 flex items-center justify-center w-10 h-10 rounded-xl bg-blue-50/70 border border-blue-100 text-[#2563EB]"
+                    aria-hidden="true"
+                  >
+                    <Icon className="w-5 h-5 sm:w-6 sm:h-6 stroke-[1.8]" />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
     </section>
