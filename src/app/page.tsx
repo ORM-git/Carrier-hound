@@ -13,6 +13,7 @@ import Footer from "@/components/Footer";
 import GlobeLiveStats from "@/components/GlobeLiveStats";
 import LandingTopArtifact from "@/components/LandingTopArtifact";
 import LandingFeaturesSection from "@/components/LandingFeaturesSection";
+import LandingCompanyLogoTicker from "@/components/LandingCompanyLogoTicker";
 import LandingCredibilitySection from "@/components/LandingCredibilitySection";
 import LandingComparisonSection from "@/components/LandingComparisonSection";
 import LandingJobsTickerStrip from "@/components/LandingJobsTickerStrip";
@@ -53,6 +54,9 @@ export default function HomePage() {
 
       {/* (2) PRODUCT FEATURES SECTION */}
       <LandingFeaturesSection />
+
+      {/* COMPANY LOGO TICKER SECTION */}
+      <LandingCompanyLogoTicker />
 
       {/* (3) JOBS JUST ADDED TICKER STRIP */}
       <LandingJobsTickerStrip />

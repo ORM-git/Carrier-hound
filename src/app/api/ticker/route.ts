@@ -9,6 +9,7 @@ import {
 } from "@/lib/api/sharedRateLimit";
 
 export const runtime = "edge";
+export const revalidate = 600;
 
 function getSupabaseAdmin() {
   const supabaseUrl =
@@ -126,8 +127,13 @@ export async function GET(req: Request) {
 
     const { supabase, supabaseUrl } = getSupabaseAdmin();
 
-    const TARGET_ITEMS = 20;
-    const MAX_PER_COMPANY = 2;
+    const url = req?.url ? new URL(req.url) : null;
+    const isDistinct = url?.searchParams.get("distinct") === "1" || url?.searchParams.get("distinct") === "true";
+    const rawLimit = url?.searchParams.get("limit") ? parseInt(url.searchParams.get("limit")!, 10) : 20;
+    const TARGET_ITEMS = isDistinct
+      ? Math.min(30, Math.max(1, isNaN(rawLimit) ? 30 : rawLimit))
+      : Math.min(20, Math.max(1, isNaN(rawLimit) ? 20 : rawLimit));
+    const MAX_PER_COMPANY = isDistinct ? 1 : 2;
     const PAGE_SIZE = 100;
     const MAX_CANDIDATE_ROWS = 500;
     const MAX_FUTURE_SKEW_MS = 5 * 60 * 1000; // 5 minutes
@@ -348,9 +354,13 @@ export async function GET(req: Request) {
       });
     }
 
+    const cacheHeader = isDistinct
+      ? "public, max-age=600, s-maxage=600, stale-while-revalidate=600"
+      : "public, max-age=60, s-maxage=60, stale-while-revalidate=120";
+
     return NextResponse.json(tickerItems, {
       headers: {
-        "Cache-Control": "public, max-age=60, s-maxage=60, stale-while-revalidate=120",
+        "Cache-Control": cacheHeader,
       },
     });
   } catch (err: any) {

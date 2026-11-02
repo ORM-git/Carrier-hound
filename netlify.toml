@@ -58,6 +58,12 @@
   force = true
 
 [[redirects]]
+  from = "/api/ticker"
+  to = "/.netlify/functions/ticker"
+  status = 200
+  force = true
+
+[[redirects]]
   from = "/job-search"
   to = "/jobs"
   status = 301
