@@ -293,7 +293,7 @@ async function testLandingPageStructure() {
       pageSrc.includes("Tired of getting auto-rejections?"),
     "Comparison section intact"
   );
-  assert.ok(pageSrc.includes("Meet the monke that fixes your resume."), "AI Resume Monke intact");
+  assert.ok(!pageSrc.includes("Meet the monke that fixes your resume."), "AI Resume Monke removed");
   assert.ok(pageSrc.includes("Orissa Lee Patnaik"), "Founder section intact");
   assert.ok(pageSrc.includes("<Testimonials />"), "Testimonials intact");
   assert.ok(pageSrc.includes("Frequently Asked Questions"), "FAQ intact");
