@@ -198,7 +198,6 @@ function runSuite() {
   const idxFeatures = pageContent.indexOf("<LandingFeaturesSection />");
   const idxTicker = pageContent.indexOf("<LandingJobsTickerStrip />");
   const idxComparison = pageContent.indexOf("<LandingComparisonSection />");
-  const idxAiResumeMonke = pageContent.indexOf("AI Resume Monke");
   const idxGlobalGlobe = pageContent.indexOf("<WireframeDottedGlobe />");
   const idxFreePreview = pageContent.indexOf("Free preview");
   const idxBio = pageContent.indexOf("Orissa here!");
@@ -212,7 +211,7 @@ function runSuite() {
   assert.ok(idxFeatures > -1, "LandingFeaturesSection must be rendered");
   assert.ok(idxTicker > -1, "LandingJobsTickerStrip must be rendered");
   assert.ok(idxComparison > -1, "LandingComparisonSection must be rendered");
-  assert.ok(idxAiResumeMonke > -1, "AI Resume Monke block must be rendered");
+  assert.ok(!pageContent.includes("AI Resume Monke"), "AI Resume Monke block must not be present in page.tsx");
   assert.ok(idxGlobalGlobe > -1, "Global map/radar section must be rendered");
   assert.ok(idxFreePreview > -1, "Free preview CTA band must be rendered");
   assert.ok(idxBio > -1, "Founder bio card must be rendered");
@@ -226,8 +225,7 @@ function runSuite() {
   assert.ok(idxTopArtifact < idxFeatures, "(1) LandingTopArtifact before (2) LandingFeaturesSection");
   assert.ok(idxFeatures < idxTicker, "(2) LandingFeaturesSection before (3) LandingJobsTickerStrip");
   assert.ok(idxTicker < idxComparison, "(3) LandingJobsTickerStrip before (4) LandingComparisonSection");
-  assert.ok(idxComparison < idxAiResumeMonke, "(4) LandingComparisonSection before AI Resume Monke subsection");
-  assert.ok(idxAiResumeMonke < idxGlobalGlobe, "(4) AI Resume Monke subsection before (5) global map/radar");
+  assert.ok(idxComparison < idxGlobalGlobe, "(4) LandingComparisonSection before (5) global map/radar");
   assert.ok(idxGlobalGlobe < idxFreePreview, "(5) global map/radar before (6) Free preview CTA band");
   assert.ok(idxFreePreview < idxBio, "(6) Free preview CTA band before (7) bio");
   assert.ok(idxBio < idxTestimonials, "(7) bio before feedback/testimonials");
