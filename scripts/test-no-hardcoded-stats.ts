@@ -193,7 +193,8 @@ check("Top 10 server routes compute real active corpus dynamically from jobs_pub
 
 check("Landing source contains no hardcoded sample jobs (Tenable, 106,000, 141,333) and uses clear sample illustration", () => {
   const landingPath = path.resolve(process.cwd(), "src", "app", "page.tsx");
-  const demoPath = path.resolve(process.cwd(), "src", "components", "LandingInteractiveDemoSection.tsx");
+  const artifactPath = path.resolve(process.cwd(), "src", "components", "LandingTopArtifact.tsx");
+  const demoPath = fs.existsSync(artifactPath) ? artifactPath : path.resolve(process.cwd(), "src", "components", "LandingInteractiveDemoSection.tsx");
   const landingContent = fs.readFileSync(landingPath, "utf8");
   const demoContent = fs.readFileSync(demoPath, "utf8");
   const combined = `${landingContent}\n${demoContent}`;
@@ -207,7 +208,7 @@ check("Landing source contains no hardcoded sample jobs (Tenable, 106,000, 141,3
   }
 
   assert.ok(
-    demoContent.includes("Illustration - sample data"),
+    demoContent.includes("Demo with sample jobs") || demoContent.includes("Illustration - sample data"),
     "Landing demo must clearly label sample data as illustration"
   );
   assert.ok(

@@ -261,11 +261,14 @@ async function testLandingPageStructure() {
     "LandingCredibilitySection must be rendered in src/app/page.tsx"
   );
 
-  const heroDemoIdx = pageSrc.indexOf("<LandingInteractiveDemoSection />");
+  const heroDemoIdx =
+    pageSrc.indexOf("<LandingTopArtifact />") > -1
+      ? pageSrc.indexOf("<LandingTopArtifact />")
+      : pageSrc.indexOf("<LandingInteractiveDemoSection />");
   const credIdx = pageSrc.indexOf("<LandingCredibilitySection />");
   const featuresIdx = pageSrc.indexOf("<LandingFeaturesSection />");
 
-  assert.ok(heroDemoIdx > -1, "LandingInteractiveDemoSection must exist");
+  assert.ok(heroDemoIdx > -1, "Hero demo must exist in src/app/page.tsx");
   assert.ok(credIdx > -1, "LandingCredibilitySection must exist");
   assert.ok(featuresIdx > -1, "LandingFeaturesSection must exist");
 
@@ -279,7 +282,11 @@ async function testLandingPageStructure() {
   );
 
   // 2. Existing sections remain intact
-  assert.ok(pageSrc.includes("Find jobs not on LinkedIn/Indeed"), "Hero headline intact");
+  assert.ok(
+    pageSrc.includes("Find jobs not on LinkedIn/Indeed") ||
+      pageSrc.includes("<LandingTopArtifact"),
+    "Hero headline / top artifact intact"
+  );
   assert.ok(
     pageSrc.includes("LandingComparisonSection") ||
       pageSrc.includes("Tired of getting auto-rejected?") ||
