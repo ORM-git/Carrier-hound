@@ -185,6 +185,12 @@ function runSuite() {
     "page.tsx must load /careermonke-visuals.js with strategy='afterInteractive'"
   );
 
+  // Single ticker rule: LandingCompanyLogoTicker removed, only LandingJobsTickerStrip kept
+  assert.ok(
+    !pageContent.includes("LandingCompanyLogoTicker"),
+    "page.tsx must not contain LandingCompanyLogoTicker (only black jobs ticker strip kept)"
+  );
+
   // Section Ordering:
   // (1) LandingTopArtifact hero/demo
   // (2) LandingFeaturesSection
