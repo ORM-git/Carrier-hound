@@ -277,8 +277,8 @@ async function testLandingPageStructure() {
     "LandingCredibilitySection must be placed after the hero demo"
   );
   assert.ok(
-    credIdx < featuresIdx,
-    "LandingCredibilitySection must be placed before the Features section"
+    featuresIdx < credIdx,
+    "LandingFeaturesSection must be placed before LandingCredibilitySection"
   );
 
   // 2. Existing sections remain intact
@@ -301,7 +301,7 @@ async function testLandingPageStructure() {
   assert.ok(pageSrc.includes("<LandingFeaturesSection />"), "Features section intact");
   assert.ok(pageSrc.includes("<Footer />"), "Footer intact");
 
-  console.log("  [PASS] Landing page placement: credibility section anchored between hero demo and Features section; all existing sections intact");
+  console.log("  [PASS] Landing page placement: features section placed after hero demo and before credibility section; all existing sections intact");
 
   // 3. Design specifications on LandingCredibilitySection.tsx
   assert.ok(
