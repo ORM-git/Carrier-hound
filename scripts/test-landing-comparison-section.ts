@@ -135,13 +135,18 @@ async function runTests() {
   });
   console.log("  [PASS] All 5 rows configured with /mascot/row{n}-sad.png and row{n}-happy.png image paths");
 
-  // 5. Mascot PNG Assets Verification (5 active files)
+  // 5. Mascot PNG Assets Verification (All 10 active files for rows 1 to 5)
   const activeMascotFiles = [
     { file: "row1-sad.png", maxKb: 80 },
     { file: "row1-happy.png", maxKb: 80 },
     { file: "row2-sad.png", maxKb: 80 },
     { file: "row2-happy.png", maxKb: 80 },
     { file: "row3-sad.png", maxKb: 80 },
+    { file: "row3-happy.png", maxKb: 80 },
+    { file: "row4-sad.png", maxKb: 80 },
+    { file: "row4-happy.png", maxKb: 80 },
+    { file: "row5-sad.png", maxKb: 80 },
+    { file: "row5-happy.png", maxKb: 80 },
   ];
 
   for (const { file, maxKb } of activeMascotFiles) {
@@ -162,28 +167,18 @@ async function runTests() {
     assert.strictEqual(buf[2], 0x4e, `${file} must be a valid PNG`);
     assert.strictEqual(buf[3], 0x47, `${file} must be a valid PNG`);
   }
-  console.log("  [PASS] 5 active mascot PNG files verified (transparent, ~320px, strictly under 80 KB)");
+  console.log("  [PASS] All 10 active mascot PNG files verified (transparent, ~320px, strictly under 80 KB)");
 
-  // 6. Missing Mascot Assets Handled Gracefully by Placeholder
-  const missingMascotFiles = [
-    "row3-happy.png",
-    "row4-sad.png",
-    "row4-happy.png",
-    "row5-sad.png",
-    "row5-happy.png",
-  ];
-  for (const file of missingMascotFiles) {
-    const fullPath = path.resolve(process.cwd(), "public/mascot", file);
-    assert.ok(
-      !fs.existsSync(fullPath),
-      `Public mascot file ${file} should not exist yet (placeholder will be rendered)`
-    );
-  }
+  // 6. Graceful Placeholder Fallback on Missing Source or Load Error
   assert.ok(
     compSrc.includes("CardImagePlaceholder"),
     "LandingComparisonSection must render CardImagePlaceholder on missing files or error"
   );
-  console.log("  [PASS] Missing rows (row 3 happy, 4 & 5) verified as pending with clean placeholder fallback");
+  assert.ok(
+    compSrc.includes("!src || hasError"),
+    "LandingComparisonSection must show placeholder when src is missing or error occurs"
+  );
+  console.log("  [PASS] CardImagePlaceholder graceful fallback verified");
 
   // 7. Cleanup of Old Comparison Directory
   const oldCompDir = path.resolve(process.cwd(), "public/images/comparison");
