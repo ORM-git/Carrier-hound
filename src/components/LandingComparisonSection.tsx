@@ -5,15 +5,11 @@ import Image from "next/image";
 import clsx from "clsx";
 import { motion, useReducedMotion } from "motion/react";
 import { X, Check, Sparkles } from "lucide-react";
-import CareerMonkeMascot, { MascotMood } from "@/components/CareerMonkeMascot";
-
-export { CareerMonkeMascot };
 
 export interface ComparisonItem {
   caption: string;
   image?: string;
   imageAlt?: string;
-  mascotMood?: MascotMood;
   loopAnimation?: "sad" | "happy";
 }
 
@@ -28,63 +24,75 @@ export const COMPARISON_ROWS: ComparisonRow[] = [
     id: "row-1",
     usual: {
       caption: "Scrolling the same feeds. Again.",
-      mascotMood: "sad",
+      image: "/mascot/row1-sad.png",
+      imageAlt: "Monkey scrolling repetitive job feeds",
+      loopAnimation: "sad",
     },
     monke: {
       caption: "Jobs most people never see",
-      mascotMood: "happy",
+      image: "/mascot/row1-happy.png",
+      imageAlt: "Monkey discovering jobs directly on company career pages",
+      loopAnimation: "happy",
     },
   },
   {
     id: "row-2",
     usual: {
       caption: '"Posted 1h ago, 200 applicants"',
-      image: "/images/comparison/row-2-usual.png",
+      image: "/mascot/row2-sad.png",
       imageAlt: "Monkey buried under 200 applicants",
+      loopAnimation: "sad",
     },
     monke: {
       caption: "Employers you didn't know existed",
-      image: "/images/comparison/row-2-monke.png",
+      image: "/mascot/row2-happy.png",
       imageAlt: "Monkey discovering hidden employers",
+      loopAnimation: "happy",
     },
   },
   {
     id: "row-3",
     usual: {
       caption: "Rewriting your resume. Again.",
-      image: "/images/comparison/row-3-usual.png",
+      image: "/mascot/row3-sad.png",
       imageAlt: "Monkey rewriting resume again",
+      loopAnimation: "sad",
     },
     monke: {
       caption: "AI-refined resume",
-      image: "/images/comparison/row-3-monke.png",
+      image: "/mascot/row3-happy.png",
       imageAlt: "Monkey with AI-refined resume",
+      loopAnimation: "happy",
     },
   },
   {
     id: "row-4",
     usual: {
       caption: '"Am I even qualified?"',
-      image: "/images/comparison/row-4-usual.png",
+      image: "/mascot/row4-sad.png",
       imageAlt: "Monkey asking am I even qualified",
+      loopAnimation: "sad",
     },
     monke: {
       caption: "Resume score card",
-      image: "/images/comparison/row-4-monke.png",
+      image: "/mascot/row4-happy.png",
       imageAlt: "Monkey holding resume score card",
+      loopAnimation: "happy",
     },
   },
   {
     id: "row-5",
     usual: {
       caption: "Endless searching",
-      image: "/images/comparison/row-5-usual.png",
+      image: "/mascot/row5-sad.png",
       imageAlt: "Monkey running in endless search hamster wheel",
+      loopAnimation: "sad",
     },
     monke: {
       caption: "Worldwide roles, filter by country",
-      image: "/images/comparison/row-5-monke.png",
+      image: "/mascot/row5-happy.png",
       imageAlt: "Monkey viewing worldwide roles filtered by country",
+      loopAnimation: "happy",
     },
   },
 ];
@@ -116,14 +124,13 @@ export function CardImagePlaceholder({ isMonke }: { isMonke?: boolean }) {
 }
 
 /**
- * Robust card image slot: renders code-driven SVG CareerMonkeMascot when mascotMood
- * is configured, or next/image with graceful placeholder fallback for image assets.
+ * Robust image component that loads next/image with graceful placeholder fallback
+ * and gentle GPU-friendly CSS animation loops when enabled by configuration.
  */
 function ComparisonCardImage({
   src,
   alt = "Comparison illustration",
   isMonke,
-  mascotMood,
   loopAnimation,
   isInView,
   shouldReduceMotion,
@@ -131,31 +138,27 @@ function ComparisonCardImage({
   src?: string;
   alt?: string;
   isMonke?: boolean;
-  mascotMood?: MascotMood;
   loopAnimation?: "sad" | "happy";
   isInView?: boolean;
   shouldReduceMotion?: boolean | null;
 }) {
   const [hasError, setHasError] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
+  const imgRef = useRef<HTMLImageElement>(null);
 
-  // 1. Code-driven animated SVG Mascot component
-  if (mascotMood) {
-    return (
-      <div className="relative w-full h-full min-h-[85px] sm:min-h-[105px] flex items-center justify-center">
-        <CareerMonkeMascot
-          mood={mascotMood}
-          size={105}
-          loop
-          isInView={isInView}
-          shouldReduceMotion={shouldReduceMotion}
-          animateOnScroll={mascotMood === "happy"}
-        />
-      </div>
-    );
-  }
+  // Check img.complete on mount so pre-hydration / cached images show immediately without flash
+  useEffect(() => {
+    if (imgRef.current) {
+      if (imgRef.current.complete) {
+        if (imgRef.current.naturalWidth > 0) {
+          setIsLoaded(true);
+        } else {
+          setHasError(true);
+        }
+      }
+    }
+  }, [src]);
 
-  // 2. Fallback placeholder if no source or error
   if (!src || hasError) {
     return <CardImagePlaceholder isMonke={isMonke} />;
   }
@@ -165,12 +168,13 @@ function ComparisonCardImage({
 
   const imageElement = (
     <Image
+      ref={imgRef}
       src={src}
       alt={alt}
       width={160}
       height={115}
       className={clsx(
-        "max-h-[85px] sm:max-h-[105px] w-auto object-contain transition-opacity duration-300 select-none relative z-10",
+        "max-h-[85px] sm:max-h-[105px] w-auto object-contain transition-opacity duration-200 select-none relative z-10",
         isLoaded ? "opacity-100" : "opacity-0"
       )}
       onLoad={() => setIsLoaded(true)}
@@ -211,8 +215,13 @@ function ComparisonCardImage({
   }
 
   return (
-    <div className="relative w-full h-full min-h-[85px] sm:min-h-[105px] flex items-center justify-center">
-      {!isLoaded && (
+    <div
+      className={clsx(
+        "relative w-full h-full min-h-[85px] sm:min-h-[105px] flex items-center justify-center",
+        isInView && !shouldReduceMotion && "mascot-scale-pop"
+      )}
+    >
+      {!isLoaded && !hasError && (
         <div className="absolute inset-0 flex items-center justify-center z-0">
           <CardImagePlaceholder isMonke={isMonke} />
         </div>
@@ -297,7 +306,6 @@ function ComparisonRowItem({
               src={row.usual.image}
               alt={row.usual.imageAlt}
               isMonke={false}
-              mascotMood={row.usual.mascotMood}
               loopAnimation={row.usual.loopAnimation}
               isInView={isInView}
               shouldReduceMotion={shouldReduceMotion}
@@ -360,7 +368,6 @@ function ComparisonRowItem({
               src={row.monke.image}
               alt={row.monke.imageAlt}
               isMonke={true}
-              mascotMood={row.monke.mascotMood}
               loopAnimation={row.monke.loopAnimation}
               isInView={isInView}
               shouldReduceMotion={shouldReduceMotion}
@@ -380,6 +387,64 @@ export default function LandingComparisonSection() {
 
   return (
     <div className="w-full max-w-[480px] sm:max-w-xl mx-auto">
+      {/* Embedded CSS Keyframes for GPU-accelerated mascot loops & scale-pop */}
+      <style>{`
+        @keyframes mascot-sad-nod {
+          0% { transform: rotate(-2deg); }
+          100% { transform: rotate(2deg); }
+        }
+        @keyframes mascot-sad-breathe {
+          0% { transform: scale(1) translateY(0); }
+          100% { transform: scale(1.02) translateY(2px); }
+        }
+        @keyframes mascot-happy-swing {
+          0% { transform: rotate(-4deg); }
+          100% { transform: rotate(4deg); }
+        }
+        @keyframes mascot-happy-bounce {
+          0% { transform: translateY(0); }
+          100% { transform: translateY(-6px); }
+        }
+        @keyframes mascot-scale-pop {
+          0% { transform: scale(0.94); }
+          60% { transform: scale(1.03); }
+          100% { transform: scale(1); }
+        }
+        .mascot-sad-nod {
+          transform-origin: bottom center;
+          animation: mascot-sad-nod 4s ease-in-out infinite alternate;
+          will-change: transform;
+        }
+        .mascot-sad-breathe {
+          transform-origin: bottom center;
+          animation: mascot-sad-breathe 3s ease-in-out infinite alternate;
+          will-change: transform;
+        }
+        .mascot-happy-swing {
+          transform-origin: top left;
+          animation: mascot-happy-swing 2.4s ease-in-out infinite alternate;
+          will-change: transform;
+        }
+        .mascot-happy-bounce {
+          animation: mascot-happy-bounce 1.2s ease-in-out infinite alternate;
+          will-change: transform;
+        }
+        .mascot-scale-pop {
+          animation: mascot-scale-pop 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+          will-change: transform;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .mascot-sad-nod,
+          .mascot-sad-breathe,
+          .mascot-happy-swing,
+          .mascot-happy-bounce,
+          .mascot-scale-pop {
+            animation: none !important;
+            transform: none !important;
+          }
+        }
+      `}</style>
+
       {/* Title */}
       <div className="text-center mb-8 sm:mb-10">
         <h2 className="text-2xl sm:text-4xl md:text-[42px] font-extrabold text-[#09090B] tracking-tight leading-[1.15] max-w-md mx-auto">
