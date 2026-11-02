@@ -41,8 +41,9 @@ function runAudit() {
     console.log('  [PASS] FIX 2: ReviewCards removed (unused legacy component)');
   }
 
-  // TEST 3: Heading order fixes (LandingInteractiveDemoSection h2, ReviewCards h3, Footer h2)
-  const demoPath = path.join(__dirname, '..', 'src', 'components', 'LandingInteractiveDemoSection.tsx');
+  // TEST 3: Heading order fixes (LandingTopArtifact/LandingInteractiveDemoSection h2, ReviewCards h3, Footer h2)
+  const artifactPath = path.join(__dirname, '..', 'src', 'components', 'LandingTopArtifact.tsx');
+  const demoPath = fs.existsSync(artifactPath) ? artifactPath : path.join(__dirname, '..', 'src', 'components', 'LandingInteractiveDemoSection.tsx');
   let demoContent = fs.readFileSync(demoPath, 'utf8');
   const footerPath = path.join(__dirname, '..', 'src', 'components', 'Footer.tsx');
   let footerContent = fs.readFileSync(footerPath, 'utf8');
@@ -52,14 +53,14 @@ function runAudit() {
     footerContent = footerContent.replace(/<h2/g, '<h3');
   }
 
-  const demoHasH2 = demoContent.includes('<h2 className="text-base font-semibold text-slate-900');
+  const demoHasH2 = demoContent.includes('<h2 className="q"') || demoContent.includes('<h2 className="band-title"') || demoContent.includes('<h2 className="text-base font-semibold text-slate-900');
   const reviewCardsHasH3 = !fs.existsSync(reviewCardsPath) || reviewCardsContent.includes('<h3');
   const footerHasH2 = footerContent.includes('<h2 className={landingColumnHeadingClass}>Navigation</h2>') || footerContent.includes('<h2 className="text-sm font-semibold uppercase tracking-wider text-slate-200">Navigation</h2>');
 
   if (!demoHasH2 || !reviewCardsHasH3 || !footerHasH2) {
-    failures.push('FIX 3 FAIL: Heading hierarchy broken (expected specific h2 in LandingInteractiveDemoSection/Footer and h3 in ReviewCards).');
+    failures.push('FIX 3 FAIL: Heading hierarchy broken (expected specific h2 in LandingTopArtifact/Footer and h3 in ReviewCards).');
   } else {
-    console.log('  [PASS] FIX 3: Heading hierarchy validated across LandingInteractiveDemoSection (h2), ReviewCards (h3), and Footer (h2)');
+    console.log('  [PASS] FIX 3: Heading hierarchy validated across LandingTopArtifact (h2), ReviewCards (h3), and Footer (h2)');
   }
 
   // TEST 4: Landing page has <main> outer wrapper

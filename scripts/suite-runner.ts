@@ -106,6 +106,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-early-access.ts", command: "npx tsx scripts/test-early-access.ts", classification: "offline" },
   { name: "scripts/test-plan-picker.ts", command: "npx tsx scripts/test-plan-picker.ts", classification: "offline" },
   { name: "scripts/test-plan-quota.ts", command: "npx tsx scripts/test-plan-quota.ts", classification: "offline" },
+  { name: "scripts/test-landing-top-artifact.ts", command: "npx tsx scripts/test-landing-top-artifact.ts", classification: "offline" },
   { name: "scripts/test-ticker-paging-and-strip.ts", command: "npx tsx scripts/test-ticker-paging-and-strip.ts", classification: "offline" },
   { name: "scripts/test-lock-page-views-insert.ts", command: "npx tsx scripts/test-lock-page-views-insert.ts", classification: "offline" },
   { name: "scripts/test-admin-secret-bypass.ts", command: "npx tsx scripts/test-admin-secret-bypass.ts", classification: "offline" },

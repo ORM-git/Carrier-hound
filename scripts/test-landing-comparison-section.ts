@@ -49,7 +49,10 @@ async function runTests() {
     "LandingComparisonSection must be rendered in src/app/page.tsx"
   );
 
-  const demoIdx = pageSrc.indexOf("<LandingInteractiveDemoSection />");
+  const demoIdx =
+    pageSrc.indexOf("<LandingTopArtifact />") > -1
+      ? pageSrc.indexOf("<LandingTopArtifact />")
+      : pageSrc.indexOf("<LandingInteractiveDemoSection />");
   const compIdx = pageSrc.indexOf("<LandingComparisonSection />");
   const resumeMonkeIdx = pageSrc.indexOf("AI Resume Monke");
   assert.ok(

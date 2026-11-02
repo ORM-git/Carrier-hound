@@ -5,19 +5,17 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import BrandIcon from "@/components/BrandIcon";
-import DotPattern from "@/components/DotPattern";
 import { FaqHomeItem } from "@/components/FaqItems";
 import { WhiteHeroButton } from "@/components/Buttons";
 import CategorySelectModal from "@/components/CategorySelectModal";
 import Footer from "@/components/Footer";
 import GlobeLiveStats from "@/components/GlobeLiveStats";
-import LandingInteractiveDemoSection from "@/components/LandingInteractiveDemoSection";
+import LandingTopArtifact from "@/components/LandingTopArtifact";
 import LandingFeaturesSection from "@/components/LandingFeaturesSection";
 import LandingCredibilitySection from "@/components/LandingCredibilitySection";
 import LandingComparisonSection from "@/components/LandingComparisonSection";
 import LandingJobsTickerStrip from "@/components/LandingJobsTickerStrip";
-import { useLiveStats } from "@/lib/api/stats";
+import "@/styles/landing-top-artifact.css";
 import { X, Check, ArrowRight, Instagram, Linkedin, Mail } from "lucide-react";
 
 const WireframeDottedGlobe = dynamic(
@@ -30,22 +28,9 @@ const Testimonials = dynamic(
   { ssr: false }
 );
 
-const UserMenu = dynamic(() => import("@/components/UserMenu"), {
-  ssr: false,
-  loading: () => (
-    <Link
-      href="/early-access"
-      className="inline-flex items-center gap-1.5 px-4 py-2 min-h-[44px] rounded-lg text-sm font-semibold transition-all border border-white/30 text-white hover:bg-white/10"
-    >
-      <span>Sign In</span>
-    </Link>
-  ),
-});
-
 export default function HomePage() {
   const router = useRouter();
   const [modalOpen, setModalOpen] = useState(false);
-  const { totalJobs } = useLiveStats();
 
   // Returning signed-in user visiting / goes to /dashboard (lazy loaded so Supabase isn't critical path)
   useEffect(() => {
@@ -60,72 +45,8 @@ export default function HomePage() {
 
   return (
     <main className="min-h-screen bg-white text-[#09090B] flex flex-col selection:bg-blue-100 selection:text-blue-900">
-      {/* ========================================================================= */}
-      {/* 1. HERO SECTION (Blue #2563EB, centered) with overlay header              */}
-      {/* ========================================================================= */}
-      <section className="relative bg-[#2563EB] text-white pt-6 pb-6 sm:pb-8 overflow-visible">
-        {/* Background Subtle Gradient & Dots */}
-        <div className="absolute inset-0 pointer-events-none opacity-10 bg-[radial-gradient(#fff_1px,transparent_1px)] [background-size:24px_24px]" />
-
-        {/* Minimal Hero Header (no nav bar, sits directly on blue hero) */}
-        <div className="w-full max-w-[1340px] mx-auto px-4 sm:px-10 lg:px-14 xl:px-16 pt-4 sm:pt-6 mb-8 sm:mb-14 lg:mb-16 flex items-center justify-between relative z-20">
-          {/* Left: Round white logo circle */}
-          <Link
-            href="/"
-            aria-label="CareerMonke Home"
-            className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-white flex items-center justify-center shadow-lg transition-transform hover:scale-105 p-1.5 min-h-[44px] min-w-[44px]"
-          >
-            <BrandIcon variant="new" className="w-11 h-11 sm:w-12 sm:h-12" priority />
-          </Link>
-
-          {/* Right: Auth-aware Sign In / User Menu */}
-          <UserMenu signInHref="/early-access" />
-        </div>
-
-        {/* Hero Content - centered with 16px rhythm and 32px gap above card panel */}
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 text-center relative z-20 flex flex-col items-center">
-          <h1 className="text-2xl sm:text-4xl md:text-5xl lg:text-[48px] font-bold leading-tight sm:leading-tight text-white max-w-3xl mx-auto tracking-tight">
-            Find jobs not on LinkedIn/Indeed
-          </h1>
-
-          <p className="mt-4 text-white/90 text-sm sm:text-base md:text-lg max-w-xl mx-auto font-normal leading-relaxed">
-            We hunt down jobs posted on company career pages, the ones most people never see. Then our AI Monke tunes up your resume, so you&apos;re actually ready for them.
-          </p>
-
-          <div className="mt-6 flex flex-wrap items-center justify-center gap-3 w-full max-w-md sm:max-w-none">
-            <button
-              onClick={() => router.push("/early-access")}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 bg-white text-[#09090B] font-bold text-base sm:text-lg px-8 sm:px-10 py-3.5 sm:py-4 min-h-[48px] rounded-xl shadow-lg hover:shadow-xl hover:scale-105 transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
-            >
-              <span>Explore jobs</span>
-              <ArrowRight className="w-5 h-5 ml-0.5 stroke-[2.5]" />
-            </button>
-            <Link
-              href="/early-access"
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-blue-700/80 hover:bg-blue-700 text-white font-bold text-base sm:text-lg px-7 sm:px-8 py-3.5 sm:py-4 min-h-[48px] rounded-xl border border-white/30 shadow-md hover:shadow-lg transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
-            >
-              <span>Try AI resume tools</span>
-            </Link>
-          </div>
-        </div>
-
-        {/* Hero Interactive Demo Card nested inside hero on blue background, overlapping next section by 48px */}
-        <div className="mt-8 sm:mt-10 max-w-[880px] mx-auto px-4 sm:px-6 relative z-20 -mb-12">
-          {/* Dotted grid pattern behind top-right corner */}
-          <div className="absolute -top-6 -right-1 sm:-top-8 sm:-right-4 pointer-events-none z-0">
-            <DotPattern width={160} height={100} dotColor="rgba(255, 255, 255, 0.45)" rows={5} cols={8} />
-          </div>
-
-          {/* Dotted grid pattern behind bottom-left corner */}
-          <div className="absolute -bottom-6 -left-1 sm:-bottom-8 sm:-left-4 pointer-events-none z-0">
-            <DotPattern width={160} height={100} dotColor="rgba(255, 255, 255, 0.45)" rows={5} cols={8} />
-          </div>
-
-          <div className="relative z-10">
-            <LandingInteractiveDemoSection />
-          </div>
-        </div>
-      </section>
+      {/* 1. TOP ARTIFACT: Sticky Nav, Hero, and Demo Band */}
+      <LandingTopArtifact />
 
       {/* ========================================================================= */}
       {/* 3. PROBLEM VS SOLUTION (Comparison)                                       */}
