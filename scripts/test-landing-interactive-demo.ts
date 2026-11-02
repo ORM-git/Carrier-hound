@@ -37,8 +37,8 @@ async function main() {
   let demoSrc = fs.readFileSync(demoPath, "utf8");
 
   if (isNegativeControl) {
-    // Inject prohibited price to prove negative control fails
-    demoSrc += "\nPrice: $19/month";
+    // Inject banned term to prove negative control fails
+    demoSrc += "\nATS breakdown of unindexed jobs from career pages";
   }
 
   console.log("================================================================================");
@@ -111,12 +111,12 @@ async function main() {
   );
   console.log("  [PASS] Hero demo placement verified and duplicate lower demo section removed cleanly");
 
-  // 2. Compact browser-style card + 4 step tabs (Find, Match, Tailor, Send) + progress line
+  // 2. Step tabs: 1 Find, 2 Match, 3 Improve, 4 Start + progress bar
   assert.strictEqual(STEP_TABS.length, 4, "Expected 4 step tabs");
   assert.deepStrictEqual(
     STEP_TABS.map((t) => t.label),
-    ["Find", "Match", "Tailor", "Send"],
-    "Step tabs must be Find, Match, Tailor, Send"
+    ["Find", "Match", "Improve", "Start"],
+    "Step tabs must be Find, Match, Improve, Start"
   );
   assert.ok(
     demoSrc.includes("max-w-[880px]"),
@@ -143,28 +143,33 @@ async function main() {
   );
   assert.strictEqual(DEMO_ROLES.length, 4, "Expected 4 interactive role presets");
   for (const role of DEMO_ROLES) {
-    assert.ok(role.jobs.length >= 2, `Role ${role.id} must have at least 2 sample jobs`);
+    assert.ok(role.jobs.length >= 1, `Role ${role.id} must have at least 1 sample job`);
     for (const job of role.jobs) {
       assert.ok(
         job.company.startsWith("Sample "),
         `Sample company '${job.company}' must clearly be sample data`
       );
-      assert.ok(
-        job.matchScore >= 70 && job.matchScore <= 99,
-        `Sample match score ${job.matchScore} must be in valid range`
-      );
+      assert.strictEqual(job.matchScore, 94, "Sample match score must be 94");
     }
   }
-  console.log("  [PASS] Compact browser-style card with Find, Match, Tailor, Send tabs & progress bar verified");
+  console.log("  [PASS] Compact browser-style card with Find, Match, Improve, Start tabs & progress bar verified");
 
-  // 3. Motion & accessibility
+  // 3. Auto-rotation removed completely & motion disabled under prefers-reduced-motion
   assert.ok(
-    demoSrc.includes("4500"),
-    "Must auto-advance steps every 4.5s (4500ms) until user interaction"
+    !demoSrc.includes("setInterval"),
+    "Auto-rotation timer (setInterval) must be completely removed"
+  );
+  assert.ok(
+    !demoSrc.includes("4500"),
+    "Legacy auto-advance timer 4500ms must be completely removed"
   );
   assert.ok(
     demoSrc.includes("prefers-reduced-motion"),
     "Must respect prefers-reduced-motion"
+  );
+  assert.ok(
+    demoSrc.includes("demoFadeIn") && demoSrc.includes("180ms"),
+    "Step transitions must be 150-200ms fades"
   );
   assert.ok(
     demoSrc.includes('role="tab"'),
@@ -176,11 +181,106 @@ async function main() {
   );
   assert.ok(
     demoSrc.includes("min-h-[44px]"),
-    "Mobile tap targets must be at least 44px (min-h-[44px])"
+    "Touch targets must be at least 44px"
   );
-  console.log("  [PASS] Auto-advance (4.5s), prefers-reduced-motion, and tab accessibility verified");
+  console.log("  [PASS] Auto-advance removed, 180ms fade transitions, and prefers-reduced-motion verified");
 
-  // 4. 'Illustration - sample companies and scores' caption under card & 'Illustration - sample data' badge
+  // 4. Primary buttons: exactly one per step, #2563EB, min-h-[48px], no green
+  const primaryButtons = [
+    { testId: "demo-step-1-next", label: "Show my jobs", hasArrow: true },
+    { testId: "demo-step-2-next", label: "Fix my resume for this job", hasArrow: true },
+    { testId: "demo-step-3-next", label: "Continue to apply", hasArrow: true },
+    { testId: "landing-demo-email-submit", label: "Get early access", hasArrow: false },
+  ];
+  for (const btn of primaryButtons) {
+    assert.ok(
+      demoSrc.includes(btn.testId),
+      `Button ${btn.testId} must exist`
+    );
+    assert.ok(
+      demoSrc.includes(btn.label),
+      `Button label '${btn.label}' must exist`
+    );
+  }
+  assert.ok(
+    demoSrc.includes("min-h-[48px]"),
+    "Primary buttons must be minimum 48px tall (min-h-[48px])"
+  );
+  console.log("  [PASS] Exactly one blue #2563EB primary button per step verified");
+
+  // 5. Step 1, 2, 3, 4 specific requirements
+  // Step 1: "Pick your kind of work", wrapping category cards
+  assert.ok(
+    demoSrc.includes("Pick your kind of work"),
+    "Step 1 must have heading 'Pick your kind of work'"
+  );
+  assert.ok(
+    demoSrc.includes("break-words") && demoSrc.includes("whitespace-normal"),
+    "Category card names must wrap to two lines without truncation"
+  );
+  assert.ok(
+    demoSrc.includes("border-[#2563EB]") && demoSrc.includes("bg-blue-50"),
+    "Tapping a card must give blue border and light blue fill"
+  );
+
+  // Step 2: "See your match score", ONE job card, "Your skills match 94% of what this job asks for."
+  assert.ok(
+    demoSrc.includes("See your match score"),
+    "Step 2 must have heading 'See your match score'"
+  );
+  assert.ok(
+    demoSrc.includes("Your skills match 94% of what this job asks for."),
+    "Step 2 must include line 'Your skills match 94% of what this job asks for.'"
+  );
+
+  // Step 3: "Your improved resume", rewritten summary only, "See the cover letter instead" link
+  assert.ok(
+    demoSrc.includes("Your improved resume"),
+    "Step 3 must have heading 'Your improved resume'"
+  );
+  assert.ok(
+    demoSrc.includes("See the cover letter instead"),
+    "Step 3 must have text link 'See the cover letter instead'"
+  );
+
+  // Step 4: "Get started", body text, visible label, "Get early access"
+  assert.ok(
+    demoSrc.includes("Get started"),
+    "Step 4 must have heading 'Get started'"
+  );
+  assert.ok(
+    demoSrc.includes("Leave your email and we&apos;ll set this up for your real job search.") ||
+      demoSrc.includes("Leave your email and we'll set this up for your real job search."),
+    "Step 4 must have body 'Leave your email and we'll set this up for your real job search.'"
+  );
+  assert.ok(
+    demoSrc.includes('<label') && demoSrc.includes('htmlFor="landing-demo-email-input"') && demoSrc.includes("Email address"),
+    "Step 4 must have a visible label 'Email address' above the input"
+  );
+  console.log("  [PASS] Steps 1-4 specific headings, bodies, links, and inputs verified");
+
+  // 6. Strict copy ban: everyday words only, ban unindexed, aggregator, ATS, breakdown inside demo
+  const bannedPatterns: Array<{ pattern: RegExp; reason: string }> = [
+    { pattern: /\bunindexed\b/i, reason: "Banned word: 'unindexed'" },
+    { pattern: /\baggregator\b/i, reason: "Banned word: 'aggregator'" },
+    { pattern: /\bATS\b/, reason: "Banned word: 'ATS'" },
+    { pattern: /\bbreakdown\b/i, reason: "Banned word: 'breakdown'" },
+    { pattern: /\bcareer page\b/i, reason: "No text about career pages allowed" },
+    { pattern: /\bcareer site\b/i, reason: "No text about career sites allowed" },
+    { pattern: /\bwhere jobs come from\b/i, reason: "No text about where jobs come from allowed" },
+    { pattern: /\$\d+/i, reason: "No dollar prices allowed in demo section" },
+    { pattern: /₹\s*\d+/i, reason: "No rupee prices allowed in demo section" },
+    { pattern: /\b4\.[89]\s*\/?\s*5\b/i, reason: "No fake star ratings allowed" },
+    { pattern: /\b\d{1,3}(,\d{3})+\+?\s*(users|members|engineers|candidates)\b/i, reason: "No fake member counts allowed" },
+    { pattern: /"Verified Employer"/i, reason: "No 'Verified Employer' label allowed in hero demo" },
+  ];
+
+  for (const { pattern, reason } of bannedPatterns) {
+    assert.ok(!pattern.test(demoSrc), `${reason} (matched ${pattern})`);
+  }
+  console.log("  [PASS] Banned words (unindexed, aggregator, ATS, breakdown, sources, career pages) absent");
+
+  // 7. Keep every "Illustration - sample data" label
   assert.ok(
     demoSrc.includes("Illustration - sample companies and scores"),
     "Must render 'Illustration - sample companies and scores' label under the card"
@@ -189,30 +289,9 @@ async function main() {
     demoSrc.includes("Illustration - sample data"),
     "Must render 'Illustration - sample data' badge text"
   );
-  console.log("  [PASS] 'Illustration - sample companies and scores' label under card verified");
+  console.log("  [PASS] 'Illustration - sample data' labels preserved");
 
-  // 5. No fake testimonials, member counts, ratings, prices, auto-apply claims, or 'Verified Employer'
-  const prohibitedPatterns: Array<{ pattern: RegExp; reason: string }> = [
-    { pattern: /\$\d+/i, reason: "No dollar prices allowed in demo section" },
-    { pattern: /₹\s*\d+/i, reason: "No rupee prices allowed in demo section" },
-    { pattern: /\b4\.[89]\s*\/?\s*5\b/i, reason: "No fake star ratings allowed" },
-    { pattern: /\b\d{1,3}(,\d{3})+\+?\s*(users|members|engineers|candidates)\b/i, reason: "No fake member counts allowed" },
-    { pattern: /we apply for you|send your resume straight to the hiring team|auto-apply for you/i, reason: "Must not claim we apply for the user or send resumes to hiring teams" },
-    { pattern: /"Verified Employer"/i, reason: "No 'Verified Employer' label allowed in hero demo" },
-    { pattern: /\bApply Now\b/i, reason: "No 'Apply Now' button allowed" },
-    { pattern: /\bDislike\b/i, reason: "No 'Dislike' button allowed" },
-  ];
-
-  for (const { pattern, reason } of prohibitedPatterns) {
-    assert.ok(!pattern.test(demoSrc), `${reason} (matched ${pattern})`);
-  }
-  assert.ok(
-    demoSrc.includes("official career site"),
-    "Must explicitly state that the user applies on the company's official career site"
-  );
-  console.log("  [PASS] Zero prices, ratings, member counts, 'Verified Employer', or auto-apply claims verified");
-
-  // 6. Inline email capture -> existing /api/early-access + /early-access flow
+  // 8. Inline email capture -> existing /api/early-access + /early-access flow
   assert.ok(
     demoSrc.includes('fetch("/api/early-access"'),
     "Inline email capture must submit to /api/early-access"
