@@ -5,11 +5,15 @@ import Image from "next/image";
 import clsx from "clsx";
 import { motion, useReducedMotion } from "motion/react";
 import { X, Check, Sparkles } from "lucide-react";
+import CareerMonkeMascot, { MascotMood } from "@/components/CareerMonkeMascot";
+
+export { CareerMonkeMascot };
 
 export interface ComparisonItem {
   caption: string;
-  image: string;
-  imageAlt: string;
+  image?: string;
+  imageAlt?: string;
+  mascotMood?: MascotMood;
   loopAnimation?: "sad" | "happy";
 }
 
@@ -24,15 +28,11 @@ export const COMPARISON_ROWS: ComparisonRow[] = [
     id: "row-1",
     usual: {
       caption: "Scrolling the same feeds. Again.",
-      image: "/mascot/row1-sad.png",
-      imageAlt: "Monkey scrolling repetitive job feeds",
-      loopAnimation: "sad",
+      mascotMood: "sad",
     },
     monke: {
-      caption: "Jobs straight from company career pages",
-      image: "/mascot/row1-happy.png",
-      imageAlt: "Monkey discovering jobs directly on company career pages",
-      loopAnimation: "happy",
+      caption: "Jobs most people never see",
+      mascotMood: "happy",
     },
   },
   {
@@ -116,20 +116,22 @@ export function CardImagePlaceholder({ isMonke }: { isMonke?: boolean }) {
 }
 
 /**
- * Robust image component that loads next/image with graceful placeholder fallback
- * and gentle GPU-friendly CSS animation loops when enabled by configuration.
+ * Robust card image slot: renders code-driven SVG CareerMonkeMascot when mascotMood
+ * is configured, or next/image with graceful placeholder fallback for image assets.
  */
 function ComparisonCardImage({
   src,
-  alt,
+  alt = "Comparison illustration",
   isMonke,
+  mascotMood,
   loopAnimation,
   isInView,
   shouldReduceMotion,
 }: {
   src?: string;
-  alt: string;
+  alt?: string;
   isMonke?: boolean;
+  mascotMood?: MascotMood;
   loopAnimation?: "sad" | "happy";
   isInView?: boolean;
   shouldReduceMotion?: boolean | null;
@@ -137,6 +139,23 @@ function ComparisonCardImage({
   const [hasError, setHasError] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
 
+  // 1. Code-driven animated SVG Mascot component
+  if (mascotMood) {
+    return (
+      <div className="relative w-full h-full min-h-[85px] sm:min-h-[105px] flex items-center justify-center">
+        <CareerMonkeMascot
+          mood={mascotMood}
+          size={105}
+          loop
+          isInView={isInView}
+          shouldReduceMotion={shouldReduceMotion}
+          animateOnScroll={mascotMood === "happy"}
+        />
+      </div>
+    );
+  }
+
+  // 2. Fallback placeholder if no source or error
   if (!src || hasError) {
     return <CardImagePlaceholder isMonke={isMonke} />;
   }
@@ -278,6 +297,7 @@ function ComparisonRowItem({
               src={row.usual.image}
               alt={row.usual.imageAlt}
               isMonke={false}
+              mascotMood={row.usual.mascotMood}
               loopAnimation={row.usual.loopAnimation}
               isInView={isInView}
               shouldReduceMotion={shouldReduceMotion}
@@ -340,6 +360,7 @@ function ComparisonRowItem({
               src={row.monke.image}
               alt={row.monke.imageAlt}
               isMonke={true}
+              mascotMood={row.monke.mascotMood}
               loopAnimation={row.monke.loopAnimation}
               isInView={isInView}
               shouldReduceMotion={shouldReduceMotion}
@@ -359,54 +380,6 @@ export default function LandingComparisonSection() {
 
   return (
     <div className="w-full max-w-[480px] sm:max-w-xl mx-auto">
-      {/* Embedded CSS Keyframes for GPU-accelerated mascot loops */}
-      <style>{`
-        @keyframes mascot-sad-nod {
-          0% { transform: rotate(-2deg); }
-          100% { transform: rotate(2deg); }
-        }
-        @keyframes mascot-sad-breathe {
-          0% { transform: scale(1) translateY(0); }
-          100% { transform: scale(1.02) translateY(2px); }
-        }
-        @keyframes mascot-happy-swing {
-          0% { transform: rotate(-4deg); }
-          100% { transform: rotate(4deg); }
-        }
-        @keyframes mascot-happy-bounce {
-          0% { transform: translateY(0); }
-          100% { transform: translateY(-6px); }
-        }
-        .mascot-sad-nod {
-          transform-origin: bottom center;
-          animation: mascot-sad-nod 4s ease-in-out infinite alternate;
-          will-change: transform;
-        }
-        .mascot-sad-breathe {
-          transform-origin: bottom center;
-          animation: mascot-sad-breathe 3s ease-in-out infinite alternate;
-          will-change: transform;
-        }
-        .mascot-happy-swing {
-          transform-origin: top left;
-          animation: mascot-happy-swing 2.4s ease-in-out infinite alternate;
-          will-change: transform;
-        }
-        .mascot-happy-bounce {
-          animation: mascot-happy-bounce 1.2s ease-in-out infinite alternate;
-          will-change: transform;
-        }
-        @media (prefers-reduced-motion: reduce) {
-          .mascot-sad-nod,
-          .mascot-sad-breathe,
-          .mascot-happy-swing,
-          .mascot-happy-bounce {
-            animation: none !important;
-            transform: none !important;
-          }
-        }
-      `}</style>
-
       {/* Title */}
       <div className="text-center mb-8 sm:mb-10">
         <h2 className="text-2xl sm:text-4xl md:text-[42px] font-extrabold text-[#09090B] tracking-tight leading-[1.15] max-w-md mx-auto">
