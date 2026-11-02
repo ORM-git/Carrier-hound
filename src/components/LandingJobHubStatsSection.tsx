@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import BrandIcon from "@/components/BrandIcon";
-import { Building2, Briefcase, Sparkles, Clock } from "lucide-react";
+import { Building2, Briefcase, Clock, Sparkles } from "lucide-react";
 
 export interface RealStatsData {
   totalJobs?: number | null;
@@ -13,6 +13,74 @@ export interface RealStatsData {
 
 export interface LandingJobHubStatsSectionProps {
   initialStats?: RealStatsData;
+}
+
+/**
+ * Elegant Laurel Wreath award badge SVG wrapper.
+ */
+function LaurelWreath({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="inline-flex items-center gap-1 sm:gap-1.5 select-none">
+      {/* Left Laurel Branch */}
+      <svg
+        width="15"
+        height="34"
+        viewBox="0 0 20 44"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        className="text-[#2563EB] shrink-0"
+        aria-hidden="true"
+      >
+        <path
+          d="M16 3 C12 12 8 26 10 40"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+        />
+        <path d="M16 4 C13 3 11 6 13 8 C15 9 17 6 16 4 Z" fill="currentColor" />
+        <path d="M14 10 C10 9 8 12 11 14 C13 15 15 12 14 10 Z" fill="currentColor" />
+        <path d="M12 18 C8 17 6 20 9 22 C12 23 14 20 12 18 Z" fill="currentColor" />
+        <path d="M10 26 C6 25 4 28 7 30 C10 31 12 28 10 26 Z" fill="currentColor" />
+        <path d="M10 34 C6 33 4 36 7 38 C9 39 11 36 10 34 Z" fill="currentColor" />
+        <path d="M15 8 C17 10 18 13 16 14 C15 15 13 12 15 8 Z" fill="currentColor" />
+        <path d="M13 16 C15 18 16 21 14 22 C13 23 11 20 13 16 Z" fill="currentColor" />
+        <path d="M11 24 C13 26 14 29 12 30 C11 31 9 28 11 24 Z" fill="currentColor" />
+        <path d="M11 32 C13 34 14 37 12 38 C11 39 9 36 11 32 Z" fill="currentColor" />
+      </svg>
+
+      {/* Center text content */}
+      <div className="flex flex-col items-center justify-center text-center">
+        {children}
+      </div>
+
+      {/* Right Laurel Branch (Mirrored) */}
+      <svg
+        width="15"
+        height="34"
+        viewBox="0 0 20 44"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        className="text-[#2563EB] shrink-0 -scale-x-100"
+        aria-hidden="true"
+      >
+        <path
+          d="M16 3 C12 12 8 26 10 40"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+        />
+        <path d="M16 4 C13 3 11 6 13 8 C15 9 17 6 16 4 Z" fill="currentColor" />
+        <path d="M14 10 C10 9 8 12 11 14 C13 15 15 12 14 10 Z" fill="currentColor" />
+        <path d="M12 18 C8 17 6 20 9 22 C12 23 14 20 12 18 Z" fill="currentColor" />
+        <path d="M10 26 C6 25 4 28 7 30 C10 31 12 28 10 26 Z" fill="currentColor" />
+        <path d="M10 34 C6 33 4 36 7 38 C9 39 11 36 10 34 Z" fill="currentColor" />
+        <path d="M15 8 C17 10 18 13 16 14 C15 15 13 12 15 8 Z" fill="currentColor" />
+        <path d="M13 16 C15 18 16 21 14 22 C13 23 11 20 13 16 Z" fill="currentColor" />
+        <path d="M11 24 C13 26 14 29 12 30 C11 31 9 28 11 24 Z" fill="currentColor" />
+        <path d="M11 32 C13 34 14 37 12 38 C11 39 9 36 11 32 Z" fill="currentColor" />
+      </svg>
+    </div>
+  );
 }
 
 /**
@@ -319,7 +387,7 @@ export default function LandingJobHubStatsSection({
           : stats.jobsToday,
       raw: stats.jobsToday,
       label: "New jobs today",
-      icon: Sparkles,
+      icon: Clock,
     },
   ];
 
@@ -338,79 +406,112 @@ export default function LandingJobHubStatsSection({
       ref={containerRef}
       aria-label="Market Data & Job Hub Statistics"
       data-testid="landing-job-hub-stats-section"
-      className="py-16 sm:py-20 lg:py-24 bg-[#EFF6FF]/40 border-b border-blue-100/50 overflow-hidden"
+      className="py-12 sm:py-16 lg:py-20 bg-white overflow-hidden"
     >
-      <div className="max-w-6xl mx-auto px-6 lg:px-8">
-        {/* Mascot Header Badge (Mascot appears once) */}
-        <div className="flex items-center gap-2.5 mb-8 sm:mb-10 select-none">
-          <div className="w-9 h-9 rounded-xl bg-white p-1 border border-blue-100 shadow-2xs flex items-center justify-center shrink-0">
-            <BrandIcon size={28} className="w-full h-full object-contain" />
-          </div>
-          <span className="text-xs font-bold uppercase tracking-wider text-[#2563EB] bg-blue-50/80 px-3 py-1 rounded-full border border-blue-100">
-            Live Market Data
-          </span>
-        </div>
-
-        {/* Single wide section layout: Left headline with dot, Center dotted connector, Right stat rows */}
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-8 lg:gap-12 w-full">
-          {/* Left Column: Big bold headline with dot on right edge */}
-          <div className="flex items-center justify-between lg:justify-start gap-4 shrink-0 lg:max-w-xs xl:max-w-sm">
-            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black text-[#090E34] uppercase tracking-tight leading-[1.05]">
-              Real numbers,
-              <br />
-              no promises
-            </h2>
-            {/* Small dot at right edge of headline */}
-            <div
-              className="hidden lg:block w-3.5 h-3.5 rounded-full bg-[#2563EB] ring-4 ring-blue-100 shrink-0"
-              aria-hidden="true"
-            />
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+        {/* Soft tinted rounded speech-bubble card with bottom-left pointer */}
+        <div className="relative bg-[#EFF6FF] border border-[#BFDBFE] rounded-3xl sm:rounded-[36px] p-6 sm:p-10 lg:p-12 shadow-xs">
+          {/* Mascot Header Badge (Mascot appears once) */}
+          <div className="flex items-center gap-2 mb-6 sm:mb-8 select-none">
+            <div className="w-8 h-8 rounded-xl bg-white p-1 border border-blue-100 shadow-2xs flex items-center justify-center shrink-0">
+              <BrandIcon size={24} className="w-full h-full object-contain" />
+            </div>
+            <span className="text-xs font-bold uppercase tracking-wider text-[#2563EB] bg-white/80 px-2.5 py-1 rounded-full border border-blue-100">
+              Live Market Data
+            </span>
           </div>
 
-          {/* Center Connector: Dotted bracket/curved split with arrowheads (desktop only) */}
-          <div
-            className="hidden lg:flex items-center justify-center shrink-0 w-24 xl:w-28 h-52 xl:h-60"
-            aria-hidden="true"
-          >
-            <DottedConnector rowCount={activeRows.length} />
-          </div>
+          {/* Single wide section layout: Left column with laurel awards & headline, Center connector, Right stat rows */}
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-8 lg:gap-12 w-full">
+            {/* Left Column: Laurel wreath award badges + Big bold headline with dot */}
+            <div className="flex flex-col justify-center shrink-0 lg:max-w-md">
+              {/* 3 Laurel Wreath Badges matching reference layout */}
+              <div className="flex flex-wrap items-center gap-4 sm:gap-6 mb-6">
+                <LaurelWreath>
+                  <span className="text-[10px] font-medium text-slate-500 leading-tight">Direct from source</span>
+                  <span className="text-[11px] font-bold text-[#090E34] leading-tight">Company Portals</span>
+                  <span className="text-[10px] font-extrabold text-[#2563EB] leading-tight uppercase">100% Direct</span>
+                </LaurelWreath>
 
-          {/* Right Column: Vertical stack of stat rows */}
-          <div className="flex-1 flex flex-col justify-center space-y-6 sm:space-y-8 w-full max-w-2xl">
-            {activeRows.map((row) => {
-              const Icon = row.icon;
-              return (
+                <LaurelWreath>
+                  <span className="text-[10px] font-medium text-slate-500 leading-tight">Continuous Radar</span>
+                  <span className="text-[11px] font-bold text-[#090E34] leading-tight">Every 15 Mins</span>
+                  <span className="text-[10px] font-extrabold text-[#2563EB] leading-tight uppercase">Live Sync</span>
+                </LaurelWreath>
+
+                <LaurelWreath>
+                  <span className="text-[10px] font-bold text-amber-500 leading-none tracking-widest">★★★★★</span>
+                  <span className="text-[10px] font-medium text-slate-500 leading-tight mt-0.5">Candidate First</span>
+                  <span className="text-[11px] font-extrabold text-[#090E34] leading-tight">Zero Aggregators</span>
+                </LaurelWreath>
+              </div>
+
+              {/* Headline with small dot on right edge */}
+              <div className="flex items-center justify-between lg:justify-start gap-4">
+                <h2 className="text-3xl sm:text-4xl lg:text-[42px] font-black text-[#090E34] uppercase tracking-tight leading-[1.08]">
+                  Real numbers,
+                  <br />
+                  no promises
+                </h2>
+                {/* Small dot at right edge of headline */}
                 <div
-                  key={row.key}
-                  className="flex items-center justify-between gap-3 sm:gap-6 w-full"
-                >
-                  {/* Number + Label */}
-                  <div className="flex flex-col text-left shrink-0 min-w-[120px] sm:min-w-[150px]">
-                    <span className="text-[40px] sm:text-5xl lg:text-6xl font-black text-[#090E34] tracking-tight leading-none">
-                      {formatNumber(row.val)}
-                    </span>
-                    <span className="text-xs sm:text-sm text-slate-500 font-medium mt-1.5 leading-snug">
-                      {row.label}
-                    </span>
-                  </div>
+                  className="hidden lg:block w-3.5 h-3.5 rounded-full bg-[#2563EB] ring-4 ring-blue-100 shrink-0"
+                  aria-hidden="true"
+                />
+              </div>
+            </div>
 
-                  {/* Long dotted horizontal leader line */}
-                  <div
-                    className="flex-1 border-b-2 border-dotted border-slate-300 mx-3 sm:mx-6 min-w-[24px]"
-                    aria-hidden="true"
-                  />
+            {/* Center Connector: Dotted bracket/curved split with arrowheads (desktop only) */}
+            <div
+              className="hidden lg:flex items-center justify-center shrink-0 w-24 xl:w-28 h-52 xl:h-60"
+              aria-hidden="true"
+            >
+              <DottedConnector rowCount={activeRows.length} />
+            </div>
 
-                  {/* Blue outline icon at far right */}
+            {/* Right Column: Vertical stack of stat rows */}
+            <div className="flex-1 flex flex-col justify-center space-y-6 sm:space-y-8 w-full max-w-2xl">
+              {activeRows.map((row) => {
+                const Icon = row.icon;
+                return (
                   <div
-                    className="shrink-0 flex items-center justify-center w-10 h-10 rounded-xl bg-blue-50/70 border border-blue-100 text-[#2563EB]"
-                    aria-hidden="true"
+                    key={row.key}
+                    className="flex items-center justify-between gap-3 sm:gap-6 w-full"
                   >
-                    <Icon className="w-5 h-5 sm:w-6 sm:h-6 stroke-[1.8]" />
+                    {/* Number + Label */}
+                    <div className="flex flex-col text-left shrink-0 min-w-[120px] sm:min-w-[150px]">
+                      <span className="text-[40px] sm:text-5xl lg:text-6xl font-black text-[#090E34] tracking-tight leading-none">
+                        {formatNumber(row.val)}
+                      </span>
+                      <span className="text-xs sm:text-sm text-slate-500 font-medium mt-1.5 leading-snug">
+                        {row.label}
+                      </span>
+                    </div>
+
+                    {/* Long dotted horizontal leader line */}
+                    <div
+                      className="flex-1 border-b-2 border-dotted border-blue-200/80 mx-3 sm:mx-6 min-w-[24px]"
+                      aria-hidden="true"
+                    />
+
+                    {/* Circular outline icon at far right */}
+                    <div
+                      className="shrink-0 flex items-center justify-center w-11 h-11 sm:w-12 sm:h-12 rounded-full border border-blue-200/90 bg-white/90 text-[#2563EB] shadow-2xs"
+                      aria-hidden="true"
+                    >
+                      <Icon className="w-5 h-5 sm:w-6 sm:h-6 stroke-[1.8]" />
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
+
+          {/* Speech-bubble tail pointing down-left */}
+          <div
+            className="absolute -bottom-3 sm:-bottom-3.5 left-10 sm:left-16 w-6 h-6 sm:w-7 sm:h-7 bg-[#EFF6FF] border-b border-r border-[#BFDBFE] rotate-45 transform pointer-events-none"
+            aria-hidden="true"
+          />
         </div>
       </div>
     </section>
