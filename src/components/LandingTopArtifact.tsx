@@ -153,13 +153,31 @@ function buzz(ms: number | number[] = 8) {
   } catch {}
 }
 
-function highlight(text: string, words: string[]): string {
-  let out = text.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] || c));
-  words.forEach((w) => {
-    const safe = w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    out = out.replace(new RegExp(safe, "i"), (m) => `<mark>${m}</mark>`);
-  });
-  return out;
+function renderHighlightedText(container: HTMLElement, text: string, words: string[]): void {
+  container.textContent = "";
+  const validWords = words.filter((w) => Boolean(w && w.trim()));
+  if (validWords.length === 0) {
+    container.textContent = text;
+    return;
+  }
+
+  // Sort by length descending to match longer phrases before shorter substrings
+  const sortedWords = [...validWords].sort((a, b) => b.length - a.length);
+  const escaped = sortedWords.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const regex = new RegExp(`(${escaped.join("|")})`, "gi");
+  const parts = text.split(regex);
+  const wordsLower = new Set(validWords.map((w) => w.toLowerCase()));
+
+  for (const part of parts) {
+    if (!part) continue;
+    if (wordsLower.has(part.toLowerCase())) {
+      const mark = document.createElement("mark");
+      mark.textContent = part;
+      container.appendChild(mark);
+    } else {
+      container.appendChild(document.createTextNode(part));
+    }
+  }
 }
 
 export default function LandingTopArtifact() {
@@ -326,7 +344,7 @@ export default function LandingTopArtifact() {
       const label = F("label");
       if (label) label.textContent = R.label;
       const feed = F("feed");
-      if (feed) feed.innerHTML = "";
+      if (feed) feed.textContent = "";
       const pagesEl = F("pages");
       const jobsEl = F("jobs");
       if (pagesEl) pagesEl.textContent = "0";
@@ -351,9 +369,23 @@ export default function LandingTopArtifact() {
           const li = document.createElement("li");
           if (best) li.className = "best";
           const initial = dom.replace(/^(careers|jobs|workat)\./, "")[0].toUpperCase();
-          li.innerHTML = `<span class="fav" style="background:${color}">${initial}</span><span class="dom">${dom}</span><span class="res ${hit}">${
-            best ? "Best match" : hit ? `+${n} job${n > 1 ? "s" : ""}` : "No fit"
-          }</span>`;
+
+          const fav = document.createElement("span");
+          fav.className = "fav";
+          fav.style.background = color;
+          fav.textContent = initial;
+
+          const domEl = document.createElement("span");
+          domEl.className = "dom";
+          domEl.textContent = dom;
+
+          const res = document.createElement("span");
+          res.className = hit ? `res ${hit}` : "res";
+          res.textContent = best ? "Best match" : hit ? `+${n} job${n > 1 ? "s" : ""}` : "No fit";
+
+          li.appendChild(fav);
+          li.appendChild(domEl);
+          li.appendChild(res);
           feed.prepend(li);
           while (feed.children.length > 5) {
             feed.lastChild?.remove();
@@ -395,7 +427,7 @@ export default function LandingTopArtifact() {
 
       const chips = F("chips");
       if (chips) {
-        chips.innerHTML = "";
+        chips.textContent = "";
         R.have.forEach((s) => {
           const c = document.createElement("span");
           c.className = "chip have";
@@ -487,7 +519,7 @@ export default function LandingTopArtifact() {
         if (i < R.after.length) later(() => type(i + 1), 21);
         else {
           line.classList.remove("typing");
-          line.innerHTML = highlight(R.after, R.add);
+          renderHighlightedText(line, R.after, R.add);
         }
       };
 
