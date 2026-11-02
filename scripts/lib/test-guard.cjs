@@ -65,6 +65,7 @@ const SUITE_CLASSIFICATIONS = Object.freeze({
   "scripts/test-card-menu.ts": "offline",
   "scripts/test-search-track-rate-limits.ts": "offline",
   "scripts/test-early-access.ts": "offline",
+  "scripts/test-plan-picker.ts": "offline",
 
   // DB-capable suites: read operations
   "scripts/test-enhanced-scoring.ts": "db-read",

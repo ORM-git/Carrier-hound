@@ -132,39 +132,32 @@ async function runPricingHeaderFirstRenderSuite() {
   console.log("  -> [PASS-LOCAL] Verified zero fake user creation; user is strictly null before session settles.");
 
   // ---------------------------------------------------------------------------
-  // TEST 3: Pricing Page Content & Copy Integrity (Unmodified Plans, CTAs, FAQs)
+  // TEST 3: Pricing Page Content & Copy Integrity (Plan Picker, Radio Rows, Upgrade CTA)
   // ---------------------------------------------------------------------------
-  console.log("\nTest 3: Verifying pricing plans, copy, and CTAs remain completely intact...");
+  console.log("\nTest 3: Verifying plan picker plans, copy, and CTAs remain completely intact...");
   
-  // Render with NEXT_PUBLIC_BILLING_ENABLED=true to verify full pricing plan cards and CTAs
-  const prevEnv = process.env.NEXT_PUBLIC_BILLING_ENABLED;
-  try {
-    process.env.NEXT_PUBLIC_BILLING_ENABLED = "true";
-    const markupBilling = renderWithRouter(React.createElement(PricingPage));
-    assert.ok(
-      markupBilling.includes("Subscribe with Razorpay (Test)"),
-      "Pricing page must retain the India domestic CTA when billing is enabled"
-    );
-    assert.ok(
-      markupBilling.includes("Coming soon"),
-      "Pricing page must retain the International CTA"
-    );
-    assert.ok(
-      markupBilling.includes("Transparent Pricing"),
-      "Pricing hero badge must be preserved"
-    );
-    assert.ok(
-      markupBilling.includes("Direct Career Radar, Zero Fluff"),
-      "Pricing heading must be preserved"
-    );
-    assert.ok(
-      markupBilling.includes("Frequently Asked Questions"),
-      "Pricing FAQ section must be preserved"
-    );
-  } finally {
-    process.env.NEXT_PUBLIC_BILLING_ENABLED = prevEnv;
-  }
-  console.log("  -> [PASS-LOCAL] All pricing plans, copy, CTAs, and FAQ cards intact.");
+  const markup = renderWithRouter(React.createElement(PricingPage));
+  assert.ok(
+    markup.includes("Pick your plan"),
+    "Pricing page must retain the card title 'Pick your plan'"
+  );
+  assert.ok(
+    markup.includes("Payments opening soon"),
+    "Pricing page must retain the Upgrade CTA with 'Payments opening soon'"
+  );
+  assert.ok(
+    markup.includes("Billed weekly"),
+    "Pricing page must include the Weekly plan row"
+  );
+  assert.ok(
+    markup.includes("Rs 1,499, billed monthly"),
+    "Pricing page must include the Monthly plan row"
+  );
+  assert.ok(
+    markup.includes("Rs 3,999, billed every 3 months"),
+    "Pricing page must include the Quarterly plan row"
+  );
+  console.log("  -> [PASS-LOCAL] All plan picker plans, copy, and CTAs intact.");
 
   // ---------------------------------------------------------------------------
   // TEST 4: Source Code Guard Validation in src/app/pricing/page.tsx
