@@ -1,4 +1,6 @@
-# Getting a Gmail API OAuth Refresh Token for CareerMonke Early-Access Emails
+# [DEPRECATED] Getting a Gmail API OAuth Refresh Token for CareerMonke Early-Access Emails
+
+> **DEPRECATION NOTICE**: Gmail OAuth for CareerMonke early-access emails (thank-you & daily digest) has been deprecated and replaced by Google Apps Script web app mail routing (`APPS_SCRIPT_MAIL_URL` + `APPS_SCRIPT_MAIL_SECRET`). Gmail OAuth is no longer needed or used by the application or cron workflows. This guide is retained solely for legacy documentation and reference.
 
 This guide walks the founder step-by-step through setting up a Google Cloud OAuth 2.0 **Web application** client, enabling the **Gmail API**, publishing the consent screen to **"In production"**, and generating a long-lived `GMAIL_REFRESH_TOKEN` using Google OAuth 2.0 Playground so CareerMonke can send early-access thank-you and daily digest emails from your personal Gmail account.
 

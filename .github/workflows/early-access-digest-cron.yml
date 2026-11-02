@@ -35,11 +35,8 @@ jobs:
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
-          GMAIL_CLIENT_SECRET: ${{ secrets.GMAIL_CLIENT_SECRET }}
-          GMAIL_REFRESH_TOKEN: ${{ secrets.GMAIL_REFRESH_TOKEN }}
-          GMAIL_SENDER_EMAIL: ${{ secrets.GMAIL_SENDER_EMAIL }}
-          GMAIL_SENDER_NAME: ${{ secrets.GMAIL_SENDER_NAME }}
+          APPS_SCRIPT_MAIL_URL: ${{ secrets.APPS_SCRIPT_MAIL_URL }}
+          APPS_SCRIPT_MAIL_SECRET: ${{ secrets.APPS_SCRIPT_MAIL_SECRET }}
           EARLY_ACCESS_NOTIFY_EMAIL: ${{ secrets.EARLY_ACCESS_NOTIFY_EMAIL }}
         run: |
           ARGS=""
