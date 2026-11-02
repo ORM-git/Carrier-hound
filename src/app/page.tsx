@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import Script from "next/script";
 import { FaqHomeItem } from "@/components/FaqItems";
 import { WhiteHeroButton } from "@/components/Buttons";
 import CategorySelectModal from "@/components/CategorySelectModal";
@@ -16,7 +17,7 @@ import LandingCredibilitySection from "@/components/LandingCredibilitySection";
 import LandingComparisonSection from "@/components/LandingComparisonSection";
 import LandingJobsTickerStrip from "@/components/LandingJobsTickerStrip";
 import "@/styles/landing-top-artifact.css";
-import { X, Check, ArrowRight, Instagram, Linkedin, Mail } from "lucide-react";
+import { ArrowRight, Instagram, Linkedin, Mail } from "lucide-react";
 
 const WireframeDottedGlobe = dynamic(
   () => import("@/components/ui/wireframe-dotted-globe"),
@@ -45,12 +46,18 @@ export default function HomePage() {
 
   return (
     <main className="min-h-screen bg-white text-[#09090B] flex flex-col selection:bg-blue-100 selection:text-blue-900">
-      {/* 1. TOP ARTIFACT: Sticky Nav, Hero, and Demo Band */}
+      <Script src="/careermonke-visuals.js" strategy="afterInteractive" />
+
+      {/* (1) TOP ARTIFACT: Sticky Nav, Hero, and Demo Band */}
       <LandingTopArtifact />
 
-      {/* ========================================================================= */}
-      {/* 3. PROBLEM VS SOLUTION (Comparison)                                       */}
-      {/* ========================================================================= */}
+      {/* (2) PRODUCT FEATURES SECTION */}
+      <LandingFeaturesSection />
+
+      {/* (3) JOBS JUST ADDED TICKER STRIP */}
+      <LandingJobsTickerStrip />
+
+      {/* (4) PROBLEM VS SOLUTION (Comparison) */}
       <section className="pt-24 pb-12 lg:pt-28 lg:pb-[90px] max-w-content mx-auto px-6">
         <LandingComparisonSection />
 
@@ -114,36 +121,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ========================================================================= */}
-      {/* 5. CTA BAND (Blue #2563EB, Free Preview style)                            */}
-      {/* ========================================================================= */}
-      <section className="bg-[#2563EB] text-white py-16 sm:py-20 lg:py-24 relative overflow-hidden">
-        <div className="absolute inset-0 pointer-events-none opacity-10 bg-[radial-gradient(#fff_1px,transparent_1px)] [background-size:24px_24px]" />
-        <div className="max-w-3xl mx-auto px-6 text-center relative z-10 space-y-4 sm:space-y-5">
-          <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight">
-            Free preview
-          </h2>
-          <p className="text-white/90 text-base sm:text-lg max-w-xl mx-auto leading-relaxed font-normal">
-            No commitment. Just window shopping for your dream job. Job maxxing starts here.
-          </p>
-          <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
-            <WhiteHeroButton onClick={() => router.push("/early-access")} className="px-8 min-w-[200px]">
-              View Jobs
-            </WhiteHeroButton>
-            <Link
-              href="/early-access"
-              className="inline-flex items-center justify-center gap-2 bg-blue-700 hover:bg-blue-800 text-white border border-white/30 font-bold text-sm sm:text-base px-6 py-3.5 min-h-[44px] rounded-xl shadow-md transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
-            >
-              <span>See my Ideal Match</span>
-              <ArrowRight className="w-4 h-4" />
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      {/* ========================================================================= */}
-      {/* 5B. GLOBAL COVERAGE SECTION (Dotted Wireframe Globe + Details)            */}
-      {/* ========================================================================= */}
+      {/* (5) GLOBAL COVERAGE SECTION (Dotted Wireframe Globe + Details) */}
       <section className="max-w-6xl mx-auto px-4 py-16 sm:py-24">
         <div className="grid grid-cols-1 lg:grid-cols-2 items-center gap-10 lg:gap-12">
           {/* Right-side text block (stacked first on mobile via order-1) */}
@@ -187,9 +165,32 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ========================================================================= */}
-      {/* 6. FOUNDER CARD (Centered bordered card ~670px)                           */}
-      {/* ========================================================================= */}
+      {/* (6) CTA BAND (Blue #2563EB, Free Preview style) */}
+      <section className="bg-[#2563EB] text-white py-16 sm:py-20 lg:py-24 relative overflow-hidden">
+        <div className="absolute inset-0 pointer-events-none opacity-10 bg-[radial-gradient(#fff_1px,transparent_1px)] [background-size:24px_24px]" />
+        <div className="max-w-3xl mx-auto px-6 text-center relative z-10 space-y-4 sm:space-y-5">
+          <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight">
+            Free preview
+          </h2>
+          <p className="text-white/90 text-base sm:text-lg max-w-xl mx-auto leading-relaxed font-normal">
+            No commitment. Just window shopping for your dream job. Job maxxing starts here.
+          </p>
+          <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
+            <WhiteHeroButton onClick={() => router.push("/early-access")} className="px-8 min-w-[200px]">
+              View Jobs
+            </WhiteHeroButton>
+            <Link
+              href="/early-access"
+              className="inline-flex items-center justify-center gap-2 bg-blue-700 hover:bg-blue-800 text-white border border-white/30 font-bold text-sm sm:text-base px-6 py-3.5 min-h-[48px] rounded-xl shadow-md transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+            >
+              <span>See my Ideal Match</span>
+              <ArrowRight className="w-4 h-4" />
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* (7) BIO (Founder Card) */}
       <section className="pt-10 pb-8 sm:pt-12 sm:pb-10 lg:pt-14 lg:pb-12 max-w-content mx-auto px-6 w-full">
         <div className="max-w-[670px] mx-auto bg-white border border-[#E4E4E7] rounded-xl p-6 sm:p-8 shadow-sm">
           <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 text-center sm:text-left">
@@ -207,7 +208,7 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* Right: Name, role, story, 3 stats */}
+            {/* Right: Name, role, story */}
             <div className="space-y-3">
               <div>
                 <h3 className="text-2xl font-bold text-[#09090B]">Orissa here!</h3>
@@ -256,14 +257,10 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ========================================================================= */}
-      {/* 6. EXAMPLE FEEDBACK (12 scrolling sample cards)                           */}
-      {/* ========================================================================= */}
+      {/* FEEDBACK / TESTIMONIALS */}
       <Testimonials />
 
-      {/* ========================================================================= */}
-      {/* 8. FAQ (Gray-100 bg #F3F4F6, centered H2, 5 Q&A items, max-width ~670px) */}
-      {/* ========================================================================= */}
+      {/* FAQ (Gray-100 bg #F3F4F6, centered H2, 5 Q&A items, max-width ~670px) */}
       <section className="bg-[#F3F4F6] py-16 sm:py-20 lg:py-24">
         <div className="max-w-[670px] mx-auto px-6">
           <div className="text-center mb-8">
@@ -297,9 +294,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ========================================================================= */}
-      {/* 10. CONTACT (Gray-50 bg #F9FAFB, id="contact")                            */}
-      {/* ========================================================================= */}
+      {/* CONTACT US (Gray-50 bg #F9FAFB, id="contact") */}
       <section id="contact" className="bg-[#F9FAFB] py-16 sm:py-20 border-t border-gray-200/60">
         <div className="max-w-xl mx-auto px-6 text-center space-y-3">
           <h2 className="text-3xl font-bold sm:text-4xl md:text-[40px] md:leading-[1.2] tracking-tight text-[#09090B]">
@@ -319,23 +314,10 @@ export default function HomePage() {
         </div>
       </section>
 
-
-
-      {/* ========================================================================= */}
-      {/* 11. CREDIBILITY SECTION "Real numbers, not promises"                      */}
-      {/* ========================================================================= */}
+      {/* (8) CREDIBILITY SECTION "Real numbers, not promises" */}
       <LandingCredibilitySection />
 
-      
-      {/* JOBS JUST ADDED TICKER STRIP */}
-      <LandingJobsTickerStrip />
-
-      {/* 12. PRODUCT FEATURES SECTION */}
-      <LandingFeaturesSection />
-
-      {/* ========================================================================= */}
-      {/* 13. FOOTER (Navy #090E34) & BackToTop Button                              */}
-      {/* ========================================================================= */}
+      {/* (9) FOOTER (Navy #090E34) & BackToTop Button */}
       <Footer />
 
       {/* Category selection modal triggered by both "View Jobs" buttons */}
