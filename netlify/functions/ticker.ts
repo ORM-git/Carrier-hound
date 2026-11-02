@@ -73,17 +73,27 @@ export async function handler(event?: any) {
   const preflight = handleCorsPreflight(event, CORS_OPTIONS);
   if (preflight) return preflight;
 
+  const query = event?.queryStringParameters || {};
+  const isDistinct = query.distinct === "1" || query.distinct === "true";
+  const rawLimit = query.limit ? parseInt(query.limit, 10) : 20;
+  const TARGET_ITEMS = isDistinct
+    ? Math.min(30, Math.max(1, isNaN(rawLimit) ? 30 : rawLimit))
+    : Math.min(20, Math.max(1, isNaN(rawLimit) ? 20 : rawLimit));
+  const MAX_PER_COMPANY = isDistinct ? 1 : 2;
+
+  const cacheControl = isDistinct
+    ? "public, max-age=600, s-maxage=600, stale-while-revalidate=600"
+    : "public, max-age=60, s-maxage=60, stale-while-revalidate=120";
+
   const headers = {
     "Content-Type": "application/json",
-    "Cache-Control": "public, max-age=60, s-maxage=60, stale-while-revalidate=120",
+    "Cache-Control": cacheControl,
     ...buildCorsHeaders(event, CORS_OPTIONS),
   };
 
   try {
     const { supabase, supabaseUrl } = getSupabaseAdmin();
 
-    const TARGET_ITEMS = 20;
-    const MAX_PER_COMPANY = 2;
     const PAGE_SIZE = 100;
     const MAX_CANDIDATE_ROWS = 500;
     const MAX_FUTURE_SKEW_MS = 5 * 60 * 1000; // 5 minutes
