@@ -523,20 +523,14 @@ async function main() {
 
   if (isNegativeControlDigest) {
     process.env.__CAREERMONKE_LEGACY_DIGEST_SEND_EMPTY = "true";
-    process.env.GMAIL_CLIENT_ID = "nc-id";
-    process.env.GMAIL_CLIENT_SECRET = "nc-secret";
-    process.env.GMAIL_REFRESH_TOKEN = "nc-refresh";
-    process.env.GMAIL_SENDER_EMAIL = "nc@sender.example";
+    process.env.APPS_SCRIPT_MAIL_URL = "https://script.google.com/macros/s/nc-script/exec";
+    process.env.APPS_SCRIPT_MAIL_SECRET = "nc-secret";
     process.env.EARLY_ACCESS_NOTIFY_EMAIL = "nc@notify.example";
     mockDbRows.length = 0;
     mockSendLogRows.length = 0;
 
-    globalThis.fetch = (async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url === GMAIL_OAUTH_TOKEN_URL) {
-        return new Response(JSON.stringify({ access_token: "nc-token" }), { status: 200 });
-      }
-      return new Response(JSON.stringify({ id: "nc-digest" }), { status: 200 });
+    globalThis.fetch = (async () => {
+      return new Response("ok", { status: 200, headers: { "content-type": "text/plain" } });
     }) as typeof fetch;
 
     const res = await runEarlyAccessDigestCron({
@@ -1182,7 +1176,17 @@ async function main() {
     url: string;
     method: string;
     redirect?: string;
-    body: { secret: string; email: string };
+    body: {
+      secret: string;
+      email?: string;
+      to?: string;
+      recipient?: string;
+      kind?: string;
+      subject?: string;
+      body?: string;
+      textBody?: string;
+      htmlBody?: string;
+    };
   }
   const appsScriptCalls: CapturedAppsScriptCall[] = [];
 
@@ -1454,12 +1458,12 @@ async function main() {
     console.log("  [PASS] non-OK result logged as UNKNOWN and never resent");
 
     // ---------------------------------------------------------------------------
-    // TEST 5: Scheduled Owner Digest Cron (runEarlyAccessDigestCron)
+    // TEST 5: Scheduled Owner Digest Cron (runEarlyAccessDigestCron via Apps Script)
     // ---------------------------------------------------------------------------
-    console.log("\n[TEST 5] Verifying scheduled owner digest cron (all rows since last_digest_at, no send when 0 new rows)...");
+    console.log("\n[TEST 5] Verifying scheduled owner digest cron (Apps Script route, dedupe cursor, skip when no new rows, optional GMAIL_*)...");
     mockDbRows.length = 0;
     mockSendLogRows.length = 0;
-    gmailSendCalls.length = 0;
+    appsScriptCalls.length = 0;
 
     // 5a. When early_access_emails has 0 rows -> sends NO digest
     const emptyDigestRes = await runEarlyAccessDigestCron({
@@ -1468,7 +1472,7 @@ async function main() {
     assert.strictEqual(emptyDigestRes.status, "success");
     assert.strictEqual(emptyDigestRes.sent, false);
     assert.strictEqual(emptyDigestRes.reason, "no_new_rows");
-    assert.strictEqual(gmailSendCalls.length, 0, "No digest email may be sent when there are 0 rows");
+    assert.strictEqual(appsScriptCalls.length, 0, "No digest email may be sent when there are 0 rows");
 
     // 5b. Seed 3 signups and run digest cron -> sends ONE email with all 3 rows and logs kind='digest'
     mockDbRows.push(
@@ -1484,11 +1488,22 @@ async function main() {
     assert.strictEqual(firstDigestRes.status, "success");
     assert.strictEqual(firstDigestRes.sent, true);
     assert.strictEqual(firstDigestRes.rowCount, 3);
-    assert.strictEqual(gmailSendCalls.length, 1, "Digest cron must send exactly ONE email for all 3 rows");
-    assert.ok(gmailSendCalls[0].rawMime.includes(`To: <${TEST_NOTIFY_EMAIL}>`));
-    assert.ok(gmailSendCalls[0].rawMime.includes("first@example.com"));
-    assert.ok(gmailSendCalls[0].rawMime.includes("second@example.com"));
-    assert.ok(gmailSendCalls[0].rawMime.includes("third@example.com"));
+    assert.strictEqual(appsScriptCalls.length, 1, "Digest cron must send exactly ONE email for all 3 rows");
+    assert.strictEqual(appsScriptCalls[0].url, TEST_APPS_SCRIPT_URL);
+    assert.strictEqual(appsScriptCalls[0].body.secret, TEST_APPS_SCRIPT_SECRET);
+    assert.strictEqual(appsScriptCalls[0].body.email, TEST_NOTIFY_EMAIL);
+    assert.strictEqual(appsScriptCalls[0].body.kind, "digest");
+    assert.ok(appsScriptCalls[0].body.subject?.includes("3 new signups"));
+    assert.ok(appsScriptCalls[0].body.textBody?.includes("first@example.com"));
+    assert.ok(appsScriptCalls[0].body.textBody?.includes("second@example.com"));
+    assert.ok(appsScriptCalls[0].body.textBody?.includes("third@example.com"));
+    assert.ok(appsScriptCalls[0].body.htmlBody?.includes("first@example.com"));
+    assert.ok(
+      mockSendLogRows.some(
+        (r) => r.kind === "digest" && r.recipient_email === TEST_NOTIFY_EMAIL
+      ),
+      "Digest must be recorded in gmail_send_log with kind='digest'"
+    );
 
     // 5c. Re-running digest cron immediately with no new rows -> sends NO digest
     const repeatDigestRes = await runEarlyAccessDigestCron({
@@ -1498,7 +1513,7 @@ async function main() {
     assert.strictEqual(repeatDigestRes.status, "success");
     assert.strictEqual(repeatDigestRes.sent, false);
     assert.strictEqual(repeatDigestRes.reason, "no_new_rows");
-    assert.strictEqual(gmailSendCalls.length, 1, "Re-running cron with no new rows must send 0 emails");
+    assert.strictEqual(appsScriptCalls.length, 1, "Re-running cron with no new rows must send 0 emails");
 
     // 5d. Add 2 new rows after last_digest_at -> next cron run sends ONE email with ONLY the 2 new rows
     mockDbRows.push(
@@ -1512,14 +1527,65 @@ async function main() {
     assert.strictEqual(secondDigestRes.status, "success");
     assert.strictEqual(secondDigestRes.sent, true);
     assert.strictEqual(secondDigestRes.rowCount, 2);
-    assert.strictEqual(gmailSendCalls.length, 2);
-    assert.ok(gmailSendCalls[1].rawMime.includes("fourth@example.com"));
-    assert.ok(gmailSendCalls[1].rawMime.includes("fifth@example.com"));
+    assert.strictEqual(appsScriptCalls.length, 2);
+    assert.ok(appsScriptCalls[1].body.textBody?.includes("fourth@example.com"));
+    assert.ok(appsScriptCalls[1].body.textBody?.includes("fifth@example.com"));
     assert.ok(
-      !gmailSendCalls[1].rawMime.includes("first@example.com"),
+      !appsScriptCalls[1].body.textBody?.includes("first@example.com"),
       "Second digest must only include rows created after last_digest_at"
     );
-    console.log("  [PASS] Digest cron sends once with all rows since last_digest_at and skips when no new rows");
+
+    // 5e. Optional GMAIL_* env vars & dryRun verification
+    delete process.env.GMAIL_CLIENT_ID;
+    delete process.env.GMAIL_CLIENT_SECRET;
+    delete process.env.GMAIL_REFRESH_TOKEN;
+    delete process.env.GMAIL_SENDER_EMAIL;
+    delete process.env.GMAIL_SENDER_NAME;
+
+    mockDbRows.push({
+      email: "sixth@example.com",
+      created_at: "2026-10-31T05:00:00.000Z",
+    });
+
+    // Dry-run mode: skips sending and DB write
+    const dryRunRes = await runEarlyAccessDigestCron({
+      supabaseClient: (globalThis as any).__mockSupabaseClient,
+      nowIso: "2026-10-31T18:00:00.000Z",
+      dryRun: true,
+    });
+    assert.strictEqual(dryRunRes.status, "success");
+    assert.strictEqual(dryRunRes.sent, false);
+    assert.strictEqual(dryRunRes.reason, "dry_run");
+    assert.strictEqual(dryRunRes.rowCount, 1);
+    assert.strictEqual(appsScriptCalls.length, 2, "Dry-run must not dispatch an email");
+
+    // Live send without GMAIL_* variables succeeds via Apps Script
+    const noGmailRes = await runEarlyAccessDigestCron({
+      supabaseClient: (globalThis as any).__mockSupabaseClient,
+      nowIso: "2026-10-31T18:00:00.000Z",
+    });
+    assert.strictEqual(noGmailRes.status, "success");
+    assert.strictEqual(noGmailRes.sent, true);
+    assert.strictEqual(noGmailRes.rowCount, 1);
+    assert.strictEqual(appsScriptCalls.length, 3, "Digest must send cleanly via Apps Script without GMAIL_* env vars");
+    assert.ok(appsScriptCalls[2].body.textBody?.includes("sixth@example.com"));
+
+    // Missing Apps Script config or notifyEmail returns missing_env
+    const savedUrl = process.env.APPS_SCRIPT_MAIL_URL;
+    delete process.env.APPS_SCRIPT_MAIL_URL;
+    mockDbRows.push({
+      email: "seventh@example.com",
+      created_at: "2026-11-01T05:00:00.000Z",
+    });
+    const missingEnvRes = await runEarlyAccessDigestCron({
+      supabaseClient: (globalThis as any).__mockSupabaseClient,
+      nowIso: "2026-11-01T18:00:00.000Z",
+    });
+    assert.strictEqual(missingEnvRes.status, "failed");
+    assert.strictEqual(missingEnvRes.reason, "missing_env");
+    process.env.APPS_SCRIPT_MAIL_URL = savedUrl;
+
+    console.log("  [PASS] Digest cron sends once with all rows since last_digest_at and skips when no new rows (via Apps Script)");
 
     // 5e. Verify 80/day thank-you cap across gmail_send_log
     assert.strictEqual(DAILY_THANK_YOU_CAP, 80);

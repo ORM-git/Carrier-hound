@@ -57,20 +57,26 @@ export function readAppsScriptConfig(cfEnv?: Record<string, any>): AppsScriptMai
  */
 export function sanitizeLogMessage(
   raw: string,
-  config?: Partial<GmailEnvConfig>,
-  accessToken?: string
+  config?: Partial<GmailEnvConfig> | Partial<AppsScriptMailConfig> | Record<string, any>,
+  accessToken?: string,
+  extraNotifyEmail?: string
 ): string {
   let out = String(raw || "unknown error");
+  const cfg = config as Record<string, any> | undefined;
   const secrets = [
-    config?.clientId,
-    config?.clientSecret,
-    config?.refreshToken,
-    config?.senderEmail,
-    config?.notifyEmail,
+    cfg?.clientId,
+    cfg?.clientSecret,
+    cfg?.refreshToken,
+    cfg?.senderEmail,
+    cfg?.notifyEmail,
+    cfg?.url,
+    cfg?.secret,
     accessToken,
+    extraNotifyEmail,
     process.env.APPS_SCRIPT_MAIL_URL,
     process.env.APPS_SCRIPT_MAIL_SECRET,
-  ].filter((val): val is string => Boolean(val && val.length >= 3));
+    process.env.EARLY_ACCESS_NOTIFY_EMAIL,
+  ].filter((val): val is string => typeof val === "string" && val.length >= 3);
 
   for (const secret of secrets) {
     out = out.split(secret).join("[REDACTED]");
@@ -519,6 +525,93 @@ async function sendSingleGmailMessage(params: {
   }
 }
 
+export interface DispatchAppsScriptMailParams {
+  url: string;
+  secret: string;
+  payload: Record<string, any>;
+  timeoutMs?: number;
+  parentSignal?: AbortSignal;
+}
+
+export interface DispatchAppsScriptMailResult {
+  ok: boolean;
+  reply: string;
+  capHit: boolean;
+}
+
+/**
+ * Shared dispatcher to Google Apps Script mail endpoint.
+ * - Handles secret and POST body serialization.
+ * - Preserves method with redirect: "follow".
+ * - Timeout handling with AbortController.
+ * - Sanitized logging (safeWarn).
+ */
+export async function dispatchAppsScriptMail(
+  params: DispatchAppsScriptMailParams
+): Promise<DispatchAppsScriptMailResult> {
+  const timeoutMs = params.timeoutMs ?? APPS_SCRIPT_TIMEOUT_MS;
+  const controller = new AbortController();
+  const onParentAbort = () => controller.abort();
+  if (params.parentSignal) {
+    if (params.parentSignal.aborted) {
+      controller.abort();
+    } else {
+      params.parentSignal.addEventListener("abort", onParentAbort, { once: true });
+    }
+  }
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(params.url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        secret: params.secret,
+        ...params.payload,
+      }),
+      redirect: "follow",
+      signal: controller.signal,
+    });
+
+    const reply = (await response.text().catch(() => "")).trim().toLowerCase();
+
+    if (reply === "ok") {
+      safeWarn("ok");
+      return { ok: true, reply, capHit: false };
+    }
+
+    if (reply === "already") {
+      safeWarn("already");
+      return { ok: false, reply, capHit: false };
+    }
+
+    // Non-OK result (invalid, forbidden, busy, or unexpected status):
+    // Logged as UNKNOWN (status words only, no email, no URL, no script error text)
+    // and is NEVER automatically resent.
+    safeWarn("UNKNOWN");
+    return {
+      ok: false,
+      reply,
+      capHit: reply === "busy",
+    };
+  } catch (_err) {
+    // Timeout or network failure: logged as UNKNOWN, never automatically resent.
+    safeWarn("UNKNOWN");
+    return {
+      ok: false,
+      reply: "error",
+      capHit: false,
+    };
+  } finally {
+    clearTimeout(timer);
+    if (params.parentSignal) {
+      params.parentSignal.removeEventListener("abort", onParentAbort);
+    }
+  }
+}
+
 /**
  * Sends ONLY the thank-you email to a new early-access subscriber (never sends the owner digest on the request path).
  * - Enforces a hard 2s cap (THANK_YOU_HARD_CAP_MS) so it never hangs.
@@ -632,73 +725,44 @@ export async function sendEarlyAccessThankYouEmail(params: {
   }
 
   // 3. Dispatch POST to Apps Script web app with 8s timeout
-  const timeoutMs = params.hardCapMs ?? APPS_SCRIPT_TIMEOUT_MS;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const dispatchResult = await dispatchAppsScriptMail({
+    url: config.url,
+    secret: config.secret,
+    payload: {
+      email: normalizedEmail,
+    },
+    timeoutMs: params.hardCapMs ?? APPS_SCRIPT_TIMEOUT_MS,
+  });
 
-  try {
-    const response = await fetch(config.url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        secret: config.secret,
-        email: normalizedEmail,
-      }),
-      redirect: "follow",
-      signal: controller.signal,
+  if (dispatchResult.ok) {
+    await recordSentMessage(params.supabaseClient, {
+      recipient_email: normalizedEmail,
+      kind: "thank_you",
+      sent_at: new Date().toISOString(),
     });
-
-    const reply = (await response.text().catch(() => "")).trim().toLowerCase();
-
-    if (reply === "ok") {
-      safeWarn("ok");
-      await recordSentMessage(params.supabaseClient, {
-        recipient_email: normalizedEmail,
-        kind: "thank_you",
-        sent_at: new Date().toISOString(),
-      });
-      return {
-        thankYouSent: true,
-        capHit: false,
-        failedClosed: false,
-        alreadyThanked: false,
-      };
-    }
-
-    if (reply === "already") {
-      safeWarn("already");
-      return {
-        thankYouSent: false,
-        capHit: false,
-        failedClosed: false,
-        alreadyThanked: true,
-      };
-    }
-
-    // Non-OK result (invalid, forbidden, busy, or unexpected status):
-    // Logged as UNKNOWN (status words only, no email, no URL, no script error text)
-    // and is NEVER automatically resent.
-    safeWarn("UNKNOWN");
     return {
-      thankYouSent: false,
-      capHit: reply === "busy",
-      failedClosed: false,
-      alreadyThanked: false,
-    };
-  } catch (_err) {
-    // Timeout or network failure: logged as UNKNOWN, never automatically resent.
-    safeWarn("UNKNOWN");
-    return {
-      thankYouSent: false,
+      thankYouSent: true,
       capHit: false,
       failedClosed: false,
       alreadyThanked: false,
     };
-  } finally {
-    clearTimeout(timer);
   }
+
+  if (dispatchResult.reply === "already") {
+    return {
+      thankYouSent: false,
+      capHit: false,
+      failedClosed: false,
+      alreadyThanked: true,
+    };
+  }
+
+  return {
+    thankYouSent: false,
+    capHit: dispatchResult.capHit,
+    failedClosed: false,
+    alreadyThanked: false,
+  };
 }
 export interface EarlyAccessDigestCronResult {
   status: "success" | "failed";
@@ -731,7 +795,12 @@ export async function runEarlyAccessDigestCron(options?: {
   nowIso?: string;
 }): Promise<EarlyAccessDigestCronResult> {
   const dryRun = Boolean(options?.dryRun);
-  const config = readGmailConfig(options?.cfEnv);
+  const appsScriptConfig = readAppsScriptConfig(options?.cfEnv);
+  const notifyEmail = (
+    getRuntimeEnv("EARLY_ACCESS_NOTIFY_EMAIL", options?.cfEnv) ||
+    process.env.EARLY_ACCESS_NOTIFY_EMAIL ||
+    ""
+  ).trim();
 
   const isLegacySendEmpty =
     process.env.NODE_ENV === "test" &&
@@ -861,15 +930,9 @@ export async function runEarlyAccessDigestCron(options?: {
     };
   }
 
-  // 4. Verify Gmail env config
-  if (
-    !config.clientId ||
-    !config.clientSecret ||
-    !config.refreshToken ||
-    !config.senderEmail ||
-    !config.notifyEmail
-  ) {
-    safeWarn("Missing Gmail or EARLY_ACCESS_NOTIFY_EMAIL configuration for digest cron");
+  // 4. Verify Apps Script mail config and notifyEmail (GMAIL_* are optional)
+  if (!appsScriptConfig.url || !appsScriptConfig.secret || !notifyEmail) {
+    safeWarn("Missing Apps Script or EARLY_ACCESS_NOTIFY_EMAIL configuration for digest cron");
     return {
       status: "failed",
       sent: false,
@@ -917,36 +980,25 @@ export async function runEarlyAccessDigestCron(options?: {
     };
   }
 
-  // 6. Exchange refresh token and send ONE digest email with all new rows
-  const accessToken = await exchangeRefreshTokenForAccessToken(config, GMAIL_TIMEOUT_MS);
-  if (!accessToken) {
-    return {
-      status: "failed",
-      sent: false,
-      reason: "send_error",
-      rowCount: newRows.length,
-      lastDigestAt,
-    };
-  }
-
+  // 6. Send ONE digest email via Google Apps Script mail route
   const digestContent = buildOwnerDigestEmailContent(newRows);
-  const digestRaw = buildRfc2822Base64UrlMessage({
-    fromEmail: config.senderEmail,
-    fromName: config.senderName,
-    toEmail: config.notifyEmail,
-    subject: digestContent.subject,
-    textBody: digestContent.textBody,
-    htmlBody: digestContent.htmlBody,
+  const dispatchResult = await dispatchAppsScriptMail({
+    url: appsScriptConfig.url,
+    secret: appsScriptConfig.secret,
+    payload: {
+      email: notifyEmail,
+      to: notifyEmail,
+      recipient: notifyEmail,
+      kind: "digest",
+      subject: digestContent.subject,
+      body: digestContent.textBody,
+      textBody: digestContent.textBody,
+      htmlBody: digestContent.htmlBody,
+    },
+    timeoutMs: APPS_SCRIPT_TIMEOUT_MS,
   });
 
-  const digestResult = await sendSingleGmailMessage({
-    accessToken,
-    rawBase64Url: digestRaw,
-    config,
-    timeoutMs: GMAIL_TIMEOUT_MS,
-  });
-
-  if (!digestResult.sent) {
+  if (!dispatchResult.ok) {
     return {
       status: "failed",
       sent: false,
@@ -968,7 +1020,7 @@ export async function runEarlyAccessDigestCron(options?: {
       : currentIso;
 
   await recordSentMessage(supabaseClient, {
-    recipient_email: config.notifyEmail,
+    recipient_email: notifyEmail,
     kind: "digest",
     sent_at: digestSentAt,
   });
