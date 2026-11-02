@@ -12,6 +12,7 @@ import CategorySelectModal from "@/components/CategorySelectModal";
 import Footer from "@/components/Footer";
 import GlobeLiveStats from "@/components/GlobeLiveStats";
 import LandingTopArtifact from "@/components/LandingTopArtifact";
+import LandingJobHubStatsSection from "@/components/LandingJobHubStatsSection";
 import LandingFeaturesSection from "@/components/LandingFeaturesSection";
 import LandingCompanyLogoTicker from "@/components/LandingCompanyLogoTicker";
 import LandingCredibilitySection from "@/components/LandingCredibilitySection";
@@ -51,6 +52,9 @@ export default function HomePage() {
 
       {/* (1) TOP ARTIFACT: Sticky Nav, Hero, and Demo Band */}
       <LandingTopArtifact />
+
+      {/* REAL NUMBERS & GROWING JOB HUB STATS SECTION */}
+      <LandingJobHubStatsSection />
 
       {/* (2) PRODUCT FEATURES SECTION */}
       <LandingFeaturesSection />

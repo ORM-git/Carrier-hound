@@ -217,6 +217,33 @@ check("Landing source contains no hardcoded sample jobs (Tenable, 106,000, 141,3
   );
 });
 
+check("LandingJobHubStatsSection renders no fake numbers and hides on empty data", () => {
+  const compPath = path.resolve(process.cwd(), "src", "components", "LandingJobHubStatsSection.tsx");
+  assert.ok(fs.existsSync(compPath), "LandingJobHubStatsSection.tsx must exist");
+  const content = fs.readFileSync(compPath, "utf8");
+
+  for (const forbidden of ["16,423", "16,000+", "61,000+", "12,000+", "4.5 million", "150+"]) {
+    assert.strictEqual(
+      content.includes(forbidden),
+      false,
+      `LandingJobHubStatsSection must not contain forbidden marketing figure "${forbidden}"`
+    );
+  }
+
+  for (const forbiddenText of ["trusted users", "interviews landed", "time saved", "No.1 choice", "Trustpilot"]) {
+    assert.strictEqual(
+      content.toLowerCase().includes(forbiddenText.toLowerCase()),
+      false,
+      `LandingJobHubStatsSection must not contain disallowed claim "${forbiddenText}"`
+    );
+  }
+
+  assert.ok(
+    content.includes("return null"),
+    "LandingJobHubStatsSection must return null when stats are unavailable or missing"
+  );
+});
+
 // -----------------------------------------------------------------------------
 // SECTION 3: Negative Control
 // -----------------------------------------------------------------------------
