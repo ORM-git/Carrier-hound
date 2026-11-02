@@ -375,12 +375,24 @@ export async function executeAiCore(
 
     // 4b. Plan & Addon Quota Consumption (Exclusively for resume_tailor and cover_letter)
     if (config.operation === "resume_tailor" || config.operation === "cover_letter") {
-      setConsumeKey =
+      // Client-supplied idempotency key:
+      // If the client provides an idempotency key or request ID in the request payload or params,
+      // use that exact key so network retries never burn quota twice. If omitted, generate a unique
+      // server-side fallback key prefixed by user ID and operation to ensure single-use traceability.
+      const candidateKey =
         body.idempotencyKey ||
         body.idempotency_key ||
+        body.requestId ||
+        body.request_id ||
         params?.idempotencyKey ||
         params?.idempotency_key ||
-        `set_${user.id}_${config.operation}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+        params?.requestId ||
+        params?.request_id;
+
+      setConsumeKey =
+        typeof candidateKey === "string" && candidateKey.trim()
+          ? candidateKey.trim()
+          : `set_${user.id}_${config.operation}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
       const doConsume = activeDeps.consumeSet || consumeSet;
       const consumeRes = await doConsume(user.id, config.operation, setConsumeKey);

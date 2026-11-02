@@ -115,42 +115,61 @@ export async function POST(req: Request) {
       );
     }
 
-    // Look up order in payment_orders table belonging to user
-    let orderRow: any = null;
-    try {
-      const { data: foundOrder } = await supabaseAdmin
-        .from("payment_orders")
-        .select("*")
-        .eq("provider_order_id", orderId)
-        .eq("user_id", user.id)
-        .maybeSingle();
-      orderRow = foundOrder;
-    } catch (orderLookErr) {
-      console.warn("[Razorpay Verify] payment_orders lookup warning:", orderLookErr);
+    // Look up order in payment_orders table belonging to user (REQUIRED - Fail closed)
+    const { data: orderRow, error: orderErr } = await supabaseAdmin
+      .from("payment_orders")
+      .select("*")
+      .eq("provider_order_id", orderId)
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (orderErr || !orderRow) {
+      return NextResponse.json(
+        { error: "Payment order record not found or access denied", code: "ORDER_NOT_FOUND" },
+        { status: 404 }
+      );
     }
 
-    // Idempotent: a second verify does nothing
-    if (orderRow && orderRow.status === "paid") {
+    // Fail closed on payload vs order row mismatch
+    const payloadPlan = (body as any).planCode || (body as any).plan_code;
+    const payloadAddon = (body as any).addonCode || (body as any).addon_code;
+    const payloadAmount = (body as any).amount;
+
+    if (payloadAmount && Number(payloadAmount) !== orderRow.amount_paise) {
+      return NextResponse.json(
+        { error: "Payment amount does not match recorded order amount", code: "AMOUNT_MISMATCH" },
+        { status: 400 }
+      );
+    }
+
+    if (payloadPlan && orderRow.plan_code && payloadPlan !== orderRow.plan_code) {
+      return NextResponse.json(
+        { error: "Plan code does not match recorded order", code: "PLAN_MISMATCH" },
+        { status: 400 }
+      );
+    }
+
+    if (payloadAddon && orderRow.addon_code && payloadAddon !== orderRow.addon_code) {
+      return NextResponse.json(
+        { error: "Addon code does not match recorded order", code: "ADDON_MISMATCH" },
+        { status: 400 }
+      );
+    }
+
+    if (!orderRow.plan_code && !orderRow.addon_code) {
+      return NextResponse.json(
+        { error: "Order record is missing valid plan or addon item", code: "INVALID_ORDER_STATE" },
+        { status: 400 }
+      );
+    }
+
+    // Idempotent: a second verify on an already paid order returns without granting again
+    if (orderRow.status === "paid") {
       return NextResponse.json({
         success: true,
         message: "Order already verified and paid",
         alreadyPaid: true,
       });
-    }
-
-    // Mark payment_orders row as paid
-    if (orderRow) {
-      try {
-        await supabaseAdmin
-          .from("payment_orders")
-          .update({
-            status: "paid",
-            paid_at: new Date().toISOString(),
-          })
-          .eq("id", orderRow.id);
-      } catch (updateErr) {
-        console.warn("[Razorpay Verify] payment_orders update warning:", updateErr);
-      }
     }
 
     // Test mode safety check: if key id starts with rzp_test_, NEVER grant Pro or add-on sets
@@ -164,16 +183,61 @@ export async function POST(req: Request) {
       });
     }
 
-    // Live mode fulfillment
-    const isAddon = Boolean(orderRow?.addon_code);
-    const addonCode = orderRow?.addon_code;
-    const rawPlanCode = orderRow?.plan_code || "monthly";
-    const planCode = mapPlanIdToCode(rawPlanCode);
+    // Attempt atomic fulfillment via Postgres RPC function
+    try {
+      const { data: fulfilRes, error: fulfilErr } = await supabaseAdmin.rpc("fulfil_payment_order", {
+        p_provider_order_id: orderId,
+        p_user_id: user.id,
+      });
 
-    if (isAddon && addonCode) {
-      // Add-on pack purchase: insert into user_addon_credits (sets, expires_at now + 60 days)
-      const addonDef = ADDON_PACK_DEFINITIONS[addonCode] || { sets: 10, validity_days: 60 };
-      const expiresAt = new Date(Date.now() + (addonDef.validity_days || 60) * 24 * 60 * 60 * 1000).toISOString();
+      if (!fulfilErr && fulfilRes) {
+        if (fulfilRes.success) {
+          return NextResponse.json(fulfilRes);
+        }
+        return NextResponse.json(
+          { error: fulfilRes.error || "Payment fulfillment failed", code: fulfilRes.code || "FULFILLMENT_FAILED" },
+          { status: 400 }
+        );
+      }
+    } catch {
+      // Fall through to atomic conditional update if RPC is not registered
+    }
+
+    // Atomic conditional update: only fulfill if status is currently 'created'
+    const { data: updatedOrders, error: updateErr } = await supabaseAdmin
+      .from("payment_orders")
+      .update({
+        status: "paid",
+        paid_at: new Date().toISOString(),
+      })
+      .eq("id", orderRow.id)
+      .eq("status", "created")
+      .select();
+
+    if (updateErr) {
+      console.error("[Razorpay Verify] Failed to update payment order status:", updateErr);
+      return NextResponse.json(
+        { error: "Failed to update order status", code: "ORDER_UPDATE_FAILED" },
+        { status: 500 }
+      );
+    }
+
+    if (!updatedOrders || updatedOrders.length === 0) {
+      return NextResponse.json({
+        success: true,
+        message: "Order already verified and paid",
+        alreadyPaid: true,
+      });
+    }
+
+    // Fulfill based strictly on orderRow (never defaulting to monthly)
+    if (orderRow.addon_code) {
+      const addonCode = orderRow.addon_code;
+      const addonDef = ADDON_PACK_DEFINITIONS[addonCode];
+      if (!addonDef) {
+        return NextResponse.json({ error: "Unknown add-on pack", code: "UNKNOWN_ADDON" }, { status: 400 });
+      }
+      const expiresAt = new Date(Date.now() + (addonDef.validity_days || 60) * 86400000).toISOString();
 
       const { data: creditRow, error: creditErr } = await supabaseAdmin
         .from("user_addon_credits")
@@ -183,11 +247,15 @@ export async function POST(req: Request) {
           sets_total: addonDef.sets,
           sets_remaining: addonDef.sets,
           expires_at: expiresAt,
+          order_id: orderRow.id,
         })
         .select()
         .single();
 
       if (creditErr) {
+        if (creditErr.code === "23505") {
+          return NextResponse.json({ success: true, alreadyPaid: true });
+        }
         console.error("[Razorpay Verify] Add-on credit persistence error:", creditErr);
         return NextResponse.json({ error: creditErr.message }, { status: 500 });
       }
@@ -200,12 +268,15 @@ export async function POST(req: Request) {
         expiresAt,
         credit: creditRow,
       });
-    } else {
-      // Subscription plan purchase: upsert subscriptions with plan_id = plan code and current_period_end = now + duration_days
-      const planDef = PLAN_DEFINITIONS[planCode as PlanCode] || PLAN_DEFINITIONS.monthly;
+    } else if (orderRow.plan_code) {
+      const planCode = orderRow.plan_code as PlanCode;
+      const planDef = PLAN_DEFINITIONS[planCode];
+      if (!planDef) {
+        return NextResponse.json({ error: "Unknown plan code", code: "UNKNOWN_PLAN" }, { status: 400 });
+      }
       const durationDays = planDef.duration_days || 30;
       const currentPeriodStart = new Date().toISOString();
-      const currentPeriodEnd = new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000).toISOString();
+      const currentPeriodEnd = new Date(Date.now() + durationDays * 86400000).toISOString();
 
       const { data: sub, error: subError } = await supabaseAdmin
         .from("subscriptions")
@@ -222,7 +293,7 @@ export async function POST(req: Request) {
             cancel_at_period_end: false,
             metadata: {
               razorpay_order_id: orderId,
-              razorpay_payment_id: paymentId,
+              payment_order_id: orderRow.id,
               verified_at: new Date().toISOString(),
               mode: "live",
               source: "razorpay_standard_checkout",
@@ -246,6 +317,11 @@ export async function POST(req: Request) {
         planCode,
         subscription: sub,
       });
+    } else {
+      return NextResponse.json(
+        { error: "Order record missing valid item", code: "INVALID_ORDER" },
+        { status: 400 }
+      );
     }
   } catch (err: any) {
     return NextResponse.json(

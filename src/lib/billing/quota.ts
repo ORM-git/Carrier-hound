@@ -159,6 +159,7 @@ export function resolveOrderPricing(input: {
 
 export interface PlanQuotaResult {
   planCode: PlanCode | null;
+  periodStart: string | null;
   periodEnd: string | null;
   resumesRemaining: number;
   coverLettersRemaining: number;
@@ -169,6 +170,7 @@ export interface PlanQuotaResult {
 
 export const FREE_QUOTA_DEFAULT: PlanQuotaResult = {
   planCode: null,
+  periodStart: null,
   periodEnd: null,
   resumesRemaining: 0,
   coverLettersRemaining: 0,
@@ -399,6 +401,7 @@ export async function getPlanQuota(
 
     return {
       planCode,
+      periodStart: periodStart.toISOString(),
       periodEnd: periodEnd.toISOString(),
       resumesRemaining,
       coverLettersRemaining,

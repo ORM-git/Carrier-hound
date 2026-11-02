@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { getServerEntitlement } from "./serverEntitlement";
-import { getPlanQuota } from "./quota";
+import { getPlanQuota, PLAN_DEFINITIONS } from "./quota";
 
 export type QuotaKind = "resume_tailor" | "cover_letter";
 export type QuotaSource = "plan" | "addon";
@@ -8,6 +8,7 @@ export type QuotaSource = "plan" | "addon";
 export interface ConsumeResult {
   success: boolean;
   source?: QuotaSource;
+  credit_id?: string | null;
   alreadyConsumed?: boolean;
   code?: "PRO_REQUIRED" | "DAILY_LIMIT_REACHED" | "QUOTA_EXHAUSTED" | "DATABASE_ERROR";
   error?: string;
@@ -17,6 +18,7 @@ export interface RefundResult {
   success: boolean;
   refunded: boolean;
   source?: QuotaSource;
+  credit_id?: string | null;
   error?: string;
 }
 
@@ -41,7 +43,7 @@ export function isDailyCapExceeded(todayEventCount: number, cap: number = 30): b
 }
 
 /**
- * Determines whether to consume from the active subscription plan or add-on packs.
+ * Pure decision helper: Determines whether to consume from the active subscription plan or add-on packs.
  */
 export function determineQuotaSource(
   kind: QuotaKind,
@@ -80,13 +82,16 @@ function getSupabaseAdmin() {
 }
 
 /**
- * Consumes one unit of resume_tailor or cover_letter quota.
- * Quota Priority:
- * 1. Pro Entitlement check (Free users rejected)
- * 2. Idempotency check (repeat idempotency key returns earlier result without burning twice)
- * 3. Daily Cap check (max 30 total generations across both sources per IST day)
- * 4. Plan quota for current period
- * 5. Add-on packs (earliest-expiring non-expired credits decremented atomically)
+ * Consumes one unit of resume_tailor or cover_letter quota atomically.
+ * Execution Order:
+ * 1. Pro Entitlement check (Fail closed for free users)
+ * 2. Plan quota calculation to determine stepped period start and kind quota
+ * 3. Atomic Postgres RPC execution taking per-user advisory lock:
+ *    - Validates idempotency key (returns existing result without re-burning)
+ *    - Checks 30/day IST daily cap across plan & addon usage
+ *    - Consumes from plan quota if remaining for current period
+ *    - Falls back to earliest-expiring non-expired add-on set decremented atomically
+ *    - Records exact decremented credit_id on plan_usage_events
  */
 export async function consumeSet(
   userId: string,
@@ -107,7 +112,7 @@ export async function consumeSet(
   }
 
   try {
-    // 1. Pro Entitlement Check
+    // 1. Pro Entitlement Check - Fail closed
     const entitlement = await getServerEntitlement(userId);
     if (!entitlement.isPro) {
       return {
@@ -119,149 +124,112 @@ export async function consumeSet(
 
     const supabaseAdmin = getSupabaseAdmin();
 
-    // 2. Check Idempotency: repeat key returns earlier result and never burns twice
-    const { data: existingEvent } = await supabaseAdmin
-      .from("plan_usage_events")
-      .select("id, source, kind")
-      .eq("user_id", userId)
-      .eq("idempotency_key", idempotencyKey)
-      .maybeSingle();
-
-    if (existingEvent) {
-      return {
-        success: true,
-        source: existingEvent.source as QuotaSource,
-        alreadyConsumed: true,
-      };
-    }
-
-    // 3. Daily Cap Check (30 generations per IST day across both sources)
-    const istStart = getStartOfIstDay(now);
-    const { count: todayEventCount } = await supabaseAdmin
-      .from("plan_usage_events")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", userId)
-      .gte("created_at", istStart.toISOString());
-
-    if (isDailyCapExceeded(todayEventCount || 0, 30)) {
-      return {
-        success: false,
-        code: "DAILY_LIMIT_REACHED",
-        error: "Daily fair-use limit of 30 generations reached. Resets daily at midnight IST.",
-      };
-    }
-
-    // 4. Check Plan Quota for current period
+    // 2. Resolve quota period and plan parameters
     const quota = await getPlanQuota(userId, now);
-    const quotaDecision = determineQuotaSource(
-      kind,
-      quota.resumesRemaining,
-      quota.coverLettersRemaining,
-      quota.addonSetsRemaining
-    );
+    const planDef = quota.planCode ? PLAN_DEFINITIONS[quota.planCode] : null;
+    const kindQuota =
+      kind === "resume_tailor"
+        ? (planDef?.resume_quota ?? 0)
+        : (planDef?.cover_letter_quota ?? 0);
 
-    if (quotaDecision.source === "plan") {
-      // Consume from plan quota
-      const { error: insertErr } = await supabaseAdmin
-        .from("plan_usage_events")
-        .insert({
-          user_id: userId,
-          kind,
-          source: "plan",
-          idempotency_key: idempotencyKey,
-          created_at: now.toISOString(),
-        });
+    const periodStart = quota.periodStart || now.toISOString();
+    const dayStart = getStartOfIstDay(now).toISOString();
 
-      if (insertErr) {
-        // If conflict on idempotency key race, re-check
-        if (insertErr.code === "23505") {
-          return { success: true, source: "plan", alreadyConsumed: true };
+    // 3. Primary Atomic RPC: consume_user_set (advisory lock + IST cap + plan + addon in one transaction)
+    try {
+      const { data: userSetRes, error: userSetErr } = await supabaseAdmin.rpc("consume_user_set", {
+        p_user_id: userId,
+        p_kind: kind,
+        p_idempotency_key: idempotencyKey,
+        p_period_start: periodStart,
+        p_quota: kindQuota,
+        p_daily_cap: 30,
+        p_day_start: dayStart,
+      });
+
+      if (!userSetErr && userSetRes) {
+        if (userSetRes.success) {
+          return {
+            success: true,
+            source: userSetRes.source as QuotaSource,
+            credit_id: userSetRes.credit_id || null,
+            alreadyConsumed: Boolean(userSetRes.already_consumed),
+          };
         }
-        console.error("[consumeSet] Failed to insert plan usage event:", insertErr);
-        return { success: false, code: "DATABASE_ERROR", error: "Failed to record plan quota usage" };
-      }
-
-      return { success: true, source: "plan" };
-    }
-
-    if (quotaDecision.source === "addon") {
-      // Try atomic RPC function first
-      try {
-        const { data: rpcRes, error: rpcErr } = await supabaseAdmin.rpc("consume_addon_set", {
-          p_user_id: userId,
-          p_kind: kind,
-          p_idempotency_key: idempotencyKey,
-        });
-
-        if (!rpcErr && rpcRes) {
-          if (rpcRes.success) {
-            return {
-              success: true,
-              source: "addon",
-              alreadyConsumed: Boolean(rpcRes.already_consumed),
-            };
-          }
-          if (rpcRes.code === "QUOTA_EXHAUSTED") {
-            return {
-              success: false,
-              code: "QUOTA_EXHAUSTED",
-              error: rpcRes.error || "Plan quota finished and no active add-on credits available.",
-            };
-          }
-        }
-      } catch {
-        // Fall back to direct atomic steps if RPC is not yet registered
-      }
-
-      // Fallback: Select earliest-expiring non-expired add-on credit
-      const { data: credits, error: creditErr } = await supabaseAdmin
-        .from("user_addon_credits")
-        .select("id, sets_remaining, expires_at")
-        .eq("user_id", userId)
-        .gt("sets_remaining", 0)
-        .gt("expires_at", now.toISOString())
-        .order("expires_at", { ascending: true })
-        .limit(1);
-
-      if (creditErr || !credits || credits.length === 0) {
         return {
           success: false,
-          code: "QUOTA_EXHAUSTED",
-          error: "Plan quota finished and no active add-on credits available.",
+          code: userSetRes.code || "QUOTA_EXHAUSTED",
+          error: userSetRes.error || "Quota consumption rejected",
         };
       }
-
-      const credit = credits[0];
-      const newRemaining = Math.max(0, credit.sets_remaining - 1);
-
-      // Decrement add-on credit
-      await supabaseAdmin
-        .from("user_addon_credits")
-        .update({ sets_remaining: newRemaining })
-        .eq("id", credit.id);
-
-      // Record event with source 'addon'
-      const { error: insertErr } = await supabaseAdmin
-        .from("plan_usage_events")
-        .insert({
-          user_id: userId,
-          kind,
-          source: "addon",
-          idempotency_key: idempotencyKey,
-          created_at: now.toISOString(),
-        });
-
-      if (insertErr && insertErr.code !== "23505") {
-        console.error("[consumeSet] Failed to insert addon usage event:", insertErr);
-      }
-
-      return { success: true, source: "addon" };
+    } catch {
+      // Fall through to individual atomic RPCs if consume_user_set not yet present
     }
 
+    // 4. Secondary Atomic RPC path: consume_plan_set followed by consume_addon_set
+    try {
+      const { data: planRes, error: planErr } = await supabaseAdmin.rpc("consume_plan_set", {
+        p_user_id: userId,
+        p_kind: kind,
+        p_idempotency_key: idempotencyKey,
+        p_period_start: periodStart,
+        p_quota: kindQuota,
+        p_daily_cap: 30,
+        p_day_start: dayStart,
+      });
+
+      if (!planErr && planRes) {
+        if (planRes.success) {
+          return {
+            success: true,
+            source: "plan",
+            alreadyConsumed: Boolean(planRes.already_consumed),
+          };
+        }
+
+        if (planRes.code === "DAILY_LIMIT_REACHED") {
+          return {
+            success: false,
+            code: "DAILY_LIMIT_REACHED",
+            error: planRes.error || "Daily fair-use limit of 30 generations reached.",
+          };
+        }
+      }
+
+      // If plan quota is exhausted, attempt atomic addon consume
+      const { data: addonRes, error: addonErr } = await supabaseAdmin.rpc("consume_addon_set", {
+        p_user_id: userId,
+        p_kind: kind,
+        p_idempotency_key: idempotencyKey,
+        p_daily_cap: 30,
+        p_day_start: dayStart,
+      });
+
+      if (!addonErr && addonRes) {
+        if (addonRes.success) {
+          return {
+            success: true,
+            source: "addon",
+            credit_id: addonRes.credit_id || null,
+            alreadyConsumed: Boolean(addonRes.already_consumed),
+          };
+        }
+
+        return {
+          success: false,
+          code: addonRes.code || "QUOTA_EXHAUSTED",
+          error: addonRes.error || "Plan quota finished and no active add-on credits available.",
+        };
+      }
+    } catch (rpcErr) {
+      console.error("[consumeSet] RPC execution error:", rpcErr);
+    }
+
+    // Fail closed: No non-atomic fallback allowed on quota money path
     return {
       success: false,
-      code: "QUOTA_EXHAUSTED",
-      error: "Plan quota finished and no active add-on credits available.",
+      code: "DATABASE_ERROR",
+      error: "Quota service temporarily unavailable. Please try again.",
     };
   } catch (err: any) {
     console.error("[consumeSet] Unexpected error:", err);
@@ -270,8 +238,9 @@ export async function consumeSet(
 }
 
 /**
- * Refunds a consumed set on failure.
- * Deletes the usage event and restores 1 add-on set if the event came from 'addon'.
+ * Refunds a consumed set on upstream AI generation or validation failure.
+ * - Restores the exact decremented user_addon_credits row (never exceeds sets_total).
+ * - Deletes the recorded plan_usage_events row.
  */
 export async function refundSet(
   userId: string,
@@ -285,9 +254,29 @@ export async function refundSet(
   try {
     const supabaseAdmin = getSupabaseAdmin();
 
+    // 1. Attempt atomic Postgres RPC refund
+    try {
+      const { data: rpcRes, error: rpcErr } = await supabaseAdmin.rpc("refund_plan_or_addon_set", {
+        p_user_id: userId,
+        p_idempotency_key: idempotencyKey,
+      });
+
+      if (!rpcErr && rpcRes && rpcRes.success) {
+        return {
+          success: true,
+          refunded: Boolean(rpcRes.refunded),
+          source: rpcRes.source as QuotaSource,
+          credit_id: rpcRes.credit_id || null,
+        };
+      }
+    } catch {
+      // Fall through to exact row restoration if RPC not yet registered
+    }
+
+    // 2. Fallback: Restore exact credit row from usage event and delete event
     const { data: event, error: selectErr } = await supabaseAdmin
       .from("plan_usage_events")
-      .select("id, source")
+      .select("id, source, credit_id")
       .eq("user_id", userId)
       .eq("idempotency_key", idempotencyKey)
       .maybeSingle();
@@ -296,21 +285,21 @@ export async function refundSet(
       return { success: true, refunded: false };
     }
 
-    if (event.source === "addon") {
-      // Find a non-expired addon credit to restore
-      const { data: credits } = await supabaseAdmin
+    if (event.source === "addon" && event.credit_id) {
+      // Fetch the exact credit row that was decremented
+      const { data: credit } = await supabaseAdmin
         .from("user_addon_credits")
         .select("id, sets_remaining, sets_total")
+        .eq("id", event.credit_id)
         .eq("user_id", userId)
-        .gt("expires_at", now.toISOString())
-        .order("expires_at", { ascending: true })
-        .limit(1);
+        .maybeSingle();
 
-      if (credits && credits.length > 0) {
-        const credit = credits[0];
+      if (credit) {
+        // Guarantee restoration never exceeds sets_total
+        const restoredSets = Math.min(credit.sets_total, credit.sets_remaining + 1);
         await supabaseAdmin
           .from("user_addon_credits")
-          .update({ sets_remaining: credit.sets_remaining + 1 })
+          .update({ sets_remaining: restoredSets })
           .eq("id", credit.id);
       }
     }
@@ -320,7 +309,12 @@ export async function refundSet(
       .delete()
       .eq("id", event.id);
 
-    return { success: true, refunded: true, source: event.source as QuotaSource };
+    return {
+      success: true,
+      refunded: true,
+      source: event.source as QuotaSource,
+      credit_id: event.credit_id || null,
+    };
   } catch (err: any) {
     console.error("[refundSet] Unexpected error:", err);
     return { success: false, refunded: false, error: err?.message };

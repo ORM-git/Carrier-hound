@@ -108,20 +108,24 @@ export async function POST(req: Request) {
 
     const orderData = await rzpRes.json();
 
-    // Record order in payment_orders table with status 'created'
-    try {
-      await supabaseAdmin.from("payment_orders").insert({
-        user_id: user.id,
-        provider: "razorpay",
-        provider_order_id: orderData.id,
-        plan_code: pricing.type === "plan" ? pricing.code : null,
-        addon_code: pricing.type === "addon" ? pricing.code : null,
-        amount_paise: amountInPaise,
-        currency,
-        status: "created",
-      });
-    } catch (orderDbErr) {
-      console.warn("[Razorpay Order] Failed to record payment_orders row:", orderDbErr);
+    // Record order in payment_orders table with status 'created' - REQUIRED on money path
+    const { error: insertErr } = await supabaseAdmin.from("payment_orders").insert({
+      user_id: user.id,
+      provider: "razorpay",
+      provider_order_id: orderData.id,
+      plan_code: pricing.type === "plan" ? pricing.code : null,
+      addon_code: pricing.type === "addon" ? pricing.code : null,
+      amount_paise: amountInPaise,
+      currency,
+      status: "created",
+    });
+
+    if (insertErr) {
+      console.error("[Razorpay Order] Critical: payment_orders insert failed; failing closed:", insertErr);
+      return NextResponse.json(
+        { error: "Failed to initialize order tracking. Please try again.", code: "ORDER_RECORD_FAILED" },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({
