@@ -2,8 +2,16 @@
  * src/config/plans.ts
  *
  * Central configuration file for CareerMonke subscription plans, quotas, and pricing.
- * All plan data, pricing, intervals, sub-lines, badges, add-on packs, and policy notes
- * are defined here in one place so prices and terms can change easily later.
+ * Single source of truth for pricing amounts, intervals, sub-lines, badges, add-on packs,
+ * comparison capabilities, and policy notes.
+ *
+ * APPROVED PRICES & QUOTAS:
+ * - Weekly: ₹692, billed weekly: 15 sets/week. (Supersedes old ₹499 price).
+ * - Monthly: ₹1,499, billed monthly: 60 sets/month. Badge: "Recommended". Default selected.
+ * - Quarterly: ₹3,999, billed every 3 months: 60 sets each month, resetting monthly. Badge: "Best value".
+ * - 1 Set = 1 job extraction + 1 resume tailoring + 1 cover letter.
+ * - Add-ons: ₹149 / ₹399 / ₹699 for 10 / 30 / 60 extra sets, valid 60 days (planned / coming soon).
+ * - Anti-abuse daily limit: 30 generations/day.
  */
 
 export type PlanInterval = "week" | "month" | "quarter";
@@ -11,18 +19,41 @@ export type PlanInterval = "week" | "month" | "quarter";
 export interface PlanConfig {
   id: "weekly" | "monthly" | "quarterly";
   name: string;
-  price: number; // in INR (Rs)
+  price: number; // in INR (₹)
+  originalPrice?: number;
+  savingsBadge?: string;
   currency: "INR";
   interval: PlanInterval;
   billingText: string;
   subLine: string;
-  badge?: "Most popular" | "Best value";
+  quotaSets: number;
+  quotaPeriodText: string;
+  badge?: "Recommended" | "Best value" | "Most popular";
   isDefault?: boolean;
+}
+
+export interface FreeTierConfig {
+  name: string;
+  price: number;
+  currency: "INR";
+  billingText: string;
+  subLine: string;
+  ctaText: string;
+  features: string[];
 }
 
 export interface AddOnPack {
   price: number;
   sets: number;
+}
+
+export interface PlanComparisonRow {
+  category: string;
+  feature: string;
+  description: string;
+  free: string | boolean;
+  premium: string | boolean;
+  isUpcoming?: boolean;
 }
 
 export const ADD_ON_PACKS: AddOnPack[] = [
@@ -32,7 +63,7 @@ export const ADD_ON_PACKS: AddOnPack[] = [
 ];
 
 export const ADD_ON_PACKS_NOTE =
-  "Need more? Add-on packs Rs 149 / 399 / 699 = 10 / 30 / 60 extra sets, used after your plan quota, valid 60 days";
+  "Planned Add-ons: ₹149 / ₹399 / ₹699 for 10 / 30 / 60 extra sets, used after plan quota, valid 60 days (coming soon).";
 
 export const REFUND_POLICY_NOTE = "All sales final, no refunds";
 
@@ -40,40 +71,167 @@ export const FAIR_USE_LIMIT_NOTE =
   "Fair-use limit: 30 generations per day on every plan.";
 
 export const PER_WEEK_NOTE =
-  "*Per-week figures are calculated as (monthly price × 12 / 52) or (quarterly price × 4 / 52) rounded to the nearest rupee.";
+  "*Per-week figures are calculated as (monthly price × 12 / 52) or (quarterly price × 4 / 52) rounded to the nearest rupee. These are comparisons to show relative savings, not weekly charges.";
 
 export const UPGRADE_BUTTON_LABEL = "Payments opening soon";
+
+export const FREE_TIER_CONFIG: FreeTierConfig = {
+  name: "CareerMonke Free",
+  price: 0,
+  currency: "INR",
+  billingText: "Free forever",
+  subLine: "Basic search & masked employer previews",
+  ctaText: "Current Plan",
+  features: [
+    "Search unindexed remote tech jobs",
+    "Direct employer verification tags",
+    "Masked company names & logos",
+    "Direct ATS apply links hidden",
+    "Masked salary compensation",
+    "0 AI application sets",
+    "0 Top 10 match unlocks",
+  ],
+};
 
 export const PLANS: PlanConfig[] = [
   {
     id: "weekly",
     name: "Weekly",
     price: 692,
+    originalPrice: 999,
     currency: "INR",
     interval: "week",
     billingText: "Billed weekly",
-    subLine: "15 resumes, 15 cover letters per week",
+    subLine: "15 sets/week",
+    quotaSets: 15,
+    quotaPeriodText: "15 sets per week",
   },
   {
     id: "monthly",
     name: "Monthly",
     price: 1499,
+    originalPrice: 2999,
+    savingsBadge: "Save 50%",
     currency: "INR",
     interval: "month",
     billingText: "billed monthly",
-    subLine: "60 resumes, 60 cover letters per month",
-    badge: "Most popular",
+    subLine: "60 sets/month",
+    quotaSets: 60,
+    quotaPeriodText: "60 sets per month",
+    badge: "Recommended",
     isDefault: true,
   },
   {
     id: "quarterly",
     name: "Quarterly",
     price: 3999,
+    originalPrice: 8997,
+    savingsBadge: "Save 55%",
     currency: "INR",
     interval: "quarter",
     billingText: "billed every 3 months",
-    subLine: "Same monthly quota for 3 months, one payment",
+    subLine: "60 sets each month (resets monthly)",
+    quotaSets: 60,
+    quotaPeriodText: "60 sets each month, resetting monthly",
     badge: "Best value",
+  },
+];
+
+/**
+ * Display order for paid cards in desktop row: Monthly / Quarterly / Weekly
+ */
+export const PAID_PLANS_DISPLAY_ORDER: Array<PlanConfig["id"]> = [
+  "monthly",
+  "quarterly",
+  "weekly",
+];
+
+export const PLAN_COMPARISON_ROWS: PlanComparisonRow[] = [
+  {
+    category: "AI Application Tools",
+    feature: "AI Custom Resume Generation",
+    description: "Tailor resume directly to job requirements in seconds",
+    free: "0 sets / month",
+    premium: "15 /wk · 60 /mo",
+  },
+  {
+    category: "AI Application Tools",
+    feature: "AI Cover Letter Generator",
+    description: "Personalized pitch for every single role",
+    free: "0 sets / month",
+    premium: "15 /wk · 60 /mo",
+  },
+  {
+    category: "Job Search & Data Access",
+    feature: "Direct Employer Job Search",
+    description: "Search tech roles across verified direct company career pages",
+    free: "Unlimited browse",
+    premium: "Unlimited browse",
+  },
+  {
+    category: "Job Search & Data Access",
+    feature: "Direct ATS Apply Links",
+    description: "Direct links to apply on Greenhouse, Lever, Ashby, Workable",
+    free: false,
+    premium: true,
+  },
+  {
+    category: "Job Search & Data Access",
+    feature: "Verified Salary Bands",
+    description: "Unmasked compensation ranges with multi-currency conversion",
+    free: false,
+    premium: true,
+  },
+  {
+    category: "Job Search & Data Access",
+    feature: "Employer Identity & Logos",
+    description: "Unmask company names and employer logos on listings",
+    free: "Masked (\"Verified Employer\")",
+    premium: true,
+  },
+  {
+    category: "Intelligence & Pipeline Tools",
+    feature: "Top 10 High-Compatibility Matches",
+    description: "Top 10 jobs ranked by candidate profile skills & experience",
+    free: "Blurred preview",
+    premium: true,
+  },
+  {
+    category: "Intelligence & Pipeline Tools",
+    feature: "Interactive 3D Globe Radar",
+    description: "Interactive 3D visualization of remote jobs across global hubs",
+    free: "Upgrade preview",
+    premium: true,
+  },
+  {
+    category: "Intelligence & Pipeline Tools",
+    feature: "Application Kanban Tracker",
+    description: "Track pipeline: Saved, Applied, Interview, Offer, Rejected",
+    free: "Upgrade preview",
+    premium: true,
+  },
+  {
+    category: "AI Application Tools",
+    feature: "Daily AI Anti-Abuse Limit",
+    description: "Anti-abuse rate limit to protect system performance",
+    free: "0 generations / day",
+    premium: "30 generations / day max",
+  },
+  {
+    category: "AI Application Tools",
+    feature: "AI Fit Diagnostics (\"Why You Fit\")",
+    description: "Deterministic breakdown of missing skills and why you fit each role",
+    free: false,
+    premium: "Coming soon",
+    isUpcoming: true,
+  },
+  {
+    category: "Add-on Capacity",
+    feature: "Extra Add-on Credit Packs",
+    description: "₹149 / ₹399 / ₹699 for 10 / 30 / 60 extra sets (valid 60 days after quota)",
+    free: false,
+    premium: "Coming soon",
+    isUpcoming: true,
   },
 ];
 
@@ -104,26 +262,33 @@ export function formatCurrencyINR(amount: number): string {
 }
 
 /**
- * Formats the primary billing label for the plan row:
+ * Formats a currency amount with the Indian Rupee symbol (e.g. 1499 -> "₹1,499").
+ */
+export function formatPriceINR(amount: number): string {
+  return `₹${formatCurrencyINR(amount)}`;
+}
+
+/**
+ * Formats the primary billing label for the plan card/row:
  * - Weekly: "Billed weekly"
- * - Monthly: "Rs 1,499, billed monthly"
- * - Quarterly: "Rs 3,999, billed every 3 months"
+ * - Monthly: "₹1,499, billed monthly"
+ * - Quarterly: "₹3,999, billed every 3 months"
  */
 export function getPlanBillingLabel(plan: PlanConfig): string {
   if (plan.interval === "week") {
     return plan.billingText;
   }
-  return `Rs ${formatCurrencyINR(plan.price)}, ${plan.billingText}`;
+  return `₹${formatCurrencyINR(plan.price)}, ${plan.billingText}`;
 }
 
 /**
- * Formats the per-week display text for the plan row:
- * - Weekly: "Rs 692 /week"
- * - Monthly: "Rs 346 /week*"
- * - Quarterly: "Rs 308 /week*"
+ * Formats the per-week display text for comparison:
+ * - Weekly: "₹692 /week"
+ * - Monthly: "₹346 /week*"
+ * - Quarterly: "₹308 /week*"
  */
 export function getPlanPerWeekText(plan: PlanConfig): string {
   const perWeek = calculatePerWeek(plan.price, plan.interval);
   const asterisk = plan.interval !== "week" ? "*" : "";
-  return `Rs ${formatCurrencyINR(perWeek)} /week${asterisk}`;
+  return `₹${formatCurrencyINR(perWeek)} /week${asterisk}`;
 }
