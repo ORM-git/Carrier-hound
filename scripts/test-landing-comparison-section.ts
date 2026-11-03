@@ -138,7 +138,10 @@ async function runTests() {
 
   const tickerIdx = pageSrc.indexOf("<LandingJobsTickerStrip />");
   const compIdx = pageSrc.indexOf("<LandingComparisonSection />");
-  const globeIdx = pageSrc.indexOf("Global map / radar");
+  const globeIdx =
+    pageSrc.indexOf("<LandingGlobeFeatureSection") > -1
+      ? pageSrc.indexOf("<LandingGlobeFeatureSection")
+      : pageSrc.indexOf("Global map / radar");
 
   assert.ok(tickerIdx > -1, "Jobs ticker strip must exist in page.tsx");
   assert.ok(compIdx > -1, "Comparison section must exist in page.tsx");
