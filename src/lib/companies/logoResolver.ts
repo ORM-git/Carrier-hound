@@ -21,6 +21,10 @@
  * 4. Idempotent storage and insert-time resolution for job ingestion pipelines.
  */
 
+import dns from "node:dns";
+import net from "node:net";
+import { Agent } from "undici";
+
 export interface CompanyRecord {
   id: string;
   name: string;
@@ -58,8 +62,152 @@ export interface ResolvedLogoResult {
 
 export const MAX_IMAGE_BYTES = 2097152; // 2MB
 export const REQUEST_TIMEOUT_MS = 10000; // 10s
+export const MAX_REDIRECTS = 3;
 export const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 CareerMonkeBot/1.0";
+
+/**
+ * Extracts and normalizes the IPv4 address from an IPv4-mapped IPv6 address,
+ * supporting both dotted-quad (::ffff:127.0.0.1) and WHATWG hex format (::ffff:7f00:1).
+ */
+function parseV4Mapped(ip: string): string | null {
+  const clean = ip.toLowerCase();
+  let rest = "";
+  if (clean.startsWith("::ffff:")) {
+    rest = clean.slice(7);
+  } else if (clean.startsWith("0:0:0:0:0:ffff:")) {
+    rest = clean.slice(15);
+  } else {
+    return null;
+  }
+
+  if (rest.includes(".")) {
+    return rest;
+  }
+
+  const parts = rest.split(":");
+  if (parts.length === 2) {
+    const w1 = parseInt(parts[0], 16);
+    const w2 = parseInt(parts[1], 16);
+    if (!isNaN(w1) && !isNaN(w2)) {
+      const a = (w1 >> 8) & 0xff;
+      const b = w1 & 0xff;
+      const c = (w2 >> 8) & 0xff;
+      const d = w2 & 0xff;
+      return `${a}.${b}.${c}.${d}`;
+    }
+  }
+  return null;
+}
+
+/**
+ * Checks whether an IP address belongs to private, loopback, link-local,
+ * carrier-grade NAT, multicast, or reserved ranges.
+ * Covers: 127/8, 10/8, 172.16/12, 192.168/16, 169.254/16 (incl. 169.254.169.254),
+ * ::1, fc00::/7, fe80::/10, 0/8, 100.64/10, 224/4, 240/4, ::, and IPv4-mapped IPv6.
+ */
+export function isPrivateIp(ip: string): boolean {
+  if (!ip) return true;
+  const clean = ip.trim().toLowerCase();
+
+  // IPv4-mapped IPv6 (::ffff:192.168.1.1 or ::ffff:7f00:1)
+  if (clean.startsWith("::ffff:") || clean.startsWith("0:0:0:0:0:ffff:")) {
+    const v4 = parseV4Mapped(clean);
+    if (v4) return isPrivateIp(v4);
+    return true; // Malformed or unrecognized IPv4-mapped, reject to fail closed
+  }
+
+  const family = net.isIP(clean);
+  if (!family) return true; // not a valid IP
+
+  if (family === 4) {
+    const parts = clean.split(".").map(Number);
+    if (parts.length !== 4 || parts.some((p) => isNaN(p) || p < 0 || p > 255)) {
+      return true;
+    }
+    const [a, b] = parts;
+    if (a === 127) return true; // 127/8 (loopback)
+    if (a === 10) return true; // 10/8 (private)
+    if (a === 172 && b >= 16 && b <= 31) return true; // 172.16/12 (private)
+    if (a === 192 && b === 168) return true; // 192.168/16 (private)
+    if (a === 169 && b === 254) return true; // 169.254/16 (link-local, incl 169.254.169.254)
+    if (a === 0) return true; // 0/8
+    if (a === 100 && b >= 64 && b <= 127) return true; // 100.64/10 (carrier-grade NAT)
+    if (a >= 224) return true; // 224/4 (multicast) and 240/4 (reserved/broadcast)
+    return false;
+  }
+
+  if (family === 6) {
+    if (clean === "::1" || clean === "::") return true;
+    const parts = clean.split(":");
+    const first = parts[0] === "" ? parts[1] : parts[0];
+    const val = parseInt(first, 16);
+    if (!isNaN(val)) {
+      if ((val & 0xfe00) === 0xfc00) return true; // fc00::/7 (unique local)
+      if ((val & 0xffc0) === 0xfe80) return true; // fe80::/10 (link-local)
+    }
+    return false;
+  }
+
+  return true;
+}
+
+export type DnsLookupFn = (
+  hostname: string
+) => Promise<Array<{ address: string; family: number }>>;
+
+/**
+ * Resolves a hostname to IP addresses and rejects private, loopback, or link-local IPs.
+ * Returns the resolved IP and address family.
+ */
+export async function resolveAndValidateHost(
+  rawHostname: string,
+  customLookup?: DnsLookupFn
+): Promise<{ resolvedIp: string; family: number }> {
+  let hostname = rawHostname.trim();
+  // Strip IPv6 brackets if present e.g. [::1]
+  if (hostname.startsWith("[") && hostname.endsWith("]")) {
+    hostname = hostname.slice(1, -1);
+  }
+
+  const directIpFamily = net.isIP(hostname);
+  if (directIpFamily) {
+    if (isPrivateIp(hostname)) {
+      throw new Error(`Blocked private IP address: ${hostname}`);
+    }
+    return { resolvedIp: hostname, family: directIpFamily };
+  }
+
+  // Resolve hostname via DNS
+  let records: Array<{ address: string; family: number }>;
+  if (customLookup) {
+    records = await customLookup(hostname);
+  } else {
+    records = await dns.promises.lookup(hostname, { all: true });
+  }
+
+  if (!records || records.length === 0) {
+    throw new Error(`Could not resolve hostname: ${hostname}`);
+  }
+
+  // Validate that NO resolved IP is private/loopback/link-local
+  for (const entry of records) {
+    if (isPrivateIp(entry.address)) {
+      throw new Error(
+        `Blocked private IP for hostname ${hostname}: resolved to ${entry.address}`
+      );
+    }
+  }
+
+  return { resolvedIp: records[0].address, family: records[0].family };
+}
+
+export interface FetchWithTimeoutOptions {
+  timeoutMs?: number;
+  maxRedirects?: number;
+  customLookup?: DnsLookupFn;
+  customFetch?: (url: string, init?: RequestInit & { dispatcher?: Agent }) => Promise<Response>;
+}
 
 export const ATS_HOST_KEYWORDS = [
   "greenhouse.io",
@@ -377,24 +525,169 @@ export function getCleanImageMeta(
 }
 
 /**
- * Performs HTTP fetch with strict timeout and Chrome user agent.
+ * Secure HTTP fetch with:
+ * - Scheme restriction (only http: and https:)
+ * - SSRF mitigation: host resolution & rejection of private, loopback, and link-local IPs
+ * - Pinning connection to the resolved IP
+ * - Manual redirect loop with max 3 redirects, re-validating each hop
+ * - 10s deadline across the entire request sequence
+ * - 2MB body size cap enforced during streaming
  */
 export async function fetchWithTimeout(
   url: string,
-  timeoutMs: number = REQUEST_TIMEOUT_MS
+  timeoutMsOrOptions?: number | FetchWithTimeoutOptions
 ): Promise<Response> {
+  const options: FetchWithTimeoutOptions =
+    typeof timeoutMsOrOptions === "number"
+      ? { timeoutMs: timeoutMsOrOptions }
+      : timeoutMsOrOptions || {};
+
+  const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS;
+  const maxRedirects = options.maxRedirects ?? MAX_REDIRECTS;
+  const customLookup = options.customLookup;
+  const fetchImpl = options.customFetch ?? globalThis.fetch;
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  let currentUrl = url;
+  let redirectsRemaining = maxRedirects;
+
   try {
-    const res = await fetch(url, {
-      headers: {
-        "User-Agent": USER_AGENT,
-        Accept:
-          "text/html,application/xhtml+xml,application/xml;q=0.9,image/png,image/jpeg,image/webp,*/*;q=0.8",
-      },
-      signal: controller.signal,
-    });
-    return res;
+    while (true) {
+      let parsedUrl: URL;
+      try {
+        parsedUrl = new URL(currentUrl);
+      } catch {
+        throw new Error(`Invalid URL: ${currentUrl}`);
+      }
+
+      if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+        throw new Error(
+          `Blocked scheme: ${parsedUrl.protocol}. Only http and https are allowed.`
+        );
+      }
+
+      const { resolvedIp, family } = await resolveAndValidateHost(
+        parsedUrl.hostname,
+        customLookup
+      );
+
+      const dispatcher = new Agent({
+        connect: {
+          lookup: (_originHost, _opts, cb) => {
+            cb(null, [{ address: resolvedIp, family }]);
+          },
+        },
+      });
+
+      let res: Response;
+      try {
+        res = await fetchImpl(currentUrl, {
+          dispatcher,
+          redirect: "manual",
+          headers: {
+            "User-Agent": USER_AGENT,
+            Accept:
+              "text/html,application/xhtml+xml,application/xml;q=0.9,image/png,image/jpeg,image/webp,*/*;q=0.8",
+          },
+          signal: controller.signal,
+        });
+      } catch (fetchErr) {
+        dispatcher.destroy();
+        throw fetchErr;
+      }
+
+      // Check for redirect (301, 302, 303, 307, 308)
+      if (
+        [301, 302, 303, 307, 308].includes(res.status) &&
+        res.headers.has("location")
+      ) {
+        if (res.body) {
+          try {
+            await res.arrayBuffer();
+          } catch {}
+        }
+        dispatcher.destroy();
+
+        const location = res.headers.get("location");
+        if (!location) {
+          return res;
+        }
+
+        redirectsRemaining--;
+        if (redirectsRemaining < 0) {
+          throw new Error(
+            `Redirect limit exceeded: followed maximum ${maxRedirects} redirects`
+          );
+        }
+
+        currentUrl = new URL(location, currentUrl).toString();
+        continue;
+      }
+
+      // Check Content-Length header cap
+      const clStr = res.headers.get("content-length");
+      if (clStr) {
+        const cl = parseInt(clStr, 10);
+        if (!isNaN(cl) && cl > MAX_IMAGE_BYTES) {
+          dispatcher.destroy();
+          throw new Error(
+            `Response Content-Length ${cl} exceeds maximum allowed size of ${MAX_IMAGE_BYTES} bytes (2MB)`
+          );
+        }
+      }
+
+      // Read and cap body stream at 2MB
+      let bodyBuffer: Buffer;
+      if (res.body && ![101, 204, 205, 304].includes(res.status)) {
+        const reader = res.body.getReader();
+        const chunks: Uint8Array[] = [];
+        let totalBytes = 0;
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (value) {
+              totalBytes += value.length;
+              if (totalBytes > MAX_IMAGE_BYTES) {
+                await reader.cancel();
+                throw new Error(
+                  `Response body exceeded maximum allowed size of ${MAX_IMAGE_BYTES} bytes (2MB)`
+                );
+              }
+              chunks.push(value);
+            }
+          }
+        } finally {
+          reader.releaseLock();
+          dispatcher.destroy();
+        }
+
+        bodyBuffer = Buffer.concat(chunks);
+      } else {
+        dispatcher.destroy();
+        bodyBuffer = Buffer.alloc(0);
+      }
+
+      const responsePayload = [101, 204, 205, 304].includes(res.status)
+        ? null
+        : (bodyBuffer as any);
+
+      const wrappedResponse = new Response(responsePayload, {
+        status: res.status,
+        statusText: res.statusText,
+        headers: res.headers,
+      });
+
+      Object.defineProperty(wrappedResponse, "url", {
+        value: currentUrl,
+        writable: false,
+      });
+
+      return wrappedResponse;
+    }
   } finally {
     clearTimeout(timer);
   }
