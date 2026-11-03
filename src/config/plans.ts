@@ -20,6 +20,8 @@ export interface PlanConfig {
   id: "weekly" | "monthly" | "quarterly";
   name: string;
   price: number; // in INR (₹)
+  originalPrice?: number;
+  savingsBadge?: string;
   currency: "INR";
   interval: PlanInterval;
   billingText: string;
@@ -96,6 +98,7 @@ export const PLANS: PlanConfig[] = [
     id: "weekly",
     name: "Weekly",
     price: 692,
+    originalPrice: 999,
     currency: "INR",
     interval: "week",
     billingText: "Billed weekly",
@@ -107,6 +110,8 @@ export const PLANS: PlanConfig[] = [
     id: "monthly",
     name: "Monthly",
     price: 1499,
+    originalPrice: 2999,
+    savingsBadge: "Save 50%",
     currency: "INR",
     interval: "month",
     billingText: "billed monthly",
@@ -120,6 +125,8 @@ export const PLANS: PlanConfig[] = [
     id: "quarterly",
     name: "Quarterly",
     price: 3999,
+    originalPrice: 8997,
+    savingsBadge: "Save 55%",
     currency: "INR",
     interval: "quarter",
     billingText: "billed every 3 months",
@@ -141,18 +148,25 @@ export const PAID_PLANS_DISPLAY_ORDER: Array<PlanConfig["id"]> = [
 
 export const PLAN_COMPARISON_ROWS: PlanComparisonRow[] = [
   {
-    category: "Job Search & Data Access",
-    feature: "Direct Employer Job Search",
-    description: "Search tech roles across verified direct company career pages",
-    free: true,
-    premium: true,
+    category: "AI Application Tools",
+    feature: "AI Custom Resume Generation",
+    description: "Tailor resume directly to job requirements in seconds",
+    free: "0 sets / month",
+    premium: "15 /wk · 60 /mo",
+  },
+  {
+    category: "AI Application Tools",
+    feature: "AI Cover Letter Generator",
+    description: "Personalized pitch for every single role",
+    free: "0 sets / month",
+    premium: "15 /wk · 60 /mo",
   },
   {
     category: "Job Search & Data Access",
-    feature: "Employer Identity & Logos",
-    description: "Unmask company names and employer logos on listings",
-    free: "Masked (\"Verified Employer\")",
-    premium: true,
+    feature: "Direct Employer Job Search",
+    description: "Search tech roles across verified direct company career pages",
+    free: "Unlimited browse",
+    premium: "Unlimited browse",
   },
   {
     category: "Job Search & Data Access",
@@ -170,17 +184,31 @@ export const PLAN_COMPARISON_ROWS: PlanComparisonRow[] = [
   },
   {
     category: "Job Search & Data Access",
-    feature: "Full Job Descriptions & Skills",
-    description: "Complete job requirements and extracted technical skill tags",
-    free: false,
+    feature: "Employer Identity & Logos",
+    description: "Unmask company names and employer logos on listings",
+    free: "Masked (\"Verified Employer\")",
     premium: true,
   },
   {
-    category: "AI Application Tools",
-    feature: "AI Application Sets",
-    description: "1 set = 1 job extraction + 1 tailored resume + 1 tailored cover letter",
-    free: "0 sets / month",
-    premium: "15 /wk · 60 /mo · 60 /mo*",
+    category: "Intelligence & Pipeline Tools",
+    feature: "Top 10 High-Compatibility Matches",
+    description: "Top 10 jobs ranked by candidate profile skills & experience",
+    free: "Blurred preview",
+    premium: true,
+  },
+  {
+    category: "Intelligence & Pipeline Tools",
+    feature: "Interactive 3D Globe Radar",
+    description: "Interactive 3D visualization of remote jobs across global hubs",
+    free: "Upgrade preview",
+    premium: true,
+  },
+  {
+    category: "Intelligence & Pipeline Tools",
+    feature: "Application Kanban Tracker",
+    description: "Track pipeline: Saved, Applied, Interview, Offer, Rejected",
+    free: "Upgrade preview",
+    premium: true,
   },
   {
     category: "AI Application Tools",
@@ -194,36 +222,15 @@ export const PLAN_COMPARISON_ROWS: PlanComparisonRow[] = [
     feature: "AI Fit Diagnostics (\"Why You Fit\")",
     description: "Deterministic breakdown of missing skills and why you fit each role",
     free: false,
-    premium: "Coming soon (planned)",
+    premium: "Coming soon",
     isUpcoming: true,
-  },
-  {
-    category: "Intelligence & Pipeline Tools",
-    feature: "Top 10 High-Compatibility Matches",
-    description: "Top 10 jobs ranked by candidate profile skills & experience",
-    free: false,
-    premium: true,
-  },
-  {
-    category: "Intelligence & Pipeline Tools",
-    feature: "Interactive 3D Globe Radar",
-    description: "Interactive 3D visualization of remote jobs across global hubs",
-    free: false,
-    premium: true,
-  },
-  {
-    category: "Intelligence & Pipeline Tools",
-    feature: "Application Kanban Tracker",
-    description: "Track pipeline: Saved, Applied, Interview, Offer, Rejected",
-    free: false,
-    premium: true,
   },
   {
     category: "Add-on Capacity",
     feature: "Extra Add-on Credit Packs",
     description: "₹149 / ₹399 / ₹699 for 10 / 30 / 60 extra sets (valid 60 days after quota)",
     free: false,
-    premium: "Coming soon (planned)",
+    premium: "Coming soon",
     isUpcoming: true,
   },
 ];
