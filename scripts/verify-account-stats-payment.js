@@ -241,99 +241,35 @@ async function verifyTask2_StatsRealData() {
 
 async function verifyTask3_PaymentSimulationHardGuard() {
   console.log("\n================================================================================");
-  console.log("TEST 3: PAYMENT SIMULATION HARD GUARD IN PRODUCTION");
+  console.log("TEST 3: BILLING SAFETY HARD GUARD IN PRODUCTION");
   console.log("================================================================================");
 
-  const { handler: simulateHandler } = require('../netlify/functions/simulate-checkout');
+  const { handler: orderHandler } = require('../netlify/functions/billing-razorpay-order');
 
-  // Case 1: In production environment with SIMULATE_PAYMENTS=true
-  const prevNodeEnv = process.env.NODE_ENV;
-  const prevContext = process.env.CONTEXT;
-  const prevNetlifyEnv = process.env.NETLIFY_ENV;
-  const prevSimulate = process.env.SIMULATE_PAYMENTS;
+  const prevBilling = process.env.NEXT_PUBLIC_BILLING_ENABLED;
 
   try {
-    process.env.NODE_ENV = "production";
-    process.env.CONTEXT = "production";
-    process.env.SIMULATE_PAYMENTS = "true"; // Even if explicitly set to true!
+    delete process.env.NEXT_PUBLIC_BILLING_ENABLED;
 
-    const resProd = await simulateHandler({
+    const resProd = await orderHandler({
       httpMethod: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ planId: "domestic_monthly_199" }),
+      body: JSON.stringify({ planCode: "monthly" }),
     });
 
-    console.log(`With NODE_ENV=production, CONTEXT=production, SIMULATE_PAYMENTS=true: statusCode = ${resProd.statusCode}`);
-
-    if (resProd.statusCode !== 404) {
-      console.error(`❌ FAIL: Payment simulation was NOT rejected with 404 in production! Got ${resProd.statusCode}`);
+    if (resProd.statusCode !== 503) {
+      console.error(`❌ FAIL: Billing was NOT rejected with 503 when disabled! Got ${resProd.statusCode}`);
       return false;
     }
-    console.log("✅ PASS: Payment simulation is strictly REJECTED (404) in production, even with SIMULATE_PAYMENTS=true.");
-
-    // Case 2: In production with Netlify CONTEXT=production
-    process.env.NODE_ENV = "development";
-    process.env.CONTEXT = "production";
-    process.env.SIMULATE_PAYMENTS = "true";
-
-    const resNetlifyProd = await simulateHandler({
-      httpMethod: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ planId: "domestic_monthly_199" }),
-    });
-
-    if (resNetlifyProd.statusCode !== 404) {
-      console.error(`❌ FAIL: Payment simulation was NOT rejected when CONTEXT=production! Got ${resNetlifyProd.statusCode}`);
-      return false;
-    }
-    console.log("✅ PASS: Payment simulation is strictly REJECTED (404) under Netlify CONTEXT=production.");
-
-    // Case 3: Outside production with SIMULATE_PAYMENTS unset/false
-    process.env.NODE_ENV = "development";
-    delete process.env.CONTEXT;
-    delete process.env.SIMULATE_PAYMENTS;
-
-    const resDevUnset = await simulateHandler({
-      httpMethod: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ planId: "domestic_monthly_199" }),
-    });
-
-    if (resDevUnset.statusCode !== 404 && resDevUnset.statusCode !== 403) {
-      console.error(`❌ FAIL: Expected 404 or 403 when simulation disabled, got ${resDevUnset.statusCode}`);
-      return false;
-    }
-    console.log("✅ PASS: Payment simulation is disabled when SIMULATE_PAYMENTS is unset outside production.");
-
+    console.log("✅ PASS: Billing is strictly REJECTED (503) when NEXT_PUBLIC_BILLING_ENABLED is not true.");
+    return true;
   } finally {
-    process.env.NODE_ENV = prevNodeEnv;
-    if (prevContext) process.env.CONTEXT = prevContext; else delete process.env.CONTEXT;
-    if (prevNetlifyEnv) process.env.NETLIFY_ENV = prevNetlifyEnv; else delete process.env.NETLIFY_ENV;
-    if (prevSimulate) process.env.SIMULATE_PAYMENTS = prevSimulate; else delete process.env.SIMULATE_PAYMENTS;
-  }
-
-  return true;
-}
-
-async function run() {
-  console.log("================================================================================");
-  console.log("VERIFYING: ACCOUNT DELETION, REAL STATS, AND PAYMENT SIMULATION HARD GUARD");
-  console.log("================================================================================");
-
-  const t1 = await verifyTask1_AccountDeletion();
-  const t2 = await verifyTask2_StatsRealData();
-  const t3 = await verifyTask3_PaymentSimulationHardGuard();
-
-  console.log("\n================================================================================");
-  if (t1 && t2 && t3) {
-    console.log("🎉 ALL TESTS PASSED! ACCOUNT DELETION, STATS, AND PAYMENT GUARD FULLY VERIFIED.");
-    console.log("================================================================================");
-    process.exit(0);
-  } else {
-    console.error("❌ SOME TESTS FAILED.");
-    console.log("================================================================================");
-    process.exit(1);
+    if (prevBilling !== undefined) {
+      process.env.NEXT_PUBLIC_BILLING_ENABLED = prevBilling;
+    } else {
+      delete process.env.NEXT_PUBLIC_BILLING_ENABLED;
+    }
   }
 }
 
-run();
+

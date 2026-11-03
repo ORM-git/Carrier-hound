@@ -127,26 +127,6 @@ export default function PricingPage() {
           Stronger resumes + faster applications tailored to verified unindexed remote roles.
         </p>
 
-        {/* Hidden CI compatibility text for existing test suites */}
-        <div className="sr-only" aria-hidden="true">
-          <span>Pick your plan</span>
-          <span>Accelerate your remote job search with unmasked direct employer listings</span>
-          <span>Recommended</span>
-          <span>Best value</span>
-          <span>CareerMonke Free</span>
-          <span>Basic Tier</span>
-          <span>Compare Plans</span>
-          <span>Direct Employer Job Search</span>
-          <span>Direct ATS Apply Links</span>
-          <span>Subscribe with Razorpay (Test)</span>
-          <span>Coming soon</span>
-          <span>Pro launching soon</span>
-          <span>Checkout is unavailable right now, please try again later.</span>
-          <span>Test payment successful (no Pro granted)</span>
-          <span>{ADD_ON_PACKS_NOTE}</span>
-          <span>{REFUND_POLICY_NOTE}</span>
-          <span>{FAIR_USE_LIMIT_NOTE}</span>
-        </div>
       </div>
 
       {/* 2 & 3. Main Jobright-Turbo-Style Layout: Left Big Rounded Card (3 Tiles + Table) + Right Grey Panel */}

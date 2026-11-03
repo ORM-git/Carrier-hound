@@ -14,7 +14,6 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { PLAN_DOMESTIC, PLAN_INTERNATIONAL } from "@/lib/billing/types";
 
 interface ProUpgradeScreenProps {
   title?: string;
@@ -25,7 +24,7 @@ export default function ProUpgradeScreen({
   title = "Unlock CareerMonke Pro",
   subtitle = "Complete your membership to access full job details, match scores, and AI application tools.",
 }: ProUpgradeScreenProps) {
-  const [selectedPlanId, setSelectedPlanId] = useState<"domestic" | "intl">("domestic");
+  const [selectedPlanId, setSelectedPlanId] = useState<"weekly" | "monthly" | "quarterly">("monthly");
 
   const handleSignOut = async () => {
     try {
@@ -82,30 +81,42 @@ export default function ProUpgradeScreen({
         </div>
 
         {/* Plan Switcher */}
-        <div className="grid grid-cols-2 gap-2 p-1 bg-surface-muted rounded-tk-xl border border-line">
+        <div className="grid grid-cols-3 gap-2 p-1 bg-surface-muted rounded-tk-xl border border-line">
           <button
             type="button"
-            onClick={() => setSelectedPlanId("domestic")}
-            className={`py-2 px-3 rounded-tk-lg text-xs font-bold transition cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
-              selectedPlanId === "domestic"
+            onClick={() => setSelectedPlanId("weekly")}
+            className={`py-2 px-2 rounded-tk-lg text-xs font-bold transition cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
+              selectedPlanId === "weekly"
                 ? "bg-surface text-brand-600 shadow-tk-xs border border-line"
                 : "text-ink-muted hover:text-ink"
             }`}
           >
-            <span>India Domestic</span>
-            <span className="text-xs font-semibold text-ink-muted">₹199 / month</span>
+            <span>Weekly</span>
+            <span className="text-[11px] font-semibold text-ink-muted">₹692 / wk</span>
           </button>
           <button
             type="button"
-            onClick={() => setSelectedPlanId("intl")}
-            className={`py-2 px-3 rounded-tk-lg text-xs font-bold transition cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
-              selectedPlanId === "intl"
+            onClick={() => setSelectedPlanId("monthly")}
+            className={`py-2 px-2 rounded-tk-lg text-xs font-bold transition cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
+              selectedPlanId === "monthly"
                 ? "bg-surface text-brand-600 shadow-tk-xs border border-line"
                 : "text-ink-muted hover:text-ink"
             }`}
           >
-            <span>International</span>
-            <span className="text-xs font-semibold text-ink-muted">$9 / month</span>
+            <span>Monthly</span>
+            <span className="text-[11px] font-semibold text-ink-muted">₹1,499 / mo</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedPlanId("quarterly")}
+            className={`py-2 px-2 rounded-tk-lg text-xs font-bold transition cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
+              selectedPlanId === "quarterly"
+                ? "bg-surface text-brand-600 shadow-tk-xs border border-line"
+                : "text-ink-muted hover:text-ink"
+            }`}
+          >
+            <span>Quarterly</span>
+            <span className="text-[11px] font-semibold text-ink-muted">₹3,999 / 3mo</span>
           </button>
         </div>
 
@@ -141,11 +152,11 @@ export default function ProUpgradeScreen({
             href="/pricing"
             className="w-full h-12 rounded-tk-lg bg-brand-600 hover:bg-brand-700 text-ink-inverse font-semibold flex items-center justify-center gap-2 shadow-tk-sm transition-colors cursor-pointer text-sm sm:text-base min-h-[48px]"
           >
-            <span>See Pro Plans - ₹199/mo</span>
+            <span>View Pro Plans</span>
             <ArrowRight className="w-4 h-4" />
           </Link>
           <p className="text-xs text-ink-muted font-medium">
-            UPI, RuPay, NetBanking & Cards (Razorpay Test Mode)
+            UPI, RuPay, NetBanking & Cards
           </p>
         </div>
 

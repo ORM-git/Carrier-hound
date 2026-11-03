@@ -30,39 +30,35 @@ async function runVerification() {
   }
 
   // ---------------------------------------------------------------------------
-  // TEST 2: Production Checkout Simulation Gate
+  // TEST 2: Production Billing Safety Gate
   // ---------------------------------------------------------------------------
-  console.log("\n--- TEST 2: /api/simulate-checkout returns 404 in production unless SIMULATE_PAYMENTS=true ---");
-  const prevNodeEnv = process.env.NODE_ENV;
-  const prevSimulate = process.env.SIMULATE_PAYMENTS;
+  console.log("\n--- TEST 2: /api/billing/razorpay/order returns 503 while billing is disabled ---");
+  const prevBilling = process.env.NEXT_PUBLIC_BILLING_ENABLED;
 
   try {
-    (process.env as any).NODE_ENV = "production";
-    delete process.env.SIMULATE_PAYMENTS;
+    delete process.env.NEXT_PUBLIC_BILLING_ENABLED;
 
-    // Test simulate-checkout handler under production
-    const { POST } = await import("../src/app/api/simulate-checkout/route");
-    const fakeReq = new Request("http://localhost:3000/api/simulate-checkout", {
-      method: "POST",
+    const { handler: orderHandler } = await import("../netlify/functions/billing-razorpay-order");
+    const res = await orderHandler({
+      httpMethod: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ planId: "domestic_monthly_199" }),
+      body: JSON.stringify({ planCode: "monthly" }),
     });
 
-    const res = await POST(fakeReq);
-    if (res.status === 404) {
-      console.log("✅ PASS: /api/simulate-checkout returned 404 in production environment.");
+    if (res.statusCode === 503) {
+      console.log("✅ PASS: /api/billing/razorpay/order returned 503 in production environment.");
     } else {
-      console.error(`❌ FAIL: Expected 404, received status ${res.status}`);
+      console.error(`❌ FAIL: Expected 503, received status ${res.statusCode}`);
       allPassed = false;
     }
   } finally {
-    (process.env as any).NODE_ENV = prevNodeEnv;
-    if (prevSimulate !== undefined) {
-      process.env.SIMULATE_PAYMENTS = prevSimulate;
+    if (prevBilling !== undefined) {
+      process.env.NEXT_PUBLIC_BILLING_ENABLED = prevBilling;
     } else {
-      delete process.env.SIMULATE_PAYMENTS;
+      delete process.env.NEXT_PUBLIC_BILLING_ENABLED;
     }
   }
+
 
   // ---------------------------------------------------------------------------
   // TEST 3: Guest & Non-Pro Data Access (Lock Paid Fields)

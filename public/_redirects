@@ -1,4 +1,3 @@
-/api/simulate-checkout /.netlify/functions/simulate-checkout 200!
 /api/ai /.netlify/functions/ai 200!
 /api/jobs/pro /.netlify/functions/jobs-pro 200!
 /job-search /jobs 301!

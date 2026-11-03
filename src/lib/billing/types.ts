@@ -1,4 +1,4 @@
-export type BillingProvider = "razorpay" | "stripe" | "manual";
+export type BillingProvider = "razorpay" | "manual";
 
 export type SubscriptionStatus =
   | "none"
@@ -16,50 +16,12 @@ export interface BillingPlan {
   name: string;
   description: string;
   provider: BillingProvider;
-  currency: "INR" | "USD";
-  price: number; // In display currency (e.g. 199 or 9)
+  currency: "INR";
+  price: number; // in INR
   formattedPrice: string;
-  period: "month";
+  period: "week" | "month" | "quarter";
   features: string[];
 }
-
-export const PLAN_DOMESTIC: BillingPlan = {
-  id: "domestic_monthly_199",
-  name: "India Domestic Pro Pass",
-  description: "Optimized for Indian developers and regional tech applications.",
-  provider: "razorpay",
-  currency: "INR",
-  price: 199,
-  formattedPrice: "₹199 / month",
-  period: "month",
-  features: [
-    "Direct Company ATS Endpoints (Greenhouse, Lever, Ashby)",
-    "Unmasked Verified Salary Bands & Equity",
-    "Instant UPI (GPay, PhonePe, Paytm), RuPay & Cards",
-    "Compatibility Match Scoring & Tailored Cover Letters",
-    "Application Kanban Pipeline with Auto-Sync",
-    "Priority 3D Globe Radar Density Filters",
-  ],
-};
-
-export const PLAN_INTERNATIONAL: BillingPlan = {
-  id: "intl_monthly_9",
-  name: "Global International Pro Pass",
-  description: "Unrestricted Worldwide Remote access across 37 global tech hubs.",
-  provider: "stripe",
-  currency: "USD",
-  price: 9,
-  formattedPrice: "$9 / month",
-  period: "month",
-  features: [
-    "All Direct Company ATS Endpoints Worldwide",
-    "Unmasked Verified Compensation across US, EU & APAC",
-    "Global Credit/Debit Cards, Apple Pay & Google Pay",
-    "Compatibility Match Scoring & Tailored Cover Letters",
-    "Application Kanban Pipeline with Auto-Sync",
-    "Priority 3D Globe Radar Density Filters",
-  ],
-};
 
 export interface UserSubscription {
   id: string;

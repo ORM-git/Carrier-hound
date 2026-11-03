@@ -496,78 +496,64 @@ async function runSuite() {
   // ============================================================================
   console.log("\n--- SECTION 3: Payments-Disabled Verification ---");
 
-  // 3.1 Next.js /api/simulate-checkout in production (NODE_ENV=production)
+  // 3.1 Netlify billing-razorpay-order returns 503 BILLING_DISABLED when NEXT_PUBLIC_BILLING_ENABLED is undefined
   {
     restoreEnv();
-    process.env.NODE_ENV = "production";
-    process.env.SIMULATE_PAYMENTS = "true";
+    delete process.env.NEXT_PUBLIC_BILLING_ENABLED;
 
-    const { POST } = await import("../src/app/api/simulate-checkout/route");
-    const req = new Request("http://localhost:3000/api/simulate-checkout", { method: "POST" });
-    const res = await POST(req);
-    const data = await res.json();
-
-    assert(
-      res.status === 404 && data.code === "PAYMENTS_DISABLED",
-      "Next.js /api/simulate-checkout returns 404 PAYMENTS_DISABLED in production",
-      `Expected status 404 and code PAYMENTS_DISABLED, got status ${res.status}: ${JSON.stringify(data)}`
-    );
-  }
-
-  // 3.2 Next.js /api/simulate-checkout when SIMULATE_PAYMENTS is false
-  {
-    restoreEnv();
-    process.env.NODE_ENV = "development";
-    process.env.SIMULATE_PAYMENTS = "false";
-
-    const { POST } = await import("../src/app/api/simulate-checkout/route");
-    const req = new Request("http://localhost:3000/api/simulate-checkout", { method: "POST" });
-    const res = await POST(req);
-    const data = await res.json();
-
-    assert(
-      res.status === 404 && data.code === "PAYMENTS_DISABLED",
-      "Next.js /api/simulate-checkout returns 404 PAYMENTS_DISABLED when SIMULATE_PAYMENTS=false",
-      `Expected status 404 and code PAYMENTS_DISABLED, got status ${res.status}: ${JSON.stringify(data)}`
-    );
-  }
-
-  // 3.3 Netlify simulate-checkout in production (CONTEXT=production)
-  {
-    restoreEnv();
-    process.env.CONTEXT = "production";
-    process.env.SIMULATE_PAYMENTS = "true";
-
-    const { handler: simHandler } = await import("../netlify/functions/simulate-checkout");
-    const res = await simHandler({ httpMethod: "POST", headers: {} });
+    const { handler: orderHandler } = await import("../netlify/functions/billing-razorpay-order");
+    const res = await orderHandler({ httpMethod: "POST", headers: {} });
     const data = JSON.parse(res.body);
 
     assert(
-      res.statusCode === 404 && data.code === "PAYMENTS_DISABLED",
-      "Netlify simulate-checkout returns 404 PAYMENTS_DISABLED in production context",
-      `Expected statusCode 404 and code PAYMENTS_DISABLED, got ${res.statusCode}: ${res.body}`
+      res.statusCode === 503 && data.code === "BILLING_DISABLED",
+      "Netlify billing-razorpay-order returns 503 BILLING_DISABLED when billing disabled",
+      `Expected statusCode 503 and code BILLING_DISABLED, got ${res.statusCode}: ${res.body}`
     );
   }
 
-  // 3.4 Netlify simulate-checkout when SIMULATE_PAYMENTS is false
+  // 3.2 Netlify billing-razorpay-order returns 503 BILLING_DISABLED when NEXT_PUBLIC_BILLING_ENABLED is 'false'
   {
     restoreEnv();
-    delete process.env.SIMULATE_PAYMENTS;
+    process.env.NEXT_PUBLIC_BILLING_ENABLED = "false";
 
-    const { handler: simHandler } = await import("../netlify/functions/simulate-checkout");
-    const res = await simHandler({ httpMethod: "POST", headers: {} });
+    const { handler: orderHandler } = await import("../netlify/functions/billing-razorpay-order");
+    const res = await orderHandler({ httpMethod: "POST", headers: {} });
     const data = JSON.parse(res.body);
 
     assert(
-      res.statusCode === 404 && data.code === "PAYMENTS_DISABLED",
-      "Netlify simulate-checkout returns 404 PAYMENTS_DISABLED when SIMULATE_PAYMENTS undefined",
-      `Expected statusCode 404 and code PAYMENTS_DISABLED, got ${res.statusCode}: ${res.body}`
+      res.statusCode === 503 && data.code === "BILLING_DISABLED",
+      "Netlify billing-razorpay-order returns 503 BILLING_DISABLED when NEXT_PUBLIC_BILLING_ENABLED='false'",
+      `Expected statusCode 503 and code BILLING_DISABLED, got ${res.statusCode}: ${res.body}`
     );
   }
 
-  // 3.5 openRazorpayCheckout fails safe when Razorpay keys are not configured
+  // 3.3 openRazorpayCheckout fails safe when NEXT_PUBLIC_BILLING_ENABLED is false
   {
     restoreEnv();
+    process.env.NEXT_PUBLIC_BILLING_ENABLED = "false";
+
+    const { openRazorpayCheckout } = await import("../src/lib/billing/razorpay");
+
+    let receivedError: Error | null = null;
+    await openRazorpayCheckout({
+      onSuccess: () => {},
+      onError: (err: any) => {
+        receivedError = err;
+      },
+    });
+
+    assert(
+      Boolean(receivedError && receivedError.message.includes("Payments not enabled")),
+      "openRazorpayCheckout reports 'Payments not enabled' when NEXT_PUBLIC_BILLING_ENABLED is false",
+      `Expected error containing 'Payments not enabled', got: ${receivedError?.message}`
+    );
+  }
+
+  // 3.4 openRazorpayCheckout fails safe when Razorpay keys are not configured
+  {
+    restoreEnv();
+    process.env.NEXT_PUBLIC_BILLING_ENABLED = "true";
     delete process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
     delete process.env.RAZORPAY_KEY_ID;
 
