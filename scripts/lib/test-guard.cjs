@@ -81,6 +81,7 @@ const SUITE_CLASSIFICATIONS = Object.freeze({
   "scripts/test-company-logos-and-caps.ts": "offline",
   "scripts/test-logo-resolver-ssrf.ts": "offline",
   "scripts/test-ai-fallback-and-cover-letter.ts": "offline",
+  "scripts/test-ai-idempotency-replay.ts": "offline",
 
   // DB-capable suites: read operations
   "scripts/test-enhanced-scoring.ts": "db-read",

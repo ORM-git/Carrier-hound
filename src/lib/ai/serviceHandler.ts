@@ -11,7 +11,7 @@ import {
   validateAndSanitizeAiOutput,
 } from "@/lib/ai/security";
 import { checkRequiredEnv } from "@/lib/api/envCheck";
-import { consumeSet, refundSet } from "@/lib/billing/consume";
+import { consumeSet, refundSet, QuotaKind } from "@/lib/billing/consume";
 import { checkSharedRateLimit } from "@/lib/api/sharedRateLimit";
 import { buildCorsHeaders, handleCorsPreflight } from "../../../netlify/functions/_cors";
 import { isUserApproved } from "@/lib/auth/approval";
@@ -101,6 +101,72 @@ export interface AiServiceDeps {
   consumeSet?: typeof consumeSet;
   refundSet?: typeof refundSet;
   env?: Record<string, any>;
+  isUserApproved?: (supabaseAdmin: any, user: any) => Promise<boolean>;
+}
+
+export const IDEMPOTENCY_KEY_REGEX = /^[A-Za-z0-9_.:-]+$/;
+export const IDEMPOTENCY_KEY_MAX_LENGTH = 128;
+
+export function validateIdempotencyKey(candidate: unknown): { valid: true; key: string } | { valid: false; error: string } {
+  if (candidate === undefined || candidate === null) {
+    return { valid: true, key: "" };
+  }
+  if (typeof candidate !== "string") {
+    return { valid: false, error: "Invalid idempotencyKey: must be a string." };
+  }
+  const trimmed = candidate.trim();
+  if (trimmed.length < 1) {
+    return { valid: false, error: "Invalid idempotencyKey: cannot be empty or whitespace." };
+  }
+  if (trimmed.length > IDEMPOTENCY_KEY_MAX_LENGTH) {
+    return {
+      valid: false,
+      error: `Invalid idempotencyKey: exceeds maximum length of ${IDEMPOTENCY_KEY_MAX_LENGTH} characters.`,
+    };
+  }
+  if (!IDEMPOTENCY_KEY_REGEX.test(trimmed)) {
+    return {
+      valid: false,
+      error: "Invalid idempotencyKey: must contain only alphanumeric characters, hyphens, underscores, colons, or periods.",
+    };
+  }
+  return { valid: true, key: trimmed };
+}
+
+interface IdempotencyCacheEntry {
+  payload: any;
+  cachedAt: number;
+}
+
+const idempotencyResultCache = new Map<string, IdempotencyCacheEntry>();
+const IDEMPOTENCY_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+export function _clearIdempotencyResultCacheForTesting(): void {
+  idempotencyResultCache.clear();
+}
+
+export function getIdempotencyCacheKey(userId: string, kind: string, key: string): string {
+  return `${userId}:${kind}:${key}`;
+}
+
+export function getIdempotentResult(userId: string, kind: string, key: string): any | null {
+  const cacheKey = getIdempotencyCacheKey(userId, kind, key);
+  const entry = idempotencyResultCache.get(cacheKey);
+  if (!entry) return null;
+  if (Date.now() - entry.cachedAt > IDEMPOTENCY_CACHE_TTL_MS) {
+    idempotencyResultCache.delete(cacheKey);
+    return null;
+  }
+  return entry.payload;
+}
+
+export function storeIdempotentResult(userId: string, kind: string, key: string, payload: any): void {
+  const cacheKey = getIdempotencyCacheKey(userId, kind, key);
+  if (idempotencyResultCache.size > 10000) {
+    const oldestKey = idempotencyResultCache.keys().next().value;
+    if (oldestKey) idempotencyResultCache.delete(oldestKey);
+  }
+  idempotencyResultCache.set(cacheKey, { payload, cachedAt: Date.now() });
 }
 
 /**
@@ -187,6 +253,7 @@ export async function executeAiCore(
   let setConsumed = false;
   let setConsumeKey = "";
   let confirmedUserId = "";
+  let confirmedKind: QuotaKind | undefined;
   try {
     // 0. Per-IP Rate Limiting (shared Supabase store, memory fallback)
     const ipLimit = await checkSharedRateLimit(
@@ -267,7 +334,8 @@ export async function executeAiCore(
     }
 
     // Invite-only early-access approval check
-    const isApproved = await isUserApproved(supabaseAdmin, user);
+    const checkApproved = activeDeps.isUserApproved || isUserApproved;
+    const isApproved = await checkApproved(supabaseAdmin, user);
     if (!isApproved) {
       return {
         statusCode: 403,
@@ -363,20 +431,31 @@ export async function executeAiCore(
     // and the 30/day IST fair-use cap. They MUST NOT double-count in ai_usage_quotas.
     // Non-metered operations (e.g. job_fit, extraction) fall under checkAndIncrementAiQuota.
     if (config.operation === "resume_tailor" || config.operation === "cover_letter") {
+      confirmedKind = config.operation;
       const candidateKey =
-        body.idempotencyKey ||
-        body.idempotency_key ||
-        body.requestId ||
-        body.request_id ||
-        params?.idempotencyKey ||
-        params?.idempotency_key ||
-        params?.requestId ||
+        body.idempotencyKey ??
+        body.idempotency_key ??
+        body.requestId ??
+        body.request_id ??
+        params?.idempotencyKey ??
+        params?.idempotency_key ??
+        params?.requestId ??
         params?.request_id;
 
+      const keyValidation = validateIdempotencyKey(candidateKey);
+      if (!keyValidation.valid) {
+        return {
+          statusCode: 400,
+          body: {
+            error: keyValidation.error,
+            code: "INVALID_IDEMPOTENCY_KEY",
+          },
+        };
+      }
+
       setConsumeKey =
-        typeof candidateKey === "string" && candidateKey.trim()
-          ? candidateKey.trim()
-          : `set_${user.id}_${config.operation}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+        keyValidation.key ||
+        `set_${user.id}_${config.operation}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
       const doConsume = activeDeps.consumeSet || consumeSet;
       const consumeRes = await doConsume(user.id, config.operation, setConsumeKey);
@@ -391,6 +470,65 @@ export async function executeAiCore(
           },
         };
       }
+
+      // 4B. Idempotent Replay Handling:
+      // If the operation was already consumed for this (user, kind, key),
+      // we MUST NOT regenerate fresh content or call Groq again.
+      // Return the stored result from cache, RPC, or DB without re-calling upstream AI.
+      if (consumeRes.alreadyConsumed) {
+        const cached =
+          getIdempotentResult(user.id, config.operation, setConsumeKey) ||
+          consumeRes.cachedResult;
+
+        if (cached) {
+          return {
+            statusCode: 200,
+            body: {
+              ...cached,
+              idempotentReplay: true,
+              alreadyConsumed: true,
+            },
+          };
+        }
+
+        // Fallback: Check if response payload was recorded in DB
+        try {
+          const { data: dbEvent } = await supabaseAdmin
+            .from("plan_usage_events")
+            .select("response_payload")
+            .eq("user_id", user.id)
+            .eq("kind", config.operation)
+            .eq("idempotency_key", setConsumeKey)
+            .maybeSingle();
+
+          if (dbEvent?.response_payload) {
+            return {
+              statusCode: 200,
+              body: {
+                ...dbEvent.response_payload,
+                idempotentReplay: true,
+                alreadyConsumed: true,
+              },
+            };
+          }
+        } catch {
+          // Ignore DB fetch failure on replay
+        }
+
+        return {
+          statusCode: 200,
+          body: {
+            success: true,
+            result: "Idempotent replay: operation already processed.",
+            content: "Idempotent replay: operation already processed.",
+            text: "Idempotent replay: operation already processed.",
+            operation: config.operation,
+            idempotentReplay: true,
+            alreadyConsumed: true,
+          },
+        };
+      }
+
       setConsumed = true;
     } else {
       const quotaResult = await checkAndIncrementAiQuota(
@@ -428,7 +566,7 @@ export async function executeAiCore(
       if (setConsumed && setConsumeKey) {
         const doRefund = activeDeps.refundSet || refundSet;
         try {
-          await doRefund(user.id, setConsumeKey);
+          await doRefund(user.id, setConsumeKey, new Date(), config.operation as QuotaKind);
         } catch (rfErr) {
           console.warn("[AI Service] Error refunding consumed set:", rfErr);
         }
@@ -523,17 +661,31 @@ export async function executeAiCore(
     }
 
     if (activeDeps.callGroq && content === "Simulated AI generated output") {
+      const simulatedPayload = {
+        success: true,
+        result: content,
+        content,
+        text: content,
+        operation: config.operation,
+        model: payload.model,
+        jobDescriptionShortened: false,
+      };
+
+      if (setConsumed && setConsumeKey) {
+        storeIdempotentResult(user.id, config.operation, setConsumeKey, simulatedPayload);
+        try {
+          await supabaseAdmin
+            .from("plan_usage_events")
+            .update({ response_payload: simulatedPayload })
+            .eq("user_id", user.id)
+            .eq("kind", config.operation)
+            .eq("idempotency_key", setConsumeKey);
+        } catch {}
+      }
+
       return {
         statusCode: 200,
-        body: {
-          success: true,
-          result: content,
-          content,
-          text: content,
-          operation: config.operation,
-          model: payload.model,
-          jobDescriptionShortened: false,
-        },
+        body: simulatedPayload,
       };
     }
 
@@ -546,24 +698,38 @@ export async function executeAiCore(
       };
     }
 
+    const responsePayload = {
+      success: true,
+      result: validated.parsedJson ?? validated.sanitizedText,
+      content: validated.sanitizedText,
+      text: validated.sanitizedText,
+      operation: config.operation,
+      model: payload.model,
+      jobDescriptionShortened: payload.metadata?.jobDescriptionShortened ?? false,
+    };
+
+    if (setConsumed && setConsumeKey) {
+      storeIdempotentResult(user.id, config.operation, setConsumeKey, responsePayload);
+      try {
+        await supabaseAdmin
+          .from("plan_usage_events")
+          .update({ response_payload: responsePayload })
+          .eq("user_id", user.id)
+          .eq("kind", config.operation)
+          .eq("idempotency_key", setConsumeKey);
+      } catch {}
+    }
+
     return {
       statusCode: 200,
-      body: {
-        success: true,
-        result: validated.parsedJson ?? validated.sanitizedText,
-        content: validated.sanitizedText,
-        text: validated.sanitizedText,
-        operation: config.operation,
-        model: payload.model,
-        jobDescriptionShortened: payload.metadata?.jobDescriptionShortened ?? false,
-      },
+      body: responsePayload,
     };
   } catch (err: any) {
     console.error("[AI Service] Unhandled error:", err);
     if (setConsumed && setConsumeKey && confirmedUserId) {
       const doRefund = activeDeps.refundSet || refundSet;
       try {
-        await doRefund(confirmedUserId, setConsumeKey);
+        await doRefund(confirmedUserId, setConsumeKey, new Date(), confirmedKind);
       } catch (rfErr) {
         console.warn("[AI Service] Error refunding consumed set on unhandled error:", rfErr);
       }

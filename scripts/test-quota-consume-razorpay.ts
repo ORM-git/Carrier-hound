@@ -199,8 +199,21 @@ async function runQuotaConsumeRazorpaySuite() {
           return { data: { user: null }, error: new Error("invalid token") };
         },
       },
-      from: () => mockQueryBuilder,
+      from: (table?: string) => {
+        if (table === "early_access_approved") {
+          return {
+            ...mockQueryBuilder,
+            select: () => ({
+              eq: () => ({
+                maybeSingle: async () => ({ data: { approved: true }, error: null }),
+              }),
+            }),
+          };
+        }
+        return mockQueryBuilder;
+      },
     }),
+    isUserApproved: async () => true,
     getServerEntitlement: async (userId: string) => ({
       isPro: true,
       hasActiveSubscription: true,
