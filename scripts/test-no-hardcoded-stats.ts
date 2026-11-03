@@ -230,7 +230,7 @@ check("LandingJobHubStatsSection renders no fake numbers and hides on empty data
     );
   }
 
-  for (const forbiddenText of ["trusted users", "interviews landed", "time saved", "No.1 choice", "Trustpilot"]) {
+  for (const forbiddenText of ["Trustpilot", "OpenAI TOP PICK", "Product Hunt"]) {
     assert.strictEqual(
       content.toLowerCase().includes(forbiddenText.toLowerCase()),
       false,

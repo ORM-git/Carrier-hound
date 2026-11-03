@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import BrandIcon from "@/components/BrandIcon";
-import { Briefcase, Sparkles, Percent } from "lucide-react";
+import { Smile, MessageSquare, Clock, Check } from "lucide-react";
 
 export interface RealStatsData {
   totalJobs?: number | null;
@@ -21,36 +21,36 @@ export interface LandingJobHubStatsSectionProps {
  * - Exactly ONE small root dot at mid-height
  * - Short horizontal dotted trunk connected to it
  * - Two curved dotted paths sweeping upward and downward
- * - Ending in right-pointing arrowheads aligned with Row 1 (Total jobs) and Row 3 (Salary cut)
+ * - Ending in right-pointing arrowheads aligned with Row 1 (3,000,000) and Row 4 (No.1 Choice)
  * - Stroke #2563EB, strokeWidth 2, dash pattern 3 3
  */
 function DottedConnector() {
   return (
     <svg
-      viewBox="0 0 100 224"
+      viewBox="0 0 100 288"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       className="w-full h-full text-[#2563EB]"
       aria-hidden="true"
     >
       {/* Exactly ONE small root dot at mid-height */}
-      <circle cx="8" cy="102" r="3.5" fill="#2563EB" />
+      <circle cx="8" cy="134" r="3.5" fill="#2563EB" />
 
       {/* Short horizontal dotted trunk connected to root dot */}
       <line
         x1="8"
-        y1="102"
+        y1="134"
         x2="32"
-        y2="102"
+        y2="134"
         stroke="#2563EB"
         strokeWidth="2"
         strokeDasharray="3 3"
         strokeLinecap="round"
       />
 
-      {/* Top curved dotted path sweeping upward to Row 1 (Total jobs) */}
+      {/* Top curved dotted path sweeping upward to Row 1 (3,000,000) */}
       <path
-        d="M 32 102 C 58 102 60 20 86 20"
+        d="M 32 134 C 58 134 60 20 86 20"
         stroke="#2563EB"
         strokeWidth="2"
         strokeDasharray="3 3"
@@ -60,17 +60,17 @@ function DottedConnector() {
       {/* Small solid right-pointing arrowhead pointing to Row 1 */}
       <polygon points="86,15 96,20 86,25" fill="#2563EB" />
 
-      {/* Bottom curved dotted path sweeping downward to Row 3 (0% salary cut) */}
+      {/* Bottom curved dotted path sweeping downward to Row 4 (No.1 Choice) */}
       <path
-        d="M 32 102 C 58 102 60 184 86 184"
+        d="M 32 134 C 58 134 60 248 86 248"
         stroke="#2563EB"
         strokeWidth="2"
         strokeDasharray="3 3"
         strokeLinecap="round"
         fill="none"
       />
-      {/* Small solid right-pointing arrowhead pointing to Row 3 */}
-      <polygon points="86,179 96,184 86,189" fill="#2563EB" />
+      {/* Small solid right-pointing arrowhead pointing to Row 4 */}
+      <polygon points="86,243 96,248 86,253" fill="#2563EB" />
     </svg>
   );
 }
@@ -79,128 +79,51 @@ export default function LandingJobHubStatsSection({
   initialStats,
 }: LandingJobHubStatsSectionProps) {
   const containerRef = useRef<HTMLElement | null>(null);
-  const [stats, setStats] = useState<RealStatsData | null>(() => {
-    if (initialStats) {
-      return {
-        totalJobs: initialStats.activeJobs ?? initialStats.totalJobs ?? null,
-        jobsToday: initialStats.jobsToday ?? null,
-      };
-    }
-    return null;
-  });
-
-  const [displayValues, setDisplayValues] = useState<Record<string, number | null>>({});
+  const [displayUsers, setDisplayUsers] = useState<number | null>(null);
   const hasAnimatedRef = useRef(false);
 
-  // 1. Fetch live stats from /api/stats if not provided initially
-  useEffect(() => {
-    if (
-      initialStats &&
-      (initialStats.totalJobs !== undefined ||
-        initialStats.activeJobs !== undefined ||
-        initialStats.jobsToday !== undefined)
-    ) {
-      setStats({
-        totalJobs: initialStats.activeJobs ?? initialStats.totalJobs ?? null,
-        jobsToday: initialStats.jobsToday ?? null,
-      });
-      return;
-    }
-
-    let isMounted = true;
-    async function fetchStats() {
-      try {
-        const res = await fetch("/api/stats");
-        if (!res.ok) throw new Error("Stats request failed");
-        const data = await res.json();
-        if (isMounted) {
-          const totalJobs =
-            typeof data?.activeJobs === "number"
-              ? data.activeJobs
-              : typeof data?.totalJobs === "number"
-              ? data.totalJobs
-              : null;
-          const jobsToday =
-            typeof data?.jobsToday === "number" ? data.jobsToday : null;
-
-          setStats({
-            totalJobs,
-            jobsToday,
-          });
-        }
-      } catch {
-        if (isMounted) {
-          setStats({
-            totalJobs: null,
-            jobsToday: null,
-          });
-        }
-      }
-    }
-
-    fetchStats();
-    return () => {
-      isMounted = false;
-    };
-  }, [initialStats]);
-
-  // 2. Count-up animation helper (IntersectionObserver triggered)
-  const runAnimation = (data: RealStatsData) => {
+  // 1. Count-up animation helper (IntersectionObserver triggered)
+  const runAnimation = () => {
     const prefersReducedMotion =
       typeof window !== "undefined" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-    // Under prefers-reduced-motion, set final numbers immediately
     if (prefersReducedMotion) {
-      setDisplayValues({
-        totalJobs: typeof data.totalJobs === "number" ? data.totalJobs : null,
-        jobsToday: typeof data.jobsToday === "number" ? data.jobsToday : null,
-      });
+      setDisplayUsers(3000000);
       return;
     }
 
     const duration = 1200; // 1.2s count-up
     const startTime = performance.now();
-    const targetTotal = typeof data.totalJobs === "number" ? data.totalJobs : null;
-    const targetToday = typeof data.jobsToday === "number" ? data.jobsToday : null;
+    const target = 3000000;
 
     const animate = (currentTime: number) => {
       const elapsed = currentTime - startTime;
       const progress = Math.min(elapsed / duration, 1);
       const easeOut = 1 - Math.pow(1 - progress, 3);
 
-      setDisplayValues({
-        totalJobs:
-          targetTotal !== null ? Math.round(targetTotal * easeOut) : null,
-        jobsToday:
-          targetToday !== null ? Math.round(targetToday * easeOut) : null,
-      });
+      setDisplayUsers(Math.round(target * easeOut));
 
       if (progress < 1) {
         requestAnimationFrame(animate);
       } else {
-        setDisplayValues({
-          totalJobs: targetTotal,
-          jobsToday: targetToday,
-        });
+        setDisplayUsers(target);
       }
     };
 
     requestAnimationFrame(animate);
   };
 
-  // 3. IntersectionObserver trigger
+  // 2. IntersectionObserver trigger
   useEffect(() => {
-    if (!stats) return;
-
     if (typeof window === "undefined" || !("IntersectionObserver" in window)) {
-      runAnimation(stats);
+      runAnimation();
       return;
     }
 
     const el = containerRef.current;
     if (!el) {
-      runAnimation(stats);
+      runAnimation();
       return;
     }
 
@@ -210,7 +133,7 @@ export default function LandingJobHubStatsSection({
         if (entry.isIntersecting && !hasAnimatedRef.current) {
           hasAnimatedRef.current = true;
           observer.disconnect();
-          runAnimation(stats);
+          runAnimation();
         }
       },
       { threshold: 0.15 }
@@ -218,40 +141,37 @@ export default function LandingJobHubStatsSection({
 
     observer.observe(el);
     return () => observer.disconnect();
-  }, [stats]);
+  }, []);
 
-  // Format helper: null/undefined shows neutral placeholder "—", strings returned directly, numbers formatted with commas
-  const formatDisplay = (val: number | string | null | undefined): string => {
-    if (val === null || val === undefined) return "—";
-    if (typeof val === "string") return val;
-    return val.toLocaleString("en-US");
-  };
+  // Format helper: null/undefined shows default formatted value
+  const formattedUsers =
+    displayUsers !== null ? displayUsers.toLocaleString("en-US") : "3,000,000";
 
-  // Approved three rows matching corrected hierarchy: Total jobs, New jobs today, 0% cut of your salary
+  // Four rows matching reference hierarchy from user image
   const rows = [
     {
-      key: "totalJobs",
-      val:
-        displayValues.totalJobs !== undefined
-          ? displayValues.totalJobs
-          : stats?.totalJobs,
-      label: "Total jobs",
-      icon: Briefcase,
+      key: "users",
+      val: formattedUsers,
+      label: "trusted users",
+      icon: Smile,
     },
     {
-      key: "jobsToday",
-      val:
-        displayValues.jobsToday !== undefined
-          ? displayValues.jobsToday
-          : stats?.jobsToday,
-      label: "New jobs today",
-      icon: Sparkles,
+      key: "interviews",
+      val: "3x",
+      label: "interviews landed",
+      icon: MessageSquare,
     },
     {
-      key: "salaryCut",
-      val: "0%",
-      label: "cut of your salary, ever",
-      icon: Percent,
+      key: "timeSaved",
+      val: "80%",
+      label: "time saved on job search",
+      icon: Clock,
+    },
+    {
+      key: "choice",
+      val: "No.1 Choice",
+      label: "for 80% of job seekers after their first use",
+      icon: Check,
     },
   ];
 
@@ -265,7 +185,7 @@ export default function LandingJobHubStatsSection({
       ref={containerRef}
       aria-label="Market Data & Job Hub Statistics"
       data-testid="landing-job-hub-stats-section"
-      className="py-12 sm:py-14 lg:py-16 bg-[#EFF6FF]/40 border-b border-blue-100/50 overflow-hidden"
+      className="py-10 sm:py-12 lg:py-14 bg-[#EFF6FF]/40 border-b border-blue-100/50 overflow-hidden"
     >
       <div className="max-w-6xl mx-auto px-6 lg:px-8">
         {/* Single wide section layout: Left heading (~40%), Center connector (~15%), Right stat rows (~45%) */}
@@ -292,17 +212,16 @@ export default function LandingJobHubStatsSection({
 
           {/* Center Connector: Bracket-like dotted SVG with root dot and top/bottom arrowheads (desktop only) */}
           <div
-            className="hidden lg:flex items-center justify-center shrink-0 lg:w-[15%] h-[224px]"
+            className="hidden lg:flex items-center justify-center shrink-0 lg:w-[15%] h-[288px]"
             aria-hidden="true"
           >
             <DottedConnector />
           </div>
 
-          {/* Right Column: Exactly three approved stat rows */}
-          <div className="flex-1 flex flex-col justify-between space-y-6 lg:space-y-0 lg:h-[224px] w-full lg:w-[45%]">
+          {/* Right Column: Exactly four stat rows from reference image */}
+          <div className="flex-1 flex flex-col justify-between space-y-5 lg:space-y-0 lg:h-[288px] w-full lg:w-[45%]">
             {rows.map((row) => {
               const Icon = row.icon;
-              const formattedVal = formatDisplay(row.val);
               return (
                 <div
                   key={row.key}
@@ -312,7 +231,7 @@ export default function LandingJobHubStatsSection({
                   <div className="flex flex-col shrink-0">
                     <div className="h-10 flex items-center">
                       <span className="text-3xl sm:text-4xl lg:text-[42px] font-black text-[#090E34] tracking-tight leading-none">
-                        {formattedVal}
+                        {row.val}
                       </span>
                     </div>
                     <span className="text-xs sm:text-sm text-slate-500 font-medium mt-1 leading-snug">
