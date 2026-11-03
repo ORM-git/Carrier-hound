@@ -34,6 +34,9 @@ export const PUBLIC_ROUTES: readonly string[] = [
   "/privacy",
   "/privacy-policy",
   "/terms-and-conditions",
+  "/refund-policy",
+  "/contact",
+  "/shipping-and-delivery",
 ];
 
 export function isProtectedRoute(pathname: string): boolean {
@@ -83,7 +86,13 @@ function isLegalPath(pathname: string): boolean {
     pathname === "/privacy-policy" ||
     pathname.startsWith("/privacy-policy/") ||
     pathname === "/terms-and-conditions" ||
-    pathname.startsWith("/terms-and-conditions/")
+    pathname.startsWith("/terms-and-conditions/") ||
+    pathname === "/refund-policy" ||
+    pathname.startsWith("/refund-policy/") ||
+    pathname === "/contact" ||
+    pathname.startsWith("/contact/") ||
+    pathname === "/shipping-and-delivery" ||
+    pathname.startsWith("/shipping-and-delivery/")
   );
 }
 

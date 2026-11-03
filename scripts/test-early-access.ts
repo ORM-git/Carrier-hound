@@ -1679,7 +1679,13 @@ async function main() {
   assert.strictEqual(sixthRes.status, 429);
 
   const sitemapPaths = sitemap().map((e) => new URL(e.url).pathname);
-  assert.deepStrictEqual(sitemapPaths, ["/", "/early-access"]);
+  assert.deepStrictEqual(sitemapPaths, [
+    "/",
+    "/early-access",
+    "/refund-policy",
+    "/contact",
+    "/shipping-and-delivery",
+  ]);
   console.log("  [PASS] Rate limit (5/min/IP) and sitemap verified");
 
   // ---------------------------------------------------------------------------
