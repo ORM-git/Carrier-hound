@@ -1,263 +1,163 @@
 import assert from "assert";
 import * as fs from "fs";
 import * as path from "path";
-import {
-  COMPARISON_ROWS,
-  ComparisonRow,
-} from "../src/components/LandingComparisonSection";
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { spawnSync } from "child_process";
+import LandingComparisonSection from "../src/components/LandingComparisonSection";
 
 async function runTests() {
   const isNegativeControl = process.argv.includes("--negative-control");
 
   console.log("================================================================================");
-  console.log("       LANDING COMPARISON BLOCK VERIFICATION SUITE ('THE MONKE WAY')            ");
+  console.log("       LANDING COMPARISON BLOCK VERIFICATION SUITE (GIF ARTWORK ONLY)           ");
   console.log("================================================================================\n");
 
   if (isNegativeControl) {
-    console.log("Running negative control mode: inducing intentional failure...");
+    console.log("[NEGATIVE CONTROL MODE] Inducing intentional assertion failure...");
     assert.strictEqual(
-      COMPARISON_ROWS.length,
-      999,
-      "Negative control triggered: expected 999 comparison rows but got " + COMPARISON_ROWS.length
+      "real",
+      "intentional-mismatch",
+      "Negative control triggered: expected intentional failure"
     );
+    return;
   }
 
+  // 1. Verify component source exists and does not contain old row/placeholder/badge code
+  console.log("Test 1: Inspecting src/components/LandingComparisonSection.tsx source...");
   const componentPath = path.resolve(process.cwd(), "src/components/LandingComparisonSection.tsx");
   assert.ok(fs.existsSync(componentPath), "LandingComparisonSection.tsx must exist");
   const compSrc = fs.readFileSync(componentPath, "utf8");
 
-  // 1. Verify CareerMonkeMascot SVG component is deleted
-  const mascotComponentPath = path.resolve(process.cwd(), "src/components/CareerMonkeMascot.tsx");
-  assert.ok(!fs.existsSync(mascotComponentPath), "CareerMonkeMascot.tsx must be deleted");
-  assert.ok(
-    !compSrc.includes("CareerMonkeMascot"),
-    "LandingComparisonSection must not import or render CareerMonkeMascot"
-  );
-  console.log("  [PASS] CareerMonkeMascot.tsx successfully deleted and removed from section");
+  // Removed old code assertions
+  assert.ok(!compSrc.includes("COMPARISON_ROWS"), "Old COMPARISON_ROWS array must be removed");
+  assert.ok(!compSrc.includes("CardImagePlaceholder"), "CardImagePlaceholder must be removed");
+  assert.ok(!compSrc.includes("ComparisonRowItem"), "ComparisonRowItem must be removed");
+  assert.ok(!compSrc.includes("ComparisonCardImage"), "ComparisonCardImage must be removed");
+  assert.ok(!compSrc.includes("mascot-sad"), "Old mascot CSS keyframes must be removed");
+  assert.ok(!compSrc.includes("mascot-happy"), "Old mascot CSS keyframes must be removed");
+  assert.ok(!compSrc.includes("Tired of getting"), "Old heading text must be removed");
+  assert.ok(!compSrc.includes("careermonke.com"), "Old footer text must be removed");
+  console.log("  -> [PASS-LOCAL] Old tiles, rows, placeholders, keyframes, and headings removed from component source.");
 
+  // 2. Rendered Static Markup Assertions
+  console.log("\nTest 2: Verifying rendered HTML markup of LandingComparisonSection...");
+  const renderedHtml = renderToStaticMarkup(React.createElement(LandingComparisonSection));
+
+  // Assert exact image attributes
+  assert.ok(renderedHtml.includes('src="/careermonke-comparison-boxes.gif"'), "Must render exact src '/careermonke-comparison-boxes.gif'");
+  assert.ok(
+    renderedHtml.includes('alt="The usual grind vs the Monke way: five comparisons"'),
+    "Must render exact alt 'The usual grind vs the Monke way: five comparisons'"
+  );
+  assert.ok(renderedHtml.includes('width="728"'), "Must render width 728");
+  assert.ok(renderedHtml.includes('height="900"'), "Must render height 900");
+  assert.ok(renderedHtml.includes('loading="lazy"'), "Must render loading='lazy'");
+  assert.ok(renderedHtml.includes('decoding="async"'), "Must render decoding='async'");
+
+  // Assert wrapper styling: centered, w-full, max-w-[560px], px-4 on mobile
+  assert.ok(renderedHtml.includes("w-full"), "Wrapper must have w-full");
+  assert.ok(renderedHtml.includes("max-w-[560px]"), "Wrapper must have max-w-[560px]");
+  assert.ok(renderedHtml.includes("mx-auto"), "Wrapper must be centered with mx-auto");
+  assert.ok(renderedHtml.includes("px-4"), "Wrapper must have px-4 horizontal padding");
+
+  // Assert NO heading, NO footer text, NO card, NO border, NO shadow, NO background, NO VS badges, NO extra text
+  assert.ok(!/<h[1-6]/i.test(renderedHtml), "Must contain NO heading tags (<h1..h6>)");
+  assert.ok(!/<p[\s>]/i.test(renderedHtml), "Must contain NO paragraph (<p>) tags");
+  const htmlWithoutImg = renderedHtml.replace(/<img[^>]*>/g, "");
+  assert.ok(!htmlWithoutImg.includes("The usual grind"), "Must contain NO text 'The usual grind' outside img alt");
+  assert.ok(!htmlWithoutImg.includes("The Monke way"), "Must contain NO text 'The Monke way' outside img alt");
+  assert.ok(!renderedHtml.includes("VS"), "Must contain NO VS badges");
+  assert.ok(!renderedHtml.includes("Illustration"), "Must contain NO footer illustration labels");
+  assert.ok(!renderedHtml.includes("border"), "Must contain NO border classes");
+  assert.ok(!renderedHtml.includes("shadow"), "Must contain NO shadow classes");
+  assert.ok(!renderedHtml.includes("bg-"), "Must contain NO background classes");
+
+  // Verify only 1 img element rendered
+  const imgMatches = renderedHtml.match(/<img\b/g);
+  assert.strictEqual(imgMatches?.length, 1, "Must render exactly ONE image element");
+  console.log("  -> [PASS-LOCAL] Rendered markup contains solely the comparison image with correct attributes and clean wrapper.");
+
+  // 3. GIF Asset Verification
+  console.log("\nTest 3: Verifying public/careermonke-comparison-boxes.gif asset on disk...");
+  const gifPath = path.resolve(process.cwd(), "public/careermonke-comparison-boxes.gif");
+  assert.ok(fs.existsSync(gifPath), "public/careermonke-comparison-boxes.gif must exist");
+  const gifStat = fs.statSync(gifPath);
+  assert.ok(gifStat.size > 1000000, `GIF size must be substantial (>1MB). Actual: ${gifStat.size} bytes`);
+
+  // Verify GIF89a header
+  const gifBuffer = fs.readFileSync(gifPath);
+  const gifHeader = gifBuffer.subarray(0, 6).toString("ascii");
+  assert.ok(gifHeader === "GIF89a" || gifHeader === "GIF87a", `Asset must be valid GIF format (header: ${gifHeader})`);
+
+  // Verify dimensions from GIF logical screen descriptor (bytes 6-9 in little endian)
+  const logicalWidth = gifBuffer.readUInt16LE(6);
+  const logicalHeight = gifBuffer.readUInt16LE(8);
+  assert.strictEqual(logicalWidth, 728, `GIF width must be 728 (actual: ${logicalWidth})`);
+  assert.strictEqual(logicalHeight, 900, `GIF height must be 900 (actual: ${logicalHeight})`);
+  console.log(`  -> [PASS-LOCAL] GIF file confirmed valid: 728x900 pixels, ${(gifStat.size / (1024 * 1024)).toFixed(2)} MB.`);
+
+  // 4. Mascot Assets Preservation (do not delete public/mascot files)
+  console.log("\nTest 4: Verifying public/mascot/ files were preserved...");
+  const mascotDir = path.resolve(process.cwd(), "public/mascot");
+  assert.ok(fs.existsSync(mascotDir), "public/mascot directory must exist");
+  const expectedMascotFiles = [
+    "row1-sad.png", "row1-happy.png",
+    "row2-sad.png", "row2-happy.png",
+    "row3-sad.png", "row3-happy.png",
+    "row4-sad.png", "row4-happy.png",
+    "row5-sad.png", "row5-happy.png",
+  ];
+  for (const file of expectedMascotFiles) {
+    const filePath = path.join(mascotDir, file);
+    assert.ok(fs.existsSync(filePath), `Mascot file ${file} must remain preserved`);
+  }
+  console.log("  -> [PASS-LOCAL] All 10 public/mascot files preserved.");
+
+  // 5. Page Integration & Placement in src/app/page.tsx
+  console.log("\nTest 5: Verifying slot placement in src/app/page.tsx...");
   const pagePath = path.resolve(process.cwd(), "src/app/page.tsx");
   assert.ok(fs.existsSync(pagePath), "src/app/page.tsx must exist");
   const pageSrc = fs.readFileSync(pagePath, "utf8");
 
-  // 2. Page Integration & Placement
   assert.ok(
-    pageSrc.includes("import LandingComparisonSection from \"@/components/LandingComparisonSection\";"),
-    "LandingComparisonSection must be imported in src/app/page.tsx"
+    pageSrc.includes('import LandingComparisonSection from "@/components/LandingComparisonSection";'),
+    "src/app/page.tsx must import LandingComparisonSection"
   );
   assert.ok(
     pageSrc.includes("<LandingComparisonSection />"),
-    "LandingComparisonSection must be rendered in src/app/page.tsx"
+    "src/app/page.tsx must render <LandingComparisonSection />"
   );
 
-  const demoIdx =
-    pageSrc.indexOf("<LandingTopArtifact />") > -1
-      ? pageSrc.indexOf("<LandingTopArtifact />")
-      : pageSrc.indexOf("<LandingInteractiveDemoSection />");
+  const tickerIdx = pageSrc.indexOf("<LandingJobsTickerStrip />");
   const compIdx = pageSrc.indexOf("<LandingComparisonSection />");
-  assert.ok(
-    demoIdx > -1 && compIdx > demoIdx,
-    "LandingComparisonSection must be placed after Hero demo"
-  );
-  assert.ok(
-    !pageSrc.includes("AI Resume Monke"),
-    "AI Resume Monke section must be removed from page.tsx"
-  );
-  console.log("  [PASS] Page integration & section placement verified");
+  const globeIdx = pageSrc.indexOf("Global map / radar");
 
-  // 3. Title & Two Column Headers
+  assert.ok(tickerIdx > -1, "Jobs ticker strip must exist in page.tsx");
+  assert.ok(compIdx > -1, "Comparison section must exist in page.tsx");
+  assert.ok(globeIdx > -1, "Global coverage section must exist in page.tsx");
   assert.ok(
-    compSrc.includes("Tired of getting") && compSrc.includes("auto-rejected?"),
-    "Section title must be 'Tired of getting auto-rejected?'"
+    tickerIdx < compIdx && compIdx < globeIdx,
+    "LandingComparisonSection must be placed strictly after LandingJobsTickerStrip and before global coverage section"
   );
-  assert.ok(
-    compSrc.includes("The usual grind"),
-    "Header 1 must be 'The usual grind'"
-  );
-  assert.ok(
-    compSrc.includes("The Monke way"),
-    "Header 2 must be 'The Monke way'"
-  );
-  assert.ok(
-    compSrc.includes("<X") && compSrc.includes("<Check"),
-    "Headers must include red X cross icon for usual grind and Check icon for Monke way"
-  );
-  console.log("  [PASS] Title 'Tired of getting auto-rejected?' and two column headers verified");
+  console.log("  -> [PASS-LOCAL] Placement in src/app/page.tsx strictly verified in original slot.");
 
-  // 4. Config-Array Driven Structure for all 5 Rows
-  assert.strictEqual(
-    COMPARISON_ROWS.length,
-    5,
-    "COMPARISON_ROWS must contain exactly 5 rows"
-  );
-
-  const expectedCaptions = [
-    {
-      usual: "Scrolling the same feeds. Again.",
-      monke: "Jobs most people never see",
-    },
-    {
-      usual: "Posted 1h ago, 200 applicants",
-      monke: "Employers you didn't know existed",
-    },
-    {
-      usual: "Rewriting your resume. Again.",
-      monke: "AI-refined resume",
-    },
-    {
-      usual: "Am I even qualified?",
-      monke: "Resume score card",
-    },
-    {
-      usual: "Endless searching",
-      monke: "Worldwide roles, filter by country",
-    },
-  ];
-
-  expectedCaptions.forEach((pair, idx) => {
-    const row = COMPARISON_ROWS[idx];
-    const rowNum = idx + 1;
-    assert.ok(row, `Row ${rowNum} must exist in COMPARISON_ROWS`);
-    assert.ok(
-      row.usual.caption.includes(pair.usual),
-      `Row ${rowNum} usual caption mismatch: expected to include '${pair.usual}', got '${row.usual.caption}'`
-    );
-    assert.strictEqual(
-      row.monke.caption,
-      pair.monke,
-      `Row ${rowNum} monke caption mismatch: expected '${pair.monke}', got '${row.monke.caption}'`
-    );
-
-    // Verify mascot image file references in public/mascot/
-    assert.strictEqual(
-      row.usual.image,
-      `/mascot/row${rowNum}-sad.png`,
-      `Row ${rowNum} usual image must point to /mascot/row${rowNum}-sad.png`
-    );
-    assert.strictEqual(
-      row.monke.image,
-      `/mascot/row${rowNum}-happy.png`,
-      `Row ${rowNum} monke image must point to /mascot/row${rowNum}-happy.png`
-    );
+  // 6. Negative Control Subprocess Execution
+  console.log("\nTest 6: Executing negative control subprocess to verify non-zero exit code...");
+  const negResult = spawnSync(process.execPath, ["-r", "tsx", __filename, "--negative-control"], {
+    encoding: "utf-8",
+    env: process.env,
   });
-  console.log("  [PASS] All 5 rows configured with /mascot/row{n}-sad.png and row{n}-happy.png image paths");
 
-  // 5. Mascot PNG Assets Verification (All 10 active files for rows 1 to 5)
-  const activeMascotFiles = [
-    { file: "row1-sad.png", maxKb: 80 },
-    { file: "row1-happy.png", maxKb: 80 },
-    { file: "row2-sad.png", maxKb: 80 },
-    { file: "row2-happy.png", maxKb: 80 },
-    { file: "row3-sad.png", maxKb: 80 },
-    { file: "row3-happy.png", maxKb: 80 },
-    { file: "row4-sad.png", maxKb: 80 },
-    { file: "row4-happy.png", maxKb: 80 },
-    { file: "row5-sad.png", maxKb: 80 },
-    { file: "row5-happy.png", maxKb: 80 },
-  ];
-
-  for (const { file, maxKb } of activeMascotFiles) {
-    const fullPath = path.resolve(process.cwd(), "public/mascot", file);
-    assert.ok(fs.existsSync(fullPath), `Mascot image public/mascot/${file} must exist`);
-    const stat = fs.statSync(fullPath);
-    const sizeKb = stat.size / 1024;
-    assert.ok(
-      sizeKb < maxKb,
-      `Mascot image public/mascot/${file} must be under ${maxKb} KB (actual: ${sizeKb.toFixed(2)} KB)`
-    );
-    assert.ok(stat.size > 1000, `Mascot image public/mascot/${file} must not be empty`);
-
-    // Verify PNG header (89 50 4E 47 0D 0A 1A 0A)
-    const buf = fs.readFileSync(fullPath);
-    assert.strictEqual(buf[0], 0x89, `${file} must be a valid PNG`);
-    assert.strictEqual(buf[1], 0x50, `${file} must be a valid PNG`);
-    assert.strictEqual(buf[2], 0x4e, `${file} must be a valid PNG`);
-    assert.strictEqual(buf[3], 0x47, `${file} must be a valid PNG`);
-  }
-  console.log("  [PASS] All 10 active mascot PNG files verified (transparent, ~320px, strictly under 80 KB)");
-
-  // 6. Graceful Placeholder Fallback on Missing Source or Load Error
-  assert.ok(
-    compSrc.includes("CardImagePlaceholder"),
-    "LandingComparisonSection must render CardImagePlaceholder on missing files or error"
+  assert.notStrictEqual(
+    negResult.status,
+    0,
+    "Negative control MUST fail and exit with non-zero status code!"
   );
-  assert.ok(
-    compSrc.includes("!src || hasError"),
-    "LandingComparisonSection must show placeholder when src is missing or error occurs"
-  );
-  console.log("  [PASS] CardImagePlaceholder graceful fallback verified");
-
-  // 7. Cleanup of Old Comparison Directory
-  const oldCompDir = path.resolve(process.cwd(), "public/images/comparison");
-  assert.ok(
-    !fs.existsSync(oldCompDir),
-    "Old directory public/images/comparison must be deleted"
-  );
-  console.log("  [PASS] Old public/images/comparison files confirmed deleted");
-
-  // 8. Keyframe Animations & GPU Optimization
-  assert.ok(
-    compSrc.includes("mascot-sad-nod") && compSrc.includes("rotate(-2deg)"),
-    "Sad mascot must include head-nod tilt keyframe"
-  );
-  assert.ok(
-    compSrc.includes("mascot-sad-breathe") && compSrc.includes("scale(1.02)"),
-    "Sad mascot must include slow breathing keyframe"
-  );
-  assert.ok(
-    compSrc.includes("mascot-happy-swing") && compSrc.includes("rotate(-4deg)"),
-    "Happy mascot must include pendulum swing keyframe"
-  );
-  assert.ok(
-    compSrc.includes("mascot-happy-bounce") && compSrc.includes("translateY(-6px)"),
-    "Happy mascot must include soft bounce keyframe"
-  );
-  assert.ok(
-    compSrc.includes("mascot-scale-pop"),
-    "Mascot cards must include scale-pop on scroll-in"
-  );
-  assert.ok(
-    compSrc.includes("will-change: transform"),
-    "CSS rules must declare will-change: transform for GPU friendliness"
-  );
-  assert.ok(
-    compSrc.includes("prefers-reduced-motion: reduce"),
-    "CSS must respect prefers-reduced-motion to show static poses"
-  );
-  assert.ok(
-    compSrc.includes("imgRef.current.complete") || compSrc.includes("imgRef.current?.complete"),
-    "Must check img.complete so pre-hydration image still displays immediately"
-  );
-  assert.ok(
-    compSrc.includes("IntersectionObserver"),
-    "Must use IntersectionObserver to pause animations off-screen"
-  );
-  console.log("  [PASS] Light CSS keyframes, GPU acceleration, prefers-reduced-motion, and img.complete verified");
-
-  // 9. Card Styling, Round VS Badge, and Stagger Entrance
-  assert.ok(
-    compSrc.includes("bg-[#F2F1F6]") || compSrc.includes("bg-zinc-100"),
-    "Left cards must have soft grey background (#F2F1F6)"
-  );
-  assert.ok(
-    compSrc.includes("border-[1.5px] border-neutral-900") || compSrc.includes("border-neutral-900"),
-    "Right cards must be white with a dark border"
-  );
-  assert.ok(
-    compSrc.includes("rounded-full bg-neutral-900 text-white") && compSrc.includes("VS"),
-    "Each row must feature a round VS badge with dark background and white text"
-  );
-  assert.ok(
-    compSrc.includes("x: -28") && compSrc.includes("x: 28"),
-    "Left card must slide from left, right card from right"
-  );
-  assert.ok(
-    compSrc.includes("scale: 0") && compSrc.includes("scale: 1"),
-    "VS badge must pop in (scale 0 -> 1)"
-  );
-  console.log("  [PASS] Card styling, VS badge, slide/pop entrances, and zero layout shift verified");
+  console.log(`  -> [PASS-LOCAL] Negative control correctly exited with status code ${negResult.status}.`);
 
   console.log("\n================================================================================");
-  console.log("ALL LANDING COMPARISON BLOCK TESTS PASSED [PASS-LOCAL]");
+  console.log("ALL LANDING COMPARISON SECTION TESTS PASSED SUCCESSFULLY [PASS-LOCAL]");
   console.log("================================================================================\n");
 }
 
