@@ -36,6 +36,7 @@ async function runPlanQuotaSuite() {
     FREE_QUOTA_DEFAULT,
     {
       planCode: null,
+      periodStart: null,
       periodEnd: null,
       resumesRemaining: 0,
       coverLettersRemaining: 0,

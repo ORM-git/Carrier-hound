@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { PLAN_DOMESTIC } from "@/lib/billing/types";
+import { resolveOrderPricing } from "@/lib/billing/quota";
 
 export const runtime = "edge";
 
@@ -58,8 +58,23 @@ export async function POST(req: Request) {
       );
     }
 
-    const amountInPaise = PLAN_DOMESTIC.price * 100; // 19900
-    const currency = PLAN_DOMESTIC.currency; // "INR"
+    const body = await req.json().catch(() => ({}));
+    // Resolve server-authoritative price from plans/addon_packs catalog, ignoring any client amount
+    const pricing = resolveOrderPricing({
+      planCode: body.planCode,
+      planId: body.planId || (!body.addonCode && !body.planCode ? "monthly" : undefined),
+      addonCode: body.addonCode,
+    });
+
+    if (!pricing) {
+      return NextResponse.json(
+        { error: "Invalid plan or addon code" },
+        { status: 400 }
+      );
+    }
+
+    const amountInPaise = pricing.amount_paise;
+    const currency = pricing.currency;
     const receipt = `rcpt_${user.id.slice(0, 8)}_${Date.now()}`;
 
     // Call Razorpay REST API
@@ -77,7 +92,8 @@ export async function POST(req: Request) {
         notes: {
           user_id: user.id,
           email: user.email || "",
-          plan_id: PLAN_DOMESTIC.id,
+          type: pricing.type,
+          code: pricing.code,
         },
       }),
     });
@@ -91,6 +107,26 @@ export async function POST(req: Request) {
     }
 
     const orderData = await rzpRes.json();
+
+    // Record order in payment_orders table with status 'created' - REQUIRED on money path
+    const { error: insertErr } = await supabaseAdmin.from("payment_orders").insert({
+      user_id: user.id,
+      provider: "razorpay",
+      provider_order_id: orderData.id,
+      plan_code: pricing.type === "plan" ? pricing.code : null,
+      addon_code: pricing.type === "addon" ? pricing.code : null,
+      amount_paise: amountInPaise,
+      currency,
+      status: "created",
+    });
+
+    if (insertErr) {
+      console.error("[Razorpay Order] Critical: payment_orders insert failed; failing closed:", insertErr);
+      return NextResponse.json(
+        { error: "Failed to initialize order tracking. Please try again.", code: "ORDER_RECORD_FAILED" },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({
       orderId: orderData.id,

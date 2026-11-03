@@ -11,6 +11,7 @@ import {
   validateAndSanitizeAiOutput,
 } from "@/lib/ai/security";
 import { checkRequiredEnv } from "@/lib/api/envCheck";
+import { consumeSet, refundSet } from "@/lib/billing/consume";
 import { checkSharedRateLimit } from "@/lib/api/sharedRateLimit";
 import { buildCorsHeaders, handleCorsPreflight } from "../../../netlify/functions/_cors";
 
@@ -96,6 +97,8 @@ export interface AiServiceDeps {
   getSupabaseAdmin?: () => any;
   getServerEntitlement?: typeof getServerEntitlement;
   callGroq?: (payload: any) => Promise<any>;
+  consumeSet?: typeof consumeSet;
+  refundSet?: typeof refundSet;
   env?: Record<string, any>;
 }
 
@@ -180,6 +183,9 @@ export async function executeAiCore(
   ipRateLimitPrefix: string = "ai:ip:"
 ): Promise<AiCoreResponse> {
   const activeDeps: AiServiceDeps = deps;
+  let setConsumed = false;
+  let setConsumeKey = "";
+  let confirmedUserId = "";
   try {
     // 0. Per-IP Rate Limiting (shared Supabase store, memory fallback)
     const ipLimit = await checkSharedRateLimit(
@@ -258,6 +264,7 @@ export async function executeAiCore(
         body: { error: "Invalid or expired session. Please sign in again." },
       };
     }
+    confirmedUserId = user.id;
 
     // 1.1 Per-User Burst Rate Limiting (shared Supabase store, memory fallback)
     const userLimit = await checkSharedRateLimit(
@@ -335,36 +342,87 @@ export async function executeAiCore(
 
     const { payload } = payloadResult;
 
-    // 4. Durable Quotas Enforcement (Per-User Daily Quota in Supabase)
-    const quotaResult = await checkAndIncrementAiQuota(
-      supabaseAdmin,
-      user.id,
-      config.operation,
-      payload.estimatedInputTokens
-    );
+    const isMeteredOperation = config.operation === "resume_tailor" || config.operation === "cover_letter";
 
-    if (!quotaResult.allowed) {
-      if (quotaResult.isServiceUnavailable) {
+    // 4. Quota Enforcement:
+    // Metered AI generations (resume_tailor and cover_letter) route strictly through consumeSet,
+    // which manages Pro entitlement, plan quotas, add-on credits, client idempotency keys,
+    // and the 30/day IST fair-use cap. They MUST NOT double-count in ai_usage_quotas.
+    // Non-metered operations (e.g. job_fit, extraction) fall under checkAndIncrementAiQuota.
+    if (config.operation === "resume_tailor" || config.operation === "cover_letter") {
+      const candidateKey =
+        body.idempotencyKey ||
+        body.idempotency_key ||
+        body.requestId ||
+        body.request_id ||
+        params?.idempotencyKey ||
+        params?.idempotency_key ||
+        params?.requestId ||
+        params?.request_id;
+
+      setConsumeKey =
+        typeof candidateKey === "string" && candidateKey.trim()
+          ? candidateKey.trim()
+          : `set_${user.id}_${config.operation}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
+      const doConsume = activeDeps.consumeSet || consumeSet;
+      const consumeRes = await doConsume(user.id, config.operation, setConsumeKey);
+
+      if (!consumeRes.success) {
+        const isDailyCap = consumeRes.code === "DAILY_LIMIT_REACHED";
         return {
-          statusCode: 503,
+          statusCode: isDailyCap ? 429 : 403,
           body: {
-            error: quotaResult.error || "AI quota service is temporarily unavailable. Please try again shortly.",
-            code: "AI_QUOTA_SERVICE_UNAVAILABLE",
+            error: consumeRes.error || "Quota exhausted for operation",
+            code: consumeRes.code || "QUOTA_EXHAUSTED",
           },
         };
       }
-      return {
-        statusCode: 429,
-        body: {
-          error: `Daily AI usage quota exceeded for operation '${config.operation}' (${quotaResult.currentCount}/${quotaResult.limit}). Quotas reset daily at midnight UTC.`,
-          currentCount: quotaResult.currentCount,
-          limit: quotaResult.limit,
-        },
-        headers: {
-          "Retry-After": "86400",
-        },
-      };
+      setConsumed = true;
+    } else {
+      const quotaResult = await checkAndIncrementAiQuota(
+        supabaseAdmin,
+        user.id,
+        config.operation,
+        payload.estimatedInputTokens
+      );
+
+      if (!quotaResult.allowed) {
+        if (quotaResult.isServiceUnavailable) {
+          return {
+            statusCode: 503,
+            body: {
+              error: quotaResult.error || "AI quota service is temporarily unavailable. Please try again shortly.",
+              code: "AI_QUOTA_SERVICE_UNAVAILABLE",
+            },
+          };
+        }
+        return {
+          statusCode: 429,
+          body: {
+            error: `Daily AI usage quota exceeded for operation '${config.operation}' (${quotaResult.currentCount}/${quotaResult.limit}). Quotas reset daily at midnight UTC.`,
+            currentCount: quotaResult.currentCount,
+            limit: quotaResult.limit,
+          },
+          headers: {
+            "Retry-After": "86400",
+          },
+        };
+      }
     }
+
+    const rollbackAllQuotas = async () => {
+      if (setConsumed && setConsumeKey) {
+        const doRefund = activeDeps.refundSet || refundSet;
+        try {
+          await doRefund(user.id, setConsumeKey);
+        } catch (rfErr) {
+          console.warn("[AI Service] Error refunding consumed set:", rfErr);
+        }
+      } else if (!isMeteredOperation) {
+        await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
+      }
+    };
 
     // 5. Server-Side Groq API Key Check & Upstream Groq Call
     let groqData: any;
@@ -373,7 +431,7 @@ export async function executeAiCore(
         groqData = await activeDeps.callGroq(payload);
       } catch (mockErr: any) {
         console.warn("[AI Service] Error calling mock Groq provider:", mockErr);
-        await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
+        await rollbackAllQuotas();
         return {
           statusCode: 502,
           body: { error: mockErr?.message || "AI service request failed or timed out. Please try again." },
@@ -383,7 +441,7 @@ export async function executeAiCore(
       const groqApiKey = getRuntimeEnv("GROQ_API_KEY", activeDeps.env);
       if (!groqApiKey || !groqApiKey.trim()) {
         console.error("[AI Service] Missing required environment variable: GROQ_API_KEY");
-        await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
+        await rollbackAllQuotas();
         return {
           statusCode: 500,
           body: {
@@ -411,7 +469,7 @@ export async function executeAiCore(
         });
       } catch (fetchErr) {
         console.warn("[AI Service] Network error calling upstream provider:", fetchErr);
-        await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
+        await rollbackAllQuotas();
         return {
           statusCode: 502,
           body: { error: "AI service request failed or timed out. Please try again." },
@@ -420,7 +478,7 @@ export async function executeAiCore(
 
       if (!groqResponse.ok) {
         console.warn(`[AI Service] Upstream provider returned status ${groqResponse.status}`);
-        await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
+        await rollbackAllQuotas();
         return {
           statusCode: 502,
           body: { error: "AI service generation failed. Please try again." },
@@ -431,7 +489,7 @@ export async function executeAiCore(
         groqData = await groqResponse.json();
       } catch (parseErr) {
         console.warn("[AI Service] Failed to parse upstream provider JSON:", parseErr);
-        await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
+        await rollbackAllQuotas();
         return {
           statusCode: 502,
           body: { error: "AI service returned an invalid response. Please try again." },
@@ -444,7 +502,7 @@ export async function executeAiCore(
         ? groqData
         : groqData?.choices?.[0]?.message?.content;
     if (!content) {
-      await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
+      await rollbackAllQuotas();
       return {
         statusCode: 502,
         body: { error: "AI service returned an empty generation." },
@@ -468,7 +526,7 @@ export async function executeAiCore(
 
     const validated = validateAndSanitizeAiOutput(config.operation, content, params);
     if (!validated.ok) {
-      await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
+      await rollbackAllQuotas();
       return {
         statusCode: 502,
         body: { error: validated.error },
@@ -489,6 +547,14 @@ export async function executeAiCore(
     };
   } catch (err: any) {
     console.error("[AI Service] Unhandled error:", err);
+    if (setConsumed && setConsumeKey && confirmedUserId) {
+      const doRefund = activeDeps.refundSet || refundSet;
+      try {
+        await doRefund(confirmedUserId, setConsumeKey);
+      } catch (rfErr) {
+        console.warn("[AI Service] Error refunding consumed set on unhandled error:", rfErr);
+      }
+    }
     return {
       statusCode: 500,
       body: { error: err?.message || "Internal server error occurred." },
