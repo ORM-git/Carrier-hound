@@ -15,6 +15,7 @@ process.env.SUPABASE_URL = "https://mock-supabase.local";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "mock-service-role-key-for-test-suite";
 process.env.SUPABASE_SERVICE_KEY = "mock-service-role-key-for-test-suite";
 process.env.GROQ_API_KEY = "gsk_mock_test_key_for_handler_authz_verification";
+process.env.EARLY_ACCESS_ALLOWED_EMAILS = "pro@example.com,free@example.com";
 
 // In-memory quota store for mock quota tests
 let mockAiQuotaStore: { [key: string]: { count: number; total_tokens: number } } = {};

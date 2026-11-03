@@ -14,6 +14,7 @@ import { checkRequiredEnv } from "@/lib/api/envCheck";
 import { consumeSet, refundSet } from "@/lib/billing/consume";
 import { checkSharedRateLimit } from "@/lib/api/sharedRateLimit";
 import { buildCorsHeaders, handleCorsPreflight } from "../../../netlify/functions/_cors";
+import { isUserApproved } from "@/lib/auth/approval";
 
 export interface RateLimitBucket {
   count: number;
@@ -262,6 +263,18 @@ export async function executeAiCore(
       return {
         statusCode: 401,
         body: { error: "Invalid or expired session. Please sign in again." },
+      };
+    }
+
+    // Invite-only early-access approval check
+    const isApproved = await isUserApproved(supabaseAdmin, user);
+    if (!isApproved) {
+      return {
+        statusCode: 403,
+        body: {
+          error: "Early access only",
+          message: "Invite-only access: your account is pending approval.",
+        },
       };
     }
     confirmedUserId = user.id;
