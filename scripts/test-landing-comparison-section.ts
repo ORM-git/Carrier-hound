@@ -36,13 +36,21 @@ async function runTests() {
   assert.ok(!compSrc.includes("ComparisonCardImage"), "ComparisonCardImage must be removed");
   assert.ok(!compSrc.includes("mascot-sad"), "Old mascot CSS keyframes must be removed");
   assert.ok(!compSrc.includes("mascot-happy"), "Old mascot CSS keyframes must be removed");
-  assert.ok(!compSrc.includes("Tired of getting"), "Old heading text must be removed");
+  assert.ok(!compSrc.includes("auto-rejected?"), "Old heading 'auto-rejected?' must be removed");
+  assert.ok(compSrc.includes("Tired of getting auto rejection"), "Must include exact heading 'Tired of getting auto rejection'");
   assert.ok(!compSrc.includes("careermonke.com"), "Old footer text must be removed");
-  console.log("  -> [PASS-LOCAL] Old tiles, rows, placeholders, keyframes, and headings removed from component source.");
+  console.log("  -> [PASS-LOCAL] Old tiles, rows, placeholders, keyframes, and footer removed from component source.");
 
   // 2. Rendered Static Markup Assertions
   console.log("\nTest 2: Verifying rendered HTML markup of LandingComparisonSection...");
   const renderedHtml = renderToStaticMarkup(React.createElement(LandingComparisonSection));
+
+  // Assert heading directly above the GIF
+  assert.ok(renderedHtml.includes("Tired of getting auto rejection"), "Must render heading text 'Tired of getting auto rejection'");
+  assert.ok(renderedHtml.includes("text-[#090E34]"), "Heading must use brand navy #090E34");
+  assert.ok(renderedHtml.includes("font-bold"), "Heading must be bold");
+  assert.ok(renderedHtml.includes("text-center"), "Heading must be centered");
+  assert.ok(/<h2\b[^>]*>.*Tired of getting auto rejection.*<\/h2>/s.test(renderedHtml), "Must render as an h2 element");
 
   // Assert exact image attributes
   assert.ok(renderedHtml.includes('src="/careermonke-comparison-boxes.gif"'), "Must render exact src '/careermonke-comparison-boxes.gif'");
@@ -61,8 +69,7 @@ async function runTests() {
   assert.ok(renderedHtml.includes("mx-auto"), "Wrapper must be centered with mx-auto");
   assert.ok(renderedHtml.includes("px-4"), "Wrapper must have px-4 horizontal padding");
 
-  // Assert NO heading, NO footer text, NO card, NO border, NO shadow, NO background, NO VS badges, NO extra text
-  assert.ok(!/<h[1-6]/i.test(renderedHtml), "Must contain NO heading tags (<h1..h6>)");
+  // Assert NO footer text, NO card, NO border, NO shadow, NO background, NO VS badges
   assert.ok(!/<p[\s>]/i.test(renderedHtml), "Must contain NO paragraph (<p>) tags");
   const htmlWithoutImg = renderedHtml.replace(/<img[^>]*>/g, "");
   assert.ok(!htmlWithoutImg.includes("The usual grind"), "Must contain NO text 'The usual grind' outside img alt");
@@ -76,7 +83,7 @@ async function runTests() {
   // Verify only 1 img element rendered
   const imgMatches = renderedHtml.match(/<img\b/g);
   assert.strictEqual(imgMatches?.length, 1, "Must render exactly ONE image element");
-  console.log("  -> [PASS-LOCAL] Rendered markup contains solely the comparison image with correct attributes and clean wrapper.");
+  console.log("  -> [PASS-LOCAL] Rendered markup contains solely the heading and comparison image with correct attributes and clean wrapper.");
 
   // 3. GIF Asset Verification
   console.log("\nTest 3: Verifying public/careermonke-comparison-boxes.gif asset on disk...");
