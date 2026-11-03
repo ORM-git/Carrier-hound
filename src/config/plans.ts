@@ -10,7 +10,7 @@
  * - Monthly: ₹1,499, billed monthly: 60 sets/month. Badge: "Recommended". Default selected.
  * - Quarterly: ₹3,999, billed every 3 months: 60 sets each month, resetting monthly. Badge: "Best value".
  * - 1 Set = 1 job extraction + 1 resume tailoring + 1 cover letter.
- * - Add-ons: ₹149 / ₹399 / ₹699 for 10 / 30 / 60 extra sets, valid 60 days (planned / coming soon).
+ * - Add-ons: ₹149 / ₹399 / ₹699 for 10 / 30 / 60 extra generations, valid 60 days (planned / coming soon).
  * - Anti-abuse daily limit: 30 generations/day.
  */
 
@@ -63,7 +63,7 @@ export const ADD_ON_PACKS: AddOnPack[] = [
 ];
 
 export const ADD_ON_PACKS_NOTE =
-  "Planned Add-ons: ₹149 / ₹399 / ₹699 for 10 / 30 / 60 extra sets, used after plan quota, valid 60 days (coming soon).";
+  "Planned Add-ons: ₹149 / ₹399 / ₹699 for 10 / 30 / 60 extra generations, used after plan quota, valid 60 days (coming soon).";
 
 export const REFUND_POLICY_NOTE = "All sales final, no refunds";
 
@@ -228,7 +228,7 @@ export const PLAN_COMPARISON_ROWS: PlanComparisonRow[] = [
   {
     category: "Add-on Capacity",
     feature: "Extra Add-on Credit Packs",
-    description: "₹149 / ₹399 / ₹699 for 10 / 30 / 60 extra sets (valid 60 days after quota)",
+    description: "₹149 / ₹399 / ₹699 for 10 / 30 / 60 extra generations (valid 60 days after quota)",
     free: false,
     premium: "Coming soon",
     isUpcoming: true,

@@ -67,7 +67,7 @@ export interface AddonPackDefinition {
 export const ADDON_PACK_DEFINITIONS: Record<string, AddonPackDefinition> = {
   addon_10: {
     code: "addon_10",
-    name: "10 Extra Sets",
+    name: "10 extra generations",
     price_paise: 14900,
     sets: 10,
     validity_days: 60,
@@ -75,7 +75,7 @@ export const ADDON_PACK_DEFINITIONS: Record<string, AddonPackDefinition> = {
   },
   addon_30: {
     code: "addon_30",
-    name: "30 Extra Sets",
+    name: "30 extra generations",
     price_paise: 39900,
     sets: 30,
     validity_days: 60,
@@ -83,7 +83,7 @@ export const ADDON_PACK_DEFINITIONS: Record<string, AddonPackDefinition> = {
   },
   addon_60: {
     code: "addon_60",
-    name: "60 Extra Sets",
+    name: "60 extra generations",
     price_paise: 69900,
     sets: 60,
     validity_days: 60,

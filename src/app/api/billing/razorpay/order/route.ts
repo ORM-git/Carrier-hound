@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { resolveOrderPricing } from "@/lib/billing/quota";
+import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
 
 export const runtime = "edge";
 
@@ -71,6 +72,20 @@ export async function POST(req: Request) {
         { error: "Invalid plan or addon code" },
         { status: 400 }
       );
+    }
+
+    // Add-ons require active Pro subscription
+    if (pricing.type === "addon") {
+      const entitlement = await getServerEntitlement(user.id);
+      if (!entitlement?.isPro) {
+        return NextResponse.json(
+          {
+            error: "Add-on packs require an active Pro subscription",
+            code: "PRO_REQUIRED",
+          },
+          { status: 403 }
+        );
+      }
     }
 
     const amountInPaise = pricing.amount_paise;
