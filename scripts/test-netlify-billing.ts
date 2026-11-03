@@ -6,12 +6,14 @@
  * 2. netlify/functions/billing-razorpay-verify.ts
  * 3. netlify/functions/billing-razorpay-webhook.ts
  *
- * Verifies all 5 core security requirements:
+ * Verifies all core security requirements:
  * - Flag off (503 BILLING_DISABLED when NEXT_PUBLIC_BILLING_ENABLED !== "true")
  * - No auth / invalid session (401 on order and verify)
  * - Bad signature (400 INVALID_SIGNATURE on verify and webhook)
  * - Tampered amount / mismatched plan (400 on verify)
- * - Duplicate webhook (200 alreadyProcessed: true via webhook_events deduplication)
+ * - Webhook error handling: RPC returns success:false (non-200, no dedupe row left)
+ * - Webhook error handling: RPC throws error on transient failure, then retry succeeds
+ * - Duplicate webhook after success (200 alreadyProcessed: true without re-executing RPC)
  * - Happy paths: authoritative server pricing (Weekly 692, Monthly 1499, Addons 149/399/699),
  *   add-on Pro prerequisite check, idempotent already-paid verify, and RPC fulfilment.
  *
@@ -34,6 +36,7 @@ interface MockDbState {
   subscriptions: Map<string, any>;
   addonCredits: Map<string, any>;
   rpcFulfilCalls: Array<{ orderId: string; userId: string }>;
+  customRpcHandler?: (fnName: string, args: any) => Promise<any> | any;
 }
 
 function createMockSupabase(db: MockDbState, validTokens: Record<string, any>) {
@@ -48,18 +51,16 @@ function createMockSupabase(db: MockDbState, validTokens: Record<string, any>) {
       },
     },
     from: (table: string) => {
-      let selectedFields = "*";
       let filterOrderId: string | null = null;
       let filterUserId: string | null = null;
+      let filterEventId: string | null = null;
 
       const queryObj: any = {
-        select: (fields = "*") => {
-          selectedFields = fields;
-          return queryObj;
-        },
+        select: () => queryObj,
         eq: (col: string, val: any) => {
           if (col === "provider_order_id" || col === "id") filterOrderId = val;
           if (col === "user_id") filterUserId = val;
+          if (col === "event_id") filterEventId = val;
           return queryObj;
         },
         maybeSingle: async () => {
@@ -70,6 +71,12 @@ function createMockSupabase(db: MockDbState, validTokens: Record<string, any>) {
               return { data: null, error: null };
             }
             return { data: { ...order }, error: null };
+          }
+          if (table === "webhook_events") {
+            if (filterEventId && db.webhookEvents.has(filterEventId)) {
+              return { data: { event_id: filterEventId }, error: null };
+            }
+            return { data: null, error: null };
           }
           return { data: null, error: null };
         },
@@ -96,11 +103,21 @@ function createMockSupabase(db: MockDbState, validTokens: Record<string, any>) {
           }
           return { error: null };
         },
+        upsert: async (row: any) => {
+          if (table === "webhook_events") {
+            db.webhookEvents.add(row.event_id);
+            return { error: null };
+          }
+          return { error: null };
+        },
       };
 
       return queryObj;
     },
     rpc: async (fnName: string, args: any) => {
+      if (db.customRpcHandler) {
+        return db.customRpcHandler(fnName, args);
+      }
       if (fnName === "fulfil_payment_order") {
         db.rpcFulfilCalls.push({
           orderId: args.p_provider_order_id,
@@ -479,48 +496,165 @@ async function runSuite() {
     console.log("  -> [PASS-LOCAL] Verification fulfills order and handles repeat calls idempotently.");
 
     // ---------------------------------------------------------------------------
-    // TEST 7: Webhook Deduplication and Asynchronous Fulfillment
+    // TEST 7: Webhook - RPC returns success: false (non-200, no dedupe row left)
     // ---------------------------------------------------------------------------
-    console.log("\nTest 7: Verifying webhook deduplication and fulfilment on order.paid...");
+    console.log("\nTest 7: Verifying webhook when RPC returns success: false...");
 
-    const webhookOrderId = weeklyOrder.orderId;
-    const webhookPaymentId = "pay_webhook_live_12345";
-    const webhookPayload = JSON.stringify({
+    // Create an order for testing RPC failure
+    const failOrderRes = await orderHandler({
+      httpMethod: "POST",
+      headers: { authorization: "Bearer valid-token-pro" },
+      body: JSON.stringify({ planCode: "weekly" }),
+    });
+    assert.strictEqual(failOrderRes.statusCode, 200);
+    const failOrderId = JSON.parse(failOrderRes.body).orderId;
+
+    const failEventId = "evt_fail_test_777";
+    const failWebhookPayload = JSON.stringify({
       event: "order.paid",
-      id: "evt_unique_razorpay_event_999",
+      id: failEventId,
       payload: {
-        order: { entity: { id: webhookOrderId } },
-        payment: { entity: { id: webhookPaymentId, notes: { user_id: validUser.id } } },
+        order: { entity: { id: failOrderId } },
+        payment: { entity: { id: "pay_fail_777", notes: { user_id: validUser.id } } },
       },
     });
+    const failWebhookSig = computeSignature(failWebhookPayload, TEST_WEBHOOK_SECRET);
 
-    const validWebhookSig = computeSignature(webhookPayload, TEST_WEBHOOK_SECRET);
+    // Mock RPC returning success: false
+    mockDb.customRpcHandler = async () => ({
+      data: {
+        success: false,
+        code: "ORDER_INVALID_STATE",
+        error: "Payment order is not in created state",
+      },
+      error: null,
+    });
 
-    // 7A: First webhook delivery
+    const webhookRpcFailRes = await webhookHandler({
+      httpMethod: "POST",
+      headers: { "x-razorpay-signature": failWebhookSig },
+      body: failWebhookPayload,
+    });
+
+    // Must return non-200 (HTTP 500 for retry)
+    assert.strictEqual(webhookRpcFailRes.statusCode, 500, "Must return HTTP 500 on RPC success:false");
+    const failResBody = JSON.parse(webhookRpcFailRes.body);
+    assert.strictEqual(failResBody.fulfilled, undefined, "Must NEVER return fulfilled:true when RPC fails");
+    assert.strictEqual(failResBody.code, "ORDER_INVALID_STATE");
+
+    // Dedupe row must NOT be left in webhook_events!
+    assert.strictEqual(
+      mockDb.webhookEvents.has(failEventId),
+      false,
+      "Must NOT leave dedupe row in webhook_events when fulfillment failed"
+    );
+
+    console.log("  -> [PASS-LOCAL] Webhook properly returns non-200 and leaves no dedupe row when RPC returns success:false.");
+
+    // ---------------------------------------------------------------------------
+    // TEST 8: Webhook - RPC throws error, then retry succeeds
+    // ---------------------------------------------------------------------------
+    console.log("\nTest 8: Verifying webhook when RPC throws error, then retry succeeds...");
+
+    const retryOrderRes = await orderHandler({
+      httpMethod: "POST",
+      headers: { authorization: "Bearer valid-token-pro" },
+      body: JSON.stringify({ planCode: "weekly" }),
+    });
+    assert.strictEqual(retryOrderRes.statusCode, 200);
+    const retryOrderId = JSON.parse(retryOrderRes.body).orderId;
+
+    const retryEventId = "evt_retry_test_888";
+    const retryWebhookPayload = JSON.stringify({
+      event: "order.paid",
+      id: retryEventId,
+      payload: {
+        order: { entity: { id: retryOrderId } },
+        payment: { entity: { id: "pay_retry_888", notes: { user_id: validUser.id } } },
+      },
+    });
+    const retryWebhookSig = computeSignature(retryWebhookPayload, TEST_WEBHOOK_SECRET);
+
+    // Attempt 1: RPC throws an unexpected error (e.g. DB connection reset)
+    mockDb.customRpcHandler = async () => {
+      throw new Error("Postgres connection timeout");
+    };
+
+    const webhookThrowRes = await webhookHandler({
+      httpMethod: "POST",
+      headers: { "x-razorpay-signature": retryWebhookSig },
+      body: retryWebhookPayload,
+    });
+
+    assert.strictEqual(webhookThrowRes.statusCode, 500, "Thrown RPC must return HTTP 500");
+    assert.strictEqual(
+      mockDb.webhookEvents.has(retryEventId),
+      false,
+      "Dedupe row must NOT be left when RPC threw an exception"
+    );
+
+    // Attempt 2: Razorpay retries with the SAME event_id, RPC now succeeds!
     mockDb.rpcFulfilCalls = [];
-    const webhookFirst = await webhookHandler({
-      httpMethod: "POST",
-      headers: { "x-razorpay-signature": validWebhookSig },
-      body: webhookPayload,
-    });
-    assert.strictEqual(webhookFirst.statusCode, 200);
-    const webhookFirstBody = JSON.parse(webhookFirst.body);
-    assert.strictEqual(webhookFirstBody.fulfilled, true);
-    assert.strictEqual(mockDb.rpcFulfilCalls.length, 1, "Webhook must trigger fulfil_payment_order");
-    assert.strictEqual(mockDb.rpcFulfilCalls[0].orderId, webhookOrderId);
+    mockDb.customRpcHandler = async (fnName: string, args: any) => {
+      mockDb.rpcFulfilCalls.push({
+        orderId: args.p_provider_order_id,
+        userId: args.p_user_id,
+      });
+      const order = mockDb.orders.get(args.p_provider_order_id);
+      if (order) {
+        order.status = "paid";
+        order.paid_at = new Date().toISOString();
+      }
+      return {
+        data: {
+          success: true,
+          order_id: args.p_provider_order_id,
+          fulfilled: true,
+        },
+        error: null,
+      };
+    };
 
-    // 7B: Duplicate webhook delivery (Razorpay retries after network timeout)
-    const webhookDuplicate = await webhookHandler({
+    const webhookRetrySuccessRes = await webhookHandler({
       httpMethod: "POST",
-      headers: { "x-razorpay-signature": validWebhookSig },
-      body: webhookPayload,
+      headers: { "x-razorpay-signature": retryWebhookSig },
+      body: retryWebhookPayload,
     });
-    assert.strictEqual(webhookDuplicate.statusCode, 200);
-    const webhookDupBody = JSON.parse(webhookDuplicate.body);
-    assert.strictEqual(webhookDupBody.alreadyProcessed, true, "Duplicate webhook must be marked alreadyProcessed");
-    assert.strictEqual(mockDb.rpcFulfilCalls.length, 1, "Duplicate webhook MUST NOT trigger RPC again!");
 
-    console.log("  -> [PASS-LOCAL] Webhook deduplication successfully prevents double execution.");
+    assert.strictEqual(webhookRetrySuccessRes.statusCode, 200, "Retry must succeed with HTTP 200");
+    const retrySuccessBody = JSON.parse(webhookRetrySuccessRes.body);
+    assert.strictEqual(retrySuccessBody.fulfilled, true, "Must return fulfilled:true on successful retry");
+    assert.strictEqual(mockDb.rpcFulfilCalls.length, 1, "Must execute fulfillment RPC on retry");
+    assert.strictEqual(mockDb.rpcFulfilCalls[0].orderId, retryOrderId);
+
+    // Dedupe row must NOW be saved in webhook_events
+    assert.strictEqual(
+      mockDb.webhookEvents.has(retryEventId),
+      true,
+      "Dedupe row must be inserted into webhook_events after fulfillment succeeds"
+    );
+
+    console.log("  -> [PASS-LOCAL] Webhook survives transient RPC throw and successfully fulfills on retry.");
+
+    // ---------------------------------------------------------------------------
+    // TEST 9: Webhook - Duplicate event delivery AFTER success
+    // ---------------------------------------------------------------------------
+    console.log("\nTest 9: Verifying duplicate event after success returns alreadyProcessed...");
+
+    // Send the SAME retryEventId a third time (duplicate delivery by Razorpay after success)
+    mockDb.rpcFulfilCalls = [];
+    const webhookDupAfterSuccessRes = await webhookHandler({
+      httpMethod: "POST",
+      headers: { "x-razorpay-signature": retryWebhookSig },
+      body: retryWebhookPayload,
+    });
+
+    assert.strictEqual(webhookDupAfterSuccessRes.statusCode, 200);
+    const dupBody = JSON.parse(webhookDupAfterSuccessRes.body);
+    assert.strictEqual(dupBody.alreadyProcessed, true, "Must return alreadyProcessed:true on duplicate event");
+    assert.strictEqual(mockDb.rpcFulfilCalls.length, 0, "Must NOT re-execute RPC on duplicate event after success");
+
+    console.log("  -> [PASS-LOCAL] Duplicate webhook delivery after success safely recognized without re-fulfilment.");
   } finally {
     // Restore original env vars
     process.env.NEXT_PUBLIC_BILLING_ENABLED = origBilling;
@@ -530,7 +664,7 @@ async function runSuite() {
   }
 
   console.log("\n--------------------------------------------------------------------------------");
-  console.log("ALL 7 NETLIFY BILLING TEST SUITES PASSED [PASS-LOCAL]");
+  console.log("ALL 9 NETLIFY BILLING TEST SUITES PASSED [PASS-LOCAL]");
   console.log("--------------------------------------------------------------------------------\n");
 }
 

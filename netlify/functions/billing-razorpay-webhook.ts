@@ -143,35 +143,9 @@ export function createHandler(deps: BillingWebhookDeps = {}) {
         };
       }
 
-      // Deduplicate event in webhook_events table
-      const { error: dedupeErr } = await supabaseAdmin.from("webhook_events").insert({
-        event_id: eventId,
-        provider: "razorpay",
-        event_type: payload.event || "unknown",
-      });
-
-      if (dedupeErr) {
-        // Unique constraint violation (Postgres error code 23505) -> Already processed
-        if (
-          dedupeErr.code === "23505" ||
-          dedupeErr.message?.includes("duplicate") ||
-          dedupeErr.message?.includes("unique")
-        ) {
-          return {
-            statusCode: 200,
-            headers,
-            body: JSON.stringify({
-              received: true,
-              alreadyProcessed: true,
-              eventId,
-            }),
-          };
-        }
-        safeLog.warn("[Razorpay Webhook] Deduplication insert warning:", dedupeErr);
-      }
-
-      // Process fulfillment on payment success events
       const eventType = payload.event;
+
+      // Handle payment fulfillment events: order.paid and payment.captured
       if (eventType === "order.paid" || eventType === "payment.captured") {
         const orderId =
           payload.payload?.order?.entity?.id ||
@@ -192,15 +166,17 @@ export function createHandler(deps: BillingWebhookDeps = {}) {
           payload.payload?.payment?.entity?.notes?.user_id ||
           payload.payload?.order?.entity?.notes?.user_id;
 
-        // If user_id is not in notes, look up payment_orders row by provider_order_id
-        if (!userId) {
-          const { data: orderRow } = await supabaseAdmin
-            .from("payment_orders")
-            .select("user_id")
-            .eq("provider_order_id", orderId)
-            .maybeSingle();
+        // Fetch order row from payment_orders to check current status and user_id
+        let orderRow: any = null;
+        const { data: dbOrder } = await supabaseAdmin
+          .from("payment_orders")
+          .select("*")
+          .eq("provider_order_id", orderId)
+          .maybeSingle();
 
-          userId = orderRow?.user_id;
+        orderRow = dbOrder;
+        if (!userId && orderRow?.user_id) {
+          userId = orderRow.user_id;
         }
 
         if (!userId) {
@@ -214,7 +190,34 @@ export function createHandler(deps: BillingWebhookDeps = {}) {
           };
         }
 
-        // Call database fulfillment function atomically
+        // Check if event was previously deduplicated
+        const { data: existingDedupe } = await supabaseAdmin
+          .from("webhook_events")
+          .select("event_id")
+          .eq("event_id", eventId)
+          .maybeSingle();
+
+        if (existingDedupe) {
+          // On a dedupe hit, re-attempt fulfillment if the order is still unpaid
+          if (orderRow && orderRow.status !== "paid") {
+            safeLog.warn(
+              `[Razorpay Webhook] Dedupe hit for event ${eventId} but order ${orderId} is still unpaid. Retrying fulfillment.`
+            );
+          } else {
+            // Order is genuinely already paid / fulfilled
+            return {
+              statusCode: 200,
+              headers,
+              body: JSON.stringify({
+                received: true,
+                alreadyProcessed: true,
+                eventId,
+              }),
+            };
+          }
+        }
+
+        // Fulfil first: Call database fulfillment function atomically
         const { data: fulfilRes, error: fulfilErr } = await supabaseAdmin.rpc("fulfil_payment_order", {
           p_provider_order_id: orderId,
           p_user_id: userId,
@@ -222,6 +225,7 @@ export function createHandler(deps: BillingWebhookDeps = {}) {
 
         if (fulfilErr) {
           safeLog.error("[Razorpay Webhook] fulfil_payment_order RPC error:", fulfilErr);
+          // Do not record dedupe row on RPC failure: return 500 so Razorpay retries
           return {
             statusCode: 500,
             headers,
@@ -231,6 +235,59 @@ export function createHandler(deps: BillingWebhookDeps = {}) {
             }),
           };
         }
+
+        // Strictly check fulfilRes.success
+        if (!fulfilRes || !fulfilRes.success) {
+          // Check if order was already paid (e.g. via verify endpoint race or ORDER_INVALID_STATE when genuinely paid)
+          const isGenuinelyPaid =
+            fulfilRes?.already_paid === true ||
+            (fulfilRes?.code === "ORDER_INVALID_STATE" && orderRow?.status === "paid");
+
+          if (isGenuinelyPaid) {
+            // Genuinely already paid: record dedupe row and return 200
+            await supabaseAdmin.from("webhook_events").upsert(
+              {
+                event_id: eventId,
+                provider: "razorpay",
+                event_type: eventType,
+              },
+              { onConflict: "event_id" }
+            );
+
+            return {
+              statusCode: 200,
+              headers,
+              body: JSON.stringify({
+                received: true,
+                alreadyPaid: true,
+                eventId,
+                details: fulfilRes,
+              }),
+            };
+          }
+
+          // Unsuccessful: DO NOT record dedupe row!
+          safeLog.error("[Razorpay Webhook] fulfil_payment_order returned failure:", fulfilRes);
+          const statusCode = fulfilRes?.code === "ORDER_NOT_FOUND" ? 404 : 500;
+          return {
+            statusCode,
+            headers,
+            body: JSON.stringify({
+              error: fulfilRes?.error || "Payment fulfillment failed",
+              code: fulfilRes?.code || "FULFILLMENT_FAILED",
+            }),
+          };
+        }
+
+        // Fulfillment succeeded (fulfilRes.success is true): Insert dedupe row now
+        await supabaseAdmin.from("webhook_events").upsert(
+          {
+            event_id: eventId,
+            provider: "razorpay",
+            event_type: eventType,
+          },
+          { onConflict: "event_id" }
+        );
 
         return {
           statusCode: 200,
@@ -244,7 +301,13 @@ export function createHandler(deps: BillingWebhookDeps = {}) {
         };
       }
 
-      // Other unhandled events (e.g. payment.failed, refund.created)
+      // For non-fulfillment events (e.g. payment.failed, refund.created)
+      await supabaseAdmin.from("webhook_events").insert({
+        event_id: eventId,
+        provider: "razorpay",
+        event_type: eventType || "unknown",
+      });
+
       return {
         statusCode: 200,
         headers,
