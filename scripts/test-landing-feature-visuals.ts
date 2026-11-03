@@ -204,7 +204,10 @@ function runSuite() {
   const idxFeatures = pageContent.indexOf("<LandingFeaturesSection />");
   const idxTicker = pageContent.indexOf("<LandingJobsTickerStrip />");
   const idxComparison = pageContent.indexOf("<LandingComparisonSection />");
-  const idxGlobalGlobe = pageContent.indexOf("<WireframeDottedGlobe />");
+  const idxGlobalGlobe =
+    pageContent.indexOf("<LandingGlobeFeatureSection") > -1
+      ? pageContent.indexOf("<LandingGlobeFeatureSection")
+      : pageContent.indexOf("<WireframeDottedGlobe />");
   const idxFreePreview = pageContent.indexOf("Free preview");
   const idxBio = pageContent.indexOf("Orissa here!");
   const idxTestimonials = pageContent.indexOf("<Testimonials />");
@@ -224,7 +227,7 @@ function runSuite() {
   assert.ok(idxTestimonials > -1, "Testimonials must be rendered");
   assert.ok(idxFaq > -1, "FAQ must be rendered");
   assert.ok(idxContact > -1, "Contact section must be rendered");
-  assert.ok(idxCredibility > -1, "LandingCredibilitySection must be rendered");
+  assert.strictEqual(idxCredibility, -1, "LandingCredibilitySection must NOT be rendered in page.tsx");
   assert.ok(idxFooter > -1, "Footer must be rendered");
 
   // Assert exact sequence
@@ -237,8 +240,7 @@ function runSuite() {
   assert.ok(idxBio < idxTestimonials, "(7) bio before feedback/testimonials");
   assert.ok(idxTestimonials < idxFaq, "(7) feedback/testimonials before FAQ");
   assert.ok(idxFaq < idxContact, "(7) FAQ before contact us");
-  assert.ok(idxContact < idxCredibility, "(7) contact us before LandingCredibilitySection");
-  assert.ok(idxCredibility < idxFooter, "LandingCredibilitySection before Footer");
+  assert.ok(idxContact < idxFooter, "(7) contact us before Footer");
 
   console.log("  [PASS] Landing page exact section sequence verified (1..9)");
 
