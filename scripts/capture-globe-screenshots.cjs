@@ -93,6 +93,7 @@ async function run() {
 
   try {
     const page = await browser.newPage();
+    await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "no-preference" }]);
     // Dismiss cookie notice
     await page.evaluateOnNewDocument(() => {
       localStorage.setItem("cm_cookie_notice", "dismissed");
@@ -119,6 +120,24 @@ async function run() {
     await globeSection.screenshot({ path: desktopPath });
     fs.copyFileSync(desktopPath, desktopArtifact);
     console.log(`Saved: ${desktopPath}`);
+
+    // 1b. Capture Tour Stop 2: Paris
+    console.log("Waiting for Tour Stop 2: Paris...");
+    await new Promise((r) => setTimeout(r, 3800));
+    const parisPath = path.join(REPORTS_DIR, "globe-tour-paris.png");
+    const parisArtifact = path.join(ARTIFACT_DIR, "globe-tour-paris.png");
+    await globeSection.screenshot({ path: parisPath });
+    fs.copyFileSync(parisPath, parisArtifact);
+    console.log(`Saved: ${parisPath}`);
+
+    // 1c. Capture Tour Stop 3: Singapore
+    console.log("Waiting for Tour Stop 3: Singapore...");
+    await new Promise((r) => setTimeout(r, 4500));
+    const sgPath = path.join(REPORTS_DIR, "globe-tour-singapore.png");
+    const sgArtifact = path.join(ARTIFACT_DIR, "globe-tour-singapore.png");
+    await globeSection.screenshot({ path: sgPath });
+    fs.copyFileSync(sgPath, sgArtifact);
+    console.log(`Saved: ${sgPath}`);
 
     // 2. Desktop 1440px - Click "Drag to explore" to show "Resume tour" control
     console.log("Capturing Desktop 1440px Explore Mode (Resume tour button)...");

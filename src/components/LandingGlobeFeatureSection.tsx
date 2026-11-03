@@ -36,8 +36,8 @@ const TOUR_CITIES: TourCity[] = [
     targetRotation: [122.4, -37.7],
     role: "ML Engineer",
     tags: [
-      { text: "On-site [Sample]", variant: "neutral" },
-      { text: "✕ Needs US work permit [Sample]", variant: "warning" },
+      { text: "On-site", variant: "neutral" },
+      { text: "✕ Needs US work permit", variant: "warning" },
     ],
   },
   {
@@ -47,8 +47,8 @@ const TOUR_CITIES: TourCity[] = [
     targetRotation: [-2.35, -48.8],
     role: "Senior DevOps Engineer",
     tags: [
-      { text: "Remote [Sample]", variant: "neutral" },
-      { text: "✓ EU Work Permit [Sample]", variant: "success" },
+      { text: "Remote", variant: "neutral" },
+      { text: "✓ EU Work Permit", variant: "success" },
     ],
   },
   {
@@ -58,8 +58,8 @@ const TOUR_CITIES: TourCity[] = [
     targetRotation: [-103.8, -1.3],
     role: "Full Stack Engineer",
     tags: [
-      { text: "Hybrid [Sample]", variant: "neutral" },
-      { text: "✓ Eligible: SG [Sample]", variant: "success" },
+      { text: "Hybrid", variant: "neutral" },
+      { text: "✓ Eligible: SG", variant: "success" },
     ],
   },
 ];
@@ -88,10 +88,16 @@ export default function LandingGlobeFeatureSection() {
   // Tour & interaction state
   const [isTouring, setIsTouring] = useState(true);
   const [activeCityIndex, setActiveCityIndex] = useState(0);
-  const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number; visible: boolean }>({
+  const [tooltipPos, setTooltipPos] = useState<{
+    x: number;
+    y: number;
+    visible: boolean;
+    containerWidth: number;
+  }>({
     x: 0,
     y: 0,
     visible: true,
+    containerWidth: 440,
   });
 
   // State refs for animation loop
@@ -532,6 +538,7 @@ export default function LandingGlobeFeatureSection() {
               x: cityPt[0],
               y: cityPt[1],
               visible: true,
+              containerWidth: width,
             });
           } else {
             setTooltipPos((prev) => ({ ...prev, visible: false }));
@@ -603,21 +610,31 @@ export default function LandingGlobeFeatureSection() {
 
   const currentCity = TOUR_CITIES[activeCityIndex];
 
+  // Tooltip clamping & flip calculations
+  const containerWidth = tooltipPos.containerWidth || 360;
+  const isDesktop = containerWidth >= 440;
+  const cardHalfWidth = isDesktop ? 100 : 85;
+  const clampLeft = Math.max(
+    cardHalfWidth + 10,
+    Math.min(containerWidth - cardHalfWidth - 10, tooltipPos.x)
+  );
+  const isFlippedDown = tooltipPos.y < 110;
+
   return (
     <section
       data-testid="landing-globe-feature-section"
       aria-label="Global Coverage Feature"
-      className="max-w-6xl mx-auto px-4 py-16 sm:py-24"
+      className="max-w-6xl mx-auto px-4 py-12 sm:py-20"
     >
       {/* 1. Centered Headline / Subtitle Stack */}
-      <div className="text-center space-y-3 mb-8 sm:mb-12">
+      <div className="text-center space-y-2 sm:space-y-3 mb-6 sm:mb-9">
         <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full text-xs font-semibold tracking-wider uppercase bg-blue-50/80 text-blue-700 border border-blue-200/80 shadow-2xs">
           <span>Global Map / Radar</span>
         </div>
-        <h2 className="text-3xl sm:text-4xl lg:text-[42px] font-black text-[#090E34] tracking-tight leading-tight max-w-2xl mx-auto">
+        <h2 className="text-2xl xs:text-3xl sm:text-4xl lg:text-[42px] font-black text-[#090E34] tracking-tight leading-tight max-w-2xl mx-auto">
           Your next role might be in a city you haven&apos;t thought of yet.
         </h2>
-        <p className="text-slate-600 text-base sm:text-lg max-w-xl mx-auto leading-relaxed">
+        <p className="text-slate-600 text-sm sm:text-base lg:text-lg max-w-xl mx-auto leading-relaxed">
           Look beyond your radar. Explore jobs by city, with work setup and eligibility checked.
         </p>
       </div>
@@ -628,7 +645,7 @@ export default function LandingGlobeFeatureSection() {
         tabIndex={0}
         onKeyDown={handleKeyDown}
         aria-label="Interactive 3D job radar globe. Use arrow keys to rotate, Enter or Space to resume tour."
-        className="relative w-full max-w-[460px] aspect-square mx-auto mt-7 mb-8 flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-full select-none"
+        className="relative w-full max-w-[420px] sm:max-w-[460px] aspect-square mx-auto my-4 sm:my-6 flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-full select-none"
       >
         {/* Soft Ambient Radial Blue Glow behind sphere */}
         <div
@@ -647,7 +664,7 @@ export default function LandingGlobeFeatureSection() {
         />
 
         {/* Top-Right Control: "Drag to explore" hint / "Resume tour" button */}
-        <div className="absolute -top-6 right-1 sm:-top-3 sm:right-2 z-30">
+        <div className="absolute -top-4 right-1 sm:-top-2 sm:right-2 z-30">
           {isTouring ? (
             <button
               type="button"
@@ -677,29 +694,35 @@ export default function LandingGlobeFeatureSection() {
           Illustrative preview
         </div>
 
-        {/* Floating Job Tooltip Overlay (matching Jobright screenshot) */}
+        {/* Floating Job Tooltip Overlay (matching Jobright reference) */}
         {tooltipPos.visible && currentCity && (
           <div
             style={{
-              left: `${tooltipPos.x}px`,
+              left: `${clampLeft}px`,
               top: `${tooltipPos.y}px`,
-              transform: "translate(-50%, -125%)",
+              transform: isFlippedDown
+                ? "translate(-50%, 14px)"
+                : "translate(-50%, calc(-100% - 12px))",
             }}
             className="absolute z-30 pointer-events-none transition-all duration-300 ease-out"
           >
-            <div className="bg-white/95 backdrop-blur-md rounded-2xl border border-slate-200/90 shadow-xl p-3.5 w-60 sm:w-64 text-left">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-sm font-extrabold text-[#090E34]">{currentCity.name}</span>
-                <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">
+            <div className="bg-white/95 backdrop-blur-md rounded-xl sm:rounded-2xl border border-slate-200/90 shadow-lg sm:shadow-xl p-2.5 sm:p-3 w-[165px] xs:w-[175px] sm:w-[200px] text-left">
+              <div className="flex items-center justify-between gap-1 mb-0.5 sm:mb-1">
+                <span className="text-xs sm:text-[13px] font-bold text-[#090E34] truncate">
+                  {currentCity.name}
+                </span>
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider bg-slate-100/90 px-1 py-0.2 rounded shrink-0">
                   Sample
                 </span>
               </div>
-              <div className="text-xs text-slate-600 font-medium mb-2.5">{currentCity.role}</div>
-              <div className="flex flex-wrap gap-1.5">
+              <div className="text-[11px] sm:text-xs text-slate-600 font-medium leading-tight mb-1.5 sm:mb-2 break-words">
+                {currentCity.role}
+              </div>
+              <div className="flex flex-wrap gap-1 sm:gap-1.5">
                 {currentCity.tags.map((tag, idx) => (
                   <span
                     key={idx}
-                    className={`inline-flex items-center text-[11px] font-semibold px-2 py-0.5 rounded-md ${
+                    className={`inline-flex items-center text-[10px] sm:text-[10.5px] font-medium px-1.5 py-0.5 rounded leading-tight break-words ${
                       tag.variant === "warning"
                         ? "bg-rose-50 text-rose-700 border border-rose-200/70"
                         : tag.variant === "success"
@@ -717,7 +740,7 @@ export default function LandingGlobeFeatureSection() {
       </div>
 
       {/* 3. Three-Cell Rounded Stats Strip (STRICT: NO COMPANY COUNT) */}
-      <div className="mt-8 max-w-lg mx-auto bg-white/95 backdrop-blur-xs rounded-2xl border border-slate-200/90 shadow-xs px-4 sm:px-6 py-3.5 sm:py-4 flex items-center justify-between gap-2 sm:gap-4">
+      <div className="mt-5 sm:mt-7 max-w-lg mx-auto bg-white/95 backdrop-blur-xs rounded-2xl border border-slate-200/90 shadow-xs px-3 sm:px-6 py-2.5 sm:py-3.5 flex items-center justify-between gap-2 sm:gap-4">
         {/* Cell 1: Fetch Status & Truthful Refresh Time */}
         <div className="flex-1 text-center min-w-0">
           <div className="flex items-center justify-center gap-1.5 mb-0.5">
@@ -759,10 +782,10 @@ export default function LandingGlobeFeatureSection() {
       </div>
 
       {/* 4. Dark Pill CTA Button + Descriptive Caption */}
-      <div className="mt-8 flex flex-col items-center justify-center gap-2.5">
+      <div className="mt-5 sm:mt-7 flex flex-col items-center justify-center gap-2 sm:gap-2.5">
         <Link
           href="/jobs"
-          className="inline-flex items-center justify-center gap-2 bg-[#090E34] hover:bg-[#1E293B] text-white font-semibold text-base px-8 py-3.5 rounded-full shadow-md hover:shadow-lg transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 cursor-pointer"
+          className="inline-flex items-center justify-center gap-2 bg-[#090E34] hover:bg-[#1E293B] text-white font-semibold text-sm sm:text-base px-7 py-3 sm:px-8 sm:py-3.5 rounded-full shadow-md hover:shadow-lg transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 cursor-pointer"
         >
           <span>View jobs</span>
           <ArrowRight className="w-4 h-4 ml-0.5" />

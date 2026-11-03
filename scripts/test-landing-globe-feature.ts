@@ -92,10 +92,11 @@ check("Three-city auto-tour: Singapore, Paris, San Francisco properly configured
   assert.match(componentCode, /d3\.geoInterpolate/, "Must use d3.geoInterpolate for great circle animated arc");
 });
 
-// 4. Truthful Demo Labeling
-check("Demo markers labeled 'Illustrative preview' and chips labeled '[Sample]'", () => {
+// 4. Truthful Demo Labeling & Simplified Sample Badging
+check("Demo markers labeled 'Illustrative preview', single 'Sample' badge on card, no repeated [Sample] in tags", () => {
   assert.match(componentCode, /Illustrative preview/, "Globe must be labeled 'Illustrative preview'");
-  assert.match(componentCode, /\[Sample\]/, "Tags must be clearly labeled '[Sample]'");
+  assert.match(componentCode, />\s*Sample\s*</, "Card must have single compact 'Sample' badge");
+  assert.doesNotMatch(componentCode, /\[Sample\]/, "Tags must NOT have repeated [Sample] suffix");
   assert.match(componentCode, /DEMO_HOME_COORDS/, "Home marker must be marked as demo data, not user location");
 });
 
@@ -125,6 +126,13 @@ check("CTA button links to /jobs and caption truthfully describes /radar map", (
   assert.match(componentCode, /href="\/jobs"/, "View jobs CTA button must link to /jobs");
   assert.match(componentCode, /href="\/radar"/, "Interactive map caption must link to /radar");
   assert.match(componentCode, /Open interactive map · sign-in required/, "Caption must truthfully indicate sign-in required");
+});
+
+// 8. Compact Tooltip Responsive Bounds, Clamping, and Flip
+check("Compact Tooltip: responsive width bounds (w-[165px]), edge clamping (clampLeft), and vertical flip (isFlippedDown)", () => {
+  assert.match(componentCode, /w-\[165px\]/, "Tooltip must have compact mobile width ~165px");
+  assert.match(componentCode, /clampLeft/, "Tooltip must compute clamped horizontal position");
+  assert.match(componentCode, /isFlippedDown/, "Tooltip must flip below pin when near top edge");
 });
 
 console.log(`\n================================================================================`);
