@@ -73,6 +73,7 @@ const SUITE_CLASSIFICATIONS = Object.freeze({
   "scripts/test-landing-job-hub-stats.ts": "offline",
   "scripts/test-landing-comparison-section.ts": "offline",
   "scripts/test-quota-consume-razorpay.ts": "offline",
+  "scripts/test-billing-money-path.ts": "offline",
   "scripts/test-plan-price-sync.ts": "offline",
   "scripts/test-netlify-billing.ts": "offline",
   "scripts/test-policy-pages.ts": "offline",

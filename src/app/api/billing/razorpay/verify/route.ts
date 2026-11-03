@@ -244,31 +244,54 @@ export async function POST(req: Request) {
       // Fall through to atomic conditional update if RPC is not registered
     }
 
-    // Atomic conditional update: only fulfill if status is currently 'created'
-    const { data: updatedOrders, error: updateErr } = await supabaseAdmin
-      .from("payment_orders")
-      .update({
-        status: "paid",
-        paid_at: new Date().toISOString(),
-      })
-      .eq("id", orderRow.id)
-      .eq("status", "created")
-      .select();
+    // Next fallback: Fail-closed and atomic.
+    // NEVER mark an order paid before the entitlement grant succeeds.
+    // Retries re-attempt the grant if previously incomplete.
+    if (orderRow.status === "paid") {
+      if (orderRow.addon_code) {
+        const { data: existingCredit } = await supabaseAdmin
+          .from("user_addon_credits")
+          .select("*")
+          .eq("order_id", orderRow.id)
+          .maybeSingle();
 
-    if (updateErr) {
-      console.error("[Razorpay Verify] Failed to update payment order status:", updateErr);
+        if (existingCredit) {
+          return NextResponse.json({
+            success: true,
+            alreadyPaid: true,
+            type: "addon",
+            addonCode: orderRow.addon_code,
+            credit: existingCredit,
+          });
+        }
+      } else if (orderRow.plan_code) {
+        const { data: existingSub } = await supabaseAdmin
+          .from("subscriptions")
+          .select("*")
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+        if (
+          existingSub &&
+          (existingSub.metadata?.payment_order_id === orderRow.id ||
+            existingSub.metadata?.provider_order_id === orderId)
+        ) {
+          return NextResponse.json({
+            success: true,
+            alreadyPaid: true,
+            type: "plan",
+            planCode: orderRow.plan_code,
+            isPro: true,
+            subscription: existingSub,
+          });
+        }
+      }
+      // If order was marked paid but entitlement grant is missing, retry re-attempts the grant below!
+    } else if (orderRow.status !== "created") {
       return NextResponse.json(
-        { error: "Failed to update order status", code: "ORDER_UPDATE_FAILED" },
-        { status: 500 }
+        { error: "Payment order is not in created or paid state", code: "ORDER_INVALID_STATE" },
+        { status: 400 }
       );
-    }
-
-    if (!updatedOrders || updatedOrders.length === 0) {
-      return NextResponse.json({
-        success: true,
-        message: "Order already verified and paid",
-        alreadyPaid: true,
-      });
     }
 
     // Fulfill based strictly on orderRow (never defaulting to monthly)
@@ -309,6 +332,7 @@ export async function POST(req: Request) {
 
       const expiresAt = new Date(Date.now() + validityDays * 86400000).toISOString();
 
+      // Grant add-on credit entitlement FIRST (fail-closed: do NOT mark order paid before this succeeds)
       const { data: creditRow, error: creditErr } = await supabaseAdmin
         .from("user_addon_credits")
         .insert({
@@ -327,8 +351,18 @@ export async function POST(req: Request) {
           return NextResponse.json({ success: true, alreadyPaid: true });
         }
         console.error("[Razorpay Verify] Add-on credit persistence error:", creditErr);
+        // Fail closed: order is NOT marked paid!
         return NextResponse.json({ error: creditErr.message }, { status: 500 });
       }
+
+      // Entitlement grant succeeded: ONLY NOW mark the order as paid
+      await supabaseAdmin
+        .from("payment_orders")
+        .update({
+          status: "paid",
+          paid_at: new Date().toISOString(),
+        })
+        .eq("id", orderRow.id);
 
       return NextResponse.json({
         success: true,
@@ -373,9 +407,43 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "Unknown plan code", code: "UNKNOWN_PLAN" }, { status: 400 });
       }
 
-      const currentPeriodStart = new Date().toISOString();
-      const currentPeriodEnd = new Date(Date.now() + durationDays * 86400000).toISOString();
+      // Query existing subscription for renewal/upgrade logic:
+      // When a user with an active plan buys any plan,
+      // new period end = max(current_period_end, now) + new plan duration; never shorten an existing period.
+      const { data: existingSub } = await supabaseAdmin
+        .from("subscriptions")
+        .select("*")
+        .eq("user_id", user.id)
+        .maybeSingle();
 
+      const now = new Date();
+      let currentPeriodStart = now.toISOString();
+      let currentPeriodEnd: string;
+
+      if (
+        existingSub &&
+        (existingSub.status === "active" || existingSub.status === "trialing") &&
+        existingSub.current_period_end
+      ) {
+        const existingEnd = new Date(existingSub.current_period_end);
+        const baseDate = existingEnd.getTime() > now.getTime() ? existingEnd : now;
+        currentPeriodEnd = new Date(baseDate.getTime() + durationDays * 86400000).toISOString();
+        if (existingSub.current_period_start) {
+          currentPeriodStart = existingSub.current_period_start;
+        }
+      } else {
+        currentPeriodEnd = new Date(now.getTime() + durationDays * 86400000).toISOString();
+      }
+
+      // Guarantee never shorten an existing period
+      if (existingSub?.current_period_end) {
+        const existingEnd = new Date(existingSub.current_period_end);
+        if (new Date(currentPeriodEnd).getTime() < existingEnd.getTime()) {
+          currentPeriodEnd = existingSub.current_period_end;
+        }
+      }
+
+      // Grant subscription entitlement FIRST (fail-closed: do NOT mark order paid before this succeeds)
       const { data: sub, error: subError } = await supabaseAdmin
         .from("subscriptions")
         .upsert(
@@ -405,8 +473,18 @@ export async function POST(req: Request) {
 
       if (subError) {
         console.error("[Razorpay Verify] Subscription persistence error:", subError);
+        // Fail closed: order is NOT marked paid!
         return NextResponse.json({ error: subError.message }, { status: 500 });
       }
+
+      // Entitlement grant succeeded: ONLY NOW mark the order as paid
+      await supabaseAdmin
+        .from("payment_orders")
+        .update({
+          status: "paid",
+          paid_at: new Date().toISOString(),
+        })
+        .eq("id", orderRow.id);
 
       return NextResponse.json({
         success: true,

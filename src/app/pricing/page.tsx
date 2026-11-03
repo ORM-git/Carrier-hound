@@ -453,7 +453,7 @@ export default function PricingPage() {
       <div className="w-full max-w-3xl mx-auto mt-8 px-4 text-center space-y-4">
         <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800">
           <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 font-medium leading-relaxed">
-            Add-on packs ₹149/₹399/₹699 · 10/30/60 sets. Extra sets on any plan: burn only after the plan quota is used, 60-day validity, daily limit still applies. Final-sale.
+            Add-on packs ₹149/₹399/₹699 · 10/30/60 extra generations. Extra generations on any plan: burn only after the plan quota is used, 60-day validity, daily limit still applies. Final-sale.
           </p>
         </div>
 
