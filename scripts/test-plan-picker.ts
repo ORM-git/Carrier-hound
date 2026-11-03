@@ -80,11 +80,11 @@ async function runPlanPickerSuite() {
   // Weekly plan assertions
   const weekly = PLANS[0];
   assert.strictEqual(weekly.id, "weekly");
-  assert.strictEqual(weekly.price, 499);
+  assert.strictEqual(weekly.price, 692);
   assert.strictEqual(getPlanBillingLabel(weekly), "Billed weekly");
   assert.strictEqual(weekly.subLine, "15 resumes, 15 cover letters per week");
-  assert.strictEqual(calculatePerWeek(weekly.price, "week"), 499);
-  assert.strictEqual(getPlanPerWeekText(weekly), "Rs 499 /week");
+  assert.strictEqual(calculatePerWeek(weekly.price, "week"), 692);
+  assert.strictEqual(getPlanPerWeekText(weekly), "Rs 692 /week");
   assert.strictEqual(weekly.badge, undefined, "Weekly plan must not have a badge");
 
   // Monthly plan assertions (selected by default)
@@ -177,7 +177,7 @@ async function runPlanPickerSuite() {
 
   // Plan rows copy
   assert.ok(serverHtml.includes("Billed weekly"), "Weekly row title must be present");
-  assert.ok(serverHtml.includes("Rs 499 /week"), "Weekly price must be Rs 499 /week");
+  assert.ok(serverHtml.includes("Rs 692 /week"), "Weekly price must be Rs 692 /week");
   assert.ok(serverHtml.includes("15 resumes, 15 cover letters per week"), "Weekly subline must be present");
 
   assert.ok(serverHtml.includes("Rs 1,499, billed monthly"), "Monthly row title must be present");

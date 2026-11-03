@@ -342,43 +342,14 @@ export async function executeAiCore(
 
     const { payload } = payloadResult;
 
-    // 4. Durable Quotas Enforcement (Per-User Daily Quota in Supabase)
-    const quotaResult = await checkAndIncrementAiQuota(
-      supabaseAdmin,
-      user.id,
-      config.operation,
-      payload.estimatedInputTokens
-    );
+    const isMeteredOperation = config.operation === "resume_tailor" || config.operation === "cover_letter";
 
-    if (!quotaResult.allowed) {
-      if (quotaResult.isServiceUnavailable) {
-        return {
-          statusCode: 503,
-          body: {
-            error: quotaResult.error || "AI quota service is temporarily unavailable. Please try again shortly.",
-            code: "AI_QUOTA_SERVICE_UNAVAILABLE",
-          },
-        };
-      }
-      return {
-        statusCode: 429,
-        body: {
-          error: `Daily AI usage quota exceeded for operation '${config.operation}' (${quotaResult.currentCount}/${quotaResult.limit}). Quotas reset daily at midnight UTC.`,
-          currentCount: quotaResult.currentCount,
-          limit: quotaResult.limit,
-        },
-        headers: {
-          "Retry-After": "86400",
-        },
-      };
-    }
-
-    // 4b. Plan & Addon Quota Consumption (Exclusively for resume_tailor and cover_letter)
+    // 4. Quota Enforcement:
+    // Metered AI generations (resume_tailor and cover_letter) route strictly through consumeSet,
+    // which manages Pro entitlement, plan quotas, add-on credits, client idempotency keys,
+    // and the 30/day IST fair-use cap. They MUST NOT double-count in ai_usage_quotas.
+    // Non-metered operations (e.g. job_fit, extraction) fall under checkAndIncrementAiQuota.
     if (config.operation === "resume_tailor" || config.operation === "cover_letter") {
-      // Client-supplied idempotency key:
-      // If the client provides an idempotency key or request ID in the request payload or params,
-      // use that exact key so network retries never burn quota twice. If omitted, generate a unique
-      // server-side fallback key prefixed by user ID and operation to ensure single-use traceability.
       const candidateKey =
         body.idempotencyKey ||
         body.idempotency_key ||
@@ -398,7 +369,6 @@ export async function executeAiCore(
       const consumeRes = await doConsume(user.id, config.operation, setConsumeKey);
 
       if (!consumeRes.success) {
-        await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
         const isDailyCap = consumeRes.code === "DAILY_LIMIT_REACHED";
         return {
           statusCode: isDailyCap ? 429 : 403,
@@ -409,10 +379,39 @@ export async function executeAiCore(
         };
       }
       setConsumed = true;
+    } else {
+      const quotaResult = await checkAndIncrementAiQuota(
+        supabaseAdmin,
+        user.id,
+        config.operation,
+        payload.estimatedInputTokens
+      );
+
+      if (!quotaResult.allowed) {
+        if (quotaResult.isServiceUnavailable) {
+          return {
+            statusCode: 503,
+            body: {
+              error: quotaResult.error || "AI quota service is temporarily unavailable. Please try again shortly.",
+              code: "AI_QUOTA_SERVICE_UNAVAILABLE",
+            },
+          };
+        }
+        return {
+          statusCode: 429,
+          body: {
+            error: `Daily AI usage quota exceeded for operation '${config.operation}' (${quotaResult.currentCount}/${quotaResult.limit}). Quotas reset daily at midnight UTC.`,
+            currentCount: quotaResult.currentCount,
+            limit: quotaResult.limit,
+          },
+          headers: {
+            "Retry-After": "86400",
+          },
+        };
+      }
     }
 
     const rollbackAllQuotas = async () => {
-      await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
       if (setConsumed && setConsumeKey) {
         const doRefund = activeDeps.refundSet || refundSet;
         try {
@@ -420,6 +419,8 @@ export async function executeAiCore(
         } catch (rfErr) {
           console.warn("[AI Service] Error refunding consumed set:", rfErr);
         }
+      } else if (!isMeteredOperation) {
+        await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
       }
     };
 

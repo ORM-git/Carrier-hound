@@ -48,7 +48,7 @@ export const PLANS: PlanConfig[] = [
   {
     id: "weekly",
     name: "Weekly",
-    price: 499,
+    price: 692,
     currency: "INR",
     interval: "week",
     billingText: "Billed weekly",
@@ -118,7 +118,7 @@ export function getPlanBillingLabel(plan: PlanConfig): string {
 
 /**
  * Formats the per-week display text for the plan row:
- * - Weekly: "Rs 499 /week"
+ * - Weekly: "Rs 692 /week"
  * - Monthly: "Rs 346 /week*"
  * - Quarterly: "Rs 308 /week*"
  */

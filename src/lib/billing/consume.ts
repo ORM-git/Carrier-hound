@@ -1,6 +1,8 @@
 import { createClient } from "@supabase/supabase-js";
 import { getServerEntitlement } from "./serverEntitlement";
-import { getPlanQuota, PLAN_DEFINITIONS } from "./quota";
+import { getPlanQuota, PLAN_DEFINITIONS, getStartOfIstDay } from "./quota";
+
+export { getStartOfIstDay };
 
 export type QuotaKind = "resume_tailor" | "cover_letter";
 export type QuotaSource = "plan" | "addon";
@@ -20,19 +22,6 @@ export interface RefundResult {
   source?: QuotaSource;
   credit_id?: string | null;
   error?: string;
-}
-
-/**
- * Calculates the start of today in Indian Standard Time (IST, UTC+05:30)
- * converted to a UTC Date instance for database timestamp comparisons.
- */
-export function getStartOfIstDay(now: Date = new Date()): Date {
-  const istOffsetMs = 5.5 * 60 * 60 * 1000;
-  const istDate = new Date(now.getTime() + istOffsetMs);
-  const istYear = istDate.getUTCFullYear();
-  const istMonth = istDate.getUTCMonth();
-  const istDay = istDate.getUTCDate();
-  return new Date(Date.UTC(istYear, istMonth, istDay) - istOffsetMs);
 }
 
 /**

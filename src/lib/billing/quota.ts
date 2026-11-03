@@ -21,7 +21,7 @@ export const PLAN_DEFINITIONS: Record<PlanCode, PlanDefinition> = {
     code: "weekly",
     name: "Weekly",
     duration_days: 7,
-    price_paise: 49900,
+    price_paise: 69200,
     resume_quota: 15,
     cover_letter_quota: 15,
     quota_period_days: 7,
@@ -232,6 +232,19 @@ export function calculateQuotaPeriod(
 }
 
 /**
+ * Calculates the start of today in Indian Standard Time (IST, UTC+05:30)
+ * converted to a UTC Date instance for database timestamp comparisons.
+ */
+export function getStartOfIstDay(now: Date = new Date()): Date {
+  const istOffsetMs = 5.5 * 60 * 60 * 1000;
+  const istDate = new Date(now.getTime() + istOffsetMs);
+  const istYear = istDate.getUTCFullYear();
+  const istMonth = istDate.getUTCMonth();
+  const istDay = istDate.getUTCDate();
+  return new Date(Date.UTC(istYear, istMonth, istDay) - istOffsetMs);
+}
+
+/**
  * Sums remaining sets from non-expired user add-on credits.
  */
 export function sumValidAddonCredits(
@@ -380,18 +393,18 @@ export async function getPlanQuota(
       // Table may not exist yet
     }
 
-    // 7. Query today's generation counts from ai_usage_quotas
+    // 7. Query today's generation counts from plan_usage_events over the same IST day window the RPCs use
     let generationsToday = 0;
-    const today = now.toISOString().split("T")[0];
+    const istDayStart = getStartOfIstDay(now).toISOString();
     try {
-      const { data: quotaRows } = await supabaseAdmin
-        .from("ai_usage_quotas")
-        .select("count")
+      const { count, error: usageErr } = await supabaseAdmin
+        .from("plan_usage_events")
+        .select("id", { count: "exact", head: true })
         .eq("user_id", userId)
-        .eq("period_date", today);
+        .gte("created_at", istDayStart);
 
-      if (quotaRows && Array.isArray(quotaRows)) {
-        generationsToday = quotaRows.reduce((acc, row) => acc + (row.count || 0), 0);
+      if (!usageErr && typeof count === "number") {
+        generationsToday = count;
       }
     } catch {
       // Graceful fallback

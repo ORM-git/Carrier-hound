@@ -18,6 +18,32 @@ interface VerifyPayload {
   razorpay_payment_id?: string;
 }
 
+/**
+ * Constant-time string comparison preventing timing oracles.
+ * Always compares every character without early exit.
+ */
+function constantTimeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) {
+    return false;
+  }
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
+/**
+ * Computes a fixed-length SHA-256 hex digest using Web Crypto.
+ */
+async function computeSha256Hex(value: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(value);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 async function verifySignature(
   orderId: string,
   paymentId: string,
@@ -39,7 +65,13 @@ async function verifySignature(
     const signatureBuffer = await crypto.subtle.sign("HMAC", key, data);
     const hashArray = Array.from(new Uint8Array(signatureBuffer));
     const expected = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-    return expected.toLowerCase() === signature.trim().toLowerCase();
+
+    // Constant-time comparison over fixed-length SHA-256 digests (no early exit)
+    const [expectedDigest, signatureDigest] = await Promise.all([
+      computeSha256Hex(expected.toLowerCase()),
+      computeSha256Hex(signature.trim().toLowerCase()),
+    ]);
+    return constantTimeEqual(expectedDigest, signatureDigest);
   } catch (e) {
     console.error("[Razorpay Verify] Signature computation error:", e);
     return false;
@@ -130,30 +162,39 @@ export async function POST(req: Request) {
       );
     }
 
-    // Fail closed on payload vs order row mismatch
-    const payloadPlan = (body as any).planCode || (body as any).plan_code;
-    const payloadAddon = (body as any).addonCode || (body as any).addon_code;
+    // Fail closed on payload vs order row mismatch (null-safe and symmetric)
+    const payloadPlan = (body as any).planCode ?? (body as any).plan_code;
+    const payloadAddon = (body as any).addonCode ?? (body as any).addon_code;
     const payloadAmount = (body as any).amount;
 
-    if (payloadAmount && Number(payloadAmount) !== orderRow.amount_paise) {
-      return NextResponse.json(
-        { error: "Payment amount does not match recorded order amount", code: "AMOUNT_MISMATCH" },
-        { status: 400 }
-      );
+    if (payloadAmount !== undefined && payloadAmount !== null) {
+      const numAmount = Number(payloadAmount);
+      if (isNaN(numAmount) || numAmount !== (orderRow.amount_paise ?? null)) {
+        return NextResponse.json(
+          { error: "Payment amount does not match recorded order amount", code: "AMOUNT_MISMATCH" },
+          { status: 400 }
+        );
+      }
     }
 
-    if (payloadPlan && orderRow.plan_code && payloadPlan !== orderRow.plan_code) {
-      return NextResponse.json(
-        { error: "Plan code does not match recorded order", code: "PLAN_MISMATCH" },
-        { status: 400 }
-      );
+    if (payloadPlan !== undefined && payloadPlan !== null) {
+      const recordedPlan = orderRow.plan_code ?? null;
+      if (payloadPlan !== recordedPlan) {
+        return NextResponse.json(
+          { error: "Plan code does not match recorded order", code: "PLAN_MISMATCH" },
+          { status: 400 }
+        );
+      }
     }
 
-    if (payloadAddon && orderRow.addon_code && payloadAddon !== orderRow.addon_code) {
-      return NextResponse.json(
-        { error: "Addon code does not match recorded order", code: "ADDON_MISMATCH" },
-        { status: 400 }
-      );
+    if (payloadAddon !== undefined && payloadAddon !== null) {
+      const recordedAddon = orderRow.addon_code ?? null;
+      if (payloadAddon !== recordedAddon) {
+        return NextResponse.json(
+          { error: "Addon code does not match recorded order", code: "ADDON_MISMATCH" },
+          { status: 400 }
+        );
+      }
     }
 
     if (!orderRow.plan_code && !orderRow.addon_code) {
@@ -233,19 +274,48 @@ export async function POST(req: Request) {
     // Fulfill based strictly on orderRow (never defaulting to monthly)
     if (orderRow.addon_code) {
       const addonCode = orderRow.addon_code;
-      const addonDef = ADDON_PACK_DEFINITIONS[addonCode];
-      if (!addonDef) {
+
+      // Query addon_packs table to grant exactly what fulfil_payment_order grants
+      let sets: number | undefined;
+      let validityDays: number | undefined;
+
+      try {
+        const { data: dbAddon } = await supabaseAdmin
+          .from("addon_packs")
+          .select("sets, validity_days")
+          .eq("code", addonCode)
+          .maybeSingle();
+
+        if (dbAddon?.sets && dbAddon.sets > 0) {
+          sets = dbAddon.sets;
+        }
+        if (dbAddon?.validity_days && dbAddon.validity_days > 0) {
+          validityDays = dbAddon.validity_days;
+        }
+      } catch {
+        // Fallback to in-code definition if addon_packs table query fails
+      }
+
+      if (!sets) {
+        sets = ADDON_PACK_DEFINITIONS[addonCode]?.sets;
+      }
+      if (!validityDays) {
+        validityDays = ADDON_PACK_DEFINITIONS[addonCode]?.validity_days;
+      }
+
+      if (!sets || !validityDays) {
         return NextResponse.json({ error: "Unknown add-on pack", code: "UNKNOWN_ADDON" }, { status: 400 });
       }
-      const expiresAt = new Date(Date.now() + (addonDef.validity_days || 60) * 86400000).toISOString();
+
+      const expiresAt = new Date(Date.now() + validityDays * 86400000).toISOString();
 
       const { data: creditRow, error: creditErr } = await supabaseAdmin
         .from("user_addon_credits")
         .insert({
           user_id: user.id,
           pack_code: addonCode,
-          sets_total: addonDef.sets,
-          sets_remaining: addonDef.sets,
+          sets_total: sets,
+          sets_remaining: sets,
           expires_at: expiresAt,
           order_id: orderRow.id,
         })
@@ -264,17 +334,45 @@ export async function POST(req: Request) {
         success: true,
         type: "addon",
         addonCode,
-        setsGranted: addonDef.sets,
+        setsGranted: sets,
         expiresAt,
         credit: creditRow,
       });
     } else if (orderRow.plan_code) {
       const planCode = orderRow.plan_code as PlanCode;
-      const planDef = PLAN_DEFINITIONS[planCode];
-      if (!planDef) {
+
+      // Query plans table to grant exactly what fulfil_payment_order grants
+      let durationDays: number | undefined;
+      let pricePaise: number | undefined;
+
+      try {
+        const { data: dbPlan } = await supabaseAdmin
+          .from("plans")
+          .select("duration_days, price_paise")
+          .eq("code", planCode)
+          .maybeSingle();
+
+        if (dbPlan?.duration_days && dbPlan.duration_days > 0) {
+          durationDays = dbPlan.duration_days;
+        }
+        if (dbPlan?.price_paise && dbPlan.price_paise > 0) {
+          pricePaise = dbPlan.price_paise;
+        }
+      } catch {
+        // Fallback to in-code definition if plans table query fails
+      }
+
+      if (!durationDays) {
+        durationDays = PLAN_DEFINITIONS[planCode]?.duration_days;
+      }
+      if (!pricePaise) {
+        pricePaise = PLAN_DEFINITIONS[planCode]?.price_paise;
+      }
+
+      if (!durationDays) {
         return NextResponse.json({ error: "Unknown plan code", code: "UNKNOWN_PLAN" }, { status: 400 });
       }
-      const durationDays = planDef.duration_days || 30;
+
       const currentPeriodStart = new Date().toISOString();
       const currentPeriodEnd = new Date(Date.now() + durationDays * 86400000).toISOString();
 
@@ -286,13 +384,13 @@ export async function POST(req: Request) {
             plan_id: planCode,
             provider: "razorpay",
             currency: "INR",
-            amount: planDef.price_paise,
+            amount: pricePaise || orderRow.amount_paise,
             status: "active",
             current_period_start: currentPeriodStart,
             current_period_end: currentPeriodEnd,
             cancel_at_period_end: false,
             metadata: {
-              razorpay_order_id: orderId,
+              provider_order_id: orderId,
               payment_order_id: orderRow.id,
               verified_at: new Date().toISOString(),
               mode: "live",

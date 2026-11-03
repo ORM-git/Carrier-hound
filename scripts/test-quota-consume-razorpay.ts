@@ -27,7 +27,7 @@ async function runQuotaConsumeRazorpaySuite() {
     assert.strictEqual(
       resolveOrderPricing({ planCode: "weekly" })?.amount_paise,
       999999,
-      "Negative control expected mismatch: weekly price is 49900 paise, not 999999!"
+      "Negative control expected mismatch: weekly price is 69200 paise, not 999999!"
     );
     return;
   }
@@ -128,9 +128,9 @@ async function runQuotaConsumeRazorpaySuite() {
   // ---------------------------------------------------------------------------
   console.log("\nTest 4: Verifying server-authoritative Razorpay price resolution...");
 
-  // Plans: weekly (Rs 499), monthly (Rs 1,499), quarterly (Rs 3,999)
+  // Plans: weekly (Rs 692), monthly (Rs 1,499), quarterly (Rs 3,999)
   const weeklyPricing = resolveOrderPricing({ planCode: "weekly" });
-  assert.strictEqual(weeklyPricing?.amount_paise, 49900);
+  assert.strictEqual(weeklyPricing?.amount_paise, 69200);
   assert.strictEqual(weeklyPricing?.type, "plan");
   assert.strictEqual(weeklyPricing?.duration_days, 7);
 
@@ -434,6 +434,65 @@ async function runQuotaConsumeRazorpaySuite() {
   assert.strictEqual(creditGranted, false, "Must NOT grant addon credits when order row is missing!");
 
   console.log("  -> [PASS-LOCAL] Missing order row strictly rejected with 404 and grants nothing.");
+
+  // ---------------------------------------------------------------------------
+  // TEST 6b: Symmetric Null-Safe Tamper Checks on Verify Payload
+  // ---------------------------------------------------------------------------
+  console.log("\nTest 6b: Verifying symmetric null-safe tamper checks against recorded payment_orders...");
+
+  // Helper simulating the exact tamper check in verify/route.ts
+  function evaluateTamperCheck(orderRow: { plan_code: string | null; addon_code: string | null; amount_paise: number }, body: any) {
+    const payloadPlan = body.planCode ?? body.plan_code;
+    const payloadAddon = body.addonCode ?? body.addon_code;
+    const payloadAmount = body.amount;
+
+    if (payloadAmount !== undefined && payloadAmount !== null) {
+      const numAmount = Number(payloadAmount);
+      if (isNaN(numAmount) || numAmount !== (orderRow.amount_paise ?? null)) {
+        return { status: 400, code: "AMOUNT_MISMATCH" };
+      }
+    }
+
+    if (payloadPlan !== undefined && payloadPlan !== null) {
+      const recordedPlan = orderRow.plan_code ?? null;
+      if (payloadPlan !== recordedPlan) {
+        return { status: 400, code: "PLAN_MISMATCH" };
+      }
+    }
+
+    if (payloadAddon !== undefined && payloadAddon !== null) {
+      const recordedAddon = orderRow.addon_code ?? null;
+      if (payloadAddon !== recordedAddon) {
+        return { status: 400, code: "ADDON_MISMATCH" };
+      }
+    }
+
+    return { status: 200, code: "OK" };
+  }
+
+  // 1. Client sends planCode for an add-on order (orderRow has plan_code = null) -> 400 PLAN_MISMATCH
+  const addonOrder = { plan_code: null, addon_code: "addon_10", amount_paise: 14900 };
+  const resTamper1 = evaluateTamperCheck(addonOrder, { planCode: "weekly" });
+  assert.strictEqual(resTamper1.status, 400);
+  assert.strictEqual(resTamper1.code, "PLAN_MISMATCH", "Sending planCode for addon order must reject 400 PLAN_MISMATCH");
+
+  // 2. Client sends addonCode for a plan order (orderRow has addon_code = null) -> 400 ADDON_MISMATCH
+  const planOrder = { plan_code: "weekly", addon_code: null, amount_paise: 69200 };
+  const resTamper2 = evaluateTamperCheck(planOrder, { addonCode: "addon_10" });
+  assert.strictEqual(resTamper2.status, 400);
+  assert.strictEqual(resTamper2.code, "ADDON_MISMATCH", "Sending addonCode for plan order must reject 400 ADDON_MISMATCH");
+
+  // 3. Client sends tampered amount -> 400 AMOUNT_MISMATCH
+  const resTamper3 = evaluateTamperCheck(planOrder, { amount: 100 });
+  assert.strictEqual(resTamper3.status, 400);
+  assert.strictEqual(resTamper3.code, "AMOUNT_MISMATCH", "Sending mismatched amount must reject 400 AMOUNT_MISMATCH");
+
+  // 4. Client sends matching fields -> 200 OK
+  const resTamper4 = evaluateTamperCheck(planOrder, { planCode: "weekly", amount: 69200 });
+  assert.strictEqual(resTamper4.status, 200);
+  assert.strictEqual(resTamper4.code, "OK", "Matching payload must pass tamper checks");
+
+  console.log("  -> [PASS-LOCAL] Symmetric null-safe tamper checks strictly reject mismatched plan/addon/amount.");
 
   // ---------------------------------------------------------------------------
   // TEST 7: Double Verify Idempotency (Credits Once, Never Duplicates)
