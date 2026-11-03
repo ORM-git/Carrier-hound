@@ -47,40 +47,74 @@ export default function LandingFeaturesSection() {
     >
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="space-y-16 sm:space-y-24">
-          {FEATURE_ROWS.map((row) => (
-            <div
-              key={row.id}
-              className="grid grid-cols-1 lg:grid-cols-12 items-center gap-8 lg:gap-12"
-            >
-              {/* Text Column (Top on mobile, Left on desktop) */}
-              <div className="lg:col-span-5 space-y-4 text-left">
-                <h3 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#09090B]">
-                  {row.title}
-                </h3>
-                <p className="text-base sm:text-lg text-gray-600 leading-relaxed">
-                  {row.description}
-                </p>
-                <div className="pt-2">
-                  <Link
-                    href={row.href}
-                    className="inline-flex items-center justify-center px-6 py-3 rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-medium text-sm sm:text-base transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:ring-offset-2"
-                  >
-                    {row.buttonText}
-                  </Link>
-                </div>
-              </div>
+          {FEATURE_ROWS.map((row) => {
+            const isFirstRow = row.id === "job-search";
 
-              {/* Visual Column (Bottom on mobile, Right on desktop) */}
-              <div className="lg:col-span-7 space-y-2">
-                <div className="bg-[#F8FAFC] rounded-2xl border border-gray-200/80 shadow-sm p-3 sm:p-5 flex items-center justify-center overflow-hidden">
-                  {row.visual}
+            return (
+              <div
+                key={row.id}
+                className="grid grid-cols-1 lg:grid-cols-12 items-center gap-8 lg:gap-12"
+              >
+                {/* Text Column (Top on mobile, Left on desktop) */}
+                <div className="lg:col-span-5 space-y-4 text-left">
+                  <h3 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#09090B]">
+                    {row.title}
+                  </h3>
+                  <p className="text-base sm:text-lg text-gray-600 leading-relaxed">
+                    {row.description}
+                  </p>
+                  {/* For other rows, keep CTA inside the text column */}
+                  {!isFirstRow && (
+                    <div className="pt-2">
+                      <Link
+                        href={row.href}
+                        className="inline-flex items-center justify-center px-6 py-3 rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-medium text-sm sm:text-base transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:ring-offset-2"
+                      >
+                        {row.buttonText}
+                      </Link>
+                    </div>
+                  )}
                 </div>
-                <p className="text-center text-xs text-gray-400">
-                  Illustration - sample data
-                </p>
+
+                {/* Visual Column (Bottom on mobile, Right on desktop) */}
+                <div className="lg:col-span-7 space-y-3">
+                  {isFirstRow ? (
+                    /* Row 1: Outer off-white panel removed. Blue frame sits directly against white background */
+                    <>
+                      <div className="flex items-center justify-center overflow-hidden">
+                        {row.visual}
+                      </div>
+
+                      {/* Horizontally centered CTA directly below the visual */}
+                      <div className="flex justify-center pt-2">
+                        <Link
+                          href={row.href}
+                          className="inline-flex items-center justify-center px-6 py-3 rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-medium text-sm sm:text-base transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:ring-offset-2"
+                        >
+                          {row.buttonText}
+                        </Link>
+                      </div>
+
+                      {/* Visible caption beneath centered button */}
+                      <p className="text-center text-xs text-gray-400">
+                        Illustration - sample data
+                      </p>
+                    </>
+                  ) : (
+                    /* Other Rows: Original off-white panel wrapper preserved */
+                    <>
+                      <div className="bg-[#F8FAFC] rounded-2xl border border-gray-200/80 shadow-sm p-3 sm:p-5 flex items-center justify-center overflow-hidden">
+                        {row.visual}
+                      </div>
+                      <p className="text-center text-xs text-gray-400">
+                        Illustration - sample data
+                      </p>
+                    </>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </section>
