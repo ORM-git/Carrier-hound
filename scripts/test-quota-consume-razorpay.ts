@@ -213,7 +213,6 @@ async function runQuotaConsumeRazorpaySuite() {
         return mockQueryBuilder;
       },
     }),
-    isUserApproved: async () => true,
     getServerEntitlement: async (userId: string) => ({
       isPro: true,
       hasActiveSubscription: true,
