@@ -21,14 +21,11 @@ function LandingFooter() {
     <footer className="relative bg-surface-subtle text-ink border-t border-line pt-tk-6 pb-24 sm:pb-tk-4">
       <div className="max-w-content mx-auto px-4 sm:px-6">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-tk-4 pb-tk-4 border-b border-line">
-          {/* Brand + Tagline */}
-          <div className="lg:col-span-4 space-y-tk-2">
+          {/* Brand */}
+          <div className="lg:col-span-4">
             <Link href="/" aria-label="CareerMonke Home" className="inline-flex items-center min-h-[44px] rounded-tk-lg">
               <BrandIcon variant="full" width={140} height={56} className="h-9 w-auto" />
             </Link>
-            <p className="text-tk-body-sm text-ink-muted max-w-sm">
-              We find jobs posted on company websites. Real-time radar for unindexed remote engineering, design, data, and product jobs directly from verified company ATS endpoints.
-            </p>
           </div>
 
           {/* 3-column link layout */}
