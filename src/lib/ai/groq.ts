@@ -18,6 +18,23 @@ export function getGroqApiKey(): boolean {
 
 export const isAiAvailable = getGroqApiKey;
 
+export const GENERIC_AI_UNAVAILABLE_MESSAGE =
+  "AI is temporarily unavailable. Your verified rules-based version is ready.";
+
+/**
+ * Sanitizes any AI service error string for client-side user presentation.
+ * Replaces any error message exposing environment variable names (such as GROQ_API_KEY)
+ * or sensitive internals with the generic verified rules-based fallback message.
+ */
+export function sanitizeUserFacingAiError(rawError?: string | null): string {
+  if (!rawError) return GENERIC_AI_UNAVAILABLE_MESSAGE;
+  const str = String(rawError);
+  if (/GROQ_API_KEY|API_KEY|[A-Z0-9_]+_KEY|[A-Z0-9_]+_SECRET/i.test(str)) {
+    return GENERIC_AI_UNAVAILABLE_MESSAGE;
+  }
+  return str;
+}
+
 /**
  * Proxies AI completion requests to our secure server-side endpoint (/api/ai).
  * The server strictly enforces Pro subscription status, operation allowlists,
@@ -114,6 +131,7 @@ export async function extractResumeFactsWithGroq(
 export interface GroqCoverLetterResponse {
   text: string;
   isValidated: boolean;
+  isAiEnhanced?: boolean;
   error?: string;
 }
 
@@ -146,7 +164,8 @@ export async function generateGroqTailoredCoverLetter(
         return {
           text: fallback.fullText,
           isValidated: true,
-          error: check.error,
+          isAiEnhanced: false,
+          error: sanitizeUserFacingAiError(check.error),
         };
       }
       const cleanOutput = check.sanitizedText;
@@ -157,6 +176,7 @@ export async function generateGroqTailoredCoverLetter(
         return {
           text: fallback.fullText,
           isValidated: true,
+          isAiEnhanced: false,
           error: `AI output contained unverified claims (${validation.reasons[0]}). Safely reverted to verified factual draft.`,
         };
       }
@@ -173,6 +193,7 @@ export async function generateGroqTailoredCoverLetter(
       return {
         text: blocks.join("\n\n"),
         isValidated: true,
+        isAiEnhanced: true,
       };
     }
   } catch (e) {
@@ -182,6 +203,8 @@ export async function generateGroqTailoredCoverLetter(
   return {
     text: fallback.fullText,
     isValidated: true,
+    isAiEnhanced: false,
+    error: GENERIC_AI_UNAVAILABLE_MESSAGE,
   };
 }
 
@@ -244,9 +267,10 @@ export async function generateAiTailoredResume(
     const data = await response.json().catch(() => ({}));
 
     if (!response.ok) {
+      const rawError = data.error || `AI generation failed (HTTP ${response.status}).`;
       return {
         success: false,
-        error: data.error || `AI generation failed (HTTP ${response.status}).`,
+        error: sanitizeUserFacingAiError(rawError),
       };
     }
 
@@ -293,7 +317,7 @@ export async function generateAiTailoredResume(
   } catch (err: any) {
     return {
       success: false,
-      error: err?.message || "Failed to reach AI service.",
+      error: sanitizeUserFacingAiError(err?.message || "Failed to reach AI service."),
     };
   }
 }
@@ -363,9 +387,10 @@ export async function generateJobFitExplanation(
     const data = await response.json().catch(() => ({}));
 
     if (!response.ok) {
+      const rawError = data.error || `AI service returned error (HTTP ${response.status}).`;
       return {
         success: false,
-        error: data.error || `AI service returned error (HTTP ${response.status}).`,
+        error: sanitizeUserFacingAiError(rawError),
         statusCode: response.status,
       };
     }
@@ -410,7 +435,7 @@ export async function generateJobFitExplanation(
   } catch (err: any) {
     return {
       success: false,
-      error: err?.message || "Failed to connect to AI match explanation service.",
+      error: sanitizeUserFacingAiError(err?.message || "Failed to connect to AI match explanation service."),
       statusCode: 500,
     };
   }

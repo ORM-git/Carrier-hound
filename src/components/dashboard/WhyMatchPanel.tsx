@@ -8,7 +8,11 @@ import { LiveJob } from "@/lib/jobs/service";
 import { CandidateProfile } from "@/lib/resume/types";
 import { computeFitDiagnostics, FitDiagnosticsResult } from "@/lib/matcher/scoring";
 import { stripHtmlAndExecutableMarkup } from "@/lib/security/xss";
-import { generateJobFitExplanation } from "@/lib/ai/groq";
+import {
+  generateJobFitExplanation,
+  GENERIC_AI_UNAVAILABLE_MESSAGE,
+  sanitizeUserFacingAiError,
+} from "@/lib/ai/groq";
 
 const FitDiagnosticsModal = dynamic(
   () => import("@/components/matcher/FitDiagnosticsModal"),
@@ -406,13 +410,15 @@ export default function WhyMatchPanel({
       } else {
         setAiSummary(null);
         setAiGaps([]);
-        setAiError(res.error || "AI match explanation temporarily unavailable.");
+        const rawErr = res.error || "AI match explanation temporarily unavailable.";
+        setAiError(sanitizeUserFacingAiError(rawErr));
         setIsAiGenerated(false);
       }
     } catch (err: any) {
       setAiSummary(null);
       setAiGaps([]);
-      setAiError(err?.message || "Failed to generate AI match explanation.");
+      const rawErr = err?.message || "Failed to generate AI match explanation.";
+      setAiError(sanitizeUserFacingAiError(rawErr));
       setIsAiGenerated(false);
     } finally {
       setAiLoading(false);
@@ -507,7 +513,11 @@ export default function WhyMatchPanel({
               className="flex items-center gap-2 p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-medium"
             >
               <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-              <span>{aiError} Showing verified match summary below.</span>
+              <span>
+                {aiError.includes(GENERIC_AI_UNAVAILABLE_MESSAGE)
+                  ? aiError
+                  : `${aiError} Showing verified match summary below.`}
+              </span>
             </div>
           )}
 

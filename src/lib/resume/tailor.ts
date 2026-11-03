@@ -120,10 +120,15 @@ export function validateCoverLetter(
 }
 
 /**
- * Generates a 1-click tailored cover letter grounded strictly in real resume facts.
- * Adapts tone dynamically across tech, marketing, design, and finance domains.
- * Adapts cleanly for freshers with 0 previous roles without fabricating tenure.
+ * Returns the grammatically correct indefinite article ("a" vs "an")
+ * for a given title or noun phrase (e.g. "an Intern", "a Software Engineer").
  */
+export function getIndefiniteArticle(word: string): string {
+  const trimmed = (word || "").trim();
+  if (!trimmed) return "a";
+  return /^[aeiou]/i.test(trimmed) ? "an" : "a";
+}
+
 /**
  * Extracts a concise role focus snippet from the job description if available.
  */
@@ -269,11 +274,33 @@ export function generateTailoredCoverLetter(
     const pastRole = latestExp.role || candidate.headline || "Professional";
     const pastCompany = latestExp.company;
 
+    const article = getIndefiniteArticle(pastRole);
+    const companyClause = pastCompany ? ` at ${pastCompany}` : "";
+    const skillsList = (candidate.skills || []).slice(0, 5).join(", ") || topSkills;
+
+    // Use ONLY duties and facts present in the user's parsed resume; never invent responsibilities
+    const rawBullets = Array.isArray(latestExp.bullets) ? latestExp.bullets : [];
+    const duties = rawBullets
+      .map((b) => b.trim().replace(/^[•\-\*\s]+/, "").trim())
+      .filter(Boolean);
+
+    let dutySentence = "";
+    if (duties.length > 0) {
+      const firstDuty = duties[0].replace(/\.$/, "");
+      const formattedDuty = /^[A-Z]{2,}/.test(firstDuty)
+        ? firstDuty
+        : firstDuty.charAt(0).toLowerCase() + firstDuty.slice(1);
+      dutySentence = `my responsibilities included ${formattedDuty}. `;
+    }
+
     const openingP = jdFocusSnippet
       ? `I am writing to express my strong enthusiasm for the ${job.title} opportunity at ${job.company}. Having developed hands-on proficiency in ${topSkills}, I am eager to apply my practical background to ${job.company}'s work in ${jdFocusSnippet.toLowerCase().replace(/^(building|developing|scaling)/, (m) => m.toLowerCase())}.`
       : `I am writing to express my strong enthusiasm for the ${job.title} opportunity at ${job.company}. Having developed hands-on proficiency in ${topSkills}, I am eager to apply my practical background to ${job.company}'s ${domainFocus}.`;
 
-    const bodyP = `In my work as a ${pastRole} at ${pastCompany}, I focused on ${domainStrengths}. My evidenced strengths include ${(candidate.skills || []).slice(0, 5).join(", ") || topSkills}, where I have consistently collaborated across teams to deliver measurable results.`;
+    // If a role has no parsed duties, omit the duty sentence entirely
+    const bodyP = duties.length > 0
+      ? `In my work as ${article} ${pastRole}${companyClause}, ${dutySentence}My evidenced strengths include ${skillsList}, where I have consistently collaborated across teams to deliver measurable results.`
+      : `In my work as ${article} ${pastRole}${companyClause}, my evidenced strengths include ${skillsList}, where I have consistently collaborated across teams to deliver measurable results.`;
 
     const impactP = jdFocusSnippet
       ? `What particularly excites me about ${job.company} is the opportunity to contribute directly to this role's objectives. With verified strengths in ${topSkills}, I am prepared to ramp up quickly, address key deliverables, and make immediate contributions to the ${teamLabel}.`
@@ -284,11 +311,13 @@ export function generateTailoredCoverLetter(
     paragraphs = [openingP, bodyP, impactP, closeP];
   } else {
     // Fresher / No prior work experience: Strictly zero invented history or tenure
+    const skillsList = (candidate.skills || []).slice(0, 5).join(", ") || topSkills;
+
     const openingP = jdFocusSnippet
       ? `I am writing to express my enthusiastic interest in the ${job.title} position at ${job.company}. With a verified foundation in ${topSkills}, I am eager to bring my dedicated focus and practical skills to your initiatives in ${jdFocusSnippet.toLowerCase()}.`
       : `I am writing to express my enthusiastic interest in the ${job.title} position at ${job.company}. With a verified foundation in ${topSkills}, I am eager to bring my dedicated focus, fast learning curve, and practical skills to ${job.company}'s ${domainFocus}.`;
 
-    const bodyP = `Through rigorous coursework, hands-on projects, and dedicated skill mastery, I have built competencies in ${(candidate.skills || []).slice(0, 5).join(", ") || topSkills}. I focus on ${domainStrengths}, with an emphasis on discipline and accountability.`;
+    const bodyP = `Through rigorous coursework, hands-on projects, and dedicated skill mastery, I have built competencies in ${skillsList}, with an emphasis on disciplined problem solving, continuous learning, and accountability.`;
 
     const impactP = `I am deeply inspired by ${job.company}'s work and look forward to contributing with energy, high standards, and a genuine eagerness to support the ${teamLabel}.`;
 

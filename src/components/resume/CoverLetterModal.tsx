@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { X, Copy, Download, Check, Sparkles, FileText, ArrowRight, ShieldCheck, AlertCircle } from "lucide-react";
+import { X, Copy, Download, Check, Sparkles, FileText, ArrowRight, ShieldCheck, AlertCircle, Info } from "lucide-react";
 import { CandidateProfile } from "@/lib/resume/types";
 import { generateTailoredCoverLetter, validateCoverLetter, formatContactHeader } from "@/lib/resume/tailor";
 import {
@@ -10,7 +10,12 @@ import {
   getTailoredCoverLetterAsync,
 } from "@/lib/resume/storage";
 import { downloadCoverLetterPdf } from "@/lib/resume/atsPdfGenerator";
-import { generateGroqTailoredCoverLetter, getGroqApiKey } from "@/lib/ai/groq";
+import {
+  generateGroqTailoredCoverLetter,
+  getGroqApiKey,
+  GENERIC_AI_UNAVAILABLE_MESSAGE,
+  sanitizeUserFacingAiError,
+} from "@/lib/ai/groq";
 import { getProAccessStatus } from "@/lib/billing/subscription";
 import { buildCoverLetterDocHtml, sanitizeDownloadFilename } from "@/lib/security/xss";
 import { toast } from "react-toastify";
@@ -55,6 +60,7 @@ export default function CoverLetterModal({
   const [copied, setCopied] = useState(false);
   const [isGeneratingAi, setIsGeneratingAi] = useState(false);
   const [isValidated, setIsValidated] = useState(true);
+  const [aiNotice, setAiNotice] = useState<string | null>(null);
 
   const jobId = job.id || `${(job.company || "").replace(/\s+/g, "-")}_${(job.title || "").replace(/\s+/g, "-")}`;
 
@@ -111,6 +117,7 @@ export default function CoverLetterModal({
 
   useEffect(() => {
     if (open && candidate && job) {
+      setAiNotice(null);
       const currentOwner = activeOwnerId;
       // For authenticated work, stop safely when no owner is verified: clean rules-based, no cache
       if (!currentOwner) {
@@ -160,25 +167,34 @@ export default function CoverLetterModal({
                   console.warn("Auth changed during cover letter generation; discarding result.");
                   return;
                 }
-                if (res.text) {
-                  setContent(res.text);
-                  setIsValidated(res.isValidated);
-                  saveCachedTailoredCoverLetter(
-                    jobId,
-                    {
-                      ...result,
-                      fullText: res.text,
-                      paragraphs: res.text.split("\n\n").filter(Boolean),
-                      isValidated: res.isValidated,
-                    },
-                    currentOwner
-                  );
-                  if (res.error) {
-                    toast.warn(res.error);
+                if (res.isAiEnhanced) {
+                  setAiNotice(null);
+                  if (res.text) {
+                    setContent(res.text);
+                    setIsValidated(res.isValidated);
+                    saveCachedTailoredCoverLetter(
+                      jobId,
+                      {
+                        ...result,
+                        fullText: res.text,
+                        paragraphs: res.text.split("\n\n").filter(Boolean),
+                        isValidated: res.isValidated,
+                      },
+                      currentOwner
+                    );
+                  }
+                } else {
+                  // AI Enhance failed or reverted to factual draft: show neutral notice
+                  const noticeMsg = sanitizeUserFacingAiError(res.error) || GENERIC_AI_UNAVAILABLE_MESSAGE;
+                  setAiNotice(noticeMsg);
+                  setIsValidated(true);
+                  if (res.error && !res.error.includes("GROQ_API_KEY")) {
+                    toast.warn(sanitizeUserFacingAiError(res.error));
                   }
                 }
               })
               .catch(() => {
+                setAiNotice(GENERIC_AI_UNAVAILABLE_MESSAGE);
                 setIsValidated(true);
               })
               .finally(() => {
@@ -326,6 +342,16 @@ export default function CoverLetterModal({
 
         {/* Content Body */}
         <div className="p-5 sm:p-6 space-y-4 overflow-y-auto flex-1">
+          {aiNotice && (
+            <div
+              data-testid="cover-letter-ai-notice"
+              className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 text-xs"
+            >
+              <Info className="w-4 h-4 text-slate-500 shrink-0" />
+              <span>{aiNotice}</span>
+            </div>
+          )}
+
           <div className="flex items-center justify-between text-xs text-slate-500 pb-1">
             <span>You can review and edit this letter directly before submitting:</span>
             <span className="font-mono text-slate-400">{content.length} characters</span>
