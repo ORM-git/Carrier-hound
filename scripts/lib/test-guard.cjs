@@ -75,6 +75,9 @@ const SUITE_CLASSIFICATIONS = Object.freeze({
   "scripts/test-plan-price-sync.ts": "offline",
   "scripts/test-netlify-billing.ts": "offline",
   "scripts/test-policy-pages.ts": "offline",
+  "scripts/test-backfill-company-logos.ts": "offline",
+  "scripts/test-company-logos-and-caps.ts": "offline",
+  "scripts/test-logo-resolver-ssrf.ts": "offline",
 
   // DB-capable suites: read operations
   "scripts/test-enhanced-scoring.ts": "db-read",

@@ -117,6 +117,9 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-landing-feature-visuals.ts", command: "npx tsx scripts/test-landing-feature-visuals.ts", classification: "offline" },
   { name: "scripts/test-landing-job-hub-stats.ts", command: "npx tsx scripts/test-landing-job-hub-stats.ts", classification: "offline" },
   { name: "scripts/test-landing-comparison-section.ts", command: "npx tsx scripts/test-landing-comparison-section.ts", classification: "offline" },
+  { name: "scripts/test-backfill-company-logos.ts", command: "npx tsx scripts/test-backfill-company-logos.ts", classification: "offline" },
+  { name: "scripts/test-company-logos-and-caps.ts", command: "npx tsx scripts/test-company-logos-and-caps.ts", classification: "offline" },
+  { name: "scripts/test-logo-resolver-ssrf.ts", command: "npx tsx scripts/test-logo-resolver-ssrf.ts", classification: "offline" },
 
   // DB-capable suites: read operations (BLOCKED by default unless authorized on test project)
   { name: "scripts/test-enhanced-scoring.ts", command: "npx tsx scripts/test-enhanced-scoring.ts", classification: "db-read", requiresSupabase: true },

@@ -1,11 +1,12 @@
 /**
  * scripts/backfill-company-logos.ts
  *
- * Backfill script for self-hosted company logos in Supabase Storage.
+ * Backfill script for company logos in Supabase database & Storage.
  *
  * Requirements:
  * - Service role client (reads NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY).
  * - Dry-run by default. Pass `--write` to apply uploads and database updates.
+ * - Pass `--missing-only` or `--schedule` to evaluate only companies currently without a logo.
  * - Fully idempotent.
  * - Derives candidate board URLs:
  *     greenhouse: https://job-boards.greenhouse.io/<slug> (fallback: https://boards.greenhouse.io/<slug>)
@@ -16,19 +17,22 @@
  *     use that over og:image. Otherwise fallback to og:image.
  * - Image dimensions check:
  *     Skip when width / height > 1.6 or < 0.6 (prefer square-ish images).
+ *     Minimum dimension >= 32px (128px preferred for board icons).
  * - Generic default filter:
  *     Skip any image URL shared by 3 or more companies.
  * - Allowed formats: raster images only (png, jpeg/jpg, webp, gif). SVG is strictly excluded.
- * - Homepage fallback for companies still without logo_url:
- *     Derive company website domain from job or company data (never guess).
- *     Fetch homepage, take largest apple-touch-icon or icon >= 128px with ratio 0.6..1.6.
+ * - Homepage & Free Logo Service Fallback for companies still without logo_url:
+ *     1. Derive company website domain from job, company data, or board metadata (never guess).
+ *     2. Fetch homepage, take largest apple-touch-icon or icon >= 32px with ratio 0.6..1.6.
+ *     3. Free logo service fallback (Unavatar -> Google Favicons -> DuckDuckGo).
  *     Prioritize companies appearing in the 200 most recent active jobs.
  * - In --write mode:
  *     Uploads to 'company-logos' bucket at <company_id>.<ext> (upsert: true).
  *     Deletes old file(s) when extension changes.
- *     Sets companies.logo_url to the public storage URL.
- * - In dry-run mode:
- *     Prints company, domain and candidate image URL per row.
+ *     Sets companies.logo_url to the public storage URL (and sets companies.domain).
+ * - In dry-run mode (default):
+ *     Prints company, domain, source and candidate image URL per row.
+ *     Generates and outputs the exact SQL queries for review before any DB write.
  * - Prints found/missing/failed per ats_type summary table and rollback SQL:
  *     UPDATE companies SET logo_url = null WHERE logo_url LIKE '%company-logos%';
  */
@@ -38,6 +42,23 @@ dotenv.config({ path: ".env.local" });
 dotenv.config();
 
 import { createClient } from "@supabase/supabase-js";
+import path from "node:path";
+import {
+  cleanDomain as libCleanDomain,
+  isAtsHost as libIsAtsHost,
+  deriveCompanyDomain as libDeriveCompanyDomain,
+  getImageDimensions as libGetImageDimensions,
+  getCleanImageMeta as libGetCleanImageMeta,
+  fetchWithTimeout as libFetchWithTimeout,
+  downloadAndValidateImage as libDownloadAndValidateImage,
+  parsePageImages as libParsePageImages,
+  fetchFreeLogoService as libFetchFreeLogoService,
+  MAX_IMAGE_BYTES,
+  REQUEST_TIMEOUT_MS,
+  CONCURRENCY as LIB_CONCURRENCY,
+  USER_AGENT,
+  ATS_HOST_KEYWORDS,
+} from "../src/lib/companies/logoResolver";
 
 export interface CompanyRow {
   id: string;
@@ -69,7 +90,8 @@ export interface CandidateLogo {
   ats: string;
   boardUrl: string;
   imageUrl: string;
-  source: "icon" | "og:image" | "homepage-icon";
+  source: "icon" | "og:image" | "homepage-icon" | "free-service";
+  serviceName?: string;
   domain?: string;
   buffer: Buffer;
   contentType: string;
@@ -85,134 +107,34 @@ export interface CompanyInspection {
   iconCandidate: CandidateLogo | null;
   ogCandidate: CandidateLogo | null;
   ashbyPublicWebsite?: string | null;
+  extractedDomain?: string | null;
   status: "inspected" | "already_set" | "missing" | "failed";
   reason?: string;
 }
 
-export const MAX_IMAGE_BYTES = 2097152; // 2MB
-export const REQUEST_TIMEOUT_MS = 10000; // 10s
-export const CONCURRENCY = 8;
+export { MAX_IMAGE_BYTES, REQUEST_TIMEOUT_MS, USER_AGENT, ATS_HOST_KEYWORDS };
+export const CONCURRENCY = LIB_CONCURRENCY || 8;
 
-export const USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 CareerMonkeBot/1.0";
-
-export const ATS_HOST_KEYWORDS = [
-  "greenhouse.io",
-  "lever.co",
-  "ashbyhq.com",
-  "recruitee.com",
-  "smartrecruiters.com",
-  "workable.com",
-  "careerpuck.com",
-  "rippling-ats.com",
-  "rippling.com",
-  "myworkdayjobs.com",
-  "icims.com",
-  "breezy.hr",
-  "bamboohr.com",
-  "jazz.co",
-  "jazzhr.com",
-  "ashbyprd.com",
-  "google.com",
-  "greenhouse.com",
-  "imagedelivery.net",
-  "cloudflare.net",
-  "cloudflarestatus.com",
-  "arbeitnow.com",
-  "hiring.cafe",
-  "indeed.com",
-  "linkedin.com",
-  "glassdoor.com",
-  "ziprecruiter.com",
-  "builtin.com",
-  "wellfound.com",
-  "angel.co",
-];
-
-export function isAtsHost(host: string): boolean {
-  const h = host.toLowerCase().trim();
-  return ATS_HOST_KEYWORDS.some((k) => h === k || h.endsWith("." + k));
-}
-
-export function cleanDomain(raw: string): string | null {
-  if (!raw) return null;
-  let host = raw.trim().toLowerCase();
-  try {
-    if (host.includes("://")) {
-      host = new URL(host).hostname;
-    } else if (host.includes("/")) {
-      host = host.split("/")[0];
-    }
-  } catch {
-    return null;
-  }
-  host = host.replace(/:\d+$/, "");
-  if (isAtsHost(host)) return null;
-  const parts = host.split(".");
-  if (parts.length < 2) return null;
-  if (/^\d+\.\d+\.\d+\.\d+$/.test(host)) return null;
-
-  const strippedPrefixes = [
-    "www",
-    "careers",
-    "jobs",
-    "app",
-    "recruiting",
-    "about",
-    "company",
-    "boards",
-    "job-boards",
-  ];
-  let cur = parts;
-  while (cur.length > 2 && strippedPrefixes.includes(cur[0])) {
-    cur = cur.slice(1);
-  }
-  return cur.join(".");
-}
+export const isAtsHost = libIsAtsHost;
+export const cleanDomain = libCleanDomain;
+export const getImageDimensions = libGetImageDimensions;
+export const getCleanImageMeta = libGetCleanImageMeta;
+export const fetchWithTimeout = libFetchWithTimeout;
+export const parsePageImages = libParsePageImages;
+export const fetchFreeLogoService = libFetchFreeLogoService;
 
 export function deriveCompanyDomain(
   company: CompanyRow,
   jobsForCompany: JobInfo[],
-  ashbyPublicWebsite?: string | null
+  ashbyPublicWebsite?: string | null,
+  boardHtmlOrDomain?: string | null
 ): string | null {
-  // 1. From company record: domain
-  if (company.domain) {
-    const d = cleanDomain(company.domain);
-    if (d) return d;
-  }
-
-  // 2. From company record: careers_url
-  if (company.careers_url) {
-    try {
-      const h = new URL(company.careers_url).hostname;
-      const d = cleanDomain(h);
-      if (d) return d;
-    } catch {}
-  }
-
-  // 3. From job data: apply_url or source_url
-  for (const j of jobsForCompany) {
-    for (const u of [j.apply_url, j.source_url]) {
-      if (!u) continue;
-      try {
-        const h = new URL(u).hostname;
-        const d = cleanDomain(h);
-        if (d) return d;
-      } catch {}
-    }
-  }
-
-  // 4. From Ashby board publicWebsite (if company is on Ashby)
-  if (ashbyPublicWebsite) {
-    try {
-      const h = new URL(ashbyPublicWebsite).hostname;
-      const d = cleanDomain(h);
-      if (d) return d;
-    } catch {}
-  }
-
-  // Never guess
-  return null;
+  return libDeriveCompanyDomain(
+    company,
+    jobsForCompany,
+    ashbyPublicWebsite,
+    boardHtmlOrDomain
+  );
 }
 
 export function selectLargestQualifyingIcon<
@@ -236,6 +158,19 @@ export function selectLargestQualifyingIcon<
   return qualifying[0];
 }
 
+export async function downloadAndValidateImage(
+  url: string,
+  minSize: number = 32
+): Promise<{
+  buffer: Buffer;
+  contentType: string;
+  ext: string;
+  width: number;
+  height: number;
+} | null> {
+  return libDownloadAndValidateImage(url, minSize);
+}
+
 function decodeHtmlEntities(str: string): string {
   return str
     .replace(/&amp;/g, "&")
@@ -243,260 +178,6 @@ function decodeHtmlEntities(str: string): string {
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'");
-}
-
-export function getImageDimensions(
-  buffer: Buffer
-): { width: number; height: number; type: string } | null {
-  if (!buffer || buffer.length < 8) return null;
-
-  // 1. PNG: 89 50 4E 47 0D 0A 1A 0A
-  if (
-    buffer[0] === 0x89 &&
-    buffer[1] === 0x50 &&
-    buffer[2] === 0x4e &&
-    buffer[3] === 0x47 &&
-    buffer[4] === 0x0d &&
-    buffer[5] === 0x0a &&
-    buffer[6] === 0x1a &&
-    buffer[7] === 0x0a
-  ) {
-    if (buffer.length >= 24) {
-      const width = buffer.readUInt32BE(16);
-      const height = buffer.readUInt32BE(20);
-      return { width, height, type: "png" };
-    }
-  }
-
-  // 2. GIF: GIF87a or GIF89a
-  if (
-    buffer.length >= 10 &&
-    buffer[0] === 0x47 &&
-    buffer[1] === 0x49 &&
-    buffer[2] === 0x46 &&
-    buffer[3] === 0x38
-  ) {
-    const width = buffer.readUInt16LE(6);
-    const height = buffer.readUInt16LE(8);
-    return { width, height, type: "gif" };
-  }
-
-  // 3. JPEG: FF D8 ...
-  if (buffer[0] === 0xff && buffer[1] === 0xd8) {
-    let offset = 2;
-    while (offset < buffer.length - 1) {
-      if (buffer[offset] !== 0xff) {
-        offset++;
-        continue;
-      }
-      const marker = buffer[offset + 1];
-      // SOF markers: 0xC0 to 0xCF, except 0xC4, 0xC8, 0xCC
-      if (
-        marker >= 0xc0 &&
-        marker <= 0xcf &&
-        marker !== 0xc4 &&
-        marker !== 0xc8 &&
-        marker !== 0xcc
-      ) {
-        if (offset + 8 < buffer.length) {
-          const height = buffer.readUInt16BE(offset + 5);
-          const width = buffer.readUInt16BE(offset + 7);
-          return { width, height, type: "jpg" };
-        }
-      }
-      if (offset + 3 < buffer.length) {
-        const len = buffer.readUInt16BE(offset + 2);
-        offset += 2 + len;
-      } else {
-        break;
-      }
-    }
-  }
-
-  // 4. WEBP: RIFF .... WEBP VP8 / VP8L / VP8X
-  if (
-    buffer.length >= 30 &&
-    buffer.toString("ascii", 0, 4) === "RIFF" &&
-    buffer.toString("ascii", 8, 12) === "WEBP"
-  ) {
-    const chunk = buffer.toString("ascii", 12, 16);
-    if (chunk === "VP8X" && buffer.length >= 30) {
-      const width = 1 + buffer.readUIntLE(24, 3);
-      const height = 1 + buffer.readUIntLE(27, 3);
-      return { width, height, type: "webp" };
-    } else if (chunk === "VP8L" && buffer.length >= 25) {
-      if (buffer[20] === 0x2f) {
-        const b1 = buffer[21];
-        const b2 = buffer[22];
-        const b3 = buffer[23];
-        const b4 = buffer[24];
-        const width = 1 + (((b2 & 0x3f) << 8) | b1);
-        const height = 1 + (((b4 & 0x0f) << 10) | (b3 << 2) | ((b2 & 0xc0) >> 6));
-        return { width, height, type: "webp" };
-      }
-    } else if (chunk === "VP8 " && buffer.length >= 30) {
-      if (buffer[23] === 0x9d && buffer[24] === 0x01 && buffer[25] === 0x2a) {
-        const width = buffer.readUInt16LE(26) & 0x3fff;
-        const height = buffer.readUInt16LE(28) & 0x3fff;
-        return { width, height, type: "webp" };
-      }
-    }
-  }
-
-  return null;
-}
-
-export function getCleanImageMeta(
-  rawContentType: string,
-  buffer: Buffer,
-  urlStr: string
-): { contentType: string; ext: string } | null {
-  const ct = rawContentType.toLowerCase().trim();
-
-  // Reject SVG explicitly
-  if (
-    ct.includes("svg") ||
-    urlStr.toLowerCase().endsWith(".svg") ||
-    urlStr.toLowerCase().includes(".svg?")
-  ) {
-    return null;
-  }
-
-  const dims = getImageDimensions(buffer);
-  if (!dims) return null;
-
-  switch (dims.type) {
-    case "png":
-      return { contentType: "image/png", ext: "png" };
-    case "jpg":
-      return { contentType: "image/jpeg", ext: "jpg" };
-    case "webp":
-      return { contentType: "image/webp", ext: "webp" };
-    case "gif":
-      return { contentType: "image/gif", ext: "gif" };
-    default:
-      return null;
-  }
-}
-
-export function parsePageImages(
-  html: string,
-  baseUrl: string
-): {
-  iconUrls: Array<{ url: string; declaredSize: number }>;
-  ogImageUrl: string | null;
-} {
-  const ogMatch =
-    html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ||
-    html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
-
-  let ogImageUrl: string | null = null;
-  if (ogMatch && ogMatch[1]) {
-    try {
-      const raw = decodeHtmlEntities(ogMatch[1].trim());
-      if (raw && !raw.endsWith(".svg") && !raw.includes(".svg?")) {
-        ogImageUrl = new URL(raw, baseUrl).toString();
-      }
-    } catch {
-      ogImageUrl = null;
-    }
-  }
-
-  // Parse candidate icons (<link rel="apple-touch-icon" ...>, <link rel="icon" ...>)
-  const iconUrls: Array<{ url: string; declaredSize: number }> = [];
-  const linkRegex = /<link[^>]+>/gi;
-  let match: RegExpExecArray | null;
-
-  while ((match = linkRegex.exec(html)) !== null) {
-    const tag = match[0];
-    const relMatch = tag.match(/rel=["']([^"']+)["']/i);
-    if (!relMatch) continue;
-    const rel = relMatch[1].toLowerCase();
-    if (!rel.includes("icon")) continue;
-
-    const hrefMatch = tag.match(/href=["']([^"']+)["']/i);
-    if (!hrefMatch) continue;
-    const href = decodeHtmlEntities(hrefMatch[1].trim());
-    if (!href || href.endsWith(".svg") || href.includes(".svg?")) continue;
-
-    let declaredSize = 0;
-    const sizesMatch = tag.match(/sizes=["'](\d+)x(\d+)["']/i);
-    if (sizesMatch) {
-      declaredSize = Math.min(parseInt(sizesMatch[1], 10), parseInt(sizesMatch[2], 10));
-    } else if (rel.includes("apple-touch-icon")) {
-      declaredSize = 180;
-    }
-
-    try {
-      const fullUrl = new URL(href, baseUrl).toString();
-      iconUrls.push({ url: fullUrl, declaredSize });
-    } catch {
-      // ignore
-    }
-  }
-
-  // Sort icons descending by declaredSize
-  iconUrls.sort((a, b) => b.declaredSize - a.declaredSize);
-
-  return { iconUrls, ogImageUrl };
-}
-
-export async function fetchWithTimeout(
-  url: string,
-  timeoutMs: number = REQUEST_TIMEOUT_MS
-): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, {
-      headers: {
-        "User-Agent": USER_AGENT,
-        Accept:
-          "text/html,application/xhtml+xml,application/xml;q=0.9,image/png,image/jpeg,image/webp,*/*;q=0.8",
-      },
-      signal: controller.signal,
-    });
-    return res;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-export async function downloadAndValidateImage(url: string): Promise<{
-  buffer: Buffer;
-  contentType: string;
-  ext: string;
-  width: number;
-  height: number;
-} | null> {
-  try {
-    const imgRes = await fetchWithTimeout(url);
-    if (!imgRes.ok) return null;
-
-    const arrayBuf = await imgRes.arrayBuffer();
-    const buffer = Buffer.from(arrayBuf);
-
-    if (buffer.length === 0 || buffer.length > MAX_IMAGE_BYTES) {
-      return null;
-    }
-
-    const rawType = imgRes.headers.get("content-type") || "";
-    const meta = getCleanImageMeta(rawType, buffer, url);
-    if (!meta) return null;
-
-    const dims = getImageDimensions(buffer);
-    if (!dims || dims.width === 0 || dims.height === 0) return null;
-
-    return {
-      buffer,
-      contentType: meta.contentType,
-      ext: meta.ext,
-      width: dims.width,
-      height: dims.height,
-    };
-  } catch {
-    return null;
-  }
 }
 
 export async function inspectCompany(company: CompanyRow): Promise<CompanyInspection> {
@@ -580,10 +261,47 @@ export async function inspectCompany(company: CompanyRow): Promise<CompanyInspec
 
   // Extract Ashby publicWebsite if available
   let ashbyPublicWebsite: string | null = null;
+  let extractedDomain: string | null = null;
+
   if (ats === "ashby") {
     const m = html.match(/"publicWebsite":\s*"([^"]+)"/);
     if (m && m[1]) {
       ashbyPublicWebsite = decodeHtmlEntities(m[1].trim());
+      extractedDomain = cleanDomain(ashbyPublicWebsite);
+    }
+  } else if (ats === "greenhouse") {
+    // 1. Schema.org Organization url
+    const jsonLdMatch =
+      html.match(/"@type":\s*"Organization"[^}]*"url":\s*"([^"]+)"/i) ||
+      html.match(/"url":\s*"([^"]+)"[^}]*"@type":\s*"Organization"/i);
+    if (jsonLdMatch && jsonLdMatch[1]) {
+      extractedDomain = cleanDomain(jsonLdMatch[1]);
+    }
+    // 2. Anchor tags on board page
+    if (!extractedDomain) {
+      const aMatches = Array.from(html.matchAll(/<a[^>]+href=["']([^"']+)["'][^>]*>/gi)).map(
+        (m) => m[1]
+      );
+      for (const h of aMatches) {
+        if (!h.startsWith("http") && !h.startsWith("mailto:")) continue;
+        const d = cleanDomain(h);
+        if (d && !d.includes("greenhouse")) {
+          extractedDomain = d;
+          break;
+        }
+      }
+    }
+  } else if (ats === "lever") {
+    const aMatches = Array.from(html.matchAll(/<a[^>]+href=["']([^"']+)["'][^>]*>/gi)).map(
+      (m) => m[1]
+    );
+    for (const h of aMatches) {
+      if (!h.startsWith("http") && !h.startsWith("mailto:")) continue;
+      const d = cleanDomain(h);
+      if (d && !d.includes("lever.co")) {
+        extractedDomain = d;
+        break;
+      }
     }
   }
 
@@ -594,8 +312,8 @@ export async function inspectCompany(company: CompanyRow): Promise<CompanyInspec
 
   // 1. Inspect icon candidates (favicon / apple-touch-icon of at least 128px)
   for (const icon of iconUrls) {
-    const imgData = await downloadAndValidateImage(icon.url);
-    if (imgData && imgData.width >= 128 && imgData.height >= 128) {
+    const imgData = await downloadAndValidateImage(icon.url, 128);
+    if (imgData) {
       const ratio = imgData.width / imgData.height;
       if (ratio <= 1.6 && ratio >= 0.6) {
         iconCandidate = {
@@ -604,6 +322,7 @@ export async function inspectCompany(company: CompanyRow): Promise<CompanyInspec
           boardUrl: activeBoardUrl,
           imageUrl: icon.url,
           source: "icon",
+          domain: extractedDomain || undefined,
           buffer: imgData.buffer,
           contentType: imgData.contentType,
           ext: imgData.ext,
@@ -617,7 +336,7 @@ export async function inspectCompany(company: CompanyRow): Promise<CompanyInspec
 
   // 2. Inspect og:image candidate (aspect ratio between 0.6 and 1.6)
   if (ogImageUrl) {
-    const imgData = await downloadAndValidateImage(ogImageUrl);
+    const imgData = await downloadAndValidateImage(ogImageUrl, 128);
     if (imgData) {
       const ratio = imgData.width / imgData.height;
       if (ratio <= 1.6 && ratio >= 0.6) {
@@ -627,6 +346,7 @@ export async function inspectCompany(company: CompanyRow): Promise<CompanyInspec
           boardUrl: activeBoardUrl,
           imageUrl: ogImageUrl,
           source: "og:image",
+          domain: extractedDomain || undefined,
           buffer: imgData.buffer,
           contentType: imgData.contentType,
           ext: imgData.ext,
@@ -644,14 +364,16 @@ export async function inspectCompany(company: CompanyRow): Promise<CompanyInspec
     iconCandidate,
     ogCandidate,
     ashbyPublicWebsite,
+    extractedDomain,
     status: iconCandidate || ogCandidate ? "inspected" : "missing",
-    reason: iconCandidate || ogCandidate ? undefined : "No square-ish icon or og:image found",
+    reason: iconCandidate || ogCandidate ? undefined : "No square-ish icon or og:image found on board",
   };
 }
 
 export async function inspectCompanyHomepage(
   company: CompanyRow,
-  domain: string
+  domain: string,
+  minSize: number = 32
 ): Promise<CandidateLogo | null> {
   const homeUrls = [`https://${domain}`, `https://www.${domain}`];
   let html = "";
@@ -672,9 +394,8 @@ export async function inspectCompanyHomepage(
     return null;
   }
 
-  const { iconUrls } = parsePageImages(html, finalUrl);
+  const { iconUrls, ogImageUrl } = parsePageImages(html, finalUrl);
 
-  // Also include root /apple-touch-icon.png if not present
   try {
     const rootApple = new URL("/apple-touch-icon.png", finalUrl).toString();
     if (!iconUrls.some((i) => i.url === rootApple)) {
@@ -692,49 +413,75 @@ export async function inspectCompanyHomepage(
   }> = [];
 
   for (const icon of iconUrls) {
-    const imgData = await downloadAndValidateImage(icon.url);
-    if (imgData && imgData.width >= 128 && imgData.height >= 128) {
-      const ratio = imgData.width / imgData.height;
-      if (ratio >= 0.6 && ratio <= 1.6) {
-        downloadedCandidates.push({
-          url: icon.url,
-          width: imgData.width,
-          height: imgData.height,
-          contentType: imgData.contentType,
-          ext: imgData.ext,
-          buffer: imgData.buffer,
-        });
-      }
+    const imgData = await downloadAndValidateImage(icon.url, minSize);
+    if (imgData) {
+      downloadedCandidates.push({
+        url: icon.url,
+        width: imgData.width,
+        height: imgData.height,
+        contentType: imgData.contentType,
+        ext: imgData.ext,
+        buffer: imgData.buffer,
+      });
     }
   }
 
-  const best = selectLargestQualifyingIcon(downloadedCandidates);
-  if (!best) return null;
+  let best = selectLargestQualifyingIcon(downloadedCandidates);
 
-  return {
-    company,
-    ats: company.ats_type || "unknown",
-    boardUrl: finalUrl,
-    imageUrl: best.url,
-    source: "homepage-icon",
-    domain,
-    buffer: best.buffer,
-    contentType: best.contentType,
-    ext: best.ext,
-    width: best.width,
-    height: best.height,
-  };
+  if (!best && downloadedCandidates.length > 0) {
+    downloadedCandidates.sort((a, b) => b.width * b.height - a.width * a.height);
+    best = downloadedCandidates[0];
+  }
+
+  if (best) {
+    return {
+      company,
+      ats: company.ats_type || "unknown",
+      boardUrl: finalUrl,
+      imageUrl: best.url,
+      source: "homepage-icon",
+      domain,
+      buffer: best.buffer,
+      contentType: best.contentType,
+      ext: best.ext,
+      width: best.width,
+      height: best.height,
+    };
+  }
+
+  if (ogImageUrl) {
+    const imgData = await downloadAndValidateImage(ogImageUrl, minSize);
+    if (imgData) {
+      return {
+        company,
+        ats: company.ats_type || "unknown",
+        boardUrl: finalUrl,
+        imageUrl: ogImageUrl,
+        source: "homepage-icon",
+        domain,
+        buffer: imgData.buffer,
+        contentType: imgData.contentType,
+        ext: imgData.ext,
+        width: imgData.width,
+        height: imgData.height,
+      };
+    }
+  }
+
+  return null;
 }
 
 export async function runBackfill() {
   const isWrite = process.argv.includes("--write");
+  const missingOnly = process.argv.includes("--missing-only") || process.argv.includes("--schedule");
   const limitIdx = process.argv.indexOf("--limit");
   const limitVal = limitIdx !== -1 ? parseInt(process.argv[limitIdx + 1], 10) : undefined;
 
   console.log("=========================================================================");
-  console.log("CAREERMONKE COMPANY LOGOS BACKFILL");
-  console.log(`Mode: ${isWrite ? "LIVE WRITE (--write)" : "DRY RUN (default)"}`);
-  if (limitVal) console.log(`Limit: ${limitVal} companies`);
+  console.log("CAREERMONKE COMPANY LOGOS BACKFILL & RE-CHECK ENGINE");
+  console.log(`Mode:         ${isWrite ? "LIVE WRITE (--write)" : "DRY RUN (default, safe)"}`);
+  console.log(`Missing Only: ${missingOnly ? "YES (--missing-only / --schedule)" : "NO (full evaluation)"}`);
+  if (limitVal) console.log(`Limit:        ${limitVal} companies`);
   console.log("=========================================================================\n");
 
   const supabaseUrl =
@@ -800,8 +547,23 @@ export async function runBackfill() {
     process.exit(1);
   }
 
+  const totalCompaniesCount = allCompanies.length;
+  const withLogoBefore = allCompanies.filter((c) => c.logo_url !== null).length;
+  const withoutLogoBefore = totalCompaniesCount - withLogoBefore;
+
+  console.log(`Database Baseline:`);
+  console.log(`  Total Companies:       ${totalCompaniesCount}`);
+  console.log(`  With Logo Before:      ${withLogoBefore} (${((withLogoBefore / totalCompaniesCount) * 100).toFixed(1)}%)`);
+  console.log(`  Without Logo Before:   ${withoutLogoBefore} (${((withoutLogoBefore / totalCompaniesCount) * 100).toFixed(1)}%)\n`);
+
+  // Filter if missing-only
+  let candidateCompanies = [...allCompanies];
+  if (missingOnly) {
+    candidateCompanies = candidateCompanies.filter((c) => c.logo_url === null);
+  }
+
   // Prioritize companies appearing in the 200 most recent active jobs
-  const companies = [...allCompanies].sort((a, b) => {
+  const companies = candidateCompanies.sort((a, b) => {
     const aIsTop = top200Names.has(a.name.toLowerCase().trim()) || (a.id && top200Ids.has(a.id));
     const bIsTop = top200Names.has(b.name.toLowerCase().trim()) || (b.id && top200Ids.has(b.id));
     if (aIsTop && !bIsTop) return -1;
@@ -811,7 +573,7 @@ export async function runBackfill() {
 
   const companiesToEvaluate = limitVal ? companies.slice(0, limitVal) : companies;
 
-  console.log(`Found ${companiesToEvaluate.length} companies to evaluate (prioritizing top 200 active job companies).\n`);
+  console.log(`Evaluating ${companiesToEvaluate.length} companies (prioritizing top 200 active job employers)...\n`);
 
   // Phase 1: Inspect companies on ATS boards
   console.log("Phase 1: Scanning board pages, icons, and og:image candidates...");
@@ -895,7 +657,6 @@ export async function runBackfill() {
 
     let chosen: CandidateLogo | null = null;
 
-    // Rule: Prefer favicon / apple-touch-icon >= 128px unless shared generic default (count >= 3)
     if (insp.iconCandidate) {
       const count = urlFrequency.get(insp.iconCandidate.imageUrl) || 0;
       if (count < 3) {
@@ -903,7 +664,6 @@ export async function runBackfill() {
       }
     }
 
-    // Fallback: If no icon or icon is a shared generic default, use og:image (if not shared by >= 3)
     if (!chosen && insp.ogCandidate) {
       const count = urlFrequency.get(insp.ogCandidate.imageUrl) || 0;
       if (count < 3) {
@@ -926,9 +686,9 @@ export async function runBackfill() {
   console.log(`Filtered out ${genericDefaultsSkipped} generic default images shared by 3+ companies.`);
   console.log(`Companies without logo after ATS scan: ${companiesNeedingFallback.length}\n`);
 
-  // Phase 3: Homepage Fallback for companies still without logo_url
-  console.log("Phase 3: Running Homepage Fallback for companies still without logo_url...");
-  console.log("Deriving website domains from job or company data (never guessing)...");
+  // Phase 3: Homepage & Free Logo Service Fallback for companies still without logo_url
+  console.log("Phase 3: Running Homepage & Free Logo Service Fallback (Unavatar -> Google -> DDG)...");
+  console.log("Deriving website domains from jobs, companies, or board metadata (never guessing)...");
 
   interface FallbackCandidateItem {
     candidate: CandidateLogo;
@@ -945,12 +705,47 @@ export async function runBackfill() {
         ...(jobsByCompanyId.get(company.id) || []),
       ];
 
-      const domain = deriveCompanyDomain(company, compJobs, inspection.ashbyPublicWebsite);
+      const domain = deriveCompanyDomain(
+        company,
+        compJobs,
+        inspection.ashbyPublicWebsite,
+        inspection.extractedDomain
+      );
+
       if (domain) {
+        // Step 1: Try company website homepage
         try {
-          const logo = await inspectCompanyHomepage(company, domain);
-          if (logo) {
-            fallbackCandidates.push({ candidate: logo, company });
+          const homeLogo = await inspectCompanyHomepage(company, domain, 32);
+          if (homeLogo) {
+            fallbackCandidates.push({ candidate: homeLogo, company });
+            fallbackCompleted++;
+            continue;
+          }
+        } catch {}
+
+        // Step 2: Try free logo service fallback (Unavatar -> Google Favicons -> DuckDuckGo)
+        try {
+          const freeService = await fetchFreeLogoService(domain, 32);
+          if (freeService) {
+            fallbackCandidates.push({
+              candidate: {
+                company,
+                ats: company.ats_type || "unknown",
+                boardUrl: `https://${domain}`,
+                imageUrl: freeService.imageUrl,
+                source: "free-service",
+                serviceName: freeService.serviceName,
+                domain,
+                buffer: freeService.buffer,
+                contentType: freeService.contentType,
+                ext: freeService.ext,
+                width: freeService.width,
+                height: freeService.height,
+              },
+              company,
+            });
+            fallbackCompleted++;
+            continue;
           }
         } catch {}
       }
@@ -971,9 +766,9 @@ export async function runBackfill() {
   });
 
   await Promise.all(fallbackChunks.map((chunk) => fallbackWorker(chunk)));
-  console.log(`\nFallback inspection complete. Found ${fallbackCandidates.length} candidate homepage icons.\n`);
+  console.log(`\nFallback inspection complete. Found ${fallbackCandidates.length} candidate fallback logos.\n`);
 
-  // Frequency analysis across fallback candidate icons (skip URLs shared by 3+)
+  // Frequency analysis across fallback candidate icons (skip generic default icons shared across 3+ companies)
   const fallbackUrlFreq = new Map<string, number>();
   for (const { candidate } of fallbackCandidates) {
     const u = candidate.imageUrl;
@@ -996,22 +791,41 @@ export async function runBackfill() {
     fallbackAcceptedCount++;
   }
 
-  console.log(`Accepted ${fallbackAcceptedCount} homepage fallback logos after generic filter.\n`);
+  console.log(`Accepted ${fallbackAcceptedCount} fallback logos after generic filter.\n`);
 
-  // Dry-run output: print company, ATS/source, domain (if fallback), dims, and image URL
-  console.log("=== CANDIDATE LOGOS PER ROW (DRY RUN) ===");
+  // Dry-run output: print candidate logos per row
+  console.log("=== CANDIDATE LOGOS PER ROW ===");
   for (const item of validCandidates) {
-    if (item.source === "homepage-icon") {
-      console.log(
-        `[homepage  ] ${item.company.name.padEnd(28)} | domain: ${(item.domain || "").padEnd(22)} | ${item.width}x${item.height} (icon) | ${item.imageUrl}`
-      );
-    } else {
-      console.log(
-        `[${item.ats.padEnd(10)}] ${item.company.name.padEnd(28)} | ${item.width}x${item.height} (${item.source}) | ${item.imageUrl}`
-      );
-    }
+    const tag = item.source === "homepage-icon" ? "homepage" : item.source === "free-service" ? item.serviceName || "free-svc" : item.ats;
+    console.log(
+      `[${tag.padEnd(10)}] ${item.company.name.padEnd(28)} | domain: ${(item.domain || "n/a").padEnd(22)} | ${item.width}x${item.height} (${item.source}) | ${item.imageUrl}`
+    );
   }
-  console.log("=========================================\n");
+  console.log("================================\n");
+
+  // Exact SQL generation for review before any DB write
+  console.log("=========================================================================");
+  console.log("EXACT SQL QUERIES (DRY RUN / PRE-FLIGHT AUDIT)");
+  console.log("=========================================================================");
+  console.log("-- Target table: public.companies");
+  console.log(`-- Total rows to update: ${validCandidates.length}\n`);
+
+  const sampleSqlQueries: string[] = [];
+  for (const item of validCandidates) {
+    const targetStorageUrl = `${supabaseUrl}/storage/v1/object/public/company-logos/${item.company.id}.${item.ext}`;
+    const escapedDomain = item.domain ? `'${item.domain.replace(/'/g, "''")}'` : "NULL";
+    const sql = `UPDATE public.companies SET logo_url = '${targetStorageUrl}', domain = COALESCE(domain, ${escapedDomain}) WHERE id = '${item.company.id}'; -- ${item.company.name}`;
+    sampleSqlQueries.push(sql);
+  }
+
+  // Print first 20 SQL queries + note if more
+  for (const query of sampleSqlQueries.slice(0, 20)) {
+    console.log(query);
+  }
+  if (sampleSqlQueries.length > 20) {
+    console.log(`-- ... and ${sampleSqlQueries.length - 20} more UPDATE statements for remaining companies.`);
+  }
+  console.log("=========================================================================\n");
 
   // In write mode: upload and update
   if (isWrite) {
@@ -1058,7 +872,10 @@ export async function runBackfill() {
         if (publicUrl) {
           await supabase
             .from("companies")
-            .update({ logo_url: publicUrl })
+            .update({
+              logo_url: publicUrl,
+              ...(item.domain && !item.company.domain ? { domain: item.domain } : {}),
+            })
             .eq("id", item.company.id);
           uploadCount++;
           if (sampleUploaded.length < 5) {
@@ -1081,7 +898,7 @@ export async function runBackfill() {
     for (const sample of sampleUploaded) {
       console.log(`  - ${sample.name}: ${sample.url}`);
     }
-    console.log("=========================================\n");
+    console.log("=========================================");
   }
 
   // Summary Table
@@ -1116,18 +933,28 @@ export async function runBackfill() {
   );
   console.log("-------------------------------------------------------------------------\n");
 
+  const projectedTotalWithLogo = withLogoBefore + validCandidates.length;
+  console.log("=========================================================================");
+  console.log("BEFORE VS AFTER COMPANY LOGO AUDIT REPORT");
+  console.log("=========================================================================");
+  console.log(`Total Companies in Database:       ${totalCompaniesCount}`);
+  console.log(`Companies With Logo BEFORE:        ${withLogoBefore} (${((withLogoBefore / totalCompaniesCount) * 100).toFixed(1)}%)`);
+  console.log(`Companies Without Logo BEFORE:     ${withoutLogoBefore} (${((withoutLogoBefore / totalCompaniesCount) * 100).toFixed(1)}%)`);
+  console.log(`Newly Resolved in this run:        +${validCandidates.length}`);
+  console.log(`Companies With Logo AFTER:         ${projectedTotalWithLogo} (${((projectedTotalWithLogo / totalCompaniesCount) * 100).toFixed(1)}%)`);
+  console.log(`Remaining With Letter Placeholder: ${totalCompaniesCount - projectedTotalWithLogo} (${(((totalCompaniesCount - projectedTotalWithLogo) / totalCompaniesCount) * 100).toFixed(1)}%)`);
+  console.log("=========================================================================\n");
+
   console.log("-- Rollback SQL:");
   console.log("UPDATE companies SET logo_url = null WHERE logo_url LIKE '%company-logos%';\n");
 
   if (!isWrite) {
-    console.log("Dry-run complete. No files uploaded and no database rows updated.");
-    console.log("To apply changes, run with: npx tsx scripts/backfill-company-logos.ts --write\n");
+    console.log("Dry-run complete. ZERO files uploaded and ZERO database rows modified.");
+    console.log("To apply changes, review the SQL above and run: npx tsx scripts/backfill-company-logos.ts --write\n");
   } else {
     console.log("Live write complete.\n");
   }
 }
-
-import path from "node:path";
 
 const isDirectRun =
   process.argv[1] &&
