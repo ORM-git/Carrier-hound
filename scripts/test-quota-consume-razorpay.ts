@@ -14,6 +14,8 @@ import {
 } from "../src/lib/billing/quota";
 import { executeAiCore } from "../src/lib/ai/serviceHandler";
 
+process.env.EARLY_ACCESS_ALLOWED_EMAILS = "pro@careermonke.com";
+
 async function runQuotaConsumeRazorpaySuite() {
   console.log("================================================================================");
   console.log("   QUOTA CONSUME & PLAN-AWARE RAZORPAY TEST SUITE [PASS-LOCAL]                  ");
@@ -370,6 +372,35 @@ async function runQuotaConsumeRazorpaySuite() {
   );
   assert.strictEqual(repeatRes.statusCode, 200, "Idempotent repeat must succeed without error");
   assert.strictEqual(repeatConsumeCount, 1, "Idempotent repeat must return previous consume without re-decrement");
+
+  // 5G: Unapproved user MUST receive 403 Early access only
+  const unapprovedRes = await executeAiCore(
+    "127.0.0.1",
+    "Bearer unapproved-token",
+    {
+      operation: "job_fit",
+      params: {
+        candidate: sampleCandidate,
+        job: sampleJob,
+      },
+    },
+    {
+      ...mockDeps,
+      getSupabaseAdmin: () => ({
+        auth: {
+          getUser: async () => ({
+            data: { user: { id: "user-unapproved", email: "unapproved@other.com" } },
+            error: null,
+          }),
+        },
+        from: () => mockQueryBuilder,
+      }),
+    }
+  );
+  assert.strictEqual(unapprovedRes.statusCode, 403, "Unapproved user must receive 403");
+  const unapprovedBody =
+    typeof unapprovedRes.body === "string" ? JSON.parse(unapprovedRes.body) : unapprovedRes.body;
+  assert.strictEqual(unapprovedBody.error, "Early access only");
 
   console.log("  -> [PASS-LOCAL] AI service correctly manages consume and refund lifecycle, with idempotent repeat.");
 

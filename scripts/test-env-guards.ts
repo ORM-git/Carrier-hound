@@ -252,6 +252,7 @@ async function runSuite() {
     restoreEnv();
     process.env.NEXT_PUBLIC_SUPABASE_URL = "https://mock.supabase.co";
     process.env.SUPABASE_SERVICE_ROLE_KEY = "mock-service-key";
+    process.env.EARLY_ACCESS_ALLOWED_EMAILS = "mock-pro@careermonke.com";
     delete process.env.GROQ_API_KEY;
 
     // Mock global fetch for auth verification & quota check
@@ -260,7 +261,7 @@ async function runSuite() {
       const url = String(input);
       if (url.includes("/auth/v1/user")) {
         return new Response(
-          JSON.stringify({ id: "mock-pro-user-id", user_metadata: {} }),
+          JSON.stringify({ id: "mock-pro-user-id", email: "mock-pro@careermonke.com", user_metadata: {} }),
           { status: 200, headers: { "Content-Type": "application/json" } }
         );
       }
@@ -339,6 +340,54 @@ async function runSuite() {
     );
   }
 
+  // 1.8 /api/ai POST (Unapproved user receives 403 Early access only)
+  {
+    restoreEnv();
+    process.env.NEXT_PUBLIC_SUPABASE_URL = "https://mock.supabase.co";
+    process.env.SUPABASE_SERVICE_ROLE_KEY = "mock-service-key";
+    process.env.GROQ_API_KEY = "mock-groq-key";
+
+    const origFetch = global.fetch;
+    global.fetch = async (input: RequestInfo | URL): Promise<Response> => {
+      const url = String(input);
+      if (url.includes("/auth/v1/user")) {
+        return new Response(
+          JSON.stringify({ id: "mock-unapproved-user-id", email: "unapproved@example.com", user_metadata: {} }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      if (url.includes("/rest/v1/blocked_users")) {
+        return new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response(JSON.stringify([]), { status: 200 });
+    };
+
+    try {
+      const { POST } = await import("../src/app/api/ai/route");
+      const req = new Request("http://localhost:3000/api/ai", {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer mock-token-unapproved",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          operation: "resume_extraction",
+          params: { rawText: "Software Engineer with React experience." },
+        }),
+      });
+      const res = await POST(req);
+      const data = await res.json();
+
+      assert(
+        res.status === 403 && data.error === "Early access only",
+        "Next.js POST /api/ai strictly rejects unapproved user with 403 Early access only",
+        `Expected status 403 and error 'Early access only', got status ${res.status}: ${JSON.stringify(data)}`
+      );
+    } finally {
+      global.fetch = origFetch;
+    }
+  }
+
   // ============================================================================
   // SECTION 2: Missing Required Env Vars on Netlify Serverless Functions
   // ============================================================================
@@ -413,6 +462,7 @@ async function runSuite() {
     restoreEnv();
     process.env.NEXT_PUBLIC_SUPABASE_URL = "https://mock.supabase.co";
     process.env.SUPABASE_SERVICE_ROLE_KEY = "mock-service-key";
+    process.env.EARLY_ACCESS_ALLOWED_EMAILS = "mock-pro@careermonke.com";
     delete process.env.GROQ_API_KEY;
 
     const origFetch = global.fetch;
@@ -420,7 +470,7 @@ async function runSuite() {
       const url = String(input);
       if (url.includes("/auth/v1/user")) {
         return new Response(
-          JSON.stringify({ id: "mock-pro-user-id", user_metadata: {} }),
+          JSON.stringify({ id: "mock-pro-user-id", email: "mock-pro@careermonke.com", user_metadata: {} }),
           { status: 200, headers: { "Content-Type": "application/json" } }
         );
       }

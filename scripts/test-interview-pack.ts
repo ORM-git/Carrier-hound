@@ -148,10 +148,12 @@ async function run() {
     console.log("  [PASS] Client Isolation & Cleanse: No client imports of SAMPLE_INTERVIEW_PACK, no Acme/Stripe, no fake Confirmed chips");
   }
 
-  const mockAdmin = (userId: string | null = null, error: any = null) => ({
+  process.env.EARLY_ACCESS_ALLOWED_EMAILS = "approved@careermonke.com";
+
+  const mockAdmin = (userId: string | null = null, error: any = null, email: string = "approved@careermonke.com") => ({
     auth: {
       getUser: async () => ({
-        data: { user: userId ? { id: userId, user_metadata: {} } : null },
+        data: { user: userId ? { id: userId, email, user_metadata: {} } : null },
         error,
       }),
     },
@@ -238,7 +240,19 @@ async function run() {
     assert.strictEqual(bodyPro.available, true);
     assert.strictEqual(bodyPro.isPro, true);
 
-    console.log("  [PASS] Endpoint Live Execution: Missing token -> 401, Non-Pro -> 403, No real AI -> 503 not_available_yet, Real AI -> 200");
+    // 4e. Unapproved user -> 403 Early access only
+    const reqUnapproved = new Request("http://localhost:3000/api/jobs/interview-pack?jobId=job_real_123", {
+      headers: { Authorization: "Bearer unapproved_token" },
+    });
+    const resUnapproved = await handleInterviewPackRequest(reqUnapproved, {
+      getSupabaseAdmin: () => mockAdmin("usr_unapproved", null, "unapproved@test.com"),
+      getServerEntitlement: async () => ({ isPro: true }),
+    });
+    assert.strictEqual(resUnapproved.status, 403, "Unapproved user must yield status 403");
+    const bodyUnapproved = await resUnapproved.json();
+    assert.strictEqual(bodyUnapproved.error, "Early access only", "Must return Early access only");
+
+    console.log("  [PASS] Endpoint Live Execution: Missing token -> 401, Non-Pro -> 403, Unapproved -> 403, No real AI -> 503, Real AI -> 200");
   } catch (err: any) {
     failures.push(`API EXECUTION FAIL: ${err.message}`);
   }

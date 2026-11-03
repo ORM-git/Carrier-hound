@@ -162,6 +162,7 @@ async function runRateLimitTests() {
 
   // 1. TEST AI ROUTE (netlify/functions/ai.ts)
   console.log("1. Testing AI Handler (netlify/functions/ai.ts)...");
+  process.env.EARLY_ACCESS_ALLOWED_EMAILS = "test@example.com";
   _resetAiRateLimitStore();
 
   const mockDbAi = createMockSupabaseForAi();
@@ -212,6 +213,30 @@ async function runRateLimitTests() {
     process.exit(1);
   }
   console.log("  -> Verdict: PASS-LOCAL (Enforces short-window user and IP rate limits with Retry-After header)\n");
+
+  // 1b. Invite-only gate check: unapproved user gets 403
+  console.log("1b. Verifying unapproved user gets 403 on AI Handler...");
+  _resetAiRateLimitStore();
+  const unapprovedDb = {
+    ...mockDbAi,
+    auth: {
+      getUser: async () => ({
+        data: { user: { id: "user-unapproved", email: "unapproved@test.com", user_metadata: {} } },
+        error: null,
+      }),
+    },
+  };
+  const unapprovedAiHandler = createAiHandler({
+    getSupabaseAdmin: () => unapprovedDb,
+    getServerEntitlement: async () => ({ isPro: true }),
+    callGroq: async () => "output",
+  });
+  const unapprovedRes = await unapprovedAiHandler(eventAi);
+  if (unapprovedRes.statusCode !== 403) {
+    console.error(`FAIL: Expected unapproved user to receive 403, got ${unapprovedRes.statusCode}`);
+    process.exit(1);
+  }
+  console.log("  -> Verdict: PASS-LOCAL (Unapproved user strictly rejected with 403 by invite-only gate)\n");
 
   // 2. TEST JOBS-SEARCH ROUTE (netlify/functions/jobs-search.ts)
   console.log("2. Testing Search Handler (netlify/functions/jobs-search.ts)...");
