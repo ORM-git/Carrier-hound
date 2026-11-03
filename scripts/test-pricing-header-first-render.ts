@@ -132,36 +132,52 @@ async function runPricingHeaderFirstRenderSuite() {
   console.log("  -> [PASS-LOCAL] Verified zero fake user creation; user is strictly null before session settles.");
 
   // ---------------------------------------------------------------------------
-  // TEST 3: Pricing Page Content & Copy Integrity (Plan Picker, Radio Rows, Upgrade CTA)
+  // TEST 3: Pricing Page Content & Copy Integrity (Visible Plans, Prices, Upgrade CTA)
   // ---------------------------------------------------------------------------
-  console.log("\nTest 3: Verifying plan picker plans, copy, and CTAs remain completely intact...");
+  console.log("\nTest 3: Verifying visible pricing plans, copy, prices, and disabled Upgrade CTA...");
   
   const markup = renderWithRouter(React.createElement(PricingPage));
   assert.ok(
-    markup.includes("Pick your plan"),
-    "Pricing page must retain the card title 'Pick your plan'"
+    markup.includes("Get more interviews with CareerMonke Premium"),
+    "Pricing page must include the heading 'Get more interviews with CareerMonke Premium'"
   );
   assert.ok(
     markup.includes("Payments opening soon"),
     "Pricing page must retain the Upgrade CTA with 'Payments opening soon'"
   );
   assert.ok(
+    markup.includes("disabled") && markup.includes('aria-disabled="true"'),
+    "Pricing page must render disabled Upgrade button"
+  );
+  assert.ok(
     markup.includes("Billed weekly"),
     "Pricing page must include the Weekly plan row"
   );
   assert.ok(
-    markup.includes("CareerMonke Premium"),
-    "Pricing page must include the heading 'CareerMonke Premium'"
+    markup.includes("₹692"),
+    "Pricing page must include the Weekly price ₹692"
   );
   assert.ok(
     markup.includes("billed monthly"),
     "Pricing page must include the Monthly plan row"
   );
   assert.ok(
+    markup.includes("₹1,499"),
+    "Pricing page must include the Monthly price ₹1,499"
+  );
+  assert.ok(
     markup.includes("billed every 3 months"),
     "Pricing page must include the Quarterly plan row"
   );
-  console.log("  -> [PASS-LOCAL] All plan picker plans, copy, and CTAs intact.");
+  assert.ok(
+    markup.includes("₹3,999"),
+    "Pricing page must include the Quarterly price ₹3,999"
+  );
+  assert.ok(
+    markup.includes("Free Plan") && markup.includes("₹0.00"),
+    "Pricing page must include the Free Plan row"
+  );
+  console.log("  -> [PASS-LOCAL] All visible plan picker plans, copy, and CTAs intact.");
 
   // ---------------------------------------------------------------------------
   // TEST 4: Source Code Guard Validation in src/app/pricing/page.tsx

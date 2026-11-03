@@ -9,14 +9,10 @@ import {
   Sparkles,
   Lock,
   ArrowRight,
-  CheckCircle2,
   LogIn,
-  QrCode,
-  Globe,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
-import { PLAN_DOMESTIC, PLAN_INTERNATIONAL } from "@/lib/billing/types";
 
 interface PaywallModalProps {
   open: boolean;
@@ -34,13 +30,11 @@ export default function PaywallModal({
   onOpenChange,
   title = "Unlock CareerMonke Pro Access",
   subtitle = "Direct access to unlisted company career endpoints, verified compensation bands, and ATS links.",
-  featureTitle,
   user: initialUser,
-  onSuccess,
   redirectUrl,
 }: PaywallModalProps) {
   const [currentUser, setCurrentUser] = useState<User | null>(initialUser ?? null);
-  const [selectedPlanId, setSelectedPlanId] = useState<"domestic" | "intl">("domestic");
+  const [selectedPlanId, setSelectedPlanId] = useState<"weekly" | "monthly" | "quarterly">("monthly");
   const [email, setEmail] = useState("");
 
   useEffect(() => {
@@ -121,62 +115,52 @@ export default function PaywallModal({
 
           {/* Content Body */}
           <div className="p-5 sm:p-4 space-y-4 sm:space-y-3 pb-8 sm:pb-6 pb-[max(2rem,env(safe-area-inset-bottom))]">
-            {/* Billing Plan Selector: India vs International */}
+            {/* Pro Plans Selector */}
             <div className="space-y-2">
               <span className="text-xs font-bold text-ink-muted uppercase tracking-wider block">
-                Select Billing Option:
+                Choose a Pro Plan:
               </span>
-              <div className="grid grid-cols-2 gap-3">
-                {/* Domestic Razorpay Option */}
+              <div className="grid grid-cols-3 gap-2">
+                {/* Weekly Plan */}
                 <div
-                  onClick={() => setSelectedPlanId("domestic")}
-                  className={`p-3.5 rounded-tk-xl border-2 transition-all cursor-pointer ${
-                    selectedPlanId === "domestic"
+                  onClick={() => setSelectedPlanId("weekly")}
+                  className={`p-3 rounded-tk-xl border-2 transition-all cursor-pointer text-center ${
+                    selectedPlanId === "weekly"
                       ? "border-brand-500 bg-brand-50/50 shadow-tk-xs"
                       : "border-line hover:border-line-strong bg-surface"
                   }`}
                 >
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-xs font-bold text-brand-900 flex items-center gap-1">
-                      <QrCode className="w-3.5 h-3.5 text-brand-600" />
-                      India Domestic
-                    </span>
-                    {selectedPlanId === "domestic" && (
-                      <span className="w-2 h-2 rounded-tk-full bg-brand-600" />
-                    )}
-                  </div>
-                  <div className="text-lg font-black text-ink leading-none">
-                    {PLAN_DOMESTIC.formattedPrice}
-                  </div>
-                  <p className="text-xs text-ink-muted mt-1">
-                    UPI, RuPay, NetBanking & Cards
-                  </p>
+                  <div className="text-xs font-bold text-brand-900 mb-0.5">Weekly</div>
+                  <div className="text-sm font-black text-ink">₹692</div>
+                  <p className="text-[10px] text-ink-muted mt-0.5">7 days</p>
                 </div>
 
-                {/* International Stripe Option */}
+                {/* Monthly Plan */}
                 <div
-                  onClick={() => setSelectedPlanId("intl")}
-                  className={`p-3.5 rounded-tk-xl border-2 transition-all cursor-pointer ${
-                    selectedPlanId === "intl"
+                  onClick={() => setSelectedPlanId("monthly")}
+                  className={`p-3 rounded-tk-xl border-2 transition-all cursor-pointer text-center relative ${
+                    selectedPlanId === "monthly"
                       ? "border-brand-500 bg-brand-50/50 shadow-tk-xs"
                       : "border-line hover:border-line-strong bg-surface"
                   }`}
                 >
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-xs font-bold text-ink flex items-center gap-1">
-                      <Globe className="w-3.5 h-3.5 text-ink-muted" />
-                      International
-                    </span>
-                    {selectedPlanId === "intl" && (
-                      <span className="w-2 h-2 rounded-tk-full bg-brand-600" />
-                    )}
-                  </div>
-                  <div className="text-lg font-black text-ink leading-none">
-                    {PLAN_INTERNATIONAL.formattedPrice}
-                  </div>
-                  <p className="text-xs text-ink-muted mt-1">
-                    Global Cards & Apple Pay
-                  </p>
+                  <div className="text-xs font-bold text-brand-900 mb-0.5">Monthly</div>
+                  <div className="text-sm font-black text-ink">₹1,499</div>
+                  <p className="text-[10px] text-brand-600 font-semibold mt-0.5">₹346/wk</p>
+                </div>
+
+                {/* Quarterly Plan */}
+                <div
+                  onClick={() => setSelectedPlanId("quarterly")}
+                  className={`p-3 rounded-tk-xl border-2 transition-all cursor-pointer text-center ${
+                    selectedPlanId === "quarterly"
+                      ? "border-brand-500 bg-brand-50/50 shadow-tk-xs"
+                      : "border-line hover:border-line-strong bg-surface"
+                  }`}
+                >
+                  <div className="text-xs font-bold text-brand-900 mb-0.5">Quarterly</div>
+                  <div className="text-sm font-black text-ink">₹3,999</div>
+                  <p className="text-[10px] text-brand-600 font-semibold mt-0.5">₹308/wk</p>
                 </div>
               </div>
             </div>
@@ -203,7 +187,7 @@ export default function PaywallModal({
                 <li className="flex items-start gap-2">
                   <Check className="w-4 h-4 text-brand-600 shrink-0 mt-0.5" />
                   <span>
-                    <strong className="text-ink">7-Day Renewal Grace Period:</strong> Uninterrupted radar telemetry access even if bank card renews late.
+                    <strong className="text-ink">Full Job Descriptions:</strong> Comprehensive responsibilities and qualifications directly from employers.
                   </span>
                 </li>
               </ul>
@@ -216,7 +200,7 @@ export default function PaywallModal({
                 onClick={() => onOpenChange(false)}
                 className="w-full h-12 rounded-tk-lg bg-brand-600 hover:bg-brand-700 text-ink-inverse font-semibold flex items-center justify-center gap-2 shadow-tk-sm transition-colors cursor-pointer text-sm sm:text-base min-h-[48px]"
               >
-                <span>See Pro Plans - ₹199/mo</span>
+                <span>View Pro Plans</span>
                 <ArrowRight className="w-4 h-4" />
               </Link>
 

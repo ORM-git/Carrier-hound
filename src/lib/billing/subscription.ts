@@ -3,9 +3,16 @@ import {
   UserSubscription,
   ProAccessStatus,
   SubscriptionStatus,
-  PLAN_DOMESTIC,
-  PLAN_INTERNATIONAL,
 } from "./types";
+
+function resolvePlanName(planId?: string | null): string {
+  if (!planId) return "Free Tier";
+  const normalized = planId.toLowerCase();
+  if (normalized.includes("week")) return "Weekly";
+  if (normalized.includes("quarter")) return "Quarterly";
+  if (normalized.includes("month") || normalized === "monthly" || normalized === "domestic_monthly_199") return "Monthly";
+  return "Pro Member";
+}
 
 interface CachedProStatusEntry {
   userId: string;
@@ -194,7 +201,7 @@ export async function getProAccessStatus(userId?: string): Promise<ProAccessStat
               resultStatus = {
                 isPro: true,
                 status: "in_grace_period",
-                planName: sub.plan_id === PLAN_INTERNATIONAL.id ? PLAN_INTERNATIONAL.name : PLAN_DOMESTIC.name,
+                planName: resolvePlanName(sub.plan_id),
                 inGracePeriod: true,
                 graceDaysLeft: daysLeft,
                 expirationDate: graceEnd.toISOString(),
@@ -221,7 +228,7 @@ export async function getProAccessStatus(userId?: string): Promise<ProAccessStat
               resultStatus = {
                 isPro: true,
                 status: sub.status,
-                planName: sub.plan_id === PLAN_INTERNATIONAL.id ? PLAN_INTERNATIONAL.name : PLAN_DOMESTIC.name,
+                planName: resolvePlanName(sub.plan_id),
                 inGracePeriod: false,
                 expirationDate: periodEnd ? periodEnd.toISOString() : undefined,
                 isLoading: false,
@@ -324,9 +331,9 @@ export async function getUserSubscription(): Promise<UserSubscription | null> {
           id: sub.id,
           userId: sub.user_id,
           provider: sub.provider || "manual",
-          planId: sub.plan_id || PLAN_DOMESTIC.id,
+          planId: sub.plan_id || "monthly",
           currency: sub.currency || "INR",
-          amount: sub.amount || 199,
+          amount: sub.amount || 1499,
           status: resolvedStatus,
           currentPeriodStart: sub.current_period_start || new Date().toISOString(),
           currentPeriodEnd: sub.current_period_end || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),

@@ -4,12 +4,6 @@
   functions = "netlify/functions"
 
 [[redirects]]
-  from = "/api/simulate-checkout"
-  to = "/.netlify/functions/simulate-checkout"
-  status = 200
-  force = true
-
-[[redirects]]
   from = "/api/billing/razorpay/order"
   to = "/.netlify/functions/billing-razorpay-order"
   status = 200

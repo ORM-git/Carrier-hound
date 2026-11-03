@@ -11,7 +11,7 @@ import { handler as aiHandler } from "../netlify/functions/ai";
 import { handler as jobsProHandler } from "../netlify/functions/jobs-pro";
 import { handler as jobsSearchHandler } from "../netlify/functions/jobs-search";
 import { handler as jobsTop10Handler } from "../netlify/functions/jobs-top10";
-import { handler as simulateCheckoutHandler } from "../netlify/functions/simulate-checkout";
+import { handler as billingOrderHandler } from "../netlify/functions/billing-razorpay-order";
 import { handler as statsHandler } from "../netlify/functions/stats";
 
 const IS_NEGATIVE_CONTROL = process.argv.includes("--negative-control");
@@ -42,7 +42,7 @@ const HANDLERS = [
   { name: "jobs-pro", fn: jobsProHandler },
   { name: "jobs-search", fn: jobsSearchHandler },
   { name: "jobs-top10", fn: jobsTop10Handler },
-  { name: "simulate-checkout", fn: simulateCheckoutHandler },
+  { name: "billing-razorpay-order", fn: billingOrderHandler },
   { name: "stats", fn: statsHandler },
 ];
 

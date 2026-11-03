@@ -1,5 +1,14 @@
 import { createClient } from "@supabase/supabase-js";
-import { ProAccessStatus, PLAN_DOMESTIC, PLAN_INTERNATIONAL } from "./types";
+import { ProAccessStatus } from "./types";
+
+function resolvePlanName(planId?: string | null): string {
+  if (!planId) return "Pro Member";
+  const normalized = planId.toLowerCase();
+  if (normalized.includes("week")) return "Weekly";
+  if (normalized.includes("quarter")) return "Quarterly";
+  if (normalized.includes("month") || normalized === "monthly" || normalized === "domestic_monthly_199") return "Monthly";
+  return "Pro Member";
+}
 
 /**
  * Shared server-side helper: The SINGLE source of truth for Pro entitlement.
@@ -60,10 +69,7 @@ export async function getServerEntitlement(userId: string): Promise<ProAccessSta
         return {
           isPro: true,
           status: "in_grace_period",
-          planName:
-            sub.plan_id === PLAN_INTERNATIONAL.id
-              ? PLAN_INTERNATIONAL.name
-              : PLAN_DOMESTIC.name,
+          planName: resolvePlanName(sub.plan_id),
           inGracePeriod: true,
           graceDaysLeft: daysLeft,
           expirationDate: graceEnd.toISOString(),
@@ -77,10 +83,7 @@ export async function getServerEntitlement(userId: string): Promise<ProAccessSta
         return {
           isPro: true,
           status: sub.status,
-          planName:
-            sub.plan_id === PLAN_INTERNATIONAL.id
-              ? PLAN_INTERNATIONAL.name
-              : PLAN_DOMESTIC.name,
+          planName: resolvePlanName(sub.plan_id),
           inGracePeriod: false,
           expirationDate: periodEnd ? periodEnd.toISOString() : undefined,
         };
