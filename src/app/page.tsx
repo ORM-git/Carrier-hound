@@ -50,11 +50,11 @@ export default function HomePage() {
       {/* REAL NUMBERS & GROWING JOB HUB STATS SECTION */}
       <LandingJobHubStatsSection />
 
-      {/* (2) PRODUCT FEATURES SECTION */}
-      <LandingFeaturesSection />
-
-      {/* (3) JOBS JUST ADDED TICKER STRIP */}
+      {/* (2) JOBS JUST ADDED TICKER STRIP */}
       <LandingJobsTickerStrip />
+
+      {/* (3) PRODUCT FEATURES SECTION */}
+      <LandingFeaturesSection />
 
       {/* (4) PROBLEM VS SOLUTION (Comparison) */}
       <section className="pt-24 pb-12 lg:pt-28 lg:pb-[90px] max-w-content mx-auto px-6">
