@@ -156,28 +156,24 @@ export const Testimonials = () => {
       className="py-16 sm:py-20 lg:py-24 relative overflow-hidden bg-white"
     >
       {/* Scoped CSS animation for subpixel smooth translation with instant hover pause */}
-      <style
-        dangerouslySetInnerHTML={{
-          __html: `
-            @keyframes cmTestimonialsRunner {
-              from {
-                transform: translate3d(0, 0, 0);
-              }
-              to {
-                transform: translate3d(calc(-1 * var(--loop-distance, 4440px)), 0, 0);
-              }
-            }
-            .cm-testimonials-active-track {
-              animation: cmTestimonialsRunner var(--loop-duration, 111s) linear infinite;
-            }
-            .cm-testimonials-active-track:hover,
-            .cm-testimonials-active-track:focus-within,
-            .cm-testimonials-active-track.is-paused {
-              animation-play-state: paused !important;
-            }
-          `,
-        }}
-      />
+      <style>{`
+        @keyframes cmTestimonialsRunner {
+          from {
+            transform: translate3d(0, 0, 0);
+          }
+          to {
+            transform: translate3d(calc(-1 * var(--loop-distance, 4440px)), 0, 0);
+          }
+        }
+        .cm-testimonials-active-track {
+          animation: cmTestimonialsRunner var(--loop-duration, 111s) linear infinite;
+        }
+        .cm-testimonials-active-track:hover,
+        .cm-testimonials-active-track:focus-within,
+        .cm-testimonials-active-track.is-paused {
+          animation-play-state: paused !important;
+        }
+      `}</style>
 
       <div className="max-w-[1320px] mx-auto px-4 sm:px-6">
         {/* Centered Heading Stack */}
