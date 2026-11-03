@@ -18,7 +18,7 @@ import LandingCredibilitySection from "@/components/LandingCredibilitySection";
 import LandingComparisonSection from "@/components/LandingComparisonSection";
 import LandingJobsTickerStrip from "@/components/LandingJobsTickerStrip";
 import "@/styles/landing-top-artifact.css";
-import { ArrowRight, Instagram, Linkedin, Mail } from "lucide-react";
+import { ArrowRight, Instagram, Linkedin, Mail, Rocket } from "lucide-react";
 
 const Testimonials = dynamic(
   () => import("@/components/testimonials").then((m) => m.Testimonials),
@@ -53,7 +53,28 @@ export default function HomePage() {
       {/* (2) JOBS JUST ADDED TICKER STRIP */}
       <LandingJobsTickerStrip />
 
-      {/* (3) PRODUCT FEATURES SECTION */}
+      {/* (3) LARGE PLATFORM HEADLINE */}
+      <section
+        aria-label="Platform overview"
+        className="w-full bg-white pt-14 pb-10 sm:pt-20 sm:pb-14 lg:pt-24 lg:pb-16"
+      >
+        <div className="max-w-6xl mx-auto px-6 lg:px-8 text-left">
+          <h2 className="text-3xl sm:text-5xl md:text-6xl lg:text-7xl xl:text-[76px] font-black uppercase tracking-tight text-[#090E34] leading-[1.05] sm:leading-[1.02]">
+            <span className="flex items-center gap-2 sm:gap-3.5 lg:gap-4">
+              AI
+              <Rocket
+                className="w-[0.55em] h-[0.55em] stroke-[2] text-[#090E34] shrink-0"
+                aria-hidden="true"
+              />
+            </span>
+            <span className="block mt-1 sm:mt-1.5">
+              JOB HUNTING PLATFORM
+            </span>
+          </h2>
+        </div>
+      </section>
+
+      {/* (4) PRODUCT FEATURES SECTION */}
       <LandingFeaturesSection />
 
       {/* (4) PROBLEM VS SOLUTION (Comparison) */}

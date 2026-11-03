@@ -36,8 +36,8 @@ async function runTests() {
   assert.ok(!compSrc.includes("ComparisonCardImage"), "ComparisonCardImage must be removed");
   assert.ok(!compSrc.includes("mascot-sad"), "Old mascot CSS keyframes must be removed");
   assert.ok(!compSrc.includes("mascot-happy"), "Old mascot CSS keyframes must be removed");
-  assert.ok(!compSrc.includes("auto-rejected?"), "Old heading 'auto-rejected?' must be removed");
-  assert.ok(compSrc.includes("Tired of getting auto rejection"), "Must include exact heading 'Tired of getting auto rejection'");
+  assert.ok(compSrc.includes("Tired of getting"), "Must include line 1 'Tired of getting'");
+  assert.ok(compSrc.includes("auto-rejected?"), "Must include line 2 'auto-rejected?'");
   assert.ok(!compSrc.includes("careermonke.com"), "Old footer text must be removed");
   console.log("  -> [PASS-LOCAL] Old tiles, rows, placeholders, keyframes, and footer removed from component source.");
 
@@ -45,12 +45,13 @@ async function runTests() {
   console.log("\nTest 2: Verifying rendered HTML markup of LandingComparisonSection...");
   const renderedHtml = renderToStaticMarkup(React.createElement(LandingComparisonSection));
 
-  // Assert heading directly above the GIF
-  assert.ok(renderedHtml.includes("Tired of getting auto rejection"), "Must render heading text 'Tired of getting auto rejection'");
-  assert.ok(renderedHtml.includes("text-[#090E34]"), "Heading must use brand navy #090E34");
-  assert.ok(renderedHtml.includes("font-bold"), "Heading must be bold");
+  // Assert restored heading directly above the GIF
+  assert.ok(renderedHtml.includes("Tired of getting"), "Must render heading text 'Tired of getting'");
+  assert.ok(renderedHtml.includes("auto-rejected?"), "Must render heading text 'auto-rejected?'");
+  assert.ok(renderedHtml.includes("text-[#09090B]"), "Heading must use dark text color #09090B");
+  assert.ok(renderedHtml.includes("font-extrabold"), "Heading must be font-extrabold");
   assert.ok(renderedHtml.includes("text-center"), "Heading must be centered");
-  assert.ok(/<h2\b[^>]*>.*Tired of getting auto rejection.*<\/h2>/s.test(renderedHtml), "Must render as an h2 element");
+  assert.ok(/<h2\b[^>]*>.*Tired of getting.*auto-rejected\?.*<\/h2>/s.test(renderedHtml), "Must render as an h2 element with restored two-line structure");
 
   // Assert exact image attributes
   assert.ok(renderedHtml.includes('src="/careermonke-comparison-boxes.gif"'), "Must render exact src '/careermonke-comparison-boxes.gif'");
