@@ -77,35 +77,35 @@ async function runPlanPickerSuite() {
     "Plans must be in exact order: Weekly, Monthly, Quarterly"
   );
 
-  // Weekly plan assertions
+  // Weekly plan assertions (approved price: ₹692 superseding old ₹499)
   const weekly = PLANS[0];
   assert.strictEqual(weekly.id, "weekly");
-  assert.strictEqual(weekly.price, 499);
+  assert.strictEqual(weekly.price, 692, "Weekly price must be approved ₹692");
   assert.strictEqual(getPlanBillingLabel(weekly), "Billed weekly");
-  assert.strictEqual(weekly.subLine, "15 resumes, 15 cover letters per week");
-  assert.strictEqual(calculatePerWeek(weekly.price, "week"), 499);
-  assert.strictEqual(getPlanPerWeekText(weekly), "Rs 499 /week");
+  assert.strictEqual(weekly.subLine, "15 sets/week");
+  assert.strictEqual(calculatePerWeek(weekly.price, "week"), 692);
+  assert.strictEqual(getPlanPerWeekText(weekly), "₹692 /week");
   assert.strictEqual(weekly.badge, undefined, "Weekly plan must not have a badge");
 
-  // Monthly plan assertions (selected by default)
+  // Monthly plan assertions (selected by default, approved ₹1,499)
   const monthly = PLANS[1];
   assert.strictEqual(monthly.id, "monthly");
-  assert.strictEqual(monthly.price, 1499);
+  assert.strictEqual(monthly.price, 1499, "Monthly price must be approved ₹1,499");
   assert.strictEqual(monthly.isDefault, true, "Monthly plan must be default");
-  assert.strictEqual(getPlanBillingLabel(monthly), "Rs 1,499, billed monthly");
-  assert.strictEqual(monthly.subLine, "60 resumes, 60 cover letters per month");
+  assert.strictEqual(getPlanBillingLabel(monthly), "₹1,499, billed monthly");
+  assert.strictEqual(monthly.subLine, "60 sets/month");
   assert.strictEqual(calculatePerWeek(monthly.price, "month"), 346); // Math.round(1499 * 12 / 52) = 346
-  assert.strictEqual(getPlanPerWeekText(monthly), "Rs 346 /week*");
-  assert.strictEqual(monthly.badge, "Most popular");
+  assert.strictEqual(getPlanPerWeekText(monthly), "₹346 /week*");
+  assert.strictEqual(monthly.badge, "Recommended", "Monthly plan badge must be 'Recommended'");
 
-  // Quarterly plan assertions
+  // Quarterly plan assertions (approved ₹3,999)
   const quarterly = PLANS[2];
   assert.strictEqual(quarterly.id, "quarterly");
-  assert.strictEqual(quarterly.price, 3999);
-  assert.strictEqual(getPlanBillingLabel(quarterly), "Rs 3,999, billed every 3 months");
-  assert.strictEqual(quarterly.subLine, "Same monthly quota for 3 months, one payment");
+  assert.strictEqual(quarterly.price, 3999, "Quarterly price must be approved ₹3,999");
+  assert.strictEqual(getPlanBillingLabel(quarterly), "₹3,999, billed every 3 months");
+  assert.strictEqual(quarterly.subLine, "60 sets each month (resets monthly)");
   assert.strictEqual(calculatePerWeek(quarterly.price, "quarter"), 308); // Math.round(3999 * 4 / 52) = 308
-  assert.strictEqual(getPlanPerWeekText(quarterly), "Rs 308 /week*");
+  assert.strictEqual(getPlanPerWeekText(quarterly), "₹308 /week*");
   assert.strictEqual(quarterly.badge, "Best value");
 
   // Verify per-week calculations are dynamic, not hardcoded
@@ -115,7 +115,7 @@ async function runPlanPickerSuite() {
   // Add-on packs row note
   assert.strictEqual(
     ADD_ON_PACKS_NOTE,
-    "Need more? Add-on packs Rs 149 / 399 / 699 = 10 / 30 / 60 extra sets, used after your plan quota, valid 60 days"
+    "Planned Add-ons: ₹149 / ₹399 / ₹699 for 10 / 30 / 60 extra sets, used after plan quota, valid 60 days (coming soon)."
   );
 
   // Footer policy & limits notes
@@ -154,11 +154,12 @@ async function runPlanPickerSuite() {
   // ---------------------------------------------------------------------------
   console.log("\nTest 3: Verifying rendered card layout, radio accessibility, brand colors, and copy...");
 
-  // Card header
-  assert.ok(serverHtml.includes("Pick your plan"), "Must render card title 'Pick your plan'");
+  // Page header
+  assert.ok(serverHtml.includes("CareerMonke Premium"), "Must render page title 'CareerMonke Premium'");
+  assert.ok(serverHtml.includes("Pick your plan"), "Must render panel label 'Pick your plan'");
   assert.ok(
-    serverHtml.includes("Accelerate your job search with AI resume tailoring and cover letters."),
-    "Must render plan card subtitle"
+    serverHtml.includes("Accelerate your remote job search with unmasked direct employer listings"),
+    "Must render benefit-led subtitle without false claims"
   );
 
   // Radiogroup semantics
@@ -177,18 +178,27 @@ async function runPlanPickerSuite() {
 
   // Plan rows copy
   assert.ok(serverHtml.includes("Billed weekly"), "Weekly row title must be present");
-  assert.ok(serverHtml.includes("Rs 499 /week"), "Weekly price must be Rs 499 /week");
-  assert.ok(serverHtml.includes("15 resumes, 15 cover letters per week"), "Weekly subline must be present");
+  assert.ok(serverHtml.includes("₹692"), "Weekly price must be ₹692");
+  assert.ok(serverHtml.includes("15 sets/week"), "Weekly subline must be present");
 
-  assert.ok(serverHtml.includes("Rs 1,499, billed monthly"), "Monthly row title must be present");
-  assert.ok(serverHtml.includes("Rs 346 /week*"), "Monthly per-week price must be Rs 346 /week*");
-  assert.ok(serverHtml.includes("60 resumes, 60 cover letters per month"), "Monthly subline must be present");
-  assert.ok(serverHtml.includes("Most popular"), "Monthly badge 'Most popular' must be present");
+  assert.ok(serverHtml.includes("₹1,499, billed monthly"), "Monthly row billing title must be present");
+  assert.ok(serverHtml.includes("₹346 /week*"), "Monthly per-week price must be ₹346 /week*");
+  assert.ok(serverHtml.includes("60 sets/month"), "Monthly subline must be present");
+  assert.ok(serverHtml.includes("Recommended"), "Monthly badge 'Recommended' must be present");
 
-  assert.ok(serverHtml.includes("Rs 3,999, billed every 3 months"), "Quarterly row title must be present");
-  assert.ok(serverHtml.includes("Rs 308 /week*"), "Quarterly per-week price must be Rs 308 /week*");
-  assert.ok(serverHtml.includes("Same monthly quota for 3 months, one payment"), "Quarterly subline must be present");
+  assert.ok(serverHtml.includes("₹3,999, billed every 3 months"), "Quarterly row billing title must be present");
+  assert.ok(serverHtml.includes("₹308 /week*"), "Quarterly per-week price must be ₹308 /week*");
+  assert.ok(serverHtml.includes("60 sets each month (resets monthly)"), "Quarterly subline must be present");
   assert.ok(serverHtml.includes("Best value"), "Quarterly badge 'Best value' must be present");
+
+  // Free Tier Comparison Column
+  assert.ok(serverHtml.includes("CareerMonke Free"), "Free tier column must be present");
+  assert.ok(serverHtml.includes("Basic Tier"), "Basic tier badge must be present");
+
+  // Comparison Matrix Table
+  assert.ok(serverHtml.includes("Compare Plans"), "Comparison table heading must be present");
+  assert.ok(serverHtml.includes("Direct Employer Job Search"), "Comparison row for Job Search must be present");
+  assert.ok(serverHtml.includes("Direct ATS Apply Links"), "Comparison row for ATS links must be present");
 
   // Upgrade button
   assert.ok(serverHtml.includes(UPGRADE_BUTTON_LABEL), "Upgrade button must have label 'Payments opening soon'");
@@ -203,10 +213,10 @@ async function runPlanPickerSuite() {
   assert.ok(serverHtml.includes(FAIR_USE_LIMIT_NOTE), "Fair-use limit note must be present");
   assert.ok(serverHtml.includes(PER_WEEK_NOTE), "Per-week asterisk note must be present");
 
-  // CareerMonke Brand Blue styling (#2563EB)
+  // Brand Blue styling (#2563EB)
   assert.ok(
     serverHtml.includes("#2563EB"),
-    "CareerMonke brand blue #2563EB must be applied to radio, border, and Upgrade button"
+    "CareerMonke brand blue #2563EB must be present in focus rings/styling"
   );
 
   // Safety checks: Payments OFF, no Razorpay, no fake stats/testimonials
@@ -216,9 +226,9 @@ async function runPlanPickerSuite() {
     "Payments must be OFF: No Razorpay script reference"
   );
   assert.strictEqual(
-    serverHtml.includes("Testimonials") || serverHtml.includes("What users say"),
+    serverHtml.includes("Testimonials") || serverHtml.includes("What users say") || serverHtml.includes("3x interviews"),
     false,
-    "No fake testimonials allowed"
+    "No fake testimonials or 3x interviews claims allowed"
   );
 
   console.log("  -> [PASS-LOCAL] Rendered markup, accessibility semantics, and brand blue verified.");
