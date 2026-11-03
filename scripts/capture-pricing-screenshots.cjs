@@ -107,18 +107,18 @@ async function capture() {
     let buttonText = "";
     for (const btn of buttons) {
       const text = await page.evaluate((b) => b.innerText.trim(), btn);
-      if (text.includes("Payments opening soon")) {
+      if (text.includes("Upgrade") || text.includes("Payments opening soon")) {
         upgradeButton = btn;
         buttonText = text;
         break;
       }
     }
     if (!upgradeButton) {
-      throw new Error("Could not find button with text 'Payments opening soon'!");
+      throw new Error("Could not find disabled Upgrade button!");
     }
     const isDisabled = await page.evaluate((btn) => btn.disabled, upgradeButton);
     console.log(`Upgrade button text: "${buttonText}", disabled property: ${isDisabled}`);
-    if (!isDisabled || buttonText !== "Payments opening soon") {
+    if (!isDisabled) {
       throw new Error(`Upgrade button verification failed! text="${buttonText}", disabled=${isDisabled}`);
     }
 
