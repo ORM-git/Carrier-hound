@@ -55,6 +55,9 @@ export default function HomePage() {
       {/* (3) PRODUCT FEATURES SECTION */}
       <LandingFeaturesSection />
 
+      {/* FEEDBACK / TESTIMONIALS (First Wall - Leftward Runner) */}
+      <Testimonials />
+
       {/* (4) PROBLEM VS SOLUTION (Comparison) */}
       <section className="pt-24 pb-12 lg:pt-28 lg:pb-[90px] max-w-content mx-auto px-6">
         <LandingComparisonSection />
@@ -155,8 +158,8 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* FEEDBACK / TESTIMONIALS */}
-      <Testimonials />
+      {/* FEEDBACK / TESTIMONIALS (Second Wall - Rightward Runner) */}
+      <Testimonials direction="right" />
 
       {/* FAQ (Gray-100 bg #F3F4F6, centered H2, 5 Q&A items, max-width ~670px) */}
       <section className="bg-[#F3F4F6] py-16 sm:py-20 lg:py-24">
