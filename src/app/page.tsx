@@ -10,7 +10,7 @@ import { FaqHomeItem } from "@/components/FaqItems";
 import { WhiteHeroButton } from "@/components/Buttons";
 import CategorySelectModal from "@/components/CategorySelectModal";
 import Footer from "@/components/Footer";
-import GlobeLiveStats from "@/components/GlobeLiveStats";
+import LandingGlobeFeatureSection from "@/components/LandingGlobeFeatureSection";
 import LandingTopArtifact from "@/components/LandingTopArtifact";
 import LandingJobHubStatsSection from "@/components/LandingJobHubStatsSection";
 import LandingFeaturesSection from "@/components/LandingFeaturesSection";
@@ -19,11 +19,6 @@ import LandingComparisonSection from "@/components/LandingComparisonSection";
 import LandingJobsTickerStrip from "@/components/LandingJobsTickerStrip";
 import "@/styles/landing-top-artifact.css";
 import { ArrowRight, Instagram, Linkedin, Mail } from "lucide-react";
-
-const WireframeDottedGlobe = dynamic(
-  () => import("@/components/ui/wireframe-dotted-globe"),
-  { ssr: false }
-);
 
 const Testimonials = dynamic(
   () => import("@/components/testimonials").then((m) => m.Testimonials),
@@ -66,49 +61,8 @@ export default function HomePage() {
         <LandingComparisonSection />
       </section>
 
-      {/* (5) GLOBAL COVERAGE SECTION (Dotted Wireframe Globe + Details) */}
-      <section className="max-w-6xl mx-auto px-4 py-16 sm:py-24">
-        <div className="grid grid-cols-1 lg:grid-cols-2 items-center gap-10 lg:gap-12">
-          {/* Right-side text block (stacked first on mobile via order-1) */}
-          <div className="order-1 lg:order-2 space-y-5 text-center lg:text-left">
-            <div>
-              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold border border-gray-200 text-gray-700 bg-white shadow-sm">
-                Global map / radar
-              </span>
-            </div>
-            <h2 className="text-3xl sm:text-4xl md:text-[42px] font-bold text-[#09090B] tracking-tight leading-tight">
-              Your next role might be in a city you haven&apos;t thought of yet.
-            </h2>
-            <p className="text-gray-600 text-base sm:text-lg leading-relaxed max-w-xl mx-auto lg:mx-0">
-              Look beyond the companies already on your radar. Work under the Bangalore sky or in Paris with a morning coffee. Explore listings by location and check each role&apos;s work setup and eligibility.
-            </p>
-            <div className="pt-2 flex flex-wrap items-center justify-center lg:justify-start gap-3 w-full">
-              <Link
-                href="/early-access"
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-base sm:text-lg px-8 sm:px-10 py-3.5 sm:py-4 min-h-[48px] rounded-xl shadow-md hover:shadow-xl hover:scale-105 transition-all cursor-pointer"
-              >
-                <span>View Jobs</span>
-                <ArrowRight className="w-5 h-5 ml-0.5 stroke-[2.5]" />
-              </Link>
-              <Link
-                href="/early-access"
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-[#0F172A] border border-[#CBD5E1] font-bold text-sm sm:text-base px-6 py-3.5 min-h-[48px] rounded-xl shadow-sm transition-all cursor-pointer"
-              >
-                <span>Open interactive map</span>
-                <span className="text-xs text-[#64748B] font-normal">(Sign-in required)</span>
-              </Link>
-            </div>
-
-            {/* LIVE STATS row directly under View Jobs button */}
-            <GlobeLiveStats />
-          </div>
-
-          {/* Left-side globe (stacked below on mobile via order-2) */}
-          <div className="order-2 lg:order-1 w-full max-w-[480px] mx-auto lg:max-w-none">
-            <WireframeDottedGlobe />
-          </div>
-        </div>
-      </section>
+      {/* (5) GLOBAL COVERAGE SECTION (Interactive Tour Globe + Stats) */}
+      <LandingGlobeFeatureSection />
 
       {/* (6) CTA BAND (Blue #2563EB, Free Preview style) */}
       <section className="bg-[#2563EB] text-white py-16 sm:py-20 lg:py-24 relative overflow-hidden">
