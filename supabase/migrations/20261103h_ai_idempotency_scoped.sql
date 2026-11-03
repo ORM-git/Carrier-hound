@@ -1,4 +1,4 @@
--- Migration: 20261103g_ai_idempotency_scoped.sql
+-- Migration: 20261103h_ai_idempotency_scoped.sql
 -- Scopes plan_usage_events idempotency lookup by user + operation kind,
 -- checks daily-cap before returning already_consumed,
 -- adds response_payload column for cached replay,
@@ -360,3 +360,6 @@ $$;
 
 revoke all on function public.record_plan_usage_result(uuid, text, text, jsonb) from public;
 grant execute on function public.record_plan_usage_result(uuid, text, text, jsonb) to service_role;
+
+-- 9. Drop legacy 2-argument signature to avoid overloading ambiguity
+drop function if exists public.refund_plan_or_addon_set(uuid, text);
