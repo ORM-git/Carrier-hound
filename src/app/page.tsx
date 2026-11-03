@@ -5,20 +5,20 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import BrandIcon from "@/components/BrandIcon";
-import DotPattern from "@/components/DotPattern";
+import Script from "next/script";
 import { FaqHomeItem } from "@/components/FaqItems";
 import { WhiteHeroButton } from "@/components/Buttons";
 import CategorySelectModal from "@/components/CategorySelectModal";
 import Footer from "@/components/Footer";
 import GlobeLiveStats from "@/components/GlobeLiveStats";
-import LandingInteractiveDemoSection from "@/components/LandingInteractiveDemoSection";
+import LandingTopArtifact from "@/components/LandingTopArtifact";
+import LandingJobHubStatsSection from "@/components/LandingJobHubStatsSection";
 import LandingFeaturesSection from "@/components/LandingFeaturesSection";
 import LandingCredibilitySection from "@/components/LandingCredibilitySection";
 import LandingComparisonSection from "@/components/LandingComparisonSection";
 import LandingJobsTickerStrip from "@/components/LandingJobsTickerStrip";
-import { useLiveStats } from "@/lib/api/stats";
-import { X, Check, ArrowRight, Instagram, Linkedin, Mail } from "lucide-react";
+import "@/styles/landing-top-artifact.css";
+import { ArrowRight, Instagram, Linkedin, Mail } from "lucide-react";
 
 const WireframeDottedGlobe = dynamic(
   () => import("@/components/ui/wireframe-dotted-globe"),
@@ -30,22 +30,9 @@ const Testimonials = dynamic(
   { ssr: false }
 );
 
-const UserMenu = dynamic(() => import("@/components/UserMenu"), {
-  ssr: false,
-  loading: () => (
-    <Link
-      href="/early-access"
-      className="inline-flex items-center gap-1.5 px-4 py-2 min-h-[44px] rounded-lg text-sm font-semibold transition-all border border-white/30 text-white hover:bg-white/10"
-    >
-      <span>Sign In</span>
-    </Link>
-  ),
-});
-
 export default function HomePage() {
   const router = useRouter();
   const [modalOpen, setModalOpen] = useState(false);
-  const { totalJobs } = useLiveStats();
 
   // Returning signed-in user visiting / goes to /dashboard (lazy loaded so Supabase isn't critical path)
   useEffect(() => {
@@ -60,169 +47,26 @@ export default function HomePage() {
 
   return (
     <main className="min-h-screen bg-white text-[#09090B] flex flex-col selection:bg-blue-100 selection:text-blue-900">
-      {/* ========================================================================= */}
-      {/* 1. HERO SECTION (Blue #2563EB, centered) with overlay header              */}
-      {/* ========================================================================= */}
-      <section className="relative bg-[#2563EB] text-white pt-6 pb-6 sm:pb-8 overflow-visible">
-        {/* Background Subtle Gradient & Dots */}
-        <div className="absolute inset-0 pointer-events-none opacity-10 bg-[radial-gradient(#fff_1px,transparent_1px)] [background-size:24px_24px]" />
+      <Script src="/careermonke-visuals.js" strategy="afterInteractive" />
 
-        {/* Minimal Hero Header (no nav bar, sits directly on blue hero) */}
-        <div className="w-full max-w-[1340px] mx-auto px-4 sm:px-10 lg:px-14 xl:px-16 pt-4 sm:pt-6 mb-8 sm:mb-14 lg:mb-16 flex items-center justify-between relative z-20">
-          {/* Left: Round white logo circle */}
-          <Link
-            href="/"
-            aria-label="CareerMonke Home"
-            className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-white flex items-center justify-center shadow-lg transition-transform hover:scale-105 p-1.5 min-h-[44px] min-w-[44px]"
-          >
-            <BrandIcon variant="new" className="w-11 h-11 sm:w-12 sm:h-12" priority />
-          </Link>
+      {/* (1) TOP ARTIFACT: Sticky Nav, Hero, and Demo Band */}
+      <LandingTopArtifact />
 
-          {/* Right: Auth-aware Sign In / User Menu */}
-          <UserMenu signInHref="/early-access" />
-        </div>
+      {/* REAL NUMBERS & GROWING JOB HUB STATS SECTION */}
+      <LandingJobHubStatsSection />
 
-        {/* Hero Content - centered with 16px rhythm and 32px gap above card panel */}
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 text-center relative z-20 flex flex-col items-center">
-          <h1 className="text-2xl sm:text-4xl md:text-5xl lg:text-[48px] font-bold leading-tight sm:leading-tight text-white max-w-3xl mx-auto tracking-tight">
-            Find jobs not on LinkedIn/Indeed
-          </h1>
+      {/* (2) PRODUCT FEATURES SECTION */}
+      <LandingFeaturesSection />
 
-          <p className="mt-4 text-white/90 text-sm sm:text-base md:text-lg max-w-xl mx-auto font-normal leading-relaxed">
-            We hunt down jobs posted on company career pages, the ones most people never see. Then our AI Monke tunes up your resume, so you&apos;re actually ready for them.
-          </p>
+      {/* (3) JOBS JUST ADDED TICKER STRIP */}
+      <LandingJobsTickerStrip />
 
-          <div className="mt-6 flex flex-wrap items-center justify-center gap-3 w-full max-w-md sm:max-w-none">
-            <button
-              onClick={() => router.push("/early-access")}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 bg-white text-[#09090B] font-bold text-base sm:text-lg px-8 sm:px-10 py-3.5 sm:py-4 min-h-[48px] rounded-xl shadow-lg hover:shadow-xl hover:scale-105 transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
-            >
-              <span>Explore jobs</span>
-              <ArrowRight className="w-5 h-5 ml-0.5 stroke-[2.5]" />
-            </button>
-            <Link
-              href="/early-access"
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-blue-700/80 hover:bg-blue-700 text-white font-bold text-base sm:text-lg px-7 sm:px-8 py-3.5 sm:py-4 min-h-[48px] rounded-xl border border-white/30 shadow-md hover:shadow-lg transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
-            >
-              <span>Try AI resume tools</span>
-            </Link>
-          </div>
-        </div>
-
-        {/* Hero Interactive Demo Card nested inside hero on blue background, overlapping next section by 48px */}
-        <div className="mt-8 sm:mt-10 max-w-[880px] mx-auto px-4 sm:px-6 relative z-20 -mb-12">
-          {/* Dotted grid pattern behind top-right corner */}
-          <div className="absolute -top-6 -right-1 sm:-top-8 sm:-right-4 pointer-events-none z-0">
-            <DotPattern width={160} height={100} dotColor="rgba(255, 255, 255, 0.45)" rows={5} cols={8} />
-          </div>
-
-          {/* Dotted grid pattern behind bottom-left corner */}
-          <div className="absolute -bottom-6 -left-1 sm:-bottom-8 sm:-left-4 pointer-events-none z-0">
-            <DotPattern width={160} height={100} dotColor="rgba(255, 255, 255, 0.45)" rows={5} cols={8} />
-          </div>
-
-          <div className="relative z-10">
-            <LandingInteractiveDemoSection />
-          </div>
-        </div>
-      </section>
-
-      {/* ========================================================================= */}
-      {/* 3. PROBLEM VS SOLUTION (Comparison)                                       */}
-      {/* ========================================================================= */}
+      {/* (4) PROBLEM VS SOLUTION (Comparison) */}
       <section className="pt-24 pb-12 lg:pt-28 lg:pb-[90px] max-w-content mx-auto px-6">
         <LandingComparisonSection />
-
-        {/* AI Resume Monke Section */}
-        <div className="mt-12 p-6 sm:p-8 bg-slate-50 border border-slate-200 rounded-2xl max-w-4xl mx-auto shadow-2xs">
-          <div className="text-center mb-6">
-            <span className="text-xs font-bold text-[#2563EB] uppercase tracking-wider bg-blue-50 px-2.5 py-1 rounded-full border border-blue-100">
-              AI Resume Monke
-            </span>
-            <h3 className="text-xl sm:text-2xl font-bold text-slate-900 mt-2">
-              Meet the monke that fixes your resume.
-            </h3>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-center">
-            <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
-              <div>
-                <div className="w-8 h-8 mx-auto rounded-full bg-blue-100 text-blue-700 font-extrabold text-xs flex items-center justify-center mb-2.5">
-                  1
-                </div>
-                <div className="text-sm font-bold text-slate-900">Upload your resume</div>
-                <p className="text-xs text-slate-500 mt-1">PDF or Word, the monke isn&apos;t picky.</p>
-              </div>
-            </div>
-            <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
-              <div>
-                <div className="w-8 h-8 mx-auto rounded-full bg-blue-100 text-blue-700 font-extrabold text-xs flex items-center justify-center mb-2.5">
-                  2
-                </div>
-                <div className="text-sm font-bold text-slate-900">Check the details</div>
-                <p className="text-xs text-slate-500 mt-1">It reads fast, but you know your career best. Fix anything it got wrong.</p>
-              </div>
-            </div>
-            <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
-              <div>
-                <div className="w-8 h-8 mx-auto rounded-full bg-blue-100 text-blue-700 font-extrabold text-xs flex items-center justify-center mb-2.5">
-                  3
-                </div>
-                <div className="text-sm font-bold text-slate-900">Download a clean version</div>
-                <p className="text-xs text-slate-500 mt-1">Simple, single-column, recruiter-friendly.</p>
-              </div>
-            </div>
-            <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
-              <div>
-                <div className="w-8 h-8 mx-auto rounded-full bg-blue-100 text-blue-700 font-extrabold text-xs flex items-center justify-center mb-2.5">
-                  4
-                </div>
-                <div className="text-sm font-bold text-slate-900">Check the fit</div>
-                <p className="text-xs text-slate-500 mt-1">See where you match and what&apos;s missing, before you hit apply.</p>
-              </div>
-            </div>
-          </div>
-          <div className="mt-6 text-center">
-            <Link
-              href="/early-access"
-              className="inline-flex items-center justify-center gap-2 bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-sm sm:text-base px-6 py-3 min-h-[44px] rounded-xl shadow-sm transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
-            >
-              <span>Try AI resume tools</span>
-              <ArrowRight className="w-4 h-4" />
-            </Link>
-          </div>
-        </div>
       </section>
 
-      {/* ========================================================================= */}
-      {/* 5. CTA BAND (Blue #2563EB, Free Preview style)                            */}
-      {/* ========================================================================= */}
-      <section className="bg-[#2563EB] text-white py-16 sm:py-20 lg:py-24 relative overflow-hidden">
-        <div className="absolute inset-0 pointer-events-none opacity-10 bg-[radial-gradient(#fff_1px,transparent_1px)] [background-size:24px_24px]" />
-        <div className="max-w-3xl mx-auto px-6 text-center relative z-10 space-y-4 sm:space-y-5">
-          <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight">
-            Free preview
-          </h2>
-          <p className="text-white/90 text-base sm:text-lg max-w-xl mx-auto leading-relaxed font-normal">
-            No commitment. Just window shopping for your dream job. Job maxxing starts here.
-          </p>
-          <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
-            <WhiteHeroButton onClick={() => router.push("/early-access")} className="px-8 min-w-[200px]">
-              View Jobs
-            </WhiteHeroButton>
-            <Link
-              href="/early-access"
-              className="inline-flex items-center justify-center gap-2 bg-blue-700 hover:bg-blue-800 text-white border border-white/30 font-bold text-sm sm:text-base px-6 py-3.5 min-h-[44px] rounded-xl shadow-md transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
-            >
-              <span>See my Ideal Match</span>
-              <ArrowRight className="w-4 h-4" />
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      {/* ========================================================================= */}
-      {/* 5B. GLOBAL COVERAGE SECTION (Dotted Wireframe Globe + Details)            */}
-      {/* ========================================================================= */}
+      {/* (5) GLOBAL COVERAGE SECTION (Dotted Wireframe Globe + Details) */}
       <section className="max-w-6xl mx-auto px-4 py-16 sm:py-24">
         <div className="grid grid-cols-1 lg:grid-cols-2 items-center gap-10 lg:gap-12">
           {/* Right-side text block (stacked first on mobile via order-1) */}
@@ -266,9 +110,32 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ========================================================================= */}
-      {/* 6. FOUNDER CARD (Centered bordered card ~670px)                           */}
-      {/* ========================================================================= */}
+      {/* (6) CTA BAND (Blue #2563EB, Free Preview style) */}
+      <section className="bg-[#2563EB] text-white py-16 sm:py-20 lg:py-24 relative overflow-hidden">
+        <div className="absolute inset-0 pointer-events-none opacity-10 bg-[radial-gradient(#fff_1px,transparent_1px)] [background-size:24px_24px]" />
+        <div className="max-w-3xl mx-auto px-6 text-center relative z-10 space-y-4 sm:space-y-5">
+          <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight">
+            Free preview
+          </h2>
+          <p className="text-white/90 text-base sm:text-lg max-w-xl mx-auto leading-relaxed font-normal">
+            No commitment. Just window shopping for your dream job. Job maxxing starts here.
+          </p>
+          <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
+            <WhiteHeroButton onClick={() => router.push("/early-access")} className="px-8 min-w-[200px]">
+              View Jobs
+            </WhiteHeroButton>
+            <Link
+              href="/early-access"
+              className="inline-flex items-center justify-center gap-2 bg-blue-700 hover:bg-blue-800 text-white border border-white/30 font-bold text-sm sm:text-base px-6 py-3.5 min-h-[48px] rounded-xl shadow-md transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+            >
+              <span>See my Ideal Match</span>
+              <ArrowRight className="w-4 h-4" />
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* (7) BIO (Founder Card) */}
       <section className="pt-10 pb-8 sm:pt-12 sm:pb-10 lg:pt-14 lg:pb-12 max-w-content mx-auto px-6 w-full">
         <div className="max-w-[670px] mx-auto bg-white border border-[#E4E4E7] rounded-xl p-6 sm:p-8 shadow-sm">
           <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 text-center sm:text-left">
@@ -286,7 +153,7 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* Right: Name, role, story, 3 stats */}
+            {/* Right: Name, role, story */}
             <div className="space-y-3">
               <div>
                 <h3 className="text-2xl font-bold text-[#09090B]">Orissa here!</h3>
@@ -335,14 +202,10 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ========================================================================= */}
-      {/* 6. EXAMPLE FEEDBACK (12 scrolling sample cards)                           */}
-      {/* ========================================================================= */}
+      {/* FEEDBACK / TESTIMONIALS */}
       <Testimonials />
 
-      {/* ========================================================================= */}
-      {/* 8. FAQ (Gray-100 bg #F3F4F6, centered H2, 5 Q&A items, max-width ~670px) */}
-      {/* ========================================================================= */}
+      {/* FAQ (Gray-100 bg #F3F4F6, centered H2, 5 Q&A items, max-width ~670px) */}
       <section className="bg-[#F3F4F6] py-16 sm:py-20 lg:py-24">
         <div className="max-w-[670px] mx-auto px-6">
           <div className="text-center mb-8">
@@ -376,9 +239,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ========================================================================= */}
-      {/* 10. CONTACT (Gray-50 bg #F9FAFB, id="contact")                            */}
-      {/* ========================================================================= */}
+      {/* CONTACT US (Gray-50 bg #F9FAFB, id="contact") */}
       <section id="contact" className="bg-[#F9FAFB] py-16 sm:py-20 border-t border-gray-200/60">
         <div className="max-w-xl mx-auto px-6 text-center space-y-3">
           <h2 className="text-3xl font-bold sm:text-4xl md:text-[40px] md:leading-[1.2] tracking-tight text-[#09090B]">
@@ -398,23 +259,10 @@ export default function HomePage() {
         </div>
       </section>
 
-
-
-      {/* ========================================================================= */}
-      {/* 11. CREDIBILITY SECTION "Real numbers, not promises"                      */}
-      {/* ========================================================================= */}
+      {/* (8) CREDIBILITY SECTION "Real numbers, not promises" */}
       <LandingCredibilitySection />
 
-      
-      {/* JOBS JUST ADDED TICKER STRIP */}
-      <LandingJobsTickerStrip />
-
-      {/* 12. PRODUCT FEATURES SECTION */}
-      <LandingFeaturesSection />
-
-      {/* ========================================================================= */}
-      {/* 13. FOOTER (Navy #090E34) & BackToTop Button                              */}
-      {/* ========================================================================= */}
+      {/* (9) FOOTER (Navy #090E34) & BackToTop Button */}
       <Footer />
 
       {/* Category selection modal triggered by both "View Jobs" buttons */}

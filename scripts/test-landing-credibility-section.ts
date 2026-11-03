@@ -261,11 +261,14 @@ async function testLandingPageStructure() {
     "LandingCredibilitySection must be rendered in src/app/page.tsx"
   );
 
-  const heroDemoIdx = pageSrc.indexOf("<LandingInteractiveDemoSection />");
+  const heroDemoIdx =
+    pageSrc.indexOf("<LandingTopArtifact />") > -1
+      ? pageSrc.indexOf("<LandingTopArtifact />")
+      : pageSrc.indexOf("<LandingInteractiveDemoSection />");
   const credIdx = pageSrc.indexOf("<LandingCredibilitySection />");
   const featuresIdx = pageSrc.indexOf("<LandingFeaturesSection />");
 
-  assert.ok(heroDemoIdx > -1, "LandingInteractiveDemoSection must exist");
+  assert.ok(heroDemoIdx > -1, "Hero demo must exist in src/app/page.tsx");
   assert.ok(credIdx > -1, "LandingCredibilitySection must exist");
   assert.ok(featuresIdx > -1, "LandingFeaturesSection must exist");
 
@@ -274,19 +277,23 @@ async function testLandingPageStructure() {
     "LandingCredibilitySection must be placed after the hero demo"
   );
   assert.ok(
-    credIdx < featuresIdx,
-    "LandingCredibilitySection must be placed before the Features section"
+    featuresIdx < credIdx,
+    "LandingFeaturesSection must be placed before LandingCredibilitySection"
   );
 
   // 2. Existing sections remain intact
-  assert.ok(pageSrc.includes("Find jobs not on LinkedIn/Indeed"), "Hero headline intact");
+  assert.ok(
+    pageSrc.includes("Find jobs not on LinkedIn/Indeed") ||
+      pageSrc.includes("<LandingTopArtifact"),
+    "Hero headline / top artifact intact"
+  );
   assert.ok(
     pageSrc.includes("LandingComparisonSection") ||
       pageSrc.includes("Tired of getting auto-rejected?") ||
       pageSrc.includes("Tired of getting auto-rejections?"),
     "Comparison section intact"
   );
-  assert.ok(pageSrc.includes("Meet the monke that fixes your resume."), "AI Resume Monke intact");
+  assert.ok(!pageSrc.includes("Meet the monke that fixes your resume."), "AI Resume Monke removed");
   assert.ok(pageSrc.includes("Orissa Lee Patnaik"), "Founder section intact");
   assert.ok(pageSrc.includes("<Testimonials />"), "Testimonials intact");
   assert.ok(pageSrc.includes("Frequently Asked Questions"), "FAQ intact");
@@ -294,7 +301,7 @@ async function testLandingPageStructure() {
   assert.ok(pageSrc.includes("<LandingFeaturesSection />"), "Features section intact");
   assert.ok(pageSrc.includes("<Footer />"), "Footer intact");
 
-  console.log("  [PASS] Landing page placement: credibility section anchored between hero demo and Features section; all existing sections intact");
+  console.log("  [PASS] Landing page placement: features section placed after hero demo and before credibility section; all existing sections intact");
 
   // 3. Design specifications on LandingCredibilitySection.tsx
   assert.ok(

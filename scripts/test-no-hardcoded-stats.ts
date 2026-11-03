@@ -193,7 +193,8 @@ check("Top 10 server routes compute real active corpus dynamically from jobs_pub
 
 check("Landing source contains no hardcoded sample jobs (Tenable, 106,000, 141,333) and uses clear sample illustration", () => {
   const landingPath = path.resolve(process.cwd(), "src", "app", "page.tsx");
-  const demoPath = path.resolve(process.cwd(), "src", "components", "LandingInteractiveDemoSection.tsx");
+  const artifactPath = path.resolve(process.cwd(), "src", "components", "LandingTopArtifact.tsx");
+  const demoPath = fs.existsSync(artifactPath) ? artifactPath : path.resolve(process.cwd(), "src", "components", "LandingInteractiveDemoSection.tsx");
   const landingContent = fs.readFileSync(landingPath, "utf8");
   const demoContent = fs.readFileSync(demoPath, "utf8");
   const combined = `${landingContent}\n${demoContent}`;
@@ -207,12 +208,39 @@ check("Landing source contains no hardcoded sample jobs (Tenable, 106,000, 141,3
   }
 
   assert.ok(
-    demoContent.includes("Illustration - sample data"),
+    demoContent.includes("Demo with sample jobs") || demoContent.includes("Illustration - sample data"),
     "Landing demo must clearly label sample data as illustration"
   );
   assert.ok(
     !demoContent.includes('"Verified Employer"'),
     "Landing demo must not contain 'Verified Employer'"
+  );
+});
+
+check("LandingJobHubStatsSection renders no fake numbers and hides on empty data", () => {
+  const compPath = path.resolve(process.cwd(), "src", "components", "LandingJobHubStatsSection.tsx");
+  assert.ok(fs.existsSync(compPath), "LandingJobHubStatsSection.tsx must exist");
+  const content = fs.readFileSync(compPath, "utf8");
+
+  for (const forbidden of ["16,423", "16,000+", "61,000+", "12,000+", "4.5 million", "150+"]) {
+    assert.strictEqual(
+      content.includes(forbidden),
+      false,
+      `LandingJobHubStatsSection must not contain forbidden marketing figure "${forbidden}"`
+    );
+  }
+
+  for (const forbiddenText of ["Trustpilot", "OpenAI TOP PICK", "Product Hunt"]) {
+    assert.strictEqual(
+      content.toLowerCase().includes(forbiddenText.toLowerCase()),
+      false,
+      `LandingJobHubStatsSection must not contain disallowed claim "${forbiddenText}"`
+    );
+  }
+
+  assert.ok(
+    content.includes("return null"),
+    "LandingJobHubStatsSection must return null when stats are unavailable or missing"
   );
 });
 

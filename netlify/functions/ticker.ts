@@ -84,6 +84,7 @@ export async function handler(event?: any) {
 
     const TARGET_ITEMS = 20;
     const MAX_PER_COMPANY = 2;
+
     const PAGE_SIZE = 100;
     const MAX_CANDIDATE_ROWS = 500;
     const MAX_FUTURE_SKEW_MS = 5 * 60 * 1000; // 5 minutes

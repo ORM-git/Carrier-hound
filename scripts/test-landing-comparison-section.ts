@@ -49,12 +49,18 @@ async function runTests() {
     "LandingComparisonSection must be rendered in src/app/page.tsx"
   );
 
-  const demoIdx = pageSrc.indexOf("<LandingInteractiveDemoSection />");
+  const demoIdx =
+    pageSrc.indexOf("<LandingTopArtifact />") > -1
+      ? pageSrc.indexOf("<LandingTopArtifact />")
+      : pageSrc.indexOf("<LandingInteractiveDemoSection />");
   const compIdx = pageSrc.indexOf("<LandingComparisonSection />");
-  const resumeMonkeIdx = pageSrc.indexOf("AI Resume Monke");
   assert.ok(
-    demoIdx > -1 && compIdx > demoIdx && resumeMonkeIdx > compIdx,
-    "LandingComparisonSection must be placed between Hero demo and AI Resume Monke subsection"
+    demoIdx > -1 && compIdx > demoIdx,
+    "LandingComparisonSection must be placed after Hero demo"
+  );
+  assert.ok(
+    !pageSrc.includes("AI Resume Monke"),
+    "AI Resume Monke section must be removed from page.tsx"
   );
   console.log("  [PASS] Page integration & section placement verified");
 

@@ -68,6 +68,8 @@ const SUITE_CLASSIFICATIONS = Object.freeze({
   "scripts/test-plan-picker.ts": "offline",
   "scripts/test-plan-quota.ts": "offline",
   "scripts/test-landing-top-artifact.ts": "offline",
+  "scripts/test-landing-feature-visuals.ts": "offline",
+  "scripts/test-landing-job-hub-stats.ts": "offline",
   "scripts/test-quota-consume-razorpay.ts": "offline",
   "scripts/test-plan-price-sync.ts": "offline",
 
