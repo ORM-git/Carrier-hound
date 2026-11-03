@@ -12,8 +12,19 @@ export interface ConsumeResult {
   source?: QuotaSource;
   credit_id?: string | null;
   alreadyConsumed?: boolean;
+  cachedResult?: any;
   code?: "PRO_REQUIRED" | "DAILY_LIMIT_REACHED" | "QUOTA_EXHAUSTED" | "DATABASE_ERROR";
   error?: string;
+}
+
+export const IDEMPOTENCY_KEY_REGEX = /^[A-Za-z0-9_.:-]+$/;
+export const IDEMPOTENCY_KEY_MAX_LENGTH = 128;
+
+export function isValidIdempotencyKey(key: unknown): key is string {
+  if (typeof key !== "string") return false;
+  const trimmed = key.trim();
+  if (trimmed.length < 1 || trimmed.length > IDEMPOTENCY_KEY_MAX_LENGTH) return false;
+  return IDEMPOTENCY_KEY_REGEX.test(trimmed);
 }
 
 export interface RefundResult {
@@ -96,8 +107,12 @@ export async function consumeSet(
     return { success: false, code: "QUOTA_EXHAUSTED", error: `Invalid quota kind '${kind}'` };
   }
 
-  if (!idempotencyKey || typeof idempotencyKey !== "string") {
-    return { success: false, code: "DATABASE_ERROR", error: "Idempotency key required" };
+  if (!isValidIdempotencyKey(idempotencyKey)) {
+    return {
+      success: false,
+      code: "DATABASE_ERROR",
+      error: `Invalid idempotency key format. Must be 1-${IDEMPOTENCY_KEY_MAX_LENGTH} characters matching ${IDEMPOTENCY_KEY_REGEX}`,
+    };
   }
 
   try {
@@ -143,6 +158,7 @@ export async function consumeSet(
             source: userSetRes.source as QuotaSource,
             credit_id: userSetRes.credit_id || null,
             alreadyConsumed: Boolean(userSetRes.already_consumed),
+            cachedResult: userSetRes.result || null,
           };
         }
         return {
@@ -173,6 +189,7 @@ export async function consumeSet(
             success: true,
             source: "plan",
             alreadyConsumed: Boolean(planRes.already_consumed),
+            cachedResult: planRes.result || null,
           };
         }
 
@@ -201,6 +218,7 @@ export async function consumeSet(
             source: "addon",
             credit_id: addonRes.credit_id || null,
             alreadyConsumed: Boolean(addonRes.already_consumed),
+            cachedResult: addonRes.result || null,
           };
         }
 
@@ -234,7 +252,8 @@ export async function consumeSet(
 export async function refundSet(
   userId: string,
   idempotencyKey: string,
-  now: Date = new Date()
+  now: Date = new Date(),
+  kind?: QuotaKind
 ): Promise<RefundResult> {
   if (!userId || !idempotencyKey) {
     return { success: false, refunded: false, error: "Missing userId or idempotencyKey" };
@@ -248,6 +267,7 @@ export async function refundSet(
       const { data: rpcRes, error: rpcErr } = await supabaseAdmin.rpc("refund_plan_or_addon_set", {
         p_user_id: userId,
         p_idempotency_key: idempotencyKey,
+        ...(kind ? { p_kind: kind } : {}),
       });
 
       if (!rpcErr && rpcRes && rpcRes.success) {
@@ -263,12 +283,17 @@ export async function refundSet(
     }
 
     // 2. Fallback: Restore exact credit row from usage event and delete event
-    const { data: event, error: selectErr } = await supabaseAdmin
+    let query = supabaseAdmin
       .from("plan_usage_events")
       .select("id, source, credit_id")
       .eq("user_id", userId)
-      .eq("idempotency_key", idempotencyKey)
-      .maybeSingle();
+      .eq("idempotency_key", idempotencyKey);
+
+    if (kind) {
+      query = query.eq("kind", kind);
+    }
+
+    const { data: event, error: selectErr } = await query.maybeSingle();
 
     if (selectErr || !event) {
       return { success: true, refunded: false };
