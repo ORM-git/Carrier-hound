@@ -1,0 +1,540 @@
+/**
+ * scripts/test-netlify-billing.ts
+ *
+ * Comprehensive offline verification suite for Netlify serverless billing functions:
+ * 1. netlify/functions/billing-razorpay-order.ts
+ * 2. netlify/functions/billing-razorpay-verify.ts
+ * 3. netlify/functions/billing-razorpay-webhook.ts
+ *
+ * Verifies all 5 core security requirements:
+ * - Flag off (503 BILLING_DISABLED when NEXT_PUBLIC_BILLING_ENABLED !== "true")
+ * - No auth / invalid session (401 on order and verify)
+ * - Bad signature (400 INVALID_SIGNATURE on verify and webhook)
+ * - Tampered amount / mismatched plan (400 on verify)
+ * - Duplicate webhook (200 alreadyProcessed: true via webhook_events deduplication)
+ * - Happy paths: authoritative server pricing (Weekly 692, Monthly 1499, Addons 149/399/699),
+ *   add-on Pro prerequisite check, idempotent already-paid verify, and RPC fulfilment.
+ *
+ * Includes negative control (--negative-control) to prove non-zero exit on invalid conditions.
+ */
+
+import assert from "assert";
+import crypto from "crypto";
+import { createHandler as createOrderHandler } from "../netlify/functions/billing-razorpay-order";
+import { createHandler as createVerifyHandler } from "../netlify/functions/billing-razorpay-verify";
+import { createHandler as createWebhookHandler } from "../netlify/functions/billing-razorpay-webhook";
+
+const TEST_SECRET = "rzp_test_secret_key_1234567890";
+const TEST_KEY_ID = "rzp_test_key_1234567890";
+const TEST_WEBHOOK_SECRET = "rzp_webhook_secret_abcdef12345";
+
+interface MockDbState {
+  orders: Map<string, any>;
+  webhookEvents: Set<string>;
+  subscriptions: Map<string, any>;
+  addonCredits: Map<string, any>;
+  rpcFulfilCalls: Array<{ orderId: string; userId: string }>;
+}
+
+function createMockSupabase(db: MockDbState, validTokens: Record<string, any>) {
+  return () => ({
+    auth: {
+      getUser: async (token: string) => {
+        const user = validTokens[token];
+        if (!user) {
+          return { data: { user: null }, error: new Error("Invalid JWT token") };
+        }
+        return { data: { user }, error: null };
+      },
+    },
+    from: (table: string) => {
+      let selectedFields = "*";
+      let filterOrderId: string | null = null;
+      let filterUserId: string | null = null;
+
+      const queryObj: any = {
+        select: (fields = "*") => {
+          selectedFields = fields;
+          return queryObj;
+        },
+        eq: (col: string, val: any) => {
+          if (col === "provider_order_id" || col === "id") filterOrderId = val;
+          if (col === "user_id") filterUserId = val;
+          return queryObj;
+        },
+        maybeSingle: async () => {
+          if (table === "payment_orders") {
+            const order = filterOrderId ? db.orders.get(filterOrderId) : null;
+            if (!order) return { data: null, error: null };
+            if (filterUserId && order.user_id !== filterUserId) {
+              return { data: null, error: null };
+            }
+            return { data: { ...order }, error: null };
+          }
+          return { data: null, error: null };
+        },
+        insert: async (row: any) => {
+          if (table === "payment_orders") {
+            db.orders.set(row.provider_order_id, {
+              ...row,
+              id: `po_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+              created_at: new Date().toISOString(),
+            });
+            return { error: null };
+          }
+          if (table === "webhook_events") {
+            if (db.webhookEvents.has(row.event_id)) {
+              return {
+                error: {
+                  code: "23505",
+                  message: `duplicate key value violates unique constraint "webhook_events_pkey"`,
+                },
+              };
+            }
+            db.webhookEvents.add(row.event_id);
+            return { error: null };
+          }
+          return { error: null };
+        },
+      };
+
+      return queryObj;
+    },
+    rpc: async (fnName: string, args: any) => {
+      if (fnName === "fulfil_payment_order") {
+        db.rpcFulfilCalls.push({
+          orderId: args.p_provider_order_id,
+          userId: args.p_user_id,
+        });
+        const order = db.orders.get(args.p_provider_order_id);
+        if (order) {
+          order.status = "paid";
+          order.paid_at = new Date().toISOString();
+        }
+        return {
+          data: {
+            success: true,
+            order_id: args.p_provider_order_id,
+            fulfilled: true,
+          },
+          error: null,
+        };
+      }
+      return { data: null, error: new Error(`Unknown RPC ${fnName}`) };
+    },
+  });
+}
+
+function computeSignature(payload: string, secret: string): string {
+  return crypto.createHmac("sha256", secret).update(payload).digest("hex");
+}
+
+async function runSuite() {
+  console.log("================================================================================");
+  console.log("     NETLIFY FUNCTIONS BILLING & SAFETY TEST SUITE [PASS-LOCAL]                 ");
+  console.log("================================================================================\n");
+
+  const isNegativeControl = process.argv.includes("--negative-control");
+  if (isNegativeControl) {
+    console.log("[NEGATIVE CONTROL MODE] Intentionally testing negative control assertion...");
+    assert.strictEqual(
+      1 + 1,
+      3,
+      "Negative control triggered: 1 + 1 is 2, not 3. Proving non-zero exit code."
+    );
+    return;
+  }
+
+  // Setup mock database and tokens
+  const mockDb: MockDbState = {
+    orders: new Map(),
+    webhookEvents: new Set(),
+    subscriptions: new Map(),
+    addonCredits: new Map(),
+    rpcFulfilCalls: [],
+  };
+
+  const validUser = { id: "user_pro_123", email: "candidate@example.com" };
+  const freeUser = { id: "user_free_456", email: "free@example.com" };
+
+  const validTokens: Record<string, any> = {
+    "valid-token-pro": validUser,
+    "valid-token-free": freeUser,
+  };
+
+  const mockAdminGetter = createMockSupabase(mockDb, validTokens);
+
+  let mockRzpOrderCounter = 1;
+  const mockFetch = (async (url: string, opts: any) => {
+    if (url === "https://api.razorpay.com/v1/orders") {
+      const parsedBody = JSON.parse(opts.body);
+      const generatedId = `order_test_${mockRzpOrderCounter++}_${Date.now()}`;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          id: generatedId,
+          amount: parsedBody.amount,
+          currency: parsedBody.currency,
+          status: "created",
+        }),
+      };
+    }
+    throw new Error(`Unexpected fetch call to ${url}`);
+  }) as any;
+
+  const mockEntitlement = async (userId: string) => {
+    if (userId === "user_pro_123") {
+      return { isPro: true, status: "active", planName: "Monthly" };
+    }
+    return { isPro: false, status: "none", planName: "Free Tier" };
+  };
+
+  const orderHandler = createOrderHandler({
+    getSupabaseAdmin: mockAdminGetter,
+    getServerEntitlement: mockEntitlement,
+    fetchFn: mockFetch,
+  });
+
+  const verifyHandler = createVerifyHandler({
+    getSupabaseAdmin: mockAdminGetter,
+  });
+
+  const webhookHandler = createWebhookHandler({
+    getSupabaseAdmin: mockAdminGetter,
+  });
+
+  // Preserve original env vars
+  const origBilling = process.env.NEXT_PUBLIC_BILLING_ENABLED;
+  const origKeyId = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
+  const origKeySecret = process.env.RAZORPAY_KEY_SECRET;
+  const origWebhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+
+  try {
+    process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = TEST_KEY_ID;
+    process.env.RAZORPAY_KEY_SECRET = TEST_SECRET;
+    process.env.RAZORPAY_WEBHOOK_SECRET = TEST_WEBHOOK_SECRET;
+
+    // ---------------------------------------------------------------------------
+    // TEST 1: Flag Off (NEXT_PUBLIC_BILLING_ENABLED !== "true")
+    // ---------------------------------------------------------------------------
+    console.log("Test 1: Verifying all 3 functions reject with 503 BILLING_DISABLED when flag is off...");
+    process.env.NEXT_PUBLIC_BILLING_ENABLED = "false";
+
+    const orderFlagOff = await orderHandler({
+      httpMethod: "POST",
+      headers: { authorization: "Bearer valid-token-pro" },
+      body: JSON.stringify({ planCode: "monthly" }),
+    });
+    assert.strictEqual(orderFlagOff.statusCode, 503);
+    assert.strictEqual(JSON.parse(orderFlagOff.body).code, "BILLING_DISABLED");
+
+    const verifyFlagOff = await verifyHandler({
+      httpMethod: "POST",
+      headers: { authorization: "Bearer valid-token-pro" },
+      body: JSON.stringify({ order_id: "order_123", payment_id: "pay_123", razorpay_signature: "sig" }),
+    });
+    assert.strictEqual(verifyFlagOff.statusCode, 503);
+    assert.strictEqual(JSON.parse(verifyFlagOff.body).code, "BILLING_DISABLED");
+
+    const webhookFlagOff = await webhookHandler({
+      httpMethod: "POST",
+      headers: { "x-razorpay-signature": "sig" },
+      body: JSON.stringify({ event: "order.paid" }),
+    });
+    assert.strictEqual(webhookFlagOff.statusCode, 503);
+    assert.strictEqual(JSON.parse(webhookFlagOff.body).code, "BILLING_DISABLED");
+
+    console.log("  -> [PASS-LOCAL] All endpoints return 503 BILLING_DISABLED when flag is off.");
+
+    // Turn billing flag ON for subsequent tests
+    process.env.NEXT_PUBLIC_BILLING_ENABLED = "true";
+
+    // ---------------------------------------------------------------------------
+    // TEST 2: No Auth & Invalid Session Checks
+    // ---------------------------------------------------------------------------
+    console.log("\nTest 2: Verifying no-auth and invalid session token rejections (401)...");
+
+    // 2A: Missing auth header on order
+    const orderNoAuth = await orderHandler({
+      httpMethod: "POST",
+      headers: {},
+      body: JSON.stringify({ planCode: "weekly" }),
+    });
+    assert.strictEqual(orderNoAuth.statusCode, 401);
+    assert(JSON.parse(orderNoAuth.body).error.includes("authorization header"));
+
+    // 2B: Invalid Bearer token on order
+    const orderBadToken = await orderHandler({
+      httpMethod: "POST",
+      headers: { authorization: "Bearer invalid-tampered-token" },
+      body: JSON.stringify({ planCode: "weekly" }),
+    });
+    assert.strictEqual(orderBadToken.statusCode, 401);
+    assert(JSON.parse(orderBadToken.body).error.includes("Invalid user session"));
+
+    // 2C: Missing auth header on verify
+    const verifyNoAuth = await verifyHandler({
+      httpMethod: "POST",
+      headers: {},
+      body: JSON.stringify({ order_id: "order_1", payment_id: "pay_1", razorpay_signature: "sig" }),
+    });
+    assert.strictEqual(verifyNoAuth.statusCode, 401);
+
+    // 2D: Invalid Bearer token on verify
+    const verifyBadToken = await verifyHandler({
+      httpMethod: "POST",
+      headers: { authorization: "Bearer invalid-token" },
+      body: JSON.stringify({ order_id: "order_1", payment_id: "pay_1", razorpay_signature: "sig" }),
+    });
+    assert.strictEqual(verifyBadToken.statusCode, 401);
+
+    console.log("  -> [PASS-LOCAL] Missing and invalid bearer credentials strictly return 401.");
+
+    // ---------------------------------------------------------------------------
+    // TEST 3: Authoritative Pricing & Order Creation Happy Path
+    // ---------------------------------------------------------------------------
+    console.log("\nTest 3: Verifying server-authoritative order creation and Pro check on add-ons...");
+
+    // 3A: Weekly plan order (client specifies tampered amount: 1 rupee; server must force 69200 paise)
+    const weeklyOrderRes = await orderHandler({
+      httpMethod: "POST",
+      headers: { authorization: "Bearer valid-token-pro" },
+      body: JSON.stringify({ planCode: "weekly", amount: 100 }), // Client attempts to pay 100 paise
+    });
+    assert.strictEqual(weeklyOrderRes.statusCode, 200);
+    const weeklyOrder = JSON.parse(weeklyOrderRes.body);
+    assert.strictEqual(weeklyOrder.amount, 69200, "Weekly plan MUST resolve to 69200 paise (Rs 692)");
+    assert.strictEqual(weeklyOrder.currency, "INR");
+    assert(weeklyOrder.orderId.startsWith("order_test_"));
+
+    // Verify row was created in payment_orders
+    const recordedWeeklyOrder = mockDb.orders.get(weeklyOrder.orderId);
+    assert(recordedWeeklyOrder, "Order must be recorded in payment_orders");
+    assert.strictEqual(recordedWeeklyOrder.status, "created");
+    assert.strictEqual(recordedWeeklyOrder.plan_code, "weekly");
+    assert.strictEqual(recordedWeeklyOrder.amount_paise, 69200);
+
+    // 3B: Monthly plan order
+    const monthlyOrderRes = await orderHandler({
+      httpMethod: "POST",
+      headers: { authorization: "Bearer valid-token-pro" },
+      body: JSON.stringify({ planCode: "monthly" }),
+    });
+    assert.strictEqual(monthlyOrderRes.statusCode, 200);
+    const monthlyOrder = JSON.parse(monthlyOrderRes.body);
+    assert.strictEqual(monthlyOrder.amount, 149900, "Monthly plan MUST resolve to 149900 paise (Rs 1,499)");
+
+    // 3C: Free user attempts to buy Add-on 10 -> MUST be rejected with 403 PRO_REQUIRED
+    const freeAddonRes = await orderHandler({
+      httpMethod: "POST",
+      headers: { authorization: "Bearer valid-token-free" },
+      body: JSON.stringify({ addonCode: "addon_10" }),
+    });
+    assert.strictEqual(freeAddonRes.statusCode, 403);
+    assert.strictEqual(JSON.parse(freeAddonRes.body).code, "PRO_REQUIRED");
+
+    // 3D: Pro user buys Add-on 10 -> Allowed, resolves to 14900 paise
+    const proAddonRes = await orderHandler({
+      httpMethod: "POST",
+      headers: { authorization: "Bearer valid-token-pro" },
+      body: JSON.stringify({ addonCode: "addon_10" }),
+    });
+    assert.strictEqual(proAddonRes.statusCode, 200);
+    const proAddonOrder = JSON.parse(proAddonRes.body);
+    assert.strictEqual(proAddonOrder.amount, 14900, "Addon 10 must resolve to 14900 paise (Rs 149)");
+
+    console.log("  -> [PASS-LOCAL] Server-authoritative pricing and add-on Pro gating verified.");
+
+    // ---------------------------------------------------------------------------
+    // TEST 4: Signature Verification & Bad Signature Rejections
+    // ---------------------------------------------------------------------------
+    console.log("\nTest 4: Verifying bad signatures are rejected with 400 INVALID_SIGNATURE...");
+
+    const targetOrderId = monthlyOrder.orderId;
+    const samplePaymentId = "pay_test_pymt_987654";
+    const validSignature = computeSignature(`${targetOrderId}|${samplePaymentId}`, TEST_SECRET);
+    const tamperedSignature = computeSignature(`${targetOrderId}|pay_tampered_id`, TEST_SECRET);
+
+    // 4A: Tampered signature on verify
+    const verifyBadSig = await verifyHandler({
+      httpMethod: "POST",
+      headers: { authorization: "Bearer valid-token-pro" },
+      body: JSON.stringify({
+        order_id: targetOrderId,
+        payment_id: samplePaymentId,
+        razorpay_signature: tamperedSignature,
+      }),
+    });
+    assert.strictEqual(verifyBadSig.statusCode, 400);
+    assert.strictEqual(JSON.parse(verifyBadSig.body).code, "INVALID_SIGNATURE");
+
+    // 4B: Webhook bad signature
+    const webhookRawBody = JSON.stringify({
+      event: "order.paid",
+      id: "evt_test_1001",
+      payload: {
+        order: { entity: { id: targetOrderId } },
+        payment: { entity: { id: samplePaymentId, notes: { user_id: validUser.id } } },
+      },
+    });
+    const webhookBadSig = await webhookHandler({
+      httpMethod: "POST",
+      headers: { "x-razorpay-signature": "completely_invalid_hex_signature" },
+      body: webhookRawBody,
+    });
+    assert.strictEqual(webhookBadSig.statusCode, 400);
+    assert.strictEqual(JSON.parse(webhookBadSig.body).code, "INVALID_SIGNATURE");
+
+    console.log("  -> [PASS-LOCAL] Invalid signatures rejected with 400 on verify and webhook.");
+
+    // ---------------------------------------------------------------------------
+    // TEST 5: Tampered Amount & Mismatched Order Row
+    // ---------------------------------------------------------------------------
+    console.log("\nTest 5: Verifying tamper protection on payment verify...");
+
+    // 5A: Client sends altered amount (recorded = 149900, payload = 69200)
+    const verifyTamperedAmount = await verifyHandler({
+      httpMethod: "POST",
+      headers: { authorization: "Bearer valid-token-pro" },
+      body: JSON.stringify({
+        order_id: targetOrderId,
+        payment_id: samplePaymentId,
+        razorpay_signature: validSignature,
+        amount: 69200,
+      }),
+    });
+    assert.strictEqual(verifyTamperedAmount.statusCode, 400);
+    assert.strictEqual(JSON.parse(verifyTamperedAmount.body).code, "AMOUNT_MISMATCH");
+
+    // 5B: Client sends mismatched planCode (recorded = monthly, payload = weekly)
+    const verifyTamperedPlan = await verifyHandler({
+      httpMethod: "POST",
+      headers: { authorization: "Bearer valid-token-pro" },
+      body: JSON.stringify({
+        order_id: targetOrderId,
+        payment_id: samplePaymentId,
+        razorpay_signature: validSignature,
+        planCode: "weekly",
+      }),
+    });
+    assert.strictEqual(verifyTamperedPlan.statusCode, 400);
+    assert.strictEqual(JSON.parse(verifyTamperedPlan.body).code, "PLAN_MISMATCH");
+
+    // 5C: Non-existent order record
+    const fakeOrderId = "order_non_existent_404";
+    const fakeSig = computeSignature(`${fakeOrderId}|${samplePaymentId}`, TEST_SECRET);
+    const verifyNonExistent = await verifyHandler({
+      httpMethod: "POST",
+      headers: { authorization: "Bearer valid-token-pro" },
+      body: JSON.stringify({
+        order_id: fakeOrderId,
+        payment_id: samplePaymentId,
+        razorpay_signature: fakeSig,
+      }),
+    });
+    assert.strictEqual(verifyNonExistent.statusCode, 404);
+    assert.strictEqual(JSON.parse(verifyNonExistent.body).code, "ORDER_NOT_FOUND");
+
+    console.log("  -> [PASS-LOCAL] Tampered amounts and mismatched orders successfully blocked.");
+
+    // ---------------------------------------------------------------------------
+    // TEST 6: Verify Happy Path & Idempotency
+    // ---------------------------------------------------------------------------
+    console.log("\nTest 6: Verifying verify fulfillment and repeat idempotency...");
+
+    mockDb.rpcFulfilCalls = [];
+    // 6A: First valid verify call
+    const verifySuccess = await verifyHandler({
+      httpMethod: "POST",
+      headers: { authorization: "Bearer valid-token-pro" },
+      body: JSON.stringify({
+        order_id: targetOrderId,
+        payment_id: samplePaymentId,
+        razorpay_signature: validSignature,
+      }),
+    });
+    assert.strictEqual(verifySuccess.statusCode, 200);
+    const verifyBody = JSON.parse(verifySuccess.body);
+    assert.strictEqual(verifyBody.success, true);
+    assert.strictEqual(mockDb.rpcFulfilCalls.length, 1, "Must call fulfil_payment_order RPC");
+    assert.strictEqual(mockDb.rpcFulfilCalls[0].orderId, targetOrderId);
+    assert.strictEqual(mockDb.rpcFulfilCalls[0].userId, validUser.id);
+
+    // 6B: Second verify call on same order -> Idempotent, returns alreadyPaid without re-fulfilling
+    const verifyRepeat = await verifyHandler({
+      httpMethod: "POST",
+      headers: { authorization: "Bearer valid-token-pro" },
+      body: JSON.stringify({
+        order_id: targetOrderId,
+        payment_id: samplePaymentId,
+        razorpay_signature: validSignature,
+      }),
+    });
+    assert.strictEqual(verifyRepeat.statusCode, 200);
+    const repeatBody = JSON.parse(verifyRepeat.body);
+    assert.strictEqual(repeatBody.alreadyPaid, true);
+    assert.strictEqual(mockDb.rpcFulfilCalls.length, 1, "Must NOT re-execute RPC on already paid order");
+
+    console.log("  -> [PASS-LOCAL] Verification fulfills order and handles repeat calls idempotently.");
+
+    // ---------------------------------------------------------------------------
+    // TEST 7: Webhook Deduplication and Asynchronous Fulfillment
+    // ---------------------------------------------------------------------------
+    console.log("\nTest 7: Verifying webhook deduplication and fulfilment on order.paid...");
+
+    const webhookOrderId = weeklyOrder.orderId;
+    const webhookPaymentId = "pay_webhook_live_12345";
+    const webhookPayload = JSON.stringify({
+      event: "order.paid",
+      id: "evt_unique_razorpay_event_999",
+      payload: {
+        order: { entity: { id: webhookOrderId } },
+        payment: { entity: { id: webhookPaymentId, notes: { user_id: validUser.id } } },
+      },
+    });
+
+    const validWebhookSig = computeSignature(webhookPayload, TEST_WEBHOOK_SECRET);
+
+    // 7A: First webhook delivery
+    mockDb.rpcFulfilCalls = [];
+    const webhookFirst = await webhookHandler({
+      httpMethod: "POST",
+      headers: { "x-razorpay-signature": validWebhookSig },
+      body: webhookPayload,
+    });
+    assert.strictEqual(webhookFirst.statusCode, 200);
+    const webhookFirstBody = JSON.parse(webhookFirst.body);
+    assert.strictEqual(webhookFirstBody.fulfilled, true);
+    assert.strictEqual(mockDb.rpcFulfilCalls.length, 1, "Webhook must trigger fulfil_payment_order");
+    assert.strictEqual(mockDb.rpcFulfilCalls[0].orderId, webhookOrderId);
+
+    // 7B: Duplicate webhook delivery (Razorpay retries after network timeout)
+    const webhookDuplicate = await webhookHandler({
+      httpMethod: "POST",
+      headers: { "x-razorpay-signature": validWebhookSig },
+      body: webhookPayload,
+    });
+    assert.strictEqual(webhookDuplicate.statusCode, 200);
+    const webhookDupBody = JSON.parse(webhookDuplicate.body);
+    assert.strictEqual(webhookDupBody.alreadyProcessed, true, "Duplicate webhook must be marked alreadyProcessed");
+    assert.strictEqual(mockDb.rpcFulfilCalls.length, 1, "Duplicate webhook MUST NOT trigger RPC again!");
+
+    console.log("  -> [PASS-LOCAL] Webhook deduplication successfully prevents double execution.");
+  } finally {
+    // Restore original env vars
+    process.env.NEXT_PUBLIC_BILLING_ENABLED = origBilling;
+    process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = origKeyId;
+    process.env.RAZORPAY_KEY_SECRET = origKeySecret;
+    process.env.RAZORPAY_WEBHOOK_SECRET = origWebhookSecret;
+  }
+
+  console.log("\n--------------------------------------------------------------------------------");
+  console.log("ALL 7 NETLIFY BILLING TEST SUITES PASSED [PASS-LOCAL]");
+  console.log("--------------------------------------------------------------------------------\n");
+}
+
+runSuite().catch((err) => {
+  console.error("Test suite failed:", err);
+  process.exit(1);
+});
