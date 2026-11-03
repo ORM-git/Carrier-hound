@@ -102,7 +102,7 @@ function run() {
 
   // Check 8: Footer: 4-column links block on white with top border #E2E8F0, copyright line
   const has4ColFooter = footerCode.includes("grid-cols-2 md:grid-cols-4") && footerCode.includes("border-t border-[#E2E8F0]");
-  const hasCopyright = footerCode.includes("CareerMonke Inc. All rights reserved.");
+  const hasCopyright = footerCode.includes("Olive Ridley Media Private Limited. All rights reserved.");
   if (!has4ColFooter || !hasCopyright) {
     failures.push("FOOTER FAIL: Footer must have simple 4-column links block on white with top border #E2E8F0 and copyright line.");
   } else {
