@@ -1,11 +1,11 @@
 /**
- * Test Suite: Landing Feature CTA & Outer Panel Adjustment
+ * Test Suite: Landing All Features CTA & Visual Panel Adjustment
  * Verifies:
- * 1. For row 'job-search': outer pale panel (bg-[#F8FAFC], border, shadow, padding) removed.
- * 2. CTA button 'Explore jobs' moved below the animation and horizontally centered.
- * 3. Text column for 'job-search' does not contain CTA button.
- * 4. Caption 'Illustration - sample data' visible beneath the centered button.
- * 5. Other rows ('tailored-resume', 'personalized-matches') remain unchanged with outer panel intact.
+ * 1. For all rows: outer pale panel (bg-[#F8FAFC], border, shadow, padding) removed.
+ * 2. All CTA buttons ('Explore jobs', 'Try AI resume tools', 'Find my matches') moved below animations and horizontally centered.
+ * 3. Text columns do not contain CTA buttons.
+ * 4. Caption 'Illustration - sample data' visible beneath each centered button.
+ * 5. Custom elements <cm-find-jobs />, <cm-tailor-resume />, <cm-job-matches /> preserved.
  * 6. Negative control verified.
  *
  * Run with: npx tsx scripts/test-landing-feature-cta.ts
@@ -19,11 +19,11 @@ import { spawnSync } from "node:child_process";
 const IS_NEGATIVE_CONTROL = process.argv.includes("--negative-control");
 
 console.log("================================================================================");
-console.log("TEST SUITE: Landing First Feature CTA & Visual Panel Adjustment");
+console.log("TEST SUITE: Landing All Features CTA & Visual Panel Adjustment");
 console.log("================================================================================\n");
 
 if (IS_NEGATIVE_CONTROL) {
-  console.log("Running NEGATIVE CONTROL: simulating pale panel on first feature...");
+  console.log("Running NEGATIVE CONTROL: simulating pale panel on features section...");
   assert.strictEqual("pale_panel_present", "must_not_be_present", "Simulated negative control failure");
   process.exit(0);
 }
@@ -46,36 +46,43 @@ const compPath = path.resolve(process.cwd(), "src/components/LandingFeaturesSect
 assert.ok(fs.existsSync(compPath), "LandingFeaturesSection.tsx must exist");
 const code = fs.readFileSync(compPath, "utf-8");
 
-// 1. First-row specific conditional
-check("Uses row.id === 'job-search' conditional", () => {
-  assert.match(code, /row\.id\s*===\s*["']job-search["']/, "Must check for row.id === 'job-search'");
+// 1. Removal of outer pale panel across all features
+check("Outer off-white panel removed from all features", () => {
+  assert.ok(!code.includes("bg-[#F8FAFC]"), "Must not contain bg-[#F8FAFC]");
+  assert.ok(!code.includes("border-gray-200/80"), "Must not contain border-gray-200/80 panel border");
+  assert.ok(!code.includes("p-3 sm:p-5"), "Must not contain panel padding p-3 sm:p-5");
 });
 
-// 2. Removal of outer pale panel on first feature
-check("Outer off-white panel removed on first feature", () => {
-  // In the first row branch, visual wrapper should NOT have bg-[#F8FAFC] or border-gray-200
-  assert.match(code, /isFirstRow\s*\?[\s\S]*?<div className="flex items-center justify-center overflow-hidden">[\s\S]*?{row\.visual}/,
-    "First row visual wrapper must not have bg-[#F8FAFC] or outer border");
+// 2. Uniform layout for all rows (no first-row conditional)
+check("Shared uniform structure without first-row divergence", () => {
+  assert.ok(!code.includes("isFirstRow"), "Should use clean shared structure without isFirstRow branch");
 });
 
-// 3. CTA moved below animation and horizontally centered
-check("CTA moved below animation and horizontally centered in visual column", () => {
-  assert.match(code, /isFirstRow\s*\?[\s\S]*?{row\.visual}[\s\S]*?<div className="flex justify-center[\s\S]*?<Link[\s\S]*?{row\.buttonText}/,
-    "CTA must be placed directly below visual in a centered container");
-  assert.match(code, /!isFirstRow\s*&&[\s\S]*?<Link/,
-    "Text column must only render Link when !isFirstRow");
+// 3. CTA moved below animation and horizontally centered in visual column
+check("All CTAs moved below animation and horizontally centered in visual column", () => {
+  assert.match(
+    code,
+    /<div className="flex items-center justify-center overflow-hidden">[\s\S]*?{row\.visual}[\s\S]*?<\/div>[\s\S]*?<div className="flex justify-center pt-2">[\s\S]*?<Link[\s\S]*?{row\.buttonText}[\s\S]*?<\/Link>[\s\S]*?<\/div>/,
+    "Visual must be immediately followed by centered CTA button container"
+  );
 });
 
-// 4. Caption preserved under the button
+// 4. Caption preserved under the centered button
 check("Caption 'Illustration - sample data' preserved under the button", () => {
-  assert.match(code, /isFirstRow\s*\?[\s\S]*?{row\.buttonText}[\s\S]*?Illustration - sample data/,
-    "Caption must follow the centered button for row 1");
+  assert.match(
+    code,
+    /{row\.buttonText}[\s\S]*?<\/Link>[\s\S]*?<\/div>[\s\S]*?<p className="text-center text-xs text-gray-400">[\s\S]*?Illustration - sample data[\s\S]*?<\/p>/,
+    "Caption must follow the centered button for every row"
+  );
 });
 
-// 5. Other rows preserve outer pale panel and text-column CTA
-check("Rows 2 and 3 retain original pale panel and text-column CTA", () => {
-  assert.match(code, /bg-\[#F8FAFC\] rounded-2xl border border-gray-200\/80 shadow-sm p-3 sm:p-5/,
-    "Original panel classes preserved for other rows");
+// 5. Text column has no Link or CTA button
+check("Text column contains only title and description (no CTA button)", () => {
+  assert.match(
+    code,
+    /<div className="lg:col-span-5 space-y-4 text-left">\s*<h3[\s\S]*?<\/h3>\s*<p[\s\S]*?<\/p>\s*<\/div>/,
+    "Text column should end after description"
+  );
 });
 
 // 6. Custom elements preserved unchanged
