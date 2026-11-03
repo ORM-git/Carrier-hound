@@ -42,7 +42,8 @@
     "react-select": "^5.8.1",
     "react-toastify": "^10.0.6",
     "tailwind-merge": "^2.5.4",
-    "three": "^0.186.1"
+    "three": "^0.186.1",
+    "undici": "^5.29.0"
   },
   "devDependencies": {
     "@cloudflare/next-on-pages": "^1.13.15",
