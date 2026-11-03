@@ -12,6 +12,7 @@ import {
   SourceStats,
 } from './types';
 import { detectCategory, slugify } from './utils/sanitizer';
+import { resolveCompanyLogo } from '../src/lib/companies/logoResolver';
 
 // ISO alpha-2 -> display name for the legacy `country` text column (kept in sync with country_code)
 const COUNTRY_NAMES: Record<string, string> = {
@@ -122,12 +123,13 @@ async function detectSchemaCapabilities(supabase: SupabaseClient): Promise<void>
   }
 }
 
-// Resolve or create company record in companies table
+// Resolve or create company record in companies table with logo resolution
 async function getOrCreateCompany(
   supabase: SupabaseClient,
   companyName: string,
   slug: string,
-  atsType: string
+  atsType: string,
+  sampleApplyUrl?: string
 ): Promise<string | null> {
   if (!hasCompaniesTable || !slug) return null;
   const cached = companyCache.get(slug);
@@ -136,13 +138,51 @@ async function getOrCreateCompany(
   try {
     const { data: existing } = await supabase
       .from('companies')
-      .select('id')
+      .select('id, logo_url, domain')
       .eq('slug', slug)
       .maybeSingle();
 
     if (existing?.id) {
       companyCache.set(slug, existing.id);
+
+      // Backfill missing logo_url at ingestion time if sample URL is present
+      if (!existing.logo_url) {
+        try {
+          const resolved = await resolveCompanyLogo(
+            { id: existing.id, name: companyName, slug, ats_type: atsType, domain: existing.domain },
+            sampleApplyUrl ? [{ apply_url: sampleApplyUrl }] : []
+          );
+          if (resolved?.imageUrl) {
+            await supabase
+              .from('companies')
+              .update({
+                logo_url: resolved.imageUrl,
+                ...(resolved.domain && !existing.domain ? { domain: resolved.domain } : {}),
+              })
+              .eq('id', existing.id);
+          }
+        } catch {
+          // Non-blocking for ingestion
+        }
+      }
+
       return existing.id;
+    }
+
+    // Resolve logo at insert time for new company
+    let initialLogoUrl: string | null = null;
+    let initialDomain: string | null = null;
+    try {
+      const resolved = await resolveCompanyLogo(
+        { id: 'pending', name: companyName, slug, ats_type: atsType },
+        sampleApplyUrl ? [{ apply_url: sampleApplyUrl }] : []
+      );
+      if (resolved?.imageUrl) {
+        initialLogoUrl = resolved.imageUrl;
+        initialDomain = resolved.domain || null;
+      }
+    } catch {
+      // Non-blocking for ingestion
     }
 
     const { data: inserted } = await supabase
@@ -154,6 +194,8 @@ async function getOrCreateCompany(
           ats_type: atsType,
           enabled: true,
           last_success_at: new Date().toISOString(),
+          ...(initialLogoUrl ? { logo_url: initialLogoUrl } : {}),
+          ...(initialDomain ? { domain: initialDomain } : {}),
         },
       ])
       .select('id')
@@ -364,7 +406,8 @@ async function main() {
           const isAts = isAtsSource(source.type);
           if (isAts && hasCompaniesTable) {
             const companyName = source.name.replace(/\s*\((?:Greenhouse|Lever|Ashby|SmartRecruiters|Recruitee|Workable)\)$/i, '').trim();
-            companyId = await getOrCreateCompany(supabase, companyName, source.target, source.type);
+            const sampleApplyUrl = validJobs[0]?.apply_url || validJobs[0]?.source_url;
+            companyId = await getOrCreateCompany(supabase, companyName, source.target, source.type, sampleApplyUrl);
           }
 
           // Live Supabase Sync in batches of 50

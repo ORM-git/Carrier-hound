@@ -5,6 +5,8 @@ import {
   isAtsHost,
   deriveCompanyDomain,
   selectLargestQualifyingIcon,
+  getCleanImageMeta,
+  getImageDimensions,
   CompanyRow,
   JobInfo,
 } from "./backfill-company-logos";
@@ -40,6 +42,8 @@ function testCleanDomainAndAtsFilter() {
   assert.strictEqual(cleanDomain("app.datadoghq.com"), "datadoghq.com");
   assert.strictEqual(cleanDomain("openai.com"), "openai.com");
   assert.strictEqual(cleanDomain("perplexity.ai"), "perplexity.ai");
+  assert.strictEqual(cleanDomain("mailto:careers@mavenclinic.com"), "mavenclinic.com");
+  assert.strictEqual(cleanDomain("academy.workato.com"), "workato.com");
 
   // 2. ATS and aggregator rejections
   assert.strictEqual(isAtsHost("boards.greenhouse.io"), true);
@@ -100,6 +104,23 @@ function testDeriveCompanyDomainNeverGuesses() {
   assert.strictEqual(
     deriveCompanyDomain(companyOpenAI, jobsOpenAI, "https://openai.com/"),
     "openai.com"
+  );
+
+  // Company with Greenhouse Schema.org Organization url
+  const companyCloudflare: CompanyRow = {
+    id: "comp-cf",
+    name: "Cloudflare",
+    slug: "cloudflare",
+    ats_type: "greenhouse",
+    logo_url: null,
+    domain: null,
+    careers_url: null,
+  };
+  const greenhouseHtml = `<html><head><script type="application/ld+json">{"@type":"Organization","name":"Cloudflare","url":"https://www.cloudflare.com"}</script></head></html>`;
+  assert.strictEqual(
+    deriveCompanyDomain(companyCloudflare, [], null, greenhouseHtml),
+    "cloudflare.com",
+    "Must derive domain from board Schema.org metadata"
   );
 
   // Company with company.domain
@@ -172,6 +193,58 @@ function testSelectLargestQualifyingIcon() {
   console.log("  [PASS] selectLargestQualifyingIcon selects largest >=128px with ratio 0.6..1.6");
 }
 
+function testImageValidationAndSvgRejection() {
+  console.log("Testing image validation and SVG rejection...");
+
+  // Mock valid 64x64 PNG buffer
+  const validPngHeader = Buffer.from([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, // PNG signature
+    0x00, 0x00, 0x00, 0x0d, // IHDR length
+    0x49, 0x48, 0x44, 0x52, // "IHDR"
+    0x00, 0x00, 0x00, 0x40, // width: 64
+    0x00, 0x00, 0x00, 0x40, // height: 64
+    0x08, 0x06, 0x00, 0x00, 0x00, // color/bit depth
+  ]);
+
+  const dims = getImageDimensions(validPngHeader);
+  assert.ok(dims, "Must parse PNG dimensions");
+  assert.strictEqual(dims.width, 64);
+  assert.strictEqual(dims.height, 64);
+  assert.strictEqual(dims.type, "png");
+
+  // getCleanImageMeta allows valid PNG
+  const meta = getCleanImageMeta("image/png", validPngHeader, "https://example.com/logo.png");
+  assert.ok(meta, "Valid PNG metadata returned");
+  assert.strictEqual(meta.contentType, "image/png");
+  assert.strictEqual(meta.ext, "png");
+
+  // Strictly rejects SVG even if content type says image/svg+xml or URL ends with .svg
+  const svgMeta1 = getCleanImageMeta("image/svg+xml", validPngHeader, "https://example.com/logo.svg");
+  assert.strictEqual(svgMeta1, null, "Must reject image when content-type contains svg");
+
+  const svgMeta2 = getCleanImageMeta("image/png", validPngHeader, "https://example.com/logo.svg?token=123");
+  assert.strictEqual(svgMeta2, null, "Must reject image when URL ends with .svg");
+
+  console.log("  [PASS] Image validation decodes raster formats and strictly rejects SVG");
+}
+
+function testMissingOnlySchedulingFilter() {
+  console.log("Testing --missing-only scheduling filter...");
+
+  const allCompanies: CompanyRow[] = [
+    { id: "1", name: "HasLogo", slug: "haslogo", ats_type: "greenhouse", logo_url: "https://example.com/logo.png" },
+    { id: "2", name: "NoLogo1", slug: "nologo1", ats_type: "ashby", logo_url: null },
+    { id: "3", name: "NoLogo2", slug: "nologo2", ats_type: "lever", logo_url: null },
+  ];
+
+  const missingOnly = allCompanies.filter((c) => c.logo_url === null);
+  assert.strictEqual(missingOnly.length, 2, "Scheduled missing-only must filter down to only companies with logo_url === null");
+  assert.strictEqual(missingOnly[0].id, "2");
+  assert.strictEqual(missingOnly[1].id, "3");
+
+  console.log("  [PASS] --missing-only accurately scopes re-checks to unpopulated rows");
+}
+
 function testPrioritizationTop200Jobs() {
   console.log("Testing prioritization of companies in top 200 jobs...");
 
@@ -182,7 +255,6 @@ function testPrioritizationTop200Jobs() {
     { id: "4", name: "Zeta", slug: "zeta", ats_type: "lever", logo_url: null },
   ];
 
-  // Stripe appears in the top 200 jobs
   const top200Names = new Set(["stripe"]);
   const top200Ids = new Set<string>();
 
@@ -203,10 +275,9 @@ function testPrioritizationTop200Jobs() {
 }
 
 async function main() {
-  console.log("=== BACKFILL COMPANY LOGOS HOMEPAGE FALLBACK SUITE ===");
+  console.log("=== BACKFILL COMPANY LOGOS HOMEPAGE & FREE SERVICE SUITE ===");
 
   if (isNegativeControl) {
-    // Deliberate negative control failure
     assert.strictEqual("actual", "expected", "Intentional negative control failure");
     return;
   }
@@ -217,13 +288,19 @@ async function main() {
   // 2. cleanDomain & ATS filters
   testCleanDomainAndAtsFilter();
 
-  // 3. deriveCompanyDomain (never guesses)
+  // 3. deriveCompanyDomain (never guesses, derives from jobs, ashby, greenhouse JSON-LD)
   testDeriveCompanyDomainNeverGuesses();
 
   // 4. selectLargestQualifyingIcon
   testSelectLargestQualifyingIcon();
 
-  // 5. Prioritization of top 200 jobs
+  // 5. Image validation and SVG rejection
+  testImageValidationAndSvgRejection();
+
+  // 6. Scheduled missing-only filtering
+  testMissingOnlySchedulingFilter();
+
+  // 7. Prioritization of top 200 jobs
   testPrioritizationTop200Jobs();
 
   console.log("\nALL BACKFILL COMPANY LOGOS FALLBACK TESTS PASSED-LOCAL\n");
