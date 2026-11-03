@@ -76,6 +76,21 @@ function LandingFooter() {
                     Terms & Conditions
                   </Link>
                 </li>
+                <li>
+                  <Link href="/refund-policy" prefetch={false} className={landingFooterLinkClass}>
+                    Cancellation & Refund Policy
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/shipping-and-delivery" prefetch={false} className={landingFooterLinkClass}>
+                    Shipping & Delivery
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/contact" prefetch={false} className={landingFooterLinkClass}>
+                    Contact Us
+                  </Link>
+                </li>
               </ul>
             </div>
 
@@ -123,7 +138,7 @@ function LandingFooter() {
 
         {/* Bottom row: copyright */}
         <div className="pt-tk-3 flex flex-col sm:flex-row items-center justify-between gap-tk-2 text-center sm:text-left">
-          <p className="text-tk-caption text-ink-subtle">© {new Date().getFullYear()} CareerMonke Inc. All rights reserved.</p>
+          <p className="text-tk-caption text-ink-subtle">© {new Date().getFullYear()} Olive Ridley Media Private Limited. All rights reserved.</p>
           <div className="flex flex-wrap items-center justify-center gap-x-tk-3">
             <Link href="/privacy-policy" className={landingBottomLinkClass}>
               Privacy
@@ -252,6 +267,21 @@ export default function Footer({ isGuide = false }: FooterProps) {
                 </Link>
               </li>
               <li>
+                <Link href="/refund-policy" prefetch={false} className={publicFooterLinkClass}>
+                  Cancellation & Refund Policy
+                </Link>
+              </li>
+              <li>
+                <Link href="/shipping-and-delivery" prefetch={false} className={publicFooterLinkClass}>
+                  Shipping & Delivery
+                </Link>
+              </li>
+              <li>
+                <Link href="/contact" prefetch={false} className={publicFooterLinkClass}>
+                  Contact Us
+                </Link>
+              </li>
+              <li>
                 <Link href="/privacy" prefetch={false} className={publicFooterLinkClass}>
                   Cookie Notice
                 </Link>
@@ -266,7 +296,7 @@ export default function Footer({ isGuide = false }: FooterProps) {
             <BrandIcon variant="full" width={110} height={44} className="h-7 w-auto" />
           </div>
           <p className="text-xs text-[#94A3B8]">
-            © {new Date().getFullYear()} CareerMonke Inc. All rights reserved.
+            © {new Date().getFullYear()} Olive Ridley Media Private Limited. All rights reserved.
           </p>
         </div>
       </div>
