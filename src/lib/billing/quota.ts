@@ -21,7 +21,7 @@ export const PLAN_DEFINITIONS: Record<PlanCode, PlanDefinition> = {
     code: "weekly",
     name: "Weekly",
     duration_days: 7,
-    price_paise: 49900,
+    price_paise: 69200,
     resume_quota: 15,
     cover_letter_quota: 15,
     quota_period_days: 7,
@@ -55,8 +55,111 @@ export const PLAN_DEFINITIONS: Record<PlanCode, PlanDefinition> = {
   },
 };
 
+export interface AddonPackDefinition {
+  code: string;
+  name: string;
+  price_paise: number;
+  sets: number;
+  validity_days: number;
+  is_active: boolean;
+}
+
+export const ADDON_PACK_DEFINITIONS: Record<string, AddonPackDefinition> = {
+  addon_10: {
+    code: "addon_10",
+    name: "10 Extra Sets",
+    price_paise: 14900,
+    sets: 10,
+    validity_days: 60,
+    is_active: true,
+  },
+  addon_30: {
+    code: "addon_30",
+    name: "30 Extra Sets",
+    price_paise: 39900,
+    sets: 30,
+    validity_days: 60,
+    is_active: true,
+  },
+  addon_60: {
+    code: "addon_60",
+    name: "60 Extra Sets",
+    price_paise: 69900,
+    sets: 60,
+    validity_days: 60,
+    is_active: true,
+  },
+};
+
+export interface ResolvedOrderPricing {
+  type: "plan" | "addon";
+  code: string;
+  name: string;
+  amount_paise: number;
+  currency: "INR";
+  duration_days?: number;
+  sets?: number;
+}
+
+/**
+ * Server-authoritative order price resolution.
+ * Ignores any client-supplied amount; retrieves exact price_paise from plans/addon_packs catalog.
+ */
+export function resolveOrderPricing(input: {
+  planCode?: string | null;
+  planId?: string | null;
+  addonCode?: string | null;
+}): ResolvedOrderPricing | null {
+  if (input.addonCode) {
+    const addon = ADDON_PACK_DEFINITIONS[input.addonCode];
+    if (!addon) return null;
+    return {
+      type: "addon",
+      code: addon.code,
+      name: addon.name,
+      amount_paise: addon.price_paise,
+      currency: "INR",
+      sets: addon.sets,
+    };
+  }
+
+  const rawPlan = input.planCode || input.planId;
+  if (rawPlan) {
+    const normalized = rawPlan.toLowerCase().trim();
+    let code: PlanCode | null = null;
+    if (normalized === "weekly" || normalized.includes("week")) {
+      code = "weekly";
+    } else if (normalized === "quarterly" || normalized.includes("quarter") || normalized.includes("3_month")) {
+      code = "quarterly";
+    } else if (
+      normalized === "monthly" ||
+      normalized.includes("month") ||
+      normalized === "domestic_monthly_199" ||
+      normalized === "intl_monthly_9"
+    ) {
+      code = "monthly";
+    } else {
+      return null;
+    }
+
+    const plan = PLAN_DEFINITIONS[code];
+    if (!plan) return null;
+    return {
+      type: "plan",
+      code: plan.code,
+      name: plan.name,
+      amount_paise: plan.price_paise,
+      currency: "INR",
+      duration_days: plan.duration_days,
+    };
+  }
+
+  return null;
+}
+
 export interface PlanQuotaResult {
   planCode: PlanCode | null;
+  periodStart: string | null;
   periodEnd: string | null;
   resumesRemaining: number;
   coverLettersRemaining: number;
@@ -67,6 +170,7 @@ export interface PlanQuotaResult {
 
 export const FREE_QUOTA_DEFAULT: PlanQuotaResult = {
   planCode: null,
+  periodStart: null,
   periodEnd: null,
   resumesRemaining: 0,
   coverLettersRemaining: 0,
@@ -125,6 +229,19 @@ export function calculateQuotaPeriod(
     periodStart: new Date(periodStartTime),
     periodEnd: new Date(periodEndTime),
   };
+}
+
+/**
+ * Calculates the start of today in Indian Standard Time (IST, UTC+05:30)
+ * converted to a UTC Date instance for database timestamp comparisons.
+ */
+export function getStartOfIstDay(now: Date = new Date()): Date {
+  const istOffsetMs = 5.5 * 60 * 60 * 1000;
+  const istDate = new Date(now.getTime() + istOffsetMs);
+  const istYear = istDate.getUTCFullYear();
+  const istMonth = istDate.getUTCMonth();
+  const istDay = istDate.getUTCDate();
+  return new Date(Date.UTC(istYear, istMonth, istDay) - istOffsetMs);
 }
 
 /**
@@ -276,18 +393,18 @@ export async function getPlanQuota(
       // Table may not exist yet
     }
 
-    // 7. Query today's generation counts from ai_usage_quotas
+    // 7. Query today's generation counts from plan_usage_events over the same IST day window the RPCs use
     let generationsToday = 0;
-    const today = now.toISOString().split("T")[0];
+    const istDayStart = getStartOfIstDay(now).toISOString();
     try {
-      const { data: quotaRows } = await supabaseAdmin
-        .from("ai_usage_quotas")
-        .select("count")
+      const { count, error: usageErr } = await supabaseAdmin
+        .from("plan_usage_events")
+        .select("id", { count: "exact", head: true })
         .eq("user_id", userId)
-        .eq("period_date", today);
+        .gte("created_at", istDayStart);
 
-      if (quotaRows && Array.isArray(quotaRows)) {
-        generationsToday = quotaRows.reduce((acc, row) => acc + (row.count || 0), 0);
+      if (!usageErr && typeof count === "number") {
+        generationsToday = count;
       }
     } catch {
       // Graceful fallback
@@ -297,6 +414,7 @@ export async function getPlanQuota(
 
     return {
       planCode,
+      periodStart: periodStart.toISOString(),
       periodEnd: periodEnd.toISOString(),
       resumesRemaining,
       coverLettersRemaining,
