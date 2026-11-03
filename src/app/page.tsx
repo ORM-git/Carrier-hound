@@ -17,7 +17,7 @@ import LandingFeaturesSection from "@/components/LandingFeaturesSection";
 import LandingComparisonSection from "@/components/LandingComparisonSection";
 import LandingJobsTickerStrip from "@/components/LandingJobsTickerStrip";
 import "@/styles/landing-top-artifact.css";
-import { ArrowRight, Instagram, Linkedin, Mail } from "lucide-react";
+import { ArrowRight, Instagram, Linkedin, Mail, Rocket } from "lucide-react";
 
 const Testimonials = dynamic(
   () => import("@/components/testimonials").then((m) => m.Testimonials),
@@ -51,6 +51,22 @@ export default function HomePage() {
 
       {/* (2) JOBS JUST ADDED TICKER STRIP */}
       <LandingJobsTickerStrip />
+
+      {/* HEADLINE BLOCK: AI JOB HUNTING PLATFORM */}
+      <section className="bg-white pt-10 pb-6 sm:pt-14 sm:pb-8 lg:pt-16 lg:pb-10">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+          <h2 className="text-3xl sm:text-5xl md:text-6xl lg:text-[68px] xl:text-[74px] font-black uppercase tracking-tight text-[#090E34] leading-[1.05]">
+            <span className="flex items-center gap-2 sm:gap-3">
+              <span>AI</span>
+              <Rocket
+                className="w-[0.52em] h-[0.52em] text-[#090E34] stroke-[2.2] shrink-0"
+                aria-hidden="true"
+              />
+            </span>
+            <span className="block">JOB HUNTING PLATFORM</span>
+          </h2>
+        </div>
+      </section>
 
       {/* (3) PRODUCT FEATURES SECTION */}
       <LandingFeaturesSection />
