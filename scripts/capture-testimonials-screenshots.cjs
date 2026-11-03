@@ -115,16 +115,16 @@ async function run() {
     fs.copyFileSync(desktopPath, desktopArtifact);
     console.log(`Saved: ${desktopPath}`);
 
-    // 2. Desktop 1440px - Click Manual Pause Button
-    console.log("Capturing Manual Pause Button Toggled (Resume loop)...");
-    await page.evaluate(() => {
-      const btn = document.querySelector('[data-testid="testimonials-pause-button"]');
-      if (btn) btn.click();
-    });
-    await new Promise((r) => setTimeout(r, 600));
+    // 2. Desktop 1440px - Hover over a testimonial card to verify instant pause
+    console.log("Capturing Hover Paused state over testimonial card...");
+    const cardEl = await page.$('[data-testid="testimonial-card"]');
+    if (cardEl) {
+      await cardEl.hover();
+      await new Promise((r) => setTimeout(r, 600));
+    }
 
-    const pausedPath = path.join(REPORTS_DIR, "testimonials-paused.png");
-    const pausedArtifact = path.join(ARTIFACT_DIR, "testimonials-paused.png");
+    const pausedPath = path.join(REPORTS_DIR, "testimonials-hover-paused.png");
+    const pausedArtifact = path.join(ARTIFACT_DIR, "testimonials-hover-paused.png");
     await section.screenshot({ path: pausedPath });
     fs.copyFileSync(pausedPath, pausedArtifact);
     console.log(`Saved: ${pausedPath}`);

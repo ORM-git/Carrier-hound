@@ -136,21 +136,29 @@ check("Seamless loop calculation: sequence width + boundary gap", () => {
   assert.match(testimonialsCode, /cmTestimonialsRunner/, "Must define seamless keyframe runner");
 });
 
-// 5. Accessibility & Controls
-check("Accessibility: Pause/play button, hover/focus pause, and inert duplicate", () => {
-  // Visible pause/play button
-  assert.match(testimonialsCode, /data-testid="testimonials-pause-button"/, "Must have pause/play button");
-  assert.match(testimonialsCode, /aria-label=/, "Button must have accessible label");
-  assert.match(testimonialsCode, /aria-pressed=/, "Button must expose toggle state");
+// 5. Accessibility & Motion Controls
+check("Accessibility: Instant hover/focus pause on any testimonial, no bottom pause button, inert duplicate", () => {
+  // Confirm removal of manual pause button per user instruction
+  assert.doesNotMatch(
+    testimonialsCode,
+    /data-testid="testimonials-pause-button"/,
+    "Must NOT render bottom manual pause button"
+  );
+  assert.doesNotMatch(
+    testimonialsCode,
+    /isUserPaused/,
+    "Must not retain isUserPaused manual state"
+  );
 
-  // Hover and focus pauses
+  // Hover and focus pauses on any card and container
   assert.match(testimonialsCode, /onMouseEnter/, "Must pause on hover enter");
   assert.match(testimonialsCode, /onMouseLeave/, "Must handle hover leave");
+  assert.match(testimonialsCode, /onTouchStart/, "Must pause on mobile touch start");
+  assert.match(testimonialsCode, /onTouchEnd/, "Must handle mobile touch end");
   assert.match(testimonialsCode, /onFocus/, "Must pause on focus");
   assert.match(testimonialsCode, /onBlur/, "Must handle focus blur");
-
-  // User manual pause persistence
-  assert.match(testimonialsCode, /isUserPaused/, "Must maintain user-selected pause state");
+  assert.match(testimonialsCode, /\.cm-testimonials-active-track:hover/, "Must pause immediately on CSS hover");
+  assert.match(testimonialsCode, /\.cm-testimonials-active-track:focus-within/, "Must pause on CSS focus-within");
 
   // Duplicate sequence inaccessible to assistive technology
   assert.match(testimonialsCode, /aria-hidden="true"/, "Duplicate sequence must be aria-hidden");

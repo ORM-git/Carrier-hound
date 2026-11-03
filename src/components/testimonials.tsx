@@ -3,7 +3,6 @@
 import React, { useEffect, useRef, useState, useLayoutEffect } from "react";
 import Image from "next/image";
 import { getLandingCards, LandingCard } from "@/data/landingCards";
-import { Pause, Play } from "lucide-react";
 
 export const Testimonials = () => {
   const cards = getLandingCards();
@@ -12,7 +11,6 @@ export const Testimonials = () => {
   const trackRef = useRef<HTMLDivElement | null>(null);
   const sequenceRef = useRef<HTMLDivElement | null>(null);
 
-  const [isUserPaused, setIsUserPaused] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
   const [isInView, setIsInView] = useState(true);
@@ -85,9 +83,8 @@ export const Testimonials = () => {
     };
   }, []);
 
-  // True when user explicitly paused, hovered, focused, or off-screen
-  const isAnimationPaused =
-    isUserPaused || isHovered || isFocused || !isInView;
+  // True when user hovers over any testimonial, focuses within, or section is off-screen
+  const isAnimationPaused = isHovered || isFocused || !isInView;
 
   // Render single testimonial card
   const renderCard = (card: LandingCard, isDuplicate: boolean, index: number) => (
@@ -97,6 +94,10 @@ export const Testimonials = () => {
       aria-hidden={isDuplicate ? true : undefined}
       tabIndex={isDuplicate ? -1 : undefined}
       className="bg-white border border-slate-200/90 rounded-tr-[28px] rounded-br-[28px] rounded-bl-[28px] rounded-tl-md p-6 sm:p-7 flex flex-col justify-between w-[82vw] xs:w-[330px] sm:w-[350px] shrink-0 text-left select-none shadow-2xs hover:border-slate-300 transition-colors"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      onTouchStart={() => setIsHovered(true)}
+      onTouchEnd={() => setIsHovered(false)}
     >
       <div>
         {/* Large decorative quotation mark icon */}
@@ -154,7 +155,7 @@ export const Testimonials = () => {
       aria-label="Candidate Testimonials"
       className="py-16 sm:py-20 lg:py-24 relative overflow-hidden bg-white"
     >
-      {/* Scoped CSS animation for subpixel smooth translation without React re-renders */}
+      {/* Scoped CSS animation for subpixel smooth translation with instant hover pause */}
       <style
         dangerouslySetInnerHTML={{
           __html: `
@@ -169,6 +170,8 @@ export const Testimonials = () => {
             .cm-testimonials-active-track {
               animation: cmTestimonialsRunner var(--loop-duration, 111s) linear infinite;
             }
+            .cm-testimonials-active-track:hover,
+            .cm-testimonials-active-track:focus-within,
             .cm-testimonials-active-track.is-paused {
               animation-play-state: paused !important;
             }
@@ -205,6 +208,8 @@ export const Testimonials = () => {
         }
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
+        onTouchStart={() => setIsHovered(true)}
+        onTouchEnd={() => setIsHovered(false)}
         onFocus={() => setIsFocused(true)}
         onBlur={(e) => {
           if (!e.currentTarget.contains(e.relatedTarget as Node)) {
@@ -253,41 +258,6 @@ export const Testimonials = () => {
             </div>
           )}
         </div>
-      </div>
-
-      {/* Accessible Manual Play/Pause Control */}
-      <div className="flex items-center justify-center mt-6 sm:mt-8">
-        <button
-          type="button"
-          data-testid="testimonials-pause-button"
-          onClick={() => setIsUserPaused((p) => !p)}
-          aria-label={
-            isReducedMotion
-              ? "Animation disabled due to reduced motion preference"
-              : isUserPaused
-              ? "Resume testimonials animation"
-              : "Pause testimonials animation"
-          }
-          aria-pressed={isUserPaused}
-          disabled={isReducedMotion}
-          className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold border transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 ${
-            isUserPaused
-              ? "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100"
-              : "bg-white text-slate-700 border-slate-200/90 shadow-2xs hover:bg-slate-50"
-          } ${isReducedMotion ? "opacity-60 cursor-not-allowed" : ""}`}
-        >
-          {isUserPaused ? (
-            <>
-              <Play className="w-3.5 h-3.5 fill-current text-blue-600" aria-hidden="true" />
-              <span>Resume loop</span>
-            </>
-          ) : (
-            <>
-              <Pause className="w-3.5 h-3.5 fill-current text-slate-600" aria-hidden="true" />
-              <span>Pause loop</span>
-            </>
-          )}
-        </button>
       </div>
     </section>
   );
