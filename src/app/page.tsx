@@ -14,7 +14,6 @@ import LandingGlobeFeatureSection from "@/components/LandingGlobeFeatureSection"
 import LandingTopArtifact from "@/components/LandingTopArtifact";
 import LandingJobHubStatsSection from "@/components/LandingJobHubStatsSection";
 import LandingFeaturesSection from "@/components/LandingFeaturesSection";
-import LandingCredibilitySection from "@/components/LandingCredibilitySection";
 import LandingComparisonSection from "@/components/LandingComparisonSection";
 import LandingJobsTickerStrip from "@/components/LandingJobsTickerStrip";
 import "@/styles/landing-top-artifact.css";
@@ -213,8 +212,6 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* (8) CREDIBILITY SECTION "Real numbers, not promises" */}
-      <LandingCredibilitySection />
 
       {/* (9) FOOTER (Navy #090E34) & BackToTop Button */}
       <Footer />
