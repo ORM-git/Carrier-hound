@@ -195,10 +195,13 @@ function runSuite() {
   // (1) LandingTopArtifact hero/demo
   // (2) LandingJobsTickerStrip
   // (3) LandingFeaturesSection
-  // (4) LandingComparisonSection (including its AI-resume block)
-  // (5) the global map/radar section
-  // (6) the Free preview CTA band
-  // (7) the bio, feedback/testimonials, FAQ, contact us sections in that order
+  // (4) Feedback/Testimonials (First Wall - Leftward Runner)
+  // (5) LandingComparisonSection (including its AI-resume block)
+  // (6) the global map/radar section
+  // (7) the Free preview CTA band
+  // (8) the bio card
+  // (9) Feedback/Testimonials (Second Wall - Rightward Runner)
+  // (10) FAQ, contact us sections in that order
   // then LandingCredibilitySection if it still exists and the Footer.
   const idxTopArtifact = pageContent.indexOf("<LandingTopArtifact />");
   const idxFeatures = pageContent.indexOf("<LandingFeaturesSection />");
@@ -210,7 +213,8 @@ function runSuite() {
       : pageContent.indexOf("<WireframeDottedGlobe />");
   const idxFreePreview = pageContent.indexOf("Free preview");
   const idxBio = pageContent.indexOf("Orissa here!");
-  const idxTestimonials = pageContent.indexOf("<Testimonials />");
+  const idxFirstTestimonials = pageContent.indexOf("<Testimonials />");
+  const idxSecondTestimonials = pageContent.indexOf('<Testimonials direction="right" />');
   const idxFaq = pageContent.indexOf("Frequently Asked Questions");
   const idxContact = pageContent.indexOf('id="contact"');
   const idxCredibility = pageContent.indexOf("<LandingCredibilitySection />");
@@ -224,7 +228,8 @@ function runSuite() {
   assert.ok(idxGlobalGlobe > -1, "Global map/radar section must be rendered");
   assert.ok(idxFreePreview > -1, "Free preview CTA band must be rendered");
   assert.ok(idxBio > -1, "Founder bio card must be rendered");
-  assert.ok(idxTestimonials > -1, "Testimonials must be rendered");
+  assert.ok(idxFirstTestimonials > -1, "First Testimonials wall must be rendered");
+  assert.ok(idxSecondTestimonials > -1, "Second Testimonials wall must be rendered");
   assert.ok(idxFaq > -1, "FAQ must be rendered");
   assert.ok(idxContact > -1, "Contact section must be rendered");
   assert.strictEqual(idxCredibility, -1, "LandingCredibilitySection must NOT be rendered in page.tsx");
@@ -233,14 +238,15 @@ function runSuite() {
   // Assert exact sequence
   assert.ok(idxTopArtifact < idxTicker, "(1) LandingTopArtifact before (2) LandingJobsTickerStrip");
   assert.ok(idxTicker < idxFeatures, "(2) LandingJobsTickerStrip before (3) LandingFeaturesSection");
-  assert.ok(idxFeatures < idxComparison, "(3) LandingFeaturesSection before (4) LandingComparisonSection");
+  assert.ok(idxFeatures < idxFirstTestimonials, "(3) LandingFeaturesSection before first feedback/testimonials wall");
+  assert.ok(idxFirstTestimonials < idxComparison, "first feedback/testimonials wall before (4) LandingComparisonSection");
   assert.ok(idxComparison < idxGlobalGlobe, "(4) LandingComparisonSection before (5) global map/radar");
   assert.ok(idxGlobalGlobe < idxFreePreview, "(5) global map/radar before (6) Free preview CTA band");
   assert.ok(idxFreePreview < idxBio, "(6) Free preview CTA band before (7) bio");
-  assert.ok(idxBio < idxTestimonials, "(7) bio before feedback/testimonials");
-  assert.ok(idxTestimonials < idxFaq, "(7) feedback/testimonials before FAQ");
-  assert.ok(idxFaq < idxContact, "(7) FAQ before contact us");
-  assert.ok(idxContact < idxFooter, "(7) contact us before Footer");
+  assert.ok(idxBio < idxSecondTestimonials, "(7) bio before second feedback/testimonials wall");
+  assert.ok(idxSecondTestimonials < idxFaq, "second feedback/testimonials wall before (8) FAQ");
+  assert.ok(idxFaq < idxContact, "(8) FAQ before contact us");
+  assert.ok(idxContact < idxFooter, "(8) contact us before Footer");
 
   console.log("  [PASS] Landing page exact section sequence verified (1..9)");
 
