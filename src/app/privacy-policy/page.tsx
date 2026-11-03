@@ -134,8 +134,35 @@ export default function PrivacyPolicyPage() {
         </p>
 
         <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">6. Cookies and Tracking Mechanisms</h2>
+        <h3 className="text-sm font-semibold text-[#09090B] mt-3 mb-1">Cookies and monitoring</h3>
         <p className="mb-2">
-          We utilize tracking cookies to preserve your operational login state and profile filters. You can explicitly adjust your desktop browser preferences to block or refuse tracking cookies, though certain premium workflow states may lose functional continuous connectivity as a result.
+          CareerMonke employs a minimal, privacy-first approach to browser storage and operational tracking:
+        </p>
+        <ul className="list-disc pl-5 space-y-2 mb-2">
+          <li>
+            <strong>Essential Cookies &amp; Storage:</strong> We use essential cookies and browser local storage strictly for authentication and session management (preserving your authenticated Supabase session) and remembering your interface preferences (such as acknowledged notices and filter states). These are required for the application to function.
+          </li>
+          <li>
+            <strong>Privacy-Respecting Error Monitoring:</strong> We utilize Sentry error monitoring to diagnose crashes and keep the service operational. Our client and edge configurations enforce strict PII scrubbing before any event is dispatched: no email addresses, IP addresses, usernames, or user IDs are retained, and all sensitive auth tokens, keys, and passwords are fully redacted from requests and breadcrumbs.
+          </li>
+          <li>
+            <strong>Operational Analytics:</strong> We operate a lightweight, first-party beacon for basic usage metrics (such as page views and route transitions) to monitor platform health. This internal analytics logging is strictly gated behind your cookie consent.
+          </li>
+          <li>
+            <strong>No Advertising Cookies:</strong> We have a strict policy: no advertising cookies, third-party marketing pixels, or cross-site tracking technologies are present or used on CareerMonke. We do not track you across other websites or sell your data to advertisers.
+          </li>
+          <li>
+            <strong>Managing Your Preferences:</strong> Users can clear cookies at any time through their web browser settings, or refuse non-essential browser storage. Please note that clearing essential storage may require you to sign in again to access protected features.
+          </li>
+        </ul>
+        <p className="mb-2">
+          For any questions or requests regarding our cookie practices, please contact us at{" "}
+          <a
+            href="mailto:support@careermonke.com"
+            className="text-blue-600 underline underline-offset-2 hover:text-blue-800 transition-colors"
+          >
+            support@careermonke.com
+          </a>.
         </p>
 
         <div className="pt-8 border-t border-gray-200 text-xs text-gray-500">
