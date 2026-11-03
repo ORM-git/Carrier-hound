@@ -193,8 +193,8 @@ function runSuite() {
 
   // Section Ordering:
   // (1) LandingTopArtifact hero/demo
-  // (2) LandingFeaturesSection
-  // (3) LandingJobsTickerStrip
+  // (2) LandingJobsTickerStrip
+  // (3) LandingFeaturesSection
   // (4) LandingComparisonSection (including its AI-resume block)
   // (5) the global map/radar section
   // (6) the Free preview CTA band
@@ -231,9 +231,9 @@ function runSuite() {
   assert.ok(idxFooter > -1, "Footer must be rendered");
 
   // Assert exact sequence
-  assert.ok(idxTopArtifact < idxFeatures, "(1) LandingTopArtifact before (2) LandingFeaturesSection");
-  assert.ok(idxFeatures < idxTicker, "(2) LandingFeaturesSection before (3) LandingJobsTickerStrip");
-  assert.ok(idxTicker < idxComparison, "(3) LandingJobsTickerStrip before (4) LandingComparisonSection");
+  assert.ok(idxTopArtifact < idxTicker, "(1) LandingTopArtifact before (2) LandingJobsTickerStrip");
+  assert.ok(idxTicker < idxFeatures, "(2) LandingJobsTickerStrip before (3) LandingFeaturesSection");
+  assert.ok(idxFeatures < idxComparison, "(3) LandingFeaturesSection before (4) LandingComparisonSection");
   assert.ok(idxComparison < idxGlobalGlobe, "(4) LandingComparisonSection before (5) global map/radar");
   assert.ok(idxGlobalGlobe < idxFreePreview, "(5) global map/radar before (6) Free preview CTA band");
   assert.ok(idxFreePreview < idxBio, "(6) Free preview CTA band before (7) bio");
