@@ -358,6 +358,9 @@ async function runSuite() {
   );
 
   // 1.7 AI route executeAiCore fails closed with HTTP 500 when GROQ_API_KEY is missing everywhere
+  const savedEarlyAccessEmails = process.env.EARLY_ACCESS_ALLOWED_EMAILS;
+  process.env.EARLY_ACCESS_ALLOWED_EMAILS = "test@example.com";
+
   const mockDepsMissingGroq: any = {
     env: {
       NEXT_PUBLIC_SUPABASE_URL: "https://szakevhxhwpeskidvtfs.supabase.co",
@@ -401,6 +404,50 @@ async function runSuite() {
     `Expected 500 missing GROQ_API_KEY error, got status ${resMissingGroq.statusCode}`
   );
 
+  // 1.8 AI route executeAiCore returns HTTP 403 when user is unapproved
+  const mockDepsUnapproved: any = {
+    ...mockDepsMissingGroq,
+    getSupabaseAdmin: () => ({
+      auth: {
+        getUser: async () => ({
+          data: { user: { id: "unapproved-user-id", email: "unapproved@test.com" } },
+          error: null,
+        }),
+      },
+      from: () => {
+        const chain: any = {
+          select: () => chain,
+          eq: () => chain,
+          maybeSingle: async () => ({ data: null, error: null }),
+        };
+        return chain;
+      },
+    }),
+  };
+
+  const resUnapproved = await executeAiCore(
+    "127.0.0.1",
+    "Bearer mock-valid-token",
+    { operation: "resume_extraction", rawText: "Candidate: Jane Doe, Software Engineer" },
+    mockDepsUnapproved
+  );
+
+  const unapprovedPayload =
+    typeof resUnapproved.body === "string"
+      ? JSON.parse(resUnapproved.body)
+      : resUnapproved.body;
+
+  assert(
+    resUnapproved.statusCode === 403 && unapprovedPayload.error === "Early access only",
+    "1.8 AI route executeAiCore returns HTTP 403 when user is unapproved",
+    `Expected 403 Early access only, got status ${resUnapproved.statusCode}`
+  );
+
+  if (savedEarlyAccessEmails) {
+    process.env.EARLY_ACCESS_ALLOWED_EMAILS = savedEarlyAccessEmails;
+  } else {
+    delete process.env.EARLY_ACCESS_ALLOWED_EMAILS;
+  }
   if (savedGroqKey) process.env.GROQ_API_KEY = savedGroqKey;
 
   // ============================================================================

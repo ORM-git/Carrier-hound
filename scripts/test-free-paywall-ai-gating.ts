@@ -56,6 +56,7 @@ async function run() {
   // SUITE 1: Server-Side AI Gating on all 4 Allowed Operations
   // -----------------------------------------------------------------------------
   console.log("1. Verifying Server-Side 403 PRO_REQUIRED for Non-Pro Users Across All AI Operations...");
+  process.env.EARLY_ACCESS_ALLOWED_EMAILS = "free-user@careermonke.com";
 
   const operations: AllowedAiOperation[] = [
     "cover_letter",
@@ -94,7 +95,7 @@ async function run() {
       getSupabaseAdmin: () => ({
         auth: {
           getUser: async () => ({
-            data: { user: { id: "usr_free_test", user_metadata: {} } },
+            data: { user: { id: "usr_free_test", email: "free-user@careermonke.com", user_metadata: {} } },
             error: null,
           }),
         },
@@ -131,6 +132,42 @@ async function run() {
         }
       }
     }
+  }
+
+  // 1b. Invite-only gate check: unapproved user gets 403 Early access only
+  const unapprovedReq = new Request("http://localhost:3000/api/ai", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer unapproved_token",
+    },
+    body: JSON.stringify({
+      operation: "resume_extraction",
+      params: { rawText: "Sample resume text" },
+    }),
+  });
+  const unapprovedRes = await handleAiRequest(unapprovedReq, {
+    getSupabaseAdmin: () => ({
+      auth: {
+        getUser: async () => ({
+          data: { user: { id: "usr_unapproved", email: "unapproved@test.com", user_metadata: {} } },
+          error: null,
+        }),
+      },
+      from: () => {
+        const chain: any = {
+          select: () => chain,
+          eq: () => chain,
+          maybeSingle: async () => ({ data: null, error: null }),
+        };
+        return chain;
+      },
+    }),
+    getServerEntitlement: async () => ({ isPro: true, status: "active" } as any),
+  });
+  const unapprovedJson = await unapprovedRes.json().catch(() => ({}));
+  if (unapprovedRes.status !== 403 || unapprovedJson.error !== "Early access only") {
+    failures.push(`SECURITY ERROR: Unapproved user did not get 403 Early access only (status: ${unapprovedRes.status}, error: ${unapprovedJson.error})`);
   }
 
   // -----------------------------------------------------------------------------

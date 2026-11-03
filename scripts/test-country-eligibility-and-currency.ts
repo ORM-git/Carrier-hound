@@ -427,10 +427,28 @@ async function runTests() {
     },
   ];
 
+  // Ensure test fixture user is approved for platform access
+  process.env.EARLY_ACCESS_ALLOWED_EMAILS = "user@india.test";
+
   const origFetch = globalThis.fetch;
   globalThis.fetch = (async (url: any, opts: any) => {
     const urlStr = String(url);
     if (urlStr.includes("/auth/v1/user")) {
+      const authHeader = opts?.headers?.Authorization || opts?.headers?.authorization;
+      if (authHeader?.includes("unapproved-token")) {
+        return new Response(
+          JSON.stringify({
+            id: "user-unapproved-uuid",
+            email: "unapproved@example.test",
+            aud: "authenticated",
+            role: "authenticated",
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }
+        );
+      }
       return new Response(
         JSON.stringify({
           id: "user-india-uuid",
@@ -557,6 +575,17 @@ async function runTests() {
     assert.strictEqual(netlifyOptOutJson.appliedEligibility, null);
     assert.strictEqual(netlifyOptOutJson.jobs.length, 4);
     console.log("  [PASS] 5e. Netlify functions/jobs-search with eligibility=off returns all jobs");
+
+    // 5f. Invite-only gate check: unapproved user must receive 403
+    const unapprovedReq = new Request("http://localhost:3000/api/jobs/search?page=1&pageSize=25", {
+      method: "GET",
+      headers: { Authorization: "Bearer unapproved-token" },
+    });
+    const unapprovedRes = await searchGet(unapprovedReq);
+    assert.strictEqual(unapprovedRes.status, 403, "Unapproved user must receive 403 from /api/jobs/search");
+    const unapprovedJson = await unapprovedRes.json();
+    assert.strictEqual(unapprovedJson.error, "Early access only");
+    console.log("  [PASS] 5f. Unapproved user strictly rejected with 403 by invite-only gate");
   } finally {
     globalThis.fetch = origFetch;
   }
