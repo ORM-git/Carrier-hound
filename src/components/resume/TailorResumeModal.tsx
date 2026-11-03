@@ -25,7 +25,11 @@ import {
   applyAcceptedAiDraft,
   computeJobAtsScore,
 } from "@/lib/resume/atsScorer";
-import { generateAiTailoredResume } from "@/lib/ai/groq";
+import {
+  generateAiTailoredResume,
+  GENERIC_AI_UNAVAILABLE_MESSAGE,
+  sanitizeUserFacingAiError,
+} from "@/lib/ai/groq";
 import { getProAccessStatus } from "@/lib/billing/subscription";
 import LockedPreview from "@/components/billing/LockedPreview";
 import {
@@ -255,7 +259,8 @@ export default function TailorResumeModal({
 
       if (!res.success || !res.draft) {
         setAiStatus("failed");
-        const msg = res.error || "AI generation failed. Retaining verified rules-based resume.";
+        const rawMsg = res.error || "AI generation failed. Retaining verified rules-based resume.";
+        const msg = sanitizeUserFacingAiError(rawMsg);
         setAiError(msg);
         toast.error(msg);
         return;
@@ -272,7 +277,8 @@ export default function TailorResumeModal({
       toast.info("AI draft generated! Review changes before accepting.");
     } catch (err: any) {
       setAiStatus("failed");
-      const msg = err?.message || "Failed to reach AI service.";
+      const rawMsg = err?.message || "Failed to reach AI service.";
+      const msg = sanitizeUserFacingAiError(rawMsg);
       setAiError(msg);
       toast.error(msg);
     }
@@ -563,7 +569,11 @@ export default function TailorResumeModal({
                 <div className="flex items-start gap-2">
                   <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
                   <div className="space-y-0.5">
-                    <p className="font-bold">AI generation failed: {aiError || "Service temporarily unavailable."}</p>
+                    <p className="font-bold">
+                      {aiError && aiError.includes(GENERIC_AI_UNAVAILABLE_MESSAGE)
+                        ? aiError
+                        : `AI generation failed: ${aiError || "Service temporarily unavailable."}`}
+                    </p>
                     <p className="text-[11px] text-rose-700">Your verified rules-based resume remains active and safe to export.</p>
                   </div>
                 </div>
