@@ -7,6 +7,7 @@ import {
   STATS_RATE_LIMIT,
   statsRateLimitStore,
 } from "@/lib/api/sharedRateLimit";
+import { isUserApproved } from "@/lib/auth/approval";
 
 export const runtime = "edge";
 
@@ -38,10 +39,11 @@ function getSupabaseAdmin() {
  * GET /api/stats
  * 
  * Public read-only endpoint returning strictly real counts:
- * - activeJobs: Real exact active jobs from jobs_public
- * - companies: Real count from companies table
- * ZERO invented activity numbers, zero fake multipliers, and zero fabricated fallbacks.
- * Publicly accessible to signed-out visitors, rate limited, Cache-Control 5 min.
+ * - Anonymous callers: ONLY fields the public UI needs (jobsToday, updatedAt).
+ *   Strictly DO NOT expose totalJobs, companiesScanned, activeJobs, or companies
+ *   (zero aggregate platform corpus exposure).
+ * - Authenticated + approved callers: Complete live corpus metrics.
+ * - Authenticated + unapproved callers: 403 Early access only.
  */
 export async function GET(req: Request) {
   try {
@@ -78,44 +80,43 @@ export async function GET(req: Request) {
     }
 
     const supabase = getSupabaseAdmin();
+    const authHeader = req?.headers?.get("authorization") || req?.headers?.get("Authorization");
 
-    // 1. Total active jobs
-    const { count: totalActive, error: activeErr } = await supabase
-      .from("jobs_public")
-      .select("id", { count: "exact", head: true })
-      .eq("is_active", true)
-      .eq("status", "active");
+    let isAuthenticated = false;
+    let isApproved = false;
 
-    if (activeErr) {
-      return NextResponse.json(
-        { error: "Service unavailable" },
-        {
-          status: 503,
-          headers: {
-            "Cache-Control": "no-store",
-          },
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      const token = authHeader.replace("Bearer ", "").trim();
+      try {
+        const {
+          data: { user },
+          error: userErr,
+        } = await supabase.auth.getUser(token);
+
+        if (user && !userErr) {
+          isAuthenticated = true;
+          isApproved = await isUserApproved(supabase, user);
+          if (!isApproved) {
+            return NextResponse.json(
+              {
+                error: "Early access only",
+                message: "Invite-only access: your account is pending approval.",
+              },
+              {
+                status: 403,
+                headers: {
+                  "Cache-Control": "no-store",
+                },
+              }
+            );
+          }
         }
-      );
+      } catch (authErr) {
+        console.warn("[API /stats] Token verification error:", authErr);
+      }
     }
 
-    // 2. Total companies registered
-    const { count: companyCount, error: companyErr } = await supabase
-      .from("companies")
-      .select("id", { count: "exact", head: true });
-
-    if (companyErr) {
-      return NextResponse.json(
-        { error: "Service unavailable" },
-        {
-          status: 503,
-          headers: {
-            "Cache-Control": "no-store",
-          },
-        }
-      );
-    }
-
-    // 3. Jobs posted/created today (UTC midnight to now)
+    // 1. Jobs posted/created today (UTC midnight to now) - required for public UI
     const todayMidnight = new Date();
     todayMidnight.setUTCHours(0, 0, 0, 0);
     const { count: recentJobs, error: recentErr } = await supabase
@@ -137,17 +138,65 @@ export async function GET(req: Request) {
       );
     }
 
-    const activeJobs = totalActive ?? 0;
-    const companies = companyCount ?? 0;
-    const jobsToday = recentJobs ?? 0;
+    // Anonymous or unapproved: return ONLY fields the public UI needs
+    // (jobsToday, updatedAt). Strictly DO NOT expose totalJobs, companiesScanned,
+    // activeJobs, or companies (zero aggregate job counts).
+    if (!isAuthenticated || !isApproved) {
+      return NextResponse.json(
+        {
+          jobsToday: recentJobs ?? 0,
+          updatedAt: new Date().toISOString(),
+        },
+        {
+          headers: {
+            "Cache-Control": "public, max-age=300, s-maxage=300, stale-while-revalidate=600",
+          },
+        }
+      );
+    }
+
+    // 2. Authenticated + approved callers: return full corpus metrics
+    const { count: totalActive, error: activeErr } = await supabase
+      .from("jobs_public")
+      .select("id", { count: "exact", head: true })
+      .eq("is_active", true)
+      .eq("status", "active");
+
+    if (activeErr) {
+      return NextResponse.json(
+        { error: "Service unavailable" },
+        {
+          status: 503,
+          headers: {
+            "Cache-Control": "no-store",
+          },
+        }
+      );
+    }
+
+    const { count: companyCount, error: companyErr } = await supabase
+      .from("companies")
+      .select("id", { count: "exact", head: true });
+
+    if (companyErr) {
+      return NextResponse.json(
+        { error: "Service unavailable" },
+        {
+          status: 503,
+          headers: {
+            "Cache-Control": "no-store",
+          },
+        }
+      );
+    }
 
     return NextResponse.json(
       {
-        activeJobs,
-        companies,
-        totalJobs: activeJobs,
-        companiesScanned: companies,
-        jobsToday,
+        activeJobs: totalActive ?? 0,
+        companies: companyCount ?? 0,
+        jobsToday: recentJobs ?? 0,
+        totalJobs: totalActive ?? 0,
+        companiesScanned: companyCount ?? 0,
         updatedAt: new Date().toISOString(),
       },
       {

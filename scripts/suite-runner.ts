@@ -104,6 +104,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-ai-tools-panel.ts", command: "npx tsx scripts/test-ai-tools-panel.ts", classification: "offline" },
   { name: "scripts/test-search-track-rate-limits.ts", command: "npx tsx scripts/test-search-track-rate-limits.ts", classification: "offline" },
   { name: "scripts/test-early-access.ts", command: "npx tsx scripts/test-early-access.ts", classification: "offline" },
+  { name: "scripts/test-stats-and-invite-gate.ts", command: "npx tsx scripts/test-stats-and-invite-gate.ts", classification: "offline" },
   { name: "scripts/test-plan-picker.ts", command: "npx tsx scripts/test-plan-picker.ts", classification: "offline" },
   { name: "scripts/test-plan-quota.ts", command: "npx tsx scripts/test-plan-quota.ts", classification: "offline" },
   { name: "scripts/test-landing-top-artifact.ts", command: "npx tsx scripts/test-landing-top-artifact.ts", classification: "offline" },

@@ -6,6 +6,7 @@ import { formatSalary } from "../../src/lib/salary/parser";
 import { extractCandidateRelevanceTerms, LiveJob } from "../../src/lib/jobs/service";
 import { CandidateProfile } from "../../src/lib/resume/types";
 import { isJobEligible } from "../../src/lib/jobs/eligibility";
+import { isUserApproved } from "../../src/lib/auth/approval";
 import { safeLog } from "./_logger";
 
 function getSupabaseAdmin() {
@@ -127,6 +128,20 @@ export async function handler(event: any) {
         statusCode: 401,
         headers,
         body: JSON.stringify({ error: "Invalid or expired session. Please sign in again." }),
+      };
+    }
+
+    // Invite-only early-access approval check
+    const isApproved = await isUserApproved(supabaseAdmin, user);
+    if (!isApproved) {
+      return {
+        statusCode: 403,
+        headers,
+        body: JSON.stringify({
+          error: "Early access only",
+          message: "Invite-only access: your account is pending approval.",
+          jobs: [],
+        }),
       };
     }
 

@@ -388,6 +388,15 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       if (options.currency) params.set("currency", options.currency);
 
       const res = await fetch(`/api/jobs/search?${params.toString()}`, { headers });
+      if (res.status === 403) {
+        return {
+          jobs: [],
+          totalCount: 0,
+          nextCursor: null,
+          hasNextPage: false,
+          error: "forbidden",
+        };
+      }
       if (res.status === 503) {
         const json = await res.json().catch(() => ({}));
         return {
@@ -1004,7 +1013,19 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
   // 2. Query server search endpoint for single job (works for both active and inactive/expired roles)
   if (typeof window !== "undefined") {
     try {
-      const res = await fetch(`/api/jobs/search?id=${encodeURIComponent(cleanId)}`);
+      let token: string | undefined;
+      try {
+        const supabase = createClient();
+        const { data: { session } } = await supabase.auth.getSession();
+        token = session?.access_token;
+      } catch {}
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
+      const res = await fetch(`/api/jobs/search?id=${encodeURIComponent(cleanId)}`, { headers });
+      if (res.status === 403) {
+        return null;
+      }
       if (res.ok) {
         const json = await res.json();
         if (Array.isArray(json.jobs) && json.jobs.length > 0) {
@@ -1188,6 +1209,10 @@ export async function getTopRankedJobsForCandidate(
         },
         body: JSON.stringify({ candidate, limit }),
       });
+
+      if (res.status === 403) {
+        return [];
+      }
 
       if (res.ok) {
         const data = await res.json();

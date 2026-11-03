@@ -28,25 +28,47 @@ export async function getLiveStats(): Promise<LiveStatsData | null> {
   }
 
   try {
-    const res = await fetch("/api/stats");
+    let token: string | undefined;
+    try {
+      const { createClient } = await import("../supabase/client");
+      const supabase = createClient();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      token = session?.access_token;
+    } catch {}
+
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const res = await fetch("/api/stats", { headers });
     if (!res.ok) return null;
     const data = await res.json();
-    const activeCount = typeof data.activeJobs === "number" ? data.activeJobs : (typeof data.totalJobs === "number" ? data.totalJobs : null);
-    const companyCount = typeof data.companies === "number" ? data.companies : (typeof data.companiesScanned === "number" ? data.companiesScanned : null);
+    const activeCount =
+      typeof data.activeJobs === "number"
+        ? data.activeJobs
+        : typeof data.totalJobs === "number"
+        ? data.totalJobs
+        : null;
+    const companyCount =
+      typeof data.companies === "number"
+        ? data.companies
+        : typeof data.companiesScanned === "number"
+        ? data.companiesScanned
+        : null;
 
-    if (activeCount !== null && companyCount !== null) {
-      cachedStats = {
-        activeJobs: activeCount,
-        companies: companyCount,
-        jobsToday: typeof data.jobsToday === "number" ? data.jobsToday : 0,
-        totalJobs: activeCount,
-        companiesScanned: companyCount,
-        updatedAt: data.updatedAt,
-      };
-      lastFetchTime = now;
-      return cachedStats;
-    }
-    return null;
+    cachedStats = {
+      activeJobs: activeCount,
+      companies: companyCount,
+      jobsToday: typeof data.jobsToday === "number" ? data.jobsToday : 0,
+      totalJobs: activeCount,
+      companiesScanned: companyCount,
+      updatedAt: data.updatedAt,
+    };
+    lastFetchTime = now;
+    return cachedStats;
   } catch {
     return null;
   }

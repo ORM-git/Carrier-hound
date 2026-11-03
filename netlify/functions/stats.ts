@@ -31,10 +31,11 @@ function getSupabaseAdmin() {
 
 import { buildCorsHeaders, handleCorsPreflight } from "./_cors";
 import { safeLog } from "./_logger";
+import { isUserApproved } from "../../src/lib/auth/approval";
 
 const CORS_OPTIONS = {
   allowedMethods: "GET, OPTIONS",
-  allowedHeaders: "Content-Type",
+  allowedHeaders: "Content-Type, Authorization",
 };
 
 export async function handler(event?: any) {
@@ -49,8 +50,77 @@ export async function handler(event?: any) {
 
   try {
     const supabase = getSupabaseAdmin();
+    const authHeader = event?.headers?.authorization || event?.headers?.Authorization;
 
-    // 1. Real active jobs count
+    let isAuthenticated = false;
+    let isApproved = false;
+
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      const token = authHeader.replace("Bearer ", "").trim();
+      try {
+        const {
+          data: { user },
+          error: userErr,
+        } = await supabase.auth.getUser(token);
+
+        if (user && !userErr) {
+          isAuthenticated = true;
+          isApproved = await isUserApproved(supabase, user);
+          if (!isApproved) {
+            return {
+              statusCode: 403,
+              headers: {
+                ...headers,
+                "Cache-Control": "no-store",
+              },
+              body: JSON.stringify({
+                error: "Early access only",
+                message: "Invite-only access: your account is pending approval.",
+              }),
+            };
+          }
+        }
+      } catch (authErr) {
+        safeLog.warn("[Netlify /stats] Token verification error", authErr);
+      }
+    }
+
+    // 1. Real jobs posted/created today (UTC midnight to now) - needed for public UI
+    const todayMidnight = new Date();
+    todayMidnight.setUTCHours(0, 0, 0, 0);
+    const { count: recentJobs, error: recentErr } = await supabase
+      .from("jobs")
+      .select("id", { count: "exact", head: true })
+      .eq("is_active", true)
+      .eq("status", "active")
+      .gte("created_at", todayMidnight.toISOString());
+
+    if (recentErr) {
+      return {
+        statusCode: 503,
+        headers: {
+          ...headers,
+          "Cache-Control": "no-store",
+        },
+        body: JSON.stringify({ error: "Service unavailable" }),
+      };
+    }
+
+    // Anonymous or non-approved caller: return ONLY fields the public UI needs
+    // (jobsToday, updatedAt). Strictly DO NOT expose totalJobs, companiesScanned,
+    // activeJobs, or companies (zero aggregate job counts).
+    if (!isAuthenticated || !isApproved) {
+      return {
+        statusCode: 200,
+        headers,
+        body: JSON.stringify({
+          jobsToday: recentJobs ?? 0,
+          updatedAt: new Date().toISOString(),
+        }),
+      };
+    }
+
+    // 2. Authenticated + approved users: query and return complete corpus metrics
     const { count: totalActive, error: activeErr } = await supabase
       .from("jobs")
       .select("id", { count: "exact", head: true })
@@ -68,33 +138,11 @@ export async function handler(event?: any) {
       };
     }
 
-    // 2. Real companies count from companies table
     const { count: companyCount, error: companyErr } = await supabase
       .from("companies")
       .select("id", { count: "exact", head: true });
 
     if (companyErr) {
-      return {
-        statusCode: 503,
-        headers: {
-          ...headers,
-          "Cache-Control": "no-store",
-        },
-        body: JSON.stringify({ error: "Service unavailable" }),
-      };
-    }
-
-    // 3. Real jobs posted/created today (UTC midnight to now)
-    const todayMidnight = new Date();
-    todayMidnight.setUTCHours(0, 0, 0, 0);
-    const { count: recentJobs, error: recentErr } = await supabase
-      .from("jobs")
-      .select("id", { count: "exact", head: true })
-      .eq("is_active", true)
-      .eq("status", "active")
-      .gte("created_at", todayMidnight.toISOString());
-
-    if (recentErr) {
       return {
         statusCode: 503,
         headers: {

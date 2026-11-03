@@ -5,6 +5,7 @@ import { formatSalary } from "@/lib/salary/parser";
 import { verifyUserNotBanned } from "@/lib/admin/auth";
 import { COUNTRY_CODE_TO_NAME, getCountryFilterClause } from "@/lib/countries";
 import { sanitizeSearchQuery } from "@/lib/api/jobs";
+import { isUserApproved } from "@/lib/auth/approval";
 
 import { checkRequiredEnv } from "@/lib/api/envCheck";
 
@@ -50,6 +51,17 @@ async function verifyProUser(req: Request) {
 
   if (userError || !user) {
     return { error: "Invalid or expired session. Please sign in again.", status: 401, user: null };
+  }
+
+  // Invite-only early-access approval check
+  const isApproved = await isUserApproved(supabaseAdmin, user);
+  if (!isApproved) {
+    return {
+      error: "Early access only. Your account is pending invite approval.",
+      status: 403,
+      user: null,
+      isPro: false,
+    };
   }
 
   // Ban check (fails closed on lookup error)
