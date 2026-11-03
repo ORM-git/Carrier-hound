@@ -4,7 +4,11 @@ import React, { useEffect, useRef, useState, useLayoutEffect } from "react";
 import Image from "next/image";
 import { getLandingCards, LandingCard } from "@/data/landingCards";
 
-export const Testimonials = () => {
+export interface TestimonialsProps {
+  direction?: "left" | "right";
+}
+
+export const Testimonials = ({ direction = "left" }: TestimonialsProps = {}) => {
   const cards = getLandingCards();
 
   const containerRef = useRef<HTMLElement | null>(null);
@@ -165,8 +169,19 @@ export const Testimonials = () => {
             transform: translate3d(calc(-1 * var(--loop-distance, 4440px)), 0, 0);
           }
         }
+        @keyframes cmTestimonialsRunnerReverse {
+          from {
+            transform: translate3d(calc(-1 * var(--loop-distance, 4440px)), 0, 0);
+          }
+          to {
+            transform: translate3d(0, 0, 0);
+          }
+        }
         .cm-testimonials-active-track {
           animation: cmTestimonialsRunner var(--loop-duration, 111s) linear infinite;
+        }
+        .cm-testimonials-active-track.direction-right {
+          animation-name: cmTestimonialsRunnerReverse;
         }
         .cm-testimonials-active-track:hover,
         .cm-testimonials-active-track:focus-within,
@@ -232,7 +247,9 @@ export const Testimonials = () => {
           ref={trackRef}
           data-testid="testimonials-runner-track"
           className={`flex gap-4 sm:gap-5 w-max items-stretch will-change-transform py-2 ${
-            !isReducedMotion ? "cm-testimonials-active-track" : ""
+            !isReducedMotion
+              ? `cm-testimonials-active-track ${direction === "right" ? "direction-right" : ""}`
+              : ""
           } ${isAnimationPaused ? "is-paused" : ""}`}
         >
           {/* Primary Sequence: Original, Accessible */}
