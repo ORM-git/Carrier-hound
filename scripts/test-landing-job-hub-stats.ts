@@ -33,7 +33,7 @@ function runNegativeControlSubprocess() {
 
 async function main() {
   console.log("================================================================================");
-  console.log("TEST SUITE: Landing Job Hub & Real Stats Section Verification (Single Wide Layout)");
+  console.log("TEST SUITE: Landing Job Hub & Real Stats Section Verification (3-Row Layout)");
   console.log("================================================================================\n");
 
   // Run negative control verification first
@@ -87,13 +87,7 @@ async function main() {
     "Headline and numbers must use navy #090E34 token"
   );
 
-  // Dot at right edge of headline
-  assert(
-    compCode.includes("rounded-full bg-[#2563EB]"),
-    "Headline must have a small blue dot at its right edge"
-  );
-
-  // Center Dotted connector with bracket/curved split and arrowhead
+  // Center Dotted connector: exactly one connected root dot and curved bracket paths
   assert(
     compCode.includes("DottedConnector"),
     "Component must include DottedConnector"
@@ -110,22 +104,33 @@ async function main() {
     compCode.includes("hidden lg:flex"),
     "Connector must be hidden on mobile (hidden lg:flex)"
   );
-
-  // Outline Icons: building for companies, briefcase for total jobs, sparkles/clock for new today
-  assert(compCode.includes("Building2"), "Must use Building2 outline icon for companies");
-  assert(compCode.includes("Briefcase"), "Must use Briefcase outline icon for total jobs");
   assert(
-    compCode.includes("Sparkles") || compCode.includes("Clock"),
-    "Must use Sparkles or Clock outline icon for new jobs today"
+    compCode.includes("aria-hidden"),
+    "Connector must be marked aria-hidden"
   );
 
-  // Long dotted horizontal line
+  // Strictly NO "Companies scanned" row
+  assert(
+    !compCode.includes("Companies scanned"),
+    "Must NOT show 'Companies scanned' label in this section"
+  );
+
+  // Outline Icons: briefcase for total jobs, sparkles for new today, percent for salary
+  assert(compCode.includes("Briefcase"), "Must use Briefcase outline icon for total jobs");
+  assert(compCode.includes("Sparkles"), "Must use Sparkles outline icon for new jobs today");
+  assert(compCode.includes("Percent"), "Must use Percent outline icon for zero salary cut");
+
+  // Long dotted horizontal leader lines
   assert(
     compCode.includes("border-dotted"),
     "Stat rows must feature long dotted horizontal leader lines (border-dotted)"
   );
 
-  // Single wide section, no two-card boxes, no card borders
+  // Circular outline icons (no square cards, no card containers)
+  assert(
+    compCode.includes("rounded-full border border-blue-300"),
+    "Must use thin blue circular outline around icons"
+  );
   assert(
     !compCode.includes("grid-cols-2") && !compCode.includes("rounded-3xl p-6 sm:p-8 lg:p-10 shadow-xs flex flex-col justify-between"),
     "Must not use two-card boxes or card border containers"
@@ -142,7 +147,6 @@ async function main() {
   // Brand colors & responsive classes
   assert(compCode.includes("#EFF6FF"), "Must use light background token #EFF6FF");
   assert(compCode.includes("#2563EB"), "Must use brand blue #2563EB accents");
-  assert(compCode.includes("text-[40px]"), "Mobile must render 40px numbers (text-[40px])");
   console.log("  [PASS-LOCAL] Single wide layout, headline, dotted connector, icons, mascot, and brand styling verified");
 
   // Test 3: Disallowed Marketing Claims & Fake Figure Checks
@@ -169,8 +173,8 @@ async function main() {
   }
   console.log("  [PASS-LOCAL] Zero hardcoded figures and zero disallowed claims verified");
 
-  // Test 4: Real Data Rendering & Strict Selective Row Hiding
-  console.log("\nTEST 4: Real Data Rendering & Selective Row Hiding (Jobs Today = 0 must NOT show)...");
+  // Test 4: Real Data Rendering, Neutral Placeholders, and 0 Display
+  console.log("\nTEST 4: Real Data Rendering & Neutral Placeholders...");
   const { default: LandingJobHubStatsSection } = await import(
     "../src/components/LandingJobHubStatsSection"
   );
@@ -181,7 +185,6 @@ async function main() {
       initialStats: {
         totalJobs: 1420,
         jobsToday: 38,
-        companies: 450,
       },
     })
   );
@@ -192,61 +195,53 @@ async function main() {
   assert(fullHtml.includes("Total jobs"), "Must render Total jobs label");
   assert(fullHtml.includes("38"), "Must render formatted jobsToday 38");
   assert(fullHtml.includes("New jobs today"), "Must render New jobs today label");
-  assert(fullHtml.includes("450"), "Must render formatted companies 450");
-  assert(fullHtml.includes("Companies scanned"), "Must render Companies scanned label");
-  console.log("  [PASS-LOCAL] Full real stats render accurately with comma formatting");
+  assert(!fullHtml.includes("Companies scanned"), "Companies scanned row must NOT be present");
+  assert(fullHtml.includes("0%"), "Must render static 0% cut of salary");
+  assert(fullHtml.includes("cut of your salary, ever"), "Must render cut of salary label");
+  console.log("  [PASS-LOCAL] Full real stats render accurately with comma formatting and no Companies scanned");
 
-  // Case B: jobsToday === 0 -> MUST HIDE (prompt requirement: "new jobs today must not show 0")
+  // Case B: jobsToday === 0 -> MUST DISPLAY 0 (Prompt requirement: "A successful jobsToday: 0 response MUST display 0")
   const zeroTodayHtml = renderToStaticMarkup(
     React.createElement(LandingJobHubStatsSection, {
       initialStats: {
         totalJobs: 1420,
         jobsToday: 0,
-        companies: 450,
       },
     })
   );
 
-  assert(zeroTodayHtml.includes("Companies scanned"), "Companies row must remain visible");
   assert(zeroTodayHtml.includes("Total jobs"), "Total jobs row must remain visible");
-  assert(
-    !zeroTodayHtml.includes("New jobs today"),
-    "New jobs today must be strictly HIDDEN when value is 0"
-  );
-  console.log("  [PASS-LOCAL] Strict rule verified: new jobs today is HIDDEN when value is 0");
+  assert(zeroTodayHtml.includes("New jobs today"), "New jobs today row must be visible");
+  assert(zeroTodayHtml.includes(">0<"), "New jobs today MUST display 0 when jobsToday is 0");
+  console.log("  [PASS-LOCAL] Strict rule verified: jobsToday: 0 response displays 0");
 
-  // Case C: Partial stats (companies missing/null)
+  // Case C: Partial stats (totalJobs missing/null) -> renders neutral placeholder "—"
   const partialHtml = renderToStaticMarkup(
     React.createElement(LandingJobHubStatsSection, {
       initialStats: {
-        totalJobs: 1420,
+        totalJobs: null,
         jobsToday: 25,
-        companies: null,
       },
     })
   );
 
   assert(partialHtml.includes("Total jobs"), "Total jobs row must remain visible");
   assert(partialHtml.includes("New jobs today"), "New jobs today row must remain visible");
-  assert(!partialHtml.includes("Companies scanned"), "Companies row must be hidden when null");
-  console.log("  [PASS-LOCAL] Missing/null metric row is excluded cleanly");
+  assert(partialHtml.includes("—"), "Missing/null metric must display neutral placeholder '—'");
+  console.log("  [PASS-LOCAL] Neutral placeholder '—' verified for missing/null metric");
 
-  // Case D: All fail / unavailable -> render nothing (empty box avoided)
-  const emptyHtml = renderToStaticMarkup(
+  // Case D: API Error / Missing stats -> renders neutral placeholder "—" for dynamic metrics
+  const errorHtml = renderToStaticMarkup(
     React.createElement(LandingJobHubStatsSection, {
       initialStats: {
         totalJobs: null,
-        jobsToday: 0,
-        companies: null,
+        jobsToday: null,
       },
     })
   );
-  assert.strictEqual(
-    emptyHtml,
-    "",
-    "When all stats are missing or 0, component must return null (render empty string, no empty box)"
-  );
-  console.log("  [PASS-LOCAL] Fail-safe verified: renders nothing when all stats fail/missing/zero");
+  assert(errorHtml.includes("—"), "During error/null state, dynamic stats must display placeholder '—'");
+  assert(errorHtml.includes("0%"), "Static 0% remains visible during error state");
+  console.log("  [PASS-LOCAL] API error state verified with neutral placeholders");
 
   // Test 5: Reduced-Motion Path
   console.log("\nTEST 5: Prefers-Reduced-Motion Inspection...");

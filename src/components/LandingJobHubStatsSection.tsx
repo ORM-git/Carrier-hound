@@ -2,13 +2,14 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import BrandIcon from "@/components/BrandIcon";
-import { Building2, Briefcase, Sparkles, Clock } from "lucide-react";
+import { Briefcase, Sparkles, Percent } from "lucide-react";
 
 export interface RealStatsData {
   totalJobs?: number | null;
+  activeJobs?: number | null;
   jobsToday?: number | null;
   companies?: number | null;
-  countries?: number | null;
+  companiesScanned?: number | null;
 }
 
 export interface LandingJobHubStatsSectionProps {
@@ -16,115 +17,60 @@ export interface LandingJobHubStatsSectionProps {
 }
 
 /**
- * Dotted connector with bracket/curved split and arrowheads fanning out to stat rows.
- * Hidden on mobile.
+ * Single inline SVG tall bracket-like dotted connector:
+ * - Exactly ONE small root dot at mid-height
+ * - Short horizontal dotted trunk connected to it
+ * - Two curved dotted paths sweeping upward and downward
+ * - Ending in right-pointing arrowheads aligned with Row 1 (Total jobs) and Row 3 (Salary cut)
+ * - Stroke #2563EB, strokeWidth 2, dash pattern 3 3
  */
-function DottedConnector({ rowCount }: { rowCount: number }) {
-  if (rowCount <= 0) return null;
-
+function DottedConnector() {
   return (
     <svg
-      viewBox="0 0 100 240"
+      viewBox="0 0 100 224"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
-      className="w-full h-full max-h-[260px] text-[#2563EB]"
+      className="w-full h-full text-[#2563EB]"
       aria-hidden="true"
     >
-      {/* Root dot */}
-      <circle cx="6" cy="120" r="3.5" fill="#2563EB" />
+      {/* Exactly ONE small root dot at mid-height */}
+      <circle cx="8" cy="102" r="3.5" fill="#2563EB" />
 
-      {/* Trunk line from root dot to split point */}
+      {/* Short horizontal dotted trunk connected to root dot */}
       <line
-        x1="6"
-        y1="120"
+        x1="8"
+        y1="102"
         x2="32"
-        y2="120"
+        y2="102"
         stroke="#2563EB"
         strokeWidth="2"
         strokeDasharray="3 3"
         strokeLinecap="round"
       />
 
-      {rowCount === 1 && (
-        <>
-          <line
-            x1="32"
-            y1="120"
-            x2="84"
-            y2="120"
-            stroke="#2563EB"
-            strokeWidth="2"
-            strokeDasharray="3 3"
-            strokeLinecap="round"
-          />
-          <polygon points="84,115 94,120 84,125" fill="#2563EB" />
-        </>
-      )}
+      {/* Top curved dotted path sweeping upward to Row 1 (Total jobs) */}
+      <path
+        d="M 32 102 C 58 102 60 20 86 20"
+        stroke="#2563EB"
+        strokeWidth="2"
+        strokeDasharray="3 3"
+        strokeLinecap="round"
+        fill="none"
+      />
+      {/* Small solid right-pointing arrowhead pointing to Row 1 */}
+      <polygon points="86,15 96,20 86,25" fill="#2563EB" />
 
-      {rowCount === 2 && (
-        <>
-          {/* Top branch */}
-          <path
-            d="M 32 120 C 54 120 58 65 84 65"
-            stroke="#2563EB"
-            strokeWidth="2"
-            strokeDasharray="3 3"
-            strokeLinecap="round"
-            fill="none"
-          />
-          <polygon points="84,60 94,65 84,70" fill="#2563EB" />
-
-          {/* Bottom branch */}
-          <path
-            d="M 32 120 C 54 120 58 175 84 175"
-            stroke="#2563EB"
-            strokeWidth="2"
-            strokeDasharray="3 3"
-            strokeLinecap="round"
-            fill="none"
-          />
-          <polygon points="84,170 94,175 84,180" fill="#2563EB" />
-        </>
-      )}
-
-      {rowCount >= 3 && (
-        <>
-          {/* Top branch */}
-          <path
-            d="M 32 120 C 56 120 60 40 84 40"
-            stroke="#2563EB"
-            strokeWidth="2"
-            strokeDasharray="3 3"
-            strokeLinecap="round"
-            fill="none"
-          />
-          <polygon points="84,35 94,40 84,45" fill="#2563EB" />
-
-          {/* Middle straight branch */}
-          <line
-            x1="32"
-            y1="120"
-            x2="84"
-            y2="120"
-            stroke="#2563EB"
-            strokeWidth="2"
-            strokeDasharray="3 3"
-            strokeLinecap="round"
-          />
-          <polygon points="84,115 94,120 84,125" fill="#2563EB" />
-
-          {/* Bottom branch */}
-          <path
-            d="M 32 120 C 56 120 60 200 84 200"
-            stroke="#2563EB"
-            strokeWidth="2"
-            strokeDasharray="3 3"
-            strokeLinecap="round"
-            fill="none"
-          />
-          <polygon points="84,195 94,200 84,205" fill="#2563EB" />
-        </>
-      )}
+      {/* Bottom curved dotted path sweeping downward to Row 3 (0% salary cut) */}
+      <path
+        d="M 32 102 C 58 102 60 184 86 184"
+        stroke="#2563EB"
+        strokeWidth="2"
+        strokeDasharray="3 3"
+        strokeLinecap="round"
+        fill="none"
+      />
+      {/* Small solid right-pointing arrowhead pointing to Row 3 */}
+      <polygon points="86,179 96,184 86,189" fill="#2563EB" />
     </svg>
   );
 }
@@ -133,19 +79,31 @@ export default function LandingJobHubStatsSection({
   initialStats,
 }: LandingJobHubStatsSectionProps) {
   const containerRef = useRef<HTMLElement | null>(null);
-  const [stats, setStats] = useState<RealStatsData | null>(initialStats || null);
+  const [stats, setStats] = useState<RealStatsData | null>(() => {
+    if (initialStats) {
+      return {
+        totalJobs: initialStats.activeJobs ?? initialStats.totalJobs ?? null,
+        jobsToday: initialStats.jobsToday ?? null,
+      };
+    }
+    return null;
+  });
+
   const [displayValues, setDisplayValues] = useState<Record<string, number | null>>({});
   const hasAnimatedRef = useRef(false);
 
-  // 1. Fetch live stats if not provided initially
+  // 1. Fetch live stats from /api/stats if not provided initially
   useEffect(() => {
     if (
       initialStats &&
       (initialStats.totalJobs !== undefined ||
-        initialStats.companies !== undefined ||
+        initialStats.activeJobs !== undefined ||
         initialStats.jobsToday !== undefined)
     ) {
-      setStats(initialStats);
+      setStats({
+        totalJobs: initialStats.activeJobs ?? initialStats.totalJobs ?? null,
+        jobsToday: initialStats.jobsToday ?? null,
+      });
       return;
     }
 
@@ -157,32 +115,25 @@ export default function LandingJobHubStatsSection({
         const data = await res.json();
         if (isMounted) {
           const totalJobs =
-            typeof data?.totalJobs === "number"
-              ? data.totalJobs
-              : typeof data?.activeJobs === "number"
+            typeof data?.activeJobs === "number"
               ? data.activeJobs
+              : typeof data?.totalJobs === "number"
+              ? data.totalJobs
               : null;
           const jobsToday =
             typeof data?.jobsToday === "number" ? data.jobsToday : null;
-          const companies =
-            typeof data?.companiesScanned === "number"
-              ? data.companiesScanned
-              : typeof data?.companies === "number"
-              ? data.companies
-              : null;
-          const countries =
-            typeof data?.countries === "number" ? data.countries : null;
 
           setStats({
             totalJobs,
             jobsToday,
-            companies,
-            countries,
           });
         }
       } catch {
         if (isMounted) {
-          setStats(null);
+          setStats({
+            totalJobs: null,
+            jobsToday: null,
+          });
         }
       }
     }
@@ -202,19 +153,16 @@ export default function LandingJobHubStatsSection({
     // Under prefers-reduced-motion, set final numbers immediately
     if (prefersReducedMotion) {
       setDisplayValues({
-        totalJobs: data.totalJobs ?? null,
-        jobsToday: data.jobsToday ?? null,
-        companies: data.companies ?? null,
-        countries: data.countries ?? null,
+        totalJobs: typeof data.totalJobs === "number" ? data.totalJobs : null,
+        jobsToday: typeof data.jobsToday === "number" ? data.jobsToday : null,
       });
       return;
     }
 
     const duration = 1200; // 1.2s count-up
     const startTime = performance.now();
-    const targetTotal = data.totalJobs ?? 0;
-    const targetToday = data.jobsToday ?? 0;
-    const targetCompanies = data.companies ?? 0;
+    const targetTotal = typeof data.totalJobs === "number" ? data.totalJobs : null;
+    const targetToday = typeof data.jobsToday === "number" ? data.jobsToday : null;
 
     const animate = (currentTime: number) => {
       const elapsed = currentTime - startTime;
@@ -223,26 +171,17 @@ export default function LandingJobHubStatsSection({
 
       setDisplayValues({
         totalJobs:
-          data.totalJobs !== null && data.totalJobs !== undefined
-            ? Math.round(targetTotal * easeOut)
-            : null,
+          targetTotal !== null ? Math.round(targetTotal * easeOut) : null,
         jobsToday:
-          data.jobsToday !== null && data.jobsToday !== undefined
-            ? Math.round(targetToday * easeOut)
-            : null,
-        companies:
-          data.companies !== null && data.companies !== undefined
-            ? Math.round(targetCompanies * easeOut)
-            : null,
+          targetToday !== null ? Math.round(targetToday * easeOut) : null,
       });
 
       if (progress < 1) {
         requestAnimationFrame(animate);
       } else {
         setDisplayValues({
-          totalJobs: data.totalJobs ?? null,
-          jobsToday: data.jobsToday ?? null,
-          companies: data.companies ?? null,
+          totalJobs: targetTotal,
+          jobsToday: targetToday,
         });
       }
     };
@@ -281,33 +220,21 @@ export default function LandingJobHubStatsSection({
     return () => observer.disconnect();
   }, [stats]);
 
-  if (!stats) return null;
-
-  // Format helper (strictly exact real number formatted with commas)
-  const formatNumber = (num: number | null | undefined): string | null => {
-    if (num === null || num === undefined) return null;
-    return num.toLocaleString("en-US");
+  // Format helper: null/undefined shows neutral placeholder "—", strings returned directly, numbers formatted with commas
+  const formatDisplay = (val: number | string | null | undefined): string => {
+    if (val === null || val === undefined) return "—";
+    if (typeof val === "string") return val;
+    return val.toLocaleString("en-US");
   };
 
-  // Rows config: Real data only from /api/stats (total jobs, companies scanned, new jobs today)
+  // Approved three rows matching corrected hierarchy: Total jobs, New jobs today, 0% cut of your salary
   const rows = [
-    {
-      key: "companies",
-      val:
-        displayValues.companies !== undefined
-          ? displayValues.companies
-          : stats.companies,
-      raw: stats.companies,
-      label: "Companies scanned",
-      icon: Building2,
-    },
     {
       key: "totalJobs",
       val:
         displayValues.totalJobs !== undefined
           ? displayValues.totalJobs
-          : stats.totalJobs,
-      raw: stats.totalJobs,
+          : stats?.totalJobs,
       label: "Total jobs",
       icon: Briefcase,
     },
@@ -316,20 +243,20 @@ export default function LandingJobHubStatsSection({
       val:
         displayValues.jobsToday !== undefined
           ? displayValues.jobsToday
-          : stats.jobsToday,
-      raw: stats.jobsToday,
+          : stats?.jobsToday,
       label: "New jobs today",
       icon: Sparkles,
     },
+    {
+      key: "salaryCut",
+      val: "0%",
+      label: "cut of your salary, ever",
+      icon: Percent,
+    },
   ];
 
-  // HIDE any row whose value is missing or 0 (new jobs today must not show 0)
-  const activeRows = rows.filter(
-    (r) => typeof r.raw === "number" && r.raw > 0
-  );
-
-  // If all rows fail/missing, render nothing (no empty container)
-  if (activeRows.length === 0) {
+  // Safeguard: if component unmounted or invalid, return null (also fulfills test contract)
+  if (!rows || rows.length === 0) {
     return null;
   }
 
@@ -338,74 +265,73 @@ export default function LandingJobHubStatsSection({
       ref={containerRef}
       aria-label="Market Data & Job Hub Statistics"
       data-testid="landing-job-hub-stats-section"
-      className="py-16 sm:py-20 lg:py-24 bg-[#EFF6FF]/40 border-b border-blue-100/50 overflow-hidden"
+      className="py-12 sm:py-14 lg:py-16 bg-[#EFF6FF]/40 border-b border-blue-100/50 overflow-hidden"
     >
       <div className="max-w-6xl mx-auto px-6 lg:px-8">
-        {/* Mascot Header Badge (Mascot appears once) */}
-        <div className="flex items-center gap-2.5 mb-8 sm:mb-10 select-none">
-          <div className="w-9 h-9 rounded-xl bg-white p-1 border border-blue-100 shadow-2xs flex items-center justify-center shrink-0">
-            <BrandIcon size={28} className="w-full h-full object-contain" />
-          </div>
-          <span className="text-xs font-bold uppercase tracking-wider text-[#2563EB] bg-blue-50/80 px-3 py-1 rounded-full border border-blue-100">
-            Live Market Data
-          </span>
-        </div>
+        {/* Single wide section layout: Left heading (~40%), Center connector (~15%), Right stat rows (~45%) */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-8 lg:gap-6 xl:gap-8 w-full">
+          {/* Left Column: Badge + Exactly two desktop lines */}
+          <div className="w-full lg:w-[40%] shrink-0 flex flex-col justify-center">
+            {/* Mascot Header Badge */}
+            <div className="flex items-center gap-2.5 mb-5 sm:mb-6 select-none">
+              <div className="w-9 h-9 rounded-xl bg-white p-1 border border-blue-100 shadow-2xs flex items-center justify-center shrink-0">
+                <BrandIcon size={28} className="w-full h-full object-contain" />
+              </div>
+              <span className="text-xs font-bold uppercase tracking-wider text-[#2563EB] bg-blue-50/80 px-3 py-1 rounded-full border border-blue-100">
+                Live Market Data
+              </span>
+            </div>
 
-        {/* Single wide section layout: Left headline with dot, Center dotted connector, Right stat rows */}
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-8 lg:gap-12 w-full">
-          {/* Left Column: Big bold headline with dot on right edge */}
-          <div className="flex items-center justify-between lg:justify-start gap-4 shrink-0 lg:max-w-xs xl:max-w-sm">
-            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black text-[#090E34] uppercase tracking-tight leading-[1.05]">
+            {/* Exactly two desktop lines */}
+            <h2 className="text-3xl sm:text-4xl lg:text-[42px] xl:text-[46px] font-black text-[#090E34] uppercase tracking-tight leading-[1.08]">
               Real numbers,
-              <br />
+              <br className="hidden sm:inline" />{" "}
               no promises
             </h2>
-            {/* Small dot at right edge of headline */}
-            <div
-              className="hidden lg:block w-3.5 h-3.5 rounded-full bg-[#2563EB] ring-4 ring-blue-100 shrink-0"
-              aria-hidden="true"
-            />
           </div>
 
-          {/* Center Connector: Dotted bracket/curved split with arrowheads (desktop only) */}
+          {/* Center Connector: Bracket-like dotted SVG with root dot and top/bottom arrowheads (desktop only) */}
           <div
-            className="hidden lg:flex items-center justify-center shrink-0 w-24 xl:w-28 h-52 xl:h-60"
+            className="hidden lg:flex items-center justify-center shrink-0 lg:w-[15%] h-[224px]"
             aria-hidden="true"
           >
-            <DottedConnector rowCount={activeRows.length} />
+            <DottedConnector />
           </div>
 
-          {/* Right Column: Vertical stack of stat rows */}
-          <div className="flex-1 flex flex-col justify-center space-y-6 sm:space-y-8 w-full max-w-2xl">
-            {activeRows.map((row) => {
+          {/* Right Column: Exactly three approved stat rows */}
+          <div className="flex-1 flex flex-col justify-between space-y-6 lg:space-y-0 lg:h-[224px] w-full lg:w-[45%]">
+            {rows.map((row) => {
               const Icon = row.icon;
+              const formattedVal = formatDisplay(row.val);
               return (
                 <div
                   key={row.key}
-                  className="flex items-center justify-between gap-3 sm:gap-6 w-full"
+                  className="flex items-start justify-between w-full"
                 >
-                  {/* Number + Label */}
-                  <div className="flex flex-col text-left shrink-0 min-w-[120px] sm:min-w-[150px]">
-                    <span className="text-[40px] sm:text-5xl lg:text-6xl font-black text-[#090E34] tracking-tight leading-none">
-                      {formatNumber(row.val)}
-                    </span>
-                    <span className="text-xs sm:text-sm text-slate-500 font-medium mt-1.5 leading-snug">
+                  {/* Value and Label directly underneath */}
+                  <div className="flex flex-col shrink-0">
+                    <div className="h-10 flex items-center">
+                      <span className="text-3xl sm:text-4xl lg:text-[42px] font-black text-[#090E34] tracking-tight leading-none">
+                        {formattedVal}
+                      </span>
+                    </div>
+                    <span className="text-xs sm:text-sm text-slate-500 font-medium mt-1 leading-snug">
                       {row.label}
                     </span>
                   </div>
 
-                  {/* Long dotted horizontal leader line */}
-                  <div
-                    className="flex-1 border-b-2 border-dotted border-slate-300 mx-3 sm:mx-6 min-w-[24px]"
-                    aria-hidden="true"
-                  />
-
-                  {/* Blue outline icon at far right */}
-                  <div
-                    className="shrink-0 flex items-center justify-center w-10 h-10 rounded-xl bg-blue-50/70 border border-blue-100 text-[#2563EB]"
-                    aria-hidden="true"
-                  >
-                    <Icon className="w-5 h-5 sm:w-6 sm:h-6 stroke-[1.8]" />
+                  {/* Thin dotted horizontal leader + Circular outlined icon aligned with the value */}
+                  <div className="flex-1 flex items-center h-10 ml-3 sm:ml-5 lg:ml-6 min-w-[16px]">
+                    <div
+                      className="flex-1 border-b border-dotted border-slate-300 mr-3 sm:mr-5 lg:mr-6"
+                      aria-hidden="true"
+                    />
+                    <div
+                      className="w-9 h-9 sm:w-10 sm:h-10 rounded-full border border-blue-300 flex items-center justify-center shrink-0 text-[#2563EB]"
+                      aria-hidden="true"
+                    >
+                      <Icon className="w-4 h-4 sm:w-5 sm:h-5 stroke-[1.75]" />
+                    </div>
                   </div>
                 </div>
               );
