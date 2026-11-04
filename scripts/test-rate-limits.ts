@@ -6,7 +6,7 @@
  * Includes a negative control demonstrating non-zero exit when rate limiting is absent.
  */
 
-
+process.env.NODE_ENV = "test";
 
 import {
   createHandler as createAiHandler,
@@ -21,6 +21,7 @@ import {
 import {
   createHandler as createDeleteHandler,
 } from "../netlify/functions/account-delete";
+import { runSharedRateLimitFailClosedSuite } from "./test-shared-rate-limit-fail-closed";
 
 function createMockSupabaseForSearch() {
   const sampleJob = {
@@ -165,6 +166,21 @@ async function runRateLimitTests() {
   process.env.EARLY_ACCESS_ALLOWED_EMAILS = "test@example.com";
   _resetAiRateLimitStore();
 
+  let aiMockCalls = 0;
+  (globalThis as any).__mockRateLimitClient = {
+    rpc: async (_fn: string, params: any) => {
+      if (params?.p_key?.startsWith("ai:user:")) {
+        aiMockCalls++;
+        if (aiMockCalls <= AI_RATE_LIMIT.userMaxRequests) {
+          return { data: { allowed: true, retry_after: 0, current_count: aiMockCalls }, error: null };
+        } else {
+          return { data: { allowed: false, retry_after: 60, current_count: aiMockCalls }, error: null };
+        }
+      }
+      return { data: { allowed: true, retry_after: 0, current_count: 1 }, error: null };
+    },
+  };
+
   const mockDbAi = createMockSupabaseForAi();
   const aiHandler = createAiHandler({
     getSupabaseAdmin: () => mockDbAi,
@@ -237,6 +253,12 @@ async function runRateLimitTests() {
     process.exit(1);
   }
   console.log("  -> Verdict: PASS-LOCAL (Unapproved user strictly rejected with 403 by invite-only gate)\n");
+
+  // 1c. Strict fail-closed verification suite (P1 hardening)
+  console.log("1c. Running Shared Rate Limit Fail-Closed Suite (tests a-f)...");
+  await runSharedRateLimitFailClosedSuite();
+
+  delete (globalThis as any).__mockRateLimitClient;
 
   // 2. TEST JOBS-SEARCH ROUTE (netlify/functions/jobs-search.ts)
   console.log("2. Testing Search Handler (netlify/functions/jobs-search.ts)...");

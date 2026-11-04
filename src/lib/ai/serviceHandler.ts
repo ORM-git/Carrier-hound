@@ -12,7 +12,7 @@ import {
 } from "@/lib/ai/security";
 import { checkRequiredEnv } from "@/lib/api/envCheck";
 import { consumeSet, refundSet, QuotaKind } from "@/lib/billing/consume";
-import { checkSharedRateLimit } from "@/lib/api/sharedRateLimit";
+import { checkSharedRateLimit, checkSharedRateLimitStrict } from "@/lib/api/sharedRateLimit";
 import { buildCorsHeaders, handleCorsPreflight } from "../../../netlify/functions/_cors";
 import { isUserApproved } from "@/lib/auth/approval";
 
@@ -102,6 +102,8 @@ export interface AiServiceDeps {
   refundSet?: typeof refundSet;
   env?: Record<string, any>;
   isUserApproved?: (supabaseAdmin: any, user: any) => Promise<boolean>;
+  rateLimitClient?: any;
+  checkSharedRateLimit?: typeof checkSharedRateLimitStrict;
 }
 
 export const IDEMPOTENCY_KEY_REGEX = /^[A-Za-z0-9_.:-]+$/;
@@ -255,20 +257,32 @@ export async function executeAiCore(
   let confirmedUserId = "";
   let confirmedKind: QuotaKind | undefined;
   try {
-    // 0. Per-IP Rate Limiting (shared Supabase store, memory fallback)
-    const ipLimit = await checkSharedRateLimit(
-      `${ipRateLimitPrefix}${clientIp}`,
-      AI_RATE_LIMIT.ipMaxRequests,
-      AI_RATE_LIMIT.ipWindowMs / 1000,
-      () =>
-        checkRateLimit(
-          clientIp,
-          ipRateLimitStore,
+    // 0. Per-IP Rate Limiting (strict fail-closed shared store)
+    const ipLimit = activeDeps.checkSharedRateLimit
+      ? await activeDeps.checkSharedRateLimit(
+          `${ipRateLimitPrefix}${clientIp}`,
           AI_RATE_LIMIT.ipMaxRequests,
-          AI_RATE_LIMIT.ipWindowMs
+          AI_RATE_LIMIT.ipWindowMs / 1000
         )
-    );
+      : await checkSharedRateLimitStrict(
+          `${ipRateLimitPrefix}${clientIp}`,
+          AI_RATE_LIMIT.ipMaxRequests,
+          AI_RATE_LIMIT.ipWindowMs / 1000,
+          { client: activeDeps.rateLimitClient, env: activeDeps.env }
+        );
     if (!ipLimit.allowed) {
+      if (ipLimit.source === "unavailable") {
+        return {
+          statusCode: 503,
+          body: {
+            error: "Service temporarily unavailable. Please retry in a moment.",
+            retryAfter: ipLimit.retryAfter || 30,
+          },
+          headers: {
+            "Retry-After": String(ipLimit.retryAfter || 30),
+          },
+        };
+      }
       return {
         statusCode: 429,
         body: {
@@ -347,20 +361,32 @@ export async function executeAiCore(
     }
     confirmedUserId = user.id;
 
-    // 1.1 Per-User Burst Rate Limiting (shared Supabase store, memory fallback)
-    const userLimit = await checkSharedRateLimit(
-      `ai:user:${user.id}`,
-      AI_RATE_LIMIT.userMaxRequests,
-      AI_RATE_LIMIT.userWindowMs / 1000,
-      () =>
-        checkRateLimit(
-          user.id,
-          userRateLimitStore,
+    // 1.1 Per-User Burst Rate Limiting (strict fail-closed shared store)
+    const userLimit = activeDeps.checkSharedRateLimit
+      ? await activeDeps.checkSharedRateLimit(
+          `ai:user:${user.id}`,
           AI_RATE_LIMIT.userMaxRequests,
-          AI_RATE_LIMIT.userWindowMs
+          AI_RATE_LIMIT.userWindowMs / 1000
         )
-    );
+      : await checkSharedRateLimitStrict(
+          `ai:user:${user.id}`,
+          AI_RATE_LIMIT.userMaxRequests,
+          AI_RATE_LIMIT.userWindowMs / 1000,
+          { client: activeDeps.rateLimitClient, env: activeDeps.env }
+        );
     if (!userLimit.allowed) {
+      if (userLimit.source === "unavailable") {
+        return {
+          statusCode: 503,
+          body: {
+            error: "Service temporarily unavailable. Please retry in a moment.",
+            retryAfter: userLimit.retryAfter || 30,
+          },
+          headers: {
+            "Retry-After": String(userLimit.retryAfter || 30),
+          },
+        };
+      }
       return {
         statusCode: 429,
         body: {
