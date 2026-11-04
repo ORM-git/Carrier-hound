@@ -3,11 +3,19 @@
 import React, { useState, useEffect, useRef } from "react";
 import { X, Copy, Download, Check, Sparkles, FileText, ArrowRight, ShieldCheck, AlertCircle, Info } from "lucide-react";
 import { CandidateProfile } from "@/lib/resume/types";
-import { generateTailoredCoverLetter, validateCoverLetter, formatContactHeader } from "@/lib/resume/tailor";
+import {
+  generateTailoredCoverLetter,
+  validateCoverLetter,
+  formatContactHeader,
+  computeCandidateFactsHash,
+  computeJobHash,
+} from "@/lib/resume/tailor";
 import {
   getCachedTailoredCoverLetter,
   saveCachedTailoredCoverLetter,
   getTailoredCoverLetterAsync,
+  purgeTailoredCoverLetter,
+  COVER_LETTER_CACHE_VERSION,
 } from "@/lib/resume/storage";
 import { downloadCoverLetterPdf } from "@/lib/resume/atsPdfGenerator";
 import {
@@ -119,6 +127,15 @@ export default function CoverLetterModal({
     if (open && candidate && job) {
       setAiNotice(null);
       const currentOwner = activeOwnerId;
+      const candidateHash = computeCandidateFactsHash(candidate);
+      const jHash = computeJobHash(job);
+      const validationContext = {
+        candidateFactsHash: candidateHash,
+        jobHash: jHash,
+        candidate,
+        job,
+      };
+
       // For authenticated work, stop safely when no owner is verified: clean rules-based, no cache
       if (!currentOwner) {
         const result = generateTailoredCoverLetter(candidate, job);
@@ -128,21 +145,32 @@ export default function CoverLetterModal({
       }
 
       // 1. Check per-job cache first
-      const cached = getCachedTailoredCoverLetter(jobId, currentOwner);
+      const cached = getCachedTailoredCoverLetter(jobId, currentOwner, validationContext);
       if (cached && cached.fullText) {
-        setContent(cached.fullText);
-        setIsValidated(cached.isValidated ?? true);
-        return;
+        const validation = validateCoverLetter(cached.fullText, candidate, job);
+        if (validation.valid) {
+          setContent(cached.fullText);
+          setIsValidated(true);
+          return;
+        } else {
+          // Stale / unverified cached entry: purge and generate fresh validated draft
+          purgeTailoredCoverLetter(jobId, currentOwner);
+        }
       }
 
       // Check remote Supabase cache before fresh generation
-      getTailoredCoverLetterAsync(jobId, currentOwner)
+      getTailoredCoverLetterAsync(jobId, currentOwner, validationContext)
         .then((remote) => {
           if (activeOwnerIdRef.current !== currentOwner) return;
           if (remote && remote.fullText) {
-            setContent(remote.fullText);
-            setIsValidated(remote.isValidated ?? true);
-            return;
+            const validation = validateCoverLetter(remote.fullText, candidate, job);
+            if (validation.valid) {
+              setContent(remote.fullText);
+              setIsValidated(true);
+              return;
+            } else {
+              purgeTailoredCoverLetter(jobId, currentOwner);
+            }
           }
 
           // 2. Generate deterministic tailored cover letter from job context
@@ -179,6 +207,10 @@ export default function CoverLetterModal({
                         fullText: res.text,
                         paragraphs: res.text.split("\n\n").filter(Boolean),
                         isValidated: res.isValidated,
+                        cacheVersion: COVER_LETTER_CACHE_VERSION,
+                        generatorId: "groq-cover_letter-v2",
+                        candidateFactsHash: candidateHash,
+                        jobHash: jHash,
                       },
                       currentOwner
                     );
@@ -225,7 +257,39 @@ export default function CoverLetterModal({
     return true;
   };
 
+  const validateBeforeExport = (): boolean => {
+    const validation = validateCoverLetter(content, candidate, job);
+    if (!validation.valid) {
+      setIsValidated(false);
+      const reason = validation.reasons[0] || "Unverified claims detected.";
+      toast.error(`Cannot export cover letter with unverified claims: ${reason}`);
+      if (activeOwnerId) {
+        saveCachedTailoredCoverLetter(
+          jobId,
+          {
+            recipient: `Hiring Team at ${job.company}`,
+            company: job.company,
+            jobTitle: job.title,
+            salutation: `Dear Hiring Team at ${job.company},`,
+            contactHeader: formatContactHeader(candidate),
+            paragraphs: content.split("\n\n").filter(Boolean),
+            fullText: content,
+            isValidated: false,
+            cacheVersion: COVER_LETTER_CACHE_VERSION,
+            generatorId: "user-edited-v2",
+            candidateFactsHash: computeCandidateFactsHash(candidate),
+            jobHash: computeJobHash(job),
+          },
+          activeOwnerId
+        );
+      }
+      return false;
+    }
+    return true;
+  };
+
   const handleDownloadPdf = async () => {
+    if (!validateBeforeExport()) return;
     if (!(await verifyExportAllowed())) return;
     downloadCoverLetterPdf({
       candidate,
@@ -252,6 +316,10 @@ export default function CoverLetterModal({
           paragraphs: newVal.split("\n\n").filter(Boolean),
           fullText: newVal,
           isValidated: validation.valid,
+          cacheVersion: COVER_LETTER_CACHE_VERSION,
+          generatorId: "user-edited-v2",
+          candidateFactsHash: computeCandidateFactsHash(candidate),
+          jobHash: computeJobHash(job),
         },
         activeOwnerId
       );
@@ -259,6 +327,7 @@ export default function CoverLetterModal({
   };
 
   const handleCopy = async () => {
+    if (!validateBeforeExport()) return;
     if (!(await verifyExportAllowed())) return;
     navigator.clipboard.writeText(content);
     setCopied(true);
@@ -267,6 +336,7 @@ export default function CoverLetterModal({
   };
 
   const handleDownloadTxt = async () => {
+    if (!validateBeforeExport()) return;
     if (!(await verifyExportAllowed())) return;
     const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -281,6 +351,7 @@ export default function CoverLetterModal({
   };
 
   const handleDownloadDoc = async () => {
+    if (!validateBeforeExport()) return;
     if (!(await verifyExportAllowed())) return;
     // Generate clean Word-compatible document with strict HTML escaping
     const html = buildCoverLetterDocHtml(job.company, content);
