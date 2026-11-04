@@ -68,7 +68,7 @@ export class GreenhouseAdapter implements SourceAdapter {
         let salaryText: string | null = null;
         let salaryMin: number | null = null;
         let salaryMax: number | null = null;
-        let currency = 'USD';
+        let currency: string | undefined = undefined;
         let salaryPeriod: 'yearly' | 'monthly' | 'hourly' | undefined = undefined;
 
         const validRange = Array.isArray(j.pay_input_ranges)
@@ -114,18 +114,20 @@ export class GreenhouseAdapter implements SourceAdapter {
           }
 
           if (salaryMin != null || salaryMax != null) {
-            salaryText = formatSalary(salaryMin, salaryMax, currency, salaryPeriod);
+            salaryText = formatSalary(salaryMin, salaryMax, currency || 'USD', salaryPeriod || 'yearly');
           }
         }
 
-        // Fallback to description regex parsing if no structured range exists
+        // Fallback to description regex parsing ONLY if no structured range exists
         if (!salaryText && salaryMin == null && salaryMax == null) {
           const fallback = parseSalary(description, { title, location });
-          salaryText = fallback.salary_text;
-          salaryMin = fallback.salary_min;
-          salaryMax = fallback.salary_max;
-          currency = fallback.currency;
-          salaryPeriod = fallback.salary_period;
+          if (fallback.salary_min != null || fallback.salary_max != null) {
+            salaryText = fallback.salary_text;
+            salaryMin = fallback.salary_min;
+            salaryMax = fallback.salary_max;
+            currency = fallback.currency;
+            salaryPeriod = fallback.salary_period;
+          }
         }
 
         const postedAt = normalizeDate(j.updated_at);
@@ -154,8 +156,8 @@ export class GreenhouseAdapter implements SourceAdapter {
           salary_text: salaryText,
           salary_min: salaryMin,
           salary_max: salaryMax,
-          currency,
-          salary_period: salaryPeriod,
+          currency: (salaryMin != null || salaryMax != null) ? currency : undefined,
+          salary_period: (salaryMin != null || salaryMax != null) ? salaryPeriod : undefined,
           category,
           posted_at: postedAt,
           discovered_at: nowIso,

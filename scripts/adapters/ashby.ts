@@ -42,12 +42,26 @@ export interface AshbyCompensation {
   summaryComponents?: AshbyCompensationComponent[];
 }
 
+export interface AshbySecondaryLocation {
+  location?: string;
+  address?: {
+    postalAddress?: {
+      addressCountry?: string;
+      addressLocality?: string;
+      addressRegion?: string;
+    };
+  };
+}
+
 export interface AshbyJob {
   id: string;
   title: string;
   location?: string;
+  secondaryLocations?: Array<AshbySecondaryLocation | string>;
   department?: string;
   isRemote?: boolean;
+  isListed?: boolean;
+  workplaceType?: string; // 'Remote', 'Hybrid', 'OnSite'
   publishedAt?: string;
   jobUrl?: string;
   applyUrl?: string;
@@ -76,11 +90,48 @@ export class AshbyAdapter implements SourceAdapter {
     const nowIso = new Date().toISOString();
 
     return data.jobs
-      .filter((j) => j && j.title && (j.jobUrl || j.applyUrl))
+      // Ashby correctness: exclude unlisted jobs (isListed === false)
+      .filter((j) => j && j.title && j.isListed !== false && (j.jobUrl || j.applyUrl))
       .map((j): NormalizedJob => {
         const title = cleanText(j.title);
-        const location = cleanText(j.location || 'Unspecified');
-        const remote = detectRemote(title, location, j.isRemote);
+
+        // Preserve primary and secondary locations
+        const primaryLoc = cleanText(j.location || '');
+        const secondaryLocs: string[] = [];
+        if (Array.isArray(j.secondaryLocations)) {
+          for (const sec of j.secondaryLocations) {
+            const secLocStr = typeof sec === 'string' ? sec : sec?.location;
+            if (secLocStr) {
+              const cleaned = cleanText(secLocStr);
+              if (cleaned && !secondaryLocs.includes(cleaned) && cleaned !== primaryLoc) {
+                secondaryLocs.push(cleaned);
+              }
+            }
+          }
+        }
+        const allLocs = [primaryLoc, ...secondaryLocs].filter(Boolean);
+        const location = allLocs.length > 0 ? allLocs.join('; ') : 'Unspecified';
+
+        // Distinguish workplaceType (Remote vs Hybrid vs OnSite)
+        // Ashby sets isRemote: true for both Remote and Hybrid; distinguish them authoritatively
+        const wp = (j.workplaceType || '').trim().toLowerCase();
+        let remote = false;
+        let remoteScope: 'remote' | 'hybrid' | 'onsite' = 'onsite';
+
+        if (wp === 'hybrid') {
+          remote = false;
+          remoteScope = 'hybrid';
+        } else if (wp === 'remote') {
+          remote = true;
+          remoteScope = 'remote';
+        } else if (wp === 'onsite' || wp === 'on-site') {
+          remote = false;
+          remoteScope = 'onsite';
+        } else {
+          remote = detectRemote(title, location, j.isRemote);
+          remoteScope = remote ? 'remote' : 'onsite';
+        }
+
         const jobType = detectJobType(title);
         const rawDesc = j.descriptionPlain || stripHtml(j.descriptionHtml);
         const description = cleanAndTruncateDescription(rawDesc, 4000);
@@ -89,10 +140,10 @@ export class AshbyAdapter implements SourceAdapter {
         let salaryText: string | null = null;
         let salaryMin: number | null = null;
         let salaryMax: number | null = null;
-        let currency = 'USD';
+        let currency: string | undefined = undefined;
         let salaryPeriod: 'yearly' | 'monthly' | 'hourly' | undefined = undefined;
 
-        if (j.compensation) {
+        if (j.compensation && typeof j.compensation === 'object') {
           // 1. Check structured compensation tiers/components
           const allComponents: AshbyCompensationComponent[] = [];
           if (Array.isArray(j.compensation.compensationTiers)) {
@@ -106,11 +157,13 @@ export class AshbyAdapter implements SourceAdapter {
             allComponents.push(...j.compensation.summaryComponents);
           }
 
+          // Count only valid numeric disclosed ranges (do not count empty compensation objects)
           const salaryComponent = allComponents.find(
             (c) =>
               c &&
               typeof c.compensationType === 'string' &&
-              c.compensationType.trim().toLowerCase() === 'salary'
+              c.compensationType.trim().toLowerCase() === 'salary' &&
+              ((c.minValue != null && c.minValue > 0) || (c.maxValue != null && c.maxValue > 0))
           );
 
           if (salaryComponent) {
@@ -141,8 +194,7 @@ export class AshbyAdapter implements SourceAdapter {
             } else if (rawInterval.includes('YEAR')) {
               salaryPeriod = 'yearly';
             } else {
-              // Interval is missing or unmapped
-              // Infer only when currency is USD and text says hour
+              // Interval is missing or unmapped: infer only if currency is USD and text says hour
               const textContext = `${j.compensation.compensationTierSummary || ''} ${j.compensation.summary || ''} ${j.title || ''}`;
               if (currency === 'USD' && /\b(hour|hourly|\/hr)\b/i.test(textContext)) {
                 salaryPeriod = 'hourly';
@@ -152,7 +204,7 @@ export class AshbyAdapter implements SourceAdapter {
             }
 
             if (salaryMin != null || salaryMax != null) {
-              salaryText = formatSalary(salaryMin, salaryMax, currency, salaryPeriod);
+              salaryText = formatSalary(salaryMin, salaryMax, currency || 'USD', salaryPeriod || 'yearly');
             }
           }
 
@@ -169,23 +221,27 @@ export class AshbyAdapter implements SourceAdapter {
                 location,
                 isExplicitSalaryField: true,
               });
-              salaryText = parsed.salary_text;
-              salaryMin = parsed.salary_min;
-              salaryMax = parsed.salary_max;
-              currency = parsed.currency;
-              salaryPeriod = parsed.salary_period;
+              if (parsed.salary_min != null || parsed.salary_max != null) {
+                salaryText = parsed.salary_text;
+                salaryMin = parsed.salary_min;
+                salaryMax = parsed.salary_max;
+                currency = parsed.currency;
+                salaryPeriod = parsed.salary_period;
+              }
             }
           }
         }
 
-        // 3. Fallback to description regex parsing if no compensation found
+        // 3. Fallback to description regex parsing ONLY if no structured compensation exists
         if (!salaryText && salaryMin == null && salaryMax == null) {
           const fallback = parseSalary(description, { title, location });
-          salaryText = fallback.salary_text;
-          salaryMin = fallback.salary_min;
-          salaryMax = fallback.salary_max;
-          currency = fallback.currency;
-          salaryPeriod = fallback.salary_period;
+          if (fallback.salary_min != null || fallback.salary_max != null) {
+            salaryText = fallback.salary_text;
+            salaryMin = fallback.salary_min;
+            salaryMax = fallback.salary_max;
+            currency = fallback.currency;
+            salaryPeriod = fallback.salary_period;
+          }
         }
 
         const postedAt = normalizeDate(j.publishedAt);
@@ -206,7 +262,7 @@ export class AshbyAdapter implements SourceAdapter {
           location,
           country_code: countryCode,
           remote,
-          remote_scope: remote ? 'remote' : 'onsite',
+          remote_scope: remoteScope,
           remote_eligibility: remoteEligibility,
           job_type: jobType,
           seniority,
@@ -216,8 +272,8 @@ export class AshbyAdapter implements SourceAdapter {
           salary_text: salaryText,
           salary_min: salaryMin,
           salary_max: salaryMax,
-          currency,
-          salary_period: salaryPeriod,
+          currency: (salaryMin != null || salaryMax != null) ? currency : undefined,
+          salary_period: (salaryMin != null || salaryMax != null) ? salaryPeriod : undefined,
           category,
           posted_at: postedAt,
           discovered_at: nowIso,
