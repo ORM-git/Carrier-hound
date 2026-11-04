@@ -57,6 +57,12 @@ async function run() {
   // -----------------------------------------------------------------------------
   console.log("1. Verifying Server-Side 403 PRO_REQUIRED for Non-Pro Users Across All AI Operations...");
   process.env.EARLY_ACCESS_ALLOWED_EMAILS = "free-user@careermonke.com";
+  (globalThis as any).__mockRateLimitClient = {
+    rpc: async () => ({
+      data: { allowed: true, retry_after: 0, current_count: 1 },
+      error: null,
+    }),
+  };
 
   const operations: AllowedAiOperation[] = [
     "cover_letter",
@@ -169,6 +175,7 @@ async function run() {
   if (unapprovedRes.status !== 403 || unapprovedJson.error !== "Early access only") {
     failures.push(`SECURITY ERROR: Unapproved user did not get 403 Early access only (status: ${unapprovedRes.status}, error: ${unapprovedJson.error})`);
   }
+  delete (globalThis as any).__mockRateLimitClient;
 
   // -----------------------------------------------------------------------------
   // SUITE 2: Top 10 Ranked Jobs Service Gating
