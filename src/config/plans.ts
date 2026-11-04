@@ -138,12 +138,12 @@ export const PLANS: PlanConfig[] = [
 ];
 
 /**
- * Display order for paid cards in desktop row: Monthly / Quarterly / Weekly
+ * Display order for paid cards in desktop row: Weekly / Monthly / Quarterly
  */
 export const PAID_PLANS_DISPLAY_ORDER: Array<PlanConfig["id"]> = [
+  "weekly",
   "monthly",
   "quarterly",
-  "weekly",
 ];
 
 export const PLAN_COMPARISON_ROWS: PlanComparisonRow[] = [
