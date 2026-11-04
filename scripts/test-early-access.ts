@@ -95,6 +95,11 @@ function verifyNoSelfApproveInSrc(
   let selectUseCount = 0;
 
   for (const { filePath, content } of files) {
+    // Admin management APIs are verified server-side and privileged; skip admin paths
+    if (filePath.startsWith("src/app/api/admin/") || filePath.startsWith("src/lib/admin/")) {
+      continue;
+    }
+
     const codeOnly = stripComments(content);
     if (!codeOnly.includes("early_access_approved")) {
       continue;

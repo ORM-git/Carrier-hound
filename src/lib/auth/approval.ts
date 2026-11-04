@@ -26,6 +26,20 @@ export function _clearApprovalCacheForTesting(): void {
   approvalCache.clear();
 }
 
+export function invalidateApprovalCache(email?: string): void {
+  if (!email) {
+    approvalCache.clear();
+    return;
+  }
+  approvalCache.delete(email.trim().toLowerCase());
+}
+
+export function setApprovalCache(email: string, approved: boolean): void {
+  const normalized = email.trim().toLowerCase();
+  if (!normalized) return;
+  approvalCache.set(normalized, { approved, cachedAt: Date.now() });
+}
+
 export function getAllowedEarlyAccessEmails(): Set<string> {
   const raw = process.env.EARLY_ACCESS_ALLOWED_EMAILS || "";
   return new Set(
