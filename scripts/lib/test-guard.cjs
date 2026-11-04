@@ -83,6 +83,7 @@ const SUITE_CLASSIFICATIONS = Object.freeze({
   "scripts/test-backfill-company-logos.ts": "offline",
   "scripts/test-company-logos-and-caps.ts": "offline",
   "scripts/test-logo-resolver-ssrf.ts": "offline",
+  "scripts/test-ats-pipeline-repair.ts": "offline",
   "scripts/test-ai-fallback-and-cover-letter.ts": "offline",
   "scripts/test-ai-idempotency-replay.ts": "offline",
 

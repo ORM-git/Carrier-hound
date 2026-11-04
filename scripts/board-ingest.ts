@@ -134,6 +134,10 @@ export interface IngestionOptions {
   supabaseClient?: any;
   expectHost?: string;
   skipExistingRegistry?: boolean;
+  sourceMode?: 'seed' | 'registry' | 'candidates' | 'custom';
+  includeRegistry?: boolean;
+  checkpointPath?: string;
+  resume?: boolean;
 }
 
 export interface ClosedJobRecord {
@@ -571,11 +575,13 @@ export function normalizeAtsJob(
 
     if (!salaryText && salaryMin == null && salaryMax == null) {
       const fallback = parseSalary(description, { title, location });
-      salaryText = fallback.salary_text;
-      salaryMin = fallback.salary_min;
-      salaryMax = fallback.salary_max;
-      currency = fallback.currency;
-      salaryPeriod = fallback.salary_period;
+      if (fallback.salary_min != null || fallback.salary_max != null) {
+        salaryText = fallback.salary_text;
+        salaryMin = fallback.salary_min;
+        salaryMax = fallback.salary_max;
+        currency = fallback.currency;
+        salaryPeriod = fallback.salary_period;
+      }
     }
 
     return {
@@ -598,8 +604,8 @@ export function normalizeAtsJob(
       salary_text: salaryText,
       salary_min: salaryMin,
       salary_max: salaryMax,
-      currency,
-      salary_period: salaryPeriod,
+      currency: (salaryMin != null || salaryMax != null) ? (currency || 'USD') : undefined,
+      salary_period: (salaryMin != null || salaryMax != null) ? salaryPeriod : undefined,
       category: detectCategory(title),
       posted_at: postedAt,
       discovered_at: nowIso,
@@ -617,10 +623,29 @@ export function normalizeAtsJob(
 
     const title = cleanText(raw.text);
     if (!title) return null;
+    const primaryLoc = cleanText(raw.categories?.location || '');
+    const secondaryLocs = Array.isArray(raw.categories?.allLocations)
+      ? raw.categories.allLocations.map((l) => cleanText(l)).filter((l) => l && l !== primaryLoc)
+      : [];
+    const combinedLocs = [primaryLoc, ...secondaryLocs].filter(Boolean);
+    const location = combinedLocs.length > 0 ? combinedLocs.join('; ') : 'Unspecified';
 
-    const location = cleanText(raw.categories?.location || 'Unspecified');
-    const isRemoteWorkplace = raw.workplaceType === 'remote';
-    const remote = isRemoteWorkplace || detectRemote(title, location);
+    const wp = (raw.workplaceType || '').trim().toLowerCase();
+    let remote = false;
+    let remoteScope: 'remote' | 'hybrid' | 'onsite' = 'onsite';
+    if (wp === 'hybrid') {
+      remote = false;
+      remoteScope = 'hybrid';
+    } else if (wp === 'remote') {
+      remote = true;
+      remoteScope = 'remote';
+    } else if (wp === 'on-site' || wp === 'onsite') {
+      remote = false;
+      remoteScope = 'onsite';
+    } else {
+      remote = detectRemote(title, location);
+      remoteScope = remote ? 'remote' : 'onsite';
+    }
     const countryCode = detectCountryCode(location);
     const rawDesc = raw.descriptionPlain || raw.description;
     const description = cleanAndTruncateDescription(rawDesc, 1500);
@@ -632,9 +657,14 @@ export function normalizeAtsJob(
     let currency = 'USD';
     let salaryPeriod: 'yearly' | 'monthly' | 'hourly' | undefined = undefined;
 
-    if (raw.salaryRange && typeof raw.salaryRange === 'object') {
-      const min = typeof raw.salaryRange.min === 'number' ? raw.salaryRange.min : null;
-      const max = typeof raw.salaryRange.max === 'number' ? raw.salaryRange.max : null;
+    if (
+      raw.salaryRange &&
+      typeof raw.salaryRange === 'object' &&
+      ((raw.salaryRange.min != null && raw.salaryRange.min > 0) ||
+        (raw.salaryRange.max != null && raw.salaryRange.max > 0))
+    ) {
+      const min = typeof raw.salaryRange.min === 'number' && raw.salaryRange.min > 0 ? raw.salaryRange.min : null;
+      const max = typeof raw.salaryRange.max === 'number' && raw.salaryRange.max > 0 ? raw.salaryRange.max : null;
       if (min != null || max != null) {
         salaryMin = min;
         salaryMax = max;
@@ -643,17 +673,19 @@ export function normalizeAtsJob(
         if (interval.includes('hour')) salaryPeriod = 'hourly';
         else if (interval.includes('month')) salaryPeriod = 'monthly';
         else if (interval.includes('year') || interval.includes('annu')) salaryPeriod = 'yearly';
-        salaryText = formatSalary(salaryMin, salaryMax, currency, salaryPeriod);
+        salaryText = formatSalary(salaryMin, salaryMax, currency || 'USD', salaryPeriod || 'yearly');
       }
     }
 
     if (!salaryText && salaryMin == null && salaryMax == null) {
       const fallback = parseSalary(description, { title, location });
-      salaryText = fallback.salary_text;
-      salaryMin = fallback.salary_min;
-      salaryMax = fallback.salary_max;
-      currency = fallback.currency;
-      salaryPeriod = fallback.salary_period;
+      if (fallback.salary_min != null || fallback.salary_max != null) {
+        salaryText = fallback.salary_text;
+        salaryMin = fallback.salary_min;
+        salaryMax = fallback.salary_max;
+        currency = fallback.currency;
+        salaryPeriod = fallback.salary_period;
+      }
     }
 
     return {
@@ -666,7 +698,7 @@ export function normalizeAtsJob(
       location,
       country_code: countryCode,
       remote,
-      remote_scope: remote ? 'remote' : 'onsite',
+      remote_scope: remoteScope,
       remote_eligibility: detectRemoteEligibility(location, remote),
       job_type: detectJobType(title, raw.categories?.commitment || ''),
       seniority: detectSeniority(title),
@@ -676,8 +708,8 @@ export function normalizeAtsJob(
       salary_text: salaryText,
       salary_min: salaryMin,
       salary_max: salaryMax,
-      currency,
-      salary_period: salaryPeriod,
+      currency: (salaryMin != null || salaryMax != null) ? (currency || 'USD') : undefined,
+      salary_period: (salaryMin != null || salaryMax != null) ? salaryPeriod : undefined,
       category: detectCategory(title),
       posted_at: postedAt,
       discovered_at: nowIso,
@@ -690,14 +722,45 @@ export function normalizeAtsJob(
   // ASHBY
   if (ats === 'ashby') {
     if (!raw.title) return null;
+    if (raw.isListed === false) return null;
     const applyUrl = String(raw.jobUrl || raw.applyUrl || '').trim();
     if (!isValidApplyUrl(applyUrl)) return null;
 
     const title = cleanText(raw.title);
     if (!title) return null;
 
-    const location = cleanText(raw.location || 'Unspecified');
-    const remote = detectRemote(title, location, raw.isRemote);
+    const primaryLoc = cleanText(raw.location || '');
+    const secondaryLocs: string[] = [];
+    if (Array.isArray(raw.secondaryLocations)) {
+      for (const sec of raw.secondaryLocations) {
+        const secLocStr = typeof sec === 'string' ? sec : sec?.location;
+        if (secLocStr) {
+          const cleaned = cleanText(secLocStr);
+          if (cleaned && !secondaryLocs.includes(cleaned) && cleaned !== primaryLoc) {
+            secondaryLocs.push(cleaned);
+          }
+        }
+      }
+    }
+    const allLocs = [primaryLoc, ...secondaryLocs].filter(Boolean);
+    const location = allLocs.length > 0 ? allLocs.join('; ') : 'Unspecified';
+
+    const wp = (raw.workplaceType || '').trim().toLowerCase();
+    let remote = false;
+    let remoteScope: 'remote' | 'hybrid' | 'onsite' = 'onsite';
+    if (wp === 'hybrid') {
+      remote = false;
+      remoteScope = 'hybrid';
+    } else if (wp === 'remote') {
+      remote = true;
+      remoteScope = 'remote';
+    } else if (wp === 'onsite' || wp === 'on-site') {
+      remote = false;
+      remoteScope = 'onsite';
+    } else {
+      remote = detectRemote(title, location, raw.isRemote);
+      remoteScope = remote ? 'remote' : 'onsite';
+    }
     const countryCode = detectCountryCode(location);
     const rawDesc = raw.descriptionPlain || raw.descriptionHtml;
     const description = cleanAndTruncateDescription(rawDesc, 1500);
@@ -713,13 +776,14 @@ export function normalizeAtsJob(
       const comp = raw.compensation;
       const tier = Array.isArray(comp.compensationTiers) && comp.compensationTiers[0];
       const components = tier?.components || comp.summaryComponents || [];
-      const salaryComp = components.find(
-        (c: any) =>
-          c &&
-          (c.compensationType === 'Salary' ||
-            (c.minValue != null && c.minValue > 0) ||
-            (c.maxValue != null && c.maxValue > 0))
-      );
+      const salaryComp = Array.isArray(components)
+        ? components.find(
+            (c: any) =>
+              c &&
+              c.compensationType === 'Salary' &&
+              ((c.minValue != null && c.minValue > 0) || (c.maxValue != null && c.maxValue > 0))
+          )
+        : null;
 
       if (salaryComp) {
         salaryMin = salaryComp.minValue ?? null;
@@ -729,19 +793,28 @@ export function normalizeAtsJob(
         if (interval.includes('hour')) salaryPeriod = 'hourly';
         else if (interval.includes('month')) salaryPeriod = 'monthly';
         else if (interval.includes('year')) salaryPeriod = 'yearly';
-        salaryText = formatSalary(salaryMin, salaryMax, currency, salaryPeriod);
+        salaryText = formatSalary(salaryMin, salaryMax, currency || 'USD', salaryPeriod || 'yearly');
       } else if (comp.scrapeableCompensationSalarySummary) {
-        salaryText = comp.scrapeableCompensationSalarySummary;
+        const parsed = parseSalary(comp.scrapeableCompensationSalarySummary, { title, location, isExplicitSalaryField: true });
+        if (parsed.salary_min != null || parsed.salary_max != null) {
+          salaryMin = parsed.salary_min;
+          salaryMax = parsed.salary_max;
+          salaryText = parsed.salary_text;
+          currency = parsed.currency;
+          salaryPeriod = parsed.salary_period;
+        }
       }
     }
 
     if (!salaryText && salaryMin == null && salaryMax == null) {
       const fallback = parseSalary(description, { title, location });
-      salaryText = fallback.salary_text;
-      salaryMin = fallback.salary_min;
-      salaryMax = fallback.salary_max;
-      currency = fallback.currency;
-      salaryPeriod = fallback.salary_period;
+      if (fallback.salary_min != null || fallback.salary_max != null) {
+        salaryText = fallback.salary_text;
+        salaryMin = fallback.salary_min;
+        salaryMax = fallback.salary_max;
+        currency = fallback.currency;
+        salaryPeriod = fallback.salary_period;
+      }
     }
 
     return {
@@ -754,7 +827,7 @@ export function normalizeAtsJob(
       location,
       country_code: countryCode,
       remote,
-      remote_scope: remote ? 'remote' : 'onsite',
+      remote_scope: remoteScope,
       remote_eligibility: detectRemoteEligibility(location, remote),
       job_type: detectJobType(title),
       seniority: detectSeniority(title),
@@ -764,8 +837,8 @@ export function normalizeAtsJob(
       salary_text: salaryText,
       salary_min: salaryMin,
       salary_max: salaryMax,
-      currency,
-      salary_period: salaryPeriod,
+      currency: (salaryMin != null || salaryMax != null) ? (currency || 'USD') : undefined,
+      salary_period: (salaryMin != null || salaryMax != null) ? salaryPeriod : undefined,
       category: detectCategory(title),
       posted_at: postedAt,
       discovered_at: nowIso,
@@ -897,6 +970,10 @@ export function handleClosedJobs(
  */
 export async function runBoardIngestion(options: IngestionOptions = {}): Promise<BoardIngestionStats> {
   const {
+    sourceMode,
+    includeRegistry,
+    checkpointPath,
+    resume,
     dryRun = true,
     liveWrite = false,
     confirmProdWrite = false,
@@ -982,9 +1059,28 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
   }
 
   // Load target verified boards
-  let targetBoards = loadVerifiedBoards(inputPath || configPath);
+  // Load target verified boards based on sourceMode
+  let targetBoards: CompanyRegistryEntry[] = [];
+  if (sourceMode === 'registry') {
+    targetBoards = loadCompanyRegistry(inputPath || configPath);
+  } else if (sourceMode === 'seed') {
+    const seedPath = path.resolve(__dirname, 'config/companies-seed.json');
+    if (fs.existsSync(seedPath)) {
+      const seedRaw = fs.readFileSync(seedPath, 'utf-8');
+      targetBoards = JSON.parse(seedRaw).map((s: any) => ({
+        company: s.name,
+        ats: s.type,
+        token: s.target,
+        enabled: s.enabled !== false,
+      }));
+    } else {
+      targetBoards = loadVerifiedBoards(inputPath || configPath);
+    }
+  } else {
+    targetBoards = loadVerifiedBoards(inputPath || configPath);
+  }
 
-  // Load existing registry to ensure live-write never touches existing registry boards
+  // Load existing registry to ensure live-write never touches existing registry boards in candidate discovery
   const registryEntries = loadCompanyRegistry();
   const existingRegistrySlugs = new Set<string>();
   for (const r of registryEntries) {
@@ -992,13 +1088,15 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
     if (r.target) existingRegistrySlugs.add(r.target.toLowerCase());
   }
 
+  const shouldSkipRegistry = skipExistingRegistry !== false && !includeRegistry && sourceMode !== 'registry' && sourceMode !== 'seed';
+
   let skippedRegistryCount = 0;
   let targets = targetBoards.filter((entry) => {
     if (atsFilter !== 'all' && entry.ats !== atsFilter) return false;
     if (companyFilter && !entry.company?.toLowerCase().includes(companyFilter.toLowerCase())) return false;
 
-    // Skip any board whose slug already exists in the existing registry
-    if (skipExistingRegistry !== false) {
+    // Skip any board whose slug already exists in the existing registry (when in candidate discovery)
+    if (shouldSkipRegistry) {
       const slug = (entry.token || '').toLowerCase();
       if (existingRegistrySlugs.has(slug)) {
         skippedRegistryCount++;
@@ -1532,6 +1630,13 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(__filename
   const hostIdx = args.findIndex((a) => a === '--expect-host');
   const expectHost = hostIdx !== -1 && args[hostIdx + 1] && !args[hostIdx + 1].startsWith('--') ? args[hostIdx + 1] : undefined;
 
+  const sourceIdx = args.findIndex((a) => a === '--source');
+  const sourceMode = sourceIdx !== -1 ? (args[sourceIdx + 1] as any) : undefined;
+  const includeRegistry = args.includes('--include-registry');
+  const resume = args.includes('--resume');
+  const checkpointIdx = args.findIndex((a) => a === '--checkpoint');
+  const checkpointPath = checkpointIdx !== -1 ? args[checkpointIdx + 1] : undefined;
+
   runBoardIngestion({
     dryRun: !liveWrite,
     liveWrite,
@@ -1548,6 +1653,10 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(__filename
     companyFilter,
     inputPath,
     expectHost,
+    sourceMode,
+    includeRegistry,
+    checkpointPath,
+    resume,
   })
     .then(() => process.exit(0))
     .catch((err) => {
