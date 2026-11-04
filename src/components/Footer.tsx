@@ -295,6 +295,27 @@ export default function Footer({ isGuide = false }: FooterProps) {
           <div className="flex items-center">
             <BrandIcon variant="full" width={110} height={44} className="h-7 w-auto" />
           </div>
+          <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-[#64748B]">
+            <Link href="/terms-and-conditions" className="hover:text-[#2563EB] transition-colors">
+              Terms
+            </Link>
+            <span aria-hidden="true" className="text-slate-300">·</span>
+            <Link href="/privacy-policy" className="hover:text-[#2563EB] transition-colors">
+              Privacy
+            </Link>
+            <span aria-hidden="true" className="text-slate-300">·</span>
+            <Link href="/refund-policy" className="hover:text-[#2563EB] transition-colors">
+              Refund Policy
+            </Link>
+            <span aria-hidden="true" className="text-slate-300">·</span>
+            <Link href="/shipping-and-delivery" className="hover:text-[#2563EB] transition-colors">
+              Shipping &amp; Delivery
+            </Link>
+            <span aria-hidden="true" className="text-slate-300">·</span>
+            <Link href="/contact" className="hover:text-[#2563EB] transition-colors">
+              Contact
+            </Link>
+          </div>
           <p className="text-xs text-[#94A3B8]">
             © {new Date().getFullYear()} Olive Ridley Media Private Limited. All rights reserved.
           </p>

@@ -529,9 +529,44 @@ export default function PricingPage() {
           </p>
         </div>
 
-        <div className="pt-2 text-center space-y-1.5 text-xs text-slate-500 dark:text-slate-400">
+        <div className="pt-2 text-center space-y-2 text-xs text-slate-500 dark:text-slate-400">
           <p className="font-bold text-[#090E34] dark:text-white">All sales final · no refunds</p>
-          <p>{PER_WEEK_NOTE}</p>
+          <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
+            <Link
+              href="/terms-and-conditions"
+              className="hover:text-[#2563EB] dark:hover:text-blue-400 underline underline-offset-2 transition-colors"
+            >
+              Terms &amp; Conditions
+            </Link>
+            <span aria-hidden="true" className="text-slate-300 dark:text-slate-700">·</span>
+            <Link
+              href="/privacy-policy"
+              className="hover:text-[#2563EB] dark:hover:text-blue-400 underline underline-offset-2 transition-colors"
+            >
+              Privacy Policy
+            </Link>
+            <span aria-hidden="true" className="text-slate-300 dark:text-slate-700">·</span>
+            <Link
+              href="/refund-policy"
+              className="hover:text-[#2563EB] dark:hover:text-blue-400 underline underline-offset-2 transition-colors"
+            >
+              Cancellation &amp; Refund Policy
+            </Link>
+            <span aria-hidden="true" className="text-slate-300 dark:text-slate-700">·</span>
+            <Link
+              href="/shipping-and-delivery"
+              className="hover:text-[#2563EB] dark:hover:text-blue-400 underline underline-offset-2 transition-colors"
+            >
+              Shipping &amp; Delivery
+            </Link>
+            <span aria-hidden="true" className="text-slate-300 dark:text-slate-700">·</span>
+            <Link
+              href="/contact"
+              className="hover:text-[#2563EB] dark:hover:text-blue-400 underline underline-offset-2 transition-colors"
+            >
+              Contact Us
+            </Link>
+          </div>
         </div>
       </div>
     </div>

@@ -54,18 +54,18 @@ async function runDomainResolutionSuite() {
 
     // 2. Check sitemap()
     const sitemapEntries = sitemap();
-    const allMatchSitemap = sitemapEntries.every((entry) => entry.url.startsWith(expectedBase));
+    const allMatchSitemap = sitemapEntries.every((entry) => entry.url.startsWith("https://careermonke.com"));
     if (allMatchSitemap && sitemapEntries.length > 0) {
-      console.log(`[PASS] sitemap() for ${item.name}: all ${sitemapEntries.length} entries start with ${expectedBase}`);
+      console.log(`[PASS] sitemap() for ${item.name}: all ${sitemapEntries.length} entries start with https://careermonke.com`);
       passCount++;
     } else {
-      console.error(`[FAIL] sitemap() for ${item.name}: some entries do not start with ${expectedBase}`);
+      console.error(`[FAIL] sitemap() for ${item.name}: some entries do not start with https://careermonke.com`);
       failCount++;
     }
 
     // 3. Check robots()
     const robotsEntry = robots();
-    const expectedRobotsSitemap = `${expectedBase}/sitemap.xml`;
+    const expectedRobotsSitemap = "https://careermonke.com/sitemap.xml";
     if (robotsEntry.sitemap === expectedRobotsSitemap) {
       console.log(`[PASS] robots() for ${item.name}: sitemap points to ${robotsEntry.sitemap}`);
       passCount++;
