@@ -96,6 +96,7 @@ export function getNetlifyClientIp(event: any): string {
 
 export interface AiServiceDeps {
   getSupabaseAdmin?: () => any;
+  supabaseAdmin?: any;
   getServerEntitlement?: typeof getServerEntitlement;
   callGroq?: (payload: any) => Promise<any>;
   consumeSet?: typeof consumeSet;
@@ -232,6 +233,63 @@ export function getSupabaseAdminClient(
   return createClient(supabaseUrl, serviceKey!, {
     auth: { persistSession: false },
   });
+}
+
+export const DEFAULT_AI_GLOBAL_DAILY_TOKEN_CAP = 2000000;
+export const DEFAULT_AI_GLOBAL_MAX_CONCURRENCY = 25;
+
+export function getAiGlobalDailyTokenCap(envOverrides?: Record<string, any>): number {
+  const raw = getRuntimeEnv("AI_GLOBAL_DAILY_TOKEN_CAP", envOverrides);
+  if (!raw) return DEFAULT_AI_GLOBAL_DAILY_TOKEN_CAP;
+  const parsed = parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_AI_GLOBAL_DAILY_TOKEN_CAP;
+}
+
+export function getAiGlobalMaxConcurrency(envOverrides?: Record<string, any>): number {
+  const raw = getRuntimeEnv("AI_GLOBAL_MAX_CONCURRENCY", envOverrides);
+  if (!raw) return DEFAULT_AI_GLOBAL_MAX_CONCURRENCY;
+  const parsed = parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_AI_GLOBAL_MAX_CONCURRENCY;
+}
+
+export function isAiGlobalDisabled(envOverrides?: Record<string, any>): boolean {
+  const raw = getRuntimeEnv("AI_GLOBAL_DISABLE", envOverrides);
+  if (!raw) return false;
+  const normalized = raw.trim().toLowerCase();
+  return normalized === "true" || normalized === "1" || normalized === "yes" || normalized === "on";
+}
+
+const BUDGET_ALERT_DEDUPE_MS = 60 * 60 * 1000; // 1 hour
+const budgetAlertDedupeMap = new Map<string, number>();
+
+export function _resetBudgetAlertStores(): void {
+  budgetAlertDedupeMap.clear();
+}
+
+export function _getBudgetAlertDedupeMap(): Map<string, number> {
+  return budgetAlertDedupeMap;
+}
+
+export function emitBudgetAlert(condition: string, message: string, extra?: Record<string, any>): void {
+  const now = Date.now();
+  const lastAlert = budgetAlertDedupeMap.get(condition) || 0;
+  if (now - lastAlert < BUDGET_ALERT_DEDUPE_MS) {
+    return;
+  }
+  budgetAlertDedupeMap.set(condition, now);
+
+  const marker = "[AI-GLOBAL-BUDGET]";
+  console.error(`${marker} [${condition}] ${message}`, extra ? JSON.stringify(extra) : "");
+
+  try {
+    const sentry = (globalThis as any).Sentry;
+    if (sentry && typeof sentry.captureMessage === "function") {
+      sentry.captureMessage(`${marker} [${condition}] ${message}`, {
+        level: "warning",
+        extra,
+      });
+    }
+  } catch {}
 }
 
 export interface AiCoreResponse {
@@ -451,13 +509,31 @@ export async function executeAiCore(
 
     const isMeteredOperation = config.operation === "resume_tailor" || config.operation === "cover_letter";
 
-    // 4. Quota Enforcement:
-    // Metered AI generations (resume_tailor and cover_letter) route strictly through consumeSet,
-    // which manages Pro entitlement, plan quotas, add-on credits, client idempotency keys,
-    // and the 30/day IST fair-use cap. They MUST NOT double-count in ai_usage_quotas.
-    // Non-metered operations (e.g. job_fit, extraction) fall under checkAndIncrementAiQuota.
-    if (config.operation === "resume_tailor" || config.operation === "cover_letter") {
-      confirmedKind = config.operation;
+    // 3A. Global Kill Switch Check (before any quota debit or budget reservation)
+    if (isAiGlobalDisabled(activeDeps.env)) {
+      emitBudgetAlert("kill_switch", "AI temporarily disabled via emergency kill switch (AI_GLOBAL_DISABLE)", {
+        userId: user.id,
+        operation: config.operation,
+      });
+      return {
+        statusCode: 503,
+        body: {
+          error: "AI temporarily disabled",
+          message: "AI temporarily disabled",
+          code: "AI_SERVICE_DISABLED",
+        },
+        headers: {
+          "Retry-After": "300",
+        },
+      };
+    }
+
+    // 3B. Pre-check for Idempotent Replay (Must NOT reserve budget or take a lease)
+    let isPreVerifiedReplay = false;
+    let preVerifiedReplayResult: any = null;
+
+    if (isMeteredOperation) {
+      confirmedKind = config.operation as QuotaKind;
       const candidateKey =
         body.idempotencyKey ??
         body.idempotency_key ??
@@ -483,10 +559,158 @@ export async function executeAiCore(
         keyValidation.key ||
         `set_${user.id}_${config.operation}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
+      const cached = getIdempotentResult(user.id, config.operation, setConsumeKey);
+      if (cached) {
+        isPreVerifiedReplay = true;
+        preVerifiedReplayResult = cached;
+      } else if (typeof supabaseAdmin?.from === "function") {
+        try {
+          const { data: dbEvent } = await supabaseAdmin
+            .from("plan_usage_events")
+            .select("response_payload")
+            .eq("user_id", user.id)
+            .eq("kind", config.operation)
+            .eq("idempotency_key", setConsumeKey)
+            .maybeSingle();
+
+          if (dbEvent?.response_payload) {
+            isPreVerifiedReplay = true;
+            preVerifiedReplayResult = dbEvent.response_payload;
+          }
+        } catch {}
+      }
+    }
+
+    if (isPreVerifiedReplay) {
+      return {
+        statusCode: 200,
+        body: {
+          ...preVerifiedReplayResult,
+          idempotentReplay: true,
+          alreadyConsumed: true,
+        },
+      };
+    }
+
+    // 3C. Global Daily Token Budget Reservation
+    const estimatedTokens = Math.max(1, (payload.estimatedInputTokens || 0) + (payload.maxOutputTokens || 0));
+    const globalDailyCap = getAiGlobalDailyTokenCap(activeDeps.env);
+    const periodDate = new Date().toISOString().slice(0, 10);
+    let budgetReserved = false;
+
+    if (typeof supabaseAdmin.rpc !== "function") {
+      if (process.env.NODE_ENV !== "test" || (!activeDeps.supabaseAdmin && !activeDeps.getSupabaseAdmin)) {
+        emitBudgetAlert("store_error", "Supabase client missing rpc function");
+        return {
+          statusCode: 503,
+          body: {
+            error: "Service temporarily unavailable. Please retry in a moment.",
+            code: "AI_BUDGET_SERVICE_UNAVAILABLE",
+          },
+          headers: {
+            "Retry-After": "30",
+          },
+        };
+      }
+    } else {
+      let reserveData: any;
+      let reserveErr: any;
+      try {
+        const res = await supabaseAdmin.rpc("ai_global_budget_reserve", {
+          p_period: periodDate,
+          p_tokens: estimatedTokens,
+          p_cap: globalDailyCap,
+        });
+        reserveData = res.data;
+        reserveErr = res.error;
+      } catch (err: any) {
+        reserveErr = err;
+      }
+
+      if (reserveErr) {
+        emitBudgetAlert("store_error", `Budget store RPC error: ${reserveErr.message || reserveErr}`, { error: reserveErr });
+        return {
+          statusCode: 503,
+          body: {
+            error: "Service temporarily unavailable. Please retry in a moment.",
+            code: "AI_BUDGET_SERVICE_UNAVAILABLE",
+          },
+          headers: {
+            "Retry-After": "30",
+          },
+        };
+      }
+
+      const row = Array.isArray(reserveData) ? reserveData[0] : reserveData;
+      if (!row || typeof row.allowed !== "boolean") {
+        emitBudgetAlert("store_error", "Budget store returned invalid payload", { reserveData });
+        return {
+          statusCode: 503,
+          body: {
+            error: "Service temporarily unavailable. Please retry in a moment.",
+            code: "AI_BUDGET_SERVICE_UNAVAILABLE",
+          },
+          headers: {
+            "Retry-After": "30",
+          },
+        };
+      }
+
+      if (!row.allowed) {
+        emitBudgetAlert("cap_hit", `Daily AI token budget cap reached (${globalDailyCap} tokens)`, {
+          globalDailyCap,
+          estimatedTokens,
+        });
+        return {
+          statusCode: 429,
+          body: {
+            error: "Daily AI capacity reached. Please try again tomorrow.",
+            code: "DAILY_GLOBAL_BUDGET_EXCEEDED",
+            retryAfter: 3600,
+          },
+          headers: {
+            "Retry-After": "3600",
+          },
+        };
+      }
+
+      budgetReserved = true;
+
+      const remainingTokens = Number(row.remaining ?? 0);
+      if (remainingTokens <= globalDailyCap * 0.2) {
+        emitBudgetAlert("reserve_80_percent", `Daily AI token reserve crossed 80% of cap (${globalDailyCap - remainingTokens}/${globalDailyCap})`, {
+          remaining: remainingTokens,
+          cap: globalDailyCap,
+        });
+      }
+    }
+
+    const settleBudget = async (actualTokens: number) => {
+      if (budgetReserved && typeof supabaseAdmin.rpc === "function") {
+        try {
+          await supabaseAdmin.rpc("ai_global_budget_settle", {
+            p_period: periodDate,
+            p_reserved: estimatedTokens,
+            p_actual: Math.max(0, actualTokens),
+          });
+          budgetReserved = false;
+        } catch (settleErr) {
+          console.warn("[AI Service] Error settling global AI budget:", settleErr);
+        }
+      }
+    };
+
+    // 4. Quota Enforcement:
+    // Metered AI generations (resume_tailor and cover_letter) route strictly through consumeSet,
+    // which manages Pro entitlement, plan quotas, add-on credits, client idempotency keys,
+    // and the 30/day IST fair-use cap. They MUST NOT double-count in ai_usage_quotas.
+    // Non-metered operations (e.g. job_fit, extraction) fall under checkAndIncrementAiQuota.
+    if (isMeteredOperation) {
       const doConsume = activeDeps.consumeSet || consumeSet;
-      const consumeRes = await doConsume(user.id, config.operation, setConsumeKey);
+      const consumeRes = await doConsume(user.id, config.operation as QuotaKind, setConsumeKey);
 
       if (!consumeRes.success) {
+        await settleBudget(0);
         const isDailyCap = consumeRes.code === "DAILY_LIMIT_REACHED";
         return {
           statusCode: isDailyCap ? 429 : 403,
@@ -502,6 +726,7 @@ export async function executeAiCore(
       // we MUST NOT regenerate fresh content or call Groq again.
       // Return the stored result from cache, RPC, or DB without re-calling upstream AI.
       if (consumeRes.alreadyConsumed) {
+        await settleBudget(0);
         const cached =
           getIdempotentResult(user.id, config.operation, setConsumeKey) ||
           consumeRes.cachedResult;
@@ -565,6 +790,7 @@ export async function executeAiCore(
       );
 
       if (!quotaResult.allowed) {
+        await settleBudget(0);
         if (quotaResult.isServiceUnavailable) {
           return {
             statusCode: 503,
@@ -601,108 +827,241 @@ export async function executeAiCore(
       }
     };
 
-    // 5. Server-Side Groq API Key Check & Upstream Groq Call
-    let groqData: any;
-    if (activeDeps.callGroq) {
-      try {
-        groqData = await activeDeps.callGroq(payload);
-      } catch (mockErr: any) {
-        console.warn("[AI Service] Error calling mock Groq provider:", mockErr);
+    // 4C. Global Concurrency Lease Acquisition
+    const maxConcurrency = getAiGlobalMaxConcurrency(activeDeps.env);
+    const leaseId = `lease_${user.id}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    let hasLease = false;
+
+    if (typeof supabaseAdmin.rpc !== "function") {
+      if (process.env.NODE_ENV !== "test" || (!activeDeps.supabaseAdmin && !activeDeps.getSupabaseAdmin)) {
+        emitBudgetAlert("store_error", "Supabase client missing rpc function for concurrency");
+        await settleBudget(0);
         await rollbackAllQuotas();
         return {
-          statusCode: 502,
-          body: { error: mockErr?.message || "AI service request failed or timed out. Please try again." },
+          statusCode: 503,
+          body: {
+            error: "Service temporarily unavailable. Please retry in a moment.",
+            code: "AI_CONCURRENCY_SERVICE_UNAVAILABLE",
+          },
+          headers: {
+            "Retry-After": "30",
+          },
         };
       }
     } else {
-      const groqApiKey = getRuntimeEnv("GROQ_API_KEY", activeDeps.env);
-      if (!groqApiKey || !groqApiKey.trim()) {
-        console.error("[AI Service] Missing required environment variable: GROQ_API_KEY");
-        await rollbackAllQuotas();
-        return {
-          statusCode: 500,
-          body: {
-            error: "Missing required environment variable: GROQ_API_KEY",
-            missingVariable: "GROQ_API_KEY",
-          },
-        };
-      }
-
-      let groqResponse: Response;
+      let leaseAcquired = false;
+      let leaseErr: any;
       try {
-        groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${groqApiKey}`,
-          },
-          body: JSON.stringify({
-            model: payload.model,
-            messages: payload.messages,
-            max_tokens: payload.maxOutputTokens,
-            temperature: payload.temperature,
-            ...(payload.jsonMode ? { response_format: { type: "json_object" } } : {}),
-          }),
+        const res = await supabaseAdmin.rpc("ai_concurrency_acquire", {
+          p_lease_id: leaseId,
+          p_cap: maxConcurrency,
+          p_ttl_seconds: 60,
         });
-      } catch (fetchErr) {
-        console.warn("[AI Service] Network error calling upstream provider:", fetchErr);
+        leaseAcquired = Boolean(res.data);
+        leaseErr = res.error;
+      } catch (err: any) {
+        leaseErr = err;
+      }
+
+      if (leaseErr) {
+        emitBudgetAlert("store_error", `Concurrency store RPC error: ${leaseErr.message || leaseErr}`, { error: leaseErr });
+        await settleBudget(0);
         await rollbackAllQuotas();
         return {
-          statusCode: 502,
-          body: { error: "AI service request failed or timed out. Please try again." },
+          statusCode: 503,
+          body: {
+            error: "Service temporarily unavailable. Please retry in a moment.",
+            code: "AI_CONCURRENCY_SERVICE_UNAVAILABLE",
+          },
+          headers: {
+            "Retry-After": "30",
+          },
         };
       }
 
-      if (!groqResponse.ok) {
-        console.warn(`[AI Service] Upstream provider returned status ${groqResponse.status}`);
+      if (!leaseAcquired) {
+        emitBudgetAlert("concurrency_saturated", `AI concurrency limit reached (${maxConcurrency} concurrent leases)`, {
+          maxConcurrency,
+        });
+        await settleBudget(0);
         await rollbackAllQuotas();
         return {
-          statusCode: 502,
-          body: { error: "AI service generation failed. Please try again." },
+          statusCode: 429,
+          body: {
+            error: "AI service is currently at maximum concurrency. Please wait a moment and retry.",
+            code: "AI_CONCURRENCY_CAP_REACHED",
+            retryAfter: 30,
+          },
+          headers: {
+            "Retry-After": "30",
+          },
         };
       }
 
-      try {
-        groqData = await groqResponse.json();
-      } catch (parseErr) {
-        console.warn("[AI Service] Failed to parse upstream provider JSON:", parseErr);
-        await rollbackAllQuotas();
-        return {
-          statusCode: 502,
-          body: { error: "AI service returned an invalid response. Please try again." },
-        };
-      }
+      hasLease = true;
     }
 
-    const content =
-      typeof groqData === "string"
-        ? groqData
-        : groqData?.choices?.[0]?.message?.content;
-    if (!content) {
-      await rollbackAllQuotas();
-      return {
-        statusCode: 502,
-        body: { error: "AI service returned an empty generation." },
-      };
-    }
+    try {
+      // 5. Server-Side Groq API Key Check & Upstream Groq Call
+      let groqData: any;
+      if (activeDeps.callGroq) {
+        try {
+          groqData = await activeDeps.callGroq(payload);
+        } catch (mockErr: any) {
+          console.warn("[AI Service] Error calling mock Groq provider:", mockErr);
+          await settleBudget(0);
+          await rollbackAllQuotas();
+          return {
+            statusCode: 502,
+            body: { error: mockErr?.message || "AI service request failed or timed out. Please try again." },
+          };
+        }
+      } else {
+        const groqApiKey = getRuntimeEnv("GROQ_API_KEY", activeDeps.env);
+        if (!groqApiKey || !groqApiKey.trim()) {
+          console.error("[AI Service] Missing required environment variable: GROQ_API_KEY");
+          await settleBudget(0);
+          await rollbackAllQuotas();
+          return {
+            statusCode: 500,
+            body: {
+              error: "Missing required environment variable: GROQ_API_KEY",
+              missingVariable: "GROQ_API_KEY",
+            },
+          };
+        }
 
-    if (activeDeps.callGroq && content === "Simulated AI generated output") {
-      const simulatedPayload = {
+        let groqResponse: Response;
+        try {
+          groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${groqApiKey}`,
+            },
+            body: JSON.stringify({
+              model: payload.model,
+              messages: payload.messages,
+              max_tokens: payload.maxOutputTokens,
+              temperature: payload.temperature,
+              ...(payload.jsonMode ? { response_format: { type: "json_object" } } : {}),
+            }),
+          });
+        } catch (fetchErr) {
+          console.warn("[AI Service] Network error calling upstream provider:", fetchErr);
+          await settleBudget(0);
+          await rollbackAllQuotas();
+          return {
+            statusCode: 502,
+            body: { error: "AI service request failed or timed out. Please try again." },
+          };
+        }
+
+        if (!groqResponse.ok) {
+          console.warn(`[AI Service] Upstream provider returned status ${groqResponse.status}`);
+          await settleBudget(0);
+          await rollbackAllQuotas();
+          return {
+            statusCode: 502,
+            body: { error: "AI service generation failed. Please try again." },
+          };
+        }
+
+        try {
+          groqData = await groqResponse.json();
+        } catch (parseErr) {
+          console.warn("[AI Service] Failed to parse upstream provider JSON:", parseErr);
+          await settleBudget(0);
+          await rollbackAllQuotas();
+          return {
+            statusCode: 502,
+            body: { error: "AI service returned an invalid response. Please try again." },
+          };
+        }
+      }
+
+      const content =
+        typeof groqData === "string"
+          ? groqData
+          : groqData?.choices?.[0]?.message?.content ?? groqData?.content ?? groqData?.result;
+      if (!content) {
+        await settleBudget(0);
+        await rollbackAllQuotas();
+        return {
+          statusCode: 502,
+          body: { error: "AI service returned an empty generation." },
+        };
+      }
+
+      // Settle actual tokens from Groq response usage field when present, otherwise estimate
+      let actualTokens = 0;
+      if (groqData && typeof groqData === "object" && groqData.usage) {
+        const promptTokens = Number(groqData.usage.prompt_tokens) || 0;
+        const completionTokens = Number(groqData.usage.completion_tokens) || 0;
+        actualTokens = promptTokens + completionTokens;
+      }
+      if (actualTokens <= 0) {
+        actualTokens = estimatedTokens;
+      }
+
+      if (activeDeps.callGroq && content === "Simulated AI generated output") {
+        await settleBudget(actualTokens);
+        const simulatedPayload = {
+          success: true,
+          result: content,
+          content,
+          text: content,
+          operation: config.operation,
+          model: payload.model,
+          jobDescriptionShortened: false,
+        };
+
+        if (setConsumed && setConsumeKey) {
+          storeIdempotentResult(user.id, config.operation, setConsumeKey, simulatedPayload);
+          try {
+            await supabaseAdmin
+              .from("plan_usage_events")
+              .update({ response_payload: simulatedPayload })
+              .eq("user_id", user.id)
+              .eq("kind", config.operation)
+              .eq("idempotency_key", setConsumeKey);
+          } catch {}
+        }
+
+        return {
+          statusCode: 200,
+          body: simulatedPayload,
+        };
+      }
+
+      const validated = validateAndSanitizeAiOutput(config.operation, content, params);
+      if (!validated.ok) {
+        await settleBudget(0);
+        await rollbackAllQuotas();
+        return {
+          statusCode: 502,
+          body: { error: validated.error },
+        };
+      }
+
+      await settleBudget(actualTokens);
+
+      const responsePayload = {
         success: true,
-        result: content,
-        content,
-        text: content,
+        result: validated.parsedJson ?? validated.sanitizedText,
+        content: validated.sanitizedText,
+        text: validated.sanitizedText,
         operation: config.operation,
         model: payload.model,
-        jobDescriptionShortened: false,
+        jobDescriptionShortened: payload.metadata?.jobDescriptionShortened ?? false,
       };
 
       if (setConsumed && setConsumeKey) {
-        storeIdempotentResult(user.id, config.operation, setConsumeKey, simulatedPayload);
+        storeIdempotentResult(user.id, config.operation, setConsumeKey, responsePayload);
         try {
           await supabaseAdmin
             .from("plan_usage_events")
-            .update({ response_payload: simulatedPayload })
+            .update({ response_payload: responsePayload })
             .eq("user_id", user.id)
             .eq("kind", config.operation)
             .eq("idempotency_key", setConsumeKey);
@@ -711,45 +1070,18 @@ export async function executeAiCore(
 
       return {
         statusCode: 200,
-        body: simulatedPayload,
+        body: responsePayload,
       };
+    } finally {
+      if (hasLease && typeof supabaseAdmin.rpc === "function") {
+        try {
+          await supabaseAdmin.rpc("ai_concurrency_release", { p_lease_id: leaseId });
+          hasLease = false;
+        } catch (relErr) {
+          console.warn("[AI Service] Error releasing concurrency lease:", relErr);
+        }
+      }
     }
-
-    const validated = validateAndSanitizeAiOutput(config.operation, content, params);
-    if (!validated.ok) {
-      await rollbackAllQuotas();
-      return {
-        statusCode: 502,
-        body: { error: validated.error },
-      };
-    }
-
-    const responsePayload = {
-      success: true,
-      result: validated.parsedJson ?? validated.sanitizedText,
-      content: validated.sanitizedText,
-      text: validated.sanitizedText,
-      operation: config.operation,
-      model: payload.model,
-      jobDescriptionShortened: payload.metadata?.jobDescriptionShortened ?? false,
-    };
-
-    if (setConsumed && setConsumeKey) {
-      storeIdempotentResult(user.id, config.operation, setConsumeKey, responsePayload);
-      try {
-        await supabaseAdmin
-          .from("plan_usage_events")
-          .update({ response_payload: responsePayload })
-          .eq("user_id", user.id)
-          .eq("kind", config.operation)
-          .eq("idempotency_key", setConsumeKey);
-      } catch {}
-    }
-
-    return {
-      statusCode: 200,
-      body: responsePayload,
-    };
   } catch (err: any) {
     console.error("[AI Service] Unhandled error:", err);
     if (setConsumed && setConsumeKey && confirmedUserId) {

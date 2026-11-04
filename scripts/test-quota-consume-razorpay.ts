@@ -1,3 +1,11 @@
+process.env.NODE_ENV = "test";
+(globalThis as any).__mockRateLimitClient = {
+  rpc: async () => ({
+    data: [{ allowed: true, retry_after: 0, current_count: 1 }],
+    error: null,
+  }),
+};
+
 import assert from "assert";
 import { spawnSync } from "child_process";
 import {

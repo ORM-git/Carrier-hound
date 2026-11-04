@@ -10,6 +10,14 @@
  * 6. Negative control proving non-zero exit on invalid conditions.
  */
 
+process.env.NODE_ENV = "test";
+(globalThis as any).__mockRateLimitClient = {
+  rpc: async () => ({
+    data: [{ allowed: true, retry_after: 0, current_count: 1 }],
+    error: null,
+  }),
+};
+
 import assert from "assert";
 import { spawnSync } from "child_process";
 import { executeAiCore, _clearIdempotencyResultCacheForTesting } from "../src/lib/ai/serviceHandler";
