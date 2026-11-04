@@ -15,6 +15,71 @@ export interface TailoredCoverLetterResult {
   paragraphs: string[];
   fullText: string;
   isValidated: boolean;
+  cacheVersion?: number;
+  generatorId?: string;
+  candidateFactsHash?: string;
+  jobHash?: string;
+}
+
+export const COVER_LETTER_CACHE_VERSION = 2;
+
+/**
+ * Small, deterministic, dependency-free 64-bit FNV-1a hash function.
+ */
+export function computeFnv1a64(payloadString: string): string {
+  let h1 = 0x811c9dc5;
+  let h2 = 0xcbf29ce4;
+  for (let i = 0; i < payloadString.length; i++) {
+    const code = payloadString.charCodeAt(i);
+    h1 = Math.imul(h1 ^ code, 0x01000193);
+    h2 = Math.imul(h2 ^ code, 0x01000193);
+  }
+  return `${(h1 >>> 0).toString(16).padStart(8, "0")}${(h2 >>> 0).toString(16).padStart(8, "0")}`;
+}
+
+/**
+ * Computes deterministic hash over canonical JSON of candidate facts actually used
+ * (name, contact details, experience, education, skills).
+ */
+export function computeCandidateFactsHash(candidate: Partial<CandidateProfile> | null | undefined): string {
+  if (!candidate) return "";
+  const canonical = {
+    name: (candidate.name || "").trim().toLowerCase(),
+    email: (candidate.email || "").trim().toLowerCase(),
+    phone: (candidate.phone || "").replace(/\D/g, ""),
+    location: (candidate.location || "").trim().toLowerCase(),
+    skills: (candidate.skills || []).map((s) => (s || "").trim().toLowerCase()).sort(),
+    experience: (candidate.experience || []).map((e) => ({
+      company: (e?.company || "").trim().toLowerCase(),
+      role: (e?.role || "").trim().toLowerCase(),
+      startDate: (e?.startDate || "").trim(),
+      endDate: (e?.endDate || "").trim(),
+      bullets: (e?.bullets || []).map((b) => (b || "").trim()),
+    })),
+    education: (candidate.education || []).map((ed) => ({
+      institution: (ed?.institution || "").trim().toLowerCase(),
+      degree: (ed?.degree || "").trim().toLowerCase(),
+      year: (ed?.year || "").trim(),
+    })),
+  };
+  return computeFnv1a64(JSON.stringify(canonical));
+}
+
+/**
+ * Computes deterministic hash over canonical JSON of job facts
+ * (id, title, company, description).
+ */
+export function computeJobHash(
+  job: { id?: string; title?: string; company?: string; description?: string } | null | undefined
+): string {
+  if (!job) return "";
+  const canonical = {
+    id: (job.id || "").trim(),
+    title: (job.title || "").trim().toLowerCase(),
+    company: (job.company || "").trim().toLowerCase(),
+    description: (job.description || "").trim(),
+  };
+  return computeFnv1a64(JSON.stringify(canonical));
 }
 
 export interface CoverLetterValidationResult {
@@ -110,6 +175,16 @@ export function validateCoverLetter(
       if (!isKnown) {
         reasons.push(`Mentions unverified employer: "${match[1].trim()}"`);
       }
+    }
+  }
+
+  // 6. Fabricated technical platform / microservice claims check:
+  // Rejects claims of architecting platform services or microservices when candidate has no verified technical background
+  const candidateText = `${(candidate.skills || []).join(" ")} ${(candidate.experience || []).map((e) => `${e.role || ""} ${(e.bullets || []).join(" ")}`).join(" ")} ${(candidate.education || []).map((ed) => `${ed.degree || ""} ${ed.institution || ""}`).join(" ")}`.toLowerCase();
+  const hasTechnicalEvidence = /\b(software|developer|engineer|engineering|backend|microservices?|programming|coding|devops|computer science|python|java|golang|c\+\+|javascript|typescript|api)\b/i.test(candidateText);
+  if (!hasTechnicalEvidence) {
+    if (/\b(?:(?:architect(?:ing|ed)?\s+(?:scalable\s+)?platform\s+services)|(?:optimiz(?:ing|ed)?\s+pipeline\s+throughput)|(?:deploy(?:ing|ed)?\s+(?:reliable\s+)?microservices))\b/i.test(text)) {
+      reasons.push("Claims platform architecture, pipeline throughput optimization, or microservices deployment without verified technical background.");
     }
   }
 
@@ -345,6 +420,10 @@ export function generateTailoredCoverLetter(
     paragraphs,
     fullText,
     isValidated: true,
+    cacheVersion: COVER_LETTER_CACHE_VERSION,
+    generatorId: "rules-v2",
+    candidateFactsHash: computeCandidateFactsHash(candidate),
+    jobHash: computeJobHash(job),
   };
 }
 

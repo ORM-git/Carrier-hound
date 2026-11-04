@@ -1,7 +1,11 @@
 import { CandidateProfile } from "./types";
 import { createClient } from "../supabase/client";
 import type { TailoredJobResumeResult } from "./atsScorer";
-import type { TailoredCoverLetterResult } from "./tailor";
+import {
+  type TailoredCoverLetterResult,
+  computeCandidateFactsHash,
+  computeJobHash,
+} from "./tailor";
 
 const PROFILE_STORAGE_KEY = "careermonke_candidate_profile";
 
@@ -329,6 +333,7 @@ export async function deleteCandidateProfile(): Promise<void> {
 
 export const TAILORED_RESUME_PREFIX = "careermonke_tailored_resume_";
 export const TAILORED_COVER_LETTER_PREFIX = "careermonke_tailored_cover_letter_";
+export const COVER_LETTER_CACHE_VERSION = 2;
 
 export function getScopedTailoredResumeKey(jobId: string, ownerId?: string | null): string | null {
   const resolvedOwner = ownerId?.trim() || null;
@@ -494,26 +499,110 @@ export async function getTailoredResumeAsync(
   return null;
 }
 
+export interface CoverLetterCacheValidationContext {
+  candidateFactsHash?: string;
+  jobHash?: string;
+  candidate?: CandidateProfile | null;
+  job?: { id?: string; title?: string; company?: string; description?: string } | null;
+}
+
 /**
  * Gets cached job-specific cover letter from localStorage (synchronous).
  * Scoped by verified authenticated Supabase user ID.
+ *
+ * Enforces Audit F03 invalidation:
+ * - Rejects and purges unversioned legacy entries (cacheVersion missing or != COVER_LETTER_CACHE_VERSION).
+ * - Rejects and purges entries missing candidateFactsHash or jobHash.
+ * - Rejects and purges entries where candidateFactsHash or jobHash mismatch current candidate/job facts.
  */
 export function getCachedTailoredCoverLetter(
   jobId: string,
-  ownerId?: string | null
+  ownerId?: string | null,
+  validationContext?: CoverLetterCacheValidationContext
 ): TailoredCoverLetterResult | null {
   if (typeof window === "undefined" || !jobId) return null;
   try {
     const storageKey = getScopedTailoredCoverLetterKey(jobId, ownerId);
     if (!storageKey) return null;
     const raw = localStorage.getItem(storageKey);
-    if (raw) {
-      return JSON.parse(raw);
+    if (!raw) return null;
+
+    let parsed: TailoredCoverLetterResult | null = null;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      localStorage.removeItem(storageKey);
+      return null;
     }
+
+    // 1. Version check: Every unversioned legacy entry is rejected and purged (F03 fix)
+    if (!parsed || parsed.cacheVersion !== COVER_LETTER_CACHE_VERSION) {
+      localStorage.removeItem(storageKey);
+      return null;
+    }
+
+    // 2. Hash presence check
+    if (!parsed.candidateFactsHash || !parsed.jobHash) {
+      localStorage.removeItem(storageKey);
+      return null;
+    }
+
+    // 3. Hash mismatch check against current candidate/job facts
+    const expectedCandidateHash =
+      validationContext?.candidateFactsHash ||
+      (validationContext?.candidate ? computeCandidateFactsHash(validationContext.candidate) : undefined);
+    const expectedJobHash =
+      validationContext?.jobHash ||
+      (validationContext?.job ? computeJobHash(validationContext.job) : undefined);
+
+    if (expectedCandidateHash && parsed.candidateFactsHash !== expectedCandidateHash) {
+      localStorage.removeItem(storageKey);
+      return null;
+    }
+
+    if (expectedJobHash && parsed.jobHash !== expectedJobHash) {
+      localStorage.removeItem(storageKey);
+      return null;
+    }
+
+    return parsed;
   } catch (e) {
     console.warn(`Could not read cached tailored cover letter for ${jobId}`, e);
   }
   return null;
+}
+
+/**
+ * Purges tailored cover letter from localStorage and Supabase.
+ */
+export function purgeTailoredCoverLetter(jobId: string, ownerId?: string | null): void {
+  if (typeof window === "undefined" || !jobId) return;
+  const resolvedOwner = ownerId?.trim() || null;
+  const storageKey = getScopedTailoredCoverLetterKey(jobId, resolvedOwner);
+  if (storageKey) {
+    try {
+      localStorage.removeItem(storageKey);
+    } catch (e) {
+      console.warn(`Could not purge local cover letter cache for ${jobId}`, e);
+    }
+  }
+  if (resolvedOwner && resolvedOwner !== "guest") {
+    try {
+      const supabase = createClient();
+      supabase.auth.getUser().then((res: any) => {
+        const user = res?.data?.user;
+        if (user && user.id === resolvedOwner) {
+          supabase
+            .from("tailored_resumes")
+            .update({ cover_letter_data: null, updated_at: new Date().toISOString() })
+            .eq("user_id", user.id)
+            .eq("job_id", jobId)
+            .then(() => {})
+            .catch(() => {});
+        }
+      }).catch(() => {});
+    } catch (err) {}
+  }
 }
 
 /**
@@ -531,15 +620,23 @@ export function saveCachedTailoredCoverLetter(
     console.warn(`[TailoredCache] Refusing to persist tailored cover letter for ${jobId}: explicit verified owner or "guest" required; missing owner will not be saved as guest work.`);
     return;
   }
+
+  // Ensure current cacheVersion and generatorId are always written
+  const versionedData: TailoredCoverLetterResult = {
+    ...data,
+    cacheVersion: data.cacheVersion ?? COVER_LETTER_CACHE_VERSION,
+    generatorId: data.generatorId ?? "rules-v2",
+  };
+
   try {
-    localStorage.setItem(storageKey, JSON.stringify(data));
+    localStorage.setItem(storageKey, JSON.stringify(versionedData));
   } catch (e) {
     console.warn(`Could not save cached tailored cover letter for ${jobId}`, e);
   }
 
   // Asynchronously persist to Supabase for multi-device / multi-user persistence if authenticated
   if (resolvedOwner && resolvedOwner !== "guest") {
-    saveTailoredCoverLetterToSupabase(jobId, data, resolvedOwner).catch((err) => {
+    saveTailoredCoverLetterToSupabase(jobId, versionedData, resolvedOwner).catch((err) => {
       console.warn(`Could not sync tailored cover letter to Supabase for ${jobId}:`, err);
     });
   }
@@ -579,16 +676,22 @@ export async function saveTailoredCoverLetterToSupabase(
 
 /**
  * Fetches tailored cover letter from Supabase if not found locally.
+ *
+ * Enforces Audit F03 invalidation:
+ * - Skips unversioned legacy remote rows without writing them back to localStorage.
+ * - Skips remote rows missing candidateFactsHash or jobHash without writing to localStorage.
+ * - Skips remote rows with mismatched hashes without writing to localStorage.
  */
 export async function getTailoredCoverLetterAsync(
   jobId: string,
-  ownerId?: string | null
+  ownerId?: string | null,
+  validationContext?: CoverLetterCacheValidationContext
 ): Promise<TailoredCoverLetterResult | null> {
   const resolvedOwner = ownerId?.trim() || null;
-  const local = getCachedTailoredCoverLetter(jobId, resolvedOwner);
+  const local = getCachedTailoredCoverLetter(jobId, resolvedOwner, validationContext);
   if (local) return local;
 
-  if (!resolvedOwner) return null;
+  if (!resolvedOwner || resolvedOwner === "guest") return null;
 
   try {
     const supabase = createClient();
@@ -604,6 +707,34 @@ export async function getTailoredCoverLetterAsync(
 
     if (!error && data?.cover_letter_data) {
       const parsed = data.cover_letter_data as TailoredCoverLetterResult;
+
+      // 1. Version check: Unversioned legacy remote entries are skipped and NOT written back to localStorage
+      if (!parsed || parsed.cacheVersion !== COVER_LETTER_CACHE_VERSION) {
+        return null;
+      }
+
+      // 2. Hash presence check
+      if (!parsed.candidateFactsHash || !parsed.jobHash) {
+        return null;
+      }
+
+      // 3. Hash mismatch check against current candidate/job facts
+      const expectedCandidateHash =
+        validationContext?.candidateFactsHash ||
+        (validationContext?.candidate ? computeCandidateFactsHash(validationContext.candidate) : undefined);
+      const expectedJobHash =
+        validationContext?.jobHash ||
+        (validationContext?.job ? computeJobHash(validationContext.job) : undefined);
+
+      if (expectedCandidateHash && parsed.candidateFactsHash !== expectedCandidateHash) {
+        return null;
+      }
+
+      if (expectedJobHash && parsed.jobHash !== expectedJobHash) {
+        return null;
+      }
+
+      // Valid and version-current: sync to localStorage
       if (typeof window !== "undefined") {
         const storageKey = getScopedTailoredCoverLetterKey(jobId, resolvedOwner);
         if (storageKey) {
