@@ -2,8 +2,8 @@
  * scripts/test-auth-guard.ts
  *
  * Offline verification suite for CareerMonke Server-Side & Client-Side Auth Guards:
- * 1. Guest hitting each protected route (/dashboard, /jobs, /resume, /tracker, /profile, /radar, /pricing) is redirected.
- * 2. Public routes (/, /remote, /remote/engineering, /login, /signup, /privacy, /privacy-policy, /terms-and-conditions, /worldwide) stay 200.
+ * 1. Guest hitting each protected route (/dashboard, /jobs, /resume, /tracker, /profile, /radar, /settings) is redirected.
+ * 2. Public routes (/, /remote, /remote/engineering, /login, /signup, /pricing, /privacy, /privacy-policy, /terms-and-conditions, /worldwide) stay 200.
  * 3. return-to parameter is validated (safe same-site relative paths allowed; open redirects / external URLs blocked).
  * 4. Expired sessions do not create infinite redirect loops.
  * 5. Negative control proves non-zero exit on invalid conditions.
@@ -50,7 +50,6 @@ async function runAuthGuardSuite() {
     { path: "/tracker", expectedReturnTo: "/tracker" },
     { path: "/profile", expectedReturnTo: "/profile" },
     { path: "/radar", expectedReturnTo: "/radar" },
-    { path: "/pricing", expectedReturnTo: "/pricing" },
     { path: "/settings", expectedReturnTo: "/settings" },
     { path: "/jobs?location=Remote&level=Senior", expectedReturnTo: "/jobs?location=Remote&level=Senior" },
     { path: "/tracker?stage=saved", expectedReturnTo: "/tracker?stage=saved" },
@@ -109,6 +108,7 @@ async function runAuthGuardSuite() {
     "/remote/product-designer/titles",
     "/login",
     "/signup",
+    "/pricing",
     "/privacy",
     "/privacy-policy",
     "/terms-and-conditions",

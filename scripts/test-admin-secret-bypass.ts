@@ -280,8 +280,8 @@ async function runSuite() {
   );
   pass("/api/jobs/top10 with valid header + NO session returns 403 exactly as if header were absent");
 
-  // 4.3 Other protected routes (/resume, /tracker, /pricing)
-  for (const protRoute of ["/resume", "/tracker", "/pricing", "/settings"]) {
+  // 4.3 Other protected routes (/resume, /tracker, /profile, /settings)
+  for (const protRoute of ["/resume", "/tracker", "/profile", "/settings"]) {
     const res = await middleware(
       new NextRequest(`http://localhost:3000${protRoute}`, {
         headers: { "x-admin-secret": TEST_ADMIN_SECRET },
@@ -293,7 +293,16 @@ async function runSuite() {
       `Protected page '${protRoute}' must redirect 307 even with valid x-admin-secret`
     );
   }
-  pass("Protected routes (/resume, /tracker, /pricing, /settings) redirect 307 even with valid header");
+  pass("Protected routes (/resume, /tracker, /profile, /settings) redirect 307 even with valid header");
+
+  // Public /pricing returns 200
+  const pricingRes = await middleware(
+    new NextRequest("http://localhost:3000/pricing", {
+      headers: { "x-admin-secret": TEST_ADMIN_SECRET },
+    })
+  );
+  assert.strictEqual(pricingRes.status, 200, "Public /pricing returns 200");
+  pass("Public /pricing returns 200 without redirection");
 
   // ---------------------------------------------------------------------------
   // TEST 5: Requirement (c) - Wrong header value behaves as header absent

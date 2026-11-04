@@ -14,7 +14,6 @@ export const PROTECTED_ROUTES: readonly string[] = [
   "/tracker",
   "/profile",
   "/radar",
-  "/pricing",
   "/settings",
   "/applications",
   "/job-search",
@@ -31,6 +30,7 @@ export const PUBLIC_ROUTES: readonly string[] = [
   "/worldwide",
   "/login",
   "/signup",
+  "/pricing",
   "/privacy",
   "/privacy-policy",
   "/terms-and-conditions",
@@ -658,7 +658,11 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  if (isLegalPath(pathname)) {
+  if (
+    isLegalPath(pathname) ||
+    pathname === "/pricing" ||
+    pathname.startsWith("/pricing/")
+  ) {
     return NextResponse.next();
   }
 
@@ -718,7 +722,9 @@ export async function middleware(request: NextRequest) {
     pathname === "/early-access" ||
     pathname.startsWith("/early-access/") ||
     pathname === "/login" ||
-    pathname === "/auth/callback"
+    pathname === "/auth/callback" ||
+    pathname === "/pricing" ||
+    pathname.startsWith("/pricing/")
   ) {
     return NextResponse.next();
   }

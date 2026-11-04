@@ -146,8 +146,8 @@ async function runPricingHeaderFirstRenderSuite() {
     "Pricing page must retain the Upgrade CTA with 'Payments opening soon'"
   );
   assert.ok(
-    markup.includes("disabled") && markup.includes('aria-disabled="true"'),
-    "Pricing page must render disabled Upgrade button"
+    markup.includes('href="/login"'),
+    "Pricing page must render Upgrade CTA linking to login/signup for logged-out visitors"
   );
   assert.ok(
     markup.includes("Billed weekly"),

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Link from "next/link";
 import LoggedInAppShell from "@/components/shell/LoggedInAppShell";
 import Footer from "@/components/Footer";
 import { cnTokens } from "@/components/ui/cn-tokens";
@@ -201,20 +202,34 @@ export default function PricingPage() {
 
                           {/* Upgrade Button */}
                           <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
-                            <button
-                              type="button"
-                              disabled
-                              aria-disabled="true"
-                              onClick={handleInitiateCheckout}
-                              className={cnTokens(
-                                "w-full min-h-[48px] h-11 rounded-lg font-semibold text-sm flex items-center justify-center transition-colors cursor-not-allowed select-none",
-                                isSelected
-                                  ? "bg-[#2563EB] text-white hover:bg-blue-700 shadow-xs"
-                                  : "bg-black text-white hover:bg-neutral-800 dark:bg-slate-100 dark:text-slate-900"
-                              )}
-                            >
-                              Upgrade
-                            </button>
+                            {user ? (
+                              <button
+                                type="button"
+                                disabled
+                                aria-disabled="true"
+                                onClick={handleInitiateCheckout}
+                                className={cnTokens(
+                                  "w-full min-h-[48px] h-11 rounded-lg font-semibold text-sm flex items-center justify-center transition-colors cursor-not-allowed select-none",
+                                  isSelected
+                                    ? "bg-[#2563EB] text-white hover:bg-blue-700 shadow-xs"
+                                    : "bg-black text-white hover:bg-neutral-800 dark:bg-slate-100 dark:text-slate-900"
+                                )}
+                              >
+                                Upgrade
+                              </button>
+                            ) : (
+                              <Link
+                                href="/login"
+                                className={cnTokens(
+                                  "w-full min-h-[48px] h-11 rounded-lg font-semibold text-sm flex items-center justify-center transition-colors select-none",
+                                  isSelected
+                                    ? "bg-[#2563EB] text-white hover:bg-blue-700 shadow-xs"
+                                    : "bg-black text-white hover:bg-neutral-800 dark:bg-slate-100 dark:text-slate-900"
+                                )}
+                              >
+                                Upgrade
+                              </Link>
+                            )}
                             <span className="text-[11px] text-slate-500 text-center block mt-1">
                               {UPGRADE_BUTTON_LABEL}
                             </span>
@@ -370,14 +385,23 @@ export default function PricingPage() {
                   </div>
 
                   <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
-                    <button
-                      type="button"
-                      disabled
-                      aria-disabled="true"
-                      className="w-full min-h-[48px] h-11 rounded-lg bg-[#2563EB] text-white font-semibold text-sm flex items-center justify-center cursor-not-allowed select-none"
-                    >
-                      Upgrade
-                    </button>
+                    {user ? (
+                      <button
+                        type="button"
+                        disabled
+                        aria-disabled="true"
+                        className="w-full min-h-[48px] h-11 rounded-lg bg-[#2563EB] text-white font-semibold text-sm flex items-center justify-center cursor-not-allowed select-none"
+                      >
+                        Upgrade
+                      </button>
+                    ) : (
+                      <Link
+                        href="/login"
+                        className="w-full min-h-[48px] h-11 rounded-lg bg-[#2563EB] text-white font-semibold text-sm flex items-center justify-center select-none"
+                      >
+                        Upgrade
+                      </Link>
+                    )}
                     <span className="text-[11px] text-slate-500 text-center block mt-1">
                       {UPGRADE_BUTTON_LABEL}
                     </span>

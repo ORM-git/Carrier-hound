@@ -83,8 +83,9 @@ async function main() {
     "1. Services Provided",
     "2. Eligibility and User Accounts",
     "3. Billing, Pricing, and Subscriptions",
+    "weekly, monthly and quarterly",
+    "plans are prepaid for a fixed duration and do not auto-renew; renew or upgrade extends your period",
     "Razorpay",
-    "Stripe",
     "4. Cancellation and Account Rules",
     "Cancellation &amp; Refund Policy",
     "5. Intellectual Property &amp; Acceptable Use",
@@ -96,6 +97,8 @@ async function main() {
     assert.ok(termsHtml.includes(phrase), `/terms-and-conditions must contain "${phrase}"`);
     console.log(`  [PASS-LOCAL] /terms-and-conditions contains: "${phrase}"`);
   }
+  assert.ok(!termsHtml.includes("Stripe"), "/terms-and-conditions must NOT contain Stripe (Razorpay only)");
+  console.log('  [PASS-LOCAL] /terms-and-conditions excludes Stripe (Razorpay only)');
 
   // 3. /privacy-policy Key Phrases (Google Doc Tab 2)
   console.log("\n3. Verifying /privacy-policy key phrases (Google Doc Tab 2)...");
