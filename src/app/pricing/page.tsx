@@ -27,12 +27,14 @@ import type { User } from "@supabase/supabase-js";
 export default function PricingPage() {
   const [user, setUser] = useState<User | null>(null);
   const [isPro, setIsPro] = useState(false);
+  const [isProLoading, setIsProLoading] = useState(true);
   const [selectedPlanId, setSelectedPlanId] = useState<PlanConfig["id"]>("monthly");
 
   useEffect(() => {
     let mounted = true;
     const checkAuthAndPro = async () => {
       try {
+        setIsProLoading(true);
         const supabase = createClient();
         const {
           data: { session },
@@ -44,16 +46,26 @@ export default function PricingPage() {
           const proStatus = await getProAccessStatus(session.user.id);
           if (!mounted) return;
           setIsPro(proStatus.isPro);
+        } else {
+          setUser(null);
+          setIsPro(false);
         }
       } catch (err) {
         console.warn("[Pricing] Auth / Pro check failed:", err);
+      } finally {
+        if (mounted) {
+          setIsProLoading(false);
+        }
       }
     };
 
     checkAuthAndPro();
 
     const handleProUpdated = () => {
-      getProAccessStatus().then((res) => setIsPro(res.isPro));
+      getProAccessStatus().then((res) => {
+        setIsPro(res.isPro);
+        setIsProLoading(false);
+      });
     };
     window.addEventListener("careermonke_pro_updated", handleProUpdated);
     window.addEventListener("careermonke_auth_updated", handleProUpdated);
@@ -64,6 +76,12 @@ export default function PricingPage() {
       window.removeEventListener("careermonke_auth_updated", handleProUpdated);
     };
   }, []);
+
+  const getFreeCardLabel = () => {
+    if (isProLoading) return "Checking your plan...";
+    if (isPro) return "Included with Pro";
+    return "Your current plan";
+  };
 
   // Razorpay order verification handler (payments stay strictly OFF)
   const handleInitiateCheckout = async () => {
@@ -289,7 +307,7 @@ export default function PricingPage() {
                     {/* Button container matching paid cards */}
                     <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
                       <div className="w-full min-h-[48px] h-11 rounded-lg font-semibold text-sm flex items-center justify-center select-none bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200">
-                        Your current plan
+                        {getFreeCardLabel()}
                       </div>
                       <div className="flex justify-center mt-2 invisible" aria-hidden="true">
                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium">
@@ -471,7 +489,7 @@ export default function PricingPage() {
 
             <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-800">
               <div className="w-full min-h-[48px] h-11 rounded-lg bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-semibold text-sm flex items-center justify-center select-none">
-                Your current plan
+                {getFreeCardLabel()}
               </div>
             </div>
           </div>
