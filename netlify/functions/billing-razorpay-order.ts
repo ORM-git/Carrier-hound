@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { resolveOrderPricing } from "../../src/lib/billing/quota";
 import { getServerEntitlement } from "../../src/lib/billing/serverEntitlement";
+import { getRazorpayKeyMode } from "../../src/lib/billing/mode";
 import { buildCorsHeaders, handleCorsPreflight } from "./_cors";
 import { safeLog } from "./_logger";
 
@@ -104,7 +105,20 @@ export function createHandler(deps: BillingOrderDeps = {}) {
       const keyId = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID;
       const keySecret = process.env.RAZORPAY_KEY_SECRET;
 
-      if (!keyId || !keySecret || !keyId.startsWith("rzp_test_")) {
+      if (!keyId || !keySecret) {
+        return {
+          statusCode: 503,
+          headers,
+          body: JSON.stringify({
+            error: "test keys not configured",
+            code: "RAZORPAY_TEST_KEYS_NOT_CONFIGURED",
+          }),
+        };
+      }
+
+      // Key validation: test mode keys only (must start with rzp_test_), strictly required
+      const resolvedMode = getRazorpayKeyMode(keyId);
+      if (!keyId.startsWith("rzp_test_") || resolvedMode !== "test") {
         return {
           statusCode: 503,
           headers,
@@ -192,7 +206,7 @@ export function createHandler(deps: BillingOrderDeps = {}) {
 
       const orderData: any = await rzpRes.json();
 
-      // Record in payment_orders table with status 'created' - fail closed if insert fails
+      // Record in payment_orders table with status 'created' and resolved server mode
       const { error: insertErr } = await supabaseAdmin.from("payment_orders").insert({
         user_id: user.id,
         provider: "razorpay",
@@ -202,6 +216,7 @@ export function createHandler(deps: BillingOrderDeps = {}) {
         amount_paise: amountInPaise,
         currency,
         status: "created",
+        mode: resolvedMode,
       });
 
       if (insertErr) {

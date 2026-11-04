@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
+import { getRazorpayKeyMode } from "../../src/lib/billing/mode";
 import { buildCorsHeaders, handleCorsPreflight } from "./_cors";
 import { safeLog } from "./_logger";
 
@@ -76,6 +77,20 @@ export function createHandler(deps: BillingWebhookDeps = {}) {
           statusCode: 500,
           headers,
           body: JSON.stringify({ error: "Webhook secret is not configured" }),
+        };
+      }
+
+      const serverKeyId = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID || "";
+      const serverMode = getRazorpayKeyMode(serverKeyId);
+      if (serverMode === "unknown") {
+        safeLog.error("[Razorpay Webhook] Server Razorpay key configuration missing or invalid prefix");
+        return {
+          statusCode: 500,
+          headers,
+          body: JSON.stringify({
+            error: "Server Razorpay key configuration invalid",
+            code: "RAZORPAY_CONFIG_INVALID",
+          }),
         };
       }
 
@@ -190,6 +205,32 @@ export function createHandler(deps: BillingWebhookDeps = {}) {
           };
         }
 
+        // Validate provider
+        if (orderRow?.provider && orderRow.provider !== "razorpay") {
+          return {
+            statusCode: 400,
+            headers,
+            body: JSON.stringify({
+              error: "Invalid payment provider",
+              code: "INVALID_PROVIDER",
+            }),
+          };
+        }
+
+        // Mode Isolation: Server environment mode must match order mode
+        const orderMode = orderRow?.mode || (orderRow?.provider_order_id?.startsWith("order_test_") ? "test" : "live");
+        if (orderRow && orderMode !== serverMode) {
+          safeLog.error(`[Razorpay Webhook] Mode mismatch: order mode ${orderMode} vs server mode ${serverMode}`);
+          return {
+            statusCode: 400,
+            headers,
+            body: JSON.stringify({
+              error: `Webhook mode mismatch: cannot process ${orderMode} order with ${serverMode} credentials`,
+              code: "MODE_MISMATCH",
+            }),
+          };
+        }
+
         // Check if event was previously deduplicated
         const { data: existingDedupe } = await supabaseAdmin
           .from("webhook_events")
@@ -212,15 +253,18 @@ export function createHandler(deps: BillingWebhookDeps = {}) {
                 received: true,
                 alreadyProcessed: true,
                 eventId,
+                testMode: serverMode === "test",
+                isPro: serverMode === "live" && Boolean(orderRow?.plan_code),
               }),
             };
           }
         }
 
-        // Fulfil first: Call database fulfillment function atomically
+        // Fulfil first: Call database fulfillment function atomically with server payment mode
         const { data: fulfilRes, error: fulfilErr } = await supabaseAdmin.rpc("fulfil_payment_order", {
           p_provider_order_id: orderId,
           p_user_id: userId,
+          p_expected_mode: serverMode,
         });
 
         if (fulfilErr) {
@@ -261,6 +305,8 @@ export function createHandler(deps: BillingWebhookDeps = {}) {
                 received: true,
                 alreadyPaid: true,
                 eventId,
+                testMode: serverMode === "test",
+                isPro: serverMode === "live" && Boolean(orderRow?.plan_code),
                 details: fulfilRes,
               }),
             };
@@ -289,12 +335,31 @@ export function createHandler(deps: BillingWebhookDeps = {}) {
           { onConflict: "event_id" }
         );
 
+        if (serverMode === "test") {
+          return {
+            statusCode: 200,
+            headers,
+            body: JSON.stringify({
+              received: true,
+              fulfilled: true,
+              alreadyPaid: Boolean(fulfilRes.already_paid),
+              testMode: true,
+              isPro: false,
+              eventId,
+              details: fulfilRes,
+            }),
+          };
+        }
+
         return {
           statusCode: 200,
           headers,
           body: JSON.stringify({
             received: true,
             fulfilled: true,
+            alreadyPaid: Boolean(fulfilRes.already_paid),
+            testMode: false,
+            isPro: Boolean(fulfilRes?.is_pro ?? orderRow?.plan_code),
             eventId,
             details: fulfilRes,
           }),

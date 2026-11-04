@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getRazorpayKeyMode } from "@/lib/billing/mode";
 import {
   PLAN_DEFINITIONS,
   ADDON_PACK_DEFINITIONS,
@@ -79,6 +80,7 @@ async function verifySignature(
 }
 
 export async function POST(req: Request) {
+  const deps = (req as any).__testDeps || {};
   try {
     if (process.env.NEXT_PUBLIC_BILLING_ENABLED !== "true") {
       return NextResponse.json(
@@ -93,21 +95,27 @@ export async function POST(req: Request) {
     }
 
     const token = authHeader.replace("Bearer ", "").trim();
-    const supabaseUrl =
-      process.env.NEXT_PUBLIC_SUPABASE_URL ||
-      process.env.SUPABASE_URL ||
-      "https://szakevhxhwpeskidvtfs.supabase.co";
-    const serviceRoleKey =
-      process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
+    let supabaseAdmin: any;
 
-    if (!supabaseUrl || !serviceRoleKey) {
-      return NextResponse.json({ error: "Supabase service configuration missing" }, { status: 500 });
+    if (deps.getSupabaseAdmin) {
+      supabaseAdmin = deps.getSupabaseAdmin();
+    } else {
+      const supabaseUrl =
+        process.env.NEXT_PUBLIC_SUPABASE_URL ||
+        process.env.SUPABASE_URL ||
+        "https://szakevhxhwpeskidvtfs.supabase.co";
+      const serviceRoleKey =
+        process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
+
+      if (!supabaseUrl || !serviceRoleKey) {
+        return NextResponse.json({ error: "Supabase service configuration missing" }, { status: 500 });
+      }
+
+      // Verify user session token
+      supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
+        auth: { persistSession: false },
+      });
     }
-
-    // Verify user session token
-    const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { persistSession: false },
-    });
 
     const {
       data: { user },
@@ -118,8 +126,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid user session token" }, { status: 401 });
     }
 
+    const keyId = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID || "";
     const keySecret = process.env.RAZORPAY_KEY_SECRET;
-    if (!keySecret) {
+
+    if (!keySecret || !keyId) {
+      return NextResponse.json(
+        { error: "test keys not configured", code: "RAZORPAY_TEST_KEYS_NOT_CONFIGURED" },
+        { status: 503 }
+      );
+    }
+
+    const serverMode = getRazorpayKeyMode(keyId);
+    if (serverMode === "unknown") {
       return NextResponse.json(
         { error: "test keys not configured", code: "RAZORPAY_TEST_KEYS_NOT_CONFIGURED" },
         { status: 503 }
@@ -159,6 +177,26 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { error: "Payment order record not found or access denied", code: "ORDER_NOT_FOUND" },
         { status: 404 }
+      );
+    }
+
+    // Check provider
+    if (orderRow.provider && orderRow.provider !== "razorpay") {
+      return NextResponse.json(
+        { error: "Invalid payment provider", code: "INVALID_PROVIDER" },
+        { status: 400 }
+      );
+    }
+
+    // Check order mode vs server mode
+    const orderMode = orderRow.mode || (orderRow.provider_order_id?.startsWith("order_test_") ? "test" : "live");
+    if (orderMode !== serverMode) {
+      return NextResponse.json(
+        {
+          error: `Order mode mismatch: cannot verify ${orderMode} order with ${serverMode} credentials`,
+          code: "MODE_MISMATCH",
+        },
+        { status: 400 }
       );
     }
 
@@ -210,25 +248,51 @@ export async function POST(req: Request) {
         success: true,
         message: "Order already verified and paid",
         alreadyPaid: true,
+        testMode: serverMode === "test",
+        isPro: serverMode === "live" && Boolean(orderRow.plan_code),
+        orderId: orderRow.id,
       });
     }
 
-    // Test mode safety check: if key id starts with rzp_test_, NEVER grant Pro or add-on sets
-    const keyId = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID || "";
-    if (keyId.startsWith("rzp_test_")) {
+    // Test mode safety: strictly NEVER grant Pro or add-on sets for test payments.
+    // The RPC alone must mark test orders.
+    if (serverMode === "test") {
+      const { data: fulfilRes, error: fulfilErr } = await supabaseAdmin.rpc("fulfil_payment_order", {
+        p_provider_order_id: orderId,
+        p_user_id: user.id,
+        p_expected_mode: "test",
+      });
+
+      if (fulfilErr) {
+        return NextResponse.json(
+          { error: "Payment fulfillment failed", code: "FULFILLMENT_FAILED" },
+          { status: 500 }
+        );
+      }
+
+      if (!fulfilRes || !fulfilRes.success) {
+        return NextResponse.json(
+          { error: fulfilRes?.error || "Payment fulfillment failed", code: fulfilRes?.code || "FULFILLMENT_FAILED" },
+          { status: 400 }
+        );
+      }
+
       return NextResponse.json({
+        ...fulfilRes,
         success: true,
         testMode: true,
         isPro: false,
+        orderId: orderRow.id,
         message: "Test payment successful (no Pro granted)",
       });
     }
 
-    // Attempt atomic fulfillment via Postgres RPC function
+    // Attempt atomic fulfillment via Postgres RPC function for live mode
     try {
       const { data: fulfilRes, error: fulfilErr } = await supabaseAdmin.rpc("fulfil_payment_order", {
         p_provider_order_id: orderId,
         p_user_id: user.id,
+        p_expected_mode: "live",
       });
 
       if (!fulfilErr && fulfilRes) {
@@ -244,9 +308,16 @@ export async function POST(req: Request) {
       // Fall through to atomic conditional update if RPC is not registered
     }
 
-    // Next fallback: Fail-closed and atomic.
+    // Next fallback: Fail-closed and atomic (LIVE MODE ONLY).
     // NEVER mark an order paid before the entitlement grant succeeds.
     // Retries re-attempt the grant if previously incomplete.
+    if (serverMode !== "live" || orderRow.mode !== "live") {
+      return NextResponse.json(
+        { error: "Cannot fulfil non-live order in live fallback", code: "MODE_MISMATCH" },
+        { status: 400 }
+      );
+    }
+
     if (orderRow.status === "paid") {
       if (orderRow.addon_code) {
         const { data: existingCredit } = await supabaseAdmin

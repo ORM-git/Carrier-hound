@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
+import { getRazorpayKeyMode } from "../../src/lib/billing/mode";
 import { buildCorsHeaders, handleCorsPreflight } from "./_cors";
 import { safeLog } from "./_logger";
 
@@ -120,7 +121,19 @@ export function createHandler(deps: BillingVerifyDeps = {}) {
       const keyId = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID || "";
       const keySecret = process.env.RAZORPAY_KEY_SECRET;
 
-      if (!keySecret || !keyId.startsWith("rzp_test_")) {
+      if (!keySecret || !keyId) {
+        return {
+          statusCode: 503,
+          headers,
+          body: JSON.stringify({
+            error: "test keys not configured",
+            code: "RAZORPAY_TEST_KEYS_NOT_CONFIGURED",
+          }),
+        };
+      }
+
+      const serverMode = getRazorpayKeyMode(keyId);
+      if (serverMode === "unknown") {
         return {
           statusCode: 503,
           headers,
@@ -194,6 +207,31 @@ export function createHandler(deps: BillingVerifyDeps = {}) {
         };
       }
 
+      // Check provider
+      if (orderRow.provider && orderRow.provider !== "razorpay") {
+        return {
+          statusCode: 400,
+          headers,
+          body: JSON.stringify({
+            error: "Invalid payment provider",
+            code: "INVALID_PROVIDER",
+          }),
+        };
+      }
+
+      // Check order mode vs server mode
+      const orderMode = orderRow.mode || (orderRow.provider_order_id?.startsWith("order_test_") ? "test" : "live");
+      if (orderMode !== serverMode) {
+        return {
+          statusCode: 400,
+          headers,
+          body: JSON.stringify({
+            error: `Order mode mismatch: cannot verify ${orderMode} order with ${serverMode} credentials`,
+            code: "MODE_MISMATCH",
+          }),
+        };
+      }
+
       // Symmetric null-safe tamper detection
       const payloadAmount = body.amount;
       if (payloadAmount !== undefined && payloadAmount !== null) {
@@ -257,6 +295,8 @@ export function createHandler(deps: BillingVerifyDeps = {}) {
           body: JSON.stringify({
             success: true,
             alreadyPaid: true,
+            testMode: serverMode === "test",
+            isPro: serverMode === "live" && Boolean(orderRow.plan_code),
             message: "Order already verified and paid",
             orderId: orderRow.id,
           }),
@@ -267,6 +307,7 @@ export function createHandler(deps: BillingVerifyDeps = {}) {
       const { data: fulfilRes, error: fulfilErr } = await supabaseAdmin.rpc("fulfil_payment_order", {
         p_provider_order_id: orderId,
         p_user_id: user.id,
+        p_expected_mode: serverMode,
       });
 
       if (fulfilErr) {
@@ -292,13 +333,25 @@ export function createHandler(deps: BillingVerifyDeps = {}) {
         };
       }
 
+      if (serverMode === "test") {
+        return {
+          statusCode: 200,
+          headers,
+          body: JSON.stringify({
+            ...fulfilRes,
+            testMode: true,
+            isPro: false,
+          }),
+        };
+      }
+
       return {
         statusCode: 200,
         headers,
         body: JSON.stringify({
           ...fulfilRes,
-          testMode: true,
-          isPro: true,
+          testMode: false,
+          isPro: Boolean(fulfilRes.is_pro ?? orderRow.plan_code),
         }),
       };
     } catch (err: any) {

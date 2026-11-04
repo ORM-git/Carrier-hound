@@ -2,10 +2,12 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { resolveOrderPricing } from "@/lib/billing/quota";
 import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
+import { getRazorpayKeyMode } from "@/lib/billing/mode";
 
 export const runtime = "edge";
 
 export async function POST(req: Request) {
+  const deps = (req as any).__testDeps || {};
   try {
     if (process.env.NEXT_PUBLIC_BILLING_ENABLED !== "true") {
       return NextResponse.json(
@@ -20,21 +22,27 @@ export async function POST(req: Request) {
     }
 
     const token = authHeader.replace("Bearer ", "").trim();
-    const supabaseUrl =
-      process.env.NEXT_PUBLIC_SUPABASE_URL ||
-      process.env.SUPABASE_URL ||
-      "https://szakevhxhwpeskidvtfs.supabase.co";
-    const serviceRoleKey =
-      process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
+    let supabaseAdmin: any;
 
-    if (!supabaseUrl || !serviceRoleKey) {
-      return NextResponse.json({ error: "Supabase service configuration missing" }, { status: 500 });
+    if (deps.getSupabaseAdmin) {
+      supabaseAdmin = deps.getSupabaseAdmin();
+    } else {
+      const supabaseUrl =
+        process.env.NEXT_PUBLIC_SUPABASE_URL ||
+        process.env.SUPABASE_URL ||
+        "https://szakevhxhwpeskidvtfs.supabase.co";
+      const serviceRoleKey =
+        process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
+
+      if (!supabaseUrl || !serviceRoleKey) {
+        return NextResponse.json({ error: "Supabase service configuration missing" }, { status: 500 });
+      }
+
+      // Verify user session token
+      supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
+        auth: { persistSession: false },
+      });
     }
-
-    // Verify user session token
-    const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { persistSession: false },
-    });
 
     const {
       data: { user },
@@ -45,11 +53,23 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid user session token" }, { status: 401 });
     }
 
-    // Key validation: test mode keys only, strictly required
+    // Server-authoritative key validation and mode determination
     const keyId = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID;
     const keySecret = process.env.RAZORPAY_KEY_SECRET;
 
-    if (!keyId || !keySecret || !keyId.startsWith("rzp_test_")) {
+    if (!keyId || !keySecret) {
+      return NextResponse.json(
+        {
+          error: "test keys not configured",
+          code: "RAZORPAY_TEST_KEYS_NOT_CONFIGURED",
+        },
+        { status: 503 }
+      );
+    }
+
+    // Key validation: test mode keys only (must start with rzp_test_), strictly required
+    const resolvedMode = getRazorpayKeyMode(keyId);
+    if (!keyId.startsWith("rzp_test_") || resolvedMode !== "test") {
       return NextResponse.json(
         {
           error: "test keys not configured",
@@ -76,7 +96,8 @@ export async function POST(req: Request) {
 
     // Add-ons require active Pro subscription
     if (pricing.type === "addon") {
-      const entitlement = await getServerEntitlement(user.id);
+      const entitlementChecker = deps.getServerEntitlement || getServerEntitlement;
+      const entitlement = await entitlementChecker(user.id);
       if (!entitlement?.isPro) {
         return NextResponse.json(
           {
@@ -94,7 +115,8 @@ export async function POST(req: Request) {
 
     // Call Razorpay REST API
     const credentials = btoa(`${keyId}:${keySecret}`);
-    const rzpRes = await fetch("https://api.razorpay.com/v1/orders", {
+    const fetchCaller = deps.fetchFn || fetch;
+    const rzpRes = await fetchCaller("https://api.razorpay.com/v1/orders", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -123,7 +145,7 @@ export async function POST(req: Request) {
 
     const orderData = await rzpRes.json();
 
-    // Record order in payment_orders table with status 'created' - REQUIRED on money path
+    // Record order in payment_orders table with status 'created' and resolved server mode
     const { error: insertErr } = await supabaseAdmin.from("payment_orders").insert({
       user_id: user.id,
       provider: "razorpay",
@@ -133,6 +155,7 @@ export async function POST(req: Request) {
       amount_paise: amountInPaise,
       currency,
       status: "created",
+      mode: resolvedMode,
     });
 
     if (insertErr) {

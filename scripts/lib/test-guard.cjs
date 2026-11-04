@@ -55,6 +55,7 @@ const SUITE_CLASSIFICATIONS = Object.freeze({
   "scripts/test-jobs-list-detail.ts": "offline",
   "scripts/test-card-hover-match.ts": "offline",
   "scripts/test-razorpay-billing.ts": "offline",
+  "scripts/test-razorpay-mode-isolation.ts": "offline",
   "scripts/test-profile-rebuild.ts": "offline",
   "scripts/test-auth-presentation.ts": "offline",
   "scripts/test-tracker-resume-rebuild.ts": "offline",
