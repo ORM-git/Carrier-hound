@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import type { AnalyticsStats } from "@/lib/admin/analytics";
 import { sanitizeInternalPath } from "@/lib/security/xss";
+import EarlyAccessRequestsSection from "@/components/admin/EarlyAccessRequestsSection";
 
 export default function AdminDashboardPage() {
   const [rangeDays, setRangeDays] = useState<7 | 30>(7);
@@ -414,6 +415,9 @@ export default function AdminDashboardPage() {
           </table>
         </div>
       </div>
+
+      {/* Section: Early access requests */}
+      <EarlyAccessRequestsSection />
     </div>
   );
 }

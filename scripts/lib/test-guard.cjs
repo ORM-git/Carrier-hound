@@ -66,6 +66,7 @@ const SUITE_CLASSIFICATIONS = Object.freeze({
   "scripts/test-search-track-rate-limits.ts": "offline",
   "scripts/test-early-access.ts": "offline",
   "scripts/test-admin-early-access.ts": "offline",
+  "scripts/test-admin-early-access-frontend.ts": "offline",
   "scripts/test-stats-and-invite-gate.ts": "offline",
   "scripts/test-plan-picker.ts": "offline",
   "scripts/test-plan-quota.ts": "offline",
