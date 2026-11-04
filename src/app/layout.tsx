@@ -8,7 +8,7 @@ import BackToTop from "@/components/BackToTop";
 import PageViewTracker from "@/components/analytics/PageViewTracker";
 import BlockedAccountNotice from "@/components/auth/BlockedAccountNotice";
 import CookieNotice from "@/components/CookieNotice";
-import { getSiteUrl } from "@/lib/siteUrl";
+
 
 const inter = Inter({
   subsets: ["latin"],
@@ -26,20 +26,20 @@ export const viewport: Viewport = {
 const siteTitle = "CareerMonke — Unindexed Jobs & Remote Career Discovery";
 const siteDescription =
   "Discover unindexed remote engineering, design, marketing, and data roles directly from verified employer career pages before they hit public aggregators.";
-const siteUrl = getSiteUrl();
-const ogImageUrl = `${siteUrl}/careermonke.png`;
+
+const ogImageUrl = "https://careermonke.com/careermonke.png";
 
 export const metadata: Metadata = {
   title: siteTitle,
   description: siteDescription,
-  metadataBase: new URL(siteUrl),
+  metadataBase: new URL("https://careermonke.com"),
   alternates: {
     canonical: "/",
   },
   openGraph: {
     title: siteTitle,
     description: siteDescription,
-    url: siteUrl,
+    url: "https://careermonke.com",
     siteName: "CareerMonke",
     images: [
       {
