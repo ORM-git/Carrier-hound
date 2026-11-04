@@ -140,7 +140,7 @@ export default function PricingPage() {
               <tr>
                 {/* Left Cell: White rounded card containing the three plan tiles */}
                 <td className="w-[74%] bg-white dark:bg-slate-950 rounded-t-2xl border-t border-l border-r border-slate-200 dark:border-slate-800 p-6 sm:p-7 align-top shadow-xs">
-                  {/* Three Plan Tiles Side-by-Side: Monthly, Quarterly, Weekly */}
+                  {/* Three Plan Tiles Side-by-Side: Weekly, Monthly, Quarterly */}
                   <div
                     role="radiogroup"
                     aria-label="Subscription plans"
@@ -165,7 +165,7 @@ export default function PricingPage() {
                           onClick={() => handleSelectPlan(plan.id)}
                           onKeyDown={(e) => handleKeyDownPlan(e, plan.id)}
                           className={cnTokens(
-                            "relative flex flex-col justify-between rounded-xl p-4 sm:p-5 transition-colors cursor-pointer select-none min-h-[200px] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] focus-visible:ring-offset-2",
+                            "relative flex flex-col justify-between rounded-xl p-4 sm:p-5 transition-colors cursor-pointer select-none min-h-[220px] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] focus-visible:ring-offset-2",
                             isSelected
                               ? "border-2 border-[#2563EB] bg-blue-50/20 dark:bg-blue-950/20 shadow-xs"
                               : "border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 hover:border-slate-300 dark:hover:border-slate-700"
@@ -230,17 +230,24 @@ export default function PricingPage() {
                                 Upgrade
                               </Link>
                             )}
-                            <span className="text-[11px] text-slate-500 text-center block mt-1">
-                              {UPGRADE_BUTTON_LABEL}
-                            </span>
+                            <div className="flex justify-center mt-2">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                                {UPGRADE_BUTTON_LABEL}
+                              </span>
+                            </div>
                           </div>
                         </div>
                       );
                     })}
                   </div>
 
+                  {/* Footnote right below cards */}
+                  <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-3 leading-normal">
+                    {PER_WEEK_NOTE}
+                  </p>
+
                   {/* Heading below tiles */}
-                  <div className="mt-8 mb-2">
+                  <div className="mt-6 mb-2">
                     <h2 className="text-lg font-bold text-[#090E34] dark:text-white">
                       All features included in Premium
                     </h2>
@@ -248,28 +255,48 @@ export default function PricingPage() {
                 </td>
 
                 {/* Right Cell: Grey Free Plan Panel Header */}
-                <td className="w-[26%] bg-[#F8F9FA] dark:bg-slate-900/60 rounded-t-2xl border-t border-r border-slate-200 dark:border-slate-800 p-6 pl-8 align-top">
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <h2 className="text-xl font-bold text-[#090E34] dark:text-white">
-                      Free Plan
-                    </h2>
-                    <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-slate-200 dark:bg-slate-700 text-[10px] text-slate-600 dark:text-slate-300 font-bold" aria-hidden="true">
-                      i
-                    </span>
-                  </div>
+                <td className="w-[26%] bg-[#F8F9FA] dark:bg-slate-900/60 rounded-t-2xl border-t border-r border-slate-200 dark:border-slate-800 p-6 sm:p-7 align-top">
+                  <div className="flex flex-col justify-between rounded-xl p-4 sm:p-5 border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-xs min-h-[220px]">
+                    <div>
+                      {/* Plan Name */}
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <span className="text-lg font-bold text-[#090E34] dark:text-white">
+                          Free Plan
+                        </span>
+                        <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-slate-200 dark:bg-slate-700 text-[10px] text-slate-600 dark:text-slate-300 font-bold" aria-hidden="true">
+                          i
+                        </span>
+                      </div>
 
-                  {/* Price */}
-                  <div className="my-3">
-                    <span className="text-3xl sm:text-4xl font-black text-[#090E34] dark:text-white">
-                      ₹0.00
-                    </span>
-                  </div>
+                      {/* Big Price */}
+                      <div className="my-1">
+                        <span className="text-3xl font-black text-[#090E34] dark:text-white tracking-tight">
+                          ₹0.00
+                        </span>
+                      </div>
 
-                  {/* Current Plan State */}
-                  <div className="mb-4">
-                    <span className="block w-full py-2 px-3 text-center rounded-lg bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-bold text-xs sm:text-sm">
-                      Your current plan
-                    </span>
+                      {/* Billing Line */}
+                      <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                        Free forever
+                      </p>
+
+                      {/* Subline */}
+                      <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 mt-1">
+                        Basic search & masked previews
+                      </p>
+                    </div>
+
+                    {/* Button container matching paid cards */}
+                    <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
+                      <div className="w-full min-h-[48px] h-11 rounded-lg font-semibold text-sm flex items-center justify-center select-none bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200">
+                        Your current plan
+                      </div>
+                      <div className="flex justify-center mt-2 invisible" aria-hidden="true">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium">
+                          placeholder
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 </td>
               </tr>
@@ -402,30 +429,51 @@ export default function PricingPage() {
                         Upgrade
                       </Link>
                     )}
-                    <span className="text-[11px] text-slate-500 text-center block mt-1">
-                      {UPGRADE_BUTTON_LABEL}
-                    </span>
+                    <div className="flex justify-center mt-2">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                        {UPGRADE_BUTTON_LABEL}
+                      </span>
+                    </div>
                   </div>
                 </div>
               );
             })}
           </div>
 
+          {/* Footnote right below cards */}
+          <p className="text-[11px] text-slate-400 dark:text-slate-500 -mt-2 leading-normal text-center">
+            {PER_WEEK_NOTE}
+          </p>
+
           {/* Free Tier Card on Mobile */}
-          <div className="bg-[#F8F9FA] dark:bg-slate-900/60 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-xs">
-            <div className="flex items-center justify-between gap-2 mb-2">
-              <span className="text-base font-bold text-[#090E34] dark:text-white">
-                Free Plan
-              </span>
+          <div className="flex flex-col justify-between rounded-2xl p-5 bg-[#F8F9FA] dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-xs">
+            <div>
+              <div className="mb-1">
+                <span className="text-lg font-bold text-[#090E34] dark:text-white">
+                  Free Plan
+                </span>
+              </div>
+
+              <div className="my-1">
+                <span className="text-3xl font-black text-[#090E34] dark:text-white tracking-tight">
+                  ₹0.00
+                </span>
+              </div>
+
+              <p className="text-xs text-slate-500 font-medium">Free forever</p>
+
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                  Basic search & masked previews
+                </span>
+              </div>
             </div>
-            <div className="my-2">
-              <span className="text-3xl font-black text-[#090E34] dark:text-white">
-                ₹0.00
-              </span>
+
+            <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-800">
+              <div className="w-full min-h-[48px] h-11 rounded-lg bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-semibold text-sm flex items-center justify-center select-none">
+                Your current plan
+              </div>
             </div>
-            <span className="block w-full py-2 px-3 text-center rounded-lg bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-bold text-xs">
-              Your current plan
-            </span>
           </div>
 
           {/* Mobile Comparison Table */}

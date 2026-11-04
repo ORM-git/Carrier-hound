@@ -78,7 +78,7 @@ async function capture() {
 
     // 2. Desktop 1440px - Interactive Selection of Quarterly Plan
     console.log("Interactively clicking Quarterly Plan...");
-    const quarterlyCard = await page.$('div[role="radio"]:nth-child(2)');
+    const quarterlyCard = await page.$('div[role="radio"]:nth-child(3)');
     if (quarterlyCard) {
       await quarterlyCard.click();
       await new Promise((r) => setTimeout(r, 400));
@@ -90,7 +90,7 @@ async function capture() {
 
     // 3. Desktop 1440px - Interactive Selection of Weekly Plan
     console.log("Interactively clicking Weekly Plan...");
-    const weeklyCard = await page.$('div[role="radio"]:nth-child(3)');
+    const weeklyCard = await page.$('div[role="radio"]:nth-child(1)');
     if (weeklyCard) {
       await weeklyCard.click();
       await new Promise((r) => setTimeout(r, 400));
@@ -101,7 +101,7 @@ async function capture() {
     }
 
     // 4. Test Zero Checkout Activation: Click Upgrade button
-    console.log("Verifying Upgrade button is inert / disabled (zero checkout)...");
+    console.log("Verifying Upgrade button is inert / links to login (zero checkout)...");
     const buttons = await page.$$("button[disabled]");
     let upgradeButton = null;
     let buttonText = "";
@@ -113,13 +113,27 @@ async function capture() {
         break;
       }
     }
-    if (!upgradeButton) {
-      throw new Error("Could not find disabled Upgrade button!");
-    }
-    const isDisabled = await page.evaluate((btn) => btn.disabled, upgradeButton);
-    console.log(`Upgrade button text: "${buttonText}", disabled property: ${isDisabled}`);
-    if (!isDisabled) {
-      throw new Error(`Upgrade button verification failed! text="${buttonText}", disabled=${isDisabled}`);
+    if (upgradeButton) {
+      const isDisabled = await page.evaluate((btn) => btn.disabled, upgradeButton);
+      console.log(`Upgrade button text: "${buttonText}", disabled property: ${isDisabled}`);
+      if (!isDisabled) {
+        throw new Error(`Upgrade button verification failed! text="${buttonText}", disabled=${isDisabled}`);
+      }
+    } else {
+      const loginLinks = await page.$$('a[href="/login"]');
+      let upgradeLink = null;
+      for (const link of loginLinks) {
+        const text = await page.evaluate((l) => l.innerText.trim(), link);
+        if (text.includes("Upgrade")) {
+          upgradeLink = link;
+          buttonText = text;
+          break;
+        }
+      }
+      if (!upgradeLink) {
+        throw new Error("Could not find disabled Upgrade button or login link!");
+      }
+      console.log(`Logged-out Upgrade CTA verified: text="${buttonText}", links to /login`);
     }
 
     // 5. Mobile 390px Viewport (iPhone 14 / Jobright mobile reference)
