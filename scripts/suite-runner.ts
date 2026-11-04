@@ -130,6 +130,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-ai-idempotency-replay.ts", command: "npx tsx scripts/test-ai-idempotency-replay.ts", classification: "offline" },
   { name: "scripts/test-global-ai-budget.ts", command: "npx tsx scripts/test-global-ai-budget.ts", classification: "offline" },
   { name: "scripts/test-cover-letter-cache-versioning.ts", command: "npx tsx scripts/test-cover-letter-cache-versioning.ts", classification: "offline" },
+  { name: "scripts/test-billing-states-audit.ts", command: "npx tsx scripts/test-billing-states-audit.ts", classification: "offline" },
 
   // DB-capable suites: read operations (BLOCKED by default unless authorized on test project)
   { name: "scripts/test-enhanced-scoring.ts", command: "npx tsx scripts/test-enhanced-scoring.ts", classification: "db-read", requiresSupabase: true },

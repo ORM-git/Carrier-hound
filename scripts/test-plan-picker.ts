@@ -180,7 +180,10 @@ async function runPlanPickerSuite() {
   // Free Tier Card
   assert.ok(serverHtml.includes("Free Plan"), "Free tier heading 'Free Plan' must be present");
   assert.ok(serverHtml.includes("₹0.00"), "Free plan price ₹0.00 must be present");
-  assert.ok(serverHtml.includes("Your current plan"), "'Your current plan' badge must be present");
+  assert.ok(
+    serverHtml.includes("Checking your plan..."),
+    "Free plan button on initial render must show neutral placeholder 'Checking your plan...'"
+  );
 
   // Comparison Features Section
   assert.ok(serverHtml.includes("All features included in Premium"), "Features section heading must be present");

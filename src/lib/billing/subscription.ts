@@ -349,27 +349,3 @@ export async function getUserSubscription(): Promise<UserSubscription | null> {
 
   return null;
 }
-
-/**
- * Marks the subscription to cancel at the end of the current period
- */
-export async function cancelSubscription(): Promise<UserSubscription | null> {
-  setLocalProActive(false);
-
-  try {
-    const supabase = createClient();
-    const { data: { session } } = await supabase.auth.getSession();
-    const user = session?.user || (await supabase.auth.getUser()).data.user;
-
-    if (user) {
-      await supabase
-        .from("subscriptions")
-        .update({ status: "canceled", cancel_at_period_end: true })
-        .eq("user_id", user.id);
-    }
-  } catch (e) {
-    console.warn("Could not cancel subscription remotely", e);
-  }
-
-  return null;
-}

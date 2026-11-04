@@ -9,7 +9,8 @@ import AppTopBar from "@/components/shell/AppTopBar";
 import LoggedInAppShell from "@/components/shell/LoggedInAppShell";
 import { getAuthUser, getUserPreferences, saveUserPreferences, signOutUser } from "@/lib/auth/session";
 import { UserPreferences } from "@/lib/auth/types";
-import { getUserSubscription, cancelSubscription } from "@/lib/billing/subscription";
+import { getUserSubscription } from "@/lib/billing/subscription";
+import { formatPriceINR } from "@/config/plans";
 import { UserSubscription } from "@/lib/billing/types";
 import { getCandidateProfile, deleteCandidateProfile } from "@/lib/resume/storage";
 import { getTrackedApplications } from "@/lib/tracker/storage";
@@ -30,6 +31,43 @@ import {
   AlertCircle
 } from "lucide-react";
 import { toast } from "react-toastify";
+
+function getSubscriptionPlanName(planId?: string | null): string {
+  if (!planId) return "Pro";
+  const id = planId.toLowerCase();
+  if (id.includes("week")) return "Weekly";
+  if (id.includes("quarter")) return "Quarterly";
+  if (id.includes("month")) return "Monthly";
+  return planId.charAt(0).toUpperCase() + planId.slice(1);
+}
+
+function formatSubscriptionRecord(sub: UserSubscription | null): string {
+  if (!sub) return "Full direct ATS apply unlocked.";
+  const planName = getSubscriptionPlanName(sub.planId);
+  const currencyStr = sub.currency ? sub.currency.toUpperCase() : "INR";
+  const formattedPrice =
+    typeof sub.amount === "number" && sub.amount > 0
+      ? currencyStr === "INR"
+        ? formatPriceINR(sub.amount)
+        : `${currencyStr} ${sub.amount}`
+      : null;
+
+  if (formattedPrice) {
+    return `${planName} Plan (${formattedPrice} ${currencyStr}). Full direct ATS apply unlocked.`;
+  }
+  return `${planName} Plan. Full direct ATS apply unlocked.`;
+}
+
+function formatUnambiguousDate(dateInput?: string | number | Date | null): string {
+  if (!dateInput) return "Active";
+  const date = new Date(dateInput);
+  if (isNaN(date.getTime())) return "Active";
+  const day = date.getDate();
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const month = months[date.getMonth()];
+  const year = date.getFullYear();
+  return `${day} ${month} ${year}`;
+}
 
 function SettingsPageInner() {
   const { isExpanded } = useSidebarMode();
@@ -111,15 +149,6 @@ function SettingsPageInner() {
       setRoles([...roles, customRole.trim()]);
       setCustomRole("");
     }
-  };
-
-  const handleCancelSubscription = async () => {
-    if (!window.confirm("Are you sure you want to cancel your Pro renewal? You will retain Pro access until the end of the billing period.")) {
-      return;
-    }
-    const updated = await cancelSubscription();
-    setSubscription(updated);
-    toast.info("Subscription marked for cancellation at period end.");
   };
 
   const handleExportData = async () => {
@@ -513,7 +542,7 @@ function SettingsPageInner() {
                   </h3>
                   <p className="text-xs text-slate-500">
                     {isPro
-                      ? "₹199 / month (Domestic) or $9 / month (International). Full direct ATS apply unlocked."
+                      ? formatSubscriptionRecord(subscription)
                       : "Standard title browsing, 5 tracker slots, 1 ATS resume export."}
                   </p>
                 </div>
@@ -530,18 +559,13 @@ function SettingsPageInner() {
               </div>
 
               {isPro && (
-                <div className="pt-3 border-t border-slate-200/80 flex items-center justify-between text-xs">
+                <div className="pt-3 border-t border-slate-200/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 text-xs">
                   <span className="text-slate-600">
-                    Auto-renews on: <strong>{new Date(subscription?.currentPeriodEnd || Date.now()).toLocaleDateString()}</strong>
+                    Pro access ends on: <strong>{formatUnambiguousDate(subscription?.currentPeriodEnd)}</strong>
                   </span>
-
-                  <button
-                    type="button"
-                    onClick={handleCancelSubscription}
-                    className="text-red-600 hover:text-red-800 font-semibold cursor-pointer"
-                  >
-                    Cancel Renewal
-                  </button>
+                  <span className="text-slate-500">
+                    Prepaid plan - no auto-renewal, no renewal to cancel.
+                  </span>
                 </div>
               )}
             </div>
