@@ -56,16 +56,13 @@ export default function TermsPage() {
         <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">3. Billing, Pricing, and Subscriptions</h2>
         <ul className="list-disc pl-5 space-y-2 mb-2">
           <li>
-            <strong>Subscription Model:</strong> We offer monthly, quarterly, and annual paid membership tiers. By subscribing, you authorize us to charge your designated payment method for recurring renewal fees until you cancel.
+            <strong>Subscription Model:</strong> We offer weekly, monthly and quarterly paid membership tiers; plans are prepaid for a fixed duration and do not auto-renew; renew or upgrade extends your period.
           </li>
           <li>
             <strong>Payment Gateways:</strong> To ensure seamless financial operations across borders, all transactions are processed through secure, third-party payment gateways:
             <ul className="list-disc pl-5 space-y-1 mt-1">
               <li>
                 <strong>Razorpay:</strong> Primarily used for domestic Indian transactions (INR), supporting UPI, NetBanking, and local cards.
-              </li>
-              <li>
-                <strong>Stripe:</strong> Primarily used for international and multi-currency transactions (USD, EUR, GBP, etc.), supporting global credit/debit networks.
               </li>
             </ul>
           </li>

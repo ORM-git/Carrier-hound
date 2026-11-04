@@ -185,9 +185,8 @@ async function runPlanPickerSuite() {
   // Comparison Features Section
   assert.ok(serverHtml.includes("All features included in Premium"), "Features section heading must be present");
 
-  // Disabled Upgrade Button & Sub-label
-  assert.ok(serverHtml.includes("disabled"), "Upgrade button must have disabled attribute");
-  assert.ok(serverHtml.includes('aria-disabled="true"'), "Upgrade button must have aria-disabled='true'");
+  // Upgrade Button & Sub-label (links to login/signup for logged-out visitors)
+  assert.ok(serverHtml.includes('href="/login"'), "Upgrade CTA must link to login/signup for logged-out visitors");
   assert.ok(serverHtml.includes("Upgrade"), "Upgrade button text must be 'Upgrade'");
   assert.ok(serverHtml.includes(UPGRADE_BUTTON_LABEL), "Upgrade button sub-label must be UPGRADE_BUTTON_LABEL ('Payments opening soon')");
 
