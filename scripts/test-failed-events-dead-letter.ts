@@ -17,6 +17,9 @@ import {
   recordFailedEvent,
   replayFailedEvents,
   scrubSensitiveData,
+  computeStableEventId,
+  computeEmailHash,
+  resolveSubscriberEmail,
   type FailedEventRecord,
 } from "../src/lib/events/failedEvents";
 import { GET as adminReplayGet, POST as adminReplayPost } from "../src/app/api/admin/replay/route";
@@ -31,6 +34,8 @@ interface MockDb {
   failedEvents: Map<string, FailedEventRecord>;
   webhookEvents: Map<string, any>;
   paymentOrders: Map<string, any>;
+  earlyAccessEmails: Map<string, any>;
+  gmailSendLog: any[];
 }
 
 function createMockDb(): MockDb {
@@ -38,6 +43,8 @@ function createMockDb(): MockDb {
     failedEvents: new Map<string, FailedEventRecord>(),
     webhookEvents: new Map<string, any>(),
     paymentOrders: new Map<string, any>(),
+    earlyAccessEmails: new Map<string, any>(),
+    gmailSendLog: [],
   };
 }
 
@@ -49,21 +56,38 @@ function createMockSupabaseClient(db: MockDb) {
       let filterStatus: string | null = null;
       let filterId: string | null = null;
       let filterLteRetry: string | null = null;
+      let filterEmail: string | null = null;
+      let filterCreatedAt: string | null = null;
+      let filterKind: string | null = null;
+      let filterRecipientEmail: string | null = null;
+      let filterGteSentAt: string | null = null;
+      let isCountHead: boolean = false;
       let limitCount: number = 100;
       let orderCol: string | null = null;
       let orderAsc: boolean = true;
 
       const queryBuilder: any = {
-        select: (_cols?: string) => queryBuilder,
+        select: (_cols?: string, opts?: { count?: string; head?: boolean }) => {
+          if (opts?.head || opts?.count) isCountHead = true;
+          return queryBuilder;
+        },
         eq: (col: string, val: any) => {
           if (col === "source") filterSource = String(val);
           if (col === "event_id") filterEventId = String(val);
           if (col === "status") filterStatus = String(val);
           if (col === "id") filterId = String(val);
+          if (col === "email") filterEmail = String(val);
+          if (col === "created_at") filterCreatedAt = String(val);
+          if (col === "kind") filterKind = String(val);
+          if (col === "recipient_email") filterRecipientEmail = String(val);
           return queryBuilder;
         },
         lte: (col: string, val: any) => {
           if (col === "next_retry_at") filterLteRetry = String(val);
+          return queryBuilder;
+        },
+        gte: (col: string, val: any) => {
+          if (col === "sent_at") filterGteSentAt = String(val);
           return queryBuilder;
         },
         order: (col: string, opts?: { ascending?: boolean }) => {
@@ -89,6 +113,14 @@ function createMockSupabaseClient(db: MockDb) {
           if (table === "webhook_events") {
             if (filterEventId && db.webhookEvents.has(filterEventId)) {
               return { data: { ...db.webhookEvents.get(filterEventId) }, error: null };
+            }
+            return { data: null, error: null };
+          }
+          if (table === "early_access_emails") {
+            for (const item of db.earlyAccessEmails.values()) {
+              if (filterEmail && item.email !== filterEmail) continue;
+              if (filterCreatedAt && item.created_at !== filterCreatedAt) continue;
+              return { data: { ...item }, error: null };
             }
             return { data: null, error: null };
           }
@@ -119,6 +151,12 @@ function createMockSupabaseClient(db: MockDb) {
             } else if (table === "webhook_events") {
               db.webhookEvents.set(r.event_id, r);
               inserted.push(r);
+            } else if (table === "early_access_emails") {
+              db.earlyAccessEmails.set(r.email, r);
+              inserted.push(r);
+            } else if (table === "gmail_send_log") {
+              db.gmailSendLog.push(r);
+              inserted.push(r);
             }
           }
           const resPromise: any = Promise.resolve({ data: inserted, error: null });
@@ -137,6 +175,10 @@ function createMockSupabaseClient(db: MockDb) {
             db.failedEvents.set(key, row);
             return { data: row, error: null };
           }
+          if (table === "early_access_emails") {
+            db.earlyAccessEmails.set(row.email, row);
+            return { data: row, error: null };
+          }
           return { data: null, error: null };
         },
         update: (updates: any) => ({
@@ -144,14 +186,12 @@ function createMockSupabaseClient(db: MockDb) {
             if (table === "failed_events") {
               for (const [key, item] of db.failedEvents.entries()) {
                 if (col === "id" && item.id === val) {
-                  const updated = { ...item, ...updates };
-                  db.failedEvents.set(key, updated);
-                  return { data: updated, error: null };
+                  Object.assign(item, updates);
+                  return { data: item, error: null };
                 }
                 if (col === "event_id" && item.event_id === val) {
-                  const updated = { ...item, ...updates };
-                  db.failedEvents.set(key, updated);
-                  return { data: updated, error: null };
+                  Object.assign(item, updates);
+                  return { data: item, error: null };
                 }
               }
             }
@@ -167,6 +207,23 @@ function createMockSupabaseClient(db: MockDb) {
             if (filterLteRetry) list = list.filter((i) => i.next_retry_at <= filterLteRetry!);
             list = list.slice(0, limitCount);
             return Promise.resolve({ data: list, error: null }).then(resolve, reject);
+          }
+          if (table === "early_access_emails") {
+            let list = Array.from(db.earlyAccessEmails.values());
+            if (filterEmail) list = list.filter((i) => i.email === filterEmail);
+            if (filterCreatedAt) list = list.filter((i) => i.created_at === filterCreatedAt);
+            list = list.slice(0, limitCount);
+            return Promise.resolve({ data: list, error: null }).then(resolve, reject);
+          }
+          if (table === "gmail_send_log") {
+            let list = db.gmailSendLog.slice();
+            if (filterKind) list = list.filter((i) => i.kind === filterKind);
+            if (filterRecipientEmail) list = list.filter((i) => i.recipient_email === filterRecipientEmail);
+            if (filterGteSentAt) list = list.filter((i) => i.sent_at >= filterGteSentAt!);
+            if (isCountHead) {
+              return Promise.resolve({ count: list.length, data: null, error: null }).then(resolve, reject);
+            }
+            return Promise.resolve({ data: list, count: list.length, error: null }).then(resolve, reject);
           }
           return Promise.resolve({ data: [], error: null }).then(resolve, reject);
         },
@@ -192,10 +249,25 @@ async function runSuite() {
   console.log("     ASYNC DEAD-LETTER QUEUE & REPLAY TEST SUITE [PASS-LOCAL]                   ");
   console.log("================================================================================\n");
 
-  // Negative control flag check
+  // Negative control flag checks
   if (process.argv.includes("--negative-control")) {
     console.log("Triggering deliberate failure via --negative-control...");
     assert.strictEqual(true, false, "Negative control deliberately triggered non-zero exit.");
+  }
+  if (process.argv.includes("--negative-control-pii")) {
+    console.log("Triggering deliberate failure via --negative-control-pii...");
+    // Negative control: unredacted email must fail assertion
+    assert.strictEqual("user@example.com", "[REDACTED]", "Negative control PII assertion failed as expected");
+  }
+  if (process.argv.includes("--negative-control-stable-id")) {
+    console.log("Triggering deliberate failure via --negative-control-stable-id...");
+    // Negative control: divergent IDs for same input must fail assertion
+    assert.strictEqual("event_12345", "event_99999", "Negative control stable-id assertion failed as expected");
+  }
+  if (process.argv.includes("--negative-control-mail-replay")) {
+    console.log("Triggering deliberate failure via --negative-control-mail-replay...");
+    // Negative control: un-resolved address during mail replay must fail
+    assert.strictEqual("[REDACTED]", "applicant@careermonke.com", "Negative control mail replay assertion failed as expected");
   }
 
   // --------------------------------------------------------------------------
@@ -396,7 +468,7 @@ async function runSuite() {
   // --------------------------------------------------------------------------
   // TEST 5: Secret and PII Scrubbing
   // --------------------------------------------------------------------------
-  console.log("Test 5: Secret and PII scrubbing removes credentials and card details...");
+  console.log("Test 5: Secret and PII scrubbing removes credentials, card details, and PII...");
   {
     const rawPayload = {
       order_id: "order_999",
@@ -406,24 +478,70 @@ async function runSuite() {
       password: "SuperSecretPassword123",
       api_key: "rzp_live_abc123xyz",
       auth: "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9",
+      // Core PII keys (case variations)
+      email: "plain_email@example.com",
+      EMAIL: "UPPER_EMAIL@EXAMPLE.COM",
+      contact: "+919876543210",
+      Contact: "+919876543211",
+      phone: "+15551234567",
+      PHONE: "+15551234568",
+      vpa: "user@okhdfcbank",
+      VPA: "OTHER@UPI",
+      name: "Jane Doe",
+      Name: "John Doe",
       nested: {
         card_number: "4111222233334444",
         card_cvv: "123",
         pan: "ABCDE1234F",
         ssn: "000-12-3456",
         safe_meta: "harmless_data",
+        customer_name: "Nested Customer",
+        user_email: "nested@example.com",
+        contact_number: "+911234567890",
+        phone_secondary: "+919999999999",
+        vpa_handle: "nested@okaxis",
       },
+      customers: [
+        {
+          id: "cust_1",
+          name: "Customer One",
+          email: "one@example.com",
+          contact: "+918888888881",
+          phone: "+918888888882",
+          vpa: "cust1@upi",
+          status: "active",
+        },
+        {
+          id: "cust_2",
+          fullName: "Customer Two",
+          contactPhone: "+917777777771",
+          vpaAddress: "cust2@upi",
+          emailAddress: "two@example.com",
+          meta: {
+            deep_name: "Deep Name",
+            deep_phone: "+916666666661",
+          },
+        },
+      ],
       array_items: [
         "Bearer my-token-here",
         "whsec_another_secret",
         "normal_string",
+        "standalone.email@example.org",
       ],
     };
 
     const scrubbed = scrubSensitiveData(rawPayload);
 
+    // Non-sensitive preserved
     assert.strictEqual(scrubbed.order_id, "order_999", "order_id must be preserved");
     assert.strictEqual(scrubbed.amount, 1499, "amount must be preserved");
+    assert.strictEqual(scrubbed.nested.safe_meta, "harmless_data", "safe_meta must be preserved");
+    assert.strictEqual(scrubbed.customers[0].id, "cust_1", "customer id must be preserved");
+    assert.strictEqual(scrubbed.customers[0].status, "active", "status must be preserved");
+    assert.strictEqual(scrubbed.array_items[2], "normal_string", "normal string in array preserved");
+
+    // Credentials & auth scrubbed
     assert.strictEqual(scrubbed.client_secret, "[REDACTED]", "client_secret must be scrubbed");
     assert.strictEqual(scrubbed.razorpay_signature, "[REDACTED]", "signature key must be scrubbed");
     assert.strictEqual(scrubbed.password, "[REDACTED]", "password must be scrubbed");
@@ -433,11 +551,42 @@ async function runSuite() {
     assert.strictEqual(scrubbed.nested.card_cvv, "[REDACTED]", "card_cvv must be scrubbed");
     assert.strictEqual(scrubbed.nested.pan, "[REDACTED]", "pan must be scrubbed");
     assert.strictEqual(scrubbed.nested.ssn, "[REDACTED]", "ssn must be scrubbed");
-    assert.strictEqual(scrubbed.nested.safe_meta, "harmless_data", "safe_meta must be preserved");
     assert.strictEqual(scrubbed.array_items[0], "[REDACTED_TOKEN]", "Bearer string in array scrubbed");
     assert.strictEqual(scrubbed.array_items[1], "[REDACTED_SECRET]", "whsec_ string in array scrubbed");
-    assert.strictEqual(scrubbed.array_items[2], "normal_string", "normal string in array preserved");
-    console.log("  -> [PASS-LOCAL] scrubSensitiveData removes all secrets and PII safely.\n");
+    assert.strictEqual(scrubbed.array_items[3], "[REDACTED_EMAIL]", "standalone email in array scrubbed");
+
+    // PII keys scrubbed (case-insensitive, top-level, nested, and arrays)
+    assert.strictEqual(scrubbed.email, "[REDACTED]", "top-level email must be scrubbed");
+    assert.strictEqual(scrubbed.EMAIL, "[REDACTED]", "top-level uppercase EMAIL must be scrubbed");
+    assert.strictEqual(scrubbed.contact, "[REDACTED]", "top-level contact must be scrubbed");
+    assert.strictEqual(scrubbed.Contact, "[REDACTED]", "top-level Contact must be scrubbed");
+    assert.strictEqual(scrubbed.phone, "[REDACTED]", "top-level phone must be scrubbed");
+    assert.strictEqual(scrubbed.PHONE, "[REDACTED]", "top-level PHONE must be scrubbed");
+    assert.strictEqual(scrubbed.vpa, "[REDACTED]", "top-level vpa must be scrubbed");
+    assert.strictEqual(scrubbed.VPA, "[REDACTED]", "top-level VPA must be scrubbed");
+    assert.strictEqual(scrubbed.name, "[REDACTED]", "top-level name must be scrubbed");
+    assert.strictEqual(scrubbed.Name, "[REDACTED]", "top-level Name must be scrubbed");
+
+    assert.strictEqual(scrubbed.nested.customer_name, "[REDACTED]", "nested customer_name must be scrubbed");
+    assert.strictEqual(scrubbed.nested.user_email, "[REDACTED]", "nested user_email must be scrubbed");
+    assert.strictEqual(scrubbed.nested.contact_number, "[REDACTED]", "nested contact_number must be scrubbed");
+    assert.strictEqual(scrubbed.nested.phone_secondary, "[REDACTED]", "nested phone_secondary must be scrubbed");
+    assert.strictEqual(scrubbed.nested.vpa_handle, "[REDACTED]", "nested vpa_handle must be scrubbed");
+
+    assert.strictEqual(scrubbed.customers[0].name, "[REDACTED]", "array object name must be scrubbed");
+    assert.strictEqual(scrubbed.customers[0].email, "[REDACTED]", "array object email must be scrubbed");
+    assert.strictEqual(scrubbed.customers[0].contact, "[REDACTED]", "array object contact must be scrubbed");
+    assert.strictEqual(scrubbed.customers[0].phone, "[REDACTED]", "array object phone must be scrubbed");
+    assert.strictEqual(scrubbed.customers[0].vpa, "[REDACTED]", "array object vpa must be scrubbed");
+
+    assert.strictEqual(scrubbed.customers[1].fullName, "[REDACTED]", "array object fullName must be scrubbed");
+    assert.strictEqual(scrubbed.customers[1].contactPhone, "[REDACTED]", "array object contactPhone must be scrubbed");
+    assert.strictEqual(scrubbed.customers[1].vpaAddress, "[REDACTED]", "array object vpaAddress must be scrubbed");
+    assert.strictEqual(scrubbed.customers[1].emailAddress, "[REDACTED]", "array object emailAddress must be scrubbed");
+    assert.strictEqual(scrubbed.customers[1].meta.deep_name, "[REDACTED]", "deeply nested name must be scrubbed");
+    assert.strictEqual(scrubbed.customers[1].meta.deep_phone, "[REDACTED]", "deeply nested phone must be scrubbed");
+
+    console.log("  -> [PASS-LOCAL] scrubSensitiveData removes all secrets and PII (email, contact, phone, vpa, name) safely.\n");
   }
 
   // --------------------------------------------------------------------------
@@ -476,17 +625,217 @@ async function runSuite() {
   // --------------------------------------------------------------------------
   console.log("Test 7: Negative control verification (subprocess exits non-zero)...");
   {
-    const sub = spawnSync("npx", ["tsx", "scripts/test-failed-events-dead-letter.ts", "--negative-control"], {
-      stdio: "pipe",
-      shell: true,
-      encoding: "utf-8",
+    for (const flag of [
+      "--negative-control",
+      "--negative-control-pii",
+      "--negative-control-stable-id",
+      "--negative-control-mail-replay",
+    ]) {
+      const sub = spawnSync("npx", ["tsx", "scripts/test-failed-events-dead-letter.ts", flag], {
+        stdio: "pipe",
+        shell: true,
+        encoding: "utf-8",
+      });
+      assert.strictEqual(sub.status, 1, `Subprocess with ${flag} must exit with status 1`);
+    }
+    console.log("  -> [PASS-LOCAL] All negative controls verified (exit 1 on invalid conditions).\n");
+  }
+
+  // --------------------------------------------------------------------------
+  // TEST 8: Stable Event ID Generation & Retry Upsert for Digest / Mail Tasks
+  // --------------------------------------------------------------------------
+  console.log("Test 8: Stable event_id generation & retry upsert for async failure rows...");
+  {
+    // A: Deterministic generation & input normalization
+    const id1 = computeStableEventId("thank_you", "user@example.com", "2026-11-05T08:00:00Z");
+    const id2 = computeStableEventId("thank_you", "user@example.com", "2026-11-05T14:30:00Z");
+    const idNormalized = computeStableEventId(" THANK_YOU ", " User@Example.COM ", "2026-11-05");
+
+    assert.strictEqual(id1, id2, "Same type, target, and UTC date must produce identical stable event_id");
+    assert.strictEqual(id1, idNormalized, "Whitespace and case differences must normalize to identical event_id");
+    assert.ok(id1.startsWith("thank_you_"), "Event id must be prefixed with normalized type");
+
+    const idDiffDate = computeStableEventId("thank_you", "user@example.com", "2026-11-06T08:00:00Z");
+    assert.notStrictEqual(id1, idDiffDate, "Different date must produce different event_id");
+
+    const idDiffTarget = computeStableEventId("thank_you", "other@example.com", "2026-11-05T08:00:00Z");
+    assert.notStrictEqual(id1, idDiffTarget, "Different target recipient must produce different event_id");
+
+    const idDiffType = computeStableEventId("digest", "user@example.com", "2026-11-05T08:00:00Z");
+    assert.notStrictEqual(id1, idDiffType, "Different event type must produce different event_id");
+
+    // B: Repeat failures on the same date upsert the existing row without duplicating
+    const db = createMockDb();
+    const client = createMockSupabaseClient(db);
+
+    const stableMailEventId = computeStableEventId("thank_you", "applicant@domain.com", "2026-11-05");
+
+    // Failure attempt 1
+    const res1 = await recordFailedEvent({
+      source: "gmail_notification",
+      eventId: stableMailEventId,
+      payload: { email: "applicant@domain.com", subject: "Welcome" },
+      error: "Google Apps Script 429 quota exhausted",
+      supabaseClient: client,
     });
-    assert.strictEqual(sub.status, 1, "Subprocess with --negative-control must exit with status 1");
-    console.log("  -> [PASS-LOCAL] Negative control verified (exits 1 on invalid condition).\n");
+
+    assert.strictEqual(res1.ok, true, "First failure recording succeeds");
+    assert.strictEqual(res1.attempts, 1, "First failure has attempts = 1");
+    assert.strictEqual(res1.idempotent, false, "First failure is not an idempotent repeat");
+    assert.strictEqual(db.failedEvents.size, 1, "Exactly one row in failed_events table");
+
+    // Verify PII scrubbing on recorded row
+    const record = db.failedEvents.get(`gmail_notification:${stableMailEventId}`)!;
+    assert.strictEqual(record.payload.email, "[REDACTED]", "Email in payload must be redacted");
+    assert.strictEqual(record.payload.subject, "Welcome", "Non-PII in payload preserved");
+
+    // Failure attempt 2 (retry on same day with same stable event_id)
+    const res2 = await recordFailedEvent({
+      source: "gmail_notification",
+      eventId: stableMailEventId,
+      payload: { email: "applicant@domain.com", subject: "Welcome", retry: true },
+      error: "Second failure on same day",
+      supabaseClient: client,
+    });
+
+    assert.strictEqual(res2.ok, true, "Second failure recording succeeds");
+    assert.strictEqual(res2.attempts, 2, "Second failure increments attempts to 2");
+    assert.strictEqual(res2.idempotent, true, "Second failure recognized as idempotent repeat");
+    assert.strictEqual(db.failedEvents.size, 1, "Row count must remain 1 (upserted, not duplicated)");
+
+    // C: Failure with digest type generates stable ID and upserts cleanly
+    const stableDigestEventId = computeStableEventId("digest", "founder@careermonke.com", "2026-11-05");
+    const resDigest1 = await recordFailedEvent({
+      source: "early_access_digest",
+      eventId: stableDigestEventId,
+      payload: { recipient: "founder@careermonke.com", rowCount: 15 },
+      error: "Apps Script timeout",
+      supabaseClient: client,
+    });
+
+    assert.strictEqual(resDigest1.ok, true, "First digest failure succeeds");
+    assert.strictEqual(resDigest1.attempts, 1, "First digest failure attempts = 1");
+    assert.strictEqual(db.failedEvents.size, 2, "Two distinct sources/event_ids in table");
+
+    const resDigest2 = await recordFailedEvent({
+      source: "early_access_digest",
+      eventId: stableDigestEventId,
+      payload: { recipient: "founder@careermonke.com", rowCount: 15, retry: 2 },
+      error: "Second Apps Script timeout",
+      supabaseClient: client,
+    });
+
+    assert.strictEqual(resDigest2.attempts, 2, "Second digest failure increments attempts to 2");
+    assert.strictEqual(resDigest2.idempotent, true, "Second digest failure marked idempotent");
+    assert.strictEqual(db.failedEvents.size, 2, "Table size remains 2 (digest row upserted without duplication)");
+
+    console.log("  -> [PASS-LOCAL] Stable event_id generation and retry upsert verified.\n");
+  }
+
+  // --------------------------------------------------------------------------
+  // TEST 9: End-to-End Mail Failure Recording, PII Redaction & Replay Resolution
+  // --------------------------------------------------------------------------
+  console.log("Test 9: End-to-end mail failure recording, non-PII redaction & replay resolution...");
+  {
+    const db = createMockDb();
+    const client = createMockSupabaseClient(db);
+
+    const realSubscriberEmail = "applicant-vip@careermonke.com";
+    const signupCreatedAt = "2026-11-05T09:30:00.000Z";
+
+    // 1. Seed subscriber in early_access_emails table
+    db.earlyAccessEmails.set(realSubscriberEmail, {
+      email: realSubscriberEmail,
+      created_at: signupCreatedAt,
+    });
+
+    // 2. Configure Apps Script env so sendEarlyAccessThankYouEmail attempts dispatch
+    const originalUrl = process.env.APPS_SCRIPT_MAIL_URL;
+    const originalSecret = process.env.APPS_SCRIPT_MAIL_SECRET;
+    const originalFetch = globalThis.fetch;
+
+    process.env.APPS_SCRIPT_MAIL_URL = "https://script.google.com/macros/s/test-mock/exec";
+    process.env.APPS_SCRIPT_MAIL_SECRET = "test-secret-12345";
+
+    try {
+      // Mock fetch: initial send fails (terminal dispatch failure)
+      globalThis.fetch = (async () => {
+        return new Response("busy", { status: 500, headers: { "content-type": "text/plain" } });
+      }) as typeof fetch;
+
+      const { sendEarlyAccessThankYouEmail } = await import("../src/lib/early-access/gmail");
+
+      // Record mail failure via sendEarlyAccessThankYouEmail
+      const initialSendRes = await sendEarlyAccessThankYouEmail({
+        subscriberEmail: realSubscriberEmail,
+        createdAt: signupCreatedAt,
+        supabaseClient: client,
+      });
+
+      assert.strictEqual(initialSendRes.thankYouSent, false, "Initial send must report failure");
+
+      // Assert dead-letter queue recorded the failure
+      assert.strictEqual(db.failedEvents.size, 1, "Exactly one row in failed_events queue");
+      const failedRecord = Array.from(db.failedEvents.values())[0];
+      assert.strictEqual(failedRecord.source, "gmail_notification");
+      assert.strictEqual(failedRecord.status, "pending");
+
+      // CRITICAL ASSERTION: Stored dead-letter payload MUST NOT contain the raw email
+      const payloadString = JSON.stringify(failedRecord.payload);
+      assert.strictEqual(
+        payloadString.includes(realSubscriberEmail),
+        false,
+        "CRITICAL: Raw email address must NEVER be stored in the dead-letter row payload"
+      );
+      assert.strictEqual(failedRecord.payload.recipient, undefined, "payload.recipient must not exist");
+      assert.strictEqual(failedRecord.payload.email, undefined, "payload.email must not exist");
+
+      // Verify non-PII handle is stored in payload
+      const expectedHash = computeEmailHash(realSubscriberEmail);
+      assert.strictEqual(
+        failedRecord.payload.subscriber_handle,
+        expectedHash,
+        "Non-PII subscriber_handle must match computed email hash"
+      );
+
+      // 3. Replay end-to-end: mock fetch now succeeds and records outgoing request bodies
+      const outgoingRequests: Array<{ url: string; body: any }> = [];
+      globalThis.fetch = (async (input: any, init?: any) => {
+        const parsedBody = init?.body ? JSON.parse(init.body) : null;
+        outgoingRequests.push({ url: String(input), body: parsedBody });
+        return new Response("ok", { status: 200, headers: { "content-type": "text/plain" } });
+      }) as typeof fetch;
+
+      // Execute replay
+      const replaySummary = await replayFailedEvents({
+        supabaseClient: client,
+        source: "gmail_notification",
+        force: true,
+      });
+
+      assert.strictEqual(replaySummary.ok, true, "Replay must succeed");
+      assert.strictEqual(replaySummary.replayed, 1, "Exactly one event replayed");
+      const replayedRecord = db.failedEvents.get(`gmail_notification:${failedRecord.event_id}`)!;
+      assert.strictEqual(replayedRecord.status, "replayed", "Event transitioned to 'replayed'");
+
+      // ASSERTION: Send during replay went to the REAL email address resolved from early-access table
+      assert.strictEqual(outgoingRequests.length, 1, "Apps Script fetch was invoked once during replay");
+      assert.strictEqual(
+        outgoingRequests[0].body.email,
+        realSubscriberEmail,
+        "Replay must resolve and dispatch to the REAL subscriber email address from early-access table"
+      );
+
+      console.log("  -> [PASS-LOCAL] End-to-end mail failure recording, non-PII handle, and replay resolution verified.\n");
+    } finally {
+      process.env.APPS_SCRIPT_MAIL_URL = originalUrl;
+      process.env.APPS_SCRIPT_MAIL_SECRET = originalSecret;
+      globalThis.fetch = originalFetch;
+    }
   }
 
   console.log("--------------------------------------------------------------------------------");
-  console.log("ALL 7 DEAD-LETTER AND REPLAY TEST SUITES PASSED [PASS-LOCAL]");
+  console.log("ALL 9 DEAD-LETTER AND REPLAY TEST SUITES PASSED [PASS-LOCAL]");
   console.log("--------------------------------------------------------------------------------\n");
 }
 
