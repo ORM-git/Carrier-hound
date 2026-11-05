@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React from "react";
 import BrandIcon from "@/components/BrandIcon";
-import { Smile, MessageSquare, Clock, Check } from "lucide-react";
+import { MessageSquare, Clock, Check } from "lucide-react";
 
 export interface RealStatsData {
   totalJobs?: number | null;
@@ -21,7 +21,7 @@ export interface LandingJobHubStatsSectionProps {
  * - Exactly ONE small root dot at mid-height
  * - Short horizontal dotted trunk connected to it
  * - Two curved dotted paths sweeping upward and downward
- * - Ending in right-pointing arrowheads aligned with Row 1 (3,000,000) and Row 4 (No.1 Choice)
+ * - Ending in right-pointing arrowheads aligned with Row 1 (3x) and Row 3 (No.1 Choice)
  * - Stroke #2563EB, strokeWidth 2, dash pattern 3 3
  */
 function DottedConnector() {
@@ -48,7 +48,7 @@ function DottedConnector() {
         strokeLinecap="round"
       />
 
-      {/* Top curved dotted path sweeping upward to Row 1 (3,000,000) */}
+      {/* Top curved dotted path sweeping upward to Row 1 (3x) */}
       <path
         d="M 32 134 C 58 134 60 20 86 20"
         stroke="#2563EB"
@@ -60,7 +60,7 @@ function DottedConnector() {
       {/* Small solid right-pointing arrowhead pointing to Row 1 */}
       <polygon points="86,15 96,20 86,25" fill="#2563EB" />
 
-      {/* Bottom curved dotted path sweeping downward to Row 4 (No.1 Choice) */}
+      {/* Bottom curved dotted path sweeping downward to Row 3 (No.1 Choice) */}
       <path
         d="M 32 134 C 58 134 60 248 86 248"
         stroke="#2563EB"
@@ -69,92 +69,17 @@ function DottedConnector() {
         strokeLinecap="round"
         fill="none"
       />
-      {/* Small solid right-pointing arrowhead pointing to Row 4 */}
+      {/* Small solid right-pointing arrowhead pointing to Row 3 */}
       <polygon points="86,243 96,248 86,253" fill="#2563EB" />
     </svg>
   );
 }
 
 export default function LandingJobHubStatsSection({
-  initialStats,
-}: LandingJobHubStatsSectionProps) {
-  const containerRef = useRef<HTMLElement | null>(null);
-  const [displayUsers, setDisplayUsers] = useState<number | null>(null);
-  const hasAnimatedRef = useRef(false);
-
-  // 1. Count-up animation helper (IntersectionObserver triggered)
-  const runAnimation = () => {
-    const prefersReducedMotion =
-      typeof window !== "undefined" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-    if (prefersReducedMotion) {
-      setDisplayUsers(3000000);
-      return;
-    }
-
-    const duration = 1200; // 1.2s count-up
-    const startTime = performance.now();
-    const target = 3000000;
-
-    const animate = (currentTime: number) => {
-      const elapsed = currentTime - startTime;
-      const progress = Math.min(elapsed / duration, 1);
-      const easeOut = 1 - Math.pow(1 - progress, 3);
-
-      setDisplayUsers(Math.round(target * easeOut));
-
-      if (progress < 1) {
-        requestAnimationFrame(animate);
-      } else {
-        setDisplayUsers(target);
-      }
-    };
-
-    requestAnimationFrame(animate);
-  };
-
-  // 2. IntersectionObserver trigger
-  useEffect(() => {
-    if (typeof window === "undefined" || !("IntersectionObserver" in window)) {
-      runAnimation();
-      return;
-    }
-
-    const el = containerRef.current;
-    if (!el) {
-      runAnimation();
-      return;
-    }
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const [entry] = entries;
-        if (entry.isIntersecting && !hasAnimatedRef.current) {
-          hasAnimatedRef.current = true;
-          observer.disconnect();
-          runAnimation();
-        }
-      },
-      { threshold: 0.15 }
-    );
-
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-
-  // Format helper: null/undefined shows default formatted value
-  const formattedUsers =
-    displayUsers !== null ? displayUsers.toLocaleString("en-US") : "3,000,000";
-
-  // Four rows matching reference hierarchy from user image
+  initialStats: _initialStats,
+}: LandingJobHubStatsSectionProps = {}) {
+  // Three rows matching reference hierarchy
   const rows = [
-    {
-      key: "users",
-      val: formattedUsers,
-      label: "trusted users",
-      icon: Smile,
-    },
     {
       key: "interviews",
       val: "3x",
@@ -182,7 +107,6 @@ export default function LandingJobHubStatsSection({
 
   return (
     <section
-      ref={containerRef}
       aria-label="Market Data & Job Hub Statistics"
       data-testid="landing-job-hub-stats-section"
       className="py-10 sm:py-12 lg:py-14 bg-[#EFF6FF]/40 border-b border-blue-100/50 overflow-hidden"

@@ -33,7 +33,7 @@ function runNegativeControlSubprocess() {
 
 async function main() {
   console.log("================================================================================");
-  console.log("TEST SUITE: Landing Job Hub & Stats Section Verification (Reference 4-Row Layout)");
+  console.log("TEST SUITE: Landing Job Hub & Stats Section Verification (Reference 3-Row Layout)");
   console.log("================================================================================\n");
 
   // Run negative control verification first
@@ -109,8 +109,8 @@ async function main() {
     "Connector must be marked aria-hidden"
   );
 
-  // Outline Icons: Smile for users, MessageSquare for interviews, Clock for time saved, Check for No.1 choice
-  assert(compCode.includes("Smile"), "Must use Smile outline icon for trusted users");
+  // Outline Icons: MessageSquare for interviews, Clock for time saved, Check for No.1 choice
+  assert(!compCode.includes("Smile"), "Smile outline icon must be removed with trusted users");
   assert(compCode.includes("MessageSquare"), "Must use MessageSquare outline icon for interviews landed");
   assert(compCode.includes("Clock"), "Must use Clock outline icon for time saved");
   assert(compCode.includes("Check"), "Must use Check outline icon for No.1 choice");
@@ -164,8 +164,8 @@ async function main() {
   }
   console.log("  [PASS-LOCAL] Zero hardcoded job/company figures and zero fake review badges verified");
 
-  // Test 4: Rendering of 4 Approved Reference Points
-  console.log("\nTEST 4: Rendering of 4 Approved Reference Points...");
+  // Test 4: Rendering of 3 Approved Reference Points & Absence of 3,000,000
+  console.log("\nTEST 4: Rendering of 3 Approved Reference Points & Absence of 3,000,000...");
   const { default: LandingJobHubStatsSection } = await import(
     "../src/components/LandingJobHubStatsSection"
   );
@@ -174,27 +174,35 @@ async function main() {
 
   assert(html.includes("Real numbers,"), "Must render headline 'Real numbers,'");
   assert(html.includes("no promises"), "Must render headline 'no promises'");
-  assert(html.includes("3,000,000"), "Must render 3,000,000 value");
-  assert(html.includes("trusted users"), "Must render trusted users label");
+  assert(!html.includes("3,000,000"), "Must NOT render 3,000,000 value");
+  assert(!html.includes("trusted users"), "Must NOT render trusted users label");
   assert(html.includes("3x"), "Must render 3x value");
   assert(html.includes("interviews landed"), "Must render interviews landed label");
   assert(html.includes("80%"), "Must render 80% value");
   assert(html.includes("time saved on job search"), "Must render time saved on job search label");
   assert(html.includes("No.1 Choice"), "Must render No.1 Choice value");
   assert(html.includes("for 80% of job seekers after their first use"), "Must render No.1 choice label");
-  console.log("  [PASS-LOCAL] All 4 reference points render accurately");
+  console.log("  [PASS-LOCAL] All 3 reference points render accurately and 3,000,000 is absent");
 
-  // Test 5: Reduced-Motion Path
-  console.log("\nTEST 5: Prefers-Reduced-Motion Inspection...");
+  // Test 5: Layout Alignment & Clean Static Rendering
+  console.log("\nTEST 5: Layout Alignment of Remaining Items...");
   assert(
-    compCode.includes("prefers-reduced-motion"),
-    "Component must check prefers-reduced-motion media query"
+    compCode.includes("justify-between"),
+    "Remaining stat rows must maintain justify-between alignment"
   );
   assert(
-    compCode.includes("prefersReducedMotion"),
-    "Component must handle prefersReducedMotion flag"
+    compCode.includes("lg:h-[288px]"),
+    "Section must maintain fixed desktop bracket height lg:h-[288px]"
   );
-  console.log("  [PASS-LOCAL] Prefers-reduced-motion check verified");
+  assert(
+    !compCode.includes("3,000,000"),
+    "Component code must not contain 3,000,000"
+  );
+  assert(
+    !compCode.includes("trusted users"),
+    "Component code must not contain 'trusted users'"
+  );
+  console.log("  [PASS-LOCAL] Even alignment and clean static rendering verified");
 
   console.log("\n================================================================================");
   console.log("ALL LANDING JOB HUB STATS CHECKS PASSED [PASS-LOCAL]");

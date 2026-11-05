@@ -195,9 +195,9 @@ function runSuite() {
   // (1) LandingTopArtifact hero/demo
   // (2) LandingJobsTickerStrip
   // (3) LandingFeaturesSection
-  // (4) Feedback/Testimonials (First Wall - Leftward Runner)
-  // (5) LandingComparisonSection (including its AI-resume block)
-  // (6) the global map/radar section
+  // (4) the global map/radar section (LandingGlobeFeatureSection)
+  // (5) Feedback/Testimonials (First Wall - Leftward Runner)
+  // (6) LandingComparisonSection (including its AI-resume block)
   // (7) the Free preview CTA band
   // (8) the bio card
   // (9) Feedback/Testimonials (Second Wall - Rightward Runner)
@@ -238,10 +238,10 @@ function runSuite() {
   // Assert exact sequence
   assert.ok(idxTopArtifact < idxTicker, "(1) LandingTopArtifact before (2) LandingJobsTickerStrip");
   assert.ok(idxTicker < idxFeatures, "(2) LandingJobsTickerStrip before (3) LandingFeaturesSection");
-  assert.ok(idxFeatures < idxFirstTestimonials, "(3) LandingFeaturesSection before first feedback/testimonials wall");
-  assert.ok(idxFirstTestimonials < idxComparison, "first feedback/testimonials wall before (4) LandingComparisonSection");
-  assert.ok(idxComparison < idxGlobalGlobe, "(4) LandingComparisonSection before (5) global map/radar");
-  assert.ok(idxGlobalGlobe < idxFreePreview, "(5) global map/radar before (6) Free preview CTA band");
+  assert.ok(idxFeatures < idxGlobalGlobe, "(3) LandingFeaturesSection before (4) global map/radar");
+  assert.ok(idxGlobalGlobe < idxFirstTestimonials, "(4) global map/radar before (5) first feedback/testimonials wall");
+  assert.ok(idxFirstTestimonials < idxComparison, "(5) first feedback/testimonials wall before (6) LandingComparisonSection");
+  assert.ok(idxComparison < idxFreePreview, "(6) LandingComparisonSection before (7) Free preview CTA band");
   assert.ok(idxFreePreview < idxBio, "(6) Free preview CTA band before (7) bio");
   assert.ok(idxBio < idxSecondTestimonials, "(7) bio before second feedback/testimonials wall");
   assert.ok(idxSecondTestimonials < idxFaq, "second feedback/testimonials wall before (8) FAQ");

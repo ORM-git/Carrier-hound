@@ -73,6 +73,22 @@ check("src/app/page.tsx contains exactly ONE globe section using LandingGlobeFea
   );
 });
 
+// 1b. Placement: directly below Features section and directly above Testimonials section
+check("LandingGlobeFeatureSection sits directly below LandingFeaturesSection and directly above Testimonials", () => {
+  const featuresIdx = pageCode.indexOf("<LandingFeaturesSection />");
+  const globeIdx = pageCode.indexOf("<LandingGlobeFeatureSection />");
+  const testimonialsIdx = pageCode.indexOf("<Testimonials />");
+
+  assert.ok(featuresIdx > -1, "LandingFeaturesSection must exist in page.tsx");
+  assert.ok(globeIdx > -1, "LandingGlobeFeatureSection must exist in page.tsx");
+  assert.ok(testimonialsIdx > -1, "First Testimonials must exist in page.tsx");
+
+  assert.ok(
+    featuresIdx < globeIdx && globeIdx < testimonialsIdx,
+    "LandingGlobeFeatureSection must sit directly below LandingFeaturesSection and directly above Testimonials"
+  );
+});
+
 // 2. Strict prohibition of company metrics in globe section
 check("Strict Anti-Fabrication: ZERO company count or source metrics in LandingGlobeFeatureSection", () => {
   assert.doesNotMatch(componentCode, /companiesScanned/i, "Must not reference companiesScanned in globe section");

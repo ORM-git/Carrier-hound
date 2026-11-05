@@ -147,8 +147,8 @@ async function runTests() {
   assert.ok(compIdx > -1, "Comparison section must exist in page.tsx");
   assert.ok(globeIdx > -1, "Global coverage section must exist in page.tsx");
   assert.ok(
-    tickerIdx < compIdx && compIdx < globeIdx,
-    "LandingComparisonSection must be placed strictly after LandingJobsTickerStrip and before global coverage section"
+    tickerIdx < globeIdx && globeIdx < compIdx,
+    "LandingComparisonSection must be placed strictly after LandingJobsTickerStrip and after global coverage section"
   );
   console.log("  -> [PASS-LOCAL] Placement in src/app/page.tsx strictly verified in original slot.");
 
