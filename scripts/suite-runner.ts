@@ -129,6 +129,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-ai-fallback-and-cover-letter.ts", command: "npx tsx scripts/test-ai-fallback-and-cover-letter.ts", classification: "offline" },
   { name: "scripts/test-ai-idempotency-replay.ts", command: "npx tsx scripts/test-ai-idempotency-replay.ts", classification: "offline" },
   { name: "scripts/test-global-ai-budget.ts", command: "npx tsx scripts/test-global-ai-budget.ts", classification: "offline" },
+  { name: "scripts/test-error-boundaries.ts", command: "npx tsx scripts/test-error-boundaries.ts", classification: "offline" },
   { name: "scripts/test-cover-letter-cache-versioning.ts", command: "npx tsx scripts/test-cover-letter-cache-versioning.ts", classification: "offline" },
 
   // DB-capable suites: read operations (BLOCKED by default unless authorized on test project)
