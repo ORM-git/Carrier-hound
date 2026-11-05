@@ -9,6 +9,7 @@ import PageViewTracker from "@/components/analytics/PageViewTracker";
 import WebVitalsTracker from "@/components/analytics/WebVitalsTracker";
 import BlockedAccountNotice from "@/components/auth/BlockedAccountNotice";
 import CookieNotice from "@/components/CookieNotice";
+import { getRootStructuredData, getConnectionHints } from "@/lib/seo/structuredData";
 
 
 const inter = Inter({
@@ -70,8 +71,25 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const jsonLd = getRootStructuredData();
+  const connectionHints = getConnectionHints();
+
   return (
     <html lang="en" className={`${inter.variable} scroll-smooth`}>
+      <head>
+        {connectionHints.map((origin) => (
+          <link key={`preconnect-${origin}`} rel="preconnect" href={origin} />
+        ))}
+        {connectionHints.map((origin) => (
+          <link key={`dns-prefetch-${origin}`} rel="dns-prefetch" href={origin} />
+        ))}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify(jsonLd),
+          }}
+        />
+      </head>
       <body className="font-sans antialiased text-[#09090B] bg-white min-h-screen flex flex-col selection:bg-blue-100 selection:text-blue-900 overflow-x-hidden w-full max-w-full">
         <a
           href="#main-content"
