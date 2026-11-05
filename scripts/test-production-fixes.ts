@@ -12,6 +12,14 @@
  * Run negative control: npx tsx scripts/test-production-fixes.ts --negative-control
  */
 
+process.env.NODE_ENV = "test";
+(globalThis as any).__mockRateLimitClient = {
+  rpc: async () => ({
+    data: { allowed: true, retry_after: 0, current_count: 1 },
+    error: null,
+  }),
+};
+
 import http from "http";
 import fs from "fs";
 import path from "path";
@@ -384,6 +392,21 @@ async function runSuite() {
           }),
         },
         from: () => mockQueryBuilder,
+        rpc: async (fn: string) => {
+          if (fn === "ai_global_budget_reserve") {
+            return {
+              data: [{ allowed: true, current_tokens: 100, remaining_tokens: 999900 }],
+              error: null,
+            };
+          }
+          if (fn === "ai_concurrency_acquire") {
+            return {
+              data: [{ allowed: true, lease_id: "mock-lease", current_leases: 1 }],
+              error: null,
+            };
+          }
+          return { data: { allowed: true }, error: null };
+        },
       };
     },
     getServerEntitlement: async () => ({ isPro: true, status: "active" }),
