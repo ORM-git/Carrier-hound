@@ -92,6 +92,7 @@ const SUITE_CLASSIFICATIONS = Object.freeze({
   "scripts/test-groq-timeout-circuit-breaker.ts": "offline",
   "scripts/test-web-vitals-analytics.ts": "offline",
   "scripts/test-failed-events-dead-letter.ts": "offline",
+  "scripts/test-lint-config.ts": "offline",
 
   // DB-capable suites: read operations
   "scripts/test-enhanced-scoring.ts": "db-read",
