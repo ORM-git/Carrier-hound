@@ -6,6 +6,7 @@ import "./globals.css";
 import { ToastContainer } from "react-toastify";
 import BackToTop from "@/components/BackToTop";
 import PageViewTracker from "@/components/analytics/PageViewTracker";
+import WebVitalsTracker from "@/components/analytics/WebVitalsTracker";
 import BlockedAccountNotice from "@/components/auth/BlockedAccountNotice";
 import CookieNotice from "@/components/CookieNotice";
 
@@ -83,6 +84,9 @@ export default function RootLayout({
         </div>
         <Suspense fallback={null}>
           <PageViewTracker />
+        </Suspense>
+        <Suspense fallback={null}>
+          <WebVitalsTracker />
         </Suspense>
         <BlockedAccountNotice />
         <CookieNotice />
