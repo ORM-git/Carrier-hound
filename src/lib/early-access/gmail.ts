@@ -757,19 +757,14 @@ export async function sendEarlyAccessThankYouEmail(params: {
     };
   }
 
-  // Terminal failure: record into failed_events dead-letter queue
+  // Terminal failure: record into failed_events dead-letter queue with stable event_id
   try {
-    const { recordFailedEvent } = await import("@/lib/events/failedEvents");
-    let hash = 0x811c9dc5;
-    for (let i = 0; i < normalizedEmail.length; i++) {
-      hash ^= normalizedEmail.charCodeAt(i);
-      hash = Math.imul(hash, 0x01000193);
-    }
-    const emailHash = (hash >>> 0).toString(16);
+    const { recordFailedEvent, computeStableEventId } = await import("@/lib/events/failedEvents");
+    const eventId = computeStableEventId("thank_you", normalizedEmail, validNow);
 
     await recordFailedEvent({
       source: "gmail_notification",
-      eventId: `thankyou_${emailHash}_${validNow.getTime()}`,
+      eventId,
       payload: {
         recipient: normalizedEmail,
         email: normalizedEmail,
@@ -1025,10 +1020,15 @@ export async function runEarlyAccessDigestCron(options?: {
 
   if (!dispatchResult.ok) {
     try {
-      const { recordFailedEvent } = await import("@/lib/events/failedEvents");
+      const { recordFailedEvent, computeStableEventId } = await import("@/lib/events/failedEvents");
+      const eventId = computeStableEventId(
+        "digest",
+        notifyEmail,
+        options?.nowIso || new Date()
+      );
       await recordFailedEvent({
         source: "early_access_digest",
-        eventId: `digest_${(options?.nowIso || new Date().toISOString()).slice(0, 10)}_${Date.now()}`,
+        eventId,
         payload: {
           recipient: notifyEmail,
           rowCount: newRows.length,

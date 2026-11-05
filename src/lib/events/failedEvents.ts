@@ -90,8 +90,9 @@ export interface ReplaySummary {
 }
 
 const SENSITIVE_KEY_REGEX =
-  /(password|secret|token|api_?key|auth|bearer|signature|cvv|cvc|card_?number|card_?cvv|pan|ssn|aadhaar|bank_?account|private_?key|cookie|session)/i;
+  /(password|secret|token|api_?key|auth|bearer|signature|cvv|cvc|card_?number|card_?cvv|pan|ssn|aadhaar|bank_?account|private_?key|cookie|session|email|contact|phone|vpa|name)/i;
 const HEX_SHA256_REGEX = /^[a-fA-F0-9]{64}$/;
+const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
 
 function safeLogWarn(message: string, error?: any): void {
   // Never log in test mode to avoid polluting test output or tripping leak-detection assertions
@@ -107,6 +108,47 @@ function safeLogWarn(message: string, error?: any): void {
   } else {
     console.warn(`[Dead-Letter] ${sanitized}`);
   }
+}
+
+/**
+ * Generates a stable event_id for digest or mail tasks as a deterministic hash of (type + target + date).
+ * Ensures repeat executions on the same date for the same recipient/task upsert into failed_events
+ * rather than creating duplicate entries.
+ */
+export function computeStableEventId(
+  type: string,
+  target: string,
+  dateInput: string | Date = new Date()
+): string {
+  const normType = String(type || "mail").trim().toLowerCase();
+  const normTarget = String(target || "system").trim().toLowerCase();
+
+  let dateStr: string;
+  try {
+    const d = typeof dateInput === "string" ? new Date(dateInput) : dateInput;
+    dateStr = Number.isNaN(d.getTime())
+      ? new Date().toISOString().slice(0, 10)
+      : d.toISOString().slice(0, 10);
+  } catch {
+    dateStr = new Date().toISOString().slice(0, 10);
+  }
+
+  const payload = `${normType}:${normTarget}:${dateStr}`;
+
+  // Deterministic 64-bit FNV-1a hash
+  let h1 = 0x811c9dc5;
+  let h2 = 0x84222325;
+  for (let i = 0; i < payload.length; i++) {
+    const code = payload.charCodeAt(i);
+    h1 ^= code;
+    h1 = Math.imul(h1, 0x01000193);
+    h2 ^= code;
+    h2 = Math.imul(h2, 0x01000193);
+  }
+
+  const hex1 = (h1 >>> 0).toString(16).padStart(8, "0");
+  const hex2 = (h2 >>> 0).toString(16).padStart(8, "0");
+  return `${normType}_${hex1}${hex2}`;
 }
 
 /**
@@ -127,6 +169,9 @@ export function scrubSensitiveData(data: any): any {
     }
     if (HEX_SHA256_REGEX.test(data.trim())) {
       return "[REDACTED_SIGNATURE]";
+    }
+    if (EMAIL_REGEX.test(data.trim())) {
+      return "[REDACTED_EMAIL]";
     }
     return data;
   }

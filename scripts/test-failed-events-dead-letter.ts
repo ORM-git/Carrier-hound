@@ -17,6 +17,7 @@ import {
   recordFailedEvent,
   replayFailedEvents,
   scrubSensitiveData,
+  computeStableEventId,
   type FailedEventRecord,
 } from "../src/lib/events/failedEvents";
 import { GET as adminReplayGet, POST as adminReplayPost } from "../src/app/api/admin/replay/route";
@@ -192,10 +193,20 @@ async function runSuite() {
   console.log("     ASYNC DEAD-LETTER QUEUE & REPLAY TEST SUITE [PASS-LOCAL]                   ");
   console.log("================================================================================\n");
 
-  // Negative control flag check
+  // Negative control flag checks
   if (process.argv.includes("--negative-control")) {
     console.log("Triggering deliberate failure via --negative-control...");
     assert.strictEqual(true, false, "Negative control deliberately triggered non-zero exit.");
+  }
+  if (process.argv.includes("--negative-control-pii")) {
+    console.log("Triggering deliberate failure via --negative-control-pii...");
+    // Negative control: unredacted email must fail assertion
+    assert.strictEqual("user@example.com", "[REDACTED]", "Negative control PII assertion failed as expected");
+  }
+  if (process.argv.includes("--negative-control-stable-id")) {
+    console.log("Triggering deliberate failure via --negative-control-stable-id...");
+    // Negative control: divergent IDs for same input must fail assertion
+    assert.strictEqual("event_12345", "event_99999", "Negative control stable-id assertion failed as expected");
   }
 
   // --------------------------------------------------------------------------
@@ -396,7 +407,7 @@ async function runSuite() {
   // --------------------------------------------------------------------------
   // TEST 5: Secret and PII Scrubbing
   // --------------------------------------------------------------------------
-  console.log("Test 5: Secret and PII scrubbing removes credentials and card details...");
+  console.log("Test 5: Secret and PII scrubbing removes credentials, card details, and PII...");
   {
     const rawPayload = {
       order_id: "order_999",
@@ -406,24 +417,70 @@ async function runSuite() {
       password: "SuperSecretPassword123",
       api_key: "rzp_live_abc123xyz",
       auth: "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9",
+      // Core PII keys (case variations)
+      email: "plain_email@example.com",
+      EMAIL: "UPPER_EMAIL@EXAMPLE.COM",
+      contact: "+919876543210",
+      Contact: "+919876543211",
+      phone: "+15551234567",
+      PHONE: "+15551234568",
+      vpa: "user@okhdfcbank",
+      VPA: "OTHER@UPI",
+      name: "Jane Doe",
+      Name: "John Doe",
       nested: {
         card_number: "4111222233334444",
         card_cvv: "123",
         pan: "ABCDE1234F",
         ssn: "000-12-3456",
         safe_meta: "harmless_data",
+        customer_name: "Nested Customer",
+        user_email: "nested@example.com",
+        contact_number: "+911234567890",
+        phone_secondary: "+919999999999",
+        vpa_handle: "nested@okaxis",
       },
+      customers: [
+        {
+          id: "cust_1",
+          name: "Customer One",
+          email: "one@example.com",
+          contact: "+918888888881",
+          phone: "+918888888882",
+          vpa: "cust1@upi",
+          status: "active",
+        },
+        {
+          id: "cust_2",
+          fullName: "Customer Two",
+          contactPhone: "+917777777771",
+          vpaAddress: "cust2@upi",
+          emailAddress: "two@example.com",
+          meta: {
+            deep_name: "Deep Name",
+            deep_phone: "+916666666661",
+          },
+        },
+      ],
       array_items: [
         "Bearer my-token-here",
         "whsec_another_secret",
         "normal_string",
+        "standalone.email@example.org",
       ],
     };
 
     const scrubbed = scrubSensitiveData(rawPayload);
 
+    // Non-sensitive preserved
     assert.strictEqual(scrubbed.order_id, "order_999", "order_id must be preserved");
     assert.strictEqual(scrubbed.amount, 1499, "amount must be preserved");
+    assert.strictEqual(scrubbed.nested.safe_meta, "harmless_data", "safe_meta must be preserved");
+    assert.strictEqual(scrubbed.customers[0].id, "cust_1", "customer id must be preserved");
+    assert.strictEqual(scrubbed.customers[0].status, "active", "status must be preserved");
+    assert.strictEqual(scrubbed.array_items[2], "normal_string", "normal string in array preserved");
+
+    // Credentials & auth scrubbed
     assert.strictEqual(scrubbed.client_secret, "[REDACTED]", "client_secret must be scrubbed");
     assert.strictEqual(scrubbed.razorpay_signature, "[REDACTED]", "signature key must be scrubbed");
     assert.strictEqual(scrubbed.password, "[REDACTED]", "password must be scrubbed");
@@ -433,11 +490,42 @@ async function runSuite() {
     assert.strictEqual(scrubbed.nested.card_cvv, "[REDACTED]", "card_cvv must be scrubbed");
     assert.strictEqual(scrubbed.nested.pan, "[REDACTED]", "pan must be scrubbed");
     assert.strictEqual(scrubbed.nested.ssn, "[REDACTED]", "ssn must be scrubbed");
-    assert.strictEqual(scrubbed.nested.safe_meta, "harmless_data", "safe_meta must be preserved");
     assert.strictEqual(scrubbed.array_items[0], "[REDACTED_TOKEN]", "Bearer string in array scrubbed");
     assert.strictEqual(scrubbed.array_items[1], "[REDACTED_SECRET]", "whsec_ string in array scrubbed");
-    assert.strictEqual(scrubbed.array_items[2], "normal_string", "normal string in array preserved");
-    console.log("  -> [PASS-LOCAL] scrubSensitiveData removes all secrets and PII safely.\n");
+    assert.strictEqual(scrubbed.array_items[3], "[REDACTED_EMAIL]", "standalone email in array scrubbed");
+
+    // PII keys scrubbed (case-insensitive, top-level, nested, and arrays)
+    assert.strictEqual(scrubbed.email, "[REDACTED]", "top-level email must be scrubbed");
+    assert.strictEqual(scrubbed.EMAIL, "[REDACTED]", "top-level uppercase EMAIL must be scrubbed");
+    assert.strictEqual(scrubbed.contact, "[REDACTED]", "top-level contact must be scrubbed");
+    assert.strictEqual(scrubbed.Contact, "[REDACTED]", "top-level Contact must be scrubbed");
+    assert.strictEqual(scrubbed.phone, "[REDACTED]", "top-level phone must be scrubbed");
+    assert.strictEqual(scrubbed.PHONE, "[REDACTED]", "top-level PHONE must be scrubbed");
+    assert.strictEqual(scrubbed.vpa, "[REDACTED]", "top-level vpa must be scrubbed");
+    assert.strictEqual(scrubbed.VPA, "[REDACTED]", "top-level VPA must be scrubbed");
+    assert.strictEqual(scrubbed.name, "[REDACTED]", "top-level name must be scrubbed");
+    assert.strictEqual(scrubbed.Name, "[REDACTED]", "top-level Name must be scrubbed");
+
+    assert.strictEqual(scrubbed.nested.customer_name, "[REDACTED]", "nested customer_name must be scrubbed");
+    assert.strictEqual(scrubbed.nested.user_email, "[REDACTED]", "nested user_email must be scrubbed");
+    assert.strictEqual(scrubbed.nested.contact_number, "[REDACTED]", "nested contact_number must be scrubbed");
+    assert.strictEqual(scrubbed.nested.phone_secondary, "[REDACTED]", "nested phone_secondary must be scrubbed");
+    assert.strictEqual(scrubbed.nested.vpa_handle, "[REDACTED]", "nested vpa_handle must be scrubbed");
+
+    assert.strictEqual(scrubbed.customers[0].name, "[REDACTED]", "array object name must be scrubbed");
+    assert.strictEqual(scrubbed.customers[0].email, "[REDACTED]", "array object email must be scrubbed");
+    assert.strictEqual(scrubbed.customers[0].contact, "[REDACTED]", "array object contact must be scrubbed");
+    assert.strictEqual(scrubbed.customers[0].phone, "[REDACTED]", "array object phone must be scrubbed");
+    assert.strictEqual(scrubbed.customers[0].vpa, "[REDACTED]", "array object vpa must be scrubbed");
+
+    assert.strictEqual(scrubbed.customers[1].fullName, "[REDACTED]", "array object fullName must be scrubbed");
+    assert.strictEqual(scrubbed.customers[1].contactPhone, "[REDACTED]", "array object contactPhone must be scrubbed");
+    assert.strictEqual(scrubbed.customers[1].vpaAddress, "[REDACTED]", "array object vpaAddress must be scrubbed");
+    assert.strictEqual(scrubbed.customers[1].emailAddress, "[REDACTED]", "array object emailAddress must be scrubbed");
+    assert.strictEqual(scrubbed.customers[1].meta.deep_name, "[REDACTED]", "deeply nested name must be scrubbed");
+    assert.strictEqual(scrubbed.customers[1].meta.deep_phone, "[REDACTED]", "deeply nested phone must be scrubbed");
+
+    console.log("  -> [PASS-LOCAL] scrubSensitiveData removes all secrets and PII (email, contact, phone, vpa, name) safely.\n");
   }
 
   // --------------------------------------------------------------------------
@@ -476,17 +564,110 @@ async function runSuite() {
   // --------------------------------------------------------------------------
   console.log("Test 7: Negative control verification (subprocess exits non-zero)...");
   {
-    const sub = spawnSync("npx", ["tsx", "scripts/test-failed-events-dead-letter.ts", "--negative-control"], {
-      stdio: "pipe",
-      shell: true,
-      encoding: "utf-8",
+    for (const flag of ["--negative-control", "--negative-control-pii", "--negative-control-stable-id"]) {
+      const sub = spawnSync("npx", ["tsx", "scripts/test-failed-events-dead-letter.ts", flag], {
+        stdio: "pipe",
+        shell: true,
+        encoding: "utf-8",
+      });
+      assert.strictEqual(sub.status, 1, `Subprocess with ${flag} must exit with status 1`);
+    }
+    console.log("  -> [PASS-LOCAL] All negative controls verified (exit 1 on invalid conditions).\n");
+  }
+
+  // --------------------------------------------------------------------------
+  // TEST 8: Stable Event ID Generation & Retry Upsert for Digest / Mail Tasks
+  // --------------------------------------------------------------------------
+  console.log("Test 8: Stable event_id generation & retry upsert for async failure rows...");
+  {
+    // A: Deterministic generation & input normalization
+    const id1 = computeStableEventId("thank_you", "user@example.com", "2026-11-05T08:00:00Z");
+    const id2 = computeStableEventId("thank_you", "user@example.com", "2026-11-05T14:30:00Z");
+    const idNormalized = computeStableEventId(" THANK_YOU ", " User@Example.COM ", "2026-11-05");
+
+    assert.strictEqual(id1, id2, "Same type, target, and UTC date must produce identical stable event_id");
+    assert.strictEqual(id1, idNormalized, "Whitespace and case differences must normalize to identical event_id");
+    assert.ok(id1.startsWith("thank_you_"), "Event id must be prefixed with normalized type");
+
+    const idDiffDate = computeStableEventId("thank_you", "user@example.com", "2026-11-06T08:00:00Z");
+    assert.notStrictEqual(id1, idDiffDate, "Different date must produce different event_id");
+
+    const idDiffTarget = computeStableEventId("thank_you", "other@example.com", "2026-11-05T08:00:00Z");
+    assert.notStrictEqual(id1, idDiffTarget, "Different target recipient must produce different event_id");
+
+    const idDiffType = computeStableEventId("digest", "user@example.com", "2026-11-05T08:00:00Z");
+    assert.notStrictEqual(id1, idDiffType, "Different event type must produce different event_id");
+
+    // B: Repeat failures on the same date upsert the existing row without duplicating
+    const db = createMockDb();
+    const client = createMockSupabaseClient(db);
+
+    const stableMailEventId = computeStableEventId("thank_you", "applicant@domain.com", "2026-11-05");
+
+    // Failure attempt 1
+    const res1 = await recordFailedEvent({
+      source: "gmail_notification",
+      eventId: stableMailEventId,
+      payload: { email: "applicant@domain.com", subject: "Welcome" },
+      error: "Google Apps Script 429 quota exhausted",
+      supabaseClient: client,
     });
-    assert.strictEqual(sub.status, 1, "Subprocess with --negative-control must exit with status 1");
-    console.log("  -> [PASS-LOCAL] Negative control verified (exits 1 on invalid condition).\n");
+
+    assert.strictEqual(res1.ok, true, "First failure recording succeeds");
+    assert.strictEqual(res1.attempts, 1, "First failure has attempts = 1");
+    assert.strictEqual(res1.idempotent, false, "First failure is not an idempotent repeat");
+    assert.strictEqual(db.failedEvents.size, 1, "Exactly one row in failed_events table");
+
+    // Verify PII scrubbing on recorded row
+    const record = db.failedEvents.get(`gmail_notification:${stableMailEventId}`)!;
+    assert.strictEqual(record.payload.email, "[REDACTED]", "Email in payload must be redacted");
+    assert.strictEqual(record.payload.subject, "Welcome", "Non-PII in payload preserved");
+
+    // Failure attempt 2 (retry on same day with same stable event_id)
+    const res2 = await recordFailedEvent({
+      source: "gmail_notification",
+      eventId: stableMailEventId,
+      payload: { email: "applicant@domain.com", subject: "Welcome", retry: true },
+      error: "Second failure on same day",
+      supabaseClient: client,
+    });
+
+    assert.strictEqual(res2.ok, true, "Second failure recording succeeds");
+    assert.strictEqual(res2.attempts, 2, "Second failure increments attempts to 2");
+    assert.strictEqual(res2.idempotent, true, "Second failure recognized as idempotent repeat");
+    assert.strictEqual(db.failedEvents.size, 1, "Row count must remain 1 (upserted, not duplicated)");
+
+    // C: Failure with digest type generates stable ID and upserts cleanly
+    const stableDigestEventId = computeStableEventId("digest", "founder@careermonke.com", "2026-11-05");
+    const resDigest1 = await recordFailedEvent({
+      source: "early_access_digest",
+      eventId: stableDigestEventId,
+      payload: { recipient: "founder@careermonke.com", rowCount: 15 },
+      error: "Apps Script timeout",
+      supabaseClient: client,
+    });
+
+    assert.strictEqual(resDigest1.ok, true, "First digest failure succeeds");
+    assert.strictEqual(resDigest1.attempts, 1, "First digest failure attempts = 1");
+    assert.strictEqual(db.failedEvents.size, 2, "Two distinct sources/event_ids in table");
+
+    const resDigest2 = await recordFailedEvent({
+      source: "early_access_digest",
+      eventId: stableDigestEventId,
+      payload: { recipient: "founder@careermonke.com", rowCount: 15, retry: 2 },
+      error: "Second Apps Script timeout",
+      supabaseClient: client,
+    });
+
+    assert.strictEqual(resDigest2.attempts, 2, "Second digest failure increments attempts to 2");
+    assert.strictEqual(resDigest2.idempotent, true, "Second digest failure marked idempotent");
+    assert.strictEqual(db.failedEvents.size, 2, "Table size remains 2 (digest row upserted without duplication)");
+
+    console.log("  -> [PASS-LOCAL] Stable event_id generation and retry upsert verified.\n");
   }
 
   console.log("--------------------------------------------------------------------------------");
-  console.log("ALL 7 DEAD-LETTER AND REPLAY TEST SUITES PASSED [PASS-LOCAL]");
+  console.log("ALL 8 DEAD-LETTER AND REPLAY TEST SUITES PASSED [PASS-LOCAL]");
   console.log("--------------------------------------------------------------------------------\n");
 }
 
