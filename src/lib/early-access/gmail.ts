@@ -757,6 +757,31 @@ export async function sendEarlyAccessThankYouEmail(params: {
     };
   }
 
+  // Terminal failure: record into failed_events dead-letter queue
+  try {
+    const { recordFailedEvent } = await import("@/lib/events/failedEvents");
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < normalizedEmail.length; i++) {
+      hash ^= normalizedEmail.charCodeAt(i);
+      hash = Math.imul(hash, 0x01000193);
+    }
+    const emailHash = (hash >>> 0).toString(16);
+
+    await recordFailedEvent({
+      source: "gmail_notification",
+      eventId: `thankyou_${emailHash}_${validNow.getTime()}`,
+      payload: {
+        recipient: normalizedEmail,
+        email: normalizedEmail,
+        createdAt: params.createdAt,
+        kind: "thank_you",
+      },
+      error: dispatchResult.reply || "Failed to dispatch thank-you email",
+      supabaseClient: params.supabaseClient,
+      cfEnv: params.cfEnv,
+    });
+  } catch (_) {}
+
   return {
     thankYouSent: false,
     capHit: dispatchResult.capHit,
@@ -999,6 +1024,23 @@ export async function runEarlyAccessDigestCron(options?: {
   });
 
   if (!dispatchResult.ok) {
+    try {
+      const { recordFailedEvent } = await import("@/lib/events/failedEvents");
+      await recordFailedEvent({
+        source: "early_access_digest",
+        eventId: `digest_${(options?.nowIso || new Date().toISOString()).slice(0, 10)}_${Date.now()}`,
+        payload: {
+          recipient: notifyEmail,
+          rowCount: newRows.length,
+          lastDigestAt,
+          newRowsCount: newRows.length,
+        },
+        error: dispatchResult.reply || "Failed to dispatch early access digest email via Apps Script",
+        supabaseClient,
+        cfEnv: options?.cfEnv,
+      });
+    } catch (_) {}
+
     return {
       status: "failed",
       sent: false,

@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 import { getRazorpayKeyMode } from "../../src/lib/billing/mode";
+import { recordFailedEvent } from "../../src/lib/events/failedEvents";
 import { buildCorsHeaders, handleCorsPreflight } from "./_cors";
 import { safeLog } from "./_logger";
 
@@ -69,6 +70,10 @@ export function createHandler(deps: BillingWebhookDeps = {}) {
       };
     }
 
+    let eventId = "";
+    let payload: any = {};
+    let supabaseAdmin: any = null;
+
     try {
       const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
       if (!webhookSecret) {
@@ -128,7 +133,6 @@ export function createHandler(deps: BillingWebhookDeps = {}) {
         };
       }
 
-      let payload: any = {};
       try {
         payload = typeof rawBody === "string" ? JSON.parse(rawBody) : rawBody;
       } catch {
@@ -139,14 +143,13 @@ export function createHandler(deps: BillingWebhookDeps = {}) {
         };
       }
 
-      const eventId =
+      eventId =
         payload.id ||
         payload.event_id ||
         event.headers?.["x-razorpay-event-id"] ||
         event.headers?.["X-Razorpay-Event-Id"] ||
         `rzp_evt_${payload.event}_${payload.payload?.payment?.entity?.id || payload.payload?.order?.entity?.id}_${payload.created_at || Date.now()}`;
 
-      let supabaseAdmin: any;
       try {
         supabaseAdmin = adminGetter();
       } catch (err: any) {
@@ -269,6 +272,24 @@ export function createHandler(deps: BillingWebhookDeps = {}) {
 
         if (fulfilErr) {
           safeLog.error("[Razorpay Webhook] fulfil_payment_order RPC error:", fulfilErr);
+          try {
+            await recordFailedEvent({
+              source: "razorpay_webhook",
+              eventId,
+              payload: {
+                event: eventType,
+                order_id: orderId,
+                user_id: userId,
+                mode: serverMode,
+                payload,
+              },
+              error: fulfilErr,
+              supabaseClient: supabaseAdmin,
+            });
+          } catch (dlErr) {
+            safeLog.warn("[Razorpay Webhook] Failed to record dead-letter event:", dlErr);
+          }
+
           // Do not record dedupe row on RPC failure: return 500 so Razorpay retries
           return {
             statusCode: 500,
@@ -314,6 +335,24 @@ export function createHandler(deps: BillingWebhookDeps = {}) {
 
           // Unsuccessful: DO NOT record dedupe row!
           safeLog.error("[Razorpay Webhook] fulfil_payment_order returned failure:", fulfilRes);
+          try {
+            await recordFailedEvent({
+              source: "razorpay_webhook",
+              eventId,
+              payload: {
+                event: eventType,
+                order_id: orderId,
+                user_id: userId,
+                mode: serverMode,
+                payload,
+              },
+              error: fulfilRes?.error || "fulfil_payment_order returned failure",
+              supabaseClient: supabaseAdmin,
+            });
+          } catch (dlErr) {
+            safeLog.warn("[Razorpay Webhook] Failed to record dead-letter event:", dlErr);
+          }
+
           const statusCode = fulfilRes?.code === "ORDER_NOT_FOUND" ? 404 : 500;
           return {
             statusCode,
@@ -384,6 +423,17 @@ export function createHandler(deps: BillingWebhookDeps = {}) {
       };
     } catch (err: any) {
       safeLog.error("[Razorpay Webhook]", err);
+      if (eventId && supabaseAdmin) {
+        try {
+          await recordFailedEvent({
+            source: "razorpay_webhook",
+            eventId,
+            payload: payload || {},
+            error: err,
+            supabaseClient: supabaseAdmin,
+          });
+        } catch (_) {}
+      }
       return {
         statusCode: 500,
         headers,
