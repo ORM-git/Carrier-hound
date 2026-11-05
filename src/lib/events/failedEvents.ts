@@ -57,6 +57,7 @@ export interface ReplayOptions {
   limit?: number;
   eventId?: string;
   source?: string;
+  sources?: string[];
   force?: boolean;
   maxAttempts?: number;
   webhookFulfillHandler?: (
@@ -76,6 +77,7 @@ export interface ReplayItemResult {
   attempts: number;
   error?: string;
   alreadyProcessed?: boolean;
+  suppressed?: boolean;
 }
 
 export interface ReplaySummary {
@@ -530,6 +532,65 @@ export async function resolveSubscriberEmail(
 }
 
 /**
+ * Checks whether an email address is present in public.email_suppressions.
+ * Case-insensitive (uses ilike with lowercased lookup).
+ * Fails open (false) if the table does not exist or client is unconfigured.
+ */
+export async function isEmailSuppressed(
+  client: any,
+  email: string
+): Promise<boolean> {
+  if (!client?.from || !email) return false;
+  const norm = String(email).trim().toLowerCase();
+  if (!norm || !norm.includes("@")) return false;
+
+  try {
+    const { data, error } = await client
+      .from("email_suppressions")
+      .select("email")
+      .ilike("email", norm)
+      .maybeSingle();
+
+    if (error) {
+      // Table doesn't exist yet (migration not applied) or connection issue: fail open safely
+      return false;
+    }
+    return Boolean(data?.email);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Records an email suppression in public.email_suppressions.
+ * Normalizes email address to lowercase on write.
+ */
+export async function recordEmailSuppression(
+  client: any,
+  email: string,
+  reason: "bounce" | "complaint" | "unsubscribe" | "manual" | "invalid" = "manual"
+): Promise<{ ok: boolean; error?: string }> {
+  if (!client?.from || !email) return { ok: false, error: "Missing client or email" };
+  const norm = String(email).trim().toLowerCase();
+  if (!norm || !norm.includes("@")) return { ok: false, error: "Invalid email" };
+
+  try {
+    const { error } = await client.from("email_suppressions").upsert(
+      {
+        email: norm,
+        reason,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "email" }
+    );
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || "Failed to record email suppression" };
+  }
+}
+
+/**
  * Replays eligible pending failed events with exponential backoff and max 5 attempts.
  * Uses webhook_events idempotency table to ensure no event is applied twice.
  */
@@ -567,8 +628,23 @@ export async function replayFailedEvents(options: ReplayOptions = {}): Promise<R
   if (options.eventId) {
     query = query.eq("event_id", options.eventId);
   }
-  if (options.source) {
-    query = query.eq("source", options.source);
+  if (options.sources && options.sources.length > 0) {
+    query = query.in("source", options.sources);
+  } else if (options.source) {
+    if (
+      options.source === "email" ||
+      options.source === "email_events" ||
+      options.source === "gmail_notification/digest"
+    ) {
+      query = query.in("source", [
+        "gmail_notification",
+        "early_access_digest",
+        "digest",
+        "thank_you",
+      ]);
+    } else {
+      query = query.eq("source", options.source);
+    }
   }
 
   const { data: rows, error: fetchErr } = await query;
@@ -619,6 +695,7 @@ export async function replayFailedEvents(options: ReplayOptions = {}): Promise<R
     let replaySuccess = false;
     let replayError = "";
     let wasAlreadyProcessed = false;
+    let wasSuppressed = false;
 
     try {
       if (event.source === "razorpay_webhook") {
@@ -682,8 +759,22 @@ export async function replayFailedEvents(options: ReplayOptions = {}): Promise<R
             replaySuccess = true;
           }
         }
-      } else if (event.source === "early_access_digest") {
-        if (options.digestHandler) {
+      } else if (event.source === "early_access_digest" || event.source === "digest") {
+        const notifyEmail = (
+          event.payload?.recipient ||
+          (typeof process !== "undefined"
+            ? process.env.EARLY_ACCESS_DIGEST_EMAIL || process.env.EARLY_ACCESS_NOTIFY_EMAIL
+            : "") ||
+          ""
+        ).trim().toLowerCase();
+
+        const isSuppressed = notifyEmail ? await isEmailSuppressed(client, notifyEmail) : false;
+
+        if (isSuppressed) {
+          replaySuccess = true;
+          wasSuppressed = true;
+          replayError = `Skipped: digest recipient ${notifyEmail.replace(/(.{2})(.*)(@.*)/, "$1***$3")} is suppressed in email_suppressions`;
+        } else if (options.digestHandler) {
           const dRes = await options.digestHandler();
           replaySuccess = dRes.success;
           if (!replaySuccess) replayError = dRes.error || "Digest handler failed";
@@ -697,33 +788,41 @@ export async function replayFailedEvents(options: ReplayOptions = {}): Promise<R
           replaySuccess = dRes.status === "success";
           if (!replaySuccess) replayError = `Digest cron failed with status '${dRes.status}'`;
         }
-      } else if (event.source === "gmail_notification") {
+      } else if (event.source === "gmail_notification" || event.source === "thank_you") {
         // Resolve real subscriber email address from early-access table via service role
         const resolvedEmail = await resolveSubscriberEmail(client, event);
 
         if (!resolvedEmail) {
           replaySuccess = false;
           replayError = `Unable to resolve subscriber email for event ${event.event_id} from early-access table`;
-        } else if (options.notificationHandler) {
-          const nRes = await options.notificationHandler({
-            ...event.payload,
-            resolvedEmail,
-            subscriberEmail: resolvedEmail,
-            email: resolvedEmail,
-            recipient: resolvedEmail,
-          });
-          replaySuccess = nRes.success;
-          if (!replaySuccess) replayError = nRes.error || "Notification handler failed";
         } else {
-          const { sendEarlyAccessThankYouEmail } = await import("../early-access/gmail");
-          const nRes = await sendEarlyAccessThankYouEmail({
-            subscriberEmail: resolvedEmail,
-            createdAt: event.payload?.createdAt || new Date().toISOString(),
-            supabaseClient: client,
-            cfEnv: options.cfEnv,
-          });
-          replaySuccess = nRes.thankYouSent || nRes.alreadyThanked;
-          if (!replaySuccess) replayError = "Thank you email dispatch failed";
+          const suppressed = await isEmailSuppressed(client, resolvedEmail);
+          if (suppressed) {
+            // Recipient is on suppression list: skip send and mark replayed
+            replaySuccess = true;
+            wasSuppressed = true;
+            replayError = `Skipped: recipient ${resolvedEmail.replace(/(.{2})(.*)(@.*)/, "$1***$3")} is suppressed in email_suppressions`;
+          } else if (options.notificationHandler) {
+            const nRes = await options.notificationHandler({
+              ...event.payload,
+              resolvedEmail,
+              subscriberEmail: resolvedEmail,
+              email: resolvedEmail,
+              recipient: resolvedEmail,
+            });
+            replaySuccess = nRes.success;
+            if (!replaySuccess) replayError = nRes.error || "Notification handler failed";
+          } else {
+            const { sendEarlyAccessThankYouEmail } = await import("../early-access/gmail");
+            const nRes = await sendEarlyAccessThankYouEmail({
+              subscriberEmail: resolvedEmail,
+              createdAt: event.payload?.createdAt || new Date().toISOString(),
+              supabaseClient: client,
+              cfEnv: options.cfEnv,
+            });
+            replaySuccess = nRes.thankYouSent || nRes.alreadyThanked;
+            if (!replaySuccess) replayError = "Thank you email dispatch failed";
+          }
         }
       } else {
         // Unknown source
@@ -735,7 +834,7 @@ export async function replayFailedEvents(options: ReplayOptions = {}): Promise<R
     }
 
     if (replaySuccess) {
-      // Replay succeeded: mark replayed
+      // Replay succeeded or skipped due to suppression: mark replayed
       await client
         .from("failed_events")
         .update({
@@ -743,6 +842,8 @@ export async function replayFailedEvents(options: ReplayOptions = {}): Promise<R
           last_attempt_at: nowIso,
           error: wasAlreadyProcessed
             ? "Replayed: already processed in webhook_events (idempotent no-op)"
+            : wasSuppressed
+            ? "Replayed: skipped send (address is in email_suppressions)"
             : "Replayed successfully",
         })
         .eq("id", event.id);
@@ -755,6 +856,7 @@ export async function replayFailedEvents(options: ReplayOptions = {}): Promise<R
         status: "replayed",
         attempts: event.attempts,
         alreadyProcessed: wasAlreadyProcessed,
+        suppressed: wasSuppressed,
       });
     } else {
       // Replay failed: increment attempts, calculate exponential backoff, or mark dead
@@ -817,4 +919,30 @@ export async function replayFailedEvents(options: ReplayOptions = {}): Promise<R
     skipped: 0,
     results,
   };
+}
+
+/**
+ * Cron-safe replay helper for failed email events (thank-you notifications and digests).
+ * Picks pending failed_events rows with source 'gmail_notification' or 'early_access_digest'/'digest',
+ * checks email_suppressions before dispatching, retries with exponential backoff (max 5 attempts),
+ * and marks rows as dead once the attempt limit is exceeded.
+ */
+export async function replayFailedEmailEvents(
+  options: ReplayOptions = {}
+): Promise<ReplaySummary> {
+  const sources = options.sources
+    ? options.sources
+    : options.source
+    ? [options.source]
+    : [
+        "gmail_notification",
+        "early_access_digest",
+        "digest",
+        "thank_you",
+      ];
+
+  return replayFailedEvents({
+    ...options,
+    sources,
+  });
 }

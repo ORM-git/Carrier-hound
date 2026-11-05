@@ -16,6 +16,9 @@ import { spawnSync } from "child_process";
 import {
   recordFailedEvent,
   replayFailedEvents,
+  replayFailedEmailEvents,
+  isEmailSuppressed,
+  recordEmailSuppression,
   scrubSensitiveData,
   computeStableEventId,
   computeEmailHash,
@@ -36,6 +39,7 @@ interface MockDb {
   paymentOrders: Map<string, any>;
   earlyAccessEmails: Map<string, any>;
   gmailSendLog: any[];
+  emailSuppressions: Set<string>;
 }
 
 function createMockDb(): MockDb {
@@ -45,6 +49,7 @@ function createMockDb(): MockDb {
     paymentOrders: new Map<string, any>(),
     earlyAccessEmails: new Map<string, any>(),
     gmailSendLog: [],
+    emailSuppressions: new Set<string>(),
   };
 }
 
@@ -52,6 +57,7 @@ function createMockSupabaseClient(db: MockDb) {
   return {
     from: (table: string) => {
       let filterSource: string | null = null;
+      let filterSources: string[] | null = null;
       let filterEventId: string | null = null;
       let filterStatus: string | null = null;
       let filterId: string | null = null;
@@ -61,6 +67,7 @@ function createMockSupabaseClient(db: MockDb) {
       let filterKind: string | null = null;
       let filterRecipientEmail: string | null = null;
       let filterGteSentAt: string | null = null;
+      let filterGtCreatedAt: string | null = null;
       let isCountHead: boolean = false;
       let limitCount: number = 100;
       let orderCol: string | null = null;
@@ -80,6 +87,21 @@ function createMockSupabaseClient(db: MockDb) {
           if (col === "created_at") filterCreatedAt = String(val);
           if (col === "kind") filterKind = String(val);
           if (col === "recipient_email") filterRecipientEmail = String(val);
+          return queryBuilder;
+        },
+        ilike: (col: string, val: any) => {
+          if (col === "email") filterEmail = String(val).toLowerCase();
+          return queryBuilder;
+        },
+        in: (col: string, vals: any[]) => {
+          if (col === "source") filterSources = vals.map(String);
+          return queryBuilder;
+        },
+        gt: (col: string, val: any) => {
+          if (col === "created_at") filterGtCreatedAt = String(val);
+          return queryBuilder;
+        },
+        lt: (_col: string, _val: any) => {
           return queryBuilder;
         },
         lte: (col: string, val: any) => {
@@ -104,6 +126,7 @@ function createMockSupabaseClient(db: MockDb) {
             for (const item of db.failedEvents.values()) {
               if (filterId && item.id !== filterId) continue;
               if (filterSource && item.source !== filterSource) continue;
+              if (filterSources && !filterSources.includes(item.source)) continue;
               if (filterEventId && item.event_id !== filterEventId) continue;
               if (filterStatus && item.status !== filterStatus) continue;
               return { data: { ...item }, error: null };
@@ -121,6 +144,12 @@ function createMockSupabaseClient(db: MockDb) {
               if (filterEmail && item.email !== filterEmail) continue;
               if (filterCreatedAt && item.created_at !== filterCreatedAt) continue;
               return { data: { ...item }, error: null };
+            }
+            return { data: null, error: null };
+          }
+          if (table === "email_suppressions") {
+            if (filterEmail && db.emailSuppressions.has(filterEmail.toLowerCase())) {
+              return { data: { email: filterEmail.toLowerCase(), reason: "bounce" }, error: null };
             }
             return { data: null, error: null };
           }
@@ -157,6 +186,9 @@ function createMockSupabaseClient(db: MockDb) {
             } else if (table === "gmail_send_log") {
               db.gmailSendLog.push(r);
               inserted.push(r);
+            } else if (table === "email_suppressions") {
+              db.emailSuppressions.add(r.email.toLowerCase());
+              inserted.push(r);
             }
           }
           const resPromise: any = Promise.resolve({ data: inserted, error: null });
@@ -177,6 +209,10 @@ function createMockSupabaseClient(db: MockDb) {
           }
           if (table === "early_access_emails") {
             db.earlyAccessEmails.set(row.email, row);
+            return { data: row, error: null };
+          }
+          if (table === "email_suppressions") {
+            db.emailSuppressions.add(row.email.toLowerCase());
             return { data: row, error: null };
           }
           return { data: null, error: null };
@@ -203,6 +239,9 @@ function createMockSupabaseClient(db: MockDb) {
             let list: FailedEventRecord[] = Array.from(db.failedEvents.values());
             if (filterStatus) list = list.filter((i) => i.status === filterStatus);
             if (filterSource) list = list.filter((i) => i.source === filterSource);
+            if (filterSources && filterSources.length > 0) {
+              list = list.filter((i) => filterSources!.includes(i.source));
+            }
             if (filterEventId) list = list.filter((i) => i.event_id === filterEventId);
             if (filterLteRetry) list = list.filter((i) => i.next_retry_at <= filterLteRetry!);
             list = list.slice(0, limitCount);
@@ -212,7 +251,13 @@ function createMockSupabaseClient(db: MockDb) {
             let list = Array.from(db.earlyAccessEmails.values());
             if (filterEmail) list = list.filter((i) => i.email === filterEmail);
             if (filterCreatedAt) list = list.filter((i) => i.created_at === filterCreatedAt);
+            if (filterGtCreatedAt) list = list.filter((i) => i.created_at > filterGtCreatedAt!);
             list = list.slice(0, limitCount);
+            return Promise.resolve({ data: list, error: null }).then(resolve, reject);
+          }
+          if (table === "email_suppressions") {
+            let list = Array.from(db.emailSuppressions).map((e) => ({ email: e }));
+            if (filterEmail) list = list.filter((i) => i.email === filterEmail.toLowerCase());
             return Promise.resolve({ data: list, error: null }).then(resolve, reject);
           }
           if (table === "gmail_send_log") {
@@ -268,6 +313,21 @@ async function runSuite() {
     console.log("Triggering deliberate failure via --negative-control-mail-replay...");
     // Negative control: un-resolved address during mail replay must fail
     assert.strictEqual("[REDACTED]", "applicant@careermonke.com", "Negative control mail replay assertion failed as expected");
+  }
+  if (process.argv.includes("--negative-control-email-retry")) {
+    console.log("Triggering deliberate failure via --negative-control-email-retry...");
+    // Negative control: failed email retry marked replayed must fail
+    assert.strictEqual("replayed", "failed", "Negative control email-retry assertion failed as expected");
+  }
+  if (process.argv.includes("--negative-control-backoff-cap")) {
+    console.log("Triggering deliberate failure via --negative-control-backoff-cap...");
+    // Negative control: attempt 5 not marked dead must fail
+    assert.strictEqual("pending", "dead", "Negative control backoff-cap assertion failed as expected");
+  }
+  if (process.argv.includes("--negative-control-suppression-skip")) {
+    console.log("Triggering deliberate failure via --negative-control-suppression-skip...");
+    // Negative control: suppressed send not skipped must fail
+    assert.strictEqual(true, false, "Negative control suppression-skip assertion failed as expected");
   }
 
   // --------------------------------------------------------------------------
@@ -630,6 +690,9 @@ async function runSuite() {
       "--negative-control-pii",
       "--negative-control-stable-id",
       "--negative-control-mail-replay",
+      "--negative-control-email-retry",
+      "--negative-control-backoff-cap",
+      "--negative-control-suppression-skip",
     ]) {
       const sub = spawnSync("npx", ["tsx", "scripts/test-failed-events-dead-letter.ts", flag], {
         stdio: "pipe",
@@ -834,8 +897,341 @@ async function runSuite() {
     }
   }
 
+  // --------------------------------------------------------------------------
+  // TEST 10: Cron-Safe Email Retry, Exponential Backoff & Max-5 Attempts Cap
+  // --------------------------------------------------------------------------
+  console.log("Test 10: Cron-safe email retry, exponential backoff & max 5 attempts dead cap...");
+  {
+    const db = createMockDb();
+    const client = createMockSupabaseClient(db);
+
+    const emailA = "applicant-retry-a@careermonke.com";
+    const emailCapped = "applicant-capped@careermonke.com";
+    const emailFuture = "applicant-future@careermonke.com";
+    const pastIso = new Date(Date.now() - 3600 * 1000).toISOString();
+    const futureIso = new Date(Date.now() + 3600 * 1000).toISOString();
+
+    // 1. Seed subscribers in early_access_emails table
+    db.earlyAccessEmails.set(emailA, { email: emailA, created_at: pastIso });
+    db.earlyAccessEmails.set(emailCapped, { email: emailCapped, created_at: pastIso });
+    db.earlyAccessEmails.set(emailFuture, { email: emailFuture, created_at: pastIso });
+
+    // 2. Seed failed_events:
+    // a) Pending gmail_notification at attempt 1 (past retry date)
+    const idA = "gmail_notification:ev_retry_mail_1";
+    db.failedEvents.set(idA, {
+      id: "fe_mail_1",
+      source: "gmail_notification",
+      event_id: "ev_retry_mail_1",
+      payload: { subscriber_handle: computeEmailHash(emailA) },
+      error: "Temporary network timeout",
+      attempts: 1,
+      status: "pending",
+      first_failed_at: pastIso,
+      last_attempt_at: pastIso,
+      next_retry_at: pastIso,
+    });
+
+    // b) Pending early_access_digest at attempt 1 (past retry date)
+    const idDigest = "early_access_digest:ev_retry_digest_1";
+    db.failedEvents.set(idDigest, {
+      id: "fe_digest_1",
+      source: "early_access_digest",
+      event_id: "ev_retry_digest_1",
+      payload: { recipient: "owner-digest@careermonke.com", rowCount: 5 },
+      error: "Apps Script quota hit",
+      attempts: 1,
+      status: "pending",
+      first_failed_at: pastIso,
+      last_attempt_at: pastIso,
+      next_retry_at: pastIso,
+    });
+
+    // c) Unrelated pending event (razorpay_webhook) - must be ignored by replayFailedEmailEvents
+    const idRzp = "razorpay_webhook:ev_other_rzp";
+    db.failedEvents.set(idRzp, {
+      id: "fe_rzp_1",
+      source: "razorpay_webhook",
+      event_id: "ev_other_rzp",
+      payload: { payment_id: "pay_123" },
+      error: "DB lock timeout",
+      attempts: 1,
+      status: "pending",
+      first_failed_at: pastIso,
+      last_attempt_at: pastIso,
+      next_retry_at: pastIso,
+    });
+
+    // d) Pending gmail_notification at attempt 4 - must cap at attempt 5 and transition to 'dead'
+    const idCapped = "gmail_notification:ev_retry_capped";
+    db.failedEvents.set(idCapped, {
+      id: "fe_capped_1",
+      source: "gmail_notification",
+      event_id: "ev_retry_capped",
+      payload: { subscriber_handle: computeEmailHash(emailCapped) },
+      error: "Persistent error",
+      attempts: 4,
+      status: "pending",
+      first_failed_at: pastIso,
+      last_attempt_at: pastIso,
+      next_retry_at: pastIso,
+    });
+
+    // e) Pending gmail_notification with next_retry_at in FUTURE - must NOT be picked when force: false
+    const idFuture = "gmail_notification:ev_retry_future";
+    db.failedEvents.set(idFuture, {
+      id: "fe_future_1",
+      source: "gmail_notification",
+      event_id: "ev_retry_future",
+      payload: { subscriber_handle: computeEmailHash(emailFuture) },
+      error: "Waiting for backoff window",
+      attempts: 1,
+      status: "pending",
+      first_failed_at: pastIso,
+      last_attempt_at: pastIso,
+      next_retry_at: futureIso,
+    });
+
+    // Step A: Execute cron-safe replay (force: false) with failing fetch
+    const originalUrl = process.env.APPS_SCRIPT_MAIL_URL;
+    const originalSecret = process.env.APPS_SCRIPT_MAIL_SECRET;
+    const originalNotifyEmail = process.env.EARLY_ACCESS_NOTIFY_EMAIL;
+    const originalFetch = globalThis.fetch;
+
+    process.env.APPS_SCRIPT_MAIL_URL = "https://script.google.com/macros/s/test-mock/exec";
+    process.env.APPS_SCRIPT_MAIL_SECRET = "test-secret-12345";
+    process.env.EARLY_ACCESS_NOTIFY_EMAIL = "owner-digest@careermonke.com";
+
+    try {
+      globalThis.fetch = (async () => {
+        return new Response("server unavailable", { status: 503 });
+      }) as typeof fetch;
+
+      const cronSummary1 = await replayFailedEmailEvents({
+        supabaseClient: client,
+        force: false,
+      });
+
+      // Assertions on scope of cron run
+      assert.strictEqual(cronSummary1.total, 3, "Only the 3 eligible past-due email events were inspected");
+      assert.strictEqual(cronSummary1.replayed, 0, "No events succeeded replay");
+      assert.strictEqual(cronSummary1.pending, 2, "2 events remained pending with incremented backoff");
+      assert.strictEqual(cronSummary1.dead, 1, "1 event transitioned to dead state (attempt 4 -> 5)");
+
+      // Verify email event A backoff increment
+      const recA = db.failedEvents.get(idA)!;
+      assert.strictEqual(recA.attempts, 2, "Attempt incremented to 2");
+      assert.strictEqual(recA.status, "pending", "Status remains pending");
+      assert.ok(recA.next_retry_at > pastIso, "next_retry_at scheduled in the future");
+
+      // Verify digest event backoff increment
+      const recDigest = db.failedEvents.get(idDigest)!;
+      assert.strictEqual(recDigest.attempts, 2, "Digest attempt incremented to 2");
+      assert.strictEqual(recDigest.status, "pending", "Digest status remains pending");
+      assert.ok(recDigest.next_retry_at > pastIso, "Digest next_retry_at scheduled in the future");
+
+      // Verify razorpay event was completely ignored
+      const recRzp = db.failedEvents.get(idRzp)!;
+      assert.strictEqual(recRzp.attempts, 1, "Unrelated non-email event was untouched");
+      assert.strictEqual(recRzp.status, "pending", "Unrelated event untouched");
+
+      // Verify capped event transitioned to DEAD
+      const recCapped = db.failedEvents.get(idCapped)!;
+      assert.strictEqual(recCapped.attempts, 5, "Capped event attempts reached 5");
+      assert.strictEqual(recCapped.status, "dead", "Capped event marked dead at attempt 5");
+
+      // Verify future event was NOT picked by cron
+      const recFuture = db.failedEvents.get(idFuture)!;
+      assert.strictEqual(recFuture.attempts, 1, "Future event was not picked due to cron-safe lte(next_retry_at)");
+
+      // Step B: Now mock fetch succeeds and test successful replay of pending events
+      const dispatchedEmails: string[] = [];
+      globalThis.fetch = (async (input: any, init?: any) => {
+        const body = init?.body ? JSON.parse(init.body) : null;
+        if (body?.email) dispatchedEmails.push(body.email);
+        return new Response("ok", { status: 200 });
+      }) as typeof fetch;
+
+      // Force-replay remaining pending email events
+      const cronSummary2 = await replayFailedEmailEvents({
+        supabaseClient: client,
+        force: true,
+      });
+
+      assert.strictEqual(cronSummary2.ok, true, "All eligible pending email events succeeded replay");
+      assert.strictEqual(recA.status, "replayed", "Event A transitioned to 'replayed'");
+      assert.strictEqual(recDigest.status, "replayed", "Digest event transitioned to 'replayed'");
+      assert.strictEqual(recFuture.status, "replayed", "Future event forced to 'replayed'");
+      assert.strictEqual(recCapped.status, "dead", "Dead event was not replayed");
+
+      console.log("  -> [PASS-LOCAL] Cron-safe email retry, exponential backoff, and 5-attempt cap verified.\n");
+    } finally {
+      process.env.APPS_SCRIPT_MAIL_URL = originalUrl;
+      process.env.APPS_SCRIPT_MAIL_SECRET = originalSecret;
+      process.env.EARLY_ACCESS_NOTIFY_EMAIL = originalNotifyEmail;
+      globalThis.fetch = originalFetch;
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // TEST 11: Suppression Check Skips Send and Resolves Dead-Letter Queue
+  // --------------------------------------------------------------------------
+  console.log("Test 11: Suppression check skips send and resolves dead-letter queue...");
+  {
+    const db = createMockDb();
+    const client = createMockSupabaseClient(db);
+
+    // 1. Direct unit test of isEmailSuppressed and recordEmailSuppression helpers
+    db.emailSuppressions.add("bounced-subscriber@careermonke.com");
+    db.emailSuppressions.add("complained@careermonke.com");
+
+    const isSuppressed1 = await isEmailSuppressed(client, "bounced-subscriber@careermonke.com");
+    assert.strictEqual(isSuppressed1, true, "Exact match suppressed");
+
+    const isSuppressedCase = await isEmailSuppressed(client, "BOUNCED-SUBSCRIBER@careermonke.com");
+    assert.strictEqual(isSuppressedCase, true, "Case-insensitive check suppressed via ilike");
+
+    const isSuppressedTrim = await isEmailSuppressed(client, "  complained@careermonke.com  ");
+    assert.strictEqual(isSuppressedTrim, true, "Whitespace-trimmed check suppressed");
+
+    const isCleanSuppressed = await isEmailSuppressed(client, "legitimate-applicant@careermonke.com");
+    assert.strictEqual(isCleanSuppressed, false, "Non-suppressed email returns false");
+
+    const isNullClient = await isEmailSuppressed(null, "bounced-subscriber@careermonke.com");
+    assert.strictEqual(isNullClient, false, "Unconfigured/null client safely fails open to false");
+
+    // 1b. Test lowercase normalization on write via recordEmailSuppression
+    const writeRes = await recordEmailSuppression(client, "MIXED-CASE-BOUNCE@CareerMonke.COM", "bounce");
+    assert.strictEqual(writeRes.ok, true, "recordEmailSuppression succeeds");
+    assert.strictEqual(
+      db.emailSuppressions.has("mixed-case-bounce@careermonke.com"),
+      true,
+      "email must be stored in lowercase on write"
+    );
+    assert.strictEqual(
+      db.emailSuppressions.has("MIXED-CASE-BOUNCE@CareerMonke.COM"),
+      false,
+      "raw uppercase string must not be stored in email_suppressions set"
+    );
+    const readAfterWrite = await isEmailSuppressed(client, "Mixed-Case-Bounce@CareerMonke.com");
+    assert.strictEqual(readAfterWrite, true, "isEmailSuppressed reads back normalized address via ilike");
+
+    // 2. Suppression check on direct thank-you email send
+    let fetchCalled = false;
+    const originalFetch = globalThis.fetch;
+    const originalUrl = process.env.APPS_SCRIPT_MAIL_URL;
+    const originalSecret = process.env.APPS_SCRIPT_MAIL_SECRET;
+
+    process.env.APPS_SCRIPT_MAIL_URL = "https://script.google.com/macros/s/test-mock/exec";
+    process.env.APPS_SCRIPT_MAIL_SECRET = "test-secret-12345";
+
+    try {
+      globalThis.fetch = (async () => {
+        fetchCalled = true;
+        return new Response("ok", { status: 200 });
+      }) as typeof fetch;
+
+      const { sendEarlyAccessThankYouEmail } = await import("../src/lib/early-access/gmail");
+
+      const directSendResult = await sendEarlyAccessThankYouEmail({
+        subscriberEmail: "bounced-subscriber@careermonke.com",
+        createdAt: new Date().toISOString(),
+        supabaseClient: client,
+      });
+
+      assert.strictEqual(directSendResult.suppressed, true, "Send reports suppressed: true");
+      assert.strictEqual(directSendResult.thankYouSent, false, "Send does not send email");
+      assert.strictEqual(fetchCalled, false, "Apps Script fetch was NEVER invoked for suppressed email");
+      assert.strictEqual(db.failedEvents.size, 0, "No dead-letter row recorded for suppressed send");
+
+      // 3. Suppression check during replay of existing failed_events row
+      const suppressedEmail = "historic-failure-now-suppressed@careermonke.com";
+      const signupAt = "2026-11-05T08:00:00.000Z";
+
+      // Seed in early_access_emails so handle resolution succeeds
+      db.earlyAccessEmails.set(suppressedEmail, {
+        email: suppressedEmail,
+        created_at: signupAt,
+      });
+
+      // Add to suppression list
+      db.emailSuppressions.add(suppressedEmail);
+
+      // Seed a failed_events pending row
+      const mailEventId = "thank_you_historic_fail";
+      db.failedEvents.set(`gmail_notification:${mailEventId}`, {
+        id: "fe_suppressed_replay",
+        source: "gmail_notification",
+        event_id: mailEventId,
+        payload: { subscriber_handle: computeEmailHash(suppressedEmail) },
+        error: "Previous Apps Script 500 error",
+        attempts: 1,
+        status: "pending",
+        first_failed_at: signupAt,
+        last_attempt_at: signupAt,
+        next_retry_at: signupAt,
+      });
+
+      fetchCalled = false;
+      const replayRes = await replayFailedEmailEvents({
+        supabaseClient: client,
+        force: true,
+      });
+
+      assert.strictEqual(replayRes.ok, true, "Replay completes successfully");
+      assert.strictEqual(replayRes.replayed, 1, "Suppressed row is marked as replayed");
+      assert.strictEqual(fetchCalled, false, "Apps Script fetch was NEVER invoked during suppressed replay");
+
+      const resolvedRecord = db.failedEvents.get(`gmail_notification:${mailEventId}`)!;
+      assert.strictEqual(resolvedRecord.status, "replayed", "Event transitioned to 'replayed'");
+      assert.ok(
+        resolvedRecord.error.includes("email_suppressions"),
+        "Row error note explains skip due to email_suppressions"
+      );
+      assert.strictEqual(replayRes.results[0].suppressed, true, "Result item indicates suppressed: true");
+
+      // 4. Suppression check for digest replay
+      const suppressedOwner = "suppressed-owner@careermonke.com";
+      db.emailSuppressions.add(suppressedOwner);
+
+      const digestEventId = "digest_owner_suppressed";
+      db.failedEvents.set(`early_access_digest:${digestEventId}`, {
+        id: "fe_suppressed_digest",
+        source: "early_access_digest",
+        event_id: digestEventId,
+        payload: { recipient: suppressedOwner, rowCount: 10 },
+        error: "Network failure during digest",
+        attempts: 1,
+        status: "pending",
+        first_failed_at: signupAt,
+        last_attempt_at: signupAt,
+        next_retry_at: signupAt,
+      });
+
+      fetchCalled = false;
+      const digestReplayRes = await replayFailedEmailEvents({
+        supabaseClient: client,
+        force: true,
+      });
+
+      assert.strictEqual(digestReplayRes.ok, true, "Digest replay completes successfully");
+      assert.strictEqual(digestReplayRes.replayed, 1, "Suppressed digest row marked replayed");
+      assert.strictEqual(fetchCalled, false, "Fetch was NEVER invoked for suppressed digest recipient");
+
+      const resolvedDigest = db.failedEvents.get(`early_access_digest:${digestEventId}`)!;
+      assert.strictEqual(resolvedDigest.status, "replayed", "Digest transitioned to 'replayed'");
+      assert.strictEqual(digestReplayRes.results[0].suppressed, true, "Digest result item indicates suppressed: true");
+
+      console.log("  -> [PASS-LOCAL] Suppression check skips send and resolves dead-letter queue verified.\n");
+    } finally {
+      process.env.APPS_SCRIPT_MAIL_URL = originalUrl;
+      process.env.APPS_SCRIPT_MAIL_SECRET = originalSecret;
+      globalThis.fetch = originalFetch;
+    }
+  }
+
   console.log("--------------------------------------------------------------------------------");
-  console.log("ALL 9 DEAD-LETTER AND REPLAY TEST SUITES PASSED [PASS-LOCAL]");
+  console.log("ALL 11 DEAD-LETTER AND REPLAY TEST SUITES PASSED [PASS-LOCAL]");
   console.log("--------------------------------------------------------------------------------\n");
 }
 

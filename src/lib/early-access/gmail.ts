@@ -630,6 +630,7 @@ export async function sendEarlyAccessThankYouEmail(params: {
   capHit: boolean;
   failedClosed: boolean;
   alreadyThanked: boolean;
+  suppressed?: boolean;
 }> {
   const isLegacy =
     process.env.NODE_ENV === "test" &&
@@ -724,7 +725,21 @@ export async function sendEarlyAccessThankYouEmail(params: {
     };
   }
 
-  // 3. Dispatch POST to Apps Script web app with 8s timeout
+  // 3. Suppression check: skip addresses in public.email_suppressions table
+  const { isEmailSuppressed } = await import("@/lib/events/failedEvents");
+  const isSuppressed = await isEmailSuppressed(params.supabaseClient, normalizedEmail);
+  if (isSuppressed) {
+    safeWarn("suppressed");
+    return {
+      thankYouSent: false,
+      capHit: false,
+      failedClosed: false,
+      alreadyThanked: false,
+      suppressed: true,
+    };
+  }
+
+  // 4. Dispatch POST to Apps Script web app with 8s timeout
   const dispatchResult = await dispatchAppsScriptMail({
     url: config.url,
     secret: config.secret,
@@ -798,7 +813,8 @@ export interface EarlyAccessDigestCronResult {
     | "log_read_error"
     | "emails_read_error"
     | "missing_env"
-    | "send_error";
+    | "send_error"
+    | "suppressed";
   rowCount: number;
   lastDigestAt: string | null;
 }
@@ -1003,7 +1019,21 @@ export async function runEarlyAccessDigestCron(options?: {
     };
   }
 
-  // 6. Send ONE digest email via Google Apps Script mail route
+  // 6. Suppression check: skip sending digest if notifyEmail is suppressed
+  const { isEmailSuppressed } = await import("@/lib/events/failedEvents");
+  const isDigestSuppressed = await isEmailSuppressed(supabaseClient, notifyEmail);
+  if (isDigestSuppressed) {
+    safeWarn(`Owner digest recipient is suppressed in email_suppressions; skipping send`);
+    return {
+      status: "success",
+      sent: false,
+      reason: "suppressed",
+      rowCount: newRows.length,
+      lastDigestAt,
+    };
+  }
+
+  // 7. Send ONE digest email via Google Apps Script mail route
   const digestContent = buildOwnerDigestEmailContent(newRows);
   const dispatchResult = await dispatchAppsScriptMail({
     url: appsScriptConfig.url,

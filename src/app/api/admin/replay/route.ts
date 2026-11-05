@@ -72,6 +72,7 @@ export async function POST(req: Request) {
       limit: body.limit,
       eventId: body.eventId,
       source: body.source,
+      sources: body.sources,
       force: body.force ?? true,
       maxAttempts: body.maxAttempts ?? 5,
     });
