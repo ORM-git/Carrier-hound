@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
 import { formatSalary } from "@/lib/salary/parser";
 import { verifyUserNotBanned } from "@/lib/admin/auth";
-import { COUNTRY_CODE_TO_NAME, getCountryFilterClause } from "@/lib/countries";
+import { getCountryFilterClause } from "@/lib/countries";
 import { sanitizeSearchQuery } from "@/lib/api/jobs";
 import { isUserApproved } from "@/lib/auth/approval";
 

@@ -155,7 +155,7 @@ async function runTests() {
   // Test that lower max-warnings triggers failure (simulating new warning on new code)
   const failResult = spawnSync(
     eslintBin,
-    ["eslint", "src", "--max-warnings", "304", "--quiet"],
+    ["eslint", "src", "--max-warnings", "0", "--quiet"],
     {
       shell: isWindows,
       cwd: rootDir,
@@ -164,7 +164,7 @@ async function runTests() {
   assert.strictEqual(
     failResult.status,
     1,
-    `ESLint with max-warnings 304 must fail with code 1 (got ${failResult.status})`
+    `ESLint with max-warnings 0 must fail with code 1 (got ${failResult.status})`
   );
   pass("ESLint fails (exit code 1) when warning count exceeds baseline (new code regression gate)");
 

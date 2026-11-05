@@ -4,7 +4,7 @@ import { formatSalary } from "@/lib/salary/parser";
 import { getSupabaseAdminClient, getRuntimeEnv, getClientIpFromRequest, checkRateLimit } from "@/lib/ai/serviceHandler";
 import { checkSharedRateLimit, SEARCH_RATE_LIMIT, searchRateLimitStore } from "@/lib/api/sharedRateLimit";
 import { getRequestContext } from "@cloudflare/next-on-pages";
-import { COUNTRY_CODE_TO_NAME, getCountryFilterClause } from "@/lib/countries";
+import { getCountryFilterClause } from "@/lib/countries";
 import { decodeCursor, encodeCursor } from "@/lib/pagination/cursor";
 import { capJobsPerCompany } from "@/lib/jobs/capping";
 import { normalizeUserCountries, applyEligibilityFilter, isJobEligible } from "@/lib/jobs/eligibility";
@@ -167,7 +167,7 @@ export async function GET(req: Request) {
             userEligibilityPref = prefs.eligibility_filter !== false;
           }
         }
-      } catch (authErr) {
+      } catch (_authErr) {
         // Fall back to safe preview
         isPro = false;
       }
