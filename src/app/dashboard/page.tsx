@@ -8,7 +8,6 @@ import AppIconRail from "@/components/shell/AppIconRail";
 import AppTopBar from "@/components/shell/AppTopBar";
 import LoggedInAppShell from "@/components/shell/LoggedInAppShell";
 import { useSidebarMode } from "@/lib/sidebar";
-import ProUpgradeScreen from "@/components/billing/ProUpgradeScreen";
 import ProOnboardingCard from "@/components/onboarding/ProOnboardingCard";
 import ResumeUploadAndConfirm from "@/components/resume/ResumeUploadAndConfirm";
 import TopTenCompatibleJobs from "@/components/dashboard/TopTenCompatibleJobs";
