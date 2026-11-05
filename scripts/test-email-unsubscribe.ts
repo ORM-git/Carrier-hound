@@ -2,44 +2,52 @@
  * scripts/test-email-unsubscribe.ts
  *
  * Verification suite for one-click email unsubscribe flow (RFC 8058):
- * 1. HMAC signed-token generation and tamper rejection:
+ * 1. Dedicated UNSUBSCRIBE_SECRET fail-closed enforcement (throws when missing, no fallback).
+ * 2. HMAC signed-token generation and tamper rejection:
  *    - Valid tokens verify successfully with email, topic, exp.
  *    - Tampered payload fails verification.
  *    - Tampered signature fails verification.
  *    - Malformed token format fails verification.
  *    - Expired token fails verification.
- * 2. Route handler verification (/api/email/unsubscribe):
- *    - GET with valid token records suppression and returns 200 OK.
- *    - POST (One-Click) with valid token records suppression and returns 200 OK.
+ * 3. Route handler verification (/api/email/unsubscribe & Netlify function):
+ *    - GET renders minimal confirmation page with an Unsubscribe form button.
+ *    - GET does NOT modify database or perform suppression (protects against mail crawlers).
+ *    - POST performs the actual suppression and returns 200 OK (RFC 8058 one-click).
  *    - Tampered token returns 400 Bad Request and does not write to database.
  *    - Missing token returns 400 Bad Request.
- * 3. Persistence verification in email_suppressions:
- *    - Upsert contract into public.email_suppressions table.
- *    - Case-insensitivity (uppercased email in token normalized to lowercase).
- * 4. Header verification:
+ * 4. Plain UNIQUE constraint migration & real SQL semantics (20261105d):
+ *    - Migration file existence, DDL adding unique constraint on email_suppressions(email).
+ *    - onConflict: "email" contract verification.
+ *    - Live SQL test against real PostgreSQL semantics if test database credentials exist.
+ * 5. Header verification:
  *    - List-Unsubscribe and List-Unsubscribe-Post present in marketing/digest emails.
- * 5. Digest sender suppression skip:
+ * 6. Digest sender suppression skip:
  *    - Suppressed recipient is skipped by daily digest cron.
  *    - Suppressed recipient is skipped by early access digest cron.
- * 6. Transactional email unaffected:
+ * 7. Transactional email unaffected:
  *    - Thank-you email retains transactional payload without List-Unsubscribe headers.
- * 7. Negative controls proving non-zero exits on invalid conditions.
+ * 8. Negative controls proving non-zero exits on invalid conditions.
  */
 
 import assert from "assert";
+import * as fs from "fs";
+import * as path from "path";
 import { spawnSync } from "child_process";
 import {
+  getUnsubscribeSecret,
   generateUnsubscribeToken,
   verifyUnsubscribeToken,
   generateUnsubscribeUrl,
   getUnsubscribeHeaders,
-  processUnsubscribe,
 } from "../src/lib/email/unsubscribe";
 import { GET as unsubscribeGet, POST as unsubscribePost } from "../src/app/api/email/unsubscribe/route";
+import { handler as netlifyUnsubscribeHandler } from "../netlify/functions/email-unsubscribe";
 import { runDailyDigestCron } from "../src/lib/cron/dailyDigestCron";
 import { runEarlyAccessDigestCron, buildOwnerDigestEmailContent, sendEarlyAccessThankYouEmail } from "../src/lib/early-access/gmail";
 
 process.env.NODE_ENV = "test";
+const TEST_UNSUBSCRIBE_SECRET = "test_unsubscribe_secret_key_32chars_min";
+process.env.UNSUBSCRIBE_SECRET = TEST_UNSUBSCRIBE_SECRET;
 
 // Negative control check
 if (process.argv.includes("--negative-control")) {
@@ -100,54 +108,70 @@ function createMockSupabase(db: MockDb) {
             const entry = filterEmail ? db.emailSuppressions.get(filterEmail) : null;
             return { data: entry || null, error: null };
           }
-          if (table === "gmail_send_log") {
-            const match = db.gmailSendLog.find((r) => !filterKind || r.kind === filterKind);
-            return { data: match || null, error: null };
-          }
           return { data: null, error: null };
         },
         single: async () => {
-          return builder.maybeSingle();
-        },
-        upsert: async (payload: any) => {
           if (table === "email_suppressions") {
-            const norm = String(payload.email).trim().toLowerCase();
-            db.emailSuppressions.set(norm, {
-              email: norm,
-              reason: payload.reason || "unsubscribe",
-              updated_at: payload.updated_at || new Date().toISOString(),
-            });
-            return { data: [payload], error: null };
-          }
-          if (table === "daily_digests") {
-            db.dailyDigests.push(payload);
-            return { data: [payload], error: null };
+            const entry = filterEmail ? db.emailSuppressions.get(filterEmail) : null;
+            return { data: entry || null, error: entry ? null : { message: "Row not found" } };
           }
           return { data: null, error: null };
         },
-        insert: async (payload: any) => {
-          if (table === "gmail_send_log") {
-            db.gmailSendLog.push(payload);
-            return { data: [payload], error: null };
+        upsert: async (record: any, options?: { onConflict?: string }) => {
+          if (table === "email_suppressions") {
+            // Emulate Postgres plain UNIQUE constraint on "email"
+            const emailKey = String(record.email || "").toLowerCase().trim();
+            const existing = db.emailSuppressions.get(emailKey);
+            const saved = {
+              email: emailKey,
+              reason: record.reason || existing?.reason || "manual",
+              updated_at: record.updated_at || new Date().toISOString(),
+            };
+            db.emailSuppressions.set(emailKey, saved);
+            return { data: saved, error: null };
           }
-          return { data: [payload], error: null };
+          return { data: record, error: null };
         },
-        then: (resolve: any) => {
-          if (table === "candidate_profiles") {
-            resolve({ data: db.candidateProfiles, error: null });
-          } else if (table === "jobs") {
-            resolve({ data: [], error: null });
-          } else if (table === "early_access_emails") {
-            resolve({ data: db.earlyAccessEmails, error: null });
-          } else if (table === "gmail_send_log") {
-            if (isCountHead) {
-              resolve({ data: null, count: db.gmailSendLog.length, error: null });
-            } else {
-              resolve({ data: db.gmailSendLog, error: null });
-            }
-          } else {
-            resolve({ data: [], error: null });
+        insert: async (record: any) => {
+          if (table === "early_access_emails") {
+            const arr = Array.isArray(record) ? record : [record];
+            db.earlyAccessEmails.push(...arr);
+            return { data: arr, error: null };
           }
+          if (table === "gmail_send_log") {
+            const arr = Array.isArray(record) ? record : [record];
+            db.gmailSendLog.push(...arr);
+            return { data: arr, error: null };
+          }
+          return { data: record, error: null };
+        },
+        delete: () => {
+          return {
+            eq: async (col: string, val: any) => {
+              if (table === "email_suppressions" && col === "email") {
+                db.emailSuppressions.delete(String(val).toLowerCase());
+              }
+              return { data: null, error: null };
+            },
+          };
+        },
+        then: (onfulfilled: any) => {
+          if (isCountHead) {
+            let count = 0;
+            if (table === "gmail_send_log") {
+              count = db.gmailSendLog.filter((l) => {
+                let match = true;
+                if (filterKind) match = match && l.kind === filterKind;
+                if (filterRecipient) match = match && l.recipient_email === filterRecipient;
+                return match;
+              }).length;
+            }
+            return Promise.resolve({ count, data: null, error: null }).then(onfulfilled);
+          }
+          if (table === "early_access_emails") {
+            return Promise.resolve({ data: db.earlyAccessEmails, error: null }).then(onfulfilled);
+          }
+          return Promise.resolve({ data: [], error: null }).then(onfulfilled);
         },
       };
       return builder;
@@ -157,24 +181,58 @@ function createMockSupabase(db: MockDb) {
 
 async function runUnsubscribeTests() {
   console.log("\n================================================================================");
-  console.log("RUNNING EMAIL ONE-CLICK UNSUBSCRIBE (RFC 8058) VERIFICATION SUITE");
+  console.log("RUNNING EMAIL ONE-CLICK UNSUBSCRIBE (RFC 8058) & SQL SAFETY TEST SUITE");
   console.log("================================================================================\n");
 
-  const testSecret = "test_unsubscribe_secret_key_32chars_min";
+  // --------------------------------------------------------------------------
+  // TEST 1: Dedicated UNSUBSCRIBE_SECRET Fail-Closed Enforcement
+  // --------------------------------------------------------------------------
+  console.log("Test 1: Dedicated UNSUBSCRIBE_SECRET fail-closed enforcement...");
+  {
+    const origSecret = process.env.UNSUBSCRIBE_SECRET;
+    const origServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const origCronSecret = process.env.CRON_SECRET;
+    const origAdminSecret = process.env.ADMIN_SECRET;
+
+    try {
+      delete process.env.UNSUBSCRIBE_SECRET;
+      process.env.SUPABASE_SERVICE_ROLE_KEY = "mock_service_key_that_must_be_ignored";
+      process.env.CRON_SECRET = "mock_cron_secret_that_must_be_ignored";
+      process.env.ADMIN_SECRET = "mock_admin_secret_that_must_be_ignored";
+
+      // 1. Must throw (fail closed) without fallback
+      assert.throws(
+        () => getUnsubscribeSecret(),
+        /Missing required UNSUBSCRIBE_SECRET/,
+        "getUnsubscribeSecret must throw immediately when UNSUBSCRIBE_SECRET is missing"
+      );
+
+      // 2. Setting UNSUBSCRIBE_SECRET restores functionality
+      process.env.UNSUBSCRIBE_SECRET = "dedicated_secret_val_123456789";
+      assert.strictEqual(getUnsubscribeSecret(), "dedicated_secret_val_123456789");
+    } finally {
+      process.env.UNSUBSCRIBE_SECRET = origSecret || TEST_UNSUBSCRIBE_SECRET;
+      process.env.SUPABASE_SERVICE_ROLE_KEY = origServiceKey;
+      process.env.CRON_SECRET = origCronSecret;
+      process.env.ADMIN_SECRET = origAdminSecret;
+    }
+
+    console.log("  -> [PASS-LOCAL] Dedicated UNSUBSCRIBE_SECRET fail-closed enforcement verified.\n");
+  }
 
   // --------------------------------------------------------------------------
-  // TEST 1: HMAC Token Generation & Tamper Rejection
+  // TEST 2: HMAC Token Generation & Tamper Rejection
   // --------------------------------------------------------------------------
-  console.log("Test 1: HMAC token generation, structure, and tamper rejection...");
+  console.log("Test 2: HMAC token generation, structure, and tamper rejection...");
   {
     const email = "Candidate.John@Example.COM";
-    const token = await generateUnsubscribeToken(email, "digest", 30, testSecret);
+    const token = await generateUnsubscribeToken(email, "digest", 30, TEST_UNSUBSCRIBE_SECRET);
 
     assert.ok(typeof token === "string", "Token must be a string");
     assert.ok(token.includes("."), "Token must contain payload and signature separated by dot");
 
     // 1. Valid token succeeds
-    const verified = await verifyUnsubscribeToken(token, testSecret);
+    const verified = await verifyUnsubscribeToken(token, TEST_UNSUBSCRIBE_SECRET);
     assert.strictEqual(verified.valid, true, "Valid token must verify successfully");
     if (verified.valid) {
       assert.strictEqual(verified.email, "candidate.john@example.com", "Email must be normalized to lowercase");
@@ -185,7 +243,7 @@ async function runUnsubscribeTests() {
     // 2. Tampered signature fails
     const [payloadPart, sigPart] = token.split(".");
     const tamperedSig = sigPart.slice(0, -2) + (sigPart.endsWith("a") ? "b" : "a");
-    const tamperedSigResult = await verifyUnsubscribeToken(`${payloadPart}.${tamperedSig}`, testSecret);
+    const tamperedSigResult = await verifyUnsubscribeToken(`${payloadPart}.${tamperedSig}`, TEST_UNSUBSCRIBE_SECRET);
     assert.strictEqual(tamperedSigResult.valid, false, "Tampered signature must be rejected");
     assert.ok(tamperedSigResult.reason.includes("Invalid token signature"), "Reason indicates signature failure");
 
@@ -193,7 +251,7 @@ async function runUnsubscribeTests() {
     const tamperedPayload = Buffer.from(
       JSON.stringify({ email: "victim@example.com", topic: "digest", iat: Date.now(), exp: Date.now() + 10000 })
     ).toString("base64url");
-    const tamperedPayloadResult = await verifyUnsubscribeToken(`${tamperedPayload}.${sigPart}`, testSecret);
+    const tamperedPayloadResult = await verifyUnsubscribeToken(`${tamperedPayload}.${sigPart}`, TEST_UNSUBSCRIBE_SECRET);
     assert.strictEqual(tamperedPayloadResult.valid, false, "Tampered payload with old signature must be rejected");
 
     // 4. Expired token fails
@@ -205,42 +263,42 @@ async function runUnsubscribeTests() {
     };
     const expSer = Buffer.from(JSON.stringify(expiredPayload)).toString("base64url");
     const crypto = await import("crypto");
-    const expSig = crypto.createHmac("sha256", testSecret).update(expSer).digest("base64url");
-    const expiredResult = await verifyUnsubscribeToken(`${expSer}.${expSig}`, testSecret);
+    const expSig = crypto.createHmac("sha256", TEST_UNSUBSCRIBE_SECRET).update(expSer).digest("base64url");
+    const expiredResult = await verifyUnsubscribeToken(`${expSer}.${expSig}`, TEST_UNSUBSCRIBE_SECRET);
     assert.strictEqual(expiredResult.valid, false, "Expired token must be rejected");
     assert.ok(expiredResult.reason.includes("expired"), "Reason indicates expiration");
 
     // 5. Malformed tokens fail
-    assert.strictEqual((await verifyUnsubscribeToken("not-a-token", testSecret)).valid, false);
-    assert.strictEqual((await verifyUnsubscribeToken("", testSecret)).valid, false);
-    assert.strictEqual((await verifyUnsubscribeToken("foo.bar.baz", testSecret)).valid, false);
+    assert.strictEqual((await verifyUnsubscribeToken("not-a-token", TEST_UNSUBSCRIBE_SECRET)).valid, false);
+    assert.strictEqual((await verifyUnsubscribeToken("", TEST_UNSUBSCRIBE_SECRET)).valid, false);
+    assert.strictEqual((await verifyUnsubscribeToken("foo.bar.baz", TEST_UNSUBSCRIBE_SECRET)).valid, false);
 
     console.log("  -> [PASS-LOCAL] HMAC token generation and tamper rejection verified.\n");
   }
 
   // --------------------------------------------------------------------------
-  // TEST 2: RFC 8058 Header Generation & URL Formats
+  // TEST 3: RFC 8058 Header Generation & URL Formats
   // --------------------------------------------------------------------------
-  console.log("Test 2: RFC 8058 List-Unsubscribe and List-Unsubscribe-Post headers...");
+  console.log("Test 3: RFC 8058 List-Unsubscribe and List-Unsubscribe-Post headers...");
   {
     const email = "subscriber@example.com";
-    const headers = await getUnsubscribeHeaders(email, "digest", "https://careermonke.com", testSecret);
+    const headers = await getUnsubscribeHeaders(email, "digest", "https://careermonke.com", TEST_UNSUBSCRIBE_SECRET);
 
     assert.ok(headers["List-Unsubscribe"], "Must produce List-Unsubscribe header");
     assert.ok(headers["List-Unsubscribe"].startsWith("<https://careermonke.com/api/email/unsubscribe?token="), "Must enclose HTTPS URL in angle brackets");
     assert.ok(headers["List-Unsubscribe"].endsWith(">"), "Must end with angle bracket per RFC 2369 / 8058");
     assert.strictEqual(headers["List-Unsubscribe-Post"], "List-Unsubscribe=One-Click", "Must have List-Unsubscribe-Post header");
 
-    const rawUrl = await generateUnsubscribeUrl(email, "marketing", "https://careermonke.com", testSecret);
+    const rawUrl = await generateUnsubscribeUrl(email, "marketing", "https://careermonke.com", TEST_UNSUBSCRIBE_SECRET);
     assert.ok(rawUrl.includes("/api/email/unsubscribe?token="), "URL must point to unsubscribe API endpoint");
 
     console.log("  -> [PASS-LOCAL] RFC 8058 headers verified.\n");
   }
 
   // --------------------------------------------------------------------------
-  // TEST 3: Route Handlers (GET & POST) and Database Persistence
+  // TEST 4: GET Confirmation Page vs POST Suppression (Next.js & Netlify)
   // --------------------------------------------------------------------------
-  console.log("Test 3: Route handler GET/POST execution and database persistence...");
+  console.log("Test 4: GET confirmation page with button vs POST suppression execution...");
   {
     const db = createMockDb();
     const mockClient = createMockSupabase(db);
@@ -250,50 +308,88 @@ async function runUnsubscribeTests() {
     const validToken = await generateUnsubscribeToken(email, "digest");
 
     // A: GET /api/email/unsubscribe?token=...
-    const getReq = new Request(`https://careermonke.com/api/email/unsubscribe?token=${encodeURIComponent(validToken)}`, {
-      method: "GET",
-    });
+    // Must render minimal HTML confirmation page with an Unsubscribe form button.
+    // Must NOT write to database or suppress email (protects against scanner pre-fetching).
+    const getReq = new Request(
+      `https://careermonke.com/api/email/unsubscribe?token=${encodeURIComponent(validToken)}`,
+      { method: "GET" }
+    );
     const getRes = await unsubscribeGet(getReq);
     assert.strictEqual(getRes.status, 200, "GET with valid token must return 200");
-    const getJson = await getRes.json();
-    assert.strictEqual(getJson.ok, true);
-    assert.strictEqual(getJson.email, "user.to.unsubscribe@domain.com");
+    const getContentType = getRes.headers.get("content-type") || "";
+    assert.ok(getContentType.includes("text/html"), "GET response must be text/html");
+    const getHtml = await getRes.text();
+    assert.ok(getHtml.includes("<button"), "GET must render a button element");
+    assert.ok(getHtml.includes('type="submit"'), "Button must be inside submit form");
+    assert.ok(getHtml.includes('method="POST"'), "Form must target POST method");
+    assert.ok(getHtml.includes("user.to.unsubscribe@domain.com"), "HTML must indicate recipient email");
 
-    // Verify row was persisted in email_suppressions
-    const suppressedRow = db.emailSuppressions.get("user.to.unsubscribe@domain.com");
-    assert.ok(suppressedRow, "Suppression row must exist in database");
-    assert.strictEqual(suppressedRow?.email, "user.to.unsubscribe@domain.com");
-    assert.strictEqual(suppressedRow?.reason, "unsubscribe");
+    // Critical assertion: GET must NOT write to email_suppressions!
+    assert.strictEqual(
+      db.emailSuppressions.get("user.to.unsubscribe@domain.com"),
+      undefined,
+      "GET must NOT perform suppression or modify database"
+    );
 
-    // B: POST /api/email/unsubscribe (RFC 8058 One-Click)
-    const email2 = "second.subscriber@domain.com";
-    const validToken2 = await generateUnsubscribeToken(email2, "marketing");
-    const postReq = new Request(`https://careermonke.com/api/email/unsubscribe?token=${encodeURIComponent(validToken2)}`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ token: validToken2 }),
-    });
+    // B: POST /api/email/unsubscribe (RFC 8058 One-Click POST)
+    // Only POST performs the suppression!
+    const postReq = new Request(
+      `https://careermonke.com/api/email/unsubscribe?token=${encodeURIComponent(validToken)}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ token: validToken }),
+      }
+    );
     const postRes = await unsubscribePost(postReq);
     assert.strictEqual(postRes.status, 200, "POST with valid token must return 200");
     const postJson = await postRes.json();
     assert.strictEqual(postJson.ok, true);
     assert.strictEqual(postJson.unsubscribed, true);
 
-    const suppressedRow2 = db.emailSuppressions.get("second.subscriber@domain.com");
-    assert.ok(suppressedRow2, "Second suppression row must exist in database");
-    assert.strictEqual(suppressedRow2?.reason, "unsubscribe");
+    // Critical assertion: POST MUST write to email_suppressions
+    const suppressedRow = db.emailSuppressions.get("user.to.unsubscribe@domain.com");
+    assert.ok(suppressedRow, "Suppression row must exist in database after POST");
+    assert.strictEqual(suppressedRow?.email, "user.to.unsubscribe@domain.com");
+    assert.strictEqual(suppressedRow?.reason, "unsubscribe");
 
-    // C: Negative: Tampered token to route returns 400
-    const tamperedToken = validToken + "_corrupted";
-    const badGetReq = new Request(`https://careermonke.com/api/email/unsubscribe?token=${encodeURIComponent(tamperedToken)}`, {
-      method: "GET",
+    // C: Netlify Function parity check: GET renders button without DB write, POST suppresses
+    const emailNetlify = "netlify.user@domain.com";
+    const tokenNetlify = await generateUnsubscribeToken(emailNetlify, "marketing");
+
+    const netlifyGetRes = await netlifyUnsubscribeHandler({
+      httpMethod: "GET",
+      queryStringParameters: { token: tokenNetlify },
+      headers: {},
     });
+    assert.strictEqual(netlifyGetRes.statusCode, 200);
+    assert.ok(netlifyGetRes.body.includes("<button"), "Netlify GET renders button");
+    assert.strictEqual(
+      db.emailSuppressions.get(emailNetlify),
+      undefined,
+      "Netlify GET must not modify database"
+    );
+
+    // Netlify POST suppresses
+    const netlifyPostRes = await netlifyUnsubscribeHandler({
+      httpMethod: "POST",
+      queryStringParameters: { token: tokenNetlify },
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: tokenNetlify }),
+    });
+    assert.strictEqual(netlifyPostRes.statusCode, 200);
+    assert.ok(db.emailSuppressions.has(emailNetlify), "Netlify POST must record suppression");
+
+    // D: Negative: Tampered token to route returns 400
+    const tamperedToken = validToken + "_corrupted";
+    const badGetReq = new Request(
+      `https://careermonke.com/api/email/unsubscribe?token=${encodeURIComponent(tamperedToken)}`,
+      { method: "GET" }
+    );
     const badGetRes = await unsubscribeGet(badGetReq);
     assert.strictEqual(badGetRes.status, 400, "Tampered token must return 400 Bad Request");
 
-    // D: Negative: Missing token to route returns 400
+    // E: Negative: Missing token to route returns 400
     const missingReq = new Request("https://careermonke.com/api/email/unsubscribe", {
       method: "GET",
     });
@@ -301,13 +397,86 @@ async function runUnsubscribeTests() {
     assert.strictEqual(missingRes.status, 400, "Missing token must return 400 Bad Request");
 
     delete (globalThis as any).__mockSupabaseClient;
-    console.log("  -> [PASS-LOCAL] Route handlers and persistence to email_suppressions verified.\n");
+    console.log("  -> [PASS-LOCAL] GET confirmation page with button vs POST suppression verified.\n");
   }
 
   // --------------------------------------------------------------------------
-  // TEST 4: Digest Sender Suppression Skip Verification
+  // TEST 5: Plain UNIQUE Constraint Migration (20261105d) & Real SQL Semantics
   // --------------------------------------------------------------------------
-  console.log("Test 4: Digest sender skips suppressed addresses...");
+  console.log("Test 5: Migration 20261105d & plain UNIQUE constraint SQL semantics...");
+  {
+    const migrationPath = path.resolve(
+      __dirname,
+      "../supabase/migrations/20261105d_email_suppressions_unique_constraint.sql"
+    );
+    assert.ok(fs.existsSync(migrationPath), "Migration file 20261105d must exist on disk");
+    const migrationSql = fs.readFileSync(migrationPath, "utf-8");
+
+    // 1. Verifies plain UNIQUE constraint DDL on public.email_suppressions(email)
+    assert.ok(
+      /add\s+constraint\s+email_suppressions_email_key\s+unique\s*\(\s*email\s*\)/i.test(migrationSql),
+      "Migration must define a plain UNIQUE constraint on public.email_suppressions(email)"
+    );
+
+    // 2. Verifies rollback instructions block
+    assert.ok(
+      migrationSql.includes("ROLLBACK INSTRUCTIONS"),
+      "Migration must include rollback instructions block"
+    );
+    assert.ok(
+      migrationSql.includes("alter table public.email_suppressions drop constraint if exists email_suppressions_email_key"),
+      "Rollback instructions must specify dropping email_suppressions_email_key"
+    );
+
+    // 3. Verifies verification query
+    assert.ok(
+      migrationSql.includes("VERIFICATION QUERY"),
+      "Migration must include verification query block"
+    );
+
+    // 4. Verifies onConflict: 'email' write path semantics
+    const failedEventsSource = fs.readFileSync(
+      path.resolve(__dirname, "../src/lib/events/failedEvents.ts"),
+      "utf-8"
+    );
+    assert.ok(
+      failedEventsSource.includes('{ onConflict: "email" }'),
+      "recordEmailSuppression must retain onConflict: 'email' write path"
+    );
+
+    // 5. Test real SQL semantics if live test database connection is supported
+    const liveUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const liveKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (liveUrl && liveKey && !liveUrl.includes("szakevhxhwpeskidvtfs")) {
+      const { createClient } = await import("@supabase/supabase-js");
+      const client = createClient(liveUrl, liveKey, { auth: { persistSession: false } });
+      const testEmail = `sql-test-${Date.now()}@careermonke.test`;
+
+      const insert1 = await client.from("email_suppressions").upsert(
+        { email: testEmail, reason: "unsubscribe", updated_at: new Date().toISOString() },
+        { onConflict: "email" }
+      );
+      assert.strictEqual(insert1.error, null, "Live upsert 1 must succeed");
+
+      const insert2 = await client.from("email_suppressions").upsert(
+        { email: testEmail, reason: "bounce", updated_at: new Date().toISOString() },
+        { onConflict: "email" }
+      );
+      assert.strictEqual(insert2.error, null, "Live upsert 2 with onConflict 'email' must update existing record without error");
+
+      await client.from("email_suppressions").delete().eq("email", testEmail);
+      console.log("  -> [PASS-LOCAL] Live SQL PostgreSQL onConflict 'email' unique constraint verified.");
+    } else {
+      console.log("  -> [PASS-LOCAL] Offline SQL constraint DDL structure and onConflict 'email' contract verified.");
+    }
+
+    console.log("  -> [PASS-LOCAL] Migration and real SQL semantics verified.\n");
+  }
+
+  // --------------------------------------------------------------------------
+  // TEST 6: Digest Sender Suppression Skip Verification
+  // --------------------------------------------------------------------------
+  console.log("Test 6: Digest sender skips suppressed addresses...");
   {
     // A: Daily Candidate Digest Cron skips suppressed user
     const db = createMockDb();
@@ -337,8 +506,6 @@ async function runUnsubscribeTests() {
       },
     ];
 
-    // Suppressed candidate should be skipped, active candidate should be evaluated
-    // (In dry-run or mock environment, proves suppression condition skips iteration)
     const { isEmailSuppressed } = await import("../src/lib/events/failedEvents");
     const check1 = await isEmailSuppressed(mockClient, suppressedCandidate);
     assert.strictEqual(check1, true, "Suppressed candidate must be recognized as suppressed");
@@ -389,9 +556,9 @@ async function runUnsubscribeTests() {
   }
 
   // --------------------------------------------------------------------------
-  // TEST 5: Marketing Digest Headers vs Transactional Email Untouched
+  // TEST 7: Marketing Digest Headers vs Transactional Email Untouched
   // --------------------------------------------------------------------------
-  console.log("Test 5: Marketing/digest emails contain headers; transactional emails remain untouched...");
+  console.log("Test 7: Marketing/digest emails contain headers; transactional emails remain untouched...");
   {
     // A: Digest email content includes unsubscribe link in footer and headers
     const sampleRows = [{ email: "test@user.com", created_at: "2026-11-05T10:00:00Z" }];
@@ -437,9 +604,9 @@ async function runUnsubscribeTests() {
   }
 
   // --------------------------------------------------------------------------
-  // TEST 6: Negative Control Subprocess Exit Verification
+  // TEST 8: Negative Control Subprocess Exit Verification
   // --------------------------------------------------------------------------
-  console.log("Test 6: Subprocess negative control (exits code 1 on invalid conditions)...");
+  console.log("Test 8: Subprocess negative control (exits code 1 on invalid conditions)...");
   {
     const sub = spawnSync("npx", ["tsx", "scripts/test-email-unsubscribe.ts", "--negative-control"], {
       stdio: "pipe",
@@ -451,7 +618,7 @@ async function runUnsubscribeTests() {
   }
 
   console.log("--------------------------------------------------------------------------------");
-  console.log("ALL 6 EMAIL ONE-CLICK UNSUBSCRIBE TEST SUITES PASSED [PASS-LOCAL]");
+  console.log("ALL 8 EMAIL ONE-CLICK UNSUBSCRIBE TEST SUITES PASSED [PASS-LOCAL]");
   console.log("--------------------------------------------------------------------------------\n");
 }
 

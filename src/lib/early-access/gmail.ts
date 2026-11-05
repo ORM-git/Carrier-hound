@@ -1047,9 +1047,15 @@ export async function runEarlyAccessDigestCron(options?: {
   }
 
   // 7. Send ONE digest email via Google Apps Script mail route
-  const { getUnsubscribeHeaders, generateUnsubscribeUrl } = await import("@/lib/email/unsubscribe");
-  const unsubscribeHeaders = await getUnsubscribeHeaders(notifyEmail, "digest");
-  const unsubscribeUrl = await generateUnsubscribeUrl(notifyEmail, "digest");
+  let unsubscribeHeaders: { "List-Unsubscribe": string; "List-Unsubscribe-Post": string } | undefined;
+  let unsubscribeUrl: string | undefined;
+  try {
+    const { getUnsubscribeHeaders, generateUnsubscribeUrl } = await import("@/lib/email/unsubscribe");
+    unsubscribeHeaders = await getUnsubscribeHeaders(notifyEmail, "digest");
+    unsubscribeUrl = await generateUnsubscribeUrl(notifyEmail, "digest");
+  } catch (err: any) {
+    safeWarn(`Unable to generate unsubscribe headers: ${err?.message}`);
+  }
   const digestContent = buildOwnerDigestEmailContent(newRows, unsubscribeUrl);
   const dispatchResult = await dispatchAppsScriptMail({
     url: appsScriptConfig.url,
@@ -1063,12 +1069,14 @@ export async function runEarlyAccessDigestCron(options?: {
       body: digestContent.textBody,
       textBody: digestContent.textBody,
       htmlBody: digestContent.htmlBody,
-      headers: {
-        "List-Unsubscribe": unsubscribeHeaders["List-Unsubscribe"],
-        "List-Unsubscribe-Post": unsubscribeHeaders["List-Unsubscribe-Post"],
-      },
-      listUnsubscribe: unsubscribeHeaders["List-Unsubscribe"],
-      listUnsubscribePost: unsubscribeHeaders["List-Unsubscribe-Post"],
+      headers: unsubscribeHeaders
+        ? {
+            "List-Unsubscribe": unsubscribeHeaders["List-Unsubscribe"],
+            "List-Unsubscribe-Post": unsubscribeHeaders["List-Unsubscribe-Post"],
+          }
+        : undefined,
+      listUnsubscribe: unsubscribeHeaders?.["List-Unsubscribe"],
+      listUnsubscribePost: unsubscribeHeaders?.["List-Unsubscribe-Post"],
     },
     timeoutMs: APPS_SCRIPT_TIMEOUT_MS,
   });

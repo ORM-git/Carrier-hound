@@ -2,8 +2,8 @@
  * src/lib/email/unsubscribe.ts
  *
  * Cryptographic HMAC signed-token one-click email unsubscribe flow (RFC 8058).
- * Handles token generation, tamper verification, header production, and database
- * suppression recording in public.email_suppressions.
+ * Handles token generation, tamper verification, header production, HTML confirmation
+ * rendering, and database suppression recording in public.email_suppressions.
  *
  * Edge runtime and browser compatible using standard Web Crypto API.
  */
@@ -22,20 +22,17 @@ export type TokenVerificationResult =
   | { valid: false; reason: string };
 
 /**
- * Resolves the server HMAC signing secret from environment hierarchy.
+ * Resolves the server HMAC signing secret from environment.
+ * Requires dedicated UNSUBSCRIBE_SECRET; fails closed (throws) if missing.
  */
 export function getUnsubscribeSecret(envOverrides?: Record<string, any>): string {
-  const secret =
-    envOverrides?.UNSUBSCRIBE_SECRET ||
-    process.env.UNSUBSCRIBE_SECRET ||
-    envOverrides?.CRON_SECRET ||
-    process.env.CRON_SECRET ||
-    envOverrides?.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    envOverrides?.ADMIN_SECRET ||
-    process.env.ADMIN_SECRET ||
-    "careermonke_unsubscribe_secure_hmac_default_secret_key_2026";
-  return secret;
+  const secret = envOverrides?.UNSUBSCRIBE_SECRET || process.env.UNSUBSCRIBE_SECRET;
+  if (!secret || typeof secret !== "string" || secret.trim() === "") {
+    throw new Error(
+      "Missing required UNSUBSCRIBE_SECRET environment variable for email unsubscribe token signing (fail closed)."
+    );
+  }
+  return secret.trim();
 }
 
 /**
@@ -147,6 +144,7 @@ export async function generateUnsubscribeToken(
 /**
  * Verifies an HMAC-SHA256 signed unsubscribe token.
  * Rejects tampered, malformed, or expired tokens using constantTimeEqual.
+ * Fails closed if UNSUBSCRIBE_SECRET is missing.
  */
 export async function verifyUnsubscribeToken(
   token: string,
@@ -166,7 +164,13 @@ export async function verifyUnsubscribeToken(
     return { valid: false, reason: "Incomplete token components" };
   }
 
-  const secret = customSecret || getUnsubscribeSecret();
+  let secret: string;
+  try {
+    secret = customSecret || getUnsubscribeSecret();
+  } catch (err: any) {
+    return { valid: false, reason: err?.message || "Missing UNSUBSCRIBE_SECRET" };
+  }
+
   const expectedSig = await computeHmacSha256Base64Url(serialized, secret);
 
   if (!constantTimeEqual(signature, expectedSig)) {
@@ -282,4 +286,119 @@ export async function processUnsubscribe(
     email: verification.email,
     topic: verification.topic,
   };
+}
+
+/**
+ * Safely escapes HTML special characters.
+ */
+export function escapeHtml(str: string): string {
+  return String(str || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/**
+ * Minimal confirmation page HTML rendered on GET requests.
+ * Displays a button inside a POST form so only deliberate user interaction triggers unsubscribe.
+ */
+export function renderUnsubscribeConfirmationHtml(params: {
+  email: string;
+  topic: string;
+  token: string;
+  postUrl?: string;
+}): string {
+  const emailEsc = escapeHtml(params.email);
+  const topicEsc = escapeHtml(params.topic);
+  const tokenEsc = escapeHtml(params.token);
+  const postUrl = escapeHtml(params.postUrl || "/api/email/unsubscribe");
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Unsubscribe Confirmation | CareerMonke</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0b0f19; color: #f8fafc; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 16px; box-sizing: border-box; }
+    .card { background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 32px; max-width: 440px; width: 100%; text-align: center; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5); }
+    h1 { font-size: 20px; font-weight: 600; margin: 0 0 12px; color: #ffffff; }
+    p { font-size: 14px; color: #9ca3af; margin: 0 0 24px; line-height: 1.5; }
+    .btn { display: inline-block; width: 100%; padding: 12px 20px; background: #ef4444; color: #ffffff; font-size: 14px; font-weight: 600; border: none; border-radius: 8px; cursor: pointer; transition: background 0.2s; box-sizing: border-box; }
+    .btn:hover { background: #dc2626; }
+    .footer { margin-top: 20px; font-size: 12px; color: #6b7280; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Confirm Unsubscribe</h1>
+    <p>Click the button below to unsubscribe <strong>${emailEsc}</strong> from CareerMonke <strong>${topicEsc}</strong> emails.</p>
+    <form method="POST" action="${postUrl}">
+      <input type="hidden" name="token" value="${tokenEsc}" />
+      <button type="submit" class="btn">Unsubscribe</button>
+    </form>
+    <div class="footer">You will no longer receive recurring emails from CareerMonke.</div>
+  </div>
+</body>
+</html>`;
+}
+
+/**
+ * Minimal success confirmation page HTML rendered on successful browser POST.
+ */
+export function renderUnsubscribeSuccessHtml(params: {
+  email?: string;
+  topic?: string;
+  message?: string;
+}): string {
+  const msg = escapeHtml(params.message || "You have been successfully unsubscribed.");
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Unsubscribed | CareerMonke</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0b0f19; color: #f8fafc; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 16px; box-sizing: border-box; }
+    .card { background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 32px; max-width: 440px; width: 100%; text-align: center; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5); }
+    h1 { font-size: 20px; font-weight: 600; margin: 0 0 12px; color: #10b981; }
+    p { font-size: 14px; color: #9ca3af; margin: 0; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Unsubscribed Successfully</h1>
+    <p>${msg}</p>
+  </div>
+</body>
+</html>`;
+}
+
+/**
+ * Minimal error page HTML rendered on invalid token / missing token.
+ */
+export function renderUnsubscribeErrorHtml(errorMessage: string): string {
+  const msg = escapeHtml(errorMessage || "The unsubscribe link is invalid or has expired.");
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Invalid Unsubscribe Link | CareerMonke</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0b0f19; color: #f8fafc; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 16px; box-sizing: border-box; }
+    .card { background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 32px; max-width: 440px; width: 100%; text-align: center; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5); }
+    h1 { font-size: 20px; font-weight: 600; margin: 0 0 12px; color: #f87171; }
+    p { font-size: 14px; color: #9ca3af; margin: 0; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Unable to Unsubscribe</h1>
+    <p>${msg}</p>
+  </div>
+</body>
+</html>`;
 }

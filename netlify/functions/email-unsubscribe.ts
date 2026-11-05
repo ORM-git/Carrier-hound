@@ -1,7 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
 import { buildCorsHeaders, handleCorsPreflight } from "./_cors";
-import { processUnsubscribe, verifyUnsubscribeToken } from "../../src/lib/email/unsubscribe";
-import { recordEmailSuppression } from "../../src/lib/events/failedEvents";
+import {
+  verifyUnsubscribeToken,
+  processUnsubscribe,
+  renderUnsubscribeConfirmationHtml,
+  renderUnsubscribeSuccessHtml,
+  renderUnsubscribeErrorHtml,
+} from "../../src/lib/email/unsubscribe";
 
 const CORS_OPTIONS = {
   allowedMethods: "GET, POST, OPTIONS",
@@ -9,6 +14,9 @@ const CORS_OPTIONS = {
 };
 
 function getSupabaseAdmin() {
+  if ((globalThis as any).__mockSupabaseClient) {
+    return (globalThis as any).__mockSupabaseClient;
+  }
   const supabaseUrl =
     process.env.NEXT_PUBLIC_SUPABASE_URL ||
     process.env.SUPABASE_URL ||
@@ -30,6 +38,9 @@ export async function handler(event: any) {
   if (preflight) return preflight;
 
   const corsHeaders = buildCorsHeaders(event, CORS_OPTIONS);
+  const acceptHeader = event.headers?.accept || event.headers?.Accept || "";
+  const prefersHtml =
+    acceptHeader.includes("text/html") && !acceptHeader.includes("application/json");
 
   if (event.httpMethod !== "GET" && event.httpMethod !== "POST") {
     return {
@@ -40,10 +51,59 @@ export async function handler(event: any) {
   }
 
   try {
-    // 1. Extract token from queryStringParameters or body
+    // ------------------------------------------------------------------------
+    // GET: Render confirmation page with button; DO NOT perform suppression
+    // ------------------------------------------------------------------------
+    if (event.httpMethod === "GET") {
+      const token = event.queryStringParameters?.token;
+      if (!token) {
+        return {
+          statusCode: 400,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "text/html; charset=utf-8",
+          },
+          body: renderUnsubscribeErrorHtml("Missing required 'token' parameter."),
+        };
+      }
+
+      const verification = await verifyUnsubscribeToken(token);
+      if (!verification.valid) {
+        return {
+          statusCode: 400,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "text/html; charset=utf-8",
+          },
+          body: renderUnsubscribeErrorHtml(
+            `This unsubscribe link is invalid or has expired: ${verification.reason}`
+          ),
+        };
+      }
+
+      const html = renderUnsubscribeConfirmationHtml({
+        email: verification.email,
+        topic: verification.topic,
+        token,
+        postUrl: "/api/email/unsubscribe",
+      });
+
+      return {
+        statusCode: 200,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "text/html; charset=utf-8",
+        },
+        body: html,
+      };
+    }
+
+    // ------------------------------------------------------------------------
+    // POST: Perform actual suppression (RFC 8058 One-Click / user confirmation)
+    // ------------------------------------------------------------------------
     let token = event.queryStringParameters?.token;
 
-    if (!token && event.body && event.httpMethod === "POST") {
+    if (!token && event.body) {
       try {
         const parsed = JSON.parse(event.body);
         token = parsed?.token;
@@ -54,6 +114,16 @@ export async function handler(event: any) {
     }
 
     if (!token) {
+      if (prefersHtml) {
+        return {
+          statusCode: 400,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "text/html; charset=utf-8",
+          },
+          body: renderUnsubscribeErrorHtml("Missing required 'token' parameter."),
+        };
+      }
       return {
         statusCode: 400,
         headers: corsHeaders,
@@ -61,29 +131,39 @@ export async function handler(event: any) {
       };
     }
 
-    // 2. Verify token
-    const verification = await verifyUnsubscribeToken(token);
-    if (!verification.valid) {
+    const supabaseAdmin = getSupabaseAdmin();
+    const result = await processUnsubscribe(supabaseAdmin, token);
+
+    if (!result.ok) {
+      if (prefersHtml) {
+        return {
+          statusCode: result.status,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "text/html; charset=utf-8",
+          },
+          body: renderUnsubscribeErrorHtml(result.message),
+        };
+      }
       return {
-        statusCode: 400,
+        statusCode: result.status,
         headers: corsHeaders,
-        body: JSON.stringify({ ok: false, error: `Unsubscribe failed: ${verification.reason}` }),
+        body: JSON.stringify({ ok: false, error: result.message }),
       };
     }
 
-    // 3. Connect Supabase Admin and record suppression
-    const supabaseAdmin = getSupabaseAdmin();
-    const result = await recordEmailSuppression(
-      supabaseAdmin,
-      verification.email,
-      "unsubscribe"
-    );
-
-    if (!result.ok) {
+    if (prefersHtml) {
       return {
-        statusCode: 500,
-        headers: corsHeaders,
-        body: JSON.stringify({ ok: false, error: result.error || "Failed to persist suppression" }),
+        statusCode: 200,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "text/html; charset=utf-8",
+        },
+        body: renderUnsubscribeSuccessHtml({
+          email: result.email,
+          topic: result.topic,
+          message: result.message,
+        }),
       };
     }
 
@@ -93,12 +173,22 @@ export async function handler(event: any) {
       body: JSON.stringify({
         ok: true,
         unsubscribed: true,
-        message: `Successfully unsubscribed from ${verification.topic} emails.`,
-        email: verification.email,
-        topic: verification.topic,
+        message: result.message,
+        email: result.email,
+        topic: result.topic,
       }),
     };
   } catch (err: any) {
+    if (prefersHtml) {
+      return {
+        statusCode: 500,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "text/html; charset=utf-8",
+        },
+        body: renderUnsubscribeErrorHtml(err?.message || "Internal server error"),
+      };
+    }
     return {
       statusCode: 500,
       headers: corsHeaders,

@@ -1,13 +1,19 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/ai/serviceHandler";
-import { processUnsubscribe } from "@/lib/email/unsubscribe";
+import {
+  verifyUnsubscribeToken,
+  processUnsubscribe,
+  renderUnsubscribeConfirmationHtml,
+  renderUnsubscribeSuccessHtml,
+  renderUnsubscribeErrorHtml,
+} from "@/lib/email/unsubscribe";
 
 export const runtime = "edge";
 
 /**
  * GET /api/email/unsubscribe?token=<signed_token>
- * One-click unsubscribe endpoint via browser link click.
- * No login required; cryptographically verified via HMAC token.
+ * Renders a minimal confirmation page with an unsubscribe button.
+ * Does NOT perform suppression on GET (protects against email scanner pre-fetching).
  */
 export async function GET(req: Request) {
   try {
@@ -15,53 +21,63 @@ export async function GET(req: Request) {
     const token = url.searchParams.get("token");
 
     if (!token) {
-      return NextResponse.json(
-        { ok: false, error: "Missing required 'token' parameter." },
-        { status: 400 }
-      );
+      const errorHtml = renderUnsubscribeErrorHtml("Missing required 'token' parameter.");
+      return new Response(errorHtml, {
+        status: 400,
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      });
     }
 
-    let supabaseAdmin: any;
-    try {
-      supabaseAdmin = getSupabaseAdminClient(undefined, true);
-    } catch (_err: any) {
-      return NextResponse.json(
-        { ok: false, error: "Database configuration unavailable." },
-        { status: 500 }
+    const verification = await verifyUnsubscribeToken(token);
+    if (!verification.valid) {
+      const errorHtml = renderUnsubscribeErrorHtml(
+        `This unsubscribe link is invalid or has expired: ${verification.reason}`
       );
+      return new Response(errorHtml, {
+        status: 400,
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      });
     }
 
-    const result = await processUnsubscribe(supabaseAdmin, token);
+    // Render minimal confirmation page with form button targeting POST
+    const html = renderUnsubscribeConfirmationHtml({
+      email: verification.email,
+      topic: verification.topic,
+      token,
+      postUrl: "/api/email/unsubscribe",
+    });
 
-    return NextResponse.json(
-      {
-        ok: result.ok,
-        message: result.message,
-        email: result.email,
-        topic: result.topic,
-        error: result.ok ? undefined : result.message,
-      },
-      { status: result.status }
-    );
+    return new Response(html, {
+      status: 200,
+      headers: { "Content-Type": "text/html; charset=utf-8" },
+    });
   } catch (err: any) {
-    return NextResponse.json(
-      { ok: false, error: err?.message || "Internal unsubscribe error." },
-      { status: 500 }
+    const errorHtml = renderUnsubscribeErrorHtml(
+      err?.message || "Internal server error rendering unsubscribe confirmation."
     );
+    return new Response(errorHtml, {
+      status: 500,
+      headers: { "Content-Type": "text/html; charset=utf-8" },
+    });
   }
 }
 
 /**
  * POST /api/email/unsubscribe
- * RFC 8058 One-Click Unsubscribe endpoint (List-Unsubscribe=One-Click).
- * Email user-agents execute automated POST with token in query or body.
+ * Performs the actual email suppression:
+ * - RFC 8058 One-Click Unsubscribe (List-Unsubscribe=One-Click from email client).
+ * - Human submission of the confirmation form from the GET page.
  */
 export async function POST(req: Request) {
+  const acceptHeader = req.headers.get("accept") || "";
+  const prefersHtml =
+    acceptHeader.includes("text/html") && !acceptHeader.includes("application/json");
+
   try {
     const url = new URL(req.url);
     let token = url.searchParams.get("token");
 
-    // Also support token passed in JSON body or form-data body
+    // Extract token from request body if not in query params
     if (!token) {
       const contentType = req.headers.get("content-type") || "";
       if (contentType.includes("application/json")) {
@@ -69,7 +85,10 @@ export async function POST(req: Request) {
           const body = await req.json();
           token = body?.token;
         } catch {}
-      } else if (contentType.includes("application/x-www-form-urlencoded")) {
+      } else if (
+        contentType.includes("application/x-www-form-urlencoded") ||
+        contentType.includes("multipart/form-data")
+      ) {
         try {
           const text = await req.text();
           const params = new URLSearchParams(text);
@@ -79,6 +98,15 @@ export async function POST(req: Request) {
     }
 
     if (!token) {
+      if (prefersHtml) {
+        return new Response(
+          renderUnsubscribeErrorHtml("Missing required 'token' parameter."),
+          {
+            status: 400,
+            headers: { "Content-Type": "text/html; charset=utf-8" },
+          }
+        );
+      }
       return NextResponse.json(
         { ok: false, error: "Missing required 'token' parameter." },
         { status: 400 }
@@ -89,6 +117,15 @@ export async function POST(req: Request) {
     try {
       supabaseAdmin = getSupabaseAdminClient(undefined, true);
     } catch (_err: any) {
+      if (prefersHtml) {
+        return new Response(
+          renderUnsubscribeErrorHtml("Database configuration unavailable."),
+          {
+            status: 500,
+            headers: { "Content-Type": "text/html; charset=utf-8" },
+          }
+        );
+      }
       return NextResponse.json(
         { ok: false, error: "Database configuration unavailable." },
         { status: 500 }
@@ -97,18 +134,54 @@ export async function POST(req: Request) {
 
     const result = await processUnsubscribe(supabaseAdmin, token);
 
+    if (!result.ok) {
+      if (prefersHtml) {
+        return new Response(renderUnsubscribeErrorHtml(result.message), {
+          status: result.status,
+          headers: { "Content-Type": "text/html; charset=utf-8" },
+        });
+      }
+      return NextResponse.json(
+        { ok: false, error: result.message },
+        { status: result.status }
+      );
+    }
+
+    // Success response
+    if (prefersHtml) {
+      return new Response(
+        renderUnsubscribeSuccessHtml({
+          email: result.email,
+          topic: result.topic,
+          message: result.message,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "text/html; charset=utf-8" },
+        }
+      );
+    }
+
     return NextResponse.json(
       {
-        ok: result.ok,
-        unsubscribed: result.ok,
+        ok: true,
+        unsubscribed: true,
         message: result.message,
         email: result.email,
         topic: result.topic,
-        error: result.ok ? undefined : result.message,
       },
-      { status: result.status }
+      { status: 200 }
     );
   } catch (err: any) {
+    if (prefersHtml) {
+      return new Response(
+        renderUnsubscribeErrorHtml(err?.message || "Internal unsubscribe error."),
+        {
+          status: 500,
+          headers: { "Content-Type": "text/html; charset=utf-8" },
+        }
+      );
+    }
     return NextResponse.json(
       { ok: false, error: err?.message || "Internal unsubscribe error." },
       { status: 500 }
