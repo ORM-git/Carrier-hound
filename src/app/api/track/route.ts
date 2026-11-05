@@ -6,6 +6,9 @@ import { extractToken } from "@/lib/admin/auth";
 
 export const runtime = "edge";
 
+const MAX_TRACK_PAYLOAD_BYTES = 16384; // 16 KB size cap
+
+const ALLOWED_METRIC_NAMES = new Set(["LCP", "INP", "CLS", "TTFB", "FCP"]);
 
 async function sha256Hex16(input: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -42,12 +45,22 @@ async function getSessionUserId(req: Request): Promise<string | null> {
 
 export async function POST(req: Request) {
   try {
+    // 1. Size cap check via Content-Length header (if present)
+    const contentLength = req.headers.get("content-length");
+    if (contentLength) {
+      const cl = parseInt(contentLength, 10);
+      if (!Number.isNaN(cl) && cl > MAX_TRACK_PAYLOAD_BYTES) {
+        return new NextResponse(null, { status: 204 });
+      }
+    }
+
     const isLegacy =
       process.env.NODE_ENV === "test" &&
       process.env.__CAREERMONKE_LEGACY_RATE_LIMIT === "true";
 
     const clientIp = getClientIpFromRequest(req);
 
+    // 2. Shared rate limiting
     if (!isLegacy) {
       const ipLimit = await checkSharedRateLimit(
         `track:ip:${clientIp}`,
@@ -79,46 +92,105 @@ export async function POST(req: Request) {
       }
     }
 
-    const body = await req.json().catch(() => ({}));
-    const { path, referrer, eventType, metric } = body;
-
-    // Handle Core Web Vitals telemetry events
-    if (eventType === "web-vitals") {
-      if (
-        !path ||
-        typeof path !== "string" ||
-        !path.startsWith("/") ||
-        path.length > 200 ||
-        path.includes("?") ||
-        path.includes("#")
-      ) {
-        return NextResponse.json({ ok: false, error: "Invalid path" }, { status: 400 });
-      }
-
-      if (!metric || typeof metric !== "object") {
-        return NextResponse.json({ ok: false, error: "Invalid metric" }, { status: 400 });
-      }
-
-      const { name, value, rating, navigationType } = metric;
-      const allowedMetrics = ["LCP", "INP", "CLS", "TTFB", "FCP"];
-      if (!name || typeof name !== "string" || !allowedMetrics.includes(name)) {
-        return NextResponse.json({ ok: false, error: "Invalid metric name" }, { status: 400 });
-      }
-
-      if (typeof value !== "number" || !Number.isFinite(value)) {
-        return NextResponse.json({ ok: false, error: "Invalid metric value" }, { status: 400 });
-      }
-
-      if (rating && (typeof rating !== "string" || rating.length > 50)) {
-        return NextResponse.json({ ok: false, error: "Invalid rating" }, { status: 400 });
-      }
-
-      if (navigationType && (typeof navigationType !== "string" || navigationType.length > 50)) {
-        return NextResponse.json({ ok: false, error: "Invalid navigationType" }, { status: 400 });
-      }
-
-      return NextResponse.json({ ok: true, eventType: "web-vitals" });
+    // 3. Read body text and enforce body size cap
+    const rawBody = await req.text().catch(() => "");
+    if (!rawBody) {
+      return new NextResponse(null, { status: 204 });
     }
+
+    const byteLength = new TextEncoder().encode(rawBody).length;
+    if (byteLength > MAX_TRACK_PAYLOAD_BYTES) {
+      return new NextResponse(null, { status: 204 });
+    }
+
+    let body: any = null;
+    try {
+      body = JSON.parse(rawBody);
+    } catch {
+      return new NextResponse(null, { status: 204 });
+    }
+
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return new NextResponse(null, { status: 204 });
+    }
+
+    const { eventType } = body;
+
+    // 4. Handle Core Web Vitals telemetry events
+    if (eventType === "web-vitals") {
+      const route = body.route || body.path || body.metric?.route || body.metric?.path;
+
+      if (
+        !route ||
+        typeof route !== "string" ||
+        !route.startsWith("/") ||
+        route.length > 200 ||
+        route.includes("?") ||
+        route.includes("#")
+      ) {
+        return new NextResponse(null, { status: 204 });
+      }
+
+      const metric = body.metric;
+      const name = metric?.name || body.name;
+
+      if (!name || typeof name !== "string" || !ALLOWED_METRIC_NAMES.has(name)) {
+        return new NextResponse(null, { status: 204 });
+      }
+
+      const value = metric?.value !== undefined ? metric.value : body.value;
+      if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+        return new NextResponse(null, { status: 204 });
+      }
+
+      const rating = metric?.rating !== undefined ? metric.rating : body.rating;
+      if (rating !== undefined && rating !== null) {
+        if (typeof rating !== "string" || rating.length > 50) {
+          return new NextResponse(null, { status: 204 });
+        }
+      }
+
+      const navigationType =
+        metric?.navigationType !== undefined
+          ? metric.navigationType
+          : body.navigationType !== undefined
+          ? body.navigationType
+          : metric?.navigation_type !== undefined
+          ? metric.navigation_type
+          : body.navigation_type;
+
+      if (navigationType !== undefined && navigationType !== null) {
+        if (typeof navigationType !== "string" || navigationType.length > 50) {
+          return new NextResponse(null, { status: 204 });
+        }
+      }
+
+      // Insert into web_vitals table via service role (strictly zero user identifiers)
+      try {
+        const mockAdmin = (globalThis as any).__mockSupabaseClient;
+        const supabaseAdmin = mockAdmin || getSupabaseAdminClient(undefined, true);
+        if (supabaseAdmin?.from) {
+          const { error } = await supabaseAdmin.from("web_vitals").insert({
+            name,
+            value,
+            rating: rating || null,
+            route,
+            navigation_type: navigationType || null,
+            created_at: new Date().toISOString(),
+          });
+          if (error && error.code !== "PGRST205") {
+            console.warn("[web-vitals] Insert error:", error.message);
+          }
+        }
+      } catch {
+        // Fail silently
+      }
+
+      return NextResponse.json({ ok: true, eventType: "web-vitals" }, { status: 200 });
+    }
+
+    // 5. Handle Standard Page View events
+    const { path, referrer } = body;
 
     if (!path || typeof path !== "string" || !path.startsWith("/") || path.length > 200) {
       return NextResponse.json({ ok: false, error: "Invalid path" }, { status: 400 });
@@ -152,7 +224,7 @@ export async function POST(req: Request) {
     });
 
     return NextResponse.json({ ok: true });
-  } catch (err: any) {
+  } catch {
     // Fail silently to never break client page experience
     return NextResponse.json({ ok: true, fallback: true });
   }
