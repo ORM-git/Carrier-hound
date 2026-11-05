@@ -83,12 +83,9 @@ export default function RootLayout({
         {connectionHints.map((origin) => (
           <link key={`dns-prefetch-${origin}`} rel="dns-prefetch" href={origin} />
         ))}
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{
-            __html: JSON.stringify(jsonLd),
-          }}
-        />
+        <script type="application/ld+json">
+          {JSON.stringify(jsonLd)}
+        </script>
       </head>
       <body className="font-sans antialiased text-[#09090B] bg-white min-h-screen flex flex-col selection:bg-blue-100 selection:text-blue-900 overflow-x-hidden w-full max-w-full">
         <a
