@@ -1,0 +1,17 @@
+{
+  "maxWarnings": 305,
+  "description": "ESLint warning baseline for existing codebase. Any new violations exceed this cap and fail the build.",
+  "warningCountsByRule": {
+    "@typescript-eslint/no-unused-vars": 183,
+    "jsx-a11y/label-has-associated-control": 68,
+    "jsx-a11y/no-static-element-interactions": 16,
+    "jsx-a11y/click-events-have-key-events": 14,
+    "react-hooks/exhaustive-deps": 12,
+    "@next/next/no-img-element": 5,
+    "react/no-unescaped-entities": 2,
+    "jsx-a11y/no-noninteractive-tabindex": 2,
+    "jsx-a11y/no-noninteractive-element-to-interactive-role": 1,
+    "jsx-a11y/no-autofocus": 1,
+    "jsx-a11y/heading-has-content": 1
+  }
+}
