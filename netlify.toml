@@ -64,6 +64,12 @@
   force = true
 
 [[redirects]]
+  from = "/api/email/unsubscribe"
+  to = "/.netlify/functions/email-unsubscribe"
+  status = 200
+  force = true
+
+[[redirects]]
   from = "/job-search"
   to = "/jobs"
   status = 301

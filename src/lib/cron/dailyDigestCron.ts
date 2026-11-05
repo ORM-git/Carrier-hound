@@ -169,6 +169,15 @@ export async function runDailyDigestCron(options: {
 
     // 4. For each user, compute match scores and construct daily digest
     for (const item of candidateProfiles) {
+      // Check email suppression: skip candidates who unsubscribed or are blocked
+      if (item.profile.email && supabase) {
+        const { isEmailSuppressed } = await import("../events/failedEvents");
+        const isSuppressed = await isEmailSuppressed(supabase, item.profile.email);
+        if (isSuppressed) {
+          continue;
+        }
+      }
+
       usersProcessedCount++;
       const userMatches: Array<{
         jobId: string;
