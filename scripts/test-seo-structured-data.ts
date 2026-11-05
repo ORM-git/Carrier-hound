@@ -17,6 +17,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import assert from "node:assert";
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import JsonLd from "../src/components/seo/JsonLd";
 import {
   getRootStructuredData,
   getConnectionHints,
@@ -166,24 +169,76 @@ async function main() {
   passedChecks += 2;
 
   // ---------------------------------------------------------------------------
-  // SECTION 6: Root Layout Static Mounting Verification
+  // SECTION 6: Server-Render JSON-LD Component & Parse Script Body
   // ---------------------------------------------------------------------------
-  console.log("\n--- Section 6: Root Layout Static Head Mounting ---");
+  console.log("\n--- Section 6: Server-Render JSON-LD Component & Script Body JSON Parsing ---");
+
+  // 6a. Server-render default <JsonLd />
+  const renderedMarkup = renderToStaticMarkup(React.createElement(JsonLd));
+  assert.ok(renderedMarkup.startsWith("<script"), "JsonLd component must render a <script> element");
+  assert.ok(renderedMarkup.includes('type="application/ld+json"'), "JsonLd must specify type=\"application/ld+json\"");
+
+  const scriptMatch = renderedMarkup.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/i);
+  assert.ok(scriptMatch && scriptMatch[1], "Must extract script body from server-rendered JsonLd markup");
+  const scriptBody = scriptMatch[1];
+
+  // 6b. JSON.parse the server-rendered script body
+  let parsedFromScript: any;
+  try {
+    parsedFromScript = JSON.parse(scriptBody);
+    console.log("✓ Successfully parsed JSON from server-rendered <JsonLd /> script body.");
+    passedChecks++;
+  } catch (err: any) {
+    console.error("❌ Failed to JSON.parse server-rendered script body:", err.message);
+    process.exit(1);
+  }
+
+  assert.strictEqual(parsedFromScript["@context"], "https://schema.org", "Parsed script JSON must have @context https://schema.org");
+  assert.ok(Array.isArray(parsedFromScript["@graph"]), "Parsed script JSON must contain @graph array");
+  assert.strictEqual(parsedFromScript["@graph"].length, 2, "Parsed script JSON must contain 2 entities");
+  const scriptOrg = parsedFromScript["@graph"].find((item: any) => item["@type"] === "Organization");
+  const scriptWebSite = parsedFromScript["@graph"].find((item: any) => item["@type"] === "WebSite");
+  assert.strictEqual(scriptOrg?.name, "CareerMonke", "Organization name in parsed script must match");
+  assert.strictEqual(scriptWebSite?.name, "CareerMonke", "WebSite name in parsed script must match");
+  console.log("✓ Server-rendered JSON-LD contains valid Schema.org Organization and WebSite graph.");
+  passedChecks++;
+
+  // 6c. Verify XSS safety: '<' characters are strictly unicode-escaped as '\u003c' in script body
+  const customXssData = {
+    ...rawData,
+    "@graph": [
+      {
+        ...rawData["@graph"][0],
+        name: "CareerMonke <script>alert(1)</script>",
+      },
+      rawData["@graph"][1],
+    ],
+  };
+  const xssMarkup = renderToStaticMarkup(React.createElement(JsonLd, { data: customXssData }));
+  const xssMatch = xssMarkup.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/i);
+  assert.ok(xssMatch && xssMatch[1], "Must extract script body from XSS test markup");
+  const xssBody = xssMatch[1];
+
+  assert.ok(!xssBody.includes("<"), "Server-rendered script body must NOT contain raw '<' character (must be unicode-escaped as \\u003c)");
+  assert.ok(xssBody.includes("\\u003c"), "Server-rendered script body must contain unicode-escaped '\\u003c'");
+  const parsedXss = JSON.parse(xssBody);
+  assert.strictEqual(
+    parsedXss["@graph"][0].name,
+    "CareerMonke <script>alert(1)</script>",
+    "JSON.parse must correctly decode unicode escape '\\u003c' back to '<'"
+  );
+  console.log("✓ Server-rendered script body strictly escapes '<' as '\\u003c' for XSS safety (decoded back via JSON.parse).");
+  passedChecks++;
+
+  // 6d. Verify RootLayout integration and untouched landing/stats/testimonials
   const layoutPath = path.join(process.cwd(), "src", "app", "layout.tsx");
   const layoutContent = fs.readFileSync(layoutPath, "utf-8");
-
-  assert.ok(layoutContent.includes("<head>"), "RootLayout must render a <head> element");
-  assert.ok(layoutContent.includes("application/ld+json"), "RootLayout head must mount JSON-LD script");
+  assert.ok(layoutContent.includes("<JsonLd"), "RootLayout head must mount <JsonLd /> component");
   assert.ok(layoutContent.includes('rel="preconnect"'), "RootLayout head must render preconnect link tags");
   assert.ok(layoutContent.includes('rel="dns-prefetch"'), "RootLayout head must render dns-prefetch link tags");
-  assert.ok(layoutContent.includes("getRootStructuredData"), "RootLayout must import getRootStructuredData");
-  assert.ok(layoutContent.includes("getConnectionHints"), "RootLayout must import getConnectionHints");
-
-  // Verify that landing page, testimonials, and stats components were NOT touched
   assert.ok(!layoutContent.includes("TestimonialsList"), "RootLayout must not import or modify testimonials");
-  console.log("✓ RootLayout statically mounts connection hints and JSON-LD script inside <head>.");
-  console.log("✓ Landing page components, testimonials, and stats untouched.");
-  passedChecks += 2;
+  console.log("✓ RootLayout mounts <JsonLd /> and connection hints; landing page, testimonials, and stats untouched.");
+  passedChecks++;
 
   console.log("\n================================================================================");
   console.log(`SEO STRUCTURED DATA & CONNECTION HINTS SUITE: ALL ${passedChecks} CHECKS PASSED (PASS-LOCAL)`);

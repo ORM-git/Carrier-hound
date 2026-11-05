@@ -9,7 +9,8 @@ import PageViewTracker from "@/components/analytics/PageViewTracker";
 import WebVitalsTracker from "@/components/analytics/WebVitalsTracker";
 import BlockedAccountNotice from "@/components/auth/BlockedAccountNotice";
 import CookieNotice from "@/components/CookieNotice";
-import { getRootStructuredData, getConnectionHints } from "@/lib/seo/structuredData";
+import { getConnectionHints } from "@/lib/seo/structuredData";
+import JsonLd from "@/components/seo/JsonLd";
 
 
 const inter = Inter({
@@ -71,7 +72,6 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const jsonLd = getRootStructuredData();
   const connectionHints = getConnectionHints();
 
   return (
@@ -83,12 +83,7 @@ export default function RootLayout({
         {connectionHints.map((origin) => (
           <link key={`dns-prefetch-${origin}`} rel="dns-prefetch" href={origin} />
         ))}
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{
-            __html: JSON.stringify(jsonLd),
-          }}
-        />
+        <JsonLd />
       </head>
       <body className="font-sans antialiased text-[#09090B] bg-white min-h-screen flex flex-col selection:bg-blue-100 selection:text-blue-900 overflow-x-hidden w-full max-w-full">
         <a
