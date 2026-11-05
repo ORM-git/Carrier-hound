@@ -112,8 +112,17 @@ async function runSuite() {
   const srcFiles = walkFiles(path.resolve(process.cwd(), "src"));
   const dangerousSinkHits: string[] = [];
 
+  // Narrow allowlist: ONLY the dedicated JSON-LD component file is permitted to use
+  // dangerouslySetInnerHTML to emit structured data, provided it unicode-escapes '<' to '\u003c'.
+  const ALLOWED_DOM_SINK_FILES = new Set([
+    "src/components/seo/JsonLd.tsx",
+  ]);
+
   for (const file of srcFiles) {
     const rel = path.relative(process.cwd(), file).replace(/\\/g, "/");
+    if (ALLOWED_DOM_SINK_FILES.has(rel)) {
+      continue;
+    }
     const content = fs.readFileSync(file, "utf8");
     const lines = content.split(/\r?\n/);
     lines.forEach((line, idx) => {
