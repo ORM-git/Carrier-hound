@@ -71,6 +71,9 @@ export default function HomePage() {
       {/* (3) PRODUCT FEATURES SECTION */}
       <LandingFeaturesSection />
 
+      {/* (5) GLOBAL COVERAGE SECTION (Interactive Tour Globe + Stats) */}
+      <LandingGlobeFeatureSection />
+
       {/* FEEDBACK / TESTIMONIALS (First Wall - Leftward Runner) */}
       <Testimonials />
 
@@ -78,9 +81,6 @@ export default function HomePage() {
       <section className="pt-24 pb-12 lg:pt-28 lg:pb-[90px] max-w-content mx-auto px-6">
         <LandingComparisonSection />
       </section>
-
-      {/* (5) GLOBAL COVERAGE SECTION (Interactive Tour Globe + Stats) */}
-      <LandingGlobeFeatureSection />
 
       {/* (6) CTA BAND (Blue #2563EB, Free Preview style) */}
       <section className="bg-[#2563EB] text-white py-16 sm:py-20 lg:py-24 relative overflow-hidden">
