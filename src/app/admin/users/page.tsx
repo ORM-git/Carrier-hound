@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useState, useCallback } from "react";
 import {
-  Users,
   Search,
   RefreshCw,
   Crown,
@@ -64,7 +63,7 @@ export default function AdminUsersPage() {
     return {};
   };
 
-  const fetchUsers = async (q: string = "") => {
+  const fetchUsers = useCallback(async (q: string = "") => {
     setLoading(true);
     try {
       const authHeader = await getAuthHeader();
@@ -80,7 +79,7 @@ export default function AdminUsersPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     // If URL has search query param
@@ -94,7 +93,7 @@ export default function AdminUsersPage() {
       }
     }
     fetchUsers();
-  }, []);
+  }, [fetchUsers]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -491,10 +490,11 @@ export default function AdminUsersPage() {
             </p>
 
             <div className="mb-4">
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
+              <label htmlFor="block-reason-input" className="block text-xs font-semibold text-slate-700 mb-1">
                 Reason for suspension (optional)
               </label>
               <input
+                id="block-reason-input"
                 type="text"
                 aria-label="Reason for suspension (optional)"
                 placeholder="e.g. Terms violation, scraping, suspicious activity"

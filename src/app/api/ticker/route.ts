@@ -353,7 +353,7 @@ export async function GET(req: Request) {
         "Cache-Control": "public, max-age=60, s-maxage=60, stale-while-revalidate=120",
       },
     });
-  } catch (err: any) {
+  } catch (_err: any) {
     return NextResponse.json(
       {
         error: "temporarily unavailable",
