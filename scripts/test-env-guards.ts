@@ -12,6 +12,14 @@
  * Run negative control: npx tsx scripts/test-env-guards.ts --negative-control
  */
 
+process.env.NODE_ENV = "test";
+(globalThis as any).__mockRateLimitClient = {
+  rpc: async () => ({
+    data: { allowed: true, retry_after: 0, current_count: 1 },
+    error: null,
+  }),
+};
+
 const IS_NEGATIVE_CONTROL = process.argv.includes("--negative-control");
 
 interface TestResult {
@@ -280,6 +288,18 @@ async function runSuite() {
           { status: 200, headers: { "Content-Type": "application/json" } }
         );
       }
+      if (url.includes("/rpc/ai_global_budget_reserve")) {
+        return new Response(
+          JSON.stringify({ allowed: true, current_tokens: 100, remaining_tokens: 999900 }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      if (url.includes("/rpc/ai_concurrency_acquire")) {
+        return new Response(
+          JSON.stringify({ allowed: true, lease_id: "mock-lease", current_leases: 1 }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
       return new Response(JSON.stringify({}), { status: 200 });
     };
 
@@ -486,6 +506,18 @@ async function runSuite() {
       if (url.includes("/rest/v1/ai_usage_quotas")) {
         return new Response(
           JSON.stringify([{ count: 0, estimated_tokens: 0 }]),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      if (url.includes("/rpc/ai_global_budget_reserve")) {
+        return new Response(
+          JSON.stringify({ allowed: true, current_tokens: 100, remaining_tokens: 999900 }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      if (url.includes("/rpc/ai_concurrency_acquire")) {
+        return new Response(
+          JSON.stringify({ allowed: true, lease_id: "mock-lease", current_leases: 1 }),
           { status: 200, headers: { "Content-Type": "application/json" } }
         );
       }

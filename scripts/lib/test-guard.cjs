@@ -89,6 +89,7 @@ const SUITE_CLASSIFICATIONS = Object.freeze({
   "scripts/test-global-ai-budget.ts": "offline",
   "scripts/test-error-boundaries.ts": "offline",
   "scripts/test-cover-letter-cache-versioning.ts": "offline",
+  "scripts/test-groq-timeout-circuit-breaker.ts": "offline",
 
   // DB-capable suites: read operations
   "scripts/test-enhanced-scoring.ts": "db-read",

@@ -15,6 +15,11 @@ import { consumeSet, refundSet, QuotaKind } from "@/lib/billing/consume";
 import { checkSharedRateLimit, checkSharedRateLimitStrict } from "@/lib/api/sharedRateLimit";
 import { buildCorsHeaders, handleCorsPreflight } from "../../../netlify/functions/_cors";
 import { isUserApproved } from "@/lib/auth/approval";
+import {
+  GroqCircuitBreaker,
+  groqCircuitBreaker,
+  _resetGroqCircuitBreaker,
+} from "./circuitBreaker";
 
 export interface RateLimitBucket {
   count: number;
@@ -98,14 +103,22 @@ export interface AiServiceDeps {
   getSupabaseAdmin?: () => any;
   supabaseAdmin?: any;
   getServerEntitlement?: typeof getServerEntitlement;
-  callGroq?: (payload: any) => Promise<any>;
+  callGroq?: (payload: any, options?: { signal?: AbortSignal }) => Promise<any>;
   consumeSet?: typeof consumeSet;
   refundSet?: typeof refundSet;
   env?: Record<string, any>;
   isUserApproved?: (supabaseAdmin: any, user: any) => Promise<boolean>;
   rateLimitClient?: any;
   checkSharedRateLimit?: typeof checkSharedRateLimitStrict;
+  circuitBreaker?: GroqCircuitBreaker;
+  groqTimeoutMs?: number;
 }
+
+export {
+  GroqCircuitBreaker,
+  groqCircuitBreaker,
+  _resetGroqCircuitBreaker,
+};
 
 export const IDEMPOTENCY_KEY_REGEX = /^[A-Za-z0-9_.:-]+$/;
 export const IDEMPOTENCY_KEY_MAX_LENGTH = 128;
@@ -592,6 +605,27 @@ export async function executeAiCore(
       };
     }
 
+    // 3B-2. Circuit Breaker Check (fails fast before budget reservation, quota debit, or concurrency lease)
+    const activeBreaker = activeDeps.circuitBreaker || groqCircuitBreaker;
+    const breakerCheck = activeBreaker.canExecute();
+    if (!breakerCheck.allowed) {
+      return {
+        statusCode: 503,
+        body: {
+          error: "AI temporarily busy",
+        },
+        headers: {
+          "Retry-After": "30",
+        },
+      };
+    }
+
+    const releaseProbeIfAny = () => {
+      if (breakerCheck.isProbe) {
+        activeBreaker.releaseProbe();
+      }
+    };
+
     // 3C. Global Daily Token Budget Reservation
     const estimatedTokens = Math.max(1, (payload.estimatedInputTokens || 0) + (payload.maxOutputTokens || 0));
     const globalDailyCap = getAiGlobalDailyTokenCap(activeDeps.env);
@@ -600,6 +634,7 @@ export async function executeAiCore(
 
     if (typeof supabaseAdmin.rpc !== "function") {
       if (process.env.NODE_ENV !== "test" || (!activeDeps.supabaseAdmin && !activeDeps.getSupabaseAdmin)) {
+        releaseProbeIfAny();
         emitBudgetAlert("store_error", "Supabase client missing rpc function");
         return {
           statusCode: 503,
@@ -628,6 +663,7 @@ export async function executeAiCore(
       }
 
       if (reserveErr) {
+        releaseProbeIfAny();
         emitBudgetAlert("store_error", `Budget store RPC error: ${reserveErr.message || reserveErr}`, { error: reserveErr });
         return {
           statusCode: 503,
@@ -643,6 +679,7 @@ export async function executeAiCore(
 
       const row = Array.isArray(reserveData) ? reserveData[0] : reserveData;
       if (!row || typeof row.allowed !== "boolean") {
+        releaseProbeIfAny();
         emitBudgetAlert("store_error", "Budget store returned invalid payload", { reserveData });
         return {
           statusCode: 503,
@@ -657,6 +694,7 @@ export async function executeAiCore(
       }
 
       if (!row.allowed) {
+        releaseProbeIfAny();
         emitBudgetAlert("cap_hit", `Daily AI token budget cap reached (${globalDailyCap} tokens)`, {
           globalDailyCap,
           estimatedTokens,
@@ -710,6 +748,7 @@ export async function executeAiCore(
       const consumeRes = await doConsume(user.id, config.operation as QuotaKind, setConsumeKey);
 
       if (!consumeRes.success) {
+        releaseProbeIfAny();
         await settleBudget(0);
         const isDailyCap = consumeRes.code === "DAILY_LIMIT_REACHED";
         return {
@@ -726,6 +765,7 @@ export async function executeAiCore(
       // we MUST NOT regenerate fresh content or call Groq again.
       // Return the stored result from cache, RPC, or DB without re-calling upstream AI.
       if (consumeRes.alreadyConsumed) {
+        releaseProbeIfAny();
         await settleBudget(0);
         const cached =
           getIdempotentResult(user.id, config.operation, setConsumeKey) ||
@@ -790,6 +830,7 @@ export async function executeAiCore(
       );
 
       if (!quotaResult.allowed) {
+        releaseProbeIfAny();
         await settleBudget(0);
         if (quotaResult.isServiceUnavailable) {
           return {
@@ -834,6 +875,7 @@ export async function executeAiCore(
 
     if (typeof supabaseAdmin.rpc !== "function") {
       if (process.env.NODE_ENV !== "test" || (!activeDeps.supabaseAdmin && !activeDeps.getSupabaseAdmin)) {
+        releaseProbeIfAny();
         emitBudgetAlert("store_error", "Supabase client missing rpc function for concurrency");
         await settleBudget(0);
         await rollbackAllQuotas();
@@ -864,6 +906,7 @@ export async function executeAiCore(
       }
 
       if (leaseErr) {
+        releaseProbeIfAny();
         emitBudgetAlert("store_error", `Concurrency store RPC error: ${leaseErr.message || leaseErr}`, { error: leaseErr });
         await settleBudget(0);
         await rollbackAllQuotas();
@@ -880,6 +923,7 @@ export async function executeAiCore(
       }
 
       if (!leaseAcquired) {
+        releaseProbeIfAny();
         emitBudgetAlert("concurrency_saturated", `AI concurrency limit reached (${maxConcurrency} concurrent leases)`, {
           maxConcurrency,
         });
@@ -901,13 +945,36 @@ export async function executeAiCore(
       hasLease = true;
     }
 
+    const groqTimeoutMs =
+      activeDeps.groqTimeoutMs ??
+      (Number(getRuntimeEnv("GROQ_TIMEOUT_MS", activeDeps.env)) || 25000);
+
+    const abortController = new AbortController();
+    const timeoutHandle = setTimeout(() => {
+      abortController.abort(new Error("AI service request timed out after 25s"));
+    }, groqTimeoutMs);
+
     try {
       // 5. Server-Side Groq API Key Check & Upstream Groq Call
       let groqData: any;
       if (activeDeps.callGroq) {
         try {
-          groqData = await activeDeps.callGroq(payload);
+          const mockCall = activeDeps.callGroq(payload, { signal: abortController.signal });
+          const timeoutPromise = new Promise((_, reject) => {
+            abortController.signal.addEventListener(
+              "abort",
+              () => {
+                const err = new Error("AI service request timed out after 25s");
+                (err as any).name = "AbortError";
+                reject(err);
+              },
+              { once: true }
+            );
+          });
+          groqData = await Promise.race([mockCall, timeoutPromise]);
         } catch (mockErr: any) {
+          clearTimeout(timeoutHandle);
+          activeBreaker.recordFailure();
           console.warn("[AI Service] Error calling mock Groq provider:", mockErr);
           await settleBudget(0);
           await rollbackAllQuotas();
@@ -919,6 +986,8 @@ export async function executeAiCore(
       } else {
         const groqApiKey = getRuntimeEnv("GROQ_API_KEY", activeDeps.env);
         if (!groqApiKey || !groqApiKey.trim()) {
+          clearTimeout(timeoutHandle);
+          releaseProbeIfAny();
           console.error("[AI Service] Missing required environment variable: GROQ_API_KEY");
           await settleBudget(0);
           await rollbackAllQuotas();
@@ -946,8 +1015,11 @@ export async function executeAiCore(
               temperature: payload.temperature,
               ...(payload.jsonMode ? { response_format: { type: "json_object" } } : {}),
             }),
+            signal: abortController.signal,
           });
-        } catch (fetchErr) {
+        } catch (fetchErr: any) {
+          clearTimeout(timeoutHandle);
+          activeBreaker.recordFailure();
           console.warn("[AI Service] Network error calling upstream provider:", fetchErr);
           await settleBudget(0);
           await rollbackAllQuotas();
@@ -958,6 +1030,8 @@ export async function executeAiCore(
         }
 
         if (!groqResponse.ok) {
+          clearTimeout(timeoutHandle);
+          activeBreaker.recordFailure();
           console.warn(`[AI Service] Upstream provider returned status ${groqResponse.status}`);
           await settleBudget(0);
           await rollbackAllQuotas();
@@ -970,6 +1044,8 @@ export async function executeAiCore(
         try {
           groqData = await groqResponse.json();
         } catch (parseErr) {
+          clearTimeout(timeoutHandle);
+          activeBreaker.recordFailure();
           console.warn("[AI Service] Failed to parse upstream provider JSON:", parseErr);
           await settleBudget(0);
           await rollbackAllQuotas();
@@ -980,11 +1056,14 @@ export async function executeAiCore(
         }
       }
 
+      clearTimeout(timeoutHandle);
+
       const content =
         typeof groqData === "string"
           ? groqData
           : groqData?.choices?.[0]?.message?.content ?? groqData?.content ?? groqData?.result;
       if (!content) {
+        activeBreaker.recordFailure();
         await settleBudget(0);
         await rollbackAllQuotas();
         return {
@@ -992,6 +1071,8 @@ export async function executeAiCore(
           body: { error: "AI service returned an empty generation." },
         };
       }
+
+      activeBreaker.recordSuccess();
 
       // Settle actual tokens from Groq response usage field when present, otherwise estimate
       let actualTokens = 0;
@@ -1073,12 +1154,25 @@ export async function executeAiCore(
         body: responsePayload,
       };
     } finally {
+      clearTimeout(timeoutHandle);
       if (hasLease && typeof supabaseAdmin.rpc === "function") {
         try {
           await supabaseAdmin.rpc("ai_concurrency_release", { p_lease_id: leaseId });
           hasLease = false;
         } catch (relErr) {
           console.warn("[AI Service] Error releasing concurrency lease:", relErr);
+        }
+      }
+      if (budgetReserved && typeof supabaseAdmin.rpc === "function") {
+        try {
+          await supabaseAdmin.rpc("ai_global_budget_settle", {
+            p_period: periodDate,
+            p_reserved: estimatedTokens,
+            p_actual: 0,
+          });
+          budgetReserved = false;
+        } catch (setErr) {
+          console.warn("[AI Service] Error settling budget reservation in finally:", setErr);
         }
       }
     }
