@@ -230,7 +230,8 @@ export function buildThankYouEmailContent(): {
 }
 
 export function buildOwnerDigestEmailContent(
-  rows: Array<{ email: string; created_at: string }>
+  rows: Array<{ email: string; created_at: string }>,
+  unsubscribeUrl?: string
 ): {
   subject: string;
   textBody: string;
@@ -248,6 +249,10 @@ export function buildOwnerDigestEmailContent(
     ...rows.map((r, idx) => `${idx + 1}. ${r.email} — ${r.created_at}`),
   ];
 
+  if (unsubscribeUrl) {
+    textLines.push("", `To unsubscribe from digest emails: ${unsubscribeUrl}`);
+  }
+
   const htmlItems = rows
     .map(
       (r) =>
@@ -255,12 +260,19 @@ export function buildOwnerDigestEmailContent(
     )
     .join("");
 
+  const footerHtml = unsubscribeUrl
+    ? `<p style="font-size:11px;color:#64748b;margin-top:24px;border-top:1px solid #e2e8f0;padding-top:12px;">You received this digest email because of your subscription. <a href="${escapeHtml(
+        unsubscribeUrl
+      )}" style="color:#2563eb;text-decoration:underline;">Unsubscribe from daily digests</a>.</p>`
+    : "";
+
   const htmlBody = [
     '<div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.5;color:#0f172a;">',
     `<p><strong>CareerMonke early-access daily digest (${count} signup${
       count === 1 ? "" : "s"
     }):</strong></p>`,
     `<ol>${htmlItems}</ol>`,
+    footerHtml,
     "</div>",
   ].join("");
 
@@ -566,6 +578,7 @@ export async function dispatchAppsScriptMail(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        ...(params.payload?.headers || {}),
       },
       body: JSON.stringify({
         secret: params.secret,
@@ -1034,7 +1047,10 @@ export async function runEarlyAccessDigestCron(options?: {
   }
 
   // 7. Send ONE digest email via Google Apps Script mail route
-  const digestContent = buildOwnerDigestEmailContent(newRows);
+  const { getUnsubscribeHeaders, generateUnsubscribeUrl } = await import("@/lib/email/unsubscribe");
+  const unsubscribeHeaders = await getUnsubscribeHeaders(notifyEmail, "digest");
+  const unsubscribeUrl = await generateUnsubscribeUrl(notifyEmail, "digest");
+  const digestContent = buildOwnerDigestEmailContent(newRows, unsubscribeUrl);
   const dispatchResult = await dispatchAppsScriptMail({
     url: appsScriptConfig.url,
     secret: appsScriptConfig.secret,
@@ -1047,6 +1063,12 @@ export async function runEarlyAccessDigestCron(options?: {
       body: digestContent.textBody,
       textBody: digestContent.textBody,
       htmlBody: digestContent.htmlBody,
+      headers: {
+        "List-Unsubscribe": unsubscribeHeaders["List-Unsubscribe"],
+        "List-Unsubscribe-Post": unsubscribeHeaders["List-Unsubscribe-Post"],
+      },
+      listUnsubscribe: unsubscribeHeaders["List-Unsubscribe"],
+      listUnsubscribePost: unsubscribeHeaders["List-Unsubscribe-Post"],
     },
     timeoutMs: APPS_SCRIPT_TIMEOUT_MS,
   });
