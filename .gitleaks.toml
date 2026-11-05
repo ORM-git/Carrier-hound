@@ -1,0 +1,15 @@
+title = "CareerMonke Gitleaks Allowlist"
+
+[allowlist]
+description = "Allowlist for existing known offline test fixtures and documentation examples"
+paths = [
+  '''(?i)scripts/test-.*''',
+  '''(?i)scripts/lib/.*''',
+  '''(?i)\.env\.example''',
+  '''(?i)security/.*''',
+]
+regexes = [
+  '''(?i)rzp_test_[a-zA-Z0-9_-]+''',
+  '''(?i)whsec_[a-zA-Z0-9_-]+''',
+  '''(?i)eyJhbGciOiJIUzI1Ni[a-zA-Z0-9._-]+''',
+]

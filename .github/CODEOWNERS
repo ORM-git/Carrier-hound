@@ -1,0 +1,7 @@
+# CareerMonke CODEOWNERS
+# Critical infrastructure, database migrations, backend APIs, and CI workflows
+
+supabase/migrations/ @ORM-git
+netlify/functions/   @ORM-git
+src/app/api/         @ORM-git
+.github/workflows/   @ORM-git

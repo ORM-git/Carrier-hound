@@ -1,0 +1,114 @@
+[
+  {
+    "id": "GHSA-h25m-26qc-wcjf",
+    "package": "next",
+    "severity": "high",
+    "source": 1112653,
+    "title": "Next.js HTTP request deserialization can lead to DoS when using insecure React Server Components",
+    "reason": "Next.js 14.2.15 RSC DoS advisory. Unexploitable in CareerMonke due to static export (output: 'export'); no live Node.js React Server Component runtime in production. Scheduled for Next.js 15.5+ upgrade prior to public launch."
+  },
+  {
+    "id": "GHSA-q4gf-8mx6-v5v3",
+    "package": "next",
+    "severity": "high",
+    "source": 1116376,
+    "title": "Next.js has a Denial of Service with Server Components",
+    "reason": "Next.js Server Components DoS. Unexploitable in CareerMonke because the application is built with static export; server components are compiled at build time, not rendered dynamically by a Node server."
+  },
+  {
+    "id": "GHSA-8h8q-6873-q5fj",
+    "package": "next",
+    "severity": "high",
+    "source": 1117931,
+    "title": "Next.js Vulnerable to Denial of Service with Server Components",
+    "reason": "Next.js Server Components DoS. Unexploitable due to static export compilation; dynamic requests are handled by serverless Netlify Functions, not Next.js Node server."
+  },
+  {
+    "id": "GHSA-c4j6-fc7j-m34r",
+    "package": "next",
+    "severity": "high",
+    "source": 1118954,
+    "title": "Next.js vulnerable to server-side request forgery in applications using WebSocket upgrades",
+    "reason": "Next.js SSRF in WebSocket upgrades. CareerMonke static export does not implement or expose Next.js WebSocket upgrade endpoints."
+  },
+  {
+    "id": "GHSA-36qx-fr4f-26g5",
+    "package": "next",
+    "severity": "high",
+    "source": 1118962,
+    "title": "Next.js has a Middleware / Proxy bypass in Pages Router applications using i18n",
+    "reason": "Next.js Pages Router i18n middleware bypass. CareerMonke uses App Router with static export and does not use Pages Router i18n."
+  },
+  {
+    "id": "GHSA-m99w-x7hq-7vfj",
+    "package": "next",
+    "severity": "high",
+    "source": 1124172,
+    "title": "Next.js: Denial of Service in App Router using Server Actions",
+    "reason": "Next.js Server Actions DoS. CareerMonke does not use Next.js Server Actions; dynamic backend functionality is hosted on Netlify Functions."
+  },
+  {
+    "id": "GHSA-89xv-2m56-2m9x",
+    "package": "next",
+    "severity": "high",
+    "source": 1124185,
+    "title": "Next.js: Server-Side Request Forgery in Server Actions on custom servers",
+    "reason": "Next.js SSRF in Server Actions on custom servers. CareerMonke does not deploy a custom Node.js server or use Server Actions."
+  },
+  {
+    "id": "GHSA-p9j2-gv94-2wf4",
+    "package": "next",
+    "severity": "high",
+    "source": 1124193,
+    "title": "Next.js: Server-Side Request Forgery in rewrites via attacker-controlled destination hostname",
+    "reason": "Next.js rewrite SSRF. Rewrites are statically declared in netlify.toml without user-controlled dynamic destination hostnames."
+  },
+  {
+    "id": "GHSA-p293-qw3h-jr36",
+    "package": "next",
+    "severity": "critical",
+    "source": 1193677,
+    "title": "Next.js: Unauthenticated Remote Code Execution on windows-hosted servers",
+    "reason": "Next.js Windows server RCE. CareerMonke production deployments run on Netlify (Linux serverless / static CDN), not Windows server hosting."
+  },
+  {
+    "id": "GHSA-2xp9-vwfh-vxw4",
+    "package": "next",
+    "severity": "critical",
+    "source": 1193733,
+    "title": "Next.js: Unauthenticated Remote Code Execution in Image Optimization API when AVIF files are used",
+    "reason": "Next.js Image Optimization API AVIF RCE. CareerMonke relies on static assets and Netlify Image CDN rather than the vulnerable Next.js dynamic image optimizer server."
+  },
+  {
+    "id": "GHSA-2464-fhr4-w9xw",
+    "package": "next",
+    "severity": "critical",
+    "source": 1242817,
+    "title": "Next.js: Unauthenticated Remote Code Execution in Image Optimization API when SVG files are used",
+    "reason": "Next.js Image Optimization API SVG RCE. CareerMonke is statically exported; self-hosted Next.js image optimization API is disabled and unreachable."
+  },
+  {
+    "id": "GHSA-p3m5-59mp-jv5r",
+    "package": "next",
+    "severity": "high",
+    "source": 1242819,
+    "title": "Next.js: Denial of Service in App Router using Server Actions",
+    "reason": "Next.js Server Actions DoS in App Router. Server Actions are not implemented or enabled in the codebase."
+  },
+  {
+    "id": "GHSA-6g55-p6wh-862q",
+    "package": "postcss",
+    "severity": "high",
+    "source": 1124252,
+    "title": "PostCSS: Arbitrary file read and information disclosure via attacker-controlled sourceMappingURL in CSS comments",
+    "reason": "PostCSS build-time arbitrary file read via sourceMappingURL. PostCSS is a build-time dependency bundled with Next.js; no user-supplied CSS comments are processed in production."
+  },
+  {
+    "id": "GHSA-r28c-9q8g-f849",
+    "package": "postcss",
+    "severity": "high",
+    "source": 1139510,
+    "title": "PostCSS: Path Traversal in Previous Source Map Auto-Loading (sourceMappingURL) leads to Arbitrary .map File Disclosure",
+    "reason": "PostCSS build-time path traversal in sourceMappingURL. Used exclusively during build compilation and not exposed to external runtime user input."
+  }
+]

@@ -135,6 +135,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-web-vitals-analytics.ts", command: "npx tsx scripts/test-web-vitals-analytics.ts", classification: "offline" },
   { name: "scripts/test-failed-events-dead-letter.ts", command: "npx tsx scripts/test-failed-events-dead-letter.ts", classification: "offline" },
   { name: "scripts/test-lint-config.ts", command: "npx tsx scripts/test-lint-config.ts", classification: "offline" },
+  { name: "scripts/test-security-audit-baseline.ts", command: "npx tsx scripts/test-security-audit-baseline.ts", classification: "offline" },
 
   // DB-capable suites: read operations (BLOCKED by default unless authorized on test project)
   { name: "scripts/test-enhanced-scoring.ts", command: "npx tsx scripts/test-enhanced-scoring.ts", classification: "db-read", requiresSupabase: true },
