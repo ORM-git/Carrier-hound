@@ -18,6 +18,8 @@ import {
   replayFailedEvents,
   scrubSensitiveData,
   computeStableEventId,
+  computeEmailHash,
+  resolveSubscriberEmail,
   type FailedEventRecord,
 } from "../src/lib/events/failedEvents";
 import { GET as adminReplayGet, POST as adminReplayPost } from "../src/app/api/admin/replay/route";
@@ -32,6 +34,8 @@ interface MockDb {
   failedEvents: Map<string, FailedEventRecord>;
   webhookEvents: Map<string, any>;
   paymentOrders: Map<string, any>;
+  earlyAccessEmails: Map<string, any>;
+  gmailSendLog: any[];
 }
 
 function createMockDb(): MockDb {
@@ -39,6 +43,8 @@ function createMockDb(): MockDb {
     failedEvents: new Map<string, FailedEventRecord>(),
     webhookEvents: new Map<string, any>(),
     paymentOrders: new Map<string, any>(),
+    earlyAccessEmails: new Map<string, any>(),
+    gmailSendLog: [],
   };
 }
 
@@ -50,21 +56,38 @@ function createMockSupabaseClient(db: MockDb) {
       let filterStatus: string | null = null;
       let filterId: string | null = null;
       let filterLteRetry: string | null = null;
+      let filterEmail: string | null = null;
+      let filterCreatedAt: string | null = null;
+      let filterKind: string | null = null;
+      let filterRecipientEmail: string | null = null;
+      let filterGteSentAt: string | null = null;
+      let isCountHead: boolean = false;
       let limitCount: number = 100;
       let orderCol: string | null = null;
       let orderAsc: boolean = true;
 
       const queryBuilder: any = {
-        select: (_cols?: string) => queryBuilder,
+        select: (_cols?: string, opts?: { count?: string; head?: boolean }) => {
+          if (opts?.head || opts?.count) isCountHead = true;
+          return queryBuilder;
+        },
         eq: (col: string, val: any) => {
           if (col === "source") filterSource = String(val);
           if (col === "event_id") filterEventId = String(val);
           if (col === "status") filterStatus = String(val);
           if (col === "id") filterId = String(val);
+          if (col === "email") filterEmail = String(val);
+          if (col === "created_at") filterCreatedAt = String(val);
+          if (col === "kind") filterKind = String(val);
+          if (col === "recipient_email") filterRecipientEmail = String(val);
           return queryBuilder;
         },
         lte: (col: string, val: any) => {
           if (col === "next_retry_at") filterLteRetry = String(val);
+          return queryBuilder;
+        },
+        gte: (col: string, val: any) => {
+          if (col === "sent_at") filterGteSentAt = String(val);
           return queryBuilder;
         },
         order: (col: string, opts?: { ascending?: boolean }) => {
@@ -90,6 +113,14 @@ function createMockSupabaseClient(db: MockDb) {
           if (table === "webhook_events") {
             if (filterEventId && db.webhookEvents.has(filterEventId)) {
               return { data: { ...db.webhookEvents.get(filterEventId) }, error: null };
+            }
+            return { data: null, error: null };
+          }
+          if (table === "early_access_emails") {
+            for (const item of db.earlyAccessEmails.values()) {
+              if (filterEmail && item.email !== filterEmail) continue;
+              if (filterCreatedAt && item.created_at !== filterCreatedAt) continue;
+              return { data: { ...item }, error: null };
             }
             return { data: null, error: null };
           }
@@ -120,6 +151,12 @@ function createMockSupabaseClient(db: MockDb) {
             } else if (table === "webhook_events") {
               db.webhookEvents.set(r.event_id, r);
               inserted.push(r);
+            } else if (table === "early_access_emails") {
+              db.earlyAccessEmails.set(r.email, r);
+              inserted.push(r);
+            } else if (table === "gmail_send_log") {
+              db.gmailSendLog.push(r);
+              inserted.push(r);
             }
           }
           const resPromise: any = Promise.resolve({ data: inserted, error: null });
@@ -138,6 +175,10 @@ function createMockSupabaseClient(db: MockDb) {
             db.failedEvents.set(key, row);
             return { data: row, error: null };
           }
+          if (table === "early_access_emails") {
+            db.earlyAccessEmails.set(row.email, row);
+            return { data: row, error: null };
+          }
           return { data: null, error: null };
         },
         update: (updates: any) => ({
@@ -145,14 +186,12 @@ function createMockSupabaseClient(db: MockDb) {
             if (table === "failed_events") {
               for (const [key, item] of db.failedEvents.entries()) {
                 if (col === "id" && item.id === val) {
-                  const updated = { ...item, ...updates };
-                  db.failedEvents.set(key, updated);
-                  return { data: updated, error: null };
+                  Object.assign(item, updates);
+                  return { data: item, error: null };
                 }
                 if (col === "event_id" && item.event_id === val) {
-                  const updated = { ...item, ...updates };
-                  db.failedEvents.set(key, updated);
-                  return { data: updated, error: null };
+                  Object.assign(item, updates);
+                  return { data: item, error: null };
                 }
               }
             }
@@ -168,6 +207,23 @@ function createMockSupabaseClient(db: MockDb) {
             if (filterLteRetry) list = list.filter((i) => i.next_retry_at <= filterLteRetry!);
             list = list.slice(0, limitCount);
             return Promise.resolve({ data: list, error: null }).then(resolve, reject);
+          }
+          if (table === "early_access_emails") {
+            let list = Array.from(db.earlyAccessEmails.values());
+            if (filterEmail) list = list.filter((i) => i.email === filterEmail);
+            if (filterCreatedAt) list = list.filter((i) => i.created_at === filterCreatedAt);
+            list = list.slice(0, limitCount);
+            return Promise.resolve({ data: list, error: null }).then(resolve, reject);
+          }
+          if (table === "gmail_send_log") {
+            let list = db.gmailSendLog.slice();
+            if (filterKind) list = list.filter((i) => i.kind === filterKind);
+            if (filterRecipientEmail) list = list.filter((i) => i.recipient_email === filterRecipientEmail);
+            if (filterGteSentAt) list = list.filter((i) => i.sent_at >= filterGteSentAt!);
+            if (isCountHead) {
+              return Promise.resolve({ count: list.length, data: null, error: null }).then(resolve, reject);
+            }
+            return Promise.resolve({ data: list, count: list.length, error: null }).then(resolve, reject);
           }
           return Promise.resolve({ data: [], error: null }).then(resolve, reject);
         },
@@ -207,6 +263,11 @@ async function runSuite() {
     console.log("Triggering deliberate failure via --negative-control-stable-id...");
     // Negative control: divergent IDs for same input must fail assertion
     assert.strictEqual("event_12345", "event_99999", "Negative control stable-id assertion failed as expected");
+  }
+  if (process.argv.includes("--negative-control-mail-replay")) {
+    console.log("Triggering deliberate failure via --negative-control-mail-replay...");
+    // Negative control: un-resolved address during mail replay must fail
+    assert.strictEqual("[REDACTED]", "applicant@careermonke.com", "Negative control mail replay assertion failed as expected");
   }
 
   // --------------------------------------------------------------------------
@@ -564,7 +625,12 @@ async function runSuite() {
   // --------------------------------------------------------------------------
   console.log("Test 7: Negative control verification (subprocess exits non-zero)...");
   {
-    for (const flag of ["--negative-control", "--negative-control-pii", "--negative-control-stable-id"]) {
+    for (const flag of [
+      "--negative-control",
+      "--negative-control-pii",
+      "--negative-control-stable-id",
+      "--negative-control-mail-replay",
+    ]) {
       const sub = spawnSync("npx", ["tsx", "scripts/test-failed-events-dead-letter.ts", flag], {
         stdio: "pipe",
         shell: true,
@@ -666,8 +732,110 @@ async function runSuite() {
     console.log("  -> [PASS-LOCAL] Stable event_id generation and retry upsert verified.\n");
   }
 
+  // --------------------------------------------------------------------------
+  // TEST 9: End-to-End Mail Failure Recording, PII Redaction & Replay Resolution
+  // --------------------------------------------------------------------------
+  console.log("Test 9: End-to-end mail failure recording, non-PII redaction & replay resolution...");
+  {
+    const db = createMockDb();
+    const client = createMockSupabaseClient(db);
+
+    const realSubscriberEmail = "applicant-vip@careermonke.com";
+    const signupCreatedAt = "2026-11-05T09:30:00.000Z";
+
+    // 1. Seed subscriber in early_access_emails table
+    db.earlyAccessEmails.set(realSubscriberEmail, {
+      email: realSubscriberEmail,
+      created_at: signupCreatedAt,
+    });
+
+    // 2. Configure Apps Script env so sendEarlyAccessThankYouEmail attempts dispatch
+    const originalUrl = process.env.APPS_SCRIPT_MAIL_URL;
+    const originalSecret = process.env.APPS_SCRIPT_MAIL_SECRET;
+    const originalFetch = globalThis.fetch;
+
+    process.env.APPS_SCRIPT_MAIL_URL = "https://script.google.com/macros/s/test-mock/exec";
+    process.env.APPS_SCRIPT_MAIL_SECRET = "test-secret-12345";
+
+    try {
+      // Mock fetch: initial send fails (terminal dispatch failure)
+      globalThis.fetch = (async () => {
+        return new Response("busy", { status: 500, headers: { "content-type": "text/plain" } });
+      }) as typeof fetch;
+
+      const { sendEarlyAccessThankYouEmail } = await import("../src/lib/early-access/gmail");
+
+      // Record mail failure via sendEarlyAccessThankYouEmail
+      const initialSendRes = await sendEarlyAccessThankYouEmail({
+        subscriberEmail: realSubscriberEmail,
+        createdAt: signupCreatedAt,
+        supabaseClient: client,
+      });
+
+      assert.strictEqual(initialSendRes.thankYouSent, false, "Initial send must report failure");
+
+      // Assert dead-letter queue recorded the failure
+      assert.strictEqual(db.failedEvents.size, 1, "Exactly one row in failed_events queue");
+      const failedRecord = Array.from(db.failedEvents.values())[0];
+      assert.strictEqual(failedRecord.source, "gmail_notification");
+      assert.strictEqual(failedRecord.status, "pending");
+
+      // CRITICAL ASSERTION: Stored dead-letter payload MUST NOT contain the raw email
+      const payloadString = JSON.stringify(failedRecord.payload);
+      assert.strictEqual(
+        payloadString.includes(realSubscriberEmail),
+        false,
+        "CRITICAL: Raw email address must NEVER be stored in the dead-letter row payload"
+      );
+      assert.strictEqual(failedRecord.payload.recipient, undefined, "payload.recipient must not exist");
+      assert.strictEqual(failedRecord.payload.email, undefined, "payload.email must not exist");
+
+      // Verify non-PII handle is stored in payload
+      const expectedHash = computeEmailHash(realSubscriberEmail);
+      assert.strictEqual(
+        failedRecord.payload.subscriber_handle,
+        expectedHash,
+        "Non-PII subscriber_handle must match computed email hash"
+      );
+
+      // 3. Replay end-to-end: mock fetch now succeeds and records outgoing request bodies
+      const outgoingRequests: Array<{ url: string; body: any }> = [];
+      globalThis.fetch = (async (input: any, init?: any) => {
+        const parsedBody = init?.body ? JSON.parse(init.body) : null;
+        outgoingRequests.push({ url: String(input), body: parsedBody });
+        return new Response("ok", { status: 200, headers: { "content-type": "text/plain" } });
+      }) as typeof fetch;
+
+      // Execute replay
+      const replaySummary = await replayFailedEvents({
+        supabaseClient: client,
+        source: "gmail_notification",
+        force: true,
+      });
+
+      assert.strictEqual(replaySummary.ok, true, "Replay must succeed");
+      assert.strictEqual(replaySummary.replayed, 1, "Exactly one event replayed");
+      const replayedRecord = db.failedEvents.get(`gmail_notification:${failedRecord.event_id}`)!;
+      assert.strictEqual(replayedRecord.status, "replayed", "Event transitioned to 'replayed'");
+
+      // ASSERTION: Send during replay went to the REAL email address resolved from early-access table
+      assert.strictEqual(outgoingRequests.length, 1, "Apps Script fetch was invoked once during replay");
+      assert.strictEqual(
+        outgoingRequests[0].body.email,
+        realSubscriberEmail,
+        "Replay must resolve and dispatch to the REAL subscriber email address from early-access table"
+      );
+
+      console.log("  -> [PASS-LOCAL] End-to-end mail failure recording, non-PII handle, and replay resolution verified.\n");
+    } finally {
+      process.env.APPS_SCRIPT_MAIL_URL = originalUrl;
+      process.env.APPS_SCRIPT_MAIL_SECRET = originalSecret;
+      globalThis.fetch = originalFetch;
+    }
+  }
+
   console.log("--------------------------------------------------------------------------------");
-  console.log("ALL 8 DEAD-LETTER AND REPLAY TEST SUITES PASSED [PASS-LOCAL]");
+  console.log("ALL 9 DEAD-LETTER AND REPLAY TEST SUITES PASSED [PASS-LOCAL]");
   console.log("--------------------------------------------------------------------------------\n");
 }
 

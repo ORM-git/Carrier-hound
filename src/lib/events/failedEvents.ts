@@ -111,6 +111,39 @@ function safeLogWarn(message: string, error?: any): void {
 }
 
 /**
+ * Deterministic 64-bit FNV-1a hash of normalized email address.
+ * Serves as a pseudonymized non-PII handle stored in dead-letter queues.
+ */
+export function computeEmailHash(email: string): string {
+  const norm = String(email || "").trim().toLowerCase();
+  let h1 = 0x811c9dc5;
+  let h2 = 0x84222325;
+  for (let i = 0; i < norm.length; i++) {
+    const code = norm.charCodeAt(i);
+    h1 ^= code;
+    h1 = Math.imul(h1, 0x01000193);
+    h2 ^= code;
+    h2 = Math.imul(h2, 0x01000193);
+  }
+  const hex1 = (h1 >>> 0).toString(16).padStart(8, "0");
+  const hex2 = (h2 >>> 0).toString(16).padStart(8, "0");
+  return `${hex1}${hex2}`;
+}
+
+/**
+ * 32-bit FNV-1a hash for backward compatibility.
+ */
+export function computeLegacyEmailHash(email: string): string {
+  const norm = String(email || "").trim().toLowerCase();
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < norm.length; i++) {
+    hash ^= norm.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16);
+}
+
+/**
  * Generates a stable event_id for digest or mail tasks as a deterministic hash of (type + target + date).
  * Ensures repeat executions on the same date for the same recipient/task upsert into failed_events
  * rather than creating duplicate entries.
@@ -183,7 +216,11 @@ export function scrubSensitiveData(data: any): any {
   if (typeof data === "object") {
     const scrubbed: Record<string, any> = {};
     for (const [key, value] of Object.entries(data)) {
-      if (SENSITIVE_KEY_REGEX.test(key)) {
+      if (
+        SENSITIVE_KEY_REGEX.test(key) &&
+        !key.toLowerCase().endsWith("_hash") &&
+        !key.toLowerCase().endsWith("hash")
+      ) {
         scrubbed[key] = "[REDACTED]";
       } else {
         scrubbed[key] = scrubSensitiveData(value);
@@ -228,7 +265,28 @@ export async function recordFailedEvent(
       ? error
       : JSON.stringify(error || "Unknown error");
 
-  const scrubbedPayload = scrubSensitiveData(payload || {});
+  const normalizedPayload = { ...(payload || {}) };
+  if (source === "gmail_notification") {
+    const rawEmail =
+      normalizedPayload.subscriber_handle ||
+      normalizedPayload.recipient ||
+      normalizedPayload.email ||
+      normalizedPayload.recipient_email;
+
+    if (
+      rawEmail &&
+      typeof rawEmail === "string" &&
+      rawEmail.includes("@") &&
+      !rawEmail.startsWith("[")
+    ) {
+      const emailHash = computeEmailHash(rawEmail);
+      normalizedPayload.subscriber_handle = emailHash;
+      normalizedPayload.subscriber_id = emailHash;
+      normalizedPayload.target_hash = emailHash;
+    }
+  }
+
+  const scrubbedPayload = scrubSensitiveData(normalizedPayload);
   const now = new Date();
   const nowIso = now.toISOString();
 
@@ -367,6 +425,108 @@ export async function recordFailedEvent(
       error: err?.message || "Unknown exception recording failed event",
     };
   }
+}
+
+/**
+ * Resolves the real subscriber email address from public.early_access_emails via service role
+ * using the non-PII handle (hash of email), subscriber id, or event_id.
+ * Ensures dead-letter queue rows never store raw email addresses while enabling safe replay.
+ */
+export async function resolveSubscriberEmail(
+  client: any,
+  event: FailedEventRecord
+): Promise<string | null> {
+  if (!client?.from) return null;
+
+  const payload = event.payload || {};
+  const createdAt = payload.createdAt || payload.created_at;
+  const targetHandle =
+    payload.subscriber_handle ||
+    payload.subscriber_id ||
+    payload.target_hash ||
+    payload.recipient_hash ||
+    payload.email_hash ||
+    payload.emailHash ||
+    payload.handle;
+
+  // 1. Fast path: If createdAt is present, query by created_at (indexed)
+  if (createdAt) {
+    try {
+      const { data: rows, error } = await client
+        .from("early_access_emails")
+        .select("email, created_at")
+        .eq("created_at", createdAt);
+
+      if (!error && Array.isArray(rows) && rows.length > 0) {
+        if (targetHandle) {
+          const match = rows.find((r: any) => {
+            const norm = String(r.email || "").trim().toLowerCase();
+            return (
+              computeEmailHash(norm) === targetHandle ||
+              computeLegacyEmailHash(norm) === targetHandle ||
+              norm === String(targetHandle).trim().toLowerCase()
+            );
+          });
+          if (match) return match.email.trim().toLowerCase();
+        } else if (rows.length === 1) {
+          return rows[0].email.trim().toLowerCase();
+        }
+      }
+    } catch (_) {}
+  }
+
+  // 2. Query early_access_emails table and match against non-PII handle or stable event_id
+  try {
+    const { data: allRows, error } = await client
+      .from("early_access_emails")
+      .select("email, created_at");
+
+    if (!error && Array.isArray(allRows)) {
+      // Pass 2a: match by email hash
+      if (targetHandle) {
+        const match = allRows.find((r: any) => {
+          const norm = String(r.email || "").trim().toLowerCase();
+          return (
+            computeEmailHash(norm) === targetHandle ||
+            computeLegacyEmailHash(norm) === targetHandle ||
+            norm === String(targetHandle).trim().toLowerCase()
+          );
+        });
+        if (match) return match.email.trim().toLowerCase();
+      }
+
+      // Pass 2b: match by stable event_id (thank_you_<hash>)
+      if (event.event_id) {
+        const candidateDates = [
+          createdAt,
+          event.first_failed_at,
+          event.last_attempt_at,
+          new Date().toISOString(),
+        ].filter(Boolean);
+
+        for (const row of allRows) {
+          const norm = String(row.email || "").trim().toLowerCase();
+          for (const d of candidateDates) {
+            if (computeStableEventId("thank_you", norm, d) === event.event_id) {
+              return norm;
+            }
+          }
+        }
+      }
+    }
+  } catch (_) {}
+
+  // 3. Fallback: If an unredacted valid email happens to be present in legacy rows
+  const directCandidate = payload.recipient || payload.email || payload.recipient_email;
+  if (
+    typeof directCandidate === "string" &&
+    directCandidate.includes("@") &&
+    !directCandidate.startsWith("[REDACTED")
+  ) {
+    return directCandidate.trim().toLowerCase();
+  }
+
+  return null;
 }
 
 /**
@@ -538,18 +698,26 @@ export async function replayFailedEvents(options: ReplayOptions = {}): Promise<R
           if (!replaySuccess) replayError = `Digest cron failed with status '${dRes.status}'`;
         }
       } else if (event.source === "gmail_notification") {
-        if (options.notificationHandler) {
-          const nRes = await options.notificationHandler(event.payload);
+        // Resolve real subscriber email address from early-access table via service role
+        const resolvedEmail = await resolveSubscriberEmail(client, event);
+
+        if (!resolvedEmail) {
+          replaySuccess = false;
+          replayError = `Unable to resolve subscriber email for event ${event.event_id} from early-access table`;
+        } else if (options.notificationHandler) {
+          const nRes = await options.notificationHandler({
+            ...event.payload,
+            resolvedEmail,
+            subscriberEmail: resolvedEmail,
+            email: resolvedEmail,
+            recipient: resolvedEmail,
+          });
           replaySuccess = nRes.success;
           if (!replaySuccess) replayError = nRes.error || "Notification handler failed";
         } else {
           const { sendEarlyAccessThankYouEmail } = await import("../early-access/gmail");
-          const subscriberEmail =
-            event.payload?.recipient ||
-            event.payload?.recipient_email ||
-            event.payload?.email;
           const nRes = await sendEarlyAccessThankYouEmail({
-            subscriberEmail,
+            subscriberEmail: resolvedEmail,
             createdAt: event.payload?.createdAt || new Date().toISOString(),
             supabaseClient: client,
             cfEnv: options.cfEnv,

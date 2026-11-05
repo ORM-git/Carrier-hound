@@ -759,15 +759,18 @@ export async function sendEarlyAccessThankYouEmail(params: {
 
   // Terminal failure: record into failed_events dead-letter queue with stable event_id
   try {
-    const { recordFailedEvent, computeStableEventId } = await import("@/lib/events/failedEvents");
+    const { recordFailedEvent, computeStableEventId, computeEmailHash } = await import("@/lib/events/failedEvents");
+    const emailHash = computeEmailHash(normalizedEmail);
     const eventId = computeStableEventId("thank_you", normalizedEmail, validNow);
 
     await recordFailedEvent({
       source: "gmail_notification",
       eventId,
       payload: {
-        recipient: normalizedEmail,
-        email: normalizedEmail,
+        subscriber_handle: emailHash,
+        subscriber_id: emailHash,
+        target_hash: emailHash,
+        email_hash: emailHash,
         createdAt: params.createdAt,
         kind: "thank_you",
       },
