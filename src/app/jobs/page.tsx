@@ -4,7 +4,7 @@ import React, { useState, useMemo, useEffect, useRef, Suspense } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { motion, useReducedMotion, AnimatePresence } from "motion/react";
+import { motion, useReducedMotion } from "motion/react";
 import { getLiveJobs, getLiveJobById, LiveJob, isEarlyApplicant, capJobsPerCompany } from "@/lib/jobs/service";
 import { getAuthUser, getUserPreferences } from "@/lib/auth/session";
 import { getCandidateProfile, calculateProfileCompletion } from "@/lib/resume/storage";
@@ -20,7 +20,6 @@ import {
   isMatchingTrackerJob,
 } from "@/lib/tracker/storage";
 import { getProAccessStatus } from "@/lib/billing/subscription";
-import GuideHeader from "@/components/GuideHeader";
 import Footer from "@/components/Footer";
 import AppIconRail from "@/components/shell/AppIconRail";
 import { useSidebarMode } from "@/lib/sidebar";
@@ -28,7 +27,7 @@ import AppTopBar, { TopBarTab } from "@/components/shell/AppTopBar";
 import JobDetailView from "@/components/jobs/JobDetailView";
 import JobFilterBar, { JobFilterValues } from "@/components/jobs/JobFilterBar";
 import AllFiltersDrawer from "@/components/jobs/AllFiltersDrawer";
-import { COUNTRY_CODE_TO_NAME, matchCountryWithStrictFallback } from "@/lib/countries";
+import { matchCountryWithStrictFallback } from "@/lib/countries";
 import MobileFilterSheet from "@/components/jobs/MobileFilterSheet";
 import { JobCardMenu } from "@/components/jobs/JobCardMenu";
 import { computeFitDiagnostics, FitDiagnosticsResult } from "@/lib/matcher/scoring";
@@ -37,19 +36,13 @@ import {
   Search,
   MapPin,
   Laptop,
-  Building,
   RotateCcw,
-  Globe,
-  SlidersHorizontal,
   X,
-  Check,
   Heart,
   Sparkles,
   Briefcase,
   TrendingUp,
   Clock,
-  Calendar,
-  Award,
   ChevronDown,
   Lock,
   ArrowRight,
