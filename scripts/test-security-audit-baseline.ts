@@ -139,7 +139,18 @@ async function runSuite() {
     validateEntries([{ id: "GHSA-fake-id-1234", reason: "   " }]);
   }, /'reason' must be non-empty/);
 
-  // E. Subprocess negative control (--negative-control exits 1)
+  // E. Empty npm audit output must cause check-security-audit.cjs to exit 1
+  const emptyAuditSub = spawnSync("node", ["-e", `
+    const check = require("./scripts/check-security-audit.cjs");
+    check.runAudit("");
+  `], {
+    stdio: "pipe",
+    encoding: "utf-8",
+  });
+  assert.strictEqual(emptyAuditSub.status, 1, "check-security-audit.cjs must exit 1 on empty audit output");
+  assert.ok(emptyAuditSub.stderr.includes("npm audit output is empty"), "Error message must indicate empty output");
+
+  // F. Subprocess negative control (--negative-control exits 1)
   const sub = spawnSync("npx", ["tsx", "scripts/test-security-audit-baseline.ts", "--negative-control"], {
     stdio: "pipe",
     shell: true,

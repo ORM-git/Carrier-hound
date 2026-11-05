@@ -50,22 +50,26 @@ function loadBaseline() {
   return { entries, allowedIds };
 }
 
-function runAudit() {
+function runAudit(overrideOutput) {
   let auditOutput = "";
-  try {
-    auditOutput = execSync("npm audit --omit=dev --json", {
-      encoding: "utf-8",
-      maxBuffer: 50 * 1024 * 1024,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-  } catch (err) {
-    // npm audit returns exit code 1 when vulnerabilities exist
-    auditOutput = err.stdout ? err.stdout.toString() : "";
+  if (typeof overrideOutput === "string") {
+    auditOutput = overrideOutput;
+  } else {
+    try {
+      auditOutput = execSync("npm audit --omit=dev --json", {
+        encoding: "utf-8",
+        maxBuffer: 50 * 1024 * 1024,
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+    } catch (err) {
+      // npm audit returns exit code 1 when vulnerabilities exist
+      auditOutput = err.stdout ? err.stdout.toString() : "";
+    }
   }
 
   if (!auditOutput.trim()) {
-    console.warn("[AUDIT WARN] Empty npm audit output; proceeding as clean.");
-    return { vulnerabilities: {} };
+    console.error("[AUDIT ERROR] npm audit output is empty or failed to execute; exiting 1.");
+    process.exit(1);
   }
 
   try {
@@ -162,5 +166,6 @@ if (require.main === module) {
 module.exports = {
   loadBaseline,
   extractHighCriticalAdvisories,
+  runAudit,
   BASELINE_PATH,
 };

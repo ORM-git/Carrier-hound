@@ -10,6 +10,4 @@ paths = [
 ]
 regexes = [
   '''(?i)rzp_test_[a-zA-Z0-9_-]+''',
-  '''(?i)whsec_[a-zA-Z0-9_-]+''',
-  '''(?i)eyJhbGciOiJIUzI1Ni[a-zA-Z0-9._-]+''',
 ]
