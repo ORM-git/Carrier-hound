@@ -80,7 +80,45 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json().catch(() => ({}));
-    const { path, referrer } = body;
+    const { path, referrer, eventType, metric } = body;
+
+    // Handle Core Web Vitals telemetry events
+    if (eventType === "web-vitals") {
+      if (
+        !path ||
+        typeof path !== "string" ||
+        !path.startsWith("/") ||
+        path.length > 200 ||
+        path.includes("?") ||
+        path.includes("#")
+      ) {
+        return NextResponse.json({ ok: false, error: "Invalid path" }, { status: 400 });
+      }
+
+      if (!metric || typeof metric !== "object") {
+        return NextResponse.json({ ok: false, error: "Invalid metric" }, { status: 400 });
+      }
+
+      const { name, value, rating, navigationType } = metric;
+      const allowedMetrics = ["LCP", "INP", "CLS", "TTFB", "FCP"];
+      if (!name || typeof name !== "string" || !allowedMetrics.includes(name)) {
+        return NextResponse.json({ ok: false, error: "Invalid metric name" }, { status: 400 });
+      }
+
+      if (typeof value !== "number" || !Number.isFinite(value)) {
+        return NextResponse.json({ ok: false, error: "Invalid metric value" }, { status: 400 });
+      }
+
+      if (rating && (typeof rating !== "string" || rating.length > 50)) {
+        return NextResponse.json({ ok: false, error: "Invalid rating" }, { status: 400 });
+      }
+
+      if (navigationType && (typeof navigationType !== "string" || navigationType.length > 50)) {
+        return NextResponse.json({ ok: false, error: "Invalid navigationType" }, { status: 400 });
+      }
+
+      return NextResponse.json({ ok: true, eventType: "web-vitals" });
+    }
 
     if (!path || typeof path !== "string" || !path.startsWith("/") || path.length > 200) {
       return NextResponse.json({ ok: false, error: "Invalid path" }, { status: 400 });
