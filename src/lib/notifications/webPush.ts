@@ -2,7 +2,7 @@
  * Web Push adapter scaffolding (Backend sheet rank 13, docs/push-notifications.md).
  *
  * Repo-side only: the subscription table migration
- * (20261106e_push_subscriptions.sql) is NOT APPLIED, no service worker or UI
+ * (20261106i_push_subscriptions.sql) is NOT APPLIED, no service worker or UI
  * ships, and no push provider account exists yet. This module fixes the
  * contract the future sender implements so the product decision is the only
  * remaining step.
