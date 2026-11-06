@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { measureRouteBudget } from "@/lib/api/routeBudget";
 import { createClient } from "@supabase/supabase-js";
 import { checkRequiredEnv } from "@/lib/api/envCheck";
 import { getClientIpFromRequest, checkRateLimit } from "@/lib/ai/serviceHandler";
@@ -90,7 +91,7 @@ function sanitizeLogoUrl(rawLogoUrl: string | null | undefined, supabaseUrl?: st
  * Matches companies by company_id where available, with case-insensitive name fallback.
  * Returns logo_url only if it points to the project storage host under /company-logos/.
  */
-export async function GET(req: Request) {
+async function getHandler(req: Request) {
   try {
     if (req) {
       const clientIp = getClientIpFromRequest(req);
@@ -366,4 +367,8 @@ export async function GET(req: Request) {
       }
     );
   }
+}
+
+export async function GET(req: Request) {
+  return measureRouteBudget("/api/ticker", () => getHandler(req));
 }

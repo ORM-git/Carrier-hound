@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { measureRouteBudget } from "@/lib/api/routeBudget";
 import { createClient } from "@supabase/supabase-js";
 import { checkRequiredEnv } from "@/lib/api/envCheck";
 import { getClientIpFromRequest, checkRateLimit } from "@/lib/ai/serviceHandler";
@@ -45,7 +46,7 @@ function getSupabaseAdmin() {
  * - Authenticated + approved callers: Complete live corpus metrics.
  * - Authenticated + unapproved callers: 403 Early access only.
  */
-export async function GET(req: Request) {
+async function getHandler(req: Request) {
   try {
     if (req) {
       const clientIp = getClientIpFromRequest(req);
@@ -224,4 +225,8 @@ export async function GET(req: Request) {
       }
     );
   }
+}
+
+export async function GET(req: Request) {
+  return measureRouteBudget("/api/stats", () => getHandler(req));
 }
