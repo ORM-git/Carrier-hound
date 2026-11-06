@@ -11,8 +11,12 @@
  * bearer tokens):
  * 1. Repeated admin-token failures from one IP (token probing / stuffing).
  * 2. Repeated failures for the same presented token (replay/probing).
- * 3. OTP-request bursts per IP (scripted enumeration / mail flooding).
- * 4. OTP-request bursts per email hash (targeted account hammering).
+ * 3. Client-reported OTP-request bursts per IP.
+ * 4. Client-reported OTP-request bursts per email hash.
+ *
+ * Client reports are untrusted hints: attackers can omit or forge them.
+ * They do not establish that Supabase actually sent an OTP or that a
+ * takeover happened. Provider-side auth audit alerts remain required.
  */
 
 import { checkSharedRateLimit } from "../api/sharedRateLimit";
@@ -34,6 +38,7 @@ export interface AuthMonitorDeps {
 
 const alertDedupe = new Map<string, number>();
 const ALERT_DEDUPE_WINDOW_MS = 10 * 60 * 1000;
+const MAX_DEDUPE_KEYS = 1024;
 
 /** Test hook: clears the in-memory alert dedupe map. */
 export function _resetAuthMonitorDedupe() {
@@ -75,9 +80,17 @@ async function countAndAlert(
   const result = await check(key, max, windowSeconds, undefined, { failClosed: true });
   if (result.source !== "shared" || result.allowed) return;
 
-  const lastAlert = alertDedupe.get(key) ?? 0;
-  if (now() - lastAlert < ALERT_DEDUPE_WINDOW_MS) return;
-  alertDedupe.set(key, now());
+  const timestamp = now();
+  alertDedupe.forEach((last, storedKey) => {
+    if (timestamp - last >= ALERT_DEDUPE_WINDOW_MS) alertDedupe.delete(storedKey);
+  });
+  const lastAlert = alertDedupe.get(key);
+  if (lastAlert !== undefined && timestamp - lastAlert < ALERT_DEDUPE_WINDOW_MS) return;
+  if (alertDedupe.size >= MAX_DEDUPE_KEYS) {
+    const oldest = alertDedupe.keys().next().value;
+    if (oldest !== undefined) alertDedupe.delete(oldest);
+  }
+  alertDedupe.set(key, timestamp);
   log(alertLine);
 }
 

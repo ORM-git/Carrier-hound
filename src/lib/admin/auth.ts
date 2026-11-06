@@ -127,8 +127,8 @@ export async function verifyAdminSession(req?: Request): Promise<{
       }
     }
 
-    // ATO monitoring: count failed admin verifications (fire-and-forget,
-    // fully caught internally - never affects the auth decision).
+    // ATO monitoring: count failed admin verifications. This is awaited,
+    // fully caught internally, and does not change the auth decision.
     await noteAdminAuthFailure(req, token);
 
     return { isAdmin: false, user: null, error: "Forbidden: Verified admin access required." };

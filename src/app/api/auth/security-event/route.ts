@@ -34,7 +34,33 @@ export async function POST(req: Request) {
       return new NextResponse(null, { status: 204 });
     }
 
-    const body = (await req.json().catch(() => null)) as { event?: string; email?: string } | null;
+    // Enforce the cap while streaming too: Content-Length can be absent
+    // or dishonest (for example on a chunked request).
+    const reader = req.body?.getReader();
+    if (!reader) return new NextResponse(null, { status: 204 });
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        if (total > MAX_PAYLOAD_BYTES) {
+          await reader.cancel();
+          return new NextResponse(null, { status: 204 });
+        }
+        chunks.push(value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    const bytes = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    const body = JSON.parse(new TextDecoder().decode(bytes)) as { event?: string; email?: string } | null;
     if (!body || typeof body.event !== "string" || !ALLOWED_EVENTS.has(body.event)) {
       return new NextResponse(null, { status: 204 });
     }
