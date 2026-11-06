@@ -33,6 +33,8 @@ Cross-references: `docs/retention-policy.md` (per-table retention classes),
 | `gmail_send_log` | recipient email per send | Doubles as suppression evidence (180-day retention). |
 | `page_views` | user id (nullable), salted IP hash, user agent, paths | Behavioral; 90-day retention. |
 | `blocked_users` | email, user id, block reason | Moderation record. |
+| `funnel_events` | nullable user id, pseudonymous `anonymous_id`, salted IP hash, funnel metadata | Signup->onboard->apply funnel; 90-day retention (20261106f). |
+| `row_change_history` | before/after row images of user and billing tables | Per-row change audit; service-role only, append-only (20261106c). |
 
 ## Internal tables
 
@@ -47,7 +49,8 @@ Cross-references: `docs/retention-policy.md` (per-table retention classes),
 | `ai_usage_quotas` / `plan_usage_events` / `ai_concurrency_leases` / `ai_global_budget_daily` | Per-user and global AI usage accounting. User-linked but not identifying beyond the id. |
 | `web_vitals` | Anonymous performance telemetry (no identifiers by design). |
 | `company_token_registry` | Scraper tokens for company boards. Secret-adjacent; service-role only. |
-| `schema_migrations` | Applied-migration ledger. |
+| `matview_refresh_log` | Materialized-view refresh telemetry (when, duration). Service-role only (20261106d). |
+| `supabase_migrations.schema_migrations` | Applied-migration ledger (Supabase-internal schema). |
 
 ## Public data
 
