@@ -35,6 +35,8 @@ Cross-references: `docs/retention-policy.md` (per-table retention classes),
 | `blocked_users` | email, user id, block reason | Moderation record. |
 | `funnel_events` | nullable user id, pseudonymous `anonymous_id`, salted IP hash, funnel metadata | Signup->onboard->apply funnel; 90-day retention (20261106f). |
 | `row_change_history` | before/after row images of user and billing tables | Per-row change audit; service-role only, append-only (20261106c). |
+| `push_subscriptions` | Web Push endpoint URL and `p256dh`/`auth` keys per browser subscription | Endpoint and keys identify a device; deleted with the account or on unsubscribe (20261106i, NOT APPLIED). |
+| `inbound_replies` | sender address, subject, truncated body excerpt of replies to product mail | Personal correspondence; service-role only, no user-facing policies (20261106j, NOT APPLIED). |
 
 ## Internal tables
 

@@ -27,6 +27,17 @@ guessed.
 - Job-board sources (greenhouse.io, lever.co, ashbyhq.com) - read-only ingestion
   of public job posts. Never name these in customer-facing copy.
 
+## Public disclosure
+
+As of 2026-11-06 the customer-facing privacy policy
+(`src/app/privacy-policy/page.tsx`, "Service Providers" section) lists all
+seven active sub-processors above by name (Supabase, Cloudflare, Netlify,
+Google, Sentry, Razorpay, Groq). `scripts/test-subprocessors-doc.ts` (in the
+suite) fails if a code-called vendor goes missing from this file or from
+that page, and if any job-board source is ever named in customer-facing
+copy. Razorpay appears in the public list while payments remain disabled -
+owner to review that wording (public copy changes are owner-approved only).
+
 ## Maintenance
 
 - Review this file whenever a dependency or outbound integration is added.
