@@ -181,6 +181,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-redundant-index-cleanup.ts", command: "npx tsx scripts/test-redundant-index-cleanup.ts", classification: "offline" },
   { name: "scripts/test-data-classification.ts", command: "npx tsx scripts/test-data-classification.ts", classification: "offline" },
   { name: "scripts/test-autocomplete-policy.ts", command: "npx tsx scripts/test-autocomplete-policy.ts", classification: "offline" },
+  { name: "scripts/test-log-retention-doc.ts", command: "npx tsx scripts/test-log-retention-doc.ts", classification: "offline" },
 ];
 
 export interface RunSummary {
