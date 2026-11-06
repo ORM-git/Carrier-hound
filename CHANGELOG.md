@@ -13,6 +13,13 @@ requests; older history lives in the git log.
 - Minimal SWR-style client cache on the dashboard (#276)
 - `startTransition` around the debounced jobs search (#274)
 - Husky pre-commit hooks with lint-staged (#267; scoped to eslint only in #275)
+- Client-side abort of the radar telemetry fetch on unmount (#277)
+- Static RSS feed for public guides at /feed.xml, linked from footer + guide pages (#278)
+- BreadcrumbList JSON-LD on public pages; sitemap coverage extended to all public routes (#272)
+- Vitest unit test setup with first library suites; `npm run test:all` now chains it (#281)
+- Bundle size budget check (650 KB first-load / 400 KB chunk, from measured production values) (#285)
+- First-touch UTM/referrer capture in the early-access signup payload (#287)
+- Advisory axe + Lighthouse quality workflow (#288)
 
 ### Fixed / Infrastructure
 - Cron failure visibility (#271), data retention (#270), SBOM + dependency review (#263), security/ops baseline docs (#268)
