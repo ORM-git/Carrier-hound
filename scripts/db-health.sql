@@ -104,7 +104,21 @@ group by 1, 2, 3
 order by 1 desc, reads desc
 limit 100;
 
--- 10. Slow queries (DB row: Slow-query log). pg_stat_statements is enabled by
+-- 10. Funnel review (Backend row: Funnel Tracking) - signup -> onboard -> apply conversion.
+--     Unique actors prefer the signed-in user id, falling back to the pseudonymous
+--     anonymous_id for pre-signup steps. Requires migration 20261106e.
+select event,
+       count(*) as events,
+       count(distinct coalesce(user_id::text, anonymous_id)) as unique_actors
+from public.funnel_events
+where created_at > now() - interval '30 days'
+group by event
+order by array_position(
+  array['signup_started','signup_completed','onboarding_started','onboarding_completed','apply_started','apply_completed'],
+  event
+);
+
+-- 11. Slow queries (DB row: Slow-query log). pg_stat_statements is enabled by
 --     migration 20261105c; this is the review surface for what it records.
 --     NOTE: Postgres log_min_duration_statement cannot be set from the SQL editor
 --     on Supabase - if log-file slow logging is wanted it is a dashboard setting.
