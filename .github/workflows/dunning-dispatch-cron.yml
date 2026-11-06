@@ -16,6 +16,12 @@ on:
 permissions:
   contents: read
 
+# Never let two dispatchers overlap (stamped rows are double-send guarded,
+# but serializing keeps the outbox strictly ordered).
+concurrency:
+  group: dunning-dispatch
+  cancel-in-progress: false
+
 jobs:
   dunning-dispatch:
     name: Dispatch Queued Dunning Emails
