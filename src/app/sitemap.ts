@@ -18,12 +18,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.9,
     },
     {
-      url: `${baseUrl}/jobs`,
-      lastModified: new Date(),
-      changeFrequency: "daily",
-      priority: 0.9,
-    },
-    {
       url: `${baseUrl}/remote`,
       lastModified: new Date(),
       changeFrequency: "daily",
@@ -34,24 +28,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
       lastModified: new Date(),
       changeFrequency: "daily",
       priority: 0.8,
-    },
-    {
-      url: `${baseUrl}/radar`,
-      lastModified: new Date(),
-      changeFrequency: "daily",
-      priority: 0.8,
-    },
-    {
-      url: `${baseUrl}/resume`,
-      lastModified: new Date(),
-      changeFrequency: "weekly",
-      priority: 0.7,
-    },
-    {
-      url: `${baseUrl}/tracker`,
-      lastModified: new Date(),
-      changeFrequency: "weekly",
-      priority: 0.7,
     },
     {
       url: `${baseUrl}/pricing`,
