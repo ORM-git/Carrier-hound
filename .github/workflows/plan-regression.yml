@@ -49,9 +49,25 @@ jobs:
           mkdir -p plan-output
           psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/scripts/explain-checks.sql > plan-output/explain-checks.txt 2>&1
 
+      # Advisory for now (owner decision): seq-scan checks can false-positive
+      # on small tables and must not block migration PRs. The step still runs
+      # and its verdict is written to the job summary. Flip to blocking later
+      # by removing continue-on-error once the guard list is proven.
       - name: Check for plan regressions
+        id: check
         if: steps.explain.outputs.skipped == 'false'
+        continue-on-error: true
         run: node scripts/check-plan-regression.mjs plan-output/explain-checks.txt
+
+      - name: Report verdict to job summary
+        if: steps.explain.outputs.skipped == 'false'
+        run: |
+          if [ "${{ steps.check.outcome }}" = "success" ]; then
+            echo "## Plan regression: PASS" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## Plan regression: FAIL (advisory - not blocking)" >> "$GITHUB_STEP_SUMMARY"
+            echo "Review plan-output/explain-checks.txt in the artifact; the check found a structural regression." >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Upload plan output
         if: steps.explain.outputs.skipped == 'false'
