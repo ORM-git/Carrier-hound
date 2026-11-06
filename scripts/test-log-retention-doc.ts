@@ -15,6 +15,7 @@ const doc = fs.readFileSync("docs/log-retention.md", "utf8");
 
 check("marked INTERNAL", doc.includes("INTERNAL"));
 check("covers Cloudflare Pages production logs", doc.includes("Cloudflare Pages (production)"));
+check("cites repo config, owner to confirm", doc.includes("carrier-hound.pages.dev") && doc.includes("owner to confirm") && !doc.includes("Owner-confirmed"));
 check("scopes Netlify to preview/legacy only", doc.includes("Netlify (preview/legacy functions)"));
 check("has explicit owner steps (dashboard-bound)", doc.includes("Owner steps"));
 check("names Sentry as central error log", doc.includes("Sentry") && doc.includes("sentryErrorReporter.ts"));
