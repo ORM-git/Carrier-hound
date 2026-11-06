@@ -75,3 +75,55 @@ order by duration desc;
 select sum(heap_blks_hit) / nullif(sum(heap_blks_hit) + sum(heap_blks_read), 0)
        AS cache_hit_ratio
 from pg_statio_user_tables;
+
+-- 11. Activation / retention (Backend row: Activation / Retention Metrics).
+--     DAU/WAU/MAU from page_views (signed-in users only), plus week-1 cohort retention
+--     (signed up in week W, seen again in W+1). auth.users is readable in the SQL editor.
+
+-- 11a. Active users
+select 'DAU (avg, last 14d)' as metric,
+       round(avg(cnt)) as value
+from (
+  select date_trunc('day', created_at) as d, count(distinct user_id) as cnt
+  from public.page_views
+  where created_at > now() - interval '14 days' and user_id is not null
+  group by 1
+) daily
+union all
+select 'WAU (avg, last 8w)',
+       round(avg(cnt))
+from (
+  select date_trunc('week', created_at) as w, count(distinct user_id) as cnt
+  from public.page_views
+  where created_at > now() - interval '8 weeks' and user_id is not null
+  group by 1
+) weekly
+union all
+select 'MAU (last 30d)',
+       count(distinct user_id)
+from public.page_views
+where created_at > now() - interval '30 days' and user_id is not null;
+
+-- 11b. Week-1 retention by signup cohort (only cohorts old enough to have a week+1)
+with cohorts as (
+  select id, date_trunc('week', created_at) as cohort_week
+  from auth.users
+  where created_at < date_trunc('week', now()) - interval '1 week'
+),
+returns as (
+  select distinct c.cohort_week, c.id
+  from cohorts c
+  join public.page_views pv
+    on pv.user_id = c.id
+   and pv.created_at >= c.cohort_week + interval '1 week'
+   and pv.created_at <  c.cohort_week + interval '2 weeks'
+)
+select c.cohort_week::date as signup_week,
+       count(*) as signups,
+       count(r.id) as active_in_week_1,
+       round(100.0 * count(r.id) / count(*), 1) as week1_retention_pct
+from cohorts c
+left join returns r on r.cohort_week = c.cohort_week and r.id = c.id
+group by 1
+order by 1 desc
+limit 12;
