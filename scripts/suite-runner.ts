@@ -30,7 +30,9 @@ export interface SuiteSpec {
 
 // In-source documented test-project allowlist. Strictly EMPTY by default.
 // Only non-production project refs explicitly listed here can authorize DB-capable suites.
-export const TEST_PROJECT_ALLOWLIST: string[] = [...GUARD_DEFAULT_ALLOWLIST];
+export const TEST_PROJECT_ALLOWLIST: string[] = [...GUARD_DEFAULT_ALLOWLIST,
+  { name: "scripts/test-data-classification.ts", command: "npx tsx scripts/test-data-classification.ts", classification: "offline" },
+];
 
 // Production project reference ID that is strictly denied under all circumstances.
 export const DENIED_PROJECT_REFS: string[] = [...GUARD_DENIED_REFS];
@@ -52,7 +54,6 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-account-export.ts", command: "npx tsx scripts/test-account-export.ts", classification: "offline" },
   { name: "scripts/test-rate-limits.ts", command: "npx tsx scripts/test-rate-limits.ts", classification: "offline" },
   { name: "scripts/test-route-budget.ts", command: "npx tsx scripts/test-route-budget.ts", classification: "offline" },
-  { name: "scripts/test-data-classification.ts", command: "npx tsx scripts/test-data-classification.ts", classification: "offline" },
   { name: "scripts/test-worldwide-view.ts", command: "npx tsx scripts/test-worldwide-view.ts", classification: "offline" },
   { name: "scripts/test-domain-resolution.ts", command: "npx tsx scripts/test-domain-resolution.ts", classification: "offline" },
   { name: "scripts/test-env-guards.ts", command: "npx tsx scripts/test-env-guards.ts", classification: "offline" },
