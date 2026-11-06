@@ -75,3 +75,6 @@ jobs:
 
       - name: Coverage Thresholds
         run: npm install --no-save @vitest/coverage-v8@2.1.9 && npx vitest run --coverage
+
+      - name: Config Drift Check
+        run: npx tsx scripts/check-config-drift.ts
