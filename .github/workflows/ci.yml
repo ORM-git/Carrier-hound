@@ -38,6 +38,9 @@ jobs:
       - name: Run Type Check
         run: npm run type-check
 
+      - name: Log Retention Doc Check
+        run: npx tsx scripts/test-log-retention-doc.ts
+
       - name: Run Linter
         run: npm run lint
 
