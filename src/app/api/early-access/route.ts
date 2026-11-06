@@ -11,7 +11,10 @@ import {
   getSupabaseAdminClient,
   getRuntimeEnv,
 } from "@/lib/ai/serviceHandler";
-import { sanitizeAttribution } from "@/lib/analytics/attribution";
+import {
+  isMissingAttributionColumnError,
+  sanitizeAttribution,
+} from "@/lib/analytics/attribution";
 import {
   sendEarlyAccessThankYouEmail,
   THANK_YOU_HARD_CAP_MS,
@@ -212,9 +215,23 @@ export async function POST(req: Request) {
         }
 
         const attribution = sanitizeAttribution((body as any).attribution);
-        const { error: insertError } = await supabaseClient
+        let { error: insertError } = await supabaseClient
           .from("early_access_emails")
           .insert({ email, created_at: createdAt, ...attribution });
+
+        // Migration 20261106b pending: if the attribution columns do not
+        // exist yet, retry without them so signups never break on the
+        // not-yet-applied migration.
+        if (
+          insertError &&
+          Object.keys(attribution).length > 0 &&
+          isMissingAttributionColumnError(insertError)
+        ) {
+          const retry = await supabaseClient
+            .from("early_access_emails")
+            .insert({ email, created_at: createdAt });
+          insertError = retry.error;
+        }
 
         if (insertError) {
           // Postgres unique constraint violation (23505) -> generic idempotent success, no email sent
