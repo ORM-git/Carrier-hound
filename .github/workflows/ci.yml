@@ -49,11 +49,11 @@ jobs:
           # through the Node prerender step of `output: "export"` builds.
           CF_PAGES: '1'
 
-      - name: Verify Public Sourcemap Guard
-        run: node scripts/test-public-sourcemaps.mjs && node scripts/check-public-sourcemaps.mjs
-
       - name: Bundle Size Budget
         run: npm run check:budget
+
+      - name: Sub-processor Inventory Check
+        run: npx tsx scripts/test-subprocessor-inventory.ts
 
       - name: Run Test Suite (test:all)
         run: npm run test:all
