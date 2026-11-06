@@ -20,11 +20,12 @@ async function main() {
 
   const summary = await dispatchQueuedDunningEmails({ supabase });
   console.log(
-    `[DunningDispatch] scanned=${summary.scanned} sent=${summary.sent} failed=${summary.failed} skipped_no_recipient=${summary.skippedNoRecipient} missing_mail_env=${summary.missingMailEnv}`
+    `[DunningDispatch] scanned=${summary.scanned} sent=${summary.sent} failed=${summary.failed} skipped_no_recipient=${summary.skippedNoRecipient} capped_out=${summary.cappedOut} missing_mail_env=${summary.missingMailEnv}`
   );
   if (summary.missingMailEnv) {
-    console.error("APPS_SCRIPT_MAIL_URL/APPS_SCRIPT_MAIL_SECRET not configured (owner step pending)");
-    process.exit(2);
+    // Owner step pending: pass with a notice instead of a daily red run.
+    console.log("::notice::APPS_SCRIPT_MAIL_URL/APPS_SCRIPT_MAIL_SECRET not configured (owner step pending); dunning dispatch skipped.");
+    process.exit(0);
   }
   if (summary.failed > 0) {
     // Rows stay queued for the next run; signal partial failure without
