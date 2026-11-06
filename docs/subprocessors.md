@@ -13,7 +13,8 @@ guessed.
 | Sub-processor | Purpose | User data sent | Evidence in code |
 | --- | --- | --- | --- |
 | Supabase (project `szakevhxhwpeskidvtfs`) | Postgres database, Auth, file storage | All account and profile data: auth identities, candidate profiles, resumes (files), applications, preferences, usage logs | `NEXT_PUBLIC_SUPABASE_URL` / `SUPABASE_*` env; `supabase/migrations/*`; `src/lib/account/*` |
-| Netlify | Hosting, edge runtime, deploys | Full request/response traffic for the app (URLs, form submissions, cookies); platform access logs | `@netlify/plugin-nextjs` in `package.json`; edge `runtime` exports in API routes |
+| Cloudflare Pages | PRODUCTION hosting: serves the app and runs production functions; holds the Groq API key in Pages env | Full production request/response traffic (URLs, form submissions, cookies); the Groq credential | Owner-confirmed production platform (2026-11-06); Groq key in Cloudflare Pages env |
+| Netlify | Preview deploys + legacy functions only (NOT production traffic) | Preview/legacy request traffic only | `@netlify/plugin-nextjs` in `package.json`; edge `runtime` exports in API routes |
 | Sentry | Error monitoring | Error events with stack traces and request context; may incidentally include user identifiers or payload fragments | `@sentry/nextjs` in `package.json`; `src/lib/monitoring/sentryErrorReporter.ts` |
 | Groq | LLM inference for AI features (tailoring, analysis) | Resume and profile text submitted to AI endpoints | `https://api.groq.com/openai/v1/chat/completions` in `src/lib/ai/serviceHandler.ts` |
 | Google (Gmail API) | Transactional email for early access (thank-you / digest) | Recipient email addresses; message content | `src/lib/early-access/gmail.ts`; `gmail_send_log` table |
