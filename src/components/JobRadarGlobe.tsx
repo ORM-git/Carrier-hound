@@ -244,6 +244,7 @@ export default function JobRadarGlobe() {
   }, []);
 
   // 2. Fetch live telemetry from /api/radar on mount (abortable on unmount)
+  const lastTelemetryAtRef = useRef<number>(0);
   const fetchTelemetry = useCallback(async (signal?: AbortSignal) => {
     setIsLoadingTelemetry(true);
     setTelemetryError(null);
@@ -260,6 +261,7 @@ export default function JobRadarGlobe() {
       }
       const data: RadarTelemetryPayload = await res.json();
       if (signal?.aborted) return;
+      lastTelemetryAtRef.current = Date.now();
       setTelemetry(data);
     } catch (err: any) {
       if (err?.name === "AbortError") return;
@@ -276,6 +278,19 @@ export default function JobRadarGlobe() {
     const controller = new AbortController();
     fetchTelemetry(controller.signal);
     return () => controller.abort();
+  }, [fetchTelemetry]);
+
+  // Page Visibility API: refetch telemetry when the tab becomes visible
+  // again and the data is older than 60s (animation pause/resume on
+  // visibilitychange is handled in the WebGL effect below).
+  useEffect(() => {
+    const onVisible = () => {
+      if (!document.hidden && Date.now() - lastTelemetryAtRef.current > 60_000) {
+        fetchTelemetry();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
   }, [fetchTelemetry]);
 
   // Check WebGL support on client
