@@ -443,6 +443,10 @@ async function run() {
       const operationsLog: string[] = [];
       const deletedTables = new Set<string>();
       const deletedEmailTables = new Set<string>();
+      const softDeletedTables = new Set<string>();
+      const anonymizedEmailTables = new Set<string>();
+      const anonymizedEmailValues: string[] = [];
+      const tombstoneUpserts: Array<{ table: string; rows: any }> = [];
       const updatedSubscriptions: Array<{ id: string; payload: any }> = [];
       const removedStorageBatches: string[][] = [];
       const listCalls: Array<{ prefix: string; limit?: number; offset?: number }> = [];
@@ -500,9 +504,20 @@ async function run() {
               if (table === "subscriptions") {
                 updatedSubscriptions.push({ id: val, payload });
               }
+              if (payload && payload.deleted_at && !payload.status && !payload.anonymized_at) {
+                softDeletedTables.add(table);
+              }
+              if (payload && payload.anonymized_at) {
+                anonymizedEmailTables.add(table);
+                anonymizedEmailValues.push(payload.email);
+              }
               return { error: null };
             },
           }),
+          upsert: async (rows: any) => {
+            tombstoneUpserts.push({ table, rows });
+            return { error: null };
+          },
           delete: () => ({
             eq: async (col: string, val: string) => {
               operationsLog.push(`delete:${table}:${col}=${val}`);
@@ -572,7 +587,8 @@ async function run() {
         "subscriptions rows must NEVER be deleted during account deletion"
       );
 
-      // Verify user-owned tables + early_access_emails were deleted
+      // Verify user-owned tables were soft-deleted (deleted_at) and
+      // early_access_emails was anonymized-and-kept (DB rows #1/#5/#26)
       for (const requiredTable of [
         "candidate_profiles",
         "user_preferences",
@@ -583,13 +599,30 @@ async function run() {
         "job_applications",
       ]) {
         assert.ok(
-          deletedTables.has(requiredTable),
-          `Account delete must delete rows from ${requiredTable}`
+          softDeletedTables.has(requiredTable) || deletedTables.has(requiredTable),
+          `Account delete must soft-delete rows from ${requiredTable}`
         );
       }
       assert.ok(
-        deletedEmailTables.has("early_access_emails"),
-        "Account delete must delete early_access link in early_access_emails"
+        anonymizedEmailTables.has("early_access_emails") || deletedEmailTables.has("early_access_emails"),
+        "Account delete must anonymize or delete the early_access link in early_access_emails"
+      );
+      if (anonymizedEmailTables.has("early_access_emails")) {
+        assert.ok(
+          anonymizedEmailValues.every((e) => typeof e === "string" && e.endsWith("@deleted.invalid") && !e.includes("candidate@example.com")),
+          "Anonymized early-access email must be a non-deliverable placeholder without the original address"
+        );
+      }
+
+      // Verify the deletion tombstone was written (fail-open, PII-free)
+      const tombstone = tombstoneUpserts.find((t) => t.table === "deleted_account_tombstones");
+      assert.ok(tombstone, "Account delete must write a deleted_account_tombstones record");
+      assert.strictEqual(tombstone.rows.user_id, "user-del-999");
+      assert.match(tombstone.rows.email_hash, /^[0-9a-f]{64}$/, "tombstone email_hash must be a SHA-256 hex digest");
+      assert.ok(!tombstone.rows.email_hash.includes("candidate@example.com"), "tombstone must not contain the raw email");
+      assert.ok(
+        new Date(tombstone.rows.hard_delete_after).getTime() > Date.now() + 29 * 24 * 60 * 60 * 1000,
+        "tombstone hard_delete_after must be ~30 days out"
       );
 
       // Verify recursive + paginated storage listing (99 + 26 + 1 nested = 126 files total)
