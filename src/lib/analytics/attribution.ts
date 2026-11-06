@@ -60,3 +60,17 @@ export function sanitizeAttribution(raw: unknown): AttributionColumns {
 export function hasAttribution(columns: AttributionColumns): boolean {
   return Object.keys(columns).length > 0;
 }
+
+/**
+ * True when an insert failed because an attribution column does not exist yet
+ * (migration 20261106b pending): Postgres undefined_column (42703) or
+ * PostgREST schema-cache miss (PGRST204).
+ */
+export function isMissingAttributionColumnError(err: any): boolean {
+  if (!err) return false;
+  if (err.code === "42703" || err.code === "PGRST204") return true;
+  const msg = String(err.message || "").toLowerCase();
+  return (
+    msg.includes("does not exist") && msg.includes("column")
+  ) || msg.includes("could not find") && msg.includes("column");
+}
