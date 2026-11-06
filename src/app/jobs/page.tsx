@@ -463,6 +463,7 @@ function JobsPageInner() {
   const [appliedCount, setAppliedCount] = useState<number>(0);
   const [updatingAppliedJobId, setUpdatingAppliedJobId] = useState<string | null>(null);
   const inFlightAppliedRef = useRef<Set<string>>(new Set());
+  const inFlightSaveRef = useRef<Set<string>>(new Set());
   const filtersTriggerRef = useRef<HTMLButtonElement | null>(null);
   const filterDialogRef = useRef<HTMLDivElement | null>(null);
   const tabsContainerRef = useRef<HTMLDivElement | null>(null);
@@ -1377,31 +1378,40 @@ function JobsPageInner() {
       return;
     }
 
-    if (savedJobIds.includes(job.id)) {
-      try {
-        await removeApplicationFromTracker(job.id);
-        setSavedJobIds((prev) => prev.filter((id) => id !== job.id));
-        toast.info(`Removed "${job.title}" from Liked Jobs.`);
-      } catch (e) {
-        toast.error("Could not update saved job.");
-      }
-      return;
-    }
+    // Synchronous lock check (same pattern as handleUpdateApplied):
+    // immediately aborts duplicate same-tick invocations (double-click race).
+    if (inFlightSaveRef.current.has(job.id)) return;
+    inFlightSaveRef.current.add(job.id);
 
     try {
-      await addApplicationToTracker({
-        jobId: job.id,
-        title: job.title,
-        company: job.company,
-        location: job.location,
-        salaryText: job.salary,
-        applyUrl: job.applyUrl,
-        stage: "saved",
-      });
-      setSavedJobIds((prev) => [...prev, job.id]);
-      toast.success(`Liked "${job.title}"! Saved to your tracker.`);
-    } catch (e) {
-      toast.error("Could not save job.");
+      if (savedJobIds.includes(job.id)) {
+        try {
+          await removeApplicationFromTracker(job.id);
+          setSavedJobIds((prev) => prev.filter((id) => id !== job.id));
+          toast.info(`Removed "${job.title}" from Liked Jobs.`);
+        } catch (e) {
+          toast.error("Could not update saved job.");
+        }
+        return;
+      }
+
+      try {
+        await addApplicationToTracker({
+          jobId: job.id,
+          title: job.title,
+          company: job.company,
+          location: job.location,
+          salaryText: job.salary,
+          applyUrl: job.applyUrl,
+          stage: "saved",
+        });
+        setSavedJobIds((prev) => [...prev, job.id]);
+        toast.success(`Liked "${job.title}"! Saved to your tracker.`);
+      } catch (e) {
+        toast.error("Could not save job.");
+      }
+    } finally {
+      inFlightSaveRef.current.delete(job.id);
     }
   };
 
