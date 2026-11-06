@@ -8,6 +8,7 @@
  *   otherwise fetches, updates the cache, and dedupes identical concurrent
  *   requests through a shared in-flight promise.
  * - `invalidateSwr` drops entries by exact key or prefix after mutations.
+ * - `isSwrStale` reports cache age so pages can revalidate on tab-visible.
  */
 
 interface CacheEntry<T> {
@@ -48,6 +49,12 @@ export async function swrFetch<T>(
     inflight.set(key, pending);
   }
   return pending;
+}
+
+/** True when the entry is missing or older than ttlMs. */
+export function isSwrStale(key: string, ttlMs = 60_000): boolean {
+  const hit = store.get(key) as CacheEntry<unknown> | undefined;
+  return !hit || Date.now() - hit.ts >= ttlMs;
 }
 
 export function invalidateSwr(keyOrPrefix: string): void {
