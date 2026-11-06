@@ -31,10 +31,14 @@ export interface DunningDispatchSummary {
   sent: number;
   failed: number;
   skippedNoRecipient: number;
+  cappedOut: number;
   missingMailEnv: boolean;
 }
 
 export const DUNNING_DISPATCH_BATCH_SIZE = 25;
+
+/** Stop retrying a row after this many failed dispatch attempts. */
+export const DUNNING_DISPATCH_MAX_ATTEMPTS = 5;
 
 export function buildDunningEmailContent(params: {
   gracePeriodEnd: string | null;
@@ -99,6 +103,7 @@ export async function dispatchQueuedDunningEmails(options?: {
     sent: 0,
     failed: 0,
     skippedNoRecipient: 0,
+    cappedOut: 0,
     missingMailEnv: false,
   };
 
@@ -149,6 +154,21 @@ export async function dispatchQueuedDunningEmails(options?: {
       failureReason: row.failure_reason,
     });
 
+    const attempts = row.metadata?.dispatch_attempts ?? 0;
+    if (attempts >= DUNNING_DISPATCH_MAX_ATTEMPTS) {
+      // Retry cap reached: dequeue instead of retrying forever; the row
+      // remains in dunning_logs for manual follow-up.
+      summary.cappedOut += 1;
+      await supabase
+        .from("dunning_logs")
+        .update({
+          dunning_email_queued: false,
+          metadata: { ...(row.metadata ?? {}), dispatch_error: "max_attempts" },
+        })
+        .eq("id", row.id);
+      continue;
+    }
+
     const result = await dispatchAppsScriptMail({
       url: mailer.url,
       secret: mailer.secret,
@@ -164,7 +184,9 @@ export async function dispatchQueuedDunningEmails(options?: {
       },
     });
 
-    if (result.ok) {
+    if (result.ok || result.reply === "already") {
+      // "already" means the mail route has this send on record; stamp it so
+      // the outbox stops retrying a delivered email.
       // Conditional stamp: only claim the send if nobody else stamped it first.
       const { data: stamped, error: stampErr } = await supabase
         .from("dunning_logs")
