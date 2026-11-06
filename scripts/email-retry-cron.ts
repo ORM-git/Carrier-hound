@@ -17,6 +17,7 @@ dotenv.config({ path: ".env.local" });
 dotenv.config({ path: ".env" });
 
 import { replayFailedEmailEvents } from "../src/lib/events/failedEvents";
+import { reportCronFailure } from "./lib/cron-sentry";
 
 async function main() {
   const args = process.argv.slice(2);
@@ -56,5 +57,6 @@ async function main() {
 
 main().catch((err) => {
   console.error("Fatal unhandled email retry cron error:", err);
+  await reportCronFailure("email-retry", err);
   process.exit(1);
 });
