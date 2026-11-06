@@ -52,6 +52,9 @@ jobs:
     name: Dependency Review (PR diff)
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
+    # FIXME: dependency graph is disabled at repo level and only an org admin
+    # can enable it; keep this non-blocking until then.
+    continue-on-error: true
     steps:
       - name: Checkout Code
         uses: actions/checkout@v7
@@ -64,6 +67,8 @@ jobs:
   sbom:
     name: SBOM Generation (CycloneDX)
     runs-on: ubuntu-latest
+    # Weekly schedule + manual dispatch only; no need to rebuild the SBOM per PR.
+    if: github.event_name != 'pull_request'
     steps:
       - name: Checkout Code
         uses: actions/checkout@v7
