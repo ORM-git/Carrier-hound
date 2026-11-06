@@ -66,7 +66,7 @@ export default function ProfileDrawers({
 
   // Re-initialize draft whenever drawer opens or candidate updates.
   // Form autosave/draft: a stored unsaved draft for this section wins over
-  // the server copy and is restored with a dismissable notice.
+  // the server copy and is restored silently (no visible UI).
   useEffect(() => {
     if (isOpen) {
       const key = draftStorageKey(candidate?.email, section);
@@ -82,8 +82,8 @@ export default function ProfileDrawers({
 
   // Autosave the draft (debounced) while the drawer is open so unsaved
   // edits survive an accidental close, navigation, or reload. Stored on
-  // this device only, keyed by account email + section; cleared on save
-  // or explicit discard.
+  // this device only, keyed by account email + section; cleared on
+  // successful save, after 7 days, and on sign-out.
   useEffect(() => {
     if (!isOpen) return;
     const key = draftStorageKey(candidate?.email, section);

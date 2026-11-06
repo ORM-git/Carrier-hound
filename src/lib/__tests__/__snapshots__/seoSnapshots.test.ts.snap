@@ -1,0 +1,128 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`SEO serialized output snapshots > breadcrumb JSON-LD shape is stable 1`] = `
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {
+      "@type": "ListItem",
+      "item": "https://careermonke.com/",
+      "name": "Home",
+      "position": 1,
+    },
+    {
+      "@type": "ListItem",
+      "item": "https://careermonke.com/remote",
+      "name": "Remote Jobs",
+      "position": 2,
+    },
+    {
+      "@type": "ListItem",
+      "item": "https://careermonke.com/pricing",
+      "name": "Pricing",
+      "position": 3,
+    },
+  ],
+}
+`;
+
+exports[`SEO serialized output snapshots > robots output is stable 1`] = `
+{
+  "rules": {
+    "allow": "/",
+    "disallow": [
+      "/onboarding",
+    ],
+    "userAgent": "*",
+  },
+  "sitemap": "https://careermonke.com/sitemap.xml",
+}
+`;
+
+exports[`SEO serialized output snapshots > root JSON-LD graph is stable 1`] = `
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@id": "https://careermonke.com/#organization",
+      "@type": "Organization",
+      "logo": "https://careermonke.com/careermonke-logo.png",
+      "name": "CareerMonke",
+      "url": "https://careermonke.com",
+    },
+    {
+      "@id": "https://careermonke.com/#website",
+      "@type": "WebSite",
+      "name": "CareerMonke",
+      "potentialAction": {
+        "@type": "SearchAction",
+        "query-input": "required name=search_term_string",
+        "target": {
+          "@type": "EntryPoint",
+          "urlTemplate": "https://careermonke.com/jobs?q={search_term_string}",
+        },
+      },
+      "publisher": {
+        "@id": "https://careermonke.com/#organization",
+      },
+      "url": "https://careermonke.com",
+    },
+  ],
+}
+`;
+
+exports[`SEO serialized output snapshots > sitemap route list is stable (volatile lastModified excluded) 1`] = `
+[
+  {
+    "changeFrequency": "daily",
+    "priority": 1,
+    "url": "https://careermonke.com",
+  },
+  {
+    "changeFrequency": "daily",
+    "priority": 0.9,
+    "url": "https://careermonke.com/early-access",
+  },
+  {
+    "changeFrequency": "daily",
+    "priority": 0.8,
+    "url": "https://careermonke.com/remote",
+  },
+  {
+    "changeFrequency": "daily",
+    "priority": 0.8,
+    "url": "https://careermonke.com/worldwide",
+  },
+  {
+    "changeFrequency": "weekly",
+    "priority": 0.7,
+    "url": "https://careermonke.com/pricing",
+  },
+  {
+    "changeFrequency": "monthly",
+    "priority": 0.6,
+    "url": "https://careermonke.com/signup",
+  },
+  {
+    "changeFrequency": "monthly",
+    "priority": 0.7,
+    "url": "https://careermonke.com/privacy-policy",
+  },
+  {
+    "changeFrequency": "monthly",
+    "priority": 0.7,
+    "url": "https://careermonke.com/terms-and-conditions",
+  },
+  {
+    "changeFrequency": "monthly",
+    "priority": 0.7,
+    "url": "https://careermonke.com/refund-policy",
+  },
+  {
+    "changeFrequency": "monthly",
+    "priority": 0.7,
+    "url": "https://careermonke.com/contact",
+  },
+]
+`;

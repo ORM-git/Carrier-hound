@@ -31,7 +31,7 @@ export interface SuiteSpec {
 // In-source documented test-project allowlist. Strictly EMPTY by default.
 // Only non-production project refs explicitly listed here can authorize DB-capable suites.
 export const TEST_PROJECT_ALLOWLIST: string[] = [...GUARD_DEFAULT_ALLOWLIST,
-  { name: "scripts/test-redundant-index-cleanup.ts", command: "npx tsx scripts/test-redundant-index-cleanup.ts", classification: "offline" },
+  { name: "scripts/test-rpc-retry.ts", command: "npx tsx scripts/test-rpc-retry.ts", classification: "offline" },
 ];
 
 // Production project reference ID that is strictly denied under all circumstances.
@@ -76,6 +76,8 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-tracker-isolation.ts", command: "npx tsx scripts/test-tracker-isolation.ts", classification: "offline" },
   { name: "scripts/test-url-state-assertions.ts", command: "npx tsx scripts/test-url-state-assertions.ts", classification: "offline" },
   { name: "scripts/test-production-fixes.ts", command: "npx tsx scripts/test-production-fixes.ts", classification: "offline" },
+  { name: "scripts/test-structured-data-validation.ts", command: "npx tsx scripts/test-structured-data-validation.ts", classification: "offline" },
+  { name: "scripts/test-openapi-spec.ts", command: "npx tsx scripts/test-openapi-spec.ts", classification: "offline" },
   { name: "scripts/test-filter-predicates.ts", command: "npx tsx scripts/test-filter-predicates.ts", classification: "offline" },
   { name: "scripts/test-keyset-pagination.ts", command: "npx tsx scripts/test-keyset-pagination.ts", classification: "offline" },
   { name: "scripts/test-jobs-detail-polish.ts", command: "npx tsx scripts/test-jobs-detail-polish.ts", classification: "offline" },
@@ -171,6 +173,8 @@ export const SUITES: SuiteSpec[] = [
 
   // DB-capable suites: anonymous write attempt (tests RLS denial; attempts insert/update)
   { name: "scripts/test-filters.ts", command: "npx tsx scripts/test-filters.ts", classification: "db-anon-write-attempt", requiresSupabase: true },
+  { name: "scripts/check-plan-regression.mjs --selftest", command: "node scripts/check-plan-regression.mjs --selftest", classification: "offline" },
+  { name: "scripts/test-redundant-index-cleanup.ts", command: "npx tsx scripts/test-redundant-index-cleanup.ts", classification: "offline" },
 ];
 
 export interface RunSummary {
