@@ -89,7 +89,7 @@ async function main() {
   });
 }
 
-main().catch((err) => {
+main().catch(async (err) => {
   console.error("Fatal unhandled retention cron error:", err);
   await reportCronFailure("retention", err);
   process.exit(1);
