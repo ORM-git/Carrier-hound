@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "generated": "2026-11-06",
+  "files": {
+    "netlify.toml": "155afe74c4a9d9a673fa3b1915b7f6e94a044ac3b628e87c7df82f9fa7647ac8",
+    "next.config.mjs": "58594e645a0160175f696a26ab3103cf7a682a3ea98f5d3341fad267a216f5f0",
+    "package.json": "bb63ad9b0b3455dadafa88d7b5e8c4cc6b43ed59544b00636f10a907af68399d",
+    ".github/workflows/board-ingest.yml": "bcf686171a7390e3fdeb115b44364fab05f6bbed7a70b0f00411d3bce38b1976",
+    ".github/workflows/ci.yml": "d32a8380a0214ca84e14b86300d4710d2308a0a033357535451682735286c417",
+    ".github/workflows/daily-digest-cron.yml": "63eb1a331ef469517f883b5ece2abd9cb6ba4ba5657b282f7a4ddb55e28ac922",
+    ".github/workflows/early-access-digest-cron.yml": "a4ecfc4a4d78e35009a2254a453a04e47e85f95566be490bb682eb1849758e02",
+    ".github/workflows/ingest.yml": "a85d4b0ffb3100cbe17cae731cd04f2616275e8b63ebdd2c8823398be2314dac",
+    ".github/workflows/plan-regression.yml": "60e1cde0e388fc46a871fca81138d5c963a730f3fa9e8f08c8e08718ea2b7b69",
+    ".github/workflows/quality-advisory.yml": "915fd58a520f0178636725a4cfc6d0b924c213d880d6b622f2afaa6c95f023c0",
+    ".github/workflows/retention-cron.yml": "5aa1332ece522f46e0afc62a9b5d815a4e05a4d35a9e1f870d1efb12e58862e3",
+    ".github/workflows/security-scan.yml": "2ea2452a2a9c3be2fa1098f58f15cb3cf6997f0dd8970c288c90f4f096039462"
+  }
+}
