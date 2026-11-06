@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { getServerEntitlement } from "./serverEntitlement";
+import { rpcWithRetry } from "../db/rpcRetry";
 import { getPlanQuota, PLAN_DEFINITIONS, getStartOfIstDay } from "./quota";
 
 export { getStartOfIstDay };
@@ -141,7 +142,7 @@ export async function consumeSet(
 
     // 3. Primary Atomic RPC: consume_user_set (advisory lock + IST cap + plan + addon in one transaction)
     try {
-      const { data: userSetRes, error: userSetErr } = await supabaseAdmin.rpc("consume_user_set", {
+      const { data: userSetRes, error: userSetErr } = await rpcWithRetry(() => supabaseAdmin.rpc("consume_user_set", {
         p_user_id: userId,
         p_kind: kind,
         p_idempotency_key: idempotencyKey,
@@ -149,7 +150,7 @@ export async function consumeSet(
         p_quota: kindQuota,
         p_daily_cap: 30,
         p_day_start: dayStart,
-      });
+      }));
 
       if (!userSetErr && userSetRes) {
         if (userSetRes.success) {
@@ -173,7 +174,7 @@ export async function consumeSet(
 
     // 4. Secondary Atomic RPC path: consume_plan_set followed by consume_addon_set
     try {
-      const { data: planRes, error: planErr } = await supabaseAdmin.rpc("consume_plan_set", {
+      const { data: planRes, error: planErr } = await rpcWithRetry(() => supabaseAdmin.rpc("consume_plan_set", {
         p_user_id: userId,
         p_kind: kind,
         p_idempotency_key: idempotencyKey,
@@ -181,7 +182,7 @@ export async function consumeSet(
         p_quota: kindQuota,
         p_daily_cap: 30,
         p_day_start: dayStart,
-      });
+      }));
 
       if (!planErr && planRes) {
         if (planRes.success) {
@@ -203,13 +204,13 @@ export async function consumeSet(
       }
 
       // If plan quota is exhausted, attempt atomic addon consume
-      const { data: addonRes, error: addonErr } = await supabaseAdmin.rpc("consume_addon_set", {
+      const { data: addonRes, error: addonErr } = await rpcWithRetry(() => supabaseAdmin.rpc("consume_addon_set", {
         p_user_id: userId,
         p_kind: kind,
         p_idempotency_key: idempotencyKey,
         p_daily_cap: 30,
         p_day_start: dayStart,
-      });
+      }));
 
       if (!addonErr && addonRes) {
         if (addonRes.success) {
@@ -264,11 +265,11 @@ export async function refundSet(
 
     // 1. Attempt atomic Postgres RPC refund
     try {
-      const { data: rpcRes, error: rpcErr } = await supabaseAdmin.rpc("refund_plan_or_addon_set", {
+      const { data: rpcRes, error: rpcErr } = await rpcWithRetry(() => supabaseAdmin.rpc("refund_plan_or_addon_set", {
         p_user_id: userId,
         p_idempotency_key: idempotencyKey,
         ...(kind ? { p_kind: kind } : {}),
-      });
+      }));
 
       if (!rpcErr && rpcRes && rpcRes.success) {
         return {

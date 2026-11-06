@@ -14,6 +14,7 @@
  */
 
 import { getSupabaseAdmin } from "../admin/auth";
+import { rpcWithRetry } from "../db/rpcRetry";
 
 export type FailedEventStatus = "pending" | "replayed" | "dead";
 
@@ -731,11 +732,11 @@ export async function replayFailedEvents(options: ReplayOptions = {}): Promise<R
             fulfilOk = Boolean(hRes.success || hRes.already_paid);
             if (!fulfilOk) replayError = hRes.error || "Fulfillment handler failed";
           } else {
-            const { data: rpcRes, error: rpcErr } = await client.rpc("fulfil_payment_order", {
+            const { data: rpcRes, error: rpcErr } = await rpcWithRetry(() => client.rpc("fulfil_payment_order", {
               p_provider_order_id: orderId,
               p_user_id: userId,
               p_expected_mode: mode,
-            });
+            }));
 
             if (rpcErr) {
               replayError = rpcErr.message;
