@@ -17,6 +17,7 @@ interface ProfileDrawersProps {
 }
 
 const DRAFT_STORAGE_PREFIX = "careermonke:profile-draft:";
+const DRAFT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 interface StoredProfileDraft {
   ts: number;
@@ -34,6 +35,11 @@ function readStoredDraft(key: string): StoredProfileDraft | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as StoredProfileDraft;
     if (!parsed || typeof parsed.ts !== "number" || !parsed.draft) return null;
+    if (Date.now() - parsed.ts > DRAFT_MAX_AGE_MS) {
+      // Stale draft: expire it instead of surfacing week-old edits.
+      window.localStorage.removeItem(key);
+      return null;
+    }
     return parsed;
   } catch {
     return null;
