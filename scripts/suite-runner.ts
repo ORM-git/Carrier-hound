@@ -179,6 +179,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-matview-staleness.ts", command: "npx tsx scripts/test-matview-staleness.ts", classification: "offline" },
   { name: "scripts/test-funnel-events.ts", command: "npx tsx scripts/test-funnel-events.ts", classification: "offline" },
   { name: "scripts/test-redundant-index-cleanup.ts", command: "npx tsx scripts/test-redundant-index-cleanup.ts", classification: "offline" },
+  { name: "scripts/test-structured-logger.ts", command: "npx tsx scripts/test-structured-logger.ts", classification: "offline" },
 ];
 
 export interface RunSummary {
