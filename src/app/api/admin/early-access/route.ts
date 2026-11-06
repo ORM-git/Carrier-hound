@@ -41,6 +41,16 @@ export async function GET(req: Request) {
       );
     }
 
+    // Audit: an admin just read the early-access list (emails = PII).
+    // Fail-open logger; never blocks the response.
+    await logAdminAction({
+      adminUserId: auth.user.id,
+      action: "pii_read",
+      targetType: "early_access_list",
+      metadata: { page, limit, status, total: result.total },
+      request: req,
+    });
+
     return NextResponse.json({
       ok: true,
       requests: result.requests,

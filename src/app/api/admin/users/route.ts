@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { verifyAdminSession } from "@/lib/admin/auth";
 import { getUsersManagementList } from "@/lib/admin/analytics";
+import { logAdminAction } from "@/lib/admin/auditLog";
 
 export const runtime = "edge";
 
@@ -18,6 +19,19 @@ export async function GET(req: Request) {
 
   try {
     const users = await getUsersManagementList(q);
+
+    // Audit: an admin just read the user list (PII). Fail-open logger; never
+    // blocks the response. DB row: user data access audit.
+    if (auth.user) {
+      await logAdminAction({
+        adminUserId: auth.user.id,
+        action: "pii_read",
+        targetType: "user_list",
+        metadata: { result_count: users.length, filtered: Boolean(q) },
+        request: req,
+      });
+    }
+
     return NextResponse.json({ ok: true, users });
   } catch (err: any) {
     return NextResponse.json(

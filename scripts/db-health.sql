@@ -87,3 +87,19 @@ order by duration desc;
 select sum(heap_blks_hit) / nullif(sum(heap_blks_hit) + sum(heap_blks_read), 0)
        AS cache_hit_ratio
 from pg_statio_user_tables;
+
+-- 9. PII access review (DB row: user data access audit) - who read personal data, when, what kind.
+--    Reads land in admin_audit_log with action = 'pii_read' (user list, user activity,
+--    early-access list, self-service data exports). Review weekly; investigate actors
+--    you do not recognize or unusual volumes.
+select date_trunc('day', created_at) as day,
+       admin_user_id as actor_user_id,
+       target_type,
+       count(*) as reads,
+       count(distinct target_id) as distinct_subjects
+from public.admin_audit_log
+where action = 'pii_read'
+  and created_at > now() - interval '30 days'
+group by 1, 2, 3
+order by 1 desc, reads desc
+limit 100;
