@@ -207,7 +207,7 @@ export default function PrivacyPolicyPage() {
         </p>
         <ul className="list-disc pl-5 space-y-2 mb-2">
           <li>
-            <strong>Grievance Officer</strong>, Olive Ridley Media Private Limited
+            <strong>Grievance Officer:</strong> Orissa Lee Patnaik, Olive Ridley Media Private Limited
           </li>
           <li>
             Email:{" "}
