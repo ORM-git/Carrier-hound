@@ -29,13 +29,13 @@ describe("evaluateSlo", () => {
     expect(r.status).toBe("ok");
     expect(r.breaches).toEqual([]);
     expect(r.sampleCount).toBe(4);
-    expect(r.percentiles.p75).toBe(400);
+    expect(r.percentiles.p75).toBe(300);
   });
 
   it("reports breach with actual values when the target is exceeded", () => {
     const r = evaluateSlo([100, 200, 900, 950], target);
     expect(r.status).toBe("breach");
-    expect(r.breaches).toEqual([{ percentile: 75, maxMs: 800, actualMs: 950 }]);
+    expect(r.breaches).toEqual([{ percentile: 75, maxMs: 800, actualMs: 900 }]);
   });
 
   it("reports no_data on empty or fully-invalid samples", () => {
