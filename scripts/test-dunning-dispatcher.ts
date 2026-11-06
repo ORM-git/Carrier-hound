@@ -111,7 +111,36 @@ async function main() {
     check("missing recipient skipped and dequeued", s.skippedNoRecipient === 1 && !!cleared);
   }
 
-  // 6. Empty outbox is a no-op
+  // 6. Retry cap: row at max attempts is dequeued without sending
+  {
+    stubFetch("ok");
+    const sb = new FakeSupabase();
+    sb.rows = [{
+      id: "row-4", user_id: "u4", provider: "razorpay", subscription_id: null,
+      failure_reason: null, grace_period_expires_at: null,
+      metadata: { recipient_email: "user@example.com", dispatch_attempts: 5 },
+      created_at: "2026-11-06T00:00:00Z",
+    }];
+    const s = await dispatchQueuedDunningEmails({ supabase: sb as any, mailer: MAILER });
+    const capped = sb.updates.find((u) => u.values.dunning_email_queued === false && u.values.metadata?.dispatch_error === "max_attempts");
+    check("max-attempts row dequeued without sending", s.cappedOut === 1 && s.sent === 0 && !!capped);
+  }
+
+  // 7. "already" reply is stamped as sent
+  {
+    stubFetch("already");
+    const sb = new FakeSupabase();
+    sb.rows = [{
+      id: "row-5", user_id: "u5", provider: "razorpay", subscription_id: null,
+      failure_reason: null, grace_period_expires_at: null,
+      metadata: { recipient_email: "user@example.com" }, created_at: "2026-11-06T00:00:00Z",
+    }];
+    const s = await dispatchQueuedDunningEmails({ supabase: sb as any, mailer: MAILER, now: new Date("2026-11-06T12:00:00Z") });
+    const stamped = sb.updates.some((u) => u.values.dunning_email_sent_at);
+    check("'already' reply stamped as sent", s.sent === 1 && s.failed === 0 && stamped);
+  }
+
+  // 8. Empty outbox is a no-op
   {
     stubFetch("ok");
     const sb = new FakeSupabase();
