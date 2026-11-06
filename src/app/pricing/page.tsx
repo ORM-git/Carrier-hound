@@ -23,6 +23,7 @@ import { PLAN_FEATURE_ROWS } from "@/config/plan-features";
 import { getProAccessStatus } from "@/lib/billing/subscription";
 import { createClient } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
+import { BreadcrumbJsonLd } from "@/components/seo/BreadcrumbJsonLd";
 
 export default function PricingPage() {
   const [user, setUser] = useState<User | null>(null);
@@ -567,6 +568,7 @@ export default function PricingPage() {
 
   return (
     <LoggedInAppShell pageLabel="PRICING" user={user} isPro={isPro}>
+  <BreadcrumbJsonLd trail={[{ name: "Home", path: "/" }, { name: "Pricing", path: "/pricing" }]} />
       {pricingContent}
       <Footer />
     </LoggedInAppShell>

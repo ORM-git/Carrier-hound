@@ -5,6 +5,7 @@ import Footer from "@/components/Footer";
 import { GUIDE_ARTICLES } from "@/data/guides/articles";
 import { CATEGORY_LANDINGS } from "@/data/guides/categories";
 import { BookOpen, ArrowRight, ShieldCheck, Compass, Briefcase, FileText } from "lucide-react";
+import { BreadcrumbJsonLd } from "@/components/seo/BreadcrumbJsonLd";
 
 export const metadata = {
   title: "Career Resources & Hiring Guides | CareerMonke",
@@ -17,6 +18,7 @@ export default function ResourcesIndexPage() {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#09090B] flex flex-col">
+  <BreadcrumbJsonLd trail={[{ name: "Home", path: "/" }, { name: "Remote Jobs", path: "/remote" }]} />
       <GuideHeader />
 
       <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-12 sm:py-16 space-y-12">

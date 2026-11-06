@@ -1687,6 +1687,10 @@ async function main() {
   assert.deepStrictEqual(sitemapPaths, [
     "/",
     "/early-access",
+    "/remote",
+    "/worldwide",
+    "/pricing",
+    "/signup",
     "/privacy-policy",
     "/terms-and-conditions",
     "/refund-policy",

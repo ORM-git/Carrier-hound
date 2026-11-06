@@ -12,6 +12,7 @@ import {
   Sparkles,
   ShieldCheck,
 } from "lucide-react";
+import { BreadcrumbJsonLd } from "@/components/seo/BreadcrumbJsonLd";
 
 const CLIENT_EMAIL_REGEX =
   /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i;
@@ -97,6 +98,7 @@ export default function EarlyAccessPage() {
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-[#F0F7FF] via-[#F8FAFC] to-white text-[#0F172A] flex flex-col justify-between selection:bg-blue-100 selection:text-blue-900">
+  <BreadcrumbJsonLd trail={[{ name: "Home", path: "/" }, { name: "Early Access", path: "/early-access" }]} />
       {/* Top bar with CareerMonke logo + "Get early access" button */}
       <header className="w-full border-b border-slate-200/80 bg-white/80 backdrop-blur-md sticky top-0 z-30">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">

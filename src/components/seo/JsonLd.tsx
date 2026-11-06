@@ -1,8 +1,9 @@
 import React from "react";
-import { getRootStructuredData, RootJsonLdGraph } from "@/lib/seo/structuredData";
+import { getRootStructuredData } from "@/lib/seo/structuredData";
 
 export interface JsonLdProps {
-  data?: RootJsonLdGraph;
+  /** Any JSON-LD node or graph; defaults to the root Organization/WebSite graph. */
+  data?: object;
 }
 
 export function JsonLd({ data }: JsonLdProps = {}) {
