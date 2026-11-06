@@ -126,6 +126,53 @@ async function main() {
     console.log("ok - plain signup payload unchanged (no attribution keys)");
   }
 
+  // 6. Migration pending: insert with columns 42703s -> retried without them
+  {
+    const attempts: any[] = [];
+    (globalThis as any).__mockSupabaseClient = {
+      from: () => ({
+        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }),
+        insert: (row: any) => {
+          attempts.push(row);
+          if (attempts.length === 1) {
+            return Promise.resolve({ error: { code: "42703", message: 'column "utm_source" does not exist' } });
+          }
+          return Promise.resolve({ error: null });
+        },
+      }),
+    };
+    const { POST } = require("../src/app/api/early-access/route");
+    const req: any = {
+      headers: { get: () => null },
+      json: async () => ({ email: "retry@example.com", attribution: { utmSource: "x" } }),
+    };
+    const res = await POST(req);
+    assert.ok((await res.json()).ok, "signup must succeed via the retry path");
+    assert.strictEqual(attempts.length, 2, "one retry expected");
+    assert.ok("utm_source" in attempts[0], "first attempt carries attribution");
+    assert.ok(!("utm_source" in attempts[1]), "retry drops attribution columns");
+    console.log("ok - pending-migration insert retries without attribution, signup succeeds");
+  }
+
+  // 7. Non-column insert errors are NOT retried
+  {
+    const attempts: any[] = [];
+    (globalThis as any).__mockSupabaseClient = {
+      from: () => ({
+        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }),
+        insert: (row: any) => { attempts.push(row); return Promise.resolve({ error: { code: "23505", message: "duplicate key" } }); },
+      }),
+    };
+    const { POST } = require("../src/app/api/early-access/route");
+    const req: any = {
+      headers: { get: () => null },
+      json: async () => ({ email: "dup@example.com", attribution: { utmSource: "x" } }),
+    };
+    await POST(req);
+    assert.strictEqual(attempts.length, 1, "duplicate-key errors must not trigger the retry");
+    console.log("ok - non-column errors are not retried");
+  }
+
   delete (globalThis as any).__mockSupabaseClient;
   console.log("\nAll attribution checks passed.");
 }
