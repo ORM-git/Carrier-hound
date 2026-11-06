@@ -18,7 +18,8 @@
     "test:all": "tsx scripts/suite-runner.ts && vitest run",
     "prepare": "husky",
     "format:check": "prettier --check .",
-    "test:unit": "vitest run"
+    "test:unit": "vitest run",
+    "check:budget": "node scripts/check-bundle-budget.mjs"
   },
   "dependencies": {
     "@netlify/plugin-nextjs": "5.16.5",
