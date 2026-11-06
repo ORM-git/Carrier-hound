@@ -40,6 +40,9 @@ export const metadata: Metadata = {
   metadataBase: new URL("https://careermonke.com"),
   alternates: {
     canonical: "/",
+    types: {
+      "application/rss+xml": "/feed.xml",
+    },
   },
   openGraph: {
     title: siteTitle,
