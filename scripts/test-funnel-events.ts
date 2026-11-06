@@ -50,6 +50,21 @@ check("route caps metadata size", route.includes("MAX_FUNNEL_METADATA_BYTES"));
 check("route tolerates missing table (PGRST205)", /PGRST205/.test(route));
 check("route inserts via service role client", route.includes('from("funnel_events").insert'));
 
+// Retention follow-up: 20261106f extends purge_operational_logs with funnel_events
+const ret = fs.readFileSync("supabase/migrations/20261106f_funnel_events_retention.sql", "utf8");
+check("retention migration marked NOT APPLIED", ret.includes("NOT APPLIED"));
+check("retention migration names record-migration command", ret.includes("record-migration.cjs 20261106f_funnel_events_retention"));
+check("retention migration notes apply-after dependencies", ret.includes("20261106a_data_retention") && ret.includes("20261106e_funnel_events"));
+check("retention adds a funnel_events purge class", /delete from public\.funnel_events/i.test(ret));
+check("funnel_events kept 90 days", /funnel_events[\s\S]{0,200}interval '90 days'/i.test(ret));
+check("dry_run default true preserved", /purge_operational_logs\(dry_run boolean default true\)/i.test(ret));
+check("all six prior classes preserved", ["page_views", "gmail_send_log", "cron_run_logs", "admin_audit_log", "webhook_events", "failed_events"].every((t) => new RegExp("delete from public\\." + t, "i").test(ret)));
+check("function comment lists funnel_events window", ret.includes("funnel_events 90d"));
+check("service_role-only execute preserved", /revoke all on function public\.purge_operational_logs\(boolean\) from public, anon, authenticated/i.test(ret) && /grant execute on function public\.purge_operational_logs\(boolean\) to service_role/i.test(ret));
+check("rollback restores prior function", ret.includes("re-apply") && ret.includes("20261106a_data_retention.sql"));
+check("consent-gate note in migration", ret.includes("consent gate"));
+check("consent-gate note in track route", route.includes("consent gate"));
+
 check("db-health has a funnel review query", /funnel review/i.test(health));
 check("db-health funnel query reads funnel_events", /from public\.funnel_events/i.test(health));
 
