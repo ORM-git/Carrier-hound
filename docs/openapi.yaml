@@ -1,0 +1,242 @@
+# CareerMonke HTTP API surface.
+# Generated from the actual route files under src/app/api (26 routes).
+# Coverage is enforced in CI by scripts/test-openapi-spec.ts: any route added
+# or removed without updating this file fails the suite.
+openapi: 3.0.3
+info:
+  title: CareerMonke API
+  version: "0.1.0"
+  description: >-
+    Next.js App Router route handlers under /api. Routes run on the edge
+    runtime and delegate to handler libraries under src/lib. Admin routes
+    require an admin session (verified via verifyAdminSession in code);
+    other authentication requirements are enforced per-route inside their
+    handler libraries and are intentionally not restated here.
+servers:
+  - url: https://careermonke.com
+tags:
+  - name: account
+  - name: admin
+  - name: ai
+  - name: billing
+  - name: jobs
+  - name: public
+  - name: analytics
+paths:
+  /api/account/delete:
+    post:
+      tags: [account]
+      summary: Request account deletion
+      description: Delegates to handleAccountDeleteRequest (src/lib/account/deleteHandler).
+      responses:
+        "200": { description: Deletion processed }
+  /api/account/export:
+    post:
+      tags: [account]
+      summary: Export account data
+      description: Delegates to handleAccountExportRequest.
+      responses:
+        "200": { description: Export generated }
+  /api/admin/early-access:
+    get:
+      tags: [admin]
+      summary: List early-access requests
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Request list }
+        "403": { description: Not an admin }
+    post:
+      tags: [admin]
+      summary: Manage early-access requests
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Action processed }
+        "403": { description: Not an admin }
+  /api/admin/early-access/approve:
+    post:
+      tags: [admin]
+      summary: Approve an early-access request
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Approved }
+        "403": { description: Not an admin }
+  /api/admin/early-access/reject:
+    post:
+      tags: [admin]
+      summary: Reject an early-access request
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Rejected }
+        "403": { description: Not an admin }
+  /api/admin/replay:
+    get:
+      tags: [admin]
+      summary: Inspect dead-letter queue for replay
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Dead-letter entries }
+        "403": { description: Not an admin }
+    post:
+      tags: [admin]
+      summary: Replay dead-letter events
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Replay processed }
+        "403": { description: Not an admin }
+  /api/admin/stats:
+    get:
+      tags: [admin]
+      summary: Admin analytics stats
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Stats payload }
+        "403": { description: Not an admin }
+  /api/admin/users:
+    get:
+      tags: [admin]
+      summary: List users
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: User list }
+        "403": { description: Not an admin }
+  /api/admin/users/activity:
+    get:
+      tags: [admin]
+      summary: User activity view
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Activity payload }
+        "403": { description: Not an admin }
+  /api/admin/users/block:
+    post:
+      tags: [admin]
+      summary: Block a user
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: User blocked }
+        "403": { description: Not an admin }
+  /api/ai:
+    post:
+      tags: [ai]
+      summary: AI assistant request
+      description: >-
+        Delegates to handleAiRequest (src/lib/ai/serviceHandler); Groq-backed
+        with timeout and circuit breaker. Wrapped in the per-route response
+        time budget (measureRouteBudget).
+      responses:
+        "200": { description: AI response }
+  /api/billing/razorpay/order:
+    post:
+      tags: [billing]
+      summary: Create a Razorpay order
+      description: Payments are disabled pre-launch (owner decision).
+      responses:
+        "200": { description: Order created }
+  /api/billing/razorpay/verify:
+    post:
+      tags: [billing]
+      summary: Verify a Razorpay payment signature
+      description: Payments are disabled pre-launch (owner decision).
+      responses:
+        "200": { description: Verification result }
+  /api/early-access:
+    post:
+      tags: [public]
+      summary: Join the early-access waitlist
+      description: Captures first-touch UTM/referrer attribution.
+      responses:
+        "200": { description: Signup recorded }
+  /api/email/unsubscribe:
+    get:
+      tags: [public]
+      summary: One-click unsubscribe (signed token)
+      responses:
+        "200": { description: Unsubscribe confirmation page }
+    post:
+      tags: [public]
+      summary: Confirm unsubscribe
+      responses:
+        "200": { description: Unsubscribed }
+  /api/health:
+    get:
+      tags: [public]
+      summary: Health check
+      responses:
+        "200": { description: Service healthy }
+  /api/jobs/interview-pack:
+    get:
+      tags: [jobs]
+      summary: Generate an interview pack for a job
+      description: Delegates to handleInterviewPackRequest.
+      responses:
+        "200": { description: Interview pack }
+  /api/jobs/pro:
+    get:
+      tags: [jobs]
+      summary: Pro job details
+      responses:
+        "200": { description: Job details }
+    post:
+      tags: [jobs]
+      summary: Unlock Pro job details
+      responses:
+        "200": { description: Unlocked details }
+  /api/jobs/search:
+    get:
+      tags: [jobs]
+      summary: Search jobs
+      responses:
+        "200": { description: Search results }
+  /api/jobs/skill-what-if:
+    get:
+      tags: [jobs]
+      summary: Skill what-if analysis
+      description: Delegates to handleSkillWhatIfRequest.
+      responses:
+        "200": { description: Analysis result }
+  /api/jobs/top10:
+    post:
+      tags: [jobs]
+      summary: Top-10 job matches for the candidate
+      responses:
+        "200": { description: Ranked matches }
+  /api/me/quota:
+    get:
+      tags: [account]
+      summary: Current user quota status
+      responses:
+        "200": { description: Quota payload }
+  /api/radar:
+    get:
+      tags: [public]
+      summary: Live job-radar telemetry
+      responses:
+        "200": { description: Telemetry payload }
+  /api/stats:
+    get:
+      tags: [public]
+      summary: Public product stats
+      responses:
+        "200": { description: Stats payload }
+  /api/ticker:
+    get:
+      tags: [public]
+      summary: Ticker data
+      responses:
+        "200": { description: Ticker payload }
+  /api/track:
+    post:
+      tags: [analytics]
+      summary: Client analytics events (incl. Web Vitals)
+      responses:
+        "200": { description: Event recorded }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: >-
+        Admin session token (src/lib/admin/auth.ts extractToken): send
+        Authorization: Bearer <token>. The Supabase auth cookie
+        (sb-<project-ref>-auth-token) is also accepted as a fallback; the
+        token is then verified by verifyAdminSession.
