@@ -201,4 +201,4 @@ function main() {
 // Only invoke main when executed directly as script entrypoint
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(__filename)) {
   main();
-    }
+}
