@@ -7,6 +7,7 @@ import { ToastContainer } from "react-toastify";
 import BackToTop from "@/components/BackToTop";
 import PageViewTracker from "@/components/analytics/PageViewTracker";
 import WebVitalsTracker from "@/components/analytics/WebVitalsTracker";
+import { ServiceWorkerRegistrar } from "@/components/pwa/ServiceWorkerRegistrar";
 import BlockedAccountNotice from "@/components/auth/BlockedAccountNotice";
 import CookieNotice from "@/components/CookieNotice";
 import { getConnectionHints } from "@/lib/seo/structuredData";
@@ -103,6 +104,7 @@ export default function RootLayout({
         </Suspense>
         <BlockedAccountNotice />
         <CookieNotice />
+        <ServiceWorkerRegistrar />
         <BackToTop />
         <ToastContainer
           position="bottom-right"
