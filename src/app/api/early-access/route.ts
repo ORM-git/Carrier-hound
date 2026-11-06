@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { measureRouteBudget } from "@/lib/api/routeBudget";
 import { getRequestContext } from "@cloudflare/next-on-pages";
 import {
   checkSharedRateLimit,
@@ -11,6 +12,10 @@ import {
   getSupabaseAdminClient,
   getRuntimeEnv,
 } from "@/lib/ai/serviceHandler";
+import {
+  isMissingAttributionColumnError,
+  sanitizeAttribution,
+} from "@/lib/analytics/attribution";
 import {
   sendEarlyAccessThankYouEmail,
   THANK_YOU_HARD_CAP_MS,
@@ -70,7 +75,7 @@ function validateEarlyAccessEmail(raw: unknown): {
   return { valid: true, email: normalized };
 }
 
-export async function POST(req: Request) {
+async function postHandler(req: Request) {
   try {
     const isLegacy =
       process.env.NODE_ENV === "test" &&
@@ -210,9 +215,24 @@ export async function POST(req: Request) {
           });
         }
 
-        const { error: insertError } = await supabaseClient
+        const attribution = sanitizeAttribution((body as any).attribution);
+        let { error: insertError } = await supabaseClient
           .from("early_access_emails")
-          .insert({ email, created_at: createdAt });
+          .insert({ email, created_at: createdAt, ...attribution });
+
+        // Migration 20261106b pending: if the attribution columns do not
+        // exist yet, retry without them so signups never break on the
+        // not-yet-applied migration.
+        if (
+          insertError &&
+          Object.keys(attribution).length > 0 &&
+          isMissingAttributionColumnError(insertError)
+        ) {
+          const retry = await supabaseClient
+            .from("early_access_emails")
+            .insert({ email, created_at: createdAt });
+          insertError = retry.error;
+        }
 
         if (insertError) {
           // Postgres unique constraint violation (23505) -> generic idempotent success, no email sent
@@ -273,4 +293,8 @@ export async function POST(req: Request) {
       { status: 500 }
     );
   }
+}
+
+export async function POST(req: Request) {
+  return measureRouteBudget("/api/early-access", () => postHandler(req));
 }

@@ -320,11 +320,29 @@ async function runSuite() {
   await new Promise<void>((resolve) => server.listen(PORT, resolve));
 
   const CHROME_PATH = getChromePath();
-  const browser = await puppeteer.launch({
-    executablePath: CHROME_PATH,
-    headless: "new",
-    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--hide-scrollbars"],
-  });
+  // CI runners occasionally take >30s to hand over the browser WS endpoint
+  // (observed flake on main, 2026-11-06). Raise the launch timeout to 60s and
+  // retry exactly once, only when the failure is the browser launch itself -
+  // page-level assertions keep their original timeouts and are never retried.
+  async function launchBrowser(attempt: number): Promise<ReturnType<typeof puppeteer.launch>> {
+    try {
+      return await puppeteer.launch({
+        executablePath: CHROME_PATH,
+        headless: "new",
+        timeout: 60_000,
+        args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--hide-scrollbars"],
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const isLaunchTimeout = /waiting for (the )?WS endpoint|Timed out after \d+ ms waiting/i.test(msg);
+      if (isLaunchTimeout && attempt < 2) {
+        console.warn(`  -> [RETRY] Browser launch timed out (attempt ${attempt}/2); retrying once...`);
+        return launchBrowser(attempt + 1);
+      }
+      throw err;
+    }
+  }
+  const browser = await launchBrowser(1);
 
   try {
     const page = await browser.newPage();

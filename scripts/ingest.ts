@@ -1,3 +1,4 @@
+import { LruCache } from "../src/lib/cache/lru";
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import * as dotenv from 'dotenv';
 import * as fs from 'fs';
@@ -70,7 +71,9 @@ let hasJobDescriptionsTable = false;
 let hasIngestRunsTable = false;
 let hasVerifiedColumn = false;
 
-const companyCache = new Map<string, string>(); // slug -> company_id
+// Entry-count guard, not a measured performance claim. Evicted companies
+// follow the existing DB lookup path; correctness does not depend on a hit.
+const companyCache = new LruCache<string, string>(5000); // slug -> company_id
 
 // Initialize Supabase Client
 function getSupabaseClient(): SupabaseClient | null {

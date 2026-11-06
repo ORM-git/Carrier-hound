@@ -18,7 +18,9 @@
     "test:all": "tsx scripts/suite-runner.ts && vitest run",
     "prepare": "husky",
     "format:check": "prettier --check .",
-    "test:unit": "vitest run"
+    "test:unit": "vitest run",
+    "check:budget": "node scripts/check-bundle-budget.mjs",
+    "audit:quality": "node scripts/advisory-quality.mjs"
   },
   "dependencies": {
     "@netlify/plugin-nextjs": "5.16.5",
@@ -52,16 +54,22 @@
   },
   "devDependencies": {
     "@cloudflare/next-on-pages": "^1.13.15",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
     "@types/d3": "^7.4.3",
     "@types/node": "^20.17.0",
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.0",
     "autoprefixer": "^10.6.2",
+    "axe-core": "^4.14.0",
     "dotenv": "^18.0.9",
     "eslint": "^8.57.1",
     "eslint-config-next": "^14.2.35",
     "eslint-plugin-jsx-a11y": "^6.10.2",
     "husky": "^9.1.7",
+    "jsdom": "^31.0.0",
+    "lighthouse": "^12.8.2",
     "lint-staged": "^15.5.2",
     "postcss": "^8.5.32",
     "prettier": "^3.9.10",
