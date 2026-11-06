@@ -39,3 +39,13 @@ inbox. This adds repo-side inbound handling; activation is owner-gated.
   on audit/history writes.
 - The 2-day lookback window and 25-message cap per run are chosen
   defaults to bound API usage; widen once traffic justifies it.
+
+## Retention
+
+`inbound_replies` holds other people's email (sender address, subject,
+excerpt) - treat it as PII-adjacent. No automated purge ships with this
+migration. Chosen default retention class: follow the operational-log
+default in `docs/retention-policy.md` (90 days) unless the owner sets a
+different window; purging is an owner step (pg_cron delete of rows older
+than the window, or include the table in the next retention migration).
+Owner to confirm the window before launch.
