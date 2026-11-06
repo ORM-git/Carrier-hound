@@ -1,5 +1,5 @@
 # CareerMonke HTTP API surface.
-# Generated from the actual route files under src/app/api (26 routes).
+# Generated from the actual route files under src/app/api (27 routes).
 # Coverage is enforced in CI by scripts/test-openapi-spec.ts: any route added
 # or removed without updating this file fails the suite.
 openapi: 3.0.3
@@ -23,6 +23,25 @@ tags:
   - name: public
   - name: analytics
 paths:
+  /api/auth/security-event:
+    post:
+      tags: [analytics]
+      summary: Receive untrusted client auth telemetry
+      description: >-
+        Accepts otp_request hints, not proof of a Supabase auth event.
+        Size-capped and rate-limited. Always responds with no content to avoid
+        revealing account state, detection thresholds, or alert outcomes.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [event]
+              properties:
+                event: { type: string, enum: [otp_request] }
+                email: { type: string, maxLength: 320 }
+      responses:
+        "204": { description: Telemetry accepted or silently discarded }
   /api/account/delete:
     post:
       tags: [account]
