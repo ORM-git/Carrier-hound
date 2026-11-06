@@ -82,11 +82,6 @@ function LandingFooter() {
                   </Link>
                 </li>
                 <li>
-                  <Link href="/shipping-and-delivery" prefetch={false} className={landingFooterLinkClass}>
-                    Shipping & Delivery
-                  </Link>
-                </li>
-                <li>
                   <Link href="/contact" prefetch={false} className={landingFooterLinkClass}>
                     Contact Us
                   </Link>
@@ -272,11 +267,6 @@ export default function Footer({ isGuide = false }: FooterProps) {
                 </Link>
               </li>
               <li>
-                <Link href="/shipping-and-delivery" prefetch={false} className={publicFooterLinkClass}>
-                  Shipping & Delivery
-                </Link>
-              </li>
-              <li>
                 <Link href="/contact" prefetch={false} className={publicFooterLinkClass}>
                   Contact Us
                 </Link>
@@ -306,10 +296,6 @@ export default function Footer({ isGuide = false }: FooterProps) {
             <span aria-hidden="true" className="text-slate-300">·</span>
             <Link href="/refund-policy" className="hover:text-[#2563EB] transition-colors">
               Refund Policy
-            </Link>
-            <span aria-hidden="true" className="text-slate-300">·</span>
-            <Link href="/shipping-and-delivery" className="hover:text-[#2563EB] transition-colors">
-              Shipping &amp; Delivery
             </Link>
             <span aria-hidden="true" className="text-slate-300">·</span>
             <Link href="/contact" className="hover:text-[#2563EB] transition-colors">

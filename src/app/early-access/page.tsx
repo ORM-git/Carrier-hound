@@ -350,7 +350,7 @@ export default function EarlyAccessPage() {
       {/* Minimal clean footer */}
       <footer className="w-full border-t border-slate-200/80 bg-white/70 py-5 px-4 sm:px-6 lg:px-8">
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-[#64748B]">
-          <span>© {new Date().getFullYear()} CareerMonke Inc. All rights reserved.</span>
+          <span>© {new Date().getFullYear()} Olive Ridley Media Private Limited. All rights reserved.</span>
           <div className="flex items-center gap-4">
             <Link href="/privacy" className="hover:text-slate-900 transition-colors">Privacy</Link>
             <Link href="/terms-and-conditions" className="hover:text-slate-900 transition-colors">Terms</Link>
