@@ -11,9 +11,9 @@
 -- 1. Failed cron runs in the last 7 days (DB #66 - the alert query)
 --    If this returns rows, a scheduled job failed without a page. Wire the
 --    count into an uptime/alert check when alerting is stood up.
-select source, status, error_message, started_at
+select job_type, status, error_message, started_at
 from public.cron_run_logs
-where status <> 'success'
+where status = 'failed'
   and started_at > now() - interval '7 days'
 order by started_at desc
 limit 50;
