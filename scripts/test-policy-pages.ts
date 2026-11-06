@@ -7,6 +7,10 @@
  * 3. /contact (Google Doc Tab 3)
  * 4. /refund-policy ("Cancellation & Refund Policy")
  *
+ * Phrase lists updated 2026-11-06 for the Razorpay-review copy (PR #350).
+ * NOTE: the source Google Doc tabs still carry the old copy and need the
+ * same update owner-side; this suite now asserts the revised pages.
+ *
  * Strict negative control included per permanent rules.
  */
 
@@ -76,11 +80,15 @@ async function main() {
     "CareerMonke",
     "1. Services Provided",
     "2. Eligibility and User Accounts",
-    "3. Billing, Pricing, and Subscriptions",
-    "weekly, monthly and quarterly",
-    "plans are prepaid for a fixed duration and do not auto-renew; renew or upgrade extends your period",
+    "3. Plans, Pricing, and Add-ons",
+    "proprietary ingestion tools",
+    "Current prices are shown on the",
+    "Pricing page",
+    "plans are prepaid for a fixed duration and do not renew automatically",
+    "Planned add-on packs",
+    "expire 60 days after purchase",
     "Razorpay",
-    "4. Cancellation and Account Rules",
+    "4. Cancellation, Renewal, and Access After Cancellation",
     "Cancellation &amp; Refund Policy",
     "5. Intellectual Property &amp; Acceptable Use",
     "6. Limitation of Liability &amp; Disclaimer",
@@ -93,6 +101,10 @@ async function main() {
   }
   assert.ok(!termsHtml.includes("Stripe"), "/terms-and-conditions must NOT contain Stripe (Razorpay only)");
   console.log('  [PASS-LOCAL] /terms-and-conditions excludes Stripe (Razorpay only)');
+  for (const hardcodedPrice of ["₹692", "₹1,499", "₹3,999", "₹149", "₹399", "₹699"]) {
+    assert.ok(!termsHtml.includes(hardcodedPrice), `/terms-and-conditions must NOT hard-code price "${hardcodedPrice}" (prices live on /pricing; final prices pending founders)`);
+  }
+  console.log('  [PASS-LOCAL] /terms-and-conditions hard-codes no INR amounts (prices live on /pricing)');
 
   // 3. /privacy-policy Key Phrases (Google Doc Tab 2)
   console.log("\n3. Verifying /privacy-policy key phrases (Google Doc Tab 2)...");
@@ -102,20 +114,25 @@ async function main() {
     "1. Information We Collect",
     "2. Legal Basis and How We Use Your Data",
     "Razorpay Software Private Limited",
-    "Stripe, Inc.",
-    "3. Data Sharing and International Transfers",
-    "4. Global Privacy Rights &amp; Compliance",
-    "Indian Users (DPDP Act Compliance)",
-    "European Union Users (GDPR Compliance)",
-    "California Users (CCPA Compliance)",
+    "3. How Our AI Features Process Your Resume Data",
+    "Groq, Inc.",
+    "4. Data Sharing and Service Providers",
+    "5. Your Privacy Rights and How to Exercise Them",
+    "Digital Personal Data Protection (DPDP) Act",
     "support@careermonke.com",
-    "5. Data Retention Boundaries",
-    "6. Cookies and Tracking Mechanisms",
+    "6. Data Retention",
+    "7. Security Practices",
+    "8. Grievance Officer",
+    "9. Cookies and Tracking Mechanisms",
   ];
   for (const phrase of privacyPhrases) {
     assert.ok(privacyHtml.includes(phrase), `/privacy-policy must contain "${phrase}"`);
     console.log(`  [PASS-LOCAL] /privacy-policy contains: "${phrase}"`);
   }
+  for (const banned of ["Stripe", "GDPR Compliance", "CCPA Compliance", "absolute right to be forgotten"]) {
+    assert.ok(!privacyHtml.includes(banned), `/privacy-policy must NOT contain "${banned}"`);
+  }
+  console.log('  [PASS-LOCAL] /privacy-policy excludes Stripe and blanket GDPR/CCPA/"absolute erasure" claims');
 
   // 4. /contact Key Details (Google Doc Tab 3)
   console.log("\n4. Verifying /contact key details (Google Doc Tab 3)...");
@@ -125,12 +142,13 @@ async function main() {
     "CareerMonke",
     "Corporate Legal Entity",
     "Olive Ridley Media Private Limited",
-    "Registered Office / Corporate Address",
-    "BLOCK-C2, 7TH FLOOR, FLAT NO-712, BALAJI COMPLEX, BLOCK-C2, JHARPADA, BHUBANESWAR, Khordha, Odisha, 751006",
-    "Primary Support Email",
+    "Registered Office:",
+    "Flat No. 712, 7th Floor, Block C-2, Balaji Complex, Jharpada, Bhubaneswar, Khordha, Odisha 751006, India",
+    "Support Email:",
     "support@careermonke.com",
-    "Grievance Officer / Customer Support Helpline",
+    "Grievance Officer",
     "+91-9124618200",
+    "5-7 working days",
   ];
   for (const phrase of contactPhrases) {
     assert.ok(contactHtml.includes(phrase), `/contact must contain "${phrase}"`);
@@ -142,9 +160,12 @@ async function main() {
   const refundPhrases = [
     "Cancellation &amp; Refund Policy",
     "prepaid fixed-duration plans and add-on packs",
-    "all sales final",
+    "all sales are final",
+    "no recurring charges",
+    "when offered, are valid for 60 days from purchase",
     "duplicate or failed-but-debited payment",
     "5-7 business days",
+    "5-7 working days",
     "support@careermonke.com",
     "order id",
     "Olive Ridley Media Private Limited",
