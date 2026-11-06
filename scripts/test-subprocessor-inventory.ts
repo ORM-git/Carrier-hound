@@ -16,6 +16,9 @@ function check(name: string, cond: boolean) {
 const doc = fs.readFileSync("docs/subprocessors.md", "utf8");
 
 check("marked INTERNAL / not customer-facing", /INTERNAL/.test(doc) && /[Nn]ot customer-facing/.test(doc));
+check("lists Cloudflare Pages as PRODUCTION hosting", doc.includes("Cloudflare Pages") && /PRODUCTION hosting/.test(doc));
+check("scopes Netlify to preview/legacy, not production", /Netlify \| Preview deploys \+ legacy functions only \(NOT production traffic\)/.test(doc));
+check("records Groq key location in Cloudflare Pages env", doc.includes("Groq API key in Pages env"));
 for (const p of ["Supabase", "Netlify", "Sentry", "Groq", "Gmail", "Razorpay"]) {
   check(`lists ${p}`, doc.includes(p));
 }
