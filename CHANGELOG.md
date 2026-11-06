@@ -1,29 +1,82 @@
 # Changelog
 
-Notable changes to CareerMonke. Dates are IST. Entries cite the merged pull
-requests; older history lives in the git log.
+All notable changes to CareerMonke. Format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
+dates are IST release days. This project does not yet use semantic
+versioning or git tags (starting with `v1.0.0` at public launch).
 
-## 2026-11-06
+## [Unreleased]
 
 ### Added
-- PWA basics: web app manifest, `theme-color` meta, 192/512 icon links (#264)
-- Conservative service worker + branded offline fallback page (#266)
-- Branded `<noscript>` fallback (#265)
-- Static branded `500.html` for host-level server errors (#269)
-- Minimal SWR-style client cache on the dashboard (#276)
-- `startTransition` around the debounced jobs search (#274)
-- Husky pre-commit hooks with lint-staged (#267; scoped to eslint only in #275)
-- Client-side abort of the radar telemetry fetch on unmount (#277)
-- Static RSS feed for public guides at /feed.xml, linked from footer + guide pages (#278)
-- BreadcrumbList JSON-LD on public pages; sitemap coverage extended to all public routes (#272)
-- Vitest unit test setup with first library suites; `npm run test:all` now chains it (#281)
-- Bundle size budget check (650 KB first-load / 400 KB chunk, from measured production values) (#285)
-- First-touch UTM/referrer capture in the early-access signup payload (#287)
-- Advisory axe + Lighthouse quality workflow (#288)
+- CI: dependency review on pull requests (fails on high severity) and
+  weekly CycloneDX SBOM artifact (#263).
+- Docs: security disclosure policy (SECURITY.md + security.txt),
+  secrets rotation runbook, ops runbooks, incident log, first
+  postmortem, initial SLOs, this changelog.
 
-### Fixed / Infrastructure
-- Cron failure visibility (#271), data retention (#270), SBOM + dependency review (#263), security/ops baseline docs (#268)
+## 2026-11-06 (frontend audit remediation day)
 
-## 2026-11-05
+### Added
+- PWA basics: web app manifest, `theme-color` meta, 192/512 icon links (#264).
+- Conservative service worker + branded offline fallback page (#266);
+  branded `<noscript>` fallback (#265); static branded `500.html` for
+  host-level server errors (#269).
+- Minimal SWR-style client cache on the dashboard (#276);
+  `startTransition` around the debounced jobs search (#274).
+- Client-side abort of the radar telemetry fetch on unmount (#277).
+- Static RSS feed for public guides at `/feed.xml`, exposed via a feed
+  link tag in the root metadata (#278).
+- BreadcrumbList JSON-LD on public pages; sitemap coverage extended to
+  all public routes (#272).
+- Vitest unit test setup with first library suites; `npm run test:all`
+  now chains it (#281).
+- Bundle size budget check (650 KB first-load / 400 KB chunk, budgets
+  from measured production values) (#285).
+- First-touch UTM/referrer capture in the early-access flow
+  (sessionStorage; backend storage planned separately) (#287).
+- Advisory axe + Lighthouse quality workflow (#288).
+- Browser support matrix (docs/BROWSER_SUPPORT.md).
+- Husky pre-commit hooks with lint-staged (#267; scoped to eslint only
+  in #275).
 
-- Error boundaries, Groq timeout + circuit breaker, Web Vitals collection and storage, dead-letter `failed_events`, security scan workflow (npm audit, gitleaks, dependabot, CODEOWNERS), ESLint + jsx-a11y baseline, PII scrub of dead-letter payloads, email retry + suppression list, dependabot groups, DB safety migration file, JSON-LD structured data + preconnect hints, one-click email unsubscribe, landing globe repositioned below Features with the 3,000,000 stat removed (#238-#262)
+## 2026-11-05 (audit remediation day)
+
+### Added
+- Real-user Core Web Vitals collection and storage (#240, #248).
+- Dead-letter queue (`failed_events`) with admin replay path and PII
+  scrubbing (#241, #244).
+- Email retry with exponential backoff + suppression list (#247);
+  signed one-click unsubscribe with dedicated `UNSUBSCRIBE_SECRET` and
+  confirmation flow (#260).
+- ESLint with jsx-a11y and max-warnings baseline (#243).
+- Security CI: npm-audit baseline, Gitleaks, Dependabot groups,
+  CODEOWNERS (#242, #245, #249, #250).
+- DB safety migration (schema_migrations, statement/lock timeouts,
+  pg_stat_statements) - **pending owner apply** (#254).
+- JSON-LD structured data + preconnect hints (#255, unicode-escape fix
+  #259).
+
+### Fixed
+- Groq timeout + circuit breaker; main CI green again (#239).
+- Error boundaries (#238); landing: globe repositioned, 3M stat
+  removed (#261); Razorpay footer compliance (#262).
+
+## 2026-10-19 → 2026-11-04 (billing, gating, hardening)
+
+### Added
+- Razorpay billing backend: plans, add-ons, atomic quota RPCs, global AI
+  budget, webhook fulfilment with order-mode isolation (#233-#237
+  series; billing disabled pre-launch).
+- Early-access approval gate + admin review console.
+- Cloudflare Pages as primary host (carrier-hound.pages.dev).
+
+### Security
+- Removed audit-email bypass and fake Pro activation; locked
+  job_descriptions and scraper tables; RLS audit pass.
+- Rotated exposed keys (Groq; Supabase JWT rotation still pending).
+
+## 2026-10-16 (first merge train)
+
+- PRs #15-#39 merged: performance (jobs LCP), a11y contrast, rate
+  limits, /worldwide DB counts, digest cron on Node 22, RLS lockdown,
+  mobile perf 82 median.
