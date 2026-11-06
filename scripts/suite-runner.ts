@@ -184,6 +184,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-error-budget.ts", command: "npx tsx scripts/test-error-budget.ts", classification: "offline" },
   { name: "scripts/test-push-notifications-policy.ts", command: "npx tsx scripts/test-push-notifications-policy.ts", classification: "offline" },
   { name: "scripts/test-pbt-sanitizers.ts", command: "npx tsx scripts/test-pbt-sanitizers.ts", classification: "offline" },
+  { name: "scripts/test-inbound-replies-policy.ts", command: "npx tsx scripts/test-inbound-replies-policy.ts", classification: "offline" },
   { name: "scripts/test-bounce-intake-policy.ts", command: "npx tsx scripts/test-bounce-intake-policy.ts", classification: "offline" },
 ];
 
