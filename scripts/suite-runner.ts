@@ -188,6 +188,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-subprocessors-doc.ts", command: "npx tsx scripts/test-subprocessors-doc.ts", classification: "offline" },
   { name: "scripts/test-vendor-risk-register.ts", command: "npx tsx scripts/test-vendor-risk-register.ts", classification: "offline" },
   { name: "scripts/test-maintainer-handoff.ts", command: "npx tsx scripts/test-maintainer-handoff.ts", classification: "offline" },
+  { name: "scripts/test-ato-monitoring-policy.ts", command: "npx tsx scripts/test-ato-monitoring-policy.ts", classification: "offline" },
 ];
 
 export interface RunSummary {
