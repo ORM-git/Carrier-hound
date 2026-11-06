@@ -101,6 +101,28 @@ export default function RootLayout({
         >
           Skip to main content
         </a>
+        <noscript>
+          <div
+            style={{
+              padding: "2rem 1.5rem",
+              margin: "1rem",
+              border: "1px solid #DBE3EF",
+              borderRadius: "0.75rem",
+              backgroundColor: "#EFF6FF",
+              color: "#09090B",
+              fontFamily: "system-ui, sans-serif",
+              textAlign: "center",
+            }}
+          >
+            <p style={{ fontWeight: 600, marginBottom: "0.5rem" }}>
+              CareerMonke needs JavaScript to run
+            </p>
+            <p style={{ margin: 0 }}>
+              Please enable JavaScript in your browser to browse jobs and use
+              your dashboard.
+            </p>
+          </div>
+        </noscript>
         <div id="main-content" className="flex-1 flex flex-col">
           {children}
         </div>
