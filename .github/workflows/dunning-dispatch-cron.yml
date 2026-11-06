@@ -47,4 +47,5 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           APPS_SCRIPT_MAIL_URL: ${{ secrets.APPS_SCRIPT_MAIL_URL }}
           APPS_SCRIPT_MAIL_SECRET: ${{ secrets.APPS_SCRIPT_MAIL_SECRET }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
         run: npx tsx scripts/dunning-dispatch-cron.ts
