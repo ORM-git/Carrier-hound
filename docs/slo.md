@@ -8,6 +8,7 @@ drop per what the data shows.
 | Site availability (careermonke.com) | >= 99.5% monthly | UptimeRobot external monitor |
 | API availability (/api/stats, /api/jobs) | >= 99.5% monthly | UptimeRobot monitor on /api/stats |
 | Mobile LCP (p75) | <= 2.5s | Web Vitals collection (`web_vitals` table, PR #240/#248) |
+| Server response TTFB (p75) | <= 800 ms | RUM `web_vitals` (`name=TTFB`) evaluated by `scripts/check-ttfb-slo.ts` (web.dev "good" threshold) |
 | API latency | p95 < 3s under 200-user load | k6 (`scripts/loadtest/cm-load.js`, threshold enforced) |
 | Daily digest delivery | Sent by 00:30 IST or alert | Cron run status + `cron_run_logs` |
 | Error budget | 0.5% of monthly uptime | Downtime beyond budget pauses feature work for reliability work |
