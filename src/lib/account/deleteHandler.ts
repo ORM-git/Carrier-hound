@@ -41,6 +41,20 @@ export const RECONCILABLE_SUBSCRIPTION_STATUSES = [
 
 export const STORAGE_LIST_PAGE_SIZE = 100;
 
+/** Retention window for soft-deleted account data before the purge hard-deletes it. */
+export const ACCOUNT_DELETION_RETENTION_DAYS = 30;
+
+/** Domain used for anonymized early-access email placeholders (never deliverable). */
+export const ANONYMIZED_EMAIL_DOMAIN = "deleted.invalid";
+
+/** SHA-256 hex digest (edge-runtime safe). Used to keep a lookup hash without PII. */
+export async function sha256Hex(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 /**
  * Recursively lists all file paths under `rootPrefix` in a storage bucket using
  * pagination (`limit: 100, offset`).
@@ -151,7 +165,7 @@ function getSupabaseAdmin() {
  * 2. Refuses deletion if user is banned in `blocked_users` (fail-closed on DB error).
  * 3. Reconciles `active`, `trialing`, and `in_grace_period` subscriptions to `canceled`
  *    and preserves the `subscriptions` rows (FK `ON DELETE SET NULL` on `auth.users`).
- * 4. Removes all user-owned rows:
+ * 4. Soft-deletes (deleted_at, 30-day undo window) or anonymizes user-owned rows;
  *    - profile (`candidate_profiles`, `user_preferences`)
  *    - resumes (`resumes`, `tailored_resumes`)
  *    - saved jobs (`saved_jobs`)
@@ -325,8 +339,9 @@ export async function handleAccountDeleteRequest(
       );
     }
 
-    // 4. Delete user-owned rows across all user_id tables (excluding subscriptions) + early_access link
+    // 4. Soft-delete/anonymize user-owned rows across all user_id tables (excluding subscriptions) + early_access link
     const errors: string[] = [];
+    const nowIso = new Date().toISOString();
 
     const isIgnorableDeleteError = (err: any) => {
       if (!err) return true;
@@ -341,24 +356,58 @@ export async function handleAccountDeleteRequest(
       );
     };
 
+    // Soft-delete marks rows with deleted_at (undo window); when the
+    // 20261106h migration has not been applied yet the column is missing and
+    // we fall back to the previous hard delete so the flow never breaks.
+    const isMissingSoftDeleteColumn = (err: any) => {
+      if (!err) return false;
+      const msg = (err.message || "").toLowerCase();
+      return err.code === "42703" || err.code === "PGRST204" || msg.includes("deleted_at");
+    };
+
     for (const table of ACCOUNT_DELETE_USER_ID_TABLES) {
-      const { error } = await supabaseAdmin
+      const { error: softError } = await supabaseAdmin
         .from(table)
-        .delete()
+        .update({ deleted_at: nowIso })
         .eq("user_id", userId);
-      if (!isIgnorableDeleteError(error)) {
-        errors.push(`${table}: ${error?.message || JSON.stringify(error)}`);
+      if (softError && isMissingSoftDeleteColumn(softError)) {
+        const { error } = await supabaseAdmin
+          .from(table)
+          .delete()
+          .eq("user_id", userId);
+        if (!isIgnorableDeleteError(error)) {
+          errors.push(`${table}: ${error?.message || JSON.stringify(error)}`);
+        }
+      } else if (!isIgnorableDeleteError(softError)) {
+        errors.push(`${table}: ${softError?.message || JSON.stringify(softError)}`);
       }
     }
 
+    // Anonymize-and-keep for email-keyed rows: replace the address with a
+    // non-deliverable placeholder derived from its hash, keep the row for
+    // attribution stats. Falls back to hard delete pre-migration.
     if (normalizedEmail) {
+      const emailHash = await sha256Hex(normalizedEmail);
+      const anonymizedEmail = `anon_${emailHash.slice(0, 16)}@${ANONYMIZED_EMAIL_DOMAIN}`;
       for (const emailTable of ACCOUNT_DELETE_EMAIL_TABLES) {
-        const { error } = await supabaseAdmin
+        const { error: anonError } = await supabaseAdmin
           .from(emailTable)
-          .delete()
+          .update({
+            email: anonymizedEmail,
+            deleted_at: nowIso,
+            anonymized_at: nowIso,
+          })
           .eq("email", normalizedEmail);
-        if (!isIgnorableDeleteError(error)) {
-          errors.push(`${emailTable}: ${error?.message || JSON.stringify(error)}`);
+        if (anonError && isMissingSoftDeleteColumn(anonError)) {
+          const { error } = await supabaseAdmin
+            .from(emailTable)
+            .delete()
+            .eq("email", normalizedEmail);
+          if (!isIgnorableDeleteError(error)) {
+            errors.push(`${emailTable}: ${error?.message || JSON.stringify(error)}`);
+          }
+        } else if (!isIgnorableDeleteError(anonError)) {
+          errors.push(`${emailTable}: ${anonError?.message || JSON.stringify(anonError)}`);
         }
       }
     }
@@ -411,6 +460,32 @@ export async function handleAccountDeleteRequest(
         },
         { status: 500 }
       );
+    }
+
+    // 5b. Write the deletion tombstone (PII-free audit record). Fail-open:
+    // the tombstone table may not exist pre-migration and an audit insert
+    // must never block the deletion itself.
+    try {
+      const emailHash = normalizedEmail ? await sha256Hex(normalizedEmail) : "";
+      const hardDeleteAfter = new Date(
+        Date.now() + ACCOUNT_DELETION_RETENTION_DAYS * 24 * 60 * 60 * 1000
+      ).toISOString();
+      const { error: tombstoneError } = await supabaseAdmin
+        .from("deleted_account_tombstones")
+        .upsert(
+          {
+            user_id: userId,
+            email_hash: emailHash,
+            deletion_completed_at: nowIso,
+            hard_delete_after: hardDeleteAfter,
+          },
+          { onConflict: "user_id" }
+        );
+      if (tombstoneError) {
+        console.warn("Account deletion tombstone write failed (continuing):", tombstoneError);
+      }
+    } catch (tombstoneErr: any) {
+      console.warn("Account deletion tombstone write failed (continuing):", tombstoneErr?.message || tombstoneErr);
     }
 
     // 6. Delete the Auth User Identity from Supabase Auth (last step)
