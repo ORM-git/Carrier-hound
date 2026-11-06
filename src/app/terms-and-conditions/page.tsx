@@ -78,21 +78,28 @@ export default function TermsPage() {
             <strong>Subscription plans (prepaid, fixed duration):</strong>
             <ul className="list-disc pl-5 space-y-1 mt-1">
               <li>
-                <strong>Weekly:</strong> ₹692 for 7 days of premium access, including 15 AI generation sets per 7-day period.
+                <strong>Weekly:</strong> 7 days of premium access, including 15 AI generation sets per 7-day period.
               </li>
               <li>
-                <strong>Monthly:</strong> ₹1,499 for 30 days of premium access, including 60 AI generation sets per 30-day period.
+                <strong>Monthly:</strong> 30 days of premium access, including 60 AI generation sets per 30-day period.
               </li>
               <li>
-                <strong>Quarterly:</strong> ₹3,999 for 90 days of premium access, including 60 AI generation sets per 30-day period.
+                <strong>Quarterly:</strong> 90 days of premium access, including 60 AI generation sets per 30-day period.
               </li>
             </ul>
+          </li>
+          <li>
+            Current prices are shown on the{" "}
+            <Link href="/pricing" className="text-blue-600 underline underline-offset-2 hover:text-blue-800 transition-colors">
+              Pricing page
+            </Link>{" "}
+            and confirmed at checkout before you pay.
           </li>
           <li>
             One AI generation set is consumed when you run the AI resume tailoring or AI cover letter features, subject to a fair-use limit of 30 generations per day on every plan.
           </li>
           <li>
-            <strong>Add-on packs:</strong> additional generation sets are available as one-time add-on packs of 10 sets for ₹149, 30 sets for ₹399, or 60 sets for ₹699. Add-on sets are used only after your plan quota is exhausted and expire 60 days after purchase.
+            <strong>Planned add-on packs:</strong> additional generation sets are planned as one-time add-on packs; when offered, add-on sets are used only after your plan quota is exhausted and expire 60 days after purchase.
           </li>
           <li>
             <strong>No auto-renewal:</strong> all plans are prepaid for a fixed duration and do not renew automatically. No recurring charge will ever be debited. You may purchase a new plan or upgrade at any time; renewing or upgrading extends your access period.
