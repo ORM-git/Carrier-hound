@@ -178,6 +178,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-dunning-dispatcher.ts", command: "npx tsx scripts/test-dunning-dispatcher.ts", classification: "offline" },
   { name: "scripts/test-matview-staleness.ts", command: "npx tsx scripts/test-matview-staleness.ts", classification: "offline" },
   { name: "scripts/test-funnel-events.ts", command: "npx tsx scripts/test-funnel-events.ts", classification: "offline" },
+  { name: "scripts/test-redundant-index-cleanup.ts", command: "npx tsx scripts/test-redundant-index-cleanup.ts", classification: "offline" },
   { name: "scripts/test-activation-metrics.ts", command: "npx tsx scripts/test-activation-metrics.ts", classification: "offline" },
 ];
 
