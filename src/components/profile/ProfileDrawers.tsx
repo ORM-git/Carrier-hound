@@ -57,8 +57,6 @@ export default function ProfileDrawers({
   const drawerRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  // Form autosave/draft: timestamp of a restored unsaved draft, if any
-  const [restoredDraftAt, setRestoredDraftAt] = useState<number | null>(null);
 
   // Draft profile copy for unsaved edits
   const [draft, setDraft] = useState<CandidateProfile>(() => createInitialDraft(candidate));
@@ -73,13 +71,9 @@ export default function ProfileDrawers({
     if (isOpen) {
       const key = draftStorageKey(candidate?.email, section);
       const stored = key ? readStoredDraft(key) : null;
-      if (stored) {
-        setDraft(stored.draft);
-        setRestoredDraftAt(stored.ts);
-      } else {
-        setDraft(createInitialDraft(candidate));
-        setRestoredDraftAt(null);
-      }
+      // Silent restore (owner rule: no visible UI changes). The 7-day
+      // expiry and sign-out purge keep stale/foreign drafts out.
+      setDraft(stored ? stored.draft : createInitialDraft(candidate));
       setError(null);
       setSaving(false);
       setNewSkill("");
@@ -350,7 +344,6 @@ export default function ProfileDrawers({
           // Best-effort cleanup.
         }
       }
-      setRestoredDraftAt(null);
       // On success, close drawer and return focus
       onClose();
     } catch (err: any) {
@@ -420,38 +413,6 @@ export default function ProfileDrawers({
         {/* Drawer Scrollable Body */}
         <form onSubmit={handleSave} className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
           {/* Inline Error Banner */}
-          {restoredDraftAt !== null && (
-            <div
-              role="status"
-              data-testid="drawer-draft-restored"
-              className="p-3.5 rounded-xl bg-[#EFF6FF] border border-[#DBE3EF] text-[#2563EB] text-sm flex items-center justify-between gap-2.5"
-            >
-              <div className="flex-1 text-[13px] leading-relaxed font-medium">
-                Restored your unsaved changes from{" "}
-                {new Date(restoredDraftAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
-                .
-              </div>
-              <button
-                type="button"
-                className="text-xs font-semibold text-[#2563EB] hover:underline shrink-0"
-                onClick={() => {
-                  const key = draftStorageKey(candidate?.email, section);
-                  if (key) {
-                    try {
-                      window.localStorage.removeItem(key);
-                    } catch {
-                      // Best-effort cleanup.
-                    }
-                  }
-                  setRestoredDraftAt(null);
-                  setDraft(createInitialDraft(candidate));
-                }}
-              >
-                Discard
-              </button>
-            </div>
-          )}
-
           {error && (
             <div
               role="alert"
