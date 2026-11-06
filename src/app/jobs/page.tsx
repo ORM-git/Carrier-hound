@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useEffect, useRef, Suspense } from "react";
+import React, { useState, useMemo, useEffect, useRef, Suspense, startTransition } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -420,7 +420,11 @@ function JobsPageInner() {
   // Debounced search for server-side execution (300ms)
   useEffect(() => {
     const handler = setTimeout(() => {
-      setDebouncedSearch(search);
+      // Mark the filter/render pass as non-urgent so typing stays responsive
+      // while the job list re-renders (concurrent feature).
+      startTransition(() => {
+        setDebouncedSearch(search);
+      });
     }, 300);
     return () => clearTimeout(handler);
   }, [search]);
