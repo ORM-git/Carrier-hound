@@ -17,6 +17,7 @@ dotenv.config({ path: ".env" });
 
 import { createClient } from "@supabase/supabase-js";
 import { reportCronFailure } from "./lib/cron-sentry";
+import { startCronHeartbeat } from "./lib/cron-heartbeat";
 
 type PurgeRow = {
   table_name: string;
@@ -89,8 +90,13 @@ async function main() {
   });
 }
 
-main().catch(async (err) => {
+const heartbeat = startCronHeartbeat("retention");
+
+main()
+  .then(() => heartbeat.ok())
+  .catch(async (err) => {
   console.error("Fatal unhandled retention cron error:", err);
   await reportCronFailure("retention", err);
+  await heartbeat.error();
   process.exit(1);
 });
