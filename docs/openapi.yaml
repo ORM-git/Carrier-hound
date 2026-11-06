@@ -213,6 +213,12 @@ paths:
       description: Delegates to handleSkillWhatIfRequest.
       responses:
         "200": { description: Analysis result }
+  /api/jobs/suggest:
+    get:
+      tags: [jobs]
+      summary: Autocomplete prefix suggestions for job titles
+      responses:
+        "200": { description: Suggestion list }
   /api/jobs/top10:
     post:
       tags: [jobs]

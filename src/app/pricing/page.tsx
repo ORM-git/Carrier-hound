@@ -532,6 +532,7 @@ export default function PricingPage() {
 
         <div className="pt-2 text-center space-y-2 text-xs text-slate-500 dark:text-slate-400">
           <p className="font-bold text-[#090E34] dark:text-white">All sales final · no refunds</p>
+          <p>Plans are prepaid for a fixed duration and do not auto-renew. Premium access ends automatically when the plan period expires. Planned add-on packs, when offered, expire 60 days after purchase.</p>
           <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
             <Link
               href="/terms-and-conditions"
