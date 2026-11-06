@@ -1,10 +1,13 @@
 "use client";
 
-import React from "react";
+import React, { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import AppIconRail from "./AppIconRail";
 import AppTopBar, { TopBarTab } from "./AppTopBar";
 import { useSidebarMode } from "@/lib/sidebar";
 import type { User } from "@supabase/supabase-js";
+
+const USER_EMAIL_KEY = "careermonke_user_email";
 
 interface LoggedInAppShellProps {
   pageLabel: string;
@@ -30,6 +33,21 @@ export default function LoggedInAppShell({
   children,
 }: LoggedInAppShellProps) {
   const { isExpanded } = useSidebarMode();
+  const router = useRouter();
+
+  // Cross-tab state sync: when another tab signs out, the user-email key is
+  // removed from localStorage and every other open app tab is sent to
+  // /login instead of sitting on a stale authenticated view. Same-tab
+  // sign-out already redirects through UserMenu.
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === USER_EMAIL_KEY && event.newValue === null) {
+        router.replace("/login");
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [router]);
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col font-sans">
