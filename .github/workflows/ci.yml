@@ -57,3 +57,6 @@ jobs:
 
       - name: Run Test Suite (test:all)
         run: npm run test:all
+
+      - name: API Versioning Policy Check
+        run: npx tsx scripts/test-api-versioning-policy.ts
