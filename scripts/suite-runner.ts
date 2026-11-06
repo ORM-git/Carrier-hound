@@ -180,6 +180,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-funnel-events.ts", command: "npx tsx scripts/test-funnel-events.ts", classification: "offline" },
   { name: "scripts/test-redundant-index-cleanup.ts", command: "npx tsx scripts/test-redundant-index-cleanup.ts", classification: "offline" },
   { name: "scripts/test-data-classification.ts", command: "npx tsx scripts/test-data-classification.ts", classification: "offline" },
+  { name: "scripts/test-edge-kv.ts", command: "npx tsx scripts/test-edge-kv.ts", classification: "offline" },
 ];
 
 export interface RunSummary {
