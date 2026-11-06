@@ -54,3 +54,6 @@ jobs:
 
       - name: Run Test Suite (test:all)
         run: npm run test:all
+
+      - name: Suite-runner Integrity
+        run: npx tsx scripts/test-suite-runner-integrity.ts
