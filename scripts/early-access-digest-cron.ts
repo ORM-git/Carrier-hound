@@ -38,6 +38,19 @@ async function main() {
   console.log("------------------------------------------------------------\n");
 
   if (result.status === "failed") {
+    // Surface cron failures in the dead-letter queue (admin replay view),
+    // not only in GitHub Actions email. One row per day per reason.
+    try {
+      const { recordFailedEvent } = await import("../src/lib/events/failedEvents");
+      await recordFailedEvent({
+        source: "cron_early_access_digest",
+        eventId: `ead-${new Date().toISOString().slice(0, 10)}`,
+        payload: { reason: result.reason, rowCount: result.rowCount, dryRun },
+        error: `Early-access digest cron failed: ${result.reason}`,
+      });
+    } catch (captureErr) {
+      console.error("Failed to record cron failure to failed_events:", captureErr);
+    }
     process.exit(1);
   }
 }
