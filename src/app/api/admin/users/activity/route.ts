@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { verifyAdminSession } from "@/lib/admin/auth";
 import { getUserActivityLogs } from "@/lib/admin/analytics";
+import { logAdminAction } from "@/lib/admin/auditLog";
 
 export const runtime = "edge";
 
@@ -25,6 +26,20 @@ export async function GET(req: Request) {
 
   try {
     const activity = await getUserActivityLogs(userId);
+
+    // Audit: an admin just read one user's activity (PII). Fail-open logger;
+    // never blocks the response. DB row: user data access audit.
+    if (auth.user) {
+      await logAdminAction({
+        adminUserId: auth.user.id,
+        action: "pii_read",
+        targetType: "user",
+        targetId: userId,
+        metadata: { log_count: Array.isArray(activity) ? activity.length : null },
+        request: req,
+      });
+    }
+
     return NextResponse.json({ ok: true, activity });
   } catch (err: any) {
     return NextResponse.json(
