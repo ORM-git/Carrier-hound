@@ -4,7 +4,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { evaluateSourceHealth } from "../src/lib/observability/sourceHealth";
 
-const MAX_CONSECUTIVE_FAILURES = 1;
+const MAX_FAILURES_IN_WINDOW = 1;
 const STALE_AFTER_HOURS = 26; // Daily ingest plus bounded schedule drift.
 
 async function main() {
@@ -22,7 +22,7 @@ async function main() {
     .limit(10);
   if (error) throw new Error(`ingest_runs query failed: ${error.message}`);
 
-  const result = evaluateSourceHealth(data ?? [], { maxConsecutiveFailures: MAX_CONSECUTIVE_FAILURES, staleAfterHours: STALE_AFTER_HOURS }, new Date().toISOString());
+  const result = evaluateSourceHealth(data ?? [], { maxFailuresInWindow: MAX_FAILURES_IN_WINDOW, staleAfterHours: STALE_AFTER_HOURS }, new Date().toISOString());
   console.log(JSON.stringify(result));
   if (result.status === "degraded") {
     console.error(`[SOURCE-HEALTH-ALERT] ${result.reason}`);
