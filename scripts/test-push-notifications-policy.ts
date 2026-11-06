@@ -13,10 +13,10 @@ function check(name: string, cond: boolean) {
 
 const doc = fs.readFileSync("docs/push-notifications.md", "utf8");
 const adapter = fs.readFileSync("src/lib/notifications/webPush.ts", "utf8");
-const migration = fs.readFileSync("supabase/migrations/20261106e_push_subscriptions.sql", "utf8");
+const migration = fs.readFileSync("supabase/migrations/20261106i_push_subscriptions.sql", "utf8");
 
 check("doc marked INTERNAL", doc.includes("INTERNAL"));
-check("migration NOT APPLIED with record command", migration.includes("NOT APPLIED") && migration.includes("record-migration.cjs 20261106e_push_subscriptions"));
+check("migration NOT APPLIED with record command", migration.includes("NOT APPLIED") && migration.includes("record-migration.cjs 20261106i_push_subscriptions"));
 check("migration has rollback", migration.includes("Rollback:") && migration.includes("DROP TABLE IF EXISTS public.push_subscriptions"));
 check("migration stores the Web Push keys", migration.includes("endpoint") && migration.includes("p256dh") && migration.includes("auth") && migration.includes("endpoint    text not null unique"));
 check("migration enables RLS with owner policies", migration.includes("enable row level security") && (migration.match(/create policy/g) || []).length >= 4);
