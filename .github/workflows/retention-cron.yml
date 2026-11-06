@@ -1,0 +1,44 @@
+name: Weekly Retention Purge Cron
+
+on:
+  schedule:
+    # Runs weekly on Sunday at 19:30 UTC (01:00 IST Monday)
+    - cron: '30 19 * * 0'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Run in dry-run mode (counts only, no deletes)'
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  retention-purge:
+    name: Purge Old Operational Logs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Execute Retention Purge
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          ARGS=""
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry"
+          fi
+          echo "Executing: npx tsx scripts/retention-cron.ts $ARGS"
+          npx tsx scripts/retention-cron.ts $ARGS
