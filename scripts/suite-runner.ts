@@ -51,6 +51,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-account-delete-parallel.ts", command: "npx tsx scripts/test-account-delete-parallel.ts", classification: "offline" },
   { name: "scripts/test-account-export.ts", command: "npx tsx scripts/test-account-export.ts", classification: "offline" },
   { name: "scripts/test-rate-limits.ts", command: "npx tsx scripts/test-rate-limits.ts", classification: "offline" },
+  { name: "scripts/test-dunning-dispatcher.ts", command: "npx tsx scripts/test-dunning-dispatcher.ts", classification: "offline" },
   { name: "scripts/test-worldwide-view.ts", command: "npx tsx scripts/test-worldwide-view.ts", classification: "offline" },
   { name: "scripts/test-domain-resolution.ts", command: "npx tsx scripts/test-domain-resolution.ts", classification: "offline" },
   { name: "scripts/test-env-guards.ts", command: "npx tsx scripts/test-env-guards.ts", classification: "offline" },
