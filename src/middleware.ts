@@ -1,4 +1,4 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import { isVerifiedAdminUser } from "@/lib/admin/constants";
@@ -571,7 +571,7 @@ async function verifyAuthenticatedRequest(
   };
 }
 
-export async function middleware(request: NextRequest) {
+async function middlewareImpl(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
 
   // 1. Always allow static assets and internal _next paths
@@ -742,3 +742,32 @@ export const config = {
     "/((?!_next/static|_next/image|favicon.ico|data/ne_110m_land\\.json|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|txt|xml)$).*)",
   ],
 };
+
+// ============================================================================
+// Correlation / request IDs (audit BE #25)
+// Every request gets an x-request-id: a well-formed inbound id is honored
+// (so edge logs and client error reports join up), anything else is replaced
+// with a fresh UUID. The id is set on the request headers handed to route
+// handlers and echoed on the response.
+// ============================================================================
+export const REQUEST_ID_HEADER = "x-request-id";
+
+const REQUEST_ID_PATTERN = /^[A-Za-z0-9_-]{8,128}$/;
+
+export function resolveRequestId(request: NextRequest): string {
+  const incoming = request.headers.get(REQUEST_ID_HEADER);
+  if (incoming && REQUEST_ID_PATTERN.test(incoming)) {
+    return incoming;
+  }
+  return crypto.randomUUID();
+}
+
+export async function middleware(request: NextRequest) {
+  const requestId = resolveRequestId(request);
+  const scopedHeaders = new Headers(request.headers);
+  scopedHeaders.set(REQUEST_ID_HEADER, requestId);
+  const scopedRequest = new NextRequest(request, { headers: scopedHeaders });
+  const response = await middlewareImpl(scopedRequest);
+  response.headers.set(REQUEST_ID_HEADER, requestId);
+  return response;
+}

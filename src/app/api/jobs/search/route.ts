@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { measureRouteBudget } from "@/lib/api/routeBudget";
 import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
 import { formatSalary } from "@/lib/salary/parser";
 import { getSupabaseAdminClient, getRuntimeEnv, getClientIpFromRequest, checkRateLimit } from "@/lib/ai/serviceHandler";
@@ -50,7 +51,7 @@ function sanitizeSearchQuery(input: string): string {
  * Raw jobs table is NEVER exposed to anonymous clients directly.
  */
 
-export async function GET(req: Request) {
+async function getHandler(req: Request) {
   try {
     const isLegacy =
       process.env.NODE_ENV === "test" &&
@@ -860,4 +861,8 @@ export async function GET(req: Request) {
       { status: 500 }
     );
   }
+}
+
+export async function GET(req: Request) {
+  return measureRouteBudget("/api/jobs/search", () => getHandler(req));
 }
