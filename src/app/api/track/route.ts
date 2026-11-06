@@ -204,6 +204,8 @@ export async function POST(req: Request) {
     }
 
     // 4b. Handle funnel events (signup -> onboard -> apply)
+    // NOTE for the frontend emitter: fire these only behind the analytics
+    // consent gate (same gate as the UTM capture) - no consent, no events.
     if (eventType === "funnel") {
       const funnelEvent = body.event;
       if (
