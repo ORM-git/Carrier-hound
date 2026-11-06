@@ -17,7 +17,8 @@ A new maintainer should be able to do these steps using their own account:
    request through their handler/auth helpers. Identify where service-role
    credentials are required and where authorization is enforced.
 4. Read `docs/runbooks.md`, `docs/slo.md`, `docs/incident-log.md`,
-   `docs/retention-policy.md` and the secrets rotation runbook.
+   `docs/retention-policy.md` and the secrets rotation runbook
+   (`docs/security/secrets-rotation-runbook.md`).
 5. Open a small test-only PR and have another reviewer verify it. Do not
    make a production incident the first deployment exercise.
 
