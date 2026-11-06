@@ -3,7 +3,9 @@
 -- Purpose:   Retention enforcement for operational/log tables. One SECURITY
 --            DEFINER function, callable only by service_role, purges rows past
 --            each table's retention window (docs/retention-policy.md).
---            Supports dry_run to report counts without deleting.
+--            dry_run DEFAULTS TO TRUE (reviewer nit, 2026-11-06): a bare
+--            select public.purge_operational_logs() only reports counts; pass
+--            false explicitly to delete. Safer against SQL-editor fat-finger.
 -- Status:    NOT APPLIED - owner applies in the Supabase SQL editor, then runs
 --            node scripts/record-migration.cjs 20261106a_data_retention
 -- Covers:    audit rows DB#4 (retention enforcement), DB#5 (purge jobs for
@@ -12,7 +14,7 @@
 -- Rollback:  DROP FUNCTION IF EXISTS public.purge_operational_logs(boolean);
 -- ============================================================================
 
-create or replace function public.purge_operational_logs(dry_run boolean default false)
+create or replace function public.purge_operational_logs(dry_run boolean default true)
 returns table (table_name text, cutoff timestamptz, rows_matched bigint, rows_deleted bigint)
 language plpgsql
 security definer
