@@ -7,6 +7,7 @@ import {
   accountExportRateLimitStore,
 } from "@/lib/api/sharedRateLimit";
 import { checkRateLimit } from "@/lib/ai/serviceHandler";
+import { logAdminAction } from "@/lib/admin/auditLog";
 import {
   ACCOUNT_DELETE_USER_ID_TABLES,
   ACCOUNT_DELETE_EMAIL_TABLES,
@@ -205,6 +206,22 @@ export async function handleAccountExportRequest(
         { status: 500 }
       );
     }
+
+    // Audit: record the PII disclosure. The actor is the account owner
+    // (self-service export); admin_user_id carries the exporting user's id.
+    // Fail-open logger; never blocks the response.
+    await logAdminAction({
+      adminUserId: userId,
+      action: "pii_read",
+      targetType: "self_data_export",
+      targetId: userId,
+      metadata: {
+        table_count: Object.keys(data).length,
+        truncated_tables: truncatedTables,
+        storage_buckets: Object.keys(storageFiles),
+      },
+      request: req,
+    });
 
     const generatedAt = new Date().toISOString();
     const exportPayload = {
