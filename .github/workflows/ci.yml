@@ -52,6 +52,9 @@ jobs:
 
       - name: Build Application
         run: npm run build
+
+      - name: Tail Latency Gate Check
+        run: npx tsx scripts/test-tail-latency-gate.ts
         env:
           # Build the Cloudflare (next-on-pages) variant: production ships on
           # Cloudflare Pages; the edge-runtime /jobs/detail page cannot go
