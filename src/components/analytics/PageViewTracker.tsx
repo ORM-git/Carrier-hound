@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { COOKIE_CONSENT_KEY, COOKIE_CONSENT_EVENT } from "@/components/CookieNotice";
+import { captureAttribution } from "@/lib/analytics/utm";
 
 /**
  * Lightweight, non-blocking, fire-and-forget page view tracker.
@@ -36,6 +37,9 @@ export default function PageViewTracker() {
             // Strictly gate pageview analytics behind user consent
             return;
           }
+          // First-touch UTM / referrer capture (sessionStorage only, nothing
+          // leaves the device; consumed by future attribution-aware payloads).
+          captureAttribution(pathname);
         }
 
         let userId: string | null = null;
