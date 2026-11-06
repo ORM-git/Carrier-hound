@@ -19,6 +19,7 @@ check("marked INTERNAL / not customer-facing", /INTERNAL/.test(doc) && /[Nn]ot c
 check("lists Cloudflare Pages as PRODUCTION hosting", doc.includes("Cloudflare Pages") && /PRODUCTION hosting/.test(doc));
 check("scopes Netlify to preview/legacy, not production", /Netlify \| Preview deploys \+ legacy functions only \(NOT production traffic\)/.test(doc));
 check("records Groq key location in Cloudflare Pages env", doc.includes("Groq API key in Pages env"));
+check("cites repo config, not owner confirmation", doc.includes("carrier-hound.pages.dev") && doc.includes("@cloudflare/next-on-pages") && doc.includes("owner to confirm") && !doc.includes("Owner-confirmed"));
 for (const p of ["Supabase", "Netlify", "Sentry", "Groq", "Gmail", "Razorpay"]) {
   check(`lists ${p}`, doc.includes(p));
 }
