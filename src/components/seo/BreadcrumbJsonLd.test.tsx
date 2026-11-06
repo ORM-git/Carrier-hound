@@ -14,7 +14,7 @@ describe("BreadcrumbJsonLd", () => {
     const { container } = render(<BreadcrumbJsonLd trail={trail} />);
     const script = container.querySelector('script[type="application/ld+json"]');
     expect(script).not.toBeNull();
-    const parsed = JSON.parse(script!.innerHTML);
+    const parsed = JSON.parse(script!.textContent || "");
     expect(parsed["@type"]).toBe("BreadcrumbList");
     expect(parsed.itemListElement).toHaveLength(2);
     expect(parsed.itemListElement[0]).toMatchObject({
