@@ -66,6 +66,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-jobs-list-detail.ts", command: "npx tsx scripts/test-jobs-list-detail.ts", classification: "offline" },
   { name: "scripts/test-card-hover-match.ts", command: "npx tsx scripts/test-card-hover-match.ts", classification: "offline" },
   { name: "scripts/test-razorpay-billing.ts", command: "npx tsx scripts/test-razorpay-billing.ts", classification: "offline" },
+  { name: "scripts/test-razorpay-sri.ts", command: "npx tsx scripts/test-razorpay-sri.ts", classification: "offline" },
   { name: "scripts/test-profile-rebuild.ts", command: "npx tsx scripts/test-profile-rebuild.ts", classification: "offline" },
   { name: "scripts/test-auth-presentation.ts", command: "npx tsx scripts/test-auth-presentation.ts", classification: "offline" },
   { name: "scripts/test-tracker-resume-rebuild.ts", command: "npx tsx scripts/test-tracker-resume-rebuild.ts", classification: "offline" },
