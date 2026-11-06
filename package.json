@@ -15,7 +15,9 @@
     "cron:digest": "tsx scripts/daily-digest-cron.ts",
     "cron:digest:dry": "tsx scripts/daily-digest-cron.ts --dry",
     "test:filters": "tsx scripts/test-filters.ts",
-    "test:all": "tsx scripts/suite-runner.ts"
+    "test:all": "tsx scripts/suite-runner.ts",
+    "prepare": "husky",
+    "format:check": "prettier --check ."
   },
   "dependencies": {
     "@netlify/plugin-nextjs": "5.16.5",
@@ -58,6 +60,8 @@
     "eslint": "^8.57.1",
     "eslint-config-next": "^14.2.35",
     "eslint-plugin-jsx-a11y": "^6.10.2",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.5.2",
     "postcss": "^8.5.32",
     "prettier": "^3.9.10",
     "puppeteer-core": "^25.16.0",
@@ -70,5 +74,14 @@
     "undici": "^6.29.1",
     "ws": "^8.21.3",
     "zod": "^4.6.7"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx,cjs,mjs}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,mdx,css}": [
+      "prettier --write"
+    ]
   }
 }
