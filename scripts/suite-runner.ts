@@ -175,6 +175,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-filters.ts", command: "npx tsx scripts/test-filters.ts", classification: "db-anon-write-attempt", requiresSupabase: true },
   { name: "scripts/check-plan-regression.mjs --selftest", command: "node scripts/check-plan-regression.mjs --selftest", classification: "offline" },
   { name: "scripts/test-pii-access-log.ts", command: "npx tsx scripts/test-pii-access-log.ts", classification: "offline" },
+  { name: "scripts/test-dunning-dispatcher.ts", command: "npx tsx scripts/test-dunning-dispatcher.ts", classification: "offline" },
   { name: "scripts/test-activation-metrics.ts", command: "npx tsx scripts/test-activation-metrics.ts", classification: "offline" },
 ];
 
