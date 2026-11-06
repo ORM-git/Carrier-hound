@@ -1,0 +1,47 @@
+name: Quality Advisory (a11y & Lighthouse, non-blocking)
+
+on:
+  pull_request:
+    branches: ['**']
+  workflow_dispatch:
+
+jobs:
+  advisory:
+    name: Axe + Lighthouse (advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    continue-on-error: true
+
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: 'https://placeholder.supabase.co'
+      SUPABASE_URL: 'https://placeholder.supabase.co'
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: 'dummy-anon-key-ci'
+      SUPABASE_ANON_KEY: 'dummy-anon-key-ci'
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build Static Export
+        # Default build (no CF_PAGES) produces out/ for static serving.
+        run: npm run build
+
+      - name: Run Advisory Quality Audit
+        run: npm run audit:quality
+
+      - name: Upload Advisory Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-advisory
+          path: reports/quality-advisory.json
+          if-no-files-found: ignore
