@@ -76,6 +76,7 @@ async function getHandler(req: Request) {
             headers: {
               "Retry-After": String(ipLimit.retryAfter),
               "Cache-Control": "no-store",
+              Vary: "Authorization",
             },
           }
         );
@@ -109,6 +110,7 @@ async function getHandler(req: Request) {
                 status: 403,
                 headers: {
                   "Cache-Control": "no-store",
+                  Vary: "Authorization",
                 },
               }
             );
@@ -136,6 +138,7 @@ async function getHandler(req: Request) {
           status: 503,
           headers: {
             "Cache-Control": "no-store",
+            Vary: "Authorization",
           },
         }
       );
@@ -150,8 +153,15 @@ async function getHandler(req: Request) {
         jobsToday: recentJobs ?? 0,
         updatedAt: new Date().toISOString(),
       };
+      // Edge-cacheable ONLY when the request carries no Authorization header at
+      // all: any Authorization header, valid or invalid, keeps the response
+      // no-store so an authed context never poisons the shared cache. The TTL
+      // values are chosen defaults (rank 42 review decision), not measured.
       const publicHeaders = {
-        "Cache-Control": "public, max-age=300, s-maxage=300, stale-while-revalidate=600",
+        "Cache-Control": authHeader
+          ? "no-store"
+          : "public, s-maxage=60, stale-while-revalidate=300",
+        Vary: "Authorization",
       };
       const etag = await computeWeakEtag(publicStats);
       const notModified = notModifiedResponse(req, etag, publicHeaders);
@@ -175,6 +185,7 @@ async function getHandler(req: Request) {
           status: 503,
           headers: {
             "Cache-Control": "no-store",
+            Vary: "Authorization",
           },
         }
       );
@@ -191,6 +202,7 @@ async function getHandler(req: Request) {
           status: 503,
           headers: {
             "Cache-Control": "no-store",
+            Vary: "Authorization",
           },
         }
       );
@@ -207,7 +219,8 @@ async function getHandler(req: Request) {
       },
       {
         headers: {
-          "Cache-Control": "public, max-age=300, s-maxage=300, stale-while-revalidate=600",
+          "Cache-Control": "no-store",
+          Vary: "Authorization",
         },
       }
     );
@@ -227,6 +240,7 @@ async function getHandler(req: Request) {
         status: 500,
         headers: {
           "Cache-Control": "no-store",
+          Vary: "Authorization",
         },
       }
     );
