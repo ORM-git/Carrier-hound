@@ -61,6 +61,7 @@ import {
 } from "lucide-react";
 import CompanyLogo from "@/components/CompanyLogo";
 import { toast } from "react-toastify";
+import { trackFunnelEvent } from "@/lib/analytics/funnel";
 
 const PaywallModal = dynamic(() => import("@/components/PaywallModal"), { ssr: false });
 
@@ -1341,10 +1342,12 @@ function JobsPageInner() {
           },
           "applied"
         );
+        trackFunnelEvent("apply_completed", { path: "/jobs" });
         toast.success(`Marked "${job.title}" as applied! Added to Tracker.`);
       } else if (existing.stage === "saved") {
         // Existing saved record: move to applied, preserving notes, dates, and other fields
         await updateApplicationStage(existing.id, "applied");
+        trackFunnelEvent("apply_completed", { path: "/jobs" });
         toast.success(`Marked "${job.title}" as applied! Moved to Tracker Applied tab.`);
       } else if (existing.stage === "applied") {
         // Already applied: clicking again must NOT demote it
@@ -1755,6 +1758,7 @@ function JobsPageInner() {
                 onSave={() => handleSaveJob(selectedJob)}
                 onToggleApplied={() => handleToggleApplied(selectedJob)}
                 onApply={(e) => {
+                  trackFunnelEvent("apply_started", { path: "/jobs" });
                   if (!isPro || selectedJob?.proUnlockError) {
                     handleLockedAction(e);
                   }
@@ -2702,4 +2706,4 @@ export default function JobsPage() {
       <JobsPageInner />
     </Suspense>
   );
-}
+  }
