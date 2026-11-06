@@ -1,9 +1,10 @@
 import { handleAiRequest } from "@/lib/ai/serviceHandler";
+import { measureRouteBudget } from "@/lib/api/routeBudget";
 import { getRequestContext } from "@cloudflare/next-on-pages";
 
 export const runtime = "edge";
 
-export async function POST(req: Request) {
+async function postHandler(req: Request) {
   let cfEnv: Record<string, any> | undefined;
   try {
     const ctx = getRequestContext();
@@ -13,4 +14,8 @@ export async function POST(req: Request) {
   } catch {}
 
   return handleAiRequest(req, { env: cfEnv });
+}
+
+export async function POST(req: Request) {
+  return measureRouteBudget("/api/ai", () => postHandler(req));
 }
