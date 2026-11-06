@@ -35,11 +35,20 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
+      - name: Error Budget Policy Check
+        run: npx tsx scripts/test-error-budget-policy.ts
+
       - name: Run Type Check
         run: npm run type-check
 
+      - name: Log Retention Doc Check
+        run: npx tsx scripts/test-log-retention-doc.ts
+
       - name: Run Linter
         run: npm run lint
+
+      - name: Account Deletion Anonymize Checks
+        run: npx tsx scripts/test-account-deletion-anonymize.ts
 
       - name: Build Application
         run: npm run build
@@ -49,8 +58,17 @@ jobs:
           # through the Node prerender step of `output: "export"` builds.
           CF_PAGES: '1'
 
+      - name: Verify Public Sourcemap Guard
+        run: node scripts/test-public-sourcemaps.mjs && node scripts/check-public-sourcemaps.mjs
+
       - name: Bundle Size Budget
         run: npm run check:budget
 
+      - name: Sub-processor Inventory Check
+        run: npx tsx scripts/test-subprocessor-inventory.ts
+
       - name: Run Test Suite (test:all)
         run: npm run test:all
+
+      - name: Coverage Thresholds
+        run: npm install --no-save @vitest/coverage-v8@2.1.9 && npx vitest run --coverage
