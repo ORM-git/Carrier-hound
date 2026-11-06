@@ -173,6 +173,8 @@ export const SUITES: SuiteSpec[] = [
 
   // DB-capable suites: anonymous write attempt (tests RLS denial; attempts insert/update)
   { name: "scripts/test-filters.ts", command: "npx tsx scripts/test-filters.ts", classification: "db-anon-write-attempt", requiresSupabase: true },
+  { name: "scripts/check-plan-regression.mjs --selftest", command: "node scripts/check-plan-regression.mjs --selftest", classification: "offline" },
+  { name: "scripts/test-pii-access-log.ts", command: "npx tsx scripts/test-pii-access-log.ts", classification: "offline" },
 ];
 
 export interface RunSummary {
