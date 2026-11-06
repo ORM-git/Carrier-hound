@@ -35,6 +35,9 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
+      - name: Error Budget Policy Check
+        run: npx tsx scripts/test-error-budget-policy.ts
+
       - name: Run Type Check
         run: npm run type-check
 
