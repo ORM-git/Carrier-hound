@@ -7,12 +7,12 @@ worker, no UI, and no provider account ships in this change.
 
 ## What exists now
 
-- `supabase/migrations/20261106e_push_subscriptions.sql` - subscription
+- `supabase/migrations/20261106i_push_subscriptions.sql` - subscription
   storage (endpoint, p256dh, auth keys, user agent, revoke timestamp),
   RLS scoped to the owning user, service role bypasses for the future
   dispatcher. NOT APPLIED: owner applies in the Supabase SQL editor, then
   records it with
-  `node scripts/record-migration.cjs 20261106e_push_subscriptions`.
+  `node scripts/record-migration.cjs 20261106i_push_subscriptions`.
   Rollback: `DROP TABLE IF EXISTS public.push_subscriptions;`
 - `src/lib/notifications/webPush.ts` - the sender contract:
   `PushProvider.send(subscription, message)`, with `NoopPushProvider` as
