@@ -5,11 +5,15 @@
 
 ## Platform logs (default retention, dashboard-only today)
 
-- **Netlify function/edge + access logs**: all API routes and SSR output.
-  `console.*` in app code lands here. Retention is the Netlify plan default
-  and lives in the dashboard only - no central copy.
+- **Cloudflare Pages (production)**: production traffic serves from
+  Cloudflare Pages; its function/access logs carry all production API and
+  SSR output. `console.*` in app code lands here in production. Retention
+  is the Cloudflare plan default and lives in the dashboard only - no
+  central copy.
+- **Netlify (preview/legacy functions)**: preview deploys and legacy
+  function logs only; not production traffic.
 - **Owner steps** (account/dashboard bound, not codeable):
-  1. Enable a Netlify log drain to the chosen central sink.
+  1. Enable a Cloudflare log drain / Logpush to the chosen central sink.
   2. Set dashboard retention to the plan maximum that fits the DPDP
      schedule in `docs/retention-policy.md`.
 
