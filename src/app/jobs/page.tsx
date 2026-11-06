@@ -1377,17 +1377,20 @@ function JobsPageInner() {
       return;
     }
 
+    // Optimistic UI: toggle the heart instantly, roll back on failure.
     if (savedJobIds.includes(job.id)) {
+      setSavedJobIds((prev) => prev.filter((id) => id !== job.id));
       try {
         await removeApplicationFromTracker(job.id);
-        setSavedJobIds((prev) => prev.filter((id) => id !== job.id));
         toast.info(`Removed "${job.title}" from Liked Jobs.`);
       } catch (e) {
+        setSavedJobIds((prev) => (prev.includes(job.id) ? prev : [...prev, job.id]));
         toast.error("Could not update saved job.");
       }
       return;
     }
 
+    setSavedJobIds((prev) => [...prev, job.id]);
     try {
       await addApplicationToTracker({
         jobId: job.id,
@@ -1398,9 +1401,9 @@ function JobsPageInner() {
         applyUrl: job.applyUrl,
         stage: "saved",
       });
-      setSavedJobIds((prev) => [...prev, job.id]);
       toast.success(`Liked "${job.title}"! Saved to your tracker.`);
     } catch (e) {
+      setSavedJobIds((prev) => prev.filter((id) => id !== job.id));
       toast.error("Could not save job.");
     }
   };
