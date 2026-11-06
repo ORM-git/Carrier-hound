@@ -122,7 +122,7 @@ function warnMemoryFallback(key: string) {
   if (now - lastWarn >= ALERT_DEDUPE_WINDOW_MS) {
     fallbackWarnDedupeStore.set(route, now);
     console.warn(
-      `[RATE-LIMIT-MEMORY-FALLBACK] Shared store down; falling back to in-memory rate limiting for route '${route}'. Permitted only for cheap public read endpoints (search, track, stats, ticker, early-access).`
+      `[RATE-LIMIT-MEMORY-FALLBACK] Shared store down; falling back to in-memory rate limiting for route '${route}'. Permitted only for cheap public read endpoints (search, track, stats, ticker, early-access) and the auth-gated account export/delete endpoints.`
     );
   }
 }
@@ -205,6 +205,8 @@ export async function checkSharedRateLimit(
   // - /api/stats (`stats:ip:*`)
   // - /api/ticker (`ticker:ip:*`)
   // - /api/early-access (`early_access:ip:*`)
+  // - /api/account/export (`account_export:user:*`) - auth-gated, user-keyed
+  // - /api/account/delete (`account_delete:user:*`) - auth-gated, user-keyed
   // All costly/AI operations (e.g. /api/ai per-IP and per-user) MUST use checkSharedRateLimitStrict() / failClosed: true.
   if (!memoryFallback) {
     return {
@@ -236,7 +238,19 @@ export const EARLY_ACCESS_RATE_LIMIT = {
 
 export const searchRateLimitStore = new Map<string, { count: number; resetAt: number }>();
 export const trackRateLimitStore = new Map<string, { count: number; resetAt: number }>();
+export const ACCOUNT_EXPORT_RATE_LIMIT = {
+  maxRequests: 5,
+  windowSeconds: 3600,
+};
+
+export const ACCOUNT_DELETE_RATE_LIMIT = {
+  maxRequests: 5,
+  windowSeconds: 3600,
+};
+
 export const earlyAccessRateLimitStore = new Map<string, { count: number; resetAt: number }>();
+export const accountExportRateLimitStore = new Map<string, { count: number; resetAt: number }>();
+export const accountDeleteRateLimitStore = new Map<string, { count: number; resetAt: number }>();
 
 export function _resetSearchRateLimitStore() {
   searchRateLimitStore.clear();
