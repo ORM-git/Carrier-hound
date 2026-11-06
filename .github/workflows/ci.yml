@@ -49,5 +49,8 @@ jobs:
           # through the Node prerender step of `output: "export"` builds.
           CF_PAGES: '1'
 
+      - name: Bundle Size Budget
+        run: npm run check:budget
+
       - name: Run Test Suite (test:all)
         run: npm run test:all
