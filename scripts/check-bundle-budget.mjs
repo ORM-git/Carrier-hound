@@ -2,10 +2,15 @@
 /**
  * Bundle size budget check (runs after `next build`).
  *
- * Budgets are grounded in the production baseline measured 2026-11-06 from
- * https://careermonke.com (landing first-load JS = 553,390 bytes across 20
- * chunks; largest single chunk = 340,293 bytes, the globe visualisation).
- * Headroom ~18% total, ~18% per chunk. Tighten as the app shrinks.
+ * The per-chunk budget (400 KB) is grounded in the production baseline
+ * measured 2026-11-06 from https://careermonke.com (largest single chunk =
+ * 340,293 bytes, the globe visualisation; ~18% headroom).
+ *
+ * The landing first-load budget is a RATCHET: the app-build-manifest basis
+ * measured 800,131 bytes in CI on 2026-11-06 (manifest byte counts differ
+ * from the deployed-site measurement above). Budget = baseline + ~5%
+ * headroom; tighten it as the landing bundle shrinks. Landing code is not
+ * to be modified to fit this budget (owner decision).
  *
  * Checks:
  *  1. Landing first-load JS (from .next/app-build-manifest.json) <= FIRST_LOAD_BUDGET_BYTES
@@ -17,7 +22,8 @@
 import { readFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 
-const FIRST_LOAD_BUDGET_BYTES = 650_000;
+// Ratchet: CI-measured baseline 800,131 + ~5% headroom. Lower over time.
+const FIRST_LOAD_BUDGET_BYTES = 840_000;
 const CHUNK_BUDGET_BYTES = 400_000;
 
 const root = process.cwd();
