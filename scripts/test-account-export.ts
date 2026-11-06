@@ -10,10 +10,15 @@ const {
   handleAccountExportRequest,
   ACCOUNT_EXPORT_USER_ID_TABLES,
   ACCOUNT_EXPORT_EMAIL_TABLES,
+  ACCOUNT_EXPORT_ROW_CAP,
 } = require("../src/lib/account/exportHandler");
 const {
   ACCOUNT_DELETE_USER_ID_TABLES,
 } = require("../src/lib/account/deleteHandler");
+const {
+  accountExportRateLimitStore,
+  ACCOUNT_EXPORT_RATE_LIMIT,
+} = require("../src/lib/api/sharedRateLimit");
 
 function makeReq(token?: string) {
   return {
@@ -29,7 +34,7 @@ function createMockAdmin(opts: {
   rows?: Record<string, any[]>;
   failTables?: string[];
 }) {
-  const queried: Array<{ table: string; column: string; value: string }> = [];
+  const queried: Array<{ table: string; column: string; value: string; limit?: number }> = [];
   const failTables = new Set(opts.failTables || []);
   return {
     queried,
@@ -38,13 +43,15 @@ function createMockAdmin(opts: {
     },
     from: (table: string) => ({
       select: () => ({
-        eq: (column: string, value: string) => {
-          queried.push({ table, column, value });
-          if (failTables.has(table)) {
-            return Promise.resolve({ data: null, error: { code: "42P01", message: `relation "${table}" does not exist` } });
-          }
-          return Promise.resolve({ data: opts.rows?.[table] || [], error: null });
-        },
+        eq: (column: string, value: string) => ({
+          limit: (n: number) => {
+            queried.push({ table, column, value, limit: n });
+            if (failTables.has(table)) {
+              return Promise.resolve({ data: null, error: { code: "42P01", message: `relation "${table}" does not exist` } });
+            }
+            return Promise.resolve({ data: opts.rows?.[table] || [], error: null });
+          },
+        }),
       }),
     }),
     storage: {
@@ -74,6 +81,7 @@ async function main() {
 
   // 3. Table coverage: every deletion-covered user_id table plus subscriptions
   {
+    accountExportRateLimitStore.clear();
     const admin = createMockAdmin({ user: USER, rows: { candidate_profiles: [{ id: 1 }] } });
     const res = await handleAccountExportRequest(makeReq("tok"), { getSupabaseAdmin: () => admin });
     assert.strictEqual(res.status, 200, "happy path must be 200");
@@ -96,6 +104,7 @@ async function main() {
 
   // 4. Early-access rows matched by lowercase email
   {
+    accountExportRateLimitStore.clear();
     const admin = createMockAdmin({ user: USER });
     await handleAccountExportRequest(makeReq("tok"), { getSupabaseAdmin: () => admin });
     for (const table of ACCOUNT_EXPORT_EMAIL_TABLES) {
@@ -109,12 +118,14 @@ async function main() {
 
   // 5. Payload shape + download headers
   {
+    accountExportRateLimitStore.clear();
     const admin = createMockAdmin({ user: USER, rows: { saved_jobs: [{ job_id: "j1" }] } });
     const res = await handleAccountExportRequest(makeReq("tok"), { getSupabaseAdmin: () => admin });
     const body = await res.json();
     assert.strictEqual(body.export_version, 1);
     assert.strictEqual(body.user.id, USER.id);
     assert.deepStrictEqual(body.tables.saved_jobs, [{ job_id: "j1" }]);
+    assert.deepStrictEqual(body.truncated_tables, []);
     assert.ok(body.generated_at, "generated_at present");
     const cd = res.headers.get("content-disposition") || "";
     assert.ok(cd.includes("attachment"), "must be an attachment download");
@@ -124,10 +135,44 @@ async function main() {
 
   // 6. Missing tables are tolerated, not fatal
   {
+    accountExportRateLimitStore.clear();
     const admin = createMockAdmin({ user: USER, failTables: ["user_consents", "page_views"] });
     const res = await handleAccountExportRequest(makeReq("tok"), { getSupabaseAdmin: () => admin });
     assert.strictEqual(res.status, 200, "missing tables must not fail the export");
     console.log("ok - non-existent tables skipped (42P01 tolerated)");
+  }
+
+  // 7. Row cap: queries fetch cap+1 and over-cap tables are flagged truncated
+  {
+    accountExportRateLimitStore.clear();
+    const heavy = Array.from({ length: ACCOUNT_EXPORT_ROW_CAP + 2 }, (_, i) => ({ id: i }));
+    const admin = createMockAdmin({ user: USER, rows: { page_views: heavy } });
+    const res = await handleAccountExportRequest(makeReq("tok"), { getSupabaseAdmin: () => admin });
+    assert.strictEqual(res.status, 200);
+    const body = await res.json();
+    assert.strictEqual(body.tables.page_views.length, ACCOUNT_EXPORT_ROW_CAP, "page_views capped at the row cap");
+    assert.deepStrictEqual(body.truncated_tables, ["page_views"], "truncated table flagged");
+    assert.ok(
+      admin.queried.every((q: any) => q.limit === ACCOUNT_EXPORT_ROW_CAP + 1),
+      "every table query must fetch cap+1 rows (truncation detection)"
+    );
+    console.log("ok - heavy tables capped with truncated_tables flag");
+  }
+
+  // 8. Shared rate limit: 429 after the per-user allowance is exhausted
+  {
+    accountExportRateLimitStore.clear();
+    const admin = createMockAdmin({ user: USER });
+    let res: any = null;
+    for (let i = 0; i < ACCOUNT_EXPORT_RATE_LIMIT.maxRequests; i++) {
+      res = await handleAccountExportRequest(makeReq("tok"), { getSupabaseAdmin: () => admin });
+      assert.strictEqual(res.status, 200, `request ${i + 1} within allowance must pass`);
+    }
+    res = await handleAccountExportRequest(makeReq("tok"), { getSupabaseAdmin: () => admin });
+    assert.strictEqual(res.status, 429, "request beyond allowance must be 429");
+    assert.ok(res.headers.get("retry-after"), "429 carries Retry-After");
+    accountExportRateLimitStore.clear();
+    console.log("ok - per-user shared rate limit returns 429 with Retry-After");
   }
 
   console.log("\nAll account-export checks passed.");
