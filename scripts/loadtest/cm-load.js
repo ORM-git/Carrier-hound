@@ -57,7 +57,12 @@ export const options = {
   summaryTrendStats: ['avg', 'min', 'med', 'max', 'p(90)', 'p(95)', 'p(99)'],
   thresholds: {
     http_req_failed: [{ threshold: 'rate<0.02', abortOnFail: true, delayAbortEval: '30s' }],
-    http_req_duration: [{ threshold: 'p(95)<3000', abortOnFail: true, delayAbortEval: '30s' }],
+    http_req_duration: [
+      { threshold: 'p(95)<3000', abortOnFail: true, delayAbortEval: '30s' },
+      // Tail latency gate (BE#9/#39): p99 target is provisional at p95 + 2s,
+      // same 200-user load; tighten once real traffic baselines exist.
+      { threshold: 'p(99)<5000', abortOnFail: true, delayAbortEval: '30s' },
+    ],
     rate_limit_hits: [{ threshold: 'count<1', abortOnFail: true }],
     cf_challenge_hits: [{ threshold: 'count<1', abortOnFail: true }],
   },
