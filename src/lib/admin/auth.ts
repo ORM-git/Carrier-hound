@@ -1,5 +1,6 @@
 import { createClient as createAdminSupabaseClient } from "@supabase/supabase-js";
 import type { User } from "@supabase/supabase-js";
+import { noteAdminAuthFailure } from "../security/authMonitor";
 import {
   ADMIN_EMAIL,
   ADMIN_EMAIL_LIST,
@@ -125,6 +126,10 @@ export async function verifyAdminSession(req?: Request): Promise<{
         return { isAdmin: true, user };
       }
     }
+
+    // ATO monitoring: count failed admin verifications (fire-and-forget,
+    // fully caught internally - never affects the auth decision).
+    await noteAdminAuthFailure(req, token);
 
     return { isAdmin: false, user: null, error: "Forbidden: Verified admin access required." };
   } catch (err: any) {
