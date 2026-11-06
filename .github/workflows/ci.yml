@@ -75,3 +75,6 @@ jobs:
 
       - name: Coverage Thresholds
         run: npm install --no-save @vitest/coverage-v8@2.1.9 && npx vitest run --coverage
+
+      - name: API Versioning Policy Check
+        run: npx tsx scripts/test-api-versioning-policy.ts
