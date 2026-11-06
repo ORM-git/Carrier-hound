@@ -1,0 +1,94 @@
+/**
+ * CareerMonke — Operational Log Retention Purge Runner
+ *
+ * Calls public.purge_operational_logs (migration 20261106a) with the
+ * service role, prints the per-table result table, and records the run in
+ * cron_run_logs. Requires the migration to be applied first; fails closed
+ * with a clear message when the function is missing.
+ *
+ * Usage:
+ *   npx tsx scripts/retention-cron.ts         # real purge
+ *   npx tsx scripts/retention-cron.ts --dry   # counts only, no deletes
+ */
+
+import dotenv from "dotenv";
+dotenv.config({ path: ".env.local" });
+dotenv.config({ path: ".env" });
+
+import { createClient } from "@supabase/supabase-js";
+
+type PurgeRow = {
+  table_name: string;
+  cutoff: string;
+  rows_matched: number;
+  rows_deleted: number;
+};
+
+async function main() {
+  const dry = process.argv.slice(2).includes("--dry");
+
+  console.log("============================================================");
+  console.log("  CareerMonke Retention Purge Cron Runner");
+  console.log("============================================================");
+  console.log(`Execution Mode: ${dry ? "DRY RUN (counts only)" : "REAL PURGE"}\n`);
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceRoleKey) {
+    console.error("Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY.");
+    process.exit(1);
+  }
+
+  const supabase = createClient(supabaseUrl, serviceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  const startTime = Date.now();
+  const { data, error } = await supabase.rpc("purge_operational_logs", {
+    dry_run: dry,
+  });
+
+  if (error) {
+    console.error(`✗ FAILED: purge_operational_logs RPC error: ${error.message}`);
+    if (/could not find|does not exist|function/i.test(error.message)) {
+      console.error(
+        "Migration 20261106a_data_retention.sql is not applied yet. Apply it in the Supabase SQL editor first."
+      );
+    }
+    await supabase.from("cron_run_logs").insert({
+      job_type: "retention_purge",
+      status: "failed",
+      error_message: error.message.slice(0, 500),
+      started_at: new Date(startTime).toISOString(),
+      completed_at: new Date().toISOString(),
+    });
+    process.exit(1);
+  }
+
+  const rows = (data || []) as PurgeRow[];
+  const durationSec = ((Date.now() - startTime) / 1000).toFixed(2);
+
+  console.log("------------------------------------------------------------");
+  for (const r of rows) {
+    console.log(
+      `${r.table_name.padEnd(18)} matched=${String(r.rows_matched).padStart(6)}  deleted=${String(r.rows_deleted).padStart(6)}  cutoff=${r.cutoff}`
+    );
+  }
+  console.log("------------------------------------------------------------");
+  console.log(`Status:         ✓ SUCCESS`);
+  console.log(`Duration:       ${durationSec}s`);
+  console.log("------------------------------------------------------------\n");
+
+  await supabase.from("cron_run_logs").insert({
+    job_type: "retention_purge",
+    status: "success",
+    started_at: new Date(startTime).toISOString(),
+    completed_at: new Date().toISOString(),
+    metadata: { dry_run: dry, results: rows },
+  });
+}
+
+main().catch((err) => {
+  console.error("Fatal unhandled retention cron error:", err);
+  process.exit(1);
+});

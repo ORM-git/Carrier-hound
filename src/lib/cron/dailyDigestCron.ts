@@ -294,6 +294,18 @@ export async function runDailyDigestCron(options: {
           })
           .eq("id", runId);
       } catch (e) {}
+
+      // Also surface the failure in the dead-letter queue (admin replay
+      // view), so cron failures are visible somewhere watched.
+      try {
+        const { recordFailedEvent } = await import("../events/failedEvents");
+        await recordFailedEvent({
+          source: "cron_daily_digest",
+          eventId: `dd-${completedAt.slice(0, 10)}`,
+          payload: { runId, jobsScannedCount, newJobsCount },
+          error: `Daily digest cron failed: ${errorMsg}`,
+        });
+      } catch (e) {}
     }
 
     return {

@@ -972,23 +972,26 @@ export async function runEarlyAccessDigestCron(options?: {
     };
   }
 
-  if (dryRun) {
-    return {
-      status: "success",
-      sent: false,
-      reason: "dry_run",
-      rowCount: newRows.length,
-      lastDigestAt,
-    };
-  }
-
-  // 4. Verify Apps Script mail config and notifyEmail (GMAIL_* are optional)
+  // 4. Verify Apps Script mail config and notifyEmail (GMAIL_* are optional).
+  // Runs BEFORE the dry-run early return on purpose: a dry run must also
+  // surface missing configuration, otherwise a green dry-run masks a broken
+  // live cron (see docs/postmortems/2026-11-06-early-access-digest-missing-env.md).
   if (!appsScriptConfig.url || !appsScriptConfig.secret || !notifyEmail) {
     safeWarn("Missing Apps Script or EARLY_ACCESS_NOTIFY_EMAIL configuration for digest cron");
     return {
       status: "failed",
       sent: false,
       reason: "missing_env",
+      rowCount: newRows.length,
+      lastDigestAt,
+    };
+  }
+
+  if (dryRun) {
+    return {
+      status: "success",
+      sent: false,
+      reason: "dry_run",
       rowCount: newRows.length,
       lastDigestAt,
     };
