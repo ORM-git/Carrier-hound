@@ -14,6 +14,31 @@ versioning or git tags (starting with `v1.0.0` at public launch).
   secrets rotation runbook, ops runbooks, incident log, first
   postmortem, initial SLOs, this changelog.
 
+## 2026-11-06 (frontend audit remediation day)
+
+### Added
+- PWA basics: web app manifest, `theme-color` meta, 192/512 icon links (#264).
+- Conservative service worker + branded offline fallback page (#266);
+  branded `<noscript>` fallback (#265); static branded `500.html` for
+  host-level server errors (#269).
+- Minimal SWR-style client cache on the dashboard (#276);
+  `startTransition` around the debounced jobs search (#274).
+- Client-side abort of the radar telemetry fetch on unmount (#277).
+- Static RSS feed for public guides at `/feed.xml`, exposed via a feed
+  link tag in the root metadata (#278).
+- BreadcrumbList JSON-LD on public pages; sitemap coverage extended to
+  all public routes (#272).
+- Vitest unit test setup with first library suites; `npm run test:all`
+  now chains it (#281).
+- Bundle size budget check (650 KB first-load / 400 KB chunk, budgets
+  from measured production values) (#285).
+- First-touch UTM/referrer capture in the early-access flow
+  (sessionStorage; backend storage planned separately) (#287).
+- Advisory axe + Lighthouse quality workflow (#288).
+- Browser support matrix (docs/BROWSER_SUPPORT.md).
+- Husky pre-commit hooks with lint-staged (#267; scoped to eslint only
+  in #275).
+
 ## 2026-11-05 (audit remediation day)
 
 ### Added
