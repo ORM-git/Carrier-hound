@@ -9,7 +9,9 @@
 --            node scripts/record-migration.cjs 20261106c_change_history_triggers
 -- Covers:    audit row DB#10 (change-history triggers). admin_audit_log
 --            (20261020) covers admin actions only; this covers row-level data
---            changes from any writer.
+--            changes from any writer. The history insert is fail-open
+--            (BEGIN/EXCEPTION -> RAISE WARNING): a write to a billing or
+--            user table must never fail because of audit logging.
 -- Scope:     subscriptions, payment_orders, user_addon_credits,
 --            user_preferences. High-churn operational tables are intentionally
 --            excluded to keep volume bounded.
@@ -87,8 +89,14 @@ begin
   end;
   v_actor := coalesce(v_actor, session_user);
 
-  insert into public.row_change_history (table_name, row_id, operation, old_row, new_row, changed_by)
-  values (TG_TABLE_NAME, v_row_id, TG_OP, v_old, v_new, v_actor);
+  -- Fail-open per owner decision: a write to a billing or user table must
+  -- never fail because of audit logging. Log a warning and continue.
+  begin
+    insert into public.row_change_history (table_name, row_id, operation, old_row, new_row, changed_by)
+    values (TG_TABLE_NAME, v_row_id, TG_OP, v_old, v_new, v_actor);
+  exception when others then
+    raise warning 'row_change_history insert failed for % (% op): %', TG_TABLE_NAME, v_row_id, TG_OP, SQLERRM;
+  end;
 
   if TG_OP = 'DELETE' then
     return OLD;
