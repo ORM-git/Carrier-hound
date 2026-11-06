@@ -41,14 +41,14 @@ paths:
     get:
       tags: [admin]
       summary: List early-access requests
-      security: [{ adminSession: [] }]
+      security: [{ bearerAuth: [] }]
       responses:
         "200": { description: Request list }
         "403": { description: Not an admin }
     post:
       tags: [admin]
       summary: Manage early-access requests
-      security: [{ adminSession: [] }]
+      security: [{ bearerAuth: [] }]
       responses:
         "200": { description: Action processed }
         "403": { description: Not an admin }
@@ -56,7 +56,7 @@ paths:
     post:
       tags: [admin]
       summary: Approve an early-access request
-      security: [{ adminSession: [] }]
+      security: [{ bearerAuth: [] }]
       responses:
         "200": { description: Approved }
         "403": { description: Not an admin }
@@ -64,7 +64,7 @@ paths:
     post:
       tags: [admin]
       summary: Reject an early-access request
-      security: [{ adminSession: [] }]
+      security: [{ bearerAuth: [] }]
       responses:
         "200": { description: Rejected }
         "403": { description: Not an admin }
@@ -72,14 +72,14 @@ paths:
     get:
       tags: [admin]
       summary: Inspect dead-letter queue for replay
-      security: [{ adminSession: [] }]
+      security: [{ bearerAuth: [] }]
       responses:
         "200": { description: Dead-letter entries }
         "403": { description: Not an admin }
     post:
       tags: [admin]
       summary: Replay dead-letter events
-      security: [{ adminSession: [] }]
+      security: [{ bearerAuth: [] }]
       responses:
         "200": { description: Replay processed }
         "403": { description: Not an admin }
@@ -87,7 +87,7 @@ paths:
     get:
       tags: [admin]
       summary: Admin analytics stats
-      security: [{ adminSession: [] }]
+      security: [{ bearerAuth: [] }]
       responses:
         "200": { description: Stats payload }
         "403": { description: Not an admin }
@@ -95,7 +95,7 @@ paths:
     get:
       tags: [admin]
       summary: List users
-      security: [{ adminSession: [] }]
+      security: [{ bearerAuth: [] }]
       responses:
         "200": { description: User list }
         "403": { description: Not an admin }
@@ -103,7 +103,7 @@ paths:
     get:
       tags: [admin]
       summary: User activity view
-      security: [{ adminSession: [] }]
+      security: [{ bearerAuth: [] }]
       responses:
         "200": { description: Activity payload }
         "403": { description: Not an admin }
@@ -111,7 +111,7 @@ paths:
     post:
       tags: [admin]
       summary: Block a user
-      security: [{ adminSession: [] }]
+      security: [{ bearerAuth: [] }]
       responses:
         "200": { description: User blocked }
         "403": { description: Not an admin }
@@ -232,8 +232,11 @@ paths:
         "200": { description: Event recorded }
 components:
   securitySchemes:
-    adminSession:
-      type: apiKey
-      in: cookie
-      name: admin_session
-      description: Admin session verified via verifyAdminSession (src/lib/admin/auth).
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: >-
+        Admin session token (src/lib/admin/auth.ts extractToken): send
+        Authorization: Bearer <token>. The Supabase auth cookie
+        (sb-<project-ref>-auth-token) is also accepted as a fallback; the
+        token is then verified by verifyAdminSession.

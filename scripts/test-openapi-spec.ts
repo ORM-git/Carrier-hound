@@ -93,14 +93,14 @@ for (const [specPathEntry, methods] of specPaths) {
 }
 console.log(`  -> [PASS] all ${specPaths.size} spec paths map to real route files and methods`);
 
-// 3. Admin routes carry the adminSession security requirement
+// 3. Admin routes carry the bearerAuth security requirement
 for (const [p, methods] of specPaths) {
   if (p.startsWith("/api/admin/") && methods.size > 0) {
     const idx = spec.indexOf(`${p}:`);
     const block = spec.slice(idx, idx + 1200);
-    assert.ok(block.includes("adminSession"), `${p} operations require adminSession in the spec`);
+    assert.ok(block.includes("bearerAuth"), `${p} operations require bearerAuth in the spec`);
   }
 }
-console.log("  -> [PASS] admin paths declare the adminSession security scheme");
+console.log("  -> [PASS] admin paths declare the bearerAuth security scheme");
 
 console.log("\nAll OpenAPI coverage checks passed.");
