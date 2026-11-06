@@ -84,7 +84,7 @@ let browser;
 try {
   browser = await puppeteer.launch({
     executablePath: CHROME_PATH,
-    headless: "new",
+    headless: true,
     args: ["--no-sandbox", "--disable-dev-shm-usage", "--remote-debugging-port=0"],
   });
   const axeSource = readFileSync(require.resolve("axe-core/axe.min.js"), "utf8");
