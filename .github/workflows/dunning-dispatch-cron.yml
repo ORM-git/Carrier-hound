@@ -1,0 +1,44 @@
+name: Dunning Outbox Dispatch Cron
+
+# Audit BE #30: drains the dunning_logs outbox (rows written by
+# processFailedRenewalDunning with dunning_email_queued = true) and sends the
+# queued renewal alert emails. Daily cadence is enough: dunning grants a
+# 7-day grace period, so hour-level latency adds nothing.
+#
+# Owner steps (shared with the early-access mail route): APPS_SCRIPT_MAIL_URL
+# and APPS_SCRIPT_MAIL_SECRET secrets.
+
+on:
+  schedule:
+    - cron: "30 4 * * *" # daily 04:30 UTC (10:00 IST)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dunning-dispatch:
+    name: Dispatch Queued Dunning Emails
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Dispatch Dunning Outbox
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          APPS_SCRIPT_MAIL_URL: ${{ secrets.APPS_SCRIPT_MAIL_URL }}
+          APPS_SCRIPT_MAIL_SECRET: ${{ secrets.APPS_SCRIPT_MAIL_SECRET }}
+        run: npx tsx scripts/dunning-dispatch-cron.ts
