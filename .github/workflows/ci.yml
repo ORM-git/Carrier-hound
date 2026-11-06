@@ -41,6 +41,9 @@ jobs:
       - name: Run Linter
         run: npm run lint
 
+      - name: Account Deletion Anonymize Checks
+        run: npx tsx scripts/test-account-deletion-anonymize.ts
+
       - name: Build Application
         run: npm run build
         env:
