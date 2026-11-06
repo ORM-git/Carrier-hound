@@ -24,7 +24,7 @@ import { getProAccessStatus } from "@/lib/billing/subscription";
 import { getTrackedApplications } from "@/lib/tracker/storage";
 import { TrackedApplication, STAGE_CONFIG, ApplicationStage } from "@/lib/tracker/types";
 import type { User } from "@supabase/supabase-js";
-import { readSwr, swrFetch } from "@/lib/cache/swr";
+import { isSwrStale, readSwr, swrFetch } from "@/lib/cache/swr";
 import {
   Sparkles,
   Lock,
@@ -222,6 +222,19 @@ export default function DashboardPage() {
       loadData(authUser);
     });
   }, [router, loadData]);
+
+  // Page Visibility API: revalidate when the tab becomes visible again and
+  // the cached bundle has gone stale (fresh cache skips the network call).
+  useEffect(() => {
+    if (!user) return;
+    const onVisible = () => {
+      if (!document.hidden && isSwrStale(`dashboard:${user.id}`)) {
+        loadData(user);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [user, loadData]);
 
   if (loading || (!isPro && !isProDefinitive)) {
     return <DashboardSkeleton />;

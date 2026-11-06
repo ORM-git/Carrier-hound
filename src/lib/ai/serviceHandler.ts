@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { rpcWithRetry } from "../db/rpcRetry";
 import { createClient } from "@supabase/supabase-js";
 import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
 import { verifyUserNotBanned } from "@/lib/admin/auth";
@@ -651,11 +652,11 @@ export async function executeAiCore(
       let reserveData: any;
       let reserveErr: any;
       try {
-        const res = await supabaseAdmin.rpc("ai_global_budget_reserve", {
+        const res = await rpcWithRetry(() => supabaseAdmin.rpc("ai_global_budget_reserve", {
           p_period: periodDate,
           p_tokens: estimatedTokens,
           p_cap: globalDailyCap,
-        });
+        }));
         reserveData = res.data;
         reserveErr = res.error;
       } catch (err: any) {
@@ -726,11 +727,11 @@ export async function executeAiCore(
     const settleBudget = async (actualTokens: number) => {
       if (budgetReserved && typeof supabaseAdmin.rpc === "function") {
         try {
-          await supabaseAdmin.rpc("ai_global_budget_settle", {
+          await rpcWithRetry(() => supabaseAdmin.rpc("ai_global_budget_settle", {
             p_period: periodDate,
             p_reserved: estimatedTokens,
             p_actual: Math.max(0, actualTokens),
-          });
+          }));
           budgetReserved = false;
         } catch (settleErr) {
           console.warn("[AI Service] Error settling global AI budget:", settleErr);
@@ -894,11 +895,11 @@ export async function executeAiCore(
       let leaseAcquired = false;
       let leaseErr: any;
       try {
-        const res = await supabaseAdmin.rpc("ai_concurrency_acquire", {
+        const res = await rpcWithRetry(() => supabaseAdmin.rpc("ai_concurrency_acquire", {
           p_lease_id: leaseId,
           p_cap: maxConcurrency,
           p_ttl_seconds: 60,
-        });
+        }));
         leaseAcquired = Boolean(res.data);
         leaseErr = res.error;
       } catch (err: any) {
@@ -1157,7 +1158,7 @@ export async function executeAiCore(
       clearTimeout(timeoutHandle);
       if (hasLease && typeof supabaseAdmin.rpc === "function") {
         try {
-          await supabaseAdmin.rpc("ai_concurrency_release", { p_lease_id: leaseId });
+          await rpcWithRetry(() => supabaseAdmin.rpc("ai_concurrency_release", { p_lease_id: leaseId }));
           hasLease = false;
         } catch (relErr) {
           console.warn("[AI Service] Error releasing concurrency lease:", relErr);
@@ -1165,11 +1166,11 @@ export async function executeAiCore(
       }
       if (budgetReserved && typeof supabaseAdmin.rpc === "function") {
         try {
-          await supabaseAdmin.rpc("ai_global_budget_settle", {
+          await rpcWithRetry(() => supabaseAdmin.rpc("ai_global_budget_settle", {
             p_period: periodDate,
             p_reserved: estimatedTokens,
             p_actual: 0,
-          });
+          }));
           budgetReserved = false;
         } catch (setErr) {
           console.warn("[AI Service] Error settling budget reservation in finally:", setErr);
