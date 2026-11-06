@@ -58,6 +58,9 @@ jobs:
       - name: Bundle Size Budget
         run: npm run check:budget
 
+      - name: Sub-processor Inventory Check
+        run: npx tsx scripts/test-subprocessor-inventory.ts
+
       - name: Run Test Suite (test:all)
         run: npm run test:all
 
