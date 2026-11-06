@@ -182,6 +182,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-data-classification.ts", command: "npx tsx scripts/test-data-classification.ts", classification: "offline" },
   { name: "scripts/test-autocomplete-policy.ts", command: "npx tsx scripts/test-autocomplete-policy.ts", classification: "offline" },
   { name: "scripts/test-error-budget.ts", command: "npx tsx scripts/test-error-budget.ts", classification: "offline" },
+  { name: "scripts/test-push-notifications-policy.ts", command: "npx tsx scripts/test-push-notifications-policy.ts", classification: "offline" },
 ];
 
 export interface RunSummary {
