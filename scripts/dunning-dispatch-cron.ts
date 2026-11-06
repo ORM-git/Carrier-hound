@@ -35,7 +35,7 @@ async function main() {
   }
 }
 
-main().catch((err) => {
+main().catch(async (err) => {
   console.error("[DunningDispatch] fatal:", err?.message || err);
   await reportCronFailure("dunning-dispatch", err);
   process.exit(2);
