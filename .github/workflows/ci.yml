@@ -54,3 +54,6 @@ jobs:
 
       - name: Run Test Suite (test:all)
         run: npm run test:all
+
+      - name: Coverage Thresholds
+        run: npm install --no-save @vitest/coverage-v8@2.1.9 && npx vitest run --coverage
