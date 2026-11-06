@@ -80,6 +80,7 @@ async function main() {
 
   let suppressed = 0;
   let review = 0;
+  let failed = 0;
   for (const row of rows ?? []) {
     const recipient = extractBounceRecipient(
       `${row.subject ?? ""}\n${row.body_excerpt ?? ""}`,
@@ -89,9 +90,13 @@ async function main() {
       const res = await recordEmailSuppression(client, recipient, "bounce");
       if (res.ok) {
         suppressed++;
-        console.log(`suppressed ${recipient} (bounce, inbound_replies ${row.id})`);
+        console.log(`suppressed recipient for inbound_replies ${row.id} (bounce)`);
       } else {
-        console.error(`suppression failed for ${recipient}: ${res.error}`);
+        failed++;
+        console.error(
+          `suppression failed for inbound_replies ${row.id}: ${res.error} - left unprocessed for retry`
+        );
+        continue;
       }
     } else {
       review++;
@@ -107,7 +112,9 @@ async function main() {
     }
   }
 
-  console.log(`bounce intake: ${suppressed} suppressed, ${review} marked for review, ${(rows ?? []).length} rows processed.`);
+  console.log(
+    `bounce intake: ${suppressed} suppressed, ${review} marked for review, ${failed} failed (left unprocessed for retry), ${(rows ?? []).length} rows seen.`
+  );
 }
 
 const isMain = process.argv[1] && process.argv[1].endsWith("bounce-intake-cron.ts");
