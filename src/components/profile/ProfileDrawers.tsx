@@ -16,6 +16,36 @@ interface ProfileDrawersProps {
   onSave: (updated: CandidateProfile) => Promise<void>;
 }
 
+const DRAFT_STORAGE_PREFIX = "careermonke:profile-draft:";
+const DRAFT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+interface StoredProfileDraft {
+  ts: number;
+  draft: CandidateProfile;
+}
+
+function draftStorageKey(email: string | undefined, section: ProfileSection | null): string | null {
+  if (!email || !section) return null;
+  return `${DRAFT_STORAGE_PREFIX}${email}:${section}`;
+}
+
+function readStoredDraft(key: string): StoredProfileDraft | null {
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as StoredProfileDraft;
+    if (!parsed || typeof parsed.ts !== "number" || !parsed.draft) return null;
+    if (Date.now() - parsed.ts > DRAFT_MAX_AGE_MS) {
+      // Stale draft: expire it instead of surfacing week-old edits.
+      window.localStorage.removeItem(key);
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
 export default function ProfileDrawers({
   isOpen,
   section,
@@ -34,15 +64,40 @@ export default function ProfileDrawers({
   // New skill input state inside Skills drawer
   const [newSkill, setNewSkill] = useState("");
 
-  // Re-initialize draft whenever drawer opens or candidate updates
+  // Re-initialize draft whenever drawer opens or candidate updates.
+  // Form autosave/draft: a stored unsaved draft for this section wins over
+  // the server copy and is restored with a dismissable notice.
   useEffect(() => {
     if (isOpen) {
-      setDraft(createInitialDraft(candidate));
+      const key = draftStorageKey(candidate?.email, section);
+      const stored = key ? readStoredDraft(key) : null;
+      // Silent restore (owner rule: no visible UI changes). The 7-day
+      // expiry and sign-out purge keep stale/foreign drafts out.
+      setDraft(stored ? stored.draft : createInitialDraft(candidate));
       setError(null);
       setSaving(false);
       setNewSkill("");
     }
   }, [isOpen, candidate, section]);
+
+  // Autosave the draft (debounced) while the drawer is open so unsaved
+  // edits survive an accidental close, navigation, or reload. Stored on
+  // this device only, keyed by account email + section; cleared on save
+  // or explicit discard.
+  useEffect(() => {
+    if (!isOpen) return;
+    const key = draftStorageKey(candidate?.email, section);
+    if (!key) return;
+    const handle = window.setTimeout(() => {
+      try {
+        const entry: StoredProfileDraft = { ts: Date.now(), draft };
+        window.localStorage.setItem(key, JSON.stringify(entry));
+      } catch {
+        // Storage full or unavailable; autosave is best-effort.
+      }
+    }, 500);
+    return () => window.clearTimeout(handle);
+  }, [draft, isOpen, candidate?.email, section]);
 
   // Focus trap, Escape key handling, and background interaction blocking
   useEffect(() => {
@@ -281,6 +336,14 @@ export default function ProfileDrawers({
     try {
       const sanitized = sanitizeCandidateProfile(draft);
       await onSave(sanitized);
+      const key = draftStorageKey(candidate?.email, section);
+      if (key) {
+        try {
+          window.localStorage.removeItem(key);
+        } catch {
+          // Best-effort cleanup.
+        }
+      }
       // On success, close drawer and return focus
       onClose();
     } catch (err: any) {
