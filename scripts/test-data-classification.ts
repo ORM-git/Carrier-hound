@@ -24,7 +24,11 @@ for (const f of fs.readdirSync("supabase/migrations")) {
   }
 }
 
-const missing = [...tables].filter((t) => !doc.includes(`\`${t}\``));
+// A table may be documented under its live schema-qualified name
+// (e.g. schema_migrations lives in supabase_migrations on the live DB).
+const missing = [...tables].filter(
+  (t) => !doc.includes(`\`${t}\``) && !doc.includes(`.${t}\``)
+);
 check(`doc names every migrated table (${tables.size} found)`, missing.length === 0);
 if (missing.length) console.log("  missing:", missing.join(", "));
 
