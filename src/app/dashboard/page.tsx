@@ -24,6 +24,7 @@ import { getProAccessStatus } from "@/lib/billing/subscription";
 import { getTrackedApplications } from "@/lib/tracker/storage";
 import { TrackedApplication, STAGE_CONFIG, ApplicationStage } from "@/lib/tracker/types";
 import type { User } from "@supabase/supabase-js";
+import { readSwr, swrFetch } from "@/lib/cache/swr";
 import {
   Sparkles,
   Lock,
@@ -153,15 +154,16 @@ export default function DashboardPage() {
   const [activeStep, setActiveStep] = useState<"onboarding" | "resume" | "matches">("matches");
 
   const loadData = useCallback(async (authUser: User) => {
-    setLoading(true);
-    try {
-      const [proRes, prefRes, profileRes, appsRes] = await Promise.all([
-        getProAccessStatus(authUser.id),
-        getUserPreferences(authUser.id),
-        getCandidateProfile(authUser.id),
-        getTrackedApplications(authUser.id),
-      ]);
+    type DashboardBundle = {
+      proRes: Awaited<ReturnType<typeof getProAccessStatus>>;
+      prefRes: Awaited<ReturnType<typeof getUserPreferences>>;
+      profileRes: Awaited<ReturnType<typeof getCandidateProfile>>;
+      appsRes: Awaited<ReturnType<typeof getTrackedApplications>>;
+    };
+    const cacheKey = `dashboard:${authUser.id}`;
 
+    const applyBundle = (bundle: DashboardBundle) => {
+      const { proRes, prefRes, profileRes, appsRes } = bundle;
       setIsPro(proRes.isPro);
       setIsProDefinitive(Boolean(proRes.isDefinitive));
       setPreferences(prefRes);
@@ -176,6 +178,33 @@ export default function DashboardPage() {
       } else {
         setActiveStep("matches");
       }
+    };
+
+    // Stale-while-revalidate: paint any cached bundle instantly, then
+    // revalidate. Fresh cache (60s TTL) skips the network entirely; identical
+    // concurrent loads share one in-flight request.
+    const cached = readSwr<DashboardBundle>(cacheKey);
+    if (cached) {
+      applyBundle(cached);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
+    try {
+      const bundle = await swrFetch<DashboardBundle>(cacheKey, () =>
+        Promise.all([
+          getProAccessStatus(authUser.id),
+          getUserPreferences(authUser.id),
+          getCandidateProfile(authUser.id),
+          getTrackedApplications(authUser.id),
+        ]).then(([proRes, prefRes, profileRes, appsRes]) => ({
+          proRes,
+          prefRes,
+          profileRes,
+          appsRes,
+        }))
+      );
+      applyBundle(bundle);
     } catch (err) {
       console.warn("Could not load dashboard data:", err);
     } finally {
