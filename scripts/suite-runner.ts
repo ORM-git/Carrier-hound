@@ -32,7 +32,6 @@ export interface SuiteSpec {
 // Only non-production project refs explicitly listed here can authorize DB-capable suites.
 export const TEST_PROJECT_ALLOWLIST: string[] = [...GUARD_DEFAULT_ALLOWLIST,
   { name: "scripts/test-rpc-retry.ts", command: "npx tsx scripts/test-rpc-retry.ts", classification: "offline" },
-  { name: "scripts/test-dunning-dispatcher.ts", command: "npx tsx scripts/test-dunning-dispatcher.ts", classification: "offline" },
 ];
 
 // Production project reference ID that is strictly denied under all circumstances.
@@ -175,6 +174,7 @@ export const SUITES: SuiteSpec[] = [
   // DB-capable suites: anonymous write attempt (tests RLS denial; attempts insert/update)
   { name: "scripts/test-filters.ts", command: "npx tsx scripts/test-filters.ts", classification: "db-anon-write-attempt", requiresSupabase: true },
   { name: "scripts/check-plan-regression.mjs --selftest", command: "node scripts/check-plan-regression.mjs --selftest", classification: "offline" },
+  { name: "scripts/test-dunning-dispatcher.ts", command: "npx tsx scripts/test-dunning-dispatcher.ts", classification: "offline" },
 ];
 
 export interface RunSummary {
