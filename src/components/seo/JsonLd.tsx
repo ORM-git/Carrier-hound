@@ -3,7 +3,7 @@ import { getRootStructuredData } from "@/lib/seo/structuredData";
 
 export interface JsonLdProps {
   /** Any JSON-LD node or graph; defaults to the root Organization/WebSite graph. */
-  data?: Record<string, unknown>;
+  data?: object;
 }
 
 export function JsonLd({ data }: JsonLdProps = {}) {

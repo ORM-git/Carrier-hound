@@ -1,6 +1,7 @@
 import React from "react";
 import Link from "next/link";
 import BrandIcon from "@/components/BrandIcon";
+import { BreadcrumbJsonLd } from "@/components/seo/BreadcrumbJsonLd";
 
 export const metadata = {
   title: "Contact Us | CareerMonke",
@@ -13,6 +14,7 @@ export const metadata = {
 export default function ContactUsPage() {
   return (
     <main className="min-h-screen bg-white text-[#09090B] py-16 px-6">
+  <BreadcrumbJsonLd trail={[{ name: "Home", path: "/" }, { name: "Contact", path: "/contact" }]} />
       {/* Small blue logo (max-width 200px) centered at top */}
       <div className="max-w-[200px] mx-auto text-center mb-10">
         <Link href="/" className="inline-flex items-center gap-2 text-blue-600 group">
