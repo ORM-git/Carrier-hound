@@ -1,3 +1,18 @@
+export const RAZORPAY_CHECKOUT_JS_URL = "https://checkout.razorpay.com/v1/checkout.js";
+
+/**
+ * Subresource Integrity pin for Razorpay Standard Checkout (audit BE #13).
+ * checkout.js is unversioned, so when Razorpay ships an update this hash must
+ * be refreshed - until then the browser refuses to execute the script and the
+ * checkout flow fails loudly through onerror. Regenerate with:
+ *   curl -s https://checkout.razorpay.com/v1/checkout.js \
+ *     | openssl dgst -sha384 -binary | openssl base64 -A
+ * (Pinned 2026-11-06. Razorpay serves Access-Control-Allow-Origin: * on this
+ * URL, which the crossorigin="anonymous" SRI fetch requires.)
+ */
+export const RAZORPAY_CHECKOUT_JS_INTEGRITY =
+  "sha384-QhZYjrzJghgRtsXU5dBDs/KLgu9keL4QxZuvGrltBalzWuj8+Dovxvea1GQSaPhT";
+
 /**
  * Loads Razorpay Standard Checkout SDK dynamically
  */
@@ -12,7 +27,9 @@ export function loadRazorpayScript(): Promise<boolean> {
       return;
     }
     const script = document.createElement("script");
-    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.src = RAZORPAY_CHECKOUT_JS_URL;
+    script.integrity = RAZORPAY_CHECKOUT_JS_INTEGRITY;
+    script.crossOrigin = "anonymous";
     script.async = true;
     script.onload = () => resolve(true);
     script.onerror = () => resolve(false);
