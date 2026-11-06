@@ -31,20 +31,35 @@ async function main() {
 
   const client = createClient(url, key);
   const since = new Date(Date.now() - windowHours * 60 * 60 * 1000).toISOString();
-  const { data, error } = await client
-    .from("web_vitals")
-    .select("value")
-    .eq("name", "TTFB")
-    .gte("created_at", since)
-    .order("created_at", { ascending: false })
-    .limit(10000);
-
-  if (error) {
-    console.error(`[SLO-CHECK-ERROR] web_vitals query failed: ${error.message}`);
-    process.exit(2);
+  // A stable upper bound avoids mixing later arrivals into the window.
+  // Supabase commonly caps each response at 1000 rows: paginate explicitly
+  // and never label a truncated sample as the complete window.
+  const until = new Date().toISOString();
+  const samples: number[] = [];
+  let expectedCount: number | null = null;
+  for (let offset = 0; ; offset += 1000) {
+    const { data, error, count } = await client
+      .from("web_vitals")
+      .select("id,value", { count: "exact" })
+      .eq("name", "TTFB")
+      .gte("created_at", since)
+      .lte("created_at", until)
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true })
+      .range(offset, offset + 999);
+    if (error) throw new Error(`web_vitals query failed: ${error.message}`);
+    if (count === null || (expectedCount !== null && count !== expectedCount)) {
+      throw new Error("TTFB sample window changed or count unavailable; retry the check.");
+    }
+    expectedCount = count;
+    if (count > 10000) throw new Error("TTFB window exceeds 10000 samples; shorten window rather than truncate.");
+    for (const row of data ?? []) {
+      if (typeof row.value === "number" && Number.isFinite(row.value) && row.value >= 0) samples.push(row.value);
+    }
+    const returned = (data ?? []).length;
+    if (offset + returned >= count) break;
+    if (returned < 1000) throw new Error("TTFB response truncated before the full window; cannot evaluate safely.");
   }
-
-  const samples = (data ?? []).map((r: any) => Number(r.value));
   const result = evaluateSlo(samples, TTFB_SLO_TARGETS);
 
   console.log(
@@ -55,8 +70,8 @@ async function main() {
   );
 
   if (result.status === "no_data") {
-    console.log("No TTFB samples in window - nothing to evaluate.");
-    process.exit(0);
+    console.error("No valid TTFB samples in window - monitoring has no data.");
+    process.exit(2);
   }
   if (result.status === "breach") {
     for (const b of result.breaches) {

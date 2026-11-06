@@ -22,8 +22,8 @@ export interface SloEvaluation {
 
 /** Nearest-rank percentile on an unsorted numeric sample. */
 export function percentile(samples: readonly number[], p: number): number | null {
+  if (!Number.isFinite(p) || p <= 0 || p > 100) throw new RangeError(`percentile must be in (0, 100], got ${p}`);
   if (samples.length === 0) return null;
-  if (p <= 0 || p > 100) throw new RangeError(`percentile must be in (0, 100], got ${p}`);
   const sorted = [...samples].sort((a, b) => a - b);
   const rank = Math.ceil((p / 100) * sorted.length);
   return sorted[Math.min(rank, sorted.length) - 1];
@@ -39,6 +39,7 @@ export function evaluateSlo(samples: readonly number[], targets: readonly SloTar
   const breaches: SloEvaluation["breaches"] = [];
 
   for (const t of targets) {
+    if (!Number.isFinite(t.maxMs) || t.maxMs < 0) throw new RangeError("maxMs must be finite and nonnegative");
     const actual = percentile(clean, t.percentile);
     percentiles[`p${t.percentile}`] = actual;
     if (actual !== null && actual > t.maxMs) {
