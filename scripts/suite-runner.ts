@@ -78,6 +78,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-jobs-service-degraded.ts", command: "npx tsx scripts/test-jobs-service-degraded.ts", classification: "offline" },
   { name: "scripts/test-no-dummy-jobs.ts", command: "npx tsx scripts/test-no-dummy-jobs.ts", classification: "offline" },
   { name: "scripts/test-auth-guard.ts", command: "npx tsx scripts/test-auth-guard.ts", classification: "offline" },
+  { name: "scripts/test-request-id.ts", command: "npx tsx scripts/test-request-id.ts", classification: "offline" },
   { name: "scripts/test-prompt5-base.cjs", command: "node scripts/test-prompt5-base.cjs", classification: "offline" },
   { name: "scripts/test-admin-bypass-removal.ts", command: "npx tsx scripts/test-admin-bypass-removal.ts", classification: "offline" },
   { name: "scripts/test-hide-empty-feed-card.ts", command: "npx tsx scripts/test-hide-empty-feed-card.ts", classification: "offline" },
