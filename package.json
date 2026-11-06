@@ -36,7 +36,7 @@
     "dompurify": "^3.4.17",
     "globe.gl": "^2.46.2",
     "jspdf": "^4.2.1",
-    "lucide-react": "^0.453.0",
+    "lucide-react": "^1.66.0",
     "mammoth": "^1.13.0",
     "mapbox-gl": "^3.34.1",
     "motion": "^13.4.4",
