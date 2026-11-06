@@ -191,6 +191,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-ato-monitoring-policy.ts", command: "npx tsx scripts/test-ato-monitoring-policy.ts", classification: "offline" },
   { name: "scripts/test-ttfb-slo-policy.ts", command: "npx tsx scripts/test-ttfb-slo-policy.ts", classification: "offline" },
   { name: "scripts/test-bounce-intake-policy.ts", command: "npx tsx scripts/test-bounce-intake-policy.ts", classification: "offline" },
+  { name: "scripts/test-request-tracing-policy.ts", command: "npx tsx scripts/test-request-tracing-policy.ts", classification: "offline" },
 ];
 
 export interface RunSummary {
