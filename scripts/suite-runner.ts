@@ -177,6 +177,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-pii-access-log.ts", command: "npx tsx scripts/test-pii-access-log.ts", classification: "offline" },
   { name: "scripts/test-dunning-dispatcher.ts", command: "npx tsx scripts/test-dunning-dispatcher.ts", classification: "offline" },
   { name: "scripts/test-matview-staleness.ts", command: "npx tsx scripts/test-matview-staleness.ts", classification: "offline" },
+  { name: "scripts/test-push-notifications-policy.ts", command: "npx tsx scripts/test-push-notifications-policy.ts", classification: "offline" },
 ];
 
 export interface RunSummary {
