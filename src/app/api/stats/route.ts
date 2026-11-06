@@ -9,6 +9,7 @@ import {
   statsRateLimitStore,
 } from "@/lib/api/sharedRateLimit";
 import { isUserApproved } from "@/lib/auth/approval";
+import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
 import { computeWeakEtag, notModifiedResponse } from "@/lib/api/etag";
 
 export const runtime = "edge";
@@ -217,6 +218,7 @@ async function getHandler(req: Request) {
         return NextResponse.json(parsed, { status: 500 });
       }
     } catch {}
+    reportRequestErrorToSentry(req, err);
     return NextResponse.json(
       {
         error: "temporarily unavailable",
