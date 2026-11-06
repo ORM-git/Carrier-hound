@@ -50,7 +50,7 @@ export default function RefundPolicyPage() {
             When a plan period ends, premium features and remaining plan quotas expire automatically. Your account, profile, resumes, and saved jobs stay available on the free tier.
           </li>
           <li>
-            Add-on packs are valid for 60 days from purchase and expire automatically after that, whether or not the sets are used.
+            Add-on packs, when offered, are valid for 60 days from purchase and expire automatically after that, whether or not the sets are used.
           </li>
           <li>
             You may also delete your account entirely at any time from your account settings; deletion removes your personal data as described in our{" "}
