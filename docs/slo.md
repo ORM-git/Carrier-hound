@@ -13,5 +13,20 @@ drop per what the data shows.
 | Daily digest delivery | Sent by 00:30 IST or alert | Cron run status + `cron_run_logs` |
 | Error budget | 0.5% of monthly uptime | Downtime beyond budget pauses feature work for reliability work |
 
-Error budgets beyond "did we burn it" (allocation policies, freeze rules)
-are intentionally deferred until these SLIs have a month of data.
+## Error budget policy (BE#8)
+
+Budget: 0.5% of monthly uptime per availability SLI (row above). The policy
+is defined now and applies as soon as each SLI has measurement data; until
+then the freeze rule below is manual.
+
+- **Fast burn**: if an SLI burns budget at more than 14.4x its allocated
+  rate sustained for 1 hour (canonical SRE multiwindow default), page the
+  on-call and stop non-fix deploys to the affected surface.
+- **Slow burn**: more than 6x allocated rate sustained over 6 hours opens a
+  reliability issue and is triaged next business day.
+- **Budget exhausted for the month**: feature work on the affected surface
+  pauses; merges are reliability fixes only until the monthly window resets.
+- **Measurement**: availability SLIs from the UptimeRobot monitors, TTFB from
+  `web_vitals` via `scripts/check-ttfb-slo.ts`, cron delivery from
+  `cron_run_logs`. Burn-rate alerting automation is an owner-side monitor
+  configuration step; this policy defines the thresholds it should use.
