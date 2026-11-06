@@ -1,12 +1,11 @@
 /**
  * scripts/test-policy-pages.ts
  *
- * Verification suite for the 5 CareerMonke legal & policy routes:
+ * Verification suite for the 4 CareerMonke legal & policy routes:
  * 1. /terms-and-conditions (Google Doc Tab 1)
  * 2. /privacy-policy and /privacy (Google Doc Tab 2)
  * 3. /contact (Google Doc Tab 3)
  * 4. /refund-policy ("Cancellation & Refund Policy")
- * 5. /shipping-and-delivery ("Shipping & Delivery Policy")
  *
  * Strict negative control included per permanent rules.
  */
@@ -22,14 +21,13 @@ import TermsPage from "../src/app/terms-and-conditions/page";
 import PrivacyPolicyPage from "../src/app/privacy-policy/page";
 import ContactUsPage from "../src/app/contact/page";
 import RefundPolicyPage from "../src/app/refund-policy/page";
-import ShippingAndDeliveryPage from "../src/app/shipping-and-delivery/page";
 import sitemap from "../src/app/sitemap";
 
 const IS_NEGATIVE_CONTROL = process.argv.includes("--negative-control");
 
 async function main() {
   console.log("================================================================================");
-  console.log("       CAREERMONKE 5 LEGAL & POLICY ROUTES COMPLIANCE VERIFICATION SUITE       ");
+  console.log("       CAREERMONKE 4 LEGAL & POLICY ROUTES COMPLIANCE VERIFICATION SUITE       ");
   console.log("================================================================================\n");
 
   if (IS_NEGATIVE_CONTROL) {
@@ -51,8 +49,8 @@ async function main() {
   assert.strictEqual(tsxNeg.status, 1, `Negative control must exit with code 1 (got ${tsxNeg.status})`);
   console.log("  [PASS-LOCAL] Negative control exited with code 1\n");
 
-  // 1. Render All 5 Target Policy Pages via react-dom/server
-  console.log("1. Rendering all 5 policy pages to static markup via react-dom/server...");
+  // 1. Render All 4 Target Policy Pages via react-dom/server
+  console.log("1. Rendering all 4 policy pages to static markup via react-dom/server...");
 
   const termsHtml = renderToStaticMarkup(React.createElement(TermsPage));
   assert.ok(termsHtml && termsHtml.length > 500, "TermsPage must render non-empty HTML");
@@ -69,10 +67,6 @@ async function main() {
   const refundHtml = renderToStaticMarkup(React.createElement(RefundPolicyPage));
   assert.ok(refundHtml && refundHtml.length > 200, "RefundPolicyPage must render non-empty HTML");
   console.log(`  [PASS-LOCAL] /refund-policy rendered successfully (${refundHtml.length} bytes)`);
-
-  const shippingHtml = renderToStaticMarkup(React.createElement(ShippingAndDeliveryPage));
-  assert.ok(shippingHtml && shippingHtml.length > 200, "ShippingAndDeliveryPage must render non-empty HTML");
-  console.log(`  [PASS-LOCAL] /shipping-and-delivery rendered successfully (${shippingHtml.length} bytes)`);
 
   // 2. /terms-and-conditions Key Phrases (Google Doc Tab 1)
   console.log("\n2. Verifying /terms-and-conditions key phrases (Google Doc Tab 1)...");
@@ -160,28 +154,12 @@ async function main() {
     console.log(`  [PASS-LOCAL] /refund-policy contains: "${phrase}"`);
   }
 
-  // 6. /shipping-and-delivery Key Phrases
-  console.log("\n6. Verifying /shipping-and-delivery key phrases...");
-  const shippingPhrases = [
-    "Shipping &amp; Delivery Policy",
-    "electronic SaaS",
-    "no physical shipping",
-    "access and credits activated instantly after payment confirmation",
-    "support@careermonke.com",
-    "order id",
-    "Olive Ridley Media Private Limited",
-  ];
-  for (const phrase of shippingPhrases) {
-    assert.ok(shippingHtml.includes(phrase), `/shipping-and-delivery must contain "${phrase}"`);
-    console.log(`  [PASS-LOCAL] /shipping-and-delivery contains: "${phrase}"`);
-  }
-
   // 7. Footer Legal Links and Corporate Legal Line
   console.log("\n7. Verifying Footer legal links and corporate legal line...");
   const footerContent = fs.readFileSync(path.resolve(__dirname, "../src/components/Footer.tsx"), "utf8");
   assert.ok(footerContent.includes('href="/refund-policy"'), "Footer must link to /refund-policy");
   assert.ok(footerContent.includes('href="/contact"'), "Footer must link to /contact");
-  assert.ok(footerContent.includes('href="/shipping-and-delivery"'), "Footer must link to /shipping-and-delivery");
+  assert.ok(!footerContent.includes('href="/shipping-and-delivery"'), "Footer must NOT link to /shipping-and-delivery (digital SaaS, no physical shipping)");
   assert.ok(
     footerContent.includes("Olive Ridley Media Private Limited. All rights reserved."),
     "Footer legal line must feature Olive Ridley Media Private Limited"
@@ -190,7 +168,7 @@ async function main() {
     !footerContent.includes("CareerMonke Inc. All rights reserved."),
     "Footer legal line must NOT feature CareerMonke Inc."
   );
-  console.log("  [PASS-LOCAL] Footer contains links to /refund-policy, /contact, and /shipping-and-delivery");
+  console.log("  [PASS-LOCAL] Footer contains links to /refund-policy and /contact, and excludes /shipping-and-delivery");
   console.log("  [PASS-LOCAL] Footer legal line features Olive Ridley Media Private Limited");
 
   // 8. Sitemap Verification
@@ -199,11 +177,11 @@ async function main() {
   const sitemapUrls = sitemapEntries.map((e) => e.url);
   assert.ok(sitemapUrls.some((u) => u.endsWith("/refund-policy")), "Sitemap must contain /refund-policy");
   assert.ok(sitemapUrls.some((u) => u.endsWith("/contact")), "Sitemap must contain /contact");
-  assert.ok(sitemapUrls.some((u) => u.endsWith("/shipping-and-delivery")), "Sitemap must contain /shipping-and-delivery");
-  console.log("  [PASS-LOCAL] Sitemap contains all 3 new policy routes (5 total entries)");
+  assert.ok(!sitemapUrls.some((u) => u.endsWith("/shipping-and-delivery")), "Sitemap must NOT contain /shipping-and-delivery (digital SaaS, no physical shipping)");
+  console.log("  [PASS-LOCAL] Sitemap contains the policy routes and excludes /shipping-and-delivery");
 
   console.log("\n================================================================================");
-  console.log("ALL 5 POLICY PAGES & LEGAL COMPLIANCE TESTS PASSED [PASS-LOCAL]");
+  console.log("ALL 4 POLICY PAGES & LEGAL COMPLIANCE TESTS PASSED [PASS-LOCAL]");
   console.log("================================================================================\n");
 }
 

@@ -554,13 +554,6 @@ export default function PricingPage() {
             </Link>
             <span aria-hidden="true" className="text-slate-300 dark:text-slate-700">·</span>
             <Link
-              href="/shipping-and-delivery"
-              className="hover:text-[#2563EB] dark:hover:text-blue-400 underline underline-offset-2 transition-colors"
-            >
-              Shipping &amp; Delivery
-            </Link>
-            <span aria-hidden="true" className="text-slate-300 dark:text-slate-700">·</span>
-            <Link
               href="/contact"
               className="hover:text-[#2563EB] dark:hover:text-blue-400 underline underline-offset-2 transition-colors"
             >

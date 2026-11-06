@@ -1691,7 +1691,6 @@ async function main() {
     "/terms-and-conditions",
     "/refund-policy",
     "/contact",
-    "/shipping-and-delivery",
   ]);
   console.log("  [PASS] Rate limit (5/min/IP) and sitemap verified");
 

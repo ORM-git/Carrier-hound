@@ -45,7 +45,6 @@ const BASELINE_FOOTER_HREFS: Record<string, number> = {
   "/privacy-policy": 4,
   "/terms-and-conditions": 4,
   "/refund-policy": 3,
-  "/shipping-and-delivery": 3,
   "/contact": 3,
   "https://x.com/careermonke": 1,
   "https://linkedin.com/company/careermonke": 1,
