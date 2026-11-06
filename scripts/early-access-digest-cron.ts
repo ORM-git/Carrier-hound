@@ -15,6 +15,7 @@ dotenv.config({ path: ".env" });
 
 import { runEarlyAccessDigestCron } from "../src/lib/early-access/gmail";
 import { reportCronFailure } from "./lib/cron-sentry";
+import { startCronHeartbeat } from "./lib/cron-heartbeat";
 
 async function main() {
   const args = process.argv.slice(2);
@@ -56,8 +57,13 @@ async function main() {
   }
 }
 
-main().catch(async (err) => {
+const heartbeat = startCronHeartbeat("early-access-digest");
+
+main()
+  .then(() => heartbeat.ok())
+  .catch(async (err) => {
   console.error("Fatal unhandled early-access digest cron error:", err);
   await reportCronFailure("early-access-digest", err);
+  await heartbeat.error();
   process.exit(1);
 });

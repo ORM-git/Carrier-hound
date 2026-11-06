@@ -14,6 +14,7 @@ dotenv.config({ path: ".env" });
 
 import { runDailyDigestCron } from "../src/lib/cron/dailyDigestCron";
 import { reportCronFailure } from "./lib/cron-sentry";
+import { startCronHeartbeat } from "./lib/cron-heartbeat";
 
 async function main() {
   const args = process.argv.slice(2);
@@ -56,8 +57,13 @@ async function main() {
   }
 }
 
-main().catch(async (err) => {
+const heartbeat = startCronHeartbeat("daily-digest");
+
+main()
+  .then(() => heartbeat.ok())
+  .catch(async (err) => {
   console.error("Fatal unhandled cron error:", err);
   await reportCronFailure("daily-digest", err);
+  await heartbeat.error();
   process.exit(1);
 });
