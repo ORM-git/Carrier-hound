@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { checkRequiredEnv } from "@/lib/api/envCheck";
+import {
+  checkSharedRateLimit,
+  ACCOUNT_DELETE_RATE_LIMIT,
+  accountDeleteRateLimitStore,
+} from "@/lib/api/sharedRateLimit";
+import { checkRateLimit } from "@/lib/ai/serviceHandler";
 
 export interface AccountDeleteRouteDeps {
   getSupabaseAdmin?: () => any;
@@ -188,6 +194,31 @@ export async function handleAccountDeleteRequest(
 
     const userId = user.id;
     const normalizedEmail = String(user.email || "").trim().toLowerCase();
+
+    // 1b. Shared rate limit (per user), same pattern as the public endpoints:
+    // durable via the check_rate_limit RPC, in-memory fallback per isolate.
+    const deleteLimit = await checkSharedRateLimit(
+      `account_delete:user:${userId}`,
+      ACCOUNT_DELETE_RATE_LIMIT.maxRequests,
+      ACCOUNT_DELETE_RATE_LIMIT.windowSeconds,
+      () =>
+        checkRateLimit(
+          `account_delete:user:${userId}`,
+          accountDeleteRateLimitStore,
+          ACCOUNT_DELETE_RATE_LIMIT.maxRequests,
+          ACCOUNT_DELETE_RATE_LIMIT.windowSeconds * 1000
+        )
+    );
+    if (!deleteLimit.allowed) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Too many deletion requests. Please try again later.",
+          retryAfter: deleteLimit.retryAfter,
+        },
+        { status: 429, headers: { "Retry-After": String(deleteLimit.retryAfter) } }
+      );
+    }
 
     // 2. Moderation check: Refuse deletion if user is banned (fail-closed)
     try {

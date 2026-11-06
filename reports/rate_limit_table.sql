@@ -2,7 +2,8 @@
 -- Schema: Shared Rate Limit Store & Distributed Sliding-Window Throttling
 -- Scope: Multi-instance serverless rate limiting for signup, login, and AI calls
 -- File: reports/rate_limit_table.sql
--- Status: REPORT-ONLY (Documented schema proposal, not applied to live DB)
+-- Status: SUPERSEDED - canonical copy lives at supabase/migrations/20261020_rate_limits.sql
+-- (applied out-of-band 2026-10-20; kept here for the original report trail)
 -- ==============================================================================
 
 -- 1. Create durable rate_limits table
