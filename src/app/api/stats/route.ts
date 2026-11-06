@@ -9,6 +9,7 @@ import {
   statsRateLimitStore,
 } from "@/lib/api/sharedRateLimit";
 import { isUserApproved } from "@/lib/auth/approval";
+import { computeWeakEtag, notModifiedResponse } from "@/lib/api/etag";
 
 export const runtime = "edge";
 
@@ -143,17 +144,20 @@ async function getHandler(req: Request) {
     // (jobsToday, updatedAt). Strictly DO NOT expose totalJobs, companiesScanned,
     // activeJobs, or companies (zero aggregate job counts).
     if (!isAuthenticated || !isApproved) {
-      return NextResponse.json(
-        {
-          jobsToday: recentJobs ?? 0,
-          updatedAt: new Date().toISOString(),
-        },
-        {
-          headers: {
-            "Cache-Control": "public, max-age=300, s-maxage=300, stale-while-revalidate=600",
-          },
-        }
-      );
+      // Identical body for every anonymous caller: safe for weak ETag / 304.
+      const publicStats = {
+        jobsToday: recentJobs ?? 0,
+        updatedAt: new Date().toISOString(),
+      };
+      const publicHeaders = {
+        "Cache-Control": "public, max-age=300, s-maxage=300, stale-while-revalidate=600",
+      };
+      const etag = await computeWeakEtag(publicStats);
+      const notModified = notModifiedResponse(req, etag, publicHeaders);
+      if (notModified) return notModified;
+      return NextResponse.json(publicStats, {
+        headers: { ...publicHeaders, ETag: etag },
+      });
     }
 
     // 2. Authenticated + approved callers: return full corpus metrics
