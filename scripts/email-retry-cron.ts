@@ -55,7 +55,7 @@ async function main() {
   }
 }
 
-main().catch((err) => {
+main().catch(async (err) => {
   console.error("Fatal unhandled email retry cron error:", err);
   await reportCronFailure("email-retry", err);
   process.exit(1);
