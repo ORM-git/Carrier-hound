@@ -5,9 +5,10 @@
 
 ## Platform logs (default retention, dashboard-only today)
 
-- **Cloudflare Pages (production)**: production traffic serves from
-  Cloudflare Pages; its function/access logs carry all production API and
-  SSR output. `console.*` in app code lands here in production. Retention
+- **Cloudflare Pages (production)**: per repo config
+  (`carrier-hound.pages.dev`, `@cloudflare/next-on-pages`), production
+  serves from Cloudflare Pages (owner to confirm); its function/access
+  logs carry all production API and SSR output. `console.*` in app code lands here in production. Retention
   is the Cloudflare plan default and lives in the dashboard only - no
   central copy.
 - **Netlify (preview/legacy functions)**: preview deploys and legacy
