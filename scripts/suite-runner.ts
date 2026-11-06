@@ -198,6 +198,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-cron-heartbeat-monitoring.ts", command: "npx tsx scripts/test-cron-heartbeat-monitoring.ts", classification: "offline" },
   { name: "scripts/test-poison-message-handling.ts", command: "npx tsx scripts/test-poison-message-handling.ts", classification: "offline" },
   { name: "scripts/test-dependency-policy.ts", command: "npx tsx scripts/test-dependency-policy.ts", classification: "offline" },
+  { name: "scripts/test-retention-policy-consistency.ts", command: "npx tsx scripts/test-retention-policy-consistency.ts", classification: "offline" },
 ];
 
 export interface RunSummary {
