@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getRazorpayKeyMode } from "@/lib/billing/mode";
+import { rpcWithRetry } from "@/lib/db/rpcRetry";
 import {
   PLAN_DEFINITIONS,
   ADDON_PACK_DEFINITIONS,
@@ -256,11 +257,11 @@ export async function POST(req: Request) {
     // Test mode safety: strictly NEVER grant Pro or add-on sets for test payments.
     // The RPC alone must mark test orders.
     if (serverMode === "test") {
-      const { data: fulfilRes, error: fulfilErr } = await supabaseAdmin.rpc("fulfil_payment_order", {
+      const { data: fulfilRes, error: fulfilErr } = await rpcWithRetry(() => supabaseAdmin.rpc("fulfil_payment_order", {
         p_provider_order_id: orderId,
         p_user_id: user.id,
         p_expected_mode: "test",
-      });
+      }));
 
       if (fulfilErr) {
         return NextResponse.json(
@@ -288,11 +289,11 @@ export async function POST(req: Request) {
 
     // Attempt atomic fulfillment via Postgres RPC function for live mode
     try {
-      const { data: fulfilRes, error: fulfilErr } = await supabaseAdmin.rpc("fulfil_payment_order", {
+      const { data: fulfilRes, error: fulfilErr } = await rpcWithRetry(() => supabaseAdmin.rpc("fulfil_payment_order", {
         p_provider_order_id: orderId,
         p_user_id: user.id,
         p_expected_mode: "live",
-      });
+      }));
 
       if (!fulfilErr && fulfilRes) {
         if (fulfilRes.success) {
