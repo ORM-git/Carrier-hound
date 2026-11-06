@@ -78,3 +78,6 @@ jobs:
 
       - name: API Versioning Policy Check
         run: npx tsx scripts/test-api-versioning-policy.ts
+
+      - name: Release Versioning Policy Check
+        run: npx tsx scripts/test-release-versioning-policy.ts
