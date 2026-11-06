@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { measureRouteBudget } from "@/lib/api/routeBudget";
 import { getRequestContext } from "@cloudflare/next-on-pages";
 import {
   checkSharedRateLimit,
@@ -74,7 +75,7 @@ function validateEarlyAccessEmail(raw: unknown): {
   return { valid: true, email: normalized };
 }
 
-export async function POST(req: Request) {
+async function postHandler(req: Request) {
   try {
     const isLegacy =
       process.env.NODE_ENV === "test" &&
@@ -292,4 +293,8 @@ export async function POST(req: Request) {
       { status: 500 }
     );
   }
+}
+
+export async function POST(req: Request) {
+  return measureRouteBudget("/api/early-access", () => postHandler(req));
 }
