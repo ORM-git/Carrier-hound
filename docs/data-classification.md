@@ -50,6 +50,7 @@ Cross-references: `docs/retention-policy.md` (per-table retention classes),
 | `web_vitals` | Anonymous performance telemetry (no identifiers by design). |
 | `company_token_registry` | Scraper tokens for company boards. Secret-adjacent; service-role only. |
 | `matview_refresh_log` | Materialized-view refresh telemetry (when, duration). Service-role only (20261106d). |
+| `deleted_account_tombstones` | PII-free account-deletion audit anchor (user id, SHA-256 email hash, purge deadline). 30-day undo window, then hard-purged (20261106h). |
 | `supabase_migrations.schema_migrations` | Applied-migration ledger (Supabase-internal schema). |
 
 ## Public data
