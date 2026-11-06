@@ -101,6 +101,15 @@ export default function LoginPage() {
       const supabase = createClient();
       const origin = typeof window !== "undefined" && window.location.origin ? window.location.origin : getSiteUrl();
       const redirectUrl = `${origin}/auth/callback?returnTo=${encodeURIComponent(next)}`;
+      // Auth telemetry for the credential-stuffing monitor (fire-and-forget,
+      // no UI surface, never blocks the sign-in flow).
+      fetch("/api/auth/security-event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ event: "otp_request", email: cleanEmail }),
+        keepalive: true,
+      }).catch(() => {});
+
       const { error: signInError } = await supabase.auth.signInWithOtp({
         email: cleanEmail,
         options: {

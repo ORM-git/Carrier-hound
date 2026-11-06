@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { rpcWithRetry } from "../db/rpcRetry";
 
 /**
  * Shared rate limiting backed by Supabase (public.check_rate_limit RPC),
@@ -161,11 +162,11 @@ export async function checkSharedRateLimit(
     }
   } else {
     try {
-      const { data, error } = await client.rpc("check_rate_limit", {
+      const { data, error } = await rpcWithRetry(() => client.rpc("check_rate_limit", {
         p_key: key,
         p_max_requests: maxRequests,
         p_window_seconds: windowSeconds,
-      });
+      }));
 
       if (error) {
         recordSharedStoreFailure(key, "rpc_error", error);

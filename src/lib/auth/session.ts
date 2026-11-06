@@ -251,7 +251,8 @@ export async function signOutUser(): Promise<void> {
       if (
         k &&
         (k.startsWith("careermonke_candidate_profile") ||
-          k.startsWith("careermonke_preferences"))
+          k.startsWith("careermonke_preferences") ||
+          k.startsWith("careermonke:profile-draft:"))
       ) {
         toRemove.push(k);
       }
