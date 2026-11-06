@@ -243,33 +243,39 @@ export default function JobRadarGlobe() {
     };
   }, []);
 
-  // 2. Fetch live telemetry from /api/radar on mount
-  const fetchTelemetry = useCallback(async () => {
+  // 2. Fetch live telemetry from /api/radar on mount (abortable on unmount)
+  const fetchTelemetry = useCallback(async (signal?: AbortSignal) => {
     setIsLoadingTelemetry(true);
     setTelemetryError(null);
     try {
-      let res = await fetch("/api/radar", { cache: "no-store" });
+      let res = await fetch("/api/radar", { cache: "no-store", signal });
       if (!res.ok) {
-        res = await fetch("/api/radar.json");
+        res = await fetch("/api/radar.json", { signal });
       }
       if (!res.ok) {
-        res = await fetch("/data/radar.json");
+        res = await fetch("/data/radar.json", { signal });
       }
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}: Failed to load live telemetry`);
       }
       const data: RadarTelemetryPayload = await res.json();
+      if (signal?.aborted) return;
       setTelemetry(data);
     } catch (err: any) {
+      if (err?.name === "AbortError") return;
       console.error("Failed to load radar telemetry:", err);
       setTelemetryError(err.message || "Failed to load radar telemetry");
     } finally {
-      setIsLoadingTelemetry(false);
+      if (!signal?.aborted) {
+        setIsLoadingTelemetry(false);
+      }
     }
   }, []);
 
   useEffect(() => {
-    fetchTelemetry();
+    const controller = new AbortController();
+    fetchTelemetry(controller.signal);
+    return () => controller.abort();
   }, [fetchTelemetry]);
 
   // Check WebGL support on client
