@@ -10,6 +10,20 @@ const MAX_TRACK_PAYLOAD_BYTES = 16384; // 16 KB size cap
 
 const ALLOWED_METRIC_NAMES = new Set(["LCP", "INP", "CLS", "TTFB", "FCP"]);
 
+// Funnel stages (signup -> onboard -> apply). Must stay identical to the
+// CHECK constraint in supabase/migrations/20261106e_funnel_events.sql;
+// scripts/test-funnel-events.ts asserts parity.
+const ALLOWED_FUNNEL_EVENTS = new Set([
+  "signup_started",
+  "signup_completed",
+  "onboarding_started",
+  "onboarding_completed",
+  "apply_started",
+  "apply_completed",
+]);
+
+const MAX_FUNNEL_METADATA_BYTES = 2048;
+
 async function sha256Hex16(input: string): Promise<string> {
   const encoder = new TextEncoder();
   const data = encoder.encode(input);
@@ -187,6 +201,91 @@ export async function POST(req: Request) {
       }
 
       return NextResponse.json({ ok: true, eventType: "web-vitals" }, { status: 200 });
+    }
+
+    // 4b. Handle funnel events (signup -> onboard -> apply)
+    if (eventType === "funnel") {
+      const funnelEvent = body.event;
+      if (
+        !funnelEvent ||
+        typeof funnelEvent !== "string" ||
+        !ALLOWED_FUNNEL_EVENTS.has(funnelEvent)
+      ) {
+        return new NextResponse(null, { status: 204 });
+      }
+
+      const funnelPath = body.path;
+      if (funnelPath !== undefined && funnelPath !== null) {
+        if (
+          typeof funnelPath !== "string" ||
+          !funnelPath.startsWith("/") ||
+          funnelPath.length > 200 ||
+          funnelPath.includes("?") ||
+          funnelPath.includes("#")
+        ) {
+          return new NextResponse(null, { status: 204 });
+        }
+      }
+
+      // Pseudonymous pre-signup id: random client token, capped, no PII.
+      const anonymousId = body.anonymousId ?? body.anonymous_id;
+      if (anonymousId !== undefined && anonymousId !== null) {
+        if (typeof anonymousId !== "string" || anonymousId.length > 64) {
+          return new NextResponse(null, { status: 204 });
+        }
+      }
+
+      let funnelMetadata: Record<string, unknown> = {};
+      if (body.metadata !== undefined && body.metadata !== null) {
+        if (typeof body.metadata !== "object" || Array.isArray(body.metadata)) {
+          return new NextResponse(null, { status: 204 });
+        }
+        try {
+          if (
+            new TextEncoder().encode(JSON.stringify(body.metadata)).length >
+            MAX_FUNNEL_METADATA_BYTES
+          ) {
+            return new NextResponse(null, { status: 204 });
+          }
+        } catch {
+          return new NextResponse(null, { status: 204 });
+        }
+        funnelMetadata = body.metadata;
+      }
+
+      // Actor comes from the session only; a client-supplied user id is ignored.
+      const sessionUserId = isLegacy
+        ? body.userId || null
+        : await getSessionUserId(req);
+      const ipForHash =
+        clientIp === "anonymous-client"
+          ? req.headers.get("x-real-ip") || "127.0.0.1"
+          : clientIp;
+      const ipHash = await sha256Hex16(`${ipForHash}_careermonke_salt`);
+
+      try {
+        const mockAdmin = (globalThis as any).__mockSupabaseClient;
+        const supabaseAdmin = mockAdmin || getSupabaseAdminClient(undefined, true);
+        if (supabaseAdmin?.from) {
+          const { error } = await supabaseAdmin.from("funnel_events").insert({
+            event: funnelEvent,
+            user_id: sessionUserId,
+            anonymous_id: anonymousId || null,
+            path: funnelPath || null,
+            ip_hash: ipHash,
+            metadata: funnelMetadata,
+            created_at: new Date().toISOString(),
+          });
+          // PGRST205 = table missing until migration 20261106e is applied; stay silent.
+          if (error && error.code !== "PGRST205") {
+            console.warn("[funnel] Insert error:", error.message);
+          }
+        }
+      } catch {
+        // Fail silently - analytics must never break the client flow.
+      }
+
+      return NextResponse.json({ ok: true, eventType: "funnel" }, { status: 200 });
     }
 
     // 5. Handle Standard Page View events
