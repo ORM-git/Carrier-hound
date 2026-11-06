@@ -52,5 +52,11 @@ t("pre-activation green when the table is missing", cron.includes("exiting green
 t("exit 2 on missing env and hard errors", cron.includes("process.exit(2)"));
 t("bounded batch", cron.includes("MAX_ROWS_PER_RUN"));
 
+// 4. Reviewer nits (NO-GO fixes on PR #370).
+const consoleCalls = cron.match(/console\.(log|error)\(`[^`]*`/g) ?? [];
+t("no console.* call interpolates the recipient address (no PII in logs)", !consoleCalls.some((c) => c.includes("${recipient}")));
+t("suppression failure leaves the row unprocessed for retry", /left unprocessed for retry/.test(cron) && /suppression failed[\s\S]{0,220}continue;/.test(cron));
+t("rows marked processed only on success or deliberate ambiguous skip", cron.indexOf("continue;") < cron.indexOf('.update({ processed_at:'));
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
