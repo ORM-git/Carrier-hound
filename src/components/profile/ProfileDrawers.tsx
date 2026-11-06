@@ -16,6 +16,30 @@ interface ProfileDrawersProps {
   onSave: (updated: CandidateProfile) => Promise<void>;
 }
 
+const DRAFT_STORAGE_PREFIX = "careermonke:profile-draft:";
+
+interface StoredProfileDraft {
+  ts: number;
+  draft: CandidateProfile;
+}
+
+function draftStorageKey(email: string | undefined, section: ProfileSection | null): string | null {
+  if (!email || !section) return null;
+  return `${DRAFT_STORAGE_PREFIX}${email}:${section}`;
+}
+
+function readStoredDraft(key: string): StoredProfileDraft | null {
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as StoredProfileDraft;
+    if (!parsed || typeof parsed.ts !== "number" || !parsed.draft) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
 export default function ProfileDrawers({
   isOpen,
   section,
@@ -27,6 +51,8 @@ export default function ProfileDrawers({
   const drawerRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // Form autosave/draft: timestamp of a restored unsaved draft, if any
+  const [restoredDraftAt, setRestoredDraftAt] = useState<number | null>(null);
 
   // Draft profile copy for unsaved edits
   const [draft, setDraft] = useState<CandidateProfile>(() => createInitialDraft(candidate));
@@ -34,15 +60,44 @@ export default function ProfileDrawers({
   // New skill input state inside Skills drawer
   const [newSkill, setNewSkill] = useState("");
 
-  // Re-initialize draft whenever drawer opens or candidate updates
+  // Re-initialize draft whenever drawer opens or candidate updates.
+  // Form autosave/draft: a stored unsaved draft for this section wins over
+  // the server copy and is restored with a dismissable notice.
   useEffect(() => {
     if (isOpen) {
-      setDraft(createInitialDraft(candidate));
+      const key = draftStorageKey(candidate?.email, section);
+      const stored = key ? readStoredDraft(key) : null;
+      if (stored) {
+        setDraft(stored.draft);
+        setRestoredDraftAt(stored.ts);
+      } else {
+        setDraft(createInitialDraft(candidate));
+        setRestoredDraftAt(null);
+      }
       setError(null);
       setSaving(false);
       setNewSkill("");
     }
   }, [isOpen, candidate, section]);
+
+  // Autosave the draft (debounced) while the drawer is open so unsaved
+  // edits survive an accidental close, navigation, or reload. Stored on
+  // this device only, keyed by account email + section; cleared on save
+  // or explicit discard.
+  useEffect(() => {
+    if (!isOpen) return;
+    const key = draftStorageKey(candidate?.email, section);
+    if (!key) return;
+    const handle = window.setTimeout(() => {
+      try {
+        const entry: StoredProfileDraft = { ts: Date.now(), draft };
+        window.localStorage.setItem(key, JSON.stringify(entry));
+      } catch {
+        // Storage full or unavailable; autosave is best-effort.
+      }
+    }, 500);
+    return () => window.clearTimeout(handle);
+  }, [draft, isOpen, candidate?.email, section]);
 
   // Focus trap, Escape key handling, and background interaction blocking
   useEffect(() => {
@@ -281,6 +336,15 @@ export default function ProfileDrawers({
     try {
       const sanitized = sanitizeCandidateProfile(draft);
       await onSave(sanitized);
+      const key = draftStorageKey(candidate?.email, section);
+      if (key) {
+        try {
+          window.localStorage.removeItem(key);
+        } catch {
+          // Best-effort cleanup.
+        }
+      }
+      setRestoredDraftAt(null);
       // On success, close drawer and return focus
       onClose();
     } catch (err: any) {
@@ -350,6 +414,38 @@ export default function ProfileDrawers({
         {/* Drawer Scrollable Body */}
         <form onSubmit={handleSave} className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
           {/* Inline Error Banner */}
+          {restoredDraftAt !== null && (
+            <div
+              role="status"
+              data-testid="drawer-draft-restored"
+              className="p-3.5 rounded-xl bg-[#EFF6FF] border border-[#DBE3EF] text-[#2563EB] text-sm flex items-center justify-between gap-2.5"
+            >
+              <div className="flex-1 text-[13px] leading-relaxed font-medium">
+                Restored your unsaved changes from{" "}
+                {new Date(restoredDraftAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                .
+              </div>
+              <button
+                type="button"
+                className="text-xs font-semibold text-[#2563EB] hover:underline shrink-0"
+                onClick={() => {
+                  const key = draftStorageKey(candidate?.email, section);
+                  if (key) {
+                    try {
+                      window.localStorage.removeItem(key);
+                    } catch {
+                      // Best-effort cleanup.
+                    }
+                  }
+                  setRestoredDraftAt(null);
+                  setDraft(createInitialDraft(candidate));
+                }}
+              >
+                Discard
+              </button>
+            </div>
+          )}
+
           {error && (
             <div
               role="alert"
