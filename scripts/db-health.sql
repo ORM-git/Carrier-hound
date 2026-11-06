@@ -63,6 +63,18 @@ select matviewname, ispopulated
 from pg_matviews
 order by matviewname;
 
+-- 6b. Refresh recency from the refresh log (requires migration 20261106d).
+--     If last_refreshed_at is NULL or older than your ingest cadence, the
+--     refresh trigger is stuck - check ingest_runs and cron_run_logs.
+select matview_name,
+       max(refreshed_at) as last_refreshed_at,
+       now() - max(refreshed_at) as staleness,
+       max(duration_ms) as slowest_refresh_ms,
+       count(*) as refreshes_logged
+from public.matview_refresh_log
+group by matview_name
+order by matview_name;
+
 -- 7. Long-running queries right now (> 30s, excludes this session)
 select pid, now() - query_start AS duration, state, left(query, 200) AS query
 from pg_stat_activity
@@ -91,3 +103,17 @@ where action = 'pii_read'
 group by 1, 2, 3
 order by 1 desc, reads desc
 limit 100;
+
+-- 10. Funnel review (Backend row: Funnel Tracking) - signup -> onboard -> apply conversion.
+--     Unique actors prefer the signed-in user id, falling back to the pseudonymous
+--     anonymous_id for pre-signup steps. Requires migration 20261106e.
+select event,
+       count(*) as events,
+       count(distinct coalesce(user_id::text, anonymous_id)) as unique_actors
+from public.funnel_events
+where created_at > now() - interval '30 days'
+group by event
+order by array_position(
+  array['signup_started','signup_completed','onboarding_started','onboarding_completed','apply_started','apply_completed'],
+  event
+);

@@ -176,6 +176,9 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/check-plan-regression.mjs --selftest", command: "node scripts/check-plan-regression.mjs --selftest", classification: "offline" },
   { name: "scripts/test-pii-access-log.ts", command: "npx tsx scripts/test-pii-access-log.ts", classification: "offline" },
   { name: "scripts/test-dunning-dispatcher.ts", command: "npx tsx scripts/test-dunning-dispatcher.ts", classification: "offline" },
+  { name: "scripts/test-matview-staleness.ts", command: "npx tsx scripts/test-matview-staleness.ts", classification: "offline" },
+  { name: "scripts/test-funnel-events.ts", command: "npx tsx scripts/test-funnel-events.ts", classification: "offline" },
+  { name: "scripts/test-redundant-index-cleanup.ts", command: "npx tsx scripts/test-redundant-index-cleanup.ts", classification: "offline" },
 ];
 
 export interface RunSummary {
