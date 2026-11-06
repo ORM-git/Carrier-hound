@@ -504,7 +504,7 @@ export async function handleAccountDeleteRequest(
       success: true,
       billingReconciled,
       deletedStoragePaths,
-      message: "User account deleted. Personal data is anonymized and remaining rows are purged after the retention window.",
+      message: "User account and all owned data permanently deleted.",
     });
   } catch (err: any) {
     try {
