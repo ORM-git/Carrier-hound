@@ -123,6 +123,7 @@ async function main() {
     "6. Data Retention",
     "7. Security Practices",
     "8. Grievance Officer",
+    "Orissa Lee Patnaik",
     "9. Cookies and Tracking Mechanisms",
   ];
   for (const phrase of privacyPhrases) {
@@ -147,6 +148,7 @@ async function main() {
     "Support Email:",
     "support@careermonke.com",
     "Grievance Officer",
+    "Orissa Lee Patnaik",
     "+91-9124618200",
     "5-7 working days",
   ];
