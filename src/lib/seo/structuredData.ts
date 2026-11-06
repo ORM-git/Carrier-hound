@@ -127,3 +127,38 @@ export function getConnectionHints(envUrl?: string): string[] {
 
   return origins;
 }
+
+export interface BreadcrumbListItem {
+  "@type": "ListItem";
+  position: number;
+  name: string;
+  item: string;
+}
+
+export interface BreadcrumbListJsonLd {
+  "@context": "https://schema.org";
+  "@type": "BreadcrumbList";
+  itemListElement: BreadcrumbListItem[];
+}
+
+/**
+ * Builds BreadcrumbList JSON-LD from an ordered trail of { name, path }.
+ * Paths are resolved against the canonical site URL; pass them exactly as
+ * they appear in the sitemap (leading slash, no trailing slash).
+ */
+export function getBreadcrumbJsonLd(
+  trail: { name: string; path: string }[],
+  overrideUrl?: string
+): BreadcrumbListJsonLd {
+  const baseUrl = (overrideUrl || getSiteUrl()).trim().replace(/\/+$/, "");
+  return {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: trail.map((crumb, i) => ({
+      "@type": "ListItem",
+      position: i + 1,
+      name: crumb.name,
+      item: `${baseUrl}${crumb.path}`,
+    })),
+  };
+}
