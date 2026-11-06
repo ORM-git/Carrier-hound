@@ -11,6 +11,7 @@ import {
   getSupabaseAdminClient,
   getRuntimeEnv,
 } from "@/lib/ai/serviceHandler";
+import { sanitizeAttribution } from "@/lib/analytics/attribution";
 import {
   sendEarlyAccessThankYouEmail,
   THANK_YOU_HARD_CAP_MS,
@@ -210,9 +211,10 @@ export async function POST(req: Request) {
           });
         }
 
+        const attribution = sanitizeAttribution((body as any).attribution);
         const { error: insertError } = await supabaseClient
           .from("early_access_emails")
-          .insert({ email, created_at: createdAt });
+          .insert({ email, created_at: createdAt, ...attribution });
 
         if (insertError) {
           // Postgres unique constraint violation (23505) -> generic idempotent success, no email sent
