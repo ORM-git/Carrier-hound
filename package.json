@@ -15,9 +15,10 @@
     "cron:digest": "tsx scripts/daily-digest-cron.ts",
     "cron:digest:dry": "tsx scripts/daily-digest-cron.ts --dry",
     "test:filters": "tsx scripts/test-filters.ts",
-    "test:all": "tsx scripts/suite-runner.ts",
+    "test:all": "tsx scripts/suite-runner.ts && vitest run",
     "prepare": "husky",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "test:unit": "vitest run"
   },
   "dependencies": {
     "@netlify/plugin-nextjs": "5.16.5",
@@ -67,7 +68,8 @@
     "puppeteer-core": "^25.16.0",
     "tailwindcss": "^3.4.14",
     "tsx": "^4.23.15",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.9"
   },
   "overrides": {
     "dompurify": "^3.4.17",
