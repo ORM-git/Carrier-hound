@@ -175,6 +175,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-filters.ts", command: "npx tsx scripts/test-filters.ts", classification: "db-anon-write-attempt", requiresSupabase: true },
   { name: "scripts/check-plan-regression.mjs --selftest", command: "node scripts/check-plan-regression.mjs --selftest", classification: "offline" },
   { name: "scripts/test-pii-access-log.ts", command: "npx tsx scripts/test-pii-access-log.ts", classification: "offline" },
+  { name: "scripts/test-dunning-dispatcher.ts", command: "npx tsx scripts/test-dunning-dispatcher.ts", classification: "offline" },
   { name: "scripts/test-slow-query-review.ts", command: "npx tsx scripts/test-slow-query-review.ts", classification: "offline" },
 ];
 
@@ -200,4 +201,4 @@ function main() {
 // Only invoke main when executed directly as script entrypoint
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(__filename)) {
   main();
-}
+    }
