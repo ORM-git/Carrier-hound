@@ -2706,4 +2706,4 @@ export default function JobsPage() {
       <JobsPageInner />
     </Suspense>
   );
-  }
+                                    }
