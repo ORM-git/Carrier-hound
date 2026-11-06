@@ -56,7 +56,7 @@ async function main() {
   }
 }
 
-main().catch((err) => {
+main().catch(async (err) => {
   console.error("Fatal unhandled early-access digest cron error:", err);
   await reportCronFailure("early-access-digest", err);
   process.exit(1);
