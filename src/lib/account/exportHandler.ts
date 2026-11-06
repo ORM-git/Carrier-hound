@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { checkRequiredEnv } from "@/lib/api/envCheck";
 import {
+  checkSharedRateLimit,
+  ACCOUNT_EXPORT_RATE_LIMIT,
+  accountExportRateLimitStore,
+} from "@/lib/api/sharedRateLimit";
+import { checkRateLimit } from "@/lib/ai/serviceHandler";
+import {
   ACCOUNT_DELETE_USER_ID_TABLES,
   ACCOUNT_DELETE_EMAIL_TABLES,
   listBucketFilesRecursively,
@@ -21,6 +27,13 @@ export const ACCOUNT_EXPORT_USER_ID_TABLES = [
 export const ACCOUNT_EXPORT_EMAIL_TABLES = [...ACCOUNT_DELETE_EMAIL_TABLES] as const;
 
 export const ACCOUNT_EXPORT_STORAGE_BUCKETS = ["resumes"] as const;
+
+/**
+ * Per-table row cap. Heavy tables (page_views, ai_usage_ledger, daily_digests)
+ * can hold unbounded history; the export documents truncation instead of
+ * streaming an unbounded payload through a serverless request.
+ */
+export const ACCOUNT_EXPORT_ROW_CAP = 10000;
 
 function getSupabaseAdmin() {
   if (process.env.NODE_ENV === "test" && (globalThis as any).__mockSupabaseClient) {
@@ -103,19 +116,55 @@ export async function handleAccountExportRequest(
     const userId = user.id;
     const normalizedEmail = String(user.email || "").trim().toLowerCase();
 
+    // Shared rate limit (per user), same pattern as the public endpoints:
+    // durable via the check_rate_limit RPC, in-memory fallback per isolate.
+    const exportLimit = await checkSharedRateLimit(
+      `account_export:user:${userId}`,
+      ACCOUNT_EXPORT_RATE_LIMIT.maxRequests,
+      ACCOUNT_EXPORT_RATE_LIMIT.windowSeconds,
+      () =>
+        checkRateLimit(
+          `account_export:user:${userId}`,
+          accountExportRateLimitStore,
+          ACCOUNT_EXPORT_RATE_LIMIT.maxRequests,
+          ACCOUNT_EXPORT_RATE_LIMIT.windowSeconds * 1000
+        )
+    );
+    if (!exportLimit.allowed) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Too many export requests. Please try again later.",
+          retryAfter: exportLimit.retryAfter,
+        },
+        { status: 429, headers: { "Retry-After": String(exportLimit.retryAfter) } }
+      );
+    }
+
     const data: Record<string, unknown[]> = {};
+    const truncatedTables: string[] = [];
     const errors: string[] = [];
+
+    const collectRows = (table: string, rows: unknown[] | null) => {
+      const list = Array.isArray(rows) ? rows : [];
+      if (list.length > ACCOUNT_EXPORT_ROW_CAP) {
+        truncatedTables.push(table);
+        return list.slice(0, ACCOUNT_EXPORT_ROW_CAP);
+      }
+      return list;
+    };
 
     for (const table of ACCOUNT_EXPORT_USER_ID_TABLES) {
       const { data: rows, error } = await supabaseAdmin
         .from(table)
         .select("*")
-        .eq("user_id", userId);
+        .eq("user_id", userId)
+        .limit(ACCOUNT_EXPORT_ROW_CAP + 1);
       if (!isIgnorableTableError(error)) {
         errors.push(`${table}: ${error?.message || JSON.stringify(error)}`);
         continue;
       }
-      data[table] = Array.isArray(rows) ? rows : [];
+      data[table] = collectRows(table, rows);
     }
 
     if (normalizedEmail) {
@@ -123,12 +172,13 @@ export async function handleAccountExportRequest(
         const { data: rows, error } = await supabaseAdmin
           .from(table)
           .select("*")
-          .eq("email", normalizedEmail);
+          .eq("email", normalizedEmail)
+          .limit(ACCOUNT_EXPORT_ROW_CAP + 1);
         if (!isIgnorableTableError(error)) {
           errors.push(`${table}: ${error?.message || JSON.stringify(error)}`);
           continue;
         }
-        data[table] = Array.isArray(rows) ? rows : [];
+        data[table] = collectRows(table, rows);
       }
     }
 
@@ -165,6 +215,7 @@ export async function handleAccountExportRequest(
         email: user.email || null,
       },
       tables: data,
+      truncated_tables: truncatedTables,
       storage_files: storageFiles,
     };
 
