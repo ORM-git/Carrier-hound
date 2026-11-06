@@ -97,7 +97,7 @@ async function getHandler(req: Request) {
       .from("jobs_public")
       .select("title")
       .ilike("title", `${escapeIlike(q)}%`)
-      .order("posted_at", { ascending: false })
+      .order("posted_at", { ascending: false, nullsFirst: false })
       .limit(CANDIDATE_ROWS);
 
     if (error) {
