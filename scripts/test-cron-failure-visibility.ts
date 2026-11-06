@@ -39,7 +39,7 @@ for (const [file, tag, exitCall] of CRONS) {
   const s = readFileSync(join("scripts", `${file}.ts`), "utf8");
   check(s.includes('import { reportCronFailure } from "./lib/cron-sentry";'), `${file} imports reportCronFailure`);
   check(s.includes(`await reportCronFailure("${tag}", err);`), `${file} reports fatal errors tagged "${tag}"`);
-  check(s.includes("main().catch(async (err)"), `${file} fatal catch callback is async (await is legal)`);
+  check(s.includes(".catch(async (err) => {"), `${file} fatal catch callback is async (await is legal)`);
   check(s.includes("console.error("), `${file} preserves existing console.error`);
   check(s.includes(`process.${exitCall}`), `${file} preserves its exit code (${exitCall})`);
 }
