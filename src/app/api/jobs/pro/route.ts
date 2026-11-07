@@ -13,7 +13,7 @@ import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter
 
 import { createLogger } from "@/lib/observability/logger";
 
-const log = createLogger({ context: { route: "/api/jobs/pro" } });
+const baseLog = createLogger({ context: { route: "/api/jobs/pro" } });
 
 export const runtime = "edge";
 
@@ -97,6 +97,7 @@ async function verifyProUser(req: Request) {
 
 // GET: Unlocks a single job by id or returns filtered jobs for a verified Pro subscriber
 export async function GET(req: Request) {
+  const log = baseLog.child({ requestId: req.headers.get("x-request-id") ?? "unknown" });
   try {
     const authCheck = await verifyProUser(req);
     if (authCheck.error || !authCheck.user) {
@@ -216,6 +217,7 @@ export async function GET(req: Request) {
 
 // POST: Unlocks a list of jobs by IDs for a verified Pro subscriber
 export async function POST(req: Request) {
+  const log = baseLog.child({ requestId: req.headers.get("x-request-id") ?? "unknown" });
   try {
     const authCheck = await verifyProUser(req);
     if (authCheck.error || !authCheck.user) {
