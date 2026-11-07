@@ -30,9 +30,7 @@ export interface SuiteSpec {
 
 // In-source documented test-project allowlist. Strictly EMPTY by default.
 // Only non-production project refs explicitly listed here can authorize DB-capable suites.
-export const TEST_PROJECT_ALLOWLIST: string[] = [...GUARD_DEFAULT_ALLOWLIST,
-  { name: "scripts/test-rpc-retry.ts", command: "npx tsx scripts/test-rpc-retry.ts", classification: "offline" },
-];
+export const TEST_PROJECT_ALLOWLIST: string[] = [...GUARD_DEFAULT_ALLOWLIST];
 
 // Production project reference ID that is strictly denied under all circumstances.
 export const DENIED_PROJECT_REFS: string[] = [...GUARD_DENIED_REFS];
@@ -209,6 +207,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-capacity-headroom-policy.ts", command: "npx tsx scripts/test-capacity-headroom-policy.ts", classification: "offline" },
   { name: "scripts/test-slow-query-review.ts", command: "npx tsx scripts/test-slow-query-review.ts", classification: "offline" },
   { name: "scripts/test-activation-metrics.ts", command: "npx tsx scripts/test-activation-metrics.ts", classification: "offline" },
+  { name: "scripts/test-rpc-retry.ts", command: "npx tsx scripts/test-rpc-retry.ts", classification: "offline" },
 ];
 
 export interface RunSummary {

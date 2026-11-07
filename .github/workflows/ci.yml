@@ -84,3 +84,6 @@ jobs:
 
       - name: Config Drift Check
         run: npx tsx scripts/check-config-drift.ts
+
+      - name: Suite-runner Integrity
+        run: npx tsx scripts/test-suite-runner-integrity.ts
