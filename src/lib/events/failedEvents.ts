@@ -17,6 +17,10 @@ import { getSupabaseAdmin } from "../admin/auth";
 import { rpcWithRetry } from "../db/rpcRetry";
 import { withJitter } from "../reliability/jitter";
 
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger({ context: { module: "events/failedEvents" } });
+
 export type FailedEventStatus = "pending" | "replayed" | "dead";
 
 export interface FailedEventRecord {
@@ -108,9 +112,9 @@ function safeLogWarn(message: string, error?: any): void {
     "[REDACTED_EMAIL]"
   );
   if (error) {
-    console.warn(`[Dead-Letter] ${sanitized}`, error);
+    log.warn(`[Dead-Letter] ${sanitized}`, { error: error });
   } else {
-    console.warn(`[Dead-Letter] ${sanitized}`);
+    log.warn(`[Dead-Letter] ${sanitized}`);
   }
 }
 
@@ -884,7 +888,7 @@ export async function replayFailedEvents(options: ReplayOptions = {}): Promise<R
           error: replayError,
         });
       } else {
-        // Exponential backoff: 2^attempt * 60 seconds (2m, 4m, 8m, 16m) with ±20% jitter
+        // Exponential backoff: 2^attempt * 60 seconds (2m, 4m, 8m, 16m) with Â±20% jitter
         const delayMs = withJitter(Math.pow(2, nextAttempt) * 60 * 1000);
         const nextRetryDate = new Date(Date.now() + delayMs).toISOString();
 
