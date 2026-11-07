@@ -4,6 +4,7 @@ import {
   ProAccessStatus,
   SubscriptionStatus,
 } from "./types";
+import { withJitter } from "../reliability/jitter";
 
 function resolvePlanName(planId?: string | null): string {
   if (!planId) return "Free Tier";
@@ -79,13 +80,13 @@ async function querySubscriptionWithRetry(
       console.warn(`[Billing] Subscription check attempt ${attempt + 1}/${maxRetries + 1} failed:`, res.error.message);
 
       if (attempt < maxRetries) {
-        // Exponential backoff: 500ms, 1000ms
-        await new Promise((resolve) => setTimeout(resolve, 500 * Math.pow(2, attempt)));
+        // Exponential backoff: 500ms, 1000ms (±20% jitter via withJitter)
+        await new Promise((resolve) => setTimeout(resolve, withJitter(500 * Math.pow(2, attempt))));
       }
     } catch (err: any) {
       console.warn(`[Billing] Subscription query exception on attempt ${attempt + 1}:`, err);
       if (attempt < maxRetries) {
-        await new Promise((resolve) => setTimeout(resolve, 500 * Math.pow(2, attempt)));
+        await new Promise((resolve) => setTimeout(resolve, withJitter(500 * Math.pow(2, attempt))));
       }
     }
     attempt++;

@@ -2,6 +2,8 @@
  * Polite Fetcher with domain rate limiting, timeout, retries, and robots.txt compliance.
  */
 
+import { withJitter } from "../../src/lib/reliability/jitter";
+
 const USER_AGENT = 'CareerMonkeBot/1.0';
 const DEFAULT_TIMEOUT_MS = 15000;
 const MAX_RETRIES = 2;
@@ -217,7 +219,7 @@ export async function politeFetch(url: string, options: PoliteFetchOptions = {})
       if (response.status === 429 && attempt < retries) {
         attempt++;
         const retryAfter = response.headers.get('Retry-After');
-        const waitMs = retryAfter ? parseInt(retryAfter, 10) * 1000 : 2000 * Math.pow(2, attempt);
+        const waitMs = retryAfter ? parseInt(retryAfter, 10) * 1000 : withJitter(2000 * Math.pow(2, attempt));
         console.warn(`[politeFetch] 429 received from ${parsedUrl.hostname}. Retrying in ${waitMs}ms...`);
         await sleep(waitMs);
         continue;
@@ -232,7 +234,7 @@ export async function politeFetch(url: string, options: PoliteFetchOptions = {})
       lastError = err;
       attempt++;
       if (attempt <= retries) {
-        const backoffMs = 1500 * Math.pow(2, attempt - 1);
+        const backoffMs = withJitter(1500 * Math.pow(2, attempt - 1));
         console.warn(
           `[politeFetch] Attempt ${attempt} failed for ${url} (${err.message}). Retrying in ${backoffMs}ms...`
         );
