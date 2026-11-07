@@ -33,3 +33,12 @@ BEGIN
       FOR SELECT USING (auth.uid() = user_id);
   END IF;
 END $$;
+
+-- ============================================================================
+-- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
+--   DROP POLICY IF EXISTS "ai_usage_quotas_owner_select" ON public.ai_usage_quotas;
+--   DROP INDEX IF EXISTS public.ai_usage_quotas_user_date_idx;
+--   DROP INDEX IF EXISTS public.ai_usage_quotas_user_idx;
+--   ALTER TABLE public.ai_usage_quotas DISABLE ROW LEVEL SECURITY;
+--   DROP TABLE IF EXISTS public.ai_usage_quotas CASCADE;
+-- ============================================================================
