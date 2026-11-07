@@ -130,35 +130,36 @@ LIMIT 10;
 
 -- ------------------------------------------------------------------------------
 -- 9a. KEYSET PAGINATION — PAGE 1 (plain LIMIT, no OFFSET)
--- Page 1 under keyset pagination is the unfiltered first page: ORDER BY the
--- deterministic (first_seen_at DESC, id DESC) key, LIMIT the page size.
+-- Mirrors the runtime page-1 keyset query in src/app/api/jobs/search/route.ts:
+-- ORDER BY posted_at DESC NULLS LAST, id DESC (nullsFirst:false), LIMIT the
+-- page size. The cursor is [posted_at, id] (src/lib/pagination/cursor.ts).
 -- ------------------------------------------------------------------------------
 EXPLAIN (ANALYZE, BUFFERS)
 SELECT id, title, location, remote, remote_scope, remote_eligibility, job_type,
        category, country, country_code, seniority, first_seen_at, posted_at, status, is_active
 FROM public.jobs_public
-ORDER BY first_seen_at DESC, id DESC
+ORDER BY posted_at DESC NULLS LAST, id DESC
 LIMIT 10;
 
 -- ------------------------------------------------------------------------------
 -- 9b. KEYSET PAGINATION — CONTINUATION PAGE (cursor instead of OFFSET 4990)
--- Mirrors the runtime keyset path in src/app/api/jobs/search/route.ts (and
--- src/lib/pagination/cursor.ts): the cursor carries the previous page's last
--- (first_seen_at, id) and the continuation filters past it - constant cost at
--- any page depth, no OFFSET scan-and-drop. Replace the two placeholder
--- literals below with the last row's first_seen_at / id from page N-1. The
--- three-arm OR form (lt / eq+lt / IS NULL) matches the route's null-safe
--- PostgREST or() clause shape.
+-- Truly mirrors the runtime keyset path in src/app/api/jobs/search/route.ts:
+-- the cursor carries the previous page's last (posted_at, id); with posted_at
+-- DESC NULLS LAST the continuation is posted_at < cursor, tie-broken by id,
+-- with NULL-posted_at rows reachable at the tail of the ordering (the IS NULL
+-- arm matches the route's PostgREST or() clause). Constant cost at any page
+-- depth, no OFFSET scan-and-drop. Replace the two placeholder literals below
+-- with the last row's posted_at / id from page N-1.
 -- ------------------------------------------------------------------------------
 EXPLAIN (ANALYZE, BUFFERS)
 SELECT id, title, location, remote, remote_scope, remote_eligibility, job_type,
        category, country, country_code, seniority, first_seen_at, posted_at, status, is_active
 FROM public.jobs_public
-WHERE first_seen_at < '2000-01-01T00:00:00Z'::timestamptz  -- cursor: previous page's last first_seen_at
-   OR (first_seen_at = '2000-01-01T00:00:00Z'::timestamptz
+WHERE posted_at < '2000-01-01T00:00:00Z'::timestamptz  -- cursor: previous page's last posted_at
+   OR (posted_at = '2000-01-01T00:00:00Z'::timestamptz
        AND id < '00000000-0000-0000-0000-000000000000'::uuid)  -- cursor tie-break: previous page's last id
-   OR first_seen_at IS NULL
-ORDER BY first_seen_at DESC, id DESC
+   OR posted_at IS NULL  -- NULLS LAST tail of the ordering, as in the route
+ORDER BY posted_at DESC NULLS LAST, id DESC
 LIMIT 10;
 
 -- ------------------------------------------------------------------------------
