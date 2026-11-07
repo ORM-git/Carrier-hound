@@ -21,6 +21,10 @@
 
 import { checkSharedRateLimit } from "../api/sharedRateLimit";
 
+import { createLogger } from "@/lib/observability/logger";
+
+const logger = createLogger({ context: { module: "security/authMonitor" } });
+
 /** Detection thresholds. Defaults chosen for a low-traffic pre-launch app;
  *  tune as real traffic data arrives. */
 export const ATO_LIMITS = {
@@ -74,7 +78,7 @@ async function countAndAlert(
   deps: AuthMonitorDeps
 ): Promise<void> {
   const check = deps.check ?? checkSharedRateLimit;
-  const log = deps.log ?? ((line: string) => console.error(line));
+  const log = deps.log ?? ((line: string) => logger.error(line));
   const now = deps.now ?? Date.now;
 
   const result = await check(key, max, windowSeconds, undefined, { failClosed: true });
