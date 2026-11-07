@@ -310,3 +310,14 @@ $$;
 
 revoke all on function public.refund_plan_or_addon_set(uuid, text) from public;
 grant execute on function public.refund_plan_or_addon_set(uuid, text) to service_role;
+
+-- ============================================================================
+-- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
+--   DROP INDEX IF EXISTS public.idx_plan_usage_credit_id;
+--   ALTER TABLE public.plan_usage_events DROP COLUMN IF EXISTS credit_id;
+--   DROP FUNCTION IF EXISTS public.consume_plan_set(p_user_id uuid, p_kind text, p_idempotency_key text, p_period_start timestamptz, p_quota int, p_daily_cap int, p_day_start timestamptz);
+--   DROP FUNCTION IF EXISTS public.consume_user_set(p_user_id uuid, p_kind text, p_idempotency_key text, p_period_start timestamptz, p_quota int, p_daily_cap int, p_day_start timestamptz);
+--   DROP FUNCTION IF EXISTS public.refund_plan_or_addon_set(p_user_id uuid, p_idempotency_key text);
+--   NOTE: replaces function public.consume_addon_set (first defined in 20261103b_consume_set_fn.sql); restore the prior definition from that file if this change must be undone.
+--   NOTE: data writes above (insert/update/delete) need a manual restore from backup or a hand-written reverse; no automatic rollback.
+-- ============================================================================
