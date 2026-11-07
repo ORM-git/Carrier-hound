@@ -64,3 +64,15 @@ BEGIN
       WITH CHECK (true);
   END IF;
 END $$;
+
+-- ============================================================================
+-- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
+--   DROP POLICY IF EXISTS "jobs_service_role_access" ON public.jobs;
+--   DROP VIEW IF EXISTS public.jobs_public;
+--   REVOKE SELECT ON public.jobs_public FROM anon, authenticated, service_role;
+--   GRANT SELECT ON public.jobs TO anon, authenticated;
+--   NOTE: re-enables RLS on public.jobs (first enabled in 20261001_filter_upgrades.sql); rollback of THIS file leaves RLS as it was.
+--   NOTE: this migration itself drops POLICY jobs_public_read - restore it from the earlier migration that created it (or from backup) if rolling back.
+--   NOTE: this migration itself drops POLICY jobs_anon_read - restore it from the earlier migration that created it (or from backup) if rolling back.
+--   NOTE: this migration itself drops POLICY jobs_authenticated_read - restore it from the earlier migration that created it (or from backup) if rolling back.
+-- ============================================================================
