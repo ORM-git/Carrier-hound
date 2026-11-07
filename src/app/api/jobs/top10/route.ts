@@ -13,6 +13,10 @@ import { checkRequiredEnv } from "@/lib/api/envCheck";
 
 import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
 
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger({ context: { route: "/api/jobs/top10" } });
+
 export const runtime = "edge";
 
 function getSupabaseAdmin() {
@@ -229,7 +233,7 @@ export async function POST(req: Request) {
       .limit(120);
 
     if (queryErr) {
-      console.error("[API /jobs/top10] Query error:", queryErr);
+      log.error("Query error", { error: queryErr?.message || String(queryErr) });
       return NextResponse.json({ error: "Failed to query jobs corpus" }, { status: 500 });
     }
 
@@ -384,7 +388,7 @@ export async function POST(req: Request) {
         return NextResponse.json(parsed, { status: 500 });
       }
     } catch {}
-    console.error("[API /jobs/top10 error]:", err);
+    log.error("fatal error", { error: err?.message || String(err) });
     reportRequestErrorToSentry(req, err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
