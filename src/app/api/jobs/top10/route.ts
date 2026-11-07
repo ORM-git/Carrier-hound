@@ -93,7 +93,7 @@ function getTop10CacheKey(
  * only the top N results with full unlocked Pro data.
  */
 export async function POST(req: Request) {
-  const log = baseLog.child({ requestId: req.headers.get("x-request-id") ?? "unknown" });
+  const log = baseLog.child({ requestId: req?.headers.get("x-request-id") ?? "unknown" });
   try {
     // 1. Verify Authorization Header (Bearer Supabase access token)
     const authHeader = req.headers.get("authorization") || req.headers.get("Authorization");
