@@ -30,6 +30,7 @@ const COVERED_FILES = [
   "next.config.mjs",
   "package.json",
   ".github/workflows/board-ingest.yml",
+  ".github/workflows/capacity-report-cron.yml",
   ".github/workflows/ci.yml",
   ".github/workflows/daily-digest-cron.yml",
   ".github/workflows/early-access-digest-cron.yml",
