@@ -3,6 +3,7 @@
 -- Date: 2026-11-01
 -- File: supabase/migrations/20261101_lock_page_views_insert.sql
 -- Status: PENDING APPLICATION (Run in Supabase SQL editor by project owner)
+--   If/when applied: record with  node scripts/record-migration.cjs 20261101_lock_page_views_insert
 --
 -- Security Context:
 -- 1. In migration 20261011_admin_page_views_and_blocked_users.sql, policy
