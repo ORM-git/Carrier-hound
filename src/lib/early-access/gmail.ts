@@ -217,7 +217,7 @@ export function buildThankYouEmailContent(): {
     "",
     "No spam, ever. If you have any questions, just reply directly to this email.",
     "",
-    "â CareerMonke",
+    "— CareerMonke",
   ].join("\r\n");
 
   const htmlBody = [
@@ -250,7 +250,7 @@ export function buildOwnerDigestEmailContent(
   const textLines = [
     `CareerMonke early-access daily digest (${count} signup${count === 1 ? "" : "s"}):`,
     "",
-    ...rows.map((r, idx) => `${idx + 1}. ${r.email} â ${r.created_at}`),
+    ...rows.map((r, idx) => `${idx + 1}. ${r.email} — ${r.created_at}`),
   ];
 
   if (unsubscribeUrl) {
