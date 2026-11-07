@@ -1,4 +1,5 @@
 import { CandidateProfile } from "./types";
+import { ALLOWED_RESUME_EXTENSIONS, MAX_RESUME_UPLOAD_BYTES } from "./parser";
 import { createClient } from "../supabase/client";
 import type { TailoredJobResumeResult } from "./atsScorer";
 import {
@@ -782,6 +783,26 @@ export async function uploadResumeFile(
   const objectPath = `${user.id}/${Date.now()}_${safeName}`;
   if (!isOwnerScopedResumePath(objectPath, user.id)) {
     throw new Error("Forbidden: invalid resume storage path.");
+  }
+
+  // Server-side enforcement of the same type/size rules the client applies
+  // (Backend sheet rank 70). Uploads that bypass client validation are
+  // rejected here too; error strings mirror the client validator exactly.
+  const safeExtParts = safeName.split(".");
+  const safeExt = safeExtParts.length > 1 ? safeExtParts.pop()!.toLowerCase().trim() : "";
+  if (!safeExt || !ALLOWED_RESUME_EXTENSIONS.has(safeExt)) {
+    throw new Error("Unsupported file format. Please upload a PDF, DOCX, TXT, or MD document.");
+  }
+  const byteSize =
+    typeof (file as { size?: unknown })?.size === "number"
+      ? (file as { size: number }).size
+      : file instanceof ArrayBuffer
+        ? file.byteLength
+        : file instanceof Uint8Array
+          ? file.byteLength
+          : null;
+  if (byteSize !== null && (byteSize <= 0 || byteSize > MAX_RESUME_UPLOAD_BYTES)) {
+    throw new Error("File size exceeds 10MB limit. Please upload a smaller document.");
   }
 
   const bucket = supabase.storage.from(RESUME_STORAGE_BUCKET);
