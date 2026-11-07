@@ -346,3 +346,11 @@ $$;
 
 REVOKE ALL ON FUNCTION public.fulfil_payment_order(text, uuid, text) FROM public;
 GRANT EXECUTE ON FUNCTION public.fulfil_payment_order(text, uuid, text) TO service_role;
+
+-- ============================================================================
+-- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
+--   DROP INDEX IF EXISTS public.idx_payment_orders_mode;
+--   ALTER TABLE public.payment_orders DROP COLUMN IF EXISTS mode;
+--   NOTE: replaces function public.fulfil_payment_order (first defined in 20261103c_fulfil_payment_fn.sql); restore the prior definition from that file if this change must be undone.
+--   NOTE: data writes above (insert/update/delete) need a manual restore from backup or a hand-written reverse; no automatic rollback.
+-- ============================================================================
