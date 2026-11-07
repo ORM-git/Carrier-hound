@@ -32,7 +32,7 @@ const ALLOWLIST = new Set([
   "src/app/api/billing/razorpay/verify/route.ts:348",
   "src/lib/resume/storage.ts:155",
   "src/lib/tracker/storage.ts:133",
-  "src/lib/cron/dailyDigestCron.ts:118",
+  "src/lib/cron/dailyDigestCron.ts:121",
   "src/lib/cron/digestStorage.ts:61",
   "src/lib/events/failedEvents.ts:626",
 ]);

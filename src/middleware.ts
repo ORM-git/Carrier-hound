@@ -4,6 +4,9 @@ import { createClient } from "@supabase/supabase-js";
 import { isVerifiedAdminUser } from "@/lib/admin/constants";
 import { isCrossSiteMutation } from "@/lib/security/sameOrigin";
 import { exceedsGlobalBodyCap } from "@/lib/security/bodySize";
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger({ context: { module: "middleware" } });
 
 /**
  * App routes that strictly require an authenticated Supabase session.
@@ -296,7 +299,7 @@ export async function checkEarlyAccessApproval(
   // Check if we have a last-known-good verdict within 5-minute grace window:
   if (cached && now - cached.cachedAt <= EARLY_ACCESS_GRACE_WINDOW_MS) {
     if (cached.approved) {
-      console.warn(
+      log.warn(
         `[middleware] approval query error for ${normalized}; serving cached approved verdict within 5m grace window.`
       );
       return { approved: true, shouldSignOut: false };
@@ -306,9 +309,9 @@ export async function checkEarlyAccessApproval(
   }
 
   // No cached verdict (or past grace window): bounce to /early-access without signing out (session stays intact)
-  console.warn(
-    `[middleware] approval query error for ${normalized} with no cached verdict; bouncing without sign-out:`,
-    result.error?.message || result.error
+  log.warn(
+    `[middleware] approval query error for ${normalized} with no cached verdict; bouncing without sign-out`,
+    { error: result.error?.message || String(result.error) }
   );
   return { approved: false, shouldSignOut: false };
 }

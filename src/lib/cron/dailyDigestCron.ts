@@ -1,6 +1,9 @@
 import { createClient } from "@supabase/supabase-js";
 import { computeFitDiagnostics } from "../matcher/scoring";
 import { CandidateProfile } from "../resume/types";
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger({ context: { module: "cron/dailyDigestCron" } });
 
 export interface CronRunStats {
   runId: string;
@@ -96,7 +99,7 @@ export async function runDailyDigestCron(options: {
         runId = data.id;
       }
     } catch (e) {
-      console.warn("Could not write initial cron log to DB, continuing with in-memory ID", e);
+      log.warn("Could not write initial cron log to DB, continuing with in-memory ID", { error: e });
     }
   }
 
@@ -109,7 +112,7 @@ export async function runDailyDigestCron(options: {
     // 2. Fetch candidate profiles with confirmed facts
     let candidateProfiles: Array<{ userId: string; profile: CandidateProfile }> = [];
     if (!supabase) {
-      console.warn("Notice: Running in offline dry-run mode without Supabase credentials. Using sample evaluation profile.");
+      log.warn("Notice: Running in offline dry-run mode without Supabase credentials. Using sample evaluation profile.");
       const { getSampleCandidateProfile } = await import("../resume/parser");
       candidateProfiles = [{ userId: "sample-candidate-evaluation", profile: getSampleCandidateProfile() }];
     } else {
@@ -119,7 +122,7 @@ export async function runDailyDigestCron(options: {
         .not("skills", "is", null);
 
       if (profilesError) {
-        console.warn("Notice: candidate_profiles table not yet migrated in Supabase. Using sample evaluation profile for evaluation.");
+        log.warn("Notice: candidate_profiles table not yet migrated in Supabase. Using sample evaluation profile for evaluation.");
         const { getSampleCandidateProfile } = await import("../resume/parser");
         candidateProfiles = [{ userId: "sample-candidate-evaluation", profile: getSampleCandidateProfile() }];
       } else {
@@ -154,7 +157,7 @@ export async function runDailyDigestCron(options: {
         .limit(500);
 
       if (jobsError) {
-        console.warn("Notice: jobs table query returned error:", jobsError.message);
+        log.warn("Notice: jobs table query returned error", { error: jobsError.message });
         activeJobs = [];
       } else {
         activeJobs = jobsData || [];
@@ -280,13 +283,13 @@ export async function runDailyDigestCron(options: {
       if (!bulkError) {
         digestsQueuedCount += pendingDigestRows.length;
       } else {
-        console.warn("Bulk daily_digests upsert failed; falling back to per-row upserts:", bulkError.message);
+        log.warn("Bulk daily_digests upsert failed; falling back to per-row upserts", { error: bulkError.message });
         for (const row of pendingDigestRows) {
           const { error: rowError } = await supabase.from("daily_digests").upsert(row, { onConflict: "user_id,digest_date" });
           if (!rowError) {
             digestsQueuedCount++;
           } else {
-            console.warn(`Failed to queue digest for user ${row.user_id}:`, rowError.message);
+            log.warn("Failed to queue digest for user", { userId: row.user_id, error: rowError.message });
           }
         }
       }

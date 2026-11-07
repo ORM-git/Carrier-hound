@@ -66,6 +66,16 @@ migrate incrementally (suggested order: API routes with the most
 `console.*` calls first). Existing behavior is unchanged until a call site
 opts in.
 
+Status (Backend sheet rank 102): every server-side module under `src/lib`,
+`src/app/api` and `src/middleware.ts` logs through the logger, so `LOG_LEVEL`
+filtering covers the whole request path. Two intentional exceptions:
+`src/lib/observability/logger.ts` (the seam owns console output) and
+`src/lib/api/routeBudget.ts` (emits its own JSON line; `scripts/test-route-budget.ts`
+asserts that raw line). Remaining `console.*` calls under `src` are client/UI
+files (pages and components), which run in the browser and are out of scope for
+`LOG_LEVEL`. Guards: `structuredLoggingLibAdoption.test.ts` (lib modules and
+middleware) and `structuredLoggingAdoption.test.ts` (routes).
+
 For tests, inject a sink:
 
 ```ts
