@@ -212,6 +212,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-reindex-maintenance-policy.ts", command: "npx tsx scripts/test-reindex-maintenance-policy.ts", classification: "offline" },
   { name: "scripts/test-covering-index-policy.ts", command: "npx tsx scripts/test-covering-index-policy.ts", classification: "offline" },
   { name: "scripts/test-not-valid-validate-policy.ts", command: "npx tsx scripts/test-not-valid-validate-policy.ts", classification: "offline" },
+  { name: "scripts/test-idempotent-seed-policy.ts", command: "npx tsx scripts/test-idempotent-seed-policy.ts", classification: "offline" },
 ];
 
 export interface RunSummary {
