@@ -66,7 +66,13 @@ async function postHandler(req: Request): Promise<Response> {
     req.headers.get("authorization") || req.headers.get("Authorization");
   const body = await req.json().catch(() => ({}));
 
-  const res = await executeAiCore(clientIp, authHeader, body, { env: cfEnv }, "ai:ip:");
+  // Second flag, OFF by default: ask the upstream provider for a streamed completion and
+  // assemble it server-side. The assembled text is still validated and sanitized as a whole
+  // before any SSE frame is written, so no unsanitized text ever reaches the client.
+  const upstreamFlag = getRuntimeEnv("AI_UPSTREAM_STREAMING_ENABLED", cfEnv);
+  const upstreamStream = upstreamFlag === "1" || upstreamFlag === "true";
+
+  const res = await executeAiCore(clientIp, authHeader, body, { env: cfEnv, upstreamStream }, "ai:ip:");
 
   if (res.statusCode !== 200) {
     return new Response(JSON.stringify(res.body), {
