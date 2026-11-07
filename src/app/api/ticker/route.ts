@@ -351,8 +351,9 @@ async function getHandler(req: Request) {
     }
 
     // Public, identical for every caller: weak ETag enables 304 revalidation.
+    // TTL values are chosen defaults (rank 42 review decision), not measured.
     const tickerHeaders = {
-      "Cache-Control": "public, max-age=60, s-maxage=60, stale-while-revalidate=120",
+      "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
     };
     const etag = await computeWeakEtag(tickerItems);
     const notModified = notModifiedResponse(req, etag, tickerHeaders);

@@ -38,6 +38,7 @@ jobs:
           APPS_SCRIPT_MAIL_URL: ${{ secrets.APPS_SCRIPT_MAIL_URL }}
           APPS_SCRIPT_MAIL_SECRET: ${{ secrets.APPS_SCRIPT_MAIL_SECRET }}
           EARLY_ACCESS_NOTIFY_EMAIL: ${{ secrets.EARLY_ACCESS_NOTIFY_EMAIL }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
         run: |
           ARGS=""
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
