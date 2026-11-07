@@ -211,6 +211,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-job-archival-policy.ts", command: "npx tsx scripts/test-job-archival-policy.ts", classification: "offline" },
   { name: "scripts/test-reindex-maintenance-policy.ts", command: "npx tsx scripts/test-reindex-maintenance-policy.ts", classification: "offline" },
   { name: "scripts/test-covering-index-policy.ts", command: "npx tsx scripts/test-covering-index-policy.ts", classification: "offline" },
+  { name: "scripts/test-search-path-pinning-policy.ts", command: "npx tsx scripts/test-search-path-pinning-policy.ts", classification: "offline" },
 ];
 
 export interface RunSummary {
