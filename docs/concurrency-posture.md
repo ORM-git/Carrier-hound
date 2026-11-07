@@ -48,10 +48,10 @@ there is no in-process shared mutable state to race on. All state shared
 across requests lives in Postgres and is mutated through the atomic RPCs
 above (`for update` locks, single-statement guarded updates with
 predicates like `sets_remaining > 0`), never read-modify-write in
-application code. The in-memory rate-limit fallback store is per-isolate
-best-effort and fails open to the shared store (see
-`src/lib/api/sharedRateLimit.ts`); it is correctness-uncritical because
-the shared store is authoritative when reachable.
+application code. The shared rate-limit store is authoritative whenever
+reachable; only while it is down does a per-isolate in-memory fallback
+apply best-effort limits (see `src/lib/api/sharedRateLimit.ts`), so the
+steady-state posture does not depend on isolate-local state.
 
 ## 49 - Backpressure
 
