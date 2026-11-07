@@ -7,6 +7,7 @@ import { ToastContainer } from "react-toastify";
 import BackToTop from "@/components/BackToTop";
 import PageViewTracker from "@/components/analytics/PageViewTracker";
 import WebVitalsTracker from "@/components/analytics/WebVitalsTracker";
+import GlobalErrorReporter from "@/components/monitoring/GlobalErrorReporter";
 import { ServiceWorkerRegistrar } from "@/components/pwa/ServiceWorkerRegistrar";
 import BlockedAccountNotice from "@/components/auth/BlockedAccountNotice";
 import CookieNotice from "@/components/CookieNotice";
@@ -136,6 +137,7 @@ export default function RootLayout({
         <Suspense fallback={null}>
           <WebVitalsTracker />
         </Suspense>
+        <GlobalErrorReporter />
         <BlockedAccountNotice />
         <CookieNotice />
         <ServiceWorkerRegistrar />
