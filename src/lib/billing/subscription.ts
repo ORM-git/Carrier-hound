@@ -60,7 +60,7 @@ async function querySubscriptionWithRetry(
     try {
       const fetchPromise = supabase
         .from("subscriptions")
-        .select("*")
+        .select("status, plan_id, current_period_end, grace_period_end")
         .eq("user_id", userId)
         .order("created_at", { ascending: false })
         .limit(1)
@@ -316,7 +316,7 @@ export async function getUserSubscription(): Promise<UserSubscription | null> {
     if (user) {
       const { data: sub, error } = await supabase
         .from("subscriptions")
-        .select("*")
+        .select("id, user_id, provider, plan_id, currency, amount, status, current_period_start, current_period_end, grace_period_end, cancel_at_period_end, metadata")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false })
         .limit(1)

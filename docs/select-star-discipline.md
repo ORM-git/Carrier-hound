@@ -26,23 +26,23 @@ acceptable: they are plpgsql row variables, not wire payloads.
 | `src/lib/resume/storage.ts:155` | candidate_profiles | The fetched profile is returned whole to the caller. |
 | `src/lib/tracker/storage.ts:133` | applications | The application rows are returned whole to the caller (tracker list). |
 
-### Narrow reads - column-list candidates (flagged, owner to confirm before tightening)
+### Billing reads kept as `*` (owner to confirm)
 
-| Site | Table | Columns actually consumed | Note |
-| --- | --- | --- | --- |
-| `src/lib/billing/quota.ts:307` | subscriptions | `plan_id` (+ row existence) | Billing-critical path; tightening changes a hot entitlement read, so it is deferred to an owner-confirmed follow-up rather than bundled here. |
-| `src/lib/billing/quota.ts:325` | plans | `code, name, duration_days, price_paise, resume_quota` | Small table, single row by unique code. |
-| `src/lib/billing/subscription.ts:63` | subscriptions | subscription status/period fields | Client-facing read with a 10s timeout race; payload is one row. |
-| `src/lib/billing/subscription.ts:319` | subscriptions | `status, current_period_end` | Same pattern. |
-| `src/lib/billing/serverEntitlement.ts:53` | subscriptions | entitlement fields | Server entitlement check. |
-| `src/app/api/billing/razorpay/verify/route.ts:178` | payment_orders | `status, addon_code, plan_code, id` | Payment verify, fail-closed path; payment-critical, deferred like the other billing reads. |
-| `src/app/api/billing/razorpay/verify/route.ts:348` | subscriptions | `metadata` fields | Idempotent-replay check on the payment verify path. |
-| `src/app/api/billing/razorpay/verify/route.ts:493` | subscriptions | `current_period_end` etc. | Renewal/upgrade period math on the payment verify path. |
+| Site | Table | Why `*` stays |
+| --- | --- | --- |
+| `src/app/api/billing/razorpay/verify/route.ts:348` | subscriptions | The row IS the API payload (`subscription: existingSub` in the already-paid replay response). Narrowing changes the response, so it stays. |
 
 ### Narrowed (done)
 
 | Site | Table | Now reads |
 | --- | --- | --- |
+| `src/lib/billing/quota.ts:307` | subscriptions | `plan_id, current_period_start, current_period_end, created_at` (the only `sub.*` reads in getPlanQuota). |
+| `src/lib/billing/quota.ts:325` | plans | The 10 plan columns the mapper copies (`code` ... `is_active`). Previously documented as 5; the code reads 10. |
+| `src/lib/billing/subscription.ts:63` | subscriptions | `status, plan_id, current_period_end, grace_period_end` (the only reads in getProAccessStatus). |
+| `src/lib/billing/subscription.ts:319` | subscriptions | The 12 columns getUserSubscription maps to UserSubscription. |
+| `src/lib/billing/serverEntitlement.ts:53` | subscriptions | `status, plan_id, current_period_end, grace_period_end`. |
+| `src/app/api/billing/razorpay/verify/route.ts:178` | payment_orders | `id, provider, mode, provider_order_id, plan_code, addon_code, amount_paise, status`. `mode` is added by `20261104b_payment_order_mode_isolation.sql`; the row is never returned in a response. |
+| `src/app/api/billing/razorpay/verify/route.ts:493` | subscriptions | `status, current_period_start, current_period_end` (renewal/upgrade period math; the row is not returned in the response on this path). |
 | `src/lib/auth/session.ts` (getUserPreferences) | user_preferences | The 13 columns the mapper consumes (`roles` ... `updated_at`); `src/lib/__tests__/userPreferencesColumns.test.ts` fails if a column the mapper reads is missing from the list. Same column names the search/top10 routes already select by name. |
 
 ### Bounded scans under review elsewhere (keep, tracked by rank 46)

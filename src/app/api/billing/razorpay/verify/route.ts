@@ -175,7 +175,7 @@ export async function POST(req: Request) {
     // Look up order in payment_orders table belonging to user (REQUIRED - Fail closed)
     const { data: orderRow, error: orderErr } = await supabaseAdmin
       .from("payment_orders")
-      .select("*")
+      .select("id, provider, mode, provider_order_id, plan_code, addon_code, amount_paise, status")
       .eq("provider_order_id", orderId)
       .eq("user_id", user.id)
       .maybeSingle();
@@ -490,7 +490,7 @@ export async function POST(req: Request) {
       // new period end = max(current_period_end, now) + new plan duration; never shorten an existing period.
       const { data: existingSub } = await supabaseAdmin
         .from("subscriptions")
-        .select("*")
+        .select("status, current_period_start, current_period_end")
         .eq("user_id", user.id)
         .maybeSingle();
 

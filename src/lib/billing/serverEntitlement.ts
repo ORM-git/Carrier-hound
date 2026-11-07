@@ -50,7 +50,7 @@ export async function getServerEntitlement(userId: string): Promise<ProAccessSta
 
     const { data: sub, error } = await supabaseAdmin
       .from("subscriptions")
-      .select("*")
+      .select("status, plan_id, current_period_end, grace_period_end")
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(1)

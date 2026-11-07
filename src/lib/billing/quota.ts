@@ -304,7 +304,7 @@ export async function getPlanQuota(
     // 2. Fetch latest subscription record
     const { data: sub, error: subError } = await supabaseAdmin
       .from("subscriptions")
-      .select("*")
+      .select("plan_id, current_period_start, current_period_end, created_at")
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(1)
@@ -322,7 +322,7 @@ export async function getPlanQuota(
     try {
       const { data: dbPlan } = await supabaseAdmin
         .from("plans")
-        .select("*")
+        .select("code, name, duration_days, price_paise, resume_quota, cover_letter_quota, quota_period_days, daily_generation_cap, sort_order, is_active")
         .eq("code", planCode)
         .maybeSingle();
       if (dbPlan) {
