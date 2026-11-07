@@ -32,8 +32,8 @@ check(
     /\bapply_url\b/.test(insert.match(/\(([^)]*)\)/)![1])
 );
 check(
-  "insert ends with ON CONFLICT (apply_url) DO NOTHING",
-  /on conflict \(apply_url\) do nothing;/i.test(insert.trim().slice(-60))
+  "insert ends with ON CONFLICT (apply_url) WHERE apply_url IS NOT NULL DO NOTHING",
+  /on conflict \(apply_url\) where apply_url is not null do nothing;/i.test(insert.trim().slice(-80))
 );
 check(
   "arbiter unique index exists in migrations (jobs_apply_url_unique)",
@@ -41,6 +41,17 @@ check(
     const s = fs.readFileSync(`supabase/migrations/${f}`, "utf8");
     return /CREATE UNIQUE INDEX jobs_apply_url_unique/i.test(s) &&
       /ON public\.jobs \(apply_url\)/i.test(s);
+  })
+);
+check(
+  "arbiter index is partial with the SAME predicate the ON CONFLICT clause carries (real DDL cross-check)",
+  fs.readdirSync("supabase/migrations").some((f) => {
+    const s = fs.readFileSync(`supabase/migrations/${f}`, "utf8");
+    const m = s.match(/CREATE UNIQUE INDEX jobs_apply_url_unique[\s\S]*?WHERE ([a-z_]+ IS NOT NULL);/i);
+    if (!m) return false;
+    const indexPredicate = m[1].toLowerCase();
+    const clause = insert.match(/on conflict \(apply_url\) where ([a-z_]+ is not null) do nothing;/i);
+    return !!clause && clause[1].toLowerCase() === indexPredicate;
   })
 );
 check(
