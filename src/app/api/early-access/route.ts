@@ -22,6 +22,8 @@ import {
   THANK_YOU_WAIT_UNTIL_HARD_CAP_MS,
 } from "@/lib/early-access/gmail";
 
+import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
+
 export const runtime = "edge";
 
 const EMAIL_REGEX =
@@ -287,7 +289,8 @@ async function postHandler(req: Request) {
       ok: true,
       message: "You're on the list",
     });
-  } catch {
+  } catch (_err) {
+    reportRequestErrorToSentry(req, _err);
     return NextResponse.json(
       { ok: false, error: GENERIC_TRY_AGAIN_MESSAGE },
       { status: 500 }
