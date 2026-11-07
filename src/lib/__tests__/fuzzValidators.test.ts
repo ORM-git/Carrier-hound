@@ -17,7 +17,7 @@ import {
   validateIdempotencyKey,
   IDEMPOTENCY_KEY_REGEX,
   IDEMPOTENCY_KEY_MAX_LENGTH,
-} from "../ai/serviceHandler";
+} from "../ai/idempotency";
 
 // Chosen defaults (same pattern as scripts/test-pbt-sanitizers.ts):
 // fixed seed keeps CI deterministic; a few thousand iterations per
