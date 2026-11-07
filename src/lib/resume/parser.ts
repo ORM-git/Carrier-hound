@@ -5,6 +5,10 @@ import {
   stripHtmlAndExecutableMarkup,
 } from "../security/xss";
 
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger({ context: { module: "resume/parser" } });
+
 export const MAX_RESUME_UPLOAD_BYTES = 10 * 1024 * 1024; // 10 MB
 export const ALLOWED_RESUME_EXTENSIONS = new Set(["pdf", "docx", "txt", "md"]);
 
@@ -124,7 +128,7 @@ export async function extractTextFromFile(file: File): Promise<string> {
       const result = await mammoth.extractRawText({ arrayBuffer });
       return stripHtmlAndExecutableMarkup(result.value || "");
     } catch (err) {
-      console.warn("Mammoth DOCX extraction failed, falling back to basic reader", err);
+      log.warn("Mammoth DOCX extraction failed, falling back to basic reader", { error: err });
       return stripHtmlAndExecutableMarkup(await file.text());
     }
   }
@@ -201,7 +205,7 @@ async function extractTextFromPdf(file: File): Promise<string> {
     if (err?.message && !err.message.includes("PDF.js")) {
       throw err;
     }
-    console.warn("Client PDF.js parsing failed, trying text decoder fallback", err);
+    log.warn("Client PDF.js parsing failed, trying text decoder fallback", { error: err });
   }
 
   // Fallback: decode text strings from PDF binary stream (stripping any embedded /JS or /JavaScript actions)
@@ -360,7 +364,7 @@ export function parseResumeText(inputRawText: string): ParsedResumeResult {
 
   // 4. Experience Timeline Extraction
   const experience: WorkExperienceItem[] = [];
-  const dateRangeRegex = /((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{4}|\b\d{4}\b)\s*(?:-|–|to)\s*((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{4}|\b\d{4}\b|Present|Current)/i;
+  const dateRangeRegex = /((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{4}|\b\d{4}\b)\s*(?:-|â|to)\s*((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{4}|\b\d{4}\b|Present|Current)/i;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -374,7 +378,7 @@ export function parseResumeText(inputRawText: string): ParsedResumeResult {
 
       const beforeDate = line.substring(0, match.index).trim();
       if (beforeDate.length > 3) {
-        const parts = beforeDate.split(/[-–|@,]/).map((p) => p.trim());
+        const parts = beforeDate.split(/[-â|@,]/).map((p) => p.trim());
         if (parts.length >= 2) {
           roleCandidate = parts[0];
           companyCandidate = parts[1];
@@ -394,8 +398,8 @@ export function parseResumeText(inputRawText: string): ParsedResumeResult {
         if (subLine.match(dateRangeRegex) || subLine.match(/^(education|skills|certifications|projects)/i)) {
           break;
         }
-        if (subLine.startsWith("•") || subLine.startsWith("-") || subLine.startsWith("*") || subLine.length > 20) {
-          bullets.push(subLine.replace(/^[•\-*]\s*/, ""));
+        if (subLine.startsWith("â¢") || subLine.startsWith("-") || subLine.startsWith("*") || subLine.length > 20) {
+          bullets.push(subLine.replace(/^[â¢\-*]\s*/, ""));
         }
         j++;
       }
@@ -505,7 +509,7 @@ export function parseResumeText(inputRawText: string): ParsedResumeResult {
     const hasTrigger = certTriggers.some((ct) => lower.includes(ct));
 
     if ((inCertSection && line.length > 4 && line.length < 100) || hasTrigger) {
-      const cleanCert = line.replace(/^[•\-\*]\s*/, "").trim();
+      const cleanCert = line.replace(/^[â¢\-\*]\s*/, "").trim();
       if (cleanCert && !certifications.includes(cleanCert) && !/^(certifications|licenses)$/i.test(cleanCert)) {
         certifications.push(cleanCert);
         facts.push({
