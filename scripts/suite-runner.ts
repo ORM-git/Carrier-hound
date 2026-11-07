@@ -226,6 +226,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-upstream-streaming-core.ts", command: "npx tsx scripts/test-upstream-streaming-core.ts", classification: "offline" },
   { name: "scripts/test-cross-source-dedupe.ts", command: "npx tsx scripts/test-cross-source-dedupe.ts", classification: "offline" },
   { name: "scripts/test-search-alert-dispatcher.ts", command: "npx tsx scripts/test-search-alert-dispatcher.ts", classification: "offline" },
+  { name: "scripts/test-payment-reconciliation.ts", command: "npx tsx scripts/test-payment-reconciliation.ts", classification: "offline" },
   { name: "scripts/test-outbox-queue.ts", command: "npx tsx scripts/test-outbox-queue.ts", classification: "offline" },
 ];
 
