@@ -13,6 +13,7 @@ import {
   SourceStats,
 } from './types';
 import { detectCategory, slugify } from './utils/sanitizer';
+import { dropFeedJobsAlreadyCoveredByAts } from './utils/crossSourceDedupe';
 import { resolveCompanyLogo } from '../src/lib/companies/logoResolver';
 
 // ISO alpha-2 -> display name for the legacy `country` text column (kept in sync with country_code)
@@ -386,6 +387,18 @@ async function main() {
         totalAccumulatedJobs++;
         if (MAX_PER_SOURCE && validJobs.length >= MAX_PER_SOURCE) break;
         if (totalAccumulatedJobs >= MAX_RUN_JOBS) break;
+      }
+
+      // Cross-run dedupe (Backend rank 98): drop feed jobs whose role is already active in the DB
+      // from a verified ATS source. Live runs only; fails open (keeps everything) on any DB error.
+      if (supabase && !isDryRun && !isAtsSource(source.type) && validJobs.length > 0) {
+        const covered = await dropFeedJobsAlreadyCoveredByAts(supabase, validJobs);
+        if (covered.dropped > 0) {
+          validJobs.splice(0, validJobs.length, ...covered.kept);
+          stats.skipped += covered.dropped;
+          totalAccumulatedJobs -= covered.dropped;
+          console.log(`   Cross-source dedupe: dropped ${covered.dropped} feed job(s) already covered by a verified ATS row.`);
+        }
       }
 
       stats.normalized = validJobs.length;
