@@ -191,3 +191,28 @@ CREATE TRIGGER trigger_refresh_worldwide_company_counts
 -- SELECT has_table_privilege('authenticated', 'public.ingest_runs', 'SELECT') AS auth_ingest_runs_select; -- Must be: false
 -- SELECT count(*) > 0 AS count_gt_zero FROM public.worldwide_company_counts; -- Must be: true
 -- SELECT has_function_privilege('anon', 'public.refresh_worldwide_company_counts()', 'EXECUTE') AS anon_refresh_exec; -- Must be: false
+
+-- ============================================================================
+-- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
+--   DROP TRIGGER IF EXISTS trigger_refresh_worldwide_company_counts ON public.ingest_runs;
+--   DROP POLICY IF EXISTS "companies_service_role_access" ON public.companies;
+--   DROP POLICY IF EXISTS "ingest_runs_service_role_access" ON public.ingest_runs;
+--   DROP INDEX IF EXISTS public.idx_worldwide_company_counts_slug;
+--   DROP INDEX IF EXISTS public.idx_worldwide_company_counts_active_job_count;
+--   DROP MATERIALIZED VIEW IF EXISTS public.worldwide_company_counts;
+--   DROP FUNCTION IF EXISTS public.refresh_worldwide_company_counts();
+--   DROP FUNCTION IF EXISTS public.on_ingest_run_completed_refresh_worldwide();
+--   REVOKE SELECT, INSERT, UPDATE, DELETE ON public.companies FROM service_role;
+--   REVOKE SELECT, INSERT, UPDATE, DELETE ON public.ingest_runs FROM service_role;
+--   REVOKE SELECT ON public.worldwide_company_counts FROM anon, authenticated, service_role;
+--   GRANT SELECT ON public.companies TO anon, authenticated;
+--   GRANT SELECT ON public.ingest_runs TO anon, authenticated;
+--   NOTE: this replaces the earlier public.worldwide_company_counts (from 20261016_worldwide_company_counts.sql); after dropping the materialized view, restore the prior definition from that file.
+--   NOTE: re-enables RLS on public.companies (first enabled in 20261001_phase1_storage_optimization.sql); rollback of THIS file leaves RLS as it was.
+--   NOTE: re-enables RLS on public.ingest_runs (first enabled in 20261001_phase1_storage_optimization.sql); rollback of THIS file leaves RLS as it was.
+--   NOTE: this migration itself drops POLICY companies_public_read - restore it from the earlier migration that created it (or from backup) if rolling back.
+--   NOTE: this migration itself drops POLICY allow public select on companies - restore it from the earlier migration that created it (or from backup) if rolling back.
+--   NOTE: this migration itself drops POLICY ingest_runs_public_read - restore it from the earlier migration that created it (or from backup) if rolling back.
+--   NOTE: this migration itself drops POLICY allow public select on ingest_runs - restore it from the earlier migration that created it (or from backup) if rolling back.
+--   NOTE: this migration itself drops VIEW worldwide_company_counts - restore it from the earlier migration that created it (or from backup) if rolling back.
+-- ============================================================================
