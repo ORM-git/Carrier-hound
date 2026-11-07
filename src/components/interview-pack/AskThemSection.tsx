@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { copyTextToClipboard } from "@/lib/clipboard";
 import { HelpCircle, Copy, Check, Ear, Sparkles } from "lucide-react";
 import type { ReverseQuestion } from "@/data/interviewPackFixture";
 
@@ -11,9 +12,8 @@ interface AskThemSectionProps {
 export default function AskThemSection({ questions }: AskThemSectionProps) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const handleCopy = (id: string, text: string) => {
-    if (typeof navigator !== "undefined" && navigator.clipboard) {
-      navigator.clipboard.writeText(text);
+  const handleCopy = async (id: string, text: string) => {
+    if (await copyTextToClipboard(text)) {
       setCopiedId(id);
       setTimeout(() => setCopiedId(null), 2000);
     }

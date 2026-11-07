@@ -44,6 +44,7 @@ import {
   downloadAtsResumeText,
   buildAtsResumePlainText,
 } from "@/lib/resume/tailor";
+import { copyTextToClipboard } from "@/lib/clipboard";
 import { toast } from "react-toastify";
 
 interface TailorResumeModalProps {
@@ -377,10 +378,13 @@ export default function TailorResumeModal({
 
   const handleCopy = async () => {
     if (!(await verifyExportAllowed())) return;
-    navigator.clipboard.writeText(resumeText);
-    setCopied(true);
-    toast.success("Tailored resume copied to clipboard!");
-    setTimeout(() => setCopied(false), 2000);
+    if (await copyTextToClipboard(resumeText)) {
+      setCopied(true);
+      toast.success("Tailored resume copied to clipboard!");
+      setTimeout(() => setCopied(false), 2000);
+    } else {
+      toast.error("Could not copy in this browser. Please select and copy the text manually.");
+    }
   };
 
   const handleRerun = () => {

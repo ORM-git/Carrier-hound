@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { copyTextToClipboard } from "@/lib/clipboard";
 import { MessageSquareQuote, Copy, Check, FileText, Sparkles } from "lucide-react";
 import type { InterviewCard } from "@/data/interviewPackFixture";
 
@@ -11,9 +12,8 @@ interface YourAnswersSectionProps {
 export default function YourAnswersSection({ cards }: YourAnswersSectionProps) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const handleCopy = (id: string, text: string) => {
-    if (typeof navigator !== "undefined" && navigator.clipboard) {
-      navigator.clipboard.writeText(text);
+  const handleCopy = async (id: string, text: string) => {
+    if (await copyTextToClipboard(text)) {
       setCopiedId(id);
       setTimeout(() => setCopiedId(null), 2000);
     }

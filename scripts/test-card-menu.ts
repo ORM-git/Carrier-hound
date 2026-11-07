@@ -235,7 +235,7 @@ function run() {
   const hasShareAction = menuCompCode.includes('data-testid="job-card-menu-item-share"') &&
     menuCompCode.includes("Share") &&
     menuCompCode.includes("navigator.share") &&
-    menuCompCode.includes("navigator.clipboard.writeText") &&
+    menuCompCode.includes("copyTextToClipboard") &&
     menuCompCode.includes("toast");
   if (!hasShareAction) {
     failures.push("ACTION 3 FAIL: Popover must include 'Share' with navigator.share and clipboard copy toast fallback.");
