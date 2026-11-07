@@ -45,10 +45,12 @@ async function main() {
   check("claim: null data gives empty list", (await claimOutboxBatch(fake(null), { topic: "t", limit: 1, leaseSeconds: 1, worker: "w" })).length === 0);
   check("claim: limit, lease and worker validated, no defaults", await rejects(claimOutboxBatch(fake([]), { topic: "t", limit: 0, leaseSeconds: 1, worker: "w" })) && await rejects(claimOutboxBatch(fake([]), { topic: "t", limit: 1, leaseSeconds: undefined as any, worker: "w" })) && await rejects(claimOutboxBatch(fake([]), { topic: "t", limit: 1, leaseSeconds: 1, worker: "" })));
 
-  check("ack: true only when rpc returns true", (await ackOutbox(fake(true), "i", "w")) === true && (await ackOutbox(fake(false), "i", "w")) === false);
+  c = fake(true);
+  check("ack: true only when rpc returns true, passes the fencing token", (await ackOutbox(c, { id: "i", worker: "w", attempt: 2 })) === true && c.calls[0].fn === "outbox_ack" && c.calls[0].args.p_attempt === 2 && (await ackOutbox(fake(false), { id: "i", worker: "w", attempt: 1 })) === false);
   c = fake("retry");
-  check("fail: maps args, returns retry/dead/null", (await failOutbox(c, { id: "i", worker: "w", error: "e", retryDelaySeconds: 0 })) === "retry" && c.calls[0].args.p_retry_delay_seconds === 0 && (await failOutbox(fake("dead"), { id: "i", worker: "w", error: "e", retryDelaySeconds: 5 })) === "dead" && (await failOutbox(fake(null), { id: "i", worker: "w", error: "e", retryDelaySeconds: 5 })) === null);
-  check("fail: retryDelaySeconds required non-negative integer", await rejects(failOutbox(fake("retry"), { id: "i", worker: "w", error: "e", retryDelaySeconds: -1 })) && await rejects(failOutbox(fake("retry"), { id: "i", worker: "w", error: "e", retryDelaySeconds: undefined as any })));
+  check("fail: maps args incl. fencing token, returns retry/dead/null", (await failOutbox(c, { id: "i", worker: "w", attempt: 3, error: "e", retryDelaySeconds: 0 })) === "retry" && c.calls[0].args.p_retry_delay_seconds === 0 && c.calls[0].args.p_attempt === 3 && (await failOutbox(fake("dead"), { id: "i", worker: "w", attempt: 1, error: "e", retryDelaySeconds: 5 })) === "dead" && (await failOutbox(fake(null), { id: "i", worker: "w", attempt: 1, error: "e", retryDelaySeconds: 5 })) === null);
+  check("fail: retryDelaySeconds required non-negative integer", await rejects(failOutbox(fake("retry"), { id: "i", worker: "w", attempt: 1, error: "e", retryDelaySeconds: -1 })) && await rejects(failOutbox(fake("retry"), { id: "i", worker: "w", attempt: 1, error: "e", retryDelaySeconds: undefined as any })));
+  check("ack and fail refuse a missing or invalid attempt before any rpc", await rejects(ackOutbox(fake(true), { id: "i", worker: "w", attempt: undefined as any })) && await rejects(ackOutbox(fake(true), { id: "i", worker: "w", attempt: 0 })) && await rejects(failOutbox(fake("retry"), { id: "i", worker: "w", attempt: 1.5, error: "e", retryDelaySeconds: 1 })));
 
   // Static checks against the real DDL.
   const sql = fs.readFileSync("supabase/migrations/20261107c_outbox_queue.sql", "utf8");
@@ -66,6 +68,16 @@ async function main() {
   check("migration: status check values match the TS type", ["pending", "processing", "done", "dead"].every((s) => code.indexOf(`'${s}'`) !== -1) && /status\s+IN \('pending', 'processing', 'done', 'dead'\)/.test(code));
   check("migration: no baked-in numeric defaults for attempts, lease or delay", !/max_attempts\s+INTEGER\s+NOT NULL\s+DEFAULT/.test(code) && !/p_(max_attempts|lease_seconds|retry_delay_seconds|limit)\s+INTEGER\s+DEFAULT/.test(code));
   check("migration: rollback block drops all four functions, indexes and table", fnNames.every((n) => new RegExp(`--\\s+DROP FUNCTION IF EXISTS public\\.${n}\\(`).test(sql)) && /--\s+DROP TABLE IF EXISTS public\.outbox;/.test(sql) && /--\s+DROP INDEX IF EXISTS public\.outbox_claim_idx/.test(sql));
+  // Fencing follow-up migration 20261107e.
+  const sqlE = fs.readFileSync("supabase/migrations/20261107e_outbox_fencing.sql", "utf8");
+  const codeE = sqlE.split("\n").filter((l) => !/^\s*--/.test(l)).join("\n");
+  check("fencing migration: NOT APPLIED header + record-migration command + ordering note", /STATUS: NOT APPLIED/.test(sqlE) && /record-migration\.cjs 20261107e_outbox_fencing/.test(sqlE) && /AFTER\s*\n--\s*20261107c_outbox_queue\.sql/.test(sqlE));
+  check("fencing migration: old ack/fail signatures dropped, new ones require p_attempt", /DROP FUNCTION IF EXISTS public\.outbox_ack\(UUID, TEXT\)/.test(codeE) && /DROP FUNCTION IF EXISTS public\.outbox_fail\(UUID, TEXT, TEXT, INTEGER\)/.test(codeE) && /outbox_ack\(p_id UUID, p_worker TEXT, p_attempt INTEGER\)/.test(codeE) && /p_attempt\s+INTEGER,\s*p_error/.test(codeE));
+  check("fencing migration: ack and fail both match on attempts = p_attempt", (codeE.match(/attempts = p_attempt/g) || []).length === 2);
+  check("fencing migration: expired-final-attempt cleanup selects FOR UPDATE SKIP LOCKED before updating", /WITH expired AS \([\s\S]*?FOR UPDATE SKIP LOCKED\s*\)\s*UPDATE public\.outbox/.test(codeE) && /FOR UPDATE SKIP LOCKED/.test(codeE.split("RETURN QUERY")[1] || ""));
+  check("fencing migration: functions definer + pinned path, revoked, service_role only, new signatures", (codeE.match(/SECURITY DEFINER/g) || []).length === 3 && (codeE.match(/SET search_path = public/g) || []).length === 3 && /REVOKE ALL ON FUNCTION public\.outbox_ack\(UUID, TEXT, INTEGER\) FROM PUBLIC, anon, authenticated/.test(codeE) && /GRANT EXECUTE ON FUNCTION public\.outbox_fail\(UUID, TEXT, INTEGER, TEXT, INTEGER\) TO service_role/.test(codeE));
+  check("fencing migration: helper arg order matches DDL (p_attempt present for ack and fail)", /p_attempt/.test(helperSrc) && (helperSrc.match(/p_attempt:/g) || []).length === 2);
+  check("fencing migration: rollback block present", /ROLLBACK/.test(sqlE) && /--\s+DROP FUNCTION IF EXISTS public\.outbox_ack\(UUID, TEXT, INTEGER\)/.test(sqlE));
   check("helper: no network or mail code", !/fetch\(|resend|nodemailer/i.test(helperSrc));
 
   console.log(`\n${passed} passed, ${failed} failed`);
