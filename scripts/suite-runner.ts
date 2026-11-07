@@ -222,6 +222,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-jitter-policy.ts", command: "npx tsx scripts/test-jitter-policy.ts", classification: "offline" },
   { name: "scripts/test-migration-discipline.ts", command: "npx tsx scripts/test-migration-discipline.ts", classification: "offline" },
   { name: "scripts/test-hotfix-process-doc.ts", command: "npx tsx scripts/test-hotfix-process-doc.ts", classification: "offline" },
+  { name: "scripts/test-concurrency-posture.ts", command: "npx tsx scripts/test-concurrency-posture.ts", classification: "offline" },
 ];
 
 export interface RunSummary {
