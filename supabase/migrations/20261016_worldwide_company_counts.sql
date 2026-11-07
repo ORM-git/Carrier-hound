@@ -52,3 +52,9 @@ ORDER BY active_job_count DESC;
 
 -- Grant read access to public and authenticated roles
 GRANT SELECT ON public.worldwide_company_counts TO anon, authenticated, service_role;
+
+-- ============================================================================
+-- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
+--   DROP VIEW IF EXISTS public.worldwide_company_counts;
+--   REVOKE SELECT ON public.worldwide_company_counts FROM anon, authenticated, service_role;
+-- ============================================================================
