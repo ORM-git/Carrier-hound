@@ -190,3 +190,44 @@ BEGIN
     CREATE POLICY "subscriptions_owner_select" ON public.subscriptions FOR SELECT TO authenticated USING (auth.uid() = user_id);
   END IF;
 END $$;
+
+-- ============================================================================
+-- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
+--   DROP POLICY IF EXISTS "daily_digests_owner_select" ON public.daily_digests;
+--   DROP POLICY IF EXISTS "daily_digests_owner_update" ON public.daily_digests;
+--   DROP POLICY IF EXISTS "subscriptions_owner_select" ON public.subscriptions;
+--   ALTER TABLE public.candidate_profiles DROP COLUMN IF EXISTS location;
+--   ALTER TABLE public.candidate_profiles DROP COLUMN IF EXISTS confirmed_at;
+--   ALTER TABLE public.candidate_profiles DROP COLUMN IF EXISTS experience_json;
+--   ALTER TABLE public.candidate_profiles DROP COLUMN IF EXISTS education_json;
+--   ALTER TABLE public.candidate_profiles DROP COLUMN IF EXISTS certifications;
+--   ALTER TABLE public.candidate_profiles DROP COLUMN IF EXISTS raw_resume_text;
+--   NOTE: re-declares table public.candidate_profiles (created in 20261008_phase1_candidate_and_tracker.sql); rollback of THIS file does not drop it.
+--   NOTE: re-declares table public.user_preferences (created in 20261008_phase4_user_preferences_and_onboarding.sql); rollback of THIS file does not drop it.
+--   NOTE: re-declares table public.applications (created in 20261008_phase1_candidate_and_tracker.sql); rollback of THIS file does not drop it.
+--   NOTE: re-declares table public.daily_digests (created in 20261008_phase2_daily_digest_cron.sql); rollback of THIS file does not drop it.
+--   NOTE: re-declares table public.subscriptions (created in 20261008_phase3_subscriptions_and_billing.sql); rollback of THIS file does not drop it.
+--   NOTE: re-declares index applications_user_stage_idx (created in 20261008_phase1_candidate_and_tracker.sql); not dropped here.
+--   NOTE: re-declares index applications_user_created_idx (created in 20261008_phase1_candidate_and_tracker.sql); not dropped here.
+--   NOTE: re-declares index idx_daily_digests_user_date (created in 20261008_phase2_daily_digest_cron.sql); not dropped here.
+--   NOTE: re-declares index idx_daily_digests_status (created in 20261008_phase2_daily_digest_cron.sql); not dropped here.
+--   NOTE: re-declares index idx_subscriptions_user_id (created in 20261008_phase3_subscriptions_and_billing.sql); not dropped here.
+--   NOTE: re-declares index idx_subscriptions_status (created in 20261008_phase3_subscriptions_and_billing.sql); not dropped here.
+--   NOTE: re-declares policy "candidate_profiles_owner_select" on public.candidate_profiles (from 20261008_phase1_candidate_and_tracker.sql).
+--   NOTE: re-declares policy "candidate_profiles_owner_insert" on public.candidate_profiles (from 20261008_phase1_candidate_and_tracker.sql).
+--   NOTE: re-declares policy "candidate_profiles_owner_update" on public.candidate_profiles (from 20261008_phase1_candidate_and_tracker.sql).
+--   NOTE: re-declares policy "candidate_profiles_owner_delete" on public.candidate_profiles (from 20261008_phase1_candidate_and_tracker.sql).
+--   NOTE: re-declares policy "user_preferences_owner_select" on public.user_preferences (from 20261008_phase4_user_preferences_and_onboarding.sql).
+--   NOTE: re-declares policy "user_preferences_owner_insert" on public.user_preferences (from 20261008_phase4_user_preferences_and_onboarding.sql).
+--   NOTE: re-declares policy "user_preferences_owner_update" on public.user_preferences (from 20261008_phase4_user_preferences_and_onboarding.sql).
+--   NOTE: re-declares policy "user_preferences_owner_delete" on public.user_preferences (from 20261008_phase4_user_preferences_and_onboarding.sql).
+--   NOTE: re-declares policy "applications_owner_select" on public.applications (from 20261008_phase1_candidate_and_tracker.sql).
+--   NOTE: re-declares policy "applications_owner_insert" on public.applications (from 20261008_phase1_candidate_and_tracker.sql).
+--   NOTE: re-declares policy "applications_owner_update" on public.applications (from 20261008_phase1_candidate_and_tracker.sql).
+--   NOTE: re-declares policy "applications_owner_delete" on public.applications (from 20261008_phase1_candidate_and_tracker.sql).
+--   NOTE: re-enables RLS on public.candidate_profiles (first enabled in 20261008_phase1_candidate_and_tracker.sql); rollback of THIS file leaves RLS as it was.
+--   NOTE: re-enables RLS on public.user_preferences (first enabled in 20261008_phase4_user_preferences_and_onboarding.sql); rollback of THIS file leaves RLS as it was.
+--   NOTE: re-enables RLS on public.applications (first enabled in 20261008_phase1_candidate_and_tracker.sql); rollback of THIS file leaves RLS as it was.
+--   NOTE: re-enables RLS on public.daily_digests (first enabled in 20261008_phase2_daily_digest_cron.sql); rollback of THIS file leaves RLS as it was.
+--   NOTE: re-enables RLS on public.subscriptions (first enabled in 20261008_phase3_subscriptions_and_billing.sql); rollback of THIS file leaves RLS as it was.
+-- ============================================================================
