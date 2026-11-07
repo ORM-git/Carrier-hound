@@ -618,6 +618,7 @@ export default function ResumeUploadAndConfirm({
               <div>
                 <label className="block text-xs font-medium text-slate-700 mb-1">Full Name</label>
                 <input
+                  aria-label="Full Name"
                   type="text"
                   value={profile.name}
                   onChange={(e) => setProfile({ ...profile, name: e.target.value })}
@@ -628,6 +629,7 @@ export default function ResumeUploadAndConfirm({
               <div>
                 <label className="block text-xs font-medium text-slate-700 mb-1">Email</label>
                 <input
+                  aria-label="Email"
                   type="email"
                   value={profile.email}
                   onChange={(e) => setProfile({ ...profile, email: e.target.value })}
@@ -638,6 +640,7 @@ export default function ResumeUploadAndConfirm({
               <div>
                 <label className="block text-xs font-medium text-slate-700 mb-1">Phone</label>
                 <input
+                  aria-label="Phone"
                   type="text"
                   value={profile.phone}
                   onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
@@ -648,6 +651,7 @@ export default function ResumeUploadAndConfirm({
               <div>
                 <label className="block text-xs font-medium text-slate-700 mb-1">Location / Timezone</label>
                 <input
+                  aria-label="Location / Timezone"
                   type="text"
                   value={profile.location || ""}
                   onChange={(e) => setProfile({ ...profile, location: e.target.value })}
@@ -661,6 +665,7 @@ export default function ResumeUploadAndConfirm({
               <div className="sm:col-span-1">
                 <label className="block text-xs font-medium text-slate-700 mb-1">Target Headline / Title</label>
                 <input
+                  aria-label="Target Headline / Title"
                   type="text"
                   value={profile.headline}
                   onChange={(e) => setProfile({ ...profile, headline: e.target.value })}
@@ -791,6 +796,7 @@ export default function ResumeUploadAndConfirm({
                     <div>
                       <label className="block text-[11px] font-medium text-slate-600 mb-1">Company</label>
                       <input
+                        aria-label="Company"
                         type="text"
                         value={exp.company}
                         onChange={(e) => handleUpdateExperience(idx, "company", e.target.value)}
@@ -801,6 +807,7 @@ export default function ResumeUploadAndConfirm({
                     <div>
                       <label className="block text-[11px] font-medium text-slate-600 mb-1">Role / Title</label>
                       <input
+                        aria-label="Role / Title"
                         type="text"
                         value={exp.role}
                         onChange={(e) => handleUpdateExperience(idx, "role", e.target.value)}
@@ -811,6 +818,7 @@ export default function ResumeUploadAndConfirm({
                     <div>
                       <label className="block text-[11px] font-medium text-slate-600 mb-1">Start Date</label>
                       <input
+                        aria-label="Start Date"
                         type="text"
                         value={exp.startDate}
                         onChange={(e) => handleUpdateExperience(idx, "startDate", e.target.value)}
@@ -821,6 +829,7 @@ export default function ResumeUploadAndConfirm({
                     <div>
                       <label className="block text-[11px] font-medium text-slate-600 mb-1">End Date</label>
                       <input
+                        aria-label="End Date"
                         type="text"
                         value={exp.endDate}
                         onChange={(e) => handleUpdateExperience(idx, "endDate", e.target.value)}
@@ -902,6 +911,7 @@ export default function ResumeUploadAndConfirm({
                         <span className="text-[11px] font-bold text-slate-700">Degree #{idx + 1}</span>
                       </div>
                       <button
+                        aria-label="Remove education entry"
                         type="button"
                         onClick={() => handleRemoveEducation(idx)}
                         className="text-slate-400 hover:text-red-500 text-xs cursor-pointer"
@@ -958,6 +968,7 @@ export default function ResumeUploadAndConfirm({
                     <Award className="w-3 h-3 text-amber-500" />
                     <span>{cert}</span>
                     <button
+                      aria-label={`Remove certification ${cert}`}
                       type="button"
                       onClick={() => handleRemoveCert(cert)}
                       className="text-slate-400 hover:text-red-500 cursor-pointer"

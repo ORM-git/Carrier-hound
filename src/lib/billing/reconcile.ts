@@ -26,6 +26,7 @@ export type FindingKind =
   | "paid_plan_order_without_subscription"
   | "paid_addon_order_without_credit"
   | "credit_linked_to_unpaid_order"
+  | "credit_user_mismatch"
   | "stale_created_order";
 
 export interface Finding { kind: FindingKind; orderId: string; userId: string; detail: string; }
@@ -37,6 +38,26 @@ export interface ReconcileInput {
   nowMs: number;
   /** Required: how old a 'created' order must be to be reported. No default (owner to confirm). */
   staleCreatedHours: number;
+}
+
+/** Total row count from a PostgREST Content-Range header ("0-999/2500"), or null when absent or "*". */
+export function parseContentRangeTotal(header: string | null | undefined): number | null {
+  if (!header) return null;
+  const m = /\/(\d+)\s*$/.exec(header);
+  return m ? Number(m[1]) : null;
+}
+
+/**
+ * Paging stop rule for the report reader. `from` is the number of rows read so far
+ * (including this page), `got` the size of this page, `total` the server-reported
+ * total (null when unknown), `pageSize` the requested page size. With a known total the
+ * reader continues until it has read that many rows, so a server cap lower than the page
+ * size no longer ends the read early; without one it falls back to "short page = done".
+ */
+export function pagingDone(from: number, got: number, total: number | null, pageSize: number): boolean {
+  if (got === 0) return true;
+  if (total !== null) return from >= total;
+  return got < pageSize;
 }
 
 export function reconcilePayments(input: ReconcileInput): Finding[] {
@@ -73,6 +94,9 @@ export function reconcilePayments(input: ReconcileInput): Finding[] {
     const o = orderById[c.order_id];
     if (o && o.status !== "paid") {
       findings.push({ kind: "credit_linked_to_unpaid_order", orderId: o.id, userId: c.user_id, detail: `credit ${c.id} points at an order with status '${o.status}'` });
+    }
+    if (o && o.user_id !== c.user_id) {
+      findings.push({ kind: "credit_user_mismatch", orderId: o.id, userId: c.user_id, detail: `credit ${c.id} belongs to a different user than order ${o.id}` });
     }
   });
   return findings;

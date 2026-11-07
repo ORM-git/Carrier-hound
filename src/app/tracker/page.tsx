@@ -397,6 +397,7 @@ export default function TrackerPage() {
                 />
                 {searchQuery && (
                   <button
+                    aria-label="Clear search"
                     type="button"
                     onClick={() => setSearchQuery("")}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-[#94A3B8] hover:text-[#0F172A] text-xs"
@@ -877,6 +878,7 @@ export default function TrackerPage() {
                 <span>Track Job Application</span>
               </h3>
               <button
+                aria-label="Close dialog"
                 type="button"
                 onClick={() => setIsAddModalOpen(false)}
                 className="text-[#94A3B8] hover:text-[#0F172A] p-1 min-h-[36px] min-w-[36px] flex items-center justify-center"
@@ -889,6 +891,7 @@ export default function TrackerPage() {
               <div>
                 <label className="block text-xs font-semibold text-[#0F172A] mb-1">Company Name *</label>
                 <input
+                  aria-label="Company name"
                   type="text"
                   name="company"
                   value={newCompany}
@@ -911,6 +914,7 @@ export default function TrackerPage() {
               <div>
                 <label className="block text-xs font-semibold text-[#0F172A] mb-1">Job Title *</label>
                 <input
+                  aria-label="Job title"
                   type="text"
                   name="title"
                   value={newTitle}
@@ -934,6 +938,7 @@ export default function TrackerPage() {
                 <div>
                   <label className="block text-xs font-semibold text-[#0F172A] mb-1">Location</label>
                   <input
+                    aria-label="Location"
                     type="text"
                     value={newLocation}
                     onChange={(e) => setNewLocation(e.target.value)}
@@ -944,6 +949,7 @@ export default function TrackerPage() {
                 <div>
                   <label className="block text-xs font-semibold text-[#0F172A] mb-1">Salary Band</label>
                   <input
+                    aria-label="Salary band"
                     type="text"
                     value={newSalary}
                     onChange={(e) => setNewSalary(e.target.value)}
@@ -971,6 +977,7 @@ export default function TrackerPage() {
                 <div>
                   <label className="block text-xs font-semibold text-[#0F172A] mb-1">Job Link (URL)</label>
                   <input
+                    aria-label="Job link URL"
                     type="url"
                     value={newApplyUrl}
                     onChange={(e) => setNewApplyUrl(e.target.value)}
@@ -1023,6 +1030,7 @@ export default function TrackerPage() {
                 <p className="text-xs text-[#475569]">{activeNotesApp.title}</p>
               </div>
               <button
+                aria-label="Close notes"
                 type="button"
                 onClick={() => setActiveNotesApp(null)}
                 className="text-[#94A3B8] hover:text-[#0F172A] p-1 min-h-[36px] min-w-[36px] flex items-center justify-center"

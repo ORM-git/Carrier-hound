@@ -568,6 +568,7 @@ export default function ProfileDrawers({
                           Degree / Major <span className="text-[#DC2626]">*</span>
                         </label>
                         <input
+                          aria-label="Degree / Major"
                           type="text"
                           value={edu.degree || ""}
                           onChange={(e) => handleUpdateEducation(idx, "degree", e.target.value)}
@@ -581,6 +582,7 @@ export default function ProfileDrawers({
                           Institution / University <span className="text-[#DC2626]">*</span>
                         </label>
                         <input
+                          aria-label="Institution / University"
                           type="text"
                           value={edu.institution || ""}
                           onChange={(e) => handleUpdateEducation(idx, "institution", e.target.value)}
@@ -595,6 +597,7 @@ export default function ProfileDrawers({
                             Graduation Year
                           </label>
                           <input
+                            aria-label="Graduation Year"
                             type="text"
                             value={edu.year || ""}
                             onChange={(e) => handleUpdateEducation(idx, "year", e.target.value)}
@@ -607,6 +610,7 @@ export default function ProfileDrawers({
                             Field of Study (Optional)
                           </label>
                           <input
+                            aria-label="Field of Study"
                             type="text"
                             value={edu.fieldOfStudy || ""}
                             onChange={(e) => handleUpdateEducation(idx, "fieldOfStudy", e.target.value)}
@@ -673,6 +677,7 @@ export default function ProfileDrawers({
                             Role / Job Title <span className="text-[#DC2626]">*</span>
                           </label>
                           <input
+                            aria-label="Role / Job Title"
                             type="text"
                             value={exp.role || ""}
                             onChange={(e) => handleUpdateExperience(idx, "role", e.target.value)}
@@ -686,6 +691,7 @@ export default function ProfileDrawers({
                             Company Name <span className="text-[#DC2626]">*</span>
                           </label>
                           <input
+                            aria-label="Company Name"
                             type="text"
                             value={exp.company || ""}
                             onChange={(e) => handleUpdateExperience(idx, "company", e.target.value)}
@@ -701,6 +707,7 @@ export default function ProfileDrawers({
                             Start Date
                           </label>
                           <input
+                            aria-label="Start Date"
                             type="text"
                             value={exp.startDate || ""}
                             onChange={(e) => handleUpdateExperience(idx, "startDate", e.target.value)}
@@ -714,6 +721,7 @@ export default function ProfileDrawers({
                             End Date
                           </label>
                           <input
+                            aria-label="End Date"
                             type="text"
                             value={exp.endDate || ""}
                             onChange={(e) => handleUpdateExperience(idx, "endDate", e.target.value)}
@@ -727,6 +735,7 @@ export default function ProfileDrawers({
                             Location
                           </label>
                           <input
+                            aria-label="Location"
                             type="text"
                             value={exp.location || ""}
                             onChange={(e) => handleUpdateExperience(idx, "location", e.target.value)}
