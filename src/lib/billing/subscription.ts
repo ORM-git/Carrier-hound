@@ -6,6 +6,10 @@ import {
 } from "./types";
 import { withJitter } from "../reliability/jitter";
 
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger({ context: { module: "billing/subscription" } });
+
 function resolvePlanName(planId?: string | null): string {
   if (!planId) return "Free Tier";
   const normalized = planId.toLowerCase();
@@ -77,14 +81,14 @@ async function querySubscriptionWithRetry(
         return { data: res.data, error: null, isDefinitive: true };
       }
 
-      console.warn(`[Billing] Subscription check attempt ${attempt + 1}/${maxRetries + 1} failed:`, res.error.message);
+      log.warn(`[Billing] Subscription check attempt ${attempt + 1}/${maxRetries + 1} failed:`, { detail: res.error.message });
 
       if (attempt < maxRetries) {
-        // Exponential backoff: 500ms, 1000ms (±20% jitter via withJitter)
+        // Exponential backoff: 500ms, 1000ms (Â±20% jitter via withJitter)
         await new Promise((resolve) => setTimeout(resolve, withJitter(500 * Math.pow(2, attempt))));
       }
     } catch (err: any) {
-      console.warn(`[Billing] Subscription query exception on attempt ${attempt + 1}:`, err);
+      log.warn(`[Billing] Subscription query exception on attempt ${attempt + 1}:`, { error: err });
       if (attempt < maxRetries) {
         await new Promise((resolve) => setTimeout(resolve, withJitter(500 * Math.pow(2, attempt))));
       }
@@ -279,7 +283,7 @@ export async function getProAccessStatus(userId?: string): Promise<ProAccessStat
 
     return activeProStatusPromise;
   } catch (e) {
-    console.warn("Could not check remote subscription status", e);
+    log.warn("Could not check remote subscription status", { error: e });
   }
 
   // Fallback on unexpected unhandled error: stay unknown/loading, do not cache
@@ -345,7 +349,7 @@ export async function getUserSubscription(): Promise<UserSubscription | null> {
       }
     }
   } catch (e) {
-    console.warn("Could not fetch user subscription", e);
+    log.warn("Could not fetch user subscription", { error: e });
   }
 
   return null;
@@ -369,7 +373,7 @@ export async function cancelSubscription(): Promise<UserSubscription | null> {
         .eq("user_id", user.id);
     }
   } catch (e) {
-    console.warn("Could not cancel subscription remotely", e);
+    log.warn("Could not cancel subscription remotely", { error: e });
   }
 
   return null;
