@@ -4,7 +4,7 @@ import {
   storeIdempotentResult,
   getIdempotentResult,
   _clearIdempotencyResultCacheForTesting,
-} from "../ai/serviceHandler";
+} from "../ai/idempotency";
 
 describe("LruCache memory bounds", () => {
   it("never exceeds its capacity", () => {
