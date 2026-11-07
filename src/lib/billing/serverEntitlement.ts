@@ -1,6 +1,10 @@
 import { createClient } from "@supabase/supabase-js";
 import { ProAccessStatus } from "./types";
 
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger({ context: { module: "billing/serverEntitlement" } });
+
 function resolvePlanName(planId?: string | null): string {
   if (!planId) return "Pro Member";
   const normalized = planId.toLowerCase();
@@ -36,7 +40,7 @@ export async function getServerEntitlement(userId: string): Promise<ProAccessSta
       process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
 
     if (!supabaseUrl || !serviceRoleKey) {
-      console.warn("[getServerEntitlement] Missing Supabase service credentials on server");
+      log.warn("[getServerEntitlement] Missing Supabase service credentials on server");
       return freeDefault;
     }
 
@@ -90,7 +94,7 @@ export async function getServerEntitlement(userId: string): Promise<ProAccessSta
       }
     }
   } catch (err) {
-    console.error("[getServerEntitlement] Unexpected error checking entitlement:", err);
+    log.error("[getServerEntitlement] Unexpected error checking entitlement:", { error: err });
   }
 
   return freeDefault;
