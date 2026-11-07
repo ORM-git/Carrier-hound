@@ -99,13 +99,20 @@ export function hasNoInventedRatings(obj: unknown): boolean {
 /**
  * Resolves the minimal set of external origins the application actually contacts
  * on initial page load:
- * 1. Supabase project URL from environment (`NEXT_PUBLIC_SUPABASE_URL` / `SUPABASE_URL`).
- * 2. Google Fonts: Not contacted at runtime (Next.js `next/font/google` self-hosts locally at build time).
- * 3. Analytics: Not external (uses first-party relative endpoint `/api/track`).
+ * 1. Supabase project URL from environment (`NEXT_PUBLIC_SUPABASE_URL` / `SUPABASE_URL`),
+ *    contacted on first paint of every data-driven page (auth/session + data).
+ * 2. unavatar.io: company-logo provider used by CompanyLogo on the app's main
+ *    job surfaces (/jobs, /tracker, dashboard) - the only other third-party
+ *    origin fetched on first load of those pages.
+ * 3. Google Fonts: Not contacted at runtime (Next.js `next/font/google` self-hosts locally at build time).
+ * 4. Analytics: Not external (uses first-party relative endpoint `/api/track`).
+ * 5. accounts.google.com / *.googleapis.com / t3.gstatic.com: present in CSP only,
+ *    not contacted by runtime code, so no hint is emitted.
+ * 6. checkout/api.razorpay.com: payments are off; no hint.
  * Strictly no other origins.
  */
 export function getConnectionHints(envUrl?: string): string[] {
-  const origins: string[] = [];
+  const origins: string[] = ["https://unavatar.io"];
   const rawUrl =
     envUrl ||
     process.env.NEXT_PUBLIC_SUPABASE_URL ||

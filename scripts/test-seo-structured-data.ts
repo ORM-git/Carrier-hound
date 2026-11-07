@@ -154,8 +154,9 @@ async function main() {
   console.log("\n--- Section 5: Connection Hints (Preconnect / DNS-Prefetch) Validation ---");
   // Test with custom Supabase URL
   const hints = getConnectionHints("https://custom-project.supabase.co/rest/v1");
-  assert.strictEqual(hints.length, 1, "Must contain exactly 1 origin when Supabase URL is provided");
-  assert.strictEqual(hints[0], "https://custom-project.supabase.co", "Must extract exact protocol and host origin");
+  assert.strictEqual(hints.length, 2, "Must contain exactly 2 origins when Supabase URL is provided (unavatar + Supabase)");
+  assert.strictEqual(hints[0], "https://unavatar.io", "unavatar.io (company logos on first-load job surfaces) must be hinted");
+  assert.strictEqual(hints[1], "https://custom-project.supabase.co", "Must extract exact protocol and host origin");
 
   // Assert no unauthorized origins exist
   assert.ok(!hints.includes("https://fonts.googleapis.com"), "Google Fonts must NOT be in connection hints");
@@ -164,8 +165,8 @@ async function main() {
 
   // Empty env test
   const emptyHints = getConnectionHints("");
-  assert.deepStrictEqual(emptyHints, [], "Empty env must produce empty hints without crashing");
-  console.log("✓ Connection hints strictly limited to Supabase origin (zero external fonts, zero external analytics).");
+  assert.deepStrictEqual(emptyHints, ["https://unavatar.io"], "Empty env must still hint unavatar (logos) without crashing");
+  console.log("✓ Connection hints limited to unavatar (logos) + Supabase origin (zero external fonts, zero external analytics).");
   passedChecks += 2;
 
   // ---------------------------------------------------------------------------
