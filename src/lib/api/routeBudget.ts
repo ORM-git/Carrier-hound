@@ -1,8 +1,3 @@
-
-
-import { createLogger } from "@/lib/observability/logger";
-
-const log = createLogger({ context: { module: "api/routeBudget" } });
 /**
  * Per-route API response time budgets (audit BE #64).
  *
@@ -47,7 +42,9 @@ export async function measureRouteBudget<T>(route: string, fn: () => Promise<T>)
     const durationMs = Date.now() - start;
     const budgetMs = getRouteBudgetMs(route);
     if (durationMs > budgetMs) {
-      log.warn(JSON.stringify({ event: "ROUTE_BUDGET_EXCEEDED", route, budgetMs, durationMs }));
+      console.warn(
+        JSON.stringify({ event: "ROUTE_BUDGET_EXCEEDED", route, budgetMs, durationMs })
+      );
     }
   }
 }
