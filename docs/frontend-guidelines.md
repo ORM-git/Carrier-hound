@@ -6,8 +6,10 @@ component. The design token and component catalog lives in
 
 ## Stack
 
-- Next.js 14 App Router, static export (`output: "export"`, `images.unoptimized`
-  is required by the export, so `next/image` optimization is unavailable).
+- Next.js 14 App Router. `output: "export"` is conditional in `next.config.mjs`:
+  omitted on Cloudflare Pages builds, kept on Netlify/local.
+  `images.unoptimized: true` applies in both modes, so `next/image`
+  optimization is unavailable either way.
 - React 18 client components; pages are whole-page `'use client'` except
   `/worldwide` (async server component).
 - Tailwind CSS + design tokens (`src/styles/tokens.css`).
