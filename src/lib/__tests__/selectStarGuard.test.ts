@@ -18,7 +18,7 @@ function walk(dir: string): string[] {
     const full = join(dir, entry);
     const st = statSync(full);
     if (st.isDirectory()) out.push(...walk(full));
-    else if (entry.endsWith(".ts") && !entry.endsWith(".test.ts")) out.push(full);
+    else if ((entry.endsWith(".ts") || entry.endsWith(".tsx")) && !entry.endsWith(".test.ts") && !entry.endsWith(".test.tsx")) out.push(full);
   }
   return out;
 }
