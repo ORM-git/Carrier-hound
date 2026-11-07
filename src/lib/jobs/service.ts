@@ -6,6 +6,7 @@ import type { UserPreferences } from "@/lib/auth/types";
 import { sanitizeExternalUrl, stripHtmlAndExecutableMarkup } from "@/lib/security/xss";
 import { COUNTRY_CODE_TO_NAME, getCountryFilterClause } from "@/lib/countries";
 import { decodeCursor, encodeCursor } from "@/lib/pagination/cursor";
+import { singleFlight } from "@/lib/cache/singleFlight";
 
 export interface LiveJob {
   id: string;
@@ -1120,6 +1121,12 @@ export async function getAllActiveJobs(): Promise<LiveJob[]> {
     return cachedAllActiveJobs;
   }
 
+  // Cache stampede guard: concurrent callers on an expired cache share one load.
+  return singleFlight("jobs:getAllActiveJobs", loadAllActiveJobs);
+}
+
+async function loadAllActiveJobs(): Promise<LiveJob[]> {
+  const now = Date.now();
   try {
     const supabase = createClient();
     const { count } = await supabase

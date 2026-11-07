@@ -5,6 +5,7 @@ import { resolveLocation, TRUSTED_CITIES, COUNTRY_CENTROIDS } from '@/lib/geo/ci
 import { reportRequestErrorToSentry } from '@/lib/monitoring/sentryErrorReporter';
 
 import { createLogger } from "@/lib/observability/logger";
+import { singleFlight } from "@/lib/cache/singleFlight";
 
 const baseLog = createLogger({ context: { route: "/api/radar" } });
 
@@ -57,32 +58,7 @@ async function fetchJobsChunks(
   return jobs;
 }
 
-export async function GET(req: Request) {
-  const log = baseLog.child({ requestId: req?.headers.get("x-request-id") ?? "unknown" });
-  const now = Date.now();
-
-  // Return in-memory cached aggregate if fresh
-  if (memoryCache && now - memoryCache.cachedAt < CACHE_TTL_MS) {
-    return NextResponse.json(memoryCache.payload, {
-      headers: {
-        'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600',
-        'X-Cache': 'HIT',
-      },
-    });
-  }
-
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-  if (!supabaseUrl || !serviceKey) {
-    return NextResponse.json({ error: 'Supabase credentials not configured' }, { status: 500 });
-  }
-
-  const supabase = createClient(supabaseUrl, serviceKey, {
-    auth: { persistSession: false },
-  });
-
-  try {
+async function computeRadarPayload(supabase: any, now: number): Promise<any> {
     // 1. Fetch metadata from latest ingest_run
     const { data: latestRun } = await supabase
       .from('ingest_runs')
@@ -249,6 +225,39 @@ export async function GET(req: Request) {
       payload,
       cachedAt: now,
     };
+
+    return payload;
+}
+
+export async function GET(req: Request) {
+  const log = baseLog.child({ requestId: req?.headers.get("x-request-id") ?? "unknown" });
+  const now = Date.now();
+
+  // Return in-memory cached aggregate if fresh
+  if (memoryCache && now - memoryCache.cachedAt < CACHE_TTL_MS) {
+    return NextResponse.json(memoryCache.payload, {
+      headers: {
+        'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600',
+        'X-Cache': 'HIT',
+      },
+    });
+  }
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !serviceKey) {
+    return NextResponse.json({ error: 'Supabase credentials not configured' }, { status: 500 });
+  }
+
+  const supabase = createClient(supabaseUrl, serviceKey, {
+    auth: { persistSession: false },
+  });
+
+  try {
+    // Cache stampede guard: concurrent misses share ONE aggregation (and its
+    // Supabase reads); every caller still builds its own response below.
+    const payload = await singleFlight("radar:aggregate", () => computeRadarPayload(supabase, now));
 
     return NextResponse.json(payload, {
       headers: {
