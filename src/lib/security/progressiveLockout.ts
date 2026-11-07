@@ -10,16 +10,18 @@
  * window's expires_at is never extended).
  *
  * Design notes (read before changing):
- *  - The store has no read-only peek; every check increments. So the
- *    failure counters themselves are the lock state: isLockedOut reads
- *    them with max=Number.MAX_SAFE_INTEGER (always "allowed") and
- *    compares currentCount against the step threshold. The extra
- *    increments only ever INFLATE failure counts - errors fail toward
- *    locking, never toward unlocking.
- *  - Thresholds are sized so a human cannot trip them: the soft step
- *    allows 8 admin verification attempts per 10 minutes (entry checks
- *    count too, so a sign-in is 1-2 increments; 8+ in 10 minutes is not
- *    human behavior), while an online guessing attack produces dozens.
+ *  - isLockedOut is READ-ONLY: it peeks the failure counters with a
+ *    plain SELECT (peekSharedRateLimitCount) and never increments.
+ *    Only recordFailureAndMaybeLock increments, once per failed
+ *    verification. A successful request therefore never moves the
+ *    counters and can never trip a step, no matter how often it runs.
+ *  - Thresholds count failed verifications only: the soft step trips on
+ *    more than 8 failed admin verifications per 10 minutes from one IP,
+ *    the later steps on sustained failure volume. An online guessing
+ *    attack produces exactly that shape; ordinary admin use (even
+ *    hundreds of successful checks an hour) produces none.
+ *  - A lock lasts only until the tripped counter's window expires;
+ *    there is nothing to reset and nothing an attacker can extend.
  *    A false trip self-heals when the short window expires. Sustained abuse trips the longer windows, which
  *    is what makes the lockout progressive.
  *  - A lock lasts only until the tripped counter's window expires;
@@ -29,7 +31,7 @@
  *    out the owner (the fail-closed side is alerting in authMonitor.ts).
  */
 
-import { checkSharedRateLimit } from "../api/sharedRateLimit";
+import { checkSharedRateLimit, peekSharedRateLimitCount } from "../api/sharedRateLimit";
 
 export interface LockoutStep {
   failures: number;
@@ -45,6 +47,7 @@ export const LOCKOUT_STEPS: readonly LockoutStep[] = [
 
 export interface LockoutDeps {
   check?: typeof checkSharedRateLimit;
+  peek?: typeof peekSharedRateLimitCount;
 }
 
 export interface LockoutStatus {
@@ -88,13 +91,13 @@ export async function isLockedOut(
   deps: LockoutDeps = {},
   steps: readonly LockoutStep[] = LOCKOUT_STEPS
 ): Promise<LockoutStatus> {
-  const check = deps.check ?? checkSharedRateLimit;
+  const peek = deps.peek ?? peekSharedRateLimitCount;
   const id = await hashId(scope, identifier);
   try {
     let worst: LockoutStep | null = null;
     for (const step of steps) {
-      const r = await countFor(check, scope, id, step, Number.MAX_SAFE_INTEGER);
-      if (r && r.currentCount > step.failures) {
+      const r = await peek(`fail:${scope}:${id}:${step.withinSeconds}`);
+      if (r && r.count > step.failures) {
         if (!worst || step.withinSeconds > worst.withinSeconds) worst = step;
       }
     }

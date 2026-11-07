@@ -222,6 +222,79 @@ export async function checkSharedRateLimit(
   return { ...memoryFallback(), source: "memory" };
 }
 
+export interface SharedPeekResult {
+  count: number;
+  expiresAt: string | null;
+  source: "shared";
+}
+
+/**
+ * Read-only peek at a shared counter: a plain SELECT on
+ * public.rate_limits through the service-role client (migration
+ * 20261020 grants service_role SELECT). Never increments, so it is safe
+ * for lock-state checks that run on EVERY request. Returns null when the
+ * store is unavailable or errors (callers fail open); an absent or
+ * expired row is a definitive count of 0.
+ */
+/**
+ * Peek tuning: a read-only check runs on EVERY admin request, so a slow or
+ * unreachable store must not stall request processing. PostgREST GETs against
+ * an unreachable host can take ~7s to fail (vs ~30ms for RPC POSTs), so the
+ * peek is hard-capped at PEEK_TIMEOUT_MS and repeated failures open a
+ * PEEK_FAILURE_COOLDOWN_MS circuit that short-circuits to fail-open null.
+ * Same fail-open policy the incrementing check already had on store errors.
+ */
+export const PEEK_TIMEOUT_MS = 2500;
+export const PEEK_FAILURE_COOLDOWN_MS = 60 * 1000;
+
+let peekDownUntil = 0;
+
+export function _resetSharedPeekCircuitForTesting(): void {
+  peekDownUntil = 0;
+}
+
+export async function peekSharedRateLimitCount(
+  key: string,
+  options?: { client?: any; env?: Record<string, any>; timeoutMs?: number }
+): Promise<SharedPeekResult | null> {
+  if (Date.now() < peekDownUntil) return null;
+  const client = getRateLimitClient(options?.client, options?.env);
+  if (!client) return null;
+  const timeoutMs = options?.timeoutMs ?? PEEK_TIMEOUT_MS;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const query = client
+      .from("rate_limits")
+      .select("count, expires_at")
+      .eq("key", key)
+      .maybeSingle();
+    const { data, error } = await Promise.race([
+      Promise.resolve(query),
+      new Promise<{ data: null; error: Error }>((resolve) => {
+        timeout = setTimeout(
+          () => resolve({ data: null, error: new Error("peek_timeout") }),
+          timeoutMs
+        );
+      }),
+    ]);
+    if (timeout) clearTimeout(timeout);
+    if (error) {
+      peekDownUntil = Date.now() + PEEK_FAILURE_COOLDOWN_MS;
+      return null;
+    }
+    peekDownUntil = 0;
+    if (!data) return { count: 0, expiresAt: null, source: "shared" };
+    if (new Date(data.expires_at).getTime() <= Date.now()) {
+      return { count: 0, expiresAt: data.expires_at, source: "shared" };
+    }
+    return { count: data.count, expiresAt: data.expires_at, source: "shared" };
+  } catch {
+    if (timeout) clearTimeout(timeout);
+    peekDownUntil = Date.now() + PEEK_FAILURE_COOLDOWN_MS;
+    return null;
+  }
+}
+
 export const SEARCH_RATE_LIMIT = {
   maxRequests: 60,
   windowSeconds: 60,
