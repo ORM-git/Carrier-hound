@@ -40,3 +40,14 @@ DROP POLICY IF EXISTS "company_token_registry_service_all" ON public.company_tok
 
 REVOKE ALL ON public.company_token_registry FROM anon, authenticated;
 GRANT ALL ON public.company_token_registry TO service_role;
+
+-- ============================================================================
+-- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
+--   DROP INDEX IF EXISTS public.company_token_registry_ats_active_idx;
+--   ALTER TABLE public.jobs DROP COLUMN IF EXISTS consecutive_misses;
+--   ALTER TABLE public.company_token_registry DISABLE ROW LEVEL SECURITY;
+--   DROP TABLE IF EXISTS public.company_token_registry CASCADE;
+--   REVOKE ALL ON public.company_token_registry FROM service_role;
+--   GRANT ALL ON public.company_token_registry TO anon, authenticated;
+--   NOTE: this migration itself drops POLICY company_token_registry_service_all - restore it from the earlier migration that created it (or from backup) if rolling back.
+-- ============================================================================
