@@ -6,7 +6,7 @@ import { reportRequestErrorToSentry } from '@/lib/monitoring/sentryErrorReporter
 
 import { createLogger } from "@/lib/observability/logger";
 
-const log = createLogger({ context: { route: "/api/radar" } });
+const baseLog = createLogger({ context: { route: "/api/radar" } });
 
 export const runtime = 'edge';
 
@@ -58,6 +58,7 @@ async function fetchJobsChunks(
 }
 
 export async function GET(req: Request) {
+  const log = baseLog.child({ requestId: req?.headers.get("x-request-id") ?? "unknown" });
   const now = Date.now();
 
   // Return in-memory cached aggregate if fresh

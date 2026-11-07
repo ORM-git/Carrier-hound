@@ -14,7 +14,7 @@ import { computeWeakEtag, notModifiedResponse } from "@/lib/api/etag";
 
 import { createLogger } from "@/lib/observability/logger";
 
-const log = createLogger({ context: { route: "/api/stats" } });
+const baseLog = createLogger({ context: { route: "/api/stats" } });
 
 export const runtime = "edge";
 
@@ -53,6 +53,7 @@ function getSupabaseAdmin() {
  * - Authenticated + unapproved callers: 403 Early access only.
  */
 async function getHandler(req: Request) {
+  const log = baseLog.child({ requestId: req?.headers.get("x-request-id") ?? "unknown" });
   try {
     if (req) {
       const clientIp = getClientIpFromRequest(req);
