@@ -102,3 +102,15 @@ BEGIN
   RETURN v_deleted;
 END;
 $$;
+
+-- ============================================================================
+-- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
+--   DROP INDEX IF EXISTS public.idx_rate_limits_expires_at;
+--   ALTER TABLE public.rate_limits DISABLE ROW LEVEL SECURITY;
+--   DROP TABLE IF EXISTS public.rate_limits CASCADE;
+--   DROP FUNCTION IF EXISTS public.check_rate_limit(p_key TEXT, p_max_requests INTEGER, p_window_seconds INTEGER);
+--   DROP FUNCTION IF EXISTS public.cleanup_expired_rate_limits();
+--   REVOKE SELECT, INSERT, UPDATE, DELETE ON public.rate_limits FROM service_role;
+--   GRANT ALL ON public.rate_limits TO anon, authenticated;
+--   NOTE: data writes above (insert/update/delete) need a manual restore from backup or a hand-written reverse; no automatic rollback.
+-- ============================================================================
