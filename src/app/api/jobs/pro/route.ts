@@ -9,6 +9,8 @@ import { isUserApproved } from "@/lib/auth/approval";
 
 import { checkRequiredEnv } from "@/lib/api/envCheck";
 
+import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
+
 export const runtime = "edge";
 
 function getSupabaseAdmin() {
@@ -203,6 +205,7 @@ export async function GET(req: Request) {
       }
     } catch {}
     console.error("[API /jobs/pro GET error]:", err);
+    reportRequestErrorToSentry(req, err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
@@ -282,6 +285,7 @@ export async function POST(req: Request) {
       }
     } catch {}
     console.error("[API /jobs/pro POST error]:", err);
+    reportRequestErrorToSentry(req, err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

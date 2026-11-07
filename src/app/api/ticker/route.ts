@@ -10,6 +10,8 @@ import {
 } from "@/lib/api/sharedRateLimit";
 import { computeWeakEtag, notModifiedResponse } from "@/lib/api/etag";
 
+import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
+
 export const runtime = "edge";
 
 function getSupabaseAdmin() {
@@ -362,6 +364,7 @@ async function getHandler(req: Request) {
       headers: { ...tickerHeaders, ETag: etag },
     });
   } catch (_err: any) {
+    reportRequestErrorToSentry(req, _err);
     return NextResponse.json(
       {
         error: "temporarily unavailable",

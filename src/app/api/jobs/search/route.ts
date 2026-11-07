@@ -11,6 +11,8 @@ import { capJobsPerCompany } from "@/lib/jobs/capping";
 import { normalizeUserCountries, applyEligibilityFilter, isJobEligible } from "@/lib/jobs/eligibility";
 import { isUserApproved } from "@/lib/auth/approval";
 
+import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
+
 export const runtime = "edge";
 
 
@@ -856,6 +858,7 @@ async function getHandler(req: Request) {
       }
     } catch {}
     console.error("[/api/jobs/search] fatal error:", err);
+    reportRequestErrorToSentry(req, err);
     return NextResponse.json(
       { error: "Internal server error", jobs: [], totalCount: 0 },
       { status: 500 }

@@ -3,6 +3,8 @@ import { createClient } from "@supabase/supabase-js";
 import { getPlanQuota } from "@/lib/billing/quota";
 import { isUserApproved } from "@/lib/auth/approval";
 
+import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
+
 export const runtime = "edge";
 
 function getSupabaseAdmin() {
@@ -76,6 +78,7 @@ export async function GET(req: Request) {
     });
   } catch (err: any) {
     console.error("[GET /api/me/quota] Error:", err);
+    reportRequestErrorToSentry(req, err);
     return NextResponse.json(
       { error: "Failed to retrieve quota status" },
       { status: 500 }
