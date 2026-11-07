@@ -4,6 +4,7 @@
 -- Status: NOT APPLIED - owner runs in the Supabase SQL editor (additive,
 --         nullable; safe while code ships first since inserts name columns
 --         explicitly and the route omits them when absent).
+--         Then record:  node scripts/record-migration.cjs 20261106b_early_access_attribution
 -- Backend half of UTM capture (frontend: PR #287 / src/lib/analytics/utm.ts).
 -- ==============================================================================
 
