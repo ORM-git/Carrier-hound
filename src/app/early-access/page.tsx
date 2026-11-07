@@ -13,6 +13,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { BreadcrumbJsonLd } from "@/components/seo/BreadcrumbJsonLd";
+import { buildEarlyAccessPayload } from "@/lib/analytics/earlyAccessPayload";
 
 const CLIENT_EMAIL_REGEX =
   /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i;
@@ -65,10 +66,7 @@ export default function EarlyAccessPage() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          email: trimmed,
-          website,
-        }),
+        body: JSON.stringify(buildEarlyAccessPayload(trimmed, website)),
       });
 
       const data = await res.json().catch(() => ({}));
