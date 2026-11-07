@@ -26,7 +26,7 @@ import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter
 
 import { createLogger } from "@/lib/observability/logger";
 
-const log = createLogger({ context: { route: "/api/early-access" } });
+const baseLog = createLogger({ context: { route: "/api/early-access" } });
 
 export const runtime = "edge";
 
@@ -82,6 +82,7 @@ function validateEarlyAccessEmail(raw: unknown): {
 }
 
 async function postHandler(req: Request) {
+  const log = baseLog.child({ requestId: req.headers.get("x-request-id") ?? "unknown" });
   try {
     const isLegacy =
       process.env.NODE_ENV === "test" &&
