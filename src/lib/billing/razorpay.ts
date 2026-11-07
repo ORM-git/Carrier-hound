@@ -1,3 +1,8 @@
+
+
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger({ context: { module: "billing/razorpay" } });
 /**
  * Loads Razorpay Standard Checkout SDK dynamically
  */
@@ -34,7 +39,7 @@ export interface RazorpayCheckoutOptions {
 
 /**
  * Initiates Razorpay checkout in browser via server-authoritative order creation and signature verification.
- * Passes ONLY planCode and/or addonCode — NO client-supplied amounts.
+ * Passes ONLY planCode and/or addonCode â NO client-supplied amounts.
  * Fails safe immediately if NEXT_PUBLIC_BILLING_ENABLED !== "true" without making network calls.
  */
 export async function openRazorpayCheckout(options: RazorpayCheckoutOptions = {}): Promise<void> {
@@ -195,7 +200,7 @@ export async function verifyRazorpayWebhookSignature(
       Buffer.from(signatureHeader, "utf8")
     );
   } catch (err) {
-    console.error("Razorpay webhook signature verification error:", err);
+    log.error("Razorpay webhook signature verification error:", { error: err });
     return false;
   }
 }
