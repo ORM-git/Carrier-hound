@@ -139,7 +139,7 @@ export async function getUserPreferences(userId?: string): Promise<UserPreferenc
     try {
       const { data, error } = await supabase
         .from("user_preferences")
-        .select("*")
+        .select("roles, categories, experience_level, employment_types, locations, remote_preference, work_auth, min_salary, salary_currency, daily_digest_opt_in, onboarding_completed, eligibility_filter, updated_at")
         .eq("user_id", userId)
         .maybeSingle();
 
