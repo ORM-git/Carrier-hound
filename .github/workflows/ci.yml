@@ -81,3 +81,6 @@ jobs:
 
       - name: Release Versioning Policy Check
         run: npx tsx scripts/test-release-versioning-policy.ts
+
+      - name: Config Drift Check
+        run: npx tsx scripts/check-config-drift.ts
