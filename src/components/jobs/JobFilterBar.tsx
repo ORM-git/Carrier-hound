@@ -331,6 +331,7 @@ export default function JobFilterBar({
                     <div className="relative">
                       <Search className="w-3.5 h-3.5 text-[#94A3B8] absolute left-2.5 top-1/2 -translate-y-1/2" />
                       <input
+                        aria-label="Search city or area"
                         type="text"
                         placeholder="e.g. San Francisco, London, Berlin"
                         value={draftFilters.location}
@@ -401,6 +402,7 @@ export default function JobFilterBar({
                   <div className="relative">
                     <Search className="w-3.5 h-3.5 text-[#94A3B8] absolute left-2.5 top-1/2 -translate-y-1/2" />
                     <input
+                      aria-label="Search functions"
                       type="text"
                       placeholder="Search functions..."
                       value={roleSearchQuery}
@@ -1136,6 +1138,7 @@ export default function JobFilterBar({
 
                 <div className="relative">
                   <input
+                    aria-label="Company"
                     type="text"
                     value={draftFilters.company || ""}
                     onChange={(e) => setDraftFilters((prev) => ({ ...prev, company: e.target.value }))}

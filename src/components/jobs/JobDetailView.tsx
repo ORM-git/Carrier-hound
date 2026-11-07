@@ -336,6 +336,7 @@ export default function JobDetailView({
           </p>
           <div className="flex items-center gap-2">
             <input
+              aria-label="Share link URL"
               type="text"
               readOnly
               data-testid="share-fallback-input"
