@@ -830,6 +830,26 @@ async function main() {
     }
   }
 
+  // Refresh planner statistics after the bulk load (Database row #73,
+  // migration 20261106q). Fail-open: until the migration is applied the
+  // function is missing - warn and skip without failing the run.
+  if (supabase && !isDryRun) {
+    try {
+      const { error: analyzeError } = await supabase.rpc('analyze_after_ingest');
+      if (analyzeError) {
+        if (/could not find|does not exist|function|PGRST202/i.test(analyzeError.message)) {
+          console.log('- Skipping post-ingest ANALYZE: analyze_after_ingest is not applied yet (migration 20261106q_analyze_after_ingest.sql).');
+        } else {
+          console.warn(`- Post-ingest ANALYZE RPC error (non-fatal): ${analyzeError.message}`);
+        }
+      } else {
+        console.log('Post-ingest ANALYZE: jobs, job_descriptions, companies refreshed.');
+      }
+    } catch (analyzeEx) {
+      console.warn(`- Post-ingest ANALYZE failed (non-fatal): ${analyzeEx}`);
+    }
+  }
+
   // Print Summary Table
   console.log(`\n======================================================`);
   console.log(`📊 INGESTION SUMMARY REPORT`);
