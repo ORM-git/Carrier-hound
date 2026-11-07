@@ -228,7 +228,7 @@ function run() {
   const hasCanonicalShare =
     detailCode.includes("getCanonicalJobUrl") &&
     detailCode.includes("/jobs?id=") &&
-    detailCode.includes("navigator.clipboard.writeText") &&
+    detailCode.includes("copyTextToClipboard") &&
     detailCode.includes("data-testid=\"share-job-button\"") &&
     detailCode.includes("data-testid=\"mobile-share-job-button\"");
 

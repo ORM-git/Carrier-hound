@@ -1,5 +1,6 @@
 "use client";
 
+import { copyTextToClipboard } from "@/lib/clipboard";
 import React, { useMemo, useState, useEffect } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
@@ -159,10 +160,9 @@ export default function JobDetailView({
   const handleShare = async () => {
     const canonicalUrl = getCanonicalJobUrl(job.id);
     try {
-      if (!navigator.clipboard || typeof navigator.clipboard.writeText !== "function") {
-        throw new Error("Clipboard API unavailable in this browser context");
+      if (!(await copyTextToClipboard(canonicalUrl))) {
+        throw new Error("Could not copy link in this browser context");
       }
-      await navigator.clipboard.writeText(canonicalUrl);
       setShareStatus("success");
       setShareErrorMsg("");
       setTimeout(() => {

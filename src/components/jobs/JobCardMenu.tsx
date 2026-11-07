@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { MoreHorizontal, Ban, CheckCircle2, Share2, Flag } from "lucide-react";
+import { copyTextToClipboard } from "@/lib/clipboard";
 import { toast } from "react-toastify";
 import type { LiveJob } from "@/lib/jobs/service";
 import { getCanonicalJobUrl, getReportJobMailto } from "@/components/jobs/JobDetailView";
@@ -127,13 +128,8 @@ export function JobCardMenu({
       }
     }
 
-    if (typeof navigator !== "undefined" && navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
-      try {
-        await navigator.clipboard.writeText(url);
-        toast.success("Job link copied to clipboard!");
-      } catch {
-        toast.error("Failed to copy link");
-      }
+    if (await copyTextToClipboard(url)) {
+      toast.success("Job link copied to clipboard!");
     } else {
       toast.info(`Job link: ${url}`);
     }

@@ -26,6 +26,7 @@ import {
 } from "@/lib/ai/groq";
 import { getProAccessStatus } from "@/lib/billing/subscription";
 import { buildCoverLetterDocHtml, sanitizeDownloadFilename } from "@/lib/security/xss";
+import { copyTextToClipboard } from "@/lib/clipboard";
 import { toast } from "react-toastify";
 import { createClient } from "@/lib/supabase/client";
 
@@ -329,10 +330,13 @@ export default function CoverLetterModal({
   const handleCopy = async () => {
     if (!validateBeforeExport()) return;
     if (!(await verifyExportAllowed())) return;
-    navigator.clipboard.writeText(content);
-    setCopied(true);
-    toast.success("Cover letter copied to clipboard!");
-    setTimeout(() => setCopied(false), 2000);
+    if (await copyTextToClipboard(content)) {
+      setCopied(true);
+      toast.success("Cover letter copied to clipboard!");
+      setTimeout(() => setCopied(false), 2000);
+    } else {
+      toast.error("Could not copy in this browser. Please select and copy the text manually.");
+    }
   };
 
   const handleDownloadTxt = async () => {
