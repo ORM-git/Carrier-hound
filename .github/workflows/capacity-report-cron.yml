@@ -1,0 +1,43 @@
+name: Capacity Headroom Report
+
+# Backend sheet rank 12: weekly measurement of Supabase/Groq usage against
+# documented tier limits (docs/capacity-headroom.md). The weekly cadence is
+# a chosen default; bump workflow_dispatch for ad-hoc checks.
+
+on:
+  schedule:
+    - cron: "0 5 * * 1" # weekly Monday 05:00 UTC (10:30 IST)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capacity-report
+  cancel-in-progress: false
+
+jobs:
+  capacity-report:
+    name: Report Capacity Headroom
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Report Capacity Headroom
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: npx tsx scripts/report-capacity-headroom.ts
