@@ -248,3 +248,17 @@ select relname,
 from pg_statio_user_tables
 where schemaname = 'public'
   and relname = 'jobs';
+
+-- 17. SECURITY DEFINER search_path pinning (DB row: SECURITY DEFINER
+--     search_path pinning). Migration 20261106p pins search_path = public on
+--     every public SECURITY DEFINER function (payment/AI RPCs included).
+--     Until applied, this lists the unpinned functions; expected zero rows
+--     after applying.
+select p.proname as function_name,
+       pg_get_function_identity_arguments(p.oid) as arguments
+from pg_proc p
+join pg_namespace n on n.oid = p.pronamespace
+where n.nspname = 'public'
+  and p.prosecdef
+  and (p.proconfig is null or not p.proconfig::text like '%search_path%')
+order by p.proname;
