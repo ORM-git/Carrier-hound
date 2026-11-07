@@ -22,7 +22,11 @@ const ROUTES: Array<[string, string, number]> = [
   ["src/app/api/stats/route.ts", "/api/stats", 1],
 ];
 
-const CHILD_RE = /\.child\(\{ requestId: req\.headers\.get\("x-request-id"\)/g;
+// req is optional-chained: route handlers run with a real request in
+// production, but offline guard suites call GET() bare to exercise env-var
+// failure paths (scripts/test-env-guards.ts); the child binding must not
+// throw before the route own missing-env handling runs.
+const CHILD_RE = /\.child\(\{ requestId: req\?\.headers\.get\("x-request-id"\)/g;
 
 describe("request-id log correlation guard (Backend sheet rank 28)", () => {
   it("every adopting route binds a base logger and derives per-request children", () => {
