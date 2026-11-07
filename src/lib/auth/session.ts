@@ -4,6 +4,10 @@ import { clearCandidateProfileMemoryCache } from "../resume/storage";
 import { clearTrackerMemoryState } from "../tracker/storage";
 import type { User } from "@supabase/supabase-js";
 
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger({ context: { module: "auth/session" } });
+
 const PREFS_STORAGE_KEY = "careermonke_preferences";
 const USER_EMAIL_KEY = "careermonke_user_email";
 const USER_PRO_KEY = "careermonke_pro_active";
@@ -114,7 +118,7 @@ export async function getAuthUser(): Promise<User | null> {
       return user;
     }
   } catch (err) {
-    console.warn("Supabase auth check failed:", err);
+    log.warn("Supabase auth check failed:", { error: err });
   }
 
   // Clear stale local storage if Supabase says no authenticated session
@@ -234,7 +238,7 @@ export async function signOutUser(): Promise<void> {
   try {
     await supabase.auth.signOut();
   } catch (e) {
-    console.warn("Supabase sign out error:", e);
+    log.warn("Supabase sign out error:", { error: e });
   }
 
   if (typeof window !== "undefined") {
