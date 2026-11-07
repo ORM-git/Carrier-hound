@@ -6,7 +6,7 @@
  * Env: NEXT_PUBLIC_SUPABASE_URL (or SUPABASE_URL), SUPABASE_SERVICE_ROLE_KEY.
  * Exit codes: 0 = no findings, 1 = findings, 2 = env or argument missing.
  */
-import { reconcilePayments } from "../src/lib/billing/reconcile";
+import { reconcilePayments, parseContentRangeTotal, pagingDone } from "../src/lib/billing/reconcile";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -25,20 +25,29 @@ if (!isFinite(staleHours) || staleHours <= 0) {
 async function readAll(table: string, select: string): Promise<any[]> {
   const out: any[] = [];
   const PAGE = 1000; // PostgREST default max rows per request
-  for (let from = 0; ; from += PAGE) {
-    const res = await fetch(`${url}/rest/v1/${table}?select=${select}`, {
+  let total: number | null = null;
+  // Stable order (primary key) so offset pages do not skip or repeat rows; the exact
+  // count lets the loop keep going if the server caps a page below PAGE.
+  for (let from = 0; ; ) {
+    const res = await fetch(`${url}/rest/v1/${table}?select=${select}&order=id.asc`, {
       method: "GET",
       headers: {
         apikey: serviceKey as string,
         Authorization: `Bearer ${serviceKey}`,
         Range: `${from}-${from + PAGE - 1}`,
         "Range-Unit": "items",
+        Prefer: "count=exact",
       },
     });
     if (!res.ok) throw new Error(`${table} read failed: HTTP ${res.status}`);
     const rows = (await res.json()) as any[];
+    total = parseContentRangeTotal(res.headers.get("content-range"));
     out.push(...rows);
-    if (rows.length < PAGE) break;
+    from += rows.length;
+    if (pagingDone(from, rows.length, total, PAGE)) break;
+  }
+  if (total !== null && out.length !== total) {
+    throw new Error(`${table}: read ${out.length} rows but the server reports ${total}; rows changed during the read, rerun`);
   }
   return out;
 }
