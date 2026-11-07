@@ -24,6 +24,10 @@ import {
 
 import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
 
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger({ context: { route: "/api/early-access" } });
+
 export const runtime = "edge";
 
 const EMAIL_REGEX =
@@ -210,7 +214,7 @@ async function postHandler(req: Request) {
         }
 
         if (!isLegacy && existingRow?.email) {
-          console.log("[early-access] Existing subscriber submitted; duplicate skipped without send");
+          log.info("Existing subscriber submitted; duplicate skipped without send");
           return NextResponse.json({
             ok: true,
             message: "You're on the list",
@@ -242,7 +246,7 @@ async function postHandler(req: Request) {
             !isLegacy &&
             (insertError.code === "23505" || /duplicate key/i.test(insertError.message || ""))
           ) {
-            console.log("[early-access] Duplicate subscriber unique constraint (23505); skipped without send");
+            log.info("Duplicate subscriber unique constraint (23505); skipped without send");
             return NextResponse.json({
               ok: true,
               message: "You're on the list",
