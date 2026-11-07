@@ -4,6 +4,8 @@ import { checkSharedRateLimit, TRACK_RATE_LIMIT, trackRateLimitStore } from "@/l
 import { getClientIpFromRequest, checkRateLimit, getSupabaseAdminClient } from "@/lib/ai/serviceHandler";
 import { extractToken } from "@/lib/admin/auth";
 
+import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
+
 export const runtime = "edge";
 
 const MAX_TRACK_PAYLOAD_BYTES = 16384; // 16 KB size cap
@@ -325,8 +327,9 @@ export async function POST(req: Request) {
     });
 
     return NextResponse.json({ ok: true });
-  } catch {
+  } catch (_err) {
     // Fail silently to never break client page experience
+    reportRequestErrorToSentry(req, _err);
     return NextResponse.json({ ok: true, fallback: true });
   }
 }
