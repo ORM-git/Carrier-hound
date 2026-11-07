@@ -1,5 +1,9 @@
 import { createClient } from "@supabase/supabase-js";
 
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger({ context: { module: "billing/dunning" } });
+
 export interface DunningEventPayload {
   userId: string;
   provider: "razorpay" | "stripe";
@@ -50,10 +54,8 @@ export async function processFailedRenewalDunning(payload: DunningEventPayload) 
       },
     });
 
-    console.log(
-      `[Dunning] User ${payload.userId} placed in 7-day grace period until ${gracePeriodEnd.toISOString()}. Dunning email queued.`
-    );
+    log.info(`[Dunning] User ${payload.userId} placed in 7-day grace period until ${gracePeriodEnd.toISOString()}. Dunning email queued.`);
   } catch (err) {
-    console.warn("Failed to process renewal failure dunning:", err);
+    log.warn("Failed to process renewal failure dunning:", { error: err });
   }
 }
