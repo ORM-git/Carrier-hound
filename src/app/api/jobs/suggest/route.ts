@@ -7,7 +7,7 @@ import { checkSharedRateLimit } from "@/lib/api/sharedRateLimit";
 
 import { createLogger } from "@/lib/observability/logger";
 
-const log = createLogger({ context: { route: "/api/jobs/suggest" } });
+const baseLog = createLogger({ context: { route: "/api/jobs/suggest" } });
 
 export const runtime = "edge";
 
@@ -62,6 +62,7 @@ function escapeIlike(input: string): string {
 }
 
 async function getHandler(req: Request) {
+  const log = baseLog.child({ requestId: req.headers.get("x-request-id") ?? "unknown" });
   const url = new URL(req.url);
   const q = (url.searchParams.get("q") || "").trim();
 
