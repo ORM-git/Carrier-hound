@@ -3,6 +3,7 @@
 -- Date: 2026-10-16
 -- Scope: public.worldwide_company_counts view
 -- Status: PENDING APPLICATION (Run in Supabase SQL editor by project owner)
+--   If/when applied: record with  node scripts/record-migration.cjs 20261016_worldwide_company_counts
 --
 -- SECURITY & PAID LOCK DISCIPLINE:
 -- Why this view does NOT bypass the paid lock on jobs data:
@@ -52,3 +53,9 @@ ORDER BY active_job_count DESC;
 
 -- Grant read access to public and authenticated roles
 GRANT SELECT ON public.worldwide_company_counts TO anon, authenticated, service_role;
+
+-- ============================================================================
+-- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
+--   DROP VIEW IF EXISTS public.worldwide_company_counts;
+--   REVOKE SELECT ON public.worldwide_company_counts FROM anon, authenticated, service_role;
+-- ============================================================================
