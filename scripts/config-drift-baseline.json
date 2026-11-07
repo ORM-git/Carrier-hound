@@ -6,6 +6,7 @@
     "next.config.mjs": "58594e645a0160175f696a26ab3103cf7a682a3ea98f5d3341fad267a216f5f0",
     "package.json": "bb63ad9b0b3455dadafa88d7b5e8c4cc6b43ed59544b00636f10a907af68399d",
     ".github/workflows/board-ingest.yml": "bcf686171a7390e3fdeb115b44364fab05f6bbed7a70b0f00411d3bce38b1976",
+    ".github/workflows/capacity-report-cron.yml": "79592676f1e0611debba80ab3e5b641ffab96a85ed7b1d7ba77b6c81bca9bdbf",
     ".github/workflows/ci.yml": "b0e5b39e3c21c979980862052a9d0b6b61174827787668d476edf5692956a47e",
     ".github/workflows/daily-digest-cron.yml": "4d5ccab1387791d478dcf5815d93f1dca759593f504339801ceb146c234216e6",
     ".github/workflows/early-access-digest-cron.yml": "3465f77b90568a228ea83fe67da115f270e1003b13cfd4380fe9873c4b32b0ac",
