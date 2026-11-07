@@ -10,7 +10,6 @@ import { join } from "path";
 //
 // Deliberately excluded:
 // - src/lib/observability/logger.ts (the seam itself owns console output),
-// - src/lib/cron/dailyDigestCron.ts (covered by the digest batching PR),
 // - src/lib/api/routeBudget.ts (emits its own JSON line via console.warn and
 //   scripts/test-route-budget.ts asserts that raw line).
 
@@ -34,6 +33,7 @@ const ADOPTERS = [
   "src/lib/billing/razorpay.ts",
   "src/lib/billing/serverEntitlement.ts",
   "src/lib/billing/subscription.ts",
+  "src/lib/cron/dailyDigestCron.ts",
   "src/lib/cron/digestStorage.ts",
   "src/lib/early-access/gmail.ts",
   "src/lib/events/failedEvents.ts",
@@ -73,5 +73,14 @@ describe("structured logging adoption guard: lib modules (Backend sheet rank 11)
       bad,
       `module(s) reverted to raw console.*: ${bad.join(", ")} - log through the structured logger instead`,
     ).toEqual([]);
+  });
+});
+
+describe("structured logging adoption guard: middleware (Backend sheet rank 102)", () => {
+  it("middleware logs through the seam logger and has no raw console.* calls", () => {
+    const src = readFileSync(join(ROOT, "src/middleware.ts"), "utf8");
+    expect(src.includes('createLogger } from "@/lib/observability/logger"')).toBe(true);
+    expect(src.includes('createLogger({ context: { module: "middleware" } })')).toBe(true);
+    expect(/console\.(log|info|warn|error|debug)\(/.test(src)).toBe(false);
   });
 });
