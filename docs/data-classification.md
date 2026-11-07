@@ -61,6 +61,7 @@ Cross-references: `docs/retention-policy.md` (per-table retention classes),
 | --- | --- |
 | `jobs` / `jobs_public` view | Job listings. The view masks paid fields (company, salary, description, apply URL) for free users. |
 | `job_descriptions` | Full job description text. |
+| `jobs_archive` | Archived expired job listings (cold storage, 20261106l). Service-role only; no client access. |
 | `companies` / `company_boards` | Company directory and ATS board config. |
 | `plans` / `addon_packs` | Product catalog (names, prices, quotas). |
 | `company-logos` storage bucket | Public logo assets. |
