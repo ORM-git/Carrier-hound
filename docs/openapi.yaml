@@ -56,6 +56,20 @@ paths:
       description: Delegates to handleAccountExportRequest.
       responses:
         "200": { description: Export generated }
+  /api/account/signout-all:
+    post:
+      tags: [account]
+      summary: Log out everywhere (revoke all sessions)
+      description: >-
+        Delegates to handleSignoutAllRequest. Authenticates with the caller's
+        Bearer access token and revokes every session for that user via the
+        admin API with scope "global" (Backend rank 74 - Session Revocation).
+        Rate limited per user.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: All sessions revoked }
+        "401": { description: Missing, invalid, or expired session }
+        "429": { description: Rate limited }
   /api/admin/early-access:
     get:
       tags: [admin]
