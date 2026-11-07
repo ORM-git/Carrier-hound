@@ -13,6 +13,8 @@
 //      comes from the request, never from the error or the client payload.
 //   4. The reference server wiring (/api/stats) reports unexpected errors
 //      with the request id while returning the same generic 500.
+//   5. Wider adoption: the hot public/user routes report their
+//      unexpected-error path through the request-scoped reporter.
 
 import { readFileSync } from "node:fs";
 
@@ -48,6 +50,26 @@ t("reportRequestErrorToSentry reads the x-request-id header", reporter.includes(
 t("/api/stats imports the request-scoped reporter", stats.includes("reportRequestErrorToSentry"));
 t("/api/stats reports the unexpected-error path with the request", stats.includes("reportRequestErrorToSentry(req, err)"));
 t("/api/stats still returns the same generic 500 body", stats.includes('error: "temporarily unavailable"'));
+
+// 5. Adoption: the hot public/user routes report their unexpected-error path
+// with the request-scoped reporter (rank 28 wider adoption).
+const adopters: Array<[string, string, string[]]> = [
+  ["src/app/api/ticker/route.ts", "reportRequestErrorToSentry(req, _err)", []],
+  ["src/app/api/track/route.ts", "reportRequestErrorToSentry(req, _err)", []],
+  ["src/app/api/radar/route.ts", "reportRequestErrorToSentry(req, err)", ["export async function GET(req: Request)"]],
+  ["src/app/api/early-access/route.ts", "reportRequestErrorToSentry(req, _err)", []],
+  ["src/app/api/jobs/search/route.ts", "reportRequestErrorToSentry(req, err)", []],
+  ["src/app/api/jobs/top10/route.ts", "reportRequestErrorToSentry(req, err)", []],
+  ["src/app/api/jobs/pro/route.ts", "reportRequestErrorToSentry(req, err)", []],
+  ["src/app/api/me/quota/route.ts", "reportRequestErrorToSentry(req, err)", []],
+];
+for (const [file, call, extras] of adopters) {
+  const src = readFileSync(file, "utf8");
+  t(`${file} imports the request-scoped reporter`, src.includes('reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter"') || src.includes("reportRequestErrorToSentry } from '@/lib/monitoring/sentryErrorReporter'"));
+  t(`${file} reports its unexpected-error path with the request`, src.includes(call));
+  for (const extra of extras) t(`${file} ${extra}`, src.includes(extra));
+}
+t("/api/jobs/pro wires both handlers", (readFileSync("src/app/api/jobs/pro/route.ts", "utf8").match(/reportRequestErrorToSentry\(req, err\)/g) || []).length === 2);
 
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
