@@ -3,6 +3,8 @@ import { verifyAdminSession } from "@/lib/admin/auth";
 import { getUsersManagementList } from "@/lib/admin/analytics";
 import { logAdminAction } from "@/lib/admin/auditLog";
 
+import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
+
 export const runtime = "edge";
 
 export async function GET(req: Request) {
@@ -34,6 +36,7 @@ export async function GET(req: Request) {
 
     return NextResponse.json({ ok: true, users });
   } catch (err: any) {
+    reportRequestErrorToSentry(req, err);
     return NextResponse.json(
       { error: err?.message || "Failed to retrieve users list" },
       { status: 500 }

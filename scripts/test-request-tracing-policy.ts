@@ -71,5 +71,23 @@ for (const [file, call, extras] of adopters) {
 }
 t("/api/jobs/pro wires both handlers", (readFileSync("src/app/api/jobs/pro/route.ts", "utf8").match(/reportRequestErrorToSentry\(req, err\)/g) || []).length === 2);
 
+// 6. Admin routes: unexpected-error catches report with the request id.
+const adminAdopters: Array<[string, number]> = [
+  ["src/app/api/admin/users/route.ts", 1],
+  ["src/app/api/admin/users/block/route.ts", 1],
+  ["src/app/api/admin/users/activity/route.ts", 1],
+  ["src/app/api/admin/stats/route.ts", 1],
+  ["src/app/api/admin/replay/route.ts", 2],
+  ["src/app/api/admin/early-access/route.ts", 2],
+  ["src/app/api/admin/early-access/approve/route.ts", 1],
+  ["src/app/api/admin/early-access/reject/route.ts", 1],
+];
+for (const [file, calls] of adminAdopters) {
+  const src = readFileSync(file, "utf8");
+  t(`${file} imports the request-scoped reporter`, src.includes('reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter"'));
+  const found = (src.match(/reportRequestErrorToSentry\(req, err\)/g) || []).length;
+  t(`${file} wires ${calls} handler(s)`, found === calls);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

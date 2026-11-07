@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { verifyAdminSession, getSupabaseAdmin } from "@/lib/admin/auth";
 import { replayFailedEvents } from "@/lib/events/failedEvents";
 
+import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
+
 export const runtime = "edge";
 
 /**
@@ -44,6 +46,7 @@ export async function GET(req: Request) {
 
     return NextResponse.json({ ok: true, items: items || [] });
   } catch (err: any) {
+    reportRequestErrorToSentry(req, err);
     return NextResponse.json(
       { error: err?.message || "Failed to inspect dead-letter queue" },
       { status: 500 }
@@ -79,6 +82,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json(summary);
   } catch (err: any) {
+    reportRequestErrorToSentry(req, err);
     return NextResponse.json(
       { ok: false, error: err?.message || "Failed to replay dead-letter events" },
       { status: 500 }

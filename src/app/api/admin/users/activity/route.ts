@@ -3,6 +3,8 @@ import { verifyAdminSession } from "@/lib/admin/auth";
 import { getUserActivityLogs } from "@/lib/admin/analytics";
 import { logAdminAction } from "@/lib/admin/auditLog";
 
+import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
+
 export const runtime = "edge";
 
 export async function GET(req: Request) {
@@ -42,6 +44,7 @@ export async function GET(req: Request) {
 
     return NextResponse.json({ ok: true, activity });
   } catch (err: any) {
+    reportRequestErrorToSentry(req, err);
     return NextResponse.json(
       { error: err?.message || "Failed to retrieve user activity" },
       { status: 500 }
