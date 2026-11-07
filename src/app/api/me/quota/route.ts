@@ -7,7 +7,7 @@ import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter
 
 import { createLogger } from "@/lib/observability/logger";
 
-const log = createLogger({ context: { route: "/api/me/quota" } });
+const baseLog = createLogger({ context: { route: "/api/me/quota" } });
 
 export const runtime = "edge";
 
@@ -29,6 +29,7 @@ function getSupabaseAdmin() {
 }
 
 export async function GET(req: Request) {
+  const log = baseLog.child({ requestId: req?.headers.get("x-request-id") ?? "unknown" });
   try {
     const authHeader =
       req.headers.get("authorization") || req.headers.get("Authorization");

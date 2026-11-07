@@ -8,11 +8,12 @@ import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter
 
 import { createLogger } from "@/lib/observability/logger";
 
-const log = createLogger({ context: { route: "/api/billing/razorpay/order" } });
+const baseLog = createLogger({ context: { route: "/api/billing/razorpay/order" } });
 
 export const runtime = "edge";
 
 export async function POST(req: Request) {
+  const log = baseLog.child({ requestId: req?.headers.get("x-request-id") ?? "unknown" });
   const deps = (req as any).__testDeps || {};
   try {
     if (process.env.NEXT_PUBLIC_BILLING_ENABLED !== "true") {

@@ -15,7 +15,7 @@ import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter
 
 import { createLogger } from "@/lib/observability/logger";
 
-const log = createLogger({ context: { route: "/api/jobs/search" } });
+const baseLog = createLogger({ context: { route: "/api/jobs/search" } });
 
 export const runtime = "edge";
 
@@ -58,6 +58,7 @@ function sanitizeSearchQuery(input: string): string {
  */
 
 async function getHandler(req: Request) {
+  const log = baseLog.child({ requestId: req?.headers.get("x-request-id") ?? "unknown" });
   try {
     const isLegacy =
       process.env.NODE_ENV === "test" &&

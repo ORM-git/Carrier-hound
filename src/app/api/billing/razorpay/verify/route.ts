@@ -12,7 +12,7 @@ import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter
 
 import { createLogger } from "@/lib/observability/logger";
 
-const log = createLogger({ context: { route: "/api/billing/razorpay/verify" } });
+const baseLog = createLogger({ context: { route: "/api/billing/razorpay/verify" } });
 
 export const runtime = "edge";
 
@@ -80,12 +80,13 @@ async function verifySignature(
     ]);
     return constantTimeEqual(expectedDigest, signatureDigest);
   } catch (e) {
-    log.error("Signature computation error", { error: String(e) });
+    baseLog.error("Signature computation error", { error: String(e) });
     return false;
   }
 }
 
 export async function POST(req: Request) {
+  const log = baseLog.child({ requestId: req?.headers.get("x-request-id") ?? "unknown" });
   const deps = (req as any).__testDeps || {};
   try {
     if (process.env.NEXT_PUBLIC_BILLING_ENABLED !== "true") {
