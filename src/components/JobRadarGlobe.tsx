@@ -665,7 +665,11 @@ export default function JobRadarGlobe() {
     textureLoader.load(
       "/globe/earth-night.jpg",
       (texture) => {
-        if (isCancelled) return;
+        if (isCancelled) {
+          // Unmounted mid-load: free the decoded texture immediately.
+          texture.dispose();
+          return;
+        }
         texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
         const earthGeo = new THREE.SphereGeometry(5, isMobile ? 48 : 64, isMobile ? 48 : 64);
         const earthMat = new THREE.MeshStandardMaterial({
@@ -877,8 +881,29 @@ export default function JobRadarGlobe() {
       });
       disposablesRef.current = [];
 
+      // Marker meshes are owned by effect 9 (telemetry/filter updates) and are
+      // not in disposablesRef; dispose whatever is currently mounted.
+      const markersGroup = markersGroupRef.current;
+      if (markersGroup) {
+        while (markersGroup.children.length > 0) {
+          const child = markersGroup.children[0] as THREE.Mesh;
+          if (child.geometry) child.geometry.dispose();
+          if (child.material) {
+            if (Array.isArray(child.material)) child.material.forEach((m) => m.dispose());
+            else child.material.dispose();
+          }
+          markersGroup.remove(child);
+        }
+      }
+
       controls.dispose();
       renderer.dispose();
+      // renderer.dispose() frees GPU resources but keeps the WebGL context
+      // alive; browsers cap live contexts (~16), so release it explicitly on
+      // unmount to avoid context exhaustion across mount/unmount cycles.
+      if (typeof renderer.forceContextLoss === "function") {
+        renderer.forceContextLoss();
+      }
       if (renderer.domElement) {
         renderer.domElement.remove();
       }
