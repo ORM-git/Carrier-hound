@@ -2,6 +2,9 @@
 -- Career Hound — Development Seed Data
 -- Run AFTER schema.sql in: Supabase Dashboard → SQL Editor
 -- 20 realistic jobs across roles, locations, and companies
+-- Idempotent (Database row #62): safe to re-run - rows conflict on
+-- apply_url (unique index jobs_apply_url_unique, 20261001_ingestion_pipeline)
+-- and are skipped instead of duplicated.
 -- ============================================================
 
 insert into public.jobs
@@ -284,4 +287,5 @@ values
   'https://jobs.ashbyhq.com/browserstack/jobs/4000020',
   'https://browserstack.com/careers',
   'active'
-);
+)
+on conflict (apply_url) do nothing;
