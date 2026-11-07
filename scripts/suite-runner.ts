@@ -58,6 +58,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-sentry-config.ts", command: "npx tsx scripts/test-sentry-config.ts", classification: "offline" },
   { name: "scripts/test-no-hardcoded-stats.ts", command: "npx tsx scripts/test-no-hardcoded-stats.ts", classification: "offline" },
   { name: "scripts/test-cookie-notice.ts", command: "npx tsx scripts/test-cookie-notice.ts", classification: "offline" },
+  { name: "scripts/audit-static-a11y.ts", command: "npx tsx scripts/audit-static-a11y.ts", classification: "offline" },
   { name: "scripts/test-admin-audit-log.ts", command: "npx tsx scripts/test-admin-audit-log.ts", classification: "offline" },
   { name: "scripts/test-xss-csp-ai-uploads.ts", command: "npx tsx scripts/test-xss-csp-ai-uploads.ts", classification: "offline" },
   { name: "scripts/test-design-tokens.ts", command: "npx tsx scripts/test-design-tokens.ts", classification: "offline" },

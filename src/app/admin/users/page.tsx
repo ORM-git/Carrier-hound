@@ -411,6 +411,7 @@ export default function AdminUsersPage() {
                 </p>
               </div>
               <button
+                aria-label="Close"
                 onClick={() => setSelectedUser(null)}
                 className="text-slate-400 hover:text-slate-600 p-1 rounded-md"
               >

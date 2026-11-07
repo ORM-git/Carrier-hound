@@ -319,6 +319,7 @@ function SettingsPageInner() {
                   >
                     <span>{r}</span>
                     <button
+                      aria-label={`Remove ${r}`}
                       type="button"
                       onClick={() => setRoles(roles.filter((x) => x !== r))}
                       className="hover:text-red-500 cursor-pointer ml-1 text-sm font-bold"
