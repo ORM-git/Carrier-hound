@@ -58,6 +58,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-sentry-config.ts", command: "npx tsx scripts/test-sentry-config.ts", classification: "offline" },
   { name: "scripts/test-no-hardcoded-stats.ts", command: "npx tsx scripts/test-no-hardcoded-stats.ts", classification: "offline" },
   { name: "scripts/test-cookie-notice.ts", command: "npx tsx scripts/test-cookie-notice.ts", classification: "offline" },
+  { name: "scripts/audit-static-a11y.ts", command: "npx tsx scripts/audit-static-a11y.ts", classification: "offline" },
   { name: "scripts/test-admin-audit-log.ts", command: "npx tsx scripts/test-admin-audit-log.ts", classification: "offline" },
   { name: "scripts/test-xss-csp-ai-uploads.ts", command: "npx tsx scripts/test-xss-csp-ai-uploads.ts", classification: "offline" },
   { name: "scripts/test-design-tokens.ts", command: "npx tsx scripts/test-design-tokens.ts", classification: "offline" },
@@ -230,6 +231,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-outbox-queue.ts", command: "npx tsx scripts/test-outbox-queue.ts", classification: "offline" },
   { name: "scripts/test-row-version-lock.ts", command: "npx tsx scripts/test-row-version-lock.ts", classification: "offline" },
   { name: "scripts/eval-ai-output-golden.ts", command: "npx tsx scripts/eval-ai-output-golden.ts", classification: "offline" },
+  { name: "scripts/test-touch-updated-at.ts", command: "npx tsx scripts/test-touch-updated-at.ts", classification: "offline" },
 ];
 
 export interface RunSummary {
