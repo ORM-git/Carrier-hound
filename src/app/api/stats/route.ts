@@ -53,7 +53,7 @@ function getSupabaseAdmin() {
  * - Authenticated + unapproved callers: 403 Early access only.
  */
 async function getHandler(req: Request) {
-  const log = baseLog.child({ requestId: req.headers.get("x-request-id") ?? "unknown" });
+  const log = baseLog.child({ requestId: req?.headers.get("x-request-id") ?? "unknown" });
   try {
     if (req) {
       const clientIp = getClientIpFromRequest(req);
