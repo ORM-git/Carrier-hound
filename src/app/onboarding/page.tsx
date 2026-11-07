@@ -11,6 +11,7 @@ import {
   getUserPreferences,
 } from "@/lib/auth/session";
 import { UserPreferences } from "@/lib/auth/types";
+import { trackFunnelEvent } from "@/lib/analytics/funnel";
 import {
   validateResumeUploadFile,
   extractTextFromFile,
@@ -124,6 +125,11 @@ function OnboardingPageInner() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Funnel: onboarding started (once per mount, consent-gated in the emitter)
+  useEffect(() => {
+    trackFunnelEvent("onboarding_started", { path: "/onboarding" });
+  }, []);
 
   // Load authenticated user and existing preferences
   useEffect(() => {
@@ -304,6 +310,7 @@ function OnboardingPageInner() {
       };
       await saveUserPreferences(finalPrefs, userId);
       setExistingPrefs(finalPrefs);
+      trackFunnelEvent("onboarding_completed", { path: "/onboarding" });
 
       // Successfully processed: redirect to dashboard
       toast.success("Resume saved");
