@@ -10,6 +10,10 @@
  * #8) to move long-expired jobs into jobs_archive; that step is fail-open
  * and skips with a warning until the migration is applied.
  *
+ * Also calls public.reindex_bloated_indexes (migration 20261106m, Database
+ * row #11) to rebuild bloated public-schema indexes; that step is fail-open
+ * and skips with a warning until the migration is applied.
+ *
  * Usage:
  *   npx tsx scripts/retention-cron.ts         # real purge
  *   npx tsx scripts/retention-cron.ts --dry   # counts only, no deletes
@@ -34,6 +38,15 @@ type ArchiveRow = {
   cutoff: string;
   rows_matched: number;
   rows_archived: number;
+};
+
+type ReindexRow = {
+  schema_name: string;
+  table_name: string;
+  index_name: string;
+  size_bytes: number;
+  size_pretty: string;
+  action: string;
 };
 
 async function main() {
@@ -143,6 +156,58 @@ async function main() {
         started_at: new Date(archiveStart).toISOString(),
         completed_at: new Date().toISOString(),
         metadata: { dry_run: dry, results: archiveData },
+      });
+    } catch (logErr) {
+      console.warn(`- cron_run_logs insert failed (non-fatal): ${logErr}`);
+    }
+  }
+
+  // Index maintenance (migration 20261106m, Database row #11): rebuilds
+  // public-schema indexes above the size threshold (plain REINDEX in the
+  // off-peak weekly slot; REINDEX CONCURRENTLY cannot run inside a
+  // function). Fail-open: until the migration is applied the function is
+  // missing - warn and skip without failing the cron run.
+  const reindexStart = Date.now();
+  const { data: reindexData, error: reindexError } = await supabase.rpc(
+    "reindex_bloated_indexes",
+    { dry_run: dry }
+  );
+
+  if (reindexError) {
+    if (/could not find|does not exist|function|PGRST202/i.test(reindexError.message)) {
+      console.log(
+        "- Skipping index maintenance: reindex_bloated_indexes is not applied yet (migration 20261106m_reindex_maintenance.sql)."
+      );
+    } else {
+      console.warn(
+        `- Index maintenance RPC error (non-fatal): ${reindexError.message}`
+      );
+      try {
+        await supabase.from("cron_run_logs").insert({
+          job_type: "reindex_maintenance",
+          status: "failed",
+          error_message: reindexError.message.slice(0, 500),
+          started_at: new Date(reindexStart).toISOString(),
+          completed_at: new Date().toISOString(),
+        });
+      } catch (logErr) {
+        console.warn(`- cron_run_logs insert failed (non-fatal): ${logErr}`);
+      }
+    }
+  } else {
+    const rrows = (reindexData || []) as ReindexRow[];
+    const reindexed = rrows.filter((r) => r.action === "reindexed").length;
+    const failedIdx = rrows.filter((r) => r.action === "failed").length;
+    console.log(
+      `Index maintenance: candidates=${rrows.length}  reindexed=${reindexed}  failed=${failedIdx}  mode=${dry ? "dry" : "real"}`
+    );
+    try {
+      await supabase.from("cron_run_logs").insert({
+        job_type: "reindex_maintenance",
+        status: "success",
+        started_at: new Date(reindexStart).toISOString(),
+        completed_at: new Date().toISOString(),
+        metadata: { dry_run: dry, results: reindexData },
       });
     } catch (logErr) {
       console.warn(`- cron_run_logs insert failed (non-fatal): ${logErr}`);
