@@ -5,6 +5,10 @@ import {
   stripHtmlAndExecutableMarkup,
 } from "../security/xss";
 
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger({ context: { module: "resume/parser" } });
+
 export const MAX_RESUME_UPLOAD_BYTES = 10 * 1024 * 1024; // 10 MB
 export const ALLOWED_RESUME_EXTENSIONS = new Set(["pdf", "docx", "txt", "md"]);
 
@@ -124,7 +128,7 @@ export async function extractTextFromFile(file: File): Promise<string> {
       const result = await mammoth.extractRawText({ arrayBuffer });
       return stripHtmlAndExecutableMarkup(result.value || "");
     } catch (err) {
-      console.warn("Mammoth DOCX extraction failed, falling back to basic reader", err);
+      log.warn("Mammoth DOCX extraction failed, falling back to basic reader", { error: err });
       return stripHtmlAndExecutableMarkup(await file.text());
     }
   }
@@ -201,7 +205,7 @@ async function extractTextFromPdf(file: File): Promise<string> {
     if (err?.message && !err.message.includes("PDF.js")) {
       throw err;
     }
-    console.warn("Client PDF.js parsing failed, trying text decoder fallback", err);
+    log.warn("Client PDF.js parsing failed, trying text decoder fallback", { error: err });
   }
 
   // Fallback: decode text strings from PDF binary stream (stripping any embedded /JS or /JavaScript actions)

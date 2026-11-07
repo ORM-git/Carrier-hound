@@ -8,6 +8,10 @@ import { validateAndSanitizeAiOutput } from "./security";
 import { stripHtmlAndExecutableMarkup } from "../security/xss";
 import { createClient } from "../supabase/client";
 
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger({ context: { module: "ai/groq" } });
+
 /**
  * Checks if server-side AI enhancement is available.
  * Backward-compatible helper used across frontend components.
@@ -55,7 +59,7 @@ export async function callGroqCompletion(options: {
     const token = session?.access_token;
 
     if (!token) {
-      console.warn("User not authenticated; utilizing deterministic local algorithms.");
+      log.warn("User not authenticated; utilizing deterministic local algorithms.");
       return null;
     }
 
@@ -76,14 +80,14 @@ export async function callGroqCompletion(options: {
 
     if (!response.ok) {
       const errData = await response.json().catch(() => ({}));
-      console.warn("[AI] Server endpoint returned error:", errData.error || response.status);
+      log.warn("[AI] Server endpoint returned error:", { detail: errData.error || response.status });
       return null;
     }
 
     const data = await response.json();
     return data?.content || data?.text || null;
   } catch (err) {
-    console.warn("[AI] Secure completion request failed, falling back to local engine:", err);
+    log.warn("[AI] Secure completion request failed, falling back to local engine:", { error: err });
     return null;
   }
 }
@@ -122,7 +126,7 @@ export async function extractResumeFactsWithGroq(
       };
     }
   } catch (err) {
-    console.warn("Failed to parse AI extraction output, retaining deterministic output:", err);
+    log.warn("Failed to parse AI extraction output, retaining deterministic output:", { error: err });
   }
 
   return baseProfile;
@@ -172,7 +176,7 @@ export async function generateGroqTailoredCoverLetter(
       // Validate the generated paragraphs against candidate facts
       const validation = validateCoverLetter(cleanOutput, candidate, job);
       if (!validation.valid) {
-        console.warn("AI cover letter failed strict evidence verification:", validation.reasons);
+        log.warn("AI cover letter failed strict evidence verification:", { detail: validation.reasons });
         return {
           text: fallback.fullText,
           isValidated: true,
@@ -197,7 +201,7 @@ export async function generateGroqTailoredCoverLetter(
       };
     }
   } catch (e) {
-    console.warn("AI cover letter generation failed, using deterministic template:", e);
+    log.warn("AI cover letter generation failed, using deterministic template:", { error: e });
   }
 
   return {

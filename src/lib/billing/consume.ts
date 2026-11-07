@@ -3,6 +3,10 @@ import { getServerEntitlement } from "./serverEntitlement";
 import { rpcWithRetry } from "../db/rpcRetry";
 import { getPlanQuota, PLAN_DEFINITIONS, getStartOfIstDay } from "./quota";
 
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger({ context: { module: "billing/consume" } });
+
 export { getStartOfIstDay };
 
 export type QuotaKind = "resume_tailor" | "cover_letter";
@@ -230,7 +234,7 @@ export async function consumeSet(
         };
       }
     } catch (rpcErr) {
-      console.error("[consumeSet] RPC execution error:", rpcErr);
+      log.error("[consumeSet] RPC execution error:", { error: rpcErr });
     }
 
     // Fail closed: No non-atomic fallback allowed on quota money path
@@ -240,7 +244,7 @@ export async function consumeSet(
       error: "Quota service temporarily unavailable. Please try again.",
     };
   } catch (err: any) {
-    console.error("[consumeSet] Unexpected error:", err);
+    log.error("[consumeSet] Unexpected error:", { error: err });
     return { success: false, code: "DATABASE_ERROR", error: err?.message || "Internal consume error" };
   }
 }
@@ -331,7 +335,7 @@ export async function refundSet(
       credit_id: event.credit_id || null,
     };
   } catch (err: any) {
-    console.error("[refundSet] Unexpected error:", err);
+    log.error("[refundSet] Unexpected error:", { error: err });
     return { success: false, refunded: false, error: err?.message };
   }
 }

@@ -8,6 +8,10 @@ import {
 } from "@/lib/api/sharedRateLimit";
 import { checkRateLimit } from "@/lib/ai/serviceHandler";
 
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger({ context: { module: "account/deleteHandler" } });
+
 export interface AccountDeleteRouteDeps {
   getSupabaseAdmin?: () => any;
 }
@@ -329,7 +333,7 @@ export async function handleAccountDeleteRequest(
         }
       }
     } catch (billingErr: any) {
-      console.warn("Billing reconciliation error:", billingErr);
+      log.warn("Billing reconciliation error:", { error: billingErr });
       return NextResponse.json(
         {
           success: false,
@@ -482,10 +486,10 @@ export async function handleAccountDeleteRequest(
           { onConflict: "user_id" }
         );
       if (tombstoneError) {
-        console.warn("Account deletion tombstone write failed (continuing):", tombstoneError);
+        log.warn("Account deletion tombstone write failed (continuing):", { error: tombstoneError });
       }
     } catch (tombstoneErr: any) {
-      console.warn("Account deletion tombstone write failed (continuing):", tombstoneErr?.message || tombstoneErr);
+      log.warn("Account deletion tombstone write failed (continuing):", { error: tombstoneErr?.message || tombstoneErr });
     }
 
     // 6. Delete the Auth User Identity from Supabase Auth (last step)
@@ -513,7 +517,7 @@ export async function handleAccountDeleteRequest(
         return NextResponse.json(parsed, { status: 500 });
       }
     } catch {}
-    console.error("Account delete error:", err);
+    log.error("Account delete error:", { error: err });
     return NextResponse.json(
       { success: false, error: err?.message || "Internal server error during account deletion." },
       { status: 500 }

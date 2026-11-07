@@ -161,6 +161,10 @@ import {
   getIdempotentResult,
   storeIdempotentResult,
 } from "./idempotency";
+
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger({ context: { module: "ai/serviceHandler" } });
 export {
   IDEMPOTENCY_KEY_REGEX,
   IDEMPOTENCY_KEY_MAX_LENGTH,
@@ -278,7 +282,7 @@ export function emitBudgetAlert(condition: string, message: string, extra?: Reco
   budgetAlertDedupeMap.set(condition, now);
 
   const marker = "[AI-GLOBAL-BUDGET]";
-  console.error(`${marker} [${condition}] ${message}`, extra ? JSON.stringify(extra) : "");
+  log.error(`${marker} [${condition}] ${message}`, { detail: extra ? JSON.stringify(extra) : "" });
 
   try {
     const sentry = (globalThis as any).Sentry;
@@ -719,7 +723,7 @@ export async function executeAiCore(
           }));
           budgetReserved = false;
         } catch (settleErr) {
-          console.warn("[AI Service] Error settling global AI budget:", settleErr);
+          log.warn("[AI Service] Error settling global AI budget:", { error: settleErr });
         }
       }
     };
@@ -847,7 +851,7 @@ export async function executeAiCore(
         try {
           await doRefund(user.id, setConsumeKey, new Date(), config.operation as QuotaKind);
         } catch (rfErr) {
-          console.warn("[AI Service] Error refunding consumed set:", rfErr);
+          log.warn("[AI Service] Error refunding consumed set:", { error: rfErr });
         }
       } else if (!isMeteredOperation) {
         await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
@@ -961,7 +965,7 @@ export async function executeAiCore(
         } catch (mockErr: any) {
           clearTimeout(timeoutHandle);
           activeBreaker.recordFailure();
-          console.warn("[AI Service] Error calling mock Groq provider:", mockErr);
+          log.warn("[AI Service] Error calling mock Groq provider:", { error: mockErr });
           await settleBudget(0);
           await rollbackAllQuotas();
           return {
@@ -974,7 +978,7 @@ export async function executeAiCore(
         if (!groqApiKey || !groqApiKey.trim()) {
           clearTimeout(timeoutHandle);
           releaseProbeIfAny();
-          console.error("[AI Service] Missing required environment variable: GROQ_API_KEY");
+          log.error("[AI Service] Missing required environment variable: GROQ_API_KEY");
           await settleBudget(0);
           await rollbackAllQuotas();
           return {
@@ -1006,7 +1010,7 @@ export async function executeAiCore(
         } catch (fetchErr: any) {
           clearTimeout(timeoutHandle);
           activeBreaker.recordFailure();
-          console.warn("[AI Service] Network error calling upstream provider:", fetchErr);
+          log.warn("[AI Service] Network error calling upstream provider:", { error: fetchErr });
           await settleBudget(0);
           await rollbackAllQuotas();
           return {
@@ -1018,7 +1022,7 @@ export async function executeAiCore(
         if (!groqResponse.ok) {
           clearTimeout(timeoutHandle);
           activeBreaker.recordFailure();
-          console.warn(`[AI Service] Upstream provider returned status ${groqResponse.status}`);
+          log.warn(`[AI Service] Upstream provider returned status ${groqResponse.status}`);
           await settleBudget(0);
           await rollbackAllQuotas();
           return {
@@ -1032,7 +1036,7 @@ export async function executeAiCore(
         } catch (parseErr) {
           clearTimeout(timeoutHandle);
           activeBreaker.recordFailure();
-          console.warn("[AI Service] Failed to parse upstream provider JSON:", parseErr);
+          log.warn("[AI Service] Failed to parse upstream provider JSON:", { error: parseErr });
           await settleBudget(0);
           await rollbackAllQuotas();
           return {
@@ -1146,7 +1150,7 @@ export async function executeAiCore(
           await rpcWithRetry(() => supabaseAdmin.rpc("ai_concurrency_release", { p_lease_id: leaseId }));
           hasLease = false;
         } catch (relErr) {
-          console.warn("[AI Service] Error releasing concurrency lease:", relErr);
+          log.warn("[AI Service] Error releasing concurrency lease:", { error: relErr });
         }
       }
       if (budgetReserved && typeof supabaseAdmin.rpc === "function") {
@@ -1158,18 +1162,18 @@ export async function executeAiCore(
           }));
           budgetReserved = false;
         } catch (setErr) {
-          console.warn("[AI Service] Error settling budget reservation in finally:", setErr);
+          log.warn("[AI Service] Error settling budget reservation in finally:", { error: setErr });
         }
       }
     }
   } catch (err: any) {
-    console.error("[AI Service] Unhandled error:", err);
+    log.error("[AI Service] Unhandled error:", { error: err });
     if (setConsumed && setConsumeKey && confirmedUserId) {
       const doRefund = activeDeps.refundSet || refundSet;
       try {
         await doRefund(confirmedUserId, setConsumeKey, new Date(), confirmedKind);
       } catch (rfErr) {
-        console.warn("[AI Service] Error refunding consumed set on unhandled error:", rfErr);
+        log.warn("[AI Service] Error refunding consumed set on unhandled error:", { error: rfErr });
       }
     }
     return {

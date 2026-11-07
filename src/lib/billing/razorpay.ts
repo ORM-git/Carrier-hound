@@ -1,3 +1,8 @@
+
+
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger({ context: { module: "billing/razorpay" } });
 /**
  * Loads Razorpay Standard Checkout SDK dynamically
  */
@@ -195,7 +200,7 @@ export async function verifyRazorpayWebhookSignature(
       Buffer.from(signatureHeader, "utf8")
     );
   } catch (err) {
-    console.error("Razorpay webhook signature verification error:", err);
+    log.error("Razorpay webhook signature verification error:", { error: err });
     return false;
   }
 }

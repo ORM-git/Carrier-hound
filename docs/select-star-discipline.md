@@ -21,32 +21,32 @@ acceptable: they are plpgsql row variables, not wire payloads.
 | --- | --- | --- |
 | `src/lib/account/exportHandler.ts:161` | per-table loop | Data-export handler: the whole point is returning every column of the user's rows. A column list would silently drop fields added later. |
 | `src/lib/account/exportHandler.ts:175` | per-table loop | Same export path, email-keyed tables. |
-| `src/lib/account/deleteHandler.ts:279` | subscriptions | Reads the full row immediately before deletion so the audit record captures what was removed. |
+| `src/lib/account/deleteHandler.ts:283` | subscriptions | Reads the full row immediately before deletion so the audit record captures what was removed. |
 | `src/app/api/billing/razorpay/verify/route.ts:332` | user_addon_credits | The row IS the API payload (`credit: existingCredit` in the verify response). Narrowing changes the response contract, which is out of scope for a docs-only change. |
-| `src/lib/resume/storage.ts:151` | candidate_profiles | The fetched profile is returned whole to the caller. |
-| `src/lib/tracker/storage.ts:129` | applications | The application rows are returned whole to the caller (tracker list). |
+| `src/lib/resume/storage.ts:155` | candidate_profiles | The fetched profile is returned whole to the caller. |
+| `src/lib/tracker/storage.ts:133` | applications | The application rows are returned whole to the caller (tracker list). |
 
 ### Narrow reads - column-list candidates (flagged, owner to confirm before tightening)
 
 | Site | Table | Columns actually consumed | Note |
 | --- | --- | --- | --- |
-| `src/lib/billing/quota.ts:303` | subscriptions | `plan_id` (+ row existence) | Billing-critical path; tightening changes a hot entitlement read, so it is deferred to an owner-confirmed follow-up rather than bundled here. |
-| `src/lib/billing/quota.ts:321` | plans | `code, name, duration_days, price_paise, resume_quota` | Small table, single row by unique code. |
-| `src/lib/billing/subscription.ts:59` | subscriptions | subscription status/period fields | Client-facing read with a 10s timeout race; payload is one row. |
-| `src/lib/billing/subscription.ts:315` | subscriptions | `status, current_period_end` | Same pattern. |
-| `src/lib/billing/serverEntitlement.ts:49` | subscriptions | entitlement fields | Server entitlement check. |
+| `src/lib/billing/quota.ts:307` | subscriptions | `plan_id` (+ row existence) | Billing-critical path; tightening changes a hot entitlement read, so it is deferred to an owner-confirmed follow-up rather than bundled here. |
+| `src/lib/billing/quota.ts:325` | plans | `code, name, duration_days, price_paise, resume_quota` | Small table, single row by unique code. |
+| `src/lib/billing/subscription.ts:63` | subscriptions | subscription status/period fields | Client-facing read with a 10s timeout race; payload is one row. |
+| `src/lib/billing/subscription.ts:319` | subscriptions | `status, current_period_end` | Same pattern. |
+| `src/lib/billing/serverEntitlement.ts:53` | subscriptions | entitlement fields | Server entitlement check. |
 | `src/app/api/billing/razorpay/verify/route.ts:178` | payment_orders | `status, addon_code, plan_code, id` | Payment verify, fail-closed path; payment-critical, deferred like the other billing reads. |
 | `src/app/api/billing/razorpay/verify/route.ts:348` | subscriptions | `metadata` fields | Idempotent-replay check on the payment verify path. |
 | `src/app/api/billing/razorpay/verify/route.ts:493` | subscriptions | `current_period_end` etc. | Renewal/upgrade period math on the payment verify path. |
-| `src/lib/auth/session.ts:138` | user_preferences | preferences blob | Single-row per user; table is narrow. |
+| `src/lib/auth/session.ts:142` | user_preferences | preferences blob | Single-row per user; table is narrow. |
 
 ### Bounded scans under review elsewhere (keep, tracked by rank 46)
 
 | Site | Table | Note |
 | --- | --- | --- |
 | `src/lib/cron/dailyDigestCron.ts:118` | candidate_profiles | Per-user loop already flagged in `docs/db-n-plus-one.md` (rank 46) with a batching recommendation. Column tightening should ride that fix. |
-| `src/lib/cron/digestStorage.ts:58` | daily_digests | Single latest digest row per user. |
-| `src/lib/events/failedEvents.ts:622` | failed_events | Replay batch read (bounded batch, see rank 46 doc); the replay needs the full payload column set. |
+| `src/lib/cron/digestStorage.ts:61` | daily_digests | Single latest digest row per user. |
+| `src/lib/events/failedEvents.ts:626` | failed_events | Replay batch read (bounded batch, see rank 46 doc); the replay needs the full payload column set. |
 
 ## Guard
 

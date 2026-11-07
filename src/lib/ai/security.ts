@@ -8,6 +8,10 @@ import {
 } from "../matcher/scoring";
 import { stripControlChars, stripHtmlAndExecutableMarkup } from "../security/xss";
 
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger({ context: { module: "ai/security" } });
+
 export type AllowedAiOperation =
   | "cover_letter"
   | "resume_extraction"
@@ -1174,11 +1178,11 @@ export async function checkAndIncrementAiQuota(
       };
     }
   } catch (fallbackErr) {
-    console.warn("[Quota Check] Error updating subscriptions fallback quota:", fallbackErr);
+    log.warn("[Quota Check] Error updating subscriptions fallback quota:", { error: fallbackErr });
   }
 
   // Fail closed: Database unreachable or both quota stores errored
-  console.error("[Quota Check] Database unreachable or error in quota stores; failing closed.");
+  log.error("[Quota Check] Database unreachable or error in quota stores; failing closed.");
   return {
     allowed: false,
     currentCount: limit,
@@ -1255,6 +1259,6 @@ export async function refundAiQuota(
       }
     }
   } catch (fallbackErr) {
-    console.warn("[Quota Refund] Error refunding subscriptions fallback quota:", fallbackErr);
+    log.warn("[Quota Refund] Error refunding subscriptions fallback quota:", { error: fallbackErr });
   }
 }

@@ -294,6 +294,10 @@ const PUBLIC_SELECT_COLUMNS =
   "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at";
 
 import { capJobsPerCompany } from "./capping";
+
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger({ context: { module: "jobs/service" } });
 export { capJobsPerCompany };
 
 const DEGRADED_JOBS_RESULT: GetJobsResult = {
@@ -420,10 +424,10 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
           ...(json.degraded ? { error: "degraded" } : {}),
         };
       } else {
-        console.warn(`Server search responded with status ${res.status}, falling back to public preview query.`);
+        log.warn(`Server search responded with status ${res.status}, falling back to public preview query.`);
       }
     } catch (searchErr) {
-      console.warn("Server search failed, falling back to public preview query:", searchErr);
+      log.warn("Server search failed, falling back to public preview query:", { error: searchErr });
     }
   }
 
@@ -842,7 +846,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
                 body: JSON.stringify({ ids: mappedJobs.map((j) => j.id) }),
               });
             } catch (netErr: any) {
-              console.error(`[API /jobs/pro error]: Network failure during batch Pro unlock (${netErr?.message || "fetch failed"})`);
+              log.error(`[API /jobs/pro error]: Network failure during batch Pro unlock (${netErr?.message || "fetch failed"})`);
               mappedJobs.forEach((j) => {
                 j.proUnlockError = { isNetworkError: true, message: "Network connection error while unlocking Pro job details." };
               });
@@ -875,7 +879,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
                   });
                 }
               } else {
-                console.error(`[API /jobs/pro error]: Pro batch unlock failed with status ${proRes.status}`);
+                log.error(`[API /jobs/pro error]: Pro batch unlock failed with status ${proRes.status}`);
                 if (proRes.status === 401) {
                   // Only redirect if getSession shows no session (prevents redirect loop)
                   const { data: { session: currentSession } } = await supabase.auth.getSession();
@@ -894,7 +898,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
             }
           }
         } catch (proErr: any) {
-          console.error(`[API /jobs/pro error]: Unexpected batch Pro unlock error (${proErr?.message || "error"})`);
+          log.error(`[API /jobs/pro error]: Unexpected batch Pro unlock error (${proErr?.message || "error"})`);
         }
       }
 
@@ -909,7 +913,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       };
     }
   } catch (err) {
-    console.warn("Supabase live jobs fetch error, falling back:", err);
+    log.warn("Supabase live jobs fetch error, falling back:", { error: err });
     if (!isLegacyBehavior) {
       return DEGRADED_JOBS_RESULT;
     }
@@ -947,7 +951,7 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
             },
           });
         } catch (fetchErr: any) {
-          console.error(`[API /jobs/pro error]: Network failure unlocking job ${cleanId} (${fetchErr?.message || "fetch failed"})`);
+          log.error(`[API /jobs/pro error]: Network failure unlocking job ${cleanId} (${fetchErr?.message || "fetch failed"})`);
           proUnlockError = { isNetworkError: true, message: "Network connection error while unlocking Pro job details." };
         }
 
@@ -983,7 +987,7 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
               };
             }
           } else {
-            console.error(`[API /jobs/pro error]: Pro unlock failed with status ${res.status}`);
+            log.error(`[API /jobs/pro error]: Pro unlock failed with status ${res.status}`);
             proUnlockError = {
               status: res.status,
               message: res.status === 403
@@ -1003,7 +1007,7 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
         }
       }
     } catch (proErr: any) {
-      console.error(`[API /jobs/pro error]: Unexpected error during Pro unlock (${proErr?.message || "error"})`);
+      log.error(`[API /jobs/pro error]: Unexpected error during Pro unlock (${proErr?.message || "error"})`);
       if (!proUnlockError) {
         proUnlockError = { isNetworkError: true, message: "Network error unlocking Pro job details." };
       }
@@ -1038,7 +1042,7 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
         }
       }
     } catch (fetchErr) {
-      console.warn("Server search single job fetch failed, falling back to direct query:", fetchErr);
+      log.warn("Server search single job fetch failed, falling back to direct query:", { error: fetchErr });
     }
   }
 
@@ -1095,7 +1099,7 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
       };
     }
   } catch (err) {
-    console.warn("Public job fetch error:", err);
+    log.warn("Public job fetch error:", { error: err });
   }
 
 
@@ -1176,7 +1180,7 @@ export async function getAllActiveJobs(): Promise<LiveJob[]> {
       return mapped;
     }
   } catch (err) {
-    console.warn("getAllActiveJobs error:", err);
+    log.warn("getAllActiveJobs error:", { error: err });
   }
 
   return [];
@@ -1222,7 +1226,7 @@ export async function getTopRankedJobsForCandidate(
       }
     }
   } catch (err) {
-    console.warn("[getTopRankedJobsForCandidate] Server top10 fetch failed, using fallback:", err);
+    log.warn("[getTopRankedJobsForCandidate] Server top10 fetch failed, using fallback:", { error: err });
   }
 
   // Graceful client fallback using unified scoring and identical inputs

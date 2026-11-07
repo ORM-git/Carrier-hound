@@ -1,5 +1,9 @@
 import { getRuntimeEnv, getSupabaseAdminClient } from "@/lib/ai/serviceHandler";
 
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger({ context: { module: "early-access/gmail" } });
+
 export const GMAIL_OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
 export const GMAIL_SEND_MESSAGE_URL =
   "https://gmail.googleapis.com/gmail/v1/users/me/messages/send";
@@ -93,7 +97,7 @@ export function sanitizeLogMessage(
 }
 
 function safeWarn(message: string): void {
-  console.warn(`[early-access/gmail] ${message}`);
+  log.warn(`[early-access/gmail] ${message}`);
 }
 
 function bytesToBase64(bytes: Uint8Array): string {

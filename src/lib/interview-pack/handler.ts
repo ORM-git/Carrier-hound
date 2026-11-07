@@ -6,6 +6,10 @@ import { checkRequiredEnv } from "@/lib/api/envCheck";
 import { isUserApproved } from "@/lib/auth/approval";
 import type { InterviewPackData } from "@/data/interviewPackFixture";
 
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger({ context: { module: "interview-pack/handler" } });
+
 export const INTERVIEW_PACK_NOT_AVAILABLE_MESSAGE =
   "Interview Pack is not available yet for this role.";
 
@@ -190,7 +194,7 @@ export async function handleInterviewPackRequest(
         return NextResponse.json(parsed, { status: 500 });
       }
     } catch {}
-    console.error("[API /jobs/interview-pack error]:", err);
+    log.error("[API /jobs/interview-pack error]:", { error: err });
     return NextResponse.json(
       { error: "Service temporarily unavailable. Please try again later.", isPro: false },
       { status: 503 }

@@ -1,6 +1,10 @@
 import { createClient } from "@supabase/supabase-js";
 import { rpcWithRetry } from "../db/rpcRetry";
 
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger({ context: { module: "api/sharedRateLimit" } });
+
 /**
  * Shared rate limiting backed by Supabase (public.check_rate_limit RPC),
  * with strict fail-closed enforcement for costly AI operations and
@@ -110,7 +114,7 @@ function recordSharedStoreFailure(key: string, reason: string, details?: any) {
   if (now - lastAlert >= ALERT_DEDUPE_WINDOW_MS) {
     alertDedupeStore.set(keyClass, now);
     const msg = `[RATE-LIMIT-SHARED-STORE-DOWN] Shared rate limit store failure (${reason}) for key class '${keyClass}' (key: '${key}')`;
-    console.error(msg, details !== undefined ? details : "");
+    log.error(msg, { detail: details !== undefined ? details : "" });
     notifySentryIfInitialized(msg, { key, keyClass, reason, details: details ? String(details) : undefined });
   }
 }
@@ -122,9 +126,7 @@ function warnMemoryFallback(key: string) {
 
   if (now - lastWarn >= ALERT_DEDUPE_WINDOW_MS) {
     fallbackWarnDedupeStore.set(route, now);
-    console.warn(
-      `[RATE-LIMIT-MEMORY-FALLBACK] Shared store down; falling back to in-memory rate limiting for route '${route}'. Permitted only for cheap public read endpoints (search, track, stats, ticker, early-access) and the auth-gated account export/delete endpoints.`
-    );
+    log.warn(`[RATE-LIMIT-MEMORY-FALLBACK] Shared store down; falling back to in-memory rate limiting for route '${route}'. Permitted only for cheap public read endpoints (search, track, stats, ticker, early-access) and the auth-gated account export/delete endpoints.`);
   }
 }
 

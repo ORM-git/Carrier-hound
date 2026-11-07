@@ -1,6 +1,10 @@
 import { createClient } from "@supabase/supabase-js";
 import { getServerEntitlement } from "./serverEntitlement";
 
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger({ context: { module: "billing/quota" } });
+
 export type PlanCode = "weekly" | "monthly" | "quarterly";
 
 export interface PlanDefinition {
@@ -289,7 +293,7 @@ export async function getPlanQuota(
       process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
 
     if (!supabaseUrl || !serviceRoleKey) {
-      console.warn("[getPlanQuota] Missing Supabase service credentials on server");
+      log.warn("[getPlanQuota] Missing Supabase service credentials on server");
       return FREE_QUOTA_DEFAULT;
     }
 
@@ -423,7 +427,7 @@ export async function getPlanQuota(
       addonSetsRemaining,
     };
   } catch (err) {
-    console.error("[getPlanQuota] Unexpected error:", err);
+    log.error("[getPlanQuota] Unexpected error:", { error: err });
     return FREE_QUOTA_DEFAULT;
   }
 }

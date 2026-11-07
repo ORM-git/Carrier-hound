@@ -8,6 +8,10 @@ import {
   computeJobHash,
 } from "./tailor";
 
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger({ context: { module: "resume/storage" } });
+
 const PROFILE_STORAGE_KEY = "careermonke_candidate_profile";
 
 /**
@@ -77,7 +81,7 @@ function emitProfileUpdate(profile: CandidateProfile | null) {
     try {
       fn(profile);
     } catch (e) {
-      console.warn("Profile listener error", e);
+      log.warn("Profile listener error", { error: e });
     }
   });
 }
@@ -181,7 +185,7 @@ export async function getCandidateProfile(userId?: string, clientOverride?: any)
         return remoteProfile;
       }
     } catch (err) {
-      console.warn("Could not fetch remote candidate profile from Supabase:", err);
+      log.warn("Could not fetch remote candidate profile from Supabase:", { error: err });
     }
 
     // 5. If Supabase has no confirmed row, check strictly user-scoped localStorage
@@ -202,7 +206,7 @@ export async function getCandidateProfile(userId?: string, clientOverride?: any)
           }
         }
       } catch (e) {
-        console.warn("Could not read local candidate profile", e);
+        log.warn("Could not read local candidate profile", { error: e });
       }
     }
 
@@ -242,7 +246,7 @@ export function saveCandidateProfileLocally(
         emitProfileUpdate(profile);
       }
     } catch (e) {
-      console.warn("Could not save candidate profile locally", e);
+      log.warn("Could not save candidate profile locally", { error: e });
     }
   }
 }
@@ -294,7 +298,7 @@ export async function saveConfirmedCandidateProfile(profile: CandidateProfile): 
     }
 
     if (error) {
-      console.error("Failed to sync candidate profile to Supabase:", error);
+      log.error("Failed to sync candidate profile to Supabase:", { error: error });
       throw new Error(`Failed to save candidate profile to database: ${error.message}`);
     }
   }
@@ -317,7 +321,7 @@ export async function deleteCandidateProfile(): Promise<void> {
       window.dispatchEvent(new Event("careermonke_profile_updated"));
       emitProfileUpdate(null);
     } catch (e) {
-      console.warn("Could not remove local candidate profile", e);
+      log.warn("Could not remove local candidate profile", { error: e });
     }
   }
 
@@ -328,7 +332,7 @@ export async function deleteCandidateProfile(): Promise<void> {
       await supabase.from("candidate_profiles").delete().eq("user_id", user.id);
     }
   } catch (err) {
-    console.warn("Could not delete candidate profile from Supabase", err);
+    log.warn("Could not delete candidate profile from Supabase", { error: err });
   }
 }
 
@@ -384,7 +388,7 @@ export function getCachedTailoredResume(
       return parsed;
     }
   } catch (e) {
-    console.warn(`Could not read cached tailored resume for ${jobId}`, e);
+    log.warn(`Could not read cached tailored resume for ${jobId}`, { error: e });
   }
   return null;
 }
@@ -401,19 +405,19 @@ export function saveCachedTailoredResume(
   const resolvedOwner = ownerId?.trim() || null;
   const storageKey = getScopedTailoredResumeKey(jobId, resolvedOwner);
   if (!storageKey) {
-    console.warn(`[TailoredCache] Refusing to persist tailored resume for ${jobId}: explicit verified owner or "guest" required; missing owner will not be saved as guest work.`);
+    log.warn(`[TailoredCache] Refusing to persist tailored resume for ${jobId}: explicit verified owner or "guest" required; missing owner will not be saved as guest work.`);
     return;
   }
   try {
     localStorage.setItem(storageKey, JSON.stringify(data));
   } catch (e) {
-    console.warn(`Could not save cached tailored resume for ${jobId}`, e);
+    log.warn(`Could not save cached tailored resume for ${jobId}`, { error: e });
   }
 
   // Asynchronously persist to Supabase for multi-device / multi-user persistence if authenticated
   if (resolvedOwner && resolvedOwner !== "guest") {
     saveTailoredResumeToSupabase(jobId, data, resolvedOwner).catch((err) => {
-      console.warn(`Could not sync tailored resume to Supabase for ${jobId}:`, err);
+      log.warn(`Could not sync tailored resume to Supabase for ${jobId}:`, { error: err });
     });
   }
 }
@@ -568,7 +572,7 @@ export function getCachedTailoredCoverLetter(
 
     return parsed;
   } catch (e) {
-    console.warn(`Could not read cached tailored cover letter for ${jobId}`, e);
+    log.warn(`Could not read cached tailored cover letter for ${jobId}`, { error: e });
   }
   return null;
 }
@@ -584,7 +588,7 @@ export function purgeTailoredCoverLetter(jobId: string, ownerId?: string | null)
     try {
       localStorage.removeItem(storageKey);
     } catch (e) {
-      console.warn(`Could not purge local cover letter cache for ${jobId}`, e);
+      log.warn(`Could not purge local cover letter cache for ${jobId}`, { error: e });
     }
   }
   if (resolvedOwner && resolvedOwner !== "guest") {
@@ -618,7 +622,7 @@ export function saveCachedTailoredCoverLetter(
   const resolvedOwner = ownerId?.trim() || null;
   const storageKey = getScopedTailoredCoverLetterKey(jobId, resolvedOwner);
   if (!storageKey) {
-    console.warn(`[TailoredCache] Refusing to persist tailored cover letter for ${jobId}: explicit verified owner or "guest" required; missing owner will not be saved as guest work.`);
+    log.warn(`[TailoredCache] Refusing to persist tailored cover letter for ${jobId}: explicit verified owner or "guest" required; missing owner will not be saved as guest work.`);
     return;
   }
 
@@ -632,13 +636,13 @@ export function saveCachedTailoredCoverLetter(
   try {
     localStorage.setItem(storageKey, JSON.stringify(versionedData));
   } catch (e) {
-    console.warn(`Could not save cached tailored cover letter for ${jobId}`, e);
+    log.warn(`Could not save cached tailored cover letter for ${jobId}`, { error: e });
   }
 
   // Asynchronously persist to Supabase for multi-device / multi-user persistence if authenticated
   if (resolvedOwner && resolvedOwner !== "guest") {
     saveTailoredCoverLetterToSupabase(jobId, versionedData, resolvedOwner).catch((err) => {
-      console.warn(`Could not sync tailored cover letter to Supabase for ${jobId}:`, err);
+      log.warn(`Could not sync tailored cover letter to Supabase for ${jobId}:`, { error: err });
     });
   }
 }

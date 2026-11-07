@@ -15,6 +15,10 @@
 
 import { dispatchAppsScriptMail, readAppsScriptConfig } from "../early-access/gmail";
 
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger({ context: { module: "billing/dunningDispatcher" } });
+
 export interface DunningLogRow {
   id: string;
   user_id: string;
@@ -196,7 +200,7 @@ export async function dispatchQueuedDunningEmails(options?: {
         .select("id");
       if (stampErr) {
         summary.failed += 1;
-        console.warn(`[DunningDispatch] sent but failed to stamp ${row.id}: ${stampErr.message}`);
+        log.warn(`[DunningDispatch] sent but failed to stamp ${row.id}: ${stampErr.message}`);
       } else if (stamped && stamped.length > 0) {
         summary.sent += 1;
       }

@@ -1,5 +1,9 @@
 import { getSupabaseAdmin, ADMIN_EMAIL } from "./auth";
 
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger({ context: { module: "admin/analytics" } });
+
 export interface PageViewPayload {
   path: string;
   userId?: string | null;
@@ -95,7 +99,7 @@ export async function recordPageView(payload: PageViewPayload): Promise<void> {
     const { error } = await admin.from("page_views").insert(record);
     if (error && error.code !== "PGRST205") {
       // Table exists but insert error
-      console.warn("[analytics] Insert error:", error.message);
+      log.warn("[analytics] Insert error:", { error: error.message });
     }
   } catch (_) {
     // Fail silently
@@ -166,7 +170,7 @@ export async function fetchAllSubscriptions(
       .range(from, to);
 
     if (error) {
-      console.warn(`[analytics] Error fetching subscriptions chunk ${chunkIndex}:`, error.message || error);
+      log.warn(`[analytics] Error fetching subscriptions chunk ${chunkIndex}:`, { detail: error.message || error });
       break;
     }
 
@@ -204,7 +208,7 @@ export async function fetchAllBlockedUsers(
       .range(from, to);
 
     if (error) {
-      console.warn(`[analytics] Error fetching blocked_users chunk ${chunkIndex}:`, error.message || error);
+      log.warn(`[analytics] Error fetching blocked_users chunk ${chunkIndex}:`, { detail: error.message || error });
       break;
     }
 
@@ -265,9 +269,7 @@ export async function fetchUserPageViewsCount(
     }
 
     if (hitCap) {
-      console.warn(
-        `[analytics] Warning: page_views count query reached safe limit of ${maxChunks * chunkSize} rows; results may be truncated.`
-      );
+      log.warn(`[analytics] Warning: page_views count query reached safe limit of ${maxChunks * chunkSize} rows; results may be truncated.`);
     }
   } catch (_) {
     // Check fallback
@@ -335,9 +337,7 @@ export async function getAnalyticsStats(
     }
 
     if (hitCap) {
-      console.warn(
-        `[analytics] Warning: getAnalyticsStats page_views reached safe limit of ${maxChunks * DB_CHUNK_SIZE} rows; results may be truncated.`
-      );
+      log.warn(`[analytics] Warning: getAnalyticsStats page_views reached safe limit of ${maxChunks * DB_CHUNK_SIZE} rows; results may be truncated.`);
     }
 
     if (allViews.length === 0) {
@@ -404,7 +404,7 @@ export async function getAnalyticsStats(
       };
     });
   } catch (err) {
-    console.warn("[analytics] User stats fetch failed:", err);
+    log.warn("[analytics] User stats fetch failed:", { error: err });
   }
 
   // 3. Compute Metrics

@@ -1,3 +1,8 @@
+
+
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger({ context: { module: "admin/auditLog" } });
 /**
  * Administrative Audit Log Service
  * Edge-safe, append-only logger for privileged administrative mutations.
@@ -136,7 +141,7 @@ export async function logAdminAction(options: LogAdminActionOptions): Promise<bo
     const { adminUserId, action, targetType, targetId, metadata, request } = options;
 
     if (!adminUserId || !action) {
-      console.warn("[AdminAuditLog] Missing required adminUserId or action");
+      log.warn("[AdminAuditLog] Missing required adminUserId or action");
       return false;
     }
 
@@ -163,7 +168,7 @@ export async function logAdminAction(options: LogAdminActionOptions): Promise<bo
       process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
 
     if (!serviceKey) {
-      console.warn("[AdminAuditLog] Service role key missing; audit action skipped safely");
+      log.warn("[AdminAuditLog] Service role key missing; audit action skipped safely");
       return false;
     }
 
@@ -186,9 +191,7 @@ export async function logAdminAction(options: LogAdminActionOptions): Promise<bo
 
       if (!res.ok) {
         const errorText = await res.text().catch(() => "Unknown error");
-        console.warn(
-          `[AdminAuditLog] PostgREST insert error (${res.status}): ${errorText.slice(0, 100)}`
-        );
+        log.warn(`[AdminAuditLog] PostgREST insert error (${res.status}): ${errorText.slice(0, 100)}`);
         return false;
       }
 
@@ -197,10 +200,7 @@ export async function logAdminAction(options: LogAdminActionOptions): Promise<bo
       clearTimeout(timeout);
     }
   } catch (err: any) {
-    console.warn(
-      "[AdminAuditLog] Failed to log admin action:",
-      err?.name === "AbortError" ? "Request timed out after 2s" : err?.message || "Unknown error"
-    );
+    log.warn("[AdminAuditLog] Failed to log admin action:", { error: err?.name === "AbortError" ? "Request timed out after 2s" : err?.message || "Unknown error" });
     return false;
   }
 }

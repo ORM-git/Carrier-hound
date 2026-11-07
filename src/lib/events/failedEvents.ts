@@ -17,6 +17,10 @@ import { getSupabaseAdmin } from "../admin/auth";
 import { rpcWithRetry } from "../db/rpcRetry";
 import { withJitter } from "../reliability/jitter";
 
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger({ context: { module: "events/failedEvents" } });
+
 export type FailedEventStatus = "pending" | "replayed" | "dead";
 
 export interface FailedEventRecord {
@@ -108,9 +112,9 @@ function safeLogWarn(message: string, error?: any): void {
     "[REDACTED_EMAIL]"
   );
   if (error) {
-    console.warn(`[Dead-Letter] ${sanitized}`, error);
+    log.warn(`[Dead-Letter] ${sanitized}`, { error: error });
   } else {
-    console.warn(`[Dead-Letter] ${sanitized}`);
+    log.warn(`[Dead-Letter] ${sanitized}`);
   }
 }
 
