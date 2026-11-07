@@ -364,7 +364,7 @@ export function parseResumeText(inputRawText: string): ParsedResumeResult {
 
   // 4. Experience Timeline Extraction
   const experience: WorkExperienceItem[] = [];
-  const dateRangeRegex = /((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{4}|\b\d{4}\b)\s*(?:-|â|to)\s*((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{4}|\b\d{4}\b|Present|Current)/i;
+  const dateRangeRegex = /((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{4}|\b\d{4}\b)\s*(?:-|–|to)\s*((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{4}|\b\d{4}\b|Present|Current)/i;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -378,7 +378,7 @@ export function parseResumeText(inputRawText: string): ParsedResumeResult {
 
       const beforeDate = line.substring(0, match.index).trim();
       if (beforeDate.length > 3) {
-        const parts = beforeDate.split(/[-â|@,]/).map((p) => p.trim());
+        const parts = beforeDate.split(/[-–|@,]/).map((p) => p.trim());
         if (parts.length >= 2) {
           roleCandidate = parts[0];
           companyCandidate = parts[1];
@@ -398,8 +398,8 @@ export function parseResumeText(inputRawText: string): ParsedResumeResult {
         if (subLine.match(dateRangeRegex) || subLine.match(/^(education|skills|certifications|projects)/i)) {
           break;
         }
-        if (subLine.startsWith("â¢") || subLine.startsWith("-") || subLine.startsWith("*") || subLine.length > 20) {
-          bullets.push(subLine.replace(/^[â¢\-*]\s*/, ""));
+        if (subLine.startsWith("•") || subLine.startsWith("-") || subLine.startsWith("*") || subLine.length > 20) {
+          bullets.push(subLine.replace(/^[•\-*]\s*/, ""));
         }
         j++;
       }
@@ -509,7 +509,7 @@ export function parseResumeText(inputRawText: string): ParsedResumeResult {
     const hasTrigger = certTriggers.some((ct) => lower.includes(ct));
 
     if ((inCertSection && line.length > 4 && line.length < 100) || hasTrigger) {
-      const cleanCert = line.replace(/^[â¢\-\*]\s*/, "").trim();
+      const cleanCert = line.replace(/^[•\-\*]\s*/, "").trim();
       if (cleanCert && !certifications.includes(cleanCert) && !/^(certifications|licenses)$/i.test(cleanCert)) {
         certifications.push(cleanCert);
         facts.push({
