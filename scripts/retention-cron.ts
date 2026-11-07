@@ -6,6 +6,10 @@
  * cron_run_logs. Requires the migration to be applied first; fails closed
  * with a clear message when the function is missing.
  *
+ * Also calls public.archive_expired_jobs (migration 20261106l, Database row
+ * #8) to move long-expired jobs into jobs_archive; that step is fail-open
+ * and skips with a warning until the migration is applied.
+ *
  * Usage:
  *   npx tsx scripts/retention-cron.ts         # real purge
  *   npx tsx scripts/retention-cron.ts --dry   # counts only, no deletes
@@ -24,6 +28,12 @@ type PurgeRow = {
   cutoff: string;
   rows_matched: number;
   rows_deleted: number;
+};
+
+type ArchiveRow = {
+  cutoff: string;
+  rows_matched: number;
+  rows_archived: number;
 };
 
 async function main() {
@@ -88,6 +98,56 @@ async function main() {
     completed_at: new Date().toISOString(),
     metadata: { dry_run: dry, results: rows },
   });
+
+  // Job archival (migration 20261106l): moves long-expired jobs out of the
+  // hot table into jobs_archive. Fail-open: until the migration is applied
+  // the function is missing - warn and skip without failing the cron run.
+  const archiveStart = Date.now();
+  const { data: archiveData, error: archiveError } = await supabase.rpc(
+    "archive_expired_jobs",
+    { dry_run: dry }
+  );
+
+  if (archiveError) {
+    if (/could not find|does not exist|function|PGRST202/i.test(archiveError.message)) {
+      console.log(
+        "- Skipping job archival: archive_expired_jobs is not applied yet (migration 20261106l_job_archival.sql)."
+      );
+    } else {
+      console.warn(
+        `- Job archival RPC error (non-fatal): ${archiveError.message}`
+      );
+      try {
+        await supabase.from("cron_run_logs").insert({
+          job_type: "job_archival",
+          status: "failed",
+          error_message: archiveError.message.slice(0, 500),
+          started_at: new Date(archiveStart).toISOString(),
+          completed_at: new Date().toISOString(),
+        });
+      } catch (logErr) {
+        console.warn(`- cron_run_logs insert failed (non-fatal): ${logErr}`);
+      }
+    }
+  } else {
+    const ar = ((archiveData || []) as ArchiveRow[])[0];
+    if (ar) {
+      console.log(
+        `Job archival:    matched=${ar.rows_matched}  archived=${ar.rows_archived}  cutoff=${ar.cutoff}`
+      );
+    }
+    try {
+      await supabase.from("cron_run_logs").insert({
+        job_type: "job_archival",
+        status: "success",
+        started_at: new Date(archiveStart).toISOString(),
+        completed_at: new Date().toISOString(),
+        metadata: { dry_run: dry, results: archiveData },
+      });
+    } catch (logErr) {
+      console.warn(`- cron_run_logs insert failed (non-fatal): ${logErr}`);
+    }
+  }
 }
 
 const heartbeat = startCronHeartbeat("retention");

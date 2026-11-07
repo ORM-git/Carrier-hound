@@ -183,3 +183,23 @@ left join returns r on r.cohort_week = c.cohort_week and r.id = c.id
 group by 1
 order by 1 desc
 limit 12;
+
+-- 13. Job archival (DB row: Archival strategy). jobs_archive is cold storage
+--     for expired listings (migration 20261106l); archive_expired_jobs runs
+--     weekly via the retention cron. Until the migration is applied the first
+--     two queries fail - run the cron_run_logs one alone in that case.
+select count(*) as archivable_now
+from public.jobs
+where is_active = false
+  and status = 'expired'
+  and last_seen_at < now() - interval '90 days';
+
+select count(*) as archived_total,
+       max(archived_at) as last_archived_at
+from public.jobs_archive;
+
+select started_at, status, metadata->>'dry_run' as dry_run
+from public.cron_run_logs
+where job_type = 'job_archival'
+order by started_at desc
+limit 5;
