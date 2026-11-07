@@ -1,3 +1,8 @@
+
+
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger({ context: { module: "api/envCheck" } });
 /**
  * Shared utility for verifying required server environment variables.
  * Consistent error responses and logging naming the missing variable (never values).
@@ -18,7 +23,7 @@ export function checkRequiredEnv(
 ): MissingEnvError | null {
   for (const [name, val] of Object.entries(requiredMap)) {
     if (!val || !val.trim()) {
-      console.error(`[${context}] Missing required environment variable: ${name}`);
+      log.error(`[${context}] Missing required environment variable: ${name}`);
       return {
         error: `Missing required environment variable: ${name}`,
         missingVariable: name,
