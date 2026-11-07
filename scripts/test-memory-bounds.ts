@@ -14,7 +14,7 @@ function check(name: string, cond: boolean) {
   else { failed++; console.log(`FAIL ${name}`); }
 }
 
-const handler = fs.readFileSync("src/lib/ai/serviceHandler.ts", "utf8");
+const handler = fs.readFileSync("src/lib/ai/idempotency.ts", "utf8");
 check(
   "AI idempotency result cache keeps its 10,000-entry cap",
   /idempotencyResultCache\.size > 10000/.test(handler)
