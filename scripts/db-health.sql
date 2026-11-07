@@ -117,3 +117,17 @@ order by array_position(
   array['signup_started','signup_completed','onboarding_started','onboarding_completed','apply_started','apply_completed'],
   event
 );
+
+-- 11. Slow queries (DB row: Slow-query log). pg_stat_statements is enabled by
+--     migration 20261105c; this is the review surface for what it records.
+--     NOTE: Postgres log_min_duration_statement cannot be set from the SQL editor
+--     on Supabase - if log-file slow logging is wanted it is a dashboard setting.
+select left(query, 120) as query,
+       calls,
+       round(total_exec_time::numeric, 1) as total_ms,
+       round(mean_exec_time::numeric, 1) as mean_ms,
+       round(max_exec_time::numeric, 1) as max_ms
+from pg_stat_statements
+where query not ilike '%pg_stat_statements%'
+order by total_exec_time desc
+limit 20;
