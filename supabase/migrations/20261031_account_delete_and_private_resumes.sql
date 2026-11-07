@@ -161,3 +161,23 @@ CREATE POLICY "Owner can delete own resume files"
 --                           under `resumes/:uid/**` via Supabase Storage API
 --   Step 8 (Auth User):     Delete user `:uid` from `auth.users` via `auth.admin.deleteUser(:uid)`
 -- =============================================================================
+
+-- ============================================================================
+-- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
+--   DROP POLICY IF EXISTS "Users can manage own saved_jobs" ON public.saved_jobs;
+--   DROP POLICY IF EXISTS "Users can manage own resumes" ON public.resumes;
+--   DROP POLICY IF EXISTS "Owner can select own resume files" ON storage.objects;
+--   DROP POLICY IF EXISTS "Owner can insert own resume files" ON storage.objects;
+--   DROP POLICY IF EXISTS "Owner can update own resume files" ON storage.objects;
+--   DROP POLICY IF EXISTS "Owner can delete own resume files" ON storage.objects;
+--   DROP INDEX IF EXISTS public.idx_saved_jobs_user_id;
+--   DROP INDEX IF EXISTS public.idx_resumes_user_id;
+--   ALTER TABLE public.subscriptions DROP CONSTRAINT IF EXISTS subscriptions_user_id_fkey;
+--   ALTER TABLE public.saved_jobs DISABLE ROW LEVEL SECURITY;
+--   ALTER TABLE public.resumes DISABLE ROW LEVEL SECURITY;
+--   DROP TABLE IF EXISTS public.saved_jobs CASCADE;
+--   DROP TABLE IF EXISTS public.resumes CASCADE;
+--   DELETE FROM storage.buckets WHERE id = 'resumes';
+--   NOTE: constraint subscriptions_user_id_fkey was dropped and re-added by this file with a new definition; restore its prior definition from the earlier migration that created it.
+--   NOTE: this migration itself drops POLICY public resume access - restore it from the earlier migration that created it (or from backup) if rolling back.
+-- ============================================================================
