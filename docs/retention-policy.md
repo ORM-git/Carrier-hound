@@ -7,6 +7,7 @@ logged to `cron_run_logs` as job_type `retention_purge`.
 | Table | Class | Window | Rationale |
 | --- | --- | --- | --- |
 | `page_views` | Analytics log | 90 days | Trend analytics need a quarter; raw views older than that have no operational use. |
+| `funnel_events` | Analytics log | 90 days | Signup-to-apply funnel trends are quarterly, same as page_views; raw events older than that have no operational use. |
 | `gmail_send_log` | Mail log | 180 days | Doubles as evidence for suppression/bounce handling; 6 months covers dispute windows. |
 | `cron_run_logs` | Ops log | 90 days | Debugging window for recurring cron failures. |
 | `admin_audit_log` | Audit trail | 365 days | Admin actions stay reviewable for a year. |
