@@ -20,6 +20,8 @@ const ADOPTERS: Array<[string, string]> = [
   ["src/app/api/stats/route.ts", "/api/stats"],
   ["src/app/api/track/route.ts", "/api/track"],
   ["src/app/api/jobs/suggest/route.ts", "/api/jobs/suggest"],
+  ["src/app/api/billing/razorpay/order/route.ts", "/api/billing/razorpay/order"],
+  ["src/app/api/billing/razorpay/verify/route.ts", "/api/billing/razorpay/verify"],
 ];
 
 describe("structured logging adoption guard (Backend sheet rank 11)", () => {
