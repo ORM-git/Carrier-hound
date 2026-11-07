@@ -28,3 +28,13 @@ revoke all on public.web_vitals from public, anon, authenticated;
 
 -- Grant access to service_role only
 grant all on public.web_vitals to service_role;
+
+-- ============================================================================
+-- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
+--   DROP INDEX IF EXISTS public.idx_web_vitals_name_route_created_at;
+--   DROP INDEX IF EXISTS public.idx_web_vitals_created_at;
+--   ALTER TABLE public.web_vitals DISABLE ROW LEVEL SECURITY;
+--   DROP TABLE IF EXISTS public.web_vitals CASCADE;
+--   REVOKE ALL ON public.web_vitals FROM service_role;
+--   GRANT ALL ON public.web_vitals TO public, anon, authenticated;
+-- ============================================================================
