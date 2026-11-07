@@ -8,6 +8,8 @@
  */
 import { createClient } from "@supabase/supabase-js";
 import { dispatchQueuedDunningEmails } from "../src/lib/billing/dunningDispatcher";
+import { reportCronFailure } from "./lib/cron-sentry";
+import { startCronHeartbeat } from "./lib/cron-heartbeat";
 
 async function main() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -34,7 +36,13 @@ async function main() {
   }
 }
 
-main().catch((err) => {
+const heartbeat = startCronHeartbeat("dunning-dispatch");
+
+main()
+  .then(() => heartbeat.ok())
+  .catch(async (err) => {
   console.error("[DunningDispatch] fatal:", err?.message || err);
+  await reportCronFailure("dunning-dispatch", err);
+  await heartbeat.error();
   process.exit(2);
 });

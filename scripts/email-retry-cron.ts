@@ -17,6 +17,8 @@ dotenv.config({ path: ".env.local" });
 dotenv.config({ path: ".env" });
 
 import { replayFailedEmailEvents } from "../src/lib/events/failedEvents";
+import { reportCronFailure } from "./lib/cron-sentry";
+import { startCronHeartbeat } from "./lib/cron-heartbeat";
 
 async function main() {
   const args = process.argv.slice(2);
@@ -54,7 +56,13 @@ async function main() {
   }
 }
 
-main().catch((err) => {
+const heartbeat = startCronHeartbeat("email-retry");
+
+main()
+  .then(() => heartbeat.ok())
+  .catch(async (err) => {
   console.error("Fatal unhandled email retry cron error:", err);
+  await reportCronFailure("email-retry", err);
+  await heartbeat.error();
   process.exit(1);
 });
