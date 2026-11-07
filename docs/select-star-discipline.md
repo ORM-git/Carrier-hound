@@ -1,6 +1,6 @@
 # SELECT * Discipline (Database sheet rank 73)
 
-Static audit of every `.select("*")` call in `src/lib` (server-side code), as of
+Static audit of every `.select("*")` call in `src/**` (`.ts` and `.tsx`, server and app code), as of
 main after PR #401. The sheet evidence reads "Client queries column-list; RPCs
 use SELECT * INTO record (acceptable)". The first half no longer holds: the
 server code has 18 `.select("*")` call sites. This document records the
@@ -50,6 +50,6 @@ acceptable: they are plpgsql row variables, not wire payloads.
 
 ## Guard
 
-`selectStarGuard.test.ts` scans `src/lib/**` for `.select("*")` /
+`selectStarGuard.test.ts` scans `src/**` (`.ts` and `.tsx`) for `.select("*")` /
 `.select('*')` and fails when a call site is not in the allowlist above. To add
 a site deliberately, add it here and to the allowlist in the same PR.
