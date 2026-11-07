@@ -7,15 +7,15 @@ import {
   ATO_LIMITS,
 } from "@/lib/security/authMonitor";
 
+import { makeRequestFromIp, makeRateLimitResult } from "./fixtures";
+
 function makeReq(ip?: string): Request {
-  const headers = new Headers();
-  if (ip) headers.set("x-forwarded-for", ip);
-  return new Request("https://careermonke.com/api/admin/x", { headers });
+  return makeRequestFromIp("https://careermonke.com/api/admin/x", ip);
 }
 
-const over = { allowed: false, retryAfter: 60, currentCount: 99, source: "shared" as const };
-const under = { allowed: true, retryAfter: 0, currentCount: 1, source: "shared" as const };
-const down = { allowed: false, retryAfter: 30, currentCount: 0, source: "unavailable" as const };
+const over = makeRateLimitResult({ allowed: false, retryAfter: 60, currentCount: 99 });
+const under = makeRateLimitResult();
+const down = makeRateLimitResult({ allowed: false, retryAfter: 30, currentCount: 0, source: "unavailable" });
 
 describe("authMonitor (credential-stuffing / ATO detection)", () => {
   beforeEach(() => _resetAuthMonitorDedupe());
