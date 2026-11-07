@@ -2,8 +2,11 @@
 
 import React, { useState, useEffect, useRef, useLayoutEffect } from "react";
 import Link from "next/link";
+import { readVersioned, writeVersioned } from "@/lib/storage/versioned";
 
 export const COOKIE_CONSENT_KEY = "cm_cookie_notice";
+/** Schema version of the stored consent payload (v0 was the legacy raw "true" string). */
+export const COOKIE_CONSENT_VERSION = 1;
 export const COOKIE_CONSENT_EVENT = "cm_cookie_consent_updated";
 
 /**
@@ -17,7 +20,12 @@ export function useCookieNoticeHeight(): number {
   useEffect(() => {
     const updateHeight = () => {
       try {
-        const acknowledged = localStorage.getItem(COOKIE_CONSENT_KEY);
+        const acknowledged = readVersioned<boolean>(COOKIE_CONSENT_KEY, {
+          version: COOKIE_CONSENT_VERSION,
+          fallback: false,
+          migrate: (from, raw) => (from === 0 ? raw === true || raw === "true" : raw),
+          validate: (d): d is boolean => typeof d === "boolean",
+        });
         if (acknowledged) {
           setHeight(0);
           if (typeof document !== "undefined") {
@@ -75,7 +83,12 @@ export default function CookieNotice() {
   useEffect(() => {
     setMounted(true);
     try {
-      const acknowledged = localStorage.getItem(COOKIE_CONSENT_KEY);
+      const acknowledged = readVersioned<boolean>(COOKIE_CONSENT_KEY, {
+        version: COOKIE_CONSENT_VERSION,
+        fallback: false,
+        migrate: (from, raw) => (from === 0 ? raw === true || raw === "true" : raw),
+        validate: (d): d is boolean => typeof d === "boolean",
+      });
       if (!acknowledged) {
         setVisible(true);
       } else {
@@ -117,7 +130,7 @@ export default function CookieNotice() {
 
   const handleDismiss = () => {
     try {
-      localStorage.setItem(COOKIE_CONSENT_KEY, "true");
+      writeVersioned(COOKIE_CONSENT_KEY, COOKIE_CONSENT_VERSION, true);
       if (typeof document !== "undefined") {
         document.documentElement.style.setProperty("--cm-cookie-notice-height", "0px");
       }
