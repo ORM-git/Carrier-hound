@@ -3,6 +3,7 @@
 -- Date: 2026-11-01
 -- File: supabase/migrations/20261101_lock_scraper_metadata.sql
 -- Status: PENDING APPLICATION (Run in Supabase SQL editor by project owner)
+--   If/when applied: record with  node scripts/record-migration.cjs 20261101_lock_scraper_metadata
 --
 -- Security & Performance Improvements:
 -- 1. Scraper Metadata Lockdown:
