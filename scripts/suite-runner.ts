@@ -171,9 +171,6 @@ export const SUITES: SuiteSpec[] = [
 
   // DB-capable suites: anonymous write attempt (tests RLS denial; attempts insert/update)
   { name: "scripts/test-filters.ts", command: "npx tsx scripts/test-filters.ts", classification: "db-anon-write-attempt", requiresSupabase: true },
-<<<<<<< fix/suite-runner-rpc-retry-placement
-  { name: "scripts/test-rpc-retry.ts", command: "npx tsx scripts/test-rpc-retry.ts", classification: "offline" },
-=======
   { name: "scripts/check-plan-regression.mjs --selftest", command: "node scripts/check-plan-regression.mjs --selftest", classification: "offline" },
   { name: "scripts/test-pii-access-log.ts", command: "npx tsx scripts/test-pii-access-log.ts", classification: "offline" },
   { name: "scripts/test-dunning-dispatcher.ts", command: "npx tsx scripts/test-dunning-dispatcher.ts", classification: "offline" },
@@ -210,7 +207,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-capacity-headroom-policy.ts", command: "npx tsx scripts/test-capacity-headroom-policy.ts", classification: "offline" },
   { name: "scripts/test-slow-query-review.ts", command: "npx tsx scripts/test-slow-query-review.ts", classification: "offline" },
   { name: "scripts/test-activation-metrics.ts", command: "npx tsx scripts/test-activation-metrics.ts", classification: "offline" },
->>>>>>> main
+  { name: "scripts/test-rpc-retry.ts", command: "npx tsx scripts/test-rpc-retry.ts", classification: "offline" },
 ];
 
 export interface RunSummary {
