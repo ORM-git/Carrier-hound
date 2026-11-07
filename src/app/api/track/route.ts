@@ -64,7 +64,7 @@ async function getSessionUserId(req: Request): Promise<string | null> {
 }
 
 export async function POST(req: Request) {
-  const log = baseLog.child({ requestId: req.headers.get("x-request-id") ?? "unknown" });
+  const log = baseLog.child({ requestId: req?.headers.get("x-request-id") ?? "unknown" });
   try {
     // 1. Size cap check via Content-Length header (if present)
     const contentLength = req.headers.get("content-length");
