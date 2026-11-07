@@ -8,7 +8,7 @@ in the same PR. Atomic quota mutations intentionally use RPC functions
 as one atomic statement per call; triggers below are for audit, derived
 data, and normalization only.
 
-Measured 7 Nov 2026: 7 triggers across 4 migration files.
+Measured 7 Nov 2026: 7 triggers across 4 migration files. Updated 7 Nov 2026 for `20261107d_row_version_optimistic_lock.sql` (not applied): 11 triggers across 5 migration files.
 
 | Trigger | Table | Timing / event | Function | Purpose |
 | --- | --- | --- | --- | --- |
@@ -19,6 +19,10 @@ Measured 7 Nov 2026: 7 triggers across 4 migration files.
 | `trg_change_history_payment_orders` | `payment_orders` | AFTER INSERT OR UPDATE OR DELETE | `log_row_change()` | Same change-history capture for payment orders. |
 | `trg_change_history_user_addon_credits` | `user_addon_credits` | AFTER INSERT OR UPDATE OR DELETE | `log_row_change()` | Same change-history capture for add-on credit balances. |
 | `trg_change_history_user_preferences` | `user_preferences` | AFTER INSERT OR UPDATE OR DELETE | `log_row_change()` | Same change-history capture for user preferences. |
+| `trg_row_version_user_preferences` | `user_preferences` | BEFORE UPDATE | `bump_row_version()` | Optimistic-lock counter: row_version + 1 on every update (20261107d, not applied). Never rejects a write. |
+| `trg_row_version_resumes` | `resumes` | BEFORE UPDATE | `bump_row_version()` | Optimistic-lock counter: row_version + 1 on every update (20261107d, not applied). Never rejects a write. |
+| `trg_row_version_applications` | `applications` | BEFORE UPDATE | `bump_row_version()` | Optimistic-lock counter: row_version + 1 on every update (20261107d, not applied). Never rejects a write. |
+| `trg_row_version_candidate_profiles` | `candidate_profiles` | BEFORE UPDATE | `bump_row_version()` | Optimistic-lock counter: row_version + 1 on every update (20261107d, not applied). Never rejects a write. |
 
 <!-- guard-entries: one per line, parsed by dbTriggersDoc.test.ts -->
 ```guard
@@ -29,4 +33,8 @@ trigger: trg_change_history_subscriptions | 20261106c_change_history_triggers.sq
 trigger: trg_change_history_payment_orders | 20261106c_change_history_triggers.sql | payment_orders
 trigger: trg_change_history_user_addon_credits | 20261106c_change_history_triggers.sql | user_addon_credits
 trigger: trg_change_history_user_preferences | 20261106c_change_history_triggers.sql | user_preferences
+trigger: trg_row_version_user_preferences | 20261107d_row_version_optimistic_lock.sql | user_preferences
+trigger: trg_row_version_resumes | 20261107d_row_version_optimistic_lock.sql | resumes
+trigger: trg_row_version_applications | 20261107d_row_version_optimistic_lock.sql | applications
+trigger: trg_row_version_candidate_profiles | 20261107d_row_version_optimistic_lock.sql | candidate_profiles
 ```
