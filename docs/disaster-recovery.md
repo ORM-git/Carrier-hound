@@ -22,7 +22,8 @@ decisions, not something this document can invent.
 
 1. Redeploy the last green commit: Netlify dashboard "Retry deploy", or
    `netlify deploy --prod` locally.
-2. Verify: load `/api/health/db` (adds `db-health` check) and the homepage.
+2. Verify: load `/api/health` and the homepage (or run
+   `npx tsx scripts/smoke-post-deploy.ts` for the scripted smoke suite).
 3. If the last deploy is broken, redeploy the previous commit.
 
 ### 2. Database corrupted or dropped
