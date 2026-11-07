@@ -259,3 +259,9 @@ $$;
 
 revoke all on function public.fulfil_payment_order(text, uuid) from public;
 grant execute on function public.fulfil_payment_order(text, uuid) to service_role;
+
+-- ============================================================================
+-- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
+--   NOTE: replaces function public.fulfil_payment_order (first defined in 20261103c_fulfil_payment_fn.sql); restore the prior definition from that file if this change must be undone.
+--   NOTE: data writes above (insert/update/delete) need a manual restore from backup or a hand-written reverse; no automatic rollback.
+-- ============================================================================
