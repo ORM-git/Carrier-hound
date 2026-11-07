@@ -1,6 +1,7 @@
 import { createOperationId } from "../security/operationId";
 import { NextResponse } from "next/server";
 import { rpcWithRetry } from "../db/rpcRetry";
+import { readChatCompletionStream } from "./upstreamStream";
 import { createClient } from "@supabase/supabase-js";
 import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
 import { verifyUserNotBanned } from "@/lib/admin/auth";
@@ -145,6 +146,14 @@ export interface AiServiceDeps {
   checkSharedRateLimit?: typeof checkSharedRateLimitStrict;
   circuitBreaker?: GroqCircuitBreaker;
   groqTimeoutMs?: number;
+  /**
+   * Request `stream: true` from the upstream provider and assemble the text
+   * server-side (Backend row "Streaming Responses"). OFF unless set; when off the
+   * upstream request body and response handling are unchanged. The assembled text
+   * still goes through validation, sanitization and settlement before anything
+   * is returned.
+   */
+  upstreamStream?: boolean;
 }
 
 export {
@@ -1004,6 +1013,9 @@ export async function executeAiCore(
               max_tokens: payload.maxOutputTokens,
               temperature: payload.temperature,
               ...(payload.jsonMode ? { response_format: { type: "json_object" } } : {}),
+              ...(activeDeps.upstreamStream === true
+                ? { stream: true, stream_options: { include_usage: true } }
+                : {}),
             }),
             signal: abortController.signal,
           });
@@ -1032,7 +1044,10 @@ export async function executeAiCore(
         }
 
         try {
-          groqData = await groqResponse.json();
+          groqData =
+            activeDeps.upstreamStream === true
+              ? await readChatCompletionStream(groqResponse.body)
+              : await groqResponse.json();
         } catch (parseErr) {
           clearTimeout(timeoutHandle);
           activeBreaker.recordFailure();
