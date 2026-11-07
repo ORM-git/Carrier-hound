@@ -8,7 +8,7 @@ in the same PR. Atomic quota mutations intentionally use RPC functions
 as one atomic statement per call; triggers below are for audit, derived
 data, and normalization only.
 
-Measured 7 Nov 2026: 7 triggers across 4 migration files. Updated 7 Nov 2026 for `20261107d_row_version_optimistic_lock.sql` (not applied): 11 triggers across 5 migration files.
+Measured 7 Nov 2026: 7 triggers across 4 migration files. Updated 7 Nov 2026 for `20261107d_row_version_optimistic_lock.sql` (not applied): 11 triggers across 5 migration files. Updated for `20261107g_touch_updated_at_triggers.sql` (not applied): 16 triggers across 6 migration files.
 
 | Trigger | Table | Timing / event | Function | Purpose |
 | --- | --- | --- | --- | --- |
@@ -23,6 +23,11 @@ Measured 7 Nov 2026: 7 triggers across 4 migration files. Updated 7 Nov 2026 for
 | `trg_row_version_resumes` | `resumes` | BEFORE UPDATE | `bump_row_version()` | Optimistic-lock counter: row_version + 1 on every update (20261107d, not applied). Never rejects a write. |
 | `trg_row_version_applications` | `applications` | BEFORE UPDATE | `bump_row_version()` | Optimistic-lock counter: row_version + 1 on every update (20261107d, not applied). Never rejects a write. |
 | `trg_row_version_candidate_profiles` | `candidate_profiles` | BEFORE UPDATE | `bump_row_version()` | Optimistic-lock counter: row_version + 1 on every update (20261107d, not applied). Never rejects a write. |
+| `trg_touch_updated_at_candidate_profiles` | `candidate_profiles` | BEFORE UPDATE | `touch_updated_at()` | Sets updated_at = now() when the UPDATE did not change it (20261107g, not applied). Never rejects a write. |
+| `trg_touch_updated_at_applications` | `applications` | BEFORE UPDATE | `touch_updated_at()` | Sets updated_at = now() when the UPDATE did not change it (20261107g, not applied). Never rejects a write. |
+| `trg_touch_updated_at_user_preferences` | `user_preferences` | BEFORE UPDATE | `touch_updated_at()` | Sets updated_at = now() when the UPDATE did not change it (20261107g, not applied). Never rejects a write. |
+| `trg_touch_updated_at_resumes` | `resumes` | BEFORE UPDATE | `touch_updated_at()` | Sets updated_at = now() when the UPDATE did not change it (20261107g, not applied). Never rejects a write. |
+| `trg_touch_updated_at_tailored_resumes` | `tailored_resumes` | BEFORE UPDATE | `touch_updated_at()` | Sets updated_at = now() when the UPDATE did not change it (20261107g, not applied). Never rejects a write. |
 
 <!-- guard-entries: one per line, parsed by dbTriggersDoc.test.ts -->
 ```guard
@@ -37,4 +42,9 @@ trigger: trg_row_version_user_preferences | 20261107d_row_version_optimistic_loc
 trigger: trg_row_version_resumes | 20261107d_row_version_optimistic_lock.sql | resumes
 trigger: trg_row_version_applications | 20261107d_row_version_optimistic_lock.sql | applications
 trigger: trg_row_version_candidate_profiles | 20261107d_row_version_optimistic_lock.sql | candidate_profiles
+trigger: trg_touch_updated_at_candidate_profiles | 20261107g_touch_updated_at_triggers.sql | candidate_profiles
+trigger: trg_touch_updated_at_applications | 20261107g_touch_updated_at_triggers.sql | applications
+trigger: trg_touch_updated_at_user_preferences | 20261107g_touch_updated_at_triggers.sql | user_preferences
+trigger: trg_touch_updated_at_resumes | 20261107g_touch_updated_at_triggers.sql | resumes
+trigger: trg_touch_updated_at_tailored_resumes | 20261107g_touch_updated_at_triggers.sql | tailored_resumes
 ```

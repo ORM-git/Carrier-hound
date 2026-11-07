@@ -461,6 +461,7 @@ export default function MobileFilterSheet({
                     <div className="relative">
                       <Search className="w-4 h-4 text-[#94A3B8] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                       <input
+                        aria-label="City or specific area"
                         type="text"
                         placeholder="Search city or specific area..."
                         value={draft.location}
@@ -592,6 +593,7 @@ export default function MobileFilterSheet({
                   <div className="relative">
                     <Building className="w-4 h-4 text-[#94A3B8] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                     <input
+                      aria-label="Company"
                       type="text"
                       placeholder="e.g. Stripe, OpenAI, Linear..."
                       value={draft.company || ""}
