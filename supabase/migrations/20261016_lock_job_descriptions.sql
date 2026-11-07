@@ -48,3 +48,12 @@ BEGIN
       WITH CHECK (true);
   END IF;
 END $$;
+
+-- ============================================================================
+-- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
+--   DROP POLICY IF EXISTS "job_descriptions_service_role_all" ON public.job_descriptions;
+--   NOTE: re-enables RLS on public.job_descriptions (first enabled in 20261001_phase1_storage_optimization.sql); rollback of THIS file leaves RLS as it was.
+--   NOTE: this migration itself drops POLICY job_descriptions_public_read - restore it from the earlier migration that created it (or from backup) if rolling back.
+--   NOTE: this migration itself drops POLICY job_descriptions_anon_read - restore it from the earlier migration that created it (or from backup) if rolling back.
+--   NOTE: this migration itself drops POLICY job_descriptions_authenticated_read - restore it from the earlier migration that created it (or from backup) if rolling back.
+-- ============================================================================
