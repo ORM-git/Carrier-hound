@@ -16,7 +16,7 @@
  * swallowed. Analytics must never break a user flow.
  */
 
-import { COOKIE_CONSENT_KEY } from "@/components/CookieNotice";
+import { readCookieConsent } from "@/lib/analytics/cookieConsent";
 
 export const FUNNEL_EVENTS = [
   "signup_started",
@@ -33,12 +33,7 @@ const ALLOWED: ReadonlySet<string> = new Set(FUNNEL_EVENTS);
 const MAX_METADATA_BYTES = 2048;
 
 function hasAnalyticsConsent(): boolean {
-  try {
-    if (typeof window === "undefined") return false;
-    return Boolean(window.localStorage.getItem(COOKIE_CONSENT_KEY));
-  } catch {
-    return false;
-  }
+  return readCookieConsent();
 }
 
 export interface FunnelTrackOptions {

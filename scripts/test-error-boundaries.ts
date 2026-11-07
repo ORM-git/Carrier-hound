@@ -182,7 +182,9 @@ async function runTestSuite() {
 
   try {
     const mockStorage = new MockLocalStorage();
-    (globalThis as any).window = {};
+    // The shared consent reader reads window.localStorage (not a bare
+    // global), so the mock window must expose the mock storage.
+    (globalThis as any).window = { localStorage: mockStorage };
     (globalThis as any).localStorage = mockStorage;
 
     // Case 4A: No DSN set, no mock -> should NOT report

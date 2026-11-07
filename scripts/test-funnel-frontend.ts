@@ -5,6 +5,7 @@
  * Run: npx tsx scripts/test-funnel-frontend.ts
  */
 import * as fs from "fs";
+import * as path from "path";
 
 let passed = 0;
 let failed = 0;
@@ -34,12 +35,17 @@ for (const s of STAGES) {
 }
 
 // 2. consent gating (same key as PageViewTracker / UTM capture)
-check("emitter gates on COOKIE_CONSENT_KEY", emitter.includes("COOKIE_CONSENT_KEY") && emitter.includes("localStorage"));
+check("emitter gates through the shared readCookieConsent reader", emitter.includes("readCookieConsent") && emitter.includes("hasAnalyticsConsent"));
+function readFileSafe(p: string): string {
+  return fs.readFileSync(path.resolve(p), "utf8");
+}
+const consentReader = readFileSafe("src/lib/analytics/cookieConsent.ts");
+check("shared reader gates on COOKIE_CONSENT_KEY via readVersioned", consentReader.includes("COOKIE_CONSENT_KEY") && consentReader.includes("readVersioned"));
 check("no-consent -> no fetch (gate precedes fetch)", emitter.indexOf("hasAnalyticsConsent()") < emitter.indexOf('fetch("/api/track"'));
 
 // 3. fail-open contract
 check("fetch failure swallowed", emitter.includes('.catch(() =>'));
-check("server-side no-op", emitter.includes('typeof window === "undefined"'));
+check("server-side no-op (reader chain guards window)", readFileSafe("src/lib/storage/versioned.ts").includes('typeof window === "undefined"'));
 
 // 4. posts to the existing funnel branch of /api/track
 check("posts eventType funnel to /api/track", emitter.includes('eventType: "funnel"') && emitter.includes('"/api/track"'));
