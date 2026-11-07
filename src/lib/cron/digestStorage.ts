@@ -4,6 +4,10 @@ import { computeFitDiagnostics } from "../matcher/scoring";
 import { getLiveJobs } from "../jobs/service";
 import { getProAccessStatus } from "../billing/subscription";
 
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger({ context: { module: "cron/digestStorage" } });
+
 export interface DigestMatchItem {
   jobId: string;
   title: string;
@@ -97,7 +101,7 @@ export async function getTodayDigest(userId?: string, isProUser?: boolean): Prom
       }
     }
   } catch (e) {
-    console.warn("Could not retrieve remote digest, computing from live jobs:", e);
+    log.warn("Could not retrieve remote digest, computing from live jobs:", { error: e });
   }
 
   // Compute top matches across the full relevant dataset against candidate profile
