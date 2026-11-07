@@ -30,14 +30,14 @@ export default function PrivacyPolicyPage() {
         <h1 className="text-2xl sm:text-3xl font-bold text-[#09090B] tracking-tight">
           Privacy Policy
         </h1>
-        <p className="text-xs text-gray-500 font-mono">Last updated: October 30, 2026</p>
+        <p className="text-xs text-gray-500 font-mono">Last updated: November 6, 2026</p>
 
         <p className="mb-2">
           Welcome to CareerMonke. This Privacy Policy explains how Olive Ridley Media Private Limited (&quot;the Company&quot;, &quot;we&quot;, &quot;us&quot;, or &quot;our&quot;) collects, protects, uses, discloses, and processes your personal information when you use our website, mobile applications, and platform tools.
         </p>
 
         <p className="mb-2">
-          We are committed to maintaining the highest standards of data privacy for both our domestic users in India and our international users worldwide. By accessing our platform, you consent to the data practices described in this policy.
+          By accessing our platform, you consent to the data practices described in this policy. Where the law requires a separate consent (for example, for optional cookies), we ask for it separately.
         </p>
 
         <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">1. Information We Collect</h2>
@@ -52,7 +52,7 @@ export default function PrivacyPolicyPage() {
             <strong>User Content:</strong> Resumes, CVs, cover letters, or career text fragments uploaded in PDF or Word formats to execute our AI resume optimization features.
           </li>
           <li>
-            <strong>Payment Information:</strong> For processing subscription plans, we collect non-sensitive transaction data (such as billing address, country of origin, and selected plan). We do not collect or store your complete credit/debit card numbers or bank account pins.
+            <strong>Payment Information:</strong> For processing subscription plans, we collect non-sensitive transaction data (such as billing address, country of origin, and selected plan). We do not collect or store your complete credit/debit card numbers, UPI PINs, or netbanking credentials.
           </li>
           <li>
             <strong>Usage &amp; Device Data:</strong> IP addresses, browser types, operating systems, and device identifiers collected automatically via operational tracking tags and session cookies.
@@ -65,18 +65,10 @@ export default function PrivacyPolicyPage() {
         </p>
         <ul className="list-disc pl-5 space-y-2 mb-2">
           <li>
-            <strong>To Provide Services:</strong> Activating premium job feeds, processing AI resume scores, and managing active member portals.
+            <strong>To Provide Services:</strong> Activating premium job feeds, personalizing job matches, processing AI resume scores, and managing active member portals.
           </li>
           <li>
-            <strong>To Process Payments Securely:</strong> We leverage secure, PCI-DSS compliant third-party payment infrastructure partners:
-            <ul className="list-disc pl-5 space-y-1 mt-1">
-              <li>
-                <strong>Razorpay Software Private Limited:</strong> Used to securely process domestic payments within India (INR) via UPI, local cards, and netbanking networks.
-              </li>
-              <li>
-                <strong>Stripe, Inc.:</strong> Used to securely process international payments and multi-currency transactions across global credit, debit, and localized digital banking networks.
-              </li>
-            </ul>
+            <strong>To Process Payments Securely:</strong> All transactions are processed in Indian Rupees (INR) through Razorpay Software Private Limited, a PCI-DSS compliant payment gateway, via UPI, local cards, and netbanking networks.
           </li>
           <li>
             <strong>Customer Support:</strong> Communicating updates, service notifications, and resolving incoming technical issues sent to{" "}
@@ -92,10 +84,32 @@ export default function PrivacyPolicyPage() {
           </li>
         </ul>
 
-        <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">3. Data Sharing and International Transfers</h2>
+        <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">3. How Our AI Features Process Your Resume Data</h2>
+        <p className="mb-2">
+          CareerMonke&apos;s AI features (resume match scoring, AI resume tailoring, and AI cover letter generation) run only when you explicitly start them for a specific job. This is how your data flows when they run:
+        </p>
         <ul className="list-disc pl-5 space-y-2 mb-2">
           <li>
-            <strong>Service Providers:</strong> We share necessary fragments of your data with trusted cloud storage entities, AI model processing API endpoints, and our designated payment processing platforms (Razorpay and Stripe) to execute your requested tasks.
+            <strong>What is sent:</strong> the text of the resume or candidate profile you uploaded, and the text of the target job description. Nothing else is included.
+          </li>
+          <li>
+            <strong>Who receives it:</strong> our AI processing provider, Groq, Inc. (GroqCloud API), over an encrypted connection. The request is made from our servers; your data is never sent to an AI provider directly from your browser, and AI provider keys are never exposed to your device.
+          </li>
+          <li>
+            <strong>What it is used for:</strong> solely to generate the score, tailored resume, or cover letter you requested. We do not use your resume content to train models, and we do not send it to any other AI provider.
+          </li>
+          <li>
+            <strong>What is stored:</strong> the generated result is saved to your account so you can download it again. Your uploaded resume files are stored in private cloud storage accessible only to your account until you delete them or close your account.
+          </li>
+          <li>
+            Groq&apos;s own handling of the data it receives is governed by Groq&apos;s API terms and privacy policy.
+          </li>
+        </ul>
+
+        <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">4. Data Sharing and Service Providers</h2>
+        <ul className="list-disc pl-5 space-y-2 mb-2">
+          <li>
+            <strong>Service Providers:</strong> We share only the necessary fragments of your data with the providers that run the platform: Supabase (database, authentication, and file storage), Cloudflare and Netlify (hosting and content delivery), Google (sign-in and transactional email delivery), Sentry (error monitoring with personal identifiers removed before dispatch), Razorpay (payments), and Groq (AI processing, as described above).
           </li>
           <li>
             <strong>Cross-Border Transfers:</strong> Because CareerMonke caters to a global market, data collected from international jurisdictions may be securely stored and processed on cloud servers located outside your home region. We implement strict standard contractual clauses to ensure your data receives identical protection layers worldwide.
@@ -105,37 +119,123 @@ export default function PrivacyPolicyPage() {
           </li>
         </ul>
 
-        <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">4. Global Privacy Rights &amp; Compliance</h2>
+        <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">5. Your Privacy Rights and How to Exercise Them</h2>
         <p className="mb-2">
-          Depending on your geographical location, you possess distinct legal rights regarding your private data:
+          Under India&apos;s Digital Personal Data Protection (DPDP) Act, you have the right to access your personal data, correct or update it, request its erasure, raise a grievance, and nominate another person to exercise these rights if you are unable to. If you live outside India, the law of your region may give you additional rights; contact us and we will honour every right that applies to our processing.
         </p>
         <ul className="list-disc pl-5 space-y-2 mb-2">
           <li>
-            <strong>Indian Users (DPDP Act Compliance):</strong> You maintain the right to view, correct, update, or completely request the deletion of your account parameters.
+            <strong>Access and portability:</strong> you can export a copy of your account data at any time from your account settings.
           </li>
           <li>
-            <strong>European Union Users (GDPR Compliance):</strong> You possess the right to data portability, the right to restrict specific backend data processing, and the absolute right to be forgotten.
+            <strong>Correction:</strong> you can edit your profile, preferences, and uploaded resumes from your account at any time.
           </li>
           <li>
-            <strong>California Users (CCPA Compliance):</strong> You maintain the right to request clear disclosure of what exact personal data pieces have been mapped, alongside a notice that we do not monetize or distribute user lists.
+            <strong>Erasure:</strong> you can delete your account from your account settings. When you do, your profile, resumes, generated documents, saved jobs, and preferences are removed from our active systems: the account is deactivated immediately and the remaining records are permanently purged after a 30-day deletion window.
           </li>
           <li>
-            <strong>Execution:</strong> To exercise any of your privacy rights, drop a direct request from your verified account email address to{" "}
+            <strong>Withdrawing consent:</strong> you can refuse or clear optional cookies through your browser settings at any time. AI features only run when you start them, so you can stop that processing by simply not using them, or by deleting the uploaded resume. To withdraw consent for all remaining processing, delete your account.
+          </li>
+          <li>
+            <strong>By email:</strong> you can also exercise any of these rights by writing to{" "}
             <a
               href="mailto:support@careermonke.com"
               className="text-blue-600 underline underline-offset-2 hover:text-blue-800 transition-colors"
             >
               support@careermonke.com
-            </a>. We will process the structural data removal or update within 30 days.
+            </a>{" "}
+            from your registered account email address. We process verified requests within 30 days.
           </li>
         </ul>
 
-        <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">5. Data Retention Boundaries</h2>
+        <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">6. Data Retention</h2>
         <p className="mb-2">
-          We keep your personal information and uploaded files only for as long as your premium or free member account remains active in our system. If you delete your account, your parameters are scrubbed from our active production database. Backup registry snapshots are systematically overwritten within standard engineering cycles.
+          We keep personal information only for as long as it is needed for the purpose it was collected:
+        </p>
+        <ul className="list-disc pl-5 space-y-2 mb-2">
+          <li>
+            <strong>Account, profile, and resume data:</strong> kept until you delete it or close your account. Account deletion deactivates the account immediately and permanently purges the remaining personal records after a 30-day deletion window.
+          </li>
+          <li>
+            <strong>Usage analytics (page views):</strong> 90 days.
+          </li>
+          <li>
+            <strong>Payment gateway webhook records:</strong> 90 days.
+          </li>
+          <li>
+            <strong>Transactional email logs:</strong> 180 days, so we can honour bounce and suppression handling.
+          </li>
+          <li>
+            <strong>Administrative audit logs</strong> (records of administrative access to user data): 365 days.
+          </li>
+          <li>
+            Platform-managed backups (run by our database provider) may retain deleted rows inside their own backup windows before they are overwritten.
+          </li>
+        </ul>
+
+        <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">7. Security Practices</h2>
+        <p className="mb-2">
+          The security measures we actually operate include:
+        </p>
+        <ul className="list-disc pl-5 space-y-2 mb-2">
+          <li>
+            All traffic is served over encrypted HTTPS connections.
+          </li>
+          <li>
+            Payment and AI provider credentials are stored only on our servers and are never included in the code sent to your browser.
+          </li>
+          <li>
+            Database row-level security restricts each user&apos;s rows to that user&apos;s own account, and uploaded resume files sit in private storage rather than public URLs.
+          </li>
+          <li>
+            AI and account endpoints enforce per-user and per-network rate limits, daily generation caps, and idempotency checks to prevent abuse and duplicate charges.
+          </li>
+          <li>
+            Administrative access to user data is recorded in an audit log that we review.
+          </li>
+          <li>
+            Error monitoring scrubs personal identifiers (emails, IP addresses, user IDs) and credentials before any diagnostic event leaves the platform.
+          </li>
+        </ul>
+        <p className="mb-2">
+          No method of transmission or storage is perfectly secure, but we maintain these practices continuously and review them as the platform evolves.
         </p>
 
-        <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">6. Cookies and Tracking Mechanisms</h2>
+        <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">8. Grievance Officer</h2>
+        <p className="mb-2">
+          In accordance with the DPDP Act, our designated Grievance Officer for any question or complaint about how your personal data is handled is:
+        </p>
+        <ul className="list-disc pl-5 space-y-2 mb-2">
+          <li>
+            <strong>Grievance Officer:</strong> Orissa Lee Patnaik, Olive Ridley Media Private Limited
+          </li>
+          <li>
+            Email:{" "}
+            <a
+              href="mailto:support@careermonke.com"
+              className="text-blue-600 underline underline-offset-2 hover:text-blue-800 transition-colors"
+            >
+              support@careermonke.com
+            </a>
+          </li>
+          <li>
+            Phone:{" "}
+            <a
+              href="tel:+919124618200"
+              className="text-blue-600 underline underline-offset-2 hover:text-blue-800 transition-colors"
+            >
+              +91-9124618200
+            </a>
+          </li>
+          <li>
+            Address: Flat No. 712, 7th Floor, Block C-2, Balaji Complex, Jharpada, Bhubaneswar, Khordha, Odisha 751006, India
+          </li>
+        </ul>
+        <p className="mb-2">
+          We aim to acknowledge and resolve grievances within 5-7 working days of receiving them.
+        </p>
+
+        <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">9. Cookies and Tracking Mechanisms</h2>
         <h3 className="text-sm font-semibold text-[#09090B] mt-3 mb-1">Cookies and monitoring</h3>
         <p className="mb-2">
           CareerMonke employs a minimal, privacy-first approach to browser storage and operational tracking:

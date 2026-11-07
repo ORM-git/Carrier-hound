@@ -33,6 +33,7 @@ for (const envVar of requiredEnv) {
 const nextConfig = {
   ...(isCloudflareBuild ? {} : { output: "export" }),
   reactStrictMode: true,
+  productionBrowserSourceMaps: false,
   images: {
     domains: [],
     unoptimized: true,
@@ -47,6 +48,7 @@ export default withSentryConfig(nextConfig, {
   project: "careermonke",
   silent: true,
   widenClientFileUpload: true,
+  sourcemaps: { deleteSourcemapsAfterUpload: true },
   disableLogger: true,
   // Disable automatic server/edge handler instrumentation to prevent
   // duplicate webpack module identifier collisions under @cloudflare/next-on-pages

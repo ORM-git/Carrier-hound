@@ -9,6 +9,8 @@ import {
   statsRateLimitStore,
 } from "@/lib/api/sharedRateLimit";
 import { isUserApproved } from "@/lib/auth/approval";
+import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
+import { computeWeakEtag, notModifiedResponse } from "@/lib/api/etag";
 
 export const runtime = "edge";
 
@@ -74,6 +76,7 @@ async function getHandler(req: Request) {
             headers: {
               "Retry-After": String(ipLimit.retryAfter),
               "Cache-Control": "no-store",
+              Vary: "Authorization",
             },
           }
         );
@@ -107,6 +110,7 @@ async function getHandler(req: Request) {
                 status: 403,
                 headers: {
                   "Cache-Control": "no-store",
+                  Vary: "Authorization",
                 },
               }
             );
@@ -134,6 +138,7 @@ async function getHandler(req: Request) {
           status: 503,
           headers: {
             "Cache-Control": "no-store",
+            Vary: "Authorization",
           },
         }
       );
@@ -143,17 +148,27 @@ async function getHandler(req: Request) {
     // (jobsToday, updatedAt). Strictly DO NOT expose totalJobs, companiesScanned,
     // activeJobs, or companies (zero aggregate job counts).
     if (!isAuthenticated || !isApproved) {
-      return NextResponse.json(
-        {
-          jobsToday: recentJobs ?? 0,
-          updatedAt: new Date().toISOString(),
-        },
-        {
-          headers: {
-            "Cache-Control": "public, max-age=300, s-maxage=300, stale-while-revalidate=600",
-          },
-        }
-      );
+      // Identical body for every anonymous caller: safe for weak ETag / 304.
+      const publicStats = {
+        jobsToday: recentJobs ?? 0,
+        updatedAt: new Date().toISOString(),
+      };
+      // Edge-cacheable ONLY when the request carries no Authorization header at
+      // all: any Authorization header, valid or invalid, keeps the response
+      // no-store so an authed context never poisons the shared cache. The TTL
+      // values are chosen defaults (rank 42 review decision), not measured.
+      const publicHeaders = {
+        "Cache-Control": authHeader
+          ? "no-store"
+          : "public, s-maxage=60, stale-while-revalidate=300",
+        Vary: "Authorization",
+      };
+      const etag = await computeWeakEtag(publicStats);
+      const notModified = notModifiedResponse(req, etag, publicHeaders);
+      if (notModified) return notModified;
+      return NextResponse.json(publicStats, {
+        headers: { ...publicHeaders, ETag: etag },
+      });
     }
 
     // 2. Authenticated + approved callers: return full corpus metrics
@@ -170,6 +185,7 @@ async function getHandler(req: Request) {
           status: 503,
           headers: {
             "Cache-Control": "no-store",
+            Vary: "Authorization",
           },
         }
       );
@@ -186,6 +202,7 @@ async function getHandler(req: Request) {
           status: 503,
           headers: {
             "Cache-Control": "no-store",
+            Vary: "Authorization",
           },
         }
       );
@@ -202,7 +219,8 @@ async function getHandler(req: Request) {
       },
       {
         headers: {
-          "Cache-Control": "public, max-age=300, s-maxage=300, stale-while-revalidate=600",
+          "Cache-Control": "no-store",
+          Vary: "Authorization",
         },
       }
     );
@@ -213,6 +231,7 @@ async function getHandler(req: Request) {
         return NextResponse.json(parsed, { status: 500 });
       }
     } catch {}
+    reportRequestErrorToSentry(req, err);
     return NextResponse.json(
       {
         error: "temporarily unavailable",
@@ -221,6 +240,7 @@ async function getHandler(req: Request) {
         status: 500,
         headers: {
           "Cache-Control": "no-store",
+          Vary: "Authorization",
         },
       }
     );

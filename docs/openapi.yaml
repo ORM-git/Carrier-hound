@@ -1,5 +1,5 @@
 # CareerMonke HTTP API surface.
-# Generated from the actual route files under src/app/api (26 routes).
+# Generated from the actual route files under src/app/api (27 routes).
 # Coverage is enforced in CI by scripts/test-openapi-spec.ts: any route added
 # or removed without updating this file fails the suite.
 openapi: 3.0.3
@@ -23,6 +23,25 @@ tags:
   - name: public
   - name: analytics
 paths:
+  /api/auth/security-event:
+    post:
+      tags: [analytics]
+      summary: Receive untrusted client auth telemetry
+      description: >-
+        Accepts otp_request hints, not proof of a Supabase auth event.
+        Size-capped and rate-limited. Always responds with no content to avoid
+        revealing account state, detection thresholds, or alert outcomes.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [event]
+              properties:
+                event: { type: string, enum: [otp_request] }
+                email: { type: string, maxLength: 320 }
+      responses:
+        "204": { description: Telemetry accepted or silently discarded }
   /api/account/delete:
     post:
       tags: [account]
@@ -125,6 +144,18 @@ paths:
         time budget (measureRouteBudget).
       responses:
         "200": { description: AI response }
+  /api/ai/stream:
+    post:
+      tags: [ai]
+      summary: AI assistant request delivered as Server-Sent Events
+      description: >-
+        SSE variant of /api/ai (transport scaffold). Feature-gated: the route
+        answers 404 unless AI_STREAMING_ENABLED is set ("1" or "true"). Same
+        guarded path as /api/ai (auth, rate limits, quotas, budget, circuit
+        breaker); non-200 outcomes return the same JSON error body as /api/ai,
+        not an SSE stream.
+      responses:
+        "200": { description: "text/event-stream: meta, chunk, done frames" }
   /api/billing/razorpay/order:
     post:
       tags: [billing]
@@ -194,6 +225,12 @@ paths:
       description: Delegates to handleSkillWhatIfRequest.
       responses:
         "200": { description: Analysis result }
+  /api/jobs/suggest:
+    get:
+      tags: [jobs]
+      summary: Autocomplete prefix suggestions for job titles
+      responses:
+        "200": { description: Suggestion list }
   /api/jobs/top10:
     post:
       tags: [jobs]

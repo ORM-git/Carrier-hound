@@ -1,3 +1,4 @@
+import { createOperationId } from "../security/operationId";
 import { NextResponse } from "next/server";
 import { rpcWithRetry } from "../db/rpcRetry";
 import { createClient } from "@supabase/supabase-js";
@@ -571,7 +572,7 @@ export async function executeAiCore(
 
       setConsumeKey =
         keyValidation.key ||
-        `set_${user.id}_${config.operation}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+        createOperationId("set");
 
       const cached = getIdempotentResult(user.id, config.operation, setConsumeKey);
       if (cached) {
@@ -871,7 +872,7 @@ export async function executeAiCore(
 
     // 4C. Global Concurrency Lease Acquisition
     const maxConcurrency = getAiGlobalMaxConcurrency(activeDeps.env);
-    const leaseId = `lease_${user.id}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    const leaseId = createOperationId("lease");
     let hasLease = false;
 
     if (typeof supabaseAdmin.rpc !== "function") {

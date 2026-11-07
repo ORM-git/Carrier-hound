@@ -8,6 +8,7 @@ import {
   TICKER_RATE_LIMIT,
   tickerRateLimitStore,
 } from "@/lib/api/sharedRateLimit";
+import { computeWeakEtag, notModifiedResponse } from "@/lib/api/etag";
 
 export const runtime = "edge";
 
@@ -349,10 +350,16 @@ async function getHandler(req: Request) {
       });
     }
 
+    // Public, identical for every caller: weak ETag enables 304 revalidation.
+    // TTL values are chosen defaults (rank 42 review decision), not measured.
+    const tickerHeaders = {
+      "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
+    };
+    const etag = await computeWeakEtag(tickerItems);
+    const notModified = notModifiedResponse(req, etag, tickerHeaders);
+    if (notModified) return notModified;
     return NextResponse.json(tickerItems, {
-      headers: {
-        "Cache-Control": "public, max-age=60, s-maxage=60, stale-while-revalidate=120",
-      },
+      headers: { ...tickerHeaders, ETag: etag },
     });
   } catch (_err: any) {
     return NextResponse.json(
