@@ -167,8 +167,10 @@ async function main() {
       console.error(`FAIL: performance ${perf} is below the hard floor ${floor}.`);
       process.exitCode = 1;
     } else if (perf < baseline) {
-      console.error(`FAIL (below budget): performance ${perf} is above the flake floor ${floor} but below the measured baseline ${baseline}. Investigate the regression before merging; if this is CI environment noise, re-run once and confirm.`);
-      process.exitCode = 1;
+      // Below the owner's locally-measured baseline but within flake
+      // tolerance: warn only (exit 0) until a CI-runner median is measured
+      // and the budget is retightened to (CI median - tolerance).
+      console.warn(`WARNING: performance ${perf} is below the measured baseline ${baseline} (floor ${floor}). Investigate when convenient; not gating until a CI median exists.`);
     } else {
       console.log(`PASS: performance ${perf} meets the measured baseline ${baseline}.`);
     }
