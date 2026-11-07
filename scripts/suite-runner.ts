@@ -204,6 +204,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-resilience-posture.ts", command: "npx tsx scripts/test-resilience-posture.ts", classification: "offline" },
   { name: "scripts/test-managed-redis.ts", command: "npx tsx scripts/test-managed-redis.ts", classification: "offline" },
   { name: "scripts/test-edge-kv.ts", command: "npx tsx scripts/test-edge-kv.ts", classification: "offline" },
+  { name: "scripts/test-structured-logger.ts", command: "npx tsx scripts/test-structured-logger.ts", classification: "offline" },
 ];
 
 export interface RunSummary {
