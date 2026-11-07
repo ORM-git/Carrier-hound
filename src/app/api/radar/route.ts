@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { resolveLocation, TRUSTED_CITIES, COUNTRY_CENTROIDS } from '@/lib/geo/cities';
 
+import { reportRequestErrorToSentry } from '@/lib/monitoring/sentryErrorReporter';
+
 export const runtime = 'edge';
 
 // In-memory cache for ultra-fast responses (5-minute TTL)
@@ -51,7 +53,7 @@ async function fetchJobsChunks(
   return jobs;
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   const now = Date.now();
 
   // Return in-memory cached aggregate if fresh
@@ -251,6 +253,7 @@ export async function GET() {
     });
   } catch (err: any) {
     console.error('Radar Aggregation Error:', err);
+    reportRequestErrorToSentry(req, err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
