@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import {
   Search,
   RefreshCw,
@@ -63,7 +63,11 @@ export default function AdminUsersPage() {
     return {};
   };
 
+  // Last-issued-wins guard: overlapping searches must not let an older,
+  // slower response overwrite a newer one (out-of-order race).
+  const fetchSeqRef = useRef(0);
   const fetchUsers = useCallback(async (q: string = "") => {
+    const seq = ++fetchSeqRef.current;
     setLoading(true);
     try {
       const authHeader = await getAuthHeader();
@@ -71,13 +75,15 @@ export default function AdminUsersPage() {
         headers: authHeader,
       });
       const data = await res.json();
+      if (seq !== fetchSeqRef.current) return; // a newer request owns the list
       if (data.ok && Array.isArray(data.users)) {
         setUsers(data.users);
       }
     } catch (_) {
+      if (seq !== fetchSeqRef.current) return;
       setFeedbackMsg({ type: "error", text: "Failed to load users list." });
     } finally {
-      setLoading(false);
+      if (seq === fetchSeqRef.current) setLoading(false);
     }
   }, []);
 
@@ -100,7 +106,11 @@ export default function AdminUsersPage() {
     fetchUsers(searchQuery);
   };
 
+  // Last-opened-wins guard: quickly opening two users' activity must not let
+  // the first, slower response paint into the second user's panel.
+  const activitySeqRef = useRef(0);
   const openActivity = async (user: UserManagementItem) => {
+    const seq = ++activitySeqRef.current;
     setSelectedUser(user);
     setActivityLoading(true);
     setActivity([]);
@@ -110,13 +120,14 @@ export default function AdminUsersPage() {
         headers: authHeader,
       });
       const data = await res.json();
+      if (seq !== activitySeqRef.current) return;
       if (data.ok && Array.isArray(data.activity)) {
         setActivity(data.activity);
       }
     } catch (_) {
       //
     } finally {
-      setActivityLoading(false);
+      if (seq === activitySeqRef.current) setActivityLoading(false);
     }
   };
 
