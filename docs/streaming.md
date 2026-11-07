@@ -19,6 +19,29 @@ The route answers 404 unless `AI_STREAMING_ENABLED` is `"1"` or `"true"`
 in the Pages/Functions environment. It is off by default; nothing
 client-side calls it yet, so there is no visible change.
 
+## Second flag: upstream streaming (OFF by default)
+
+`AI_UPSTREAM_STREAMING_ENABLED` (`"1"` or `"true"`, read only after the
+`AI_STREAMING_ENABLED` 404 gate) makes `executeAiCore` ask the provider for
+`stream: true` with `stream_options.include_usage` and assemble the text
+server-side (`src/lib/ai/upstreamStream.ts`). Everything after that is the same
+code: the assembled text is validated and sanitized as a whole, budget settles from
+the usage frame (or the estimate), quota and lease release run on failure, and
+idempotency stores the same payload. A malformed, empty, errored or oversized
+stream (200000 characters) is treated like an unparseable JSON body: 502 with the
+same error text, budget settled 0, quota refunded.
+
+With the flag off (default) the upstream request body and the `response.json()`
+path are unchanged, and `/api/ai` never enables it.
+
+What this is NOT: no partial text reaches the client before sanitization, so the
+SSE frames the route sends are still slices of the finished, sanitized result.
+Forwarding sanitized text while the model is still generating needs an incremental
+sanitizer (prefixes of the sanitized output are not always sanitized prefixes) and a
+client that renders partial text; that stays a follow-up. Live Groq streaming
+behavior (frame shapes, usage placement) is unproven here: tests use a faked
+upstream. Owner to confirm against a real call before turning the flag on.
+
 ## Frame contract
 
 ```
@@ -47,5 +70,5 @@ this scaffold.
 
 ## Rollback
 
-Delete `src/app/api/ai/stream/route.ts` (and this doc) or unset
-`AI_STREAMING_ENABLED`. No database or client changes to revert.
+Unset `AI_UPSTREAM_STREAMING_ENABLED` to return to buffered upstream calls. Delete
+`src/app/api/ai/stream/route.ts` (and this doc) or unset `AI_STREAMING_ENABLED`. No database or client changes to revert.
