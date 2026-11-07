@@ -29,12 +29,20 @@ function check(cond: boolean, label: string): void {
 
 function main(): void {
   const docPath = path.join(ROOT, "docs", "retention-policy.md");
-  const migPath = path.join(ROOT, "supabase", "migrations", "20261106a_data_retention.sql");
   const cronPath = path.join(ROOT, "scripts", "retention-cron.ts");
+  // purge_operational_logs is replaced wholesale by later migrations
+  // (20261106a, then 20261106f): always audit the NEWEST definition.
+  const migDir = path.join(ROOT, "supabase", "migrations");
+  const migCandidates = fs.readdirSync(migDir)
+    .filter((f) => f.endsWith(".sql"))
+    .filter((f) => fs.readFileSync(path.join(migDir, f), "utf8").includes("create or replace function public.purge_operational_logs"))
+    .sort();
+  const migFile = migCandidates[migCandidates.length - 1];
+  const migPath = migFile ? path.join(migDir, migFile) : "";
   check(fs.existsSync(docPath), "docs/retention-policy.md exists");
-  check(fs.existsSync(migPath), "migration 20261106a_data_retention.sql exists");
+  check(!!migFile, `a migration defining purge_operational_logs exists (auditing latest: ${migFile ?? "none"})`);
   check(fs.existsSync(cronPath), "scripts/retention-cron.ts exists");
-  if (!fs.existsSync(docPath) || !fs.existsSync(migPath) || !fs.existsSync(cronPath)) {
+  if (!fs.existsSync(docPath) || !migFile || !fs.existsSync(cronPath)) {
     console.log(`\n[PASS-LOCAL] ${passed} retention-consistency checks passed${failed ? `; ${failed} FAILED` : ""}\n`);
     process.exit(1);
   }
@@ -82,8 +90,8 @@ function main(): void {
   check(/grant execute on function public\.purge_operational_logs\(boolean\) to service_role/i.test(mig),
     "execute granted to service_role only");
   check(/security definer/i.test(mig), "function is SECURITY DEFINER (documented design)");
-  check(mig.includes("record-migration.cjs 20261106a_data_retention"),
-    "migration header carries the record-migration command (NOT APPLIED convention)");
+  check(mig.includes("record-migration.cjs"),
+    "latest retention migration header carries the record-migration command (NOT APPLIED convention)");
 
   // 5. Cron invoker leg
   check(cron.includes('"purge_operational_logs"') || cron.includes("'purge_operational_logs'"),
