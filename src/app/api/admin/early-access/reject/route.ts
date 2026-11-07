@@ -3,6 +3,8 @@ import { verifyAdminSession } from "@/lib/admin/auth";
 import { logAdminAction } from "@/lib/admin/auditLog";
 import { rejectEarlyAccessRequest } from "@/lib/admin/earlyAccess";
 
+import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
+
 export const runtime = "edge";
 
 export async function POST(req: Request) {
@@ -56,6 +58,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json(result);
   } catch (err: any) {
+    reportRequestErrorToSentry(req, err);
     return NextResponse.json(
       { error: err?.message || "Internal server error" },
       { status: 500 }
