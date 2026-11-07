@@ -64,3 +64,9 @@ $$;
 
 revoke all on function public.consume_addon_set(uuid, text, text) from public;
 grant execute on function public.consume_addon_set(uuid, text, text) to service_role;
+
+-- ============================================================================
+-- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
+--   DROP FUNCTION IF EXISTS public.consume_addon_set(p_user_id uuid, p_kind text, p_idempotency_key text);
+--   NOTE: data writes above (insert/update/delete) need a manual restore from backup or a hand-written reverse; no automatic rollback.
+-- ============================================================================
