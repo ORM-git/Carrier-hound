@@ -32,3 +32,11 @@ SET status = 'approved',
     approved_by = a.approved_by
 FROM public.early_access_approved a
 WHERE lower(trim(e.email)) = lower(trim(a.email)) AND a.approved = TRUE;
+
+-- ============================================================================
+-- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
+--   DROP INDEX IF EXISTS public.idx_early_access_emails_status_created_at;
+--   ALTER TABLE public.early_access_emails DROP COLUMN IF EXISTS status;
+--   ALTER TABLE public.early_access_approved DROP COLUMN IF EXISTS approved_at;
+--   REVOKE UPDATE ON public.early_access_emails FROM service_role;
+-- ============================================================================
