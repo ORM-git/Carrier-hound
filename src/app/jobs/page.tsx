@@ -61,6 +61,7 @@ import {
 } from "lucide-react";
 import CompanyLogo from "@/components/CompanyLogo";
 import { toast } from "react-toastify";
+import { updateSwr } from "@/lib/cache/swr";
 import { trackFunnelEvent } from "@/lib/analytics/funnel";
 
 const PaywallModal = dynamic(() => import("@/components/PaywallModal"), { ssr: false });
@@ -1360,6 +1361,12 @@ function JobsPageInner() {
 
       const updatedApps = await getTrackedApplications(user.id);
       setTrackedApplications(updatedApps);
+      // Write-through: keep the dashboard SWR bundle consistent with the
+      // mutation so it never paints the pre-mutation list (row 88).
+      updateSwr(`dashboard:${user.id}`, (bundle: { appsRes: TrackedApplication[] }) => ({
+        ...bundle,
+        appsRes: updatedApps,
+      }));
       const appliedApps = updatedApps.filter((a) => a.stage === "applied");
       setAppliedJobIds(appliedApps.map((a) => a.jobId || "").filter(Boolean));
       setAppliedCount(appliedApps.length);
@@ -1391,6 +1398,10 @@ function JobsPageInner() {
         try {
           await removeApplicationFromTracker(job.id);
           setSavedJobIds((prev) => prev.filter((id) => id !== job.id));
+          updateSwr(`dashboard:${user.id}`, (bundle: { appsRes: TrackedApplication[] }) => ({
+            ...bundle,
+            appsRes: bundle.appsRes.filter((a) => a.jobId !== job.id),
+          }));
           toast.info(`Removed "${job.title}" from Liked Jobs.`);
         } catch (e) {
           toast.error("Could not update saved job.");
@@ -1399,7 +1410,7 @@ function JobsPageInner() {
       }
 
       try {
-        await addApplicationToTracker({
+        const created = await addApplicationToTracker({
           jobId: job.id,
           title: job.title,
           company: job.company,
@@ -1409,6 +1420,10 @@ function JobsPageInner() {
           stage: "saved",
         });
         setSavedJobIds((prev) => [...prev, job.id]);
+        updateSwr(`dashboard:${user.id}`, (bundle: { appsRes: TrackedApplication[] }) => ({
+          ...bundle,
+          appsRes: [...bundle.appsRes, created],
+        }));
         toast.success(`Liked "${job.title}"! Saved to your tracker.`);
       } catch (e) {
         toast.error("Could not save job.");

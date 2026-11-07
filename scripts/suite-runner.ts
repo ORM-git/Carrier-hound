@@ -232,6 +232,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-outbox-queue.ts", command: "npx tsx scripts/test-outbox-queue.ts", classification: "offline" },
   { name: "scripts/test-row-version-lock.ts", command: "npx tsx scripts/test-row-version-lock.ts", classification: "offline" },
   { name: "scripts/test-mass-assignment-variable-writes.ts", command: "npx tsx scripts/test-mass-assignment-variable-writes.ts", classification: "offline" },
+  { name: "scripts/eval-ai-output-golden.ts", command: "npx tsx scripts/eval-ai-output-golden.ts", classification: "offline" },
   { name: "scripts/test-table-comments.ts", command: "npx tsx scripts/test-table-comments.ts", classification: "offline" },
   { name: "scripts/test-touch-updated-at.ts", command: "npx tsx scripts/test-touch-updated-at.ts", classification: "offline" },
 ];
