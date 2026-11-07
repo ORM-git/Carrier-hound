@@ -225,6 +225,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-concurrency-posture.ts", command: "npx tsx scripts/test-concurrency-posture.ts", classification: "offline" },
   { name: "scripts/test-upstream-streaming-core.ts", command: "npx tsx scripts/test-upstream-streaming-core.ts", classification: "offline" },
   { name: "scripts/test-cross-source-dedupe.ts", command: "npx tsx scripts/test-cross-source-dedupe.ts", classification: "offline" },
+  { name: "scripts/test-search-alert-dispatcher.ts", command: "npx tsx scripts/test-search-alert-dispatcher.ts", classification: "offline" },
 ];
 
 export interface RunSummary {
