@@ -209,6 +209,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-activation-metrics.ts", command: "npx tsx scripts/test-activation-metrics.ts", classification: "offline" },
   { name: "scripts/test-rpc-retry.ts", command: "npx tsx scripts/test-rpc-retry.ts", classification: "offline" },
   { name: "scripts/test-job-archival-policy.ts", command: "npx tsx scripts/test-job-archival-policy.ts", classification: "offline" },
+  { name: "scripts/test-reindex-maintenance-policy.ts", command: "npx tsx scripts/test-reindex-maintenance-policy.ts", classification: "offline" },
 ];
 
 export interface RunSummary {

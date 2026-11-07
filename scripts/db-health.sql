@@ -203,3 +203,24 @@ from public.cron_run_logs
 where job_type = 'job_archival'
 order by started_at desc
 limit 5;
+
+-- 14. Index maintenance (DB row: REINDEX maintenance). reindex_bloated_indexes
+--     (migration 20261106m) rebuilds public-schema indexes >= 50 MB (chosen
+--     default) weekly via the retention cron. Review the largest indexes and
+--     their usage here; the cron_run_logs query works even before the
+--     migration is applied.
+select schemaname, relname as table_name, indexrelname as index_name,
+       pg_size_pretty(pg_relation_size(indexrelid)) as index_size,
+       idx_scan, idx_tup_read, idx_tup_fetch
+from pg_stat_user_indexes
+where schemaname = 'public'
+order by pg_relation_size(indexrelid) desc
+limit 20;
+
+select started_at, status,
+       metadata->>'dry_run' as dry_run,
+       jsonb_array_length(coalesce(metadata->'results', '[]'::jsonb)) as candidates
+from public.cron_run_logs
+where job_type = 'reindex_maintenance'
+order by started_at desc
+limit 5;
