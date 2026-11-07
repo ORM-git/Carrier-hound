@@ -67,3 +67,21 @@ CREATE POLICY "Allow admin to modify blocked_users"
     USING (
         auth.jwt() ->> 'email' = 'xbsuryakant@gmail.com'
     );
+
+-- ============================================================================
+-- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
+--   DROP POLICY IF EXISTS "Allow public insert to page_views" ON public.page_views;
+--   DROP POLICY IF EXISTS "Allow admin to select page_views" ON public.page_views;
+--   DROP POLICY IF EXISTS "Allow users or admin to read blocked_users" ON public.blocked_users;
+--   DROP POLICY IF EXISTS "Allow admin to modify blocked_users" ON public.blocked_users;
+--   DROP INDEX IF EXISTS public.idx_page_views_path;
+--   DROP INDEX IF EXISTS public.idx_page_views_created_at;
+--   DROP INDEX IF EXISTS public.idx_page_views_user_id;
+--   DROP INDEX IF EXISTS public.idx_page_views_ip_hash;
+--   DROP INDEX IF EXISTS public.idx_blocked_users_email;
+--   DROP INDEX IF EXISTS public.idx_blocked_users_blocked_at;
+--   ALTER TABLE public.page_views DISABLE ROW LEVEL SECURITY;
+--   ALTER TABLE public.blocked_users DISABLE ROW LEVEL SECURITY;
+--   DROP TABLE IF EXISTS public.page_views CASCADE;
+--   DROP TABLE IF EXISTS public.blocked_users CASCADE;
+-- ============================================================================
