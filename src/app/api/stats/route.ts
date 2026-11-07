@@ -12,6 +12,10 @@ import { isUserApproved } from "@/lib/auth/approval";
 import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
 import { computeWeakEtag, notModifiedResponse } from "@/lib/api/etag";
 
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger({ context: { route: "/api/stats" } });
+
 export const runtime = "edge";
 
 function getSupabaseAdmin() {
@@ -117,7 +121,7 @@ async function getHandler(req: Request) {
           }
         }
       } catch (authErr) {
-        console.warn("[API /stats] Token verification error:", authErr);
+        log.warn("Token verification error", { error: String(authErr) });
       }
     }
 
