@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { getValidReturnUrl } from "@/lib/auth/session";
 import { clearCandidateProfileMemoryCache } from "@/lib/resume/storage";
+import { trackFunnelEvent } from "@/lib/analytics/funnel";
 import BrandIcon from "@/components/BrandIcon";
 import { Card } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
@@ -44,6 +45,9 @@ export default function AuthCallbackPage() {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event: any, session: any) => {
       if (session && (event === "SIGNED_IN" || event === "INITIAL_SESSION" || event === "TOKEN_REFRESHED")) {
+        if (event === "SIGNED_IN") {
+          trackFunnelEvent("signup_completed", { path: "/auth/callback" });
+        }
         finish(next);
       }
     });

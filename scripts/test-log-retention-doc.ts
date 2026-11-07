@@ -19,12 +19,21 @@ check("cites repo config, owner to confirm", doc.includes("carrier-hound.pages.d
 check("scopes Netlify to preview/legacy only", doc.includes("Netlify (preview/legacy functions)"));
 check("has explicit owner steps (dashboard-bound)", doc.includes("Owner steps"));
 check("names Sentry as central error log", doc.includes("Sentry") && doc.includes("sentryErrorReporter.ts"));
-for (const t of ["cron_run_logs", "admin_audit_log", "failed_events", "gmail_send_log", "page_views"]) {
+for (const t of ["cron_run_logs", "admin_audit_log", "failed_events", "gmail_send_log", "page_views", "webhook_events", "funnel_events"]) {
   check(`tracks ${t}`, doc.includes(t));
 }
 check("aligns with the DPDP retention policy", doc.includes("docs/retention-policy.md"));
 check("forbids PII in logs", doc.includes("No PII"));
 check("defers format to BE#27 instead of duplicating", doc.includes("BE#27"));
+
+// Parity: every table purged by the current purge_operational_logs
+// definition (20261106f replaces it wholesale) must be tracked in this doc.
+const purgeMig = fs.readFileSync("supabase/migrations/20261106f_funnel_events_retention.sql", "utf8");
+const purgedTables = [...purgeMig.matchAll(/select '([a-z_]+)'::text/g)].map((m) => m[1]);
+check("purge function covers tables", purgedTables.length >= 7);
+for (const t2 of new Set(purgedTables)) {
+  check(`doc tracks purged table ${t2}`, doc.includes(t2));
+}
 
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

@@ -63,6 +63,18 @@ select matviewname, ispopulated
 from pg_matviews
 order by matviewname;
 
+-- 6b. Refresh recency from the refresh log (requires migration 20261106d).
+--     If last_refreshed_at is NULL or older than your ingest cadence, the
+--     refresh trigger is stuck - check ingest_runs and cron_run_logs.
+select matview_name,
+       max(refreshed_at) as last_refreshed_at,
+       now() - max(refreshed_at) as staleness,
+       max(duration_ms) as slowest_refresh_ms,
+       count(*) as refreshes_logged
+from public.matview_refresh_log
+group by matview_name
+order by matview_name;
+
 -- 7. Long-running queries right now (> 30s, excludes this session)
 select pid, now() - query_start AS duration, state, left(query, 200) AS query
 from pg_stat_activity
@@ -91,3 +103,83 @@ where action = 'pii_read'
 group by 1, 2, 3
 order by 1 desc, reads desc
 limit 100;
+
+-- 10. Funnel review (Backend row: Funnel Tracking) - signup -> onboard -> apply conversion.
+--     Unique actors prefer the signed-in user id, falling back to the pseudonymous
+--     anonymous_id for pre-signup steps. Requires migration 20261106e.
+select event,
+       count(*) as events,
+       count(distinct coalesce(user_id::text, anonymous_id)) as unique_actors
+from public.funnel_events
+where created_at > now() - interval '30 days'
+group by event
+order by array_position(
+  array['signup_started','signup_completed','onboarding_started','onboarding_completed','apply_started','apply_completed'],
+  event
+);
+
+-- 11. Slow queries (DB row: Slow-query log). pg_stat_statements is enabled by
+--     migration 20261105c; this is the review surface for what it records.
+--     NOTE: Postgres log_min_duration_statement cannot be set from the SQL editor
+--     on Supabase - if log-file slow logging is wanted it is a dashboard setting.
+select left(query, 120) as query,
+       calls,
+       round(total_exec_time::numeric, 1) as total_ms,
+       round(mean_exec_time::numeric, 1) as mean_ms,
+       round(max_exec_time::numeric, 1) as max_ms
+from pg_stat_statements
+where query not ilike '%pg_stat_statements%'
+order by total_exec_time desc
+limit 20;
+
+-- 12. Activation / retention (Backend row: Activation / Retention Metrics).
+--     DAU/WAU/MAU from page_views (signed-in users only), plus week-1 cohort retention
+--     (signed up in week W, seen again in W+1). auth.users is readable in the SQL editor.
+
+-- 12a. Active users
+select 'DAU (avg, last 14d)' as metric,
+       round(avg(cnt)) as value
+from (
+  select date_trunc('day', created_at) as d, count(distinct user_id) as cnt
+  from public.page_views
+  where created_at > now() - interval '14 days' and user_id is not null
+  group by 1
+) daily
+union all
+select 'WAU (avg, last 8w)',
+       round(avg(cnt))
+from (
+  select date_trunc('week', created_at) as w, count(distinct user_id) as cnt
+  from public.page_views
+  where created_at > now() - interval '8 weeks' and user_id is not null
+  group by 1
+) weekly
+union all
+select 'MAU (last 30d)',
+       count(distinct user_id)
+from public.page_views
+where created_at > now() - interval '30 days' and user_id is not null;
+
+-- 12b. Week-1 retention by signup cohort (only cohorts old enough to have a week+1)
+with cohorts as (
+  select id, date_trunc('week', created_at) as cohort_week
+  from auth.users
+  where created_at < date_trunc('week', now()) - interval '1 week'
+),
+returns as (
+  select distinct c.cohort_week, c.id
+  from cohorts c
+  join public.page_views pv
+    on pv.user_id = c.id
+   and pv.created_at >= c.cohort_week + interval '1 week'
+   and pv.created_at <  c.cohort_week + interval '2 weeks'
+)
+select c.cohort_week::date as signup_week,
+       count(*) as signups,
+       count(r.id) as active_in_week_1,
+       round(100.0 * count(r.id) / count(*), 1) as week1_retention_pct
+from cohorts c
+left join returns r on r.cohort_week = c.cohort_week and r.id = c.id
+group by 1
+order by 1 desc
+limit 12;
