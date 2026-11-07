@@ -6,6 +6,10 @@ import { getRazorpayKeyMode } from "@/lib/billing/mode";
 
 import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
 
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger({ context: { route: "/api/billing/razorpay/order" } });
+
 export const runtime = "edge";
 
 export async function POST(req: Request) {
@@ -161,7 +165,7 @@ export async function POST(req: Request) {
     });
 
     if (insertErr) {
-      console.error("[Razorpay Order] Critical: payment_orders insert failed; failing closed:", insertErr);
+      log.error("Critical: payment_orders insert failed; failing closed", { error: insertErr?.message || String(insertErr) });
       return NextResponse.json(
         { error: "Failed to initialize order tracking. Please try again.", code: "ORDER_RECORD_FAILED" },
         { status: 500 }
