@@ -8,7 +8,29 @@ import { execSync } from "child_process";
  * git history is unavailable (e.g. a stripped deploy context) lastModified is
  * omitted rather than filled with a misleading uniform build timestamp.
  */
+/**
+ * Shallow checkouts (CI uses fetch-depth 1) have no per-path history: git log
+ * returns the HEAD date for every path, which would emit a misleading uniform
+ * date. Treat unknown history as shallow so lastModified is omitted instead.
+ */
+let shallowCache: boolean | undefined;
+function isShallowRepo(): boolean {
+  if (shallowCache !== undefined) return shallowCache;
+  try {
+    shallowCache =
+      execSync("git rev-parse --is-shallow-repository", {
+        stdio: ["ignore", "pipe", "ignore"],
+      })
+        .toString()
+        .trim() === "true";
+  } catch {
+    shallowCache = true;
+  }
+  return shallowCache;
+}
+
 function lastContentChange(paths: string[]): Date | undefined {
+  if (isShallowRepo()) return undefined;
   try {
     const out = execSync(`git log -1 --format=%cI -- ${paths.join(" ")}`, {
       stdio: ["ignore", "pipe", "ignore"],
