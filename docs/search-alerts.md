@@ -12,6 +12,7 @@ live database. No email or provider call exists in this code.
   only, rollback block. Record with
   `node scripts/record-migration.cjs 20261107b_search_alert_dispatches` after applying.
 - `scripts/test-search-alert-dispatcher.ts`: offline test (suite-runner).
+- `supabase/migrations/20261107f_search_alert_send_windows.sql` (NOT APPLIED): send windows, see follow-up below.
 
 ## Gates
 
@@ -23,8 +24,25 @@ live database. No email or provider call exists in this code.
 ## Behavior when enabled
 
 Throttle by `lastSentAt`, skip suppressed recipients, claim `(alert, job)` pairs with
-insert-ignore so a job is sent once per alert even across parallel runs, release the
-claims if the sender fails, and isolate failures per alert.
+insert-ignore so a job is sent once per alert even across parallel runs, and isolate
+failures per alert.
+
+### Follow-up: send window and ambiguous outcomes (20261107f)
+
+- `supabase/migrations/20261107f_search_alert_send_windows.sql` (NOT APPLIED): table
+  `search_alert_windows` plus `claim_search_alert_window(alert, interval_seconds)` and
+  `release_search_alert_window(alert, claimed_at)`. The claim is one atomic upsert, so two
+  parallel runs cannot both send inside one interval, and a `markSent` failure no longer
+  weakens the throttle. The interval is a required argument (owner to confirm the value).
+  Record with `node scripts/record-migration.cjs 20261107f_search_alert_send_windows`.
+- The dispatcher uses the window only when the repository supplies `claimWindow` /
+  `releaseWindow` (`claimWindowInDb` / `releaseWindowInDb` are the Supabase versions).
+- Send outcome: sender returns `false` = definite failure, job claims and window are
+  released. Sender throws = ambiguous (may have been delivered), claims and window are
+  KEPT so a retry cannot duplicate. Failures before the send starts release what is held.
+- Still open: a process that dies after claiming and before sending keeps its claims until
+  an owner-chosen cleanup (`created_at` on `search_alert_dispatches` is indexed for it).
+  Live SQL behavior is unproven.
 
 ## What is NOT done (owner steps and unknowns)
 

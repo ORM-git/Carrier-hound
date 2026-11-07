@@ -13,6 +13,8 @@ import {
   isSearchAlertDispatchEnabled,
   claimJobsInDb,
   releaseJobsInDb,
+  claimWindowInDb,
+  releaseWindowInDb,
   SearchAlertRecord,
   DispatchRepository,
 } from "../src/lib/alerts/searchAlertDispatcher";
@@ -135,6 +137,62 @@ async function main() {
   await releaseJobsInDb(fakeSb(), "a1", ["j2"]);
   check("releaseJobsInDb: deletes by alert and job ids", seen.del === true && seen.eq[1] === "a1" && seen.in[1][0] === "j2");
   check("claim of empty list does not call the db", (await claimJobsInDb(fakeSb(), "a1", [])).length === 0);
+
+  // Send window (follow-up, migration 20261107f).
+  const wcalls: string[] = [];
+  const held: Record<string, string> = {};
+  const winRepo = (base: ReturnType<typeof mkRepo>) => {
+    base.repo.claimWindow = async (id) => { wcalls.push("win:" + id); if (held[id]) return null; held[id] = "t1"; return "t1"; };
+    base.repo.releaseWindow = async (id) => { wcalls.push("winrel:" + id); delete held[id]; };
+    return base;
+  };
+  const w1 = winRepo(mkRepo([A1], { a1: ["j1"] }));
+  const rw1 = await dispatchSearchAlerts({ env: ON, repo: w1.repo, sender, minIntervalMs: HOUR, now: () => NOW });
+  check("window: claimed before send, kept after success", rw1.sent === 1 && held.a1 === "t1" && wcalls.join(",") === "win:a1");
+  const w2 = winRepo(mkRepo([A1], { a1: ["j2"] }));
+  const sb = sentJobs.length;
+  const rw2 = await dispatchSearchAlerts({ env: ON, repo: w2.repo, sender, minIntervalMs: HOUR, now: () => NOW });
+  check("window: held by another run = throttled, jobs released, nothing sent", rw2.throttled === 1 && rw2.sent === 0 && sentJobs.length === sb && w2.calls.indexOf("release:a1") !== -1);
+  delete held.a1;
+  const w3 = winRepo(mkRepo([A1], { a1: ["j3"] }));
+  const rw3 = await dispatchSearchAlerts({ env: ON, repo: w3.repo, sender: async () => false, minIntervalMs: HOUR, now: () => NOW });
+  check("window: sender false (definite) releases jobs and window", rw3.failed === 1 && w3.calls.indexOf("release:a1") !== -1 && held.a1 === undefined);
+  const w4 = winRepo(mkRepo([A1], { a1: ["j4"] }));
+  const rw4 = await dispatchSearchAlerts({ env: ON, repo: w4.repo, sender: async () => { throw new Error("timeout"); }, minIntervalMs: HOUR, now: () => NOW });
+  check("window: sender throws (ambiguous) keeps job claims and window", rw4.failed === 1 && w4.calls.indexOf("release:a1") === -1 && held.a1 === "t1" && (w4.claimed.a1 || []).length === 1);
+  delete held.a1;
+  const w5 = winRepo(mkRepo([A1], { a1: ["j5"] }));
+  w5.repo.markSent = async () => { throw new Error("db"); };
+  const rw5 = await dispatchSearchAlerts({ env: ON, repo: w5.repo, sender, minIntervalMs: HOUR, now: () => NOW });
+  check("window: markSent failure still leaves the window claimed", rw5.sent === 1 && held.a1 === "t1");
+  delete held.a1;
+  const w6 = winRepo(mkRepo([A1], { a1: ["j6"] }));
+  w6.repo.claimWindow = async () => { throw new Error("rpc down"); };
+  const rw6 = await dispatchSearchAlerts({ env: ON, repo: w6.repo, sender, minIntervalMs: HOUR, now: () => NOW });
+  check("window: claim error before send releases job claims", rw6.failed === 1 && rw6.sent === 0 && w6.calls.indexOf("release:a1") !== -1);
+  const w7 = mkRepo([A1], { a1: ["j7"] });
+  const sb7 = sentJobs.length;
+  const rw7 = await dispatchSearchAlerts({ env: ON, repo: w7.repo, sender: async () => { throw new Error("x"); }, minIntervalMs: HOUR, now: () => NOW });
+  check("no window methods: ambiguous throw still keeps claims", rw7.failed === 1 && w7.calls.indexOf("release:a1") === -1 && sentJobs.length === sb7);
+
+  const rpcSeen: any = {};
+  const rpcSb = (data: any, err?: boolean) => ({ rpc(fn: string, args: any) { rpcSeen.fn = fn; rpcSeen.args = args; return Promise.resolve({ data, error: err ? { message: "x" } : null }); } });
+  const tok = await claimWindowInDb(rpcSb("2026-11-07T12:00:00.123456+00:00"), "a1", 90500);
+  check("claimWindowInDb: rpc name, seconds rounded up, token returned", rpcSeen.fn === "claim_search_alert_window" && rpcSeen.args.p_min_interval_seconds === 91 && rpcSeen.args.p_alert_id === "a1" && tok === "2026-11-07T12:00:00.123456+00:00");
+  check("claimWindowInDb: null means window held", (await claimWindowInDb(rpcSb(null), "a1", HOUR)) === null);
+  let wt = false; try { await claimWindowInDb(rpcSb(null, true), "a1", HOUR); } catch { wt = true; }
+  check("claimWindowInDb: rpc error throws", wt);
+  await releaseWindowInDb(rpcSb(true), "a1", "tok");
+  check("releaseWindowInDb: rpc name and args", rpcSeen.fn === "release_search_alert_window" && rpcSeen.args.p_claimed_at === "tok");
+
+  // Static checks on migration 20261107f.
+  const fsql = fs.readFileSync("supabase/migrations/20261107f_search_alert_send_windows.sql", "utf8");
+  check("f migration: NOT APPLIED header + record-migration command", /STATUS: NOT APPLIED/.test(fsql) && /record-migration\.cjs 20261107f_search_alert_send_windows/.test(fsql));
+  check("f migration: rpc names and arg names match the helpers", /FUNCTION public\.claim_search_alert_window\(\s*p_alert_id\s+UUID,\s*p_min_interval_seconds\s+INTEGER/.test(fsql) && /FUNCTION public\.release_search_alert_window\(\s*p_alert_id\s+UUID,\s*p_claimed_at\s+TIMESTAMPTZ/.test(fsql));
+  check("f migration: atomic upsert with interval predicate, interval required (> 0 check)", /ON CONFLICT \(alert_id\) DO UPDATE/.test(fsql) && /WHERE w\.last_sent_at <= EXCLUDED\.last_sent_at - make_interval\(secs => p_min_interval_seconds\)/.test(fsql) && /p_min_interval_seconds <= 0/.test(fsql));
+  check("f migration: no hard-coded interval number", !/interval\s+'\d/i.test(fsql.replace(/^--.*$/gm, "")));
+  check("f migration: definer, pinned search_path, revoked, service_role only", (fsql.match(/SECURITY DEFINER/g) || []).length === 2 && (fsql.match(/SET search_path = public/g) || []).length === 2 && /REVOKE ALL ON FUNCTION public\.claim_search_alert_window\(UUID, INTEGER\) FROM PUBLIC, anon, authenticated/.test(fsql) && /GRANT EXECUTE ON FUNCTION public\.release_search_alert_window\(UUID, TIMESTAMPTZ\) TO service_role/.test(fsql));
+  check("f migration: table RLS on and rollback block", /ALTER TABLE public\.search_alert_windows ENABLE ROW LEVEL SECURITY/.test(fsql) && /ROLLBACK/.test(fsql) && /DROP TABLE IF EXISTS public\.search_alert_windows/.test(fsql));
 
   // Static checks on the migration against the helper's contract.
   const sql = fs.readFileSync("supabase/migrations/20261107b_search_alert_dispatches.sql", "utf8");
