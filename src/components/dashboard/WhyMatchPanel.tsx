@@ -510,6 +510,7 @@ export default function WhyMatchPanel({
           {aiError && (
             <div
               data-testid="ai-error-fallback-message"
+              role="alert"
               className="flex items-center gap-2 p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-medium"
             >
               <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
