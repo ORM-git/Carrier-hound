@@ -167,15 +167,47 @@ export async function runDailyDigestCron(options: {
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     newJobsCount = activeJobs.filter((j: any) => j.discovered_at && j.discovered_at >= oneDayAgo).length;
 
-    // 4. For each user, compute match scores and construct daily digest
+    // 4. For each user, compute match scores and construct daily digest.
+    // Batched per-candidate DB work (Database sheet N+1 row): suppression
+    // status is pre-fetched in bounded chunks and digest rows go out as one
+    // bulk upsert after the loop, so the candidate loop issues no per-user
+    // queries.
+    const suppressedEmails = new Set<string>();
+    if (supabase) {
+      const emails = candidateProfiles
+        .map((item) => String(item.profile.email || "").trim().toLowerCase())
+        .filter((e) => e.includes("@"));
+      for (let i = 0; i < emails.length; i += 100) {
+        const chunk = emails.slice(i, i + 100);
+        // Single-line chain keeps the N+1 guard's loop+await scan honest.
+        const { data: suppressedRows, error: suppressedError } = await supabase.from("email_suppressions").select("email").in("email", chunk);
+        if (suppressedError) {
+          // Fail open, same as the per-email check did: a suppression-store
+          // error never blocks the digest run.
+          break;
+        }
+        (suppressedRows || []).forEach((r: any) => {
+          const em = String(r?.email || "").trim().toLowerCase();
+          if (em) suppressedEmails.add(em);
+        });
+      }
+    }
+
+    const pendingDigestRows: Array<{
+      user_id: string;
+      digest_date: string;
+      matched_jobs: unknown[];
+      status: string;
+      updated_at: string;
+    }> = [];
+
     for (const item of candidateProfiles) {
       // Check email suppression: skip candidates who unsubscribed or are blocked
-      if (item.profile.email && supabase) {
-        const { isEmailSuppressed } = await import("../events/failedEvents");
-        const isSuppressed = await isEmailSuppressed(supabase, item.profile.email);
-        if (isSuppressed) {
-          continue;
-        }
+      if (
+        item.profile.email &&
+        suppressedEmails.has(String(item.profile.email).trim().toLowerCase())
+      ) {
+        continue;
       }
 
       usersProcessedCount++;
@@ -223,25 +255,40 @@ export async function runDailyDigestCron(options: {
       const topMatches = userMatches.slice(0, maxItems);
 
       if (topMatches.length > 0 && !isDryRun) {
-        // Idempotent upsert: unique constraint on (user_id, digest_date) ensures no duplicates
-        const { error: upsertError } = await supabase.from("daily_digests").upsert(
-          {
-            user_id: item.userId,
-            digest_date: digestDate,
-            matched_jobs: topMatches,
-            status: "queued",
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "user_id,digest_date" }
-        );
-
-        if (!upsertError) {
-          digestsQueuedCount++;
-        } else {
-          console.warn(`Failed to queue digest for user ${item.userId}:`, upsertError.message);
-        }
+        // Idempotent upsert: unique constraint on (user_id, digest_date) ensures
+        // no duplicates. Rows are collected here and written with one bulk
+        // upsert after the loop.
+        pendingDigestRows.push({
+          user_id: item.userId,
+          digest_date: digestDate,
+          matched_jobs: topMatches,
+          status: "queued",
+          updated_at: new Date().toISOString(),
+        });
       } else if (topMatches.length > 0 && isDryRun) {
         digestsQueuedCount++;
+      }
+    }
+
+    // One bulk idempotent upsert for all queued digests (N+1 fix). On a bulk
+    // failure, fall back to per-row upserts so one bad row cannot block the
+    // rest; per-user failures keep their individual warning.
+    if (pendingDigestRows.length > 0 && !isDryRun && supabase) {
+      const { error: bulkError } = await supabase
+        .from("daily_digests")
+        .upsert(pendingDigestRows, { onConflict: "user_id,digest_date" });
+      if (!bulkError) {
+        digestsQueuedCount += pendingDigestRows.length;
+      } else {
+        console.warn("Bulk daily_digests upsert failed; falling back to per-row upserts:", bulkError.message);
+        for (const row of pendingDigestRows) {
+          const { error: rowError } = await supabase.from("daily_digests").upsert(row, { onConflict: "user_id,digest_date" });
+          if (!rowError) {
+            digestsQueuedCount++;
+          } else {
+            console.warn(`Failed to queue digest for user ${row.user_id}:`, rowError.message);
+          }
+        }
       }
     }
 

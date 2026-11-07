@@ -18,7 +18,9 @@ flagged cron follow-up below.
 | `src/lib/account/deleteHandler.ts` | `for (const emailTable of ACCOUNT_DELETE_EMAIL_TABLES)` | Bounded: same fixed constant table-list fan-out. |
 | `src/lib/account/exportHandler.ts` | `for (const table of ACCOUNT_EXPORT_USER_ID_TABLES)` | Bounded: fixed constant table-list fan-out for export. |
 | `src/lib/account/exportHandler.ts` | `for (const table of ACCOUNT_EXPORT_EMAIL_TABLES)` | Bounded: fixed constant table-list fan-out for export. |
-| `src/lib/cron/dailyDigestCron.ts` | `for (const item of candidateProfiles)` | FLAGGED: per-candidate `daily_digests` upsert in the digest cron. Runs off the request path and the candidate batch is cron-bounded, but this should become one batched upsert; owner to confirm before changing cron behavior. |
+| `src/lib/cron/dailyDigestCron.ts` | `for (const item of candidateProfiles)` | FIXED (was FLAGGED): the candidate loop no longer issues per-user queries. Suppression status is pre-fetched in bounded 100-email chunks and digest rows go out as one bulk `daily_digests` upsert with a per-row fallback on bulk failure (owner confirmed). |
+| `src/lib/cron/dailyDigestCron.ts` | `for (let i = 0; i < emails.length; i += 100)` | Bounded: suppression pre-fetch in 100-email chunks; runs once per cron run, not per user. |
+| `src/lib/cron/dailyDigestCron.ts` | `for (const row of pendingDigestRows)` | Fallback only: per-row upserts run solely when the single bulk upsert fails, preserving per-user failure isolation. |
 | `src/lib/events/failedEvents.ts` | `for (const event of events)` | Bounded: retry-queue batch processor; the loop iterates one fetched batch of dead-letter events (batch size capped by the select limit), and per-event state transitions are individual updates by design. |
 
 <!-- guard-entries: file | loop-header-text, parsed by nPlusOneGuard.test.ts -->
@@ -28,6 +30,7 @@ pattern: src/lib/account/deleteHandler.ts | for (const table of ACCOUNT_DELETE_U
 pattern: src/lib/account/deleteHandler.ts | for (const emailTable of ACCOUNT_DELETE_EMAIL_TABLES)
 pattern: src/lib/account/exportHandler.ts | for (const table of ACCOUNT_EXPORT_USER_ID_TABLES)
 pattern: src/lib/account/exportHandler.ts | for (const table of ACCOUNT_EXPORT_EMAIL_TABLES)
-pattern: src/lib/cron/dailyDigestCron.ts | for (const item of candidateProfiles)
+pattern: src/lib/cron/dailyDigestCron.ts | for (let i = 0; i < emails.length; i += 100)
+pattern: src/lib/cron/dailyDigestCron.ts | for (const row of pendingDigestRows)
 pattern: src/lib/events/failedEvents.ts | for (const event of events)
 ```

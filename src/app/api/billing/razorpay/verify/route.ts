@@ -10,6 +10,10 @@ import {
 
 import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
 
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger({ context: { route: "/api/billing/razorpay/verify" } });
+
 export const runtime = "edge";
 
 interface VerifyPayload {
@@ -76,7 +80,7 @@ async function verifySignature(
     ]);
     return constantTimeEqual(expectedDigest, signatureDigest);
   } catch (e) {
-    console.error("[Razorpay Verify] Signature computation error:", e);
+    log.error("Signature computation error", { error: String(e) });
     return false;
   }
 }
@@ -423,7 +427,7 @@ export async function POST(req: Request) {
         if (creditErr.code === "23505") {
           return NextResponse.json({ success: true, alreadyPaid: true });
         }
-        console.error("[Razorpay Verify] Add-on credit persistence error:", creditErr);
+        log.error("Add-on credit persistence error", { error: creditErr?.message || String(creditErr) });
         // Fail closed: order is NOT marked paid!
         return NextResponse.json({ error: creditErr.message }, { status: 500 });
       }
@@ -545,7 +549,7 @@ export async function POST(req: Request) {
         .single();
 
       if (subError) {
-        console.error("[Razorpay Verify] Subscription persistence error:", subError);
+        log.error("Subscription persistence error", { error: subError?.message || String(subError) });
         // Fail closed: order is NOT marked paid!
         return NextResponse.json({ error: subError.message }, { status: 500 });
       }
