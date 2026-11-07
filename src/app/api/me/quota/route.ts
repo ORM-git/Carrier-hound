@@ -29,7 +29,7 @@ function getSupabaseAdmin() {
 }
 
 export async function GET(req: Request) {
-  const log = baseLog.child({ requestId: req.headers.get("x-request-id") ?? "unknown" });
+  const log = baseLog.child({ requestId: req?.headers.get("x-request-id") ?? "unknown" });
   try {
     const authHeader =
       req.headers.get("authorization") || req.headers.get("Authorization");
