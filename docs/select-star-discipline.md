@@ -22,7 +22,7 @@ acceptable: they are plpgsql row variables, not wire payloads.
 | `src/lib/account/exportHandler.ts:161` | per-table loop | Data-export handler: the whole point is returning every column of the user's rows. A column list would silently drop fields added later. |
 | `src/lib/account/exportHandler.ts:175` | per-table loop | Same export path, email-keyed tables. |
 | `src/lib/account/deleteHandler.ts:279` | subscriptions | Reads the full row immediately before deletion so the audit record captures what was removed. |
-| `src/app/api/billing/razorpay/verify/route.ts:325` | user_addon_credits | The row IS the API payload (`credit: existingCredit` in the verify response). Narrowing changes the response contract, which is out of scope for a docs-only change. |
+| `src/app/api/billing/razorpay/verify/route.ts:327` | user_addon_credits | The row IS the API payload (`credit: existingCredit` in the verify response). Narrowing changes the response contract, which is out of scope for a docs-only change. |
 | `src/lib/resume/storage.ts:151` | candidate_profiles | The fetched profile is returned whole to the caller. |
 | `src/lib/tracker/storage.ts:129` | applications | The application rows are returned whole to the caller (tracker list). |
 
@@ -35,9 +35,9 @@ acceptable: they are plpgsql row variables, not wire payloads.
 | `src/lib/billing/subscription.ts:59` | subscriptions | subscription status/period fields | Client-facing read with a 10s timeout race; payload is one row. |
 | `src/lib/billing/subscription.ts:315` | subscriptions | `status, current_period_end` | Same pattern. |
 | `src/lib/billing/serverEntitlement.ts:49` | subscriptions | entitlement fields | Server entitlement check. |
-| `src/app/api/billing/razorpay/verify/route.ts:171` | payment_orders | `status, addon_code, plan_code, id` | Payment verify, fail-closed path; payment-critical, deferred like the other billing reads. |
-| `src/app/api/billing/razorpay/verify/route.ts:341` | subscriptions | `metadata` fields | Idempotent-replay check on the payment verify path. |
-| `src/app/api/billing/razorpay/verify/route.ts:486` | subscriptions | `current_period_end` etc. | Renewal/upgrade period math on the payment verify path. |
+| `src/app/api/billing/razorpay/verify/route.ts:173` | payment_orders | `status, addon_code, plan_code, id` | Payment verify, fail-closed path; payment-critical, deferred like the other billing reads. |
+| `src/app/api/billing/razorpay/verify/route.ts:343` | subscriptions | `metadata` fields | Idempotent-replay check on the payment verify path. |
+| `src/app/api/billing/razorpay/verify/route.ts:488` | subscriptions | `current_period_end` etc. | Renewal/upgrade period math on the payment verify path. |
 | `src/lib/auth/session.ts:138` | user_preferences | preferences blob | Single-row per user; table is narrow. |
 
 ### Bounded scans under review elsewhere (keep, tracked by rank 46)
