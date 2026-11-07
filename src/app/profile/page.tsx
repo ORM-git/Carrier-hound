@@ -113,29 +113,38 @@ export default function ProfilePage() {
 
   // Scroll spy: updates activeTab as user scrolls through sections
   useEffect(() => {
+    const sections: ProfileSection[] = ["personal", "education", "experience", "skills"];
+    // Cache section elements once: getElementById + getBoundingClientRect on
+    // every raw scroll event forces synchronous layout per event (scroll can
+    // fire faster than the frame budget). Batch the reads into one rAF tick.
+    const sectionEls = sections
+      .map((id) => [id, document.getElementById(`section-${id}`)] as const)
+      .filter((pair): pair is readonly [ProfileSection, HTMLElement] => pair[1] !== null);
+    let rafId: number | null = null;
+
     const handleScroll = () => {
-      if (isSmoothScrollingRef.current) return;
+      if (rafId !== null) return; // one measurement per frame
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        if (isSmoothScrollingRef.current) return;
 
-      const sections: ProfileSection[] = ["personal", "education", "experience", "skills"];
-      const offset = 140; // Detection trigger offset near top
-      let currentSection: ProfileSection = "personal";
+        const offset = 140; // Detection trigger offset near top
+        let currentSection: ProfileSection = "personal";
 
-      for (const sectionId of sections) {
-        const el = document.getElementById(`section-${sectionId}`);
-        if (el) {
-          const rect = el.getBoundingClientRect();
-          if (rect.top <= offset) {
+        for (const [sectionId, el] of sectionEls) {
+          if (el.getBoundingClientRect().top <= offset) {
             currentSection = sectionId;
           }
         }
-      }
 
-      setActiveTab((prev) => (prev === currentSection ? prev : currentSection));
+        setActiveTab((prev) => (prev === currentSection ? prev : currentSection));
+      });
     };
 
     window.addEventListener("scroll", handleScroll, { passive: true });
     return () => {
       window.removeEventListener("scroll", handleScroll);
+      if (rafId !== null) cancelAnimationFrame(rafId);
       if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
     };
   }, []);
