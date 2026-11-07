@@ -39,7 +39,7 @@ export interface RazorpayCheckoutOptions {
 
 /**
  * Initiates Razorpay checkout in browser via server-authoritative order creation and signature verification.
- * Passes ONLY planCode and/or addonCode â NO client-supplied amounts.
+ * Passes ONLY planCode and/or addonCode — NO client-supplied amounts.
  * Fails safe immediately if NEXT_PUBLIC_BILLING_ENABLED !== "true" without making network calls.
  */
 export async function openRazorpayCheckout(options: RazorpayCheckoutOptions = {}): Promise<void> {
