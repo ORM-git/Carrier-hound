@@ -31,6 +31,8 @@ DPDP schedule in `docs/retention-policy.md` (weekly `retention_purge` via
 | Failed/dead-letter events | `failed_events` | 90 days after last attempt |
 | Outbound mail | `gmail_send_log` | 180 days |
 | Page-view analytics | `page_views` | 90 days |
+| Inbound webhook idempotency | `webhook_events` | 90 days |
+| Funnel analytics events | `funnel_events` | 90 days |
 | Record change history | change-history triggers (20261106c) | per `docs/retention-policy.md` |
 
 ## Centralized error tracking
