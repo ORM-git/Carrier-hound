@@ -2,6 +2,10 @@ import { TrackedApplication, ApplicationStage } from "./types";
 import { createClient } from "../supabase/client";
 import { sanitizeTrackerApplicationRecord, stripHtmlAndExecutableMarkup } from "../security/xss";
 
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger({ context: { module: "tracker/storage" } });
+
 export const GUEST_STORAGE_KEY = "careermonke_applications_guest";
 export const LEGACY_STORAGE_KEY = "careermonke_applications_tracker";
 export const LEGACY_FALLBACK_KEY = "careermonke_applications";
@@ -117,7 +121,7 @@ export async function getTrackedApplications(userId?: string | null): Promise<Tr
             localApps = JSON.parse(stored);
           }
         } catch (e) {
-          console.warn("Failed to load local tracker applications", e);
+          log.warn("Failed to load local tracker applications", { error: e });
         }
       }
 
@@ -216,7 +220,7 @@ function saveToLocalStorage(apps: TrackedApplication[], ownerId?: string | null)
       localStorage.setItem(storageKey, JSON.stringify(apps));
       window.dispatchEvent(new Event("careermonke_tracker_updated"));
     } catch (e) {
-      console.warn("Failed to save applications locally", e);
+      log.warn("Failed to save applications locally", { error: e });
     }
   }
 }
@@ -326,7 +330,7 @@ export async function addApplicationToTracker(
         updated_at: targetApp.updatedAt,
       });
       if (error) {
-        console.warn("Failed to sync application to Supabase:", error);
+        log.warn("Failed to sync application to Supabase:", { error: error });
       }
     }
   } catch (e) {}
