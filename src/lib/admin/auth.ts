@@ -12,6 +12,10 @@ import {
   isVerifiedAdminUser,
 } from "./constants";
 
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger({ context: { module: "admin/auth" } });
+
 export {
   ADMIN_EMAIL,
   ADMIN_EMAIL_LIST,
@@ -186,7 +190,7 @@ export async function verifyUserNotBanned(
       .maybeSingle();
 
     if (error) {
-      console.warn("[Ban Check] Database error checking blocked_users; failing closed:", error);
+      log.warn("[Ban Check] Database error checking blocked_users; failing closed:", { error: error });
       return {
         isBlocked: true,
         isServiceUnavailable: true,
@@ -203,7 +207,7 @@ export async function verifyUserNotBanned(
 
     return { isBlocked: false };
   } catch (err: any) {
-    console.warn("[Ban Check] Network or database exception; failing closed:", err);
+    log.warn("[Ban Check] Network or database exception; failing closed:", { error: err });
     return {
       isBlocked: true,
       isServiceUnavailable: true,
@@ -224,7 +228,7 @@ export async function isUserBlocked(userId: string, customAdmin?: any): Promise<
     const result = await verifyUserNotBanned(admin, userId);
     return result.isBlocked;
   } catch (err) {
-    console.warn("[Ban Check] Error checking isUserBlocked; failing closed:", err);
+    log.warn("[Ban Check] Error checking isUserBlocked; failing closed:", { error: err });
     return true;
   }
 }
