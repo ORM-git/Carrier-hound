@@ -39,4 +39,22 @@ describe("isCrossSiteMutation", () => {
     expect(isCrossSiteMutation("POST", "/api/track", "http://localhost:3000", "localhost:3000")).toBe(false);
     expect(isCrossSiteMutation("POST", "/api/track", "http://localhost:3001", "localhost:3000")).toBe(true);
   });
+
+  it("rejects a scheme downgrade even when the host matches", () => {
+    const ctx = { requestScheme: "https" };
+    expect(isCrossSiteMutation("POST", "/api/track", "http://careermonke.com", "careermonke.com", ctx)).toBe(true);
+    expect(isCrossSiteMutation("POST", "/api/track", "https://careermonke.com", "careermonke.com", ctx)).toBe(false);
+  });
+
+  it("rejects Origin-less cross-site requests that carry cookies (Sec-Fetch-Site)", () => {
+    const cross = { secFetchSite: "cross-site", hasCookies: true };
+    expect(isCrossSiteMutation("POST", "/api/track", null, "careermonke.com", cross)).toBe(true);
+  });
+
+  it("keeps Origin-less server-to-server and same-site traffic unchanged", () => {
+    expect(isCrossSiteMutation("POST", "/api/billing/razorpay/webhook", null, "careermonke.com", { secFetchSite: "cross-site", hasCookies: false })).toBe(false);
+    expect(isCrossSiteMutation("POST", "/api/track", null, "careermonke.com", { secFetchSite: "same-origin", hasCookies: true })).toBe(false);
+    expect(isCrossSiteMutation("POST", "/api/track", null, "careermonke.com", { secFetchSite: "same-site", hasCookies: true })).toBe(false);
+    expect(isCrossSiteMutation("POST", "/api/track", null, "careermonke.com", { secFetchSite: "none", hasCookies: true })).toBe(false);
+  });
 });

@@ -3,6 +3,7 @@ import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import { isVerifiedAdminUser } from "@/lib/admin/constants";
 import { isCrossSiteMutation } from "@/lib/security/sameOrigin";
+import { exceedsGlobalBodyCap } from "@/lib/security/bodySize";
 
 /**
  * App routes that strictly require an authenticated Supabase session.
@@ -584,8 +585,21 @@ async function middlewareImpl(request: NextRequest) {
   // /api requests whose Origin header names a different host. Browsers always
   // send Origin on cross-site POSTs; Origin-less requests (webhooks, cron,
   // server-to-server) carry no ambient cookies and pass through unchanged.
-  if (isCrossSiteMutation(request.method, pathname, request.headers.get("origin"), request.headers.get("host"))) {
+  if (
+    isCrossSiteMutation(request.method, pathname, request.headers.get("origin"), request.headers.get("host"), {
+      secFetchSite: request.headers.get("sec-fetch-site"),
+      hasCookies: request.headers.has("cookie"),
+      requestScheme: request.nextUrl.protocol,
+    })
+  ) {
     return new NextResponse(null, { status: 403 });
+  }
+
+  // 1c. Global body-size precheck (Backend sheet rank 71): reject mutating
+  // /api requests whose Content-Length exceeds the global cap. Chunked
+  // requests (no Content-Length) pass through to route-level caps.
+  if (exceedsGlobalBodyCap(request.method, pathname, request.headers.get("content-length"))) {
+    return new NextResponse(null, { status: 413 });
   }
 
   // 2. Server-side Admin Route & API Gate:
