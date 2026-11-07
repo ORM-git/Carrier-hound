@@ -5,6 +5,10 @@ import { isUserApproved } from "@/lib/auth/approval";
 
 import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
 
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger({ context: { route: "/api/me/quota" } });
+
 export const runtime = "edge";
 
 function getSupabaseAdmin() {
@@ -77,7 +81,7 @@ export async function GET(req: Request) {
       },
     });
   } catch (err: any) {
-    console.error("[GET /api/me/quota] Error:", err);
+    log.error("request error", { error: err?.message || String(err) });
     reportRequestErrorToSentry(req, err);
     return NextResponse.json(
       { error: "Failed to retrieve quota status" },
