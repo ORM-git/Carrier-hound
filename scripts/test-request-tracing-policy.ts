@@ -71,6 +71,18 @@ for (const [file, call, extras] of adopters) {
 }
 t("/api/jobs/pro wires both handlers", (readFileSync("src/app/api/jobs/pro/route.ts", "utf8").match(/reportRequestErrorToSentry\(req, err\)/g) || []).length === 2);
 
+// 7. Billing routes: unexpected-error catches report with the request id.
+const billingAdopters: Array<[string, number]> = [
+  ["src/app/api/billing/razorpay/order/route.ts", 1],
+  ["src/app/api/billing/razorpay/verify/route.ts", 1],
+];
+for (const [file, calls] of billingAdopters) {
+  const src = readFileSync(file, "utf8");
+  t(`${file} imports the request-scoped reporter`, src.includes('reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter"'));
+  const found = (src.match(/reportRequestErrorToSentry\(req, err\)/g) || []).length;
+  t(`${file} wires ${calls} handler(s)`, found === calls);
+}
+
 // 6. Admin routes: unexpected-error catches report with the request id.
 const adminAdopters: Array<[string, number]> = [
   ["src/app/api/admin/users/route.ts", 1],

@@ -8,6 +8,8 @@ import {
   type PlanCode,
 } from "@/lib/billing/quota";
 
+import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
+
 export const runtime = "edge";
 
 interface VerifyPayload {
@@ -571,6 +573,7 @@ export async function POST(req: Request) {
       );
     }
   } catch (err: any) {
+    reportRequestErrorToSentry(req, err);
     return NextResponse.json(
       { error: err?.message || "Internal server error" },
       { status: 500 }
