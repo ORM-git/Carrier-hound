@@ -30,3 +30,13 @@ alter table public.failed_events enable row level security;
 
 revoke all on public.failed_events from public, anon, authenticated;
 grant all on public.failed_events to service_role;
+
+-- ============================================================================
+-- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
+--   DROP INDEX IF EXISTS public.idx_failed_events_source_event;
+--   DROP INDEX IF EXISTS public.idx_failed_events_pending_retry;
+--   ALTER TABLE public.failed_events DISABLE ROW LEVEL SECURITY;
+--   DROP TABLE IF EXISTS public.failed_events CASCADE;
+--   REVOKE ALL ON public.failed_events FROM service_role;
+--   GRANT ALL ON public.failed_events TO public, anon, authenticated;
+-- ============================================================================
