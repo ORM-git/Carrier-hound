@@ -222,6 +222,43 @@ export async function checkSharedRateLimit(
   return { ...memoryFallback(), source: "memory" };
 }
 
+export interface SharedPeekResult {
+  count: number;
+  expiresAt: string | null;
+  source: "shared";
+}
+
+/**
+ * Read-only peek at a shared counter: a plain SELECT on
+ * public.rate_limits through the service-role client (migration
+ * 20261020 grants service_role SELECT). Never increments, so it is safe
+ * for lock-state checks that run on EVERY request. Returns null when the
+ * store is unavailable or errors (callers fail open); an absent or
+ * expired row is a definitive count of 0.
+ */
+export async function peekSharedRateLimitCount(
+  key: string,
+  options?: { client?: any; env?: Record<string, any> }
+): Promise<SharedPeekResult | null> {
+  const client = getRateLimitClient(options?.client, options?.env);
+  if (!client) return null;
+  try {
+    const { data, error } = await client
+      .from("rate_limits")
+      .select("count, expires_at")
+      .eq("key", key)
+      .maybeSingle();
+    if (error) return null;
+    if (!data) return { count: 0, expiresAt: null, source: "shared" };
+    if (new Date(data.expires_at).getTime() <= Date.now()) {
+      return { count: 0, expiresAt: data.expires_at, source: "shared" };
+    }
+    return { count: data.count, expiresAt: data.expires_at, source: "shared" };
+  } catch {
+    return null;
+  }
+}
+
 export const SEARCH_RATE_LIMIT = {
   maxRequests: 60,
   windowSeconds: 60,
