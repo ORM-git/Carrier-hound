@@ -14,7 +14,7 @@ the uncovered-table count rises above the baseline. New migrations
 that create tables must extend `schema.sql` (preferred) or this file
 in the same PR.
 
-Measured 7 Nov 2026: 42 tables created by migrations, 0 duplicated in schema.sql, 42 covered only by migrations.
+Measured 7 Nov 2026: 42 tables created by migrations, 0 duplicated in schema.sql, 42 covered only by migrations. Updated 7 Nov 2026 for `20261107b_search_alert_dispatches.sql` (not applied): 43 tables, 43 covered only by migrations.
 
 | Table | Owning migration |
 | --- | --- |
@@ -54,6 +54,7 @@ Measured 7 Nov 2026: 42 tables created by migrations, 0 duplicated in schema.sql
 | `row_change_history` | `20261106c_change_history_triggers.sql` |
 | `saved_jobs` | `20261031_account_delete_and_private_resumes.sql` |
 | `schema_migrations` | `20261105c_database_safety.sql` |
+| `search_alert_dispatches` | `20261107b_search_alert_dispatches.sql` |
 | `subscriptions` | `20261008_phase3_subscriptions_and_billing.sql` |
 | `tailored_resumes` | `20261010_tailored_resumes.sql` |
 | `user_addon_credits` | `20261103_plans_addons_usage.sql` |
@@ -63,7 +64,7 @@ Measured 7 Nov 2026: 42 tables created by migrations, 0 duplicated in schema.sql
 
 <!-- guard-entries: one per line, parsed by schemaDriftBaseline.test.ts -->
 ```guard
-baseline-count: 42
+baseline-count: 43
 table: addon_packs | 20261103_plans_addons_usage.sql
 table: admin_audit_log | 20261020_admin_audit_log.sql
 table: ai_concurrency_leases | 20261104a_global_ai_budget.sql
@@ -100,6 +101,7 @@ table: resumes | 20261031_account_delete_and_private_resumes.sql
 table: row_change_history | 20261106c_change_history_triggers.sql
 table: saved_jobs | 20261031_account_delete_and_private_resumes.sql
 table: schema_migrations | 20261105c_database_safety.sql
+table: search_alert_dispatches | 20261107b_search_alert_dispatches.sql
 table: subscriptions | 20261008_phase3_subscriptions_and_billing.sql
 table: tailored_resumes | 20261010_tailored_resumes.sql
 table: user_addon_credits | 20261103_plans_addons_usage.sql
