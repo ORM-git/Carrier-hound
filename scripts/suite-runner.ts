@@ -178,9 +178,6 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-dunning-dispatcher.ts", command: "npx tsx scripts/test-dunning-dispatcher.ts", classification: "offline" },
   { name: "scripts/test-matview-staleness.ts", command: "npx tsx scripts/test-matview-staleness.ts", classification: "offline" },
   { name: "scripts/test-funnel-events.ts", command: "npx tsx scripts/test-funnel-events.ts", classification: "offline" },
-<<<<<<< feat/streaming-sse
-  { name: "scripts/test-streaming-policy.ts", command: "npx tsx scripts/test-streaming-policy.ts", classification: "offline" },
-=======
   { name: "scripts/test-redundant-index-cleanup.ts", command: "npx tsx scripts/test-redundant-index-cleanup.ts", classification: "offline" },
   { name: "scripts/test-data-classification.ts", command: "npx tsx scripts/test-data-classification.ts", classification: "offline" },
   { name: "scripts/test-autocomplete-policy.ts", command: "npx tsx scripts/test-autocomplete-policy.ts", classification: "offline" },
@@ -208,7 +205,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-managed-redis.ts", command: "npx tsx scripts/test-managed-redis.ts", classification: "offline" },
   { name: "scripts/test-edge-kv.ts", command: "npx tsx scripts/test-edge-kv.ts", classification: "offline" },
   { name: "scripts/test-structured-logger.ts", command: "npx tsx scripts/test-structured-logger.ts", classification: "offline" },
->>>>>>> main
+  { name: "scripts/test-streaming-policy.ts", command: "npx tsx scripts/test-streaming-policy.ts", classification: "offline" },
 ];
 
 export interface RunSummary {
