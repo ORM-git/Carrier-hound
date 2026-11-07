@@ -1,0 +1,16 @@
+{
+  "$comment": "Performance budget for the public landing page, gated in CI by scripts/check-perf-budget.mjs. The mobile Lighthouse performance score of 82 is the owner-measured baseline recorded in the frontend audit sheet (row 35, 'Mobile perf 82 measured'). It is the only measured value in this file - do not add LCP/CLS/etc. thresholds until a real measurement exists for them. The hard floor is the measured score minus FLAKE_TOLERANCE_POINTS (gate policy, not a measurement): shared CI runners vary run to run, so a small tolerance avoids false failures while still catching real regressions. Scores between the floor and the measured baseline fail with a 'below budget' warning so drift is visible.",
+  "url": "/",
+  "measuredBaseline": {
+    "source": "frontend audit sheet row 35 (owner-measured mobile Lighthouse score, 2026-11)",
+    "performanceScore": 82
+  },
+  "flakeTolerancePoints": 5,
+  "budget": {
+    "categories": {
+      "performance": {
+        "minScore": 77
+      }
+    }
+  }
+}

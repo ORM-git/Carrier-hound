@@ -53,6 +53,11 @@ jobs:
       - name: Build Application
         run: npm run build
 
+      - name: Performance Budget (Lighthouse)
+        # Gates the static export in out/ against budgets/performance.json
+        # (owner-measured mobile baseline 82, documented flake tolerance).
+        run: npm run check:perf
+
       - name: Tail Latency Gate Check
         run: npx tsx scripts/test-tail-latency-gate.ts
         env:
