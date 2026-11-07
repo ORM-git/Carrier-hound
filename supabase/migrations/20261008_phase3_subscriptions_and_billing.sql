@@ -72,3 +72,15 @@ CREATE POLICY "Service role full access to dunning logs"
   TO service_role
   USING (true)
   WITH CHECK (true);
+
+-- ============================================================================
+-- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
+--   DROP INDEX IF EXISTS public.idx_subscriptions_user_id;
+--   DROP INDEX IF EXISTS public.idx_subscriptions_status;
+--   DROP INDEX IF EXISTS public.idx_subscriptions_provider;
+--   DROP INDEX IF EXISTS public.idx_dunning_logs_user_id;
+--   ALTER TABLE public.subscriptions DISABLE ROW LEVEL SECURITY;
+--   ALTER TABLE public.dunning_logs DISABLE ROW LEVEL SECURITY;
+--   DROP TABLE IF EXISTS public.subscriptions CASCADE;
+--   DROP TABLE IF EXISTS public.dunning_logs CASCADE;
+-- ============================================================================
