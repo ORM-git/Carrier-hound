@@ -4,6 +4,10 @@ import { resolveLocation, TRUSTED_CITIES, COUNTRY_CENTROIDS } from '@/lib/geo/ci
 
 import { reportRequestErrorToSentry } from '@/lib/monitoring/sentryErrorReporter';
 
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger({ context: { route: "/api/radar" } });
+
 export const runtime = 'edge';
 
 // In-memory cache for ultra-fast responses (5-minute TTL)
@@ -252,7 +256,7 @@ export async function GET(req: Request) {
       },
     });
   } catch (err: any) {
-    console.error('Radar Aggregation Error:', err);
+    log.error("Radar Aggregation Error", { error: err?.message || String(err) });
     reportRequestErrorToSentry(req, err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
