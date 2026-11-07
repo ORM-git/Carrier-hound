@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import { isVerifiedAdminUser } from "@/lib/admin/constants";
+import { isCrossSiteMutation } from "@/lib/security/sameOrigin";
 
 /**
  * App routes that strictly require an authenticated Supabase session.
@@ -577,6 +578,14 @@ async function middlewareImpl(request: NextRequest) {
   // 1. Always allow static assets and internal _next paths
   if (isStaticAssetPath(pathname)) {
     return NextResponse.next();
+  }
+
+  // 1b. CSRF same-origin barrier (Backend sheet rank 60): reject mutating
+  // /api requests whose Origin header names a different host. Browsers always
+  // send Origin on cross-site POSTs; Origin-less requests (webhooks, cron,
+  // server-to-server) carry no ambient cookies and pass through unchanged.
+  if (isCrossSiteMutation(request.method, pathname, request.headers.get("origin"), request.headers.get("host"))) {
+    return new NextResponse(null, { status: 403 });
   }
 
   // 2. Server-side Admin Route & API Gate:
