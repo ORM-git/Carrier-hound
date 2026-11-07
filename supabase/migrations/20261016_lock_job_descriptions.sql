@@ -3,6 +3,7 @@
 -- Date: 2026-10-16
 -- Scope: RLS and table privileges on public.job_descriptions
 -- Status: NOT APPLIED (Prepared migration file for owner execution)
+--   If/when applied: record with  node scripts/record-migration.cjs 20261016_lock_job_descriptions
 --
 -- Security Context:
 -- 1. In migration 20261001_phase1_storage_optimization.sql, policy
