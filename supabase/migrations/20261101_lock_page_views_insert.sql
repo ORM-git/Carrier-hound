@@ -29,3 +29,10 @@ GRANT INSERT ON public.page_views TO service_role;
 
 -- 4. Leave the existing admin-email-only SELECT policy ("Allow admin to select page_views")
 -- and every other table/policy untouched.
+
+-- ============================================================================
+-- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
+--   REVOKE INSERT ON public.page_views FROM service_role;
+--   GRANT INSERT ON public.page_views TO anon, authenticated;
+--   NOTE: this migration itself drops POLICY allow public insert to page_views - restore it from the earlier migration that created it (or from backup) if rolling back.
+-- ============================================================================
