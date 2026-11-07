@@ -8,6 +8,7 @@
  *   otherwise fetches, updates the cache, and dedupes identical concurrent
  *   requests through a shared in-flight promise.
  * - `invalidateSwr` drops entries by exact key or prefix after mutations.
+ * - `updateSwr` writes a mutation result through to a cached entry in place.
  * - `isSwrStale` reports cache age so pages can revalidate on tab-visible.
  */
 
@@ -55,6 +56,16 @@ export async function swrFetch<T>(
 export function isSwrStale(key: string, ttlMs = 60_000): boolean {
   const hit = store.get(key) as CacheEntry<unknown> | undefined;
   return !hit || Date.now() - hit.ts >= ttlMs;
+}
+
+/**
+ * Write-through update: replaces a cached entry in place after a mutation,
+ * preserving its original timestamp (staleness age stays honest). No-op when
+ * the key is not cached - a page that never loaded keeps its first fetch.
+ */
+export function updateSwr<T>(key: string, updater: (current: T) => T): void {
+  const hit = store.get(key) as CacheEntry<T> | undefined;
+  if (hit) store.set(key, { data: updater(hit.data), ts: hit.ts });
 }
 
 export function invalidateSwr(keyOrPrefix: string): void {
