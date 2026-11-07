@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { computeWeakEtag, etagMatches, notModifiedResponse } from "@/lib/api/etag";
+import { makeRequest } from "./fixtures";
 
 describe("conditional request support", () => {
   it("computes stable weak etags for equal bodies and different tags for different bodies", async () => {
@@ -23,14 +24,14 @@ describe("conditional request support", () => {
     const headers = { "Cache-Control": "public, max-age=60" };
     const etag = await computeWeakEtag([1, 2, 3]);
     const hit = notModifiedResponse(
-      new Request("https://x.test/api/ticker", { headers: { "if-none-match": etag } }),
+      makeRequest("https://x.test/api/ticker", { headers: { "if-none-match": etag } }),
       etag,
       headers
     );
     expect(hit?.status).toBe(304);
     expect(hit?.headers.get("ETag")).toBe(etag);
     expect(hit?.headers.get("Cache-Control")).toBe("public, max-age=60");
-    const miss = notModifiedResponse(new Request("https://x.test/api/ticker"), etag, headers);
+    const miss = notModifiedResponse(makeRequest("https://x.test/api/ticker"), etag, headers);
     expect(miss).toBeNull();
   });
 });
