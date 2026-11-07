@@ -2,7 +2,8 @@
 
 import { useEffect, useRef } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import { COOKIE_CONSENT_KEY, COOKIE_CONSENT_EVENT } from "@/components/CookieNotice";
+import { COOKIE_CONSENT_EVENT } from "@/components/CookieNotice";
+import { readCookieConsent } from "@/lib/analytics/cookieConsent";
 import { captureAttribution } from "@/lib/analytics/utm";
 
 /**
@@ -32,8 +33,7 @@ export default function PageViewTracker() {
     const track = () => {
       try {
         if (typeof window !== "undefined") {
-          const consent = localStorage.getItem(COOKIE_CONSENT_KEY);
-          if (!consent) {
+          if (!readCookieConsent()) {
             // Strictly gate pageview analytics behind user consent
             return;
           }

@@ -3,7 +3,8 @@
 import { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { useReportWebVitals } from "next/web-vitals";
-import { COOKIE_CONSENT_KEY, COOKIE_CONSENT_EVENT } from "@/components/CookieNotice";
+import { COOKIE_CONSENT_EVENT } from "@/components/CookieNotice";
+import { readCookieConsent } from "@/lib/analytics/cookieConsent";
 
 /**
  * Supported Core Web Vitals and key page performance metrics.
@@ -70,14 +71,7 @@ export function sanitizeWebVitalsPath(rawPath: string | null | undefined): strin
  * Returns whether user cookie consent has been granted.
  */
 export function hasCookieConsent(): boolean {
-  try {
-    if (typeof localStorage !== "undefined") {
-      return Boolean(localStorage.getItem(COOKIE_CONSENT_KEY));
-    }
-    return false;
-  } catch {
-    return false;
-  }
+  return readCookieConsent();
 }
 
 /**

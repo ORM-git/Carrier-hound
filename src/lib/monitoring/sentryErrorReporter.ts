@@ -1,5 +1,5 @@
 import * as Sentry from "@sentry/nextjs";
-import { COOKIE_CONSENT_KEY } from "@/components/CookieNotice";
+import { readCookieConsent } from "@/lib/analytics/cookieConsent";
 
 /**
  * Checks whether error reporting to Sentry is permitted under current DSN configuration
@@ -19,16 +19,9 @@ export function shouldReportToSentry(): boolean {
     return false;
   }
 
-  // 2. Cookie Consent Check: Gated behind user consent in browser environment
-  if (typeof window !== "undefined") {
-    try {
-      const consent = localStorage.getItem(COOKIE_CONSENT_KEY);
-      if (!consent) {
-        return false;
-      }
-    } catch {
-      return false;
-    }
+  // 2. Cookie Consent Check: gated behind the shared versioned consent reader
+  if (typeof window !== "undefined" && !readCookieConsent()) {
+    return false;
   }
 
   return true;

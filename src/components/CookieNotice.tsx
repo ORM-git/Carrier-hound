@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect, useRef, useLayoutEffect } from "react";
 import Link from "next/link";
-import { readVersioned, writeVersioned } from "@/lib/storage/versioned";
+import { writeVersioned } from "@/lib/storage/versioned";
+import { readCookieConsent } from "@/lib/analytics/cookieConsent";
 
 export const COOKIE_CONSENT_KEY = "cm_cookie_notice";
 /** Schema version of the stored consent payload (v0 was the legacy raw "true" string). */
@@ -20,12 +21,7 @@ export function useCookieNoticeHeight(): number {
   useEffect(() => {
     const updateHeight = () => {
       try {
-        const acknowledged = readVersioned<boolean>(COOKIE_CONSENT_KEY, {
-          version: COOKIE_CONSENT_VERSION,
-          fallback: false,
-          migrate: (from, raw) => (from === 0 ? raw === true || raw === "true" : raw),
-          validate: (d): d is boolean => typeof d === "boolean",
-        });
+        const acknowledged = readCookieConsent();
         if (acknowledged) {
           setHeight(0);
           if (typeof document !== "undefined") {
@@ -83,12 +79,7 @@ export default function CookieNotice() {
   useEffect(() => {
     setMounted(true);
     try {
-      const acknowledged = readVersioned<boolean>(COOKIE_CONSENT_KEY, {
-        version: COOKIE_CONSENT_VERSION,
-        fallback: false,
-        migrate: (from, raw) => (from === 0 ? raw === true || raw === "true" : raw),
-        validate: (d): d is boolean => typeof d === "boolean",
-      });
+      const acknowledged = readCookieConsent();
       if (!acknowledged) {
         setVisible(true);
       } else {
