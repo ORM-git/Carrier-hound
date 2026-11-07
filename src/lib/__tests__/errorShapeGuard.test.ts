@@ -90,7 +90,7 @@ describe("uniform error shape guard (Backend sheet rank 72)", () => {
     walk(join(ROOT, "src", "app", "api")).forEach((file) => {
       total += scan(file).length;
     });
-    // 119 literals at introduction (2026-11-07). A drop means responses moved
+    // 127 literals at introduction (2026-11-07, post-merge main). A drop means responses moved
     // to helpers the guard cannot see - revisit coverage before lowering.
     expect(total).toBeGreaterThanOrEqual(100);
   });
