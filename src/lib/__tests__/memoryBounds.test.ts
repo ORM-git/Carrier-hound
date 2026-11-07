@@ -76,3 +76,47 @@ describe("AI idempotency result cache memory bounds", () => {
     }
   });
 });
+
+describe("fallback rate-limit store key cap (rank 47)", () => {
+  it("caps distinct keys and evicts expired windows first", async () => {
+    const { checkRateLimit, FALLBACK_RATE_LIMIT_MAX_KEYS } = await import("@/lib/ai/serviceHandler");
+    const store = new Map<string, { count: number; resetAt: number }>();
+    const now = Date.now();
+    // Fill to cap: one live window, the rest already expired.
+    store.set("live-key", { count: 1, resetAt: now + 60000 });
+    for (let i = 0; i < FALLBACK_RATE_LIMIT_MAX_KEYS - 1; i++) {
+      store.set(`stale-${i}`, { count: 5, resetAt: now - 1000 });
+    }
+    expect(store.size).toBe(FALLBACK_RATE_LIMIT_MAX_KEYS);
+    const r = checkRateLimit("brand-new-key", store, 10, 60000);
+    expect(r.allowed).toBe(true);
+    // Expired windows were dropped to make room; the live one survived.
+    expect(store.size).toBeLessThan(FALLBACK_RATE_LIMIT_MAX_KEYS);
+    expect(store.get("live-key")).toBeDefined();
+    expect(store.get("brand-new-key")).toBeDefined();
+  });
+
+  it("evicts the soonest-expiring live window when nothing is expired", async () => {
+    const { checkRateLimit, FALLBACK_RATE_LIMIT_MAX_KEYS } = await import("@/lib/ai/serviceHandler");
+    const store = new Map<string, { count: number; resetAt: number }>();
+    const now = Date.now();
+    store.set("soonest", { count: 1, resetAt: now + 1000 });
+    for (let i = 0; i < FALLBACK_RATE_LIMIT_MAX_KEYS - 1; i++) {
+      store.set(`other-${i}`, { count: 1, resetAt: now + 60000 });
+    }
+    checkRateLimit("brand-new-key", store, 10, 60000);
+    expect(store.size).toBe(FALLBACK_RATE_LIMIT_MAX_KEYS);
+    expect(store.get("soonest")).toBeUndefined();
+    expect(store.get("brand-new-key")).toBeDefined();
+  });
+
+  it("never touches existing keys below the cap", async () => {
+    const { checkRateLimit } = await import("@/lib/ai/serviceHandler");
+    const store = new Map<string, { count: number; resetAt: number }>();
+    checkRateLimit("a", store, 2, 60000);
+    checkRateLimit("b", store, 2, 60000);
+    const r = checkRateLimit("a", store, 2, 60000);
+    expect(r.currentCount).toBe(2);
+    expect(store.size).toBe(2);
+  });
+});

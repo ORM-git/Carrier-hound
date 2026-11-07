@@ -51,6 +51,12 @@ check(
     /throw new RangeError/.test(lru)
 );
 
+const serviceHandler = fs.readFileSync("src/lib/ai/serviceHandler.ts", "utf8");
+check(
+  "fallback rate-limit stores have a 10,000 distinct-key cap on the single write path",
+  /FALLBACK_RATE_LIMIT_MAX_KEYS = 10000/.test(serviceHandler) &&
+    /evictFallbackBucketsIfFull\(store, now\)/.test(serviceHandler)
+);
 check(
   "behavioral bounds suite exists (LruCache + idempotency cache)",
   fs.existsSync("src/lib/__tests__/memoryBounds.test.ts")

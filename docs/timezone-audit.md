@@ -31,7 +31,7 @@ GitHub Actions schedules are UTC; the comments record the IST intent.
 | `early-access-digest-cron.yml` | `0 18 * * *` | 23:30 IST daily |
 | `dunning-dispatch-cron.yml` | `30 4 * * *` | 10:00 IST daily (comment in file) |
 | `capacity-report-cron.yml` | `0 5 * * 1` | 10:30 IST Monday (comment in file) |
-| `daily-digest-cron.yml` | `30 21 * * *` | 03:00 IST next day, landing ahead of the SLO |
+| `daily-digest-cron.yml` | `30 21 * * *` | 03:00 IST next day, ~2.5h past the sent-by-00:30 IST SLO - misses it (owner step Doc 70 pending) |
 
 The digest SLO is stated in IST: `docs/slo.md` requires the daily digest
 "Sent by 00:30 IST or alert". Note the anchor day: 21:30 UTC is 03:00

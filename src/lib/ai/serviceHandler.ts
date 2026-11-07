@@ -48,6 +48,36 @@ const CORS_OPTIONS = {
   allowedHeaders: "Content-Type, Authorization",
 };
 
+// Hard cap on distinct keys per in-memory rate-limit store (Backend sheet
+// rank 47): these stores are the degraded-mode fallback when the shared
+// store is down, and keys are IP/user-derived, so without a numerical cap a
+// flood of distinct sources grows an isolate's memory without limit. The
+// value matches the AI idempotency cache cap already recorded in
+// docs/memory-bounds.md.
+export const FALLBACK_RATE_LIMIT_MAX_KEYS = 10000;
+
+function evictFallbackBucketsIfFull(store: Map<string, RateLimitBucket>, now: number): void {
+  if (store.size < FALLBACK_RATE_LIMIT_MAX_KEYS) return;
+  // First pass: drop windows that have already expired - they are dead weight.
+  const expiredKeys: string[] = [];
+  store.forEach((bucket, k) => {
+    if (now >= bucket.resetAt) expiredKeys.push(k);
+  });
+  for (let i = 0; i < expiredKeys.length; i++) store.delete(expiredKeys[i]);
+  if (store.size < FALLBACK_RATE_LIMIT_MAX_KEYS) return;
+  // Second pass: evict the soonest-expiring live window. A brand-new key
+  // then starts a fresh window; every pre-existing key is untouched.
+  let oldestKey: string | undefined;
+  let oldestReset = Infinity;
+  store.forEach((bucket, k) => {
+    if (bucket.resetAt < oldestReset) {
+      oldestReset = bucket.resetAt;
+      oldestKey = k;
+    }
+  });
+  if (oldestKey !== undefined) store.delete(oldestKey);
+}
+
 export function checkRateLimit(
   key: string,
   store: Map<string, RateLimitBucket>,
@@ -58,6 +88,7 @@ export function checkRateLimit(
   let bucket = store.get(key);
 
   if (!bucket || now >= bucket.resetAt) {
+    evictFallbackBucketsIfFull(store, now);
     bucket = { count: 1, resetAt: now + windowMs };
     store.set(key, bucket);
     return { allowed: true, retryAfter: 0, currentCount: 1 };
