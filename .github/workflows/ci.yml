@@ -53,6 +53,14 @@ jobs:
       - name: Build Application
         run: npm run build
 
+      - name: Performance Budget (Lighthouse)
+        # Measures the static export in out/ against budgets/performance.json
+        # (owner-measured mobile baseline 82, documented flake tolerance).
+        # Non-blocking until a CI-runner median is measured; then tighten the
+        # budget to (CI median - tolerance) and remove continue-on-error.
+        continue-on-error: true
+        run: npm run check:perf
+
       - name: Tail Latency Gate Check
         run: npx tsx scripts/test-tail-latency-gate.ts
         env:
