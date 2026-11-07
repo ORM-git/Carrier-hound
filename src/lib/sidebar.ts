@@ -1,8 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { readVersioned, writeVersioned } from "./storage/versioned";
 
 export const SIDEBAR_STORAGE_KEY = "careermonke_sidebar_expanded";
+/** Schema version of the stored sidebar payload (v0 was the legacy raw "true"/"false" string). */
+export const SIDEBAR_STORAGE_VERSION = 1;
 export const SIDEBAR_EVENT_KEY = "careermonke_sidebar_mode_changed";
 
 /**
@@ -10,12 +13,12 @@ export const SIDEBAR_EVENT_KEY = "careermonke_sidebar_mode_changed";
  * Defaults to false (72px narrow icon rail).
  */
 export function getStoredSidebarExpanded(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    return localStorage.getItem(SIDEBAR_STORAGE_KEY) === "true";
-  } catch {
-    return false;
-  }
+  return readVersioned<boolean>(SIDEBAR_STORAGE_KEY, {
+    version: SIDEBAR_STORAGE_VERSION,
+    fallback: false,
+    migrate: (from, raw) => (from === 0 ? raw === true || raw === "true" : raw),
+    validate: (d): d is boolean => typeof d === "boolean",
+  });
 }
 
 /**
@@ -24,7 +27,7 @@ export function getStoredSidebarExpanded(): boolean {
 export function setStoredSidebarExpanded(expanded: boolean): void {
   if (typeof window === "undefined") return;
   try {
-    localStorage.setItem(SIDEBAR_STORAGE_KEY, String(expanded));
+    writeVersioned(SIDEBAR_STORAGE_KEY, SIDEBAR_STORAGE_VERSION, expanded);
     window.dispatchEvent(
       new CustomEvent(SIDEBAR_EVENT_KEY, { detail: { expanded } })
     );
