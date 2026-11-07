@@ -10,7 +10,7 @@ import * as fs from "fs";
 const doc = fs.readFileSync("docs/cache-invalidation.md", "utf8");
 const swr = fs.readFileSync("src/lib/cache/swr.ts", "utf8");
 const tailor = fs.readFileSync("src/lib/resume/tailor.ts", "utf8");
-const handler = fs.readFileSync("src/lib/ai/serviceHandler.ts", "utf8");
+const idem = fs.readFileSync("src/lib/ai/idempotency.ts", "utf8");
 const rl = fs.readFileSync("src/lib/api/sharedRateLimit.ts", "utf8");
 
 describe("cache invalidation strategy doc", () => {
@@ -28,7 +28,7 @@ describe("cache invalidation strategy doc", () => {
 
   it("covers the TTL-based idempotency cache against the real TTL", () => {
     expect(doc).toContain("24h TTL");
-    expect(/IDEMPOTENCY_CACHE_TTL_MS = 24 \* 60 \* 60 \* 1000/.test(handler)).toBe(true);
+    expect(/IDEMPOTENCY_CACHE_TTL_MS = 24 \* 60 \* 60 \* 1000/.test(idem)).toBe(true);
   });
 
   it("covers time-windowed rate-limit stores against the real window state", () => {
