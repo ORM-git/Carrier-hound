@@ -28,5 +28,9 @@ then the freeze rule below is manual.
   pauses; merges are reliability fixes only until the monthly window resets.
 - **Measurement**: availability SLIs from the UptimeRobot monitors, TTFB from
   `web_vitals` via `scripts/check-ttfb-slo.ts`, cron delivery from
-  `cron_run_logs`. Burn-rate alerting automation is an owner-side monitor
-  configuration step; this policy defines the thresholds it should use.
+  `cron_run_logs`. Digest-delivery burn is evaluated in-repo by
+  `scripts/check-error-budget.ts` (bad minutes = failed run until the next
+  success); it exits non-zero on fast burn or an exhausted budget so a
+  cron/CI run can page. Site/API burn-rate alerting automation is an
+  owner-side monitor configuration step; this policy defines the thresholds
+  it should use.

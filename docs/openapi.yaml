@@ -144,6 +144,18 @@ paths:
         time budget (measureRouteBudget).
       responses:
         "200": { description: AI response }
+  /api/ai/stream:
+    post:
+      tags: [ai]
+      summary: AI assistant request delivered as Server-Sent Events
+      description: >-
+        SSE variant of /api/ai (transport scaffold). Feature-gated: the route
+        answers 404 unless AI_STREAMING_ENABLED is set ("1" or "true"). Same
+        guarded path as /api/ai (auth, rate limits, quotas, budget, circuit
+        breaker); non-200 outcomes return the same JSON error body as /api/ai,
+        not an SSE stream.
+      responses:
+        "200": { description: "text/event-stream: meta, chunk, done frames" }
   /api/billing/razorpay/order:
     post:
       tags: [billing]
@@ -213,6 +225,12 @@ paths:
       description: Delegates to handleSkillWhatIfRequest.
       responses:
         "200": { description: Analysis result }
+  /api/jobs/suggest:
+    get:
+      tags: [jobs]
+      summary: Autocomplete prefix suggestions for job titles
+      responses:
+        "200": { description: Suggestion list }
   /api/jobs/top10:
     post:
       tags: [jobs]

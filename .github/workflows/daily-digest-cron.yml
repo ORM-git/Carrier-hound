@@ -43,6 +43,7 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           FAST_MODEL: ${{ secrets.FAST_MODEL }}
           SMART_MODEL: ${{ secrets.SMART_MODEL }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
         run: |
           ARGS=""
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then

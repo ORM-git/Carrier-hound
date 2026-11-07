@@ -8,6 +8,7 @@ import Footer from "@/components/Footer";
 import { createClient } from "@/lib/supabase/client";
 import { getValidReturnUrl, getAuthUser } from "@/lib/auth/session";
 import { getSiteUrl } from "@/lib/siteUrl";
+import { trackFunnelEvent } from "@/lib/analytics/funnel";
 import { X, Loader2, CheckCircle2, AlertCircle, RefreshCw } from "lucide-react";
 
 function GoogleIcon() {
@@ -96,6 +97,7 @@ export default function SignupPage() {
 
     setLoading(true);
     setError("");
+    trackFunnelEvent("signup_started", { path: "/signup" });
 
     try {
       const supabase = createClient();
@@ -127,6 +129,7 @@ export default function SignupPage() {
   const handleGoogle = async () => {
     setGoogleLoading(true);
     setError("");
+    trackFunnelEvent("signup_started", { path: "/signup", metadata: { method: "google" } });
 
     try {
       const supabase = createClient();

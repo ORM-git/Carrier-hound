@@ -118,6 +118,7 @@ order by array_position(
   event
 );
 
+<<<<<<< feat/activation-metrics
 -- 11. Activation / retention (Backend row: Activation / Retention Metrics).
 --     DAU/WAU/MAU from page_views (signed-in users only), plus week-1 cohort retention
 --     (signed up in week W, seen again in W+1). auth.users is readable in the SQL editor.
@@ -169,3 +170,18 @@ left join returns r on r.cohort_week = c.cohort_week and r.id = c.id
 group by 1
 order by 1 desc
 limit 12;
+=======
+-- 11. Slow queries (DB row: Slow-query log). pg_stat_statements is enabled by
+--     migration 20261105c; this is the review surface for what it records.
+--     NOTE: Postgres log_min_duration_statement cannot be set from the SQL editor
+--     on Supabase - if log-file slow logging is wanted it is a dashboard setting.
+select left(query, 120) as query,
+       calls,
+       round(total_exec_time::numeric, 1) as total_ms,
+       round(mean_exec_time::numeric, 1) as mean_ms,
+       round(max_exec_time::numeric, 1) as max_ms
+from pg_stat_statements
+where query not ilike '%pg_stat_statements%'
+order by total_exec_time desc
+limit 20;
+>>>>>>> main
