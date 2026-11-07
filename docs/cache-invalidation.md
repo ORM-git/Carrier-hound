@@ -7,7 +7,7 @@ green.
 
 | Cache | Location | Strategy |
 | --- | --- | --- |
-| Client SWR store | `src/lib/cache/swr.ts` | Explicit invalidation: `invalidateSwr` by exact key or prefix after mutations; freshness windows via `isSwrStale`; memory-only, cleared on full reload |
+| Client SWR store | `src/lib/cache/swr.ts` | Explicit invalidation: `invalidateSwr` by exact key or prefix after mutations, plus write-through `updateSwr` so mutation handlers update the cached bundle in place (no stale paint, no extra loading state); freshness windows via `isSwrStale`; memory-only, cleared on full reload |
 | Cover-letter result cache | `src/lib/resume/tailor.ts` | Version key: `COVER_LETTER_CACHE_VERSION` bump invalidates all prior generations logically |
 | AI idempotency result cache | `src/lib/ai/serviceHandler.ts` | Time-to-live: 24h TTL with expired-entry removal on read, plus a 10,000-entry cap |
 | Rate-limit windows | `src/lib/api/sharedRateLimit.ts` | Time window: per-key `resetAt` expiry; windows self-expire |
