@@ -30,23 +30,43 @@ export default function RefundPolicyPage() {
         <h1 className="text-2xl sm:text-3xl font-bold text-[#09090B] tracking-tight">
           Cancellation &amp; Refund Policy
         </h1>
-        <p className="text-xs text-gray-500 font-mono">Last updated: November 3, 2026</p>
+        <p className="text-xs text-gray-500 font-mono">Last updated: November 6, 2026</p>
 
         <p className="mb-2">
-          CareerMonke is operated by Olive Ridley Media Private Limited. All purchases are prepaid fixed-duration plans and add-on packs. As digital services, all sales final. Only a duplicate or failed-but-debited payment is reviewed and refunded to the original payment method within 5-7 business days.
+          CareerMonke is operated by Olive Ridley Media Private Limited. All purchases are prepaid fixed-duration plans and add-on packs. As digital services, all sales are final. Only a duplicate or failed-but-debited payment is reviewed and refunded to the original payment method within 5-7 business days.
         </p>
 
-        <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">1. Prepaid &amp; Non-Recurring Plans</h2>
+        <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">1. Prepaid Plans, No Auto-Renewal</h2>
         <p className="mb-2">
-          All purchases on CareerMonke are prepaid fixed-duration plans and add-on packs with no recurring charges or auto-renewals. When you subscribe or purchase an add-on pack, your payment covers access strictly for the fixed duration purchased. Access does not renew automatically, and no recurring charges will ever be debited.
+          Every CareerMonke plan (Weekly, Monthly, Quarterly) and every add-on pack is prepaid for a fixed duration. There are no recurring charges and no automatic renewals: your plan expires at the end of its paid period unless you choose to purchase again. Because nothing renews automatically, there is no recurring billing to cancel.
         </p>
 
-        <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">2. Digital Services &amp; All Sales Final</h2>
+        <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">2. Cancellation and Access After Cancellation</h2>
+        <ul className="list-disc pl-5 space-y-2 mb-2">
+          <li>
+            If you decide to stop using CareerMonke before your paid period ends, you keep full premium access until the end of the period you already paid for. No further payment is ever taken.
+          </li>
+          <li>
+            When a plan period ends, premium features and remaining plan quotas expire automatically. Your account, profile, resumes, and saved jobs stay available on the free tier.
+          </li>
+          <li>
+            Add-on packs, when offered, are valid for 60 days from purchase and expire automatically after that, whether or not the sets are used.
+          </li>
+          <li>
+            You may also delete your account entirely at any time from your account settings; deletion removes your personal data as described in our{" "}
+            <Link href="/privacy-policy" className="text-blue-600 underline underline-offset-2 hover:text-blue-800 transition-colors">
+              Privacy Policy
+            </Link>
+            .
+          </li>
+        </ul>
+
+        <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">3. Digital Services &amp; All Sales Final</h2>
         <p className="mb-2">
-          CareerMonke provides instant digital access to unindexed job discovery tools and AI credits. Because our products are digital services, all sales final once access or credits are granted.
+          CareerMonke provides instant digital access to job discovery tools and AI generation credits. Because our products are digital services delivered immediately, all sales are final once access or credits are granted. We do not provide refunds or credits for unused time, unused generation sets, or expired add-on packs.
         </p>
 
-        <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">3. Exceptions: Duplicate or Failed-But-Debited Payments</h2>
+        <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">4. Exceptions: Duplicate or Failed-But-Debited Payments</h2>
         <p className="mb-2">
           We maintain a strict no refunds policy; only a duplicate or failed-but-debited payment is reviewed and refunded to the original payment method within 5-7 business days:
         </p>
@@ -59,21 +79,21 @@ export default function RefundPolicyPage() {
           </li>
         </ul>
 
-        <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">4. Review and Refund Timeline</h2>
+        <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">5. Review and Refund Timeline</h2>
         <p className="mb-2">
           Any eligible duplicate or failed-but-debited payment exception is reviewed and refunded to the original payment method within 5-7 business days following verification by our billing support team and payment gateway.
         </p>
 
-        <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">5. How to Request a Refund</h2>
+        <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">6. How to Request a Review</h2>
         <p className="mb-2">
-          To request a review for an eligible duplicate or failed-but-debited payment, please contact our support team at{" "}
+          To request a review for an eligible duplicate or failed-but-debited payment, or to ask about cancelling your account, please contact our support team at{" "}
           <a
             href="mailto:support@careermonke.com"
             className="text-blue-600 underline underline-offset-2 hover:text-blue-800 transition-colors"
           >
             support@careermonke.com
           </a>{" "}
-          with your order id and registered account email address.
+          with your order id and registered account email address. We respond within 5-7 working days.
         </p>
 
         <div className="pt-8 border-t border-gray-200 text-xs text-gray-500">

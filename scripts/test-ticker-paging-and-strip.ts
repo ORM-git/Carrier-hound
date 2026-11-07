@@ -118,9 +118,10 @@ async function testTickerPagingUnderDominantCompanyFlood() {
     assert.strictEqual(res.status, 200, "GET /api/ticker should return status 200");
 
     const cacheHeader = res.headers.get("Cache-Control");
-    assert(
-      cacheHeader && cacheHeader.includes("max-age=60"),
-      `Expected Cache-Control 60s, got: ${cacheHeader}`
+    assert.strictEqual(
+      cacheHeader,
+      "public, s-maxage=60, stale-while-revalidate=300",
+      `Expected reviewed ticker cache policy (public, s-maxage=60, swr=300), got: ${cacheHeader}`
     );
 
     const items = await res.json();
