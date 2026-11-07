@@ -4,6 +4,8 @@ import { resolveOrderPricing } from "@/lib/billing/quota";
 import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
 import { getRazorpayKeyMode } from "@/lib/billing/mode";
 
+import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
+
 export const runtime = "edge";
 
 export async function POST(req: Request) {
@@ -173,6 +175,7 @@ export async function POST(req: Request) {
       keyId,
     });
   } catch (err: any) {
+    reportRequestErrorToSentry(req, err);
     return NextResponse.json(
       { error: err?.message || "Internal server error" },
       { status: 500 }
