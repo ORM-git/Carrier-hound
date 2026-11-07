@@ -3,7 +3,6 @@ import { getCandidateProfile } from "../resume/storage";
 import { computeFitDiagnostics } from "../matcher/scoring";
 import { getLiveJobs } from "../jobs/service";
 import { getProAccessStatus } from "../billing/subscription";
-
 import { createLogger } from "@/lib/observability/logger";
 
 const log = createLogger({ context: { module: "cron/digestStorage" } });
