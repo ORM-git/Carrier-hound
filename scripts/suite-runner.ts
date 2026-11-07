@@ -180,9 +180,6 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-funnel-events.ts", command: "npx tsx scripts/test-funnel-events.ts", classification: "offline" },
   { name: "scripts/test-redundant-index-cleanup.ts", command: "npx tsx scripts/test-redundant-index-cleanup.ts", classification: "offline" },
   { name: "scripts/test-data-classification.ts", command: "npx tsx scripts/test-data-classification.ts", classification: "offline" },
-<<<<<<< feat/edge-kv-adapter
-  { name: "scripts/test-edge-kv.ts", command: "npx tsx scripts/test-edge-kv.ts", classification: "offline" },
-=======
   { name: "scripts/test-autocomplete-policy.ts", command: "npx tsx scripts/test-autocomplete-policy.ts", classification: "offline" },
   { name: "scripts/test-error-budget.ts", command: "npx tsx scripts/test-error-budget.ts", classification: "offline" },
   { name: "scripts/test-push-notifications-policy.ts", command: "npx tsx scripts/test-push-notifications-policy.ts", classification: "offline" },
@@ -206,7 +203,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-edge-caching-policy.ts", command: "npx tsx scripts/test-edge-caching-policy.ts", classification: "offline" },
   { name: "scripts/test-resilience-posture.ts", command: "npx tsx scripts/test-resilience-posture.ts", classification: "offline" },
   { name: "scripts/test-managed-redis.ts", command: "npx tsx scripts/test-managed-redis.ts", classification: "offline" },
->>>>>>> main
+  { name: "scripts/test-edge-kv.ts", command: "npx tsx scripts/test-edge-kv.ts", classification: "offline" },
 ];
 
 export interface RunSummary {
