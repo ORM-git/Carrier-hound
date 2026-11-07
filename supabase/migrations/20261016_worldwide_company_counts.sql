@@ -3,6 +3,7 @@
 -- Date: 2026-10-16
 -- Scope: public.worldwide_company_counts view
 -- Status: PENDING APPLICATION (Run in Supabase SQL editor by project owner)
+--   If/when applied: record with  node scripts/record-migration.cjs 20261016_worldwide_company_counts
 --
 -- SECURITY & PAID LOCK DISCIPLINE:
 -- Why this view does NOT bypass the paid lock on jobs data:
