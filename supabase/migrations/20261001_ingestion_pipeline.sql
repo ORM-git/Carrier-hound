@@ -58,3 +58,20 @@ CREATE POLICY "jobs_public_read"
   ON public.jobs
   FOR SELECT
   USING (is_active = true OR status = 'active');
+
+-- ============================================================================
+-- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
+--   DROP POLICY IF EXISTS "jobs_public_read" ON public.jobs;
+--   DROP INDEX IF EXISTS public.jobs_apply_url_unique;
+--   DROP INDEX IF EXISTS public.jobs_is_active_idx;
+--   DROP INDEX IF EXISTS public.jobs_last_seen_at_idx;
+--   DROP INDEX IF EXISTS public.jobs_posted_at_idx;
+--   ALTER TABLE public.jobs DROP COLUMN IF EXISTS remote;
+--   ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_job_type_check;
+--   ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_source_source_job_id_key;
+--   NOTE: constraint jobs_job_type_check was dropped and re-added by this file with a new definition; restore its prior definition from the earlier migration that created it.
+--   NOTE: constraint jobs_source_source_job_id_key was dropped and re-added by this file with a new definition; restore its prior definition from the earlier migration that created it.
+--   NOTE: this migration itself drops INDEX jobs_source_source_job_id_unique - restore it from the earlier migration that created it (or from backup) if rolling back.
+--   NOTE: this migration itself drops INDEX jobs_apply_url_unique - restore it from the earlier migration that created it (or from backup) if rolling back.
+--   NOTE: data writes above (insert/update/delete) need a manual restore from backup or a hand-written reverse; no automatic rollback.
+-- ============================================================================
