@@ -26,6 +26,16 @@ claims or consumes anything; no caller is wired.
 - No numbers are baked in. `max_attempts`, lease seconds, retry delay and batch size are
   required arguments (owner to confirm values per topic).
 
+## Follow-up: fencing (20261107e, NOT APPLIED, apply after 20261107c)
+
+- `ack` and `fail` now take the claimed row's `attempts` as a fencing token (`attempt` in the
+  helper). A completion from an older claim of the same row is refused even if the worker id was
+  reused. Wrong token: `ack` returns false, `fail` returns null.
+- The expired-final-attempt cleanup in `outbox_claim_batch` selects FOR UPDATE SKIP LOCKED first,
+  so it no longer waits on rows another worker holds.
+- The old `outbox_ack(uuid, text)` and `outbox_fail(uuid, text, text, integer)` are dropped by
+  that migration; apply c and e together.
+
 ## Not done (owner steps and unknowns)
 
 - Applying the migration and recording it. Live SQL behavior (locking under parallel

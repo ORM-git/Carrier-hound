@@ -1,6 +1,6 @@
 /**
- * Typed wrappers over the outbox RPCs from migration 20261107c_outbox_queue.sql
- * (NOT APPLIED). Nothing in the repo calls these yet. Delivery is at-least-once,
+ * Typed wrappers over the outbox RPCs from migrations 20261107c_outbox_queue.sql and
+ * 20261107e_outbox_fencing.sql (both NOT APPLIED). Nothing in the repo calls these yet. Delivery is at-least-once,
  * so consumers must be idempotent. No numeric defaults: max attempts, lease
  * seconds and retry delay are always passed by the caller (owner to confirm).
  */
@@ -65,14 +65,29 @@ export async function claimOutboxBatch(
   return Array.isArray(data) ? (data as OutboxRow[]) : [];
 }
 
-export async function ackOutbox(supabase: any, id: string, worker: string): Promise<boolean> {
-  const data = await rpc(supabase, "outbox_ack", { p_id: id, p_worker: worker });
+function attemptToken(v: unknown): number {
+  return positiveInt("attempt", v);
+}
+
+/**
+ * attempt is the claimed row's `attempts` value (the fencing token): a completion
+ * from an older claim of the same row, even by the same worker id, is refused.
+ */
+export async function ackOutbox(
+  supabase: any,
+  input: { id: string; worker: string; attempt: number }
+): Promise<boolean> {
+  const data = await rpc(supabase, "outbox_ack", {
+    p_id: input.id,
+    p_worker: input.worker,
+    p_attempt: attemptToken(input.attempt),
+  });
   return data === true;
 }
 
 export async function failOutbox(
   supabase: any,
-  input: { id: string; worker: string; error: string; retryDelaySeconds: number }
+  input: { id: string; worker: string; attempt: number; error: string; retryDelaySeconds: number }
 ): Promise<"retry" | "dead" | null> {
   const d = input.retryDelaySeconds;
   if (typeof d !== "number" || !isFinite(d) || Math.floor(d) !== d || d < 0) {
@@ -81,6 +96,7 @@ export async function failOutbox(
   const data = await rpc(supabase, "outbox_fail", {
     p_id: input.id,
     p_worker: input.worker,
+    p_attempt: attemptToken(input.attempt),
     p_error: input.error,
     p_retry_delay_seconds: d,
   });
