@@ -125,8 +125,8 @@ export default function SkillWhatIfClient({ jobId }: SkillWhatIfClientProps) {
   if (loadingAuth || !isProDefinitive) {
     return (
       <LoggedInAppShell pageLabel="SKILL WHAT-IF" user={user} isPro={false}>
-        <div className="min-h-[70vh] flex flex-col items-center justify-center p-6 space-y-4">
-          <div className="w-10 h-10 border-4 border-[#2563EB] border-t-transparent rounded-full animate-spin" />
+        <div className="min-h-[70vh] flex flex-col items-center justify-center p-6 space-y-4" role="status" aria-label="Verifying your Pro membership">
+          <div aria-hidden="true" className="w-10 h-10 border-4 border-[#2563EB] border-t-transparent rounded-full animate-spin" />
           <p className="text-[15px] font-semibold text-[#64748B]">
             Verifying your CareerMonke Pro membership...
           </p>

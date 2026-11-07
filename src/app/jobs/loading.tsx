@@ -7,9 +7,9 @@ export default function JobsLoading() {
     <div className="min-h-screen bg-[#F8FAFC] text-[#09090B] flex flex-col">
       <GuideHeader />
 
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
+      <main role="status" aria-label="Loading jobs" className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
         {/* Top Header & Search Ribbon Skeleton */}
-        <div className="space-y-4">
+        <div aria-hidden="true" className="space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="space-y-2">
               <div className="h-7 w-64 bg-slate-200 rounded animate-pulse" />
@@ -29,7 +29,7 @@ export default function JobsLoading() {
         </div>
 
         {/* Job Cards Skeleton */}
-        <div className="space-y-3">
+        <div aria-hidden="true" className="space-y-3">
           {[1, 2, 3, 4, 5, 6].map((i) => (
             <div
               key={i}
