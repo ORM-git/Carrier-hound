@@ -82,7 +82,7 @@ function validateEarlyAccessEmail(raw: unknown): {
 }
 
 async function postHandler(req: Request) {
-  const log = baseLog.child({ requestId: req.headers.get("x-request-id") ?? "unknown" });
+  const log = baseLog.child({ requestId: req?.headers.get("x-request-id") ?? "unknown" });
   try {
     const isLegacy =
       process.env.NODE_ENV === "test" &&
