@@ -69,3 +69,15 @@ CREATE POLICY "Service role full access to daily digests"
   TO service_role
   USING (true)
   WITH CHECK (true);
+
+-- ============================================================================
+-- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
+--   DROP INDEX IF EXISTS public.idx_cron_run_logs_started_at;
+--   DROP INDEX IF EXISTS public.idx_cron_run_logs_status;
+--   DROP INDEX IF EXISTS public.idx_daily_digests_user_date;
+--   DROP INDEX IF EXISTS public.idx_daily_digests_status;
+--   ALTER TABLE public.cron_run_logs DISABLE ROW LEVEL SECURITY;
+--   ALTER TABLE public.daily_digests DISABLE ROW LEVEL SECURITY;
+--   DROP TABLE IF EXISTS public.cron_run_logs CASCADE;
+--   DROP TABLE IF EXISTS public.daily_digests CASCADE;
+-- ============================================================================
