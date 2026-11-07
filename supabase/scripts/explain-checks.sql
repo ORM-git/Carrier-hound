@@ -14,7 +14,7 @@ FROM public.jobs
 WHERE is_active = true
   AND status = 'active'
 ORDER BY first_seen_at DESC, id DESC
-LIMIT 10 OFFSET 0;
+LIMIT 10;
 
 -- ------------------------------------------------------------------------------
 -- 2. REMOTE FILTER (remote_scope = 'remote')
@@ -27,7 +27,7 @@ WHERE is_active = true
   AND status = 'active'
   AND remote_scope = 'remote'
 ORDER BY first_seen_at DESC, id DESC
-LIMIT 10 OFFSET 0;
+LIMIT 10;
 
 -- ------------------------------------------------------------------------------
 -- 3. COUNTRY FILTER (country = 'United States')
@@ -40,7 +40,7 @@ WHERE is_active = true
   AND status = 'active'
   AND country = 'United States'
 ORDER BY first_seen_at DESC, id DESC
-LIMIT 10 OFFSET 0;
+LIMIT 10;
 
 -- ------------------------------------------------------------------------------
 -- 4. SALARY FILTER ($150k+ via salary_text prefix OR clauses / salary_min)
@@ -63,7 +63,7 @@ WHERE is_active = true
     OR salary_text ILIKE '$300%'
   )
 ORDER BY first_seen_at DESC, id DESC
-LIMIT 10 OFFSET 0;
+LIMIT 10;
 
 -- ------------------------------------------------------------------------------
 -- 5. CATEGORY FILTER (category IN expanded taxonomy slugs)
@@ -76,7 +76,7 @@ WHERE is_active = true
   AND status = 'active'
   AND category IN ('software', 'engineering', 'backend', 'frontend', 'fullstack')
 ORDER BY first_seen_at DESC, id DESC
-LIMIT 10 OFFSET 0;
+LIMIT 10;
 
 -- ------------------------------------------------------------------------------
 -- 6. MULTI-WORD SEARCH (AND across words: "Senior Procurement")
@@ -100,7 +100,7 @@ WHERE is_active = true
     OR location ILIKE '%Procurement%'
   )
 ORDER BY first_seen_at DESC, id DESC
-LIMIT 10 OFFSET 0;
+LIMIT 10;
 
 -- ------------------------------------------------------------------------------
 -- 7. COMPANY SEARCH (q = 'OpenAI' across title / company)
@@ -113,7 +113,7 @@ WHERE is_active = true
   AND status = 'active'
   AND (title ILIKE '%OpenAI%' OR company ILIKE '%OpenAI%')
 ORDER BY first_seen_at DESC, id DESC
-LIMIT 10 OFFSET 0;
+LIMIT 10;
 
 -- ------------------------------------------------------------------------------
 -- 8. DATE SORT & RECENCY CUTOFF (Last 7 days sorted by posted_at / first_seen_at)
@@ -126,27 +126,41 @@ WHERE is_active = true
   AND status = 'active'
   AND first_seen_at >= NOW() - INTERVAL '7 days'
 ORDER BY posted_at DESC, first_seen_at DESC, id DESC
-LIMIT 10 OFFSET 0;
+LIMIT 10;
 
 -- ------------------------------------------------------------------------------
--- 9a. PAGINATION — PAGE 1 (LIMIT 10 OFFSET 0)
+-- 9a. KEYSET PAGINATION — PAGE 1 (plain LIMIT, no OFFSET)
+-- Mirrors the runtime page-1 keyset query in src/app/api/jobs/search/route.ts:
+-- ORDER BY posted_at DESC NULLS LAST, id DESC (nullsFirst:false), LIMIT the
+-- page size. The cursor is [posted_at, id] (src/lib/pagination/cursor.ts).
 -- ------------------------------------------------------------------------------
 EXPLAIN (ANALYZE, BUFFERS)
 SELECT id, title, location, remote, remote_scope, remote_eligibility, job_type,
        category, country, country_code, seniority, first_seen_at, posted_at, status, is_active
 FROM public.jobs_public
-ORDER BY first_seen_at DESC, id DESC
-LIMIT 10 OFFSET 0;
+ORDER BY posted_at DESC NULLS LAST, id DESC
+LIMIT 10;
 
 -- ------------------------------------------------------------------------------
--- 9b. PAGINATION — PAGE 500 (LIMIT 10 OFFSET 4990)
+-- 9b. KEYSET PAGINATION — CONTINUATION PAGE (cursor instead of OFFSET 4990)
+-- Truly mirrors the runtime keyset path in src/app/api/jobs/search/route.ts:
+-- the cursor carries the previous page's last (posted_at, id); with posted_at
+-- DESC NULLS LAST the continuation is posted_at < cursor, tie-broken by id,
+-- with NULL-posted_at rows reachable at the tail of the ordering (the IS NULL
+-- arm matches the route's PostgREST or() clause). Constant cost at any page
+-- depth, no OFFSET scan-and-drop. Replace the two placeholder literals below
+-- with the last row's posted_at / id from page N-1.
 -- ------------------------------------------------------------------------------
 EXPLAIN (ANALYZE, BUFFERS)
 SELECT id, title, location, remote, remote_scope, remote_eligibility, job_type,
        category, country, country_code, seniority, first_seen_at, posted_at, status, is_active
 FROM public.jobs_public
-ORDER BY first_seen_at DESC, id DESC
-LIMIT 10 OFFSET 4990;
+WHERE posted_at < '2000-01-01T00:00:00Z'::timestamptz  -- cursor: previous page's last posted_at
+   OR (posted_at = '2000-01-01T00:00:00Z'::timestamptz
+       AND id < '00000000-0000-0000-0000-000000000000'::uuid)  -- cursor tie-break: previous page's last id
+   OR posted_at IS NULL  -- NULLS LAST tail of the ordering, as in the route
+ORDER BY posted_at DESC NULLS LAST, id DESC
+LIMIT 10;
 
 -- ------------------------------------------------------------------------------
 -- 10. COUNT QUERY (Exact active corpus count)
