@@ -21,3 +21,11 @@ GRANT SELECT, INSERT, DELETE ON public.webhook_events TO service_role;
 
 -- Optional periodic cleanup (keeps the table small; 90 days of events):
 -- DELETE FROM public.webhook_events WHERE processed_at < now() - interval '90 days';
+
+-- ============================================================================
+-- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
+--   ALTER TABLE public.webhook_events DISABLE ROW LEVEL SECURITY;
+--   DROP TABLE IF EXISTS public.webhook_events CASCADE;
+--   REVOKE SELECT, INSERT, DELETE ON public.webhook_events FROM service_role;
+--   GRANT ALL ON public.webhook_events TO anon, authenticated;
+-- ============================================================================
