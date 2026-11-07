@@ -192,3 +192,11 @@ $$;
 
 revoke all on function public.fulfil_payment_order(text, uuid) from public;
 grant execute on function public.fulfil_payment_order(text, uuid) to service_role;
+
+-- ============================================================================
+-- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
+--   DROP INDEX IF EXISTS public.idx_user_addon_credits_order_id;
+--   ALTER TABLE public.user_addon_credits DROP COLUMN IF EXISTS order_id;
+--   DROP FUNCTION IF EXISTS public.fulfil_payment_order(p_provider_order_id text, p_user_id uuid);
+--   NOTE: data writes above (insert/update/delete) need a manual restore from backup or a hand-written reverse; no automatic rollback.
+-- ============================================================================
