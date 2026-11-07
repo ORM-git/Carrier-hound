@@ -44,3 +44,15 @@ BEGIN
     CREATE POLICY "tailored_resumes_owner_delete" ON public.tailored_resumes FOR DELETE USING (auth.uid() = user_id);
   END IF;
 END $$;
+
+-- ============================================================================
+-- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
+--   DROP POLICY IF EXISTS "tailored_resumes_owner_select" ON public.tailored_resumes;
+--   DROP POLICY IF EXISTS "tailored_resumes_owner_insert" ON public.tailored_resumes;
+--   DROP POLICY IF EXISTS "tailored_resumes_owner_update" ON public.tailored_resumes;
+--   DROP POLICY IF EXISTS "tailored_resumes_owner_delete" ON public.tailored_resumes;
+--   DROP INDEX IF EXISTS public.tailored_resumes_user_job_idx;
+--   DROP INDEX IF EXISTS public.tailored_resumes_user_updated_idx;
+--   ALTER TABLE public.tailored_resumes DISABLE ROW LEVEL SECURITY;
+--   DROP TABLE IF EXISTS public.tailored_resumes CASCADE;
+-- ============================================================================

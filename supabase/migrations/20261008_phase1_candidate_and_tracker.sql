@@ -90,3 +90,21 @@ drop policy if exists "applications_owner_delete" on public.applications;
 create policy "applications_owner_delete"
   on public.applications for delete
   using (auth.uid() = user_id);
+
+-- ============================================================================
+-- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
+--   DROP POLICY IF EXISTS "candidate_profiles_owner_select" ON public.candidate_profiles;
+--   DROP POLICY IF EXISTS "candidate_profiles_owner_insert" ON public.candidate_profiles;
+--   DROP POLICY IF EXISTS "candidate_profiles_owner_update" ON public.candidate_profiles;
+--   DROP POLICY IF EXISTS "candidate_profiles_owner_delete" ON public.candidate_profiles;
+--   DROP POLICY IF EXISTS "applications_owner_select" ON public.applications;
+--   DROP POLICY IF EXISTS "applications_owner_insert" ON public.applications;
+--   DROP POLICY IF EXISTS "applications_owner_update" ON public.applications;
+--   DROP POLICY IF EXISTS "applications_owner_delete" ON public.applications;
+--   DROP INDEX IF EXISTS public.applications_user_stage_idx;
+--   DROP INDEX IF EXISTS public.applications_user_created_idx;
+--   ALTER TABLE public.candidate_profiles DISABLE ROW LEVEL SECURITY;
+--   ALTER TABLE public.applications DISABLE ROW LEVEL SECURITY;
+--   DROP TABLE IF EXISTS public.candidate_profiles CASCADE;
+--   DROP TABLE IF EXISTS public.applications CASCADE;
+-- ============================================================================

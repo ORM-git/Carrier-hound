@@ -178,3 +178,17 @@ $$;
 
 revoke all on function public.ai_concurrency_release(text) from public, anon, authenticated;
 grant execute on function public.ai_concurrency_release(text) to service_role;
+
+-- ============================================================================
+-- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
+--   DROP INDEX IF EXISTS public.idx_ai_concurrency_leases_expires;
+--   ALTER TABLE public.ai_global_budget_daily DISABLE ROW LEVEL SECURITY;
+--   ALTER TABLE public.ai_concurrency_leases DISABLE ROW LEVEL SECURITY;
+--   DROP TABLE IF EXISTS public.ai_global_budget_daily CASCADE;
+--   DROP TABLE IF EXISTS public.ai_concurrency_leases CASCADE;
+--   DROP FUNCTION IF EXISTS public.ai_global_budget_reserve(p_period date, p_tokens bigint, p_cap bigint);
+--   DROP FUNCTION IF EXISTS public.ai_global_budget_settle(p_period date, p_reserved bigint, p_actual bigint);
+--   DROP FUNCTION IF EXISTS public.ai_concurrency_acquire(p_lease_id text, p_cap int, p_ttl_seconds int);
+--   DROP FUNCTION IF EXISTS public.ai_concurrency_release(p_lease_id text);
+--   NOTE: data writes above (insert/update/delete) need a manual restore from backup or a hand-written reverse; no automatic rollback.
+-- ============================================================================

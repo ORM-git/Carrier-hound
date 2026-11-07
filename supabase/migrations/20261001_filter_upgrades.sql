@@ -213,3 +213,36 @@ GRANT SELECT ON public.jobs_public TO anon, authenticated, service_role;
 -- 13. Ensure unsafe SECURITY DEFINER RPC get_jobs_with_facets is dropped
 -- (Direct PostgREST query path in src/lib/api/jobs.ts is used instead)
 DROP FUNCTION IF EXISTS public.get_jobs_with_facets(TEXT, TEXT[], TEXT, BOOLEAN, TEXT, TEXT, TEXT, INT, INT);
+
+-- ============================================================================
+-- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
+--   DROP INDEX IF EXISTS public.jobs_active_discovered_idx;
+--   DROP INDEX IF EXISTS public.jobs_search_vector_idx;
+--   DROP INDEX IF EXISTS public.idx_jobs_title_trgm;
+--   DROP INDEX IF EXISTS public.idx_jobs_company_trgm;
+--   DROP INDEX IF EXISTS public.idx_jobs_location_trgm;
+--   DROP INDEX IF EXISTS public.jobs_categories_gin_idx;
+--   DROP INDEX IF EXISTS public.jobs_salary_min_idx;
+--   DROP INDEX IF EXISTS public.jobs_seniority_idx;
+--   DROP INDEX IF EXISTS public.jobs_country_code_idx;
+--   DROP INDEX IF EXISTS public.jobs_remote_scope_idx;
+--   DROP INDEX IF EXISTS public.jobs_source_source_job_id_unique;
+--   ALTER TABLE public.jobs DROP COLUMN IF EXISTS discovered_at;
+--   ALTER TABLE public.jobs DROP COLUMN IF EXISTS search_vector;
+--   ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_period_check;
+--   ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_seniority_check;
+--   ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_remote_eligibility_check;
+--   ALTER TABLE public.jobs DISABLE ROW LEVEL SECURITY;
+--   REVOKE SELECT ON public.jobs_public FROM anon, authenticated, service_role;
+--   GRANT SELECT ON public.jobs TO anon, authenticated;
+--   NOTE: constraint jobs_period_check was dropped and re-added by this file with a new definition; restore its prior definition from the earlier migration that created it.
+--   NOTE: constraint jobs_seniority_check was dropped and re-added by this file with a new definition; restore its prior definition from the earlier migration that created it.
+--   NOTE: constraint jobs_remote_eligibility_check was dropped and re-added by this file with a new definition; restore its prior definition from the earlier migration that created it.
+--   NOTE: extension pg_trgm left in place (shared; drop manually only if unused elsewhere).
+--   NOTE: extension unaccent left in place (shared; drop manually only if unused elsewhere).
+--   NOTE: this migration itself drops INDEX jobs_title_trgm_idx - restore it from the earlier migration that created it (or from backup) if rolling back.
+--   NOTE: this migration itself drops INDEX jobs_company_trgm_idx - restore it from the earlier migration that created it (or from backup) if rolling back.
+--   NOTE: this migration itself drops POLICY jobs_public_read - restore it from the earlier migration that created it (or from backup) if rolling back.
+--   NOTE: this migration itself drops FUNCTION get_jobs_with_facets - restore it from the earlier migration that created it (or from backup) if rolling back.
+--   NOTE: data writes above (insert/update/delete) need a manual restore from backup or a hand-written reverse; no automatic rollback.
+-- ============================================================================

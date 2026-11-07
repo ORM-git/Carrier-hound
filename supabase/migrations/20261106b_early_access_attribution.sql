@@ -4,6 +4,7 @@
 -- Status: NOT APPLIED - owner runs in the Supabase SQL editor (additive,
 --         nullable; safe while code ships first since inserts name columns
 --         explicitly and the route omits them when absent).
+--         Then record:  node scripts/record-migration.cjs 20261106b_early_access_attribution
 -- Backend half of UTM capture (frontend: PR #287 / src/lib/analytics/utm.ts).
 -- ==============================================================================
 
@@ -17,3 +18,8 @@ ALTER TABLE public.early_access_emails
   ADD COLUMN IF NOT EXISTS landing_path TEXT CHECK (landing_path IS NULL OR char_length(landing_path) <= 200);
 
 COMMENT ON COLUMN public.early_access_emails.utm_source IS 'First-touch campaign attribution, session-scoped (backend half of UTM capture, 2026-11-06).';
+
+-- ============================================================================
+-- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
+--   ALTER TABLE public.early_access_emails DROP COLUMN IF EXISTS utm_source;
+-- ============================================================================

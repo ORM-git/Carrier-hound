@@ -37,3 +37,13 @@ CREATE POLICY "Deny all user access on early_access_approved"
   TO anon, authenticated
   USING (false)
   WITH CHECK (false);
+
+-- ============================================================================
+-- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
+--   DROP POLICY IF EXISTS "Deny all user access on early_access_approved" ON public.early_access_approved;
+--   DROP INDEX IF EXISTS public.idx_early_access_approved_lookup;
+--   ALTER TABLE public.early_access_approved DISABLE ROW LEVEL SECURITY;
+--   DROP TABLE IF EXISTS public.early_access_approved CASCADE;
+--   REVOKE SELECT, INSERT, UPDATE, DELETE ON public.early_access_approved FROM service_role;
+--   GRANT ALL ON public.early_access_approved TO PUBLIC, anon, authenticated;
+-- ============================================================================

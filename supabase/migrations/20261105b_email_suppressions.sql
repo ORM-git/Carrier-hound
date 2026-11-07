@@ -39,3 +39,14 @@ create trigger trg_email_suppressions_lowercase
   before insert or update on public.email_suppressions
   for each row execute function public.trg_email_suppressions_lowercase();
 
+-- ============================================================================
+-- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
+--   DROP TRIGGER IF EXISTS trg_email_suppressions_lowercase ON public.email_suppressions;
+--   DROP INDEX IF EXISTS public.idx_email_suppressions_lower_email;
+--   DROP INDEX IF EXISTS public.idx_email_suppressions_created_at;
+--   ALTER TABLE public.email_suppressions DISABLE ROW LEVEL SECURITY;
+--   DROP TABLE IF EXISTS public.email_suppressions CASCADE;
+--   DROP FUNCTION IF EXISTS public.trg_email_suppressions_lowercase();
+--   REVOKE ALL ON public.email_suppressions FROM service_role;
+--   GRANT ALL ON public.email_suppressions TO public, anon, authenticated;
+-- ============================================================================

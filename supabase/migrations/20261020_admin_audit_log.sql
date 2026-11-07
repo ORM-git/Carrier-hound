@@ -53,3 +53,14 @@ DROP TRIGGER IF EXISTS tr_prevent_admin_audit_log_mutation ON public.admin_audit
 CREATE TRIGGER tr_prevent_admin_audit_log_mutation
   BEFORE UPDATE OR DELETE ON public.admin_audit_log
   FOR EACH ROW EXECUTE FUNCTION public.prevent_admin_audit_log_mutation();
+
+-- ============================================================================
+-- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
+--   DROP TRIGGER IF EXISTS tr_prevent_admin_audit_log_mutation ON public.admin_audit_log;
+--   DROP INDEX IF EXISTS public.idx_admin_audit_log_created_at;
+--   DROP INDEX IF EXISTS public.idx_admin_audit_log_admin_user_created_at;
+--   DROP INDEX IF EXISTS public.idx_admin_audit_log_action;
+--   ALTER TABLE public.admin_audit_log DISABLE ROW LEVEL SECURITY;
+--   DROP TABLE IF EXISTS public.admin_audit_log CASCADE;
+--   DROP FUNCTION IF EXISTS public.prevent_admin_audit_log_mutation();
+-- ============================================================================

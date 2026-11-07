@@ -213,6 +213,10 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-covering-index-policy.ts", command: "npx tsx scripts/test-covering-index-policy.ts", classification: "offline" },
   { name: "scripts/test-not-valid-validate-policy.ts", command: "npx tsx scripts/test-not-valid-validate-policy.ts", classification: "offline" },
   { name: "scripts/test-idempotent-seed-policy.ts", command: "npx tsx scripts/test-idempotent-seed-policy.ts", classification: "offline" },
+  { name: "scripts/test-search-path-pinning-policy.ts", command: "npx tsx scripts/test-search-path-pinning-policy.ts", classification: "offline" },
+  { name: "scripts/test-analyze-after-ingest-policy.ts", command: "npx tsx scripts/test-analyze-after-ingest-policy.ts", classification: "offline" },
+  { name: "scripts/test-migration-rollback-policy.ts", command: "npx tsx scripts/test-migration-rollback-policy.ts", classification: "offline" },
+  { name: "scripts/test-pending-apply-markers-policy.ts", command: "npx tsx scripts/test-pending-apply-markers-policy.ts", classification: "offline" },
 ];
 
 export interface RunSummary {

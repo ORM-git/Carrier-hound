@@ -363,3 +363,18 @@ grant execute on function public.record_plan_usage_result(uuid, text, text, json
 
 -- 9. Drop legacy 2-argument signature to avoid overloading ambiguity
 drop function if exists public.refund_plan_or_addon_set(uuid, text);
+
+-- ============================================================================
+-- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
+--   DROP INDEX IF EXISTS public.idx_plan_usage_user_kind_idempotency;
+--   ALTER TABLE public.plan_usage_events DROP COLUMN IF EXISTS response_payload;
+--   ALTER TABLE public.plan_usage_events DROP CONSTRAINT IF EXISTS plan_usage_events_user_kind_idempotency_unique;
+--   DROP FUNCTION IF EXISTS public.record_plan_usage_result(p_user_id uuid, p_kind text, p_idempotency_key text, p_result jsonb);
+--   NOTE: replaces function public.consume_plan_set (first defined in 20261103d_consume_atomic_fn.sql); restore the prior definition from that file if this change must be undone.
+--   NOTE: replaces function public.consume_addon_set (first defined in 20261103b_consume_set_fn.sql); restore the prior definition from that file if this change must be undone.
+--   NOTE: replaces function public.consume_user_set (first defined in 20261103d_consume_atomic_fn.sql); restore the prior definition from that file if this change must be undone.
+--   NOTE: replaces function public.refund_plan_or_addon_set (first defined in 20261103d_consume_atomic_fn.sql); restore the prior definition from that file if this change must be undone.
+--   NOTE: constraint plan_usage_events_user_kind_idempotency_unique was dropped and re-added by this file with a new definition; restore its prior definition from the earlier migration that created it.
+--   NOTE: this migration itself drops constraint plan_usage_events_user_id_idempotency_key_key - restore it from the earlier migration that created it (or from backup) if rolling back.
+--   NOTE: data writes above (insert/update/delete) need a manual restore from backup or a hand-written reverse; no automatic rollback.
+-- ============================================================================

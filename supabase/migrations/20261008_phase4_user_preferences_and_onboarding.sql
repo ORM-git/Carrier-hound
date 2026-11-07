@@ -40,3 +40,13 @@ drop policy if exists "user_preferences_owner_delete" on public.user_preferences
 create policy "user_preferences_owner_delete"
   on public.user_preferences for delete
   using (auth.uid() = user_id);
+
+-- ============================================================================
+-- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
+--   DROP POLICY IF EXISTS "user_preferences_owner_select" ON public.user_preferences;
+--   DROP POLICY IF EXISTS "user_preferences_owner_insert" ON public.user_preferences;
+--   DROP POLICY IF EXISTS "user_preferences_owner_update" ON public.user_preferences;
+--   DROP POLICY IF EXISTS "user_preferences_owner_delete" ON public.user_preferences;
+--   ALTER TABLE public.user_preferences DISABLE ROW LEVEL SECURITY;
+--   DROP TABLE IF EXISTS public.user_preferences CASCADE;
+-- ============================================================================

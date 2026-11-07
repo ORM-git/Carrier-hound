@@ -38,3 +38,10 @@ CREATE POLICY "Service role write access on company logos"
   TO service_role
   USING (bucket_id = 'company-logos')
   WITH CHECK (bucket_id = 'company-logos');
+
+-- ============================================================================
+-- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
+--   DROP POLICY IF EXISTS "Service role write access on company logos" ON storage.objects;
+--   DELETE FROM storage.buckets WHERE id = 'company-logos';
+--   NOTE: this migration itself drops POLICY public company logos read access - restore it from the earlier migration that created it (or from backup) if rolling back.
+-- ============================================================================

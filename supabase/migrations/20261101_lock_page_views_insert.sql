@@ -3,6 +3,7 @@
 -- Date: 2026-11-01
 -- File: supabase/migrations/20261101_lock_page_views_insert.sql
 -- Status: PENDING APPLICATION (Run in Supabase SQL editor by project owner)
+--   If/when applied: record with  node scripts/record-migration.cjs 20261101_lock_page_views_insert
 --
 -- Security Context:
 -- 1. In migration 20261011_admin_page_views_and_blocked_users.sql, policy
@@ -29,3 +30,10 @@ GRANT INSERT ON public.page_views TO service_role;
 
 -- 4. Leave the existing admin-email-only SELECT policy ("Allow admin to select page_views")
 -- and every other table/policy untouched.
+
+-- ============================================================================
+-- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
+--   REVOKE INSERT ON public.page_views FROM service_role;
+--   GRANT INSERT ON public.page_views TO anon, authenticated;
+--   NOTE: this migration itself drops POLICY allow public insert to page_views - restore it from the earlier migration that created it (or from backup) if rolling back.
+-- ============================================================================

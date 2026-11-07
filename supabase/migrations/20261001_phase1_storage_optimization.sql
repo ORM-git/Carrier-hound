@@ -120,3 +120,25 @@ CREATE POLICY "job_descriptions_public_read" ON public.job_descriptions
 -- Ingest runs readable for monitoring/admin
 DROP POLICY IF EXISTS "ingest_runs_public_read" ON public.ingest_runs;
 CREATE POLICY "ingest_runs_public_read" ON public.ingest_runs FOR SELECT USING (true);
+
+-- ============================================================================
+-- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
+--   DROP POLICY IF EXISTS "companies_public_read" ON public.companies;
+--   DROP POLICY IF EXISTS "company_boards_public_read" ON public.company_boards;
+--   DROP POLICY IF EXISTS "job_descriptions_public_read" ON public.job_descriptions;
+--   DROP POLICY IF EXISTS "ingest_runs_public_read" ON public.ingest_runs;
+--   DROP INDEX IF EXISTS public.jobs_active_verified_idx;
+--   DROP INDEX IF EXISTS public.jobs_company_id_idx;
+--   DROP INDEX IF EXISTS public.jobs_verified_status_idx;
+--   DROP INDEX IF EXISTS public.company_boards_lookup_idx;
+--   ALTER TABLE public.jobs DROP COLUMN IF EXISTS company_id;
+--   ALTER TABLE public.companies DISABLE ROW LEVEL SECURITY;
+--   ALTER TABLE public.company_boards DISABLE ROW LEVEL SECURITY;
+--   ALTER TABLE public.job_descriptions DISABLE ROW LEVEL SECURITY;
+--   ALTER TABLE public.ingest_runs DISABLE ROW LEVEL SECURITY;
+--   DROP TABLE IF EXISTS public.companies CASCADE;
+--   DROP TABLE IF EXISTS public.company_boards CASCADE;
+--   DROP TABLE IF EXISTS public.job_descriptions CASCADE;
+--   DROP TABLE IF EXISTS public.ingest_runs CASCADE;
+--   NOTE: data writes above (insert/update/delete) need a manual restore from backup or a hand-written reverse; no automatic rollback.
+-- ============================================================================

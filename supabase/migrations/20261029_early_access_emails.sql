@@ -43,3 +43,19 @@ ALTER TABLE public.gmail_send_log ENABLE ROW LEVEL SECURITY;
 
 REVOKE ALL ON public.gmail_send_log FROM anon, authenticated;
 GRANT SELECT, INSERT ON public.gmail_send_log TO service_role;
+
+-- ============================================================================
+-- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
+--   DROP INDEX IF EXISTS public.idx_early_access_emails_created_at;
+--   DROP INDEX IF EXISTS public.idx_gmail_send_log_sent_at;
+--   DROP INDEX IF EXISTS public.idx_gmail_send_log_recipient_kind;
+--   DROP INDEX IF EXISTS public.idx_gmail_send_log_kind_sent_at;
+--   ALTER TABLE public.early_access_emails DISABLE ROW LEVEL SECURITY;
+--   ALTER TABLE public.gmail_send_log DISABLE ROW LEVEL SECURITY;
+--   DROP TABLE IF EXISTS public.early_access_emails CASCADE;
+--   DROP TABLE IF EXISTS public.gmail_send_log CASCADE;
+--   REVOKE SELECT, INSERT ON public.early_access_emails FROM service_role;
+--   REVOKE SELECT, INSERT ON public.gmail_send_log FROM service_role;
+--   GRANT ALL ON public.early_access_emails TO anon, authenticated;
+--   GRANT ALL ON public.gmail_send_log TO anon, authenticated;
+-- ============================================================================
