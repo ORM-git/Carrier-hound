@@ -13,6 +13,10 @@ import { isUserApproved } from "@/lib/auth/approval";
 
 import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
 
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger({ context: { route: "/api/jobs/search" } });
+
 export const runtime = "edge";
 
 
@@ -221,7 +225,7 @@ async function getHandler(req: Request) {
         .maybeSingle();
 
       if (singleError) {
-        console.error("[/api/jobs/search] single query error:", singleError.message || singleError);
+        log.error("single query error", { error: singleError.message || singleError });
         return NextResponse.json(
           { degraded: true, jobs: [], totalCount: 0, hasNextPage: false, hasMore: false, nextCursor: null },
           { status: 503 }
@@ -600,13 +604,13 @@ async function getHandler(req: Request) {
             String(queryResult.error.code) === "57014" ||
             (typeof queryResult.error.message === "string" && queryResult.error.message.includes("57014")))
         ) {
-          console.warn("[/api/jobs/search] count query timed out (57014); falling back to estimated");
+          log.warn("count query timed out (57014); falling back to estimated");
           queryResult = await buildSearchQuery("estimated", curCursor, curFrom, winLimit);
         }
 
         if (queryResult.error) {
           if (isFirst) {
-            console.error("[/api/jobs/search] query error:", queryResult.error.message || queryResult.error);
+            log.error("query error", { error: queryResult.error.message || queryResult.error });
             return NextResponse.json(
               { degraded: true, jobs: [], totalCount: 0, hasNextPage: false, hasMore: false, nextCursor: null },
               { status: 503 }
@@ -691,14 +695,14 @@ async function getHandler(req: Request) {
           ))
         )
       ) {
-        console.warn("[/api/jobs/search] exact count query timed out (57014); falling back to estimated count");
+        log.warn("exact count query timed out (57014); falling back to estimated count");
         queryResult = await buildSearchQuery("estimated");
       }
 
       const { data, count, error } = queryResult;
 
       if (error) {
-        console.error("[/api/jobs/search] query error:", error.message || error);
+        log.error("query error", { error: error.message || error });
         return NextResponse.json(
           { degraded: true, jobs: [], totalCount: 0, hasNextPage: false, hasMore: false, nextCursor: null },
           { status: 503 }
@@ -857,7 +861,7 @@ async function getHandler(req: Request) {
         return NextResponse.json({ ...parsed, jobs: [], totalCount: 0 }, { status: 500 });
       }
     } catch {}
-    console.error("[/api/jobs/search] fatal error:", err);
+    log.error("fatal error", { error: err?.message || String(err) });
     reportRequestErrorToSentry(req, err);
     return NextResponse.json(
       { error: "Internal server error", jobs: [], totalCount: 0 },

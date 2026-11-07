@@ -6,6 +6,10 @@ import { extractToken } from "@/lib/admin/auth";
 
 import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
 
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger({ context: { route: "/api/track" } });
+
 export const runtime = "edge";
 
 const MAX_TRACK_PAYLOAD_BYTES = 16384; // 16 KB size cap
@@ -195,7 +199,7 @@ export async function POST(req: Request) {
             created_at: new Date().toISOString(),
           });
           if (error && error.code !== "PGRST205") {
-            console.warn("[web-vitals] Insert error:", error.message);
+            log.warn("web-vitals insert error", { error: error.message });
           }
         }
       } catch {
@@ -282,7 +286,7 @@ export async function POST(req: Request) {
           });
           // PGRST205 = table missing until migration 20261106e is applied; stay silent.
           if (error && error.code !== "PGRST205") {
-            console.warn("[funnel] Insert error:", error.message);
+            log.warn("funnel insert error", { error: error.message });
           }
         }
       } catch {

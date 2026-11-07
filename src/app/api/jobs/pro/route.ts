@@ -11,6 +11,10 @@ import { checkRequiredEnv } from "@/lib/api/envCheck";
 
 import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
 
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger({ context: { route: "/api/jobs/pro" } });
+
 export const runtime = "edge";
 
 function getSupabaseAdmin() {
@@ -204,7 +208,7 @@ export async function GET(req: Request) {
         return NextResponse.json(parsed, { status: 500 });
       }
     } catch {}
-    console.error("[API /jobs/pro GET error]:", err);
+    log.error("GET error", { error: err?.message || String(err) });
     reportRequestErrorToSentry(req, err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
@@ -284,7 +288,7 @@ export async function POST(req: Request) {
         return NextResponse.json(parsed, { status: 500 });
       }
     } catch {}
-    console.error("[API /jobs/pro POST error]:", err);
+    log.error("POST error", { error: err?.message || String(err) });
     reportRequestErrorToSentry(req, err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

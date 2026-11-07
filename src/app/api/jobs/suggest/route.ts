@@ -5,6 +5,10 @@ import { checkRequiredEnv } from "@/lib/api/envCheck";
 import { getClientIpFromRequest, checkRateLimit } from "@/lib/ai/serviceHandler";
 import { checkSharedRateLimit } from "@/lib/api/sharedRateLimit";
 
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger({ context: { route: "/api/jobs/suggest" } });
+
 export const runtime = "edge";
 
 /**
@@ -101,7 +105,7 @@ async function getHandler(req: Request) {
       .limit(CANDIDATE_ROWS);
 
     if (error) {
-      console.warn("[suggest] query failed:", error.message);
+      log.warn("query failed", { error: error.message });
       return NextResponse.json(
         { error: "Suggestions unavailable." },
         { status: 503, headers: { "Cache-Control": "no-store" } }
@@ -125,7 +129,7 @@ async function getHandler(req: Request) {
       { status: 200, headers: { "Cache-Control": "public, max-age=60" } }
     );
   } catch (err: any) {
-    console.warn("[suggest] unexpected failure:", err?.message || err);
+    log.warn("unexpected failure", { error: err?.message || String(err) });
     return NextResponse.json(
       { error: "Suggestions unavailable." },
       { status: 503, headers: { "Cache-Control": "no-store" } }
