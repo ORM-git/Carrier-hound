@@ -38,7 +38,12 @@ acceptable: they are plpgsql row variables, not wire payloads.
 | `src/app/api/billing/razorpay/verify/route.ts:178` | payment_orders | `status, addon_code, plan_code, id` | Payment verify, fail-closed path; payment-critical, deferred like the other billing reads. |
 | `src/app/api/billing/razorpay/verify/route.ts:348` | subscriptions | `metadata` fields | Idempotent-replay check on the payment verify path. |
 | `src/app/api/billing/razorpay/verify/route.ts:493` | subscriptions | `current_period_end` etc. | Renewal/upgrade period math on the payment verify path. |
-| `src/lib/auth/session.ts:142` | user_preferences | preferences blob | Single-row per user; table is narrow. |
+
+### Narrowed (done)
+
+| Site | Table | Now reads |
+| --- | --- | --- |
+| `src/lib/auth/session.ts` (getUserPreferences) | user_preferences | The 13 columns the mapper consumes (`roles` ... `updated_at`); `src/lib/__tests__/userPreferencesColumns.test.ts` fails if a column the mapper reads is missing from the list. Same column names the search/top10 routes already select by name. |
 
 ### Bounded scans under review elsewhere (keep, tracked by rank 46)
 
