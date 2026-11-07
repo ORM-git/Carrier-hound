@@ -178,9 +178,6 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-dunning-dispatcher.ts", command: "npx tsx scripts/test-dunning-dispatcher.ts", classification: "offline" },
   { name: "scripts/test-matview-staleness.ts", command: "npx tsx scripts/test-matview-staleness.ts", classification: "offline" },
   { name: "scripts/test-funnel-events.ts", command: "npx tsx scripts/test-funnel-events.ts", classification: "offline" },
-<<<<<<< db/slow-query-review
-  { name: "scripts/test-slow-query-review.ts", command: "npx tsx scripts/test-slow-query-review.ts", classification: "offline" },
-=======
   { name: "scripts/test-redundant-index-cleanup.ts", command: "npx tsx scripts/test-redundant-index-cleanup.ts", classification: "offline" },
   { name: "scripts/test-data-classification.ts", command: "npx tsx scripts/test-data-classification.ts", classification: "offline" },
   { name: "scripts/test-autocomplete-policy.ts", command: "npx tsx scripts/test-autocomplete-policy.ts", classification: "offline" },
@@ -210,7 +207,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-structured-logger.ts", command: "npx tsx scripts/test-structured-logger.ts", classification: "offline" },
   { name: "scripts/test-streaming-policy.ts", command: "npx tsx scripts/test-streaming-policy.ts", classification: "offline" },
   { name: "scripts/test-capacity-headroom-policy.ts", command: "npx tsx scripts/test-capacity-headroom-policy.ts", classification: "offline" },
->>>>>>> main
+  { name: "scripts/test-slow-query-review.ts", command: "npx tsx scripts/test-slow-query-review.ts", classification: "offline" },
 ];
 
 export interface RunSummary {
