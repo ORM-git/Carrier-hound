@@ -72,3 +72,25 @@ create policy "users read own addon credits" on public.user_addon_credits for se
 create policy "users read own plan usage" on public.plan_usage_events for select using (auth.uid() = user_id);
 create policy "users read own orders" on public.payment_orders for select using (auth.uid() = user_id);
 -- no client write policies: all writes go through the service role
+
+-- ============================================================================
+-- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
+--   DROP POLICY IF EXISTS "plans readable by all" ON public.plans;
+--   DROP POLICY IF EXISTS "addon packs readable by all" ON public.addon_packs;
+--   DROP POLICY IF EXISTS "users read own addon credits" ON public.user_addon_credits;
+--   DROP POLICY IF EXISTS "users read own plan usage" ON public.plan_usage_events;
+--   DROP POLICY IF EXISTS "users read own orders" ON public.payment_orders;
+--   DROP INDEX IF EXISTS public.addon_credits_user_expiry;
+--   DROP INDEX IF EXISTS public.plan_usage_user_time;
+--   ALTER TABLE public.plans DISABLE ROW LEVEL SECURITY;
+--   ALTER TABLE public.addon_packs DISABLE ROW LEVEL SECURITY;
+--   ALTER TABLE public.user_addon_credits DISABLE ROW LEVEL SECURITY;
+--   ALTER TABLE public.plan_usage_events DISABLE ROW LEVEL SECURITY;
+--   ALTER TABLE public.payment_orders DISABLE ROW LEVEL SECURITY;
+--   DROP TABLE IF EXISTS public.plans CASCADE;
+--   DROP TABLE IF EXISTS public.addon_packs CASCADE;
+--   DROP TABLE IF EXISTS public.user_addon_credits CASCADE;
+--   DROP TABLE IF EXISTS public.plan_usage_events CASCADE;
+--   DROP TABLE IF EXISTS public.payment_orders CASCADE;
+--   NOTE: data writes above (insert/update/delete) need a manual restore from backup or a hand-written reverse; no automatic rollback.
+-- ============================================================================
