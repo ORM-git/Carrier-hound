@@ -14,7 +14,7 @@ logged to `cron_run_logs` as job_type `retention_purge`.
 | `webhook_events` | Idempotency log | 90 days | Provider retries never arrive after 90 days. |
 | `failed_events` (replayed/dead) | Dead-letter archive | 90 days after last attempt | Resolved incidents stay inspectable for a quarter. Pending rows are never purged. |
 | User profile / resume data | User data | Until account deletion | Deleted with the account (`/api/account/delete`); no separate retention. |
-| `jobs` / `job_descriptions` | Public reference data | Lifecycle-managed by ingestion (`is_active`) | Not user data; archival strategy is a separate open item. |
+| `jobs` / `job_descriptions` | Public reference data | Lifecycle-managed by ingestion (`is_active`) | Not user data; expired listings inactive for 90+ days move to `jobs_archive` via `archive_expired_jobs()` (20261106l, weekly retention cron). |
 
 Notes:
 - This schedule is the DPDP "storage limitation" baseline. User-facing
