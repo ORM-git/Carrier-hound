@@ -224,3 +224,27 @@ from public.cron_run_logs
 where job_type = 'reindex_maintenance'
 order by started_at desc
 limit 5;
+
+-- 15. Covering index (DB row: Covering indexes (INCLUDE)). Migration
+--     20261106n adds jobs_active_list_covering_idx so the public jobs list
+--     (CARD_FIELDS, keyset on first_seen_at DESC, id DESC) can run as an
+--     index-only scan. Until applied, the first query returns no rows.
+--     Watch idx_scan grow after deploy; a flat zero means the planner is
+--     not picking it (stale stats - run ANALYZE public.jobs).
+select indexrelname, idx_scan, idx_tup_read, idx_tup_fetch,
+       pg_size_pretty(pg_relation_size(indexrelid)) as index_size
+from pg_stat_user_indexes
+where schemaname = 'public'
+  and indexrelname = 'jobs_active_list_covering_idx';
+
+-- Index-only scan efficiency on the jobs table: share of heap fetches vs
+-- index tuples returned. Lower heap-fetch share is better; expect it to
+-- drop after 20261106n is applied and ANALYZE has run.
+select relname,
+       idx_scan,
+       idx_tup_fetch,
+       heap_blks_read,
+       heap_blks_hit
+from pg_statio_user_tables
+where schemaname = 'public'
+  and relname = 'jobs';
