@@ -84,7 +84,7 @@ async function querySubscriptionWithRetry(
       log.warn(`[Billing] Subscription check attempt ${attempt + 1}/${maxRetries + 1} failed:`, { detail: res.error.message });
 
       if (attempt < maxRetries) {
-        // Exponential backoff: 500ms, 1000ms (Â±20% jitter via withJitter)
+        // Exponential backoff: 500ms, 1000ms (±20% jitter via withJitter)
         await new Promise((resolve) => setTimeout(resolve, withJitter(500 * Math.pow(2, attempt))));
       }
     } catch (err: any) {
