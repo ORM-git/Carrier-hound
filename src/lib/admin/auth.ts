@@ -1,6 +1,8 @@
 import { createClient as createAdminSupabaseClient } from "@supabase/supabase-js";
 import type { User } from "@supabase/supabase-js";
 import { noteAdminAuthFailure } from "../security/authMonitor";
+import { isLockedOut, recordFailureAndMaybeLock } from "../security/progressiveLockout";
+import { getRequestIp } from "../security/authMonitor";
 import {
   ADMIN_EMAIL,
   ADMIN_EMAIL_LIST,
@@ -117,6 +119,14 @@ export async function verifyAdminSession(req?: Request): Promise<{
     const adminClient = getSupabaseAdmin();
     const token = extractToken(req);
 
+    // Progressive lockout (Backend sheet rank 68): an IP whose failed
+    // admin verifications tripped a lockout step is denied before any
+    // token work. Fail-open internally - store outage never locks out.
+    const lock = await isLockedOut("admin", getRequestIp(req));
+    if (lock.locked) {
+      return { isAdmin: false, user: null, error: "Forbidden: Verified admin access required." };
+    }
+
     if (token) {
       const {
         data: { user },
@@ -130,6 +140,9 @@ export async function verifyAdminSession(req?: Request): Promise<{
     // ATO monitoring: count failed admin verifications. This is awaited,
     // fully caught internally, and does not change the auth decision.
     await noteAdminAuthFailure(req, token);
+    // Progressive lockout counter (rank 68): records this failure and
+    // escalates when a step trips. Also awaited, fail-open internally.
+    await recordFailureAndMaybeLock("admin", getRequestIp(req));
 
     return { isAdmin: false, user: null, error: "Forbidden: Verified admin access required." };
   } catch (err: any) {
