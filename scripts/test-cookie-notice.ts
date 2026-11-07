@@ -66,12 +66,15 @@ function runTests() {
   const trackerContent = fs.readFileSync(trackerPath, "utf8");
 
   assert(
-    trackerContent.includes("COOKIE_CONSENT_KEY"),
-    "PageViewTracker must reference COOKIE_CONSENT_KEY"
+    trackerContent.includes("readCookieConsent"),
+    "PageViewTracker must gate through the shared readCookieConsent reader"
   );
+  const consentReaderPath = path.resolve(process.cwd(), "src/lib/analytics/cookieConsent.ts");
+  assert(fs.existsSync(consentReaderPath), "src/lib/analytics/cookieConsent.ts must exist");
+  const consentReaderContent = fs.readFileSync(consentReaderPath, "utf8");
   assert(
-    trackerContent.includes("localStorage.getItem(COOKIE_CONSENT_KEY)"),
-    "PageViewTracker must inspect localStorage for cookie consent key"
+    consentReaderContent.includes("COOKIE_CONSENT_KEY") && consentReaderContent.includes("readVersioned"),
+    "shared consent reader must inspect localStorage via readVersioned on COOKIE_CONSENT_KEY"
   );
   assert(
     trackerContent.includes("COOKIE_CONSENT_EVENT"),

@@ -48,8 +48,8 @@ async function runTests() {
     "WebVitalsTracker must use Next's useReportWebVitals hook"
   );
   assert.ok(
-    componentContent.includes("COOKIE_CONSENT_KEY"),
-    "WebVitalsTracker must reference COOKIE_CONSENT_KEY"
+    componentContent.includes("readCookieConsent"),
+    "WebVitalsTracker must gate through the shared readCookieConsent reader"
   );
   assert.ok(
     componentContent.includes("COOKIE_CONSENT_EVENT"),
@@ -146,6 +146,10 @@ async function runTests() {
   const { hasCookieConsent, sendWebVitalsPayload } = await import("../src/components/analytics/WebVitalsTracker");
 
   const mockStorage: Record<string, string> = {};
+  // The shared consent reader reads window.localStorage, so expose the mock
+  // through a mock window as well.
+  (globalThis as any).window = (globalThis as any).window || {};
+  (globalThis as any).window.localStorage = undefined;
   (globalThis as any).localStorage = {
     getItem: (key: string) => mockStorage[key] || null,
     setItem: (key: string, val: string) => {
@@ -158,6 +162,7 @@ async function runTests() {
       for (const k of Object.keys(mockStorage)) delete mockStorage[k];
     },
   };
+  (globalThis as any).window.localStorage = (globalThis as any).localStorage;
 
   let beaconCalls: Array<{ url: string; data: any }> = [];
   Object.defineProperty(globalThis, "navigator", {
