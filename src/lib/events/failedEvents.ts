@@ -888,7 +888,7 @@ export async function replayFailedEvents(options: ReplayOptions = {}): Promise<R
           error: replayError,
         });
       } else {
-        // Exponential backoff: 2^attempt * 60 seconds (2m, 4m, 8m, 16m) with Â±20% jitter
+        // Exponential backoff: 2^attempt * 60 seconds (2m, 4m, 8m, 16m) with ±20% jitter
         const delayMs = withJitter(Math.pow(2, nextAttempt) * 60 * 1000);
         const nextRetryDate = new Date(Date.now() + delayMs).toISOString();
 
