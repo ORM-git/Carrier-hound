@@ -248,3 +248,18 @@ select relname,
 from pg_statio_user_tables
 where schemaname = 'public'
   and relname = 'jobs';
+
+-- 16. Constraint validation (DB row: NOT VALID then VALIDATE). Migration
+--     20261106o adds jobs_salary_bounds_check as NOT VALID; it enforces new
+--     writes immediately and is validated against existing rows in a
+--     separate off-peak run (VALIDATE CONSTRAINT). Watch convalidated here.
+select conname, conrelid::regclass as table_name, convalidated
+from pg_constraint
+where connamespace = 'public'::regnamespace
+  and not convalidated
+order by conname;
+
+-- Rows that would fail jobs_salary_bounds_check (audit before Run B):
+select count(*) as salary_bounds_violations
+from public.jobs
+where not (salary_min is null or salary_max is null or salary_min <= salary_max);
