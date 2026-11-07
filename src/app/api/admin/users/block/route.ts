@@ -3,6 +3,8 @@ import { verifyAdminSession } from "@/lib/admin/auth";
 import { setUserBlockStatus } from "@/lib/admin/analytics";
 import { logAdminAction } from "@/lib/admin/auditLog";
 
+import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
+
 export const runtime = "edge";
 
 export async function POST(req: Request) {
@@ -69,6 +71,7 @@ export async function POST(req: Request) {
         : "User successfully unblocked. Access restored.",
     });
   } catch (err: any) {
+    reportRequestErrorToSentry(req, err);
     return NextResponse.json(
       { error: err?.message || "Internal server error" },
       { status: 500 }
