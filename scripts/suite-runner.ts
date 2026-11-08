@@ -203,6 +203,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-incident-response-docs.ts", command: "npx tsx scripts/test-incident-response-docs.ts", classification: "offline" },
   { name: "scripts/test-edge-caching-policy.ts", command: "npx tsx scripts/test-edge-caching-policy.ts", classification: "offline" },
   { name: "scripts/test-error-banner-announce.ts", command: "npx tsx scripts/test-error-banner-announce.ts", classification: "offline" },
+  { name: "scripts/test-layout-thrash.ts", command: "npx tsx scripts/test-layout-thrash.ts", classification: "offline" },
   { name: "scripts/test-resilience-posture.ts", command: "npx tsx scripts/test-resilience-posture.ts", classification: "offline" },
   { name: "scripts/test-managed-redis.ts", command: "npx tsx scripts/test-managed-redis.ts", classification: "offline" },
   { name: "scripts/test-edge-kv.ts", command: "npx tsx scripts/test-edge-kv.ts", classification: "offline" },
@@ -238,6 +239,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-table-comments.ts", command: "npx tsx scripts/test-table-comments.ts", classification: "offline" },
   { name: "scripts/test-touch-updated-at.ts", command: "npx tsx scripts/test-touch-updated-at.ts", classification: "offline" },
   { name: "scripts/test-gst-invoice.ts", command: "npx tsx scripts/test-gst-invoice.ts", classification: "offline" },
+  { name: "scripts/test-prompt-template-versions.ts", command: "npx tsx scripts/test-prompt-template-versions.ts", classification: "offline" },
 ];
 
 export interface RunSummary {
