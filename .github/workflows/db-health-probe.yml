@@ -1,0 +1,34 @@
+name: Read-only DB Health Probe
+
+on:
+  schedule:
+    - cron: '13 2 * * 1' # Weekly, Monday 02:13 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: db-health-probe
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    # Intentionally inert until an owner applies the migration, configures
+    # secrets and explicitly enables this repository variable. No live setup
+    # or notification subscriptions are claimed by the repository change.
+    if: ${{ vars.DB_HEALTH_PROBE_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Read database health metrics
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: npx tsx scripts/probe-db-health.ts
