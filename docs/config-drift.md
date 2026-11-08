@@ -60,6 +60,8 @@ incident/change log.
 - No production traffic routed here
 - Deploy hooks and branch deploys as expected
 
+See also: [environments-and-manual-settings.md](environments-and-manual-settings.md) for the list of dashboard-only settings, staging and parity facts.
+
 ## What this does not cover
 
 - Secret values (never hashed into the repo).
