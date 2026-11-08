@@ -16,17 +16,9 @@ function check(name: string, cond: boolean) {
 const DIR = ".github/workflows";
 const files = fs.readdirSync(DIR).filter((n) => /\.ya?ml$/.test(n)).sort();
 
-// Workflows with no top-level `permissions:` block today. They run with the repository default token
-// permissions, which this test cannot see. Fixing means adding `permissions: contents: read` to each,
-// which edits workflow files that docs/config-drift.md pins by hash, so it is a separate change.
-// When a file gets its block, remove it here (the stale-entry check below enforces that).
-const NO_EXPLICIT_PERMISSIONS_BASELINE = [
-  "ci.yml",
-  "daily-digest-cron.yml",
-  "early-access-digest-cron.yml",
-  "ingest.yml",
-  "retention-cron.yml",
-];
+// Every workflow must declare its minimum token permissions. No inherited
+// repository-default permission baseline remains.
+const NO_EXPLICIT_PERMISSIONS_BASELINE: string[] = [];
 
 // Any non-read permission must be listed here with its reason.
 const WRITE_ALLOWLIST: { [file: string]: string[] } = {
