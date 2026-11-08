@@ -41,6 +41,8 @@ Symptom: Netlify deploys fail with credits exhausted.
    backup host. No action needed for users.
 2. Credits reset monthly; pause Netlify builds until then.
 
+See also: [dns-cutover-runbook.md](dns-cutover-runbook.md) for the untested plan to move the domain between hosts.
+
 ## 5. Main CI red after a workflow change
 
 Symptom: security-scan or ci workflow fails on `main`.
