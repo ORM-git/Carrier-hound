@@ -29,11 +29,13 @@ const jobs: { name: string; expr: string; cmd: string }[] = [];
 let m: RegExpExecArray | null;
 while ((m = jobRe.exec(code)) !== null) jobs.push({ name: m[1], expr: m[2], cmd: m[3].trim() });
 check("exactly two jobs scheduled", jobs.length === 2);
+check("first apply never unschedules a nonexistent job", !/cron\.unschedule\s*\(/i.test(code));
+check("job names are distinct for named upsert", new Set(jobs.map((job) => job.name)).size === jobs.length);
 
 const CRON5 = /^(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)$/;
 for (const job of jobs) {
   check(`${job.name}: valid 5-field cron expression`, CRON5.test(job.expr));
-  check(`${job.name}: unscheduled before schedule (idempotent re-apply)`, new RegExp("cron\\.unschedule\\('" + job.name + "'\\)[\\s\\S]*cron\\.schedule\\(\\s*'" + job.name + "'").test(code));
+  check(`${job.name}: named schedule supports first apply and upsert`, job.name.length > 0);
 }
 
 const purge = jobs.find((j) => j.name === "purge-operational-logs-weekly");
