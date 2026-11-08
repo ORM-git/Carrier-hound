@@ -19,7 +19,7 @@ export interface DbHealthSnapshot {
   table_count: number;
   index_count: number;
   cron_available: boolean;
-  failed_cron_24h: number | null;
+  failed_cron_7d: number | null;
 }
 export interface DbHealthReport {
   healthy: boolean;
@@ -49,8 +49,8 @@ export function parseDbHealthSnapshot(raw: unknown): DbHealthSnapshot {
       !(raw.stats_reset === null || isDate(raw.stats_reset)) ||
       !isCount(raw.table_count) || !isCount(raw.index_count) ||
       typeof raw.cron_available !== "boolean" ||
-      !(raw.failed_cron_24h === null || isCount(raw.failed_cron_24h)) ||
-      (raw.cron_available && raw.failed_cron_24h === null) ||
+      !(raw.failed_cron_7d === null || isCount(raw.failed_cron_7d)) ||
+      (raw.cron_available && raw.failed_cron_7d === null) ||
       !Array.isArray(raw.tables) || !Array.isArray(raw.indexes) ||
       raw.tables.length > 100 || raw.indexes.length > 100 ||
       raw.tables.length !== Math.min(raw.table_count, 100) ||
@@ -81,7 +81,7 @@ export function evaluateDbHealth(raw: unknown, nowMs = Date.now()): DbHealthRepo
     alerts.push("stale_or_future_snapshot");
   }
   if (!snapshot.cron_available) alerts.push("cron_metrics_unavailable");
-  if ((snapshot.failed_cron_24h ?? 0) > 0) alerts.push("failed_cron_last_24h");
+  if ((snapshot.failed_cron_7d ?? 0) > 0) alerts.push("failed_cron_last_7d");
   if (snapshot.table_count === 0) alerts.push("no_public_tables");
   if (snapshot.table_count > 100 || snapshot.index_count > 100) alerts.push("metrics_truncated");
   const deadTupleTables = snapshot.tables.filter((t) =>
