@@ -3,6 +3,8 @@
 Status: read-only report. Not scheduled, not run by CI, no writes, no payment-provider call.
 Payments stay off; this changes nothing about checkout.
 
+See also: [coupon-design.md](coupon-design.md). A discounted order would need list price and discount recorded next to `amount_paise` (design note only, nothing implemented).
+
 Run (owner, with service-role env): `npx tsx scripts/report-payment-reconciliation.ts --stale-created-hours <n>`
 Exit 0 = no findings, 1 = findings, 2 = env or argument missing.
 
