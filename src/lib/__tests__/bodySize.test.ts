@@ -28,4 +28,27 @@ describe("exceedsGlobalBodyCap", () => {
     expect(exceedsGlobalBodyCap("POST", "/api/track", "not-a-number")).toBe(false);
     expect(exceedsGlobalBodyCap("POST", "/api/track", "-5")).toBe(false);
   });
+  it.each(["1048577junk", "1048577.5", "1048577e2", "+1048577", "1048577,1048577", "0x200000", "-1048577", "", "   "])(
+    "passes malformed decimal header %j to route-level guards", (header) => {
+      expect(exceedsGlobalBodyCap("POST", "/api/track", header)).toBe(false);
+    }
+  );
+
+  it("compares valid decimal lengths even beyond numeric range", () => {
+    expect(exceedsGlobalBodyCap("POST", "/api/track", "9".repeat(400))).toBe(true);
+    expect(exceedsGlobalBodyCap("POST", "/api/track", "0001048577")).toBe(true);
+    expect(exceedsGlobalBodyCap("POST", "/api/track", " 1048577 ")).toBe(true);
+    expect(exceedsGlobalBodyCap("POST", "/api/track", "0001048576")).toBe(false);
+  });
+
+  it("keeps method/path exclusions and custom cap boundaries for giant lengths", () => {
+    const giant = "9".repeat(400);
+    for (const method of ["GET", "head", "OPTIONS"]) {
+      expect(exceedsGlobalBodyCap(method, "/api/track", giant)).toBe(false);
+    }
+    expect(exceedsGlobalBodyCap("POST", "/apiary", giant)).toBe(false);
+    expect(exceedsGlobalBodyCap("POST", "/api/track", "10", 10)).toBe(false);
+    expect(exceedsGlobalBodyCap("POST", "/api/track", "11", 10)).toBe(true);
+  });
+
 });

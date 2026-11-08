@@ -25,7 +25,11 @@ export function exceedsGlobalBodyCap(
   if (SAFE_METHODS.has((method || "").toUpperCase())) return false;
   if (!pathname.startsWith("/api/")) return false;
   if (!contentLength) return false;
-  const bytes = Number.parseInt(contentLength, 10);
-  if (!Number.isFinite(bytes) || bytes < 0) return false;
-  return bytes > capBytes;
+  // Content-Length is decimal digits, not a parseInt numeric prefix. Keep
+  // malformed headers on the documented pass-through path to route guards.
+  const decimal = contentLength.trim();
+  if (!/^\d+$/.test(decimal)) return false;
+  // Overflow becomes Infinity, which still exceeds our finite cap. Do not
+  // accidentally allow a syntactically valid giant declared length.
+  return Number(decimal) > capBytes;
 }
