@@ -150,7 +150,7 @@ export function getEdgeKv(opts: EdgeKvOptions = {}): EdgeKvAdapter {
   const namespaceId = opts.namespaceId ?? process.env.CLOUDFLARE_KV_NAMESPACE_ID;
   const apiToken = opts.apiToken ?? process.env.CLOUDFLARE_KV_API_TOKEN;
   if (accountId && namespaceId && apiToken) {
-    return new RestEdgeKv({ accountId, namespaceId, apiToken, ...opts });
+    return new RestEdgeKv({ ...opts, accountId, namespaceId, apiToken });
   }
   return new NoopEdgeKv();
 }
