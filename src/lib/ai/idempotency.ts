@@ -66,9 +66,9 @@ export function getIdempotentResult(userId: string, kind: string, key: string): 
 
 export function storeIdempotentResult(userId: string, kind: string, key: string, payload: any): void {
   const cacheKey = getIdempotencyCacheKey(userId, kind, key);
+  idempotencyResultCache.set(cacheKey, { payload, cachedAt: Date.now() });
   if (idempotencyResultCache.size > 10000) {
     const oldestKey = idempotencyResultCache.keys().next().value;
     if (oldestKey) idempotencyResultCache.delete(oldestKey);
   }
-  idempotencyResultCache.set(cacheKey, { payload, cachedAt: Date.now() });
 }
