@@ -207,6 +207,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-canonical-routes.ts", command: "npx tsx scripts/test-canonical-routes.ts", classification: "offline" },
   { name: "scripts/test-heading-order.ts", command: "npx tsx scripts/test-heading-order.ts", classification: "offline" },
   { name: "scripts/test-prefetch-strategy.ts", command: "npx tsx scripts/test-prefetch-strategy.ts", classification: "offline" },
+  { name: "scripts/test-loading-announce.ts", command: "npx tsx scripts/test-loading-announce.ts", classification: "offline" },
   { name: "scripts/test-resilience-posture.ts", command: "npx tsx scripts/test-resilience-posture.ts", classification: "offline" },
   { name: "scripts/test-managed-redis.ts", command: "npx tsx scripts/test-managed-redis.ts", classification: "offline" },
   { name: "scripts/test-edge-kv.ts", command: "npx tsx scripts/test-edge-kv.ts", classification: "offline" },
