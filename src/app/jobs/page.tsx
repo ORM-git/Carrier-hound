@@ -335,12 +335,11 @@ function CircularMatchRing({
   score,
   size = 56,
   strokeWidth = 4.5,
-  isPro = true,
 }: {
   score: number;
   size?: number;
   strokeWidth?: number;
-  isPro?: boolean;
+  isPro?: boolean; // accepted for call-site compatibility; not rendered
 }) {
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
@@ -417,7 +416,7 @@ function JobsPageInner() {
   const allFiltersTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [sortBy, setSortBy] = useState<"match" | "newest">("newest");
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
-  const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+  const [_openDropdown, setOpenDropdown] = useState<string | null>(null);
 
   // Debounced search for server-side execution (300ms)
   useEffect(() => {
@@ -461,7 +460,7 @@ function JobsPageInner() {
   const [trackedApplications, setTrackedApplications] = useState<TrackedApplication[]>([]);
   const [resolvedJobsMap, setResolvedJobsMap] = useState<Record<string, LiveJob>>({});
   const [savedJobIds, setSavedJobIds] = useState<string[]>([]);
-  const [appliedJobIds, setAppliedJobIds] = useState<string[]>([]);
+  const [_appliedJobIds, setAppliedJobIds] = useState<string[]>([]);
   const [appliedCount, setAppliedCount] = useState<number>(0);
   const [updatingAppliedJobId, setUpdatingAppliedJobId] = useState<string | null>(null);
   const inFlightAppliedRef = useRef<Set<string>>(new Set());

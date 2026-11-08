@@ -215,7 +215,7 @@ export default function SignupPage() {
                 <CheckCircle2 className="w-6 h-6" />
               </div>
               <div className="space-y-1">
-                <h3 className="font-bold text-[16px] text-[#166534]">Check your inbox</h3>
+                <h2 className="font-bold text-[16px] text-[#166534]">Check your inbox</h2>
                 <p className="text-[13px] text-[#15803D] max-w-sm mx-auto">
                   We sent a verified magic sign-in link to <strong className="text-[#166534]">{email}</strong>. Click the link to complete sign in.
                 </p>
