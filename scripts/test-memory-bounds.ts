@@ -30,6 +30,13 @@ check(
     /idempotencyResultCache\.delete\(cacheKey\)/.test(handler)
 );
 
+const swr = fs.readFileSync("src/lib/cache/swr.ts", "utf8");
+check("client SWR completed-value store enforces the chosen 200-entry cap",
+  /SWR_MAX_ENTRIES = 200/.test(swr) && /while \(store\.size > SWR_MAX_ENTRIES\)/.test(swr));
+check("SWR fetches and write-through updates share the bounded write path",
+  /writeEntry\(key, \{ data, ts: Date\.now\(\) \}\)/.test(swr) &&
+  /writeEntry\(key, \{ data: updater\(hit\.data\), ts: hit\.ts \}\)/.test(swr));
+
 const analytics = fs.readFileSync("src/lib/admin/analytics.ts", "utf8");
 check(
   "admin analytics fallback buffer keeps its 5,000-record cap",

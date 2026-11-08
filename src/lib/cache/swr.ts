@@ -17,7 +17,19 @@ interface CacheEntry<T> {
   ts: number;
 }
 
+/** Chosen entry-count bound. Eviction is an ordinary cache miss, not data loss. */
+export const SWR_MAX_ENTRIES = 200;
 const store = new Map<string, CacheEntry<unknown>>();
+
+function writeEntry<T>(key: string, entry: CacheEntry<T>): void {
+  // Write recency, not a new timestamp: updateSwr must preserve freshness age.
+  store.delete(key);
+  store.set(key, entry);
+  while (store.size > SWR_MAX_ENTRIES) {
+    const oldest = store.keys().next();
+    if (!oldest.done) store.delete(oldest.value);
+  }
+}
 const inflight = new Map<string, Promise<unknown>>();
 
 export function readSwr<T>(key: string): T | undefined {
@@ -39,7 +51,7 @@ export async function swrFetch<T>(
   if (!pending) {
     pending = fetcher()
       .then((data) => {
-        store.set(key, { data, ts: Date.now() });
+        writeEntry(key, { data, ts: Date.now() });
         inflight.delete(key);
         return data;
       })
@@ -65,7 +77,7 @@ export function isSwrStale(key: string, ttlMs = 60_000): boolean {
  */
 export function updateSwr<T>(key: string, updater: (current: T) => T): void {
   const hit = store.get(key) as CacheEntry<T> | undefined;
-  if (hit) store.set(key, { data: updater(hit.data), ts: hit.ts });
+  if (hit) writeEntry(key, { data: updater(hit.data), ts: hit.ts });
 }
 
 export function invalidateSwr(keyOrPrefix: string): void {
