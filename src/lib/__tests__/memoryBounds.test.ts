@@ -42,7 +42,7 @@ describe("LruCache memory bounds", () => {
 describe("AI idempotency result cache memory bounds", () => {
   beforeEach(() => _clearIdempotencyResultCacheForTesting());
 
-  it("stays capped at 10,001 entries under sustained writes", () => {
+  it("stays capped at exactly 10,000 entries under sustained writes", () => {
     for (let i = 0; i < 12000; i++) {
       storeIdempotentResult(`user-${i}`, "cover_letter", `key-${i}`, { i });
     }
@@ -50,7 +50,7 @@ describe("AI idempotency result cache memory bounds", () => {
     for (let i = 0; i < 12000; i++) {
       if (getIdempotentResult(`user-${i}`, "cover_letter", `key-${i}`) !== null) size++;
     }
-    expect(size).toBeLessThanOrEqual(10001);
+    expect(size).toBe(10000);
     expect(size).toBeGreaterThan(9000);
   });
 
@@ -118,5 +118,29 @@ describe("fallback rate-limit store key cap (rank 47)", () => {
     const r = checkRateLimit("a", store, 2, 60000);
     expect(r.currentCount).toBe(2);
     expect(store.size).toBe(2);
+  });
+});
+
+
+describe("AI result cache cap boundaries", () => {
+  beforeEach(() => _clearIdempotencyResultCacheForTesting());
+
+  it("keeps exactly 10,000 entries and evicts the oldest only on a new key", () => {
+    for (let i = 0; i < 10000; i++) storeIdempotentResult("u", "kind", `k${i}`, { i });
+    expect(getIdempotentResult("u", "kind", "k0")).toEqual({ i: 0 });
+    storeIdempotentResult("u", "kind", "k10000", { i: 10000 });
+    expect(getIdempotentResult("u", "kind", "k0")).toBeNull();
+    expect(getIdempotentResult("u", "kind", "k1")).toEqual({ i: 1 });
+    expect(getIdempotentResult("u", "kind", "k10000")).toEqual({ i: 10000 });
+  });
+
+  it("does not evict an unrelated entry when updating a key at capacity", () => {
+    for (let i = 0; i < 10000; i++) storeIdempotentResult("u", "kind", `k${i}`, { i });
+    for (let i = 0; i < 50; i++) storeIdempotentResult("u", "kind", "k9999", { updated: i });
+    expect(getIdempotentResult("u", "kind", "k0")).toEqual({ i: 0 });
+    expect(getIdempotentResult("u", "kind", "k9999")).toEqual({ updated: 49 });
+    let count = 0;
+    for (let i = 0; i < 10000; i++) if (getIdempotentResult("u", "kind", `k${i}`) !== null) count++;
+    expect(count).toBe(10000);
   });
 });
