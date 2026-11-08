@@ -12,6 +12,7 @@ import { ServiceWorkerRegistrar } from "@/components/pwa/ServiceWorkerRegistrar"
 import BlockedAccountNotice from "@/components/auth/BlockedAccountNotice";
 import CookieNotice from "@/components/CookieNotice";
 import { getConnectionHints } from "@/lib/seo/structuredData";
+import RouteFocusManager from "@/components/a11y/RouteFocusManager";
 import JsonLd from "@/components/seo/JsonLd";
 
 
@@ -106,6 +107,7 @@ export default function RootLayout({
         >
           Skip to main content
         </a>
+        <RouteFocusManager />
         <noscript>
           <div
             style={{

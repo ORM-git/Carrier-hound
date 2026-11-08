@@ -2,7 +2,7 @@
   "version": 1,
   "generated": "2026-11-07",
   "files": {
-    "netlify.toml": "155afe74c4a9d9a673fa3b1915b7f6e94a044ac3b628e87c7df82f9fa7647ac8",
+    "netlify.toml": "f3079a9dcca3ce25ddd5a6ef86e1032da81732567b7957817ca76b11b7aad737",
     "next.config.mjs": "58594e645a0160175f696a26ab3103cf7a682a3ea98f5d3341fad267a216f5f0",
     "package.json": "cdfffb924dd5fed0b5e8df5b1d2b968e85ee63a075852788faa8b71db3e53318",
     ".github/workflows/board-ingest.yml": "bcf686171a7390e3fdeb115b44364fab05f6bbed7a70b0f00411d3bce38b1976",
