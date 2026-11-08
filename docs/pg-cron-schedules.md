@@ -7,7 +7,9 @@ outage silenced every cron at once).
 
 ## Schedules
 
-All times are UTC (pg_cron runs in UTC); IST equivalents in parentheses.
+Times below assume the pg_cron default UTC/GMT timezone; IST equivalents are
+in parentheses. Before applying, inspect `show cron.timezone` when supported
+and confirm the project uses UTC/GMT. No live timezone was checked here.
 
 | Job name | Schedule | When | What it runs |
 | --- | --- | --- | --- |
@@ -23,9 +25,10 @@ working during an Actions outage.
 
 ```sql
 select jobid, jobname, schedule, active from cron.job;
-select jobname, status, return_message, start_time
-from cron.job_run_details
-order by start_time desc
+select j.jobname, r.status, r.return_message, r.start_time
+from cron.job_run_details r
+left join cron.job j on j.jobid = r.jobid
+order by r.start_time desc
 limit 20;
 ```
 
@@ -36,6 +39,16 @@ select cron.unschedule('purge-operational-logs-weekly');   -- remove
 select cron.unschedule('refresh-worldwide-counts-daily');  -- remove
 -- re-apply the migration to restore both
 ```
+
+## First apply and re-apply
+
+Named `cron.schedule(jobname, schedule, command)` creates the job or updates the
+existing job for the current database user. It must not call `cron.unschedule`
+first: that overload raises an error when no job exists. This fixes the initial
+unapplied migration's first-run failure. No live SQL was executed.
+
+Implementation reference: https://raw.githubusercontent.com/citusdata/pg_cron/main/src/job_metadata.c
+(named schedule upsert and `cron_unschedule_named`).
 
 ## Apply order
 
