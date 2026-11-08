@@ -3,6 +3,8 @@
 Reverse-chronological record of production incidents. Newest first. Every
 entry links a postmortem when one exists.
 
+Public status page: none yet. See [status-page.md](status-page.md) for the plan and owner steps.
+
 | Date | Incident | Impact | Root cause | Follow-up |
 | --- | --- | --- | --- | --- |
 | 2026-10-30 → 2026-11-06 | Early-access digest cron failing nightly | No daily early-access signup digest to owner | One of `APPS_SCRIPT_MAIL_URL` / `APPS_SCRIPT_MAIL_SECRET` / `EARLY_ACCESS_NOTIFY_EMAIL` missing from GitHub Actions secrets; script fails closed with `missing_env` | [postmortem](postmortems/2026-11-06-early-access-digest-missing-env.md) |

@@ -204,6 +204,7 @@ export default function LoginPage() {
           {error && (
             <div
               data-testid="auth-error-banner"
+              id="login-error-msg"
               role="alert"
               className="bg-[#FEF2F2] border border-[#FECACA] rounded-[8px] p-3 flex items-start gap-2.5 text-[14px] text-[#B91C1C]"
             >
@@ -221,7 +222,7 @@ export default function LoginPage() {
                 <CheckCircle2 className="w-6 h-6" />
               </div>
               <div className="space-y-1">
-                <h3 className="font-bold text-[16px] text-[#166534]">Check your inbox</h3>
+                <h2 className="font-bold text-[16px] text-[#166534]">Check your inbox</h2>
                 <p className="text-[13px] text-[#15803D] max-w-sm mx-auto">
                   We sent a verified magic sign-in link to <strong className="text-[#166534]">{email}</strong>. Click the link to complete sign in.
                 </p>
@@ -289,6 +290,8 @@ export default function LoginPage() {
                   <input
                     id="login-email"
                     type="email"
+                    aria-invalid={Boolean(error)}
+                    aria-describedby={error ? "login-error-msg" : undefined}
                     value={email}
                     onChange={(e) => {
                       setEmail(e.target.value);
