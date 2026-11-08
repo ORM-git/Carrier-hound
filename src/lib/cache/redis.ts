@@ -122,7 +122,7 @@ export function getRedis(opts: RedisOptions = {}): RedisAdapter {
   if (!opts.fetchImpl && !opts.onError && memo && memo.url === url && memo.token === token) {
     return memo.adapter;
   }
-  const adapter = new UpstashRestRedis({ url, token, ...opts });
+  const adapter = new UpstashRestRedis({ ...opts, url, token });
   if (!opts.fetchImpl && !opts.onError) memo = { url, token, adapter };
   return adapter;
 }
