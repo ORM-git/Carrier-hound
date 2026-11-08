@@ -43,19 +43,14 @@ import {
   Briefcase,
   TrendingUp,
   Clock,
-  ChevronDown,
   Lock,
   ArrowRight,
   Ban,
-  MoreHorizontal,
   Plus,
   Pencil,
   Lightbulb,
   CheckCircle2,
-  HelpCircle,
   DollarSign,
-  Share2,
-  ArrowUpDown,
   AlertCircle,
   ArrowLeft,
 } from "lucide-react";
@@ -67,7 +62,6 @@ import { trackFunnelEvent } from "@/lib/analytics/funnel";
 const PaywallModal = dynamic(() => import("@/components/PaywallModal"), { ssr: false });
 
 const GUEST_HIDDEN_JOBS_KEY = "cm_hidden_jobs_guest";
-const LEGACY_HIDDEN_JOBS_KEY = "cm_hidden_jobs";
 
 function getScopedHiddenJobsKey(userId?: string | null): string {
   if (userId && userId.trim()) {
@@ -302,12 +296,6 @@ function getJobDiagnostics(job: LiveJob, candidate: CandidateProfile | null): Fi
   return null;
 }
 
-function getMatchPanelGradient(score: number): string {
-  if (score >= 80) return "bg-gradient-to-br from-[#1E3A8A] to-[#2563EB]";
-  if (score >= 50) return "bg-gradient-to-br from-[#0F172A] to-[#1E3A8A]";
-  return "bg-gradient-to-br from-[#0F172A] to-[#334155]";
-}
-
 function parseJobLocation(locationStr?: string | null): { primary: string; extraCount: number; all: string[] } {
   if (!locationStr || !locationStr.trim()) {
     return { primary: "Location unlisted", extraCount: 0, all: [] };
@@ -467,7 +455,6 @@ function JobsPageInner() {
   const inFlightSaveRef = useRef<Set<string>>(new Set());
   const filtersTriggerRef = useRef<HTMLButtonElement | null>(null);
   const filterDialogRef = useRef<HTMLDivElement | null>(null);
-  const tabsContainerRef = useRef<HTMLDivElement | null>(null);
   const activeTabRef = useRef<HTMLButtonElement | null>(null);
   const hasInitializedFromUrl = useRef(false);
   const [isPaywallOpen, setIsPaywallOpen] = useState(false);
@@ -629,6 +616,7 @@ function JobsPageInner() {
     selectedCompany,
     selectedCountryCode,
     selectedJob,
+    router,
   ]);
 
   // Focus trap, keyboard escape, inert background, and scroll locking for mobile filter sheet
@@ -894,6 +882,10 @@ function JobsPageInner() {
       window.removeEventListener("careermonke_profile_updated", handleProfileUpdate);
       window.removeEventListener("careermonke_tracker_updated", handleTrackerUpdate);
     };
+    // Mount-once bootstrap + event subscriptions. user?.id is read inside the
+    // tracker handler via closure; re-running on its change would duplicate
+    // the initial load. Intentional empty deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const hasConfirmedResume = Boolean(candidate && candidate.confirmedAt);
@@ -1245,6 +1237,9 @@ function JobsPageInner() {
         })
         .catch(() => {});
     }
+  // Deps are the primitives that actually drive the refetch; depending on the
+  // whole selectedJob object would re-fetch on unrelated field changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedJob?.id, selectedJob?.category, liveJobs.length]);
 
   // Memoize per-card fit diagnostics keyed by confirmed resume facts and job.id
@@ -1255,6 +1250,9 @@ function JobsPageInner() {
       map.set(job.id, getJobDiagnostics(job, candidate));
     }
     return map;
+  // Keyed on confirmedAt/confirmedResumeKey: the candidate object identity
+  // changes every render, so depending on it would defeat the memo.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [displayedJobs, candidate?.confirmedAt, confirmedResumeKey]);
 
   const selectedJobTrackedApp = useMemo(() => {
@@ -1402,7 +1400,7 @@ function JobsPageInner() {
             appsRes: bundle.appsRes.filter((a) => a.jobId !== job.id),
           }));
           toast.info(`Removed "${job.title}" from Liked Jobs.`);
-        } catch (e) {
+        } catch {
           toast.error("Could not update saved job.");
         }
         return;
@@ -1424,7 +1422,7 @@ function JobsPageInner() {
           appsRes: [...bundle.appsRes, created],
         }));
         toast.success(`Liked "${job.title}"! Saved to your tracker.`);
-      } catch (e) {
+      } catch {
         toast.error("Could not save job.");
       }
     } finally {
@@ -1508,16 +1506,6 @@ function JobsPageInner() {
       "Job hidden from feed",
       { autoClose: 3000 }
     );
-  };
-
-  const handleUnhideJob = (jobId: string) => {
-    const updated = hiddenJobIds.filter((id) => id !== jobId);
-    setHiddenJobIds(updated);
-    try {
-      const storageKey = getScopedHiddenJobsKey(user?.id);
-      localStorage.setItem(storageKey, JSON.stringify(updated));
-    } catch {}
-    toast.success("Job restored to feed");
   };
 
   const handleLockedAction = (e?: React.MouseEvent) => {
@@ -2035,14 +2023,6 @@ function JobsPageInner() {
                         const staggerDelay = Math.min(index * 0.03, 0.3);
                         const diagnostics = cardDiagnosticsMap.get(job.id) ?? getJobDiagnostics(job, candidate);
                         const matchScore = getJobMatchScore(job, candidate);
-                        const matchLabel =
-                          matchScore !== null
-                            ? matchScore > 70
-                              ? "Great match"
-                              : matchScore >= 50
-                              ? "Good match"
-                              : "Fair match"
-                            : "";
                         const cardZeroSkills = Boolean(diagnostics && diagnostics.matchedSkills && diagnostics.matchedSkills.length === 0);
                         const isRecent = Boolean(job.postedAt && isPostedUnder24Hours(job.postedAt) && isEarlyApplicant(job) !== undefined);
                         const postedRelative = job.postedAt ? formatDesktopPillTime(job.postedAt) : null;
