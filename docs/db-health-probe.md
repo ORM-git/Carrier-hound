@@ -8,7 +8,7 @@ APPLIED and the workflow is inert until explicitly enabled by the owner.
 
 The service-role-only RPC reads PostgreSQL public-schema table/index counters,
 relation sizes, the statistics reset time, and the count of failed cron runs in
-the last 24 hours. It does not read user rows, query text or error payloads.
+the last seven days. It does not read user rows, query text or error payloads.
 There are no data writes, vacuum operations or index changes.
 
 The probe returns aggregate counts and fixed alert codes only. The CLI exits
