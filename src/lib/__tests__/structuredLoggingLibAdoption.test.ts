@@ -9,9 +9,7 @@ import { join } from "path";
 // Reverting a module to console.* fails CI.
 //
 // Deliberately excluded:
-// - src/lib/observability/logger.ts (the seam itself owns console output),
-// - src/lib/api/routeBudget.ts (emits its own JSON line via console.warn and
-//   scripts/test-route-budget.ts asserts that raw line).
+// - src/lib/observability/logger.ts (the seam itself owns console output).
 
 const ROOT = join(__dirname, "..", "..", "..");
 
@@ -24,6 +22,7 @@ const ADOPTERS = [
   "src/lib/ai/security.ts",
   "src/lib/ai/serviceHandler.ts",
   "src/lib/api/envCheck.ts",
+  "src/lib/api/routeBudget.ts",
   "src/lib/api/sharedRateLimit.ts",
   "src/lib/auth/session.ts",
   "src/lib/billing/consume.ts",
