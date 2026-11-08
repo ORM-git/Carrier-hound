@@ -1,6 +1,8 @@
 -- ============================================================================
 -- Migration: 20261106n_covering_index_jobs_list.sql
--- STATUS: NOT APPLIED - apply manually in Supabase SQL editor, then record:
+-- STATUS: NOT APPLIED - apply this standalone statement in autocommit mode,
+-- outside BEGIN/COMMIT, DO blocks, functions or transactional migration runners.
+-- Review docs/concurrent-covering-index.md before applying, then record:
 --   node scripts/record-migration.cjs 20261106n_covering_index_jobs_list
 --
 -- Database row #12 (Covering indexes (INCLUDE)).
@@ -30,15 +32,21 @@
 --   jobs_active_discovered_idx is on (discovered_at, id), which cannot
 --   serve this ordering.
 --
--- Build cost: plain CREATE INDEX takes a share lock on jobs while it
---   builds - run it off-peak. CONCURRENTLY is intentionally not used
---   (house precedent 20261028_ats_board_ingestion.sql: it cannot run
---   inside a migration transaction).
+-- Build cost: CONCURRENTLY avoids the plain CREATE INDEX write-blocking lock,
+-- but needs two scans and can wait for existing transactions. It is not lock-free.
+-- This file contains one executable statement. Do not combine it with other
+-- migrations in one SQL-editor batch, or use psql --single-transaction/-1.
+-- A cancelled/failed concurrent build can leave an INVALID index under this name.
+-- IF NOT EXISTS does not repair that state: inspect pg_index.indisvalid first,
+-- then explicitly DROP INDEX CONCURRENTLY and retry as separate statements.
+-- Schema shape and actual index definition must be checked before recording.
+-- References: https://www.postgresql.org/docs/current/sql-createindex.html
+--             https://www.postgresql.org/docs/current/app-psql.html
 --
 -- Rollback: see the commented block at the bottom.
 -- ============================================================================
 
-CREATE INDEX IF NOT EXISTS jobs_active_list_covering_idx
+CREATE INDEX CONCURRENTLY IF NOT EXISTS jobs_active_list_covering_idx
   ON public.jobs (first_seen_at DESC, id DESC)
   INCLUDE (
     is_active,
@@ -59,6 +67,6 @@ CREATE INDEX IF NOT EXISTS jobs_active_list_covering_idx
   WHERE status = 'active';
 
 -- ============================================================================
--- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
---   DROP INDEX IF EXISTS public.jobs_active_list_covering_idx;
+-- ROLLBACK (run manually as one autocommit statement, never in a transaction):
+--   DROP INDEX CONCURRENTLY IF EXISTS public.jobs_active_list_covering_idx;
 -- ============================================================================
