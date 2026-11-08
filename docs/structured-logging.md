@@ -68,10 +68,12 @@ opts in.
 
 Status (Backend sheet rank 102): every server-side module under `src/lib`,
 `src/app/api` and `src/middleware.ts` logs through the logger, so `LOG_LEVEL`
-filtering covers the whole request path. Two intentional exceptions:
-`src/lib/observability/logger.ts` (the seam owns console output) and
-`src/lib/api/routeBudget.ts` (emits its own JSON line; `scripts/test-route-budget.ts`
-asserts that raw line). Remaining `console.*` calls under `src` are client/UI
+filtering covers the listed adopting modules. The logger seam itself owns
+console output. `src/lib/api/routeBudget.ts` now uses the seam too: budget breaches
+retain their event/route/budgetMs/durationMs fields and add the common
+level/msg/ts/module envelope. `LOG_LEVEL=error` or `silent` suppresses this warn
+just like other adopting modules. Level is read when the module initializes,
+not changed dynamically during an invocation. Remaining `console.*` calls under `src` are client/UI
 files (pages and components), which run in the browser and are out of scope for
 `LOG_LEVEL`. Guards: `structuredLoggingLibAdoption.test.ts` (lib modules and
 middleware) and `structuredLoggingAdoption.test.ts` (routes).
