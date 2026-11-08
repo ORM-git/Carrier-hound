@@ -38,3 +38,5 @@ changing table can still need a rerun.
   with the add-on pack). Plan or status of the subscription is not compared with the order.
 - Never run against live data by this change. Whether the live tables match the migrations is
   unproven. No schedule or alert is wired (owner decision).
+
+See also: [free-trial-design.md](free-trial-design.md). A trial row has no payment order, so it would need an explicit reconciliation rule (design note only, nothing implemented).
