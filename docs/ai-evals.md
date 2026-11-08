@@ -17,6 +17,8 @@ offline suite as `scripts/eval-ai-output-golden.ts`.
   system prompt leak, markup stripping, invalid JSON, wrong JSON shape, schema type errors,
   job_fit score clamping.
 
+See also: [ai-prompt-and-provider-notes.md](ai-prompt-and-provider-notes.md) for how prompts are built, what is logged, and the provider swap points.
+
 ## How to extend
 
 When a bad output slips through, add a case to `scripts/eval-ai-output-golden.ts` with the input, the
