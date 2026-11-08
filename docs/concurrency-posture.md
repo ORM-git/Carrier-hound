@@ -4,7 +4,8 @@ Backend sheet ranks 45 (Pessimistic Locking), 46 (Distributed Locks),
 48 (Thread Safety) and 49 (Backpressure). This is an audit of what the
 code does today plus the guard that keeps a later refactor from silently
 dropping it (`scripts/test-concurrency-posture.ts`, registered in the CI
-suite). It introduces no new capability and changes no runtime behavior.
+suite). The ATS request-start throttle additionally has behavioral concurrency
+tests in `src/lib/__tests__/domainThrottle.test.ts`.
 
 ## 45 - Pessimistic Locking
 
@@ -42,16 +43,21 @@ exclusion today.
 
 ## 48 - Thread Safety
 
-The deployment targets single-threaded isolates (Cloudflare Workers /
-edge runtime; Netlify Node functions are single-request-per-event), so
-there is no in-process shared mutable state to race on. All state shared
-across requests lives in Postgres and is mutated through the atomic RPCs
-above (`for update` locks, single-statement guarded updates with
-predicates like `sets_remaining > 0`), never read-modify-write in
-application code. The shared rate-limit store is authoritative whenever
-reachable; only while it is down does a per-isolate in-memory fallback
-apply best-effort limits (see `src/lib/api/sharedRateLimit.ts`), so the
-steady-state posture does not depend on isolate-local state.
+Single-threaded JavaScript does not prevent async interleaving. Shared mutable
+caches, circuit state and fallback maps exist, so absence of a Mutex is not a
+proof that all requests are race-safe. AI quota/budget mutations use the atomic
+Postgres RPCs above. The shared rate-limit store is authoritative whenever
+reachable; its per-isolate fallback is only best-effort while the store is down.
+
+The ATS `scripts/utils/polite-fetch.ts` request-start throttle now serializes
+concurrent calls through a per-registrable-domain FIFO tail. Previously callers
+could read the same timestamp, wait together and burst together. Each queued
+caller now observes the previous actual start before waiting. Separate domains
+remain independent; finished queue tails are removed and a failed wait cannot
+poison later turns. Offline fake-clock tests exercise simultaneous subdomains,
+independent domains, delayed scheduling and queue recovery. This is per-process
+pacing, not a distributed lock across separate ingestion workers. Existing
+robots checks and HTTP retry policy are unchanged.
 
 ## 49 - Backpressure
 
