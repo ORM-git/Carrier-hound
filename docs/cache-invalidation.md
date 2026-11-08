@@ -31,5 +31,7 @@ unless an actual empty key exists (the same exact-key precedence applies).
 
 This does not abort network requests or change the result returned to callers
 already awaiting an old promise. UI callers still own their cancellation or
-request-order guards. `updateSwr` remains a separate write-through operation,
-not invalidation. Deferred-promise tests cover stale success/failure ordering.
+request-order guards. A successful `updateSwr` on a cached entry also detaches
+an older in-flight read so it cannot overwrite the mutation result. It keeps
+the original freshness timestamp. A missing-key update remains a no-op;
+a throwing updater leaves both the entry and its pending read intact. Deferred-promise tests cover stale success/failure ordering.
