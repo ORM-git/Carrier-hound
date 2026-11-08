@@ -54,6 +54,9 @@ function resolveMinLevel(envValue: string | undefined): number {
 /** Deep-redact a context object. Never throws (circular-safe). */
 export function redactContext(input: unknown, seen?: WeakSet<object>): unknown {
   const refs = seen ?? new WeakSet<object>();
+  if (typeof input === "bigint") return input.toString();
+  if (typeof input === "function" || typeof input === "symbol" || typeof input === "undefined") return String(input);
+  if (typeof input === "number" && !Number.isFinite(input)) return String(input);
   if (input === null || typeof input !== "object") return input;
   if (refs.has(input as object)) return "[CIRCULAR]";
   refs.add(input as object);
@@ -62,18 +65,8 @@ export function redactContext(input: unknown, seen?: WeakSet<object>): unknown {
   for (const [k, v] of Object.entries(input as Record<string, unknown>)) {
     if (REDACTED_KEY_PATTERN.test(k)) {
       out[k] = REDACTED;
-    } else if (v !== null && typeof v === "object") {
-      out[k] = redactContext(v, refs);
-    } else if (typeof v === "bigint") {
-      out[k] = v.toString();
-    } else if (typeof v === "function" || typeof v === "symbol" || typeof v === "undefined") {
-      out[k] = String(v);
-    }
-    // finite numbers, strings, booleans pass through; NaN/Infinity handled by JSON
-    else if (typeof v === "number" && !Number.isFinite(v)) {
-      out[k] = String(v);
     } else {
-      out[k] = v;
+      out[k] = redactContext(v, refs);
     }
   }
   return out;
