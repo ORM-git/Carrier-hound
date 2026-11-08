@@ -3,6 +3,15 @@
   publish = "out"
   functions = "netlify/functions"
 
+# SEO canonical route cleanup (row 64): the /privacy alias serves the same
+# content as /privacy-policy; collapse it to the canonical URL at the edge
+# so crawlers do not spend budget on the duplicate.
+[[redirects]]
+  from = "/privacy"
+  to = "/privacy-policy"
+  status = 301
+  force = true
+
 [[redirects]]
   from = "/api/billing/razorpay/order"
   to = "/.netlify/functions/billing-razorpay-order"

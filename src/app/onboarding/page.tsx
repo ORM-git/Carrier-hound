@@ -356,8 +356,8 @@ function OnboardingPageInner() {
   if (checkingAuth) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-        <div className="flex flex-col items-center gap-3">
-          <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+        <div className="flex flex-col items-center gap-3" role="status" aria-label="Loading your setup">
+          <Loader2 aria-hidden="true" className="w-8 h-8 text-blue-600 animate-spin" />
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
             Loading your setup...
           </p>
