@@ -17,6 +17,9 @@ on:
         type: string
         default: '60'
 
+permissions:
+  contents: read
+
 jobs:
   daily-digest:
     name: Compute Match Scores & Queue Daily Digests

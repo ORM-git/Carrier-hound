@@ -1,29 +1,27 @@
 # GitHub Actions token permissions (Backend sheet row: Least-privilege Access Tokens)
 
-Status: repo-side guard and inventory. It does not change any workflow, token or secret. The row stays
-PARTIAL: the service-role key that powers the cron workflows is not audited here.
+Status: explicit read-only workflow token defaults plus offline inventory guard.
+The five formerly inherited defaults now declare `contents: read`; no repository
+setting, token, secret, cron schedule or workflow activation was changed. The
+row remains PARTIAL: service-role secret scope and live execution are separate.
 
-Pieces: `scripts/test-workflow-permissions.ts` (offline, registered), the workflow files under
-`.github/workflows/`.
+Pieces: `scripts/test-workflow-permissions.ts` (offline, registered), the workflow
+files under `.github/workflows/`, and the regenerated config-drift baseline.
 
 ## What is checked (repo evidence)
 
-- Files with a top-level `permissions:` block declare `contents: read` first. Seven workflows do
-  (`board-ingest`, `capacity-report-cron`, `dunning-dispatch-cron`, `inbound-poll-cron`, `plan-regression`,
-  `quality-advisory`, `security-scan`).
-- The only write permission is `checks: write` in `security-scan.yml`. It is on an allowlist in the test.
-- No workflow uses `write-all`, the `pull_request_target` trigger, or a hard-coded token-looking value.
-- Five workflows have no top-level `permissions:` block: `ci.yml`, `daily-digest-cron.yml`,
-  `early-access-digest-cron.yml`, `ingest.yml`, `retention-cron.yml`. They run with the repository's default
-  workflow-token permissions, which the repo cannot show. The test keeps this list as an exact baseline, so a
-  new workflow without permissions fails, and a fixed one must be removed from the list.
-
-## Why the five are not fixed here
-
-Adding `permissions: contents: read` to a workflow edits a file that `scripts/config-drift-baseline.json`
-pins by hash (`docs/config-drift.md`), and any workflow change should be reviewed on its own. Each of the five
-only checks out the repo and sets up Node, so `contents: read` looks sufficient, but that has not been run
-(owner to confirm).
+- Every workflow declares top-level `contents: read`. Unspecified token scopes
+  are disabled rather than inherited from a potentially broader repo default.
+- The only declared write permission remains `checks: write` in
+  `security-scan.yml`, covered by the existing test allowlist.
+- No workflow uses `write-all`, `pull_request_target`, or a hard-coded token.
+- The repaired workflows are `ci.yml`, `daily-digest-cron.yml`,
+  `early-access-digest-cron.yml`, `ingest.yml`, and `retention-cron.yml`. Their
+  checkout, Node setup and scripts need repository reads, not GitHub writes.
+  Their service credentials are independent of GITHUB_TOKEN permissions.
+- The missing-permissions baseline is empty: a future workflow that omits the
+  declaration fails the registered guard. Covered hashes were regenerated in
+  the same change; a hash update is not a claim of a live run.
 
 ## What this does NOT cover (unproven)
 
@@ -37,8 +35,8 @@ only checks out the repo and sets up Node, so `contents: read` looks sufficient,
 ## Owner steps (for the keeper's Doc)
 
 1. In GitHub, set the default workflow permissions to read-only (a repository setting).
-2. Approve a small PR that adds `permissions: contents: read` to the five workflows and regenerates the
-   config-drift baseline.
+2. Verify successful CI and the next intended cron runs after the explicit
+   read-only permission change. Do not dispatch live crons just for this check.
 3. Review which cron scripts really need the service-role key, and whether a narrower database role is worth
    creating.
 4. Decide whether to pin third-party actions by commit SHA.
