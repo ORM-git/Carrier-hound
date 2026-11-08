@@ -75,19 +75,37 @@ export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/**
- * Enforces polite 1 req/sec pacing per registrable domain.
- */
+// Each domain has one FIFO tail. Register it synchronously before yielding so
+// concurrent callers cannot all read the same last-start timestamp and wake
+// together. Settled tails are removed; a rejected wait never poisons the queue.
+const domainThrottleTails = new Map<string, Promise<void>>();
+
+/** Serializes request starts within this process, independently per domain. */
 export async function throttleDomain(hostnameOrDomain: string, intervalMs = MIN_DOMAIN_INTERVAL_MS): Promise<void> {
-  const regDomain = getRegistrableDomain(hostnameOrDomain) || hostnameOrDomain;
-  const now = Date.now();
-  const last = lastRequestByDomain.get(regDomain) || 0;
-  const elapsed = now - last;
-  if (elapsed < intervalMs) {
-    const waitTime = intervalMs - elapsed;
-    await sleep(waitTime);
+  if (!Number.isFinite(intervalMs) || intervalMs < 0 || intervalMs > 60_000) {
+    throw new Error('Invalid throttle interval (expected 0..60000 milliseconds)');
   }
-  lastRequestByDomain.set(regDomain, Date.now());
+  const regDomain = getRegistrableDomain(hostnameOrDomain) || hostnameOrDomain;
+  const previous = domainThrottleTails.get(regDomain) || Promise.resolve();
+  const turn = previous.catch(() => undefined).then(async () => {
+    const last = lastRequestByDomain.get(regDomain);
+    if (last !== undefined) {
+      // Re-check after each timer: delayed scheduling or wall-clock movement
+      // must not allow the next queued caller to start beside this one.
+      let remaining = intervalMs - (Date.now() - last);
+      while (remaining > 0) {
+        await sleep(Math.min(remaining, 60_000));
+        remaining = intervalMs - (Date.now() - last);
+      }
+    }
+    lastRequestByDomain.set(regDomain, Date.now());
+  });
+  domainThrottleTails.set(regDomain, turn);
+  try {
+    await turn;
+  } finally {
+    if (domainThrottleTails.get(regDomain) === turn) domainThrottleTails.delete(regDomain);
+  }
 }
 
 /**
