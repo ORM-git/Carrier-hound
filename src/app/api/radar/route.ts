@@ -6,6 +6,7 @@ import { reportRequestErrorToSentry } from '@/lib/monitoring/sentryErrorReporter
 
 import { createLogger } from "@/lib/observability/logger";
 import { singleFlight } from "@/lib/cache/singleFlight";
+import { radarJsonResponse } from "@/lib/api/radarResponse";
 
 const baseLog = createLogger({ context: { route: "/api/radar" } });
 
@@ -235,11 +236,9 @@ export async function GET(req: Request) {
 
   // Return in-memory cached aggregate if fresh
   if (memoryCache && now - memoryCache.cachedAt < CACHE_TTL_MS) {
-    return NextResponse.json(memoryCache.payload, {
-      headers: {
-        'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600',
-        'X-Cache': 'HIT',
-      },
+    return radarJsonResponse(req, memoryCache.payload, {
+      'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600',
+      'X-Cache': 'HIT',
     });
   }
 
@@ -259,11 +258,9 @@ export async function GET(req: Request) {
     // Supabase reads); every caller still builds its own response below.
     const payload = await singleFlight("radar:aggregate", () => computeRadarPayload(supabase, now));
 
-    return NextResponse.json(payload, {
-      headers: {
-        'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600',
-        'X-Cache': 'MISS',
-      },
+    return radarJsonResponse(req, payload, {
+      'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600',
+      'X-Cache': 'MISS',
     });
   } catch (err: any) {
     log.error("Radar Aggregation Error", { error: err?.message || String(err) });
