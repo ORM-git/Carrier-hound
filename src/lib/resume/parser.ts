@@ -157,6 +157,12 @@ async function extractTextFromPdf(file: File): Promise<string> {
         await new Promise<void>((resolve, reject) => {
           const script = document.createElement("script");
           script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+          // SRI pin (audit BE #68): cdnjs serves a static versioned file, so
+          // integrity + crossorigin make a tampered or swapped CDN response
+          // fail closed. Hash: docs/third-party-scripts.md.
+          script.integrity =
+            "sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e";
+          script.crossOrigin = "anonymous";
           script.onload = () => resolve();
           script.onerror = () => reject(new Error("Failed to load PDF.js from CDN"));
           document.head.appendChild(script);
