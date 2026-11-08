@@ -22,10 +22,17 @@ is **expand first, contract later, never both in one step**.
 
 ## Indexes without blocking writes
 
-- Build and drop indexes with `CONCURRENTLY` so reads and writes are not
-  blocked. Precedents: `20261106n_covering_index_jobs_list.sql`,
-  `20261106m_reindex_maintenance.sql`,
-  `20261106g_drop_redundant_subscriptions_index.sql`.
+- The NOT APPLIED `20261106n_covering_index_jobs_list.sql` now uses a
+  standalone `CREATE INDEX CONCURRENTLY`. Its rollback also uses CONCURRENTLY.
+  Follow `docs/concurrent-covering-index.md`: autocommit only, no transaction
+  wrapper, inspect validity and actual definition before recording success.
+- CONCURRENTLY avoids write-blocking during the build, not all locking or
+  waiting. A failed build can leave an invalid index that IF NOT EXISTS skips.
+- Other migrations are not claimed concurrent: `20261106m_reindex_maintenance.sql`
+  runs plain REINDEX inside a function (CONCURRENTLY is not allowed there), and
+  `20261106g_drop_redundant_subscriptions_index.sql` uses plain DROP INDEX.
+  They remain lock-risk exceptions requiring separate review. This change does
+  not prove a live zero-downtime rollout or retrofit every index migration.
 
 ## Contract
 
@@ -49,7 +56,9 @@ is **expand first, contract later, never both in one step**.
 
 ## Apply and record
 
-1. Owner applies the migration in the Supabase SQL Editor.
+1. Owner reviews the migration-specific execution mode before applying. The
+   concurrent index migration must run alone in an autocommit-capable session,
+   never in a transactional batch. Other migrations retain their own guidance.
 2. Owner records it: `node scripts/record-migration.cjs <name>`.
 3. Every migration keeps a commented ROLLBACK section (enforced by
    `scripts/test-migration-rollback-policy.ts`); general recovery notes

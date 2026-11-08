@@ -26,7 +26,7 @@ check(
 );
 check(
   "creates a partial covering index on jobs",
-  /CREATE INDEX IF NOT EXISTS jobs_active_list_covering_idx\s+ON public\.jobs/i.test(sql) &&
+  /CREATE INDEX CONCURRENTLY IF NOT EXISTS jobs_active_list_covering_idx\s+ON public\.jobs/i.test(sql) &&
     /INCLUDE\s*\(/i.test(sql) &&
     /WHERE status = 'active'/.test(sql)
 );
@@ -66,10 +66,19 @@ check(
 if (missing.length) console.log("  uncovered: " + missing.join(", "));
 
 check(
-  "build lock documented, CONCURRENTLY intentionally not used",
-  /CONCURRENTLY is intentionally not used/i.test(sql)
+  "autocommit boundary and failed-build recovery documented",
+  /autocommit/i.test(sql) && /INVALID index/.test(sql) && /IF NOT EXISTS does not repair/.test(sql)
 );
-check("rollback documented", /ROLLBACK[\s\S]*DROP INDEX IF EXISTS public\.jobs_active_list_covering_idx/i.test(sql));
+check("rollback documented", /ROLLBACK[\s\S]*DROP INDEX CONCURRENTLY IF EXISTS public\.jobs_active_list_covering_idx/i.test(sql));
+
+// A concurrent build must remain the only executable statement. This migration
+// uses no block comments or procedural bodies, so stripping line comments is
+// sufficient; reject wrappers rather than pretending to parse arbitrary SQL.
+const executable = sql.split("\n").filter((line) => !/^\s*--/.test(line)).join("\n").trim();
+check("one standalone concurrent build, no transaction/procedural wrapper",
+  /^CREATE INDEX CONCURRENTLY IF NOT EXISTS[\s\S]*;$/i.test(executable) &&
+  (executable.match(/;/g) || []).length === 1 &&
+  !/\b(?:BEGIN|COMMIT|ROLLBACK|DO)\b/i.test(executable));
 
 const health = fs.readFileSync("scripts/db-health.sql", "utf8");
 check(

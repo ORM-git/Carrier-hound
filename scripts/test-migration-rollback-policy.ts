@@ -60,8 +60,8 @@ if (executableRollback.length) console.log("  executable: " + executableRollback
 const n = fs.readFileSync(`${DIR}/20261106n_covering_index_jobs_list.sql`, "utf8");
 check(
   "anchor: 20261106n keeps its commented ROLLBACK block with DROP INDEX",
-  n.includes("-- ROLLBACK (run manually in the Supabase SQL editor") &&
-    n.includes("--   DROP INDEX IF EXISTS public.jobs_active_list_covering_idx;")
+  n.includes("-- ROLLBACK (run manually as one autocommit statement") &&
+    n.includes("--   DROP INDEX CONCURRENTLY IF EXISTS public.jobs_active_list_covering_idx;")
 );
 const c = fs.readFileSync(`${DIR}/20261105c_database_safety.sql`, "utf8");
 check(
