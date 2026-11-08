@@ -244,6 +244,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/eval-ai-output-golden.ts", command: "npx tsx scripts/eval-ai-output-golden.ts", classification: "offline" },
   { name: "scripts/test-table-comments.ts", command: "npx tsx scripts/test-table-comments.ts", classification: "offline" },
   { name: "scripts/test-touch-updated-at.ts", command: "npx tsx scripts/test-touch-updated-at.ts", classification: "offline" },
+  { name: "scripts/test-workflow-permissions.ts", command: "npx tsx scripts/test-workflow-permissions.ts", classification: "offline" },
   { name: "scripts/test-readiness.ts", command: "npx tsx scripts/test-readiness.ts", classification: "offline" },
   { name: "scripts/test-admin-mfa-posture.ts", command: "npx tsx scripts/test-admin-mfa-posture.ts", classification: "offline" },
   { name: "scripts/test-gst-invoice.ts", command: "npx tsx scripts/test-gst-invoice.ts", classification: "offline" },
