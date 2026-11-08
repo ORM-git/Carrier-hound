@@ -24,9 +24,9 @@
 -- Extensions -> pg_cron); the CREATE EXTENSION below is a no-op when it
 -- already is.
 --
--- Safe to run: CREATE EXTENSION and two cron.schedule calls only - no table
--- DDL, no data change. Idempotent: re-applying replaces each schedule instead
--- of duplicating it (unschedule by jobname, then schedule again). The GitHub
+-- Changes CREATE EXTENSION and scheduling metadata only, not product rows.
+-- No product-table DDL or maintenance is executed while creating schedules. Idempotent: named cron.schedule upserts the job for the current user.
+-- No unschedule is needed (it errors when the name does not exist). The GitHub
 -- Actions retention-cron.yml stays in place; both call the same purge
 -- function and the purge is idempotent by design.
 --
@@ -38,16 +38,15 @@
 
 create extension if not exists pg_cron;
 
--- Replace-then-schedule keeps re-application idempotent: cron.unschedule by
--- jobname returns false (no error) when the job does not exist yet.
-select cron.unschedule('purge-operational-logs-weekly');
+-- Named cron.schedule uses the jobname/username unique key to upsert.
+-- This works both on first apply and on re-apply. Do not unschedule first: the
+-- named unschedule overload raises an error when no matching job exists.
 select cron.schedule(
   'purge-operational-logs-weekly',
   '15 2 * * 0',
   $cmd$select public.purge_operational_logs(false);$cmd$
 );
 
-select cron.unschedule('refresh-worldwide-counts-daily');
 select cron.schedule(
   'refresh-worldwide-counts-daily',
   '45 2 * * *',
