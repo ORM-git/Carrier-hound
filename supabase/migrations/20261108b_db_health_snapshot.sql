@@ -48,7 +48,7 @@ BEGIN
   IF cron_available THEN
     SELECT count(*) INTO failed_cron
     FROM public.cron_run_logs
-    WHERE status = 'failed' AND started_at > now() - interval '24 hours';
+    WHERE status = 'failed' AND started_at > now() - interval '7 days';
   END IF;
 
   RETURN jsonb_build_object(
@@ -59,7 +59,7 @@ BEGIN
     'table_count', (SELECT count(*) FROM pg_stat_user_tables WHERE schemaname = 'public'),
     'index_count', (SELECT count(*) FROM pg_stat_user_indexes WHERE schemaname = 'public'),
     'cron_available', cron_available,
-    'failed_cron_24h', failed_cron
+    'failed_cron_7d', failed_cron
   );
 END;
 $function$;
