@@ -10,10 +10,23 @@ export async function computeWeakEtag(body: unknown): Promise<string> {
   return `W/"${hex.slice(0, 32)}"`;
 }
 
-/** Parses If-None-Match (list form and "*") per RFC 9110 8.8.3. */
+/** Compare valid entity tags weakly for If-None-Match (RFC 9110 13.1.2).
+ * Parse quoted tags rather than splitting commas, which are valid opaque data.
+ */
 export function etagMatches(ifNoneMatch: string | null, etag: string): boolean {
   if (!ifNoneMatch) return false;
-  return ifNoneMatch.split(",").some((candidate) => candidate.trim() === etag || candidate.trim() === "*");
+  const header = ifNoneMatch.trim();
+  if (header === "*") return true;
+  const tagPattern = /^(?:W\/)?("[\x21\x23-\x7e\x80-\xff]*")$/;
+  const target = tagPattern.exec(etag)?.[1];
+  if (target === undefined) return false;
+  // Full list grammar prevents accepting a matching substring from malformed
+  // headers, including adjacent tags with no comma. Empty members are allowed.
+  const tagSource = String.raw`(?:W/)?"[\x21\x23-\x7e\x80-\xff]*"`;
+  const listPattern = new RegExp(`^[\\t ]*(?:${tagSource})?(?:[\\t ]*,[\\t ]*(?:${tagSource})?)*[\\t ]*$`);
+  if (!listPattern.test(header)) return false;
+  const candidates = header.match(new RegExp(tagSource, "g")) ?? [];
+  return candidates.some((candidate) => tagPattern.exec(candidate)?.[1] === target);
 }
 
 /**
