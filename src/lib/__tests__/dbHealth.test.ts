@@ -10,7 +10,7 @@ function snapshot() {
     stats_reset: new Date(NOW - 8 * 86400_000).toISOString(),
     tables: [{ name: "jobs", live_tuples: 10000, dead_tuples: 10, total_bytes: 1000000 }],
     indexes: [{ name: "jobs_pkey", scans: 0, total_bytes: 100000000, is_unique: true }],
-    table_count: 1, index_count: 1, cron_available: true, failed_cron_24h: 0,
+    table_count: 1, index_count: 1, cron_available: true, failed_cron_7d: 0,
   };
 }
 
@@ -24,9 +24,9 @@ describe("DB health evaluation", () => {
     });
   });
   it("alerts on failed cron runs, missing cron metrics and zero public tables", () => {
-    expect(evaluateDbHealth({ ...snapshot(), failed_cron_24h: 1 }, NOW).alerts)
-      .toContain("failed_cron_last_24h");
-    expect(evaluateDbHealth({ ...snapshot(), cron_available: false, failed_cron_24h: null }, NOW).healthy)
+    expect(evaluateDbHealth({ ...snapshot(), failed_cron_7d: 1 }, NOW).alerts)
+      .toContain("failed_cron_last_7d");
+    expect(evaluateDbHealth({ ...snapshot(), cron_available: false, failed_cron_7d: null }, NOW).healthy)
       .toBe(false);
     expect(evaluateDbHealth({ ...snapshot(), tables: [], table_count: 0 }, NOW).alerts)
       .toContain("no_public_tables");
@@ -60,7 +60,7 @@ describe("DB health evaluation", () => {
   });
   it.each([
     null, {}, { ...snapshot(), table_count: -1 },
-    { ...snapshot(), failed_cron_24h: null },
+    { ...snapshot(), failed_cron_7d: null },
     { ...snapshot(), tables: [] },
     { ...snapshot(), tables: [{ ...snapshot().tables[0], dead_tuples: NaN }] },
     { ...snapshot(), indexes: [{ ...snapshot().indexes[0], scans: Number.MAX_SAFE_INTEGER + 1 }] },
