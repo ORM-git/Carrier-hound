@@ -18,8 +18,10 @@ Offline test: `npx tsx scripts/test-readiness.ts` (logic with injected probes, p
 - The route was not built or called against a live host or database. CI's build step is the first real build.
 - Each request makes one database call. No rate limit is added here; a monitor interval should be modest
   (`docs/slo.md` lists the current monitors) and any edge rate rule is an owner dashboard setting.
-- On the static-export (Netlify backup) build, a route handler can be prerendered at build time, so readiness there
-  may be a build-time snapshot. The guard in the route skips the database call at build. Treat the Cloudflare edge
-  build as the meaningful target (owner to confirm after the first deploy).
+- Build-time behavior is not verified. The route handlers take a `Request`, and CI builds the route, but nobody has
+  checked how the static-export (Netlify backup) build treats it. The `NOT_PROBED` branch in the route (no request,
+  so no database call) is a defensive guard that the current handlers do not reach. If a static export serves this
+  route, readiness there could be a build-time snapshot. Treat the Cloudflare edge build as the meaningful target
+  (owner to confirm after the first deploy).
 - No monitor is pointed at it yet. Adding it to UptimeRobot is an owner step. The sheet row stays PARTIAL until that
   and a live call are done.
