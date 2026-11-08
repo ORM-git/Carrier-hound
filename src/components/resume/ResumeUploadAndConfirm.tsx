@@ -432,7 +432,7 @@ export default function ResumeUploadAndConfirm({
       </div>
 
       {parseError && (
-        <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-left">
+        <div role="alert" className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-left">
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600" />
             <span>{parseError}</span>

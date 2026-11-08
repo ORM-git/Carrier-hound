@@ -1558,6 +1558,7 @@ export default function JobRadarGlobe() {
             {radarProUnlockError && (
               <div
                 data-testid="radar-pro-unlock-error-banner"
+              role="alert"
                 className="p-3 rounded-xl bg-slate-900/90 border border-slate-700/80 flex items-center justify-between gap-3 text-xs text-slate-300"
               >
                 <div className="flex items-center gap-2">

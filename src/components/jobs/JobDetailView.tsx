@@ -885,6 +885,7 @@ export default function JobDetailView({
           {job.proUnlockError && (
             <div
               data-testid="pro-unlock-error-banner"
+              role="alert"
               className="p-4 rounded-[14px] border border-[#E2E8F0] bg-[#F8FAFC] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-left"
             >
               <div className="flex items-center gap-2.5">

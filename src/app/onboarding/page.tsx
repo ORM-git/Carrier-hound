@@ -492,7 +492,7 @@ function OnboardingPageInner() {
 
           {/* Error & Retry Display */}
           {processingError && (
-            <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-xs space-y-3">
+            <div role="alert" className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-xs space-y-3">
               <div className="flex items-start gap-2">
                 <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
                 <p className="leading-relaxed">{processingError}</p>
