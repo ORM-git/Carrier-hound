@@ -352,7 +352,7 @@ export default function EarlyAccessPage() {
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-[#64748B]">
           <span>© {new Date().getFullYear()} Olive Ridley Media Private Limited. All rights reserved.</span>
           <div className="flex items-center gap-4">
-            <Link href="/privacy" className="hover:text-slate-900 transition-colors">Privacy</Link>
+            <Link href="/privacy-policy" className="hover:text-slate-900 transition-colors">Privacy</Link>
             <Link href="/terms-and-conditions" className="hover:text-slate-900 transition-colors">Terms</Link>
           </div>
         </div>

@@ -75,3 +75,5 @@ All LLM calls are constructed exclusively server-side in [`src/lib/ai/security.t
 - **Embedded PDF JavaScript**: `extractTextFromPdf` disables PDF.js `eval` (`isEvalSupported: false`) and runs `stripEmbeddedPdfJavaScript` on fallback stream decoding to strip `/JavaScript`, `/JS`, and `app.alert(...)` actions.
 - **Size Limit (10 MB)**: `validateResumeUploadFile` rejects files `> 10 MB` (e.g., 50 MB test payload) and `0`-byte files before parsing.
 - **Extension Allowlist (`.pdf`, `.docx`, `.txt`, `.md`)**: Rejects unsupported extensions (`.exe`, `.html`, `.svg`, `.js`) in both `ResumeUploadAndConfirm.tsx` and `extractTextFromFile`.
+
+See also: [pentest-scope.md](../pentest-scope.md) for the external penetration test scope and checklist (no test has been run yet).

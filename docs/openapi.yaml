@@ -208,6 +208,14 @@ paths:
       summary: Health check
       responses:
         "200": { description: Service healthy }
+  /api/health/ready:
+    get:
+      tags: [public]
+      summary: Readiness check
+      description: Checks that the Supabase env names are present and one read-only query succeeds. Returns check names and states only.
+      responses:
+        "200": { description: Ready }
+        "503": { description: Not ready }
   /api/jobs/interview-pack:
     get:
       tags: [jobs]
