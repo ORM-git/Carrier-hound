@@ -109,10 +109,11 @@ export function createLogger(options: LoggerOptions = {}): Logger {
     if (LEVEL_ORDER[level] < min) return;
     const merged: Record<string, unknown> = { ...baseContext, ...(context ?? {}) };
     const record: LogRecord = {
+      ...(redactContext(merged) as Record<string, unknown>),
+      // Envelope fields belong to the logger, never caller context.
       ts: now().toISOString(),
       level,
       msg: String(msg),
-      ...(redactContext(merged) as Record<string, unknown>),
     };
     // JSON.stringify never throws here: circular refs already replaced.
     sink(JSON.stringify(record), level);
