@@ -117,8 +117,8 @@ export default function AuthCallbackPage() {
         <div className="w-14 h-14 rounded-tk-xl bg-surface-muted border border-line flex items-center justify-center mx-auto p-2">
           <BrandIcon className="w-10 h-10" />
         </div>
-        <div className="space-y-1.5">
-          <Loader2 className="w-6 h-6 text-brand-600 animate-spin mx-auto" />
+        <div className="space-y-1.5" role="status" aria-label="Signing you in">
+          <Loader2 aria-hidden="true" className="w-6 h-6 text-brand-600 animate-spin mx-auto" />
           <h1 className="text-tk-body font-bold text-ink">Signing you in to CareerMonke…</h1>
           <p className="text-tk-caption text-ink-muted">
             Verifying your secure credentials. This only takes a moment.
