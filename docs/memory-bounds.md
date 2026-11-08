@@ -7,7 +7,7 @@ caps. This is not proof that every allocation or pending request is bounded. Thi
 
 | Structure | Location | Bound |
 | --- | --- | --- |
-| AI idempotency result cache | `src/lib/ai/idempotency.ts` | 10,001 max entries (oldest-first eviction when size exceeds 10,000) + 24h TTL with expired-entry removal on read |
+| AI idempotency result cache | `src/lib/ai/idempotency.ts` | 10,000 max entries (oldest-first eviction after writing when size exceeds 10,000) + 24h TTL with expired-entry removal on read |
 | Admin analytics fallback buffer | `src/lib/admin/analytics.ts` | 5,000 most-recent records (`slice(-5000)`) |
 | Rate-limit fallback stores | `src/lib/api/sharedRateLimit.ts` (stores) + `src/lib/ai/serviceHandler.ts` (`checkRateLimit`, the single write path) | Max 10,000 distinct keys per store (`FALLBACK_RATE_LIMIT_MAX_KEYS`): expired windows evicted first, then the soonest-expiring live window; used only when the shared store is down |
 | Client SWR completed-value store | `src/lib/cache/swr.ts` | `SWR_MAX_ENTRIES = 200`, oldest-written entry evicted; write-through preserves timestamps |
