@@ -43,6 +43,8 @@ The warning threshold (80% of a limit) is a chosen default, not a
 provider number; it exists so the cron goes red before a limit is hit,
 not at it.
 
+See also: [hot-path-complexity-review.md](hot-path-complexity-review.md) for a code-reading complexity review of the job listing and match ranking path.
+
 ## Owner steps (dashboard-bound, monthly)
 
 These metrics have no API and must be read in the vendor dashboards
