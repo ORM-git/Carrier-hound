@@ -81,7 +81,13 @@ export function isSwrStale(key: string, ttlMs = 60_000): boolean {
  */
 export function updateSwr<T>(key: string, updater: (current: T) => T): void {
   const hit = store.get(key) as CacheEntry<T> | undefined;
-  if (hit) writeEntry(key, { data: updater(hit.data), ts: hit.ts });
+  if (hit) {
+    const data = updater(hit.data); // A throwing updater leaves the flight intact.
+    writeEntry(key, { data, ts: hit.ts });
+    // A read started before this mutation must not later overwrite its result.
+    // Existing waiters still settle, but the identity guard prevents publication.
+    inflight.delete(key);
+  }
 }
 
 export function invalidateSwr(keyOrPrefix: string): void {
