@@ -29,6 +29,11 @@ export interface EdgeKvAdapter {
   isEnabled(): boolean;
 }
 
+/** Observability is best-effort too: a failing hook must not break fail-open reads. */
+function notifyError(hook: ((err: unknown) => void) | undefined, err: unknown): void {
+  try { hook?.(err); } catch { /* Preserve the adapter's miss/no-op contract. */ }
+}
+
 type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 
 export interface EdgeKvOptions {
@@ -56,14 +61,14 @@ class BindingEdgeKv implements EdgeKvAdapter {
     try {
       const v = await this.ns.get(key, { type: "text" });
       return typeof v === "string" ? v : null;
-    } catch (err) { this.onError?.(err); return null; }
+    } catch (err) { notifyError(this.onError, err); return null; }
   }
 
   async getJson<T = unknown>(key: string): Promise<T | null> {
     try {
       const v = await this.ns.get(key, { type: "json" });
       return (v ?? null) as T | null;
-    } catch (err) { this.onError?.(err); return null; }
+    } catch (err) { notifyError(this.onError, err); return null; }
   }
 
   async put(key: string, value: string, opts?: { ttlSeconds?: number }): Promise<boolean> {
@@ -74,12 +79,12 @@ class BindingEdgeKv implements EdgeKvAdapter {
       }
       await this.ns.put(key, value, o);
       return true;
-    } catch (err) { this.onError?.(err); return false; }
+    } catch (err) { notifyError(this.onError, err); return false; }
   }
 
   async delete(key: string): Promise<boolean> {
     try { await this.ns.delete(key); return true; }
-    catch (err) { this.onError?.(err); return false; }
+    catch (err) { notifyError(this.onError, err); return false; }
   }
 }
 
@@ -111,19 +116,19 @@ class RestEdgeKv implements EdgeKvAdapter {
       });
       if (!res.ok) throw new Error(`kv HTTP ${res.status}`);
       return res;
-    } catch (err) { this.onError?.(err); return null; }
+    } catch (err) { notifyError(this.onError, err); return null; }
   }
 
   async get(key: string): Promise<string | null> {
     const res = await this.request("GET", key);
     if (!res) return null;
-    try { return await res.text(); } catch (err) { this.onError?.(err); return null; }
+    try { return await res.text(); } catch (err) { notifyError(this.onError, err); return null; }
   }
 
   async getJson<T = unknown>(key: string): Promise<T | null> {
     const text = await this.get(key);
     if (text === null) return null;
-    try { return JSON.parse(text) as T; } catch (err) { this.onError?.(err); return null; }
+    try { return JSON.parse(text) as T; } catch (err) { notifyError(this.onError, err); return null; }
   }
 
   async put(key: string, value: string, opts?: { ttlSeconds?: number }): Promise<boolean> {
