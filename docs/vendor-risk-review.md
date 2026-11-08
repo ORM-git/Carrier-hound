@@ -15,6 +15,8 @@ been verified by this review. Do not use this as customer privacy copy.
 | Cloudflare / Netlify (`docs/runbooks.md`) | Deployments, host environment secrets and availability | Primary/backup host recovery notes in runbooks | Owner: current DNS, deployment access, backup deploy readiness and quotas |
 | Sentry (`SENTRY_DSN` references in application code) | Error telemetry may contain request context | Treat telemetry as restricted operational data; scrub before sending | Owner: retention, access and scrubbing settings in the project |
 
+See also: [security/key-management-and-vendor-terms.md](security/key-management-and-vendor-terms.md) for the key storage summary and the vendor terms and DPA tracking template.
+
 ## Review cadence and change gate
 
 Review on a new vendor, a change in the data it receives, a material outage,
