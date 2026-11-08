@@ -6,6 +6,8 @@ operator or account access has already been arranged. Code inventory checked
 
 ## Repository handoff
 
+For setup commands, checks and how to add a test, see [contributor-setup.md](contributor-setup.md).
+
 A new maintainer should be able to do these steps using their own account:
 
 1. Clone the repo, use the Node version in CI and run `npm ci`.
