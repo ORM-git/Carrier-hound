@@ -19,3 +19,17 @@ cross-instance coordination. If a shared data cache (e.g. the managed
 Redis seam in `docs/managed-redis.md`) is adopted, its entries must use
 one of these strategies - prefix invalidation or version keys for
 write-through data, TTL for read-through data.
+
+## Pending SWR reads
+
+`invalidateSwr` detaches matching pending reads as well as completed values.
+The next fetch starts a new loader. A detached old response cannot republish a
+value or remove the newer dedupe slot, on success or failure. Exact keys take
+precedence when a completed value or pending flight has that exact key;
+otherwise matching prefixes are invalidated. Empty prefix clears all entries
+unless an actual empty key exists (the same exact-key precedence applies).
+
+This does not abort network requests or change the result returned to callers
+already awaiting an old promise. UI callers still own their cancellation or
+request-order guards. `updateSwr` remains a separate write-through operation,
+not invalidation. Deferred-promise tests cover stale success/failure ordering.

@@ -51,12 +51,16 @@ export async function swrFetch<T>(
   if (!pending) {
     pending = fetcher()
       .then((data) => {
-        writeEntry(key, { data, ts: Date.now() });
-        inflight.delete(key);
+        // Invalidation detaches an old flight; only its current replacement
+        // may publish or remove the dedupe slot. Existing waiters still settle.
+        if (inflight.get(key) === pending) {
+          writeEntry(key, { data, ts: Date.now() });
+          inflight.delete(key);
+        }
         return data;
       })
       .catch((err: unknown) => {
-        inflight.delete(key);
+        if (inflight.get(key) === pending) inflight.delete(key);
         throw err;
       });
     inflight.set(key, pending);
@@ -81,8 +85,13 @@ export function updateSwr<T>(key: string, updater: (current: T) => T): void {
 }
 
 export function invalidateSwr(keyOrPrefix: string): void {
-  if (store.delete(keyOrPrefix)) return;
-  for (const key of Array.from(store.keys())) {
-    if (key.startsWith(keyOrPrefix)) store.delete(key);
+  // Preserve exact-key precedence over prefix matching, including flights
+  // that have not produced a completed value yet.
+  const exact = store.has(keyOrPrefix) || inflight.has(keyOrPrefix);
+  for (const key of Array.from(new Set([...Array.from(store.keys()), ...Array.from(inflight.keys())]))) {
+    if (exact ? key === keyOrPrefix : key.startsWith(keyOrPrefix)) {
+      store.delete(key);
+      inflight.delete(key);
+    }
   }
 }
