@@ -30,6 +30,11 @@ export interface RedisAdapter {
   isEnabled(): boolean;
 }
 
+/** Observability is best-effort too: a failing hook must not break fail-open reads. */
+function notifyError(hook: ((err: unknown) => void) | undefined, err: unknown): void {
+  try { hook?.(err); } catch { /* Preserve the adapter's miss/no-op contract. */ }
+}
+
 type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 
 export interface RedisOptions {
@@ -74,7 +79,7 @@ class UpstashRestRedis implements RedisAdapter {
       if (body.error) throw new Error(`redis error: ${body.error}`);
       return body.result ?? null;
     } catch (err) {
-      this.onError?.(err);
+      notifyError(this.onError, err);
       return null;
     }
   }
