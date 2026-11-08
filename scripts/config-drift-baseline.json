@@ -1,19 +1,19 @@
 {
   "version": 1,
-  "generated": "2026-11-07",
+  "generated": "2026-11-08",
   "files": {
     "netlify.toml": "f3079a9dcca3ce25ddd5a6ef86e1032da81732567b7957817ca76b11b7aad737",
     "next.config.mjs": "58594e645a0160175f696a26ab3103cf7a682a3ea98f5d3341fad267a216f5f0",
     "package.json": "cdfffb924dd5fed0b5e8df5b1d2b968e85ee63a075852788faa8b71db3e53318",
     ".github/workflows/board-ingest.yml": "bcf686171a7390e3fdeb115b44364fab05f6bbed7a70b0f00411d3bce38b1976",
     ".github/workflows/capacity-report-cron.yml": "79592676f1e0611debba80ab3e5b641ffab96a85ed7b1d7ba77b6c81bca9bdbf",
-    ".github/workflows/ci.yml": "3dbabba192002a2c029f5bac66d737a4e527da7aff2a2ea3ecc0743e979720e5",
-    ".github/workflows/daily-digest-cron.yml": "4d5ccab1387791d478dcf5815d93f1dca759593f504339801ceb146c234216e6",
-    ".github/workflows/early-access-digest-cron.yml": "3465f77b90568a228ea83fe67da115f270e1003b13cfd4380fe9873c4b32b0ac",
-    ".github/workflows/ingest.yml": "a85d4b0ffb3100cbe17cae731cd04f2616275e8b63ebdd2c8823398be2314dac",
+    ".github/workflows/ci.yml": "508019be20c80f083d52b95d87da46fd18b03e8381265cd07a7028a857a0f4b8",
+    ".github/workflows/daily-digest-cron.yml": "31b7ef763c9ca3b407255f21cf738e3fb994149545b0989fe1fccc993191c5ce",
+    ".github/workflows/early-access-digest-cron.yml": "e4bc35949c06fb612e642a936968c403bba0960ce3082e59b3e449fe1c9e3dfd",
+    ".github/workflows/ingest.yml": "e7d506fd54df6deeff70f975fea62ab27a89b765fd5410827a20ac83192954f6",
     ".github/workflows/plan-regression.yml": "60e1cde0e388fc46a871fca81138d5c963a730f3fa9e8f08c8e08718ea2b7b69",
     ".github/workflows/quality-advisory.yml": "915fd58a520f0178636725a4cfc6d0b924c213d880d6b622f2afaa6c95f023c0",
-    ".github/workflows/retention-cron.yml": "e2b01bdb39a31aa3347bf24b763bea7b7767cd596a3349c76d88e1a8564a63fe",
+    ".github/workflows/retention-cron.yml": "7683c6e28e98c806693322ff70e4ef34d934cb8ee44bb6ad23964f9603e0a9cb",
     ".github/workflows/security-scan.yml": "2ea2452a2a9c3be2fa1098f58f15cb3cf6997f0dd8970c288c90f4f096039462"
   }
 }
