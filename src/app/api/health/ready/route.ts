@@ -31,7 +31,7 @@ async function check() {
 // database from the build; report not ready without a network call.
 const NOT_PROBED = { ready: false, checks: { env: "fail", database: "skipped" } } as const;
 
-export async function GET(req?: Request) {
+export async function GET(req: Request) {
   const result = req ? await check() : NOT_PROBED;
   return new NextResponse(
     JSON.stringify({ status: result.ready ? "ready" : "not_ready", checks: result.checks }),
@@ -39,7 +39,7 @@ export async function GET(req?: Request) {
   );
 }
 
-export async function HEAD(req?: Request) {
+export async function HEAD(req: Request) {
   const result = req ? await check() : NOT_PROBED;
   return new NextResponse(null, { status: result.ready ? 200 : 503, headers: NO_CACHE_HEADERS });
 }
