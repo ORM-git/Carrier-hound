@@ -79,29 +79,33 @@ export async function readChatCompletionStream(
   };
 
   try {
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      drain(false);
-      if (state.done) break;
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        drain(false);
+        if (state.done) break;
+      }
+      buffer += decoder.decode();
+      drain(true);
+    } catch (err) {
+      try {
+        await reader.cancel();
+      } catch {}
+      throw err;
     }
-    buffer += decoder.decode();
-    drain(true);
-  } catch (err) {
-    try {
-      await reader.cancel();
-    } catch {}
-    throw err;
-  }
-  if (state.done) {
-    try {
-      await reader.cancel();
-    } catch {}
-  }
+    if (state.done) {
+      try {
+        await reader.cancel();
+      } catch {}
+    }
 
-  if (!state.content) throw new Error("upstream stream: empty content");
-  const out: UpstreamStreamResult = { choices: [{ message: { content: state.content } }] };
-  if (state.usage) out.usage = state.usage;
-  return out;
+    if (!state.content) throw new Error("upstream stream: empty content");
+    const out: UpstreamStreamResult = { choices: [{ message: { content: state.content } }] };
+    if (state.usage) out.usage = state.usage;
+    return out;
+  } finally {
+    reader.releaseLock();
+  }
 }
