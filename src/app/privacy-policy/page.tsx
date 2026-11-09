@@ -207,7 +207,7 @@ export default function PrivacyPolicyPage() {
         </p>
         <ul className="list-disc pl-5 space-y-2 mb-2">
           <li>
-            <strong>Grievance Officer:</strong> Orissa Lee Patnaik, Olive Ridley Media Private Limited
+            <strong>Grievance Officer:</strong> Simran Mohanty, Olive Ridley Media Private Limited
           </li>
           <li>
             Email:{" "}
@@ -221,10 +221,10 @@ export default function PrivacyPolicyPage() {
           <li>
             Phone:{" "}
             <a
-              href="tel:+919124618200"
+              href="tel:+919078976157"
               className="text-blue-600 underline underline-offset-2 hover:text-blue-800 transition-colors"
             >
-              +91-9124618200
+              +91-9078976157
             </a>
           </li>
           <li>
