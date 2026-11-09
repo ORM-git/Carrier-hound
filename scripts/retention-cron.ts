@@ -26,6 +26,7 @@ dotenv.config({ path: ".env" });
 import { createClient } from "@supabase/supabase-js";
 import { reportCronFailure } from "./lib/cron-sentry";
 import { startCronHeartbeat } from "./lib/cron-heartbeat";
+import { summarizeReindexResults, type ReindexRow } from "../src/lib/maintenance/reindex";
 
 type PurgeRow = {
   table_name: string;
@@ -40,14 +41,6 @@ type ArchiveRow = {
   rows_archived: number;
 };
 
-type ReindexRow = {
-  schema_name: string;
-  table_name: string;
-  index_name: string;
-  size_bytes: number;
-  size_pretty: string;
-  action: string;
-};
 
 async function main() {
   const dry = process.argv.slice(2).includes("--dry");
@@ -196,18 +189,18 @@ async function main() {
     }
   } else {
     const rrows = (reindexData || []) as ReindexRow[];
-    const reindexed = rrows.filter((r) => r.action === "reindexed").length;
-    const failedIdx = rrows.filter((r) => r.action === "failed").length;
+    const summary = summarizeReindexResults(rrows);
     console.log(
-      `Index maintenance: candidates=${rrows.length}  reindexed=${reindexed}  failed=${failedIdx}  mode=${dry ? "dry" : "real"}`
+      `Index maintenance: candidates=${rrows.length}  reindexed=${summary.reindexed}  failed=${summary.failed}  mode=${dry ? "dry" : "real"}`
     );
     try {
       await supabase.from("cron_run_logs").insert({
         job_type: "reindex_maintenance",
-        status: "success",
+        status: summary.status,
+        error_message: summary.errorMessage,
         started_at: new Date(reindexStart).toISOString(),
         completed_at: new Date().toISOString(),
-        metadata: { dry_run: dry, results: reindexData },
+        metadata: { dry_run: dry, results: reindexData, reindexed: summary.reindexed, failed: summary.failed },
       });
     } catch (logErr) {
       console.warn(`- cron_run_logs insert failed (non-fatal): ${logErr}`);
