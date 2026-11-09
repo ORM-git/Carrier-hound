@@ -202,6 +202,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-retention-policy-consistency.ts", command: "npx tsx scripts/test-retention-policy-consistency.ts", classification: "offline" },
   { name: "scripts/test-incident-response-docs.ts", command: "npx tsx scripts/test-incident-response-docs.ts", classification: "offline" },
   { name: "scripts/test-edge-caching-policy.ts", command: "npx tsx scripts/test-edge-caching-policy.ts", classification: "offline" },
+  { name: "scripts/test-analyze-bundle.ts", command: "npx tsx scripts/test-analyze-bundle.ts", classification: "offline" },
   { name: "scripts/test-error-banner-announce.ts", command: "npx tsx scripts/test-error-banner-announce.ts", classification: "offline" },
   { name: "scripts/test-layout-thrash.ts", command: "npx tsx scripts/test-layout-thrash.ts", classification: "offline" },
   { name: "scripts/test-canonical-routes.ts", command: "npx tsx scripts/test-canonical-routes.ts", classification: "offline" },
