@@ -57,6 +57,9 @@ export async function readChatCompletionStream(
 ): Promise<UpstreamStreamResult> {
   if (!body) throw new Error("upstream stream: no body");
   const maxChars = options.maxChars ?? DEFAULT_MAX_UPSTREAM_STREAM_CHARS;
+  if (!Number.isSafeInteger(maxChars) || maxChars < 1) {
+    throw new RangeError("upstream stream: maxChars must be a positive safe integer");
+  }
   const reader = body.getReader();
   const decoder = new TextDecoder("utf-8");
   const state: { content: string; usage?: UpstreamStreamResult["usage"]; done: boolean } = {
