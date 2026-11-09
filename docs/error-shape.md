@@ -3,9 +3,9 @@
 Sheet evidence: "{error} or {ok:false,error} JSON; shape varies slightly per
 route." This document records the canonical rule and every sanctioned
 variant, and `src/lib/__tests__/errorShapeGuard.test.ts` fails CI when a route
-introduces a new unlisted error-body shape. Existing responses are NOT
-rewritten - changing an emitted body is an API-contract change and out of
-scope for a guard PR.
+introduces a new unlisted error-body shape, a non-`false` `ok` value, or a
+non-string `error` field. Existing responses are NOT rewritten - changing an
+emitted body is an API-contract change and out of scope for a guard PR.
 
 ## Canonical rule
 
@@ -41,7 +41,14 @@ These are allowlisted as partial-content payloads, not errors.
 
 ## Guard coverage, honestly
 
-The guard scans direct `NextResponse.json({ ... }, { status: 4xx/5xx })`
-literals in `src/app/api/**/route.ts`. Bodies assembled via helper functions
-or spread variables are outside its view; the canonical rule still applies to
-them - reviewers enforce it until the guard learns those forms.
+The guard in `src/lib/__tests__/errorShapeGuard.test.ts` performs stronger
+static validation over `NextResponse.json(..., ...)` calls in
+`src/app/api/**/route.ts`:
+
+- **Statically validated on recognized object literals**:
+  - Top-level key sets must match `CANONICAL`, `LEGACY`, or `PARTIAL_PAYLOAD`.
+  - Wherever the `ok` key is present on a 4xx/5xx error literal, its value must be the exact boolean literal `false` (`ok: false`).
+  - Public `error` fields (and `message` fields on legacy 403 shapes) are checked against non-string literals (numbers, booleans, `null`, `undefined`, objects, arrays), empty strings, bare error-object identifiers, and unanalyzable object syntax (spreads, shorthand properties, computed keys, duplicate keys), reporting `file:line` diagnostics.
+- **Reported as `unverified` (not claimed covered)**:
+  - Call sites whose body argument is a variable/helper call (`NextResponse.json(parsed, { status: 500 })`), whose options argument or `status` property is dynamic (`status: authCheck.status`), whose partial payload spreads a variable (`{ ...parsed, jobs: [], totalCount: 0 }`), or whose `error` property is a runtime member/interpolation expression (`err?.message || "..."`, `err.message`) are explicitly recorded in `unverified` rather than counted as statically verified literals.
+- **Scope**: This guard provides stronger static validation only; it is not universal runtime normalization and does not complete the entire audit row on its own.
