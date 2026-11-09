@@ -30,7 +30,7 @@ export default function PrivacyPolicyPage() {
         <h1 className="text-2xl sm:text-3xl font-bold text-[#09090B] tracking-tight">
           Privacy Policy
         </h1>
-        <p className="text-xs text-gray-500 font-mono">Last updated: November 6, 2026</p>
+        <p className="text-xs text-gray-500 font-mono">Last updated: November 9, 2026</p>
 
         <p className="mb-2">
           Welcome to CareerMonke. This Privacy Policy explains how Olive Ridley Media Private Limited (&quot;the Company&quot;, &quot;we&quot;, &quot;us&quot;, or &quot;our&quot;) collects, protects, uses, discloses, and processes your personal information when you use our website, mobile applications, and platform tools.
@@ -102,7 +102,7 @@ export default function PrivacyPolicyPage() {
             <strong>What is stored:</strong> the generated result is saved to your account so you can download it again. Your uploaded resume files are stored in private cloud storage accessible only to your account until you delete them or close your account.
           </li>
           <li>
-            Groq&apos;s own handling of the data it receives is governed by Groq&apos;s API terms and privacy policy.
+            <strong>How long Groq keeps it:</strong> Groq does not retain your inference inputs or outputs by default. It may keep temporary logs of inputs and outputs for up to 30 days only to troubleshoot platform reliability or investigate abuse, and it retains usage metadata that does not include your content. Processing happens on Groq&apos;s servers in the United States. See Groq&apos;s data documentation and privacy policy for details.
           </li>
         </ul>
 
