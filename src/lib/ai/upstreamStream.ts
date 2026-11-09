@@ -66,12 +66,15 @@ export async function readChatCompletionStream(
   let buffer = "";
 
   const drain = (final: boolean) => {
+    // [DONE] terminates the response even when more lines share its chunk.
+    if (state.done) { buffer = ""; return; }
     // SSE events are separated by a blank line; process complete lines only.
     const lines = buffer.split(/\r?\n/);
     buffer = final ? "" : (lines.pop() as string);
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       if (line.startsWith("data:")) applyDataLine(line.slice(5), state, maxChars);
+      if (state.done) { buffer = ""; break; }
     }
   };
 
