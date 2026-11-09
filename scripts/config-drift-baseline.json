@@ -1,10 +1,10 @@
 {
   "version": 1,
-  "generated": "2026-11-08",
+  "generated": "2026-11-09",
   "files": {
     "netlify.toml": "f3079a9dcca3ce25ddd5a6ef86e1032da81732567b7957817ca76b11b7aad737",
     "next.config.mjs": "58594e645a0160175f696a26ab3103cf7a682a3ea98f5d3341fad267a216f5f0",
-    "package.json": "cdfffb924dd5fed0b5e8df5b1d2b968e85ee63a075852788faa8b71db3e53318",
+    "package.json": "b8e5bb09ca04d8ca42a647ad303c8f888d562ebb952647f4e231f595d297d3f1",
     ".github/workflows/board-ingest.yml": "bcf686171a7390e3fdeb115b44364fab05f6bbed7a70b0f00411d3bce38b1976",
     ".github/workflows/capacity-report-cron.yml": "79592676f1e0611debba80ab3e5b641ffab96a85ed7b1d7ba77b6c81bca9bdbf",
     ".github/workflows/ci.yml": "508019be20c80f083d52b95d87da46fd18b03e8381265cd07a7028a857a0f4b8",
