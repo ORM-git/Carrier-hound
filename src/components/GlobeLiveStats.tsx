@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
+import { parseGlobeStats } from "@/lib/api/clientSchemas";
 
 interface StatsData {
   jobsToday: number | null;
@@ -37,16 +38,10 @@ export default function GlobeLiveStats() {
       try {
         const res = await fetch("/api/stats");
         if (!res.ok) throw new Error("Failed to fetch stats");
-        const data = await res.json();
+        const parsedStats = parseGlobeStats(await res.json());
+        if (!parsedStats) throw new Error("Unexpected stats payload");
         if (isMounted) {
-          setStats({
-            jobsToday: typeof data.jobsToday === "number" ? data.jobsToday : 0,
-            totalJobs: typeof data.totalJobs === "number" ? data.totalJobs : null,
-            companiesScanned:
-              typeof data.companiesScanned === "number"
-                ? data.companiesScanned
-                : null,
-          });
+          setStats(parsedStats);
           setLastUpdatedTime(Date.now());
           setUpdatedText("updated just now");
         }
