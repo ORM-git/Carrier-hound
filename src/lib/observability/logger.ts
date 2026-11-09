@@ -47,7 +47,7 @@ const defaultSink: LogSink = (line, level) => {
 
 function resolveMinLevel(envValue: string | undefined): number {
   if (envValue === "silent") return Number.POSITIVE_INFINITY;
-  if (envValue && envValue in LEVEL_ORDER) return LEVEL_ORDER[envValue as LogLevel];
+  if (envValue && Object.prototype.hasOwnProperty.call(LEVEL_ORDER, envValue)) return LEVEL_ORDER[envValue as LogLevel];
   return LEVEL_ORDER.info;
 }
 
@@ -99,7 +99,7 @@ export function createLogger(options: LoggerOptions = {}): Logger {
   const baseContext = options.context ? { ...options.context } : {};
   const now = options.now ?? (() => new Date());
   const envLevel = options.level ?? process.env.LOG_LEVEL;
-  const min = typeof envLevel === "string" && envLevel in LEVEL_ORDER
+  const min = typeof envLevel === "string" && Object.prototype.hasOwnProperty.call(LEVEL_ORDER, envLevel)
     ? LEVEL_ORDER[envLevel as LogLevel]
     : envLevel === "silent"
       ? Number.POSITIVE_INFINITY
