@@ -108,8 +108,11 @@ class UpstashRestRedis implements RedisAdapter {
 
   async incr(key: string): Promise<number | null> {
     const r = await this.call(["INCR", key]);
+    // REST proxies may encode integers as strings. Reject coercible non-integer
+    // syntax and values JS cannot represent exactly rather than invent a count.
+    if (typeof r === "string" && !/^-?\d+$/.test(r)) return null;
     const n = typeof r === "string" ? Number(r) : r;
-    return typeof n === "number" && Number.isFinite(n) ? n : null;
+    return typeof n === "number" && Number.isSafeInteger(n) ? n : null;
   }
 }
 
