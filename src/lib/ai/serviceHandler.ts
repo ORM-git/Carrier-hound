@@ -23,6 +23,17 @@ import {
   groqCircuitBreaker,
   _resetGroqCircuitBreaker,
 } from "./circuitBreaker";
+import {
+  AiTextCompletionProviderAdapter,
+  AiTextCompletionRequest,
+  AiTextCompletionResponse,
+  AiTextCompletionOptions,
+  AiProviderUpstreamError,
+  GROQ_CHAT_COMPLETIONS_URL,
+  groqTextCompletionAdapter,
+  createGroqTextCompletionAdapter,
+  extractTextCompletionContent,
+} from "./providerAdapter";
 
 export interface RateLimitBucket {
   count: number;
@@ -138,6 +149,7 @@ export interface AiServiceDeps {
   supabaseAdmin?: any;
   getServerEntitlement?: typeof getServerEntitlement;
   callGroq?: (payload: any, options?: { signal?: AbortSignal }) => Promise<any>;
+  providerAdapter?: AiTextCompletionProviderAdapter;
   consumeSet?: typeof consumeSet;
   refundSet?: typeof refundSet;
   env?: Record<string, any>;
@@ -160,6 +172,17 @@ export {
   GroqCircuitBreaker,
   groqCircuitBreaker,
   _resetGroqCircuitBreaker,
+  AiProviderUpstreamError,
+  GROQ_CHAT_COMPLETIONS_URL,
+  groqTextCompletionAdapter,
+  createGroqTextCompletionAdapter,
+  extractTextCompletionContent,
+};
+export type {
+  AiTextCompletionProviderAdapter,
+  AiTextCompletionRequest,
+  AiTextCompletionResponse,
+  AiTextCompletionOptions,
 };
 
 // Idempotency helpers live in ./idempotency (extracted to keep small test
@@ -984,7 +1007,7 @@ export async function executeAiCore(
         }
       } else {
         const groqApiKey = getRuntimeEnv("GROQ_API_KEY", activeDeps.env);
-        if (!groqApiKey || !groqApiKey.trim()) {
+        if (!activeDeps.providerAdapter && (!groqApiKey || !groqApiKey.trim())) {
           clearTimeout(timeoutHandle);
           releaseProbeIfAny();
           log.error("[AI Service] Missing required environment variable: GROQ_API_KEY");
@@ -999,74 +1022,133 @@ export async function executeAiCore(
           };
         }
 
-        let groqResponse: Response;
-        try {
-          groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${groqApiKey}`,
-            },
-            body: JSON.stringify({
-              model: payload.model,
-              messages: payload.messages,
-              max_tokens: payload.maxOutputTokens,
-              temperature: payload.temperature,
-              ...(payload.jsonMode ? { response_format: { type: "json_object" } } : {}),
-              ...(activeDeps.upstreamStream === true
-                ? { stream: true, stream_options: { include_usage: true } }
-                : {}),
-            }),
-            signal: abortController.signal,
+        if (activeDeps.upstreamStream === true && !activeDeps.providerAdapter) {
+          let groqResponse: Response;
+          try {
+            groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${groqApiKey}`,
+              },
+              body: JSON.stringify({
+                model: payload.model,
+                messages: payload.messages,
+                max_tokens: payload.maxOutputTokens,
+                temperature: payload.temperature,
+                ...(payload.jsonMode ? { response_format: { type: "json_object" } } : {}),
+                ...(activeDeps.upstreamStream === true
+                  ? { stream: true, stream_options: { include_usage: true } }
+                  : {}),
+              }),
+              signal: abortController.signal,
+            });
+          } catch (fetchErr: any) {
+            clearTimeout(timeoutHandle);
+            activeBreaker.recordFailure();
+            log.warn("[AI Service] Network error calling upstream provider:", { error: fetchErr });
+            await settleBudget(0);
+            await rollbackAllQuotas();
+            return {
+              statusCode: 502,
+              body: { error: "AI service request failed or timed out. Please try again." },
+            };
+          }
+
+          if (!groqResponse.ok) {
+            clearTimeout(timeoutHandle);
+            activeBreaker.recordFailure();
+            log.warn(`[AI Service] Upstream provider returned status ${groqResponse.status}`);
+            await settleBudget(0);
+            await rollbackAllQuotas();
+            return {
+              statusCode: 502,
+              body: { error: "AI service generation failed. Please try again." },
+            };
+          }
+
+          try {
+            groqData = await readChatCompletionStream(groqResponse.body);
+          } catch (parseErr) {
+            clearTimeout(timeoutHandle);
+            activeBreaker.recordFailure();
+            log.warn("[AI Service] Failed to parse upstream provider JSON:", { error: parseErr });
+            await settleBudget(0);
+            await rollbackAllQuotas();
+            return {
+              statusCode: 502,
+              body: { error: "AI service returned an invalid response. Please try again." },
+            };
+          }
+        } else {
+          const adapter = activeDeps.providerAdapter ?? groqTextCompletionAdapter;
+          const timeoutPromise = new Promise<never>((_, reject) => {
+            abortController.signal.addEventListener(
+              "abort",
+              () => {
+                const err = new Error("AI service request timed out after 25s");
+                (err as any).name = "AbortError";
+                reject(err);
+              },
+              { once: true }
+            );
           });
-        } catch (fetchErr: any) {
-          clearTimeout(timeoutHandle);
-          activeBreaker.recordFailure();
-          log.warn("[AI Service] Network error calling upstream provider:", { error: fetchErr });
-          await settleBudget(0);
-          await rollbackAllQuotas();
-          return {
-            statusCode: 502,
-            body: { error: "AI service request failed or timed out. Please try again." },
-          };
-        }
-
-        if (!groqResponse.ok) {
-          clearTimeout(timeoutHandle);
-          activeBreaker.recordFailure();
-          log.warn(`[AI Service] Upstream provider returned status ${groqResponse.status}`);
-          await settleBudget(0);
-          await rollbackAllQuotas();
-          return {
-            statusCode: 502,
-            body: { error: "AI service generation failed. Please try again." },
-          };
-        }
-
-        try {
-          groqData =
-            activeDeps.upstreamStream === true
-              ? await readChatCompletionStream(groqResponse.body)
-              : await groqResponse.json();
-        } catch (parseErr) {
-          clearTimeout(timeoutHandle);
-          activeBreaker.recordFailure();
-          log.warn("[AI Service] Failed to parse upstream provider JSON:", { error: parseErr });
-          await settleBudget(0);
-          await rollbackAllQuotas();
-          return {
-            statusCode: 502,
-            body: { error: "AI service returned an invalid response. Please try again." },
-          };
+          try {
+            groqData = await Promise.race([
+              adapter.completeText(payload, {
+                signal: abortController.signal,
+                apiKey: groqApiKey,
+              }),
+              timeoutPromise,
+            ]);
+          } catch (adapterErr: any) {
+            clearTimeout(timeoutHandle);
+            activeBreaker.recordFailure();
+            if (adapterErr instanceof AiProviderUpstreamError) {
+              if (adapterErr.kind === "http_status") {
+                log.warn(`[AI Service] Upstream provider returned status ${adapterErr.status}`);
+                await settleBudget(0);
+                await rollbackAllQuotas();
+                return {
+                  statusCode: 502,
+                  body: { error: "AI service generation failed. Please try again." },
+                };
+              }
+              if (adapterErr.kind === "invalid_json") {
+                log.warn("[AI Service] Failed to parse upstream provider JSON:", {
+                  error: adapterErr.cause ?? adapterErr,
+                });
+                await settleBudget(0);
+                await rollbackAllQuotas();
+                return {
+                  statusCode: 502,
+                  body: { error: "AI service returned an invalid response. Please try again." },
+                };
+              }
+              log.warn("[AI Service] Network error calling upstream provider:", {
+                error: adapterErr.cause ?? adapterErr,
+              });
+              await settleBudget(0);
+              await rollbackAllQuotas();
+              return {
+                statusCode: 502,
+                body: { error: "AI service request failed or timed out. Please try again." },
+              };
+            }
+            log.warn("[AI Service] Network error calling upstream provider:", { error: adapterErr });
+            await settleBudget(0);
+            await rollbackAllQuotas();
+            return {
+              statusCode: 502,
+              body: { error: "AI service request failed or timed out. Please try again." },
+            };
+          }
         }
       }
 
       clearTimeout(timeoutHandle);
 
-      const content =
-        typeof groqData === "string"
-          ? groqData
-          : groqData?.choices?.[0]?.message?.content ?? groqData?.content ?? groqData?.result;
+      const content = extractTextCompletionContent(groqData);
       if (!content) {
         activeBreaker.recordFailure();
         await settleBudget(0);
