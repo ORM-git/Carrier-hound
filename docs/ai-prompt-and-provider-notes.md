@@ -43,29 +43,38 @@ in `<untrusted_candidate_data>` style tags plus `UNTRUSTED_DATA_SYSTEM_GUARD`.
 
 ## Provider abstraction: swap points (row stays PARTIAL)
 
-Groq is called directly, through one OpenAI-style chat-completions request. The places a provider swap would touch:
+Non-streaming text completions in `executeAiCore` (`src/lib/ai/serviceHandler.ts`) now route through a small
+server-only typed adapter interface (`AiTextCompletionProviderAdapter` in `src/lib/ai/providerAdapter.ts`), with
+`groqTextCompletionAdapter` (`createGroqTextCompletionAdapter`) as the default Groq implementation and
+`AiServiceDeps.providerAdapter` as the swap seam alongside the legacy `AiServiceDeps.callGroq` test seam.
 
-| Place | What is Groq-specific |
+The places a real second-provider swap would still touch:
+
+| Place | What is Groq-specific or covered by the adapter |
 | --- | --- |
-| `src/lib/ai/serviceHandler.ts` (upstream `fetch`) | The URL, the `GROQ_API_KEY` bearer header, the request body fields, the `usage` response field |
-| `src/lib/ai/security.ts` `OPERATION_CONFIGS` | Model names (`SMART_MODEL`, `FAST_MODEL` env, with defaults) |
-| `src/lib/ai/upstreamStream.ts` | Reads the stream, including the `x_groq.usage` frame |
-| `src/lib/ai/circuitBreaker.ts` | The breaker is named for Groq but its logic is generic |
-| `AiServiceDeps.callGroq` | A test seam that already replaces the upstream call |
-| `docs/security/secrets-rotation-runbook.md` | The key name and where it is stored |
+| `src/lib/ai/providerAdapter.ts` (`AiTextCompletionProviderAdapter`, `groqTextCompletionAdapter`) | Wraps the non-streaming `POST https://api.groq.com/openai/v1/chat/completions` call, `Authorization: Bearer` header, request body fields (`model`, `messages`, `max_tokens`, `temperature`, `response_format`), and upstream error classification (`network`, `http_status`, `invalid_json`) |
+| `src/lib/ai/serviceHandler.ts` (`executeAiCore`) | Routes non-streaming completions through `activeDeps.providerAdapter ?? groqTextCompletionAdapter`; keeps `AiServiceDeps.callGroq` for existing test callers and keeps `upstreamStream: true` on the direct `fetch` + `readChatCompletionStream` path |
+| `src/lib/ai/security.ts` `OPERATION_CONFIGS` | Model names (`SMART_MODEL`, `FAST_MODEL` env, with Groq defaults) |
+| `src/lib/ai/upstreamStream.ts` | Reads the SSE stream when `upstreamStream: true`, including the `x_groq.usage` frame |
+| `src/lib/ai/circuitBreaker.ts` | The breaker is named for Groq (`GroqCircuitBreaker`) though its state machine is generic |
+| `docs/security/secrets-rotation-runbook.md` | The `GROQ_API_KEY` secret name and where it is stored |
 
-The `callGroq` seam shows the call can be replaced in tests. There is no provider interface with a second
-implementation, so a swap needs a code change and is not tested here (owner decision if wanted).
+Offline unit tests (`src/lib/ai/__tests__/providerAdapter.test.ts`) swap in a `FakeTextCompletionAdapter` to verify
+completion, timeout, upstream error mapping, circuit-breaker accounting, token settlement, and quota rollback without
+calling any live provider. Because there is still only one live provider implementation (Groq), no multi-provider
+runtime fallback, and streaming (`upstreamStream: true`) + model defaults remain Groq-specific, the **Provider
+Abstraction Layer** audit row stays **PARTIAL**.
 
 ## What stays unproven
 
-- Any model behavior. Nothing was run.
+- Any live model behavior. Only offline tests were run.
 - Whether vendor-side prompt retention is on or off.
 - That every other prompt string is free of examples (not each read in full).
+- Any second live provider or multi-provider automatic failover (none exists).
 
 ## Owner steps
 
 1. Say what "few-shot used" in the sheet note referred to, or accept that it is zero-shot today.
 2. Decide whether a human-reviewed quality set is wanted (needs live model calls).
 3. Check the vendor's prompt retention setting and record it privately.
-4. Decide whether a provider interface is worth building before a second provider is needed.
+4. Decide whether a second live provider implementation or streaming-path adapter is needed in the future.
