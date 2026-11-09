@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import { parseTickerResponse } from "@/lib/api/clientSchemas";
 
 export interface TickerJobItem {
   company: string;
@@ -133,7 +134,7 @@ export default function LandingJobsTickerStrip({ initialJobs }: LandingJobsTicke
           return;
         }
         const data = await res.json();
-        const list = Array.isArray(data) ? data : (data?.jobs || []);
+        const list = parseTickerResponse(data);
         if (isMounted) {
           if (list && list.length >= 5) {
             setJobs(list);

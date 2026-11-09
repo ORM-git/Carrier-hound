@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { parseStatsResponse } from "./clientSchemas";
 
 /**
  * Client-side and shared utilities for fetching strictly real platform statistics.
@@ -45,28 +46,9 @@ export async function getLiveStats(): Promise<LiveStatsData | null> {
 
     const res = await fetch("/api/stats", { headers });
     if (!res.ok) return null;
-    const data = await res.json();
-    const activeCount =
-      typeof data.activeJobs === "number"
-        ? data.activeJobs
-        : typeof data.totalJobs === "number"
-        ? data.totalJobs
-        : null;
-    const companyCount =
-      typeof data.companies === "number"
-        ? data.companies
-        : typeof data.companiesScanned === "number"
-        ? data.companiesScanned
-        : null;
-
-    cachedStats = {
-      activeJobs: activeCount,
-      companies: companyCount,
-      jobsToday: typeof data.jobsToday === "number" ? data.jobsToday : 0,
-      totalJobs: activeCount,
-      companiesScanned: companyCount,
-      updatedAt: data.updatedAt,
-    };
+    const parsed = parseStatsResponse(await res.json());
+    if (!parsed) return null;
+    cachedStats = parsed;
     lastFetchTime = now;
     return cachedStats;
   } catch {
