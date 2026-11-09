@@ -92,6 +92,8 @@ export class GroqCircuitBreaker {
    */
   recordFailure(now = Date.now()): void {
     const currentState = this.getState(now);
+    // Failed probes must prune too: a long outage can repeat this branch forever.
+    this.failureTimestamps = this.failureTimestamps.filter((t) => now - t <= this.failureWindowMs);
 
     if (currentState === "HALF_OPEN") {
       // Probe request failed: re-open circuit for cooldownMs
@@ -103,8 +105,6 @@ export class GroqCircuitBreaker {
       return;
     }
 
-    // Prune failure timestamps outside the sliding failureWindowMs (60s)
-    this.failureTimestamps = this.failureTimestamps.filter((t) => now - t <= this.failureWindowMs);
     this.failureTimestamps.push(now);
     this.consecutiveFailures++;
 
