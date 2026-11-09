@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { parseStatsResponse } from "./clientSchemas";
+import { fetchWithRetry } from "./retryFetch";
 
 /**
  * Client-side and shared utilities for fetching strictly real platform statistics.
@@ -44,7 +45,7 @@ export async function getLiveStats(): Promise<LiveStatsData | null> {
       headers["Authorization"] = `Bearer ${token}`;
     }
 
-    const res = await fetch("/api/stats", { headers });
+    const res = await fetchWithRetry(() => fetch("/api/stats", { headers }));
     if (!res.ok) return null;
     const parsed = parseStatsResponse(await res.json());
     if (!parsed) return null;
