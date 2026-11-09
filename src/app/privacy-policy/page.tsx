@@ -102,7 +102,7 @@ export default function PrivacyPolicyPage() {
             <strong>What is stored:</strong> the generated result is saved to your account so you can download it again. Your uploaded resume files are stored in private cloud storage accessible only to your account until you delete them or close your account.
           </li>
           <li>
-            <strong>How long Groq keeps it:</strong> Groq does not retain your inference inputs or outputs by default. It may keep temporary logs of inputs and outputs for up to 30 days only to troubleshoot platform reliability or investigate abuse, and it retains usage metadata that does not include your content. Processing happens on Groq&apos;s servers in the United States. See Groq&apos;s data documentation and privacy policy for details.
+            <strong>How long Groq keeps it:</strong> Groq does not retain your inference inputs or outputs by default. It may keep temporary logs of inputs and outputs for up to 30 days (unless the law requires keeping them longer) only to troubleshoot platform reliability or investigate abuse, and it retains usage metadata that does not include your content. Processing happens on Groq&apos;s servers in the United States. See Groq&apos;s data documentation and privacy policy for details.
           </li>
         </ul>
 
