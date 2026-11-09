@@ -33,8 +33,10 @@ export async function updateWithVersion(
   expectedVersion: number,
   patch: Record<string, unknown>
 ): Promise<VersionedUpdateResult> {
-  const keyCol = (VERSIONED_TABLES as Record<string, string>)[table];
-  if (!keyCol) throw new Error(`optimisticLock: ${String(table)} is not a versioned table`);
+  if (!Object.prototype.hasOwnProperty.call(VERSIONED_TABLES, table)) {
+    throw new Error(`optimisticLock: ${String(table)} is not a versioned table`);
+  }
+  const keyCol = VERSIONED_TABLES[table];
   if (typeof expectedVersion !== "number" || !isFinite(expectedVersion) || Math.floor(expectedVersion) !== expectedVersion || expectedVersion < 1) {
     throw new Error("optimisticLock: expectedVersion must be a positive integer");
   }
