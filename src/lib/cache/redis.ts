@@ -32,7 +32,11 @@ export interface RedisAdapter {
 
 /** Observability is best-effort too: a failing hook must not break fail-open reads. */
 function notifyError(hook: ((err: unknown) => void) | undefined, err: unknown): void {
-  try { hook?.(err); } catch { /* Preserve the adapter's miss/no-op contract. */ }
+  try {
+    // A void callback can still be async. Observe its rejection without waiting
+    // for telemetry, which must never delay the cache miss/no-op response.
+    void Promise.resolve(hook?.(err)).catch(() => {});
+  } catch { /* Preserve the adapter's miss/no-op contract. */ }
 }
 
 type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
