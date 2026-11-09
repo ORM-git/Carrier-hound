@@ -80,6 +80,13 @@ check(
   cron.includes('job_type: "reindex_maintenance"')
 );
 
+check(
+  "per-index failures drive the run-log status, message and counts",
+  cron.includes("const summary = summarizeReindexResults(rrows)") &&
+    /job_type: "reindex_maintenance",\s*status: summary.status,\s*error_message: summary.errorMessage/.test(cron) &&
+    cron.includes("reindexed: summary.reindexed, failed: summary.failed")
+);
+
 const health = fs.readFileSync("scripts/db-health.sql", "utf8");
 check(
   "db-health has index maintenance review section",
