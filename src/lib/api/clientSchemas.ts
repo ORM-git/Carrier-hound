@@ -1,23 +1,19 @@
-import { z } from "zod";
-
 /**
  * Frontend sheet row "Client schema validation (zod/yup)".
- * Runtime schemas for the public JSON payloads the browser consumes
- * (/api/stats and /api/ticker). A malformed response is dropped or
- * normalised to "unknown" instead of reaching component state.
- * No rendered output changes for well-formed payloads.
+ * Small hand-written runtime validators for the public JSON payloads the
+ * browser consumes (/api/stats and /api/ticker). No schema library: this
+ * module is imported by landing client code, which has a first-load budget.
+ * A malformed response is dropped or normalised to null instead of reaching
+ * component state. No rendered output changes for well-formed payloads.
  */
 
-const finiteNumber = z.number().refine((n) => Number.isFinite(n));
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
 
-export const statsResponseSchema = z.object({
-  activeJobs: z.unknown().optional(),
-  totalJobs: z.unknown().optional(),
-  companies: z.unknown().optional(),
-  companiesScanned: z.unknown().optional(),
-  jobsToday: z.unknown().optional(),
-  updatedAt: z.unknown().optional(),
-});
+function numOrNull(v: unknown): number | null {
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
 
 export interface ParsedStats {
   activeJobs: number | null;
@@ -28,25 +24,18 @@ export interface ParsedStats {
   updatedAt?: string;
 }
 
-function numOrNull(v: unknown): number | null {
-  const r = finiteNumber.safeParse(v);
-  return r.success ? r.data : null;
-}
-
 /** Null when the payload is not an object; bad counts become null (jobsToday defaults to 0). */
 export function parseStatsResponse(raw: unknown): ParsedStats | null {
-  const parsed = statsResponseSchema.safeParse(raw);
-  if (!parsed.success) return null;
-  const d = parsed.data;
-  const activeJobs = numOrNull(d.activeJobs) ?? numOrNull(d.totalJobs);
-  const companies = numOrNull(d.companies) ?? numOrNull(d.companiesScanned);
+  if (!isRecord(raw)) return null;
+  const activeJobs = numOrNull(raw.activeJobs) ?? numOrNull(raw.totalJobs);
+  const companies = numOrNull(raw.companies) ?? numOrNull(raw.companiesScanned);
   return {
     activeJobs,
     companies,
-    jobsToday: numOrNull(d.jobsToday) ?? 0,
+    jobsToday: numOrNull(raw.jobsToday) ?? 0,
     totalJobs: activeJobs,
     companiesScanned: companies,
-    updatedAt: typeof d.updatedAt === "string" ? d.updatedAt : undefined,
+    updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : undefined,
   };
 }
 
@@ -56,39 +45,44 @@ export function parseGlobeStats(raw: unknown): {
   totalJobs: number | null;
   companiesScanned: number | null;
 } | null {
-  const parsed = statsResponseSchema.safeParse(raw);
-  if (!parsed.success) return null;
-  const d = parsed.data;
+  if (!isRecord(raw)) return null;
   return {
-    jobsToday: numOrNull(d.jobsToday) ?? 0,
-    totalJobs: numOrNull(d.totalJobs),
-    companiesScanned: numOrNull(d.companiesScanned),
+    jobsToday: numOrNull(raw.jobsToday) ?? 0,
+    totalJobs: numOrNull(raw.totalJobs),
+    companiesScanned: numOrNull(raw.companiesScanned),
   };
 }
 
-export const tickerItemSchema = z.object({
-  company: z.string(),
-  title: z.string(),
-  posted_at: z.string(),
-  logo_url: z.string().nullable(),
-});
-export type TickerItemParsed = z.infer<typeof tickerItemSchema>;
+export interface TickerItemParsed {
+  company: string;
+  title: string;
+  posted_at: string;
+  logo_url: string | null;
+}
 
-/** Accepts a bare array or { jobs: [...] }; drops malformed items; missing logo_url -> null. */
+function parseTickerItem(item: unknown): TickerItemParsed | null {
+  if (!isRecord(item)) return null;
+  const { company, title, posted_at } = item;
+  if (typeof company !== "string") return null;
+  if (typeof title !== "string") return null;
+  if (typeof posted_at !== "string") return null;
+  // Missing logo_url -> null; present but not string|null -> drop the item.
+  const logo = "logo_url" in item ? item.logo_url : null;
+  if (logo !== null && typeof logo !== "string") return null;
+  return { company, title, posted_at, logo_url: logo };
+}
+
+/** Accepts a bare array or { jobs: [...] }; drops malformed items; anything else -> []. */
 export function parseTickerResponse(raw: unknown): TickerItemParsed[] {
   const list = Array.isArray(raw)
     ? raw
-    : raw && typeof raw === "object" && Array.isArray((raw as { jobs?: unknown }).jobs)
-      ? (raw as { jobs: unknown[] }).jobs
+    : isRecord(raw) && Array.isArray(raw.jobs)
+      ? raw.jobs
       : [];
   const out: TickerItemParsed[] = [];
   for (const item of list) {
-    const withLogo =
-      item && typeof item === "object" && !("logo_url" in item)
-        ? { ...(item as object), logo_url: null }
-        : item;
-    const r = tickerItemSchema.safeParse(withLogo);
-    if (r.success) out.push(r.data);
+    const parsed = parseTickerItem(item);
+    if (parsed) out.push(parsed);
   }
   return out;
 }
