@@ -16,7 +16,8 @@ Guarantees (all covered by `scripts/test-structured-logger.ts`):
 - one JSON object per line, always parseable (multi-line messages and
   context values are JSON-escaped, never line-breaking)
 - fields: `ts` (ISO-8601), `level` (`debug` | `info` | `warn` | `error`),
-  `msg`, plus flat context
+  `msg`, plus flat context. The generated `ts`, `level`, and `msg` are reserved;
+  base, child, or per-call context cannot override them
 - level filtering via the `LOG_LEVEL` env var (`debug` | `info` | `warn` |
   `error` | `silent`); default `info`; unknown values fall back to `info`
 - secret redaction: context keys matching
