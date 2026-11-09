@@ -228,6 +228,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-search-path-pinning-policy.ts", command: "npx tsx scripts/test-search-path-pinning-policy.ts", classification: "offline" },
   { name: "scripts/test-analyze-after-ingest-policy.ts", command: "npx tsx scripts/test-analyze-after-ingest-policy.ts", classification: "offline" },
   { name: "scripts/test-migration-rollback-policy.ts", command: "npx tsx scripts/test-migration-rollback-policy.ts", classification: "offline" },
+  { name: "scripts/test-migration-raise-placeholders.ts", command: "npx tsx scripts/test-migration-raise-placeholders.ts", classification: "offline" },
   { name: "scripts/test-pending-apply-markers-policy.ts", command: "npx tsx scripts/test-pending-apply-markers-policy.ts", classification: "offline" },
   { name: "scripts/test-storage-bucket-limits-policy.ts", command: "npx tsx scripts/test-storage-bucket-limits-policy.ts", classification: "offline" },
   { name: "scripts/test-memory-bounds.ts", command: "npx tsx scripts/test-memory-bounds.ts", classification: "offline" },

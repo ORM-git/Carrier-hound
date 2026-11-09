@@ -192,7 +192,7 @@ begin
       TG_TABLE_NAME, v_row_id, TG_OP, v_changed_columns, v_old, v_new, v_actor
     );
   exception when others then
-    raise warning 'row_change_history insert failed for % (% op): %', TG_TABLE_NAME, v_row_id, TG_OP, SQLERRM;
+    raise warning 'row_change_history insert failed for % (row %, op %): %', TG_TABLE_NAME, v_row_id, TG_OP, SQLERRM;
   end;
 
   if TG_OP = 'DELETE' then
