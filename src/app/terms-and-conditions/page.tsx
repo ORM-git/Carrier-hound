@@ -1,6 +1,7 @@
 import React from "react";
 import Link from "next/link";
 import BrandIcon from "@/components/BrandIcon";
+import Footer from "@/components/Footer";
 import { BreadcrumbJsonLd } from "@/components/seo/BreadcrumbJsonLd";
 
 export const metadata = {
@@ -13,6 +14,7 @@ export const metadata = {
 
 export default function TermsPage() {
   return (
+    <>
     <main className="min-h-screen bg-white text-[#09090B] py-16 px-6">
   <BreadcrumbJsonLd trail={[{ name: "Home", path: "/" }, { name: "Terms and Conditions", path: "/terms-and-conditions" }]} />
       {/* Small blue logo (max-width 200px) centered at top */}
@@ -168,25 +170,9 @@ export default function TermsPage() {
         <p className="mb-2">
           These Terms shall be governed by and construed in accordance with the laws of India. Any legal actions or disputes arising out of these terms shall be subject to the exclusive jurisdiction of the courts located in Bhubaneswar, India.
         </p>
-
-        <footer className="pt-8 border-t border-gray-200 text-xs text-gray-500 space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <Link href="/" className="text-blue-600 hover:underline">
-              &larr; Return to Homepage
-            </Link>
-            <div className="flex flex-wrap items-center gap-3">
-              <Link href="/about" className="hover:text-gray-900 transition-colors">About Us</Link>
-              <Link href="/pricing" className="hover:text-gray-900 transition-colors">Pricing</Link>
-              <Link href="/privacy-policy" className="hover:text-gray-900 transition-colors">Privacy Policy</Link>
-              <Link href="/refund-policy" className="hover:text-gray-900 transition-colors">Cancellation &amp; Refund Policy</Link>
-              <Link href="/contact" className="hover:text-gray-900 transition-colors">Contact Us</Link>
-            </div>
-          </div>
-          <p className="text-xs text-gray-400 text-center sm:text-left">
-            © 2026 Olive Ridley Media Private Limited. All rights reserved.
-          </p>
-        </footer>
       </div>
     </main>
+    <Footer />
+    </>
   );
 }
