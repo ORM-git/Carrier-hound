@@ -63,7 +63,7 @@ export const ADD_ON_PACKS: AddOnPack[] = [
 ];
 
 export const ADD_ON_PACKS_NOTE =
-  "Note: add-on packs can only be added for additional usage on an active subscription.";
+  "Add-ons: ₹149 / ₹399 / ₹699 for 10 / 30 / 60 extra generations. Note: add-on packs can only be added for additional usage on an active subscription.";
 
 export const REFUND_POLICY_NOTE = "All sales final, no refunds";
 

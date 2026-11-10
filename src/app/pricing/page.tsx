@@ -525,7 +525,7 @@ export default function PricingPage() {
               Add-on Packs
             </h2>
             <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
-              Need extra AI application sets during your billing period? Add-on generations are used only after your plan quota is exhausted, respect the 30/day fair-use limit, and expire together with the subscription.
+              Need extra capacity during your billing period? 10 / 30 / 60 extra generations are used only after your plan quota is exhausted, respect the 30/day fair-use limit, and expire together with the subscription.
             </p>
           </div>
 

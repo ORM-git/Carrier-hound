@@ -246,7 +246,10 @@ async function runTests() {
   }
   const exactAddonNote =
     "Note: add-on packs can only be added for additional usage on an active subscription.";
-  assert.strictEqual(ADD_ON_PACKS_NOTE, exactAddonNote);
+  assert.ok(
+    ADD_ON_PACKS_NOTE.includes(exactAddonNote),
+    `ADD_ON_PACKS_NOTE must contain "${exactAddonNote}"`
+  );
   assert.ok(
     pricingText.includes(exactAddonNote),
     `/pricing must include the exact add-on note: "${exactAddonNote}"`
