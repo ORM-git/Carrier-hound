@@ -29,7 +29,8 @@ function scan(): Hit[] {
     ...glob.sync("src/lib/**/*.ts"),
   ].filter((f) => !f.includes("__tests__") && !f.endsWith(".test.ts"));
   const hits: Hit[] = [];
-  for (const file of files) {
+  for (const rawFile of files) {
+    const file = rawFile.replace(/\\/g, "/");
     const lines = fs.readFileSync(file, "utf8").split("\n").map(stripStrings);
     for (let i = 0; i < lines.length; i++) {
       if (!LOOP_RE.test(lines[i])) continue;
