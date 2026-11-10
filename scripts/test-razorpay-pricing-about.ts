@@ -17,7 +17,8 @@ import { AppRouterContext } from "next/dist/shared/lib/app-router-context.shared
 import { PathnameContext } from "next/dist/shared/lib/hooks-client-context.shared-runtime";
 
 import { middleware, PUBLIC_ROUTES, PROTECTED_ROUTES } from "../src/middleware";
-import { PLANS, ADD_ON_PACKS, ADD_ON_PACKS_NOTE, formatPriceINR } from "../src/config/plans";
+import { PLANS, ADD_ON_PACKS, ADD_ON_PACKS_NOTE, PLAN_QUOTA_SUMMARY_NOTE, formatPriceINR } from "../src/config/plans";
+import { PLAN_DEFINITIONS } from "../src/lib/billing/quota";
 import PricingPage from "../src/app/pricing/page";
 import AboutUsPage from "../src/app/about/page";
 import TermsPage from "../src/app/terms-and-conditions/page";
@@ -173,6 +174,26 @@ async function runTests() {
   assert.ok(
     pricingText.includes("0 AI application sets"),
     "/pricing must display Free tier usage limit ('0 AI application sets')"
+  );
+
+  // Per-feature quota summary derived directly from PLAN_DEFINITIONS in src/lib/billing/quota.ts
+  const expectedQuotaSummary = `Separate usage pools per feature: Weekly includes ${PLAN_DEFINITIONS.weekly.resume_quota} AI resume tailorings + ${PLAN_DEFINITIONS.weekly.cover_letter_quota} AI cover letters per ${PLAN_DEFINITIONS.weekly.quota_period_days} days; Monthly (${PLAN_DEFINITIONS.monthly.duration_days} days) and Quarterly (${PLAN_DEFINITIONS.quarterly.duration_days} days) include ${PLAN_DEFINITIONS.monthly.resume_quota} AI resume tailorings + ${PLAN_DEFINITIONS.monthly.cover_letter_quota} AI cover letters per ${PLAN_DEFINITIONS.monthly.quota_period_days} days.`;
+  assert.strictEqual(
+    PLAN_QUOTA_SUMMARY_NOTE,
+    expectedQuotaSummary,
+    "PLAN_QUOTA_SUMMARY_NOTE must match exact per-feature quota values in PLAN_DEFINITIONS"
+  );
+  assert.ok(
+    pricingText.includes(expectedQuotaSummary),
+    "/pricing must display the exact per-feature quota summary derived from PLAN_DEFINITIONS"
+  );
+  const plansSrc = fs.readFileSync(path.join(rootDir, "src/config/plans.ts"), "utf-8");
+  assert.strictEqual(
+    /1\s*set\s*=\s*1\s*job\s*extraction/i.test(pricingSrc) ||
+      /1\s*set\s*=\s*1\s*job\s*extraction/i.test(plansSrc) ||
+      /1\s*set\s*=\s*1\s*job\s*extraction/i.test(pricingText),
+    false,
+    "Inaccurate '1 set = 1 job extraction + ...' wording must not appear in pricing page or plans config"
   );
 
   // Payments strictly OFF: no checkout / Razorpay calls, buttons disabled

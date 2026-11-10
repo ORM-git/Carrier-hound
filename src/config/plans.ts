@@ -9,7 +9,7 @@
  * - Weekly: ₹692, billed weekly: 15 sets/week. (Supersedes old ₹499 price).
  * - Monthly: ₹1,499, billed monthly: 60 sets/month. Badge: "Recommended". Default selected.
  * - Quarterly: ₹3,999, billed every 3 months: 60 sets each month, resetting monthly. Badge: "Best value".
- * - 1 Set = 1 job extraction + 1 resume tailoring + 1 cover letter.
+ * - Separate usage pools per feature: Weekly = 15 resume tailorings + 15 cover letters per 7 days; Monthly (30 days) & Quarterly (90 days) = 60 resume tailorings + 60 cover letters per 30 days.
  * - Add-ons: ₹149 / ₹399 / ₹699 for 10 / 30 / 60 extra generations, valid 60 days (planned / coming soon).
  * - Anti-abuse daily limit: 30 generations/day.
  */
@@ -69,6 +69,15 @@ export const REFUND_POLICY_NOTE = "All sales final, no refunds";
 
 export const FAIR_USE_LIMIT_NOTE =
   "Fair-use limit: 30 generations per day on every plan.";
+
+/**
+ * Per-feature quota summary. Values mirror PLAN_DEFINITIONS in src/lib/billing/quota.ts
+ * (resume_quota, cover_letter_quota, quota_period_days, duration_days). Kept as a literal so
+ * this client-imported config never pulls the server-only quota module into the browser bundle;
+ * scripts/test-razorpay-pricing-about.ts asserts it stays in sync with PLAN_DEFINITIONS.
+ */
+export const PLAN_QUOTA_SUMMARY_NOTE =
+  "Separate usage pools per feature: Weekly includes 15 AI resume tailorings + 15 AI cover letters per 7 days; Monthly (30 days) and Quarterly (90 days) include 60 AI resume tailorings + 60 AI cover letters per 30 days.";
 
 export const PER_WEEK_NOTE =
   "*Per-week figures are calculated as (monthly price × 12 / 52) or (quarterly price × 4 / 52) rounded to the nearest rupee. These are comparisons to show relative savings, not weekly charges.";

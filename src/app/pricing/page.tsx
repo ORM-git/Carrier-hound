@@ -15,6 +15,7 @@ import {
   ADD_ON_PACKS,
   ADD_ON_PACKS_NOTE,
   FAIR_USE_LIMIT_NOTE,
+  PLAN_QUOTA_SUMMARY_NOTE,
   PER_WEEK_NOTE,
   UPGRADE_BUTTON_LABEL,
 } from "@/config/plans";
@@ -226,7 +227,7 @@ export default function PricingPage() {
                       All features included in Premium
                     </h2>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                      1 set = 1 job extraction + 1 AI tailored resume + 1 AI cover letter · {FAIR_USE_LIMIT_NOTE}
+                      {PLAN_QUOTA_SUMMARY_NOTE} {FAIR_USE_LIMIT_NOTE}
                     </p>
                   </div>
                 </td>
@@ -469,7 +470,7 @@ export default function PricingPage() {
                 All features included in Premium
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                1 set = 1 job extraction + 1 AI tailored resume + 1 AI cover letter · {FAIR_USE_LIMIT_NOTE}
+                {PLAN_QUOTA_SUMMARY_NOTE} {FAIR_USE_LIMIT_NOTE}
               </p>
             </div>
 
