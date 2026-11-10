@@ -138,7 +138,7 @@ function LandingFooter() {
 
         {/* Bottom row: copyright */}
         <div className="pt-tk-3 flex flex-col sm:flex-row items-center justify-between gap-tk-2 text-center sm:text-left">
-          <p className="text-tk-caption text-ink-subtle">© {new Date().getFullYear()} Olive Ridley Media Private Limited. All rights reserved.</p>
+          <p className="text-tk-caption text-ink-subtle">© 2026 Olive Ridley Media Private Limited. All rights reserved.</p>
           <div className="flex flex-wrap items-center justify-center gap-x-tk-3">
             <Link href="/about" className={landingBottomLinkClass}>
               About Us
@@ -320,7 +320,7 @@ export default function Footer({ isGuide = false }: FooterProps) {
             </Link>
           </div>
           <p className="text-xs text-[#94A3B8]">
-            © {new Date().getFullYear()} Olive Ridley Media Private Limited. All rights reserved.
+            © 2026 Olive Ridley Media Private Limited. All rights reserved.
           </p>
         </div>
       </div>

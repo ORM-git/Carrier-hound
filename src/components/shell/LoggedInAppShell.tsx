@@ -18,6 +18,7 @@ interface LoggedInAppShellProps {
   user?: User | null;
   isPro?: boolean;
   mainClassName?: string;
+  hideFooter?: boolean;
   children: React.ReactNode;
 }
 
@@ -30,6 +31,7 @@ export default function LoggedInAppShell({
   user,
   isPro,
   mainClassName,
+  hideFooter = false,
   children,
 }: LoggedInAppShellProps) {
   const { isExpanded } = useSidebarMode();
@@ -72,6 +74,11 @@ export default function LoggedInAppShell({
         <main id="main-content" className={mainClassName || "flex-1 min-w-0"}>
           {children}
         </main>
+        {!hideFooter && pageLabel !== "PRICING" && (
+          <footer className="border-t border-slate-200/80 bg-white/50 py-4 px-4 sm:px-6 text-center text-xs text-slate-400 mt-auto">
+            <p>© 2026 Olive Ridley Media Private Limited. All rights reserved.</p>
+          </footer>
+        )}
       </div>
     </div>
   );

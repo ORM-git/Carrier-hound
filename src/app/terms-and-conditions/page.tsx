@@ -169,17 +169,22 @@ export default function TermsPage() {
           These Terms shall be governed by and construed in accordance with the laws of India. Any legal actions or disputes arising out of these terms shall be subject to the exclusive jurisdiction of the courts located in Bhubaneswar, India.
         </p>
 
-        <footer className="pt-8 border-t border-gray-200 text-xs text-gray-500 flex flex-wrap items-center justify-between gap-2">
-          <Link href="/" className="text-blue-600 hover:underline">
-            &larr; Return to Homepage
-          </Link>
-          <div className="flex flex-wrap items-center gap-3">
-            <Link href="/about" className="hover:text-gray-900 transition-colors">About Us</Link>
-            <Link href="/pricing" className="hover:text-gray-900 transition-colors">Pricing</Link>
-            <Link href="/privacy-policy" className="hover:text-gray-900 transition-colors">Privacy Policy</Link>
-            <Link href="/refund-policy" className="hover:text-gray-900 transition-colors">Cancellation &amp; Refund Policy</Link>
-            <Link href="/contact" className="hover:text-gray-900 transition-colors">Contact Us</Link>
+        <footer className="pt-8 border-t border-gray-200 text-xs text-gray-500 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <Link href="/" className="text-blue-600 hover:underline">
+              &larr; Return to Homepage
+            </Link>
+            <div className="flex flex-wrap items-center gap-3">
+              <Link href="/about" className="hover:text-gray-900 transition-colors">About Us</Link>
+              <Link href="/pricing" className="hover:text-gray-900 transition-colors">Pricing</Link>
+              <Link href="/privacy-policy" className="hover:text-gray-900 transition-colors">Privacy Policy</Link>
+              <Link href="/refund-policy" className="hover:text-gray-900 transition-colors">Cancellation &amp; Refund Policy</Link>
+              <Link href="/contact" className="hover:text-gray-900 transition-colors">Contact Us</Link>
+            </div>
           </div>
+          <p className="text-xs text-gray-400 text-center sm:text-left">
+            © 2026 Olive Ridley Media Private Limited. All rights reserved.
+          </p>
         </footer>
       </div>
     </main>

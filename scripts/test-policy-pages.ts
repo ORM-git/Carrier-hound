@@ -94,6 +94,7 @@ async function main() {
     "6. Limitation of Liability &amp; Disclaimer",
     "7. Governing Law and Jurisdiction",
     "Bhubaneswar, India",
+    "© 2026 Olive Ridley Media Private Limited. All rights reserved.",
   ];
   for (const phrase of termsPhrases) {
     assert.ok(termsHtml.includes(phrase), `/terms-and-conditions must contain "${phrase}"`);
@@ -125,6 +126,7 @@ async function main() {
     "8. Grievance Officer",
     "Binit Kumar",
     "9. Cookies and Tracking Mechanisms",
+    "© 2026 Olive Ridley Media Private Limited. All rights reserved.",
   ];
   for (const phrase of privacyPhrases) {
     assert.ok(privacyHtml.includes(phrase), `/privacy-policy must contain "${phrase}"`);
@@ -151,6 +153,7 @@ async function main() {
     "Binit Kumar",
     "+91-9124618200",
     "5-7 working days",
+    "© 2026 Olive Ridley Media Private Limited. All rights reserved.",
   ];
   for (const phrase of contactPhrases) {
     assert.ok(contactHtml.includes(phrase), `/contact must contain "${phrase}"`);
@@ -171,6 +174,7 @@ async function main() {
     "support@careermonke.com",
     "order id",
     "Olive Ridley Media Private Limited",
+    "© 2026 Olive Ridley Media Private Limited. All rights reserved.",
   ];
   for (const phrase of refundPhrases) {
     assert.ok(refundHtml.includes(phrase), `/refund-policy must contain "${phrase}"`);
@@ -184,8 +188,8 @@ async function main() {
   assert.ok(footerContent.includes('href="/contact"'), "Footer must link to /contact");
   assert.ok(!footerContent.includes('href="/shipping-and-delivery"'), "Footer must NOT link to /shipping-and-delivery (digital SaaS, no physical shipping)");
   assert.ok(
-    footerContent.includes("Olive Ridley Media Private Limited. All rights reserved."),
-    "Footer legal line must feature Olive Ridley Media Private Limited"
+    footerContent.includes("© 2026 Olive Ridley Media Private Limited. All rights reserved."),
+    "Footer legal line must feature exact line '© 2026 Olive Ridley Media Private Limited. All rights reserved.'"
   );
   assert.ok(
     !footerContent.includes("CareerMonke Inc. All rights reserved."),
