@@ -77,8 +77,9 @@ export default function AdminLayout({
       </main>
 
       {/* Admin Footer */}
-      <footer className="border-t border-slate-200 bg-white py-4 text-center text-xs text-slate-500">
-        CareerMonke Internal Admin Console • Restricted to {ADMIN_EMAIL}
+      <footer className="border-t border-slate-200 bg-white py-4 text-center text-xs text-slate-500 space-y-1">
+        <div>CareerMonke Internal Admin Console • Restricted to {ADMIN_EMAIL}</div>
+        <div className="text-[11px] text-slate-400">© 2026 Olive Ridley Media Private Limited. All rights reserved.</div>
       </footer>
     </div>
   );

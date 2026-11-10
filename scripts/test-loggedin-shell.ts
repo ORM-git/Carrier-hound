@@ -55,6 +55,7 @@ function run() {
     jobsCode = jobsCode.replace(/appliedApps/g, "[] as any");
     jobsCode = jobsCode.replace(/min-h-\[44px\]/g, "min-h-[30px]");
     topBarCode = topBarCode.replace(/min-h-\[44px\]/g, "min-h-[30px]");
+    shellContainerCode = shellContainerCode.replace(/© 2026 Olive Ridley Media Private Limited\. All rights reserved\./g, "");
   }
 
   const failures: string[] = [];
@@ -322,6 +323,14 @@ function run() {
     failures.push("TOUCH ACCESSIBILITY FAIL: Tab buttons must have min-h-[44px] on touch screens.");
   } else {
     console.log("  [PASS] tab buttons: min-h-[44px] touch target enforced across desktop and mobile tabs");
+  }
+
+  // 7. Footer Copyright Line in LoggedInAppShell
+  const hasAppShellCopyright = shellContainerCode.includes("© 2026 Olive Ridley Media Private Limited. All rights reserved.");
+  if (!hasAppShellCopyright) {
+    failures.push("APP SHELL FAIL: LoggedInAppShell must include exact copyright line '© 2026 Olive Ridley Media Private Limited. All rights reserved.'.");
+  } else {
+    console.log("  [PASS] app shell footer: exact corporate copyright line present in LoggedInAppShell");
   }
 
   console.log("\n----------------------------------------------------------------------------------");

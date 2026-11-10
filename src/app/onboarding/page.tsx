@@ -931,6 +931,9 @@ function OnboardingPageInner() {
           </div>
         </div>
       </main>
+      <footer className="py-4 text-center text-xs text-slate-400">
+        © 2026 Olive Ridley Media Private Limited. All rights reserved.
+      </footer>
     </div>
   );
 }
