@@ -289,14 +289,14 @@ async function runTests() {
     "/terms-and-conditions must state that add-on packs expire together with the subscription"
   );
   assert.ok(
-    termsText.includes("all plans are prepaid for a fixed duration and do not renew automatically"),
-    "/terms-and-conditions auto-renewal wording must remain unchanged"
+    termsText.includes("plans renew automatically each billing period"),
+    "/terms-and-conditions must state that plans renew automatically each billing period"
   );
   assert.ok(
     privacyText.includes("Privacy Policy"),
-    "/privacy-policy must render cleanly with auto-renewal/policy wording unchanged"
+    "/privacy-policy must render cleanly"
   );
-  console.log("  [PASS-LOCAL] /terms-and-conditions add-on wording updated; auto-renewal untouched.");
+  console.log("  [PASS-LOCAL] /terms-and-conditions add-on wording and auto-renewal updated.");
 
   // ---------------------------------------------------------------------------
   // 5. /about (About Us) Public Page Content & Prohibited Terms Check

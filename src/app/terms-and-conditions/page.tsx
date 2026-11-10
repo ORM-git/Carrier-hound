@@ -30,10 +30,10 @@ export default function TermsPage() {
         <h1 className="text-2xl sm:text-3xl font-bold text-[#09090B] tracking-tight">
           Terms and Conditions
         </h1>
-        <p className="text-xs text-gray-500 font-mono">Last updated: November 6, 2026</p>
+        <p className="text-xs text-gray-500 font-mono">Last updated: November 10, 2026</p>
 
         <p className="mb-2">
-          Welcome to CareerMonke. These Terms and Conditions (&quot;Terms&quot;) constitute a legally binding agreement made between you, whether personally or on behalf of an entity (&quot;you&quot;, &quot;user&quot;, &quot;subscriber&quot;), and Olive Ridley Media Private Limited (&quot;the Company&quot;, &quot;we&quot;, &quot;us&quot;, or &quot;our&quot;), concerning your access to and use of the CareerMonke website, mobile applications, and platform tools.
+          Welcome to CareerMonke. These Terms and Conditions (&quot;Terms&quot;) constitute a legally binding agreement made between you, whether personally or on behalf of an entity (&quot;you&quot;, &quot;user&quot;, &quot;subscriber&quot;), and Olive Ridley Media Private Limited (&quot;the Company&quot;, &quot;we&quot;, &quot;us&quot;, or &quot;our&quot;), concerning your access to and use of the CareerMonke website and platform tools.
         </p>
 
         <p className="mb-2">
@@ -75,16 +75,16 @@ export default function TermsPage() {
         <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">3. Plans, Pricing, and Add-ons</h2>
         <ul className="list-disc pl-5 space-y-2 mb-2">
           <li>
-            <strong>Subscription plans (prepaid, fixed duration):</strong>
+            <strong>Subscription plans:</strong>
             <ul className="list-disc pl-5 space-y-1 mt-1">
               <li>
-                <strong>Weekly:</strong> 7 days of premium access, including 15 AI generation sets per 7-day period.
+                <strong>Weekly:</strong> 7 days of premium access, including 15 resume + 15 cover letter sets per week (15 AI resume tailorings and 15 AI cover letters per 7-day period).
               </li>
               <li>
-                <strong>Monthly:</strong> 30 days of premium access, including 60 AI generation sets per 30-day period.
+                <strong>Monthly:</strong> 30 days of premium access, including 60 resume + 60 cover letter sets per 30-day period (60 AI resume tailorings and 60 AI cover letters per 30-day period).
               </li>
               <li>
-                <strong>Quarterly:</strong> 90 days of premium access, including 60 AI generation sets per 30-day period.
+                <strong>Quarterly:</strong> 90 days of premium access, including 60 resume + 60 cover letter sets per 30-day period (60 AI resume tailorings and 60 AI cover letters per 30-day period).
               </li>
             </ul>
           </li>
@@ -92,8 +92,8 @@ export default function TermsPage() {
             Current prices are shown on the{" "}
             <Link href="/pricing" className="text-blue-600 underline underline-offset-2 hover:text-blue-800 transition-colors">
               Pricing page
-            </Link>{" "}
-            and confirmed at checkout before you pay.
+            </Link>
+            . Payments will open soon; once enabled, prices are confirmed at checkout before you pay.
           </li>
           <li>
             One AI generation set is consumed when you run the AI resume tailoring or AI cover letter features, subject to a fair-use limit of 30 generations per day on every plan.
@@ -102,10 +102,10 @@ export default function TermsPage() {
             <strong>Add-on packs:</strong> additional generation sets can only be added for additional usage on an active subscription; add-on sets are used only after your plan quota is exhausted and expire together with the subscription.
           </li>
           <li>
-            <strong>No auto-renewal:</strong> all plans are prepaid for a fixed duration and do not renew automatically. No recurring charge will ever be debited. You may purchase a new plan or upgrade at any time; renewing or upgrading extends your access period.
+            <strong>Automatic renewal:</strong> plans renew automatically each billing period. You can turn off auto-renewal anytime before the renewal date. Renewing extends your access period.
           </li>
           <li>
-            <strong>Payment gateway:</strong> all transactions are processed in Indian Rupees (INR) through Razorpay, supporting UPI, NetBanking, and cards. We do not collect or store your complete card numbers, UPI PINs, or netbanking credentials.
+            <strong>Payment gateway:</strong> Payments will open soon. When active, all transactions are processed in Indian Rupees (INR) through Razorpay, supporting UPI, NetBanking, and cards. We do not collect or store your complete card numbers, UPI PINs, or netbanking credentials.
           </li>
           <li>
             <strong>Price changes:</strong> we reserve the right to modify subscription fees upon providing at least 30 days of advance notice to active subscribers via email.
@@ -122,10 +122,10 @@ export default function TermsPage() {
         <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">4. Cancellation, Renewal, and Access After Cancellation</h2>
         <ul className="list-disc pl-5 space-y-2 mb-2">
           <li>
-            Because every plan is prepaid and does not auto-renew, there is no recurring billing to cancel. Your plan simply expires at the end of its paid period and your account returns to the free tier unless you purchase again.
+            Plans renew automatically each billing period unless cancelled. You can turn off auto-renewal anytime before the renewal date. When auto-renewal is turned off, your plan expires at the end of its current paid period and your account returns to the free tier unless you choose to renew.
           </li>
           <li>
-            If you stop using the service or ask us to close your subscription before the period ends, you keep premium access until the end of the period you already paid for. We do not provide refunds or credits for unused time or unused generation sets, except the limited payment-failure cases described in the{" "}
+            If you stop using the service or turn off auto-renewal before the period ends, you keep premium access until the end of the period you already paid for. We do not provide refunds or credits for unused time or unused generation sets, except the limited payment-failure cases described in the{" "}
             <Link href="/refund-policy" className="text-blue-600 underline underline-offset-2 hover:text-blue-800 transition-colors">
               Cancellation &amp; Refund Policy
             </Link>
@@ -136,7 +136,7 @@ export default function TermsPage() {
             <a href="mailto:support@careermonke.com" className="text-blue-600 underline underline-offset-2 hover:text-blue-800 transition-colors">
               support@careermonke.com
             </a>
-            . Deleting your account removes your personal data as described in our{" "}
+            . Account data is deleted after a 30-day period following account closure as described in our{" "}
             <Link href="/privacy-policy" className="text-blue-600 underline underline-offset-2 hover:text-blue-800 transition-colors">
               Privacy Policy
             </Link>

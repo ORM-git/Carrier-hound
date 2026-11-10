@@ -30,7 +30,7 @@ export default function ContactUsPage() {
         <h1 className="text-2xl sm:text-3xl font-bold text-[#09090B] tracking-tight">
           Contact Us
         </h1>
-        <p className="text-xs text-gray-500 font-mono">Last updated: November 9, 2026</p>
+        <p className="text-xs text-gray-500 font-mono">Last updated: November 10, 2026</p>
 
         <p className="mb-2">
           If you have any questions about our job discovery feeds, AI tools, subscription billing, or legal policies, please reach out to our team. We respond to all inquiries within 5-7 working days.
@@ -58,10 +58,10 @@ export default function ContactUsPage() {
           <li>
             <strong>Phone:</strong>{" "}
             <a
-              href="tel:+919078976157"
+              href="tel:+919124618200"
               className="text-blue-600 underline underline-offset-2 hover:text-blue-800 transition-colors"
             >
-              +91-9078976157
+              +91-9124618200
             </a>
           </li>
         </ul>
@@ -72,7 +72,7 @@ export default function ContactUsPage() {
         </p>
         <ul className="list-disc pl-5 space-y-2 mb-2">
           <li>
-            <strong>Grievance Officer:</strong> Simran Mohanty, Olive Ridley Media Private Limited
+            <strong>Grievance Officer:</strong> Binit Kumar, Olive Ridley Media Private Limited
           </li>
           <li>
             Email:{" "}
@@ -86,10 +86,10 @@ export default function ContactUsPage() {
           <li>
             Phone:{" "}
             <a
-              href="tel:+919078976157"
+              href="tel:+919124618200"
               className="text-blue-600 underline underline-offset-2 hover:text-blue-800 transition-colors"
             >
-              +91-9078976157
+              +91-9124618200
             </a>
           </li>
           <li>
