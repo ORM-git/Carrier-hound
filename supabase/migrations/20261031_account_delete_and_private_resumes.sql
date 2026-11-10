@@ -15,7 +15,7 @@
 CREATE TABLE IF NOT EXISTS public.saved_jobs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  job_id TEXT NOT NULL,
+  job_id UUID NOT NULL REFERENCES public.jobs(id) ON DELETE CASCADE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (user_id, job_id)
 );
