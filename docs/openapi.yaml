@@ -265,6 +265,55 @@ paths:
       summary: Current user quota status
       responses:
         "200": { description: Quota payload }
+  /api/notify-me:
+    post:
+      tags: [public]
+      summary: Join the notify-me launch email list
+      description: >-
+        Public endpoint for launch/feature notifications. Validates email,
+        normalises to lowercase, applies shared per-IP rate limiting,
+        includes honeypot detection, and ignores duplicate conflicts without
+        email enumeration. No emails are sent.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  maxLength: 254
+                  description: Subscriber email address (normalised to lowercase).
+                source:
+                  type: string
+                  default: pricing
+                  maxLength: 50
+                  description: Optional referral source or feature tag.
+                website:
+                  type: string
+                  description: Honeypot field (must be empty; populated requests are silently dropped).
+                honeypot:
+                  type: string
+                  description: Alternate honeypot field.
+                hp:
+                  type: string
+                  description: Alternate short honeypot field.
+      responses:
+        "200":
+          description: Generic success response (returned for new signups, duplicates, and honeypot drops to prevent enumeration)
+        "400":
+          description: Invalid email format, missing payload, or header injection attempt
+        "429":
+          description: Rate limit exceeded (5 requests / 60s per IP) with Retry-After header
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+              description: Seconds until the rate limit window resets
+        "500":
+          description: Generic error when database or server is unavailable
   /api/radar:
     get:
       tags: [public]
