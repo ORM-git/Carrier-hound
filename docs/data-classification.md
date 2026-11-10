@@ -29,6 +29,7 @@ Cross-references: `docs/retention-policy.md` (per-table retention classes),
 | `user_addon_credits` | add-on credit balance per user | Billing-adjacent. |
 | `dunning_logs` | failed-payment retry state per subscription | Billing-adjacent. |
 | `early_access_emails` / `early_access_approved` | email addresses of pre-signup leads | PII before an account exists; covered by account-deletion email matching. |
+| `notify_me_signups` | email addresses and signup source for launch/feature notifications | PII before an account exists; service-role only; retention: until the launch notification is sent or the user asks for removal (20261108c, NOT APPLIED). |
 | `email_suppressions` | email + suppression reason | Kept to honor opt-outs; do not purge blindly. |
 | `gmail_send_log` | recipient email per send | Doubles as suppression evidence (180-day retention). |
 | `page_views` | user id (nullable), salted IP hash, user agent, paths | Behavioral; 90-day retention. |
