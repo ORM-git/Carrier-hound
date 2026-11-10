@@ -9,13 +9,13 @@ import {
   PLANS,
   type PlanConfig,
   PAID_PLANS_DISPLAY_ORDER,
-  FREE_TIER_CONFIG,
   getPlanBillingLabel,
   getPlanPerWeekText,
   formatPriceINR,
+  ADD_ON_PACKS,
   ADD_ON_PACKS_NOTE,
-  REFUND_POLICY_NOTE,
   FAIR_USE_LIMIT_NOTE,
+  PLAN_QUOTA_SUMMARY_NOTE,
   PER_WEEK_NOTE,
   UPGRADE_BUTTON_LABEL,
 } from "@/config/plans";
@@ -66,30 +66,6 @@ export default function PricingPage() {
     };
   }, []);
 
-  // Razorpay order verification handler (payments stay strictly OFF)
-  const handleInitiateCheckout = async () => {
-    // Payments stay strictly OFF until stage 2 live activation
-    const isBillingEnabled = process.env.NEXT_PUBLIC_BILLING_ENABLED === "true";
-    if (!isBillingEnabled) {
-      console.log("[Pricing] Pro launching soon - payments are disabled.");
-      return;
-    }
-
-    try {
-      const res = await fetch("/api/billing/razorpay/order", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ planId: selectedPlanId }),
-      });
-      if (!res.ok) {
-        throw new Error("Checkout is unavailable right now, please try again later.");
-      }
-      console.log("Test payment successful (no Pro granted)");
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
   const handleSelectPlan = (planId: PlanConfig["id"]) => {
     setSelectedPlanId(planId);
   };
@@ -128,7 +104,11 @@ export default function PricingPage() {
         <p className="text-sm sm:text-base text-slate-600 dark:text-slate-400 leading-relaxed max-w-2xl mx-auto">
           Stronger resumes + faster applications tailored to verified unindexed remote roles.
         </p>
-
+        <div className="pt-2">
+          <span className="inline-flex items-center px-3.5 py-1.5 rounded-full text-xs sm:text-sm font-semibold bg-blue-50 text-[#2563EB] dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+            Payments will open soon.
+          </span>
+        </div>
       </div>
 
       {/* 2 & 3. Main Jobright-Turbo-Style Layout: Left Big Rounded Card (3 Tiles + Table) + Right Grey Panel */}
@@ -173,11 +153,16 @@ export default function PricingPage() {
                           )}
                         >
                           <div>
-                            {/* Plan Name */}
-                            <div className="mb-2">
+                            {/* Plan Name & Badge */}
+                            <div className="flex items-center justify-between gap-2 mb-2">
                               <span className="text-lg font-bold text-[#090E34] dark:text-white">
                                 {plan.name}
                               </span>
+                              {plan.badge && (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-[#2563EB] dark:bg-blue-950/60 dark:text-blue-300 border border-blue-100 dark:border-blue-900/40">
+                                  {plan.badge}
+                                </span>
+                              )}
                             </div>
 
                             {/* Big Price from Config */}
@@ -197,40 +182,29 @@ export default function PricingPage() {
                               {perWeekText}
                             </p>
 
+                            {/* Configured Quota / Usage Limit */}
+                            <p className="text-xs font-medium text-slate-600 dark:text-slate-300 mt-1.5">
+                              {plan.subLine}
+                            </p>
+
                             <p className="sr-only">{getPlanBillingLabel(plan)}</p>
-                            <p className="sr-only">{plan.subLine}</p>
                           </div>
 
-                          {/* Upgrade Button */}
+                          {/* Upgrade Button (Payments strictly OFF) */}
                           <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
-                            {user ? (
-                              <button
-                                type="button"
-                                disabled
-                                aria-disabled="true"
-                                onClick={handleInitiateCheckout}
-                                className={cnTokens(
-                                  "w-full min-h-[48px] h-11 rounded-lg font-semibold text-sm flex items-center justify-center transition-colors cursor-not-allowed select-none",
-                                  isSelected
-                                    ? "bg-[#2563EB] text-white hover:bg-blue-700 shadow-xs"
-                                    : "bg-black text-white hover:bg-neutral-800 dark:bg-slate-100 dark:text-slate-900"
-                                )}
-                              >
-                                Upgrade
-                              </button>
-                            ) : (
-                              <Link
-                                href="/login"
-                                className={cnTokens(
-                                  "w-full min-h-[48px] h-11 rounded-lg font-semibold text-sm flex items-center justify-center transition-colors select-none",
-                                  isSelected
-                                    ? "bg-[#2563EB] text-white hover:bg-blue-700 shadow-xs"
-                                    : "bg-black text-white hover:bg-neutral-800 dark:bg-slate-100 dark:text-slate-900"
-                                )}
-                              >
-                                Upgrade
-                              </Link>
-                            )}
+                            <button
+                              type="button"
+                              disabled
+                              aria-disabled="true"
+                              className={cnTokens(
+                                "w-full min-h-[48px] h-11 rounded-lg font-semibold text-sm flex items-center justify-center transition-colors cursor-not-allowed select-none opacity-80",
+                                isSelected
+                                  ? "bg-[#2563EB] text-white shadow-xs"
+                                  : "bg-black text-white dark:bg-slate-100 dark:text-slate-900"
+                              )}
+                            >
+                              Upgrade
+                            </button>
                             <div className="flex justify-center mt-2">
                               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
                                 {UPGRADE_BUTTON_LABEL}
@@ -252,6 +226,9 @@ export default function PricingPage() {
                     <h2 className="text-lg font-bold text-[#090E34] dark:text-white">
                       All features included in Premium
                     </h2>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      {PLAN_QUOTA_SUMMARY_NOTE} {FAIR_USE_LIMIT_NOTE}
+                    </p>
                   </div>
                 </td>
 
@@ -284,6 +261,11 @@ export default function PricingPage() {
                       {/* Subline */}
                       <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 mt-1">
                         Basic search & masked previews
+                      </p>
+
+                      {/* Free Tier Usage Limit */}
+                      <p className="text-xs font-medium text-slate-600 dark:text-slate-300 mt-1.5">
+                        0 AI application sets · Unlimited job browsing
                       </p>
                     </div>
 
@@ -391,10 +373,15 @@ export default function PricingPage() {
                   )}
                 >
                   <div>
-                    <div className="mb-1">
+                    <div className="flex items-center justify-between gap-2 mb-1">
                       <span className="text-lg font-bold text-[#090E34] dark:text-white">
                         {plan.name}
                       </span>
+                      {plan.badge && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-[#2563EB] dark:bg-blue-950/60 dark:text-blue-300 border border-blue-100 dark:border-blue-900/40">
+                          {plan.badge}
+                        </span>
+                      )}
                     </div>
 
                     <div className="my-1">
@@ -410,26 +397,21 @@ export default function PricingPage() {
                         {perWeekText}
                       </span>
                     </div>
+
+                    <p className="text-xs font-medium text-slate-600 dark:text-slate-300 mt-1.5">
+                      {plan.subLine}
+                    </p>
                   </div>
 
                   <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
-                    {user ? (
-                      <button
-                        type="button"
-                        disabled
-                        aria-disabled="true"
-                        className="w-full min-h-[48px] h-11 rounded-lg bg-[#2563EB] text-white font-semibold text-sm flex items-center justify-center cursor-not-allowed select-none"
-                      >
-                        Upgrade
-                      </button>
-                    ) : (
-                      <Link
-                        href="/login"
-                        className="w-full min-h-[48px] h-11 rounded-lg bg-[#2563EB] text-white font-semibold text-sm flex items-center justify-center select-none"
-                      >
-                        Upgrade
-                      </Link>
-                    )}
+                    <button
+                      type="button"
+                      disabled
+                      aria-disabled="true"
+                      className="w-full min-h-[48px] h-11 rounded-lg bg-[#2563EB] text-white font-semibold text-sm flex items-center justify-center cursor-not-allowed select-none opacity-80"
+                    >
+                      Upgrade
+                    </button>
                     <div className="flex justify-center mt-2">
                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
                         {UPGRADE_BUTTON_LABEL}
@@ -468,6 +450,10 @@ export default function PricingPage() {
                   Basic search & masked previews
                 </span>
               </div>
+
+              <p className="text-xs font-medium text-slate-600 dark:text-slate-300 mt-1.5">
+                0 AI application sets · Unlimited job browsing
+              </p>
             </div>
 
             <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-800">
@@ -483,33 +469,36 @@ export default function PricingPage() {
               <h2 className="text-base font-bold text-[#090E34] dark:text-white">
                 All features included in Premium
               </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                {PLAN_QUOTA_SUMMARY_NOTE} {FAIR_USE_LIMIT_NOTE}
+              </p>
             </div>
 
             <div className="overflow-x-auto -mx-2 px-2">
-              <table className="w-full text-left border-collapse min-w-[500px]">
+              <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                    <th className="py-2.5 px-3">Feature</th>
-                    <th className="py-2.5 px-3 text-center">Free</th>
-                    <th className="py-2.5 px-3 text-center">Premium</th>
+                    <th className="py-2.5 px-2">Feature</th>
+                    <th className="py-2.5 px-2 text-center">Free</th>
+                    <th className="py-2.5 px-2 text-center">Premium</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-xs">
                   {PLAN_FEATURE_ROWS.map((row, idx) => (
                     <tr key={idx}>
-                      <td className="py-2.5 px-3">
+                      <td className="py-2.5 px-2">
                         <span className="font-semibold text-[#090E34] dark:text-white block">
                           {row.name}
                         </span>
-                        <span className="text-[11px] text-slate-500 block mt-0.5">
+                        <span className="text-[11px] text-slate-500 block mt-0.5 leading-snug">
                           {row.info}
                         </span>
                       </td>
-                      <td className="py-2.5 px-3 text-center align-middle text-slate-600">
+                      <td className="py-2.5 px-2 text-center align-middle text-slate-600">
                         {row.free}
                       </td>
-                      <td className="py-2.5 px-3 text-center align-middle">
-                        <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-blue-50 text-[#2563EB]">
+                      <td className="py-2.5 px-2 text-center align-middle">
+                        <span className="inline-flex items-center justify-center px-2 py-1 rounded-lg text-[11px] font-semibold bg-blue-50 text-[#2563EB] text-center leading-snug">
                           {row.premium}
                         </span>
                       </td>
@@ -522,18 +511,69 @@ export default function PricingPage() {
         </div>
       </div>
 
-      {/* 5. Under the table: Notes, Final-sale, and Footnote */}
-      <div className="w-full max-w-3xl mx-auto mt-8 px-4 text-center space-y-4">
-        <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800">
-          <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 font-medium leading-relaxed">
-            Add-on packs ₹149/₹399/₹699 · 10/30/60 extra generations. Extra generations on any plan: burn only after the plan quota is used, 60-day validity, daily limit still applies. Final-sale.
-          </p>
-        </div>
+      {/* 5. Clearly Separated Add-on Packs Section */}
+      <section
+        aria-labelledby="addon-packs-heading"
+        className="w-full mt-10 pt-8 border-t border-slate-200 dark:border-slate-800"
+      >
+        <div className="w-full bg-white dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 sm:p-8 shadow-xs space-y-5">
+          <div className="space-y-1.5 text-center sm:text-left">
+            <h2
+              id="addon-packs-heading"
+              className="text-lg sm:text-xl font-bold text-[#090E34] dark:text-white"
+            >
+              Add-on Packs
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+              Need extra capacity during your billing period? 10 / 30 / 60 extra generations are used only after your plan quota is exhausted, respect the 30/day fair-use limit, and expire together with the subscription.
+            </p>
+          </div>
 
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {ADD_ON_PACKS.map((pack) => (
+              <div
+                key={pack.sets}
+                className="flex flex-col justify-between rounded-xl border border-slate-200 dark:border-slate-800 bg-[#F8F9FA] dark:bg-slate-900/60 p-4 sm:p-5"
+              >
+                <div>
+                  <span className="text-xs font-semibold uppercase tracking-wider text-[#2563EB] dark:text-blue-400">
+                    One-time add-on
+                  </span>
+                  <div className="mt-1 text-2xl font-black text-[#090E34] dark:text-white tracking-tight">
+                    {formatPriceINR(pack.price)}
+                  </div>
+                  <p className="mt-1 text-sm font-semibold text-slate-800 dark:text-slate-200">
+                    {pack.sets} extra generations
+                  </p>
+                </div>
+                <p className="mt-3 pt-2.5 border-t border-slate-200/80 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400">
+                  Used after plan quota · Expires together with your subscription
+                </p>
+              </div>
+            ))}
+          </div>
+
+          <div className="p-3.5 rounded-xl bg-blue-50/60 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/50 text-center sm:text-left">
+            <p className="text-xs sm:text-sm font-semibold text-[#090E34] dark:text-white">
+              {ADD_ON_PACKS_NOTE}
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* 6. Under the section: Final-sale and Policy Links */}
+      <div className="w-full max-w-3xl mx-auto mt-6 px-4 text-center space-y-4">
         <div className="pt-2 text-center space-y-2 text-xs text-slate-500 dark:text-slate-400">
           <p className="font-bold text-[#090E34] dark:text-white">All sales final · no refunds</p>
-          <p>Plans are prepaid for a fixed duration and do not auto-renew. Premium access ends automatically when the plan period expires. Planned add-on packs, when offered, expire 60 days after purchase.</p>
+          <p>Plans are prepaid for a fixed duration and do not auto-renew. Premium access ends automatically when the plan period expires. Add-on packs expire together with the subscription.</p>
           <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
+            <Link
+              href="/about"
+              className="hover:text-[#2563EB] dark:hover:text-blue-400 underline underline-offset-2 transition-colors"
+            >
+              About Us
+            </Link>
+            <span aria-hidden="true" className="text-slate-300 dark:text-slate-700">·</span>
             <Link
               href="/terms-and-conditions"
               className="hover:text-[#2563EB] dark:hover:text-blue-400 underline underline-offset-2 transition-colors"

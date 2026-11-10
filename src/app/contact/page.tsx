@@ -100,11 +100,18 @@ export default function ContactUsPage() {
           Grievances are acknowledged and resolved within 5-7 working days.
         </p>
 
-        <div className="pt-8 border-t border-gray-200 text-xs text-gray-500">
+        <footer className="pt-8 border-t border-gray-200 text-xs text-gray-500 flex flex-wrap items-center justify-between gap-2">
           <Link href="/" className="text-blue-600 hover:underline">
             &larr; Return to Homepage
           </Link>
-        </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <Link href="/about" className="hover:text-gray-900 transition-colors">About Us</Link>
+            <Link href="/pricing" className="hover:text-gray-900 transition-colors">Pricing</Link>
+            <Link href="/privacy-policy" className="hover:text-gray-900 transition-colors">Privacy Policy</Link>
+            <Link href="/terms-and-conditions" className="hover:text-gray-900 transition-colors">Terms &amp; Conditions</Link>
+            <Link href="/refund-policy" className="hover:text-gray-900 transition-colors">Cancellation &amp; Refund Policy</Link>
+          </div>
+        </footer>
       </div>
     </main>
   );

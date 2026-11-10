@@ -36,6 +36,7 @@ export const PUBLIC_ROUTES: readonly string[] = [
   "/login",
   "/signup",
   "/pricing",
+  "/about",
   "/privacy",
   "/privacy-policy",
   "/terms-and-conditions",
@@ -85,6 +86,8 @@ function isStaticAssetPath(pathname: string): boolean {
 
 function isLegalPath(pathname: string): boolean {
   return (
+    pathname === "/about" ||
+    pathname.startsWith("/about/") ||
     pathname === "/privacy" ||
     pathname.startsWith("/privacy/") ||
     pathname === "/privacy-policy" ||
