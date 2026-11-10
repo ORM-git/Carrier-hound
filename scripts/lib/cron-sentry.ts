@@ -24,3 +24,22 @@ export async function reportCronFailure(cronName: string, err: unknown): Promise
     // Never let monitoring break the cron's own exit path.
   }
 }
+
+export async function reportCronFailureMessage(
+  cronName: string,
+  message: string,
+  extra?: Record<string, unknown>
+): Promise<void> {
+  try {
+    Sentry.withScope((scope) => {
+      scope.setTag("cron", cronName);
+      if (extra) {
+        scope.setExtras(extra);
+      }
+      Sentry.captureMessage(message, "error");
+    });
+    await Sentry.flush(2000);
+  } catch {
+    // Never let monitoring break the cron's own exit path.
+  }
+}
