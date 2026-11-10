@@ -20,6 +20,7 @@ export const ROUTE_TIME_BUDGETS_MS: Record<string, number> = {
   "/api/ai": 30000,
   // Public write endpoints.
   "/api/early-access": 3000,
+  "/api/notify-me": 3000,
   // Public read endpoints backed by the jobs table.
   "/api/jobs/search": 2000,
   // Cheap public reads.

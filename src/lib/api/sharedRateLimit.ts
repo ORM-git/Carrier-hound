@@ -78,6 +78,7 @@ export function getKeyClass(key: string): string {
   if (key.startsWith("stats")) return "stats";
   if (key.startsWith("ticker")) return "ticker";
   if (key.startsWith("early_access") || key.startsWith("early-access")) return "early_access";
+  if (key.startsWith("notify_me") || key.startsWith("notify-me")) return "notify_me";
 
   const parts = key.split(":");
   if (parts.length >= 2 && !/^\d+\.\d+\.\d+\.\d+$/.test(parts[1]) && !parts[1].includes(".")) {
@@ -360,4 +361,15 @@ export const tickerRateLimitStore = new Map<string, { count: number; resetAt: nu
 
 export function _resetTickerRateLimitStore() {
   tickerRateLimitStore.clear();
+}
+
+export const NOTIFY_ME_RATE_LIMIT = {
+  maxRequests: 5,
+  windowSeconds: 60,
+};
+
+export const notifyMeRateLimitStore = new Map<string, { count: number; resetAt: number }>();
+
+export function _resetNotifyMeRateLimitStore() {
+  notifyMeRateLimitStore.clear();
 }
