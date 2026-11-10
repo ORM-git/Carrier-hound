@@ -63,7 +63,7 @@ export const ADD_ON_PACKS: AddOnPack[] = [
 ];
 
 export const ADD_ON_PACKS_NOTE =
-  "Planned Add-ons: ₹149 / ₹399 / ₹699 for 10 / 30 / 60 extra generations, used after plan quota, valid 60 days (coming soon).";
+  "Note: add-on packs can only be added for additional usage on an active subscription.";
 
 export const REFUND_POLICY_NOTE = "All sales final, no refunds";
 
@@ -228,7 +228,7 @@ export const PLAN_COMPARISON_ROWS: PlanComparisonRow[] = [
   {
     category: "Add-on Capacity",
     feature: "Extra Add-on Credit Packs",
-    description: "₹149 / ₹399 / ₹699 for 10 / 30 / 60 extra generations (valid 60 days after quota)",
+    description: "₹149 / ₹399 / ₹699 for 10 / 30 / 60 extra generations (used after plan quota, expires with subscription)",
     free: false,
     premium: "Coming soon",
     isUpcoming: true,

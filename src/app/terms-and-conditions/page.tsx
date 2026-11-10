@@ -99,7 +99,7 @@ export default function TermsPage() {
             One AI generation set is consumed when you run the AI resume tailoring or AI cover letter features, subject to a fair-use limit of 30 generations per day on every plan.
           </li>
           <li>
-            <strong>Planned add-on packs:</strong> additional generation sets are planned as one-time add-on packs; when offered, add-on sets are used only after your plan quota is exhausted and expire 60 days after purchase.
+            <strong>Add-on packs:</strong> additional generation sets can only be added for additional usage on an active subscription; add-on sets are used only after your plan quota is exhausted and expire together with the subscription.
           </li>
           <li>
             <strong>No auto-renewal:</strong> all plans are prepaid for a fixed duration and do not renew automatically. No recurring charge will ever be debited. You may purchase a new plan or upgrade at any time; renewing or upgrading extends your access period.
@@ -169,11 +169,18 @@ export default function TermsPage() {
           These Terms shall be governed by and construed in accordance with the laws of India. Any legal actions or disputes arising out of these terms shall be subject to the exclusive jurisdiction of the courts located in Bhubaneswar, India.
         </p>
 
-        <div className="pt-8 border-t border-gray-200 text-xs text-gray-500">
+        <footer className="pt-8 border-t border-gray-200 text-xs text-gray-500 flex flex-wrap items-center justify-between gap-2">
           <Link href="/" className="text-blue-600 hover:underline">
             &larr; Return to Homepage
           </Link>
-        </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <Link href="/about" className="hover:text-gray-900 transition-colors">About Us</Link>
+            <Link href="/pricing" className="hover:text-gray-900 transition-colors">Pricing</Link>
+            <Link href="/privacy-policy" className="hover:text-gray-900 transition-colors">Privacy Policy</Link>
+            <Link href="/refund-policy" className="hover:text-gray-900 transition-colors">Cancellation &amp; Refund Policy</Link>
+            <Link href="/contact" className="hover:text-gray-900 transition-colors">Contact Us</Link>
+          </div>
+        </footer>
       </div>
     </main>
   );

@@ -45,7 +45,7 @@ function LandingFooter() {
                   </Link>
                 </li>
                 <li>
-                  <Link href="/early-access" prefetch={false} className={landingFooterLinkClass}>
+                  <Link href="/pricing" prefetch={false} className={landingFooterLinkClass}>
                     Pricing & Plans
                   </Link>
                 </li>
@@ -84,6 +84,11 @@ function LandingFooter() {
                 <li>
                   <Link href="/contact" prefetch={false} className={landingFooterLinkClass}>
                     Contact Us
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/about" prefetch={false} className={landingFooterLinkClass}>
+                    About Us
                   </Link>
                 </li>
               </ul>
@@ -135,6 +140,9 @@ function LandingFooter() {
         <div className="pt-tk-3 flex flex-col sm:flex-row items-center justify-between gap-tk-2 text-center sm:text-left">
           <p className="text-tk-caption text-ink-subtle">© {new Date().getFullYear()} Olive Ridley Media Private Limited. All rights reserved.</p>
           <div className="flex flex-wrap items-center justify-center gap-x-tk-3">
+            <Link href="/about" className={landingBottomLinkClass}>
+              About Us
+            </Link>
             <Link href="/privacy-policy" className={landingBottomLinkClass}>
               Privacy
             </Link>
@@ -272,6 +280,11 @@ export default function Footer({ isGuide = false }: FooterProps) {
                 </Link>
               </li>
               <li>
+                <Link href="/about" prefetch={false} className={publicFooterLinkClass}>
+                  About Us
+                </Link>
+              </li>
+              <li>
                 <Link href="/privacy" prefetch={false} className={publicFooterLinkClass}>
                   Cookie Notice
                 </Link>
@@ -286,6 +299,10 @@ export default function Footer({ isGuide = false }: FooterProps) {
             <BrandIcon variant="full" width={110} height={44} className="h-7 w-auto" />
           </div>
           <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-[#64748B]">
+            <Link href="/about" className="hover:text-[#2563EB] transition-colors">
+              About Us
+            </Link>
+            <span aria-hidden="true" className="text-slate-300">·</span>
             <Link href="/terms-and-conditions" className="hover:text-[#2563EB] transition-colors">
               Terms
             </Link>
