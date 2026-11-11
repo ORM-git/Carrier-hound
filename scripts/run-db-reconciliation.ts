@@ -152,7 +152,12 @@ export async function executeReconciliation(
   // ============================================================================
   // 2.1 Add-on credit balance sanity bounds (0 <= sets_remaining <= sets_total)
   const { data: creditsData, error: errCredits } = await fetchAllRows(
-    (from, to) => supabase.from("user_addon_credits").select("id, sets_remaining, sets_total").range(from, to),
+    (from, to) =>
+      supabase
+        .from("user_addon_credits")
+        .select("id, sets_remaining, sets_total")
+        .order("id", { ascending: true })
+        .range(from, to),
     pageSize
   );
 
@@ -184,9 +189,10 @@ export async function executeReconciliation(
     (from, to) =>
       supabase
         .from("user_addon_credits")
-        .select("user_id, sets_remaining, expires_at")
+        .select("id, user_id, sets_remaining, expires_at")
         .gt("sets_remaining", 0)
         .gt("expires_at", nowIso)
+        .order("id", { ascending: true })
         .range(from, to),
     pageSize
   );
@@ -203,7 +209,13 @@ export async function executeReconciliation(
     const subUserSet = new Set<string>();
     for (const chunk of userIdChunks) {
       const { data: subsData, error: errSubs } = await fetchAllRows(
-        (from, to) => supabase.from("subscriptions").select("user_id").in("user_id", chunk).range(from, to),
+        (from, to) =>
+          supabase
+            .from("subscriptions")
+            .select("id, user_id")
+            .in("user_id", chunk)
+            .order("id", { ascending: true })
+            .range(from, to),
         pageSize
       );
       if (errSubs) {
@@ -242,6 +254,7 @@ export async function executeReconciliation(
         .from("user_addon_credits")
         .select("id, user_id, order_id")
         .not("order_id", "is", null)
+        .order("id", { ascending: true })
         .range(from, to),
     pageSize
   );
@@ -258,7 +271,13 @@ export async function executeReconciliation(
 
     for (const chunk of orderIdChunks) {
       const { data: ordersData, error: errOrders } = await fetchAllRows(
-        (from, to) => supabase.from("payment_orders").select("id, user_id, status").in("id", chunk).range(from, to),
+        (from, to) =>
+          supabase
+            .from("payment_orders")
+            .select("id, user_id, status")
+            .in("id", chunk)
+            .order("id", { ascending: true })
+            .range(from, to),
         pageSize
       );
       if (errOrders) {

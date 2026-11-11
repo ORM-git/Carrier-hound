@@ -18,6 +18,7 @@
  *   * funnel_stage_progression_bounds (completed <= started for signup, onboarding, apply)
  *   * retention_90d_purge_health (91-day window on both page_views and funnel_events)
  * - Verifies bounded pagination (.range) traverses result sets larger than page size and catches bad rows on later pages.
+ * - Verifies every paginated .range() read requires an explicit stable unique .order() and mock honours requested sort.
  * - Verifies every query error and null count on funnel progression explicitly fails the run.
  *
  * Run: npx tsx scripts/test-reconciliation-workflow-wiring.ts
@@ -46,6 +47,7 @@ interface MockBuilderConfig {
   data?: any[];
   count?: number | null;
   error?: any;
+  requireOrder?: boolean;
   onRange?: (from: number, to: number) => { data: any[] | null; error: any };
   onThen?: (state: any) => { data: any[] | null; count: number | null; error: any };
 }
@@ -56,6 +58,9 @@ function createChainableQuery(config: MockBuilderConfig = {}) {
     isLeak: false,
     isRetention: false,
     eventFilter: null,
+    hasOrder: false,
+    orderColumn: null as string | null,
+    orderAscending: true,
   };
 
   const builder: any = {
@@ -80,14 +85,40 @@ function createChainableQuery(config: MockBuilderConfig = {}) {
       return builder;
     },
     in: () => builder,
+    order: (col: string, opts?: { ascending?: boolean }) => {
+      state.hasOrder = true;
+      state.orderColumn = col;
+      state.orderAscending = opts?.ascending !== false;
+      return builder;
+    },
     range: (from: number, to: number) => {
+      const requireOrder = config.requireOrder !== false;
+      if (requireOrder && !state.hasOrder) {
+        return Promise.resolve({
+          data: null,
+          error: new Error("PAGINATION_ERROR: Query called .range() without explicit stable unique .order()"),
+        });
+      }
       if (config.onRange) {
         return Promise.resolve(config.onRange(from, to));
       }
       if (config.error) {
         return Promise.resolve({ data: null, error: config.error });
       }
-      const data = config.data ?? [];
+      let data = [...(config.data ?? [])];
+      if (state.orderColumn) {
+        const col = state.orderColumn;
+        const asc = state.orderAscending;
+        data.sort((a: any, b: any) => {
+          const valA = a[col];
+          const valB = b[col];
+          if (valA === valB) return 0;
+          if (valA === undefined || valA === null) return asc ? 1 : -1;
+          if (valB === undefined || valB === null) return asc ? -1 : 1;
+          if (valA < valB) return asc ? -1 : 1;
+          return asc ? 1 : -1;
+        });
+      }
       const sliced = data.slice(from, to + 1);
       return Promise.resolve({ data: sliced, error: null });
     },
@@ -130,12 +161,12 @@ function createHealthyMockSupabase(overrides: {
     { id: "c1", sets_remaining: 3, sets_total: 5 },
   ];
   const activeCreditsRows = overrides.activeCreditsRows ?? [
-    { user_id: "u1", sets_remaining: 3, expires_at: "2099-01-01" },
+    { id: "c1", user_id: "u1", sets_remaining: 3, expires_at: "2099-01-01" },
   ];
   const orderCreditsRows = overrides.orderCreditsRows ?? [
     { id: "c1", user_id: "u1", order_id: "order-paid-1" },
   ];
-  const subscriptionsRows = overrides.subscriptionsRows ?? [{ user_id: "u1" }];
+  const subscriptionsRows = overrides.subscriptionsRows ?? [{ id: "sub-1", user_id: "u1" }];
   const paymentOrdersRows = overrides.paymentOrdersRows ?? [
     { id: "order-paid-1", user_id: "u1", status: "paid" },
   ];
@@ -188,7 +219,7 @@ function createHealthyMockSupabase(overrides: {
           return createChainableQuery({ count: 0 });
         }
 
-        // Row queries with pagination (.range)
+        // Row queries with pagination (.range) and required stable unique (.order)
         if (table === "user_addon_credits") {
           if (cols?.includes("sets_total")) {
             return createChainableQuery({ data: creditsBalanceRows });
@@ -265,7 +296,7 @@ async function run() {
   const runnerScriptPath = path.resolve("scripts/run-db-reconciliation.ts");
   check("run-db-reconciliation.ts script exists", fs.existsSync(runnerScriptPath));
 
-  // 4a. Healthy mock: all 9 checks pass
+  // 4a. Healthy mock: all 9 checks pass (verifies all 5 paginated reads include valid .order())
   const mockHealthySupabase: any = createHealthyMockSupabase();
 
   const healthyReport = await executeReconciliation(mockHealthySupabase);
@@ -326,29 +357,45 @@ async function run() {
   const progCheck = progressionReport.results.find((r) => r.checkName === "funnel_stage_progression_bounds");
   check("inverted stage progression (completed > started) fails check", progCheck?.status === "FAIL");
 
-  // 4f. Fixture: result set larger than the page size with a bad row on a later page FAILS
-  // 5 rows total with pageSize = 2. Row index 3 (on page 2) has remaining (10) > total (5).
-  // Without pagination, an unpaginated read or single-page read would stop at page 1 and falsely PASS.
-  const paginatedRows = [
+  // 4f. Fixture: paginated read honours requested .order() and catches bad row on later page
+  // The raw rows are given out-of-order: row c4 (bad row) is intentionally at index 0 of input array.
+  // Because the query requests .order("id", { ascending: true }), the mock sorts them: c1, c2, c3, c4, c5.
+  // With pageSize = 2:
+  // - Page 1 (offset 0..1): c1, c2 (both valid)
+  // - Page 2 (offset 2..3): c3, c4 (c4 has sets_remaining 10 > sets_total 5, BAD ROW!)
+  // - Page 3 (offset 4..5): c5 (valid)
+  // This verifies that .order() is honoured and pagination traverses all pages to catch the bad row.
+  const paginatedUnsortedRows = [
+    { id: "c4", sets_remaining: 10, sets_total: 5 }, // Bad row: sets_remaining (10) > sets_total (5)
     { id: "c1", sets_remaining: 1, sets_total: 5 },
+    { id: "c5", sets_remaining: 4, sets_total: 5 },
     { id: "c2", sets_remaining: 2, sets_total: 5 },
     { id: "c3", sets_remaining: 3, sets_total: 5 },
-    { id: "c4", sets_remaining: 10, sets_total: 5 }, // Bad row on page 2 (index 3)
-    { id: "c5", sets_remaining: 4, sets_total: 5 },
   ];
   const mockPaginatedSupabase: any = createHealthyMockSupabase({
-    creditsBalanceRows: paginatedRows,
+    creditsBalanceRows: paginatedUnsortedRows,
   });
 
   const paginatedReport = await executeReconciliation(mockPaginatedSupabase, { pageSize: 2 });
   const paginatedBalanceCheck = paginatedReport.results.find((r) => r.checkName === "addon_credits_balance_bounds");
   check(
-    "pagination traverses pages and catches bad row on later page",
+    "pagination honours order and catches bad row on later page",
     paginatedBalanceCheck?.status === "FAIL" && paginatedBalanceCheck?.discrepancy === 1
   );
   check("paginated failure marks overall report unhealthy", paginatedReport.healthy === false);
 
-  // 4g. Fixture: query error on funnel progression (must FAIL)
+  // 4g. Fixture: query calling .range() without an explicit .order() fails
+  const unorderedQuery = createChainableQuery({
+    data: [{ id: "c1", sets_remaining: 1, sets_total: 5 }],
+  });
+  const unorderedRes = await unorderedQuery.range(0, 1);
+  check(
+    "mock fails when paginated .range() is called without .order()",
+    unorderedRes.error !== null &&
+      Boolean(unorderedRes.error.message?.includes("without explicit stable unique .order()"))
+  );
+
+  // 4h. Fixture: query error on funnel progression (must FAIL)
   const mockFunnelErrorSupabase: any = createHealthyMockSupabase({
     funnelProgressionHandler: (_stage: string) => ({
       count: null,
@@ -361,7 +408,7 @@ async function run() {
   check("query error on funnel progression fails check", funnelErrorCheck?.status === "FAIL");
   check("query error on funnel progression marks report unhealthy", funnelErrorReport.healthy === false);
 
-  // 4h. Fixture: null count on funnel progression (must FAIL)
+  // 4i. Fixture: null count on funnel progression (must FAIL)
   const mockFunnelNullCountSupabase: any = createHealthyMockSupabase({
     funnelProgressionHandler: (_stage: string) => ({
       count: null,
