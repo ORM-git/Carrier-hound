@@ -262,6 +262,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-request-size-limits.ts", command: "npx tsx scripts/test-request-size-limits.ts", classification: "offline" },
   { name: "scripts/test-pbt-parsers.ts", command: "npx tsx scripts/test-pbt-parsers.ts", classification: "offline" },
   { name: "scripts/test-hover-touch-guards.ts", command: "npx tsx scripts/test-hover-touch-guards.ts", classification: "offline" },
+  { name: "scripts/test-source-health-cron.ts", command: "npx tsx scripts/test-source-health-cron.ts", classification: "offline" },
 ];
 
 export interface RunSummary {

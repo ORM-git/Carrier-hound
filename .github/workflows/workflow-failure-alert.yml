@@ -13,6 +13,7 @@ on:
       - "Daily Job Ingestion & Cleanup Pipeline"
       - "Plan Regression"
       - "Security & Secret Scanning"
+      - "Source Health Monitoring"
     types:
       - completed
 
