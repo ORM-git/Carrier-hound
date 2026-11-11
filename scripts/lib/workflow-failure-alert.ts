@@ -61,6 +61,18 @@ export const SCHEDULED_CRON_WORKFLOWS: readonly string[] = Object.freeze([
   "Weekly Database Reconciliation Audit",
 ]);
 
+export const ALERTABLE_CONCLUSIONS: readonly string[] = Object.freeze([
+  "failure",
+  "cancelled",
+  "timed_out",
+  "stale",
+]);
+
+export function isAlertableConclusion(conclusion: string): boolean {
+  if (!conclusion || typeof conclusion !== "string") return false;
+  return ALERTABLE_CONCLUSIONS.includes(conclusion.trim().toLowerCase());
+}
+
 /** Check whether a workflow name matches the scheduled cron allowlist (case-insensitive). */
 export function isScheduledCronWorkflow(workflowName: string): boolean {
   if (!workflowName || typeof workflowName !== "string") return false;
@@ -159,11 +171,11 @@ export async function processWorkflowAlert(
 ): Promise<WorkflowAlertResult> {
   const dedupeKey = buildCronFailureDedupeKey(event.workflowName, event.createdAt);
 
-  // 1. Filter: conclusion must be 'failure'
-  if (event.conclusion !== "failure") {
+  // 1. Filter: conclusion must be alertable (failure, cancelled, timed_out, stale)
+  if (!isAlertableConclusion(event.conclusion)) {
     return {
       eligible: false,
-      skippedReason: `Conclusion '${event.conclusion}' is not a failure`,
+      skippedReason: `Conclusion '${event.conclusion}' is not an alertable failure/cancellation`,
       sentryDispatched: false,
       issueAction: "none",
       dedupeKey,

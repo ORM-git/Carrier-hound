@@ -7,9 +7,18 @@ export interface IngestRunSnapshot {
   per_source_counts?: unknown;
 }
 
+export interface CollapsedBoard {
+  board: string;
+  previousCount: number;
+  currentCount: number;
+  dropPercent: number;
+}
+
 export interface SourceHealthPolicy {
   maxFailuresInWindow: number;
   staleAfterHours: number;
+  volumeCollapseDropThresholdPercent?: number;
+  minBaselineJobsForCollapse?: number;
 }
 
 export interface SourceHealthResult {
@@ -19,6 +28,53 @@ export interface SourceHealthResult {
   lastFailureAt?: string;
   consecutiveFailures?: number;
   staleAfterHours?: number;
+  collapsedBoards?: CollapsedBoard[];
+}
+
+export function extractBoardCounts(perSourceCounts: unknown): Map<string, number> {
+  const map = new Map<string, number>();
+  if (!perSourceCounts || typeof perSourceCounts !== "object") return map;
+
+  for (const [key, value] of Object.entries(perSourceCounts as Record<string, unknown>)) {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      map.set(key, value);
+    } else if (value && typeof value === "object") {
+      const v = value as Record<string, unknown>;
+      const count =
+        (typeof v.new_canonical === "number" ? v.new_canonical : typeof v.inserted === "number" ? v.inserted : 0) +
+        (typeof v.updated === "number" ? v.updated : 0) +
+        (typeof v.reopened === "number" ? v.reopened : 0);
+      map.set(key, count);
+    }
+  }
+  return map;
+}
+
+export function detectPerBoardVolumeCollapse(
+  currentCounts: Map<string, number>,
+  previousCounts: Map<string, number>,
+  options: { minBaseline?: number; dropThresholdPercent?: number } = {}
+): CollapsedBoard[] {
+  const minBaseline = options.minBaseline ?? 5;
+  const dropThreshold = options.dropThresholdPercent ?? 80;
+  const collapsed: CollapsedBoard[] = [];
+
+  previousCounts.forEach((prevCount, board) => {
+    if (prevCount >= minBaseline) {
+      const currCount = currentCounts.get(board) ?? 0;
+      const dropPct = ((prevCount - currCount) / prevCount) * 100;
+      if (dropPct >= dropThreshold) {
+        collapsed.push({
+          board,
+          previousCount: prevCount,
+          currentCount: currCount,
+          dropPercent: Math.round(dropPct),
+        });
+      }
+    }
+  });
+
+  return collapsed.sort((a, b) => b.dropPercent - a.dropPercent);
 }
 
 export function evaluateSourceHealth(
@@ -58,5 +114,38 @@ export function evaluateSourceHealth(
   if (now - lastSuccess > staleAfterMs) {
     return { status: "degraded", reason: `Last success is older than ${policy.staleAfterHours}h.`, lastSuccessAt: new Date(lastSuccess).toISOString(), staleAfterHours: policy.staleAfterHours };
   }
+
+  // Per-board volume collapse detection across recent runs
+  const runsWithCounts = runs
+    .filter((r) => r && r.per_source_counts && typeof r.per_source_counts === "object")
+    .map((r) => ({
+      run: r,
+      timestamp: Date.parse(String(r.finished_at || r.started_at || "")),
+    }))
+    .filter((r) => Number.isFinite(r.timestamp))
+    .sort((a, b) => b.timestamp - a.timestamp);
+
+  let collapsedBoards: CollapsedBoard[] = [];
+  if (runsWithCounts.length >= 2) {
+    const currCounts = extractBoardCounts(runsWithCounts[0].run.per_source_counts);
+    const prevCounts = extractBoardCounts(runsWithCounts[1].run.per_source_counts);
+    collapsedBoards = detectPerBoardVolumeCollapse(currCounts, prevCounts, {
+      minBaseline: policy.minBaselineJobsForCollapse ?? 5,
+      dropThresholdPercent: policy.volumeCollapseDropThresholdPercent ?? 80,
+    });
+  }
+
+  if (collapsedBoards.length > 0) {
+    return {
+      status: "degraded",
+      reason: `Per-board volume collapse detected on ${collapsedBoards.length} board(s): ${collapsedBoards
+        .map((b) => `${b.board} (${b.previousCount}->${b.currentCount}, -${b.dropPercent}%)`)
+        .join(", ")}`,
+      lastSuccessAt: Number.isFinite(lastSuccess) ? new Date(lastSuccess).toISOString() : undefined,
+      lastFailureAt: Number.isFinite(lastFailure) ? new Date(lastFailure).toISOString() : undefined,
+      collapsedBoards,
+    };
+  }
+
   return { status: "healthy", lastSuccessAt: new Date(lastSuccess).toISOString() };
 }

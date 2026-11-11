@@ -33,4 +33,54 @@ describe("source health classification", () => {
     expect(evaluateSourceHealth([{ finished_at: now, status: "success" }], { maxFailuresInWindow: 0, staleAfterHours: 24 }, now).status).toBe("invalid");
     expect(evaluateSourceHealth([{ finished_at: now, status: "success" }], policy, "bad").status).toBe("invalid");
   });
+  it("detects per-board volume collapse and reports degraded", () => {
+    const runs = [
+      {
+        finished_at: "2026-11-06T11:00:00Z",
+        status: "success",
+        per_source_counts: {
+          stripe: { new_canonical: 0, updated: 0, reopened: 0 },
+          linear: 25,
+        },
+      },
+      {
+        finished_at: "2026-11-05T11:00:00Z",
+        status: "success",
+        per_source_counts: {
+          stripe: { new_canonical: 5, updated: 45, reopened: 0 },
+          linear: 24,
+        },
+      },
+    ];
+    const result = evaluateSourceHealth(runs, policy, now);
+    expect(result.status).toBe("degraded");
+    expect(result.reason).toContain("Per-board volume collapse detected");
+    expect(result.reason).toContain("stripe");
+    expect(result.collapsedBoards?.[0]?.board).toBe("stripe");
+    expect(result.collapsedBoards?.[0]?.previousCount).toBe(50);
+    expect(result.collapsedBoards?.[0]?.currentCount).toBe(0);
+    expect(result.collapsedBoards?.[0]?.dropPercent).toBe(100);
+  });
+  it("passes volume check when counts are stable", () => {
+    const runs = [
+      {
+        finished_at: "2026-11-06T11:00:00Z",
+        status: "success",
+        per_source_counts: {
+          stripe: 48,
+          linear: 25,
+        },
+      },
+      {
+        finished_at: "2026-11-05T11:00:00Z",
+        status: "success",
+        per_source_counts: {
+          stripe: 50,
+          linear: 24,
+        },
+      },
+    ];
+    const result = evaluateSourceHealth(runs, policy, now);
+    expect(result.status).toBe("healthy");
+  });
 });

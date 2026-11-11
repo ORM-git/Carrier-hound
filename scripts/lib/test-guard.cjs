@@ -99,6 +99,7 @@ const SUITE_CLASSIFICATIONS = Object.freeze({
   "scripts/test-email-unsubscribe.ts": "offline",
   "scripts/test-workflow-failure-alert.ts": "offline",
   "scripts/test-incremental-ingestion.ts": "offline",
+  "scripts/test-ingest-measurement.ts": "offline",
 
   // DB-capable suites: read operations
   "scripts/test-enhanced-scoring.ts": "db-read",

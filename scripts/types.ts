@@ -68,12 +68,17 @@ export interface SourceStats {
   sourceId: string;
   sourceName: string;
   type: SourceType;
+  board?: string;
   fetched: number;
   normalized: number;
   inserted: number;
   updated: number;
   skipped: number;
   failed: number;
+  new_canonical?: number;
+  reopened?: number;
+  rejected?: number;
+  duplicate?: number;
   error?: string;
 }
 
@@ -87,6 +92,10 @@ export interface IngestionRunSummary {
   totalUpdated: number;
   totalSkipped: number;
   totalFailed: number;
+  totalNewCanonical?: number;
+  totalReopened?: number;
+  totalRejected?: number;
+  totalDuplicate?: number;
   sources: SourceStats[];
   cleanup: {
     markedExpired: number;

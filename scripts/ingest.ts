@@ -15,6 +15,7 @@ import {
 import { detectCategory, slugify } from './utils/sanitizer';
 import { dropFeedJobsAlreadyCoveredByAts } from './utils/crossSourceDedupe';
 import { resolveCompanyLogo } from '../src/lib/companies/logoResolver';
+import { writeIngestReports } from './lib/ingest-report';
 
 // ISO alpha-2 -> display name for the legacy `country` text column (kept in sync with country_code)
 const COUNTRY_NAMES: Record<string, string> = {
@@ -329,12 +330,17 @@ async function main() {
       sourceId: source.id,
       sourceName: source.name,
       type: source.type,
+      board: source.target,
       fetched: 0,
       normalized: 0,
       inserted: 0,
       updated: 0,
       skipped: 0,
       failed: 0,
+      new_canonical: 0,
+      reopened: 0,
+      rejected: 0,
+      duplicate: 0,
     };
 
     console.log(`[${sourceIndex + 1}/${sources.length}] ▶ Processing [${source.type.toUpperCase()}] ${source.name}...`);
@@ -360,12 +366,14 @@ async function main() {
       const validJobs: NormalizedJob[] = [];
       for (const job of rawJobs) {
         if (!isValidJob(job)) {
+          stats.rejected = (stats.rejected || 0) + 1;
           stats.skipped++;
           continue;
         }
 
         // Intra-run deduplication on apply_url
         if (seenApplyUrls.has(job.apply_url)) {
+          stats.duplicate = (stats.duplicate || 0) + 1;
           stats.skipped++;
           continue;
         }
@@ -377,6 +385,7 @@ async function main() {
         } else {
           // If a verified ATS role already exists, drop the feed duplicate
           if (seenAtsRoles.has(roleDedupeKey)) {
+            stats.duplicate = (stats.duplicate || 0) + 1;
             stats.skipped++;
             continue;
           }
@@ -395,6 +404,7 @@ async function main() {
         const covered = await dropFeedJobsAlreadyCoveredByAts(supabase, validJobs);
         if (covered.dropped > 0) {
           validJobs.splice(0, validJobs.length, ...covered.kept);
+          stats.duplicate = (stats.duplicate || 0) + covered.dropped;
           stats.skipped += covered.dropped;
           totalAccumulatedJobs -= covered.dropped;
           console.log(`   Cross-source dedupe: dropped ${covered.dropped} feed job(s) already covered by a verified ATS row.`);
@@ -402,12 +412,15 @@ async function main() {
       }
 
       stats.normalized = validJobs.length;
-      console.log(`   Fetched: ${stats.fetched} | Valid: ${stats.normalized} | Skipped: ${stats.skipped}`);
+      console.log(`   Fetched: ${stats.fetched} | Valid: ${stats.normalized} | Skipped: ${stats.skipped} (rejected=${stats.rejected}, dup=${stats.duplicate})`);
 
       if (validJobs.length > 0) {
         if (isDryRun || !supabase) {
-          // Print sample job preview in dry run
+          // In dry run, count all valid jobs as new canonical
+          stats.new_canonical = validJobs.length;
           stats.inserted = validJobs.length;
+          stats.updated = 0;
+          stats.reopened = 0;
           const s = validJobs[0];
           console.log(`   [DRY RUN] Sample Job:`);
           console.log(`     Title: ${s.title}`);
@@ -480,6 +493,45 @@ async function main() {
               return row;
             });
 
+            // Pre-classify batch items: new_canonical vs updated vs reopened
+            const sourceJobIds = batchChunk.map((j) => j.source_job_id).filter(Boolean);
+            const existingMap = new Map<string, { id: string; status: string; is_active: boolean }>();
+
+            if (sourceJobIds.length > 0) {
+              try {
+                const { data: existingRows } = await supabase
+                  .from('jobs')
+                  .select('id, source_job_id, status, is_active')
+                  .eq('source', source.type)
+                  .in('source_job_id', sourceJobIds);
+
+                if (existingRows) {
+                  for (const r of existingRows) {
+                    if (r.source_job_id) {
+                      existingMap.set(r.source_job_id, r);
+                    }
+                  }
+                }
+              } catch {
+                // Non-blocking lookup fallback
+              }
+            }
+
+            let batchNewCanonical = 0;
+            let batchUpdated = 0;
+            let batchReopened = 0;
+
+            for (const j of batchChunk) {
+              const existing = existingMap.get(j.source_job_id);
+              if (!existing) {
+                batchNewCanonical++;
+              } else if (existing.status === 'active' && existing.is_active === true) {
+                batchUpdated++;
+              } else {
+                batchReopened++;
+              }
+            }
+
             // Upsert jobs into Supabase
             const { data: upsertedRows, error: upsertErr } = await supabase
               .from('jobs')
@@ -487,7 +539,10 @@ async function main() {
               .select('id, source_job_id');
 
             if (!upsertErr) {
-              stats.inserted += jobsPayload.length;
+              stats.new_canonical = (stats.new_canonical || 0) + batchNewCanonical;
+              stats.inserted = stats.new_canonical;
+              stats.updated += batchUpdated;
+              stats.reopened = (stats.reopened || 0) + batchReopened;
 
               // If job_descriptions table exists, insert/upsert descriptions
               if (hasJobDescriptionsTable && upsertedRows && upsertedRows.length > 0) {
@@ -557,7 +612,8 @@ async function main() {
                   .select('id, source_job_id');
 
                 if (!insErr && insertedRows) {
-                  stats.inserted += insertedRows.length;
+                  stats.new_canonical = (stats.new_canonical || 0) + insertedRows.length;
+                  stats.inserted = stats.new_canonical;
                   if (hasJobDescriptionsTable) {
                     const descBatch = insertedRows
                       .map((r) => {
@@ -585,7 +641,8 @@ async function main() {
                       .maybeSingle();
 
                     if (!singleErr && singleRow) {
-                      stats.inserted++;
+                      stats.new_canonical = (stats.new_canonical || 0) + 1;
+                      stats.inserted = stats.new_canonical;
                       if (hasJobDescriptionsTable) {
                         const original = batchChunk.find((b) => b.source_job_id === singleRow.source_job_id);
                         if (original?.description) {
@@ -786,6 +843,10 @@ async function main() {
     summary.totalUpdated += stats.updated;
     summary.totalSkipped += stats.skipped;
     summary.totalFailed += stats.failed;
+    summary.totalNewCanonical = (summary.totalNewCanonical || 0) + (stats.new_canonical ?? stats.inserted);
+    summary.totalReopened = (summary.totalReopened || 0) + (stats.reopened || 0);
+    summary.totalRejected = (summary.totalRejected || 0) + (stats.rejected || 0);
+    summary.totalDuplicate = (summary.totalDuplicate || 0) + (stats.duplicate || 0);
   }
 
   // Run sources with concurrency worker pool
@@ -827,15 +888,25 @@ async function main() {
           finished_at: summary.completedAt,
           duration_seconds: summary.durationSeconds,
           companies_processed: summary.sources.length,
-          total_active: summary.totalInserted + summary.totalUpdated,
+          total_active: (summary.totalNewCanonical ?? summary.totalInserted) + summary.totalUpdated + (summary.totalReopened ?? 0),
           total_verified: summary.sources
             .filter((s) => s.type === 'greenhouse' || s.type === 'lever' || s.type === 'ashby')
-            .reduce((acc, s) => acc + s.inserted + s.updated, 0),
+            .reduce((acc, s) => acc + (s.new_canonical ?? s.inserted) + s.updated + (s.reopened ?? 0), 0),
           per_source_counts: summary.sources.reduce(
-            (acc, s) => ({ ...acc, [s.sourceId]: s.inserted + s.updated }),
+            (acc, s) => ({
+              ...acc,
+              [s.sourceId]: {
+                new_canonical: s.new_canonical ?? s.inserted,
+                updated: s.updated,
+                reopened: s.reopened ?? 0,
+                rejected: s.rejected ?? 0,
+                duplicate: s.duplicate ?? 0,
+                failed: s.failed,
+              },
+            }),
             {}
           ),
-          status: summary.totalFailed > 0 ? (summary.totalInserted > 0 ? 'warning' : 'failed') : 'success',
+          status: summary.totalFailed > 0 ? ((summary.totalNewCanonical ?? summary.totalInserted) > 0 ? 'warning' : 'failed') : 'success',
         },
       ]);
     } catch {
@@ -872,23 +943,41 @@ async function main() {
       Source: s.sourceName,
       Type: s.type,
       Fetched: s.fetched,
-      Valid: s.normalized,
-      Upserted: s.inserted,
-      Skipped: s.skipped,
+      New: s.new_canonical ?? s.inserted,
+      Updated: s.updated,
+      Reopened: s.reopened ?? 0,
+      Rejected: s.rejected ?? 0,
+      Duplicate: s.duplicate ?? 0,
       Errors: s.failed,
     }))
   );
 
-  console.log(`Total Fetched:    ${summary.totalFetched}`);
-  console.log(`Total Upserted:   ${summary.totalInserted} ${isDryRun ? '(dry-run)' : ''}`);
-  console.log(`Total Skipped:    ${summary.totalSkipped}`);
-  console.log(`Total Errors:     ${summary.totalFailed}`);
+  console.log(`Total Fetched:        ${summary.totalFetched}`);
+  console.log(`Total New Canonical:  ${summary.totalNewCanonical ?? summary.totalInserted} ${isDryRun ? '(dry-run)' : ''}`);
+  console.log(`Total Updated:        ${summary.totalUpdated}`);
+  console.log(`Total Reopened:       ${summary.totalReopened ?? 0}`);
+  console.log(`Total Rejected:       ${summary.totalRejected ?? 0}`);
+  console.log(`Total Duplicates:     ${summary.totalDuplicate ?? 0}`);
+  console.log(`Total Errors:         ${summary.totalFailed}`);
   if (!isSkipCleanup && supabase) {
-    console.log(`Expired Marked:   ${summary.cleanup.markedExpired}`);
-    console.log(`Purged Deleted:   ${summary.cleanup.permanentlyDeleted}`);
+    console.log(`Expired Marked:       ${summary.cleanup.markedExpired}`);
+    console.log(`Purged Deleted:       ${summary.cleanup.permanentlyDeleted}`);
   }
-  console.log(`Duration:         ${summary.durationSeconds}s`);
+  console.log(`Duration:             ${summary.durationSeconds}s`);
   console.log(`======================================================\n`);
+
+  // Write per-source / per-board reports and update GitHub step summary
+  try {
+    const reportRes = writeIngestReports(summary);
+    console.log(`📄 Ingest reports written:`);
+    console.log(`   - JSON: ${reportRes.jsonPath}`);
+    console.log(`   - Markdown: ${reportRes.mdPath}`);
+    if (reportRes.stepSummaryWritten) {
+      console.log(`   - GitHub Step Summary: updated`);
+    }
+  } catch (repErr) {
+    console.warn(`[Ingest Report Warning]: Failed to write report files:`, repErr);
+  }
 }
 
 main().catch((err) => {
