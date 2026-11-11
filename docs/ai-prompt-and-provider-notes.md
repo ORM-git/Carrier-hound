@@ -59,7 +59,8 @@ The places a real second-provider swap would still touch:
 | `src/lib/ai/circuitBreaker.ts` | The breaker is named for Groq (`GroqCircuitBreaker`) though its state machine is generic |
 | `docs/security/secrets-rotation-runbook.md` | The `GROQ_API_KEY` secret name and where it is stored |
 
-Offline unit tests (`src/lib/ai/__tests__/providerAdapter.test.ts`) swap in a `FakeTextCompletionAdapter` to verify
+Offline unit tests (`src/lib/ai/__tests__/providerAdapter.test.ts`) and suite-runner test
+(`scripts/test-ai-provider-abstraction.ts`) swap in mock adapters (`createMockTextCompletionAdapter`) to verify
 completion, timeout, upstream error mapping, circuit-breaker accounting, token settlement, and quota rollback without
 calling any live provider. Because there is still only one live provider implementation (Groq), no multi-provider
 runtime fallback, and streaming (`upstreamStream: true`) + model defaults remain Groq-specific, the **Provider
