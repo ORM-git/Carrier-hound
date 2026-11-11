@@ -1,6 +1,7 @@
 import React from "react";
 import Link from "next/link";
 import BrandIcon from "@/components/BrandIcon";
+import Footer from "@/components/Footer";
 import { BreadcrumbJsonLd } from "@/components/seo/BreadcrumbJsonLd";
 
 export const metadata = {
@@ -13,6 +14,7 @@ export const metadata = {
 
 export default function PrivacyPolicyPage() {
   return (
+    <>
     <main className="min-h-screen bg-white text-[#09090B] py-16 px-6">
   <BreadcrumbJsonLd trail={[{ name: "Home", path: "/" }, { name: "Privacy Policy", path: "/privacy-policy" }]} />
       {/* Small blue logo (max-width 200px) centered at top */}
@@ -30,10 +32,10 @@ export default function PrivacyPolicyPage() {
         <h1 className="text-2xl sm:text-3xl font-bold text-[#09090B] tracking-tight">
           Privacy Policy
         </h1>
-        <p className="text-xs text-gray-500 font-mono">Last updated: November 9, 2026</p>
+        <p className="text-xs text-gray-500 font-mono">Last updated: November 10, 2026</p>
 
         <p className="mb-2">
-          Welcome to CareerMonke. This Privacy Policy explains how Olive Ridley Media Private Limited (&quot;the Company&quot;, &quot;we&quot;, &quot;us&quot;, or &quot;our&quot;) collects, protects, uses, discloses, and processes your personal information when you use our website, mobile applications, and platform tools.
+          Welcome to CareerMonke. This Privacy Policy explains how Olive Ridley Media Private Limited (&quot;the Company&quot;, &quot;we&quot;, &quot;us&quot;, or &quot;our&quot;) collects, protects, uses, discloses, and processes your personal information when you use our website and platform tools.
         </p>
 
         <p className="mb-2">
@@ -68,7 +70,7 @@ export default function PrivacyPolicyPage() {
             <strong>To Provide Services:</strong> Activating premium job feeds, personalizing job matches, processing AI resume scores, and managing active member portals.
           </li>
           <li>
-            <strong>To Process Payments Securely:</strong> All transactions are processed in Indian Rupees (INR) through Razorpay Software Private Limited, a PCI-DSS compliant payment gateway, via UPI, local cards, and netbanking networks.
+            <strong>To Process Payments Securely:</strong> Payments will open soon. When active, all transactions are processed in Indian Rupees (INR) through Razorpay Software Private Limited, a PCI-DSS compliant payment gateway, via UPI, local cards, and netbanking networks.
           </li>
           <li>
             <strong>Customer Support:</strong> Communicating updates, service notifications, and resolving incoming technical issues sent to{" "}
@@ -99,10 +101,10 @@ export default function PrivacyPolicyPage() {
             <strong>What it is used for:</strong> solely to generate the score, tailored resume, or cover letter you requested. We do not use your resume content to train models, and we do not send it to any other AI provider.
           </li>
           <li>
-            <strong>What is stored:</strong> the generated result is saved to your account so you can download it again. Your uploaded resume files are stored in private cloud storage accessible only to your account until you delete them or close your account.
+            <strong>What is stored:</strong> the generated result is saved to your account so you can download it again. Your uploaded resume files are stored in private cloud storage accessible only to your account until you delete them or close your account; account data is deleted after a 30-day period following account closure.
           </li>
           <li>
-            <strong>How long Groq keeps it:</strong> Groq does not retain your inference inputs or outputs by default. It may keep temporary logs of inputs and outputs for up to 30 days (unless the law requires keeping them longer) only to troubleshoot platform reliability or investigate abuse, and it retains usage metadata that does not include your content. Processing happens on Groq&apos;s servers in the United States. See Groq&apos;s data documentation and privacy policy for details.
+            <strong>How long Groq keeps it:</strong> Groq does not retain your inference inputs or outputs by default. It may keep temporary logs of inputs and outputs for up to 30 days (unless the law requires keeping them longer) only to troubleshoot platform reliability or investigate abuse, and it retains usage metadata that does not include your content. Groq retained data is stored in the United States (verified); we do not state the inference processing location as verified. See Groq&apos;s data documentation and privacy policy for details.
           </li>
         </ul>
 
@@ -112,7 +114,7 @@ export default function PrivacyPolicyPage() {
             <strong>Service Providers:</strong> We share only the necessary fragments of your data with the providers that run the platform: Supabase (database, authentication, and file storage), Cloudflare and Netlify (hosting and content delivery), Google (sign-in and transactional email delivery), Sentry (error monitoring with personal identifiers removed before dispatch), Razorpay (payments), and Groq (AI processing, as described above).
           </li>
           <li>
-            <strong>Cross-Border Transfers:</strong> Because CareerMonke caters to a global market, data collected from international jurisdictions may be securely stored and processed on cloud servers located outside your home region. We implement strict standard contractual clauses to ensure your data receives identical protection layers worldwide.
+            <strong>Cross-Border Transfers:</strong> Because CareerMonke caters to a global market, data collected from international jurisdictions may be securely stored and processed on cloud servers located outside your home region. Specifically, Groq retained data (such as temporary operational logs and usage metadata) is stored in the United States (verified); we do not state the US inference location as verified. Groq does not retain inference inputs or outputs by default, but may retain temporary logs of inputs and outputs for up to 30 days (unless required longer by law) solely to troubleshoot platform reliability or investigate abuse.
           </li>
           <li>
             <strong>No Selling of Personal Data:</strong> We do not trade, rent, sell, or distribute your private personal data or uploaded resumes to third-party recruitment agencies, brokers, or marketing networks.
@@ -131,7 +133,7 @@ export default function PrivacyPolicyPage() {
             <strong>Correction:</strong> you can edit your profile, preferences, and uploaded resumes from your account at any time.
           </li>
           <li>
-            <strong>Erasure:</strong> you can delete your account from your account settings. When you do, your profile, resumes, generated documents, saved jobs, and preferences are removed from our active systems: the account is deactivated immediately and the remaining records are permanently purged after a 30-day deletion window.
+            <strong>Erasure:</strong> you can delete your account from your account settings. When you do, your profile, resumes, generated documents, saved jobs, and preferences are removed from active systems: the account is deactivated immediately, and account data is deleted after a 30-day period following account closure.
           </li>
           <li>
             <strong>Withdrawing consent:</strong> you can refuse or clear optional cookies through your browser settings at any time. AI features only run when you start them, so you can stop that processing by simply not using them, or by deleting the uploaded resume. To withdraw consent for all remaining processing, delete your account.
@@ -154,7 +156,7 @@ export default function PrivacyPolicyPage() {
         </p>
         <ul className="list-disc pl-5 space-y-2 mb-2">
           <li>
-            <strong>Account, profile, and resume data:</strong> kept until you delete it or close your account. Account deletion deactivates the account immediately and permanently purges the remaining personal records after a 30-day deletion window.
+            <strong>Account, profile, and resume data:</strong> kept until you delete it or close your account. Account data is deleted after a 30-day period following account closure (the account is deactivated immediately upon request).
           </li>
           <li>
             <strong>Usage analytics (page views):</strong> 90 days.
@@ -207,7 +209,7 @@ export default function PrivacyPolicyPage() {
         </p>
         <ul className="list-disc pl-5 space-y-2 mb-2">
           <li>
-            <strong>Grievance Officer:</strong> Simran Mohanty, Olive Ridley Media Private Limited
+            <strong>Grievance Officer:</strong> Binit Kumar, Olive Ridley Media Private Limited
           </li>
           <li>
             Email:{" "}
@@ -221,10 +223,10 @@ export default function PrivacyPolicyPage() {
           <li>
             Phone:{" "}
             <a
-              href="tel:+919078976157"
+              href="tel:+919124618200"
               className="text-blue-600 underline underline-offset-2 hover:text-blue-800 transition-colors"
             >
-              +91-9078976157
+              +91-9124618200
             </a>
           </li>
           <li>
@@ -245,7 +247,7 @@ export default function PrivacyPolicyPage() {
             <strong>Essential Cookies &amp; Storage:</strong> We use essential cookies and browser local storage strictly for authentication and session management (preserving your authenticated Supabase session) and remembering your interface preferences (such as acknowledged notices and filter states). These are required for the application to function.
           </li>
           <li>
-            <strong>Privacy-Respecting Error Monitoring:</strong> We utilize Sentry error monitoring to diagnose crashes and keep the service operational. Our client and edge configurations enforce strict PII scrubbing before any event is dispatched: no email addresses, IP addresses, usernames, or user IDs are retained, and all sensitive auth tokens, keys, and passwords are fully redacted from requests and breadcrumbs.
+            <strong>Privacy-Respecting Error Monitoring:</strong> We utilize Sentry error monitoring to diagnose crashes and keep the service operational. Error reporting is enabled only when an operational DSN is configured, and client-side error reporting is strictly gated behind your cookie consent. Our client, edge, and server configurations enforce strict PII scrubbing before any event is dispatched: no email addresses, IP addresses, usernames, or user IDs are retained, and all sensitive auth tokens, keys, and passwords are fully redacted from requests and breadcrumbs.
           </li>
           <li>
             <strong>Operational Analytics:</strong> We operate a lightweight, first-party beacon for basic usage metrics (such as page views and route transitions) to monitor platform health. This internal analytics logging is strictly gated behind your cookie consent.
@@ -266,13 +268,9 @@ export default function PrivacyPolicyPage() {
             support@careermonke.com
           </a>.
         </p>
-
-        <div className="pt-8 border-t border-gray-200 text-xs text-gray-500">
-          <Link href="/" className="text-blue-600 hover:underline">
-            &larr; Return to Homepage
-          </Link>
-        </div>
       </div>
     </main>
+    <Footer />
+    </>
   );
 }

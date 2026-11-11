@@ -37,9 +37,10 @@ const BASELINE_HEADER_HREFS: Record<string, number> = {
 };
 const BASELINE_FOOTER_HREFS: Record<string, number> = {
   "/": 1,
-  "/early-access": 5,
+  "/early-access": 4,
   "/worldwide": 1,
-  "/pricing": 1,
+  "/pricing": 2,
+  "/about": 4,
   "/login": 1,
   "mailto:support@careermonke.com": 1,
   "/privacy-policy": 4,

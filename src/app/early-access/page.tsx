@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import BrandIcon from "@/components/BrandIcon";
+import Footer from "@/components/Footer";
 import {
   ArrowRight,
   CheckCircle2,
@@ -347,16 +348,8 @@ export default function EarlyAccessPage() {
         </div>
       </section>
 
-      {/* Minimal clean footer */}
-      <footer className="w-full border-t border-slate-200/80 bg-white/70 py-5 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-[#64748B]">
-          <span>© {new Date().getFullYear()} Olive Ridley Media Private Limited. All rights reserved.</span>
-          <div className="flex items-center gap-4">
-            <Link href="/privacy-policy" className="hover:text-slate-900 transition-colors">Privacy</Link>
-            <Link href="/terms-and-conditions" className="hover:text-slate-900 transition-colors">Terms</Link>
-          </div>
-        </div>
-      </footer>
+      {/* Shared site-wide footer (same as /pricing) */}
+      <Footer />
     </main>
   );
 }

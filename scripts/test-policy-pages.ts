@@ -20,6 +20,8 @@ import path from "path";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { spawnSync } from "child_process";
+import { AppRouterContext } from "next/dist/shared/lib/app-router-context.shared-runtime";
+import { PathnameContext } from "next/dist/shared/lib/hooks-client-context.shared-runtime";
 
 import TermsPage from "../src/app/terms-and-conditions/page";
 import PrivacyPolicyPage from "../src/app/privacy-policy/page";
@@ -28,6 +30,26 @@ import RefundPolicyPage from "../src/app/refund-policy/page";
 import sitemap from "../src/app/sitemap";
 
 const IS_NEGATIVE_CONTROL = process.argv.includes("--negative-control");
+
+const mockRouter: any = {
+  back: () => {},
+  forward: () => {},
+  refresh: () => {},
+  push: () => {},
+  replace: () => {},
+  prefetch: () => {},
+};
+
+// Policy pages render the shared <Footer />, which needs the App Router pathname context.
+function renderWithPathname(element: React.ReactElement, pathname: string): string {
+  return renderToStaticMarkup(
+    React.createElement(
+      AppRouterContext.Provider,
+      { value: mockRouter },
+      React.createElement(PathnameContext.Provider, { value: pathname }, element)
+    )
+  );
+}
 
 async function main() {
   console.log("================================================================================");
@@ -56,19 +78,19 @@ async function main() {
   // 1. Render All 4 Target Policy Pages via react-dom/server
   console.log("1. Rendering all 4 policy pages to static markup via react-dom/server...");
 
-  const termsHtml = renderToStaticMarkup(React.createElement(TermsPage));
+  const termsHtml = renderWithPathname(React.createElement(TermsPage), "/terms-and-conditions");
   assert.ok(termsHtml && termsHtml.length > 500, "TermsPage must render non-empty HTML");
   console.log(`  [PASS-LOCAL] /terms-and-conditions rendered successfully (${termsHtml.length} bytes)`);
 
-  const privacyHtml = renderToStaticMarkup(React.createElement(PrivacyPolicyPage));
+  const privacyHtml = renderWithPathname(React.createElement(PrivacyPolicyPage), "/privacy-policy");
   assert.ok(privacyHtml && privacyHtml.length > 500, "PrivacyPolicyPage must render non-empty HTML");
   console.log(`  [PASS-LOCAL] /privacy-policy rendered successfully (${privacyHtml.length} bytes)`);
 
-  const contactHtml = renderToStaticMarkup(React.createElement(ContactUsPage));
+  const contactHtml = renderWithPathname(React.createElement(ContactUsPage), "/contact");
   assert.ok(contactHtml && contactHtml.length > 200, "ContactUsPage must render non-empty HTML");
   console.log(`  [PASS-LOCAL] /contact rendered successfully (${contactHtml.length} bytes)`);
 
-  const refundHtml = renderToStaticMarkup(React.createElement(RefundPolicyPage));
+  const refundHtml = renderWithPathname(React.createElement(RefundPolicyPage), "/refund-policy");
   assert.ok(refundHtml && refundHtml.length > 200, "RefundPolicyPage must render non-empty HTML");
   console.log(`  [PASS-LOCAL] /refund-policy rendered successfully (${refundHtml.length} bytes)`);
 
@@ -84,9 +106,9 @@ async function main() {
     "proprietary ingestion tools",
     "Current prices are shown on the",
     "Pricing page",
-    "plans are prepaid for a fixed duration and do not renew automatically",
-    "Planned add-on packs",
-    "expire 60 days after purchase",
+    "plans renew automatically each billing period",
+    "Add-on packs:",
+    "expire together with the subscription",
     "Razorpay",
     "4. Cancellation, Renewal, and Access After Cancellation",
     "Cancellation &amp; Refund Policy",
@@ -94,6 +116,7 @@ async function main() {
     "6. Limitation of Liability &amp; Disclaimer",
     "7. Governing Law and Jurisdiction",
     "Bhubaneswar, India",
+    "© 2026 Olive Ridley Media Private Limited. All rights reserved.",
   ];
   for (const phrase of termsPhrases) {
     assert.ok(termsHtml.includes(phrase), `/terms-and-conditions must contain "${phrase}"`);
@@ -123,8 +146,9 @@ async function main() {
     "6. Data Retention",
     "7. Security Practices",
     "8. Grievance Officer",
-    "Simran Mohanty",
+    "Binit Kumar",
     "9. Cookies and Tracking Mechanisms",
+    "© 2026 Olive Ridley Media Private Limited. All rights reserved.",
   ];
   for (const phrase of privacyPhrases) {
     assert.ok(privacyHtml.includes(phrase), `/privacy-policy must contain "${phrase}"`);
@@ -148,9 +172,10 @@ async function main() {
     "Support Email:",
     "support@careermonke.com",
     "Grievance Officer",
-    "Simran Mohanty",
-    "+91-9078976157",
+    "Binit Kumar",
+    "+91-9124618200",
     "5-7 working days",
+    "© 2026 Olive Ridley Media Private Limited. All rights reserved.",
   ];
   for (const phrase of contactPhrases) {
     assert.ok(contactHtml.includes(phrase), `/contact must contain "${phrase}"`);
@@ -171,6 +196,7 @@ async function main() {
     "support@careermonke.com",
     "order id",
     "Olive Ridley Media Private Limited",
+    "© 2026 Olive Ridley Media Private Limited. All rights reserved.",
   ];
   for (const phrase of refundPhrases) {
     assert.ok(refundHtml.includes(phrase), `/refund-policy must contain "${phrase}"`);
@@ -184,8 +210,8 @@ async function main() {
   assert.ok(footerContent.includes('href="/contact"'), "Footer must link to /contact");
   assert.ok(!footerContent.includes('href="/shipping-and-delivery"'), "Footer must NOT link to /shipping-and-delivery (digital SaaS, no physical shipping)");
   assert.ok(
-    footerContent.includes("Olive Ridley Media Private Limited. All rights reserved."),
-    "Footer legal line must feature Olive Ridley Media Private Limited"
+    footerContent.includes("© 2026 Olive Ridley Media Private Limited. All rights reserved."),
+    "Footer legal line must feature exact line '© 2026 Olive Ridley Media Private Limited. All rights reserved.'"
   );
   assert.ok(
     !footerContent.includes("CareerMonke Inc. All rights reserved."),

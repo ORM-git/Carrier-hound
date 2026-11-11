@@ -1,6 +1,7 @@
 import React from "react";
 import Link from "next/link";
 import BrandIcon from "@/components/BrandIcon";
+import Footer from "@/components/Footer";
 import { BreadcrumbJsonLd } from "@/components/seo/BreadcrumbJsonLd";
 
 export const metadata = {
@@ -13,6 +14,7 @@ export const metadata = {
 
 export default function ContactUsPage() {
   return (
+    <>
     <main className="min-h-screen bg-white text-[#09090B] py-16 px-6">
   <BreadcrumbJsonLd trail={[{ name: "Home", path: "/" }, { name: "Contact", path: "/contact" }]} />
       {/* Small blue logo (max-width 200px) centered at top */}
@@ -30,7 +32,7 @@ export default function ContactUsPage() {
         <h1 className="text-2xl sm:text-3xl font-bold text-[#09090B] tracking-tight">
           Contact Us
         </h1>
-        <p className="text-xs text-gray-500 font-mono">Last updated: November 9, 2026</p>
+        <p className="text-xs text-gray-500 font-mono">Last updated: November 10, 2026</p>
 
         <p className="mb-2">
           If you have any questions about our job discovery feeds, AI tools, subscription billing, or legal policies, please reach out to our team. We respond to all inquiries within 5-7 working days.
@@ -58,10 +60,10 @@ export default function ContactUsPage() {
           <li>
             <strong>Phone:</strong>{" "}
             <a
-              href="tel:+919078976157"
+              href="tel:+919124618200"
               className="text-blue-600 underline underline-offset-2 hover:text-blue-800 transition-colors"
             >
-              +91-9078976157
+              +91-9124618200
             </a>
           </li>
         </ul>
@@ -72,7 +74,7 @@ export default function ContactUsPage() {
         </p>
         <ul className="list-disc pl-5 space-y-2 mb-2">
           <li>
-            <strong>Grievance Officer:</strong> Simran Mohanty, Olive Ridley Media Private Limited
+            <strong>Grievance Officer:</strong> Binit Kumar, Olive Ridley Media Private Limited
           </li>
           <li>
             Email:{" "}
@@ -86,10 +88,10 @@ export default function ContactUsPage() {
           <li>
             Phone:{" "}
             <a
-              href="tel:+919078976157"
+              href="tel:+919124618200"
               className="text-blue-600 underline underline-offset-2 hover:text-blue-800 transition-colors"
             >
-              +91-9078976157
+              +91-9124618200
             </a>
           </li>
           <li>
@@ -99,13 +101,9 @@ export default function ContactUsPage() {
         <p className="mb-2">
           Grievances are acknowledged and resolved within 5-7 working days.
         </p>
-
-        <div className="pt-8 border-t border-gray-200 text-xs text-gray-500">
-          <Link href="/" className="text-blue-600 hover:underline">
-            &larr; Return to Homepage
-          </Link>
-        </div>
       </div>
     </main>
+    <Footer />
+    </>
   );
 }

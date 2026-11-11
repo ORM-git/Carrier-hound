@@ -255,6 +255,8 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-admin-mfa-posture.ts", command: "npx tsx scripts/test-admin-mfa-posture.ts", classification: "offline" },
   { name: "scripts/test-gst-invoice.ts", command: "npx tsx scripts/test-gst-invoice.ts", classification: "offline" },
   { name: "scripts/test-prompt-template-versions.ts", command: "npx tsx scripts/test-prompt-template-versions.ts", classification: "offline" },
+  { name: "scripts/test-footer-copyright.ts", command: "npx tsx scripts/test-footer-copyright.ts", classification: "offline" },
+  { name: "scripts/test-reconciliation.ts", command: "npx tsx scripts/test-reconciliation.ts", classification: "offline" },
 ];
 
 export interface RunSummary {

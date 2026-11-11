@@ -1,6 +1,7 @@
 import React from "react";
 import Link from "next/link";
 import BrandIcon from "@/components/BrandIcon";
+import Footer from "@/components/Footer";
 import { BreadcrumbJsonLd } from "@/components/seo/BreadcrumbJsonLd";
 
 export const metadata = {
@@ -13,6 +14,7 @@ export const metadata = {
 
 export default function RefundPolicyPage() {
   return (
+    <>
     <main className="min-h-screen bg-white text-[#09090B] py-16 px-6">
   <BreadcrumbJsonLd trail={[{ name: "Home", path: "/" }, { name: "Refund Policy", path: "/refund-policy" }]} />
       {/* Small blue logo (max-width 200px) centered at top */}
@@ -95,13 +97,9 @@ export default function RefundPolicyPage() {
           </a>{" "}
           with your order id and registered account email address. We respond within 5-7 working days.
         </p>
-
-        <div className="pt-8 border-t border-gray-200 text-xs text-gray-500">
-          <Link href="/" className="text-blue-600 hover:underline">
-            &larr; Return to Homepage
-          </Link>
-        </div>
       </div>
     </main>
+    <Footer />
+    </>
   );
 }

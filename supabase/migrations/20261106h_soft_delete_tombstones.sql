@@ -9,7 +9,7 @@
 -- What this does:
 --   1. Adds `deleted_at` (soft-delete marker) to every user-owned content
 --      table the account-deletion flow touches, plus `anonymized_at` on
---      early_access_emails.
+--      early_access_emails (guarded by to_regclass so absent tables are skipped).
 --   2. Adds `deleted_account_tombstones`: a minimal, PII-free audit record
 --      (user_id + SHA-256 email hash + timestamps + purge deadline) kept
 --      after the auth identity is removed. This is the "undo / retention
@@ -25,30 +25,123 @@
 -- Rollback: see the commented block at the bottom.
 -- ============================================================================
 
--- 1. Soft-delete columns -----------------------------------------------------
+-- 1. Soft-delete columns (guarded by to_regclass so missing tables are skipped)
 
-ALTER TABLE public.candidate_profiles  ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
-ALTER TABLE public.user_preferences    ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
-ALTER TABLE public.resumes             ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
-ALTER TABLE public.tailored_resumes    ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
-ALTER TABLE public.saved_jobs          ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
-ALTER TABLE public.applications        ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
-ALTER TABLE public.job_applications    ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
-ALTER TABLE public.search_alerts       ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
-ALTER TABLE public.daily_digests       ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
-ALTER TABLE public.ai_usage_quotas     ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
-ALTER TABLE public.ai_usage_ledger     ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
-ALTER TABLE public.page_views          ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
-ALTER TABLE public.user_roles          ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
-ALTER TABLE public.user_consents       ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
-ALTER TABLE public.early_access_emails ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
-ALTER TABLE public.early_access_emails ADD COLUMN IF NOT EXISTS anonymized_at TIMESTAMPTZ;
+DO $$ BEGIN
+  IF to_regclass('public.candidate_profiles') IS NOT NULL THEN
+    ALTER TABLE public.candidate_profiles ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF to_regclass('public.user_preferences') IS NOT NULL THEN
+    ALTER TABLE public.user_preferences ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF to_regclass('public.resumes') IS NOT NULL THEN
+    ALTER TABLE public.resumes ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF to_regclass('public.tailored_resumes') IS NOT NULL THEN
+    ALTER TABLE public.tailored_resumes ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF to_regclass('public.saved_jobs') IS NOT NULL THEN
+    ALTER TABLE public.saved_jobs ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF to_regclass('public.applications') IS NOT NULL THEN
+    ALTER TABLE public.applications ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF to_regclass('public.job_applications') IS NOT NULL THEN
+    ALTER TABLE public.job_applications ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF to_regclass('public.search_alerts') IS NOT NULL THEN
+    ALTER TABLE public.search_alerts ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF to_regclass('public.daily_digests') IS NOT NULL THEN
+    ALTER TABLE public.daily_digests ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF to_regclass('public.ai_usage_quotas') IS NOT NULL THEN
+    ALTER TABLE public.ai_usage_quotas ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF to_regclass('public.ai_usage_ledger') IS NOT NULL THEN
+    ALTER TABLE public.ai_usage_ledger ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF to_regclass('public.page_views') IS NOT NULL THEN
+    ALTER TABLE public.page_views ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF to_regclass('public.user_roles') IS NOT NULL THEN
+    ALTER TABLE public.user_roles ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF to_regclass('public.user_consents') IS NOT NULL THEN
+    ALTER TABLE public.user_consents ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF to_regclass('public.early_access_emails') IS NOT NULL THEN
+    ALTER TABLE public.early_access_emails ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+    ALTER TABLE public.early_access_emails ADD COLUMN IF NOT EXISTS anonymized_at TIMESTAMPTZ;
+  END IF;
+END $$;
 
 -- Partial indexes keep the purge scan cheap without bloating hot paths.
-CREATE INDEX IF NOT EXISTS idx_candidate_profiles_deleted_at  ON public.candidate_profiles  (deleted_at) WHERE deleted_at IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_resumes_deleted_at             ON public.resumes             (deleted_at) WHERE deleted_at IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_applications_deleted_at        ON public.applications        (deleted_at) WHERE deleted_at IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_job_applications_deleted_at    ON public.job_applications    (deleted_at) WHERE deleted_at IS NOT NULL;
+DO $$ BEGIN
+  IF to_regclass('public.candidate_profiles') IS NOT NULL THEN
+    CREATE INDEX IF NOT EXISTS idx_candidate_profiles_deleted_at ON public.candidate_profiles (deleted_at) WHERE deleted_at IS NOT NULL;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF to_regclass('public.resumes') IS NOT NULL THEN
+    CREATE INDEX IF NOT EXISTS idx_resumes_deleted_at ON public.resumes (deleted_at) WHERE deleted_at IS NOT NULL;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF to_regclass('public.applications') IS NOT NULL THEN
+    CREATE INDEX IF NOT EXISTS idx_applications_deleted_at ON public.applications (deleted_at) WHERE deleted_at IS NOT NULL;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF to_regclass('public.job_applications') IS NOT NULL THEN
+    CREATE INDEX IF NOT EXISTS idx_job_applications_deleted_at ON public.job_applications (deleted_at) WHERE deleted_at IS NOT NULL;
+  END IF;
+END $$;
 
 -- 2. Tombstones --------------------------------------------------------------
 

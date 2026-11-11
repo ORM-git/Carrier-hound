@@ -108,8 +108,9 @@ export default function AuthCallbackPage() {
   return (
     <div
       data-testid="auth-callback-container"
-      className="min-h-screen bg-surface-subtle flex flex-col items-center justify-center p-6 text-ink font-sans"
+      className="min-h-screen bg-surface-subtle flex flex-col items-center justify-between p-6 text-ink font-sans"
     >
+      <div />
       <Card
         variant="surface"
         className="w-full max-w-sm p-8 text-center space-y-4 shadow-tk-sm border border-line"
@@ -125,6 +126,9 @@ export default function AuthCallbackPage() {
           </p>
         </div>
       </Card>
+      <footer className="py-2 text-center text-xs text-ink-subtle">
+        © 2026 Olive Ridley Media Private Limited. All rights reserved.
+      </footer>
     </div>
   );
 }
