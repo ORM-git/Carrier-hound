@@ -140,16 +140,18 @@ select {
   will-change: transform;
 }
 
-/* Pause on hover for any marquee line / row / column when mouse pointer enters */
-.group:hover .animate-marquee-left,
-.group:hover .animate-marquee-right,
-.group:hover .animate-marquee-vertical,
-.group:hover .animate-marquee,
-.animate-marquee-left:hover,
-.animate-marquee-right:hover,
-.animate-marquee-vertical:hover,
-.animate-marquee:hover {
-  animation-play-state: paused !important;
+/* Pause on hover for any marquee line / row / column when mouse pointer enters (guarded for touch devices) */
+@media (hover: hover) {
+  .group:hover .animate-marquee-left,
+  .group:hover .animate-marquee-right,
+  .group:hover .animate-marquee-vertical,
+  .group:hover .animate-marquee,
+  .animate-marquee-left:hover,
+  .animate-marquee-right:hover,
+  .animate-marquee-vertical:hover,
+  .animate-marquee:hover {
+    animation-play-state: paused !important;
+  }
 }
 
 /* Focus styles: focus ring 2px #93C5FD with 1px offset */
@@ -242,8 +244,10 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
   background: #cbd5e1;
   border-radius: 4px;
 }
-::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+@media (hover: hover) {
+  ::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+  }
 }
 
 /* Custom utility to hide scrollbar cleanly on mobile */
