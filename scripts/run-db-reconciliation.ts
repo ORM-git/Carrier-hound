@@ -9,13 +9,20 @@
  * Safety & Privacy:
  * - Strictly READ-ONLY operations.
  * - Prints aggregate counts and status verdicts ONLY; NEVER prints row data or user PII.
- * - Fails with exit code 1 if any discrepancy is detected or if credentials are missing.
+ * - Uses bounded pagination (.range) on row queries so PostgREST result caps never truncate checks.
+ * - Fails with exit code 1 if any discrepancy or query error is detected or if credentials are missing.
  *
  * Usage:
  *   npx tsx scripts/run-db-reconciliation.ts
  */
 
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
+
+export const DEFAULT_PAGE_SIZE = 1000;
+
+export interface ReconciliationOptions {
+  pageSize?: number;
+}
 
 export interface ReconciliationCheckResult {
   checkName: string;
@@ -36,12 +43,51 @@ export interface ReconciliationReport {
 }
 
 /**
+ * Reads all rows from a query by paginating with .range(from, to) until all pages are retrieved.
+ */
+async function fetchAllRows<T = any>(
+  queryBuilderFactory: (from: number, to: number) => any,
+  pageSize = DEFAULT_PAGE_SIZE
+): Promise<{ data: T[]; error: any }> {
+  const allRows: T[] = [];
+  let from = 0;
+
+  while (true) {
+    const to = from + pageSize - 1;
+    const { data, error } = await queryBuilderFactory(from, to);
+    if (error) {
+      return { data: allRows, error };
+    }
+    if (!data || !Array.isArray(data) || data.length === 0) {
+      break;
+    }
+    allRows.push(...data);
+    if (data.length < pageSize) {
+      break; // Reached last page
+    }
+    from += pageSize;
+  }
+
+  return { data: allRows, error: null };
+}
+
+function chunkArray<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size));
+  }
+  return chunks;
+}
+
+/**
  * Executes reconciliation audit queries against a provided Supabase client.
  * Emits strictly aggregate counts and statuses matching supabase/scripts/reconciliation.sql.
  */
 export async function executeReconciliation(
-  supabase: SupabaseClient<any, any, any>
+  supabase: SupabaseClient<any, any, any>,
+  options: ReconciliationOptions = {}
 ): Promise<ReconciliationReport> {
+  const pageSize = options.pageSize ?? DEFAULT_PAGE_SIZE;
   const results: ReconciliationCheckResult[] = [];
 
   // ============================================================================
@@ -57,12 +103,16 @@ export async function executeReconciliation(
     .from("jobs_public")
     .select("id", { count: "exact", head: true });
 
+  const hasParityError = Boolean(
+    err1 || err2 || rawActiveCount === null || viewCount === null ||
+    rawActiveCount === undefined || viewCount === undefined
+  );
   const activeCountVal = rawActiveCount ?? 0;
   const viewCountVal = viewCount ?? 0;
-  const countDiff = Math.abs(activeCountVal - viewCountVal);
+  const countDiff = hasParityError ? 1 : Math.abs(activeCountVal - viewCountVal);
   results.push({
     checkName: "jobs_vs_jobs_public_count",
-    status: err1 || err2 || countDiff !== 0 ? "FAIL" : "PASS",
+    status: !hasParityError && countDiff === 0 ? "PASS" : "FAIL",
     expectedCount: activeCountVal,
     actualCount: viewCountVal,
     discrepancy: countDiff,
@@ -76,10 +126,11 @@ export async function executeReconciliation(
     .not("is_active", "eq", true)
     .not("status", "eq", "active");
 
-  const leakCountVal = leakCount ?? 0;
+  const hasLeakError = Boolean(errLeak || leakCount === null || leakCount === undefined);
+  const leakCountVal = hasLeakError ? 1 : (leakCount ?? 0);
   results.push({
     checkName: "jobs_public_inactive_leak",
-    status: errLeak || leakCountVal > 0 ? "FAIL" : "PASS",
+    status: !hasLeakError && leakCountVal === 0 ? "PASS" : "FAIL",
     expectedCount: 0,
     actualCount: leakCountVal,
     discrepancy: leakCountVal,
@@ -89,7 +140,7 @@ export async function executeReconciliation(
   // 1.3 Detect active raw jobs missing from jobs_public view
   results.push({
     checkName: "jobs_active_missing_from_view",
-    status: countDiff === 0 && leakCountVal === 0 ? "PASS" : "FAIL",
+    status: !hasParityError && countDiff === 0 && leakCountVal === 0 ? "PASS" : "FAIL",
     expectedCount: 0,
     actualCount: countDiff,
     discrepancy: countDiff,
@@ -100,16 +151,19 @@ export async function executeReconciliation(
   // 2. SUBSCRIPTIONS vs. USER_ADDON_CREDITS RECONCILIATION
   // ============================================================================
   // 2.1 Add-on credit balance sanity bounds (0 <= sets_remaining <= sets_total)
-  const { data: creditsData, error: errCredits } = await supabase
-    .from("user_addon_credits")
-    .select("id, sets_remaining, sets_total");
+  const { data: creditsData, error: errCredits } = await fetchAllRows(
+    (from, to) => supabase.from("user_addon_credits").select("id, sets_remaining, sets_total").range(from, to),
+    pageSize
+  );
 
   let invalidCreditsCount = 0;
-  if (creditsData && Array.isArray(creditsData)) {
+  if (errCredits) {
+    invalidCreditsCount = 1;
+  } else {
     for (const row of creditsData) {
       const remaining = Number(row.sets_remaining);
       const total = Number(row.sets_total);
-      if (remaining < 0 || remaining > total) {
+      if (isNaN(remaining) || isNaN(total) || remaining < 0 || remaining > total) {
         invalidCreditsCount++;
       }
     }
@@ -126,29 +180,46 @@ export async function executeReconciliation(
 
   // 2.2 Active add-on credits held by users without subscriptions (orphan users check)
   const nowIso = new Date().toISOString();
-  const { data: activeCreditsData, error: errActiveCredits } = await supabase
-    .from("user_addon_credits")
-    .select("user_id, sets_remaining, expires_at")
-    .gt("sets_remaining", 0)
-    .gt("expires_at", nowIso);
+  const { data: activeCreditsData, error: errActiveCredits } = await fetchAllRows(
+    (from, to) =>
+      supabase
+        .from("user_addon_credits")
+        .select("user_id, sets_remaining, expires_at")
+        .gt("sets_remaining", 0)
+        .gt("expires_at", nowIso)
+        .range(from, to),
+    pageSize
+  );
 
   let orphanUsersCount = 0;
-  if (activeCreditsData && Array.isArray(activeCreditsData) && activeCreditsData.length > 0) {
-    const activeUserIds = Array.from(new Set(activeCreditsData.map((c: any) => c.user_id).filter(Boolean)));
-    if (activeUserIds.length > 0) {
-      const { data: subsData, error: errSubs } = await supabase
-        .from("subscriptions")
-        .select("user_id")
-        .in("user_id", activeUserIds);
+  let orphanHasError = Boolean(errActiveCredits);
 
+  if (errActiveCredits) {
+    orphanUsersCount = 1;
+  } else if (activeCreditsData.length > 0) {
+    const activeUserIds = Array.from(new Set(activeCreditsData.map((c: any) => c.user_id).filter(Boolean)));
+    const userIdChunks = chunkArray(activeUserIds, 500);
+
+    const subUserSet = new Set<string>();
+    for (const chunk of userIdChunks) {
+      const { data: subsData, error: errSubs } = await fetchAllRows(
+        (from, to) => supabase.from("subscriptions").select("user_id").in("user_id", chunk).range(from, to),
+        pageSize
+      );
       if (errSubs) {
+        orphanHasError = true;
         orphanUsersCount = activeUserIds.length;
-      } else {
-        const subUserSet = new Set((subsData || []).map((s: any) => s.user_id));
-        for (const uid of activeUserIds) {
-          if (!subUserSet.has(uid)) {
-            orphanUsersCount++;
-          }
+        break;
+      }
+      for (const s of subsData) {
+        if (s?.user_id) subUserSet.add(s.user_id);
+      }
+    }
+
+    if (!orphanHasError) {
+      for (const uid of activeUserIds) {
+        if (!subUserSet.has(uid)) {
+          orphanUsersCount++;
         }
       }
     }
@@ -156,7 +227,7 @@ export async function executeReconciliation(
 
   results.push({
     checkName: "addon_credits_orphan_users",
-    status: errActiveCredits || orphanUsersCount > 0 ? "FAIL" : "PASS",
+    status: orphanHasError || orphanUsersCount > 0 ? "FAIL" : "PASS",
     expectedCount: 0,
     actualCount: orphanUsersCount,
     discrepancy: orphanUsersCount,
@@ -165,29 +236,46 @@ export async function executeReconciliation(
 
   // 2.3 Add-on credits linked to payment_orders status reconciliation
   // Joins credits to referenced orders; pending/abandoned orders without credits are NOT a failure.
-  const { data: linkedCreditsData, error: errLinkedCredits } = await supabase
-    .from("user_addon_credits")
-    .select("id, user_id, order_id")
-    .not("order_id", "is", null);
+  const { data: linkedCreditsData, error: errLinkedCredits } = await fetchAllRows(
+    (from, to) =>
+      supabase
+        .from("user_addon_credits")
+        .select("id, user_id, order_id")
+        .not("order_id", "is", null)
+        .range(from, to),
+    pageSize
+  );
 
   let unconfirmedOrderCredits = 0;
-  if (linkedCreditsData && Array.isArray(linkedCreditsData) && linkedCreditsData.length > 0) {
-    const orderIds = Array.from(new Set(linkedCreditsData.map((c: any) => c.order_id).filter(Boolean)));
-    if (orderIds.length > 0) {
-      const { data: ordersData, error: errOrders } = await supabase
-        .from("payment_orders")
-        .select("id, user_id, status")
-        .in("id", orderIds);
+  let orderLinkHasError = Boolean(errLinkedCredits);
 
+  if (errLinkedCredits) {
+    unconfirmedOrderCredits = 1;
+  } else if (linkedCreditsData.length > 0) {
+    const orderIds = Array.from(new Set(linkedCreditsData.map((c: any) => c.order_id).filter(Boolean)));
+    const orderIdChunks = chunkArray(orderIds, 500);
+    const orderMap = new Map<string, any>();
+
+    for (const chunk of orderIdChunks) {
+      const { data: ordersData, error: errOrders } = await fetchAllRows(
+        (from, to) => supabase.from("payment_orders").select("id, user_id, status").in("id", chunk).range(from, to),
+        pageSize
+      );
       if (errOrders) {
+        orderLinkHasError = true;
         unconfirmedOrderCredits = linkedCreditsData.length;
-      } else {
-        const orderMap = new Map((ordersData || []).map((o: any) => [o.id, o]));
-        for (const credit of linkedCreditsData) {
-          const po = orderMap.get(credit.order_id);
-          if (!po || po.status !== "paid" || (po.user_id && po.user_id !== credit.user_id)) {
-            unconfirmedOrderCredits++;
-          }
+        break;
+      }
+      for (const o of ordersData) {
+        if (o?.id) orderMap.set(o.id, o);
+      }
+    }
+
+    if (!orderLinkHasError) {
+      for (const credit of linkedCreditsData) {
+        const po = orderMap.get(credit.order_id);
+        if (!po || po.status !== "paid" || (po.user_id && po.user_id !== credit.user_id)) {
+          unconfirmedOrderCredits++;
         }
       }
     }
@@ -195,7 +283,7 @@ export async function executeReconciliation(
 
   results.push({
     checkName: "addon_credits_order_status",
-    status: errLinkedCredits || unconfirmedOrderCredits > 0 ? "FAIL" : "PASS",
+    status: orderLinkHasError || unconfirmedOrderCredits > 0 ? "FAIL" : "PASS",
     expectedCount: 0,
     actualCount: unconfirmedOrderCredits,
     discrepancy: unconfirmedOrderCredits,
@@ -214,21 +302,26 @@ export async function executeReconciliation(
     .from("page_views")
     .select("id", { count: "exact", head: true });
 
+  const hasTelemetryError = Boolean(
+    errFunnel || errPv || funnelCount === null || pageviewCount === null ||
+    funnelCount === undefined || pageviewCount === undefined
+  );
+
   const fCount = funnelCount ?? 0;
   const pvCount = pageviewCount ?? 0;
-  const ratioPass = (pvCount === 0 && fCount === 0) || (pvCount > 0 && fCount <= pvCount);
+  const ratioPass = !hasTelemetryError && ((pvCount === 0 && fCount === 0) || (pvCount > 0 && fCount <= pvCount));
 
   results.push({
     checkName: "telemetry_volume_ratio",
-    status: errFunnel || errPv || !ratioPass ? "FAIL" : "PASS",
+    status: ratioPass ? "PASS" : "FAIL",
     expectedCount: pvCount,
     actualCount: fCount,
-    discrepancy: ratioPass ? 0 : Math.max(0, fCount - pvCount),
+    discrepancy: ratioPass ? 0 : Math.max(1, fCount - pvCount),
     description: "Total funnel events count should reasonably not exceed total page views",
   });
 
   // 3.2 Funnel stage progression monotonicity bounds
-  // signup_completed <= signup_started, onboarding_completed <= onboarding_started, apply_completed <= apply_started
+  // Every query error and null count must fail the run explicitly!
   const stages = [
     { start: "signup_started", end: "signup_completed" },
     { start: "onboarding_started", end: "onboarding_completed" },
@@ -236,27 +329,40 @@ export async function executeReconciliation(
   ];
 
   let progressionDiscrepancies = 0;
+  let progressionHasError = false;
+
   for (const { start, end } of stages) {
-    const { count: startCount } = await supabase
+    const { count: startCount, error: errStart } = await supabase
       .from("funnel_events")
       .select("id", { count: "exact", head: true })
       .eq("event", start);
 
-    const { count: endCount } = await supabase
+    const { count: endCount, error: errEnd } = await supabase
       .from("funnel_events")
       .select("id", { count: "exact", head: true })
       .eq("event", end);
 
-    const s = startCount ?? 0;
-    const e = endCount ?? 0;
-    if (e > s) {
-      progressionDiscrepancies += e - s;
+    if (
+      errStart ||
+      errEnd ||
+      startCount === null ||
+      startCount === undefined ||
+      endCount === null ||
+      endCount === undefined
+    ) {
+      progressionHasError = true;
+      progressionDiscrepancies++;
+      continue;
+    }
+
+    if (endCount > startCount) {
+      progressionDiscrepancies += endCount - startCount;
     }
   }
 
   results.push({
     checkName: "funnel_stage_progression_bounds",
-    status: progressionDiscrepancies === 0 ? "PASS" : "FAIL",
+    status: !progressionHasError && progressionDiscrepancies === 0 ? "PASS" : "FAIL",
     expectedCount: 0,
     actualCount: progressionDiscrepancies,
     discrepancy: progressionDiscrepancies,
@@ -276,13 +382,18 @@ export async function executeReconciliation(
     .select("id", { count: "exact", head: true })
     .lt("created_at", grace91DaysAgo);
 
+  const hasRetentionError = Boolean(
+    errOldPv || errOldFe || oldPv === null || oldFe === null ||
+    oldPv === undefined || oldFe === undefined
+  );
+
   const unpurgedPv = oldPv ?? 0;
   const unpurgedFe = oldFe ?? 0;
-  const totalUnpurged = unpurgedPv + unpurgedFe;
+  const totalUnpurged = hasRetentionError ? 1 : unpurgedPv + unpurgedFe;
 
   results.push({
     checkName: "retention_90d_purge_health",
-    status: errOldPv || errOldFe || totalUnpurged > 0 ? "FAIL" : "PASS",
+    status: !hasRetentionError && totalUnpurged === 0 ? "PASS" : "FAIL",
     expectedCount: 0,
     actualCount: totalUnpurged,
     discrepancy: totalUnpurged,
