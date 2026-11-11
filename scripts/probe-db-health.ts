@@ -1,4 +1,5 @@
 import { probeDbHealth } from "../src/lib/health/dbHealth";
+import { probeSlowQueries } from "../src/lib/health/slowQueries";
 
 async function main() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -10,8 +11,13 @@ async function main() {
   }
   try {
     const report = await probeDbHealth(url, key);
-    // Only aggregate metrics and fixed alert codes. No names, data or errors.
-    console.log(JSON.stringify(report));
+    const slowQueries = await probeSlowQueries(url, key);
+    // Only aggregate metrics, fixed alert codes, and redacted slow query summaries. No raw data, names or errors.
+    const fullReport = {
+      ...report,
+      slow_queries: slowQueries,
+    };
+    console.log(JSON.stringify(fullReport));
     if (!report.healthy) process.exitCode = 1;
   } catch {
     console.error("DB health probe unavailable. Check migration/configuration privately.");
