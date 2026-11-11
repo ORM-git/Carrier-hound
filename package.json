@@ -63,6 +63,7 @@
     "@types/node": "^20.17.0",
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.0",
+    "@vitest/coverage-v8": "^2.1.9",
     "autoprefixer": "^10.6.2",
     "axe-core": "^4.14.0",
     "dotenv": "^18.0.9",
