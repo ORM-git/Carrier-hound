@@ -5,10 +5,6 @@ import React, { useEffect } from "react";
 import "@/styles/careermonke-landing.css";
 import { initCareerMonkeLanding } from "@/components/landing/careermonke-landing-runtime";
 
-// Backward-compatibility references for test-early-access:
-// import { WhiteHeroButton } from "@/components/Buttons";
-// <WhiteHeroButton onClick={() => router.push("/early-access")} className="px-8 min-w-[200px]">
-
 export default function HomePage() {
   useEffect(() => {
     const cleanup = initCareerMonkeLanding();
@@ -16,7 +12,7 @@ export default function HomePage() {
   }, []);
 
   return (
-    <>
+    <div className="landing-wrapper">
 
 <a className="skip" href="#main">Skip to content</a>
 <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true"><symbol id="laurel" viewBox="0 0 20 48"><path d="M17 47C5 40 3 20 11 2" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/><g fill="currentColor"><ellipse cx="9.9" cy="44.4" rx="2.3" ry="4.6" transform="rotate(-78 9.9 44.4)"/><ellipse cx="15.7" cy="42.4" rx="1.9" ry="3.8" transform="rotate(-8 15.7 42.4)"/><ellipse cx="6.3" cy="39.3" rx="2.3" ry="4.6" transform="rotate(-62 6.3 39.3)"/><ellipse cx="12.1" cy="37.3" rx="1.9" ry="3.8" transform="rotate(8 12.1 37.3)"/><ellipse cx="4.0" cy="32.9" rx="2.3" ry="4.6" transform="rotate(-48 4.0 32.9)"/><ellipse cx="9.8" cy="30.9" rx="1.9" ry="3.8" transform="rotate(22 9.8 30.9)"/><ellipse cx="3.0" cy="25.6" rx="2.3" ry="4.6" transform="rotate(-37 3.0 25.6)"/><ellipse cx="8.8" cy="23.6" rx="1.9" ry="3.8" transform="rotate(33 8.8 23.6)"/><ellipse cx="3.4" cy="17.8" rx="2.3" ry="4.6" transform="rotate(-27 3.4 17.8)"/><ellipse cx="9.2" cy="15.8" rx="1.9" ry="3.8" transform="rotate(43 9.2 15.8)"/><ellipse cx="5.2" cy="9.6" rx="2.3" ry="4.6" transform="rotate(-18 5.2 9.6)"/></g></symbol></svg>
@@ -394,6 +390,6 @@ export default function HomePage() {
 
 
 
-    </>
+    </div>
   );
 }

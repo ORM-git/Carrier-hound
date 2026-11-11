@@ -6,6 +6,20 @@ export function initCareerMonkeLanding(): () => void {
       ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
       : false;
   const $ = (id: string) => document.getElementById(id);
+  const cleanups: Array<() => void> = [];
+
+  function addListener(
+    target: EventTarget | null | undefined,
+    type: string,
+    listener: EventListenerOrEventListenerObject,
+    options?: boolean | AddEventListenerOptions
+  ) {
+    if (!target) return;
+    target.addEventListener(type, listener, options);
+    cleanups.push(() => {
+      target.removeEventListener(type, listener, options);
+    });
+  }
 
   /* ---------- DEMO (front-end simulation, sample data only) ---------- */
   interface JobData {
@@ -124,16 +138,22 @@ export function initCareerMonkeLanding(): () => void {
   }
 
   if (demoEl) {
+    const onDemoTouched = () => { demoEl.classList.add('touched'); };
     ['pointerenter', 'focusin', 'pointerdown'].forEach((ev) => {
-      demoEl.addEventListener(ev, () => { demoEl.classList.add('touched'); }, { once: true });
+      addListener(demoEl, ev, onDemoTouched, { once: true });
     });
   }
+
+  let activeConfetti: HTMLCanvasElement | null = null;
+  let confettiReq = 0;
 
   function confetti() {
     if (reduce || !demoEl) return;
     const c = document.createElement('canvas');
     c.className = 'confetti';
-    document.body.appendChild(c);
+    const host = document.querySelector('.landing-wrapper') || document.body;
+    host.appendChild(c);
+    activeConfetti = c;
     const dpr = window.devicePixelRatio || 1;
     const W = window.innerWidth;
     const H = window.innerHeight;
@@ -182,12 +202,13 @@ export function initCareerMonkeLanding(): () => void {
         x.restore();
       });
       if (t < 2600) {
-        requestAnimationFrame(f);
+        confettiReq = requestAnimationFrame(f);
       } else {
         c.remove();
+        if (activeConfetti === c) activeConfetti = null;
       }
     }
-    requestAnimationFrame(f);
+    confettiReq = requestAnimationFrame(f);
   }
 
   function pick(key: string) {
@@ -207,12 +228,14 @@ export function initCareerMonkeLanding(): () => void {
     if (cJobs) cJobs.textContent = '0';
     if (scanBar) scanBar.style.width = '0';
     say('Checking company career pages for ' + cur.label + ' jobs');
-    requestAnimationFrame(() => {
-      if (scanBar) {
-        scanBar.style.width = '100%';
-        scanBar.style.transitionDuration = reduce ? '0s' : '2.2s';
-      }
-    });
+    timers.push(
+      requestAnimationFrame(() => {
+        if (scanBar) {
+          scanBar.style.width = '100%';
+          scanBar.style.transitionDuration = reduce ? '0s' : '2.2s';
+        }
+      })
+    );
     countTo(cPages, cur.pages, 2200);
     countTo(cJobs, cur.found, 2200);
     later(match, 2500);
@@ -355,36 +378,41 @@ export function initCareerMonkeLanding(): () => void {
   }
 
   document.querySelectorAll<HTMLElement>('.chip[data-field]').forEach((b) => {
-    b.addEventListener('click', () => {
+    const onChipClick = () => {
       const field = b.getAttribute('data-field');
       if (field) pick(field);
-    });
+    };
+    addListener(b, 'click', onChipClick);
   });
 
   const actBtn = $('act');
   if (actBtn) {
-    actBtn.addEventListener('click', function (this: HTMLElement) {
-      if (this.dataset.next === 'tailor') tailor(); else apply();
-    });
+    const onActClick = function (this: HTMLElement) {
+      if (this.dataset.next === 'tailor') tailor(); else if (this.dataset.next === 'apply') apply();
+    };
+    addListener(actBtn, 'click', onActClick as EventListener);
   }
 
   const againBtn = $('again');
   if (againBtn) {
-    againBtn.addEventListener('click', () => { reset(true); });
+    const onAgainClick = () => { reset(true); };
+    addListener(againBtn, 'click', onAgainClick);
   }
 
   const tryDemo = $('try-demo');
   if (tryDemo) {
-    tryDemo.addEventListener('click', (e) => {
+    const onTryDemoClick = (e: Event) => {
       e.preventDefault();
       const demo = $('demo');
       if (demo) demo.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' });
       if (cur === null) reset(false);
       const first = document.querySelector<HTMLElement>('.demo .state:not([hidden]) button, .demo .state:not([hidden]) a');
       if (first) {
-        setTimeout(() => { first.focus({ preventScroll: true }); }, reduce ? 0 : 350);
+        const t = setTimeout(() => { first.focus({ preventScroll: true }); }, reduce ? 0 : 350);
+        timers.push(t);
       }
-    });
+    };
+    addListener(tryDemo, 'click', onTryDemoClick);
   }
 
   /* ---------- COMPARISON REVEAL ---------- */
@@ -565,7 +593,7 @@ export function initCareerMonkeLanding(): () => void {
   if (cv) {
     const glFig = cv.closest<HTMLElement>('.gl');
     GS = gSize();
-    window.addEventListener('resize', handleResize);
+    addListener(window, 'resize', handleResize);
 
     let gChoose = (_i: number) => {};
 
@@ -578,7 +606,8 @@ export function initCareerMonkeLanding(): () => void {
         b.className = 'chip';
         b.textContent = c.n;
         b.setAttribute('aria-pressed', i === gSel ? 'true' : 'false');
-        b.addEventListener('click', () => { glTouch(); gChoose(i); });
+        const onCityClick = () => { glTouch(); gChoose(i); };
+        addListener(b, 'click', onCityClick);
         wrapC.appendChild(b);
         cyBtns.push(b);
       });
@@ -652,31 +681,36 @@ export function initCareerMonkeLanding(): () => void {
     };
     gLoopReq = requestAnimationFrame(gLoop);
 
-    cv.addEventListener('pointerdown', (e) => {
+    addListener(cv, 'pointerdown', ((e: Event) => {
+      const pe = e as PointerEvent;
       glTouch();
       gDrag = true;
       gTarget = null;
       gMoved = 0;
-      gLast = [e.clientX, e.clientY];
-      cv.setPointerCapture(e.pointerId);
-    });
+      gLast = [pe.clientX, pe.clientY];
+      if (typeof cv.setPointerCapture === 'function') {
+        cv.setPointerCapture(pe.pointerId);
+      }
+    }) as EventListener);
 
-    cv.addEventListener('pointermove', (e) => {
+    addListener(cv, 'pointermove', ((e: Event) => {
+      const pe = e as PointerEvent;
       if (!gDrag || !gLast) return;
-      const dx = e.clientX - gLast[0];
-      const dy = e.clientY - gLast[1];
+      const dx = pe.clientX - gLast[0];
+      const dy = pe.clientY - gLast[1];
       gMoved += Math.abs(dx) + Math.abs(dy);
       rot.lon += dx * 0.5;
       rot.lat = Math.max(-60, Math.min(60, rot.lat + dy * 0.35));
-      gLast = [e.clientX, e.clientY];
-    });
+      gLast = [pe.clientX, pe.clientY];
+    }) as EventListener);
 
-    cv.addEventListener('pointerup', (e) => {
+    addListener(cv, 'pointerup', ((e: Event) => {
+      const pe = e as PointerEvent;
       gDrag = false;
       if (gMoved < 6) {
         const r = cv.getBoundingClientRect();
-        const x = e.clientX - r.left;
-        const y = e.clientY - r.top;
+        const x = pe.clientX - r.left;
+        const y = pe.clientY - r.top;
         let best: number | null = null;
         let bd = 22;
         pinXY.forEach((pn) => {
@@ -688,9 +722,9 @@ export function initCareerMonkeLanding(): () => void {
         });
         if (best !== null) gChoose(best);
       }
-    });
+    }) as EventListener);
 
-    cv.addEventListener('pointercancel', () => { gDrag = false; });
+    addListener(cv, 'pointercancel', (() => { gDrag = false; }) as EventListener);
     gChoose(gSel);
 
     if (glFig && 'IntersectionObserver' in window) {
@@ -855,6 +889,8 @@ export function initCareerMonkeLanding(): () => void {
     }
   };
 
+  const cardStops: Array<() => void> = [];
+
   document.querySelectorAll<HTMLElement>('.fc[data-run]').forEach((f) => {
     const kind = f.dataset.run;
     if (!kind || !RUN[kind]) return;
@@ -864,6 +900,7 @@ export function initCareerMonkeLanding(): () => void {
       if (reduce) fn(); else ts.push(setTimeout(fn, ms));
     }
     function stop() { ts.forEach(clearTimeout); ts = []; }
+    cardStops.push(stop);
 
     if (reduce || !('IntersectionObserver' in window)) {
       f.classList.add('prep');
@@ -894,9 +931,15 @@ export function initCareerMonkeLanding(): () => void {
   // Return cleanup function
   return () => {
     clearTimers();
+    cleanups.forEach((c) => c());
+    cardStops.forEach((stop) => stop());
     if (gLoopReq) cancelAnimationFrame(gLoopReq);
     if (tourT) clearInterval(tourT);
-    window.removeEventListener('resize', handleResize);
+    if (confettiReq) cancelAnimationFrame(confettiReq);
+    if (activeConfetti) {
+      activeConfetti.remove();
+      activeConfetti = null;
+    }
     if (compObserver) compObserver.disconnect();
     if (globeObserver) globeObserver.disconnect();
     cardObservers.forEach((io) => io.disconnect());
