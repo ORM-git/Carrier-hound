@@ -11,6 +11,9 @@ Every form surface performing state mutations or external API mutations was eval
 
 Per project guidelines, this batch is **audit-only**. Gaps identified below are cataloged with exact `file:line` locations for future UI remediation; no visual layouts or component diffs were introduced.
 
+## Audit Methodology
+This audit is conducted strictly as an offline static code analysis audit of repository source files (`src/app/` and `src/components/`), inspecting real JSX and handler structures and documenting current implementation state against known gaps without synthetic DOM fixtures or AST emulation.
+
 ---
 
 ## Form-by-Form Audit Results

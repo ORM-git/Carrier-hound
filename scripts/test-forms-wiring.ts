@@ -1,20 +1,20 @@
 /**
  * scripts/test-forms-wiring.ts
  *
- * Form wiring verification guard and regression suite:
- * Verifies that forms mutating data across the application adhere to:
- *   (a) Submit control disables and shows pending state during inflight requests
- *   (b) Resume upload wires the existing progress component (or records the verified gap)
- *   (c) Failed mutations surface the existing retry affordance (or records the verified gap)
+ * Form wiring static audit guard:
+ * Inspects application form source files across the repository to verify:
+ *   (a) Submit control disables and shows pending state during inflight requests (or records verified gap)
+ *   (b) Resume upload wires the existing progress component (or records verified gap)
+ *   (c) Failed mutations surface retry affordances (or records verified gap)
  *
- * Uses static code analysis, AST/token inspection, and JSDOM DOM assertions.
+ * Strictly scoped as an offline static code analysis audit of source files in src/app/
+ * and src/components/. Does not perform synthetic DOM or AST emulation.
  * Includes a negative control proving non-zero exit on synthetic failures.
  */
 
 import * as fs from "fs";
 import * as path from "path";
 import { spawnSync } from "child_process";
-import { JSDOM } from "jsdom";
 
 const ROOT = path.resolve(__dirname, "..");
 const isNegativeControl = process.argv.includes("--negative-control");
@@ -45,7 +45,7 @@ if (isNegativeControl) {
 }
 
 // ---------------------------------------------------------------------------
-// Section 1: Static Source Verification & Gap Audit
+// Section 1: Static Source Code Analysis & Verified Gaps
 // ---------------------------------------------------------------------------
 console.log("\n--- Section 1: Static Code Analysis ---");
 
@@ -155,106 +155,9 @@ check(auditDoc.includes("src/components/resume/ResumeUploadAndConfirm.tsx:417-43
 check(auditDoc.includes("src/app/tracker/page.tsx:1009-1014"), "Audit doc records Tracker Add Application gap");
 
 // ---------------------------------------------------------------------------
-// Section 2: JSDOM DOM & Behavioral Assertions
+// Section 2: Negative Control Validation
 // ---------------------------------------------------------------------------
-console.log("\n--- Section 2: JSDOM DOM Assertions ---");
-
-// 2.1 Test submit button pending state simulation
-{
-  const dom = new JSDOM(`<!DOCTYPE html>
-    <html>
-      <body>
-        <form id="test-form">
-          <button id="submit-idle" type="submit">Email me a sign-in link</button>
-          <button id="submit-loading" type="submit" disabled>
-            <svg class="animate-spin" data-testid="spinner"></svg>
-            <span>Sending link…</span>
-          </button>
-        </form>
-      </body>
-    </html>
-  `);
-
-  const doc = dom.window.document;
-  const idleBtn = doc.querySelector<HTMLButtonElement>("#submit-idle");
-  const loadingBtn = doc.querySelector<HTMLButtonElement>("#submit-loading");
-
-  check(idleBtn !== null && !idleBtn.disabled, "JSDOM: Idle submit button is enabled");
-  check(loadingBtn !== null && loadingBtn.disabled, "JSDOM: Pending submit button has disabled=true");
-  check(
-    loadingBtn?.querySelector("[data-testid='spinner']") !== null,
-    "JSDOM: Pending submit button renders spinner element"
-  );
-  check(
-    loadingBtn?.textContent?.includes("Sending link…") === true,
-    "JSDOM: Pending submit button renders 'Sending link…' label"
-  );
-}
-
-// 2.2 Test Resume Upload Retry Affordance in JSDOM
-{
-  let retryClicked = false;
-  const dom = new JSDOM(`<!DOCTYPE html>
-    <html>
-      <body>
-        <div id="parse-error" role="alert">
-          <span>Failed to parse document</span>
-          <button id="retry-upload" type="button">Retry Upload</button>
-        </div>
-      </body>
-    </html>
-  `);
-
-  const doc = dom.window.document;
-  const retryBtn = doc.querySelector<HTMLButtonElement>("#retry-upload");
-  if (retryBtn) {
-    retryBtn.addEventListener("click", () => {
-      retryClicked = true;
-    });
-    retryBtn.click();
-  }
-
-  check(retryBtn !== null, "JSDOM: Parse error alert contains 'Retry Upload' button");
-  check(retryClicked, "JSDOM: Clicking 'Retry Upload' executes retry handler");
-}
-
-// 2.3 Test ProgressBar component DOM structure & accessibility
-{
-  const value = 65;
-  const max = 100;
-  const ratio = value / max;
-  const pct = Math.round(ratio * 100);
-
-  const dom = new JSDOM(`<!DOCTYPE html>
-    <html>
-      <body>
-        <div role="progressbar"
-             aria-label="Upload Progress"
-             aria-valuemin="0"
-             aria-valuemax="${max}"
-             aria-valuenow="${value}"
-             aria-valuetext="${pct}%">
-          <div class="fill" style="transform: scaleX(${ratio})"></div>
-        </div>
-      </body>
-    </html>
-  `);
-
-  const doc = dom.window.document;
-  const progress = doc.querySelector("[role='progressbar']");
-  check(progress !== null, "JSDOM: Progress bar element has role='progressbar'");
-  check(progress?.getAttribute("aria-valuenow") === "65", "JSDOM: Progress bar has aria-valuenow='65'");
-  check(progress?.getAttribute("aria-valuemin") === "0", "JSDOM: Progress bar has aria-valuemin='0'");
-  check(progress?.getAttribute("aria-valuemax") === "100", "JSDOM: Progress bar has aria-valuemax='100'");
-  check(progress?.getAttribute("aria-valuetext") === "65%", "JSDOM: Progress bar has aria-valuetext='65%'");
-  const fill = progress?.querySelector(".fill") as HTMLElement;
-  check(fill?.style.transform === "scaleX(0.65)", "JSDOM: Progress bar fill scales according to value ratio");
-}
-
-// ---------------------------------------------------------------------------
-// Section 3: Negative Control Validation
-// ---------------------------------------------------------------------------
-console.log("\n--- Section 3: Negative Control Verification ---");
+console.log("\n--- Section 2: Negative Control Verification ---");
 const child = spawnSync("npx", ["tsx", path.resolve(__filename), "--negative-control"], {
   encoding: "utf8",
   shell: true,
@@ -276,6 +179,6 @@ console.log(`\ntest-forms-wiring: ${passed} PASS, ${failed} FAIL`);
 if (failed > 0) {
   process.exit(1);
 } else {
-  console.log("PASS-LOCAL: All form wiring verification and gap assertions passed.");
+  console.log("PASS-LOCAL: All form wiring static verification and gap assertions passed.");
   process.exit(0);
 }
