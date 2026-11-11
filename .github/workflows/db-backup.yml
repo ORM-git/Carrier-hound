@@ -1,0 +1,47 @@
+name: Weekly Database Logical Backup
+
+on:
+  schedule:
+    # Every Sunday at 02:15 UTC
+    - cron: '15 2 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    name: Logical Database Backup Export
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Install PostgreSQL Client Tools (pg_dump)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends postgresql-client
+
+      - name: Run Database Backup Export
+        env:
+          SUPABASE_DB_CONNECTION_STRING: ${{ secrets.SUPABASE_DB_CONNECTION_STRING }}
+        run: npx tsx scripts/run-db-backup.ts
+
+      - name: Upload Backup Artifact (30-day retention)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-logical-backup-${{ github.run_id }}
+          path: backups/
+          retention-days: 30
