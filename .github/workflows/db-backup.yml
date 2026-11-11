@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   backup:
-    name: Logical Database Backup Export
+    name: Logical Database Backup Export (Schema Only)
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -38,10 +38,11 @@ jobs:
           SUPABASE_DB_CONNECTION_STRING: ${{ secrets.SUPABASE_DB_CONNECTION_STRING }}
         run: npx tsx scripts/run-db-backup.ts
 
-      - name: Upload Backup Artifact (30-day retention)
+      # Safe design: uploads schema-only DDL (no table rows or user PII) with 30-day retention
+      - name: Upload Schema Backup Artifact (30-day retention)
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: db-logical-backup-${{ github.run_id }}
+          name: db-schema-backup-${{ github.run_id }}
           path: backups/
           retention-days: 30

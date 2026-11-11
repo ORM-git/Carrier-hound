@@ -7,7 +7,9 @@
  * Security Requirements:
  * - Reads connection string exclusively from repository secret / environment.
  * - Fails with clear owner-facing instructions when secret is absent.
+ * - Enforces schema-only dump (--schema-only) so zero row data or user PII is exported.
  * - NEVER prints or logs raw credentials, passwords, or connection strings.
+ * - Masks URI query params (?password=...) and keyword-form strings in all outputs and subprocess errors.
  */
 
 import * as fs from "node:fs";
@@ -49,26 +51,136 @@ export function resolveConnectionString(
 }
 
 /**
- * Completely redacts sensitive credentials from any connection string or URI.
+ * Helper to mask sensitive query parameters (e.g. ?password=, &token=) in a URL or query string.
+ */
+function maskQueryParams(pathAndQuery: string): string {
+  return pathAndQuery.replace(
+    /([?&](?:password|pwd|secret|key|apikey|token|auth)=)([^&#\s]*)/gi,
+    "$1****"
+  );
+}
+
+/**
+ * Completely redacts sensitive credentials from any connection string, URI, or keyword string.
+ * Masks:
+ * 1. URI user:password@host authority
+ * 2. URI query parameters (?password=..., &token=...)
+ * 3. Keyword-value pairs (password=..., password='...')
  */
 export function maskConnectionString(raw: string): string {
-  if (!raw) return "";
+  if (!raw || typeof raw !== "string") return "";
 
-  // 1. Standard URI matching: protocol://user:pass@host:port/path
+  let result = raw;
+
+  // 1. Standard URI matching: protocol://user:pass@host:port/path?query
   const uriRegex = /^(postgres(?:ql)?:\/\/)([^:@\s]+)(?::([^@\s]+))?@([^\/\s?#]+)(.*)$/i;
-  const match = raw.match(uriRegex);
+  const match = result.match(uriRegex);
   if (match) {
     const [, protocol, user, , hostPort, rest] = match;
-    return `${protocol}${user}:****@${hostPort}${rest}`;
+    const maskedRest = maskQueryParams(rest);
+    return `${protocol}${user}:****@${hostPort}${maskedRest}`;
   }
 
-  // 2. Keyword/value string (host=... password=...)
-  if (/password\s*=/i.test(raw)) {
-    return raw.replace(/password\s*=\s*['"]?[^'"\s]+['"]?/gi, "password=****");
+  // 1b. URI without user:password auth but with query params: protocol://host:port/path?query
+  const uriNoAuthRegex = /^(postgres(?:ql)?:\/\/)([^\/\s?#]+)(.*)$/i;
+  const matchNoAuth = result.match(uriNoAuthRegex);
+  if (matchNoAuth) {
+    const [, protocol, hostPort, rest] = matchNoAuth;
+    return `${protocol}${hostPort}${maskQueryParams(rest)}`;
   }
 
-  // 3. Fallback: mask whole string if unrecognized format
-  return "postgresql://****:****@****/****";
+  // 2. Keyword/value string (host=... password=... or password='...')
+  if (/password\s*=/i.test(result)) {
+    result = result.replace(
+      /(password\s*=\s*)(?:'[^']*'|"[^"]*"|[^\s;]+)/gi,
+      "password=****"
+    );
+  }
+
+  // 3. Mask any remaining query parameters
+  result = maskQueryParams(result);
+
+  // 4. Fallback: mask whole string if unrecognized format and contains password-like tokens that weren't masked
+  if (!result.includes("****") && /password|secret/i.test(result)) {
+    return "postgresql://****:****@****/****";
+  }
+
+  return result;
+}
+
+/**
+ * Extracts all raw secret tokens from a connection string so they can be scrubbed
+ * from error messages or subprocess stderr.
+ */
+export function extractSecretsToScrub(connStr: string): string[] {
+  if (!connStr || typeof connStr !== "string") return [];
+  const secrets = new Set<string>();
+  secrets.add(connStr);
+
+  // 1. Password from URI: :password@
+  const uriPassMatch = connStr.match(/:\/\/([^:@\s]+):([^@\s]+)@/);
+  if (uriPassMatch && uriPassMatch[2]) {
+    secrets.add(uriPassMatch[2]);
+  }
+
+  // 2. Keyword password: password=xyz, password='xyz', password="xyz"
+  const kwPassMatch = connStr.match(/password\s*=\s*(?:'([^']*)'|"([^"]*)"|([^\s;]+))/i);
+  if (kwPassMatch) {
+    const val = kwPassMatch[1] || kwPassMatch[2] || kwPassMatch[3];
+    if (val) secrets.add(val);
+  }
+
+  // 3. Query params: ?password=xyz or &password=xyz
+  const queryMatches = connStr.matchAll(/[?&](?:password|pwd|secret|key|apikey|token|auth)=([^&#\s]+)/gi);
+  for (const qm of queryMatches) {
+    if (qm[1]) {
+      secrets.add(qm[1]);
+      try {
+        secrets.add(decodeURIComponent(qm[1]));
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  // Filter out short/empty tokens
+  return Array.from(secrets).filter((s) => s.length >= 3);
+}
+
+/**
+ * Scrubs all connection string variants, passwords, query parameters,
+ * and keyword values from text (such as subprocess error messages or logs).
+ */
+export function scrubSensitiveSecrets(text: string, secrets: string[] = []): string {
+  if (!text) return "";
+  let sanitized = text;
+
+  // Mask URI authority passwords: postgresql://...:...@...
+  sanitized = sanitized.replace(
+    /(postgres(?:ql)?:\/\/[^:@\s]+:)([^@\s]+)(@)/gi,
+    "$1****$3"
+  );
+
+  // Mask URI query params: ?password=..., &token=...
+  sanitized = sanitized.replace(
+    /([?&](?:password|pwd|secret|key|apikey|token|auth)=)([^&#\s\n'"]+)/gi,
+    "$1****"
+  );
+
+  // Mask keyword password=...
+  sanitized = sanitized.replace(
+    /(password\s*=\s*)(?:'[^']*'|"[^"]*"|[^\s;,'"\\)]+)/gi,
+    "$1****"
+  );
+
+  // Explicitly replace every extracted secret token
+  for (const secret of secrets) {
+    if (secret && secret.length >= 3) {
+      sanitized = sanitized.split(secret).join("****");
+    }
+  }
+
+  return sanitized;
 }
 
 /**
@@ -91,6 +203,7 @@ export function getOwnerSecretSetupInstructions(): string {
 
 /**
  * Builds safe pg_dump execution arguments.
+ * Enforces --schema-only so no table rows or user PII are exported.
  */
 export function buildPgDumpConfig(options: BackupOptions = {}): {
   args: string[];
@@ -99,11 +212,12 @@ export function buildPgDumpConfig(options: BackupOptions = {}): {
 } {
   const outputDir = options.outputDir ?? DEFAULT_OUTPUT_DIR;
   const dateStr = options.date ?? new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-  const fileName = `careerhound-backup-${dateStr}.sql`;
+  const fileName = `careerhound-schema-backup-${dateStr}.sql`;
   const outputPath = path.join(outputDir, fileName);
 
   const args: string[] = [
     "--schema=public",
+    "--schema-only", // Safe design: schema DDL only, zero user data/rows exported
     "--no-owner",
     "--no-privileges",
     "--clean",
@@ -138,8 +252,9 @@ export async function runDatabaseBackup(options: BackupOptions = {}): Promise<Ba
   }
 
   const { args, outputPath, fileName } = buildPgDumpConfig(options);
+  const secretsToScrub = extractSecretsToScrub(resolved.connectionString);
 
-  console.log(`[DB-BACKUP] Preparing logical backup to: ${outputPath}`);
+  console.log(`[DB-BACKUP] Preparing schema-only logical backup to: ${outputPath}`);
   console.log(`[DB-BACKUP] Target source: ${resolved.source}`);
   console.log(`[DB-BACKUP] Connection endpoint: ${maskConnectionString(resolved.connectionString)}`);
 
@@ -154,25 +269,14 @@ export async function runDatabaseBackup(options: BackupOptions = {}): Promise<Ba
 
   // Attempt pg_dump execution
   return new Promise((resolve) => {
-    // Append dbname argument
     const finalArgs = [...args, `--dbname=${resolved.connectionString}`];
 
     execFile("pg_dump", finalArgs, { env: { ...process.env } }, (err, stdout, stderr) => {
       if (err) {
-        // Ensure connection string or passwords are never leaked in error output
-        let sanitizedErr = `${err.message || ""}\n${stderr || ""}`;
-        if (resolved.connectionString) {
-          // Extract potential password from URI to scrub
-          try {
-            const parsed = new URL(resolved.connectionString);
-            if (parsed.password) {
-              sanitizedErr = sanitizedErr.split(parsed.password).join("****");
-            }
-          } catch {
-            // Ignore parse errors, mask raw
-            sanitizedErr = sanitizedErr.split(resolved.connectionString).join("****");
-          }
-        }
+        // Scrub all connection strings, passwords, and query parameters from error message and stderr
+        const rawErrText = `${err.message || ""}\n${stderr || ""}`;
+        const sanitizedErr = scrubSensitiveSecrets(rawErrText, secretsToScrub);
+
         console.error(`[DB-BACKUP] pg_dump failed: ${sanitizedErr.trim()}`);
         resolve({
           success: false,
@@ -181,7 +285,7 @@ export async function runDatabaseBackup(options: BackupOptions = {}): Promise<Ba
         return;
       }
 
-      console.log(`[DB-BACKUP] Successfully generated logical backup: ${outputPath}`);
+      console.log(`[DB-BACKUP] Successfully generated schema-only logical backup: ${outputPath}`);
       resolve({
         success: true,
         outputPath,
