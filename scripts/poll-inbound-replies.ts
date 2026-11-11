@@ -2,9 +2,8 @@
  * Inbound reply poller (Backend sheet rank 14, docs/inbound-replies.md).
  *
  * Polls the sender mailbox (GMAIL_SENDER_EMAIL) via the Gmail API and
- * stores new replies in public.inbound_replies for review. Coarse kind
- * classification only; bounce/unsubscribe handling proper lives in the
- * dedicated sheet rows (38/39).
+ * stores new replies in public.inbound_replies for review. Header-aware
+ * classification into reply / bounce / auto_reply / unsubscribe / other.
  *
  * Usage: npx tsx scripts/poll-inbound-replies.ts
  * Env:   INBOUND_POLL_ENABLED=true (activation gate, off by default),
@@ -27,17 +26,207 @@ const GMAIL_MESSAGES_URL = "https://gmail.googleapis.com/gmail/v1/users/me/messa
 const EXCERPT_MAX = 2000;
 const MAX_MESSAGES_PER_RUN = 25;
 
-type InboundKind = "reply" | "bounce_suspect" | "unsubscribe_suspect";
+/**
+ * Header-aware inbound classification kinds (Backend sheet row "Reply-to / Inbound Handling").
+ */
+export type InboundClassificationKind = "reply" | "bounce" | "auto_reply" | "unsubscribe" | "other";
 
-function classify(subject: string, snippet: string): InboundKind {
-  const s = `${subject}\n${snippet}`.toLowerCase();
-  if (s.includes("mailer-daemon") || s.includes("undeliverable") || s.includes("delivery status notification")) {
-    return "bounce_suspect";
+/**
+ * Stored kind values supported by the database schema (CHECK constraint in 20261106j_inbound_replies.sql).
+ */
+export type StoredInboundKind = "reply" | "bounce_suspect" | "unsubscribe_suspect";
+
+export const ALLOWED_STORED_KINDS: readonly StoredInboundKind[] = Object.freeze([
+  "reply",
+  "bounce_suspect",
+  "unsubscribe_suspect",
+]);
+
+/**
+ * Maps rich internal classifier output to the database CHECK constraint set:
+ * - bounce -> 'bounce_suspect' (read downstream by scripts/bounce-intake-cron.ts)
+ * - unsubscribe -> 'unsubscribe_suspect'
+ * - reply -> 'reply'
+ * - auto_reply and other -> null (skipped; no row inserted)
+ */
+export function mapClassificationToStoredKind(kind: InboundClassificationKind): StoredInboundKind | null {
+  switch (kind) {
+    case "bounce":
+      return "bounce_suspect";
+    case "unsubscribe":
+      return "unsubscribe_suspect";
+    case "reply":
+      return "reply";
+    case "auto_reply":
+    case "other":
+    default:
+      return null;
   }
-  if (s.includes("unsubscribe") || s.includes("stop emailing") || s.includes("remove me")) {
-    return "unsubscribe_suspect";
+}
+
+/** Backward compatibility alias for legacy callers */
+export type InboundKind = InboundClassificationKind;
+
+export interface InboundHeaderMap {
+  [headerName: string]: string | undefined;
+}
+
+export interface InboundMessageContext {
+  headers?: InboundHeaderMap | Array<{ name: string; value: string }>;
+  from?: string;
+  subject?: string;
+  snippet?: string;
+  body?: string;
+}
+
+/**
+ * Masks email addresses in text to ensure recipient/sender PII is never written to logs.
+ */
+export function maskEmail(text: string | null | undefined): string {
+  if (!text || typeof text !== "string") return "";
+  return text.replace(/([a-zA-Z0-9._%+-]+)@([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g, (_, user: string, domain: string) => {
+    if (user.length <= 2) {
+      return `${user[0] || "*"}***@${domain}`;
+    }
+    return `${user.slice(0, 2)}***@${domain}`;
+  });
+}
+
+/**
+ * Normalizes headers into a case-insensitive map.
+ */
+export function parseHeaderMap(
+  rawHeaders?: InboundHeaderMap | Array<{ name: string; value: string }>
+): Map<string, string> {
+  const map = new Map<string, string>();
+  if (!rawHeaders) return map;
+
+  if (Array.isArray(rawHeaders)) {
+    for (const item of rawHeaders) {
+      if (item && typeof item.name === "string" && typeof item.value === "string") {
+        map.set(item.name.toLowerCase().trim(), item.value.trim());
+      }
+    }
+  } else if (typeof rawHeaders === "object") {
+    for (const [key, value] of Object.entries(rawHeaders)) {
+      if (typeof key === "string" && typeof value === "string") {
+        map.set(key.toLowerCase().trim(), value.trim());
+      }
+    }
   }
-  return "reply";
+
+  return map;
+}
+
+/**
+ * Header-aware inbound reply classifier.
+ *
+ * Inspects:
+ * - Content-Type report headers & MAILER-DAEMON / Return-Path -> bounce
+ * - Auto-Submitted (RFC 3834) & Precedence (RFC 2076) -> auto_reply / other
+ * - List-Unsubscribe & explicit opt-out keywords -> unsubscribe
+ * - Standard human replies (without automated headers) -> reply
+ * - Fails open to "other" on unexpected input or parse errors.
+ */
+export function classifyInboundMessage(ctx: InboundMessageContext): InboundClassificationKind {
+  try {
+    if (!ctx || typeof ctx !== "object") {
+      return "other";
+    }
+
+    const headers = parseHeaderMap(ctx.headers);
+    const getHeader = (name: string): string => headers.get(name.toLowerCase()) || "";
+
+    const autoSubmitted = getHeader("auto-submitted").toLowerCase();
+    const precedence = getHeader("precedence").toLowerCase();
+    const contentType = getHeader("content-type").toLowerCase();
+    const listUnsubscribe = getHeader("list-unsubscribe");
+    const returnPath = getHeader("return-path").toLowerCase();
+    const inReplyTo = getHeader("in-reply-to");
+    const references = getHeader("references");
+
+    const fromAddress = (ctx.from || getHeader("from") || "").toLowerCase();
+    const subject = (ctx.subject || getHeader("subject") || "").trim();
+    const snippet = (ctx.snippet || ctx.body || "").trim();
+    const textBlob = `${subject}\n${snippet}`.toLowerCase();
+
+    // 1. BOUNCE: delivery failures, mailer-daemon, delivery-status reports
+    const isReportContentType =
+      contentType.includes("report-type=delivery-status") ||
+      contentType.includes("multipart/report") ||
+      contentType.includes("message/delivery-status");
+
+    const isMailerDaemonFrom =
+      fromAddress.includes("mailer-daemon") ||
+      fromAddress.includes("postmaster@") ||
+      returnPath.includes("mailer-daemon") ||
+      returnPath.includes("postmaster@");
+
+    const isBounceSubject =
+      textBlob.includes("delivery status notification") ||
+      textBlob.includes("undelivered mail returned to sender") ||
+      textBlob.includes("mail delivery failed") ||
+      textBlob.includes("failure notice") ||
+      textBlob.includes("undeliverable:");
+
+    if (isReportContentType || isMailerDaemonFrom || (isBounceSubject && (autoSubmitted.includes("auto-generated") || returnPath === "<>"))) {
+      return "bounce";
+    }
+
+    // 2. AUTO-REPLY: out-of-office, vacation responders, automated notifications
+    const isAutoSubmittedReply =
+      autoSubmitted.includes("auto-replied") ||
+      (autoSubmitted.length > 0 && autoSubmitted !== "no" && !autoSubmitted.includes("auto-generated"));
+
+    const isPrecedenceAutoReply = precedence === "auto_reply";
+
+    const isOutOfOfficeSubject =
+      /^automatic reply:/i.test(subject) ||
+      /^out of office:/i.test(subject) ||
+      /^auto-reply:/i.test(subject) ||
+      /^autoresponse:/i.test(subject) ||
+      /i am (currently )?(out of the office|away from the office|on leave)/i.test(snippet);
+
+    if (isAutoSubmittedReply || isPrecedenceAutoReply || (isOutOfOfficeSubject && autoSubmitted !== "no")) {
+      return "auto_reply";
+    }
+
+    // 3. UNSUBSCRIBE: List-Unsubscribe header or explicit opt-out intent
+    const hasListUnsubscribeHeader = Boolean(listUnsubscribe && listUnsubscribe.trim().length > 0);
+
+    const isExplicitUnsubscribeText =
+      /\b(unsubscribe|stop emailing|remove me|opt[ -]?out|take me off (your|the) list)\b/i.test(textBlob);
+
+    if (hasListUnsubscribeHeader || isExplicitUnsubscribeText) {
+      return "unsubscribe";
+    }
+
+    // 4. OTHER: Bulk / junk / system notifications that are neither bounces nor human replies
+    if (precedence === "bulk" || precedence === "junk" || precedence === "list" || autoSubmitted === "auto-generated") {
+      return "other";
+    }
+
+    // 5. HUMAN REPLY: Normal conversation response
+    const hasReplyIndicators =
+      inReplyTo.length > 0 ||
+      references.length > 0 ||
+      /^(re|fwd|fw):\s*/i.test(subject) ||
+      (subject.length > 0 && fromAddress.length > 0 && autoSubmitted !== "auto-generated");
+
+    if (hasReplyIndicators && autoSubmitted !== "auto-generated") {
+      return "reply";
+    }
+
+    return "other";
+  } catch (_err) {
+    // Fail-open on any parse error
+    return "other";
+  }
+}
+
+/** Backward compatibility wrapper */
+export function classify(subject: string, snippet: string, headers?: InboundHeaderMap | Array<{ name: string; value: string }>): InboundClassificationKind {
+  return classifyInboundMessage({ subject, snippet, headers });
 }
 
 async function getAccessToken(): Promise<string | null> {
@@ -96,8 +285,23 @@ async function main() {
     return;
   }
 
-  const supabase = createClient(url, serviceKey!);
+  const supabase = createClient(url, serviceKey);
   let inserted = 0;
+  let skippedAutomated = 0;
+
+  const METADATA_HEADERS = [
+    "From",
+    "Subject",
+    "Date",
+    "Auto-Submitted",
+    "Precedence",
+    "List-Unsubscribe",
+    "Content-Type",
+    "Return-Path",
+    "In-Reply-To",
+    "References",
+  ];
+  const metadataParams = METADATA_HEADERS.map((h) => `metadataHeaders=${encodeURIComponent(h)}`).join("&");
 
   for (const m of messages) {
     // Dedupe first: message_id is the unique key.
@@ -108,7 +312,7 @@ async function main() {
       .maybeSingle();
     if (existing) continue;
 
-    const msgRes = await fetch(`${GMAIL_MESSAGES_URL}/${m.id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`, {
+    const msgRes = await fetch(`${GMAIL_MESSAGES_URL}/${m.id}?format=metadata&${metadataParams}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!msgRes.ok) {
@@ -124,27 +328,48 @@ async function main() {
     const headers = msg.payload?.headers ?? [];
     const get = (n: string) => headers.find((h) => h.name.toLowerCase() === n.toLowerCase())?.value ?? "";
     const subject = get("Subject");
+    const fromAddress = get("From");
     const snippet = (msg.snippet ?? "").slice(0, EXCERPT_MAX);
 
-    // Fail-open: a failed insert never fails the poll run (matches the
-    // owner decision on audit/history writes).
+    const classification = classifyInboundMessage({
+      headers,
+      from: fromAddress,
+      subject,
+      snippet,
+    });
+
+    const storedKind = mapClassificationToStoredKind(classification);
+    if (!storedKind) {
+      skippedAutomated++;
+      console.log(`Skipping non-storable inbound message ${m.id} (kind: ${classification}).`);
+      continue;
+    }
+
+    // Fail-open: a failed insert never fails the poll run. Never log recipient PII.
     const { error } = await supabase.from("inbound_replies").insert({
       message_id: m.id,
       thread_id: msg.threadId ?? m.threadId ?? null,
-      from_address: get("From"),
+      from_address: fromAddress,
       subject,
       body_excerpt: snippet,
-      kind: classify(subject, snippet),
+      kind: storedKind,
       received_at: msg.internalDate ? new Date(Number(msg.internalDate)).toISOString() : new Date().toISOString(),
     });
-    if (error) console.warn(`Insert failed for ${m.id} (fail-open): ${error.message}`);
-    else inserted++;
+    if (error) {
+      console.warn(`Insert failed for ${m.id} (fail-open): ${maskEmail(error.message)}`);
+    } else {
+      inserted++;
+    }
   }
 
-  console.log(`Inbound poll complete: ${inserted} new repl${inserted === 1 ? "y" : "ies"} stored of ${messages.length} seen.`);
+  console.log(
+    `Inbound poll complete: ${inserted} new repl${inserted === 1 ? "y" : "ies"} stored, ${skippedAutomated} automated/other skipped of ${messages.length} seen.`
+  );
 }
 
-main().catch((err) => {
-  console.error("inbound poll failed:", err);
-  process.exit(1);
-});
+if (process.argv[1] && process.argv[1].endsWith("poll-inbound-replies.ts")) {
+  main().catch((err) => {
+    console.error("inbound poll failed:", maskEmail(err?.message || String(err)));
+    process.exit(1);
+  });
+}
