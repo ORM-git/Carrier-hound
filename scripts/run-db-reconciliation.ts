@@ -4,7 +4,7 @@
  * Executes the reconciliation checks defined in supabase/scripts/reconciliation.sql:
  *   1. jobs vs. jobs_public view (active job count parity, leak & missing checks)
  *   2. subscriptions vs. user_addon_credits (balance bounds, orphan links, order status)
- *   3. funnel_events vs. page_views sanity bounds (volume ratio, progression monotonicity, retention)
+ *   3. funnel_events vs. page_views sanity bounds (volume ratio, progression monotonicity, 90d retention)
  *
  * Safety & Privacy:
  * - Strictly READ-ONLY operations.
@@ -37,14 +37,16 @@ export interface ReconciliationReport {
 
 /**
  * Executes reconciliation audit queries against a provided Supabase client.
- * Emits strictly aggregate counts and statuses.
+ * Emits strictly aggregate counts and statuses matching supabase/scripts/reconciliation.sql.
  */
 export async function executeReconciliation(
   supabase: SupabaseClient<any, any, any>
 ): Promise<ReconciliationReport> {
   const results: ReconciliationCheckResult[] = [];
 
-  // --- SECTION 1: JOBS vs. JOBS_PUBLIC VIEW ---
+  // ============================================================================
+  // 1. JOBS vs. JOBS_PUBLIC VIEW RECONCILIATION
+  // ============================================================================
   // 1.1 Jobs vs jobs_public count parity
   const { count: rawActiveCount, error: err1 } = await supabase
     .from("jobs")
@@ -85,7 +87,6 @@ export async function executeReconciliation(
   });
 
   // 1.3 Detect active raw jobs missing from jobs_public view
-  // (In Supabase PostgREST, covered by parity count + leak checks above)
   results.push({
     checkName: "jobs_active_missing_from_view",
     status: countDiff === 0 && leakCountVal === 0 ? "PASS" : "FAIL",
@@ -95,42 +96,116 @@ export async function executeReconciliation(
     description: "All active raw jobs must have an identical row in jobs_public",
   });
 
-  // --- SECTION 2: SUBSCRIPTIONS vs. USER_ADDON_CREDITS ---
-  // 2.1 Add-on credit balance sanity bounds (sets_remaining <= sets_total and >= 0)
-  const { count: negativeCredits, error: errNeg } = await supabase
+  // ============================================================================
+  // 2. SUBSCRIPTIONS vs. USER_ADDON_CREDITS RECONCILIATION
+  // ============================================================================
+  // 2.1 Add-on credit balance sanity bounds (0 <= sets_remaining <= sets_total)
+  const { data: creditsData, error: errCredits } = await supabase
     .from("user_addon_credits")
-    .select("id", { count: "exact", head: true })
-    .lt("sets_remaining", 0);
+    .select("id, sets_remaining, sets_total");
 
-  const negCreditsVal = negativeCredits ?? 0;
+  let invalidCreditsCount = 0;
+  if (creditsData && Array.isArray(creditsData)) {
+    for (const row of creditsData) {
+      const remaining = Number(row.sets_remaining);
+      const total = Number(row.sets_total);
+      if (remaining < 0 || remaining > total) {
+        invalidCreditsCount++;
+      }
+    }
+  }
+
   results.push({
     checkName: "addon_credits_balance_bounds",
-    status: errNeg || negCreditsVal > 0 ? "FAIL" : "PASS",
+    status: errCredits || invalidCreditsCount > 0 ? "FAIL" : "PASS",
     expectedCount: 0,
-    actualCount: negCreditsVal,
-    discrepancy: negCreditsVal,
-    description: "Add-on credit sets_remaining must be >= 0 and within allocated bounds",
+    actualCount: invalidCreditsCount,
+    discrepancy: invalidCreditsCount,
+    description: "Add-on credits remaining must satisfy 0 <= sets_remaining <= sets_total",
   });
 
-  // 2.2 Add-on credits linked to payment_orders must be 'paid'
-  const { count: unpaidOrders, error: errOrders } = await supabase
-    .from("payment_orders")
-    .select("id", { count: "exact", head: true })
-    .neq("status", "paid")
-    .not("addon_code", "is", null);
+  // 2.2 Active add-on credits held by users without subscriptions (orphan users check)
+  const nowIso = new Date().toISOString();
+  const { data: activeCreditsData, error: errActiveCredits } = await supabase
+    .from("user_addon_credits")
+    .select("user_id, sets_remaining, expires_at")
+    .gt("sets_remaining", 0)
+    .gt("expires_at", nowIso);
 
-  const unpaidCountVal = unpaidOrders ?? 0;
+  let orphanUsersCount = 0;
+  if (activeCreditsData && Array.isArray(activeCreditsData) && activeCreditsData.length > 0) {
+    const activeUserIds = Array.from(new Set(activeCreditsData.map((c: any) => c.user_id).filter(Boolean)));
+    if (activeUserIds.length > 0) {
+      const { data: subsData, error: errSubs } = await supabase
+        .from("subscriptions")
+        .select("user_id")
+        .in("user_id", activeUserIds);
+
+      if (errSubs) {
+        orphanUsersCount = activeUserIds.length;
+      } else {
+        const subUserSet = new Set((subsData || []).map((s: any) => s.user_id));
+        for (const uid of activeUserIds) {
+          if (!subUserSet.has(uid)) {
+            orphanUsersCount++;
+          }
+        }
+      }
+    }
+  }
+
   results.push({
-    checkName: "addon_credits_paid_order_link",
-    status: errOrders || unpaidCountVal > 0 ? "FAIL" : "PASS",
+    checkName: "addon_credits_orphan_users",
+    status: errActiveCredits || orphanUsersCount > 0 ? "FAIL" : "PASS",
     expectedCount: 0,
-    actualCount: unpaidCountVal,
-    discrepancy: unpaidCountVal,
-    description: "Add-on credits linked to orders must reference orders with status = 'paid'",
+    actualCount: orphanUsersCount,
+    discrepancy: orphanUsersCount,
+    description: "Active add-on credits should map to a user with a subscriptions entry",
   });
 
-  // --- SECTION 3: FUNNEL EVENTS vs. PAGE VIEWS SANITY ---
-  // 3.1 Funnel events volume cannot exceed total page views
+  // 2.3 Add-on credits linked to payment_orders status reconciliation
+  // Joins credits to referenced orders; pending/abandoned orders without credits are NOT a failure.
+  const { data: linkedCreditsData, error: errLinkedCredits } = await supabase
+    .from("user_addon_credits")
+    .select("id, user_id, order_id")
+    .not("order_id", "is", null);
+
+  let unconfirmedOrderCredits = 0;
+  if (linkedCreditsData && Array.isArray(linkedCreditsData) && linkedCreditsData.length > 0) {
+    const orderIds = Array.from(new Set(linkedCreditsData.map((c: any) => c.order_id).filter(Boolean)));
+    if (orderIds.length > 0) {
+      const { data: ordersData, error: errOrders } = await supabase
+        .from("payment_orders")
+        .select("id, user_id, status")
+        .in("id", orderIds);
+
+      if (errOrders) {
+        unconfirmedOrderCredits = linkedCreditsData.length;
+      } else {
+        const orderMap = new Map((ordersData || []).map((o: any) => [o.id, o]));
+        for (const credit of linkedCreditsData) {
+          const po = orderMap.get(credit.order_id);
+          if (!po || po.status !== "paid" || (po.user_id && po.user_id !== credit.user_id)) {
+            unconfirmedOrderCredits++;
+          }
+        }
+      }
+    }
+  }
+
+  results.push({
+    checkName: "addon_credits_order_status",
+    status: errLinkedCredits || unconfirmedOrderCredits > 0 ? "FAIL" : "PASS",
+    expectedCount: 0,
+    actualCount: unconfirmedOrderCredits,
+    discrepancy: unconfirmedOrderCredits,
+    description: "Add-on credits referencing an order must point to a paid order for the same user",
+  });
+
+  // ============================================================================
+  // 3. FUNNEL_EVENTS vs. PAGE_VIEWS SANITY BOUNDS
+  // ============================================================================
+  // 3.1 Overall volume ratio sanity bound (funnel_events vs. page_views)
   const { count: funnelCount, error: errFunnel } = await supabase
     .from("funnel_events")
     .select("id", { count: "exact", head: true });
@@ -141,31 +216,77 @@ export async function executeReconciliation(
 
   const fCount = funnelCount ?? 0;
   const pvCount = pageviewCount ?? 0;
-  const ratioOk = pvCount === 0 || fCount <= pvCount * 5; // Generous ceiling
+  const ratioPass = (pvCount === 0 && fCount === 0) || (pvCount > 0 && fCount <= pvCount);
+
   results.push({
-    checkName: "funnel_to_pageviews_volume_ratio",
-    status: errFunnel || errPv || !ratioOk ? "FAIL" : "PASS",
+    checkName: "telemetry_volume_ratio",
+    status: errFunnel || errPv || !ratioPass ? "FAIL" : "PASS",
     expectedCount: pvCount,
     actualCount: fCount,
-    discrepancy: ratioOk ? 0 : fCount - pvCount,
-    description: "Funnel events volume must remain within sane bounds relative to page views",
+    discrepancy: ratioPass ? 0 : Math.max(0, fCount - pvCount),
+    description: "Total funnel events count should reasonably not exceed total page views",
   });
 
-  // 3.2 Operational data retention bounds (check for ancient unpurged rows > 365 days)
-  const oneYearAgo = new Date(Date.now() - 365 * 86400000).toISOString();
-  const { count: oldFunnel, error: errRetention } = await supabase
+  // 3.2 Funnel stage progression monotonicity bounds
+  // signup_completed <= signup_started, onboarding_completed <= onboarding_started, apply_completed <= apply_started
+  const stages = [
+    { start: "signup_started", end: "signup_completed" },
+    { start: "onboarding_started", end: "onboarding_completed" },
+    { start: "apply_started", end: "apply_completed" },
+  ];
+
+  let progressionDiscrepancies = 0;
+  for (const { start, end } of stages) {
+    const { count: startCount } = await supabase
+      .from("funnel_events")
+      .select("id", { count: "exact", head: true })
+      .eq("event", start);
+
+    const { count: endCount } = await supabase
+      .from("funnel_events")
+      .select("id", { count: "exact", head: true })
+      .eq("event", end);
+
+    const s = startCount ?? 0;
+    const e = endCount ?? 0;
+    if (e > s) {
+      progressionDiscrepancies += e - s;
+    }
+  }
+
+  results.push({
+    checkName: "funnel_stage_progression_bounds",
+    status: progressionDiscrepancies === 0 ? "PASS" : "FAIL",
+    expectedCount: 0,
+    actualCount: progressionDiscrepancies,
+    discrepancy: progressionDiscrepancies,
+    description: "Each completed funnel stage count must be <= its respective started count",
+  });
+
+  // 3.3 90-Day Data Retention Window Consistency (+1-day grace = 91 days)
+  const grace91DaysAgo = new Date(Date.now() - 91 * 86400000).toISOString();
+
+  const { count: oldPv, error: errOldPv } = await supabase
+    .from("page_views")
+    .select("id", { count: "exact", head: true })
+    .lt("created_at", grace91DaysAgo);
+
+  const { count: oldFe, error: errOldFe } = await supabase
     .from("funnel_events")
     .select("id", { count: "exact", head: true })
-    .lt("created_at", oneYearAgo);
+    .lt("created_at", grace91DaysAgo);
 
-  const oldFunnelVal = oldFunnel ?? 0;
+  const unpurgedPv = oldPv ?? 0;
+  const unpurgedFe = oldFe ?? 0;
+  const totalUnpurged = unpurgedPv + unpurgedFe;
+
   results.push({
-    checkName: "operational_data_retention_bounds",
-    status: errRetention || oldFunnelVal > 0 ? "FAIL" : "PASS",
+    checkName: "retention_90d_purge_health",
+    status: errOldPv || errOldFe || totalUnpurged > 0 ? "FAIL" : "PASS",
     expectedCount: 0,
-    actualCount: oldFunnelVal,
-    discrepancy: oldFunnelVal,
-    description: "Operational logs must comply with retention bounds and contain zero rows older than 365 days",
+    actualCount: totalUnpurged,
+    discrepancy: totalUnpurged,
+    description: "No records older than 90 days (+1d grace) should persist in page_views or funnel_events",
   });
 
   const passedChecks = results.filter((r) => r.status === "PASS").length;
