@@ -260,6 +260,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-footer-copyright.ts", command: "npx tsx scripts/test-footer-copyright.ts", classification: "offline" },
   { name: "scripts/test-reconciliation.ts", command: "npx tsx scripts/test-reconciliation.ts", classification: "offline" },
   { name: "scripts/test-request-size-limits.ts", command: "npx tsx scripts/test-request-size-limits.ts", classification: "offline" },
+  { name: "scripts/test-tz-display-guard.ts", command: "npx tsx scripts/test-tz-display-guard.ts", classification: "offline" },
 ];
 
 export interface RunSummary {

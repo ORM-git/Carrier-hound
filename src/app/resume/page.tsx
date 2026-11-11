@@ -18,6 +18,7 @@ import {
 import { CandidateProfile } from "@/lib/resume/types";
 import { getAuthUser } from "@/lib/auth/session";
 import { getProAccessStatus } from "@/lib/billing/subscription";
+import { formatCalendarDate } from "@/lib/date/format";
 import { downloadAtsResumeDocx, downloadAtsResumeText } from "@/lib/resume/tailor";
 import type { User } from "@supabase/supabase-js";
 import {
@@ -224,7 +225,7 @@ export default function ResumePage() {
   const isConfirmed = Boolean(candidate && candidate.confirmedAt);
   const uploadedDateStr = candidate?.confirmedAt || candidate?.updatedAt;
   const formattedDate = uploadedDateStr
-    ? new Date(uploadedDateStr).toLocaleDateString("en-US", {
+    ? formatCalendarDate(uploadedDateStr, {
         month: "short",
         day: "numeric",
         year: "numeric",
