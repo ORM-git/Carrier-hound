@@ -50,6 +50,13 @@ import {
   formatSalary,
 } from './utils/sanitizer';
 import { politeFetchJson, politeFetchText, isForbiddenDomain } from './utils/polite-fetch';
+import {
+  loadBoardWatermarks,
+  saveBoardWatermarks,
+  getBoardWatermark,
+  updateBoardWatermark,
+  filterJobsByWatermark,
+} from './lib/board-delta';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -138,6 +145,9 @@ export interface IngestionOptions {
   includeRegistry?: boolean;
   checkpointPath?: string;
   resume?: boolean;
+  deltaMode?: boolean;
+  watermarksPath?: string;
+  persistWatermarks?: boolean;
 }
 
 export interface ClosedJobRecord {
@@ -996,10 +1006,19 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
     supabaseClient,
     expectHost,
     skipExistingRegistry = true,
+    deltaMode = false,
+    watermarksPath,
+    persistWatermarks,
   } = options;
+
+  const isDeltaActive = Boolean(deltaMode && !fixtureMode);
+  const watermarks = isDeltaActive ? loadBoardWatermarks(watermarksPath) : {};
 
   const effectiveBoardsLimit = boardsLimit || limit;
   const isActualLiveWrite = liveWrite && !dryPlan;
+  const shouldPersistWatermarks = isDeltaActive && (persistWatermarks !== undefined
+    ? persistWatermarks
+    : (isActualLiveWrite || Boolean(watermarksPath)));
 
   console.log('\n======================================================');
   console.log('🚀 CareerMonke ATS Board Ingestion Engine');
@@ -1207,7 +1226,19 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
               verified: true,
             }));
 
-          const dedupRes = dedupJobs(sanitizedJobs, seenUrls, seenRoles);
+          let candidateJobs = sanitizedJobs;
+          if (isDeltaActive) {
+            const mark = getBoardWatermark(watermarks, target.ats, target.token);
+            if (mark) {
+              const deltaRes = filterJobsByWatermark(candidateJobs, mark);
+              candidateJobs = deltaRes.deltaJobs;
+              if (deltaRes.skippedCount > 0) {
+                console.log(`⏱️ [Delta] ${prefix}: skipped ${deltaRes.skippedCount} unchanged jobs older than ${mark}`);
+              }
+            }
+          }
+
+          const dedupRes = dedupJobs(candidateJobs, seenUrls, seenRoles);
           acceptedForCompany = dedupRes.accepted;
           duplicates = dedupRes.duplicates;
           fetchSucceeded = true;
@@ -1221,7 +1252,19 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
             .map((item) => normalizeAtsJob(item, target.ats, target.company || target.token, target.token))
             .filter((j): j is NormalizedJob => j !== null);
 
-          const dedupRes = dedupJobs(normalized, seenUrls, seenRoles);
+          let candidateItems = normalized;
+          if (isDeltaActive) {
+            const mark = getBoardWatermark(watermarks, target.ats, target.token);
+            if (mark) {
+              const deltaRes = filterJobsByWatermark(candidateItems, mark);
+              candidateItems = deltaRes.deltaJobs;
+              if (deltaRes.skippedCount > 0) {
+                console.log(`⏱️ [Delta] ${prefix}: skipped ${deltaRes.skippedCount} unchanged jobs older than ${mark}`);
+              }
+            }
+          }
+
+          const dedupRes = dedupJobs(candidateItems, seenUrls, seenRoles);
           acceptedForCompany = dedupRes.accepted;
           duplicates = dedupRes.duplicates;
         }
@@ -1246,6 +1289,10 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
 
       if (fetchSucceeded) {
         stats.companiesSucceeded++;
+        if (isDeltaActive && shouldPersistWatermarks) {
+          updateBoardWatermark(watermarks, target.ats, target.token, new Date().toISOString(), acceptedForCompany.length);
+          saveBoardWatermarks(watermarks, watermarksPath);
+        }
       } else {
         stats.companiesFailed++;
       }
@@ -1637,6 +1684,11 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(__filename
   const checkpointIdx = args.findIndex((a) => a === '--checkpoint');
   const checkpointPath = checkpointIdx !== -1 ? args[checkpointIdx + 1] : undefined;
 
+  const noDelta = args.includes('--no-delta') || args.includes('--full-fetch');
+  const watermarksIdx = args.findIndex((a) => a === '--watermarks');
+  const watermarksPath = watermarksIdx !== -1 ? args[watermarksIdx + 1] : undefined;
+  const persistWatermarks = args.includes('--persist-watermarks') ? true : undefined;
+
   runBoardIngestion({
     dryRun: !liveWrite,
     liveWrite,
@@ -1657,6 +1709,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(__filename
     includeRegistry,
     checkpointPath,
     resume,
+    deltaMode: !noDelta,
+    watermarksPath,
+    persistWatermarks,
   })
     .then(() => process.exit(0))
     .catch((err) => {
