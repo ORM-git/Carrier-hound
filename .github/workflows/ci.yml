@@ -93,6 +93,9 @@ jobs:
       - name: Release Versioning Policy Check
         run: npx tsx scripts/test-release-versioning-policy.ts
 
+      - name: Schema Dump Freshness Check
+        run: npx tsx scripts/check-schema-dump-freshness.ts
+
       - name: Config Drift Check
         run: npx tsx scripts/check-config-drift.ts
 

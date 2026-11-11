@@ -269,6 +269,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-feature-flags-system.ts", command: "npx tsx scripts/test-feature-flags-system.ts", classification: "offline" },
   { name: "scripts/test-ai-evals-golden.ts", command: "npx tsx scripts/test-ai-evals-golden.ts", classification: "offline" },
   { name: "scripts/test-ai-provider-abstraction.ts", command: "npx tsx scripts/test-ai-provider-abstraction.ts", classification: "offline" },
+  { name: "scripts/test-schema-dump-freshness.ts", command: "npx tsx scripts/test-schema-dump-freshness.ts", classification: "offline" },
 ];
 
 export interface RunSummary {
