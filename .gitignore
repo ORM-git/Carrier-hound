@@ -64,3 +64,4 @@ reports/
 
 # ATS verification runtime checkpoint
 data/ats-verify-checkpoint.json
+data/ingest-watermarks.json
