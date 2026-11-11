@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { formatCalendarDate } from "@/lib/date/format";
 import {
   Clock,
   CheckCircle2,
@@ -69,19 +70,19 @@ async function getAuthHeader(): Promise<Record<string, string>> {
  */
 function formatRequestedDate(dateStr?: string | null): string {
   if (!dateStr) return "—";
-  try {
-    const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return dateStr;
-    return d.toLocaleDateString("en-US", {
+  return formatCalendarDate(
+    dateStr,
+    {
+      mode: "local",
+      preserveRawOnInvalid: true,
       year: "numeric",
       month: "short",
       day: "numeric",
       hour: "2-digit",
       minute: "2-digit",
-    });
-  } catch {
-    return dateStr;
-  }
+    },
+    "en-US"
+  );
 }
 
 export default function EarlyAccessRequestsSection() {

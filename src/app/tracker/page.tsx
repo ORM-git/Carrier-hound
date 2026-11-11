@@ -23,6 +23,7 @@ import AppIconRail from "@/components/shell/AppIconRail";
 import AppTopBar from "@/components/shell/AppTopBar";
 import LoggedInAppShell from "@/components/shell/LoggedInAppShell";
 import CompanyLogo from "@/components/CompanyLogo";
+import { formatCalendarDate } from "@/lib/date/format";
 import {
   TrackedApplication,
   ApplicationStage,
@@ -664,8 +665,8 @@ export default function TrackerPage() {
                                 <Clock className="w-3 h-3 shrink-0" />
                                 <span>
                                   {app.appliedAt
-                                    ? `Applied ${new Date(app.appliedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
-                                    : `Updated ${new Date(app.updatedAt || app.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`}
+                                    ? `Applied ${formatCalendarDate(app.appliedAt, { mode: "local", month: "short", day: "numeric" }, "en-US")}`
+                                    : `Updated ${formatCalendarDate(app.updatedAt || app.createdAt, { mode: "local", month: "short", day: "numeric" }, "en-US")}`}
                                 </span>
                               </div>
 
@@ -794,7 +795,7 @@ export default function TrackerPage() {
                             )}
                           </td>
                           <td className="py-3.5 px-4 hidden md:table-cell text-xs text-[#475569]">
-                            {app.appliedAt ? new Date(app.appliedAt).toLocaleDateString() : "—"}
+                            {app.appliedAt ? formatCalendarDate(app.appliedAt, { mode: "local" }) : "—"}
                           </td>
                           <td className="py-3.5 px-4">
                             <button

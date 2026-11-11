@@ -15,6 +15,7 @@ import { getCandidateProfile, deleteCandidateProfile } from "@/lib/resume/storag
 import { getTrackedApplications } from "@/lib/tracker/storage";
 import PaywallModal from "@/components/PaywallModal";
 import { createClient } from "@/lib/supabase/client";
+import { formatCalendarDate } from "@/lib/date/format";
 import type { User } from "@supabase/supabase-js";
 import {
   Settings,
@@ -533,7 +534,7 @@ function SettingsPageInner() {
               {isPro && (
                 <div className="pt-3 border-t border-slate-200/80 flex items-center justify-between text-xs">
                   <span className="text-slate-600">
-                    Auto-renews on: <strong>{new Date(subscription?.currentPeriodEnd || Date.now()).toLocaleDateString()}</strong>
+                    Auto-renews on: <strong>{formatCalendarDate(subscription?.currentPeriodEnd || Date.now(), { mode: "local" })}</strong>
                   </span>
 
                   <button

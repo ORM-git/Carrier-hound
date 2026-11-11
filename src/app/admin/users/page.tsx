@@ -323,6 +323,7 @@ export default function AdminUsersPage() {
                         <div className="text-xs text-slate-400 font-mono mt-0.5">{user.id}</div>
                       </td>
                       <td className="px-5 py-3.5 text-xs text-slate-600">
+                        {/* FIXME: timezone-safe date display */}
                         {new Date(user.createdAt).toLocaleDateString("en-US", {
                           year: "numeric",
                           month: "short",
@@ -459,6 +460,7 @@ export default function AdminUsersPage() {
                       </div>
                       <div className="text-slate-500 font-mono text-[11px] flex items-center gap-1">
                         <Clock className="w-3 h-3 text-slate-400" />
+                        {/* FIXME: timezone-safe date display */}
                         <span>{new Date(entry.created_at).toLocaleString()}</span>
                       </div>
                     </div>

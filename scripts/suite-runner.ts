@@ -263,6 +263,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-zoom-reflow.ts", command: "npx tsx scripts/test-zoom-reflow.ts", classification: "offline" },
   { name: "scripts/test-pbt-parsers.ts", command: "npx tsx scripts/test-pbt-parsers.ts", classification: "offline" },
   { name: "scripts/test-hover-touch-guards.ts", command: "npx tsx scripts/test-hover-touch-guards.ts", classification: "offline" },
+  { name: "scripts/test-tz-display-guard.ts", command: "npx tsx scripts/test-tz-display-guard.ts", classification: "offline" },
 ];
 
 export interface RunSummary {

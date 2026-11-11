@@ -17,6 +17,7 @@ import { CANONICAL_CATEGORIES } from "@/lib/taxonomy";
 import { createClient } from "@/lib/supabase/client";
 import PaywallModal from "@/components/PaywallModal";
 import CompanyLogo from "@/components/CompanyLogo";
+import { formatPostedAt } from "@/lib/date/format";
 import {
   RotateCw,
   RotateCcw,
@@ -88,20 +89,11 @@ function matchesFilters(
 // Date formatter
 function formatJobDate(dateStr: string | null): string {
   if (!dateStr) return "Recently seen";
-  try {
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-    if (diffHours < 1) return "Just now";
-    if (diffHours < 24) return `${diffHours}h ago`;
-    const diffDays = Math.floor(diffHours / 24);
-    if (diffDays === 1) return "Yesterday";
-    if (diffDays < 30) return `${diffDays}d ago`;
-    return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  } catch {
-    return "Recently";
-  }
+  return formatPostedAt(dateStr, {
+    mode: "local",
+    emptyFallback: "Recently seen",
+    errorFallback: "Recently",
+  });
 }
 
 // Deterministic company gradient avatar

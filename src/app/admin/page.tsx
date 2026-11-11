@@ -368,6 +368,7 @@ export default function AdminDashboardPage() {
                       <div className="text-xs text-slate-400 font-mono">{user.id}</div>
                     </td>
                     <td className="px-5 py-3 text-xs text-slate-600">
+                      {/* FIXME: timezone-safe date display */}
                       {new Date(user.createdAt).toLocaleDateString("en-US", {
                         year: "numeric",
                         month: "short",
