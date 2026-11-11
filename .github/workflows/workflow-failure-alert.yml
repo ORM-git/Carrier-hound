@@ -14,6 +14,7 @@ on:
       - "Plan Regression"
       - "Security & Secret Scanning"
       - "Source Health Monitoring"
+      - "Weekly Database Reconciliation Audit"
     types:
       - completed
 

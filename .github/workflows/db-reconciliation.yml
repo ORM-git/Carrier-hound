@@ -1,0 +1,33 @@
+name: Weekly Database Reconciliation Audit
+
+on:
+  schedule:
+    - cron: '27 3 * * 1' # Weekly, Monday 03:27 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: db-reconciliation
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    # Intentionally inert until an owner configures secrets and sets the
+    # DB_RECONCILIATION_ENABLED variable or explicitly triggers via workflow_dispatch.
+    if: ${{ vars.DB_RECONCILIATION_ENABLED == 'true' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Execute database reconciliation audit
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: npx tsx scripts/run-db-reconciliation.ts
