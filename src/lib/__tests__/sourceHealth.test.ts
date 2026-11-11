@@ -83,4 +83,35 @@ describe("source health classification", () => {
     const result = evaluateSourceHealth(runs, policy, now);
     expect(result.status).toBe("healthy");
   });
+  it("manual --source or limited run does not trigger false volume collapse on un-checked boards", () => {
+    const runs = [
+      {
+        finished_at: "2026-11-06T11:00:00Z",
+        status: "success",
+        per_source_counts: {
+          _coverage: {
+            is_partial: true,
+            source_filter: "linear",
+            boards_checked: ["linear"],
+          },
+          linear: 25,
+        },
+      },
+      {
+        finished_at: "2026-11-05T11:00:00Z",
+        status: "success",
+        per_source_counts: {
+          _coverage: {
+            is_partial: false,
+            boards_checked: ["stripe", "linear"],
+          },
+          stripe: 50,
+          linear: 24,
+        },
+      },
+    ];
+    const result = evaluateSourceHealth(runs, policy, now);
+    expect(result.status).toBe("healthy");
+    expect(result.collapsedBoards).toBeUndefined();
+  });
 });

@@ -79,6 +79,7 @@ export interface SourceStats {
   reopened?: number;
   rejected?: number;
   duplicate?: number;
+  unknown?: number;
   error?: string;
 }
 
@@ -96,6 +97,7 @@ export interface IngestionRunSummary {
   totalReopened?: number;
   totalRejected?: number;
   totalDuplicate?: number;
+  totalUnknown?: number;
   sources: SourceStats[];
   cleanup: {
     markedExpired: number;

@@ -17,6 +17,7 @@ export interface AggregateTotals {
   reopened: number;
   rejected: number;
   duplicate: number;
+  unknown: number;
   failed: number;
 }
 
@@ -27,6 +28,7 @@ export function computeSummaryTotals(summary: IngestionRunSummary): AggregateTot
   let reopened = 0;
   let rejected = 0;
   let duplicate = 0;
+  let unknown = 0;
   let failed = 0;
 
   for (const s of summary.sources) {
@@ -36,6 +38,7 @@ export function computeSummaryTotals(summary: IngestionRunSummary): AggregateTot
     reopened += s.reopened || 0;
     rejected += s.rejected || 0;
     duplicate += s.duplicate || 0;
+    unknown += s.unknown || 0;
     failed += s.failed || 0;
   }
 
@@ -46,6 +49,7 @@ export function computeSummaryTotals(summary: IngestionRunSummary): AggregateTot
     reopened,
     rejected,
     duplicate,
+    unknown,
     failed: summary.totalFailed || failed,
   };
 }
@@ -70,6 +74,7 @@ export function generateIngestReportJson(summary: IngestionRunSummary): string {
       reopened: s.reopened || 0,
       rejected: s.rejected || 0,
       duplicate: s.duplicate || 0,
+      unknown: s.unknown || 0,
       failed: s.failed || 0,
       error: s.error,
     })),
@@ -100,11 +105,12 @@ export function generateIngestReportMarkdown(summary: IngestionRunSummary): stri
     `| **Reopened (Expired -> Active)** | ${totals.reopened} |`,
     `| **Rejected (Invalid / Filtered)** | ${totals.rejected} |`,
     `| **Duplicates (Intra-run / Cross-Source)** | ${totals.duplicate} |`,
+    `| **Unknown (Lookup Failed / Fail-Closed)** | ${totals.unknown} |`,
     `| **Errors / Failures** | ${totals.failed} |`,
     ``,
     `### Per-Source / Per-Board Breakdown`,
-    `| Board / Target | Source Name | Type | Fetched | New Canonical | Updated | Reopened | Rejected | Duplicate | Failed |`,
-    `| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |`,
+    `| Board / Target | Source Name | Type | Fetched | New Canonical | Updated | Reopened | Rejected | Duplicate | Unknown | Failed |`,
+    `| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |`,
   ];
 
   for (const s of summary.sources) {
@@ -113,8 +119,9 @@ export function generateIngestReportMarkdown(summary: IngestionRunSummary): stri
     const reopenedCount = s.reopened || 0;
     const rejectedCount = s.rejected || 0;
     const dupCount = s.duplicate || 0;
+    const unknownCount = s.unknown || 0;
     lines.push(
-      `| \`${board}\` | ${s.sourceName} | ${s.type} | ${s.fetched} | ${newCount} | ${s.updated} | ${reopenedCount} | ${rejectedCount} | ${dupCount} | ${s.failed} |`
+      `| \`${board}\` | ${s.sourceName} | ${s.type} | ${s.fetched} | ${newCount} | ${s.updated} | ${reopenedCount} | ${rejectedCount} | ${dupCount} | ${unknownCount} | ${s.failed} |`
     );
   }
 

@@ -80,9 +80,10 @@ export function toIstDateKey(dateInput: string | Date | number): string {
   return formatter.format(d); // YYYY-MM-DD
 }
 
-export function toIstDateLabel(dateInput: string | Date | number): string {
+export function toIstDateLabel(dateInput: string | Date | number, options: { isIncomplete?: boolean } = {}): string {
   const key = toIstDateKey(dateInput);
-  return key ? `${key} IST` : "";
+  if (!key) return "";
+  return options.isIncomplete ? `${key} IST (incomplete)` : `${key} IST`;
 }
 
 export function computeTrailingDirectJobs(
@@ -94,6 +95,7 @@ export function computeTrailingDirectJobs(
 ): TrailingReport {
   const refDate = options.now ? new Date(options.now) : new Date();
   const daysCount = options.days && options.days > 0 ? options.days : 7;
+  const todayKey = toIstDateKey(refDate);
 
   // Build the list of trailing IST dates (chronological order)
   const buckets: DayBucket[] = [];
@@ -103,9 +105,10 @@ export function computeTrailingDirectJobs(
     const d = new Date(refDate.getTime() - i * 24 * 60 * 60 * 1000);
     const key = toIstDateKey(d);
     if (!bucketMap.has(key)) {
+      const isToday = key === todayKey;
       const bucket: DayBucket = {
         dateKey: key,
-        dateLabel: `${key} IST`,
+        dateLabel: isToday ? `${key} IST (incomplete)` : `${key} IST`,
         newDirectJobs: 0,
         newVerifiedJobs: 0,
         totalNewJobs: 0,
@@ -198,35 +201,47 @@ async function main(): Promise<void> {
     jobs = JSON.parse(raw);
   } else {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
-    const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
 
     if (!url || !key) {
-      console.log(`⚠️ Supabase credentials not found in env and no --fixture supplied.`);
-      console.log(`   Printing empty placeholder report for ${daysCount} trailing days.`);
-      const emptyReport = computeTrailingDirectJobs([], { days: daysCount });
-      if (isJson) {
-        console.log(JSON.stringify(emptyReport, null, 2));
-      } else {
-        console.log(formatTrailingJobsReport(emptyReport));
-      }
-      return;
+      console.error("unavailable: Supabase service role credentials not configured.");
+      process.exit(1);
     }
 
     const client = createClient(url, key, { auth: { persistSession: false } });
     const cutoff = new Date(Date.now() - (daysCount + 1) * 24 * 60 * 60 * 1000).toISOString();
 
-    const { data, error } = await client
-      .from("jobs")
-      .select("id, title, company, source, source_type, verified, first_seen_at")
-      .gte("first_seen_at", cutoff)
-      .order("first_seen_at", { ascending: false });
+    const PAGE_SIZE = 1000;
+    let from = 0;
+    let hasMore = true;
+    const allJobs: DirectJobRow[] = [];
 
-    if (error) {
-      console.error(`Query failed: ${error.message}`);
-      process.exit(1);
+    while (hasMore) {
+      const { data, error } = await client
+        .from("jobs")
+        .select("id, title, company, source, source_type, verified, first_seen_at")
+        .gte("first_seen_at", cutoff)
+        .order("id", { ascending: true })
+        .range(from, from + PAGE_SIZE - 1);
+
+      if (error) {
+        console.error(`Query failed: ${error.message}`);
+        process.exit(1);
+      }
+
+      if (data && data.length > 0) {
+        allJobs.push(...(data as DirectJobRow[]));
+        if (data.length < PAGE_SIZE) {
+          hasMore = false;
+        } else {
+          from += PAGE_SIZE;
+        }
+      } else {
+        hasMore = false;
+      }
     }
 
-    jobs = (data as DirectJobRow[]) || [];
+    jobs = allJobs;
   }
 
   const report = computeTrailingDirectJobs(jobs, { days: daysCount });

@@ -83,6 +83,7 @@ async function runTests(negativeControl = false): Promise<void> {
     reopened: 5,
     rejected: 5,
     duplicate: 10,
+    unknown: 0,
   };
 
   check(sampleSourceStats.new_canonical === 20, "new_canonical tracked distinctly from upserts");
@@ -98,6 +99,113 @@ async function runTests(negativeControl = false): Promise<void> {
     sampleSourceStats.rejected + sampleSourceStats.duplicate === sampleSourceStats.skipped,
     "total skipped equals sum of rejected + duplicate"
   );
+
+  // Behavioral test: Prelookup failure must bucket into unknown (fail closed) and never guess new
+  console.log("\n1b. Prelookup Failure & Authoritative Classification Tests");
+  const simulatePrelookupClassification = (
+    lookupFailed: boolean,
+    existingRows: Array<{ id: string; source_job_id: string; status: string; is_active: boolean }>,
+    batch: Array<{ source_job_id: string }>
+  ) => {
+    let batchNewCanonical = 0;
+    let batchUpdated = 0;
+    let batchReopened = 0;
+    let batchUnknown = 0;
+
+    if (lookupFailed) {
+      batchUnknown = batch.length;
+    } else {
+      const map = new Map(existingRows.map((r) => [r.source_job_id, r]));
+      for (const item of batch) {
+        const ex = map.get(item.source_job_id);
+        if (!ex) batchNewCanonical++;
+        else if (ex.status === "active" && ex.is_active === true) batchUpdated++;
+        else batchReopened++;
+      }
+    }
+    return { batchNewCanonical, batchUpdated, batchReopened, batchUnknown };
+  };
+
+  const lookupFailureResult = simulatePrelookupClassification(true, [], [{ source_job_id: "job-1" }, { source_job_id: "job-2" }]);
+  check(lookupFailureResult.batchNewCanonical === 0, "lookup failure: batchNewCanonical is strictly 0 (never guesses new)");
+  check(lookupFailureResult.batchUnknown === 2, "lookup failure: fails closed by bucketing all items into batchUnknown");
+
+  // Behavioral test: Concurrent writer detection
+  const simulateConcurrentWriterCheck = (
+    prelookupNewCanonical: number,
+    existingMap: Set<string>,
+    upsertedRows: Array<{ source_job_id: string; first_seen_at?: string }>,
+    batchStartTime: number
+  ) => {
+    let newCanonical = prelookupNewCanonical;
+    let updated = 0;
+    for (const r of upsertedRows) {
+      if (r.source_job_id && !existingMap.has(r.source_job_id)) {
+        if (r.first_seen_at) {
+          const firstSeen = new Date(r.first_seen_at).getTime();
+          if (Number.isFinite(firstSeen) && firstSeen < batchStartTime - 1000) {
+            if (newCanonical > 0) {
+              newCanonical--;
+              updated++;
+            }
+          }
+        }
+      }
+    }
+    return { newCanonical, updated };
+  };
+
+  const nowMs = Date.now();
+  const concurrentResult = simulateConcurrentWriterCheck(
+    2,
+    new Set(["existing-1"]), // prelookup only knew existing-1
+    [
+      { source_job_id: "job-fresh", first_seen_at: new Date(nowMs).toISOString() }, // truly new
+      { source_job_id: "job-concurrent", first_seen_at: new Date(nowMs - 60000).toISOString() }, // written 1m ago concurrently
+    ],
+    nowMs
+  );
+  check(concurrentResult.newCanonical === 1, "concurrent writer: decrements newCanonical from 2 to 1");
+  check(concurrentResult.updated === 1, "concurrent writer: increments updated to 1");
+
+  // Behavioral test: Fallback reopen classification for inactive rows
+  const simulateFallbackClassification = (
+    existingStatusMap: Map<string, { status: string; is_active: boolean }>,
+    items: Array<{ source_job_id: string; apply_url: string }>
+  ) => {
+    let newItems = 0;
+    let updatedItems = 0;
+    let reopenedItems = 0;
+
+    for (const item of items) {
+      const ex = existingStatusMap.get(item.source_job_id) || existingStatusMap.get(item.apply_url);
+      if (!ex) {
+        newItems++;
+      } else if (ex.status === "active" && ex.is_active === true) {
+        updatedItems++;
+      } else {
+        reopenedItems++;
+      }
+    }
+    return { newItems, updatedItems, reopenedItems };
+  };
+
+  const fallbackResult = simulateFallbackClassification(
+    new Map([
+      ["job-active", { status: "active", is_active: true }],
+      ["job-inactive", { status: "inactive", is_active: false }],
+      ["job-expired", { status: "expired", is_active: false }],
+    ]),
+    [
+      { source_job_id: "job-active", apply_url: "https://co.com/active" },
+      { source_job_id: "job-inactive", apply_url: "https://co.com/inactive" },
+      { source_job_id: "job-expired", apply_url: "https://co.com/expired" },
+      { source_job_id: "job-brand-new", apply_url: "https://co.com/new" },
+    ]
+  );
+  check(fallbackResult.newItems === 1, "fallback: 1 brand new item classified as new");
+  check(fallbackResult.updatedItems === 1, "fallback: 1 active item classified as updated");
+  check(fallbackResult.reopenedItems === 2, "fallback: 2 inactive/expired items classified as reopened (not updated)");
 
   // ---------------------------------------------------------------------------
   // 2. Immutability of first_seen_at
@@ -358,6 +466,33 @@ async function runTests(negativeControl = false): Promise<void> {
   );
   check(healthRes.collapsedBoards?.length === 2, "evaluateSourceHealth includes collapsed boards detail");
 
+  // Test that a manual --source or limited run does NOT trigger false volume collapse on un-checked boards
+  const partialRunCounts = {
+    _coverage: {
+      is_partial: true,
+      source_filter: "linear",
+      boards_checked: ["linear"],
+    },
+    linear: 50,
+  };
+  const mockPartialRuns: IngestRunSnapshot[] = [
+    {
+      started_at: "2026-11-11T03:00:00Z",
+      finished_at: "2026-11-11T03:05:00Z",
+      status: "success",
+      per_source_counts: partialRunCounts,
+    },
+    {
+      started_at: "2026-11-10T02:00:00Z",
+      finished_at: "2026-11-10T02:10:00Z",
+      status: "success",
+      per_source_counts: prevRunCounts,
+    },
+  ];
+  const partialHealthRes = evaluateSourceHealth(mockPartialRuns, testPolicy, "2026-11-11T05:00:00Z");
+  check(partialHealthRes.status === "healthy", "manual --source run does NOT trigger volume collapse for un-checked boards");
+  check(partialHealthRes.collapsedBoards === undefined, "no collapsed boards reported for manual --source run");
+
   // Verify check-source-health.ts selects per_source_counts
   const checkSourceHealthScript = fs.readFileSync(path.resolve("scripts/check-source-health.ts"), "utf8");
   check(
@@ -376,6 +511,10 @@ async function runTests(negativeControl = false): Promise<void> {
   const istTestDate2 = "2026-11-10T18:00:00.000Z";
   check(toIstDateLabel(istTestDate1) === "2026-11-11 IST", "19:00 UTC maps across midnight to 2026-11-11 IST");
   check(toIstDateLabel(istTestDate2) === "2026-11-10 IST", "18:00 UTC stays on 2026-11-10 IST");
+  check(
+    toIstDateLabel(istTestDate1, { isIncomplete: true }) === "2026-11-11 IST (incomplete)",
+    "toIstDateLabel formats incomplete date label accurately"
+  );
 
   // Direct job detection
   check(isDirectJob({ source_type: "ats" }), "source_type 'ats' is direct");
@@ -410,14 +549,30 @@ async function runTests(negativeControl = false): Promise<void> {
   check(trailingReport.totalDirectJobs === 6, "computes 6 direct jobs in trailing 7 days (id 1,2,4,5,6,7)");
   check(trailingReport.totalNewJobs === 7, "computes 7 total jobs in trailing 7 days (includes id 3 feed job)");
 
-  const todayBucket = trailingReport.buckets.find((b) => b.dateLabel === "2026-11-11 IST");
+  const todayBucket = trailingReport.buckets.find((b) => b.dateKey === "2026-11-11");
+  check(todayBucket?.dateLabel === "2026-11-11 IST (incomplete)", "today's bucket is explicitly labeled '(incomplete)'");
   check(todayBucket?.newDirectJobs === 2, "today has 2 new direct jobs");
   check(todayBucket?.totalNewJobs === 3, "today has 3 total new jobs");
 
   const formattedReport = formatTrailingJobsReport(trailingReport);
   check(formattedReport.includes("TRAILING 7-DAY NEW DIRECT JOBS SUPPLY REPORT (IST)"), "formatted table has title");
-  check(formattedReport.includes("2026-11-11 IST"), "formatted table has 2026-11-11 IST bucket");
+  check(formattedReport.includes("2026-11-11 IST (incomplete)"), "formatted table has 2026-11-11 IST (incomplete) bucket");
   check(formattedReport.includes("TOTAL (7d)"), "formatted table has 7d total summary");
+
+  // Read-only script safeguards
+  const reportScriptContent = fs.readFileSync(path.resolve("scripts/report-trailing-new-jobs.ts"), "utf8");
+  check(
+    !reportScriptContent.includes("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
+    "scripts/report-trailing-new-jobs.ts has no anon key fallback"
+  );
+  check(
+    reportScriptContent.includes("unavailable") && reportScriptContent.includes("process.exit(1)"),
+    "scripts/report-trailing-new-jobs.ts exits non-zero with 'unavailable' on missing credentials"
+  );
+  check(
+    reportScriptContent.includes("range(from, from + PAGE_SIZE - 1)") && reportScriptContent.includes("order(\"id\", { ascending: true })"),
+    "scripts/report-trailing-new-jobs.ts uses bounded stable unique pagination"
+  );
 
   // ---------------------------------------------------------------------------
   // 9. Negative Control Verification

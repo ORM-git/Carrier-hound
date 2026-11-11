@@ -341,6 +341,7 @@ async function main() {
       reopened: 0,
       rejected: 0,
       duplicate: 0,
+      unknown: 0,
     };
 
     console.log(`[${sourceIndex + 1}/${sources.length}] ▶ Processing [${source.type.toUpperCase()}] ${source.name}...`);
@@ -494,41 +495,53 @@ async function main() {
             });
 
             // Pre-classify batch items: new_canonical vs updated vs reopened
+            const batchStartTime = Date.now();
             const sourceJobIds = batchChunk.map((j) => j.source_job_id).filter(Boolean);
             const existingMap = new Map<string, { id: string; status: string; is_active: boolean }>();
+            let prelookupFailed = false;
 
             if (sourceJobIds.length > 0) {
               try {
-                const { data: existingRows } = await supabase
+                const { data: existingRows, error: lookupErr } = await supabase
                   .from('jobs')
                   .select('id, source_job_id, status, is_active')
                   .eq('source', source.type)
                   .in('source_job_id', sourceJobIds);
 
-                if (existingRows) {
+                if (lookupErr) {
+                  console.warn(`   [ingest] Prelookup error for ${source.id}: ${lookupErr.message}`);
+                  prelookupFailed = true;
+                } else if (existingRows) {
                   for (const r of existingRows) {
                     if (r.source_job_id) {
                       existingMap.set(r.source_job_id, r);
                     }
                   }
                 }
-              } catch {
-                // Non-blocking lookup fallback
+              } catch (err: any) {
+                console.warn(`   [ingest] Prelookup exception for ${source.id}: ${err?.message || err}`);
+                prelookupFailed = true;
               }
             }
 
             let batchNewCanonical = 0;
             let batchUpdated = 0;
             let batchReopened = 0;
+            let batchUnknown = 0;
 
-            for (const j of batchChunk) {
-              const existing = existingMap.get(j.source_job_id);
-              if (!existing) {
-                batchNewCanonical++;
-              } else if (existing.status === 'active' && existing.is_active === true) {
-                batchUpdated++;
-              } else {
-                batchReopened++;
+            if (prelookupFailed) {
+              // Fail closed: never guess new when lookup fails!
+              batchUnknown = batchChunk.length;
+            } else {
+              for (const j of batchChunk) {
+                const existing = existingMap.get(j.source_job_id);
+                if (!existing) {
+                  batchNewCanonical++;
+                } else if (existing.status === 'active' && existing.is_active === true) {
+                  batchUpdated++;
+                } else {
+                  batchReopened++;
+                }
               }
             }
 
@@ -536,9 +549,32 @@ async function main() {
             const { data: upsertedRows, error: upsertErr } = await supabase
               .from('jobs')
               .upsert(jobsPayload, { onConflict: 'source,source_job_id' })
-              .select('id, source_job_id');
+              .select('id, source_job_id, first_seen_at');
 
             if (!upsertErr) {
+              // Authoritative post-write check for concurrent writer:
+              // If a row was not in existingMap, but was already inserted by a concurrent writer
+              // before this batch ran, its first_seen_at will be older than this batch's start time.
+              if (!prelookupFailed && upsertedRows) {
+                for (const r of upsertedRows) {
+                  if (r.source_job_id && !existingMap.has(r.source_job_id)) {
+                    if (r.first_seen_at) {
+                      const firstSeen = new Date(r.first_seen_at).getTime();
+                      if (Number.isFinite(firstSeen) && firstSeen < batchStartTime - 1000) {
+                        // Concurrent writer inserted this row before our upsert!
+                        if (batchNewCanonical > 0) {
+                          batchNewCanonical--;
+                          batchUpdated++;
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+
+              if (batchUnknown > 0) {
+                stats.unknown = (stats.unknown || 0) + batchUnknown;
+              }
               stats.new_canonical = (stats.new_canonical || 0) + batchNewCanonical;
               stats.inserted = stats.new_canonical;
               stats.updated += batchUpdated;
@@ -568,37 +604,39 @@ async function main() {
               const urls = jobsPayload.map((b: any) => b.apply_url).filter(Boolean);
 
               const [resUrl, resId] = await Promise.all([
-                supabase.from('jobs').select('id, source_job_id, apply_url').in('apply_url', urls),
-                supabase.from('jobs').select('id, source_job_id, apply_url').in('source_job_id', ids),
+                supabase.from('jobs').select('id, source_job_id, apply_url, status, is_active').in('apply_url', urls),
+                supabase.from('jobs').select('id, source_job_id, apply_url, status, is_active').in('source_job_id', ids),
               ]);
 
-              const existingIdMap = new Map<string, string>();
-              const existingUrlMap = new Map<string, string>();
+              const existingStatusMap = new Map<string, { id: string; status: string; is_active: boolean }>();
 
               if (resUrl.data) {
                 for (const row of resUrl.data) {
-                  if (row.apply_url) existingUrlMap.set(row.apply_url, row.id);
-                  if (row.source_job_id) existingIdMap.set(row.source_job_id, row.id);
+                  const info = { id: row.id, status: row.status, is_active: row.is_active };
+                  if (row.apply_url) existingStatusMap.set(row.apply_url, info);
+                  if (row.source_job_id) existingStatusMap.set(row.source_job_id, info);
                 }
               }
               if (resId.data) {
                 for (const row of resId.data) {
-                  if (row.source_job_id) existingIdMap.set(row.source_job_id, row.id);
-                  if (row.apply_url) existingUrlMap.set(row.apply_url, row.id);
+                  const info = { id: row.id, status: row.status, is_active: row.is_active };
+                  if (row.source_job_id) existingStatusMap.set(row.source_job_id, info);
+                  if (row.apply_url) existingStatusMap.set(row.apply_url, info);
                 }
               }
 
               const toInsert: any[] = [];
-              const toUpdate: Array<{ id: string; item: any; original: NormalizedJob }> = [];
+              const toUpdate: Array<{ id: string; item: any; original: NormalizedJob; isReopen: boolean }> = [];
 
               for (let jIdx = 0; jIdx < jobsPayload.length; jIdx++) {
                 const item = jobsPayload[jIdx];
                 const originalJob = batchChunk[jIdx];
-                const existingId =
-                  existingIdMap.get(item.source_job_id) || existingUrlMap.get(item.apply_url);
+                const existing =
+                  existingStatusMap.get(item.source_job_id) || existingStatusMap.get(item.apply_url);
 
-                if (existingId) {
-                  toUpdate.push({ id: existingId, item, original: originalJob });
+                if (existing) {
+                  const isReopen = existing.status !== 'active' || existing.is_active !== true;
+                  toUpdate.push({ id: existing.id, item, original: originalJob, isReopen });
                 } else {
                   toInsert.push(item);
                 }
@@ -654,7 +692,23 @@ async function main() {
                         }
                       }
                     } else {
-                      // If it already exists by apply_url, update it
+                      // Conflicted with concurrent insert or existing apply_url:
+                      // Check if the conflicting row is inactive before updating (reopen vs update)
+                      let isReopen = false;
+                      try {
+                        const { data: existingRow } = await supabase
+                          .from('jobs')
+                          .select('id, status, is_active')
+                          .eq('apply_url', singleItem.apply_url)
+                          .maybeSingle();
+
+                        if (existingRow && (existingRow.status !== 'active' || existingRow.is_active !== true)) {
+                          isReopen = true;
+                        }
+                      } catch {
+                        // Non-blocking status check
+                      }
+
                       const { error: urlUpdErr } = await supabase
                         .from('jobs')
                         .update({
@@ -665,8 +719,15 @@ async function main() {
                         })
                         .eq('apply_url', singleItem.apply_url);
 
-                      if (!urlUpdErr) stats.updated++;
-                      else stats.failed++;
+                      if (!urlUpdErr) {
+                        if (isReopen) {
+                          stats.reopened = (stats.reopened || 0) + 1;
+                        } else {
+                          stats.updated++;
+                        }
+                      } else {
+                        stats.failed++;
+                      }
                     }
                   }
                 }
@@ -675,7 +736,7 @@ async function main() {
               // 2. Parallel Update for existing items
               if (toUpdate.length > 0) {
                 await Promise.all(
-                  toUpdate.map(async ({ id, item, original }) => {
+                  toUpdate.map(async ({ id, item, original, isReopen }) => {
                     const { error: updErr } = await supabase
                       .from('jobs')
                       .update({
@@ -687,7 +748,11 @@ async function main() {
                       .eq('id', id);
 
                     if (!updErr) {
-                      stats.updated++;
+                      if (isReopen) {
+                        stats.reopened = (stats.reopened || 0) + 1;
+                      } else {
+                        stats.updated++;
+                      }
                       if (hasJobDescriptionsTable && original?.description) {
                         await supabase.from('job_descriptions').upsert({
                           job_id: id,
@@ -847,6 +912,7 @@ async function main() {
     summary.totalReopened = (summary.totalReopened || 0) + (stats.reopened || 0);
     summary.totalRejected = (summary.totalRejected || 0) + (stats.rejected || 0);
     summary.totalDuplicate = (summary.totalDuplicate || 0) + (stats.duplicate || 0);
+    summary.totalUnknown = (summary.totalUnknown || 0) + (stats.unknown || 0);
   }
 
   // Run sources with concurrency worker pool
@@ -864,10 +930,11 @@ async function main() {
   const workers = Array.from({ length: poolSize }, () => worker());
   await Promise.all(workers);
 
+  const isFullRun = !isSeedRun && !sourceFilter && !MAX_SOURCES_LIMIT && !OFFSET && !MAX_PER_SOURCE && summary.totalFailed === 0;
+
   // Cleanup & expiration phase
   if (!isSkipCleanup && supabase) {
     // Destructive safety: only run unseen-based expiration if this was a complete, full-corpus run with zero source failures
-    const isFullRun = !isSeedRun && !sourceFilter && !MAX_SOURCES_LIMIT && !OFFSET && !MAX_PER_SOURCE && summary.totalFailed === 0;
     const cleanupResult = await runJobCleanup(supabase, {
       dryRun: isDryRun,
       skipUnseenCheck: !isFullRun,
@@ -892,20 +959,29 @@ async function main() {
           total_verified: summary.sources
             .filter((s) => s.type === 'greenhouse' || s.type === 'lever' || s.type === 'ashby')
             .reduce((acc, s) => acc + (s.new_canonical ?? s.inserted) + s.updated + (s.reopened ?? 0), 0),
-          per_source_counts: summary.sources.reduce(
-            (acc, s) => ({
-              ...acc,
-              [s.sourceId]: {
-                new_canonical: s.new_canonical ?? s.inserted,
-                updated: s.updated,
-                reopened: s.reopened ?? 0,
-                rejected: s.rejected ?? 0,
-                duplicate: s.duplicate ?? 0,
-                failed: s.failed,
-              },
-            }),
-            {}
-          ),
+          per_source_counts: {
+            _coverage: {
+              is_partial: !isFullRun,
+              source_filter: sourceFilter || null,
+              limit: MAX_SOURCES_LIMIT || null,
+              boards_checked: summary.sources.map((s) => s.board || s.sourceId),
+            },
+            ...summary.sources.reduce(
+              (acc, s) => ({
+                ...acc,
+                [s.sourceId]: {
+                  new_canonical: s.new_canonical ?? s.inserted,
+                  updated: s.updated,
+                  reopened: s.reopened ?? 0,
+                  rejected: s.rejected ?? 0,
+                  duplicate: s.duplicate ?? 0,
+                  failed: s.failed,
+                  unknown: s.unknown ?? 0,
+                },
+              }),
+              {}
+            ),
+          },
           status: summary.totalFailed > 0 ? ((summary.totalNewCanonical ?? summary.totalInserted) > 0 ? 'warning' : 'failed') : 'success',
         },
       ]);

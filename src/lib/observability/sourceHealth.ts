@@ -31,11 +31,28 @@ export interface SourceHealthResult {
   collapsedBoards?: CollapsedBoard[];
 }
 
+export interface RunCoverageMetadata {
+  is_partial?: boolean;
+  source_filter?: string | null;
+  limit?: number | null;
+  boards_checked?: string[];
+}
+
+export function extractRunCoverage(perSourceCounts: unknown): RunCoverageMetadata | null {
+  if (!perSourceCounts || typeof perSourceCounts !== "object") return null;
+  const raw = perSourceCounts as Record<string, unknown>;
+  if (raw._coverage && typeof raw._coverage === "object") {
+    return raw._coverage as RunCoverageMetadata;
+  }
+  return null;
+}
+
 export function extractBoardCounts(perSourceCounts: unknown): Map<string, number> {
   const map = new Map<string, number>();
   if (!perSourceCounts || typeof perSourceCounts !== "object") return map;
 
   for (const [key, value] of Object.entries(perSourceCounts as Record<string, unknown>)) {
+    if (key.startsWith("_")) continue; // skip metadata keys like _coverage
     if (typeof value === "number" && Number.isFinite(value)) {
       map.set(key, value);
     } else if (value && typeof value === "object") {
@@ -53,13 +70,28 @@ export function extractBoardCounts(perSourceCounts: unknown): Map<string, number
 export function detectPerBoardVolumeCollapse(
   currentCounts: Map<string, number>,
   previousCounts: Map<string, number>,
-  options: { minBaseline?: number; dropThresholdPercent?: number } = {}
+  options: {
+    minBaseline?: number;
+    dropThresholdPercent?: number;
+    checkedBoards?: Set<string>;
+    onlyCheckedBoards?: boolean;
+  } = {}
 ): CollapsedBoard[] {
   const minBaseline = options.minBaseline ?? 5;
   const dropThreshold = options.dropThresholdPercent ?? 80;
   const collapsed: CollapsedBoard[] = [];
 
   previousCounts.forEach((prevCount, board) => {
+    // Only evaluate boards that were actually checked in the current run!
+    // A manual --source or limited run must not look like a 100% volume collapse for un-checked boards.
+    const isChecked = options.checkedBoards
+      ? options.checkedBoards.has(board)
+      : options.onlyCheckedBoards !== false
+      ? currentCounts.has(board)
+      : true;
+
+    if (!isChecked) return;
+
     if (prevCount >= minBaseline) {
       const currCount = currentCounts.get(board) ?? 0;
       const dropPct = ((prevCount - currCount) / prevCount) * 100;
@@ -127,11 +159,33 @@ export function evaluateSourceHealth(
 
   let collapsedBoards: CollapsedBoard[] = [];
   if (runsWithCounts.length >= 2) {
-    const currCounts = extractBoardCounts(runsWithCounts[0].run.per_source_counts);
-    const prevCounts = extractBoardCounts(runsWithCounts[1].run.per_source_counts);
+    const latestRun = runsWithCounts[0].run;
+    const latestCoverage = extractRunCoverage(latestRun.per_source_counts);
+
+    // Find the most recent compatible previous run
+    let previousRun = runsWithCounts[1].run;
+    if (latestCoverage && !latestCoverage.is_partial) {
+      // If latest is a complete run, compare against the last complete run so intervening partial runs don't distort baseline
+      const prevComplete = runsWithCounts.slice(1).find((r) => {
+        const cov = extractRunCoverage(r.run.per_source_counts);
+        return cov ? !cov.is_partial : true;
+      });
+      if (prevComplete) {
+        previousRun = prevComplete.run;
+      }
+    }
+
+    const currCounts = extractBoardCounts(latestRun.per_source_counts);
+    const prevCounts = extractBoardCounts(previousRun.per_source_counts);
+
+    const checkedBoards = latestCoverage?.boards_checked
+      ? new Set(latestCoverage.boards_checked)
+      : new Set(currCounts.keys());
+
     collapsedBoards = detectPerBoardVolumeCollapse(currCounts, prevCounts, {
       minBaseline: policy.minBaselineJobsForCollapse ?? 5,
       dropThresholdPercent: policy.volumeCollapseDropThresholdPercent ?? 80,
+      checkedBoards,
     });
   }
 
