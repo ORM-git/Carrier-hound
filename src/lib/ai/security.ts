@@ -240,7 +240,14 @@ CRITICAL ZERO-FABRICATION RULES:
 - NEVER invent false employers, project names, metrics, or years of experience.
 - If candidate has NO prior work experience, DO NOT claim "throughout my tenure" or "previous roles". Focus strictly on verified skills and enthusiasm.
 - DO NOT include any emails, phone numbers, or URLs.
-4. Tailor tone to ${jobTitle} at ${jobCompany}.${UNTRUSTED_DATA_SYSTEM_GUARD}`;
+4. Tailor tone to ${jobTitle} at ${jobCompany}.
+
+WORKED EXAMPLE:
+Candidate input: Skills: TypeScript, React, Next.js. Experience: Frontend Engineer at Acme Corp (2022 - 2024). Target role: Senior Frontend Engineer at Linear.
+Ideal output body paragraphs:
+At Acme Corp, I engineered responsive user interfaces and modular component systems utilizing TypeScript, React, and Next.js. My focus was delivering performant web applications with high reliability and clean architectural patterns.
+
+Joining Linear as a Senior Frontend Engineer aligns directly with my engineering focus. Your dedication to craft and tool performance is an environment where my experience building scalable frontend applications will drive immediate value.${UNTRUSTED_DATA_SYSTEM_GUARD}`;
 
       userPrompt = `<untrusted_candidate_data>\nName: ${candName}\nHeadline: ${candHeadline}\nSummary: ${candSummary}\nSkills: ${skillsList}\n</untrusted_candidate_data>\n\n<untrusted_job_data>\nTitle: ${jobTitle}\nCompany: ${jobCompany}\nDescription: ${jobDesc}\n</untrusted_job_data>`;
       break;
@@ -305,6 +312,38 @@ CRITICAL ZERO-FABRICATION RULES:
     }
   ],
   "certifications": string[]
+}
+
+WORKED EXAMPLE:
+Input resume text:
+"Alex Chen - Frontend Developer. Skills: React, TypeScript, CSS. Experience: UI Developer at DevCo (2021 - 2023). Built responsive UI components. Education: BS Computer Science, Tech University (2021)."
+Ideal output JSON:
+{
+  "name": "Alex Chen",
+  "headline": "Frontend Developer",
+  "summary": "",
+  "skills": ["React", "TypeScript", "CSS"],
+  "experience": [
+    {
+      "id": "exp-1",
+      "company": "DevCo",
+      "role": "UI Developer",
+      "startDate": "2021",
+      "endDate": "2023",
+      "bullets": ["Built responsive UI components."],
+      "needsReview": false
+    }
+  ],
+  "education": [
+    {
+      "id": "edu-1",
+      "degree": "BS Computer Science",
+      "institution": "Tech University",
+      "year": "2021",
+      "needsReview": false
+    }
+  ],
+  "certifications": []
 }${UNTRUSTED_DATA_SYSTEM_GUARD}`;
 
       userPrompt = `Extract verified facts from this resume text:\n\n<untrusted_candidate_data>\n${safeRawText}\n</untrusted_candidate_data>`;
@@ -334,6 +373,20 @@ CRITICAL ZERO-FABRICATION AND GROUNDING RULES:
   "tailoredSummary": string,
   "highlightedSkills": string[],
   "tailoredBullets": { [experienceId: string]: string[] }
+}
+
+WORKED EXAMPLE:
+Input:
+Candidate Skills: ["Node.js", "PostgreSQL", "Docker"]. Summary: "Backend engineer."
+Experience exp-1: Role: Software Engineer at DataInc. Bullets: ["Optimized SQL queries reducing latency by 40%."].
+Target Job: Senior Backend Engineer at CloudScale.
+Ideal output JSON:
+{
+  "tailoredSummary": "Backend engineer specializing in Node.js, PostgreSQL, and Docker, with proven success optimizing database query performance by 40%.",
+  "highlightedSkills": ["Node.js", "PostgreSQL", "Docker"],
+  "tailoredBullets": {
+    "exp-1": ["Optimized PostgreSQL database queries to reduce backend service latency by 40%."]
+  }
 }${UNTRUSTED_DATA_SYSTEM_GUARD}`;
 
       const candName = sanitizeAiInputText(candidate.name || "Candidate", AI_FIELD_LENGTH_CAPS.name);
@@ -447,6 +500,18 @@ RULES:
   "matchedSkills": string[],
   "missingSkills": string[],
   "summary": string
+}
+
+WORKED EXAMPLE:
+Input:
+Candidate Skills: ["Python", "SQL", "Pandas"]. Headline: "Data Analyst".
+Target Job: Senior Data Analyst requiring Python, SQL, Tableau, and Snowflake.
+Ideal output JSON:
+{
+  "score": 65,
+  "matchedSkills": ["Python", "SQL"],
+  "missingSkills": ["Tableau", "Snowflake"],
+  "summary": "Candidate brings verified Python and SQL foundations, with opportunities to build expertise in required visualization and data warehousing tools like Tableau and Snowflake."
 }${UNTRUSTED_DATA_SYSTEM_GUARD}`;
 
       userPrompt = `<untrusted_candidate_data>\nSkills: ${skillsList}\nHeadline: ${candHeadline}\n</untrusted_candidate_data>\n\n<untrusted_job_data>\nTitle: ${jobTitle}\nCompany: ${jobCompany}\nDescription: ${jobDesc}\n</untrusted_job_data>`;
