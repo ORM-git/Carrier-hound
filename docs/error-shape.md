@@ -18,6 +18,10 @@ first key is `error` (a human-safe string). Sanctioned optional extra keys:
 | `retryAfter` | Rate-limit 429s; seconds until retry. |
 | `ok` (`false`) | Routes whose success shape is `{ ok: true, ... }` keep `{ ok: false, error }` so clients can branch on one key. |
 
+Runtime builder and offline tests:
+- `createErrorResponse(status, error, options)` in `src/lib/api/errorResponse.ts` enforces this contract at runtime.
+- Offline behavioral test: `scripts/test-error-response-builder.ts`.
+
 ## Sanctioned legacy variants (allowlisted, do not extend)
 
 | Shape keys | Where / why |
