@@ -7,14 +7,14 @@ the same for every anonymous caller.
 | --- | --- | --- |
 | `/api/ticker` | yes | Public, identical for every caller |
 | `/api/radar` | yes (`src/lib/api/radarResponse.ts`) | Public aggregate, identical for every caller, already cached for 5 minutes |
-| `/api/stats` | no, on purpose | The anonymous body carries a per-request `updatedAt`, so the tag would never match |
+| `/api/stats` | yes | Public stats payload uses weak ETag and returns 304 Not Modified when unchanged |
 | Per-user or entitlement routes (`/api/jobs/*`, `/api/me/*`, `/api/account/*`, `/api/ai`) | no | Body depends on the caller or is not a safe cacheable read |
 
 For `/api/radar` the body, status, `Cache-Control` and `X-Cache` values are unchanged. Added: an `ETag` header, and a
 304 with no body when `If-None-Match` matches. The globe component fetches it with `cache: "no-store"`, so the page
 does not send `If-None-Match` and sees no change.
 
-Offline tests: `npx tsx scripts/test-radar-etag.ts` and `src/lib/__tests__/etag.test.ts`.
+Offline tests: `npx tsx scripts/test-radar-etag.ts`, `npx tsx scripts/test-stats-etag.ts` and `src/lib/__tests__/etag.test.ts`.
 
 ## Not proven (owner to confirm)
 
