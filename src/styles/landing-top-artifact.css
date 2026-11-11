@@ -65,7 +65,7 @@ p{margin:0}
 .brand img{flex:none;width:40px;height:40px;border-radius:50%;background:#fff;box-shadow:0 0 0 2px var(--ink)}
 .nav-actions{display:flex;align-items:center;gap:22px}
 .nav-link{font-weight:700;color:var(--ink);text-decoration:none}
-.nav-link:hover{color:var(--ink)}
+@media (hover:hover){.nav-link:hover{color:var(--ink)}}
 
 /* ---------- Hero ---------- */
 .hero{background:var(--sky-bg);padding:40px 0 60px;text-align:center}
