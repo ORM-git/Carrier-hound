@@ -39,6 +39,7 @@ const isDryRun = args.includes('--dry') || args.includes('-d');
 const isCleanupOnly = args.includes('--cleanup-only');
 const isSkipCleanup = args.includes('--skip-cleanup');
 const isSeedRun = args.includes('--seed') || args.includes('-s');
+const isScheduledRun = args.includes('--scheduled');
 
 const configArgIdx = args.findIndex((a) => a === '--config' || a === '-c');
 const configCustom = configArgIdx !== -1 && args[configArgIdx + 1] ? args[configArgIdx + 1] : null;
@@ -65,6 +66,12 @@ const sourceFilter = sourceFilterIdx !== -1 ? args[sourceFilterIdx + 1] : null;
 
 const concArgIdx = args.findIndex((a) => a === '--concurrency' || a === '-p');
 const CONCURRENCY = concArgIdx !== -1 && args[concArgIdx + 1] ? parseInt(args[concArgIdx + 1], 10) : 4;
+
+const shardArgIdx = args.findIndex((a) => a === '--shard');
+const SHARD_INDEX = shardArgIdx !== -1 && args[shardArgIdx + 1] ? parseInt(args[shardArgIdx + 1], 10) : null;
+
+const shardsArgIdx = args.findIndex((a) => a === '--shards' || a === '--total-shards');
+const TOTAL_SHARDS = shardsArgIdx !== -1 && args[shardsArgIdx + 1] ? parseInt(args[shardsArgIdx + 1], 10) : null;
 
 // Track schema capability flags dynamically
 let hasCompaniesTable = false;
@@ -220,6 +227,8 @@ function loadSourcesConfig(): SourceConfig[] {
   let configFile = 'config/sources.json';
   if (configCustom) {
     configFile = configCustom;
+  } else if (isScheduledRun) {
+    configFile = 'config/companies-scheduled.json';
   } else if (isSeedRun) {
     configFile = 'config/companies-seed.json';
   }
@@ -257,9 +266,10 @@ async function main() {
   console.log(`🚀 CareerMonke Large-Scale Storage-Optimized Ingestion`);
   console.log(`======================================================`);
   console.log(`Mode: ${isDryRun ? 'DRY RUN (No writes)' : 'LIVE PRODUCTION'}`);
-  console.log(`Config Source: ${configCustom || (isSeedRun ? 'companies-seed.json' : 'sources.json')}`);
+  console.log(`Config Source: ${configCustom || (isScheduledRun ? 'companies-scheduled.json' : isSeedRun ? 'companies-seed.json' : 'sources.json')}`);
   console.log(`Max Run Job Cap: ${MAX_RUN_JOBS}`);
   console.log(`Concurrency: ${CONCURRENCY} workers`);
+  if (TOTAL_SHARDS && SHARD_INDEX !== null) console.log(`Shard: [${SHARD_INDEX + 1}/${TOTAL_SHARDS}]`);
   if (OFFSET > 0) console.log(`Offset: Skipping first ${OFFSET} companies`);
   if (MAX_SOURCES_LIMIT) console.log(`Limit: Processing up to ${MAX_SOURCES_LIMIT} companies`);
   if (sourceFilter) console.log(`Filter: Single Source [${sourceFilter}]`);
@@ -295,6 +305,11 @@ async function main() {
     const bTier = isAtsSource(b.type) ? 0 : 1;
     return aTier - bTier;
   });
+
+  // Shard partitioning: balanced modulo partition across total shards
+  if (TOTAL_SHARDS && TOTAL_SHARDS > 1 && SHARD_INDEX !== null && SHARD_INDEX >= 0 && SHARD_INDEX < TOTAL_SHARDS) {
+    sources = sources.filter((_, idx) => idx % TOTAL_SHARDS === SHARD_INDEX);
+  }
 
   if (OFFSET > 0 || (MAX_SOURCES_LIMIT && MAX_SOURCES_LIMIT > 0)) {
     sources = sources.slice(OFFSET, MAX_SOURCES_LIMIT ? OFFSET + MAX_SOURCES_LIMIT : undefined);

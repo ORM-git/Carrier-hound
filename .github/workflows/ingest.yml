@@ -1,9 +1,9 @@
-name: Daily Job Ingestion & Cleanup Pipeline
+name: Scaled Job Ingestion & Cleanup Pipeline
 
 on:
   schedule:
-    # Runs daily at 02:00 AM IST (20:30 UTC)
-    - cron: '30 20 * * *'
+    # Runs every 4 hours (00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC)
+    - cron: '0 */4 * * *'
   workflow_dispatch:
     inputs:
       dry_run:
@@ -15,12 +15,15 @@ on:
         description: 'Maximum jobs to ingest in this run'
         required: false
         type: string
-        default: '2000'
-      seed:
-        description: 'Use companies-seed.json (52+ verified tech companies)'
+        default: '50000'
+      mode:
+        description: 'Ingestion mode: scheduled (438 validated boards sharded) or seed (52 tech companies)'
         required: false
-        type: boolean
-        default: true
+        type: choice
+        options:
+          - scheduled
+          - seed
+        default: scheduled
       source:
         description: 'Specific source ID to run (leave blank for all)'
         required: false
@@ -32,9 +35,13 @@ permissions:
 
 jobs:
   ingest:
-    name: Fetch & Ingest Jobs
+    name: Ingest Jobs (Shard ${{ matrix.shard + 1 }}/6)
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
 
     steps:
       - name: Checkout Code
@@ -57,8 +64,10 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.SUPABASE_SERVICE_KEY }}
         run: |
           ARGS=""
-          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event.inputs.seed }}" != "false" ]; then
-            ARGS="$ARGS --seed"
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event.inputs.mode }}" = "scheduled" ] || [ -z "${{ github.event.inputs.mode }}" ]; then
+            ARGS="$ARGS --scheduled --shard ${{ matrix.shard }} --total-shards 6"
+          elif [ "${{ github.event.inputs.mode }}" = "seed" ]; then
+            ARGS="$ARGS --seed --shard ${{ matrix.shard }} --total-shards 6"
           fi
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
             ARGS="$ARGS --dry"

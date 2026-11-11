@@ -10,7 +10,7 @@
     ".github/workflows/ci.yml": "9deb8716faa81cb9fbb32da8160e374461be0c8c71acd06c8f68acb1724e87d8",
     ".github/workflows/daily-digest-cron.yml": "31b7ef763c9ca3b407255f21cf738e3fb994149545b0989fe1fccc993191c5ce",
     ".github/workflows/early-access-digest-cron.yml": "e4bc35949c06fb612e642a936968c403bba0960ce3082e59b3e449fe1c9e3dfd",
-    ".github/workflows/ingest.yml": "e7d506fd54df6deeff70f975fea62ab27a89b765fd5410827a20ac83192954f6",
+    ".github/workflows/ingest.yml": "61132147f4e7c65517e30744cfd39b70a7149a9a3134299e5ea5a56dc32ace40",
     ".github/workflows/plan-regression.yml": "60e1cde0e388fc46a871fca81138d5c963a730f3fa9e8f08c8e08718ea2b7b69",
     ".github/workflows/quality-advisory.yml": "915fd58a520f0178636725a4cfc6d0b924c213d880d6b622f2afaa6c95f023c0",
     ".github/workflows/retention-cron.yml": "7683c6e28e98c806693322ff70e4ef34d934cb8ee44bb6ad23964f9603e0a9cb",
