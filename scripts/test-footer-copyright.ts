@@ -105,42 +105,6 @@ function run() {
       description: "Admin Console Layout",
     },
     {
-      file: "src/app/terms-and-conditions/page.tsx",
-      minCount: 1,
-      maxCount: 1,
-      description: "Terms and Conditions Page",
-    },
-    {
-      file: "src/app/privacy-policy/page.tsx",
-      minCount: 1,
-      maxCount: 1,
-      description: "Privacy Policy Page",
-    },
-    {
-      file: "src/app/contact/page.tsx",
-      minCount: 1,
-      maxCount: 1,
-      description: "Contact Us Page",
-    },
-    {
-      file: "src/app/refund-policy/page.tsx",
-      minCount: 1,
-      maxCount: 1,
-      description: "Refund Policy Page",
-    },
-    {
-      file: "src/app/about/page.tsx",
-      minCount: 1,
-      maxCount: 1,
-      description: "About Us Page",
-    },
-    {
-      file: "src/app/early-access/page.tsx",
-      minCount: 1,
-      maxCount: 1,
-      description: "Early Access Page",
-    },
-    {
       file: "src/app/jobs/page.tsx",
       minCount: 1,
       maxCount: 1,
@@ -199,6 +163,35 @@ function run() {
     }
   }
 
+  // Pages that delegate their footer to the shared site <Footer /> (unified footer):
+  // source must carry zero inline copyright lines and must render <Footer />.
+  const sharedFooterPages: { file: string; description: string }[] = [
+    { file: "src/app/terms-and-conditions/page.tsx", description: "Terms and Conditions Page" },
+    { file: "src/app/privacy-policy/page.tsx", description: "Privacy Policy Page" },
+    { file: "src/app/contact/page.tsx", description: "Contact Us Page" },
+    { file: "src/app/refund-policy/page.tsx", description: "Refund Policy Page" },
+    { file: "src/app/about/page.tsx", description: "About Us Page" },
+    { file: "src/app/early-access/page.tsx", description: "Early Access Page" },
+  ];
+  for (const item of sharedFooterPages) {
+    const fullPath = path.resolve(process.cwd(), item.file);
+    if (!fs.existsSync(fullPath)) {
+      failures.push(`Missing file: ${item.file}`);
+      continue;
+    }
+    const content = fs.readFileSync(fullPath, "utf-8");
+    const count = countOccurrences(content, EXACT_COPYRIGHT);
+    if (count !== 0) {
+      failures.push(
+        `${item.file} has ${count} inline copyright line(s); expected 0 because it renders the shared <Footer />`
+      );
+    } else if (!content.includes('from "@/components/Footer"') || !content.includes("<Footer />")) {
+      failures.push(`${item.file} must import and render the shared <Footer />`);
+    } else {
+      console.log(`  [PASS] ${item.description} (${item.file}) -> delegates to shared Footer (0 inline lines)`);
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // 2. Pricing duplicate-prevention verification
   // ---------------------------------------------------------------------------
@@ -227,11 +220,11 @@ function run() {
         React.createElement("div", null, "Dashboard Body")
       ),
     },
-    { name: "TermsPage", element: React.createElement(TermsPage) },
-    { name: "PrivacyPolicyPage", element: React.createElement(PrivacyPolicyPage) },
-    { name: "ContactUsPage", element: React.createElement(ContactUsPage) },
-    { name: "RefundPolicyPage", element: React.createElement(RefundPolicyPage) },
-    { name: "AboutUsPage", element: React.createElement(AboutUsPage) },
+    { name: "TermsPage", element: React.createElement(TermsPage), pathname: "/terms-and-conditions" },
+    { name: "PrivacyPolicyPage", element: React.createElement(PrivacyPolicyPage), pathname: "/privacy-policy" },
+    { name: "ContactUsPage", element: React.createElement(ContactUsPage), pathname: "/contact" },
+    { name: "RefundPolicyPage", element: React.createElement(RefundPolicyPage), pathname: "/refund-policy" },
+    { name: "AboutUsPage", element: React.createElement(AboutUsPage), pathname: "/about" },
   ];
 
   for (const testCase of renderCases) {

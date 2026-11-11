@@ -1006,18 +1006,19 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
     supabaseClient,
     expectHost,
     skipExistingRegistry = true,
-    deltaMode = true,
+    deltaMode = false,
     watermarksPath,
     persistWatermarks,
   } = options;
 
-  const watermarks = deltaMode ? loadBoardWatermarks(watermarksPath) : {};
+  const isDeltaActive = Boolean(deltaMode && !fixtureMode);
+  const watermarks = isDeltaActive ? loadBoardWatermarks(watermarksPath) : {};
 
   const effectiveBoardsLimit = boardsLimit || limit;
   const isActualLiveWrite = liveWrite && !dryPlan;
-  const shouldPersistWatermarks = persistWatermarks !== undefined
+  const shouldPersistWatermarks = isDeltaActive && (persistWatermarks !== undefined
     ? persistWatermarks
-    : (isActualLiveWrite || Boolean(watermarksPath));
+    : (isActualLiveWrite || Boolean(watermarksPath)));
 
   console.log('\n======================================================');
   console.log('🚀 CareerMonke ATS Board Ingestion Engine');
@@ -1191,19 +1192,7 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
             .map((item) => normalizeAtsJob(item, target.ats, target.company || target.token, target.token))
             .filter((j): j is NormalizedJob => j !== null);
 
-          let candidateItems = normalized;
-          if (deltaMode) {
-            const mark = getBoardWatermark(watermarks, target.ats, target.token);
-            if (mark) {
-              const deltaRes = filterJobsByWatermark(candidateItems, mark);
-              candidateItems = deltaRes.deltaJobs;
-              if (deltaRes.skippedCount > 0) {
-                console.log(`⏱️ [Delta] ${prefix}: skipped ${deltaRes.skippedCount} unchanged jobs older than ${mark}`);
-              }
-            }
-          }
-
-          const dedupRes = dedupJobs(candidateItems, seenUrls, seenRoles);
+          const dedupRes = dedupJobs(normalized, seenUrls, seenRoles);
           acceptedForCompany = dedupRes.accepted;
           duplicates = dedupRes.duplicates;
           fetchSucceeded = true;
@@ -1238,7 +1227,7 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
             }));
 
           let candidateJobs = sanitizedJobs;
-          if (deltaMode) {
+          if (isDeltaActive) {
             const mark = getBoardWatermark(watermarks, target.ats, target.token);
             if (mark) {
               const deltaRes = filterJobsByWatermark(candidateJobs, mark);
@@ -1264,7 +1253,7 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
             .filter((j): j is NormalizedJob => j !== null);
 
           let candidateItems = normalized;
-          if (deltaMode) {
+          if (isDeltaActive) {
             const mark = getBoardWatermark(watermarks, target.ats, target.token);
             if (mark) {
               const deltaRes = filterJobsByWatermark(candidateItems, mark);
@@ -1300,7 +1289,7 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
 
       if (fetchSucceeded) {
         stats.companiesSucceeded++;
-        if (deltaMode && shouldPersistWatermarks) {
+        if (isDeltaActive && shouldPersistWatermarks) {
           updateBoardWatermark(watermarks, target.ats, target.token, new Date().toISOString(), acceptedForCompany.length);
           saveBoardWatermarks(watermarks, watermarksPath);
         }
