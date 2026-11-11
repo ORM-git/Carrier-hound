@@ -58,9 +58,12 @@ export function getFlagDefinition(envVar: string): FlagDefinition | undefined {
 
 /**
  * Applies the registered rule to the given env. Unknown names throw, so a typo
- * cannot silently read as "off".
+ * cannot silently read as "off". Defaults to reading process.env if omitted.
  */
-export function isFlagEnabled(envVar: string, env: Record<string, string | undefined>): boolean {
+export function isFlagEnabled(
+  envVar: string,
+  env: Record<string, string | undefined> = process.env
+): boolean {
   const def = getFlagDefinition(envVar);
   if (!def) throw new Error(`Unknown feature flag: ${envVar}`);
   const raw = env[envVar];
@@ -68,4 +71,31 @@ export function isFlagEnabled(envVar: string, env: Record<string, string | undef
   if (def.rule === "strict_true") return raw === "true";
   const v = raw.trim().toLowerCase();
   return v === "true" || v === "1" || v === "yes" || v === "on";
+}
+
+/**
+ * Returns a complete evaluated boolean snapshot of all registered feature flags.
+ */
+export function getFeatureFlagsSnapshot(
+  env: Record<string, string | undefined> = process.env
+): Record<string, boolean> {
+  const snapshot: Record<string, boolean> = {};
+  for (const flag of FLAGS) {
+    snapshot[flag.envVar] = isFlagEnabled(flag.envVar, env);
+  }
+  return snapshot;
+}
+
+/**
+ * Lists registered feature flag definitions filtered by scope.
+ */
+export function getFlagsByScope(scope: "server" | "public-build"): FlagDefinition[] {
+  return FLAGS.filter((f) => f.scope === scope);
+}
+
+/**
+ * Validates whether an environment variable name is a known feature flag.
+ */
+export function isKnownFeatureFlag(envVar: string): boolean {
+  return Boolean(getFlagDefinition(envVar));
 }
