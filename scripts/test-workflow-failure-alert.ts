@@ -45,8 +45,9 @@ console.log("===================================================================
 console.log("1. Scheduled Cron Allowlist Tests");
 check(isScheduledCronWorkflow("Weekly Retention Purge Cron"), "retention purge cron is allowlisted");
 check(isScheduledCronWorkflow("Daily Early-Access Signup Digest Cron"), "early-access digest cron is allowlisted");
+check(isScheduledCronWorkflow("Source Health Monitoring"), "source health monitoring is allowlisted");
 check(isScheduledCronWorkflow("daily candidate matching & digest cron"), "case-insensitive allowlist matching works");
-check(SCHEDULED_CRON_WORKFLOWS.length === 10, `all 10 scheduled cron workflows are cataloged (found ${SCHEDULED_CRON_WORKFLOWS.length})`);
+check(SCHEDULED_CRON_WORKFLOWS.length === 11, `all 11 scheduled cron workflows are cataloged (found ${SCHEDULED_CRON_WORKFLOWS.length})`);
 
 // Non-cron workflows must be excluded
 check(!isScheduledCronWorkflow("Continuous Integration (Build, Lint & Test)"), "CI workflow is excluded");
@@ -197,6 +198,7 @@ async function runBehavioralTests(): Promise<void> {
   check(yamlContent.includes("types:\n      - completed"), "workflow triggers on completed event");
   check(yamlContent.includes("Weekly Retention Purge Cron"), "workflow monitors Weekly Retention Purge Cron");
   check(yamlContent.includes("Daily Early-Access Signup Digest Cron"), "workflow monitors Daily Early-Access Signup Digest Cron");
+  check(yamlContent.includes("Source Health Monitoring"), "workflow monitors Source Health Monitoring");
   check(yamlContent.includes("conclusion == 'failure'"), "workflow guards on conclusion == 'failure'");
   check(yamlContent.includes("issues: write"), "workflow requests issues: write permission");
   check(yamlContent.includes("npx tsx scripts/workflow-failure-alert.ts"), "workflow executes scripts/workflow-failure-alert.ts");
