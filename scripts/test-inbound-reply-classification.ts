@@ -12,7 +12,8 @@
  * 5. Other classification for automated bulk, junk, or unrecognized mail.
  * 6. Fail-open resilience: malformed headers and unparseable contexts return "other" without crashing.
  * 7. Recipient and sender PII protection via maskEmail.
- * 8. Subprocess negative control verifying non-zero exit (code 1) on invalid conditions.
+ * 8. Database CHECK constraint mapping and suppression of auto_reply/other.
+ * 9. Subprocess negative control verifying non-zero exit (code 1) on invalid conditions.
  *
  * Usage:
  *   npx tsx scripts/test-inbound-reply-classification.ts                    -> exit 0 on pass
@@ -25,6 +26,10 @@ import { spawnSync } from "child_process";
 import {
   classifyInboundMessage,
   InboundMessageContext,
+  InboundClassificationKind,
+  mapClassificationToStoredKind,
+  ALLOWED_STORED_KINDS,
+  StoredInboundKind,
   maskEmail,
   parseHeaderMap,
 } from "./poll-inbound-replies";
@@ -323,8 +328,57 @@ export function runTests(isNegativeControl = false): void {
   check("null email returns empty string without error", maskEmail(null) === "");
   check("empty email returns empty string", maskEmail("") === "");
 
-  // 8. Negative Control Subprocess
-  console.log("\n8. Subprocess Negative Control Verification");
+  // 8. Stored Kind Mapping & Schema CHECK Constraint Enforcement
+  console.log("\n8. Stored Kind Mapping & Schema CHECK Constraint Enforcement Tests");
+  check("bounce maps to bounce_suspect (matches bounce-intake-cron & schema)", mapClassificationToStoredKind("bounce") === "bounce_suspect");
+  check("unsubscribe maps to unsubscribe_suspect (matches schema CHECK)", mapClassificationToStoredKind("unsubscribe") === "unsubscribe_suspect");
+  check("reply maps to reply", mapClassificationToStoredKind("reply") === "reply");
+  check("auto_reply maps to null (skipped, no row inserted)", mapClassificationToStoredKind("auto_reply") === null);
+  check("other maps to null (skipped, no row inserted)", mapClassificationToStoredKind("other") === null);
+  check("arbitrary invalid kind maps to null", mapClassificationToStoredKind("unrecognized" as any) === null);
+
+  // Assert ALLOWED_STORED_KINDS matches the schema CHECK constraint exactly
+  const schemaCheckValues: readonly StoredInboundKind[] = ["reply", "bounce_suspect", "unsubscribe_suspect"];
+  check(
+    "ALLOWED_STORED_KINDS contains only schema-valid values",
+    ALLOWED_STORED_KINDS.length === 3 &&
+      ALLOWED_STORED_KINDS.every((k) => schemaCheckValues.includes(k)) &&
+      schemaCheckValues.every((k) => ALLOWED_STORED_KINDS.includes(k))
+  );
+
+  // Assert that for every classified kind, no value outside the CHECK set is ever written
+  const allKinds: InboundClassificationKind[] = ["reply", "bounce", "auto_reply", "unsubscribe", "other"];
+  for (const k of allKinds) {
+    const mapped = mapClassificationToStoredKind(k);
+    if (mapped !== null) {
+      check(
+        `mapped value '${mapped}' for classification '${k}' satisfies schema CHECK constraint`,
+        ALLOWED_STORED_KINDS.includes(mapped)
+      );
+    }
+  }
+
+  // End-to-end fixture mapping: assert that no fixture can ever produce a stored value outside CHECK set
+  const allFixtures = [
+    ...BOUNCE_FIXTURES,
+    ...AUTO_REPLY_FIXTURES,
+    ...UNSUBSCRIBE_FIXTURES,
+    ...HUMAN_REPLY_FIXTURES,
+    ...OTHER_FIXTURES,
+  ];
+  for (const f of allFixtures) {
+    const internalKind = classifyInboundMessage(f.ctx);
+    const storedKind = mapClassificationToStoredKind(internalKind);
+    if (storedKind !== null) {
+      check(
+        `fixture '${f.name}' storedKind '${storedKind}' is strictly inside CHECK constraint set`,
+        ALLOWED_STORED_KINDS.includes(storedKind)
+      );
+    }
+  }
+
+  // 9. Negative Control Subprocess
+  console.log("\n9. Subprocess Negative Control Verification");
   const child = spawnSync(
     process.execPath,
     ["-r", "tsx", path.resolve(__filename), "--negative-control"],

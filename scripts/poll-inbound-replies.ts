@@ -31,6 +31,39 @@ const MAX_MESSAGES_PER_RUN = 25;
  */
 export type InboundClassificationKind = "reply" | "bounce" | "auto_reply" | "unsubscribe" | "other";
 
+/**
+ * Stored kind values supported by the database schema (CHECK constraint in 20261106j_inbound_replies.sql).
+ */
+export type StoredInboundKind = "reply" | "bounce_suspect" | "unsubscribe_suspect";
+
+export const ALLOWED_STORED_KINDS: readonly StoredInboundKind[] = Object.freeze([
+  "reply",
+  "bounce_suspect",
+  "unsubscribe_suspect",
+]);
+
+/**
+ * Maps rich internal classifier output to the database CHECK constraint set:
+ * - bounce -> 'bounce_suspect' (read downstream by scripts/bounce-intake-cron.ts)
+ * - unsubscribe -> 'unsubscribe_suspect'
+ * - reply -> 'reply'
+ * - auto_reply and other -> null (skipped; no row inserted)
+ */
+export function mapClassificationToStoredKind(kind: InboundClassificationKind): StoredInboundKind | null {
+  switch (kind) {
+    case "bounce":
+      return "bounce_suspect";
+    case "unsubscribe":
+      return "unsubscribe_suspect";
+    case "reply":
+      return "reply";
+    case "auto_reply":
+    case "other":
+    default:
+      return null;
+  }
+}
+
 /** Backward compatibility alias for legacy callers */
 export type InboundKind = InboundClassificationKind;
 
@@ -254,6 +287,7 @@ async function main() {
 
   const supabase = createClient(url, serviceKey);
   let inserted = 0;
+  let skippedAutomated = 0;
 
   const METADATA_HEADERS = [
     "From",
@@ -304,15 +338,21 @@ async function main() {
       snippet,
     });
 
-    // Fail-open: a failed insert never fails the poll run (matches the
-    // owner decision on audit/history writes). Never log recipient PII.
+    const storedKind = mapClassificationToStoredKind(classification);
+    if (!storedKind) {
+      skippedAutomated++;
+      console.log(`Skipping non-storable inbound message ${m.id} (kind: ${classification}).`);
+      continue;
+    }
+
+    // Fail-open: a failed insert never fails the poll run. Never log recipient PII.
     const { error } = await supabase.from("inbound_replies").insert({
       message_id: m.id,
       thread_id: msg.threadId ?? m.threadId ?? null,
       from_address: fromAddress,
       subject,
       body_excerpt: snippet,
-      kind: classification,
+      kind: storedKind,
       received_at: msg.internalDate ? new Date(Number(msg.internalDate)).toISOString() : new Date().toISOString(),
     });
     if (error) {
@@ -322,7 +362,9 @@ async function main() {
     }
   }
 
-  console.log(`Inbound poll complete: ${inserted} new repl${inserted === 1 ? "y" : "ies"} stored of ${messages.length} seen.`);
+  console.log(
+    `Inbound poll complete: ${inserted} new repl${inserted === 1 ? "y" : "ies"} stored, ${skippedAutomated} automated/other skipped of ${messages.length} seen.`
+  );
 }
 
 if (process.argv[1] && process.argv[1].endsWith("poll-inbound-replies.ts")) {
