@@ -20,6 +20,8 @@ import path from "path";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { spawnSync } from "child_process";
+import { AppRouterContext } from "next/dist/shared/lib/app-router-context.shared-runtime";
+import { PathnameContext } from "next/dist/shared/lib/hooks-client-context.shared-runtime";
 
 import TermsPage from "../src/app/terms-and-conditions/page";
 import PrivacyPolicyPage from "../src/app/privacy-policy/page";
@@ -28,6 +30,26 @@ import RefundPolicyPage from "../src/app/refund-policy/page";
 import sitemap from "../src/app/sitemap";
 
 const IS_NEGATIVE_CONTROL = process.argv.includes("--negative-control");
+
+const mockRouter: any = {
+  back: () => {},
+  forward: () => {},
+  refresh: () => {},
+  push: () => {},
+  replace: () => {},
+  prefetch: () => {},
+};
+
+// Policy pages render the shared <Footer />, which needs the App Router pathname context.
+function renderWithPathname(element: React.ReactElement, pathname: string): string {
+  return renderToStaticMarkup(
+    React.createElement(
+      AppRouterContext.Provider,
+      { value: mockRouter },
+      React.createElement(PathnameContext.Provider, { value: pathname }, element)
+    )
+  );
+}
 
 async function main() {
   console.log("================================================================================");
@@ -56,19 +78,19 @@ async function main() {
   // 1. Render All 4 Target Policy Pages via react-dom/server
   console.log("1. Rendering all 4 policy pages to static markup via react-dom/server...");
 
-  const termsHtml = renderToStaticMarkup(React.createElement(TermsPage));
+  const termsHtml = renderWithPathname(React.createElement(TermsPage), "/terms-and-conditions");
   assert.ok(termsHtml && termsHtml.length > 500, "TermsPage must render non-empty HTML");
   console.log(`  [PASS-LOCAL] /terms-and-conditions rendered successfully (${termsHtml.length} bytes)`);
 
-  const privacyHtml = renderToStaticMarkup(React.createElement(PrivacyPolicyPage));
+  const privacyHtml = renderWithPathname(React.createElement(PrivacyPolicyPage), "/privacy-policy");
   assert.ok(privacyHtml && privacyHtml.length > 500, "PrivacyPolicyPage must render non-empty HTML");
   console.log(`  [PASS-LOCAL] /privacy-policy rendered successfully (${privacyHtml.length} bytes)`);
 
-  const contactHtml = renderToStaticMarkup(React.createElement(ContactUsPage));
+  const contactHtml = renderWithPathname(React.createElement(ContactUsPage), "/contact");
   assert.ok(contactHtml && contactHtml.length > 200, "ContactUsPage must render non-empty HTML");
   console.log(`  [PASS-LOCAL] /contact rendered successfully (${contactHtml.length} bytes)`);
 
-  const refundHtml = renderToStaticMarkup(React.createElement(RefundPolicyPage));
+  const refundHtml = renderWithPathname(React.createElement(RefundPolicyPage), "/refund-policy");
   assert.ok(refundHtml && refundHtml.length > 200, "RefundPolicyPage must render non-empty HTML");
   console.log(`  [PASS-LOCAL] /refund-policy rendered successfully (${refundHtml.length} bytes)`);
 
