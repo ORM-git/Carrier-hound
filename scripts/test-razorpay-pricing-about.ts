@@ -144,7 +144,10 @@ async function runTests() {
     "src/app/about/page.tsx",
   ]) {
     const src = fs.readFileSync(path.join(rootDir, relFile), "utf-8");
-    assert.ok(src.includes('href="/about"'), `${relFile} footer must contain href="/about"`);
+    assert.ok(
+      src.includes('from "@/components/Footer"') && src.includes("<Footer />"),
+      `${relFile} must render the shared site Footer (which itself contains href="/about", verified above)`
+    );
   }
   console.log("  [PASS-LOCAL] Navbar and footer 'Pricing' and 'About Us' links verified across public pages.");
 
@@ -269,9 +272,9 @@ async function runTests() {
   // 4. Terms (/terms-and-conditions): Add-on Wording Updated, Auto-Renewal Untouched
   // ---------------------------------------------------------------------------
   console.log("\n4. Verifying Terms (/terms-and-conditions) add-on wording and auto-renewal preservation...");
-  const termsHtml = renderToStaticMarkup(React.createElement(TermsPage));
+  const termsHtml = renderWithPathname(React.createElement(TermsPage), "/terms-and-conditions");
   const termsText = stripTags(termsHtml);
-  const privacyHtml = renderToStaticMarkup(React.createElement(PrivacyPolicyPage));
+  const privacyHtml = renderWithPathname(React.createElement(PrivacyPolicyPage), "/privacy-policy");
   const privacyText = stripTags(privacyHtml);
 
   assert.strictEqual(
@@ -302,7 +305,7 @@ async function runTests() {
   // 5. /about (About Us) Public Page Content & Prohibited Terms Check
   // ---------------------------------------------------------------------------
   console.log("\n5. Verifying /about (About Us) content and prohibited terms...");
-  const aboutHtml = renderToStaticMarkup(React.createElement(AboutUsPage));
+  const aboutHtml = renderWithPathname(React.createElement(AboutUsPage), "/about");
   const aboutText = stripTags(aboutHtml);
 
   assert.ok(aboutText.includes("About Us"), "/about must render 'About Us' heading");
