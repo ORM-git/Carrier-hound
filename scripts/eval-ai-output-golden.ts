@@ -14,7 +14,7 @@
  * Run: npx tsx scripts/eval-ai-output-golden.ts   (exit 1 on any mismatch)
  */
 import { validateCoverLetter } from "../src/lib/resume/tailor";
-import { validateAndSanitizeAiOutput } from "../src/lib/ai/security";
+import { validateAndSanitizeAiOutput, buildOperationPayload, OPERATION_CONFIGS } from "../src/lib/ai/security";
 
 const NOW = "2026-11-07T00:00:00Z";
 const dev: any = {
@@ -61,6 +61,92 @@ const outputs: OutCase[] = [
   { id: "job_fit score is clamped low", op: "job_fit", raw: "{\"score\":-5}", ok: true, check: (r) => r.parsedJson.score === 0 },
   { id: "job_fit skills must be arrays", op: "job_fit", raw: "{\"score\":50,\"matchedSkills\":\"a\"}", ok: false, error: "'matchedSkills' must be an array" },
   { id: "resume_tailor with no expected key rejected", op: "resume_tailor", raw: "{\"x\":1}", ok: false, error: "resume_tailor schema" },
+  // Expected output shape assertion cases for all four operations:
+  {
+    id: "cover_letter ideal output shape asserted",
+    op: "cover_letter",
+    raw: "At Acme Corp, I engineered responsive user interfaces utilizing TypeScript, React, and Next.js.\n\nJoining Linear aligns directly with my engineering focus on high-performance web tooling.",
+    ok: true,
+    check: (r) => typeof r.sanitizedText === "string" && r.sanitizedText.length > 50 && r.sanitizedText.includes("Acme Corp")
+  },
+  {
+    id: "resume_extraction ideal output shape asserted",
+    op: "resume_extraction",
+    raw: JSON.stringify({
+      name: "Alex Chen",
+      headline: "Frontend Developer",
+      summary: "Experienced UI engineer",
+      skills: ["React", "TypeScript", "CSS"],
+      experience: [
+        {
+          id: "exp-1",
+          company: "DevCo",
+          role: "UI Developer",
+          startDate: "2021",
+          endDate: "2023",
+          bullets: ["Built responsive UI components."],
+          needsReview: false
+        }
+      ],
+      education: [
+        {
+          id: "edu-1",
+          degree: "BS Computer Science",
+          institution: "Tech University",
+          year: "2021",
+          needsReview: false
+        }
+      ],
+      certifications: []
+    }),
+    ok: true,
+    check: (r) =>
+      r.parsedJson.name === "Alex Chen" &&
+      Array.isArray(r.parsedJson.skills) &&
+      r.parsedJson.skills.length === 3 &&
+      Array.isArray(r.parsedJson.experience) &&
+      r.parsedJson.experience[0].company === "DevCo" &&
+      Array.isArray(r.parsedJson.education) &&
+      r.parsedJson.education[0].institution === "Tech University"
+  },
+  {
+    id: "job_fit ideal output shape asserted",
+    op: "job_fit",
+    raw: JSON.stringify({
+      score: 85,
+      matchedSkills: ["Python", "SQL"],
+      missingSkills: ["Tableau"],
+      summary: "Candidate has strong verified SQL and Python foundations."
+    }),
+    ok: true,
+    check: (r) =>
+      typeof r.parsedJson.score === "number" &&
+      r.parsedJson.score === 85 &&
+      Array.isArray(r.parsedJson.matchedSkills) &&
+      r.parsedJson.matchedSkills.includes("Python") &&
+      Array.isArray(r.parsedJson.missingSkills) &&
+      typeof r.parsedJson.summary === "string" &&
+      r.parsedJson.summary.length > 10
+  },
+  {
+    id: "resume_tailor ideal output shape asserted",
+    op: "resume_tailor",
+    raw: JSON.stringify({
+      tailoredSummary: "Backend engineer with proven experience in Node.js and Docker.",
+      highlightedSkills: ["Node.js", "Docker"],
+      tailoredBullets: {
+        "exp-1": ["Optimized backend microservices to scale throughput by 30%."]
+      }
+    }),
+    ok: true,
+    check: (r) =>
+      typeof r.parsedJson.tailoredSummary === "string" &&
+      Array.isArray(r.parsedJson.highlightedSkills) &&
+      r.parsedJson.highlightedSkills.includes("Node.js") &&
+      typeof r.parsedJson.tailoredBullets === "object" &&
+      Array.isArray(r.parsedJson.tailoredBullets["exp-1"]) &&
+      r.parsedJson.tailoredBullets["exp-1"][0].includes("microservices")
+  },
 ];
 
 let total = 0;
@@ -80,6 +166,46 @@ outputs.forEach((c) => {
   const errOk = c.error ? (!r.ok && String(r.error).indexOf(c.error) !== -1) : true;
   const checkOk = c.check ? (r.ok && c.check(r)) : true;
   report("ai_output", c.id, r.ok === c.ok && errOk && checkOk, `ok=${r.ok} error=${r.error || ""}`);
+});
+
+// Few-shot prompt verification: assert each of the four AI operations has a worked example pair
+const sampleCandidate = {
+  name: "Jordan Smith",
+  headline: "Full Stack Engineer",
+  summary: "Experienced developer",
+  skills: ["TypeScript", "Node.js", "React"],
+  experience: [{ id: "exp-1", company: "TechCorp", role: "Engineer", startDate: "2021", endDate: "2023", bullets: ["Built APIs"] }],
+  education: [{ id: "edu-1", degree: "BSc", institution: "Uni", year: "2020", needsReview: false }],
+  certifications: [],
+};
+const sampleJob = {
+  title: "Full Stack Engineer",
+  company: "CloudScale",
+  description: "Looking for an engineer with TypeScript and Node.js skills.",
+};
+
+const fewShotOps = [
+  { op: "cover_letter", params: { candidate: sampleCandidate, job: sampleJob } },
+  { op: "resume_extraction", params: { rawText: "Jordan Smith - Developer. Skills: TypeScript." } },
+  { op: "resume_tailor", params: { candidate: sampleCandidate, job: sampleJob } },
+  { op: "job_fit", params: { candidate: sampleCandidate, job: sampleJob } },
+] as const;
+
+fewShotOps.forEach(({ op, params }) => {
+  const cfg = OPERATION_CONFIGS[op as keyof typeof OPERATION_CONFIGS];
+  const built = buildOperationPayload(cfg, params);
+  const hasWorkedExample =
+    built.ok &&
+    built.payload.messages.some(
+      (m) => m.role === "system" && m.content.includes("WORKED EXAMPLE") && m.content.includes("Ideal output")
+    );
+  const withinBudget = built.ok && (built.payload.estimatedInputTokens || 0) < cfg.maxInputTokens;
+  report(
+    "few_shot_prompt",
+    `${op} system prompt contains worked example pair within budget`,
+    hasWorkedExample && withinBudget,
+    `hasWorkedExample=${hasWorkedExample} withinBudget=${withinBudget}`
+  );
 });
 
 console.log(`\ncases=${total} passed=${total - bad} failed=${bad}`);
