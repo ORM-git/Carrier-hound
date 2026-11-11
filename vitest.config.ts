@@ -15,15 +15,15 @@ export default defineConfig({
       provider: "v8",
       include: ["src/lib/**"],
       reporter: ["text", "json-summary"],
-      // Ratchet baseline measured on main 2026-11-06 (audit BE #13):
-      // lines 1.44 / statements 1.44 / functions 29.59 / branches 42.55.
+      // Ratchet baseline measured on main 2026-11-10 (sheet row Coverage Thresholds):
+      // lines 15.90 / statements 15.90 / functions 50.40 / branches 72.45.
       // The gate blocks backsliding only; raise the thresholds as unit
       // suites grow (same pattern as the bundle-size budget in #285).
       thresholds: {
-        lines: 1.4,
-        statements: 1.4,
-        functions: 29,
-        branches: 42,
+        lines: 15.8,
+        statements: 15.8,
+        functions: 50,
+        branches: 72,
       },
     },
   },
