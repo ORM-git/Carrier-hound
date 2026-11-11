@@ -23,6 +23,8 @@ const NO_EXPLICIT_PERMISSIONS_BASELINE: string[] = [];
 // Any non-read permission must be listed here with its reason.
 const WRITE_ALLOWLIST: { [file: string]: string[] } = {
   "security-scan.yml": ["checks: write"],
+  // Creates and updates deduplicated GitHub tracking issues when scheduled cron workflows fail
+  "workflow-failure-alert.yml": ["issues: write"],
 };
 
 function text(n: string) { return fs.readFileSync(DIR + "/" + n, "utf8"); }
