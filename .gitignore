@@ -59,8 +59,6 @@ scripts/extract_docx.py
 supabase/.temp/
 reports/
 
-# Local agent instructions
-/AGENTS.md
 
 # ATS verification runtime checkpoint
 data/ats-verify-checkpoint.json

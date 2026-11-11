@@ -1,0 +1,3 @@
+#!/bin/sh
+# Auto-rebuilds the knowledge graph after merge/pull.
+sh "$(dirname "$0")/post-checkout" "$@"
