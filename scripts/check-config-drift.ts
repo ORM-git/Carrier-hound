@@ -29,16 +29,20 @@ const COVERED_FILES = [
   "netlify.toml",
   "next.config.mjs",
   "package.json",
+  "scripts/suite-runner.ts",
   ".github/workflows/board-ingest.yml",
   ".github/workflows/capacity-report-cron.yml",
   ".github/workflows/ci.yml",
   ".github/workflows/daily-digest-cron.yml",
   ".github/workflows/early-access-digest-cron.yml",
   ".github/workflows/ingest.yml",
+  ".github/workflows/license-guard.yml",
   ".github/workflows/plan-regression.yml",
   ".github/workflows/quality-advisory.yml",
   ".github/workflows/retention-cron.yml",
   ".github/workflows/security-scan.yml",
+  ".github/workflows/source-health-cron.yml",
+  ".github/workflows/workflow-failure-alert.yml",
 ] as const;
 
 type Baseline = {
