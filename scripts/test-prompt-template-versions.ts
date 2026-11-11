@@ -40,10 +40,10 @@ const PARAMS: Record<AllowedAiOperation, any> = {
 
 // Bump `version` and update `sha256` together whenever a prompt or setting changes on purpose.
 const REGISTRY: Record<AllowedAiOperation, { version: string; sha256: string }> = {
-  cover_letter: { version: "1", sha256: "093161a952757fb3a7cf88caa176529f9290177f2860048093e62b8ab2b27e20" },
-  resume_extraction: { version: "1", sha256: "666c4e41a027986c326d9bc46f85f1edc9830428dc2bdfecdbc1828821f84493" },
-  resume_tailor: { version: "1", sha256: "fae75eca4f4ad4aeaad28d563894fb79531bde25bd0a5056d884d8fff7a72499" },
-  job_fit: { version: "1", sha256: "1b8bffe1957dee6a9022a5d360702acdf18b596c03cb76a247137a82e100adfa" },
+  cover_letter: { version: "2", sha256: "bca8533bf3a86845b0673fe8e4252b4faff25f3e89719664b673840680d4e92e" },
+  resume_extraction: { version: "2", sha256: "7e0a560fe264681dbf0a522411d341b6fadd275633d67bac3b83ff65e6e59639" },
+  resume_tailor: { version: "2", sha256: "5ed5e8f2eb8541fcdab466a350783e6e95b55742bf5dab57d59dc33a4611fbd8" },
+  job_fit: { version: "2", sha256: "e12fdd764ad9ef4ff2ceb4b2542718d7e2cf86786e322991812d0311af51a0cd" },
 };
 
 function fingerprint(op: AllowedAiOperation): string | null {
