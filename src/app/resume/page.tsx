@@ -225,11 +225,16 @@ export default function ResumePage() {
   const isConfirmed = Boolean(candidate && candidate.confirmedAt);
   const uploadedDateStr = candidate?.confirmedAt || candidate?.updatedAt;
   const formattedDate = uploadedDateStr
-    ? formatCalendarDate(uploadedDateStr, {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      })
+    ? formatCalendarDate(
+        uploadedDateStr,
+        {
+          mode: "local",
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        },
+        "en-US"
+      )
     : "Recently";
   const createdAgo = formatTimeAgo(candidate?.confirmedAt || candidate?.updatedAt);
   const lastModifiedAgo = formatTimeAgo(candidate?.updatedAt || candidate?.confirmedAt);

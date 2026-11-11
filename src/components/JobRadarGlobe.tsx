@@ -89,7 +89,11 @@ function matchesFilters(
 // Date formatter
 function formatJobDate(dateStr: string | null): string {
   if (!dateStr) return "Recently seen";
-  return formatPostedAt(dateStr);
+  return formatPostedAt(dateStr, {
+    mode: "local",
+    emptyFallback: "Recently seen",
+    errorFallback: "Recently",
+  });
 }
 
 // Deterministic company gradient avatar

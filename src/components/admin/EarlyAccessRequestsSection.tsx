@@ -70,13 +70,19 @@ async function getAuthHeader(): Promise<Record<string, string>> {
  */
 function formatRequestedDate(dateStr?: string | null): string {
   if (!dateStr) return "—";
-  return formatCalendarDate(dateStr, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatCalendarDate(
+    dateStr,
+    {
+      mode: "local",
+      preserveRawOnInvalid: true,
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    },
+    "en-US"
+  );
 }
 
 export default function EarlyAccessRequestsSection() {

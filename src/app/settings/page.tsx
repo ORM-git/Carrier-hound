@@ -534,7 +534,7 @@ function SettingsPageInner() {
               {isPro && (
                 <div className="pt-3 border-t border-slate-200/80 flex items-center justify-between text-xs">
                   <span className="text-slate-600">
-                    Auto-renews on: <strong>{formatCalendarDate(subscription?.currentPeriodEnd || Date.now(), { year: "numeric", month: "numeric", day: "numeric" })}</strong>
+                    Auto-renews on: <strong>{formatCalendarDate(subscription?.currentPeriodEnd || Date.now(), { mode: "local" })}</strong>
                   </span>
 
                   <button
