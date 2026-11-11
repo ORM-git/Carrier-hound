@@ -16,7 +16,7 @@ async function main() {
   const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const { data, error } = await client
     .from("ingest_runs")
-    .select("started_at,finished_at,status")
+    .select("started_at,finished_at,status,per_source_counts")
     .gte("finished_at", since)
     .order("finished_at", { ascending: false })
     .limit(10);

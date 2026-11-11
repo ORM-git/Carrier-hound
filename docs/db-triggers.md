@@ -8,7 +8,7 @@ in the same PR. Atomic quota mutations intentionally use RPC functions
 as one atomic statement per call; triggers below are for audit, derived
 data, and normalization only.
 
-Measured 7 Nov 2026: 7 triggers across 4 migration files. Updated 7 Nov 2026 for `20261107d_row_version_optimistic_lock.sql` (not applied): 11 triggers across 5 migration files. Updated for `20261107g_touch_updated_at_triggers.sql` (not applied): 16 triggers across 6 migration files.
+Measured 7 Nov 2026: 7 triggers across 4 migration files. Updated 7 Nov 2026 for `20261107d_row_version_optimistic_lock.sql` (not applied): 11 triggers across 5 migration files. Updated for `20261107g_touch_updated_at_triggers.sql` (not applied): 16 triggers across 6 migration files. Updated for `20261108d_jobs_first_seen_at_immutable.sql` (not applied): 17 triggers across 7 migration files.
 
 | Trigger | Table | Timing / event | Function | Purpose |
 | --- | --- | --- | --- | --- |
@@ -28,6 +28,7 @@ Measured 7 Nov 2026: 7 triggers across 4 migration files. Updated 7 Nov 2026 for
 | `trg_touch_updated_at_user_preferences` | `user_preferences` | BEFORE UPDATE | `touch_updated_at()` | Sets updated_at = now() when the UPDATE did not change it (20261107g, not applied). Never rejects a write. |
 | `trg_touch_updated_at_resumes` | `resumes` | BEFORE UPDATE | `touch_updated_at()` | Sets updated_at = now() when the UPDATE did not change it (20261107g, not applied). Never rejects a write. |
 | `trg_touch_updated_at_tailored_resumes` | `tailored_resumes` | BEFORE UPDATE | `touch_updated_at()` | Sets updated_at = now() when the UPDATE did not change it (20261107g, not applied). Never rejects a write. |
+| `trg_protect_jobs_first_seen_at` | `jobs` | BEFORE UPDATE | `protect_jobs_first_seen_at()` | Guarantees immutability of first_seen_at across all updates and upserts (20261108d, not applied). |
 
 <!-- guard-entries: one per line, parsed by dbTriggersDoc.test.ts -->
 ```guard
@@ -47,4 +48,5 @@ trigger: trg_touch_updated_at_applications | 20261107g_touch_updated_at_triggers
 trigger: trg_touch_updated_at_user_preferences | 20261107g_touch_updated_at_triggers.sql | user_preferences
 trigger: trg_touch_updated_at_resumes | 20261107g_touch_updated_at_triggers.sql | resumes
 trigger: trg_touch_updated_at_tailored_resumes | 20261107g_touch_updated_at_triggers.sql | tailored_resumes
+trigger: trg_protect_jobs_first_seen_at | 20261108d_jobs_first_seen_at_immutable.sql | jobs
 ```
