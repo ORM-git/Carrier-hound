@@ -54,7 +54,10 @@ update, fails the check.
 
 ## Baseline Refresh Procedure
 
-Follow this procedure whenever a covered configuration or workflow file is modified or added:
+Follow this procedure whenever a covered configuration or workflow file is modified or added, or when syncing with `main`:
+
+> [!IMPORTANT]
+> **Branch Syncing & Merges**: When syncing or merging `main` into a branch where covered files (such as `scripts/suite-runner.ts` or `.github/workflows/*`) were modified upstream, the baseline must be regenerated on the merged tree using `npx tsx scripts/check-config-drift.ts --update` so the drift check passes in CI.
 
 ### Step 1: Make your intentional config changes
 Edit the target file (for example, adding a workflow file, registering a suite in `scripts/suite-runner.ts`, updating build scripts in `package.json`, or tuning headers in `netlify.toml`).
