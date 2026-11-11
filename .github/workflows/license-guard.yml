@@ -1,0 +1,29 @@
+name: OSS License Guard
+
+on:
+  pull_request:
+    paths:
+      - 'package-lock.json'
+      - 'scripts/dependency-license-inventory.mjs'
+  schedule:
+    - cron: '0 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  license-check:
+    name: Check Dependency Licenses
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+
+      - name: Verify License Policy
+        run: node scripts/dependency-license-inventory.mjs --check
