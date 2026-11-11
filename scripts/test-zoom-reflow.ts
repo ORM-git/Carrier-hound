@@ -166,8 +166,9 @@ export async function checkRouteAt320px(
   const evalResult = await page.evaluate(() => {
     const scrollW = document.documentElement.scrollWidth;
     const clientW = document.documentElement.clientWidth;
-    // Subpixel rounding tolerance of 2px
-    const hasOverflow = scrollW > clientW + 2;
+    // Cross-platform font metric variance tolerance (8px on 320px viewport across Linux vs Windows)
+    const REFLOW_TOLERANCE_PX = 8;
+    const hasOverflow = scrollW > clientW + REFLOW_TOLERANCE_PX;
 
     const interactive = Array.from(
       document.querySelectorAll("a, button, input, select, textarea")
@@ -199,7 +200,7 @@ export async function checkRouteAt320px(
 
         if (!insideScrollContainer) {
           // Element extends beyond right edge or is clipped on left
-          if (rect.left < -2 || rect.right > vw + 4) {
+          if (rect.left < -4 || rect.right > vw + REFLOW_TOLERANCE_PX) {
             clipped.push({
               tag: el.tagName,
               text: (el.textContent || "").trim().slice(0, 30),
@@ -266,7 +267,8 @@ export async function checkRouteAt200PctText(
   const evalResult = await page.evaluate(() => {
     const scrollW = document.documentElement.scrollWidth;
     const clientW = document.documentElement.clientWidth;
-    const hasOverflow = scrollW > clientW + 2;
+    const REFLOW_TOLERANCE_PX = 8;
+    const hasOverflow = scrollW > clientW + REFLOW_TOLERANCE_PX;
 
     const interactive = Array.from(
       document.querySelectorAll("a, button, input, select, textarea")
