@@ -14,7 +14,7 @@ the uncovered-table count rises above the baseline. New migrations
 that create tables must extend `schema.sql` (preferred) or this file
 in the same PR.
 
-Measured 7 Nov 2026: 42 tables created by migrations, 0 duplicated in schema.sql, 42 covered only by migrations. Updated 7 Nov 2026 for `20261107b_search_alert_dispatches.sql` (not applied): 43 tables, 43 covered only by migrations. Updated again for `20261107c_outbox_queue.sql` (not applied): 44 tables, 44 covered only by migrations. Updated for `20261107f_search_alert_send_windows.sql` (not applied): 45 tables, 45 covered only by migrations.
+Measured 7 Nov 2026: 42 tables created by migrations, 0 duplicated in schema.sql, 42 covered only by migrations. Updated 7 Nov 2026 for `20261107b_search_alert_dispatches.sql` (not applied): 43 tables, 43 covered only by migrations. Updated again for `20261107c_outbox_queue.sql` (not applied): 44 tables, 44 covered only by migrations. Updated for `20261107f_search_alert_send_windows.sql` (not applied): 45 tables, 45 covered only by migrations. Updated 8 Nov 2026 for `20261108c_matview_refresh_deferred.sql` (not applied): 46 tables, 46 covered only by migrations.
 
 | Table | Owning migration |
 | --- | --- |
@@ -43,6 +43,7 @@ Measured 7 Nov 2026: 42 tables created by migrations, 0 duplicated in schema.sql
 | `ingest_runs` | `20261001_phase1_storage_optimization.sql` |
 | `job_descriptions` | `20261001_phase1_storage_optimization.sql` |
 | `jobs_archive` | `20261106l_job_archival.sql` |
+| `matview_refresh_control` | `20261108c_matview_refresh_deferred.sql` |
 | `matview_refresh_log` | `20261106d_matview_refresh_log.sql` |
 | `outbox` | `20261107c_outbox_queue.sql` |
 | `page_views` | `20261011_admin_page_views_and_blocked_users.sql` |
@@ -66,7 +67,7 @@ Measured 7 Nov 2026: 42 tables created by migrations, 0 duplicated in schema.sql
 
 <!-- guard-entries: one per line, parsed by schemaDriftBaseline.test.ts -->
 ```guard
-baseline-count: 45
+baseline-count: 46
 table: addon_packs | 20261103_plans_addons_usage.sql
 table: admin_audit_log | 20261020_admin_audit_log.sql
 table: ai_concurrency_leases | 20261104a_global_ai_budget.sql
@@ -92,6 +93,7 @@ table: inbound_replies | 20261106j_inbound_replies.sql
 table: ingest_runs | 20261001_phase1_storage_optimization.sql
 table: job_descriptions | 20261001_phase1_storage_optimization.sql
 table: jobs_archive | 20261106l_job_archival.sql
+table: matview_refresh_control | 20261108c_matview_refresh_deferred.sql
 table: matview_refresh_log | 20261106d_matview_refresh_log.sql
 table: outbox | 20261107c_outbox_queue.sql
 table: page_views | 20261011_admin_page_views_and_blocked_users.sql
