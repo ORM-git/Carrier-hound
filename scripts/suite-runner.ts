@@ -195,6 +195,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-request-tracing-policy.ts", command: "npx tsx scripts/test-request-tracing-policy.ts", classification: "offline" },
   { name: "scripts/test-log-retention-doc.ts", command: "npx tsx scripts/test-log-retention-doc.ts", classification: "offline" },
   { name: "scripts/test-cron-failure-visibility.ts", command: "npx tsx scripts/test-cron-failure-visibility.ts", classification: "offline" },
+  { name: "scripts/test-workflow-failure-alert.ts", command: "npx tsx scripts/test-workflow-failure-alert.ts", classification: "offline" },
   { name: "scripts/test-funnel-frontend.ts", command: "npx tsx scripts/test-funnel-frontend.ts", classification: "offline" },
   { name: "scripts/test-cron-heartbeat-monitoring.ts", command: "npx tsx scripts/test-cron-heartbeat-monitoring.ts", classification: "offline" },
   { name: "scripts/test-poison-message-handling.ts", command: "npx tsx scripts/test-poison-message-handling.ts", classification: "offline" },
