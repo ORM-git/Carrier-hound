@@ -164,3 +164,34 @@ export function createGroqTextCompletionAdapter(
 
 export const groqTextCompletionAdapter: AiTextCompletionProviderAdapter =
   createGroqTextCompletionAdapter();
+
+/**
+ * Creates an in-memory mock completion adapter for tests and offline harnesses.
+ */
+export function createMockTextCompletionAdapter(
+  provider = "mock-provider",
+  responseContent: string | Record<string, unknown> = "mock completion text"
+): AiTextCompletionProviderAdapter {
+  return {
+    provider,
+    async completeText(): Promise<AiTextCompletionResponse> {
+      return {
+        choices: [
+          {
+            message: {
+              content:
+                typeof responseContent === "string"
+                  ? responseContent
+                  : JSON.stringify(responseContent),
+            },
+          },
+        ],
+        usage: {
+          prompt_tokens: 15,
+          completion_tokens: 25,
+          total_tokens: 40,
+        },
+      };
+    },
+  };
+}
