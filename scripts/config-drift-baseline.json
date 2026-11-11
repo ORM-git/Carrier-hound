@@ -7,7 +7,7 @@
     "package.json": "22fa5e4ae473eb8fe2488208c89fcb0cbd35c6a6aca93529e4a8eef1a10ee539",
     ".github/workflows/board-ingest.yml": "bcf686171a7390e3fdeb115b44364fab05f6bbed7a70b0f00411d3bce38b1976",
     ".github/workflows/capacity-report-cron.yml": "79592676f1e0611debba80ab3e5b641ffab96a85ed7b1d7ba77b6c81bca9bdbf",
-    ".github/workflows/ci.yml": "508019be20c80f083d52b95d87da46fd18b03e8381265cd07a7028a857a0f4b8",
+    ".github/workflows/ci.yml": "9deb8716faa81cb9fbb32da8160e374461be0c8c71acd06c8f68acb1724e87d8",
     ".github/workflows/daily-digest-cron.yml": "31b7ef763c9ca3b407255f21cf738e3fb994149545b0989fe1fccc993191c5ce",
     ".github/workflows/early-access-digest-cron.yml": "e4bc35949c06fb612e642a936968c403bba0960ce3082e59b3e449fe1c9e3dfd",
     ".github/workflows/ingest.yml": "e7d506fd54df6deeff70f975fea62ab27a89b765fd5410827a20ac83192954f6",
