@@ -265,6 +265,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-hover-touch-guards.ts", command: "npx tsx scripts/test-hover-touch-guards.ts", classification: "offline" },
   { name: "scripts/test-source-health-cron.ts", command: "npx tsx scripts/test-source-health-cron.ts", classification: "offline" },
   { name: "scripts/test-inbound-reply-classification.ts", command: "npx tsx scripts/test-inbound-reply-classification.ts", classification: "offline" },
+  { name: "scripts/test-index-constraint-inventory.ts", command: "npx tsx scripts/test-index-constraint-inventory.ts", classification: "offline" },
 ];
 
 export interface RunSummary {
