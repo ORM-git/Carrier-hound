@@ -30,18 +30,35 @@ on:
         type: string
         default: ''
 
+concurrency:
+  group: ingest-pipeline
+  cancel-in-progress: false
+
 permissions:
   contents: read
 
 jobs:
   ingest:
-    name: Ingest Jobs (Shard ${{ matrix.shard + 1 }}/6)
+    name: Ingest Jobs (Shard ${{ matrix.label }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
+      max-parallel: 2
       matrix:
-        shard: [0, 1, 2, 3, 4, 5]
+        include:
+          - shard: 0
+            label: "1-of-6"
+          - shard: 1
+            label: "2-of-6"
+          - shard: 2
+            label: "3-of-6"
+          - shard: 3
+            label: "4-of-6"
+          - shard: 4
+            label: "5-of-6"
+          - shard: 5
+            label: "6-of-6"
 
     steps:
       - name: Checkout Code
@@ -56,14 +73,15 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
-      - name: Run Job Ingestion Pipeline
+      - name: Run Job Ingestion Shard
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || secrets.SUPABASE_URL }}
           SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.SUPABASE_SERVICE_KEY }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.SUPABASE_SERVICE_KEY }}
         run: |
-          ARGS=""
+          CYCLE_ID="${{ github.run_id }}-${{ github.run_attempt }}"
+          ARGS="--skip-cleanup --cycle-id $CYCLE_ID"
           if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event.inputs.mode }}" = "scheduled" ] || [ -z "${{ github.event.inputs.mode }}" ]; then
             ARGS="$ARGS --scheduled --shard ${{ matrix.shard }} --total-shards 6"
           elif [ "${{ github.event.inputs.mode }}" = "seed" ]; then
@@ -90,6 +108,64 @@ jobs:
               echo "⚠️ [CI Notice] Supabase secrets not configured. Proceeding in offline DRY-RUN mode."
             else
               echo "::error title=Missing GitHub Repository Secrets::Live job ingestion requires Supabase credentials. Missing: $([ $HAS_URL -eq 0 ] && echo 'NEXT_PUBLIC_SUPABASE_URL ') $([ $HAS_KEY -eq 0 ] && echo 'SUPABASE_SERVICE_ROLE_KEY'). Please configure them in Repository Settings -> Secrets and variables -> Actions."
+            fi
+          fi
+
+          npx tsx scripts/ingest.ts $ARGS
+
+      - name: Upload Ingestion Report Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ingest-report-shard-${{ matrix.shard }}
+          path: |
+            reports/ingest-report.json
+            reports/ingest-report.md
+            reports/ingest-report-*.json
+            reports/ingest-report-*.md
+          if-no-files-found: ignore
+          retention-days: 14
+
+  cleanup:
+    name: Run Corpus Cleanup
+    needs: ingest
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run Global Job Cleanup
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || secrets.SUPABASE_URL }}
+          SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          ARGS="--cleanup-only"
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry"
+          fi
+
+          HAS_URL=0
+          HAS_KEY=0
+          if [ -n "$NEXT_PUBLIC_SUPABASE_URL" ] || [ -n "$SUPABASE_URL" ]; then HAS_URL=1; fi
+          if [ -n "$SUPABASE_SERVICE_ROLE_KEY" ] || [ -n "$SUPABASE_SERVICE_KEY" ]; then HAS_KEY=1; fi
+
+          if [ "$HAS_URL" -eq 0 ] || [ "$HAS_KEY" -eq 0 ]; then
+            if [[ "$ARGS" == *"--dry"* ]]; then
+              echo "⚠️ [CI Notice] Supabase secrets not configured. Proceeding in offline DRY-RUN mode."
+            else
+              echo "::error title=Missing GitHub Repository Secrets::Live job cleanup requires Supabase credentials."
             fi
           fi
 

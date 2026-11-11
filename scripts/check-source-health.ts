@@ -16,10 +16,10 @@ async function main() {
   const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const { data, error } = await client
     .from("ingest_runs")
-    .select("started_at,finished_at,status")
+    .select("started_at,finished_at,status,per_source_counts")
     .gte("finished_at", since)
     .order("finished_at", { ascending: false })
-    .limit(10);
+    .limit(50);
   if (error) throw new Error(`ingest_runs query failed: ${error.message}`);
 
   const result = evaluateSourceHealth(data ?? [], { maxFailuresInWindow: MAX_FAILURES_IN_WINDOW, staleAfterHours: STALE_AFTER_HOURS }, new Date().toISOString());

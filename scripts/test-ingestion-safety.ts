@@ -152,16 +152,27 @@ async function runTests() {
   // ---------------------------------------------------------------------------
   console.log('\n--- TEST 4: Cleanup Retention Safety (skipUnseenCheck) ---');
 
-  // Verify that isFullRun is false under seed or filtered runs
-  function computeIsFullRun(isSeed: boolean, sourceFilter: string | null, limit: number | null, failures: number): boolean {
-    return !isSeed && !sourceFilter && !limit && failures === 0;
+  // Verify that isFullRun is false under seed, sharded, or filtered runs
+  function computeIsFullRun(
+    isSeed: boolean,
+    sourceFilter: string | null,
+    limit: number | null,
+    failures: number,
+    shardIndex: number | null = null,
+    totalShards: number | null = null
+  ): boolean {
+    const isSharded = shardIndex !== null || (totalShards !== null && totalShards > 1);
+    return !isSeed && !isSharded && !sourceFilter && !limit && failures === 0;
   }
 
   assert(computeIsFullRun(true, null, null, 0) === false, 'Seed run correctly flags isFullRun = false (skips unseen check)');
   assert(computeIsFullRun(false, 'stripe', null, 0) === false, 'Filtered source run correctly flags isFullRun = false');
   assert(computeIsFullRun(false, null, 10, 0) === false, 'Limited source run correctly flags isFullRun = false');
   assert(computeIsFullRun(false, null, null, 2) === false, 'Run with source failures correctly flags isFullRun = false');
-  assert(computeIsFullRun(false, null, null, 0) === true, 'Full-corpus run with zero failures correctly permits isFullRun = true');
+  assert(computeIsFullRun(false, null, null, 0, 0, 6) === false, 'Sharded run correctly flags isFullRun = false');
+  assert(computeIsFullRun(false, null, null, 0, 1, null) === false, 'Run with shard index correctly flags isFullRun = false');
+  assert(computeIsFullRun(false, null, null, 0, null, 6) === false, 'Run with total shards > 1 correctly flags isFullRun = false');
+  assert(computeIsFullRun(false, null, null, 0, null, null) === true, 'Full-corpus run with zero failures correctly permits isFullRun = true');
 
   // ---------------------------------------------------------------------------
   // TEST 5: Dry-Run Cleanup Execution

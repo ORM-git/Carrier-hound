@@ -73,11 +73,17 @@ const SHARD_INDEX = shardArgIdx !== -1 && args[shardArgIdx + 1] ? parseInt(args[
 const shardsArgIdx = args.findIndex((a) => a === '--shards' || a === '--total-shards');
 const TOTAL_SHARDS = shardsArgIdx !== -1 && args[shardsArgIdx + 1] ? parseInt(args[shardsArgIdx + 1], 10) : null;
 
+const cycleArgIdx = args.findIndex((a) => a === '--cycle-id' || a === '--cycle');
+const CYCLE_ID = cycleArgIdx !== -1 && args[cycleArgIdx + 1] ? args[cycleArgIdx + 1] : (process.env.INGEST_CYCLE_ID || null);
+
+const isShardedRun = SHARD_INDEX !== null || (TOTAL_SHARDS !== null && TOTAL_SHARDS > 1);
+
 // Track schema capability flags dynamically
 let hasCompaniesTable = false;
 let hasJobDescriptionsTable = false;
 let hasIngestRunsTable = false;
 let hasVerifiedColumn = false;
+let hasCoverageColumn = false;
 
 // Entry-count guard, not a measured performance claim. Evicted companies
 // follow the existing DB lookup path; correctness does not depend on a hit.
@@ -124,11 +130,15 @@ async function detectSchemaCapabilities(supabase: SupabaseClient): Promise<void>
 
     const { error: runsErr } = await supabase.from('ingest_runs').select('id').limit(1);
     hasIngestRunsTable = !runsErr;
+    if (hasIngestRunsTable) {
+      const { error: covErr } = await supabase.from('ingest_runs').select('coverage').limit(1);
+      hasCoverageColumn = !covErr;
+    }
 
     const { error: verErr } = await supabase.from('jobs').select('verified').limit(1);
     hasVerifiedColumn = !verErr;
 
-    console.log(`Schema capabilities: companies=${hasCompaniesTable}, job_descriptions=${hasJobDescriptionsTable}, ingest_runs=${hasIngestRunsTable}, verified_col=${hasVerifiedColumn}`);
+    console.log(`Schema capabilities: companies=${hasCompaniesTable}, job_descriptions=${hasJobDescriptionsTable}, ingest_runs=${hasIngestRunsTable}, coverage_col=${hasCoverageColumn}, verified_col=${hasVerifiedColumn}`);
   } catch (err: any) {
     console.warn(`[Schema Detection Warning]: ${err.message}`);
   }
@@ -282,6 +292,10 @@ async function main() {
 
   if (isCleanupOnly) {
     if (!supabase) {
+      if (isDryRun) {
+        console.warn('⚠️ [Cleanup] Supabase credentials not found in env; skipping cleanup in offline DRY-RUN mode.');
+        return;
+      }
       console.error('Cleanup requires valid Supabase credentials.');
       process.exit(1);
     }
@@ -821,7 +835,7 @@ async function main() {
   // Cleanup & expiration phase
   if (!isSkipCleanup && supabase) {
     // Destructive safety: only run unseen-based expiration if this was a complete, full-corpus run with zero source failures
-    const isFullRun = !isSeedRun && !sourceFilter && !MAX_SOURCES_LIMIT && !OFFSET && !MAX_PER_SOURCE && summary.totalFailed === 0;
+    const isFullRun = !isSeedRun && !isShardedRun && !sourceFilter && !MAX_SOURCES_LIMIT && !OFFSET && !MAX_PER_SOURCE && summary.totalFailed === 0;
     const cleanupResult = await runJobCleanup(supabase, {
       dryRun: isDryRun,
       skipUnseenCheck: !isFullRun,
@@ -836,23 +850,37 @@ async function main() {
   // Record Run into ingest_runs if table exists
   if (hasIngestRunsTable && supabase && !isDryRun) {
     try {
-      await supabase.from('ingest_runs').insert([
-        {
-          started_at: summary.startedAt,
-          finished_at: summary.completedAt,
-          duration_seconds: summary.durationSeconds,
-          companies_processed: summary.sources.length,
-          total_active: summary.totalInserted + summary.totalUpdated,
-          total_verified: summary.sources
-            .filter((s) => s.type === 'greenhouse' || s.type === 'lever' || s.type === 'ashby')
-            .reduce((acc, s) => acc + s.inserted + s.updated, 0),
-          per_source_counts: summary.sources.reduce(
+      const effectiveCycleId = CYCLE_ID || (isShardedRun ? `cycle-${summary.startedAt}` : `standalone-${summary.startedAt}`);
+      const coverageData = {
+        cycle_id: effectiveCycleId,
+        shard_id: SHARD_INDEX ?? 0,
+        expected_shards: TOTAL_SHARDS ?? 1,
+      };
+
+      const runRecord: Record<string, any> = {
+        started_at: summary.startedAt,
+        finished_at: summary.completedAt,
+        duration_seconds: summary.durationSeconds,
+        companies_processed: summary.sources.length,
+        total_active: summary.totalInserted + summary.totalUpdated,
+        total_verified: summary.sources
+          .filter((s) => s.type === 'greenhouse' || s.type === 'lever' || s.type === 'ashby')
+          .reduce((acc, s) => acc + s.inserted + s.updated, 0),
+        per_source_counts: {
+          ...summary.sources.reduce(
             (acc, s) => ({ ...acc, [s.sourceId]: s.inserted + s.updated }),
             {}
           ),
-          status: summary.totalFailed > 0 ? (summary.totalInserted > 0 ? 'warning' : 'failed') : 'success',
+          coverage: coverageData,
         },
-      ]);
+        status: summary.totalFailed > 0 ? (summary.totalInserted > 0 ? 'warning' : 'failed') : 'success',
+      };
+
+      if (hasCoverageColumn) {
+        runRecord.coverage = coverageData;
+      }
+
+      await supabase.from('ingest_runs').insert([runRecord]);
     } catch {
       // Ignore
     }
@@ -904,6 +932,11 @@ async function main() {
   }
   console.log(`Duration:         ${summary.durationSeconds}s`);
   console.log(`======================================================\n`);
+
+  if (summary.totalFailed > 0) {
+    console.error(`❌ [Ingest Failure] Shard encountered ${summary.totalFailed} source failures. Exiting non-zero.`);
+    process.exit(1);
+  }
 }
 
 main().catch((err) => {
