@@ -272,6 +272,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-ai-provider-abstraction.ts", command: "npx tsx scripts/test-ai-provider-abstraction.ts", classification: "offline" },
   { name: "scripts/test-schema-dump-freshness.ts", command: "npx tsx scripts/test-schema-dump-freshness.ts", classification: "offline" },
   { name: "scripts/test-forms-wiring.ts", command: "npx tsx scripts/test-forms-wiring.ts", classification: "offline" },
+  { name: "scripts/test-reconciliation-workflow-wiring.ts", command: "npx tsx scripts/test-reconciliation-workflow-wiring.ts", classification: "offline" },
 ];
 
 export interface RunSummary {

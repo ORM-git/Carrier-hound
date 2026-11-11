@@ -58,6 +58,7 @@ export const SCHEDULED_CRON_WORKFLOWS: readonly string[] = Object.freeze([
   "Plan Regression",
   "Security & Secret Scanning",
   "Source Health Monitoring",
+  "Weekly Database Reconciliation Audit",
 ]);
 
 /** Check whether a workflow name matches the scheduled cron allowlist (case-insensitive). */
