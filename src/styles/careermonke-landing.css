@@ -320,7 +320,7 @@
     .landing-wrapper .ex-right{display:grid;gap:14px}
     .landing-wrapper .cities .chip{flex:0 1 auto;padding:0 16px}
     .landing-wrapper .quotes{grid-template-columns:repeat(3,1fr);gap:16px}
-    .landing-wrapper .founder{grid-template-columns:96px 1fr;gap:24px;max-width:760px}
+    .landing-wrapper .founder{grid-template-columns:96px 1fr;gap:24px;max-width:760px;margin:0 auto}
     .landing-wrapper .founder img{width:96px;height:96px}
     .landing-wrapper .final{padding:48px 32px}
     .landing-wrapper .f-grid{grid-template-columns:1fr 1fr;gap:48px}
@@ -375,7 +375,8 @@
   .landing-wrapper .feat>p{padding-left:40px}
   @media (min-width:768px){
     .landing-wrapper{--sec:72px;--pad:32px}
-    .landing-wrapper .h2{font-size:40px;text-align:left}
+    .landing-wrapper .h2{font-size:40px;text-align:center}
+    .landing-wrapper .lead{text-align:center}
     .landing-wrapper .feats{margin-top:32px}
     .landing-wrapper .feat h3{font-size:24px}
     .landing-wrapper .feat>p{font-size:16px;line-height:24px}
@@ -392,7 +393,7 @@
     .landing-wrapper .cmp{width:100%;margin:32px 0 0;font-size:15px}
     .landing-wrapper .quotes{margin:32px 0 0}
     .landing-wrapper .quote blockquote{font-size:16px;line-height:24px}
-    .landing-wrapper .founder{grid-template-columns:80px 1fr;gap:24px}
+    .landing-wrapper .founder{grid-template-columns:80px 1fr;gap:24px;margin-left:auto;margin-right:auto}
     .landing-wrapper .founder img{width:80px;height:80px}
     .landing-wrapper .founder p.bio,.landing-wrapper .founder details p{font-size:16px;line-height:24px}
     .landing-wrapper .final{margin:0;padding:56px 32px}
@@ -495,7 +496,7 @@
   .landing-wrapper .vs tbody tr:nth-child(5) td:first-child{transition-delay:1.4s}.landing-wrapper .vs tbody tr:nth-child(5) td:last-child{transition-delay:1.65s}
   .landing-wrapper .vs tbody tr:nth-child(1) td .vb{transition-delay:.35s}.landing-wrapper .vs tbody tr:nth-child(2) td .vb{transition-delay:.7s}.landing-wrapper .vs tbody tr:nth-child(3) td .vb{transition-delay:1.05s}.landing-wrapper .vs tbody tr:nth-child(4) td .vb{transition-delay:1.4s}.landing-wrapper .vs tbody tr:nth-child(5) td .vb{transition-delay:1.75s}
   @media (min-width:768px){
-    .landing-wrapper .vs{width:100%;max-width:760px;margin:32px 0 0;border-spacing:12px 0;margin-left:-12px}
+    .landing-wrapper .vs{width:100%;max-width:760px;margin:32px auto 0;border-spacing:12px 0}
     .landing-wrapper .vs th{font-size:14px}
     .landing-wrapper .vt{width:48px;height:48px;margin-right:12px}
     .landing-wrapper .vt .vi{width:32px;height:32px}
@@ -619,7 +620,7 @@
   .landing-wrapper .fc.prep .vd{opacity:0;transform:scale(.6)}
   .landing-wrapper .fc.prep .vd.show{opacity:1;transform:none}
   .landing-wrapper .fc.prep .fc-track i{width:0}
-  @media (min-width:768px) and (max-width:1023px){ .landing-wrapper .fx{max-width:600px} }
+  @media (min-width:768px) and (max-width:1023px){ .landing-wrapper .fx{max-width:600px;margin-left:auto;margin-right:auto} }
   @media (min-width:768px){
     .landing-wrapper .fx{margin-top:40px;gap:80px}
     .landing-wrapper .fc{margin:24px 0 0}
@@ -733,12 +734,12 @@
   .landing-wrapper .faq summary::after{content:"+";flex:none;width:28px;height:28px;border-radius:50%;background:#fff;border:1px solid var(--line);display:grid;place-items:center;font-size:18px;font-weight:500;color:var(--blue);transition:transform .25s}
   .landing-wrapper .faq details[open] summary::after{transform:rotate(45deg)}
   .landing-wrapper .faq details p{padding:0 44px 16px 0;font-size:14px;line-height:21px;color:var(--ink)}
-  @media (min-width:768px){ .landing-wrapper .faq{max-width:820px} .landing-wrapper .faq summary{font-size:18px} .landing-wrapper .faq details p{font-size:16px;line-height:24px} }
+  @media (min-width:768px){ .landing-wrapper .faq{max-width:820px;margin-left:auto;margin-right:auto} .landing-wrapper .faq summary{font-size:18px} .landing-wrapper .faq details p{font-size:16px;line-height:24px} }
   /* contact */
   .landing-wrapper .contact{text-align:center}
   .landing-wrapper .contact p{margin-top:8px;color:var(--muted);font-size:15px}
   .landing-wrapper .contact .fbtn{width:auto;padding:0 24px}
-  @media (min-width:768px){ .landing-wrapper .contact{text-align:left} .landing-wrapper .contact .fbtn{margin:16px 0 0} }
+  @media (min-width:768px){ .landing-wrapper .contact{text-align:center} .landing-wrapper .contact .fbtn{margin:16px auto 0} }
   .landing-wrapper .founder p.bio+p.bio{margin-top:8px}
   /* free preview as its own full-width section */
   .landing-wrapper .navyband{background:var(--navy);box-shadow:0 0 0 100vmax var(--navy);clip-path:inset(0 -100vmax);margin-top:var(--sec);padding-bottom:var(--sec)}
