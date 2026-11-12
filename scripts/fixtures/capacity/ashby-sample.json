@@ -1,0 +1,39 @@
+{
+  "jobs": [
+    {
+      "id": "ashby-c1",
+      "title": "Full Stack Engineer",
+      "publishedAt": "2026-11-12T06:00:00.000Z",
+      "isListed": true,
+      "jobUrl": "https://jobs.ashbyhq.com/example/ashby-c1"
+    },
+    {
+      "id": "ashby-c2",
+      "title": "Principal AI Researcher",
+      "publishedAt": "2026-11-12T02:00:00.000Z",
+      "isListed": true,
+      "jobUrl": "https://jobs.ashbyhq.com/example/ashby-c2"
+    },
+    {
+      "id": "ashby-c3",
+      "title": "Confidential Executive Role",
+      "publishedAt": "2026-11-12T04:00:00.000Z",
+      "isListed": false,
+      "jobUrl": "https://jobs.ashbyhq.com/example/ashby-c3"
+    },
+    {
+      "id": "ashby-c4",
+      "title": "Technical Recruiter",
+      "publishedAt": "2026-11-05T12:00:00.000Z",
+      "isListed": true,
+      "jobUrl": "https://jobs.ashbyhq.com/example/ashby-c4"
+    },
+    {
+      "id": "ashby-c5",
+      "title": "Operations Coordinator",
+      "publishedAt": null,
+      "isListed": true,
+      "jobUrl": "https://jobs.ashbyhq.com/example/ashby-c5"
+    }
+  ]
+}
