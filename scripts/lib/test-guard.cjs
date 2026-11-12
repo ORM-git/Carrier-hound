@@ -103,6 +103,7 @@ const SUITE_CLASSIFICATIONS = Object.freeze({
   "scripts/test-token-generation-guard.ts": "offline",
   "scripts/test-token-budget.ts": "offline",
   "scripts/test-navigation-history.ts": "offline",
+  "scripts/test-audit-sweep-db-fe-1.ts": "offline",
 
   // DB-capable suites: read operations
   "scripts/test-enhanced-scoring.ts": "db-read",
