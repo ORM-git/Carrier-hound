@@ -43,6 +43,7 @@ export function Typewriter({
   useEffect(() => {
     if (!currentText) return;
 
+    let pauseTimeout: ReturnType<typeof setTimeout> | null = null;
     const timeout = setTimeout(
       () => {
         if (!isDeleting) {
@@ -50,7 +51,7 @@ export function Typewriter({
             setDisplayText((prev) => prev + currentText[currentIndex]);
             setCurrentIndex((prev) => prev + 1);
           } else if (loop) {
-            setTimeout(() => setIsDeleting(true), delay);
+            pauseTimeout = setTimeout(() => setIsDeleting(true), delay);
           }
         } else {
           if (displayText.length > 0) {
@@ -65,7 +66,10 @@ export function Typewriter({
       isDeleting ? deleteSpeed : speed,
     );
 
-    return () => clearTimeout(timeout);
+    return () => {
+      clearTimeout(timeout);
+      if (pauseTimeout !== null) clearTimeout(pauseTimeout);
+    };
   }, [
     currentIndex,
     isDeleting,

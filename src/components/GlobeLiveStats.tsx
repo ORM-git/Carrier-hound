@@ -25,8 +25,9 @@ export default function GlobeLiveStats() {
   const [displayTotalJobs, setDisplayTotalJobs] = useState<number | null>(null);
   const [displayCompanies, setDisplayCompanies] = useState<number | null>(null);
 
-  // Track if count-up has already executed
+  // Track if count-up has already executed and active animation frame for unmount cleanup
   const hasAnimatedRef = useRef(false);
+  const animFrameRef = useRef<number | null>(null);
   const [lastUpdatedTime, setLastUpdatedTime] = useState<number>(Date.now());
   const [updatedText, setUpdatedText] = useState("updated just now");
 
@@ -59,10 +60,25 @@ export default function GlobeLiveStats() {
     };
   }, []);
 
+  // Cancel any active count-up animation frame on unmount
+  useEffect(() => {
+    return () => {
+      if (animFrameRef.current !== null) {
+        cancelAnimationFrame(animFrameRef.current);
+        animFrameRef.current = null;
+      }
+    };
+  }, []);
+
   // 2. Count-up animation helper (ease-out over 1.5s)
   const runCountUp = (target: StatsData) => {
     if (target.totalJobs === null && target.companiesScanned === null) {
       return;
+    }
+
+    if (animFrameRef.current !== null) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
     }
 
     const duration = 1500; // 1.5 seconds
@@ -88,15 +104,16 @@ export default function GlobeLiveStats() {
       }
 
       if (progress < 1) {
-        requestAnimationFrame(animate);
+        animFrameRef.current = requestAnimationFrame(animate);
       } else {
+        animFrameRef.current = null;
         setDisplayJobsToday(target.jobsToday);
         setDisplayTotalJobs(target.totalJobs);
         setDisplayCompanies(target.companiesScanned);
       }
     };
 
-    requestAnimationFrame(animate);
+    animFrameRef.current = requestAnimationFrame(animate);
   };
 
   // 3. IntersectionObserver: Trigger count-up once when scrolled into view
