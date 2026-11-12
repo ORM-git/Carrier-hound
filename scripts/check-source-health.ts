@@ -5,7 +5,7 @@ import { createClient } from "@supabase/supabase-js";
 import { evaluateSourceHealth } from "../src/lib/observability/sourceHealth";
 
 const MAX_FAILURES_IN_WINDOW = 1;
-const STALE_AFTER_HOURS = 26; // Daily ingest plus bounded schedule drift.
+const STALE_AFTER_HOURS = 4; // 4-hour scheduled ingest cadence.
 
 async function main() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
@@ -16,10 +16,10 @@ async function main() {
   const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const { data, error } = await client
     .from("ingest_runs")
-    .select("started_at,finished_at,status")
+    .select("started_at,finished_at,status,per_source_counts")
     .gte("finished_at", since)
     .order("finished_at", { ascending: false })
-    .limit(10);
+    .limit(50);
   if (error) throw new Error(`ingest_runs query failed: ${error.message}`);
 
   const result = evaluateSourceHealth(data ?? [], { maxFailuresInWindow: MAX_FAILURES_IN_WINDOW, staleAfterHours: STALE_AFTER_HOURS }, new Date().toISOString());

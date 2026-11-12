@@ -13,7 +13,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { getAdapter } from './adapters';
-import { runJobCleanup } from './cleanup';
+import { runJobCleanup, shouldPerformUnseenCleanup } from './cleanup';
 import { SourceConfig } from './types';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -152,16 +152,153 @@ async function runTests() {
   // ---------------------------------------------------------------------------
   console.log('\n--- TEST 4: Cleanup Retention Safety (skipUnseenCheck) ---');
 
-  // Verify that isFullRun is false under seed or filtered runs
-  function computeIsFullRun(isSeed: boolean, sourceFilter: string | null, limit: number | null, failures: number): boolean {
-    return !isSeed && !sourceFilter && !limit && failures === 0;
+  // Verify that isFullRun is false under seed, sharded, or filtered runs
+  function computeIsFullRun(
+    isSeed: boolean,
+    sourceFilter: string | null,
+    limit: number | null,
+    failures: number,
+    shardIndex: number | null = null,
+    totalShards: number | null = null
+  ): boolean {
+    const isSharded = shardIndex !== null || (totalShards !== null && totalShards > 1);
+    return !isSeed && !isSharded && !sourceFilter && !limit && failures === 0;
   }
 
   assert(computeIsFullRun(true, null, null, 0) === false, 'Seed run correctly flags isFullRun = false (skips unseen check)');
   assert(computeIsFullRun(false, 'stripe', null, 0) === false, 'Filtered source run correctly flags isFullRun = false');
   assert(computeIsFullRun(false, null, 10, 0) === false, 'Limited source run correctly flags isFullRun = false');
   assert(computeIsFullRun(false, null, null, 2) === false, 'Run with source failures correctly flags isFullRun = false');
-  assert(computeIsFullRun(false, null, null, 0) === true, 'Full-corpus run with zero failures correctly permits isFullRun = true');
+  assert(computeIsFullRun(false, null, null, 0, 0, 6) === false, 'Sharded run correctly flags isFullRun = false');
+  assert(computeIsFullRun(false, null, null, 0, 1, null) === false, 'Run with shard index correctly flags isFullRun = false');
+  assert(computeIsFullRun(false, null, null, 0, null, 6) === false, 'Run with total shards > 1 correctly flags isFullRun = false');
+  assert(computeIsFullRun(false, null, null, 0, null, null) === true, 'Full-corpus run with zero failures correctly permits isFullRun = true');
+
+  // Verify shouldPerformUnseenCleanup policy
+  console.log('--- TEST 4b: shouldPerformUnseenCleanup Policy Verification ---');
+  const fullRuns = [0, 1, 2, 3, 4, 5].map((shard_id) => ({
+    status: 'success',
+    coverage: { cycle_id: 'cycle-clean', shard_id, expected_shards: 6 },
+  }));
+
+  const partialShardRuns = [0, 1].map((shard_id) => ({
+    status: 'success',
+    coverage: { cycle_id: 'cycle-clean', shard_id, expected_shards: 6 },
+  }));
+
+  const failedShardRuns = [0, 1, 2, 3, 4, 5].map((shard_id) => ({
+    status: shard_id === 2 ? 'failed' : 'success',
+    coverage: { cycle_id: 'cycle-clean', shard_id, expected_shards: 6 },
+  }));
+
+  assert(
+    shouldPerformUnseenCleanup({
+      isScheduled: false,
+      isSeed: true,
+      sourceFilter: null,
+      capArgPresent: false,
+      capValue: 50000,
+      runs: fullRuns,
+      cycleId: 'cycle-clean',
+    }).allowed === false,
+    'Unseen cleanup BLOCKED when mode is seed'
+  );
+
+  assert(
+    shouldPerformUnseenCleanup({
+      isScheduled: false,
+      isSeed: false,
+      sourceFilter: null,
+      capArgPresent: false,
+      capValue: 50000,
+      runs: fullRuns,
+      cycleId: 'cycle-clean',
+    }).allowed === false,
+    'Unseen cleanup BLOCKED when mode is not scheduled'
+  );
+
+  assert(
+    shouldPerformUnseenCleanup({
+      isScheduled: true,
+      isSeed: false,
+      sourceFilter: 'stripe',
+      capArgPresent: false,
+      capValue: 50000,
+      runs: fullRuns,
+      cycleId: 'cycle-clean',
+    }).allowed === false,
+    'Unseen cleanup BLOCKED when source filter is present'
+  );
+
+  assert(
+    shouldPerformUnseenCleanup({
+      isScheduled: true,
+      isSeed: false,
+      sourceFilter: null,
+      capArgPresent: true,
+      capValue: 100,
+      runs: fullRuns,
+      cycleId: 'cycle-clean',
+    }).allowed === false,
+    'Unseen cleanup BLOCKED when low job cap is active (<50000)'
+  );
+
+  assert(
+    shouldPerformUnseenCleanup({
+      isScheduled: true,
+      isSeed: false,
+      sourceFilter: null,
+      capArgPresent: false,
+      capValue: 50000,
+      runs: partialShardRuns,
+      cycleId: 'cycle-clean',
+    }).allowed === false,
+    'Unseen cleanup BLOCKED when only partial shards received (2 of 6)'
+  );
+
+  assert(
+    shouldPerformUnseenCleanup({
+      isScheduled: true,
+      isSeed: false,
+      sourceFilter: null,
+      capArgPresent: false,
+      capValue: 50000,
+      runs: failedShardRuns,
+      cycleId: 'cycle-clean',
+    }).allowed === false,
+    'Unseen cleanup BLOCKED when any shard in cycle failed'
+  );
+
+  const nonSuccessShardRuns = [0, 1, 2, 3, 4, 5].map((shard_id) => ({
+    status: shard_id === 4 ? 'running' : 'success',
+    coverage: { cycle_id: 'cycle-clean', shard_id, expected_shards: 6 },
+  }));
+
+  assert(
+    shouldPerformUnseenCleanup({
+      isScheduled: true,
+      isSeed: false,
+      sourceFilter: null,
+      capArgPresent: false,
+      capValue: 50000,
+      runs: nonSuccessShardRuns,
+      cycleId: 'cycle-clean',
+    }).allowed === false,
+    'Unseen cleanup BLOCKED when any shard has non-success status strictly (e.g. running)'
+  );
+
+  assert(
+    shouldPerformUnseenCleanup({
+      isScheduled: true,
+      isSeed: false,
+      sourceFilter: null,
+      capArgPresent: false,
+      capValue: 50000,
+      runs: fullRuns,
+      cycleId: 'cycle-clean',
+    }).allowed === true,
+    'Unseen cleanup PERMITTED for complete 6-shard scheduled corpus run'
+  );
 
   // ---------------------------------------------------------------------------
   // TEST 5: Dry-Run Cleanup Execution

@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { getAdapter } from './adapters';
-import { runJobCleanup } from './cleanup';
+import { runJobCleanup, shouldPerformUnseenCleanup } from './cleanup';
 import {
   IngestionRunSummary,
   NormalizedJob,
@@ -39,6 +39,7 @@ const isDryRun = args.includes('--dry') || args.includes('-d');
 const isCleanupOnly = args.includes('--cleanup-only');
 const isSkipCleanup = args.includes('--skip-cleanup');
 const isSeedRun = args.includes('--seed') || args.includes('-s');
+const isScheduledRun = args.includes('--scheduled');
 
 const configArgIdx = args.findIndex((a) => a === '--config' || a === '-c');
 const configCustom = configArgIdx !== -1 && args[configArgIdx + 1] ? args[configArgIdx + 1] : null;
@@ -66,11 +67,23 @@ const sourceFilter = sourceFilterIdx !== -1 ? args[sourceFilterIdx + 1] : null;
 const concArgIdx = args.findIndex((a) => a === '--concurrency' || a === '-p');
 const CONCURRENCY = concArgIdx !== -1 && args[concArgIdx + 1] ? parseInt(args[concArgIdx + 1], 10) : 4;
 
+const shardArgIdx = args.findIndex((a) => a === '--shard');
+const SHARD_INDEX = shardArgIdx !== -1 && args[shardArgIdx + 1] ? parseInt(args[shardArgIdx + 1], 10) : null;
+
+const shardsArgIdx = args.findIndex((a) => a === '--shards' || a === '--total-shards');
+const TOTAL_SHARDS = shardsArgIdx !== -1 && args[shardsArgIdx + 1] ? parseInt(args[shardsArgIdx + 1], 10) : null;
+
+const cycleArgIdx = args.findIndex((a) => a === '--cycle-id' || a === '--cycle');
+const CYCLE_ID = cycleArgIdx !== -1 && args[cycleArgIdx + 1] ? args[cycleArgIdx + 1] : (process.env.INGEST_CYCLE_ID || null);
+
+const isShardedRun = SHARD_INDEX !== null || (TOTAL_SHARDS !== null && TOTAL_SHARDS > 1);
+
 // Track schema capability flags dynamically
 let hasCompaniesTable = false;
 let hasJobDescriptionsTable = false;
 let hasIngestRunsTable = false;
 let hasVerifiedColumn = false;
+let hasCoverageColumn = false;
 
 // Entry-count guard, not a measured performance claim. Evicted companies
 // follow the existing DB lookup path; correctness does not depend on a hit.
@@ -117,11 +130,15 @@ async function detectSchemaCapabilities(supabase: SupabaseClient): Promise<void>
 
     const { error: runsErr } = await supabase.from('ingest_runs').select('id').limit(1);
     hasIngestRunsTable = !runsErr;
+    if (hasIngestRunsTable) {
+      const { error: covErr } = await supabase.from('ingest_runs').select('coverage').limit(1);
+      hasCoverageColumn = !covErr;
+    }
 
     const { error: verErr } = await supabase.from('jobs').select('verified').limit(1);
     hasVerifiedColumn = !verErr;
 
-    console.log(`Schema capabilities: companies=${hasCompaniesTable}, job_descriptions=${hasJobDescriptionsTable}, ingest_runs=${hasIngestRunsTable}, verified_col=${hasVerifiedColumn}`);
+    console.log(`Schema capabilities: companies=${hasCompaniesTable}, job_descriptions=${hasJobDescriptionsTable}, ingest_runs=${hasIngestRunsTable}, coverage_col=${hasCoverageColumn}, verified_col=${hasVerifiedColumn}`);
   } catch (err: any) {
     console.warn(`[Schema Detection Warning]: ${err.message}`);
   }
@@ -220,6 +237,8 @@ function loadSourcesConfig(): SourceConfig[] {
   let configFile = 'config/sources.json';
   if (configCustom) {
     configFile = configCustom;
+  } else if (isScheduledRun) {
+    configFile = 'config/companies-scheduled.json';
   } else if (isSeedRun) {
     configFile = 'config/companies-seed.json';
   }
@@ -257,9 +276,10 @@ async function main() {
   console.log(`🚀 CareerMonke Large-Scale Storage-Optimized Ingestion`);
   console.log(`======================================================`);
   console.log(`Mode: ${isDryRun ? 'DRY RUN (No writes)' : 'LIVE PRODUCTION'}`);
-  console.log(`Config Source: ${configCustom || (isSeedRun ? 'companies-seed.json' : 'sources.json')}`);
+  console.log(`Config Source: ${configCustom || (isScheduledRun ? 'companies-scheduled.json' : isSeedRun ? 'companies-seed.json' : 'sources.json')}`);
   console.log(`Max Run Job Cap: ${MAX_RUN_JOBS}`);
   console.log(`Concurrency: ${CONCURRENCY} workers`);
+  if (TOTAL_SHARDS && SHARD_INDEX !== null) console.log(`Shard: [${SHARD_INDEX + 1}/${TOTAL_SHARDS}]`);
   if (OFFSET > 0) console.log(`Offset: Skipping first ${OFFSET} companies`);
   if (MAX_SOURCES_LIMIT) console.log(`Limit: Processing up to ${MAX_SOURCES_LIMIT} companies`);
   if (sourceFilter) console.log(`Filter: Single Source [${sourceFilter}]`);
@@ -272,10 +292,53 @@ async function main() {
 
   if (isCleanupOnly) {
     if (!supabase) {
+      if (isDryRun) {
+        console.warn('⚠️ [Cleanup] Supabase credentials not found in env; skipping cleanup in offline DRY-RUN mode.');
+        return;
+      }
       console.error('Cleanup requires valid Supabase credentials.');
       process.exit(1);
     }
-    await runJobCleanup(supabase, { dryRun: isDryRun });
+
+    let recentRuns: any[] = [];
+    if (supabase) {
+      try {
+        const columns = hasCoverageColumn
+          ? 'started_at,finished_at,status,per_source_counts,coverage'
+          : 'started_at,finished_at,status,per_source_counts';
+        const { data, error } = await supabase
+          .from('ingest_runs')
+          .select(columns)
+          .order('finished_at', { ascending: false })
+          .limit(50);
+        if (data && !error) recentRuns = data;
+      } catch {
+        // Fall back to empty runs
+      }
+    }
+
+    const safetyCheck = shouldPerformUnseenCleanup({
+      isScheduled: isScheduledRun,
+      isSeed: isSeedRun,
+      sourceFilter,
+      capArgPresent: capArgIdx !== -1,
+      capValue: MAX_RUN_JOBS,
+      expectedShards: 6,
+      runs: recentRuns,
+      cycleId: CYCLE_ID,
+    });
+
+    const skipUnseen = !safetyCheck.allowed;
+    if (skipUnseen) {
+      console.warn(`⚠️ [Cleanup Safety] Global unseen expiration SKIPPED: ${safetyCheck.reason}`);
+    } else {
+      console.log(`✅ [Cleanup Safety] Global unseen expiration ENABLED: ${safetyCheck.reason}`);
+    }
+
+    await runJobCleanup(supabase, {
+      dryRun: isDryRun,
+      skipUnseenCheck: skipUnseen,
+    });
     console.log(`\n🎉 Cleanup complete.`);
     return;
   }
@@ -295,6 +358,11 @@ async function main() {
     const bTier = isAtsSource(b.type) ? 0 : 1;
     return aTier - bTier;
   });
+
+  // Shard partitioning: balanced modulo partition across total shards
+  if (TOTAL_SHARDS && TOTAL_SHARDS > 1 && SHARD_INDEX !== null && SHARD_INDEX >= 0 && SHARD_INDEX < TOTAL_SHARDS) {
+    sources = sources.filter((_, idx) => idx % TOTAL_SHARDS === SHARD_INDEX);
+  }
 
   if (OFFSET > 0 || (MAX_SOURCES_LIMIT && MAX_SOURCES_LIMIT > 0)) {
     sources = sources.slice(OFFSET, MAX_SOURCES_LIMIT ? OFFSET + MAX_SOURCES_LIMIT : undefined);
@@ -806,7 +874,7 @@ async function main() {
   // Cleanup & expiration phase
   if (!isSkipCleanup && supabase) {
     // Destructive safety: only run unseen-based expiration if this was a complete, full-corpus run with zero source failures
-    const isFullRun = !isSeedRun && !sourceFilter && !MAX_SOURCES_LIMIT && !OFFSET && !MAX_PER_SOURCE && summary.totalFailed === 0;
+    const isFullRun = !isSeedRun && !isShardedRun && !sourceFilter && !MAX_SOURCES_LIMIT && !OFFSET && !MAX_PER_SOURCE && summary.totalFailed === 0;
     const cleanupResult = await runJobCleanup(supabase, {
       dryRun: isDryRun,
       skipUnseenCheck: !isFullRun,
@@ -821,23 +889,37 @@ async function main() {
   // Record Run into ingest_runs if table exists
   if (hasIngestRunsTable && supabase && !isDryRun) {
     try {
-      await supabase.from('ingest_runs').insert([
-        {
-          started_at: summary.startedAt,
-          finished_at: summary.completedAt,
-          duration_seconds: summary.durationSeconds,
-          companies_processed: summary.sources.length,
-          total_active: summary.totalInserted + summary.totalUpdated,
-          total_verified: summary.sources
-            .filter((s) => s.type === 'greenhouse' || s.type === 'lever' || s.type === 'ashby')
-            .reduce((acc, s) => acc + s.inserted + s.updated, 0),
-          per_source_counts: summary.sources.reduce(
+      const effectiveCycleId = CYCLE_ID || (isShardedRun ? `cycle-${summary.startedAt}` : `standalone-${summary.startedAt}`);
+      const coverageData = {
+        cycle_id: effectiveCycleId,
+        shard_id: SHARD_INDEX ?? 0,
+        expected_shards: TOTAL_SHARDS ?? 1,
+      };
+
+      const runRecord: Record<string, any> = {
+        started_at: summary.startedAt,
+        finished_at: summary.completedAt,
+        duration_seconds: summary.durationSeconds,
+        companies_processed: summary.sources.length,
+        total_active: summary.totalInserted + summary.totalUpdated,
+        total_verified: summary.sources
+          .filter((s) => s.type === 'greenhouse' || s.type === 'lever' || s.type === 'ashby')
+          .reduce((acc, s) => acc + s.inserted + s.updated, 0),
+        per_source_counts: {
+          ...summary.sources.reduce(
             (acc, s) => ({ ...acc, [s.sourceId]: s.inserted + s.updated }),
             {}
           ),
-          status: summary.totalFailed > 0 ? (summary.totalInserted > 0 ? 'warning' : 'failed') : 'success',
+          coverage: coverageData,
         },
-      ]);
+        status: summary.totalFailed > 0 ? (summary.totalInserted > 0 ? 'warning' : 'failed') : 'success',
+      };
+
+      if (hasCoverageColumn) {
+        runRecord.coverage = coverageData;
+      }
+
+      await supabase.from('ingest_runs').insert([runRecord]);
     } catch {
       // Ignore
     }
@@ -889,6 +971,11 @@ async function main() {
   }
   console.log(`Duration:         ${summary.durationSeconds}s`);
   console.log(`======================================================\n`);
+
+  if (summary.totalFailed > 0) {
+    console.error(`❌ [Ingest Failure] Shard encountered ${summary.totalFailed} source failures. Exiting non-zero.`);
+    process.exit(1);
+  }
 }
 
 main().catch((err) => {

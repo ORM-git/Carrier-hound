@@ -55,6 +55,7 @@ export const SCHEDULED_CRON_WORKFLOWS: readonly string[] = Object.freeze([
   "Read-only DB Health Probe",
   "Inbound Reply Poll",
   "Daily Job Ingestion & Cleanup Pipeline",
+  "Scaled Job Ingestion & Cleanup Pipeline",
   "Plan Regression",
   "Security & Secret Scanning",
   "Source Health Monitoring",
