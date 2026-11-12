@@ -793,31 +793,53 @@ export function resolveRequestId(request: NextRequest): string {
 
 export async function middleware(request: NextRequest) {
   const requestId = resolveRequestId(request);
-  const response = await middlewareImpl(request);
+  let response = await middlewareImpl(request);
 
-  // Propagate x-request-id to downstream route handlers via Next.js / next-on-pages
-  // middleware override headers instead of `new NextRequest(request, { headers })`,
-  // because constructing a new NextRequest clones/consumes the incoming Request body
-  // in Cloudflare Workers and causes @cloudflare/next-on-pages's `new Request(url, request)`
-  // to throw an uncaught TypeError (error code 1101) on POST/PUT/PATCH/DELETE.
+  // Propagate x-request-id to downstream route handlers using Next's supported
+  // NextResponse.next({ request: { headers } }) mechanism without constructing
+  // `new NextRequest(request, ...)` (which consumes non-GET bodies in Cloudflare Workers
+  // and triggers @cloudflare/next-on-pages error 1101 on POST/PUT/PATCH/DELETE).
+  // Rebuilding from all non-internal request headers preserves every header expected
+  // by Next's resolve-routes.js (which deletes incoming headers absent from
+  // x-middleware-override-headers) as well as Cloudflare's routes-matcher.ts.
   if (response.headers.get("x-middleware-next") === "1") {
     const scopedHeaders = new Headers(request.headers);
-    scopedHeaders.set(REQUEST_ID_HEADER, requestId);
+    for (const key of Array.from(scopedHeaders.keys())) {
+      if (key.toLowerCase().startsWith("x-middleware-")) {
+        scopedHeaders.delete(key);
+      }
+    }
+
     const existingOverrides = response.headers.get("x-middleware-override-headers");
-    const overrideKeys = new Set(
-      existingOverrides
-        ? existingOverrides
-            .split(",")
-            .map((key) => key.trim().toLowerCase())
-            .filter(Boolean)
-        : []
-    );
-    overrideKeys.add(REQUEST_ID_HEADER);
-    response.headers.set("x-middleware-override-headers", Array.from(overrideKeys).join(","));
-    response.headers.set(
-      `x-middleware-request-${REQUEST_ID_HEADER}`,
-      scopedHeaders.get(REQUEST_ID_HEADER) ?? requestId
-    );
+    if (existingOverrides) {
+      for (const rawKey of existingOverrides.split(",")) {
+        const key = rawKey.trim().toLowerCase();
+        if (!key || key.startsWith("x-middleware-")) continue;
+        const overrideValue = response.headers.get(`x-middleware-request-${key}`);
+        if (overrideValue !== null) {
+          scopedHeaders.set(key, overrideValue);
+        } else {
+          scopedHeaders.delete(key);
+        }
+      }
+    }
+
+    scopedHeaders.set(REQUEST_ID_HEADER, requestId);
+
+    const responseHeaders = new Headers(response.headers);
+    for (const key of Array.from(responseHeaders.keys())) {
+      const lower = key.toLowerCase();
+      if (lower === "x-middleware-override-headers" || lower.startsWith("x-middleware-request-")) {
+        responseHeaders.delete(key);
+      }
+    }
+
+    response = NextResponse.next({
+      headers: responseHeaders,
+      request: {
+        headers: scopedHeaders,
+      },
+    });
   }
 
   response.headers.set(REQUEST_ID_HEADER, requestId);
