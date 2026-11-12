@@ -1,9 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
 import { WORLDWIDE_COMPANIES, WorldwideCompany } from "@/data/companies";
+import { createLogger } from "@/lib/observability/logger";
 import {
   ClientSchemaValidationError,
   parseWorldwideCompanyRows,
 } from "./clientSchemas";
+
+const log = createLogger({ context: { module: "api/worldwide" } });
 
 export interface WorldwideCompanyRow {
   name: string;
@@ -84,7 +87,10 @@ export async function getWorldwideCompanies(clientOverride?: any): Promise<World
     });
   } catch (err) {
     if (err instanceof ClientSchemaValidationError) {
-      throw err;
+      log.warn("CLIENT_SCHEMA_VALIDATION_FAILED", {
+        schema: err.schema,
+        reason: err.reason,
+      });
     }
     return WORLDWIDE_COMPANIES;
   }
