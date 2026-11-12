@@ -17,7 +17,7 @@ export function getScopedTrackerStorageKey(userId?: string | null): string {
   return GUEST_STORAGE_KEY;
 }
 
-function generateUUID(): string {
+export function generateUUID(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
   if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
     const b = new Uint8Array(16); crypto.getRandomValues(b);
