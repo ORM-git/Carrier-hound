@@ -44,28 +44,57 @@ const defaultStages = [
   { duration: '30s', target: 0 },   // ramp down 30s
 ];
 
+// FULL=1 1000-user stage profile with gradual ramp-up and ramp-down
 const fullStages = [
-  { duration: '2m', target: 50 },   // 50 VUs for 2 min
-  { duration: '2m', target: 200 },  // 200 VUs for 2 min
-  { duration: '2m', target: 500 },  // 500 VUs for 2 min
-  { duration: '2m', target: 1000 }, // 1000 VUs for 2 min
-  { duration: '30s', target: 0 },   // ramp down 30s
+  { duration: '2m', target: 50 },   // ramp-up: 50 VUs
+  { duration: '2m', target: 200 },  // ramp-up: 200 VUs
+  { duration: '2m', target: 500 },  // ramp-up: 500 VUs
+  { duration: '2m', target: 1000 }, // peak: 1000 VUs
+  { duration: '30s', target: 0 },   // ramp-down: 0 VUs
 ];
+
+// Baseline 200-user thresholds (default)
+const defaultThresholds = {
+  http_req_failed: [{ threshold: 'rate<0.02', abortOnFail: true, delayAbortEval: '30s' }],
+  http_req_duration: [
+    { threshold: 'p(95)<3000', abortOnFail: true, delayAbortEval: '30s' },
+    // Tail latency gate (BE#9/#39): p99 target is provisional at p95 + 2s,
+    // same 200-user load; tighten once real traffic baselines exist.
+    { threshold: 'p(99)<5000', abortOnFail: true, delayAbortEval: '30s' },
+  ],
+  rate_limit_hits: [{ threshold: 'count<1', abortOnFail: true }],
+  cf_challenge_hits: [{ threshold: 'count<1', abortOnFail: true }],
+};
+
+// FULL=1 1000-user thresholds with per-endpoint latency ceilings matching the abort checklist
+const fullThresholds = {
+  ...defaultThresholds,
+  duration_home: [
+    { threshold: 'p(95)<2000', abortOnFail: true, delayAbortEval: '30s' },
+    { threshold: 'p(99)<4000', abortOnFail: true, delayAbortEval: '30s' },
+  ],
+  duration_jobs_shell: [
+    { threshold: 'p(95)<2500', abortOnFail: true, delayAbortEval: '30s' },
+    { threshold: 'p(99)<4500', abortOnFail: true, delayAbortEval: '30s' },
+  ],
+  duration_stats: [
+    { threshold: 'p(95)<2000', abortOnFail: true, delayAbortEval: '30s' },
+    { threshold: 'p(99)<3500', abortOnFail: true, delayAbortEval: '30s' },
+  ],
+  duration_jobs_category: [
+    { threshold: 'p(95)<3000', abortOnFail: true, delayAbortEval: '30s' },
+    { threshold: 'p(99)<5000', abortOnFail: true, delayAbortEval: '30s' },
+  ],
+  duration_jobs_search: [
+    { threshold: 'p(95)<3500', abortOnFail: true, delayAbortEval: '30s' },
+    { threshold: 'p(99)<5500', abortOnFail: true, delayAbortEval: '30s' },
+  ],
+};
 
 export const options = {
   stages: IS_FULL ? fullStages : defaultStages,
   summaryTrendStats: ['avg', 'min', 'med', 'max', 'p(90)', 'p(95)', 'p(99)'],
-  thresholds: {
-    http_req_failed: [{ threshold: 'rate<0.02', abortOnFail: true, delayAbortEval: '30s' }],
-    http_req_duration: [
-      { threshold: 'p(95)<3000', abortOnFail: true, delayAbortEval: '30s' },
-      // Tail latency gate (BE#9/#39): p99 target is provisional at p95 + 2s,
-      // same 200-user load; tighten once real traffic baselines exist.
-      { threshold: 'p(99)<5000', abortOnFail: true, delayAbortEval: '30s' },
-    ],
-    rate_limit_hits: [{ threshold: 'count<1', abortOnFail: true }],
-    cf_challenge_hits: [{ threshold: 'count<1', abortOnFail: true }],
-  },
+  thresholds: IS_FULL ? fullThresholds : defaultThresholds,
 };
 
 /**
@@ -251,8 +280,12 @@ export function handleSummary(data) {
   out += `VERDICT: ${thresholdsMet ? 'PASS (All thresholds satisfied, no defense triggered)' : 'FAIL / ABORTED'}\n`;
   out += '================================================================================\n';
 
+  const dateStr = new Date().toISOString().replace(/[:.]/g, '-');
+  const datedReportPath = `reports/loadtest/load-run-${dateStr}.txt`;
+
   return {
     stdout: out,
     'scripts/loadtest/summary.txt': out,
+    [datedReportPath]: out,
   };
 }
