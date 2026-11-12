@@ -377,7 +377,7 @@ export default function AppTopBar({
               aria-label="CareerMonke Dashboard"
               className="flex items-center min-h-[44px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
             >
-              <BrandIcon variant="full" width={125} height={50} className="h-8 w-auto" />
+              <BrandIcon variant="full" width={32} height={39} className="h-8 w-auto" />
             </Link>
             <button
               type="button"
