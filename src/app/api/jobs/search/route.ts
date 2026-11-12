@@ -12,6 +12,7 @@ import { normalizeUserCountries, applyEligibilityFilter, isJobEligible } from "@
 import { isUserApproved } from "@/lib/auth/approval";
 
 import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
+import { withRouteSpan } from "@/lib/monitoring/tracing";
 
 import { createLogger } from "@/lib/observability/logger";
 
@@ -872,5 +873,7 @@ async function getHandler(req: Request) {
 }
 
 export async function GET(req: Request) {
-  return measureRouteBudget("/api/jobs/search", () => getHandler(req));
+  return withRouteSpan("/api/jobs/search", req, () =>
+    measureRouteBudget("/api/jobs/search", () => getHandler(req))
+  );
 }

@@ -12,6 +12,7 @@ import { isUserApproved } from "@/lib/auth/approval";
 import { checkRequiredEnv } from "@/lib/api/envCheck";
 
 import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
+import { withRouteSpan } from "@/lib/monitoring/tracing";
 
 import { createLogger } from "@/lib/observability/logger";
 
@@ -93,8 +94,9 @@ function getTop10CacheKey(
  * only the top N results with full unlocked Pro data.
  */
 export async function POST(req: Request) {
-  const log = baseLog.child({ requestId: req?.headers.get("x-request-id") ?? "unknown" });
-  try {
+  return withRouteSpan("/api/jobs/top10", req, async () => {
+    const log = baseLog.child({ requestId: req?.headers.get("x-request-id") ?? "unknown" });
+    try {
     // 1. Verify Authorization Header (Bearer Supabase access token)
     const authHeader = req.headers.get("authorization") || req.headers.get("Authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -393,4 +395,5 @@ export async function POST(req: Request) {
     reportRequestErrorToSentry(req, err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
+  });
 }

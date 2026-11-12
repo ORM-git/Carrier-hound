@@ -10,6 +10,7 @@ import {
 } from "@/lib/api/sharedRateLimit";
 import { isUserApproved } from "@/lib/auth/approval";
 import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
+import { withRouteSpan } from "@/lib/monitoring/tracing";
 import { computeWeakEtag, notModifiedResponse } from "@/lib/api/etag";
 
 import { createLogger } from "@/lib/observability/logger";
@@ -253,5 +254,7 @@ async function getHandler(req: Request) {
 }
 
 export async function GET(req: Request) {
-  return measureRouteBudget("/api/stats", () => getHandler(req));
+  return withRouteSpan("/api/stats", req, () =>
+    measureRouteBudget("/api/stats", () => getHandler(req))
+  );
 }
