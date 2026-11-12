@@ -3,7 +3,16 @@ import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { expandCategoryFilter, normalizeCategorySlug } from "@/lib/taxonomy";
 import type { Job } from "@/data/jobs";
 import { sanitizeExternalUrl, stripHtmlAndExecutableMarkup } from "@/lib/security/xss";
+import {
+  ClientSchemaValidationError,
+  parseSearchJobsFacetRows,
+  parseSearchJobsRows,
+  type SearchJobRowParsed,
+} from "./clientSchemas";
+import { createLogger } from "@/lib/observability/logger";
 import { COUNTRY_CODE_TO_NAME } from "@/lib/countries";
+
+const log = createLogger({ context: { module: "api/jobs" } });
 
 export interface SearchJobsParams {
   q?: string;
@@ -226,7 +235,22 @@ export async function searchJobs(
   const total = count || 0;
   const totalPages = Math.ceil(total / pageSize) || 1;
 
-  const mappedJobs: Job[] = (data || []).map((d: any) => ({
+  let validatedJobs: SearchJobRowParsed[] = [];
+  try {
+    validatedJobs = parseSearchJobsRows(data ?? []);
+  } catch (err) {
+    if (err instanceof ClientSchemaValidationError) {
+      log.warn("CLIENT_SCHEMA_VALIDATION_FAILED", {
+        schema: err.schema,
+        reason: err.reason,
+      });
+      validatedJobs = [];
+    } else {
+      throw err;
+    }
+  }
+
+  const mappedJobs: Job[] = validatedJobs.map((d) => ({
     id: d.id,
     title: stripHtmlAndExecutableMarkup(d.title),
     company: stripHtmlAndExecutableMarkup(d.company),
@@ -261,17 +285,29 @@ export async function searchJobs(
   const countryFacets: Record<string, number> = {};
   const availableSet = new Set<string>();
 
-  if (facetData) {
-    facetData.forEach((row: any) => {
-      if (row.category) {
-        const canonical = normalizeCategorySlug(row.category);
-        categoryFacets[canonical] = (categoryFacets[canonical] || 0) + 1;
+  if (facetData != null) {
+    try {
+      const validatedFacets = parseSearchJobsFacetRows(facetData);
+      validatedFacets.forEach((row) => {
+        if (row.category) {
+          const canonical = normalizeCategorySlug(row.category);
+          categoryFacets[canonical] = (categoryFacets[canonical] || 0) + 1;
+        }
+        if (row.country) {
+          countryFacets[row.country] = (countryFacets[row.country] || 0) + 1;
+          availableSet.add(row.country);
+        }
+      });
+    } catch (err) {
+      if (err instanceof ClientSchemaValidationError) {
+        log.warn("CLIENT_SCHEMA_VALIDATION_FAILED", {
+          schema: err.schema,
+          reason: err.reason,
+        });
+      } else {
+        throw err;
       }
-      if (row.country) {
-        countryFacets[row.country] = (countryFacets[row.country] || 0) + 1;
-        availableSet.add(row.country);
-      }
-    });
+    }
   }
 
   const availableCountries =
