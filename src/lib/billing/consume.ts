@@ -69,13 +69,31 @@ export function determineQuotaSource(
   return { source: null, code: "QUOTA_EXHAUSTED" };
 }
 
+function readRuntimeEnv(key: string): string | undefined {
+  if (typeof process !== "undefined" && process.env && process.env[key]) {
+    return String(process.env[key]);
+  }
+  try {
+    const cfCtx = (globalThis as any)[Symbol.for("__cloudflare-request-context__")];
+    if (cfCtx?.env && cfCtx.env[key]) {
+      return String(cfCtx.env[key]);
+    }
+    const cfEnv = (globalThis as any)[Symbol.for("__cloudflare-env__")];
+    if (cfEnv && cfEnv[key]) {
+      return String(cfEnv[key]);
+    }
+  } catch {}
+  return undefined;
+}
+
 function getSupabaseAdmin() {
   const supabaseUrl =
-    process.env.NEXT_PUBLIC_SUPABASE_URL ||
-    process.env.SUPABASE_URL ||
+    readRuntimeEnv("NEXT_PUBLIC_SUPABASE_URL") ||
+    readRuntimeEnv("SUPABASE_URL") ||
     "https://szakevhxhwpeskidvtfs.supabase.co";
   const serviceRoleKey =
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
+    readRuntimeEnv("SUPABASE_SERVICE_ROLE_KEY") ||
+    readRuntimeEnv("SUPABASE_SERVICE_KEY");
 
   if (!supabaseUrl || !serviceRoleKey) {
     throw new Error("Missing Supabase service role configuration");
