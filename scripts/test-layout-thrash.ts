@@ -30,7 +30,7 @@ function walk(dir: string, out: string[]): void {
   for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, ent.name);
     if (ent.isDirectory()) walk(full, out);
-    else if (/\.(tsx?|jsx?)$/.test(ent.name)) out.push(path.relative(ROOT, full));
+    else if (/\.(tsx?|jsx?)$/.test(ent.name)) out.push(path.relative(ROOT, full).replace(/\\/g, "/"));
   }
 }
 

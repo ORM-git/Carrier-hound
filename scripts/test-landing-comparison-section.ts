@@ -1,174 +1,84 @@
 import assert from "assert";
 import * as fs from "fs";
 import * as path from "path";
-import React from "react";
-import { renderToStaticMarkup } from "react-dom/server";
 import { spawnSync } from "child_process";
-import LandingComparisonSection from "../src/components/LandingComparisonSection";
+
+const ROOT = process.cwd();
+const isNegativeControl = process.argv.includes("--negative-control");
+
+function runNegativeControlSubprocess() {
+  const res = spawnSync(
+    process.execPath,
+    ["--import", "tsx", "scripts/test-landing-comparison-section.ts", "--negative-control"],
+    {
+      cwd: ROOT,
+      encoding: "utf8",
+    }
+  );
+  assert.notStrictEqual(
+    res.status,
+    0,
+    `Expected negative control subprocess to exit non-zero, but got status=${res.status}`
+  );
+  console.log("  [PASS-LOCAL] Negative control '--negative-control' exited non-zero as expected");
+}
 
 async function runTests() {
-  const isNegativeControl = process.argv.includes("--negative-control");
-
   console.log("================================================================================");
-  console.log("       LANDING COMPARISON BLOCK VERIFICATION SUITE (GIF ARTWORK ONLY)           ");
+  console.log("       LANDING COMPARISON SECTION VERIFICATION SUITE                            ");
   console.log("================================================================================\n");
 
   if (isNegativeControl) {
     console.log("[NEGATIVE CONTROL MODE] Inducing intentional assertion failure...");
-    assert.strictEqual(
-      "real",
-      "intentional-mismatch",
-      "Negative control triggered: expected intentional failure"
-    );
+    assert.strictEqual("actual", "intentional-comparison-failure");
     return;
   }
 
-  // 1. Verify component source exists and does not contain old row/placeholder/badge code
-  console.log("Test 1: Inspecting src/components/LandingComparisonSection.tsx source...");
-  const componentPath = path.resolve(process.cwd(), "src/components/LandingComparisonSection.tsx");
-  assert.ok(fs.existsSync(componentPath), "LandingComparisonSection.tsx must exist");
-  const compSrc = fs.readFileSync(componentPath, "utf8");
+  runNegativeControlSubprocess();
 
-  // Removed old code assertions
-  assert.ok(!compSrc.includes("COMPARISON_ROWS"), "Old COMPARISON_ROWS array must be removed");
-  assert.ok(!compSrc.includes("CardImagePlaceholder"), "CardImagePlaceholder must be removed");
-  assert.ok(!compSrc.includes("ComparisonRowItem"), "ComparisonRowItem must be removed");
-  assert.ok(!compSrc.includes("ComparisonCardImage"), "ComparisonCardImage must be removed");
-  assert.ok(!compSrc.includes("mascot-sad"), "Old mascot CSS keyframes must be removed");
-  assert.ok(!compSrc.includes("mascot-happy"), "Old mascot CSS keyframes must be removed");
-  assert.ok(!compSrc.includes("auto-rejected?"), "Old heading 'auto-rejected?' must be removed");
-  assert.ok(compSrc.includes("Tired of getting auto rejection"), "Must include exact heading 'Tired of getting auto rejection'");
-  assert.ok(!compSrc.includes("careermonke.com"), "Old footer text must be removed");
-  console.log("  -> [PASS-LOCAL] Old tiles, rows, placeholders, keyframes, and footer removed from component source.");
-
-  // 2. Rendered Static Markup Assertions
-  console.log("\nTest 2: Verifying rendered HTML markup of LandingComparisonSection...");
-  const renderedHtml = renderToStaticMarkup(React.createElement(LandingComparisonSection));
-
-  // Assert heading directly above the GIF
-  assert.ok(renderedHtml.includes("Tired of getting auto rejection"), "Must render heading text 'Tired of getting auto rejection'");
-  assert.ok(renderedHtml.includes("text-[#090E34]"), "Heading must use brand navy #090E34");
-  assert.ok(renderedHtml.includes("font-bold"), "Heading must be bold");
-  assert.ok(renderedHtml.includes("text-center"), "Heading must be centered");
-  assert.ok(/<h2\b[^>]*>.*Tired of getting auto rejection.*<\/h2>/s.test(renderedHtml), "Must render as an h2 element");
-
-  // Assert exact image attributes
-  assert.ok(renderedHtml.includes('src="/careermonke-comparison-boxes.gif"'), "Must render exact src '/careermonke-comparison-boxes.gif'");
-  assert.ok(
-    renderedHtml.includes('alt="The usual grind vs the Monke way: five comparisons"'),
-    "Must render exact alt 'The usual grind vs the Monke way: five comparisons'"
-  );
-  assert.ok(renderedHtml.includes('width="728"'), "Must render width 728");
-  assert.ok(renderedHtml.includes('height="900"'), "Must render height 900");
-  assert.ok(renderedHtml.includes('loading="lazy"'), "Must render loading='lazy'");
-  assert.ok(renderedHtml.includes('decoding="async"'), "Must render decoding='async'");
-
-  // Assert wrapper styling: centered, w-full, max-w-[560px], px-4 on mobile
-  assert.ok(renderedHtml.includes("w-full"), "Wrapper must have w-full");
-  assert.ok(renderedHtml.includes("max-w-[560px]"), "Wrapper must have max-w-[560px]");
-  assert.ok(renderedHtml.includes("mx-auto"), "Wrapper must be centered with mx-auto");
-  assert.ok(renderedHtml.includes("px-4"), "Wrapper must have px-4 horizontal padding");
-
-  // Assert NO footer text, NO card, NO border, NO shadow, NO background, NO VS badges
-  assert.ok(!/<p[\s>]/i.test(renderedHtml), "Must contain NO paragraph (<p>) tags");
-  const htmlWithoutImg = renderedHtml.replace(/<img[^>]*>/g, "");
-  assert.ok(!htmlWithoutImg.includes("The usual grind"), "Must contain NO text 'The usual grind' outside img alt");
-  assert.ok(!htmlWithoutImg.includes("The Monke way"), "Must contain NO text 'The Monke way' outside img alt");
-  assert.ok(!renderedHtml.includes("VS"), "Must contain NO VS badges");
-  assert.ok(!renderedHtml.includes("Illustration"), "Must contain NO footer illustration labels");
-  assert.ok(!renderedHtml.includes("border"), "Must contain NO border classes");
-  assert.ok(!renderedHtml.includes("shadow"), "Must contain NO shadow classes");
-  assert.ok(!renderedHtml.includes("bg-"), "Must contain NO background classes");
-
-  // Verify only 1 img element rendered
-  const imgMatches = renderedHtml.match(/<img\b/g);
-  assert.strictEqual(imgMatches?.length, 1, "Must render exactly ONE image element");
-  console.log("  -> [PASS-LOCAL] Rendered markup contains solely the heading and comparison image with correct attributes and clean wrapper.");
-
-  // 3. GIF Asset Verification
-  console.log("\nTest 3: Verifying public/careermonke-comparison-boxes.gif asset on disk...");
-  const gifPath = path.resolve(process.cwd(), "public/careermonke-comparison-boxes.gif");
-  assert.ok(fs.existsSync(gifPath), "public/careermonke-comparison-boxes.gif must exist");
-  const gifStat = fs.statSync(gifPath);
-  assert.ok(gifStat.size > 1000000, `GIF size must be substantial (>1MB). Actual: ${gifStat.size} bytes`);
-
-  // Verify GIF89a header
-  const gifBuffer = fs.readFileSync(gifPath);
-  const gifHeader = gifBuffer.subarray(0, 6).toString("ascii");
-  assert.ok(gifHeader === "GIF89a" || gifHeader === "GIF87a", `Asset must be valid GIF format (header: ${gifHeader})`);
-
-  // Verify dimensions from GIF logical screen descriptor (bytes 6-9 in little endian)
-  const logicalWidth = gifBuffer.readUInt16LE(6);
-  const logicalHeight = gifBuffer.readUInt16LE(8);
-  assert.strictEqual(logicalWidth, 728, `GIF width must be 728 (actual: ${logicalWidth})`);
-  assert.strictEqual(logicalHeight, 900, `GIF height must be 900 (actual: ${logicalHeight})`);
-  console.log(`  -> [PASS-LOCAL] GIF file confirmed valid: 728x900 pixels, ${(gifStat.size / (1024 * 1024)).toFixed(2)} MB.`);
-
-  // 4. Mascot Assets Preservation (do not delete public/mascot files)
-  console.log("\nTest 4: Verifying public/mascot/ files were preserved...");
-  const mascotDir = path.resolve(process.cwd(), "public/mascot");
-  assert.ok(fs.existsSync(mascotDir), "public/mascot directory must exist");
-  const expectedMascotFiles = [
-    "row1-sad.png", "row1-happy.png",
-    "row2-sad.png", "row2-happy.png",
-    "row3-sad.png", "row3-happy.png",
-    "row4-sad.png", "row4-happy.png",
-    "row5-sad.png", "row5-happy.png",
-  ];
-  for (const file of expectedMascotFiles) {
-    const filePath = path.join(mascotDir, file);
-    assert.ok(fs.existsSync(filePath), `Mascot file ${file} must remain preserved`);
-  }
-  console.log("  -> [PASS-LOCAL] All 10 public/mascot files preserved.");
-
-  // 5. Page Integration & Placement in src/app/page.tsx
-  console.log("\nTest 5: Verifying slot placement in src/app/page.tsx...");
-  const pagePath = path.resolve(process.cwd(), "src/app/page.tsx");
+  const pagePath = path.resolve(ROOT, "src", "app", "page.tsx");
   assert.ok(fs.existsSync(pagePath), "src/app/page.tsx must exist");
   const pageSrc = fs.readFileSync(pagePath, "utf8");
 
+  // 1. Heading
+  console.log("Test 1: Heading & comparison section wrapper...");
   assert.ok(
-    pageSrc.includes('import LandingComparisonSection from "@/components/LandingComparisonSection";'),
-    "src/app/page.tsx must import LandingComparisonSection"
+    pageSrc.includes("The Usual Grind vs The CareerMonke Way"),
+    "Must include heading 'The Usual Grind vs The CareerMonke Way'"
   );
   assert.ok(
-    pageSrc.includes("<LandingComparisonSection />"),
-    "src/app/page.tsx must render <LandingComparisonSection />"
+    pageSrc.includes('id="vs"'),
+    "Must include comparison table with id='vs'"
   );
+  console.log("  -> [PASS-LOCAL] Comparison heading and table element verified.");
 
-  const tickerIdx = pageSrc.indexOf("<LandingJobsTickerStrip />");
-  const compIdx = pageSrc.indexOf("<LandingComparisonSection />");
-  const globeIdx =
-    pageSrc.indexOf("<LandingGlobeFeatureSection") > -1
-      ? pageSrc.indexOf("<LandingGlobeFeatureSection")
-      : pageSrc.indexOf("Global map / radar");
+  // 2. All 5 Comparison Rows
+  console.log("\nTest 2: Verifying 5 comparison criteria rows...");
+  const expectedRows = [
+    ["800+ applicants per listing", "Under 20 applicants, direct"],
+    ["Hours tailoring every bullet", "1-tap ATS-matched resume"],
+    ["Resumes lost in black holes", "Instant keyword match score"],
+    ["Ghost and expired reposts", "Live from verified career sites"],
+    ["Auto-rejected in 10 minutes", "Seen by recruiters early"],
+  ];
 
-  assert.ok(tickerIdx > -1, "Jobs ticker strip must exist in page.tsx");
-  assert.ok(compIdx > -1, "Comparison section must exist in page.tsx");
-  assert.ok(globeIdx > -1, "Global coverage section must exist in page.tsx");
+  for (const [usual, monke] of expectedRows) {
+    assert.ok(pageSrc.includes(usual), `Must include usual criterion "${usual}"`);
+    assert.ok(pageSrc.includes(monke), `Must include monke criterion "${monke}"`);
+  }
+  console.log("  -> [PASS-LOCAL] All 5 comparison criteria rows verified with 100% fidelity.");
+
+  // 3. No Heavy GIF in page.tsx (Performance Rule)
+  console.log("\nTest 3: Zero heavy comparison GIF in landing page (light first load)...");
   assert.ok(
-    tickerIdx < globeIdx && globeIdx < compIdx,
-    "LandingComparisonSection must be placed strictly after LandingJobsTickerStrip and after global coverage section"
+    !pageSrc.includes("careermonke-comparison-boxes.gif"),
+    "page.tsx must not load heavy careermonke-comparison-boxes.gif (lightweight SVG/CSS table only)"
   );
-  console.log("  -> [PASS-LOCAL] Placement in src/app/page.tsx strictly verified in original slot.");
-
-  // 6. Negative Control Subprocess Execution
-  console.log("\nTest 6: Executing negative control subprocess to verify non-zero exit code...");
-  const negResult = spawnSync(process.execPath, ["-r", "tsx", __filename, "--negative-control"], {
-    encoding: "utf-8",
-    env: process.env,
-  });
-
-  assert.notStrictEqual(
-    negResult.status,
-    0,
-    "Negative control MUST fail and exit with non-zero status code!"
-  );
-  console.log(`  -> [PASS-LOCAL] Negative control correctly exited with status code ${negResult.status}.`);
+  console.log("  -> [PASS-LOCAL] Confirmed no heavy comparison GIF on landing route.");
 
   console.log("\n================================================================================");
-  console.log("ALL LANDING COMPARISON SECTION TESTS PASSED SUCCESSFULLY [PASS-LOCAL]");
-  console.log("================================================================================\n");
+  console.log("ALL LANDING COMPARISON SECTION TESTS PASSED [PASS-LOCAL]");
+  console.log("================================================================================");
 }
 
 runTests().catch((err) => {
