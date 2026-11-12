@@ -83,17 +83,25 @@ export default function PageViewTracker() {
       }
     };
 
+    let cancelled = false;
+    let idleId: number | null = null;
+    let fallbackTimeout: ReturnType<typeof setTimeout> | null = null;
+
     if (typeof window !== "undefined") {
       if ("requestIdleCallback" in window) {
-        (window as any).requestIdleCallback(track, { timeout: 1500 });
+        idleId = (window as any).requestIdleCallback(() => {
+          if (!cancelled) track();
+        }, { timeout: 1500 });
       } else {
-        setTimeout(track, 100);
+        fallbackTimeout = setTimeout(() => {
+          if (!cancelled) track();
+        }, 100);
       }
     }
 
     // Listen for consent granted event to track immediately once acknowledged
     const onConsentGranted = () => {
-      track();
+      if (!cancelled) track();
     };
 
     if (typeof window !== "undefined") {
@@ -101,6 +109,13 @@ export default function PageViewTracker() {
     }
 
     return () => {
+      cancelled = true;
+      if (idleId !== null && typeof window !== "undefined" && "cancelIdleCallback" in window) {
+        (window as any).cancelIdleCallback(idleId);
+      }
+      if (fallbackTimeout !== null) {
+        clearTimeout(fallbackTimeout);
+      }
       if (typeof window !== "undefined") {
         window.removeEventListener(COOKIE_CONSENT_EVENT, onConsentGranted);
       }

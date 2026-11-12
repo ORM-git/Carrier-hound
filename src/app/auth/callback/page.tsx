@@ -52,6 +52,9 @@ export default function AuthCallbackPage() {
       }
     });
 
+    let hashTimeoutId: ReturnType<typeof setTimeout> | null = null;
+    let fallbackTimeoutId: ReturnType<typeof setTimeout> | null = null;
+
     const handleAuth = async () => {
       // 2. PKCE code exchange
       if (code) {
@@ -77,7 +80,7 @@ export default function AuthCallbackPage() {
 
       // 4. If window has hash (e.g. #access_token=... from magic link), give it 1.5 seconds to complete
       if (typeof window !== "undefined" && window.location.hash.includes("access_token")) {
-        setTimeout(() => {
+        hashTimeoutId = setTimeout(() => {
           supabase.auth.getSession().then(({ data }: any) => {
             const hashSession = data?.session;
             if (hashSession) {
@@ -91,7 +94,7 @@ export default function AuthCallbackPage() {
       }
 
       // Fallback
-      setTimeout(() => {
+      fallbackTimeoutId = setTimeout(() => {
         if (!resolved) {
           finish(`/login?error=${encodeURIComponent("Could not authenticate session. Please try again.")}`);
         }
@@ -101,6 +104,9 @@ export default function AuthCallbackPage() {
     handleAuth();
 
     return () => {
+      resolved = true;
+      if (hashTimeoutId !== null) clearTimeout(hashTimeoutId);
+      if (fallbackTimeoutId !== null) clearTimeout(fallbackTimeoutId);
       subscription.unsubscribe();
     };
   }, [router]);
