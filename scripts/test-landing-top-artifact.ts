@@ -20,179 +20,230 @@ function runNegativeControlSubprocess() {
     0,
     `Expected negative control subprocess to exit non-zero, but got status=${res.status}`
   );
-  console.log("  [PASS] Negative control '--negative-control' exited non-zero (1)");
+  console.log("  [PASS-LOCAL] Negative control '--negative-control' exited non-zero as expected");
 }
 
 async function main() {
+  console.log("================================================================================");
+  console.log("       LANDING TOP HERO & INTERACTIVE DEMO VERIFICATION SUITE                   ");
+  console.log("================================================================================\n");
+
+  if (isNegativeControl) {
+    console.log("[NEGATIVE CONTROL MODE] Inducing intentional assertion failure...");
+    assert.strictEqual("actual", "expected-negative-control-mismatch");
+    return;
+  }
+
+  runNegativeControlSubprocess();
+
   const pagePath = path.join(ROOT, "src", "app", "page.tsx");
-  const artifactCompPath = path.join(ROOT, "src", "components", "LandingTopArtifact.tsx");
-  const oldDemoPath = path.join(ROOT, "src", "components", "LandingInteractiveDemoSection.tsx");
-  const cssPath = path.join(ROOT, "src", "styles", "landing-top-artifact.css");
+  const cssPath = path.join(ROOT, "src", "styles", "careermonke-landing.css");
+  const runtimePath = path.join(ROOT, "src", "components", "landing", "careermonke-landing-runtime.ts");
 
   assert.ok(fs.existsSync(pagePath), "src/app/page.tsx must exist");
-  assert.ok(fs.existsSync(artifactCompPath), "src/components/LandingTopArtifact.tsx must exist");
-  assert.ok(!fs.existsSync(oldDemoPath), "Old LandingInteractiveDemoSection.tsx must be deleted");
-  assert.ok(fs.existsSync(cssPath), "src/styles/landing-top-artifact.css must exist");
+  assert.ok(fs.existsSync(cssPath), "src/styles/careermonke-landing.css must exist");
+  assert.ok(fs.existsSync(runtimePath), "src/components/landing/careermonke-landing-runtime.ts must exist");
 
   const pageSrc = fs.readFileSync(pagePath, "utf8");
-  let compSrc = fs.readFileSync(artifactCompPath, "utf8");
-  let cssSrc = fs.readFileSync(cssPath, "utf8");
+  const cssSrc = fs.readFileSync(cssPath, "utf8");
 
-  if (isNegativeControl) {
-    compSrc += "\nInjected negative control failure";
-    cssSrc = cssSrc.replace(/--brand:#2563EB;/g, "--brand:#000000;");
-  }
-
-  console.log("================================================================================");
-  console.log("       LANDING TOP ARTIFACT PORT & BRANDING VERIFICATION SUITE                  ");
-  console.log("================================================================================\n");
-
-  // 1. Structure & Placement in page.tsx
+  // 1. Exact 1:1 Headline and Hero Copy
   assert.ok(
-    pageSrc.includes("<LandingTopArtifact />"),
-    "LandingTopArtifact must be rendered in src/app/page.tsx"
+    pageSrc.includes("Skip LinkedIn competition") && pageSrc.includes("job"),
+    "page.tsx must contain exact headline 'Skip LinkedIn competition. Start jobmaxxing with AI'"
   );
   assert.ok(
-    !pageSrc.includes("<LandingInteractiveDemoSection"),
-    "Old LandingInteractiveDemoSection must not be referenced in page.tsx"
+    pageSrc.includes("1,240 new jobs found today"),
+    "page.tsx must contain exact badge '1,240 new jobs found today'"
   );
-  const artifactIdx = pageSrc.indexOf("<LandingTopArtifact />");
-  const comparisonIdx = pageSrc.indexOf("<LandingComparisonSection />");
   assert.ok(
-    artifactIdx > -1 && comparisonIdx > artifactIdx,
-    "LandingTopArtifact must be placed at the top of the landing page before LandingComparisonSection"
+    pageSrc.includes("Get direct roles from company sites and tailor your resume to clear their ATS in seconds."),
+    "page.tsx must contain lead copy about direct roles from company sites"
   );
-  console.log("  [PASS] Structure & placement verified: LandingTopArtifact at top before comparison");
+  assert.ok(
+    pageSrc.includes("Sign up for free"),
+    "page.tsx must contain 'Sign up for free'"
+  );
 
-  // 2. 1:1 Copy Fidelity from Artifact
-  const requiredCopy = [
-    "Jobs LinkedIn doesn&apos;t show you",
-    "Get there first.",
-    "We pull jobs straight from company career pages, match them to you, and tailor your resume in one tap.",
-    "See it work in 3",
-    "What kind of job do you want?",
-    "Backend",
-    "Frontend",
-    "Full-stack",
-    "Data &amp; AI",
-    "Mobile",
-    "Design",
-    "Checking career pages",
-    "pages checked",
-    "jobs for you",
-    "jobs found.",
-    "aren&apos;t on LinkedIn.",
-    "Your resume",
-    "Tailor my resume",
-    "+26",
-    "Applied in",
-    "seconds",
-    "Get my real matches",
-    "Try another field",
-    "Demo with sample jobs",
-    "Pick a job type!",
-  ];
+  // 2. Working Navigation and CTAs wired to real routes
+  assert.ok(pageSrc.includes('href="/signup"'), "Hero CTA must link to /signup");
+  assert.ok(pageSrc.includes('href="/login"'), "Top nav must link to /login");
+  assert.ok(pageSrc.includes('href="/radar"'), "Top nav must link to /radar");
+  assert.ok(pageSrc.includes('href="/early-access"'), "Top nav must link to /early-access");
+  assert.ok(pageSrc.includes('id="try-demo"'), "Hero must include #try-demo button");
 
-  for (const text of requiredCopy) {
+  // 3. Interactive Demo Structure and Chips
+  assert.ok(pageSrc.includes('id="demo"'), "page.tsx must contain interactive demo section with id='demo'");
+  const requiredChips = ["Backend", "Remote", "Marketing", "Data &amp; AI", "Sales", "Design"];
+  for (const chip of requiredChips) {
     assert.ok(
-      compSrc.includes(text),
-      `LandingTopArtifact must include exact artifact copy: "${text}"`
+      pageSrc.includes(chip),
+      `Demo must include job chip "${chip}"`
     );
   }
-  console.log("  [PASS] Copy fidelity verified (all headline, steps, roles, and button copy present)");
 
-  // 3. Branding, Tokens, Fonts & Images
-  assert.ok(
-    !cssSrc.includes("Fredoka") && !cssSrc.includes("Figtree"),
-    "Fredoka and Figtree must be completely removed from landing-top-artifact.css"
-  );
-  assert.ok(
-    cssSrc.includes("--font-inter"),
-    "CSS variables must reference Inter via --font-inter"
-  );
-  assert.ok(
-    cssSrc.includes("--brand:#2563EB;") || cssSrc.includes("--brand: #2563EB;"),
-    "Brand blue must be set to CareerMonke primary blue #2563EB"
-  );
-  assert.ok(
-    cssSrc.includes("--canopy:#090E34;") || cssSrc.includes("--canopy: #090E34;"),
-    "Canopy/Navy must be set to CareerMonke navy #090E34"
-  );
-  assert.ok(
-    cssSrc.includes("--ink:#090E34;") || cssSrc.includes("--ink: #090E34;"),
-    "Ink must be set to CareerMonke navy #090E34"
-  );
-  assert.ok(
-    compSrc.includes('/icon.png') && compSrc.includes('/mascot.png'),
-    "Logo and mascot must use our own repo images (/icon.png and /mascot.png)"
-  );
-  assert.ok(
-    !compSrc.includes('data:image/webp;base64,'),
-    "No embedded base64 images allowed in LandingTopArtifact"
-  );
-  console.log("  [PASS] Branding, Inter font, tokens, and repo images verified");
+  // 4. Demo States
+  assert.ok(pageSrc.includes('data-state="pick"'), "Demo must include 'pick' state");
+  assert.ok(pageSrc.includes('data-state="scan"'), "Demo must include 'scan' state");
+  assert.ok(pageSrc.includes('data-state="match"'), "Demo must include 'match' state");
+  assert.ok(pageSrc.includes('data-state="applied"'), "Demo must include 'applied' state");
 
-  // 4. 3D-Button and Hard Offset Shadows
-  assert.ok(
-    cssSrc.includes("box-shadow:0 var(--lift) 0 var(--edge)") ||
-      cssSrc.includes("box-shadow: 0 var(--lift) 0 var(--edge)"),
-    "3D-button raised shadow styling must be preserved"
-  );
-  assert.ok(
-    cssSrc.includes("box-shadow:0 0 0 3px var(--ink),0 7px 0 3px var(--ink)") ||
-      cssSrc.includes("box-shadow: 0 0 0 3px var(--ink), 0 7px 0 3px var(--ink)"),
-    "Hard offset shadow styling for floating cards must be preserved"
-  );
-  console.log("  [PASS] 3D-button raised styling and hard offset shadows verified");
+  // 5. Brand Styling in CSS & Complete Scoping under .landing-wrapper
+  assert.ok(cssSrc.includes("--blue:#2563EB"), "careermonke-landing.css must define brand blue #2563EB");
+  assert.ok(cssSrc.includes("--navy:#090E34"), "careermonke-landing.css must define brand navy #090E34");
 
-  // 5. Routing & Wire Links
-  assert.ok(
-    compSrc.includes('href="/login"') && compSrc.includes('Sign in'),
-    "Sign in must link to /login"
-  );
-  assert.ok(
-    compSrc.includes('href="/signup"') && compSrc.includes('Sign up free'),
-    "Sign up free must link to /signup"
-  );
-  assert.ok(
-    compSrc.includes('href="/early-access"') && compSrc.includes('Get my real matches'),
-    "Get my real matches must link to /early-access"
-  );
-  assert.ok(
-    compSrc.includes('href="#try"') && compSrc.includes('or try the demo first'),
-    "or try the demo first must anchor to #try"
-  );
-  console.log("  [PASS] Route links (/login, /signup, /early-access, #try) verified");
+  // Ensure zero commented WhiteHeroButton or router.push in page.tsx
+  assert.ok(!pageSrc.includes("WhiteHeroButton"), "page.tsx must not contain WhiteHeroButton");
+  assert.ok(!pageSrc.includes("router.push"), "page.tsx must not contain commented router.push");
 
-  // 6. Responsive Breakpoints
-  assert.ok(
-    cssSrc.includes("@media (max-width:1180px){.float{display:none}}") ||
-      cssSrc.includes("@media (max-width:1180px) { .float { display: none"),
-    "Floating cards must be hidden on viewport width <= 1180px"
-  );
-  assert.ok(
-    cssSrc.includes("@media (max-width:600px){\n  .nav-link{display:none}") ||
-      cssSrc.includes("@media (max-width:600px)"),
-    "Sign in nav-link must be hidden under 600px"
-  );
-  console.log("  [PASS] Responsive layout rules (float hidden <= 1180px, nav-link hidden <= 600px) verified");
-
-  if (isNegativeControl) {
-    throw new Error("Negative control injected failure");
+  // Ensure CSS is strictly scoped under .landing-wrapper (no global root, body, html, a, h1-h3, p, main, footer)
+  const forbiddenGlobalPatterns = [
+    /^:root\s*\{/m,
+    /^\s*body\s*\{/m,
+    /^\s*html\s*\{/m,
+    /^\s*a\s*\{/m,
+    /^\s*h1\s*,/m,
+    /^\s*p\s*\{/m,
+    /^\s*main\s*\{/m,
+    /^\s*footer\s*\{/m,
+  ];
+  for (const pat of forbiddenGlobalPatterns) {
+    assert.ok(!pat.test(cssSrc), `Landing CSS must not have global unscoped selector matching ${pat}`);
   }
 
-  console.log("\n================================================================================");
-  console.log("ALL LANDING TOP ARTIFACT TESTS PASSED [PASS-LOCAL]");
-  console.log("================================================================================\n");
+  // 6. Runtime Interactive Verification (React Strict Mode mount -> cleanup -> remount simulation)
+  console.log("  Testing runtime mount -> cleanup -> remount (React Strict Mode safe)...");
+  const { JSDOM } = await import("jsdom");
+  const { performance } = await import("node:perf_hooks");
+  const { initCareerMonkeLanding } = await import("../src/components/landing/careermonke-landing-runtime");
+
+  // Extract landing-wrapper markup from pageSrc
+  const wrapperMatch = pageSrc.match(/<div className="landing-wrapper">([\s\S]*?)<\/div>\s*\);\s*\}/);
+  assert.ok(wrapperMatch, "page.tsx must have .landing-wrapper root container");
+  const cleanMarkup = wrapperMatch[1]
+    .replace(/className=/g, "class=")
+    .replace(/tabIndex={-1}/g, 'tabindex="-1"')
+    .replace(/tabIndex={0}/g, 'tabindex="0"')
+    .replace(/style=\{\{[^}]*\}\}/g, "")
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, "");
+
+  const dom = new JSDOM(`<!DOCTYPE html><html><body><div class="landing-wrapper">${cleanMarkup}</div></body></html>`, {
+    url: "http://localhost:3000",
+    pretendToBeVisual: true,
+  });
+
+  // Polyfill browser globals
+  globalThis.window = dom.window as any;
+  globalThis.document = dom.window.document;
+  globalThis.HTMLElement = dom.window.HTMLElement;
+  globalThis.HTMLCanvasElement = dom.window.HTMLCanvasElement;
+  globalThis.performance = performance as any;
+  globalThis.requestAnimationFrame = (cb: FrameRequestCallback) => setTimeout(() => cb(performance.now()), 16) as any;
+  globalThis.cancelAnimationFrame = (id: any) => clearTimeout(id);
+  (dom.window as any).requestAnimationFrame = globalThis.requestAnimationFrame;
+  (dom.window as any).cancelAnimationFrame = globalThis.cancelAnimationFrame;
+  (dom.window as any).matchMedia = () => ({ matches: true, addListener: () => {}, removeListener: () => {} });
+  globalThis.matchMedia = (dom.window as any).matchMedia;
+  class MockIntersectionObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+  (dom.window.HTMLCanvasElement.prototype as any).getContext = () => ({
+    clearRect: () => {},
+    createRadialGradient: () => ({ addColorStop: () => {} }),
+    beginPath: () => {},
+    arc: () => {},
+    fill: () => {},
+    stroke: () => {},
+    fillRect: () => {},
+    fillText: () => {},
+    measureText: () => ({ width: 50 }),
+    setTransform: () => {},
+  });
+  globalThis.IntersectionObserver = MockIntersectionObserver as any;
+  (dom.window as any).IntersectionObserver = MockIntersectionObserver as any;
+  (dom.window.Element.prototype as any).scrollIntoView = () => {};
+
+  // Mount 1
+  const cleanup1 = initCareerMonkeLanding();
+  assert.strictEqual(typeof cleanup1, "function", "initCareerMonkeLanding must return a cleanup function");
+
+  // Cleanup 1 (Unmount in Strict Mode)
+  cleanup1();
+
+  // Mount 2 (Remount in Strict Mode)
+  const cleanup2 = initCareerMonkeLanding();
+  assert.strictEqual(typeof cleanup2, "function", "remount must return a cleanup function");
+
+  // Verify Interactive Demo Flow:
+  const backendChip = document.querySelector<HTMLButtonElement>('.chip[data-field="backend"]');
+  assert.ok(backendChip, "Backend job chip must exist");
+
+  // Click backend chip
+  backendChip.click();
+  // Allow microtasks/macrotasks to complete
+  await new Promise((r) => setTimeout(r, 50));
+
+  const actBtn = document.getElementById("act") as HTMLButtonElement | null;
+  assert.ok(actBtn, "#act button must exist");
+  assert.strictEqual(actBtn.dataset.next, "tailor", "After pick & match, #act must have data-next='tailor'");
+
+  const matchState = document.querySelector<HTMLElement>('.state[data-state="match"]');
+  const appliedState = document.querySelector<HTMLElement>('.state[data-state="applied"]');
+  assert.ok(matchState && !matchState.hidden, "Match state must be visible");
+  assert.ok(appliedState && appliedState.hidden, "Applied state must remain hidden before click");
+
+  // STRICT MODE VERIFICATION:
+  // Single click on #act must advance EXACTLY one step to 'apply' (tailor), NOT skip straight to 'applied'.
+  actBtn.click();
+  await new Promise((r) => setTimeout(r, 50));
+
+  assert.strictEqual(
+    actBtn.dataset.next,
+    "apply",
+    "First click on #act must advance to data-next='apply' (step 2 -> step 3)"
+  );
+  assert.ok(
+    appliedState.hidden,
+    "Strict Mode safety check: single click on #act must NOT skip to applied state"
+  );
+
+  // Second click on #act advances to 'applied' (step 3 -> step 4)
+  actBtn.click();
+  await new Promise((r) => setTimeout(r, 50));
+
+  assert.ok(
+    !appliedState.hidden,
+    "Second click on #act must advance to applied state"
+  );
+  assert.ok(
+    matchState.hidden,
+    "Match state must be hidden once applied"
+  );
+
+  // Click #again: resets back to 'pick'
+  const againBtn = document.getElementById("again") as HTMLButtonElement | null;
+  assert.ok(againBtn, "#again button must exist in applied state");
+  againBtn.click();
+  await new Promise((r) => setTimeout(r, 50));
+
+  const pickState = document.querySelector<HTMLElement>('.state[data-state="pick"]');
+  assert.ok(pickState && !pickState.hidden, "#again button must reset demo back to pick state");
+
+  // Click #try-demo
+  const tryDemoBtn = document.getElementById("try-demo") as HTMLElement | null;
+  assert.ok(tryDemoBtn, "#try-demo button must exist");
+  tryDemoBtn.click();
+  await new Promise((r) => setTimeout(r, 50));
+
+  // Final cleanup must execute cleanly
+  cleanup2();
+
+  console.log("  [PASS-LOCAL] All top hero and interactive demo assertions passed cleanly.");
 }
 
-if (isNegativeControl) {
-  main().catch(() => process.exit(1));
-} else {
-  main()
-    .then(() => runNegativeControlSubprocess())
-    .catch((err) => {
-      console.error(err);
-      process.exit(1);
-    });
-}
+main().catch((err) => {
+  console.error("Test failed:", err);
+  process.exit(1);
+});

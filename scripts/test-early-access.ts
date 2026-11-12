@@ -601,11 +601,17 @@ async function main() {
     "utf8"
   );
 
-  assert.ok(landingSrc.includes('import { WhiteHeroButton } from "@/components/Buttons";'));
   assert.ok(
-    landingSrc.includes(
-      '<WhiteHeroButton onClick={() => router.push("/early-access")} className="px-8 min-w-[200px]">'
-    )
+    landingSrc.includes('href="/early-access"'),
+    "Landing page must contain valid CTAs pointing to /early-access"
+  );
+  assert.ok(
+    landingSrc.includes('href="/signup"'),
+    "Landing page must contain signup CTA"
+  );
+  assert.ok(
+    landingSrc.includes('href="/login"'),
+    "Landing page must contain signin CTA"
   );
   // 1b. Verify TikTok button removed and mailto restored in page.tsx
   assert.strictEqual(
