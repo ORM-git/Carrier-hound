@@ -1,7 +1,7 @@
 -- ==============================================================================
 -- CareerMonke Schema Representation (Generated from Migrations)
--- Freshness Header: Generated on 2026-11-11
--- Migrations Count: 70
+-- Freshness Header: Generated on 2026-11-12
+-- Migrations Count: 71
 -- DO NOT EDIT DIRECTLY. Regenerate using: npx tsx scripts/generate-schema-dump.ts
 -- ==============================================================================
 
@@ -7459,4 +7459,61 @@ COMMENT ON FUNCTION public.db_health_snapshot() IS
 
 -- ROLLBACK (manual, after disabling the workflow):
 -- DROP FUNCTION IF EXISTS public.db_health_snapshot();
+
+
+-- ------------------------------------------------------------------------------
+-- Migration: 20261112a_custom_domain_types.sql
+-- ------------------------------------------------------------------------------
+-- ============================================================================
+-- Migration: 20261112a_custom_domain_types.sql
+-- STATUS: NOT APPLIED - record-migration.cjs 20261112a_custom_domain_types
+--
+-- Reusable PostgreSQL DOMAIN types for CareerMonke schema integrity.
+-- Audit finding: Plain text columns with duplicated, drift-prone ad hoc CHECK
+-- constraints for emails, slugs, and non-empty strings.
+--
+-- Introduces reusable DOMAIN types in public schema:
+--   1. public.cm_email: Normalized lowercase, trimmed text, valid email format
+--      with no leading/trailing/consecutive dots in local part, no leading/trailing
+--      hyphens or empty labels in domain, letters-only TLD, max length 254 chars.
+--   2. public.cm_non_empty_text: Text requiring VALUE ~ '[^[:space:]]',
+--      preventing empty strings or whitespace-only inputs (spaces, tabs, newlines).
+--   3. public.cm_slug: Normalized lowercase, non-empty text matching slug
+--      pattern ^[a-z0-9]+(-[a-z0-9]+)*$, max length 120 chars.
+--
+-- Safety & non-breaking constraints:
+--   - Contains ONLY CREATE DOMAIN statements.
+--   - Does NOT alter, drop, or rewrite any existing table, column, CHECK,
+--     function, or data.
+--   - Domain CHECK constraints evaluate to TRUE for NULL values; table columns
+--     requiring non-null values must declare NOT NULL independently.
+--   - Adoption into existing columns is staged and out of scope for now.
+--
+-- ============================================================================
+-- ROLLBACK INSTRUCTIONS (manual rollback if applied)
+-- ============================================================================
+-- To undo this migration (safe before columns adopt these domains):
+--   DROP DOMAIN IF EXISTS public.cm_slug;
+--   DROP DOMAIN IF EXISTS public.cm_non_empty_text;
+--   DROP DOMAIN IF EXISTS public.cm_email;
+-- ============================================================================
+
+CREATE DOMAIN public.cm_email AS text
+  CHECK (
+    VALUE = lower(trim(VALUE))
+    AND char_length(VALUE) <= 254
+    AND position('@' in VALUE) > 1
+    AND VALUE ~ '^[a-z0-9_%+-]+(\.[a-z0-9_%+-]+)*@[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*\.[a-z]{2,}$'
+  );
+
+CREATE DOMAIN public.cm_non_empty_text AS text
+  CHECK (VALUE ~ '[^[:space:]]');
+
+CREATE DOMAIN public.cm_slug AS text
+  CHECK (
+    VALUE = lower(trim(VALUE))
+    AND length(trim(VALUE)) > 0
+    AND char_length(VALUE) <= 120
+    AND VALUE ~ '^[a-z0-9]+(-[a-z0-9]+)*$'
+  );
 
