@@ -19,7 +19,26 @@ All 5 genuine missing cleanups discovered in non-landing modules outside open PR
 2. `src/components/analytics/PageViewTracker.tsx`: Tracked `requestIdleCallback` (`idleId`) and fallback `setTimeout` (`fallbackTimeout`) handles and cancelled both (`cancelIdleCallback` / `clearTimeout`) plus checked `cancelled` in the `useEffect` cleanup on route change or unmount.
 3. `src/components/ui/auth-ui.tsx` (`Typewriter`): Tracked the nested pause `setTimeout(() => setIsDeleting(true), delay)` in `pauseTimeout` and cleared it alongside the outer `timeout` in `useEffect` cleanup.
 4. `src/components/ui/typewriter-text.tsx` (`Typewriter`): Same nested `pauseTimeout` tracking and `clearTimeout` cleanup in `Typewriter`.
-5. `src/app/auth/callback/page.tsx`: Tracked `hashTimeoutId` (1500ms hash-session fallback) and `fallbackTimeoutId` (1000ms session fallback), cleared both in `useEffect` cleanup, and marked `resolved = true` on unmount alongside `subscription.unsubscribe()`.
+5. `src/app/auth/callback/page.tsx`: Tracked `hashTimeoutId` (1500ms hash-session fallback) and `fallbackTimeoutId` (1000ms session fallback), cleared both in `useEffect` cleanup, marked `cancelled = true` and `resolved = true` on unmount alongside `subscription.unsubscribe()`, and guarded every post-`await` continuation and timer creation (`setTimeout`) + hash `getSession` retry with `if (cancelled || resolved) return;`. Guarded by the delayed-`getSession` unmount regression test in `src/app/auth/callback/__tests__/page.test.tsx`.
+
+---
+
+## Scanner Scope & Documented Heuristics
+
+`scripts/test-lifecycle-cleanup.ts` parses every non-landing, non-test TypeScript/TSX file under `src/` with the TypeScript compiler AST and pairs **each individual acquisition** inside its enclosing `useEffect`/`useLayoutEffect`/function scope:
+
+- `addEventListener(target, event, callback)` -> same-scope `removeEventListener(target, event, callback)` with matching target, event, and callback expressions (unless `{ once: true }`).
+- `new IntersectionObserver|ResizeObserver|MutationObserver` / `<obs>.observe(...)` -> same-scope `<obs>.disconnect()` or `<obs>.unobserve(...)` on the same observer binding.
+- `setInterval(...)` / `setTimeout(...)` / `requestAnimationFrame(...)` -> matching `clearInterval` / `clearTimeout` / `cancelAnimationFrame` on the same timer binding inside the same scope.
+- `onAuthStateChange(...)` / `subscribeCandidateProfile(...)` -> `<sameBinding>.unsubscribe()` / `<sameBinding>()` in the same scope.
+
+Where static AST pairing uses a **Heuristic**, it is labeled here and in `scripts/test-lifecycle-cleanup.ts` (`SCANNER_HEURISTICS`):
+
+1. **Cross-effect React `useRef` timer/rAF heuristic:** Timer/rAF handles assigned directly to `<ref>.current` (e.g., `animFrameRef.current` in `GlobeLiveStats.tsx`, `scrollTimerRef.current` in `src/app/profile/page.tsx`) may be cleared inside a separate unmount `useEffect` in the same enclosing component/hook function rather than inline inside the scheduling helper, provided both bind the exact same `<ref>.current`.
+2. **`OrbitControls.dispose()` listener heuristic:** `controls.addEventListener(...)` inside a `useEffect` (`src/components/JobRadarGlobe.tsx`) is paired with `controls.dispose()` on the same `controls` target in that effect scope.
+3. **Stateless Promise sleep heuristic:** `new Promise((resolve) => setTimeout(resolve, ms))` where `setTimeout` directly passes the executor's `resolve` identifier (`src/lib/api/retryFetch.ts`, `src/lib/billing/subscription.ts`, `src/lib/db/rpcRetry.ts`, `src/app/api/early-access/route.ts`) is excluded because no component callbacks or React state closures are retained.
+4. **Synchronous `Promise` executor scope heuristic:** Variable assignments inside `new Promise((resolve) => { timer = setTimeout(...); })` execute synchronously inside the enclosing function (`src/lib/api/sharedRateLimit.ts`, `src/lib/health/readiness.ts`), so they share the enclosing function's scope and pair with `clearTimeout(timer)` in its `try`/`finally` block.
+5. **AST expression-text equality + one-hop scope alias heuristic:** Expressions match by whitespace-normalized AST text, with one-hop local alias propagation inside a scope (e.g., `authListener = data.subscription`). Dynamic wrapper helpers or mutating arrays of listeners outside these shapes would require explicit allowlisting or refactoring.
 
 ---
 
@@ -54,11 +73,13 @@ Re-verified against current `main`:
 
 ## Intentional App-Lifetime & Framework-Scoped Allowlist
 
-Entries allowlisted in `scripts/test-lifecycle-cleanup.ts`:
+Entries allowlisted in `scripts/test-lifecycle-cleanup.ts` (`LIFECYCLE_ALLOWLIST`):
 
-1. **`src/lib/billing/subscription.ts`** (`addEventListener` without `removeEventListener`): Registers 5 module-singleton `window` listeners (`careermonke_auth_updated`, `careermonke_pro_updated`, `careermonke_route_changed`, `focus`, `popstate`) at module initialization to keep `cachedProStatus` consistent for the entire browser session across client navigations.
+1. **`src/lib/billing/subscription.ts`** (`window.addEventListener` without `removeEventListener`): Registers 5 module-singleton `window` listeners (`careermonke_auth_updated`, `careermonke_pro_updated`, `careermonke_route_changed`, `focus`, `popstate`) at module initialization to keep `cachedProStatus` consistent for the entire browser session across client navigations; also allowlists its bounded `Promise.race` query timeout (`Subscription query timeout`).
 2. **`src/components/JobRadarGlobe.tsx`** (`controls.addEventListener("start", ...)`): Registered on a locally instantiated `THREE.OrbitControls` instance that is disposed on unmount via `controls.dispose()` (PR #441), not on `window`/`document`.
 3. **`src/app/jobs/page.tsx` & `src/components/jobs/JobCardMenu.tsx`** (one-shot `requestAnimationFrame`): Single-shot `window.scrollTo` / `itemRefs.current[0]?.focus()` scheduled inside `popstate`, detail-close handler, or menu-open effect rather than a recursive animation loop.
+4. **Server/storage `Promise.race` fallback guards:** Short bounded timeouts (4s-10s) used as `Promise.race` losers in `src/lib/auth/session.ts` (`Auth timeout`), `src/lib/cron/digestStorage.ts` (`Digest query timeout`), `src/lib/resume/storage.ts` (`Profile query timeout`), and `src/lib/tracker/storage.ts` (`Applications query timeout`).
+5. **Transient imperative UX / focus-restore `setTimeout` calls:** Event-triggered one-shot timers with no recurring loop: `src/app/onboarding/page.tsx` (`router.push(next)` 400ms redirect after save), `src/components/interview-pack/AskThemSection.tsx` & `src/components/interview-pack/YourAnswersSection.tsx` (`setCopiedId(null)`), `src/components/jobs/JobDetailView.tsx` (2.5s copy feedback), `src/components/profile/ProfileDrawers.tsx` (`previousActive.focus()` 10ms post-unmount focus restore inside `useEffect` cleanup), `src/components/resume/CoverLetterModal.tsx` & `src/components/resume/TailorResumeModal.tsx` (`setCopied(false)` inside click handlers, separate from their `useEffect` cleanups), and `src/components/resume/ResumeUploadAndConfirm.tsx` (`setIsSaved(false)`).
 
 ---
 
