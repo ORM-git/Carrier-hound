@@ -4,9 +4,12 @@ import {
   getRuntimeEnv,
 } from "@/lib/ai/serviceHandler";
 import { measureRouteBudget } from "@/lib/api/routeBudget";
+import { createLogger } from "@/lib/observability/logger";
 import { getRequestContext } from "@cloudflare/next-on-pages";
 
 export const runtime = "edge";
+
+const log = createLogger({ context: { module: "api:ai:stream" } });
 
 /**
  * SSE variant of /api/ai (Backend row "Streaming Responses").
@@ -74,6 +77,17 @@ async function postHandler(req: Request): Promise<Response> {
 
   const res = await executeAiCore(clientIp, authHeader, body, { env: cfEnv, upstreamStream }, "ai:ip:");
 
+  if (res.statusCode >= 500) {
+    try {
+      log.error("[AI Service Stream] 5xx error response", {
+        statusCode: res.statusCode,
+        error: res.body?.error,
+        code: res.body?.code,
+        missingVariable: res.body?.missingVariable,
+      });
+    } catch {}
+  }
+
   if (res.statusCode !== 200) {
     return new Response(JSON.stringify(res.body), {
       status: res.statusCode,
@@ -107,5 +121,15 @@ async function postHandler(req: Request): Promise<Response> {
 }
 
 export async function POST(req: Request) {
-  return measureRouteBudget("/api/ai/stream", () => postHandler(req));
+  try {
+    return await measureRouteBudget("/api/ai/stream", () => postHandler(req));
+  } catch (err) {
+    try {
+      log.error("[API /api/ai/stream] Unhandled error", { error: err });
+    } catch {}
+    return new Response(
+      JSON.stringify({ error: "Internal server error occurred." }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
+    );
+  }
 }
