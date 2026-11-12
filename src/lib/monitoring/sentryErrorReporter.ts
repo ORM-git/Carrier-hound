@@ -81,6 +81,13 @@ export function reportErrorToSentry(error: unknown, options?: ReportErrorOptions
  * before tagging.
  */
 export function reportRequestErrorToSentry(request: Request, error: unknown): void {
-  const requestId = request.headers.get("x-request-id") ?? undefined;
-  reportErrorToSentry(error, { requestId });
+  try {
+    const requestId =
+      request?.headers && typeof request.headers.get === "function"
+        ? request.headers.get("x-request-id") ?? undefined
+        : undefined;
+    reportErrorToSentry(error, { requestId });
+  } catch {
+    // Safe no-op
+  }
 }

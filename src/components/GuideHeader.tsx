@@ -148,7 +148,7 @@ export default function GuideHeader() {
             aria-label="CareerMonke Home"
             className="flex items-center shrink-0 min-h-[44px] rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
           >
-            <BrandIcon variant="full" width={140} height={56} className="h-9 w-auto" priority />
+            <BrandIcon variant="full" width={36} height={44} className="h-9 w-auto" priority />
           </Link>
 
           {/* Centre / Left Nav Links: Desktop */}
@@ -366,7 +366,7 @@ export default function GuideHeader() {
               aria-label="CareerMonke Home"
               className="flex items-center"
             >
-              <BrandIcon variant="full" width={125} height={50} className="h-8 w-auto" />
+              <BrandIcon variant="full" width={32} height={39} className="h-8 w-auto" />
             </Link>
             <button
               type="button"
