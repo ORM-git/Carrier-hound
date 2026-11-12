@@ -95,17 +95,17 @@ function TickerCard({ job, keyPrefix = "", index, isDuplicate = false }: TickerC
       </div>
 
       {/* Text block: Line 1 (Company · Time), Line 2 (Title) */}
-      <div className="flex flex-col justify-center">
-        <div className="flex items-center text-white leading-tight">
-          <span className="text-[13px] font-semibold text-white">
+      <div className="flex flex-col justify-center min-w-0">
+        <div className="flex items-center leading-tight text-[#A1A1AA]">
+          <span className="text-[11px] md:text-[13px] font-medium text-[#D4D4D8] truncate max-w-[140px]">
             {job.company}
           </span>
-          <span className="text-white/60 mx-1.5 text-[11px] md:text-[13px] select-none">·</span>
-          <span className="text-[11px] md:text-[13px] font-normal text-white">
+          <span className="text-[#71717A] mx-1.5 text-[11px] md:text-[13px] select-none">·</span>
+          <span className="text-[11px] md:text-[13px] font-normal text-[#A1A1AA] whitespace-nowrap">
             {relativeTime}
           </span>
         </div>
-        <div className="text-[13px] md:text-[18px] font-semibold md:font-medium text-white truncate max-w-[200px] sm:max-w-[280px] md:max-w-[340px] leading-tight mt-0.5 group-hover:text-blue-400 transition-colors">
+        <div className="text-[14px] md:text-[17px] font-bold text-white truncate max-w-[200px] sm:max-w-[280px] md:max-w-[340px] leading-snug mt-0.5 group-hover:text-blue-400 transition-colors">
           {job.title}
         </div>
       </div>
@@ -186,7 +186,7 @@ export default function LandingJobsTickerStrip({ initialJobs }: LandingJobsTicke
   return (
     <section
       aria-label="Jobs just added"
-      className="jobs-ticker-strip w-full overflow-hidden bg-black md:bg-[#0A0A0A] h-[100px] md:h-[144px] flex items-center relative z-20 border-y border-white/5"
+      className="jobs-ticker-strip w-full overflow-hidden bg-black md:bg-[#0A0A0A] h-[84px] md:h-[104px] flex items-center relative z-20 border-y border-white/10"
     >
       <style>{`
         @keyframes tickerMarquee {
@@ -198,12 +198,22 @@ export default function LandingJobsTickerStrip({ initialJobs }: LandingJobsTicke
           }
         }
 
+        .jobs-ticker-strip .ticker-card {
+          color: inherit;
+          text-decoration: none;
+        }
+
         .ticker-track {
           display: flex;
           align-items: center;
           width: max-content;
           will-change: transform;
           animation: tickerMarquee 155s linear infinite;
+        }
+
+        .jobs-ticker-strip:hover .ticker-track,
+        .jobs-ticker-strip:focus-within .ticker-track {
+          animation-play-state: paused;
         }
 
         @media (max-width: 767px) {

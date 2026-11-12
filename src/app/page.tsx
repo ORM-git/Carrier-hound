@@ -4,6 +4,7 @@
 import React, { useEffect } from "react";
 import "@/styles/careermonke-landing.css";
 import { initCareerMonkeLanding } from "@/components/landing/careermonke-landing-runtime";
+import LandingJobsTickerStrip from "@/components/LandingJobsTickerStrip";
 
 export default function HomePage() {
   useEffect(() => {
@@ -130,6 +131,8 @@ export default function HomePage() {
     </dl>
     <p className="stats-note" id="stats-note">*Based on early access user surveys</p>
   </section>
+
+  <LandingJobsTickerStrip />
 
   {/* FEATURES */}
   <section className="wrap s" aria-labelledby="feat-h">
@@ -271,28 +274,47 @@ export default function HomePage() {
   </section>
 
   {/* FINAL CTA */}
-  <section className="wrap s navyband" aria-labelledby="cta-h">
-    <div className="final">
-      <h2 className="h2" id="cta-h">Stop competing with 800 people.</h2>
-      <p>Match your skills, beat the bot, and apply first.</p>
-      <div className="row">
-        <a className="btn btn-blue" href="/signup">Get Started for Free <span aria-hidden="true">→</span></a>
+  <section className="free-preview-band" aria-labelledby="cta-h">
+    <div className="wrap free-preview">
+      <h2 className="fp-title" id="cta-h">Free preview</h2>
+      <p className="fp-sub">No commitment. Just window shopping for your dream job. Job maxxing starts here.</p>
+      <div className="fp-row">
+        <a className="fp-btn fp-btn-white" href="/early-access">View Jobs <span aria-hidden="true">→</span></a>
+        <a className="fp-btn fp-btn-outline" href="/early-access">See my Ideal Match <span aria-hidden="true">→</span></a>
       </div>
     </div>
   </section>
 
   {/* FOUNDER */}
-  <section className="wrap s band" aria-labelledby="f-h">
+  <section className="wrap s founder-section" aria-labelledby="f-h">
     <div className="founder">
-      <img src="/owner.jpg" alt="Orissa Lee Patnaik, founder of CareerMonke" width="64" height="64" loading="lazy" onError={(e) => { e.currentTarget.style.visibility = "hidden"; }} />
-      <div>
+      <img src="/owner.jpg" alt="Orissa Lee Patnaik, founder of CareerMonke" width="112" height="112" loading="lazy" onError={(e) => { e.currentTarget.style.visibility = "hidden"; }} />
+      <div className="founder-body">
         <h2 id="f-h">Orissa here!</h2>
-        <p className="role">Orissa Lee Patnaik · Creator of CareerMonke</p>
-        <p className="bio">Growing up in the US and living in India showed me job hunting is broken everywhere.</p>
-        <p className="bio">Broken software discards qualified people, and legacy sites make every role a cattle call. I built CareerMonke to cut through the noise and put your story in front of real people.</p>
+        <p className="role">Creator of CareerMonke</p>
+        <p className="bio">Growing up in the US and living in India showed me the friction of job hunting is universal. Broken software discards qualified people, and legacy sites make every role a cattle call.</p>
+        <p className="bio">I built CareerMonke to cut through the noise, give candidates leverage back, and land your story directly with real people without the unnecessary hollow hustle rhetoric.</p>
         <div className="socials">
-          <a href="https://www.linkedin.com/in/orissa-patnaik-85071a1aa/">LinkedIn</a>
-          <a href="https://www.instagram.com/orissa.patnaik">Instagram</a>
+          <a href="https://www.instagram.com/orissa.patnaik" target="_blank" rel="noopener noreferrer" aria-label="Instagram">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
+              <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+              <line x1="17.5" y1="6.5" x2="17.51" y2="6.5" />
+            </svg>
+          </a>
+          <a href="https://www.linkedin.com/in/orissa-patnaik-85071a1aa/" target="_blank" rel="noopener noreferrer" aria-label="LinkedIn">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z" />
+              <rect x="2" y="9" width="4" height="12" />
+              <circle cx="4" cy="4" r="2" />
+            </svg>
+          </a>
+          <a href="mailto:orissaleepatnaik@gmail.com" aria-label="Email">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="2" y="4" width="20" height="16" rx="2" />
+              <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+            </svg>
+          </a>
         </div>
       </div>
     </div>
@@ -360,7 +382,7 @@ export default function HomePage() {
 <footer>
   <div className="wrap">
     <div className="f-top">
-      <a href="/" aria-label="CareerMonke home"><img src="/careermonke-logo.png" alt="CareerMonke" width="140" height="57" loading="lazy" /></a>
+      <a href="/" aria-label="CareerMonke home"><img src="/careermonke-logo.png" alt="CareerMonke" width="66" height="80" loading="lazy" /></a>
     </div>
     <nav className="f-grid" aria-label="Footer">
       <div className="f-group">
