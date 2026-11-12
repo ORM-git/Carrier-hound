@@ -15,7 +15,7 @@ Distributed tracing is currently **PARTIAL** across CareerMonke:
 - **Server/Edge Side**: Server/edge auto-instrumentation is **disabled** in `next.config.mjs` to maintain compatibility with `@cloudflare/next-on-pages`.
 - **The Observability Gap**: Because incoming HTTP requests to edge API route handlers (`export const runtime = "edge"`) lack server-side transaction and span creation, the distributed trace stops abruptly at the browser boundary. Server processing time, database query latency, Upstash Redis rate-limit round-trips, and candidate scoring waterfalls are invisible end-to-end. At launch, production tail latency (P95/P99) on core search and tracking routes cannot be diagnosed with waterfall traces.
 
-This spike explains the exact technical root cause of this limitation, evaluates three architectural options for enabling server-side tracing, presents a compatibility risk assessment, and recommends a provably compatible path for launch.
+This spike explains the technical root cause of this limitation, evaluates three architectural options for enabling server-side tracing, presents a compatibility risk assessment, and details a conservative manual path for launch.
 
 ---
 
@@ -79,13 +79,13 @@ Production latency on the following five endpoints directly impacts user experie
 
 - **Architecture**:
   - Keep `next.config.mjs` automated AST instrumentation disabled (`autoInstrumentServerFunctions: false`, `instrumentationHook: false`).
-  - Introduce a lightweight wrapper `src/lib/monitoring/tracing.ts` (`withRouteSpan`) that invokes `Sentry.continueTrace` and `Sentry.startSpan`.
+  - Introduce an explicit wrapper `src/lib/monitoring/tracing.ts` (`withRouteSpan`) that invokes `Sentry.continueTrace` and `Sentry.startSpan`.
   - Gate execution behind an environment variable flag `ENABLE_SERVER_TRACING=true` (default: **`false` / OFF**).
   - Wrap the route handlers of the 5 hottest routes.
 - **Compatibility Risk Assessment**:
-  - *Build Compatibility*: **Zero risk**. Does not modify webpack bundler options, `next.config.mjs`, or build pipelines. `@sentry/nextjs` is already installed and imported by `reportRequestErrorToSentry` across these routes.
-  - *Runtime Compatibility*: **Low risk / Provably Compatible**. `@sentry/nextjs` edge exports (`@sentry/core`) safely execute `startSpan` in edge environments. When `ENABLE_SERVER_TRACING` is disabled, the wrapper directly awaits the handler with zero overhead. Even if Sentry SDK fails or is misconfigured, the wrapper catches and fails open.
-  - *Subrequest Quota*: Cloudflare Workers allow 50 subrequests per execution. Sentry envelope delivery uses standard `fetch` transport. In production, tracing should use Sentry's existing 5% sample rate to stay well within quotas.
+  - *Build Impact*: Low build risk. Does not modify webpack bundler options, `next.config.mjs`, or build pipelines. `@sentry/nextjs` is already installed and imported by `reportRequestErrorToSentry` across these routes.
+  - *Runtime Resilience*: When `ENABLE_SERVER_TRACING` is disabled, the wrapper directly awaits the handler without calling Sentry SDK span methods. The wrapper isolates all telemetry calls in strict `try/catch` blocks and guarantees that any failure before, during, or after span creation fails open and returns the original response or throws the original business error.
+  - *Subrequest Quota*: Cloudflare Workers allow 50 subrequests per execution. Sentry envelope delivery uses standard `fetch` transport. In production, tracing must be sampled conservatively to stay within quotas.
 
 ### Option 2: OpenTelemetry-Lite Manual Spans
 
@@ -100,7 +100,7 @@ Production latency on the following five endpoints directly impacts user experie
 - **Architecture**:
   - Defer all server tracing until `@cloudflare/next-on-pages` and `@sentry/nextjs` provide seamless zero-config edge auto-instrumentation.
 - **Compatibility Risk Assessment**:
-  - *Build & Runtime*: Zero risk today.
+  - *Build & Runtime*: No changes required today.
   - *Operational Risk at Launch*: **High**. Launches with zero end-to-end trace visibility on `/api/track` and job routes. If P99 spikes on search, engineers cannot determine whether the bottleneck is Supabase database queries, network latency, or edge CPU execution.
 
 ---
@@ -109,26 +109,39 @@ Production latency on the following five endpoints directly impacts user experie
 
 | Criterion | Option 1: Manual Sentry Spans (Gated) | Option 2: OpenTelemetry-Lite | Option 3: Wait for Platform |
 | :--- | :--- | :--- | :--- |
-| **next-on-pages Build Safety** | **Provably Safe** (No webpack AST injection) | **Safe** | **Safe** |
+| **next-on-pages Build Impact** | Low (No webpack AST injection) | Low | None |
 | **End-to-End Distributed Trace** | **Yes** (Connects client `sentry-trace`) | No (Requires custom bridge) | No |
 | **Sentry Performance UI** | **Yes** (Native spans & waterfalls) | No | No |
 | **Default OFF Safety Net** | **Yes** (`ENABLE_SERVER_TRACING=true`) | Yes | Yes (No-op) |
-| **Implementation Footprint** | Small (~75 lines helper + route wrapping) | Large (Full OTel serialization) | Zero |
-| **Launch Readiness** | **Ready immediately** | Weeks of plumbing | Unknown (Upstream dependency) |
+| **Implementation Footprint** | Small (~100 lines helper + route wrapping) | Large (Full OTel serialization) | Zero |
+| **Launch Feasibility** | High with manual wrapping | Low (weeks of plumbing) | Blocked on upstream |
 
 ---
 
-## 6. Recommended Implementation Path
+## 6. Unverified Platform Behaviors & Caveats
 
-1. **Land Pure Tracing Helper (`src/lib/monitoring/tracing.ts`)**:
+The following behaviors remain **unverified** and must be validated prior to production enablement:
+
+1. **Cloudflare Build & Runtime Environment**:
+   While manual function calls avoid webpack AST rewriting during the `next-on-pages` compile pass, live execution inside Cloudflare's production `workerd` environment has not been verified under load. Edge memory constraints, execution timeouts, and global scope behavior during Sentry flush must be observed in staging or preview deployments.
+2. **SDK Initialization & 5% Sampling on Edge Routes**:
+   Sentry client configuration applies 5% sampling in the browser. In server/edge route handlers, Sentry SDK initialization and trace continuation behavior (`tracesSampleRate` inheritance vs trace propagation) on Cloudflare edge routes remain unverified in live traffic.
+3. **Environment Flag Resolution (`ENABLE_SERVER_TRACING`)**:
+   `isServerTracingEnabled()` checks `process.env.ENABLE_SERVER_TRACING === "true"` directly. Unlike Cloudflare runtime environment bindings accessed via `@cloudflare/next-on-pages` (`getRequestContext().env`), `process.env` is evaluated at build/runtime according to the platform's Node-compat layer. Toggling `ENABLE_SERVER_TRACING` via Cloudflare dashboard environment variables dynamically at runtime without a redeploy is **unverified**.
+
+---
+
+## 7. Recommended Implementation Path
+
+1. **Land Fail-Open Tracing Helper (`src/lib/monitoring/tracing.ts`)**:
    Implement `withRouteSpan(route, req, fn, options)` and `isServerTracingEnabled()`:
-   - Default state: `process.env.ENABLE_SERVER_TRACING === "true"` (default: `false`).
-   - Disabled state: Directly executes and returns `await fn()` with zero overhead and zero Sentry calls.
-   - Enabled state: Extracts `sentry-trace`, `baggage`, and `x-request-id`, invokes `Sentry.continueTrace()`, starts an `http.server` span, and attaches `http.status_code`.
-   - Fail-open: Transparently catches any Sentry internal exception and proceeds with the handler.
+   - Default state: `process.env.ENABLE_SERVER_TRACING === "true"` (default: `false` / OFF).
+   - Disabled state: Directly executes and returns `await fn()` without Sentry span calls.
+   - Enabled state: Extracts `sentry-trace`, `baggage`, and `x-request-id`, invokes `activeSdk.continueTrace()`, starts an `http.server` span, and attaches `http.status_code`.
+   - Truly fail-open: All telemetry operations are wrapped in independent `try/catch` blocks. The handler is called at most once, and its original response or business error always surfaces.
 2. **Wire the 5 Hottest Routes**:
    Wrap `/api/track`, `/api/jobs/search`, `/api/jobs/top10`, `/api/jobs/pro`, and `/api/stats` with `withRouteSpan`.
 3. **Register Offline Guard Test (`scripts/test-tracing-enablement.ts`)**:
-   Enforce default OFF bypass, enabled span creation, distributed trace header extraction, fail-open resilience, route wiring completeness, and negative control verification. Register append-only in `scripts/suite-runner.ts`.
+   Enforce default OFF bypass, enabled span creation, distributed trace header extraction, fail-open resilience under simulated SDK crashes, route wiring completeness, and negative control verification. Register append-only in `scripts/suite-runner.ts`.
 4. **Owner Operational Rollout**:
-   Leave `ENABLE_SERVER_TRACING` unset in production initially. When diagnosing launch performance or verifying tail latency, set `ENABLE_SERVER_TRACING=true` in Cloudflare Pages environment variables to enable 5% sampled end-to-end traces.
+   Leave `ENABLE_SERVER_TRACING` unset in production initially. Once verified on Cloudflare preview deployments, set `ENABLE_SERVER_TRACING=true` in build environment variables to enable server-side trace spans.
