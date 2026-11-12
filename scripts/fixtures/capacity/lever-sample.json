@@ -1,0 +1,26 @@
+[
+  {
+    "id": "lever-c1",
+    "text": "Site Reliability Engineer",
+    "createdAt": 1794474000000,
+    "hostedUrl": "https://jobs.lever.co/example/lever-c1"
+  },
+  {
+    "id": "lever-c2",
+    "text": "Data Platform Architect",
+    "createdAt": 1794416400000,
+    "hostedUrl": "https://jobs.lever.co/example/lever-c2"
+  },
+  {
+    "id": "lever-c3",
+    "text": "Account Executive - Enterprise",
+    "createdAt": 1794225600000,
+    "hostedUrl": "https://jobs.lever.co/example/lever-c3"
+  },
+  {
+    "id": "lever-c4",
+    "text": "Customer Onboarding Specialist",
+    "createdAt": null,
+    "hostedUrl": "https://jobs.lever.co/example/lever-c4"
+  }
+]
