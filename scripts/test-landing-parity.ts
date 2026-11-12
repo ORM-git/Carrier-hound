@@ -101,8 +101,33 @@ async function runParityTests() {
   console.log("Test 3: Founder styling across viewports...");
   assert.ok(cssSrc.includes(".founder{grid-template-columns:56px 1fr;gap:16px}"), "Founder mobile width must be 56px");
   assert.ok(cssSrc.includes(".founder img{width:56px;height:56px}"), "Founder mobile img size must be 56x56");
-  assert.ok(cssSrc.includes(".founder{grid-template-columns:80px 1fr;gap:24px}"), "Founder desktop width must be 80px");
+  // Owner-approved deviation from original HTML: desktop (>=768px) founder card is centered with auto margins
+  assert.ok(
+    cssSrc.includes(".founder{grid-template-columns:80px 1fr;gap:24px;margin-left:auto;margin-right:auto}"),
+    "Founder desktop width must be 80px with auto margins for centering"
+  );
   assert.ok(cssSrc.includes(".founder img{width:80px;height:80px}"), "Founder desktop img size must be 80x80");
+
+  // 3b. Desktop (>=768px) Centering Rules Verification
+  // NOTE: Owner-approved deviation from the original HTML: on desktop (>=768px), sections below the hero
+  // are center aligned (like mobile) instead of left-aligned.
+  console.log("Test 3b: Desktop (>=768px) centering rules (owner-approved deviation)...");
+  assert.ok(
+    cssSrc.includes(".h2{font-size:40px;text-align:center}"),
+    "Desktop .h2 must be center-aligned (owner-approved deviation)"
+  );
+  assert.ok(
+    cssSrc.includes(".vs{width:100%;max-width:760px;margin:32px auto 0;border-spacing:12px 0}"),
+    "Desktop .vs must use auto margins and remove negative left margin"
+  );
+  assert.ok(
+    cssSrc.includes(".faq{max-width:820px;margin-left:auto;margin-right:auto}"),
+    "Desktop .faq must have auto margins"
+  );
+  assert.ok(
+    cssSrc.includes(".contact{text-align:center} .landing-wrapper .contact .fbtn{margin:16px auto 0}"),
+    "Desktop .contact must be center-aligned with centered button"
+  );
 
   // 4. Header, Hero, Demo, Stats, Comparison, Footer Section Sequence
   console.log("Test 4: Section-by-section sequence check...");
