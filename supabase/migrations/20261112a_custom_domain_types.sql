@@ -8,9 +8,10 @@
 --
 -- Introduces reusable DOMAIN types in public schema:
 --   1. public.cm_email: Normalized lowercase, trimmed text, valid email format
---      matching app email normalization, max length 254 chars.
---   2. public.cm_non_empty_text: Text requiring length(trim(VALUE)) > 0,
---      preventing empty strings or whitespace-only inputs.
+--      with no leading/trailing/consecutive dots in local part, no leading/trailing
+--      hyphens or empty labels in domain, letters-only TLD, max length 254 chars.
+--   2. public.cm_non_empty_text: Text requiring VALUE ~ '[^[:space:]]',
+--      preventing empty strings or whitespace-only inputs (spaces, tabs, newlines).
 --   3. public.cm_slug: Normalized lowercase, non-empty text matching slug
 --      pattern ^[a-z0-9]+(-[a-z0-9]+)*$, max length 120 chars.
 --
@@ -18,6 +19,8 @@
 --   - Contains ONLY CREATE DOMAIN statements.
 --   - Does NOT alter, drop, or rewrite any existing table, column, CHECK,
 --     function, or data.
+--   - Domain CHECK constraints evaluate to TRUE for NULL values; table columns
+--     requiring non-null values must declare NOT NULL independently.
 --   - Adoption into existing columns is staged and out of scope for now.
 --
 -- ============================================================================
@@ -34,11 +37,11 @@ CREATE DOMAIN public.cm_email AS text
     VALUE = lower(trim(VALUE))
     AND char_length(VALUE) <= 254
     AND position('@' in VALUE) > 1
-    AND VALUE ~ '^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$'
+    AND VALUE ~ '^[a-z0-9_%+-]+(\.[a-z0-9_%+-]+)*@[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*\.[a-z]{2,}$'
   );
 
 CREATE DOMAIN public.cm_non_empty_text AS text
-  CHECK (length(trim(VALUE)) > 0);
+  CHECK (VALUE ~ '[^[:space:]]');
 
 CREATE DOMAIN public.cm_slug AS text
   CHECK (

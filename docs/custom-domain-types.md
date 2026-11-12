@@ -18,25 +18,30 @@ Migration `supabase/migrations/20261112a_custom_domain_types.sql` introduces reu
     VALUE = lower(trim(VALUE))
     AND char_length(VALUE) <= 254
     AND position('@' in VALUE) > 1
-    AND VALUE ~ '^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$'
+    AND VALUE ~ '^[a-z0-9_%+-]+(\.[a-z0-9_%+-]+)*@[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*\.[a-z]{2,}$'
   )
   ```
 - **Rules Enforced**:
   - **Normalization**: Must be stored strictly lowercase and trimmed (`VALUE = lower(trim(VALUE))`), matching application-level normalization (`normalizeEmail` in `src/lib/admin/earlyAccess.ts`).
   - **RFC Length Limit**: Maximum length 254 characters (RFC 5321).
-  - **Format Validation**: Must contain a valid local-part, `@` delimiter with preceding characters, domain name, and valid top-level domain (`.[a-z]{2,}`).
-  - Prevents uppercase letters, untrimmed whitespace, missing domains, and malformed email strings from ever being persisted.
+  - **Format Validation (Strict POSIX Regex)**:
+    - **Local Part**: `^[a-z0-9_%+-]+(\.[a-z0-9_%+-]+)*@` prevents leading dots (`.a@example.com`), trailing dots (`a.@example.com`), or consecutive dots (`a..b@example.com`).
+    - **Domain Labels**: `[a-z0-9]([a-z0-9-]*[a-z0-9])?` requires every label to begin and end with an alphanumeric character. Prevents domain labels starting with a hyphen (`a@-example.com`), ending with a hyphen (`a@example-.com`), or containing empty labels / consecutive dots (`a@example..com`).
+    - **Top-Level Domain**: `\.[a-z]{2,}$` enforces letters only with a minimum of 2 characters.
+  - **NULL Semantics**: PostgreSQL domain `CHECK` constraints evaluate to `TRUE` for `NULL` values. If a column must not be nullable, declare `NOT NULL` on the column definition.
 
 ### `public.cm_non_empty_text`
 - **Base Type**: `text`
 - **Enforced Constraints**:
   ```sql
-  CHECK (length(trim(VALUE)) > 0)
+  CHECK (VALUE ~ '[^[:space:]]')
   ```
 - **Rules Enforced**:
-  - Rejects empty strings (`""`).
-  - Rejects whitespace-only strings (`"   "`).
+  - **Explicit Whitespace Predicate**: PostgreSQL standard `trim(string)` only strips space characters (`' '` ASCII 32). A naive `length(trim(VALUE)) > 0` check permits tab-only (`\t`) and newline-only (`\n`) strings.
+  - **POSIX `[:space:]` Matching**: `VALUE ~ '[^[:space:]]'` tests for at least one non-whitespace character across all POSIX whitespace characters (spaces, horizontal tabs, newlines, carriage returns, vertical tabs, form feeds).
+  - Rejects empty strings (`""`), space-only strings (`"   "`), tab-only strings (`"\t"`, `"\t\t"`), newline-only strings (`"\n"`, `"\r\n"`), and mixed whitespace-only strings.
   - Ensures required text columns (e.g. company names, job titles, department names) carry substantive content rather than blank placeholders.
+  - **NULL Semantics**: Evaluates to `TRUE` for `NULL`. Table columns must declare `NOT NULL` separately.
 
 ### `public.cm_slug`
 - **Base Type**: `text`
@@ -55,10 +60,31 @@ Migration `supabase/migrations/20261112a_custom_domain_types.sql` introduces reu
   - **No Leading/Trailing Hyphens**: Disallows `-slug`, `slug-`, and multiple consecutive hyphens `slug--name`.
   - **Length Cap**: Bounded to 120 characters to ensure URL compatibility and index efficiency.
   - Matches the standard `slugify` logic in `scripts/utils/sanitizer.ts`.
+  - **NULL Semantics**: Evaluates to `TRUE` for `NULL`. Table columns must declare `NOT NULL` separately.
 
 ---
 
-## 3. Why DOMAIN Types Beat Duplicated Ad-Hoc CHECKs
+## 3. Important PostgreSQL Domain Behaviors
+
+### NULL Handling: Domain CHECKs Do Not Enforce NOT NULL
+In SQL standard and PostgreSQL, `CHECK (expression)` evaluates to:
+- `TRUE` -> validation passes.
+- `FALSE` -> validation fails, error raised.
+- `NULL` / `UNKNOWN` -> validation passes!
+
+When a column value is `NULL`, expressions like `VALUE ~ '[^[:space:]]'` or `char_length(VALUE) <= 254` evaluate to `NULL`, which PostgreSQL considers valid.
+Therefore, **PostgreSQL domain types do NOT enforce column presence**. Table column definitions requiring a non-null value MUST explicitly declare `NOT NULL` alongside the domain:
+```sql
+-- Correct usage for required fields:
+CREATE TABLE public.example (
+  email public.cm_email NOT NULL,
+  title public.cm_non_empty_text NOT NULL
+);
+```
+
+---
+
+## 4. Why DOMAIN Types Beat Duplicated Ad-Hoc CHECKs
 
 | Dimension | Ad-Hoc `CHECK` Constraints | Reusable PostgreSQL `DOMAIN` Types |
 | :--- | :--- | :--- |
@@ -70,9 +96,58 @@ Migration `supabase/migrations/20261112a_custom_domain_types.sql` introduces reu
 
 ---
 
-## 4. Staged Adoption Plan
+## 5. Staged Adoption Plan & Zero-Downtime Migration Guidance
 
-Adopting domain types across production databases requires strict discipline to prevent unintended write rejections or lock contention on high-traffic tables.
+### Locking Truth: ALTER COLUMN TYPE Is NOT Zero-Downtime
+Directly altering an existing column's type to a domain:
+```sql
+-- DANGER: NOT zero-downtime!
+ALTER TABLE public.early_access_emails
+  ALTER COLUMN email TYPE public.cm_email;
+```
+Takes an **`ACCESS EXCLUSIVE`** lock on the table. This lock blocks all concurrent `SELECT`, `INSERT`, `UPDATE`, and `DELETE` operations for the entire duration of a full sequential table scan while PostgreSQL validates the domain constraints against every existing row. On active or large tables (`jobs`, `early_access_emails`), this causes connection pool exhaustion, query queues, and lock timeouts.
+
+### Safe Zero-Downtime Adoption Patterns
+
+#### Pattern A: Table-Level `CHECK ... NOT VALID` then `VALIDATE CONSTRAINT` (Recommended)
+When keeping existing `text` columns while enforcing domain-level validation rules:
+1. **Add constraint `NOT VALID`**:
+   ```sql
+   -- Acquires brief SHARE ROW EXCLUSIVE lock; does NOT scan existing rows.
+   -- Only validates subsequent INSERTs and UPDATEs.
+   ALTER TABLE public.early_access_emails
+     ADD CONSTRAINT chk_early_access_emails_cm_email
+     CHECK (
+       email = lower(trim(email))
+       AND char_length(email) <= 254
+       AND position('@' in email) > 1
+       AND email ~ '^[a-z0-9_%+-]+(\.[a-z0-9_%+-]+)*@[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*\.[a-z]{2,}$'
+     ) NOT VALID;
+   ```
+2. **Validate constraint concurrently**:
+   ```sql
+   -- Scans existing rows with SHARE UPDATE EXCLUSIVE lock.
+   -- Concurrent SELECT, INSERT, UPDATE, and DELETE operations proceed normally!
+   ALTER TABLE public.early_access_emails
+     VALIDATE CONSTRAINT chk_early_access_emails_cm_email;
+   ```
+
+#### Pattern B: Dual-Column Migration with Batched Backfill
+When the column type itself must become the domain type (e.g. for PostgREST / GraphQL schema introspection):
+1. Add new column with the domain type:
+   ```sql
+   ALTER TABLE public.early_access_emails
+     ADD COLUMN email_v2 public.cm_email;
+   ```
+2. Deploy application code to dual-write to both `email` and `email_v2` (or use a trigger).
+3. Backfill existing rows in throttled batches to avoid long locks or replication lag.
+4. Verify data parity between `email` and `email_v2`.
+5. Switch application reads and writes to `email_v2`.
+6. Drop the old column and rename `email_v2` to `email`.
+
+---
+
+## 6. Adoption Phases
 
 ### Phase 0: Type Definition (Current PR)
 - Create domain types in `supabase/migrations/20261112a_custom_domain_types.sql`.
@@ -92,14 +167,18 @@ Adopting domain types across production databases requires strict discipline to 
   ```
 
 ### Phase 2: Existing Column Audit & Data Cleansing
-- Before altering existing columns, audit production data against the domain rules to identify legacy non-conforming rows:
+- Before adding constraints to existing columns, audit production data against the domain rules to identify legacy non-conforming rows:
   ```sql
   -- Audit emails violating cm_email rules
   SELECT email FROM public.early_access_emails
   WHERE email != lower(trim(email))
      OR char_length(email) > 254
      OR position('@' in email) <= 1
-     OR email !~ '^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$';
+     OR email !~ '^[a-z0-9_%+-]+(\.[a-z0-9_%+-]+)*@[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*\.[a-z]{2,}$';
+
+  -- Audit non-empty text violating cm_non_empty_text
+  SELECT title FROM public.jobs
+  WHERE title !~ '[^[:space:]]';
 
   -- Audit slugs violating cm_slug rules
   SELECT slug FROM public.companies
@@ -110,13 +189,8 @@ Adopting domain types across production databases requires strict discipline to 
   ```
 - Run targeted data-hygiene scripts to normalize any legacy entries before schema alterations.
 
-### Phase 3: Staged Column Adoption with Owner Approval
-- With owner approval, migrate candidate columns table-by-table using non-blocking, zero-downtime procedures:
-  ```sql
-  -- Safe column type adoption using validated existing data
-  ALTER TABLE public.early_access_emails
-    ALTER COLUMN email TYPE public.cm_email;
-  ```
+### Phase 3: Staged Constraint Adoption with Owner Approval
+- Using Pattern A (`ADD CONSTRAINT ... NOT VALID` then `VALIDATE CONSTRAINT`), apply validation rules table-by-table.
 - Priority candidate columns:
   - `public.early_access_emails.email`
   - `public.email_suppressions.email`
@@ -127,7 +201,7 @@ Adopting domain types across production databases requires strict discipline to 
 
 ---
 
-## 5. Rollback Runbook
+## 7. Rollback Runbook
 
 If the domain definitions must be removed prior to column adoption:
 ```sql

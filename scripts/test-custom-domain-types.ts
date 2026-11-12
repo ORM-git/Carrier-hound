@@ -116,8 +116,14 @@ check(
   /position\s*\(\s*'@'\s+in\s+VALUE\s*\)\s*>\s*1/i.test(executableCode)
 );
 check(
-  "cm_non_empty_text enforces length(trim(VALUE)) > 0",
-  /length\s*\(\s*trim\s*\(\s*VALUE\s*\)\s*\)\s*>\s*0/i.test(executableCode)
+  "cm_email enforces tightened regex without leading/trailing dots or hyphens",
+  executableCode.includes(
+    "VALUE ~ '^[a-z0-9_%+-]+(\\.[a-z0-9_%+-]+)*@[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*\\.[a-z]{2,}$'"
+  )
+);
+check(
+  "cm_non_empty_text enforces explicit whitespace predicate VALUE ~ '[^[:space:]]'",
+  /VALUE\s*~\s*'\[\^\[:space:\]\]'/i.test(executableCode)
 );
 check(
   "cm_slug enforces lower(trim(VALUE)) normalization",
@@ -133,24 +139,60 @@ check(
 );
 
 // 7. Behavioral unit verification of domain rules
-const emailRegex = /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/;
+const emailRegex = /^[a-z0-9_%+-]+(\.[a-z0-9_%+-]+)*@[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*\.[a-z]{2,}$/;
 const isValidEmail = (val: string) =>
   val === val.trim().toLowerCase() &&
   val.length <= 254 &&
   val.indexOf("@") > 0 &&
   emailRegex.test(val);
 
+// cm_email valid cases
 check("cm_email accepts valid normalized emails", isValidEmail("user@careermonke.com"));
 check("cm_email accepts valid subdomains and plus addressing", isValidEmail("user+alerts@eng.example.co.uk"));
+check("cm_email accepts standard dot-separated local part", isValidEmail("first.last@example.com"));
+check("cm_email accepts multi-dot subdomains", isValidEmail("first.middle.last@sub.example.co.uk"));
+check("cm_email accepts minimal valid email", isValidEmail("a@b.co"));
+check("cm_email accepts underscore in local part", isValidEmail("user_name@example.org"));
+check("cm_email accepts hyphen in domain label", isValidEmail("user@example-domain.com"));
+
+// cm_email negative cases: 4 review-specified cases
+check("cm_email rejects leading dot in local part (.a@example.com)", !isValidEmail(".a@example.com"));
+check("cm_email rejects consecutive dots in local part (a..b@example.com)", !isValidEmail("a..b@example.com"));
+check("cm_email rejects leading hyphen in domain label (a@-example.com)", !isValidEmail("a@-example.com"));
+check("cm_email rejects consecutive dots / empty domain label (a@example..com)", !isValidEmail("a@example..com"));
+
+// cm_email additional negative edge cases
+check("cm_email rejects trailing dot in local part (a.@example.com)", !isValidEmail("a.@example.com"));
+check("cm_email rejects trailing hyphen in domain label (a@example-.com)", !isValidEmail("a@example-.com"));
+check("cm_email rejects domain starting with dot (a@.example.com)", !isValidEmail("a@.example.com"));
+check("cm_email rejects single-letter TLD (a@example.c)", !isValidEmail("a@example.c"));
+check("cm_email rejects numeric TLD (a@example.123)", !isValidEmail("a@example.123"));
 check("cm_email rejects uppercase email", !isValidEmail("User@CareerMonke.com"));
 check("cm_email rejects untrimmed email", !isValidEmail(" user@careermonke.com "));
 check("cm_email rejects missing top-level domain", !isValidEmail("user@localhost"));
 check("cm_email rejects missing local-part", !isValidEmail("@domain.com"));
+check("cm_email rejects length exceeding 254 characters", !isValidEmail("a".repeat(243) + "@example.com"));
 
-const isValidNonEmptyText = (val: string) => val.trim().length > 0;
-check("cm_non_empty_text accepts standard text", isValidNonEmptyText("Engineering"));
-check("cm_non_empty_text rejects empty string", !isValidNonEmptyText(""));
-check("cm_non_empty_text rejects whitespace-only string", !isValidNonEmptyText("   \t\n  "));
+// cm_non_empty_text:
+// Model PostgreSQL POSIX VALUE ~ '[^[:space:]]' predicate:
+// In PostgreSQL, trim(s) only strips space (' '), so naive length(trim(E'\t')) > 0 is TRUE in SQL.
+// POSIX [:space:] matches [ \t\r\n\v\f]. We model the SQL rule using a character class
+// matching POSIX [:space:], NOT JS String.prototype.trim().
+const SQL_NON_WHITESPACE_REGEX = /[^ \t\r\n\v\f]/;
+const isValidSqlNonEmptyText = (val: string) => SQL_NON_WHITESPACE_REGEX.test(val);
+
+// Edge-case tests for cm_non_empty_text
+check("cm_non_empty_text accepts standard text", isValidSqlNonEmptyText("Engineering"));
+check("cm_non_empty_text accepts text with surrounding whitespace", isValidSqlNonEmptyText("  Senior Developer  "));
+check("cm_non_empty_text accepts text containing embedded tabs/newlines", isValidSqlNonEmptyText("\tJob Title\n"));
+check("cm_non_empty_text rejects empty string", !isValidSqlNonEmptyText(""));
+check("cm_non_empty_text rejects single-space string", !isValidSqlNonEmptyText(" "));
+check("cm_non_empty_text rejects space-only string", !isValidSqlNonEmptyText("      "));
+check("cm_non_empty_text rejects single-tab string", !isValidSqlNonEmptyText("\t"));
+check("cm_non_empty_text rejects tab-only string", !isValidSqlNonEmptyText("\t\t\t"));
+check("cm_non_empty_text rejects single-newline string", !isValidSqlNonEmptyText("\n"));
+check("cm_non_empty_text rejects newline-only string (LF and CRLF)", !isValidSqlNonEmptyText("\r\n\n\r"));
+check("cm_non_empty_text rejects mixed whitespace-only string (spaces, tabs, newlines, form feeds)", !isValidSqlNonEmptyText(" \t \r\n \v\f "));
 
 const slugRegex = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const isValidSlug = (val: string) =>
@@ -176,6 +218,10 @@ check("docs covers cm_non_empty_text", docContent.includes("cm_non_empty_text"))
 check("docs covers cm_slug", docContent.includes("cm_slug"));
 check("docs explains why domains beat duplicated CHECKs", docContent.includes("Why DOMAIN Types Beat Duplicated"));
 check("docs contains staged adoption plan", docContent.includes("Staged Adoption Plan"));
+check("docs explains ALTER COLUMN TYPE locking (ACCESS EXCLUSIVE / NOT zero-downtime)", docContent.includes("ACCESS EXCLUSIVE") && docContent.includes("NOT zero-downtime"));
+check("docs explains ADD CONSTRAINT ... NOT VALID then VALIDATE CONSTRAINT pattern", docContent.includes("NOT VALID") && docContent.includes("VALIDATE CONSTRAINT"));
+check("docs explains dual-column migration with backfill pattern", docContent.includes("Dual-Column Migration") || docContent.includes("dual-column"));
+check("docs documents that domain CHECKs evaluate to TRUE for NULL", docContent.includes("NULL") && docContent.includes("NOT NULL"));
 
 console.log(`\n================================================================================`);
 console.log(`AUDIT SUMMARY: ${passed} passed, ${failed} failed`);
