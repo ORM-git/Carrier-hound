@@ -1,104 +1,90 @@
 # CareerMonke Fleet Daily Ingestion Capacity Projection
 
-**Audit Run Date**: 2026-11-12 08:35:32 UTC  
-**Fleet Schedule Scope**: 438 enabled ATS company boards (6-shard partition, polled every 4 hours)  
-**Sampled Scope**: 438 of 438 boards (436 successful, 2 errors)  
-**Sampling Window**: Trailing 24 hours ($T_{\text{now}} - 24\text{h} \le T_{\text{job}} \le T_{\text{now}}$)  
+**Audit Run Date**: 2026-11-12 09:43:06 UTC  
+**Script Version**: `2.0.0`  
+**Scope Type**: `full_fleet` (complete fleet enumeration (438 enabled boards))  
+**Fleet Coverage**: 438 / 438 enabled boards (100% coverage | 438 succeeded, 0 failed)  
+**Provenance Artifact**: `reports/daily-capacity-provenance.json`  
+**Provenance SHA-256**: `4cb4f593e6e51d54ca1567b00b9bb51d03f5684380057d90e2a2023fa8082767`  
+**Invocation Command**: `npx tsx scripts/project-daily-capacity.ts --live --delay 100`  
 
 ---
 
 ## 1. Executive Summary & Verdict
 
-**Verdict**: Projected fleet daily capacity is ~1,592 new jobs/day vs target 1,200 jobs/day (TARGET ACHIEVED: +392 jobs/day).
+**Verdict**: NEW-JOBS TARGET: NOT ESTABLISHED — Open-job public ATS snapshots cannot prove delivered/deduplicated ingestion per day vs the 1,200/day goal (live proof comes from PR #557's immutable `first_seen_at` DB report).
 
-| Metric | Target | Projected Fleet Value | Status |
-| :--- | :--- | :--- | :--- |
-| **Daily NEW Jobs Supply** | **1,200 / day** | **~1,592 / day** | **✅ TARGET ACHIEVED** |
-| **Surplus / Deficit** | — | +392 jobs/day | Surplus |
-| **Fleet Open Job Inventory** | — | ~26,498 total active listings | Baseline Pool |
-| **Trailing 24h Turnover Rate** | — | 6.02% | % of inventory refreshed daily |
-| **Fleet Coverage** | 438 boards | 438 / 438 boards checked | 6-shard fleet |
+- **Date-able NEW Jobs Supply (trailing 24h, genuine first-post dates only)**: ~421 / day (observed in sample: 421)
+- **Recent Activity / Updates (trailing 24h, Greenhouse `updated_at` edit churn — NEVER added to NEW jobs)**: ~1,514 / day (observed in sample: 1,514)
+- **Target Daily NEW Jobs Goal**: 1,200 / day (First-Seen DB Evidence Present: **NO**)
+
+| Metric | Estimate / Value | Notes |
+| :--- | :--- | :--- |
+| **Target Status** | **NOT_ESTABLISHED** | Public ATS snapshots cannot verify deduplicated DB ingestion (see PR #557) |
+| **Date-able NEW Jobs (Trailing 24h)** | **~421 / day** | Counts ONLY genuine first-post dates (`first_published`, `publishedAt`, `createdAt`) |
+| **Recent Activity / Updates (Trailing 24h)** | **~1,514 / day** | Counts Greenhouse `updated_at` edit/refresh events separately; never counted as new |
+| **Estimated Fleet Open Inventory** | **~26,459** | Active public job listings across measured boards |
+| **Failed Boards** | **0** | HTTP errors / timeouts excluded from successful denominator |
 
 > [!IMPORTANT]
-> **Empirical Estimation Notice**: All figures in this report are empirical estimates extrapolated directly from public ATS timestamps observed during this audit run. No synthetic or invented numbers are used.
-> - **Greenhouse**: Exposes `updated_at` (reflects newly opened positions as well as requisition edits/refreshes).
-> - **Ashby**: Exposes `publishedAt` on publicly listed postings (`isListed !== false`).
-> - **Lever**: Exposes `createdAt` (precise requisition creation timestamp).
+> **Why Open-Job Snapshots Cannot Prove Target Attainment**:
+> 1. **No Delivery / Deduplication Proof**: Polling open ATS snapshots measures *upstream posting hints*, not *delivered, deduplicated DB inserts*. Live proof of delivered daily NEW jobs comes strictly from PR #557's immutable `first_seen_at` database report.
+> 2. **Strict Separation of Edit Churn (`updated_at`)**: Greenhouse `updated_at` fires on routine requisition edits, recruiter changes, or description tweaks. It is tracked strictly as **recent activity** and NEVER included in NEW-jobs supply. Only genuine first-post fields (`first_published` / `created_at` on Greenhouse, `publishedAt` on Ashby, `createdAt` on Lever) feed NEW-jobs supply.
+> 3. **Extrapolation Assumptions**: When a subset of boards is sampled (`--limit`) or individual boards fail, extrapolation assumes failed/unsampled boards have the same mean posting rate as successful sampled boards within that ATS platform. Unmeasured ATS platforms under `--ats` are strictly reported as **UNKNOWN**.
 
 ---
 
 ## 2. Per-ATS Platform Breakdown
 
-| ATS Platform | Fleet Total Boards | Sampled Boards | Boards w/ Date-able Jobs | Boards w/ Zero Date-able Jobs | Sampled Open Jobs | Trailing 24h Jobs | Avg New Jobs / Board | Extrapolated Daily Jobs | Turnover Rate |
+| ATS Platform | Measured? | Fleet Boards | Sampled Boards | Failed Boards | Boards w/ Zero Date-able NEW | Open Jobs Sampled | Date-able NEW (24h, First-Post) | Recent Activity (24h, `updated_at`) | Extrapolated Daily NEW Supply |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Greenhouse** | 227 | 227 | 227 | 0 | 17,726 | 1,485 | 6.542 | **~1,485** | 8.38% |
-| **Ashby** | 170 | 170 | 170 | 0 | 7,509 | 101 | 0.594 | **~101** | 1.35% |
-| **Lever** | 41 | 41 | 39 | 0 | 1,201 | 6 | 0.154 | **~6** | 0.5% |
-| **Fleet Total** | **438** | **438** | **436** | **0** | **26,436** | **1,592** | **3.651** | **~1,592** | **6.02%** |
+| **Greenhouse** | YES | 227 | 227 | 0 | 0 | 17,730 | 308 | 1,514 | **~308** |
+| **Ashby** | YES | 170 | 170 | 0 | 0 | 7,513 | 106 | N/A | **~106** |
+| **Lever** | YES | 41 | 41 | 0 | 0 | 1,216 | 7 | N/A | **~7** |
+| **Fleet Aggregate** | FULL | **438** | **438** | **0** | **0** | **26,459** | **421** | **1,514** | **~421** |
 
 ---
 
-## 3. Top Contributing Boards (Trailing 24 Hours)
+## 3. Top Contributing Boards (Date-able NEW First-Posts in Trailing 24h)
 
-The highest-volume posting boards in the fleet during the audit window:
-
-| Company Name | ATS | Target | Total Open Jobs | Jobs in Trailing 24h | Daily Share % |
+| Company Name | ATS | Target | Open Jobs | Date-able NEW (24h) | Recent Activity `updated_at` (24h) |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| HelloFresh | `greenhouse` | `hellofresh` | 370 | **370** | 23.2% |
-| Roblox | `greenhouse` | `roblox` | 277 | **252** | 15.8% |
-| Twilio | `greenhouse` | `twilio` | 125 | **68** | 4.3% |
-| Celonis | `greenhouse` | `celonis` | 257 | **58** | 3.6% |
-| Stripe | `greenhouse` | `stripe` | 787 | **42** | 2.6% |
-| Elastic | `greenhouse` | `elastic` | 419 | **40** | 2.5% |
-| Toast | `greenhouse` | `toast` | 352 | **37** | 2.3% |
-| DoorDash | `greenhouse` | `doordashusa` | 436 | **34** | 2.1% |
-| Fivetran | `greenhouse` | `fivetran` | 179 | **32** | 2.0% |
-| Samsara | `greenhouse` | `samsara` | 314 | **30** | 1.9% |
-| Cloudflare | `greenhouse` | `cloudflare` | 482 | **28** | 1.8% |
-| N26 | `greenhouse` | `n26` | 37 | **28** | 1.8% |
-| Alloy | `greenhouse` | `alloy` | 31 | **27** | 1.7% |
-| Adyen | `greenhouse` | `adyen` | 253 | **21** | 1.3% |
-| Airbnb | `greenhouse` | `airbnb` | 207 | **21** | 1.3% |
-| Riot Games | `greenhouse` | `riotgames` | 200 | **21** | 1.3% |
-| Zscaler | `greenhouse` | `zscaler` | 376 | **21** | 1.3% |
-| Databricks | `greenhouse` | `databricks` | 912 | **20** | 1.3% |
-| Flexport | `greenhouse` | `flexport` | 193 | **15** | 0.9% |
-| MongoDB | `greenhouse` | `mongodb` | 379 | **14** | 0.9% |
+| Celonis | `greenhouse` | `celonis` | 262 | **22** | 63 |
+| Elastic | `greenhouse` | `elastic` | 421 | **21** | 41 |
+| Toast | `greenhouse` | `toast` | 352 | **21** | 36 |
+| Stripe | `greenhouse` | `stripe` | 787 | **17** | 41 |
+| Cloudflare | `greenhouse` | `cloudflare` | 483 | **14** | 28 |
+| HelloFresh | `greenhouse` | `hellofresh` | 372 | **13** | 372 |
+| Riot Games | `greenhouse` | `riotgames` | 200 | **13** | 20 |
+| Airbnb | `greenhouse` | `airbnb` | 207 | **12** | 19 |
+| Snowflake | `ashby` | `snowflake` | 381 | **11** | N/A |
+| Lightmatter | `greenhouse` | `lightmatter` | 65 | **10** | 12 |
+| Zscaler | `greenhouse` | `zscaler` | 375 | **10** | 21 |
+| Harvey | `ashby` | `harvey` | 380 | **8** | N/A |
+| MongoDB | `greenhouse` | `mongodb` | 379 | **8** | 14 |
+| Oscar Health | `greenhouse` | `oscar` | 184 | **8** | 14 |
+| OpenAI | `ashby` | `openai` | 822 | **7** | N/A |
+| Adyen | `greenhouse` | `adyen` | 254 | **7** | 22 |
+| Nubank | `ashby` | `nubank` | 108 | **6** | N/A |
+| Datadog | `greenhouse` | `datadog` | 391 | **6** | 11 |
+| Samsara | `greenhouse` | `samsara` | 314 | **6** | 29 |
+| Kong | `ashby` | `kong` | 118 | **5** | N/A |
 
 ---
 
-## 4. Flagged Boards with Zero Date-able Jobs (0 boards)
+## 4. Flagged Boards with Zero Date-able NEW Jobs (0 boards)
 
-Boards returning 0 date-able jobs in the audit run (either zero active open jobs, or dates omitted from ATS response payload):
+Boards returning 0 jobs with genuine first-post dates (`first_published` / `publishedAt` / `createdAt`):
 
-| Company Name | ATS | Target | Total Open Jobs | Reason / Status |
-| :--- | :--- | :--- | :--- | :--- |
-| _None_ | — | — | — | All sampled boards provided date-able jobs |
-
+| Company Name | ATS | Target | Total Open Jobs | Recent Activity `updated_at` (24h) | Flag Reason |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| _None_ | — | — | — | — | All successful boards exposed genuine first-post dates |
 
 
 ---
 
-## 5. Boards with Fetch Errors (2 boards)
+## 5. Boards with Fetch Errors (0 boards)
 
 | Company Name | ATS | Target | Error Message |
 | :--- | :--- | :--- | :--- |
-| Sonatype | `lever` | `sonatype` | `HTTP 404 Not Found` |
-| Symplicity | `lever` | `symplicity` | `HTTP 404 Not Found` |
-
-
----
-
-## 6. Mathematical Methodology & Projection Formulas
-
-1. **Board-Level Daily Posting Rate**:
-   $$\text{Rate}_b = \sum_{j \in \text{Jobs}_b} \mathbb{I}\left(T_{\text{now}} - 24\text{h} \le T_j \le T_{\text{now}}\right)$$
-2. **Platform Average Posting Rate**:
-   $$\mu_{\text{ATS}} = \frac{\sum_{b \in S_{\text{ATS}}} \text{Rate}_b}{|S_{\text{ATS}}|}$$
-3. **Fleet-Wide Extrapolated Daily Supply**:
-   $$\widehat{C}_{\text{fleet}} = \sum_{\text{ATS} \in \{\text{GH}, \text{Ashby}, \text{Lever}\}} \left(\mu_{\text{ATS}} \times N_{\text{ATS}}\right)$$
-   Where $N_{\text{ATS}}$ is the fleet-wide enabled board count (Greenhouse: 227, Ashby: 170, Lever: 41, Total: 438).
-4. **Target Feasibility Determination**:
-   $$\Delta = \widehat{C}_{\text{fleet}} - 1200$$
-   - If $\Delta \ge 0$: Fleet posting rate **can deliver 1,200+ new jobs/day**.
-   - If $\Delta < 0$: Fleet posting rate exhibits a **deficit of $|\Delta|$ jobs/day**.
+| _None_ | — | — | Zero failed requests |

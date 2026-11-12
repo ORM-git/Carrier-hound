@@ -3,38 +3,48 @@
  *
  * READ-ONLY capacity projection script auditing CareerMonke's active fleet of scheduled ATS boards.
  *
- * For each enabled board in scripts/config/companies-scheduled.json (Greenhouse, Ashby, Lever):
- * 1. Fetches public job listings via official public ATS APIs.
- * 2. Parses and counts jobs posted or updated in the trailing 24 hours where the ATS exposes dates.
- * 3. Flags boards with zero date-able jobs.
- * 4. Extrapolates fleet-wide daily NEW-jobs supply against the 1,200 new jobs/day target.
- * 5. Generates reports/daily-capacity-projection.md with run date, explicit verdict line,
- *    and per-ATS / per-board empirical breakdowns.
+ * Safety & Methodology Rules:
+ * 1. Defaults strictly to --dry-run (no network calls). Pass --live to fetch public ATS APIs.
+ * 2. Strict separation between first-published timestamps and edit/update timestamps:
+ *    - NEW-jobs supply ONLY counts genuine first-post dates (Greenhouse `first_published` / `created_at`,
+ *      Ashby `publishedAt` where `isListed !== false`, Lever `createdAt`).
+ *    - Greenhouse `updated_at` is an edit/refresh timestamp and is reported SEPARATELY as
+ *      "recent activity (updated in trailing 24h)" — it NEVER feeds NEW-jobs totals.
+ * 3. Honest Verdict: Public open-job snapshots cannot prove delivered/deduplicated daily ingestion
+ *    (live proof comes from PR #557's immutable `first_seen_at` DB report). The verdict is therefore
+ *    `NEW-JOBS TARGET: NOT ESTABLISHED` unless real first-seen DB evidence exists.
+ * 4. Scope Honesty:
+ *    - `--limit` selects a deterministic, representative stratified systematic every-k-th sample across ATS types.
+ *    - `--ats` runs a partial scope: unmeasured ATS platforms are marked `UNKNOWN` (`null`), never `0`,
+ *      and no fleet-wide projection is emitted.
+ * 5. Provenance: Live runs emit a machine-readable JSON provenance artifact with SHA-256 content hash,
+ *    per-board timestamps/status/counts, script version, and invocation command next to the markdown report.
  *
- * Flags:
- *   --dry-run      Print planned execution without making any network calls.
- *   --limit <n>    Limit the number of boards sampled/fetched.
- *   --ats <type>   Filter to a single ATS type (greenhouse, ashby, lever).
- *   --delay <ms>   Polite inter-request delay in milliseconds (default: 75ms).
- *   --output <p>   Path to output report markdown (default: reports/daily-capacity-projection.md).
- *   --target <n>   Daily new-jobs target (default: 1200).
+ * Usage:
+ *   npx tsx scripts/project-daily-capacity.ts                              # Safe dry-run default
+ *   npx tsx scripts/project-daily-capacity.ts --dry-run --limit 30         # Dry-run sampled plan
+ *   npx tsx scripts/project-daily-capacity.ts --live                       # Live full-fleet audit (438 boards)
+ *   npx tsx scripts/project-daily-capacity.ts --live --ats lever           # Live partial audit (Lever only)
  */
 
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 
 // =============================================================================
-// Types and Interfaces
+// Constants, Types, and Interfaces
 // =============================================================================
 
+export const SCRIPT_VERSION = '2.0.0';
 export type AtsType = 'greenhouse' | 'ashby' | 'lever';
 
 export const SUPPORTED_ATS_TYPES: AtsType[] = ['greenhouse', 'ashby', 'lever'];
 export const DEFAULT_CONFIG_PATH = path.join('scripts', 'config', 'companies-scheduled.json');
 export const DEFAULT_REPORT_PATH = path.join('reports', 'daily-capacity-projection.md');
+export const DEFAULT_PROVENANCE_PATH = path.join('reports', 'daily-capacity-provenance.json');
 export const DEFAULT_TARGET_DAILY_JOBS = 1200;
-export const DEFAULT_DELAY_MS = 75; // Polite ~13 req/sec overall, strictly 1 req per company
-export const DEFAULT_TIMEOUT_MS = 10000;
+export const DEFAULT_DELAY_MS = 100;
+export const DEFAULT_TIMEOUT_MS = 15000;
 export const TRAILING_WINDOW_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 export interface ScheduledCompany {
@@ -45,60 +55,106 @@ export interface ScheduledCompany {
   enabled: boolean;
 }
 
+export interface ParsedBoardResult {
+  totalJobs: number;
+  dateableNewJobs: number;
+  newJobsTrailing24h: number;
+  zeroDateableNewJobs: boolean;
+  recentActivityDateableJobs: number;
+  recentActivityTrailing24h: number;
+}
+
 export interface BoardCapacityMetrics {
   id: string;
   name: string;
   ats: AtsType;
   target: string;
+  fetchedAt: string;
   totalOpenJobs: number;
-  dateableJobs: number;
-  jobsTrailing24h: number;
-  zeroDateableJobs: boolean;
+  dateableNewJobs: number;
+  newJobsTrailing24h: number;
+  zeroDateableNewJobs: boolean;
+  recentActivityDateableJobs: number;
+  recentActivityTrailing24h: number;
+  status: 'ok' | 'zero_dateable_new' | 'error';
   error?: string;
-  status: 'ok' | 'zero_dateable' | 'error';
 }
 
 export interface AtsCapacityProjection {
   ats: AtsType;
+  measured: boolean;
   fleetTotalBoards: number;
-  sampledBoards: number;
-  successfulBoards: number;
-  failedBoards: number;
-  boardsWithDateableJobs: number;
-  boardsWithZeroDateableJobs: number;
-  totalOpenJobsSampled: number;
-  totalJobsTrailing24hSampled: number;
-  avgNewJobsPerBoardPerDay: number;
-  extrapolatedDailyCapacity: number;
-  extrapolatedOpenInventory: number;
-  turnoverRatePct: number;
+  sampledBoards: number | null;
+  successfulBoards: number | null;
+  failedBoards: number | null;
+  boardsWithDateableNewJobs: number | null;
+  boardsWithZeroDateableNewJobs: number | null;
+  totalOpenJobsSampled: number | null;
+  newJobsTrailing24hSampled: number | null;
+  recentActivityTrailing24hSampled: number | null;
+  avgNewJobsPerBoardPerDay: number | null;
+  extrapolatedDailyNewJobs: number | null;
+  extrapolatedRecentActivity24h: number | null;
+  extrapolatedOpenInventory: number | null;
 }
 
-export interface FleetCapacityReport {
-  runDate: string;
-  nowEpochMs: number;
-  trailingWindowHours: number;
-  fleetTargetPerDay: number;
+export interface FleetScopeMetadata {
+  isPartial: boolean;
+  scopeType: 'full_fleet' | 'sampled_subset' | 'partial_ats';
+  atsFilter?: AtsType;
+  limit?: number;
+  samplingStrategy: string;
+  coveragePct: number;
   totalFleetBoards: number;
   totalSampledBoards: number;
   totalSuccessfulBoards: number;
   totalFailedBoards: number;
-  totalBoardsWithDateableJobs: number;
-  totalBoardsWithZeroDateableJobs: number;
+  totalBoardsWithDateableNewJobs: number;
+  totalBoardsWithZeroDateableNewJobs: number;
+}
+
+export interface FleetCapacityReport {
+  scriptVersion: string;
+  runDate: string;
+  nowEpochMs: number;
+  trailingWindowHours: number;
+  fleetTargetPerDay: number;
+  scope: FleetScopeMetadata;
   sampledOpenJobs: number;
-  sampledJobsTrailing24h: number;
-  extrapolatedFleetDailyCapacity: number;
-  extrapolatedFleetOpenInventory: number;
-  fleetTurnoverRatePct: number;
+  sampledNewJobsTrailing24h: number;
+  sampledRecentActivityTrailing24h: number;
+  extrapolatedFleetDailyNewJobs: number | null;
+  extrapolatedFleetRecentActivity24h: number | null;
+  extrapolatedFleetOpenInventory: number | null;
   perAts: Record<AtsType, AtsCapacityProjection>;
   boards: BoardCapacityMetrics[];
   verdict: {
-    targetDailyJobs: number;
-    projectedDailyJobs: number;
-    surplusOrDeficit: number;
-    status: 'ACHIEVED' | 'DEFICIT';
+    hasFirstSeenEvidence: boolean;
+    status: 'NOT_ESTABLISHED' | 'PARTIAL_SCOPE';
     verdictLine: string;
   };
+}
+
+export interface ProvenanceRecord {
+  schemaVersion: '1.0.0';
+  scriptVersion: string;
+  invocationCommand: string;
+  runDate: string;
+  nowEpochMs: number;
+  trailingWindowHours: number;
+  scope: FleetScopeMetadata;
+  summary: {
+    sampledOpenJobs: number;
+    sampledNewJobsTrailing24h: number;
+    sampledRecentActivityTrailing24h: number;
+    extrapolatedFleetDailyNewJobs: number | null;
+    extrapolatedFleetRecentActivity24h: number | null;
+    extrapolatedFleetOpenInventory: number | null;
+    perAts: Record<AtsType, AtsCapacityProjection>;
+    verdict: FleetCapacityReport['verdict'];
+  };
+  boards: BoardCapacityMetrics[];
+  contentHashSha256: string;
 }
 
 export interface CapacityCliOptions {
@@ -108,27 +164,31 @@ export interface CapacityCliOptions {
   delayMs: number;
   configPath: string;
   outputPath: string;
+  provenancePath: string;
   targetDailyJobs: number;
 }
 
 // =============================================================================
-// CLI Argument Parsing
+// CLI Argument Parsing (Safe Dry-Run Default, --live Required)
 // =============================================================================
 
 export function parseCapacityCliArgs(argv: string[]): CapacityCliOptions {
-  let dryRun = false;
+  const hasLive = argv.includes('--live');
+  const hasDryRun = argv.includes('--dry-run');
+  // Safe default: dryRun is true unless --live is explicitly passed without --dry-run
+  const dryRun = !hasLive || hasDryRun;
+
   let limit: number | undefined;
   let atsFilter: AtsType | undefined;
   let delayMs = DEFAULT_DELAY_MS;
   let configPath = DEFAULT_CONFIG_PATH;
   let outputPath = DEFAULT_REPORT_PATH;
+  let provenancePath = DEFAULT_PROVENANCE_PATH;
   let targetDailyJobs = DEFAULT_TARGET_DAILY_JOBS;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === '--dry-run') {
-      dryRun = true;
-    } else if (arg === '--limit' && argv[i + 1]) {
+    if (arg === '--limit' && argv[i + 1]) {
       const parsed = parseInt(argv[i + 1], 10);
       if (!isNaN(parsed) && parsed > 0) {
         limit = parsed;
@@ -166,6 +226,11 @@ export function parseCapacityCliArgs(argv: string[]): CapacityCliOptions {
       i++;
     } else if (arg.startsWith('--output=')) {
       outputPath = arg.split('=')[1].trim();
+    } else if (arg === '--provenance' && argv[i + 1]) {
+      provenancePath = argv[i + 1].trim();
+      i++;
+    } else if (arg.startsWith('--provenance=')) {
+      provenancePath = arg.split('=')[1].trim();
     } else if (arg === '--target' && argv[i + 1]) {
       const parsed = parseInt(argv[i + 1], 10);
       if (!isNaN(parsed) && parsed > 0) {
@@ -190,22 +255,92 @@ export function parseCapacityCliArgs(argv: string[]): CapacityCliOptions {
     delayMs,
     configPath,
     outputPath,
+    provenancePath,
     targetDailyJobs,
   };
 }
 
 // =============================================================================
-// ATS Parsing & Trailing-24h Date Counting
+// Stratified Systematic Sampling (Stable Representative --limit)
+// =============================================================================
+
+/**
+ * Selects a deterministic, representative sample of size `limit` using
+ * stratified systematic every-k-th sampling across ATS types sorted by board id.
+ */
+export function selectRepresentativeSample<T extends { id: string; type: string }>(
+  boards: T[],
+  limit?: number
+): T[] {
+  if (!limit || limit <= 0 || limit >= boards.length) {
+    return [...boards];
+  }
+
+  // Group deterministically by ATS type sorted by id
+  const groups = new Map<string, T[]>();
+  for (const ats of SUPPORTED_ATS_TYPES) {
+    groups.set(ats, []);
+  }
+  for (const b of boards) {
+    const bucket = groups.get(b.type) || [];
+    bucket.push(b);
+    groups.set(b.type, bucket);
+  }
+
+  for (const [k, list] of groups.entries()) {
+    list.sort((a, b) => a.id.localeCompare(b.id));
+    if (list.length === 0) groups.delete(k);
+  }
+
+  const total = boards.length;
+  const quotas = new Map<string, number>();
+  const remainders: Array<{ ats: string; rem: number }> = [];
+  let allocated = 0;
+
+  for (const [ats, list] of groups.entries()) {
+    const exact = (list.length / total) * limit;
+    const base = Math.min(list.length, Math.floor(exact));
+    quotas.set(ats, base);
+    allocated += base;
+    remainders.push({ ats, rem: exact - base });
+  }
+
+  // Distribute remaining slots via Hamilton largest-remainder method
+  remainders.sort((a, b) => b.rem - a.rem || a.ats.localeCompare(b.ats));
+  let idx = 0;
+  while (allocated < limit && remainders.length > 0) {
+    const item = remainders[idx % remainders.length];
+    const current = quotas.get(item.ats) || 0;
+    const maxLen = groups.get(item.ats)!.length;
+    if (current < maxLen) {
+      quotas.set(item.ats, current + 1);
+      allocated++;
+    }
+    idx++;
+    if (idx > remainders.length * 4 && allocated < limit) break;
+  }
+
+  // Select evenly spaced every-k-th item from each group
+  const selected: T[] = [];
+  for (const [ats, list] of groups.entries()) {
+    const q = quotas.get(ats) || 0;
+    for (let i = 0; i < q; i++) {
+      const pickIdx = Math.floor((i * list.length) / q);
+      selected.push(list[pickIdx]);
+    }
+  }
+
+  return selected;
+}
+
+// =============================================================================
+// ATS Parsing & Strict First-Post vs Recent-Activity Separation
 // =============================================================================
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/**
- * Checks if a date timestamp falls within the trailing window:
- * [now - windowMs, now + 5min (clock skew tolerance)].
- */
 export function isTimestampInTrailingWindow(
   timestampMs: number,
   nowMs: number,
@@ -213,34 +348,63 @@ export function isTimestampInTrailingWindow(
 ): boolean {
   if (isNaN(timestampMs)) return false;
   const ageMs = nowMs - timestampMs;
-  // Allow up to 5 minutes of future clock drift from upstream servers
   return ageMs >= -5 * 60 * 1000 && ageMs <= windowMs;
 }
 
 /**
- * Parses Greenhouse jobs payload:
- * Endpoint returns { jobs: [ { id, title, updated_at, ... } ] }
+ * Parses Greenhouse public jobs payload.
+ * CRITICAL RULE:
+ * - `first_published` (or `created_at` if present) is a genuine first-post date -> feeds NEW-jobs metrics.
+ * - `updated_at` is an edit/refresh timestamp -> ONLY feeds `recentActivity*` metrics, NEVER `newJobsTrailing24h`.
  */
 export function parseGreenhouseJobs(
   jobs: any[],
   nowMs: number,
   windowMs: number = TRAILING_WINDOW_MS
-): { totalJobs: number; dateableJobs: number; jobsTrailing24h: number; zeroDateableJobs: boolean } {
+): ParsedBoardResult {
   if (!Array.isArray(jobs)) {
-    return { totalJobs: 0, dateableJobs: 0, jobsTrailing24h: 0, zeroDateableJobs: true };
+    return {
+      totalJobs: 0,
+      dateableNewJobs: 0,
+      newJobsTrailing24h: 0,
+      zeroDateableNewJobs: true,
+      recentActivityDateableJobs: 0,
+      recentActivityTrailing24h: 0,
+    };
   }
 
   const validJobs = jobs.filter((j) => j && (j.id != null || j.title));
-  let dateableJobs = 0;
-  let jobsTrailing24h = 0;
+  let dateableNewJobs = 0;
+  let newJobsTrailing24h = 0;
+  let recentActivityDateableJobs = 0;
+  let recentActivityTrailing24h = 0;
 
   for (const job of validJobs) {
+    // 1. Genuine first-post timestamp ONLY (first_published / created_at). NEVER updated_at.
+    const rawFirstPost =
+      typeof job.first_published === 'string' && job.first_published.trim()
+        ? job.first_published
+        : typeof job.created_at === 'string' && job.created_at.trim()
+          ? job.created_at
+          : null;
+
+    if (rawFirstPost) {
+      const parsedFirst = Date.parse(rawFirstPost);
+      if (!isNaN(parsedFirst)) {
+        dateableNewJobs++;
+        if (isTimestampInTrailingWindow(parsedFirst, nowMs, windowMs)) {
+          newJobsTrailing24h++;
+        }
+      }
+    }
+
+    // 2. Edit/update timestamp (updated_at) -> Recent Activity ONLY.
     if (job.updated_at && typeof job.updated_at === 'string') {
-      const parsed = Date.parse(job.updated_at);
-      if (!isNaN(parsed)) {
-        dateableJobs++;
-        if (isTimestampInTrailingWindow(parsed, nowMs, windowMs)) {
-          jobsTrailing24h++;
+      const parsedUpdated = Date.parse(job.updated_at);
+      if (!isNaN(parsedUpdated)) {
+        recentActivityDateableJobs++;
+        if (isTimestampInTrailingWindow(parsedUpdated, nowMs, windowMs)) {
+          recentActivityTrailing24h++;
         }
       }
     }
@@ -248,38 +412,46 @@ export function parseGreenhouseJobs(
 
   return {
     totalJobs: validJobs.length,
-    dateableJobs,
-    jobsTrailing24h,
-    zeroDateableJobs: dateableJobs === 0,
+    dateableNewJobs,
+    newJobsTrailing24h,
+    zeroDateableNewJobs: dateableNewJobs === 0,
+    recentActivityDateableJobs,
+    recentActivityTrailing24h,
   };
 }
 
 /**
- * Parses Ashby jobs payload:
- * Endpoint returns { jobs: [ { id, title, publishedAt, isListed, ... } ] }
- * Excludes unlisted jobs (isListed === false) per public board specification.
+ * Parses Ashby public jobs payload:
+ * Excludes unlisted jobs (isListed === false).
+ * Uses `publishedAt` as genuine first-post date.
  */
 export function parseAshbyJobs(
   jobs: any[],
   nowMs: number,
   windowMs: number = TRAILING_WINDOW_MS
-): { totalJobs: number; dateableJobs: number; jobsTrailing24h: number; zeroDateableJobs: boolean } {
+): ParsedBoardResult {
   if (!Array.isArray(jobs)) {
-    return { totalJobs: 0, dateableJobs: 0, jobsTrailing24h: 0, zeroDateableJobs: true };
+    return {
+      totalJobs: 0,
+      dateableNewJobs: 0,
+      newJobsTrailing24h: 0,
+      zeroDateableNewJobs: true,
+      recentActivityDateableJobs: 0,
+      recentActivityTrailing24h: 0,
+    };
   }
 
-  // Filter only publicly listed jobs (isListed !== false)
   const listedJobs = jobs.filter((j) => j && (j.id != null || j.title) && j.isListed !== false);
-  let dateableJobs = 0;
-  let jobsTrailing24h = 0;
+  let dateableNewJobs = 0;
+  let newJobsTrailing24h = 0;
 
   for (const job of listedJobs) {
     if (job.publishedAt && typeof job.publishedAt === 'string') {
       const parsed = Date.parse(job.publishedAt);
       if (!isNaN(parsed)) {
-        dateableJobs++;
+        dateableNewJobs++;
         if (isTimestampInTrailingWindow(parsed, nowMs, windowMs)) {
-          jobsTrailing24h++;
+          newJobsTrailing24h++;
         }
       }
     }
@@ -287,42 +459,50 @@ export function parseAshbyJobs(
 
   return {
     totalJobs: listedJobs.length,
-    dateableJobs,
-    jobsTrailing24h,
-    zeroDateableJobs: dateableJobs === 0,
+    dateableNewJobs,
+    newJobsTrailing24h,
+    zeroDateableNewJobs: dateableNewJobs === 0,
+    recentActivityDateableJobs: 0,
+    recentActivityTrailing24h: 0,
   };
 }
 
 /**
- * Parses Lever jobs payload:
- * Endpoint returns an array of postings: [ { id, text, createdAt, ... } ]
- * createdAt is an epoch millisecond integer.
+ * Parses Lever public jobs payload:
+ * Uses `createdAt` (epoch ms) as genuine first-post date.
  */
 export function parseLeverJobs(
   jobs: any[],
   nowMs: number,
   windowMs: number = TRAILING_WINDOW_MS
-): { totalJobs: number; dateableJobs: number; jobsTrailing24h: number; zeroDateableJobs: boolean } {
+): ParsedBoardResult {
   if (!Array.isArray(jobs)) {
-    return { totalJobs: 0, dateableJobs: 0, jobsTrailing24h: 0, zeroDateableJobs: true };
+    return {
+      totalJobs: 0,
+      dateableNewJobs: 0,
+      newJobsTrailing24h: 0,
+      zeroDateableNewJobs: true,
+      recentActivityDateableJobs: 0,
+      recentActivityTrailing24h: 0,
+    };
   }
 
   const validJobs = jobs.filter((j) => j && (j.id != null || j.text));
-  let dateableJobs = 0;
-  let jobsTrailing24h = 0;
+  let dateableNewJobs = 0;
+  let newJobsTrailing24h = 0;
 
   for (const job of validJobs) {
     if (typeof job.createdAt === 'number' && !isNaN(job.createdAt) && job.createdAt > 0) {
-      dateableJobs++;
+      dateableNewJobs++;
       if (isTimestampInTrailingWindow(job.createdAt, nowMs, windowMs)) {
-        jobsTrailing24h++;
+        newJobsTrailing24h++;
       }
     } else if (typeof job.createdAt === 'string') {
       const parsed = Date.parse(job.createdAt);
       if (!isNaN(parsed)) {
-        dateableJobs++;
+        dateableNewJobs++;
         if (isTimestampInTrailingWindow(parsed, nowMs, windowMs)) {
-          jobsTrailing24h++;
+          newJobsTrailing24h++;
         }
       }
     }
@@ -330,37 +510,61 @@ export function parseLeverJobs(
 
   return {
     totalJobs: validJobs.length,
-    dateableJobs,
-    jobsTrailing24h,
-    zeroDateableJobs: dateableJobs === 0,
+    dateableNewJobs,
+    newJobsTrailing24h,
+    zeroDateableNewJobs: dateableNewJobs === 0,
+    recentActivityDateableJobs: 0,
+    recentActivityTrailing24h: 0,
   };
 }
 
 // =============================================================================
-// Network Fetching (Public APIs Only, Polite Rate Limiting)
+// Network Fetching (Public APIs Only, Only Invoked with --live)
 // =============================================================================
 
 async function fetchWithTimeout(url: string, timeoutMs: number = DEFAULT_TIMEOUT_MS): Promise<any> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const maxAttempts = 3;
+  let lastError: Error | null = null;
 
-  try {
-    const res = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'CareerMonkeCapacityProjector/1.0 (Polite-Fleet-Audit)',
-        Accept: 'application/json, text/plain, */*',
-      },
-    });
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status} ${res.statusText}`);
+    try {
+      const res = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent': `CareerMonkeCapacityProjector/${SCRIPT_VERSION} (Polite-Fleet-Audit)`,
+          Accept: 'application/json, text/plain, */*',
+        },
+      });
+
+      if (!res.ok) {
+        const err = new Error(`HTTP ${res.status} ${res.statusText}`);
+        (err as any).status = res.status;
+        if (res.status === 429 || res.status >= 500) {
+          lastError = err;
+          await sleep(300 * attempt);
+          continue;
+        }
+        throw err;
+      }
+
+      return await res.json();
+    } catch (err: any) {
+      lastError = err;
+      if (err && typeof err.status === 'number' && err.status >= 400 && err.status < 500 && err.status !== 429) {
+        throw err;
+      }
+      if (attempt < maxAttempts) {
+        await sleep(300 * attempt);
+      }
+    } finally {
+      clearTimeout(timer);
     }
-
-    return await res.json();
-  } finally {
-    clearTimeout(timer);
   }
+
+  throw lastError || new Error(`Failed fetching ${url}`);
 }
 
 export async function fetchGreenhouseBoard(
@@ -368,8 +572,7 @@ export async function fetchGreenhouseBoard(
   timeoutMs: number = DEFAULT_TIMEOUT_MS
 ): Promise<any> {
   const slug = encodeURIComponent(target.trim().toLowerCase());
-  const url = `https://boards-api.greenhouse.io/v1/boards/${slug}/jobs`;
-  return await fetchWithTimeout(url, timeoutMs);
+  return await fetchWithTimeout(`https://boards-api.greenhouse.io/v1/boards/${slug}/jobs`, timeoutMs);
 }
 
 export async function fetchAshbyBoard(
@@ -377,8 +580,7 @@ export async function fetchAshbyBoard(
   timeoutMs: number = DEFAULT_TIMEOUT_MS
 ): Promise<any> {
   const slug = encodeURIComponent(target.trim().toLowerCase());
-  const url = `https://api.ashbyhq.com/posting-api/job-board/${slug}`;
-  return await fetchWithTimeout(url, timeoutMs);
+  return await fetchWithTimeout(`https://api.ashbyhq.com/posting-api/job-board/${slug}`, timeoutMs);
 }
 
 export async function fetchLeverBoard(
@@ -386,47 +588,106 @@ export async function fetchLeverBoard(
   timeoutMs: number = DEFAULT_TIMEOUT_MS
 ): Promise<any> {
   const slug = encodeURIComponent(target.trim().toLowerCase());
-  // Try primary global endpoint first; fallback to EU endpoint if needed
   try {
-    const url = `https://api.lever.co/v0/postings/${slug}?mode=json`;
-    return await fetchWithTimeout(url, timeoutMs);
-  } catch (_err: any) {
-    const euUrl = `https://api.eu.lever.co/v0/postings/${slug}?mode=json`;
-    return await fetchWithTimeout(euUrl, timeoutMs);
+    return await fetchWithTimeout(`https://api.lever.co/v0/postings/${slug}?mode=json`, timeoutMs);
+  } catch (err: any) {
+    // Only fall back to EU host on genuine 404 (not timeout/429)
+    if (err && err.status === 404) {
+      return await fetchWithTimeout(`https://api.eu.lever.co/v0/postings/${slug}?mode=json`, timeoutMs);
+    }
+    throw err;
   }
 }
 
 // =============================================================================
-// Extrapolation & Capacity Projection Math
+// Extrapolation, Scope Honesty & Honest Verdict Engine
 // =============================================================================
+
+export interface ProjectionContext {
+  atsFilter?: AtsType;
+  limit?: number;
+  hasFirstSeenEvidence?: boolean;
+  targetDailyJobs?: number;
+  nowEpochMs?: number;
+}
 
 /**
  * Pure calculation engine computing per-ATS and fleet-wide capacity projections.
- * Strictly avoids invented numbers; extrapolates empirically based on observed trailing 24h rates.
+ * - Never combines Greenhouse `updated_at` recent activity into NEW-jobs counts.
+ * - Never outputs ACHIEVED or DEFICIT without first-seen DB evidence.
+ * - Marks unmeasured ATS platforms as UNKNOWN (null) when `--ats` partial filter is active.
  */
 export function calculateCapacityProjections(
   boards: BoardCapacityMetrics[],
   fleetEnabledCounts: Record<AtsType, number>,
-  targetDailyJobs: number = DEFAULT_TARGET_DAILY_JOBS,
-  nowEpochMs: number = Date.now()
+  ctx: ProjectionContext = {}
 ): FleetCapacityReport {
-  const atsList: AtsType[] = ['greenhouse', 'ashby', 'lever'];
+  const targetDailyJobs = ctx.targetDailyJobs ?? DEFAULT_TARGET_DAILY_JOBS;
+  const nowEpochMs = ctx.nowEpochMs ?? Date.now();
+  const hasFirstSeenEvidence = ctx.hasFirstSeenEvidence === true; // Public ATS snapshots never have DB first-seen evidence
+
+  const totalFleetBoards =
+    (fleetEnabledCounts.greenhouse || 0) +
+    (fleetEnabledCounts.ashby || 0) +
+    (fleetEnabledCounts.lever || 0);
+
+  const isPartialAts = Boolean(ctx.atsFilter);
+  const isSampledSubset = !isPartialAts && Boolean(ctx.limit && ctx.limit < totalFleetBoards);
+  const isPartial = isPartialAts || isSampledSubset;
+
+  const scopeType: FleetScopeMetadata['scopeType'] = isPartialAts
+    ? 'partial_ats'
+    : isSampledSubset
+      ? 'sampled_subset'
+      : 'full_fleet';
+
+  const samplingStrategy = isPartialAts
+    ? `filtered to ATS=${ctx.atsFilter} only (other ATS platforms unmeasured / UNKNOWN)`
+    : isSampledSubset
+      ? `stratified systematic every-k-th sample (${ctx.limit} of ${totalFleetBoards} enabled boards)`
+      : `complete fleet enumeration (${totalFleetBoards} enabled boards)`;
+
   const perAts: Record<AtsType, AtsCapacityProjection> = {} as any;
 
-  let totalFleetBoards = 0;
   let totalSampledBoards = 0;
   let totalSuccessfulBoards = 0;
   let totalFailedBoards = 0;
-  let totalBoardsWithDateableJobs = 0;
-  let totalBoardsWithZeroDateableJobs = 0;
+  let totalBoardsWithDateableNewJobs = 0;
+  let totalBoardsWithZeroDateableNewJobs = 0;
   let sampledOpenJobs = 0;
-  let sampledJobsTrailing24h = 0;
-  let extrapolatedFleetDailyCapacity = 0;
-  let extrapolatedFleetOpenInventory = 0;
+  let sampledNewJobsTrailing24h = 0;
+  let sampledRecentActivityTrailing24h = 0;
 
-  for (const ats of atsList) {
+  let allMeasured = true;
+  let fleetNewJobsSum = 0;
+  let fleetRecentActivitySum = 0;
+  let fleetInventorySum = 0;
+
+  for (const ats of SUPPORTED_ATS_TYPES) {
     const fleetTotal = fleetEnabledCounts[ats] || 0;
-    totalFleetBoards += fleetTotal;
+    const isMeasured = !ctx.atsFilter || ctx.atsFilter === ats;
+
+    if (!isMeasured) {
+      allMeasured = false;
+      perAts[ats] = {
+        ats,
+        measured: false,
+        fleetTotalBoards: fleetTotal,
+        sampledBoards: null,
+        successfulBoards: null,
+        failedBoards: null,
+        boardsWithDateableNewJobs: null,
+        boardsWithZeroDateableNewJobs: null,
+        totalOpenJobsSampled: null,
+        newJobsTrailing24hSampled: null,
+        recentActivityTrailing24hSampled: null,
+        avgNewJobsPerBoardPerDay: null,
+        extrapolatedDailyNewJobs: null,
+        extrapolatedRecentActivity24h: null,
+        extrapolatedOpenInventory: null,
+      };
+      continue;
+    }
 
     const atsBoards = boards.filter((b) => b.ats === ats);
     const sampled = atsBoards.length;
@@ -437,97 +698,157 @@ export function calculateCapacityProjections(
     totalSuccessfulBoards += successful;
     totalFailedBoards += failed;
 
-    const dateableCount = atsBoards.filter((b) => !b.zeroDateableJobs && b.status !== 'error').length;
-    const zeroDateableCount = atsBoards.filter((b) => b.zeroDateableJobs && b.status !== 'error').length;
-    totalBoardsWithDateableJobs += dateableCount;
-    totalBoardsWithZeroDateableJobs += zeroDateableCount;
+    const dateableNewCount = atsBoards.filter((b) => !b.zeroDateableNewJobs && b.status !== 'error').length;
+    const zeroDateableNewCount = atsBoards.filter((b) => b.zeroDateableNewJobs && b.status !== 'error').length;
+    totalBoardsWithDateableNewJobs += dateableNewCount;
+    totalBoardsWithZeroDateableNewJobs += zeroDateableNewCount;
 
     const atsOpenJobs = atsBoards.reduce((sum, b) => sum + (b.totalOpenJobs || 0), 0);
-    const atsTrailing24h = atsBoards.reduce((sum, b) => sum + (b.jobsTrailing24h || 0), 0);
+    const atsNew24h = atsBoards.reduce((sum, b) => sum + (b.newJobsTrailing24h || 0), 0);
+    const atsRecent24h = atsBoards.reduce((sum, b) => sum + (b.recentActivityTrailing24h || 0), 0);
+
     sampledOpenJobs += atsOpenJobs;
-    sampledJobsTrailing24h += atsTrailing24h;
+    sampledNewJobsTrailing24h += atsNew24h;
+    sampledRecentActivityTrailing24h += atsRecent24h;
 
-    // Daily rate per board
-    const avgNewJobs = successful > 0 ? Number((atsTrailing24h / successful).toFixed(3)) : 0;
+    const avgNewPerBoard = successful > 0 ? Number((atsNew24h / successful).toFixed(3)) : 0;
 
-    // Extrapolate to fleet
-    let extrapolatedCapacity: number;
+    let extrapolatedNew: number;
+    let extrapolatedRecent: number;
     let extrapolatedInventory: number;
 
     if (successful === 0) {
-      extrapolatedCapacity = 0;
+      extrapolatedNew = 0;
+      extrapolatedRecent = 0;
       extrapolatedInventory = 0;
     } else if (successful === fleetTotal) {
-      // 100% of fleet sampled: exact sum, no scaling rounding error
-      extrapolatedCapacity = atsTrailing24h;
+      extrapolatedNew = atsNew24h;
+      extrapolatedRecent = atsRecent24h;
       extrapolatedInventory = atsOpenJobs;
     } else {
-      // Proportional extrapolation
-      extrapolatedCapacity = Math.round((atsTrailing24h / successful) * fleetTotal);
+      extrapolatedNew = Math.round((atsNew24h / successful) * fleetTotal);
+      extrapolatedRecent = Math.round((atsRecent24h / successful) * fleetTotal);
       extrapolatedInventory = Math.round((atsOpenJobs / successful) * fleetTotal);
     }
 
-    extrapolatedFleetDailyCapacity += extrapolatedCapacity;
-    extrapolatedFleetOpenInventory += extrapolatedInventory;
-
-    const turnoverPct =
-      atsOpenJobs > 0 ? Number(((atsTrailing24h / atsOpenJobs) * 100).toFixed(2)) : 0;
+    fleetNewJobsSum += extrapolatedNew;
+    fleetRecentActivitySum += extrapolatedRecent;
+    fleetInventorySum += extrapolatedInventory;
 
     perAts[ats] = {
       ats,
+      measured: true,
       fleetTotalBoards: fleetTotal,
       sampledBoards: sampled,
       successfulBoards: successful,
       failedBoards: failed,
-      boardsWithDateableJobs: dateableCount,
-      boardsWithZeroDateableJobs: zeroDateableCount,
+      boardsWithDateableNewJobs: dateableNewCount,
+      boardsWithZeroDateableNewJobs: zeroDateableNewCount,
       totalOpenJobsSampled: atsOpenJobs,
-      totalJobsTrailing24hSampled: atsTrailing24h,
-      avgNewJobsPerBoardPerDay: avgNewJobs,
-      extrapolatedDailyCapacity: extrapolatedCapacity,
+      newJobsTrailing24hSampled: atsNew24h,
+      recentActivityTrailing24hSampled: atsRecent24h,
+      avgNewJobsPerBoardPerDay: avgNewPerBoard,
+      extrapolatedDailyNewJobs: extrapolatedNew,
+      extrapolatedRecentActivity24h: extrapolatedRecent,
       extrapolatedOpenInventory: extrapolatedInventory,
-      turnoverRatePct: turnoverPct,
     };
   }
 
-  const fleetTurnoverRatePct =
-    sampledOpenJobs > 0 ? Number(((sampledJobsTrailing24h / sampledOpenJobs) * 100).toFixed(2)) : 0;
+  const coveragePct =
+    totalFleetBoards > 0 ? Number(((totalSampledBoards / totalFleetBoards) * 100).toFixed(1)) : 0;
 
-  const surplusOrDeficit = extrapolatedFleetDailyCapacity - targetDailyJobs;
-  const status: 'ACHIEVED' | 'DEFICIT' =
-    extrapolatedFleetDailyCapacity >= targetDailyJobs ? 'ACHIEVED' : 'DEFICIT';
+  // If partial ATS scope, fleet-wide aggregate is UNKNOWN (null), NEVER partial sum!
+  const extrapolatedFleetDailyNewJobs = allMeasured ? fleetNewJobsSum : null;
+  const extrapolatedFleetRecentActivity24h = allMeasured ? fleetRecentActivitySum : null;
+  const extrapolatedFleetOpenInventory = allMeasured ? fleetInventorySum : null;
 
-  const verdictWord = status === 'ACHIEVED' ? 'TARGET ACHIEVED' : 'CAPACITY DEFICIT';
-  const diffSign = surplusOrDeficit >= 0 ? '+' : '';
-  const verdictLine = `**Verdict**: Projected fleet daily capacity is ~${extrapolatedFleetDailyCapacity.toLocaleString()} new jobs/day vs target ${targetDailyJobs.toLocaleString()} jobs/day (${verdictWord}: ${diffSign}${surplusOrDeficit.toLocaleString()} jobs/day).`;
+  // Honest Verdict (never ACHIEVED or DEFICIT without first-seen DB evidence)
+  const verdictStatus: FleetCapacityReport['verdict']['status'] = isPartialAts
+    ? 'PARTIAL_SCOPE'
+    : 'NOT_ESTABLISHED';
+
+  let verdictLine: string;
+  if (isPartialAts) {
+    verdictLine = `**Verdict**: NEW-JOBS TARGET: NOT ESTABLISHED (PARTIAL SCOPE: \`--ats ${ctx.atsFilter}\` only; unmeasured ATS platforms are UNKNOWN). Open-job public ATS snapshots cannot prove delivered/deduplicated ingestion per day (live proof comes from PR #557's immutable \`first_seen_at\` DB report).`;
+  } else {
+    verdictLine = `**Verdict**: NEW-JOBS TARGET: NOT ESTABLISHED — Open-job public ATS snapshots cannot prove delivered/deduplicated ingestion per day vs the ${targetDailyJobs.toLocaleString()}/day goal (live proof comes from PR #557's immutable \`first_seen_at\` DB report).`;
+  }
 
   const runDate = new Date(nowEpochMs).toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
 
   return {
+    scriptVersion: SCRIPT_VERSION,
     runDate,
     nowEpochMs,
     trailingWindowHours: 24,
     fleetTargetPerDay: targetDailyJobs,
-    totalFleetBoards,
-    totalSampledBoards,
-    totalSuccessfulBoards,
-    totalFailedBoards,
-    totalBoardsWithDateableJobs,
-    totalBoardsWithZeroDateableJobs,
+    scope: {
+      isPartial,
+      scopeType,
+      atsFilter: ctx.atsFilter,
+      limit: ctx.limit,
+      samplingStrategy,
+      coveragePct,
+      totalFleetBoards,
+      totalSampledBoards,
+      totalSuccessfulBoards,
+      totalFailedBoards,
+      totalBoardsWithDateableNewJobs,
+      totalBoardsWithZeroDateableNewJobs,
+    },
     sampledOpenJobs,
-    sampledJobsTrailing24h,
-    extrapolatedFleetDailyCapacity,
+    sampledNewJobsTrailing24h,
+    sampledRecentActivityTrailing24h,
+    extrapolatedFleetDailyNewJobs,
+    extrapolatedFleetRecentActivity24h,
     extrapolatedFleetOpenInventory,
-    fleetTurnoverRatePct,
     perAts,
     boards,
     verdict: {
-      targetDailyJobs,
-      projectedDailyJobs: extrapolatedFleetDailyCapacity,
-      surplusOrDeficit,
-      status,
+      hasFirstSeenEvidence,
+      status: verdictStatus,
       verdictLine,
     },
+  };
+}
+
+// =============================================================================
+// Provenance Hash & Serialization
+// =============================================================================
+
+export function computeProvenanceHash(payload: Omit<ProvenanceRecord, 'contentHashSha256'>): string {
+  const canonical = JSON.stringify(payload);
+  return crypto.createHash('sha256').update(canonical, 'utf8').digest('hex');
+}
+
+export function buildProvenanceRecord(
+  report: FleetCapacityReport,
+  invocationCommand: string
+): ProvenanceRecord {
+  const basePayload: Omit<ProvenanceRecord, 'contentHashSha256'> = {
+    schemaVersion: '1.0.0',
+    scriptVersion: report.scriptVersion,
+    invocationCommand,
+    runDate: report.runDate,
+    nowEpochMs: report.nowEpochMs,
+    trailingWindowHours: report.trailingWindowHours,
+    scope: report.scope,
+    summary: {
+      sampledOpenJobs: report.sampledOpenJobs,
+      sampledNewJobsTrailing24h: report.sampledNewJobsTrailing24h,
+      sampledRecentActivityTrailing24h: report.sampledRecentActivityTrailing24h,
+      extrapolatedFleetDailyNewJobs: report.extrapolatedFleetDailyNewJobs,
+      extrapolatedFleetRecentActivity24h: report.extrapolatedFleetRecentActivity24h,
+      extrapolatedFleetOpenInventory: report.extrapolatedFleetOpenInventory,
+      perAts: report.perAts,
+      verdict: report.verdict,
+    },
+    boards: report.boards,
+  };
+
+  return {
+    ...basePayload,
+    contentHashSha256: computeProvenanceHash(basePayload),
   };
 }
 
@@ -535,22 +856,38 @@ export function calculateCapacityProjections(
 // Markdown Report Generator
 // =============================================================================
 
-export function generateMarkdownReport(report: FleetCapacityReport): string {
-  const { verdict, perAts, boards } = report;
+function fmtNum(val: number | null, prefix: string = ''): string {
+  if (val === null) return 'UNKNOWN (unmeasured)';
+  return `${prefix}${val.toLocaleString()}`;
+}
 
-  const zeroDateableBoards = boards.filter((b) => b.zeroDateableJobs && b.status !== 'error');
+export function generateMarkdownReport(
+  report: FleetCapacityReport,
+  provenance?: ProvenanceRecord,
+  provenanceFilePath: string = DEFAULT_PROVENANCE_PATH
+): string {
+  const { verdict, perAts, boards, scope } = report;
+
+  const zeroDateableNewBoards = boards.filter((b) => b.zeroDateableNewJobs && b.status !== 'error');
   const errorBoards = boards.filter((b) => b.status === 'error');
-  const topActiveBoards = [...boards]
-    .filter((b) => b.jobsTrailing24h > 0)
-    .sort((a, b) => b.jobsTrailing24h - a.jobsTrailing24h)
+  const topNewJobBoards = [...boards]
+    .filter((b) => b.newJobsTrailing24h > 0)
+    .sort((a, b) => b.newJobsTrailing24h - a.newJobsTrailing24h)
     .slice(0, 20);
+
+  const provenanceBlock = provenance
+    ? `**Provenance Artifact**: \`${provenanceFilePath.replace(/\\/g, '/')}\`  
+**Provenance SHA-256**: \`${provenance.contentHashSha256}\`  
+**Invocation Command**: \`${provenance.invocationCommand}\``
+    : `**Provenance Status**: _UNVERIFIED (in-memory projection without committed raw run JSON)_`;
 
   return `# CareerMonke Fleet Daily Ingestion Capacity Projection
 
 **Audit Run Date**: ${report.runDate}  
-**Fleet Schedule Scope**: ${report.totalFleetBoards} enabled ATS company boards (6-shard partition, polled every 4 hours)  
-**Sampled Scope**: ${report.totalSampledBoards} of ${report.totalFleetBoards} boards (${report.totalSuccessfulBoards} successful, ${report.totalFailedBoards} errors)  
-**Sampling Window**: Trailing 24 hours ($T_{\\text{now}} - 24\\text{h} \\le T_{\\text{job}} \\le T_{\\text{now}}$)  
+**Script Version**: \`${report.scriptVersion}\`  
+**Scope Type**: \`${scope.scopeType}\` (${scope.samplingStrategy})  
+**Fleet Coverage**: ${scope.totalSampledBoards} / ${scope.totalFleetBoards} enabled boards (${scope.coveragePct}% coverage | ${scope.totalSuccessfulBoards} succeeded, ${scope.totalFailedBoards} failed)  
+${provenanceBlock}  
 
 ---
 
@@ -558,96 +895,84 @@ export function generateMarkdownReport(report: FleetCapacityReport): string {
 
 ${verdict.verdictLine}
 
-| Metric | Target | Projected Fleet Value | Status |
-| :--- | :--- | :--- | :--- |
-| **Daily NEW Jobs Supply** | **${report.fleetTargetPerDay.toLocaleString()} / day** | **~${report.extrapolatedFleetDailyCapacity.toLocaleString()} / day** | **${verdict.status === 'ACHIEVED' ? '✅ TARGET ACHIEVED' : '⚠️ DEFICIT'}** |
-| **Surplus / Deficit** | — | ${verdict.surplusOrDeficit >= 0 ? `+${verdict.surplusOrDeficit.toLocaleString()}` : `${verdict.surplusOrDeficit.toLocaleString()}`} jobs/day | ${verdict.status === 'ACHIEVED' ? 'Surplus' : 'Under Target'} |
-| **Fleet Open Job Inventory** | — | ~${report.extrapolatedFleetOpenInventory.toLocaleString()} total active listings | Baseline Pool |
-| **Trailing 24h Turnover Rate** | — | ${report.fleetTurnoverRatePct}% | % of inventory refreshed daily |
-| **Fleet Coverage** | 438 boards | ${report.totalSampledBoards} / ${report.totalFleetBoards} boards checked | 6-shard fleet |
+- **Date-able NEW Jobs Supply (trailing 24h, genuine first-post dates only)**: ${fmtNum(report.extrapolatedFleetDailyNewJobs, '~')} / day (observed in sample: ${report.sampledNewJobsTrailing24h.toLocaleString()})
+- **Recent Activity / Updates (trailing 24h, Greenhouse \`updated_at\` edit churn — NEVER added to NEW jobs)**: ${fmtNum(report.extrapolatedFleetRecentActivity24h, '~')} / day (observed in sample: ${report.sampledRecentActivityTrailing24h.toLocaleString()})
+- **Target Daily NEW Jobs Goal**: ${report.fleetTargetPerDay.toLocaleString()} / day (First-Seen DB Evidence Present: **${verdict.hasFirstSeenEvidence ? 'YES' : 'NO'}**)
+
+| Metric | Estimate / Value | Notes |
+| :--- | :--- | :--- |
+| **Target Status** | **${verdict.status}** | Public ATS snapshots cannot verify deduplicated DB ingestion (see PR #557) |
+| **Date-able NEW Jobs (Trailing 24h)** | **${fmtNum(report.extrapolatedFleetDailyNewJobs, '~')} / day** | Counts ONLY genuine first-post dates (\`first_published\`, \`publishedAt\`, \`createdAt\`) |
+| **Recent Activity / Updates (Trailing 24h)** | **${fmtNum(report.extrapolatedFleetRecentActivity24h, '~')} / day** | Counts Greenhouse \`updated_at\` edit/refresh events separately; never counted as new |
+| **Estimated Fleet Open Inventory** | **${fmtNum(report.extrapolatedFleetOpenInventory, '~')}** | Active public job listings across measured boards |
+| **Failed Boards** | **${scope.totalFailedBoards}** | HTTP errors / timeouts excluded from successful denominator |
 
 > [!IMPORTANT]
-> **Empirical Estimation Notice**: All figures in this report are empirical estimates extrapolated directly from public ATS timestamps observed during this audit run. No synthetic or invented numbers are used.
-> - **Greenhouse**: Exposes \`updated_at\` (reflects newly opened positions as well as requisition edits/refreshes).
-> - **Ashby**: Exposes \`publishedAt\` on publicly listed postings (\`isListed !== false\`).
-> - **Lever**: Exposes \`createdAt\` (precise requisition creation timestamp).
+> **Why Open-Job Snapshots Cannot Prove Target Attainment**:
+> 1. **No Delivery / Deduplication Proof**: Polling open ATS snapshots measures *upstream posting hints*, not *delivered, deduplicated DB inserts*. Live proof of delivered daily NEW jobs comes strictly from PR #557's immutable \`first_seen_at\` database report.
+> 2. **Strict Separation of Edit Churn (\`updated_at\`)**: Greenhouse \`updated_at\` fires on routine requisition edits, recruiter changes, or description tweaks. It is tracked strictly as **recent activity** and NEVER included in NEW-jobs supply. Only genuine first-post fields (\`first_published\` / \`created_at\` on Greenhouse, \`publishedAt\` on Ashby, \`createdAt\` on Lever) feed NEW-jobs supply.
+> 3. **Extrapolation Assumptions**: When a subset of boards is sampled (\`--limit\`) or individual boards fail, extrapolation assumes failed/unsampled boards have the same mean posting rate as successful sampled boards within that ATS platform. Unmeasured ATS platforms under \`--ats\` are strictly reported as **UNKNOWN**.
 
 ---
 
 ## 2. Per-ATS Platform Breakdown
 
-| ATS Platform | Fleet Total Boards | Sampled Boards | Boards w/ Date-able Jobs | Boards w/ Zero Date-able Jobs | Sampled Open Jobs | Trailing 24h Jobs | Avg New Jobs / Board | Extrapolated Daily Jobs | Turnover Rate |
+| ATS Platform | Measured? | Fleet Boards | Sampled Boards | Failed Boards | Boards w/ Zero Date-able NEW | Open Jobs Sampled | Date-able NEW (24h, First-Post) | Recent Activity (24h, \`updated_at\`) | Extrapolated Daily NEW Supply |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Greenhouse** | ${perAts.greenhouse.fleetTotalBoards} | ${perAts.greenhouse.sampledBoards} | ${perAts.greenhouse.boardsWithDateableJobs} | ${perAts.greenhouse.boardsWithZeroDateableJobs} | ${perAts.greenhouse.totalOpenJobsSampled.toLocaleString()} | ${perAts.greenhouse.totalJobsTrailing24hSampled.toLocaleString()} | ${perAts.greenhouse.avgNewJobsPerBoardPerDay} | **~${perAts.greenhouse.extrapolatedDailyCapacity.toLocaleString()}** | ${perAts.greenhouse.turnoverRatePct}% |
-| **Ashby** | ${perAts.ashby.fleetTotalBoards} | ${perAts.ashby.sampledBoards} | ${perAts.ashby.boardsWithDateableJobs} | ${perAts.ashby.boardsWithZeroDateableJobs} | ${perAts.ashby.totalOpenJobsSampled.toLocaleString()} | ${perAts.ashby.totalJobsTrailing24hSampled.toLocaleString()} | ${perAts.ashby.avgNewJobsPerBoardPerDay} | **~${perAts.ashby.extrapolatedDailyCapacity.toLocaleString()}** | ${perAts.ashby.turnoverRatePct}% |
-| **Lever** | ${perAts.lever.fleetTotalBoards} | ${perAts.lever.sampledBoards} | ${perAts.lever.boardsWithDateableJobs} | ${perAts.lever.boardsWithZeroDateableJobs} | ${perAts.lever.totalOpenJobsSampled.toLocaleString()} | ${perAts.lever.totalJobsTrailing24hSampled.toLocaleString()} | ${perAts.lever.avgNewJobsPerBoardPerDay} | **~${perAts.lever.extrapolatedDailyCapacity.toLocaleString()}** | ${perAts.lever.turnoverRatePct}% |
-| **Fleet Total** | **${report.totalFleetBoards}** | **${report.totalSampledBoards}** | **${report.totalBoardsWithDateableJobs}** | **${report.totalBoardsWithZeroDateableJobs}** | **${report.sampledOpenJobs.toLocaleString()}** | **${report.sampledJobsTrailing24h.toLocaleString()}** | **${(report.sampledJobsTrailing24h / Math.max(1, report.totalSuccessfulBoards)).toFixed(3)}** | **~${report.extrapolatedFleetDailyCapacity.toLocaleString()}** | **${report.fleetTurnoverRatePct}%** |
+| **Greenhouse** | ${perAts.greenhouse.measured ? 'YES' : 'NO'} | ${perAts.greenhouse.fleetTotalBoards} | ${fmtNum(perAts.greenhouse.sampledBoards)} | ${fmtNum(perAts.greenhouse.failedBoards)} | ${fmtNum(perAts.greenhouse.boardsWithZeroDateableNewJobs)} | ${fmtNum(perAts.greenhouse.totalOpenJobsSampled)} | ${fmtNum(perAts.greenhouse.newJobsTrailing24hSampled)} | ${fmtNum(perAts.greenhouse.recentActivityTrailing24hSampled)} | **${fmtNum(perAts.greenhouse.extrapolatedDailyNewJobs, '~')}** |
+| **Ashby** | ${perAts.ashby.measured ? 'YES' : 'NO'} | ${perAts.ashby.fleetTotalBoards} | ${fmtNum(perAts.ashby.sampledBoards)} | ${fmtNum(perAts.ashby.failedBoards)} | ${fmtNum(perAts.ashby.boardsWithZeroDateableNewJobs)} | ${fmtNum(perAts.ashby.totalOpenJobsSampled)} | ${fmtNum(perAts.ashby.newJobsTrailing24hSampled)} | N/A | **${fmtNum(perAts.ashby.extrapolatedDailyNewJobs, '~')}** |
+| **Lever** | ${perAts.lever.measured ? 'YES' : 'NO'} | ${perAts.lever.fleetTotalBoards} | ${fmtNum(perAts.lever.sampledBoards)} | ${fmtNum(perAts.lever.failedBoards)} | ${fmtNum(perAts.lever.boardsWithZeroDateableNewJobs)} | ${fmtNum(perAts.lever.totalOpenJobsSampled)} | ${fmtNum(perAts.lever.newJobsTrailing24hSampled)} | N/A | **${fmtNum(perAts.lever.extrapolatedDailyNewJobs, '~')}** |
+| **Fleet Aggregate** | ${scope.isPartial ? 'PARTIAL' : 'FULL'} | **${scope.totalFleetBoards}** | **${scope.totalSampledBoards}** | **${scope.totalFailedBoards}** | **${scope.totalBoardsWithZeroDateableNewJobs}** | **${report.sampledOpenJobs.toLocaleString()}** | **${report.sampledNewJobsTrailing24h.toLocaleString()}** | **${report.sampledRecentActivityTrailing24h.toLocaleString()}** | **${fmtNum(report.extrapolatedFleetDailyNewJobs, '~')}** |
 
 ---
 
-## 3. Top Contributing Boards (Trailing 24 Hours)
+## 3. Top Contributing Boards (Date-able NEW First-Posts in Trailing 24h)
 
-The highest-volume posting boards in the fleet during the audit window:
-
-| Company Name | ATS | Target | Total Open Jobs | Jobs in Trailing 24h | Daily Share % |
+| Company Name | ATS | Target | Open Jobs | Date-able NEW (24h) | Recent Activity \`updated_at\` (24h) |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-${topActiveBoards
-  .map(
-    (b) =>
-      `| ${b.name} | \`${b.ats}\` | \`${b.target}\` | ${b.totalOpenJobs} | **${b.jobsTrailing24h}** | ${((b.jobsTrailing24h / Math.max(1, report.sampledJobsTrailing24h)) * 100).toFixed(1)}% |`
-  )
-  .join('\n')}
-
----
-
-## 4. Flagged Boards with Zero Date-able Jobs (${zeroDateableBoards.length} boards)
-
-Boards returning 0 date-able jobs in the audit run (either zero active open jobs, or dates omitted from ATS response payload):
-
-| Company Name | ATS | Target | Total Open Jobs | Reason / Status |
-| :--- | :--- | :--- | :--- | :--- |
 ${
-  zeroDateableBoards.length === 0
-    ? '| _None_ | — | — | — | All sampled boards provided date-able jobs |'
-    : zeroDateableBoards
-        .slice(0, 50)
+  topNewJobBoards.length === 0
+    ? '| _None observed in sample_ | — | — | — | 0 | 0 |'
+    : topNewJobBoards
         .map(
           (b) =>
-            `| ${b.name} | \`${b.ats}\` | \`${b.target}\` | ${b.totalOpenJobs} | ${b.totalOpenJobs === 0 ? 'Empty board (0 open jobs)' : 'No parseable date fields in payload'} |`
+            `| ${b.name} | \`${b.ats}\` | \`${b.target}\` | ${b.totalOpenJobs} | **${b.newJobsTrailing24h}** | ${b.ats === 'greenhouse' ? b.recentActivityTrailing24h : 'N/A'} |`
         )
         .join('\n')
 }
-${zeroDateableBoards.length > 50 ? `\n_...and ${zeroDateableBoards.length - 50} more boards with zero date-able jobs._` : ''}
 
+---
+
+## 4. Flagged Boards with Zero Date-able NEW Jobs (${zeroDateableNewBoards.length} boards)
+
+Boards returning 0 jobs with genuine first-post dates (\`first_published\` / \`publishedAt\` / \`createdAt\`):
+
+| Company Name | ATS | Target | Total Open Jobs | Recent Activity \`updated_at\` (24h) | Flag Reason |
+| :--- | :--- | :--- | :--- | :--- | :--- |
 ${
-  errorBoards.length > 0
-    ? `
+  zeroDateableNewBoards.length === 0
+    ? '| _None_ | — | — | — | — | All successful boards exposed genuine first-post dates |'
+    : zeroDateableNewBoards
+        .slice(0, 50)
+        .map(
+          (b) =>
+            `| ${b.name} | \`${b.ats}\` | \`${b.target}\` | ${b.totalOpenJobs} | ${b.ats === 'greenhouse' ? b.recentActivityTrailing24h : 'N/A'} | ${b.totalOpenJobs === 0 ? 'Empty board (0 open jobs)' : 'No genuine first-post date exposed by ATS'} |`
+        )
+        .join('\n')
+}
+${zeroDateableNewBoards.length > 50 ? `\n_...and ${zeroDateableNewBoards.length - 50} more boards with zero date-able NEW jobs (see provenance JSON)._` : ''}
+
 ---
 
 ## 5. Boards with Fetch Errors (${errorBoards.length} boards)
 
 | Company Name | ATS | Target | Error Message |
 | :--- | :--- | :--- | :--- |
-${errorBoards.map((b) => `| ${b.name} | \`${b.ats}\` | \`${b.target}\` | \`${b.error || 'Unknown error'}\` |`).join('\n')}
-`
-    : ''
+${
+  errorBoards.length === 0
+    ? '| _None_ | — | — | Zero failed requests |'
+    : errorBoards.map((b) => `| ${b.name} | \`${b.ats}\` | \`${b.target}\` | \`${b.error || 'Unknown error'}\` |`).join('\n')
 }
-
----
-
-## 6. Mathematical Methodology & Projection Formulas
-
-1. **Board-Level Daily Posting Rate**:
-   $$\\text{Rate}_b = \\sum_{j \\in \\text{Jobs}_b} \\mathbb{I}\\left(T_{\\text{now}} - 24\\text{h} \\le T_j \\le T_{\\text{now}}\\right)$$
-2. **Platform Average Posting Rate**:
-   $$\\mu_{\\text{ATS}} = \\frac{\\sum_{b \\in S_{\\text{ATS}}} \\text{Rate}_b}{|S_{\\text{ATS}}|}$$
-3. **Fleet-Wide Extrapolated Daily Supply**:
-   $$\\widehat{C}_{\\text{fleet}} = \\sum_{\\text{ATS} \\in \\{\\text{GH}, \\text{Ashby}, \\text{Lever}\\}} \\left(\\mu_{\\text{ATS}} \\times N_{\\text{ATS}}\\right)$$
-   Where $N_{\\text{ATS}}$ is the fleet-wide enabled board count (Greenhouse: 227, Ashby: 170, Lever: 41, Total: 438).
-4. **Target Feasibility Determination**:
-   $$\\Delta = \\widehat{C}_{\\text{fleet}} - 1200$$
-   - If $\\Delta \\ge 0$: Fleet posting rate **can deliver 1,200+ new jobs/day**.
-   - If $\\Delta < 0$: Fleet posting rate exhibits a **deficit of $|\\Delta|$ jobs/day**.
 `;
 }
 
@@ -655,19 +980,20 @@ ${errorBoards.map((b) => `| ${b.name} | \`${b.ats}\` | \`${b.target}\` | \`${b.e
 // Main Execution Engine
 // =============================================================================
 
-export async function runCapacityProjection(options: CapacityCliOptions): Promise<FleetCapacityReport> {
+export async function runCapacityProjection(
+  options: CapacityCliOptions,
+  rawArgv: string[] = []
+): Promise<FleetCapacityReport> {
   const rawConfig = fs.readFileSync(path.resolve(options.configPath), 'utf8');
   const allCompanies: ScheduledCompany[] = JSON.parse(rawConfig);
   const enabledCompanies = allCompanies.filter((c) => c.enabled);
 
-  // Compute fleet total counts by ATS
   const fleetEnabledCounts: Record<AtsType, number> = {
     greenhouse: enabledCompanies.filter((c) => c.type === 'greenhouse').length,
     ashby: enabledCompanies.filter((c) => c.type === 'ashby').length,
     lever: enabledCompanies.filter((c) => c.type === 'lever').length,
   };
 
-  // Filter by ATS if requested
   let targetCompanies = enabledCompanies.filter((c) =>
     SUPPORTED_ATS_TYPES.includes(c.type as AtsType)
   );
@@ -676,39 +1002,40 @@ export async function runCapacityProjection(options: CapacityCliOptions): Promis
     targetCompanies = targetCompanies.filter((c) => c.type === options.atsFilter);
   }
 
-  // Apply limit if requested
-  if (options.limit && options.limit > 0) {
-    targetCompanies = targetCompanies.slice(0, options.limit);
-  }
+  // Representative stratified systematic sampling for --limit
+  targetCompanies = selectRepresentativeSample(targetCompanies, options.limit);
 
   console.log('================================================================================');
   console.log('       CAREERMONKE FLEET DAILY INGESTION CAPACITY PROJECTION TOOL               ');
   console.log('================================================================================');
   console.log(`Config File:           ${options.configPath}`);
   console.log(`Fleet Enabled Boards:  ${enabledCompanies.length} (GH: ${fleetEnabledCounts.greenhouse}, Ashby: ${fleetEnabledCounts.ashby}, Lever: ${fleetEnabledCounts.lever})`);
-  console.log(`Planned Sample Size:   ${targetCompanies.length} boards`);
-  console.log(`Target Daily Jobs:     ${options.targetDailyJobs} new jobs/day`);
+  console.log(`Sample Scope:          ${targetCompanies.length} boards${options.atsFilter ? ` (ATS filter: ${options.atsFilter})` : ''}${options.limit ? ` (Systematic sample limit: ${options.limit})` : ''}`);
   console.log(`Polite Delay:          ${options.delayMs}ms per board`);
-  console.log(`Execution Mode:        ${options.dryRun ? 'DRY-RUN (No network calls made)' : 'LIVE AUDIT'}`);
-  console.log(`Output Markdown:       ${options.outputPath}`);
+  console.log(`Execution Mode:        ${options.dryRun ? 'DRY-RUN (Safe default - no network calls made)' : 'LIVE EXECUTION'}`);
+  console.log(`Report Path:           ${options.outputPath}`);
+  console.log(`Provenance Path:       ${options.provenancePath}`);
   console.log('================================================================================\n');
 
   if (options.dryRun) {
-    console.log('[DRY-RUN] Planned board polling:');
-    for (const c of targetCompanies.slice(0, 10)) {
+    console.log('[DRY-RUN] Planned representative board polling:');
+    for (const c of targetCompanies.slice(0, 12)) {
       console.log(`  - [${c.type.toUpperCase()}] ${c.name} (target: '${c.target}')`);
     }
-    if (targetCompanies.length > 10) {
-      console.log(`  ...and ${targetCompanies.length - 10} more scheduled boards.`);
+    if (targetCompanies.length > 12) {
+      console.log(`  ...and ${targetCompanies.length - 12} more scheduled boards.`);
     }
-    console.log('\n[DRY-RUN] To run live execution and write report, execute without --dry-run:');
-    console.log('  npx tsx scripts/project-daily-capacity.ts\n');
+    console.log('\n[DRY-RUN] Normal invocation defaults to --dry-run. Pass --live to execute network calls:');
+    console.log('  npx tsx scripts/project-daily-capacity.ts --live\n');
 
-    // Return empty dry-run report
-    return calculateCapacityProjections([], fleetEnabledCounts, options.targetDailyJobs);
+    return calculateCapacityProjections([], fleetEnabledCounts, {
+      atsFilter: options.atsFilter,
+      limit: options.limit,
+      targetDailyJobs: options.targetDailyJobs,
+    });
   }
 
-  // Live polling
+  // Live polling (requires --live flag)
   const nowMs = Date.now();
   const boardMetrics: BoardCapacityMetrics[] = [];
 
@@ -716,9 +1043,10 @@ export async function runCapacityProjection(options: CapacityCliOptions): Promis
     const c = targetCompanies[idx];
     const ats = c.type as AtsType;
     const progress = `[${idx + 1}/${targetCompanies.length}]`;
+    const fetchedAt = new Date().toISOString();
 
     try {
-      let parsedResult: { totalJobs: number; dateableJobs: number; jobsTrailing24h: number; zeroDateableJobs: boolean };
+      let parsedResult: ParsedBoardResult;
 
       if (ats === 'greenhouse') {
         const data = await fetchGreenhouseBoard(c.target);
@@ -738,16 +1066,19 @@ export async function runCapacityProjection(options: CapacityCliOptions): Promis
         name: c.name,
         ats,
         target: c.target,
+        fetchedAt,
         totalOpenJobs: parsedResult.totalJobs,
-        dateableJobs: parsedResult.dateableJobs,
-        jobsTrailing24h: parsedResult.jobsTrailing24h,
-        zeroDateableJobs: parsedResult.zeroDateableJobs,
-        status: parsedResult.zeroDateableJobs ? 'zero_dateable' : 'ok',
+        dateableNewJobs: parsedResult.dateableNewJobs,
+        newJobsTrailing24h: parsedResult.newJobsTrailing24h,
+        zeroDateableNewJobs: parsedResult.zeroDateableNewJobs,
+        recentActivityDateableJobs: parsedResult.recentActivityDateableJobs,
+        recentActivityTrailing24h: parsedResult.recentActivityTrailing24h,
+        status: parsedResult.zeroDateableNewJobs ? 'zero_dateable_new' : 'ok',
       };
 
       boardMetrics.push(metric);
-      const tag = parsedResult.zeroDateableJobs ? '(Zero date-able)' : `(${parsedResult.jobsTrailing24h} in 24h)`;
-      console.log(`${progress} ${c.name} [${ats}]: ${parsedResult.totalJobs} jobs, ${parsedResult.dateableJobs} dateable ${tag}`);
+      const recentTag = ats === 'greenhouse' ? `, recent_updated=${parsedResult.recentActivityTrailing24h}` : '';
+      console.log(`${progress} ${c.name} [${ats}]: ${parsedResult.totalJobs} open, ${parsedResult.dateableNewJobs} dateable_new (${parsedResult.newJobsTrailing24h} in 24h${recentTag})`);
     } catch (err: any) {
       console.warn(`${progress} ${c.name} [${ats}]: ERROR - ${err.message}`);
       boardMetrics.push({
@@ -755,53 +1086,62 @@ export async function runCapacityProjection(options: CapacityCliOptions): Promis
         name: c.name,
         ats,
         target: c.target,
+        fetchedAt,
         totalOpenJobs: 0,
-        dateableJobs: 0,
-        jobsTrailing24h: 0,
-        zeroDateableJobs: true,
-        error: err.message,
+        dateableNewJobs: 0,
+        newJobsTrailing24h: 0,
+        zeroDateableNewJobs: true,
+        recentActivityDateableJobs: 0,
+        recentActivityTrailing24h: 0,
         status: 'error',
+        error: err.message,
       });
     }
 
-    // Polite rate limiting between consecutive boards
     if (idx < targetCompanies.length - 1 && options.delayMs > 0) {
       await sleep(options.delayMs);
     }
   }
 
-  // Calculate fleet-wide projections
-  const report = calculateCapacityProjections(boardMetrics, fleetEnabledCounts, options.targetDailyJobs, nowMs);
-  const markdown = generateMarkdownReport(report);
+  const report = calculateCapacityProjections(boardMetrics, fleetEnabledCounts, {
+    atsFilter: options.atsFilter,
+    limit: options.limit,
+    targetDailyJobs: options.targetDailyJobs,
+    nowEpochMs: nowMs,
+  });
 
-  // Write report to disk
+  const invocationCommand = `npx tsx scripts/project-daily-capacity.ts ${rawArgv.join(' ')}`.trim();
+  const provenance = buildProvenanceRecord(report, invocationCommand);
+  const markdown = generateMarkdownReport(report, provenance, options.provenancePath);
+
   const fullOutputPath = path.resolve(options.outputPath);
   fs.mkdirSync(path.dirname(fullOutputPath), { recursive: true });
   fs.writeFileSync(fullOutputPath, markdown, 'utf8');
+
+  const fullProvPath = path.resolve(options.provenancePath);
+  fs.mkdirSync(path.dirname(fullProvPath), { recursive: true });
+  fs.writeFileSync(fullProvPath, JSON.stringify(provenance, null, 2) + '\n', 'utf8');
 
   console.log('\n================================================================================');
   console.log('                          CAPACITY PROJECTION RESULTS                           ');
   console.log('================================================================================');
   console.log(report.verdict.verdictLine);
-  console.log(`Sampled:             ${report.totalSampledBoards} boards (${report.totalSuccessfulBoards} successful)`);
-  console.log(`Observed Open Jobs:  ${report.sampledOpenJobs.toLocaleString()}`);
-  console.log(`Observed Trailing:   ${report.sampledJobsTrailing24h.toLocaleString()} jobs in trailing 24h`);
-  console.log(`Extrapolated Fleet:  ~${report.extrapolatedFleetDailyCapacity.toLocaleString()} new jobs/day`);
-  console.log(`Extrapolated Pool:   ~${report.extrapolatedFleetOpenInventory.toLocaleString()} open jobs pool`);
-  console.log(`Report Generated:    ${options.outputPath}`);
+  console.log(`Date-able NEW (first-post):  ${fmtNum(report.extrapolatedFleetDailyNewJobs, '~')} / day (sample: ${report.sampledNewJobsTrailing24h})`);
+  console.log(`Recent Activity (updated_at): ${fmtNum(report.extrapolatedFleetRecentActivity24h, '~')} / day (sample: ${report.sampledRecentActivityTrailing24h})`);
+  console.log(`Provenance JSON:              ${options.provenancePath} (sha256: ${provenance.contentHashSha256})`);
+  console.log(`Markdown Report:              ${options.outputPath}`);
   console.log('================================================================================\n');
 
   return report;
 }
 
-// Auto-run when executed directly from CLI
 if (
-  typeof require !== 'undefined' &&
-  require.main === module ||
+  (typeof require !== 'undefined' && require.main === module) ||
   (process.argv[1] && process.argv[1].endsWith('project-daily-capacity.ts'))
 ) {
-  const options = parseCapacityCliArgs(process.argv.slice(2));
-  runCapacityProjection(options).catch((err) => {
+  const argv = process.argv.slice(2);
+  const options = parseCapacityCliArgs(argv);
+  runCapacityProjection(options, argv).catch((err) => {
     console.error('Fatal execution error:', err);
     process.exit(1);
   });

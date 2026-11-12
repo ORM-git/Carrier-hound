@@ -3,31 +3,36 @@
     {
       "id": 101,
       "title": "Staff Infrastructure Engineer",
+      "first_published": "2026-11-12T08:00:00.000Z",
       "updated_at": "2026-11-12T08:00:00.000Z",
       "absolute_url": "https://boards.greenhouse.io/example/jobs/101"
     },
     {
       "id": 102,
-      "title": "Senior Product Designer",
-      "updated_at": "2026-11-11T18:00:00.000Z",
+      "title": "Senior Product Designer (Old Post Edited Today)",
+      "first_published": "2026-10-01T12:00:00.000Z",
+      "updated_at": "2026-11-12T06:00:00.000Z",
       "absolute_url": "https://boards.greenhouse.io/example/jobs/102"
     },
     {
       "id": 103,
-      "title": "Engineering Manager - Billing",
-      "updated_at": "2026-11-10T10:00:00.000Z",
+      "title": "Engineering Manager (Updated Only, No first_published)",
+      "first_published": null,
+      "updated_at": "2026-11-12T09:00:00.000Z",
       "absolute_url": "https://boards.greenhouse.io/example/jobs/103"
     },
     {
       "id": 104,
-      "title": "Executive Assistant",
-      "updated_at": null,
+      "title": "Senior Solutions Architect",
+      "first_published": "2026-11-10T10:00:00.000Z",
+      "updated_at": "2026-11-10T10:00:00.000Z",
       "absolute_url": "https://boards.greenhouse.io/example/jobs/104"
     },
     {
       "id": 105,
-      "title": "Senior Solutions Architect",
-      "updated_at": "2026-11-01T00:00:00.000Z",
+      "title": "Executive Assistant (Undated)",
+      "first_published": null,
+      "updated_at": null,
       "absolute_url": "https://boards.greenhouse.io/example/jobs/105"
     }
   ]
