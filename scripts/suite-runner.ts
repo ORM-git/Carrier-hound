@@ -275,6 +275,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-reconciliation-workflow-wiring.ts", command: "npx tsx scripts/test-reconciliation-workflow-wiring.ts", classification: "offline" },
   { name: "scripts/test-ingest-board-scale.ts", command: "npx tsx scripts/test-ingest-board-scale.ts", classification: "offline" },
   { name: "scripts/test-landing-parity.ts", command: "npx tsx scripts/test-landing-parity.ts", classification: "offline" },
+  { name: "scripts/test-statement-timeouts.ts", command: "npx tsx scripts/test-statement-timeouts.ts", classification: "offline" },
 ];
 
 export interface RunSummary {
