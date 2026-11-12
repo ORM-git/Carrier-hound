@@ -62,11 +62,9 @@ async function main() {
   });
 
   const startTime = Date.now();
-  const { data, error } = await supabase
-    .rpc("purge_operational_logs", {
-      dry_run: dry,
-    })
-    .abortSignal(AbortSignal.timeout(30_000));
+  const { data, error } = await supabase.rpc("purge_operational_logs", {
+    dry_run: dry,
+  });
 
   if (error) {
     console.error(`✗ FAILED: purge_operational_logs RPC error: ${error.message}`);
@@ -111,9 +109,10 @@ async function main() {
   // hot table into jobs_archive. Fail-open: until the migration is applied
   // the function is missing - warn and skip without failing the cron run.
   const archiveStart = Date.now();
-  const { data: archiveData, error: archiveError } = await supabase
-    .rpc("archive_expired_jobs", { dry_run: dry })
-    .abortSignal(AbortSignal.timeout(30_000));
+  const { data: archiveData, error: archiveError } = await supabase.rpc(
+    "archive_expired_jobs",
+    { dry_run: dry }
+  );
 
   if (archiveError) {
     if (/could not find|does not exist|function|PGRST202/i.test(archiveError.message)) {
@@ -162,9 +161,10 @@ async function main() {
   // function). Fail-open: until the migration is applied the function is
   // missing - warn and skip without failing the cron run.
   const reindexStart = Date.now();
-  const { data: reindexData, error: reindexError } = await supabase
-    .rpc("reindex_bloated_indexes", { dry_run: dry })
-    .abortSignal(AbortSignal.timeout(300_000));
+  const { data: reindexData, error: reindexError } = await supabase.rpc(
+    "reindex_bloated_indexes",
+    { dry_run: dry }
+  );
 
   if (reindexError) {
     if (/could not find|does not exist|function|PGRST202/i.test(reindexError.message)) {

@@ -1,16 +1,18 @@
 /**
  * scripts/test-statement-timeouts.ts
  *
- * Offline guard test for statement timeout discipline and caller enforcement.
+ * Offline guard test for statement timeout discipline.
  * Verifies:
  *   1. Migration file exists: supabase/migrations/20261112b_statement_timeouts.sql
  *   2. Migration carries the required NOT APPLIED header comment:
  *      "NOT APPLIED - record-migration.cjs 20261112b_statement_timeouts"
- *   3. docs/statement-timeouts.md exists, explains caller enforcement, removes unverified p99s,
- *      and documents reindex_bloated_indexes loop/rollback behavior and maintenance budget.
- *   4. Zero forbidden statements outside comments: no INSERT, UPDATE, DELETE, DROP, CREATE, or TRUNCATE.
- *   5. Role-level defaults: ALTER ROLE authenticator and service_role set statement_timeout.
- *   6. Argument signatures: Every ALTER FUNCTION specifies exact argument signatures matching
+ *   3. docs/statement-timeouts.md exists, distinguishes invocation routes (REST RPC, direct, pg_cron),
+ *      notes retention-cron.ts and ingest.ts use REST, confirms ALTER FUNCTION statement_timeout
+ *      IS supported for REST RPCs, covers reindex loop/rollback mechanics and REST 60s bounds,
+ *      removes unverified p99s, explains RESET inheritance, and includes PostgREST config reload note.
+ *   4. Zero forbidden statements: no INSERT, UPDATE, DELETE, DROP, CREATE, TRUNCATE, or ALTER TABLE.
+ *   5. Zero ALTER ROLE statements: no broad role ceilings added to service_role or reasserted on authenticator.
+ *   6. Exact argument signatures: Every ALTER FUNCTION specifies exact argument signatures matching
  *      the canonical defining migrations.
  *   7. Rollback block: Contains exact rollback commands, restores previous proconfig for
  *      db_health_snapshot (SET statement_timeout = '5s' preserved from 20261108b, NOT RESET blindly).
@@ -68,7 +70,7 @@ function normalizeSignature(sig: string): string {
 
 function runStatementTimeoutTests() {
   console.log("================================================================================");
-  console.log("       STATEMENT TIMEOUT DISCIPLINE & CALLER ENFORCEMENT GUARD TEST             ");
+  console.log("       STATEMENT TIMEOUT DISCIPLINE & INVOCATION ARCHITECTURE GUARD TEST        ");
   console.log("================================================================================\n");
 
   if (isNegativeControl) {
@@ -101,20 +103,33 @@ function runStatementTimeoutTests() {
   const docContent = fs.readFileSync(docPath, "utf8");
   assert.ok(docContent.includes("statement_timeout"), "Doc must explain statement_timeout discipline");
   assert.ok(docContent.includes("SECURITY DEFINER"), "Doc must cover SECURITY DEFINER connection holding risk");
-  assert.ok(docContent.includes("authenticator"), "Doc must cover authenticator role default");
-  assert.ok(docContent.includes("service_role"), "Doc must cover service_role default");
+  assert.ok(docContent.includes("retention-cron.ts"), "Doc must identify retention-cron.ts as using REST RPC");
+  assert.ok(docContent.includes("ingest.ts"), "Doc must identify ingest.ts as using REST RPC");
+  assert.ok(
+    docContent.includes("IS fully supported and effective for REST RPC calls") ||
+      docContent.includes("is supported and effective for REST RPC calls"),
+    "Doc must affirm that function-level statement_timeout is supported for REST RPC calls"
+  );
+  assert.ok(docContent.includes("Direct PostgreSQL Connection"), "Doc must distinguish direct connection route");
+  assert.ok(docContent.includes("pg_cron"), "Doc must distinguish pg_cron background route");
+  assert.ok(docContent.includes("60 seconds") || docContent.includes("60s"), "Doc must note Supabase REST 60s gateway bound");
   assert.ok(docContent.includes("reindex_bloated_indexes"), "Doc must catalog reindex_bloated_indexes");
   assert.ok(docContent.includes("57014"), "Doc must explain 57014 cancellation code and rollback");
-  assert.ok(docContent.includes("maintenance budget"), "Doc must size maintenance budget for multi-index loops");
-  assert.ok(docContent.includes("SET LOCAL statement_timeout"), "Doc must explain SET LOCAL caller pattern");
-  assert.ok(docContent.includes("pg_cron"), "Doc must explain pg_cron command wrapper pattern");
   assert.ok(
     !/Normal p99/i.test(docContent),
     "Doc must NOT claim unverified 'Normal p99' measurements without provenance"
   );
+  assert.ok(
+    docContent.includes("NOTIFY pgrst, 'reload config'"),
+    "Doc runbook must include PostgREST config reload note (NOTIFY pgrst, 'reload config')"
+  );
+  assert.ok(
+    docContent.includes("Pre-Apply Capture") || docContent.includes("pre-apply"),
+    "Doc runbook must include pre-apply capture step"
+  );
 
   // 4. Content sanity: strip comments and check prohibited statements
-  console.log("Test 4: Statement purity (no INSERT, UPDATE, DELETE, DROP, CREATE, TRUNCATE)...");
+  console.log("Test 4: Statement purity (no INSERT, UPDATE, DELETE, DROP, CREATE, TRUNCATE, ALTER ROLE)...");
   const codeOnly = migrationRaw
     .replace(/--.*$/gm, "")
     .replace(/\/\*[\s\S]*?\*\//g, "")
@@ -128,6 +143,7 @@ function runStatementTimeoutTests() {
     { word: "CREATE", re: /\bCREATE\b/i },
     { word: "TRUNCATE", re: /\bTRUNCATE\b/i },
     { word: "ALTER TABLE", re: /\bALTER\s+TABLE\b/i },
+    { word: "ALTER ROLE", re: /\bALTER\s+ROLE\b/i },
     { word: "TRIGGER", re: /\bTRIGGER\b/i },
     { word: "cron.schedule", re: /\bcron\.schedule\b/i },
   ];
@@ -139,36 +155,26 @@ function runStatementTimeoutTests() {
     );
   }
 
-  // 5. Parse every statement and verify ALTER ROLE and ALTER FUNCTION
-  console.log("Test 5: Verifying role-level and function-level statements...");
+  // 5. Parse every statement and verify ALTER FUNCTION with exact argument signatures
+  console.log("Test 5: Verifying all statements are ALTER FUNCTION with exact signatures...");
   const statements = codeOnly
     .split(";")
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
 
-  // Role statements check
-  const roleStmts = statements.filter((s) => s.toUpperCase().startsWith("ALTER ROLE"));
-  assert.ok(roleStmts.length >= 2, `Expected at least 2 ALTER ROLE statements, got ${roleStmts.length}`);
-  const hasAuthenticator = roleStmts.some((s) =>
-    /ALTER\s+ROLE\s+authenticator\s+SET\s+statement_timeout\s*=\s*'15s'/i.test(s)
-  );
-  const hasServiceRole = roleStmts.some((s) =>
-    /ALTER\s+ROLE\s+service_role\s+SET\s+statement_timeout\s*=\s*'\d+s'/i.test(s)
-  );
-  assert.ok(hasAuthenticator, "Must set statement_timeout on role authenticator");
-  assert.ok(hasServiceRole, "Must set statement_timeout on role service_role");
-
-  // Function statements check
-  const fnStmts = statements.filter((s) => s.toUpperCase().startsWith("ALTER FUNCTION"));
   assert.strictEqual(
-    fnStmts.length,
+    statements.length,
     Object.keys(CANONICAL_TARGETS).length,
-    `Expected exactly ${Object.keys(CANONICAL_TARGETS).length} ALTER FUNCTION statements, got ${fnStmts.length}`
+    `Expected exactly ${Object.keys(CANONICAL_TARGETS).length} ALTER FUNCTION statements, got ${statements.length}`
   );
 
   const foundTargets = new Set<string>();
 
-  for (const stmt of fnStmts) {
+  for (const stmt of statements) {
+    assert.ok(
+      stmt.toUpperCase().startsWith("ALTER FUNCTION"),
+      `Statement must start with ALTER FUNCTION: "${stmt}"`
+    );
     assert.ok(
       stmt.toUpperCase().includes("SET STATEMENT_TIMEOUT"),
       `Statement must configure statement_timeout: "${stmt}"`
@@ -192,11 +198,11 @@ function runStatementTimeoutTests() {
       `Argument signature mismatch for '${fnName}': expected '${expectedArgs}', got '${args}'`
     );
 
-    // reindex_bloated_indexes must receive a maintenance budget (>= 300s)
+    // reindex_bloated_indexes must fit the Supabase REST bound (60s)
     if (fnName === "reindex_bloated_indexes") {
       assert.ok(
-        /SET\s+statement_timeout\s*=\s*'(?:300s|5min|5m)'/i.test(stmt),
-        "reindex_bloated_indexes must have maintenance budget of at least 300s (5min)"
+        /SET\s+statement_timeout\s*=\s*'60s'/i.test(stmt),
+        "reindex_bloated_indexes must be set to '60s' to fit Supabase REST gateway bound"
       );
     }
 
@@ -214,25 +220,20 @@ function runStatementTimeoutTests() {
   }
 
   // 6. Rollback Block & Exact proconfig restoration
-  console.log("Test 6: Rollback block presence, role restorations, and exact function proconfig preservation...");
+  console.log("Test 6: Rollback block presence, exact proconfig preservation, and no unbounded claims...");
   assert.ok(
     /--\s*=+\s*\n--\s*ROLLBACK\s+INSTRUCTIONS/i.test(migrationRaw),
     "Migration must contain commented ROLLBACK INSTRUCTIONS block"
   );
 
-  // Extract rollback block text
   const rollbackIdx = migrationRaw.search(/--\s*ROLLBACK/i);
   assert.ok(rollbackIdx !== -1, "Must find ROLLBACK block in migration");
   const rollbackText = migrationRaw.slice(rollbackIdx);
 
-  // Role rollback checks
+  // Must not claim RESET restores an unbounded baseline
   assert.ok(
-    /ALTER\s+ROLE\s+authenticator\s+(?:SET\s+statement_timeout\s*=\s*'15s'|RESET\s+statement_timeout)/i.test(rollbackText),
-    "Rollback must restore authenticator statement_timeout"
-  );
-  assert.ok(
-    /ALTER\s+ROLE\s+service_role\s+RESET\s+statement_timeout/i.test(rollbackText),
-    "Rollback must reset service_role statement_timeout to unbounded default"
+    !/RESET restores an unbounded baseline/i.test(rollbackText),
+    "Rollback must NOT claim that RESET restores an unbounded baseline"
   );
 
   // db_health_snapshot exact proconfig preservation: MUST NOT RESET BLINDLY!
@@ -245,7 +246,7 @@ function runStatementTimeoutTests() {
     "Rollback must restore db_health_snapshot statement_timeout = '5s' (preserving 20261108b)"
   );
 
-  // Verify all other 13 functions are present in rollback
+  // Verify all other 13 functions are present in rollback with exact signatures
   for (const [fnName, sig] of Object.entries(CANONICAL_TARGETS)) {
     if (fnName === "db_health_snapshot") continue;
     const escapedSig = sig.replace(/\(/g, "\\(").replace(/\)/g, "\\)").replace(/,/g, "\\s*,\\s*");
