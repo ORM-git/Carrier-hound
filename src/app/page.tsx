@@ -309,7 +309,7 @@ export default function HomePage() {
               <circle cx="4" cy="4" r="2" />
             </svg>
           </a>
-          <a href="mailto:orissaleepatnaik@gmail.com" aria-label="Email">
+          <a href="mailto:support@careermonke.com" aria-label="Email">
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <rect x="2" y="4" width="20" height="16" rx="2" />
               <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />

@@ -107,7 +107,7 @@ async function runParityTests() {
     "Founder Instagram link must match"
   );
   assert.ok(
-    pageSrc.includes('href="mailto:orissaleepatnaik@gmail.com"'),
+    pageSrc.includes('href="mailto:support@careermonke.com"'),
     "Founder Email link must match"
   );
   assert.ok(pageSrc.includes("Free preview"), "Free preview CTA heading must exist");
