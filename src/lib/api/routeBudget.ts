@@ -43,12 +43,19 @@ export async function measureRouteBudget<T>(route: string, fn: () => Promise<T>)
   try {
     return await fn();
   } finally {
-    const durationMs = Date.now() - start;
-    const budgetMs = getRouteBudgetMs(route);
-    if (durationMs > budgetMs) {
-      log.warn("ROUTE_BUDGET_EXCEEDED", {
-        event: "ROUTE_BUDGET_EXCEEDED", route, budgetMs, durationMs,
-      });
+    try {
+      const durationMs = Date.now() - start;
+      const budgetMs = getRouteBudgetMs(route);
+      if (durationMs > budgetMs) {
+        log.warn("ROUTE_BUDGET_EXCEEDED", {
+          event: "ROUTE_BUDGET_EXCEEDED",
+          route,
+          budgetMs,
+          durationMs,
+        });
+      }
+    } catch {
+      // Never allow budget logging to fail or mask the route response.
     }
   }
 }

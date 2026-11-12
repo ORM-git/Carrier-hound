@@ -52,6 +52,32 @@ async function main() {
     console.log("ok - id validation boundaries enforced");
   }
 
+  // 5. POST request does NOT disturb bodyUsed or break `new Request(req.url, req)` (Cloudflare next-on-pages 1101 guard)
+  {
+    const postReq = new NextRequest("http://localhost:3000/api/early-access", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "cf-post-check@example.com" }),
+    });
+    const res = await middleware(postReq);
+    assert.strictEqual(postReq.bodyUsed, false, "middleware must never consume POST request body");
+    const clonedReq = new Request(postReq.url, postReq);
+    assert.strictEqual(
+      await clonedReq.text(),
+      JSON.stringify({ email: "cf-post-check@example.com" }),
+      "downstream new Request(url, req) must read full POST body cleanly"
+    );
+    const id = res.headers.get(REQUEST_ID_HEADER);
+    assert.ok(id && UUID_RE.test(id), "POST middleware response must include x-request-id");
+    assert.strictEqual(res.headers.get("x-middleware-next"), "1", "public API POST must pass through middleware");
+    assert.strictEqual(
+      res.headers.get(`x-middleware-request-${REQUEST_ID_HEADER}`),
+      id,
+      "middleware must forward x-request-id to downstream route via override header"
+    );
+    console.log("ok - POST request body preserved for Cloudflare next-on-pages downstream Request()");
+  }
+
   console.log("\nAll request-id checks passed.");
 }
 

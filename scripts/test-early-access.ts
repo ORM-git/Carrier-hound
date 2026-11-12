@@ -1724,6 +1724,281 @@ async function main() {
     console.log(`  [PASS] Negative control '${flag}' exited non-zero (${child.status})`);
   }
 
+  // ---------------------------------------------------------------------------
+  // TEST 8: Cloudflare Pages 1101 / JSON-Only Error & AI Quota Rollback Regression
+  // ---------------------------------------------------------------------------
+  console.log("\n[TEST 8] Verifying Cloudflare Pages 1101 POST preservation, JSON error resilience, AI quota rollback, and 5xx logging...");
+  {
+    // 8A. Middleware must pass POST requests without consuming bodyUsed or breaking `new Request(url, req)`
+    const bodyPayload = JSON.stringify({ email: "cf-preview@example.com" });
+    const postMwReq = new NextRequest("http://localhost:3000/api/early-access", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: bodyPayload,
+    });
+    const postMwRes = await middleware(postMwReq);
+    assert.strictEqual(postMwReq.bodyUsed, false, "Middleware must NOT consume POST request body (prevents CF 1101)");
+    const downstreamReq = new Request(postMwReq.url, postMwReq);
+    assert.strictEqual(
+      await downstreamReq.text(),
+      bodyPayload,
+      "Cloudflare next-on-pages downstream `new Request(url, req)` must preserve POST body"
+    );
+    assert.strictEqual(postMwRes.headers.get("x-middleware-next"), "1");
+    assert.ok(postMwRes.headers.get("x-request-id"), "Middleware must attach x-request-id on POST pass-through");
+
+    // 8B. POST /api/early-access returns valid JSON for invalid email (400), honeypot (200), and defensive error paths (500)
+    const invalidRes = await earlyAccessPost(
+      new Request("http://localhost:3000/api/early-access", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.201" },
+        body: JSON.stringify({ email: "not-an-email" }),
+      })
+    );
+    assert.strictEqual(invalidRes.status, 400);
+    assert.ok((invalidRes.headers.get("content-type") || "").includes("application/json"));
+    const invalidJson = await invalidRes.json();
+    assert.strictEqual(invalidJson.ok, false);
+
+    const honeypotRes = await earlyAccessPost(
+      new Request("http://localhost:3000/api/early-access", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.202" },
+        body: JSON.stringify({ email: "", website: "http://bot.spam" }),
+      })
+    );
+    assert.strictEqual(honeypotRes.status, 200);
+    assert.ok((honeypotRes.headers.get("content-type") || "").includes("application/json"));
+    const honeypotJson = await honeypotRes.json();
+    assert.strictEqual(honeypotJson.ok, true);
+
+    const brokenReq = {
+      headers: {
+        get() {
+          throw new Error("Simulated malformed header access");
+        },
+      },
+    } as unknown as Request;
+    const brokenRes = await earlyAccessPost(brokenReq);
+    assert.strictEqual(brokenRes.status, 500);
+    assert.ok((brokenRes.headers.get("content-type") || "").includes("application/json"));
+    const brokenJson = await brokenRes.json();
+    assert.strictEqual(brokenJson.ok, false);
+
+    // 8C. AI routes always return JSON (never throw non-JSON 500), failed AI never consumes quota, and 5xx emits structured error logs
+    const { handleAiRequest, _resetAiRateLimitStore } = await import("../src/lib/ai/serviceHandler");
+    const { POST: aiPost } = await import("../src/app/api/ai/route");
+    const { _resetGroqCircuitBreaker } = await import("../src/lib/ai/circuitBreaker");
+
+    const aiRouteBrokenReq = new Request("http://localhost:3000/api/ai", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ operation: "job_fit" }),
+    });
+    const aiRouteRes = await aiPost(aiRouteBrokenReq);
+    assert.ok(aiRouteRes.status >= 400 && aiRouteRes.status < 600);
+    assert.ok((aiRouteRes.headers.get("content-type") || "").includes("application/json"));
+    await aiRouteRes.json();
+
+    const makeMockAiSupabase = () => {
+      const refundedCalls: string[] = [];
+      return {
+        refundedCalls,
+        client: {
+          auth: {
+            getUser: async () => ({
+              data: {
+                user: {
+                  id: "00000000-0000-4000-8000-000000000801",
+                  email: "approved-ai@example.com",
+                  email_confirmed_at: new Date().toISOString(),
+                  app_metadata: { provider: "email", providers: ["email", "google"] },
+                  identities: [{ provider: "email" }, { provider: "google" }],
+                },
+              },
+              error: null,
+            }),
+          },
+          from: (table: string) => {
+            const chain: any = {
+              select: () => chain,
+              eq: () => chain,
+              maybeSingle: async () => {
+                if (table === "early_access_approved" || table === "early_access_emails") {
+                  return { data: { id: "ea-1", email: "approved-ai@example.com", approved: true }, error: null };
+                }
+                return { data: null, error: null };
+              },
+              update: () => chain,
+            };
+            return chain;
+          },
+          rpc: async (fn: string) => {
+            if (fn === "ai_global_budget_reserve") {
+              return { data: [{ allowed: true, remaining_tokens: 100000 }], error: null };
+            }
+            if (fn === "ai_concurrency_acquire") {
+              return { data: [{ allowed: true, lease_id: "lease-8", current_leases: 1 }], error: null };
+            }
+            if (fn === "check_and_increment_ai_quota") {
+              return { data: { allowed: true, current_count: 1, daily_limit: 50 }, error: null };
+            }
+            if (fn === "refund_ai_quota") {
+              refundedCalls.push(fn);
+              return { data: true, error: null };
+            }
+            return { data: true, error: null };
+          },
+        },
+      };
+    };
+
+    const prevGroqKey = process.env.GROQ_API_KEY;
+    const prevSbUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const prevSbKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const prevAllowedEmails = process.env.EARLY_ACCESS_ALLOWED_EMAILS;
+    const prevMockRateLimitClient = (globalThis as any).__mockRateLimitClient;
+    const origConsoleError = console.error;
+    const capturedErrorLogs: string[] = [];
+
+    try {
+      (globalThis as any).__mockRateLimitClient = {
+        rpc: async () => ({
+          data: { allowed: true, retry_after: 0, current_count: 1 },
+          error: null,
+        }),
+      };
+      process.env.EARLY_ACCESS_ALLOWED_EMAILS = "approved-ai@example.com";
+      process.env.NEXT_PUBLIC_SUPABASE_URL = "https://mock.supabase.co";
+      process.env.SUPABASE_SERVICE_ROLE_KEY = "mock-service-role-key";
+      delete process.env.GROQ_API_KEY;
+      delete process.env.AI_PROVIDER_KEY;
+      delete process.env.GROQ_KEY;
+
+      console.error = (...args: any[]) => {
+        capturedErrorLogs.push(args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" "));
+      };
+
+      // (i) Missing GROQ_API_KEY on resume_tailor: must fail BEFORE consumeSet and emit 5xx log
+      _resetAiRateLimitStore();
+      _resetGroqCircuitBreaker();
+      let consumeCountMissing = 0;
+      let refundCountMissing = 0;
+      const missingRes = await handleAiRequest(
+        new Request("http://localhost:3000/api/ai", {
+          method: "POST",
+          headers: { authorization: "Bearer token-1", "content-type": "application/json", "x-forwarded-for": "203.0.113.210" },
+          body: JSON.stringify({
+            operation: "resume_tailor",
+            params: {
+              candidate: {
+                name: "Jane Doe",
+                headline: "Senior Backend Engineer",
+                summary: "Senior engineer with Postgres and TypeScript experience.",
+                skills: ["TypeScript", "Postgres"],
+                experience: ["Built scalable backend APIs."],
+              },
+              job: {
+                title: "Backend Engineer",
+                company: "Acme",
+                description: "Build scalable APIs with TypeScript and Postgres.",
+              },
+            },
+          }),
+        }),
+        {
+          env: {},
+          getSupabaseAdmin: () => makeMockAiSupabase().client,
+          getServerEntitlement: async () => ({ isPro: true, status: "active" }),
+          consumeSet: async () => {
+            consumeCountMissing++;
+            return { success: true, source: "plan", resumesRemaining: 4, coverLettersRemaining: 5, addonSetsRemaining: 0, dailyRemaining: 29 };
+          },
+          refundSet: async () => {
+            refundCountMissing++;
+            return { refunded: true };
+          },
+        }
+      );
+      assert.strictEqual(missingRes.status, 500);
+      const missingBody = await missingRes.json();
+      assert.strictEqual(missingBody.missingVariable, "GROQ_API_KEY");
+      assert.strictEqual(consumeCountMissing, 0, "Missing GROQ_API_KEY must NOT consume daily tailoring quota");
+      assert.strictEqual(refundCountMissing, 0);
+      assert.ok(
+        capturedErrorLogs.some((line) => line.includes("5xx response returned") || line.includes("GROQ_API_KEY")),
+        "AI 5xx response must emit a structured server error log"
+      );
+
+      // (ii) Upstream failure on cover_letter after consumeSet: must refund consumed credit and emit 5xx log
+      _resetAiRateLimitStore();
+      _resetGroqCircuitBreaker();
+      capturedErrorLogs.length = 0;
+      let consumeCountUpstream = 0;
+      let refundCountUpstream = 0;
+      const upstreamFailRes = await handleAiRequest(
+        new Request("http://localhost:3000/api/ai", {
+          method: "POST",
+          headers: { authorization: "Bearer token-2", "content-type": "application/json", "x-forwarded-for": "203.0.113.211" },
+          body: JSON.stringify({
+            operation: "cover_letter",
+            params: {
+              candidate: {
+                name: "Jane Doe",
+                headline: "Senior Backend Engineer",
+                summary: "Senior engineer with Postgres and TypeScript experience.",
+                skills: ["TypeScript", "Postgres"],
+                experience: ["5 years building TypeScript APIs."],
+              },
+              job: {
+                title: "Backend Engineer",
+                company: "Acme",
+                description: "Build scalable APIs with TypeScript and Postgres.",
+              },
+            },
+          }),
+        }),
+        {
+          env: { GROQ_API_KEY: "test-key" },
+          getSupabaseAdmin: () => makeMockAiSupabase().client,
+          getServerEntitlement: async () => ({ isPro: true, status: "active" }),
+          consumeSet: async () => {
+            consumeCountUpstream++;
+            return { success: true, source: "plan", resumesRemaining: 4, coverLettersRemaining: 4, addonSetsRemaining: 0, dailyRemaining: 29 };
+          },
+          refundSet: async () => {
+            refundCountUpstream++;
+            return { refunded: true };
+          },
+          callGroq: async () => {
+            throw new Error("Simulated upstream Groq outage");
+          },
+        }
+      );
+      assert.strictEqual(upstreamFailRes.status, 502);
+      assert.ok((upstreamFailRes.headers.get("content-type") || "").includes("application/json"));
+      assert.strictEqual(consumeCountUpstream, 1);
+      assert.strictEqual(refundCountUpstream, 1, "Failed AI generation must refund consumed daily allowance");
+      assert.ok(
+        capturedErrorLogs.some((line) => line.includes("5xx response returned")),
+        "Upstream 502 must emit structured 5xx server error log"
+      );
+    } finally {
+      console.error = origConsoleError;
+      (globalThis as any).__mockRateLimitClient = prevMockRateLimitClient;
+      if (prevGroqKey !== undefined) process.env.GROQ_API_KEY = prevGroqKey;
+      else delete process.env.GROQ_API_KEY;
+      if (prevSbUrl !== undefined) process.env.NEXT_PUBLIC_SUPABASE_URL = prevSbUrl;
+      else delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+      if (prevSbKey !== undefined) process.env.SUPABASE_SERVICE_ROLE_KEY = prevSbKey;
+      else delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+      if (prevAllowedEmails !== undefined) process.env.EARLY_ACCESS_ALLOWED_EMAILS = prevAllowedEmails;
+      else delete process.env.EARLY_ACCESS_ALLOWED_EMAILS;
+    }
+
+    console.log("  [PASS] CF 1101 POST preservation, JSON error resilience, AI quota rollback, and 5xx logging verified");
+  }
+
   console.log("\n================================================================================");
   console.log("ALL EARLY-ACCESS-ONLY MODE & GMAIL API TESTS PASSED [PASS-LOCAL]");
   console.log("================================================================================");

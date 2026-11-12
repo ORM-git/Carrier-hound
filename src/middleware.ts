@@ -793,10 +793,33 @@ export function resolveRequestId(request: NextRequest): string {
 
 export async function middleware(request: NextRequest) {
   const requestId = resolveRequestId(request);
-  const scopedHeaders = new Headers(request.headers);
-  scopedHeaders.set(REQUEST_ID_HEADER, requestId);
-  const scopedRequest = new NextRequest(request, { headers: scopedHeaders });
-  const response = await middlewareImpl(scopedRequest);
+  const response = await middlewareImpl(request);
+
+  // Propagate x-request-id to downstream route handlers via Next.js / next-on-pages
+  // middleware override headers instead of `new NextRequest(request, { headers })`,
+  // because constructing a new NextRequest clones/consumes the incoming Request body
+  // in Cloudflare Workers and causes @cloudflare/next-on-pages's `new Request(url, request)`
+  // to throw an uncaught TypeError (error code 1101) on POST/PUT/PATCH/DELETE.
+  if (response.headers.get("x-middleware-next") === "1") {
+    const scopedHeaders = new Headers(request.headers);
+    scopedHeaders.set(REQUEST_ID_HEADER, requestId);
+    const existingOverrides = response.headers.get("x-middleware-override-headers");
+    const overrideKeys = new Set(
+      existingOverrides
+        ? existingOverrides
+            .split(",")
+            .map((key) => key.trim().toLowerCase())
+            .filter(Boolean)
+        : []
+    );
+    overrideKeys.add(REQUEST_ID_HEADER);
+    response.headers.set("x-middleware-override-headers", Array.from(overrideKeys).join(","));
+    response.headers.set(
+      `x-middleware-request-${REQUEST_ID_HEADER}`,
+      scopedHeaders.get(REQUEST_ID_HEADER) ?? requestId
+    );
+  }
+
   response.headers.set(REQUEST_ID_HEADER, requestId);
   return response;
 }
