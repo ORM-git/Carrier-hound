@@ -1,4 +1,99 @@
 import { SupabaseClient } from '@supabase/supabase-js';
+import { extractRunCoverage } from '../src/lib/observability/sourceHealth';
+
+export interface UnseenCleanupSafetyCheckParams {
+  isScheduled: boolean;
+  isSeed: boolean;
+  sourceFilter: string | null;
+  capArgPresent: boolean;
+  capValue: number;
+  expectedShards?: number;
+  runs?: readonly any[];
+  cycleId?: string | null;
+}
+
+/**
+ * Determines whether destructive unseen expiration cleanup is safe to perform.
+ * Per reviewer rules: Only do global unseen cleanup for a complete scheduled corpus
+ * run (all 6 shards, no source filter, no cap, scheduled mode). Otherwise skip unseen cleanup.
+ */
+export function shouldPerformUnseenCleanup(params: UnseenCleanupSafetyCheckParams): {
+  allowed: boolean;
+  reason: string;
+} {
+  // 1. Scheduled mode: must be scheduled, not seed
+  if (params.isSeed) {
+    return { allowed: false, reason: "Partial manual run: mode is 'seed' (not scheduled)." };
+  }
+  if (!params.isScheduled) {
+    return { allowed: false, reason: "Partial manual run: mode is not 'scheduled'." };
+  }
+
+  // 2. No source filter
+  if (params.sourceFilter) {
+    return { allowed: false, reason: `Partial manual run: source filter active ('${params.sourceFilter}').` };
+  }
+
+  // 3. No cap: low cap (< 50000)
+  if (params.capArgPresent && params.capValue < 50000) {
+    return { allowed: false, reason: `Partial manual run: low job cap active (${params.capValue} < 50000).` };
+  }
+
+  // 4. All 6 shards complete and successful
+  const expectedShards = params.expectedShards ?? 6;
+  if (!params.runs || params.runs.length === 0) {
+    return { allowed: false, reason: "Incomplete run: no ingest_runs recorded for cycle." };
+  }
+
+  // Filter runs for the given cycleId if specified
+  const cycleRuns = params.cycleId
+    ? params.runs.filter((r) => {
+        const cov = extractRunCoverage(r);
+        return cov?.cycle_id === params.cycleId;
+      })
+    : params.runs;
+
+  const shardMap = new Map<number, any>();
+  for (const r of cycleRuns) {
+    const cov = extractRunCoverage(r);
+    const sId = typeof cov?.shard_id === "number" ? cov.shard_id : 0;
+    const existing = shardMap.get(sId);
+    if (!existing || r.status === "success") {
+      shardMap.set(sId, r);
+    }
+  }
+
+  const missingShards: number[] = [];
+  for (let s = 0; s < expectedShards; s++) {
+    if (!shardMap.has(s)) {
+      missingShards.push(s);
+    }
+  }
+  if (missingShards.length > 0) {
+    return {
+      allowed: false,
+      reason: `Incomplete scheduled run: expected ${expectedShards} shards, received ${shardMap.size} (missing shard(s): ${missingShards.join(", ")}).`,
+    };
+  }
+
+  const failedShards: number[] = [];
+  shardMap.forEach((r, sId) => {
+    if (r.status === "failed" || r.status === "warning") {
+      failedShards.push(sId);
+    }
+  });
+  if (failedShards.length > 0) {
+    return {
+      allowed: false,
+      reason: `Incomplete scheduled run: failing shard(s): ${failedShards.join(", ")}.`,
+    };
+  }
+
+  return {
+    allowed: true,
+    reason: `Complete scheduled corpus run verified (${expectedShards}/${expectedShards} shards successful).`,
+  };
+}
 
 export interface CleanupConfig {
   unseenExpiryDays?: number; // default: 7 days

@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { getAdapter } from './adapters';
-import { runJobCleanup } from './cleanup';
+import { runJobCleanup, shouldPerformUnseenCleanup } from './cleanup';
 import {
   IngestionRunSummary,
   NormalizedJob,
@@ -299,7 +299,43 @@ async function main() {
       console.error('Cleanup requires valid Supabase credentials.');
       process.exit(1);
     }
-    await runJobCleanup(supabase, { dryRun: isDryRun });
+
+    let recentRuns: any[] = [];
+    if (supabase) {
+      try {
+        const { data } = await supabase
+          .from('ingest_runs')
+          .select('started_at,finished_at,status,per_source_counts,coverage')
+          .order('finished_at', { ascending: false })
+          .limit(50);
+        if (data) recentRuns = data;
+      } catch {
+        // Fall back to empty runs
+      }
+    }
+
+    const safetyCheck = shouldPerformUnseenCleanup({
+      isScheduled: isScheduledRun,
+      isSeed: isSeedRun,
+      sourceFilter,
+      capArgPresent: capArgIdx !== -1,
+      capValue: MAX_RUN_JOBS,
+      expectedShards: 6,
+      runs: recentRuns,
+      cycleId: CYCLE_ID,
+    });
+
+    const skipUnseen = !safetyCheck.allowed;
+    if (skipUnseen) {
+      console.warn(`⚠️ [Cleanup Safety] Global unseen expiration SKIPPED: ${safetyCheck.reason}`);
+    } else {
+      console.log(`✅ [Cleanup Safety] Global unseen expiration ENABLED: ${safetyCheck.reason}`);
+    }
+
+    await runJobCleanup(supabase, {
+      dryRun: isDryRun,
+      skipUnseenCheck: skipUnseen,
+    });
     console.log(`\n🎉 Cleanup complete.`);
     return;
   }

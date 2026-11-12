@@ -17,6 +17,7 @@ export interface IngestRunSnapshot {
 export interface SourceHealthPolicy {
   maxFailuresInWindow: number;
   staleAfterHours: number;
+  cycleDeadlineMinutes?: number;
 }
 
 export interface SourceHealthResult {
@@ -49,12 +50,25 @@ interface CycleInfo {
   earliestStartedAt: number;
 }
 
-function checkCycleHealth(c: CycleInfo): {
+export interface CycleEvaluation {
+  cycleId: string;
+  expectedShards: number;
+  isComplete: boolean;
+  isInProgress: boolean;
+  isOverdue: boolean;
   isHealthy: boolean;
   missingShards: number[];
   failedShards: number[];
   reason?: string;
-} {
+  latestFinishedAt: number;
+  earliestStartedAt: number;
+}
+
+export function evaluateCycleHealth(
+  c: CycleInfo,
+  now: number,
+  cycleDeadlineMinutes: number
+): CycleEvaluation {
   const missingShards: number[] = [];
   for (let s = 0; s < c.expectedShards; s++) {
     if (!c.shards.has(s)) {
@@ -69,25 +83,73 @@ function checkCycleHealth(c: CycleInfo): {
     }
   });
 
+  const isComplete = missingShards.length === 0;
+  const cycleRefTime = c.earliestStartedAt;
+  const elapsedMinutes = (now - cycleRefTime) / (60 * 1000);
+  const isOverdue = elapsedMinutes > cycleDeadlineMinutes;
+
   if (failedShards.length > 0) {
     return {
+      cycleId: c.cycleId,
+      expectedShards: c.expectedShards,
+      isComplete,
+      isInProgress: false,
+      isOverdue,
       isHealthy: false,
       missingShards,
       failedShards,
       reason: `Cycle ${c.cycleId} had failing shard(s): ${failedShards.join(", ")}.`,
+      latestFinishedAt: c.latestFinishedAt,
+      earliestStartedAt: c.earliestStartedAt,
     };
   }
 
-  if (missingShards.length > 0) {
+  if (isComplete) {
     return {
+      cycleId: c.cycleId,
+      expectedShards: c.expectedShards,
+      isComplete: true,
+      isInProgress: false,
+      isOverdue: false,
+      isHealthy: true,
+      missingShards: [],
+      failedShards: [],
+      latestFinishedAt: c.latestFinishedAt,
+      earliestStartedAt: c.earliestStartedAt,
+    };
+  }
+
+  // Missing shards, no failures
+  if (isOverdue) {
+    return {
+      cycleId: c.cycleId,
+      expectedShards: c.expectedShards,
+      isComplete: false,
+      isInProgress: false,
+      isOverdue: true,
       isHealthy: false,
       missingShards,
-      failedShards,
-      reason: `Cycle ${c.cycleId} is incomplete: expected ${c.expectedShards} shards, received ${c.shards.size} (missing shard(s): ${missingShards.join(", ")}).`,
+      failedShards: [],
+      reason: `Cycle ${c.cycleId} is overdue (${Math.round(elapsedMinutes)}m > ${cycleDeadlineMinutes}m) and incomplete: expected ${c.expectedShards} shards, received ${c.shards.size} (missing shard(s): ${missingShards.join(", ")}).`,
+      latestFinishedAt: c.latestFinishedAt,
+      earliestStartedAt: c.earliestStartedAt,
     };
   }
 
-  return { isHealthy: true, missingShards: [], failedShards: [] };
+  // Missing shards, no failures, inside allowed deadline window: in progress!
+  return {
+    cycleId: c.cycleId,
+    expectedShards: c.expectedShards,
+    isComplete: false,
+    isInProgress: true,
+    isOverdue: false,
+    isHealthy: true,
+    missingShards,
+    failedShards: [],
+    reason: `Cycle ${c.cycleId} is in progress (${c.shards.size}/${c.expectedShards} shards completed).`,
+    latestFinishedAt: c.latestFinishedAt,
+    earliestStartedAt: c.earliestStartedAt,
+  };
 }
 
 export function evaluateSourceHealth(
@@ -100,7 +162,9 @@ export function evaluateSourceHealth(
     !Number.isSafeInteger(policy.maxFailuresInWindow) ||
     policy.maxFailuresInWindow < 1 ||
     !Number.isFinite(policy.staleAfterHours) ||
-    policy.staleAfterHours <= 0
+    policy.staleAfterHours <= 0 ||
+    (policy.cycleDeadlineMinutes !== undefined &&
+      (!Number.isFinite(policy.cycleDeadlineMinutes) || policy.cycleDeadlineMinutes <= 0))
   ) {
     return { status: "invalid", reason: "Policy must have positive failure and staleness thresholds." };
   }
@@ -123,8 +187,11 @@ export function evaluateSourceHealth(
   const cyclesMap = new Map<string, CycleInfo>();
 
   runs.forEach((run, idx) => {
-    const stamp = Date.parse(String(run?.finished_at || run?.started_at || ""));
+    const finishStamp = Date.parse(String(run?.finished_at || run?.started_at || ""));
+    const startStamp = Date.parse(String(run?.started_at || run?.finished_at || ""));
+    const stamp = Number.isFinite(finishStamp) ? finishStamp : startStamp;
     if (!Number.isFinite(stamp)) return;
+    const effectiveStart = Number.isFinite(startStamp) ? startStamp : stamp;
 
     const cov = extractRunCoverage(run);
     const hasExplicitCycle = Boolean(cov?.cycle_id);
@@ -144,7 +211,7 @@ export function evaluateSourceHealth(
         expectedShards,
         shards: new Map(),
         latestFinishedAt: stamp,
-        earliestStartedAt: stamp,
+        earliestStartedAt: effectiveStart,
       };
       cyclesMap.set(cycleId, group);
     } else {
@@ -152,7 +219,7 @@ export function evaluateSourceHealth(
         group.expectedShards = expectedShards;
       }
       group.latestFinishedAt = Math.max(group.latestFinishedAt, stamp);
-      group.earliestStartedAt = Math.min(group.earliestStartedAt, stamp);
+      group.earliestStartedAt = Math.min(group.earliestStartedAt, effectiveStart);
     }
 
     const existing = group.shards.get(shardId);
@@ -171,13 +238,18 @@ export function evaluateSourceHealth(
     (a, b) => b.latestFinishedAt - a.latestFinishedAt
   );
 
-  let lastSuccessCycle: CycleInfo | null = null;
-  let lastFailureCycle: CycleInfo | null = null;
+  const deadlineMinutes = policy.cycleDeadlineMinutes ?? 90;
+  const evaluatedCycles = sortedCycles.map((c) => evaluateCycleHealth(c, now, deadlineMinutes));
+
+  // Completed cycles are finalized: complete all shards, overdue timeout, or failed
+  const completedCycles = evaluatedCycles.filter((c) => !c.isInProgress);
+
+  let lastSuccessCycle: CycleEvaluation | null = null;
+  let lastFailureCycle: CycleEvaluation | null = null;
   let failureCount = 0;
 
-  for (const c of sortedCycles) {
-    const health = checkCycleHealth(c);
-    if (health.isHealthy) {
+  for (const c of completedCycles) {
+    if (c.isHealthy && c.isComplete) {
       if (!lastSuccessCycle) lastSuccessCycle = c;
     } else {
       if (!lastFailureCycle) lastFailureCycle = c;
@@ -185,23 +257,57 @@ export function evaluateSourceHealth(
     }
   }
 
+  const latestCycle = evaluatedCycles[0];
+
+  // Completion/deadline handling: a cycle still inside its allowed window is
+  // "in progress", not failed; evaluate the last COMPLETED cycle meanwhile.
+  if (latestCycle.isInProgress) {
+    if (lastSuccessCycle) {
+      const staleAfterMs = policy.staleAfterHours * 60 * 60 * 1000;
+      if (now - lastSuccessCycle.latestFinishedAt > staleAfterMs) {
+        return {
+          status: "degraded",
+          reason: `Last success is older than ${policy.staleAfterHours}h.`,
+          lastSuccessAt: new Date(lastSuccessCycle.latestFinishedAt).toISOString(),
+          staleAfterHours: policy.staleAfterHours,
+        };
+      }
+      return {
+        status: "healthy",
+        lastSuccessAt: new Date(lastSuccessCycle.latestFinishedAt).toISOString(),
+      };
+    }
+
+    if (lastFailureCycle && failureCount >= policy.maxFailuresInWindow) {
+      return {
+        status: "degraded",
+        reason: lastFailureCycle.reason || "Previous completed cycle failed.",
+        lastFailureAt: new Date(lastFailureCycle.latestFinishedAt).toISOString(),
+        consecutiveFailures: failureCount,
+      };
+    }
+
+    // No completed cycle at all yet, but current cycle is in progress without failures
+    return {
+      status: "healthy",
+      lastSuccessAt: new Date(latestCycle.latestFinishedAt).toISOString(),
+    };
+  }
+
+  // Latest cycle is finalized (completed, overdue, or has failing shards)
   if (!lastSuccessCycle) {
-    const latestHealth = sortedCycles.length > 0 ? checkCycleHealth(sortedCycles[0]) : null;
     return {
       status: "degraded",
-      reason: latestHealth && !latestHealth.isHealthy ? latestHealth.reason : "No successful cycle in the provided window.",
+      reason: latestCycle.reason || "No successful cycle in the provided window.",
       lastFailureAt: lastFailureCycle ? new Date(lastFailureCycle.latestFinishedAt).toISOString() : undefined,
       consecutiveFailures: failureCount,
     };
   }
 
-  const latestCycle = sortedCycles[0];
-  const latestHealth = checkCycleHealth(latestCycle);
-
-  if (!latestHealth.isHealthy && failureCount >= policy.maxFailuresInWindow) {
+  if (!latestCycle.isHealthy && failureCount >= policy.maxFailuresInWindow) {
     return {
       status: "degraded",
-      reason: latestHealth.reason || "Latest cycle is unhealthy.",
+      reason: latestCycle.reason || "Latest cycle is unhealthy.",
       lastSuccessAt: new Date(lastSuccessCycle.latestFinishedAt).toISOString(),
       lastFailureAt: new Date(latestCycle.latestFinishedAt).toISOString(),
       consecutiveFailures: failureCount,

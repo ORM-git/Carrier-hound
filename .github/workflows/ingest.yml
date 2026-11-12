@@ -151,9 +151,24 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.SUPABASE_SERVICE_KEY }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.SUPABASE_SERVICE_KEY }}
         run: |
-          ARGS="--cleanup-only"
+          CYCLE_ID="${{ github.run_id }}-${{ github.run_attempt }}"
+          ARGS="--cleanup-only --cycle-id $CYCLE_ID"
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event.inputs.mode }}" = "scheduled" ] || [ -z "${{ github.event.inputs.mode }}" ]; then
+            ARGS="$ARGS --scheduled"
+          elif [ "${{ github.event.inputs.mode }}" = "seed" ]; then
+            ARGS="$ARGS --seed"
+          fi
+
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
             ARGS="$ARGS --dry"
+          fi
+
+          if [ -n "${{ github.event.inputs.cap }}" ]; then
+            ARGS="$ARGS --cap ${{ github.event.inputs.cap }}"
+          fi
+
+          if [ -n "${{ github.event.inputs.source }}" ]; then
+            ARGS="$ARGS --source ${{ github.event.inputs.source }}"
           fi
 
           HAS_URL=0

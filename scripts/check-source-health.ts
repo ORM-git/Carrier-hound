@@ -5,7 +5,7 @@ import { createClient } from "@supabase/supabase-js";
 import { evaluateSourceHealth } from "../src/lib/observability/sourceHealth";
 
 const MAX_FAILURES_IN_WINDOW = 1;
-const STALE_AFTER_HOURS = 26; // Daily ingest plus bounded schedule drift.
+const STALE_AFTER_HOURS = 4; // 4-hour scheduled ingest cadence.
 
 async function main() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
