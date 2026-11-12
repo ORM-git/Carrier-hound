@@ -28,7 +28,7 @@ Migration `supabase/migrations/20261112a_custom_domain_types.sql` introduces reu
     - **Local Part**: `^[a-z0-9_%+-]+(\.[a-z0-9_%+-]+)*@` prevents leading dots (`.a@example.com`), trailing dots (`a.@example.com`), or consecutive dots (`a..b@example.com`).
     - **Domain Labels**: `[a-z0-9]([a-z0-9-]*[a-z0-9])?` requires every label to begin and end with an alphanumeric character. Prevents domain labels starting with a hyphen (`a@-example.com`), ending with a hyphen (`a@example-.com`), or containing empty labels / consecutive dots (`a@example..com`).
     - **Top-Level Domain**: `\.[a-z]{2,}$` enforces letters only with a minimum of 2 characters.
-  - **NULL Semantics**: PostgreSQL domain `CHECK` constraints evaluate to `TRUE` for `NULL` values. If a column must not be nullable, declare `NOT NULL` on the column definition.
+  - **NULL Semantics**: Domain `CHECK`s evaluate to `UNKNOWN` for `NULL` and the value is accepted. If a column must not be nullable, declare `NOT NULL` separately on the column definition.
 
 ### `public.cm_non_empty_text`
 - **Base Type**: `text`
@@ -41,7 +41,7 @@ Migration `supabase/migrations/20261112a_custom_domain_types.sql` introduces reu
   - **POSIX `[:space:]` Matching**: `VALUE ~ '[^[:space:]]'` tests for at least one non-whitespace character across all POSIX whitespace characters (spaces, horizontal tabs, newlines, carriage returns, vertical tabs, form feeds).
   - Rejects empty strings (`""`), space-only strings (`"   "`), tab-only strings (`"\t"`, `"\t\t"`), newline-only strings (`"\n"`, `"\r\n"`), and mixed whitespace-only strings.
   - Ensures required text columns (e.g. company names, job titles, department names) carry substantive content rather than blank placeholders.
-  - **NULL Semantics**: Evaluates to `TRUE` for `NULL`. Table columns must declare `NOT NULL` separately.
+  - **NULL Semantics**: Domain `CHECK`s evaluate to `UNKNOWN` for `NULL` and the value is accepted. Table columns requiring presence must declare `NOT NULL` separately.
 
 ### `public.cm_slug`
 - **Base Type**: `text`
@@ -60,20 +60,20 @@ Migration `supabase/migrations/20261112a_custom_domain_types.sql` introduces reu
   - **No Leading/Trailing Hyphens**: Disallows `-slug`, `slug-`, and multiple consecutive hyphens `slug--name`.
   - **Length Cap**: Bounded to 120 characters to ensure URL compatibility and index efficiency.
   - Matches the standard `slugify` logic in `scripts/utils/sanitizer.ts`.
-  - **NULL Semantics**: Evaluates to `TRUE` for `NULL`. Table columns must declare `NOT NULL` separately.
+  - **NULL Semantics**: Domain `CHECK`s evaluate to `UNKNOWN` for `NULL` and the value is accepted. Table columns requiring presence must declare `NOT NULL` separately.
 
 ---
 
 ## 3. Important PostgreSQL Domain Behaviors
 
-### NULL Handling: Domain CHECKs Do Not Enforce NOT NULL
-In SQL standard and PostgreSQL, `CHECK (expression)` evaluates to:
+### NULL Handling: Domain CHECKs Evaluate to UNKNOWN for NULL (Do Not Enforce NOT NULL)
+In SQL standard and PostgreSQL, `CHECK (expression)` evaluates to three-valued logic:
 - `TRUE` -> validation passes.
 - `FALSE` -> validation fails, error raised.
-- `NULL` / `UNKNOWN` -> validation passes!
+- `UNKNOWN` -> validation passes; the value is accepted!
 
-When a column value is `NULL`, expressions like `VALUE ~ '[^[:space:]]'` or `char_length(VALUE) <= 254` evaluate to `NULL`, which PostgreSQL considers valid.
-Therefore, **PostgreSQL domain types do NOT enforce column presence**. Table column definitions requiring a non-null value MUST explicitly declare `NOT NULL` alongside the domain:
+When a column value is `NULL`, expressions like `VALUE ~ '[^[:space:]]'` or `char_length(VALUE) <= 254` evaluate to `UNKNOWN` for `NULL` and the value is accepted (standard SQL behavior treats anything that is not `FALSE` as satisfying a `CHECK` constraint).
+Therefore, **PostgreSQL domain types do NOT enforce column presence**. Table column definitions requiring a non-null value MUST explicitly declare `NOT NULL` separately alongside the domain:
 ```sql
 -- Correct usage for required fields:
 CREATE TABLE public.example (
@@ -111,10 +111,15 @@ Takes an **`ACCESS EXCLUSIVE`** lock on the table. This lock blocks all concurre
 
 #### Pattern A: Table-Level `CHECK ... NOT VALID` then `VALIDATE CONSTRAINT` (Recommended)
 When keeping existing `text` columns while enforcing domain-level validation rules:
-1. **Add constraint `NOT VALID`**:
+
+1. **Add constraint `NOT VALID` with `lock_timeout`**:
+   - **Lock Behavior**: `ALTER TABLE ... ADD CONSTRAINT ... CHECK ... NOT VALID` acquires a brief **`ACCESS EXCLUSIVE`** lock on the table (not `SHARE ROW EXCLUSIVE`).
+   - **No Existing-Row Scan**: Because existing rows are not validated, the DDL execution itself is sub-millisecond.
+   - **Qualifying "Zero Downtime"**: Although the lock duration is brief once acquired, acquiring an `ACCESS EXCLUSIVE` lock can queue behind long-running transactions (such as slow analytical reads or heavy batch updates). While waiting in the lock queue, it blocks *all* subsequent incoming queries on the table, which can quickly saturate connection pools and cause application-wide blocking.
+   - **Operational Guidance**: Always run with a short transaction, set a tight `lock_timeout` (e.g. 2–3 seconds), and retry with backoff on failure rather than allowing a lock queue to form:
    ```sql
-   -- Acquires brief SHARE ROW EXCLUSIVE lock; does NOT scan existing rows.
-   -- Only validates subsequent INSERTs and UPDATEs.
+   -- Step 1: Add constraint NOT VALID in a short transaction with lock_timeout
+   SET lock_timeout = '2s';
    ALTER TABLE public.early_access_emails
      ADD CONSTRAINT chk_early_access_emails_cm_email
      CHECK (
@@ -123,11 +128,14 @@ When keeping existing `text` columns while enforcing domain-level validation rul
        AND position('@' in email) > 1
        AND email ~ '^[a-z0-9_%+-]+(\.[a-z0-9_%+-]+)*@[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*\.[a-z]{2,}$'
      ) NOT VALID;
+   RESET lock_timeout;
    ```
+
 2. **Validate constraint concurrently**:
+   - **Lock Behavior**: `ALTER TABLE ... VALIDATE CONSTRAINT` acquires only a **`SHARE UPDATE EXCLUSIVE`** lock.
+   - **Concurrent Operations**: `SHARE UPDATE EXCLUSIVE` allows concurrent `SELECT`, `INSERT`, `UPDATE`, and `DELETE` queries to proceed normally while PostgreSQL performs the sequential scan to validate existing rows in the background.
    ```sql
-   -- Scans existing rows with SHARE UPDATE EXCLUSIVE lock.
-   -- Concurrent SELECT, INSERT, UPDATE, and DELETE operations proceed normally!
+   -- Step 2: Validate existing rows with SHARE UPDATE EXCLUSIVE lock (concurrent reads/writes proceed)
    ALTER TABLE public.early_access_emails
      VALIDATE CONSTRAINT chk_early_access_emails_cm_email;
    ```
