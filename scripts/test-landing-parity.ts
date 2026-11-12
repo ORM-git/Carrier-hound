@@ -154,7 +154,38 @@ async function runParityTests() {
   assert.ok(pageSrc.includes("fresh roles <span className=\"sbr\">daily</span>"), "Stats must include 'fresh roles daily'");
   assert.ok(pageSrc.includes("*Based on early access user surveys"), "Stats must include survey note");
 
-  console.log("\n✅ ALL LANDING PARITY & FOUNDER PHOTO TESTS PASSED!");
+  // 6. Desktop Alignment & Centering Verification (>=768px and >=1024px)
+  console.log("Test 6: Desktop container centering & 1:1 section alignment rules...");
+  assert.ok(
+    cssSrc.includes(".wrap{max-width:1120px;margin:0 auto;padding:0 var(--pad)}"),
+    ".wrap container must be horizontally centered (margin: 0 auto; max-width: 1120px)"
+  );
+  assert.ok(
+    cssSrc.includes(".h2{font-size:40px;text-align:left}"),
+    "On min-width: 768px, .h2 must match original reference (font-size: 40px; text-align: left)"
+  );
+  assert.ok(
+    cssSrc.includes(".contact{text-align:left}"),
+    "On min-width: 768px, .contact must match original reference (text-align: left)"
+  );
+  assert.ok(
+    cssSrc.includes(".vs{width:100%;max-width:760px;margin:32px 0 0;border-spacing:12px 0;margin-left:-12px}"),
+    "On min-width: 768px, .vs comparison table must match original reference (max-width: 760px; margin-left: -12px)"
+  );
+  assert.ok(
+    cssSrc.includes(".faq{max-width:820px}"),
+    "On min-width: 768px, .faq must match original reference (max-width: 820px)"
+  );
+  assert.ok(
+    cssSrc.includes(".founder{grid-template-columns:96px 1fr;gap:24px;max-width:760px}"),
+    "On min-width: 768px, .founder must match original reference (max-width: 760px)"
+  );
+  assert.ok(
+    cssSrc.includes(".fxi{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,540px);grid-template-areas:\"copy card\" \"btn card\";column-gap:72px;align-items:start}"),
+    "On min-width: 1024px, feature item grid must match original reference (columns: 1fr 540px)"
+  );
+
+  console.log("\n✅ ALL LANDING PARITY, FOUNDER PHOTO & DESKTOP ALIGNMENT TESTS PASSED!");
 }
 
 runParityTests().catch(err => {
