@@ -10,16 +10,18 @@
  * worked examples, or output-format directives.
  */
 
-import { getEncoding, Tiktoken } from "js-tiktoken";
+import { Tiktoken } from "js-tiktoken/lite";
+import cl100k_base from "js-tiktoken/ranks/cl100k_base";
 
 let cachedEncoder: Tiktoken | null = null;
 
 /**
  * Returns the singleton Tiktoken encoder instance for cl100k_base encoding.
+ * Uses js-tiktoken/lite with isolated cl100k_base ranks to avoid bundling unused vocabularies.
  */
 export function getTokenizer(): Tiktoken {
   if (!cachedEncoder) {
-    cachedEncoder = getEncoding("cl100k_base");
+    cachedEncoder = new Tiktoken(cl100k_base);
   }
   return cachedEncoder;
 }
@@ -27,10 +29,11 @@ export function getTokenizer(): Tiktoken {
 /**
  * Accurately counts the number of tokens in a string using cl100k_base BPE.
  * Returns 0 for null, undefined, or empty strings.
+ * Disables special token rejection so markers like <|endoftext|> are encoded as ordinary text.
  */
 export function countTokens(text: string | null | undefined): number {
   if (!text || typeof text !== "string") return 0;
-  return getTokenizer().encode(text).length;
+  return getTokenizer().encode(text, [], []).length;
 }
 
 /**
@@ -38,14 +41,29 @@ export function countTokens(text: string | null | undefined): number {
  *
  * - If maxTokens <= 0, returns an empty string.
  * - If text token count <= maxTokens, returns the original text untouched.
- * - Otherwise, encodes to BPE tokens, slices to maxTokens, and decodes back to string.
+ * - Otherwise, encodes to BPE tokens (treating special tokens as ordinary text),
+ *   slices to maxTokens, and decodes back to string.
+ * - Guarantees the decoded string never ends on a partial UTF-8 character:
+ *   backs off tokens until decode contains no U+FFFD replacement characters.
  */
 export function trimTextToTokens(text: string | null | undefined, maxTokens: number): string {
   if (!text || typeof text !== "string" || maxTokens <= 0) return "";
   const encoder = getTokenizer();
-  const tokens = encoder.encode(text);
+  const tokens = encoder.encode(text, [], []);
   if (tokens.length <= maxTokens) return text;
-  return encoder.decode(tokens.slice(0, maxTokens));
+
+  let count = maxTokens;
+  while (count > 0) {
+    const decoded = encoder.decode(tokens.slice(0, count));
+    if (!decoded.includes("\uFFFD")) {
+      return decoded;
+    }
+    if (text.includes("\uFFFD") && !decoded.endsWith("\uFFFD")) {
+      return decoded;
+    }
+    count--;
+  }
+  return "";
 }
 
 /**

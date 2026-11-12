@@ -45,8 +45,8 @@ export const AI_FIELD_LENGTH_CAPS = {
   date: 40,
   jobTitle: 200,
   jobCompany: 150,
-  jobDescription: 24000,
-  rawText: 30000,
+  jobDescription: 6000,
+  rawText: 12000,
 } as const;
 
 /**
@@ -221,7 +221,9 @@ export function buildOperationPayload(
       let candSummary = sanitizeAiInputText(candidate.summary || "", AI_FIELD_LENGTH_CAPS.summary);
       const jobTitle = sanitizeAiInputText(job.title || "Target Role", AI_FIELD_LENGTH_CAPS.jobTitle);
       const jobCompany = sanitizeAiInputText(job.company || "Target Company", AI_FIELD_LENGTH_CAPS.jobCompany);
-      let jobDesc = sanitizeAiInputText(job.description || "", AI_FIELD_LENGTH_CAPS.jobDescription);
+      const originalJobDesc = typeof job.description === "string" ? job.description : "";
+      let jobDesc = sanitizeAiInputText(originalJobDesc, AI_FIELD_LENGTH_CAPS.jobDescription);
+      const isJobDescCharCapped = originalJobDesc.trim().length > jobDesc.length;
 
       const buildCoverLetterPrompts = (fields: {
         jobDesc: string;
@@ -320,9 +322,11 @@ Joining Linear as a Senior Frontend Engineer aligns directly with my engineering
           }
         }
 
+      }
+      if (trimmedFieldNames.length > 0 || isJobDescCharCapped) {
         metadata = {
-          jobDescriptionShortened: trimmedFieldNames.includes("jobDescription"),
-          trimmedFields: trimmedFieldNames,
+          jobDescriptionShortened: isJobDescCharCapped || trimmedFieldNames.includes("jobDescription"),
+          trimmedFields: trimmedFieldNames.length > 0 ? trimmedFieldNames : ["jobDescription"],
         };
       }
 
@@ -341,6 +345,7 @@ Joining Linear as a Senior Frontend Engineer aligns directly with my engineering
       }
 
       let safeRawText = sanitizeAiInputText(rawText, AI_FIELD_LENGTH_CAPS.rawText);
+      const isRawTextCharCapped = rawText.trim().length > safeRawText.length;
       if (!safeRawText) {
         return {
           ok: false,
@@ -424,8 +429,13 @@ Ideal output JSON:
       const availableTokensForRaw = Math.max(0, config.maxInputTokens - fixedTokens);
 
       const rawTokens = countTokens(safeRawText);
+      let isTokenTrimmed = false;
       if (rawTokens > availableTokensForRaw) {
         safeRawText = trimTextToTokens(safeRawText, availableTokensForRaw).trim();
+        isTokenTrimmed = true;
+      }
+
+      if (isTokenTrimmed || isRawTextCharCapped) {
         metadata = {
           trimmedFields: ["rawText"],
         };
@@ -476,8 +486,8 @@ Ideal output JSON:
 
       const candName = sanitizeAiInputText(candidate.name || "Candidate", AI_FIELD_LENGTH_CAPS.name);
       const candHeadline = sanitizeAiInputText(candidate.headline || "Professional", AI_FIELD_LENGTH_CAPS.headline);
-      const candSummary = sanitizeAiInputText(candidate.summary || "", AI_FIELD_LENGTH_CAPS.summary);
-      const skillsList = Array.isArray(candidate.skills)
+      let candSummary = sanitizeAiInputText(candidate.summary || "", AI_FIELD_LENGTH_CAPS.summary);
+      let skillsList = Array.isArray(candidate.skills)
         ? candidate.skills
             .slice(0, AI_FIELD_LENGTH_CAPS.maxSkillsCount)
             .map((s) => sanitizeAiInputText(s, AI_FIELD_LENGTH_CAPS.skill))
@@ -485,7 +495,7 @@ Ideal output JSON:
             .join(", ")
         : "";
 
-      const experienceEntries = Array.isArray(candidate.experience) && candidate.experience.length > 0
+      let experienceEntries = Array.isArray(candidate.experience) && candidate.experience.length > 0
         ? candidate.experience
             .map((e, idx) => {
               const expId = sanitizeAiInputText(e?.id || `exp-${idx + 1}`, 50);
@@ -502,43 +512,103 @@ Ideal output JSON:
             .join("\n\n")
         : "(No prior work experience)";
 
-      const candDataText = `<untrusted_candidate_data>\nName: ${candName}\nHeadline: ${candHeadline}\nSummary: ${candSummary}\nSkills: ${skillsList}\n\nWork History:\n${experienceEntries}\n</untrusted_candidate_data>`;
-
       const jobTitle = sanitizeAiInputText(job.title || "Target Role", AI_FIELD_LENGTH_CAPS.jobTitle);
       const jobCompany = sanitizeAiInputText(job.company || "Target Company", AI_FIELD_LENGTH_CAPS.jobCompany);
       const originalJobDesc = typeof job.description === "string" ? job.description : "";
-      const rawJobDesc = sanitizeAiInputText(originalJobDesc, AI_FIELD_LENGTH_CAPS.jobDescription);
+      let jobDesc = sanitizeAiInputText(originalJobDesc, AI_FIELD_LENGTH_CAPS.jobDescription);
 
-      const systemTokens = estimateTokens(systemPrompt);
-      const candTokens = estimateTokens(candDataText);
-      const jobBaseText = `<untrusted_job_data>\nTitle: ${jobTitle}\nCompany: ${jobCompany}\nDescription: \n</untrusted_job_data>`;
-      const jobBaseTokens = estimateTokens(jobBaseText);
-      const baseTokens = systemTokens + candTokens + jobBaseTokens;
+      const buildTailorUserPrompt = (fields: {
+        jobDesc: string;
+        candSummary: string;
+        experienceEntries: string;
+        skillsList: string;
+      }) => {
+        const candDataText = `<untrusted_candidate_data>\nName: ${candName}\nHeadline: ${candHeadline}\nSummary: ${fields.candSummary}\nSkills: ${fields.skillsList}\n\nWork History:\n${fields.experienceEntries}\n</untrusted_candidate_data>`;
+        return `${candDataText}\n\n<untrusted_job_data>\nTitle: ${jobTitle}\nCompany: ${jobCompany}\nDescription: ${fields.jobDesc}\n</untrusted_job_data>`;
+      };
 
-      if (baseTokens > config.maxInputTokens) {
+      let currentUserPrompt = buildTailorUserPrompt({ jobDesc, candSummary, experienceEntries, skillsList });
+      let totalTokens = countTokens(systemPrompt) + countTokens(currentUserPrompt);
+
+      const trimmedFieldNames: string[] = [];
+
+      // Token-accurate budget trimming for resume tailoring: lowest-priority fields trimmed first
+      if (totalTokens > config.maxInputTokens) {
+        let excess = totalTokens - config.maxInputTokens;
+
+        // 1. jobDescription (priority 1 - lowest, trimmed first)
+        if (excess > 0 && jobDesc) {
+          const jobTokens = countTokens(jobDesc);
+          const minJobTokens = 20;
+          const maxReduction = Math.max(0, jobTokens - minJobTokens);
+          if (maxReduction > 0) {
+            const reduction = Math.min(excess + 4, maxReduction);
+            jobDesc = trimTextToTokens(jobDesc, jobTokens - reduction).trim();
+            trimmedFieldNames.push("jobDescription");
+            currentUserPrompt = buildTailorUserPrompt({ jobDesc, candSummary, experienceEntries, skillsList });
+            totalTokens = countTokens(systemPrompt) + countTokens(currentUserPrompt);
+            excess = totalTokens - config.maxInputTokens;
+          }
+        }
+
+        // 2. candidateSummary (priority 2)
+        if (excess > 0 && candSummary) {
+          const sumTokens = countTokens(candSummary);
+          if (sumTokens > 0) {
+            const reduction = Math.min(excess + 4, sumTokens);
+            candSummary = trimTextToTokens(candSummary, sumTokens - reduction).trim();
+            trimmedFieldNames.push("candidateSummary");
+            currentUserPrompt = buildTailorUserPrompt({ jobDesc, candSummary, experienceEntries, skillsList });
+            totalTokens = countTokens(systemPrompt) + countTokens(currentUserPrompt);
+            excess = totalTokens - config.maxInputTokens;
+          }
+        }
+
+        // 3. candidateExperience (priority 3)
+        if (excess > 0 && experienceEntries && experienceEntries !== "(No prior work experience)") {
+          const expTokens = countTokens(experienceEntries);
+          const expCount = Array.isArray(candidate.experience) ? candidate.experience.length : 1;
+          const minExpTokens = Math.max(30, expCount * 90);
+          const maxReduction = Math.max(0, expTokens - minExpTokens);
+          if (maxReduction > 0) {
+            const reduction = Math.min(excess + 4, maxReduction);
+            experienceEntries = trimTextToTokens(experienceEntries, expTokens - reduction).trim();
+            trimmedFieldNames.push("candidateExperience");
+            currentUserPrompt = buildTailorUserPrompt({ jobDesc, candSummary, experienceEntries, skillsList });
+            totalTokens = countTokens(systemPrompt) + countTokens(currentUserPrompt);
+            excess = totalTokens - config.maxInputTokens;
+          }
+        }
+
+        // 4. candidateSkills (priority 4)
+        if (excess > 0 && skillsList) {
+          const skTokens = countTokens(skillsList);
+          const minSkills = 10;
+          const maxReduction = Math.max(0, skTokens - minSkills);
+          if (maxReduction > 0) {
+            const reduction = Math.min(excess + 4, maxReduction);
+            skillsList = trimTextToTokens(skillsList, skTokens - reduction).trim();
+            trimmedFieldNames.push("candidateSkills");
+            currentUserPrompt = buildTailorUserPrompt({ jobDesc, candSummary, experienceEntries, skillsList });
+            totalTokens = countTokens(systemPrompt) + countTokens(currentUserPrompt);
+            excess = totalTokens - config.maxInputTokens;
+          }
+        }
+      }
+
+      if (totalTokens > config.maxInputTokens) {
         return {
           ok: false,
-          error: `Payload exceeds maximum allowed token limit for operation 'resume_tailor' (${baseTokens} > ${config.maxInputTokens}). Candidate facts exceed token capacity.`,
+          error: `Payload exceeds maximum allowed token limit for operation 'resume_tailor' (${totalTokens} > ${config.maxInputTokens}). Candidate facts exceed token capacity.`,
         };
       }
 
-      // Remaining budget for job description
-      const availableTokensForDesc = config.maxInputTokens - baseTokens - 5;
-      const descTokens = countTokens(rawJobDesc);
-
-      let finalJobDesc = rawJobDesc;
-      let jobDescriptionShortened = originalJobDesc.trim().length > rawJobDesc.length;
-
-      if (descTokens > availableTokensForDesc) {
-        finalJobDesc = trimTextToTokens(rawJobDesc, Math.max(0, availableTokensForDesc)).trim();
-        jobDescriptionShortened = true;
-      }
-
       metadata = {
-        jobDescriptionShortened,
+        jobDescriptionShortened: trimmedFieldNames.includes("jobDescription") || originalJobDesc.trim().length > jobDesc.length,
+        trimmedFields: trimmedFieldNames.length > 0 ? trimmedFieldNames : (originalJobDesc.trim().length > jobDesc.length ? ["jobDescription"] : []),
       };
 
-      userPrompt = `${candDataText}\n\n<untrusted_job_data>\nTitle: ${jobTitle}\nCompany: ${jobCompany}\nDescription: ${finalJobDesc}\n</untrusted_job_data>`;
+      userPrompt = currentUserPrompt;
       break;
     }
 
@@ -564,7 +634,9 @@ Ideal output JSON:
       let candHeadline = sanitizeAiInputText(candidate.headline || "", AI_FIELD_LENGTH_CAPS.headline);
       const jobTitle = sanitizeAiInputText(job.title || "", AI_FIELD_LENGTH_CAPS.jobTitle);
       const jobCompany = sanitizeAiInputText(job.company || "", AI_FIELD_LENGTH_CAPS.jobCompany);
-      let jobDesc = sanitizeAiInputText(job.description || "", AI_FIELD_LENGTH_CAPS.jobDescription);
+      const originalJobDesc = typeof job.description === "string" ? job.description : "";
+      let jobDesc = sanitizeAiInputText(originalJobDesc, AI_FIELD_LENGTH_CAPS.jobDescription);
+      const isJobDescCharCapped = originalJobDesc.trim().length > jobDesc.length;
 
       systemPrompt = `You are an objective talent assessment engine. Evaluate candidate fit against the target job requirements.
 RULES:
@@ -645,9 +717,11 @@ Ideal output JSON:
           }
         }
 
+      }
+      if (trimmedFieldNames.length > 0 || isJobDescCharCapped) {
         metadata = {
-          jobDescriptionShortened: trimmedFieldNames.includes("jobDescription"),
-          trimmedFields: trimmedFieldNames,
+          jobDescriptionShortened: isJobDescCharCapped || trimmedFieldNames.includes("jobDescription"),
+          trimmedFields: trimmedFieldNames.length > 0 ? trimmedFieldNames : ["jobDescription"],
         };
       }
 
@@ -659,12 +733,13 @@ Ideal output JSON:
       return { ok: false, error: `Unhandled operation: ${config.operation}` };
   }
 
-  const estimatedInputTokens = countTokens(systemPrompt) + countTokens(userPrompt);
+  const estimatedInputTokens = estimateTokens(systemPrompt) + estimateTokens(userPrompt);
 
-  if (estimatedInputTokens > config.maxInputTokens) {
+  const trueTokens = countTokens(systemPrompt) + countTokens(userPrompt);
+  if (trueTokens > config.maxInputTokens) {
     return {
       ok: false,
-      error: `Payload exceeds maximum allowed token limit for operation '${config.operation}' (${estimatedInputTokens} > ${config.maxInputTokens}).`,
+      error: `Payload exceeds maximum allowed token limit for operation '${config.operation}' (${trueTokens} > ${config.maxInputTokens}).`,
     };
   }
 
