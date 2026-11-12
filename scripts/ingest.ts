@@ -303,12 +303,15 @@ async function main() {
     let recentRuns: any[] = [];
     if (supabase) {
       try {
-        const { data } = await supabase
+        const columns = hasCoverageColumn
+          ? 'started_at,finished_at,status,per_source_counts,coverage'
+          : 'started_at,finished_at,status,per_source_counts';
+        const { data, error } = await supabase
           .from('ingest_runs')
-          .select('started_at,finished_at,status,per_source_counts,coverage')
+          .select(columns)
           .order('finished_at', { ascending: false })
           .limit(50);
-        if (data) recentRuns = data;
+        if (data && !error) recentRuns = data;
       } catch {
         // Fall back to empty runs
       }

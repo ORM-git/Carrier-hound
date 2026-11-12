@@ -76,16 +76,16 @@ export function shouldPerformUnseenCleanup(params: UnseenCleanupSafetyCheckParam
     };
   }
 
-  const failedShards: number[] = [];
+  const nonSuccessShards: number[] = [];
   shardMap.forEach((r, sId) => {
-    if (r.status === "failed" || r.status === "warning") {
-      failedShards.push(sId);
+    if (r.status !== "success") {
+      nonSuccessShards.push(sId);
     }
   });
-  if (failedShards.length > 0) {
+  if (nonSuccessShards.length > 0) {
     return {
       allowed: false,
-      reason: `Incomplete scheduled run: failing shard(s): ${failedShards.join(", ")}.`,
+      reason: `Incomplete scheduled run: non-success or failing shard(s): ${nonSuccessShards.join(", ")}.`,
     };
   }
 

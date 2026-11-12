@@ -269,6 +269,24 @@ async function runTests() {
     'Unseen cleanup BLOCKED when any shard in cycle failed'
   );
 
+  const nonSuccessShardRuns = [0, 1, 2, 3, 4, 5].map((shard_id) => ({
+    status: shard_id === 4 ? 'running' : 'success',
+    coverage: { cycle_id: 'cycle-clean', shard_id, expected_shards: 6 },
+  }));
+
+  assert(
+    shouldPerformUnseenCleanup({
+      isScheduled: true,
+      isSeed: false,
+      sourceFilter: null,
+      capArgPresent: false,
+      capValue: 50000,
+      runs: nonSuccessShardRuns,
+      cycleId: 'cycle-clean',
+    }).allowed === false,
+    'Unseen cleanup BLOCKED when any shard has non-success status strictly (e.g. running)'
+  );
+
   assert(
     shouldPerformUnseenCleanup({
       isScheduled: true,

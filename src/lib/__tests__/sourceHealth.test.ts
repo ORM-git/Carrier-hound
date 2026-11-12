@@ -71,7 +71,7 @@ describe("source health classification", () => {
       expect(result.lastSuccessAt).toBe("2026-11-06T10:00:00.000Z");
     });
 
-    it("reports healthy when the only cycle in evidence is currently in-progress without failures", () => {
+    it("reports in_progress honestly when the only cycle in evidence is currently in-progress", () => {
       const currentRuns: IngestRunSnapshot[] = [0, 1].map((shard_id) => ({
         started_at: "2026-11-06T11:45:00Z",
         finished_at: "2026-11-06T11:50:00Z",
@@ -80,8 +80,41 @@ describe("source health classification", () => {
       }));
 
       const result = evaluateSourceHealth(currentRuns, { maxFailuresInWindow: 1, staleAfterHours: 4, cycleDeadlineMinutes: 90 }, now);
-      expect(result.status).toBe("healthy");
-      expect(result.lastSuccessAt).toBe("2026-11-06T11:50:00.000Z");
+      expect(result.status).toBe("in_progress");
+      expect(result.reason).toContain("in progress");
+      expect(result.lastSuccessAt).toBeUndefined();
+    });
+
+    it("stays degraded when latest cycle is in progress but most recent finalized cycle failed (A success -> B failed -> C in-progress)", () => {
+      // Cycle A: 06:00 - complete & healthy
+      const cycleARuns: IngestRunSnapshot[] = [0, 1, 2, 3, 4, 5].map((shard_id) => ({
+        started_at: "2026-11-06T05:45:00Z",
+        finished_at: "2026-11-06T06:00:00Z",
+        status: "success",
+        coverage: { cycle_id: "cycle-A", shard_id, expected_shards: 6 },
+      }));
+
+      // Cycle B: 10:00 - finalized with failing shard
+      const cycleBRuns: IngestRunSnapshot[] = [0, 1, 2, 3, 4, 5].map((shard_id) => ({
+        started_at: "2026-11-06T09:45:00Z",
+        finished_at: "2026-11-06T10:00:00Z",
+        status: shard_id === 2 ? "failed" : "success",
+        coverage: { cycle_id: "cycle-B", shard_id, expected_shards: 6 },
+      }));
+
+      // Cycle C: 11:45 - in progress (shards 0 and 1 finished at 11:50, now is 12:00, within 90m deadline)
+      const cycleCRuns: IngestRunSnapshot[] = [0, 1].map((shard_id) => ({
+        started_at: "2026-11-06T11:45:00Z",
+        finished_at: "2026-11-06T11:50:00Z",
+        status: "success",
+        coverage: { cycle_id: "cycle-C", shard_id, expected_shards: 6 },
+      }));
+
+      const runs = [...cycleARuns, ...cycleBRuns, ...cycleCRuns];
+      const result = evaluateSourceHealth(runs, { maxFailuresInWindow: 1, staleAfterHours: 4, cycleDeadlineMinutes: 90 }, now);
+      expect(result.status).toBe("degraded");
+      expect(result.reason).toContain("failing shard(s): 2");
+      expect(result.lastFailureAt).toBe("2026-11-06T10:00:00.000Z");
     });
 
     it("reports degraded when an incomplete cycle exceeds its deadline window (overdue)", () => {

@@ -21,7 +21,7 @@ export interface SourceHealthPolicy {
 }
 
 export interface SourceHealthResult {
-  status: "healthy" | "degraded" | "no_data" | "invalid";
+  status: "healthy" | "degraded" | "no_data" | "invalid" | "in_progress";
   reason?: string;
   lastSuccessAt?: string;
   lastFailureAt?: string;
@@ -78,7 +78,7 @@ export function evaluateCycleHealth(
 
   const failedShards: number[] = [];
   c.shards.forEach((r, sId) => {
-    if (r.status === "failed" || r.status === "warning") {
+    if (r.status !== "success") {
       failedShards.push(sId);
     }
   });
@@ -260,37 +260,40 @@ export function evaluateSourceHealth(
   const latestCycle = evaluatedCycles[0];
 
   // Completion/deadline handling: a cycle still inside its allowed window is
-  // "in progress", not failed; evaluate the last COMPLETED cycle meanwhile.
+  // "in progress", not failed; evaluate the most recent FINALIZED cycle.
   if (latestCycle.isInProgress) {
-    if (lastSuccessCycle) {
-      const staleAfterMs = policy.staleAfterHours * 60 * 60 * 1000;
-      if (now - lastSuccessCycle.latestFinishedAt > staleAfterMs) {
-        return {
-          status: "degraded",
-          reason: `Last success is older than ${policy.staleAfterHours}h.`,
-          lastSuccessAt: new Date(lastSuccessCycle.latestFinishedAt).toISOString(),
-          staleAfterHours: policy.staleAfterHours,
-        };
-      }
+    const mostRecentFinalized = completedCycles[0];
+
+    if (!mostRecentFinalized) {
       return {
-        status: "healthy",
-        lastSuccessAt: new Date(lastSuccessCycle.latestFinishedAt).toISOString(),
+        status: "in_progress",
+        reason: latestCycle.reason || `Cycle ${latestCycle.cycleId} is in progress; no completed cycle exists.`,
       };
     }
 
-    if (lastFailureCycle && failureCount >= policy.maxFailuresInWindow) {
+    if (!mostRecentFinalized.isHealthy) {
       return {
         status: "degraded",
-        reason: lastFailureCycle.reason || "Previous completed cycle failed.",
-        lastFailureAt: new Date(lastFailureCycle.latestFinishedAt).toISOString(),
+        reason: mostRecentFinalized.reason || "Previous finalized cycle failed.",
+        lastSuccessAt: lastSuccessCycle ? new Date(lastSuccessCycle.latestFinishedAt).toISOString() : undefined,
+        lastFailureAt: new Date(mostRecentFinalized.latestFinishedAt).toISOString(),
         consecutiveFailures: failureCount,
       };
     }
 
-    // No completed cycle at all yet, but current cycle is in progress without failures
+    const staleAfterMs = policy.staleAfterHours * 60 * 60 * 1000;
+    if (now - mostRecentFinalized.latestFinishedAt > staleAfterMs) {
+      return {
+        status: "degraded",
+        reason: `Last success is older than ${policy.staleAfterHours}h.`,
+        lastSuccessAt: new Date(mostRecentFinalized.latestFinishedAt).toISOString(),
+        staleAfterHours: policy.staleAfterHours,
+      };
+    }
+
     return {
       status: "healthy",
-      lastSuccessAt: new Date(latestCycle.latestFinishedAt).toISOString(),
+      lastSuccessAt: new Date(mostRecentFinalized.latestFinishedAt).toISOString(),
     };
   }
 
