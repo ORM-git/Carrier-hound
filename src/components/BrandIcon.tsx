@@ -12,7 +12,7 @@ export interface BrandIconProps {
 
 /**
  * CareerMonke Brand Logo & Mascot Icon
- * - "full": Full official logo image (mascot monkey head with sunglasses + "career monke" wordmark).
+ * - "full": Full official logo image (brown monkey mark + "CAREER MONKE" wordmark).
  * - "new" / "legacy": Mascot monkey head square icon for round buttons, avatars, and app rails.
  */
 export default function BrandIcon({
@@ -24,8 +24,8 @@ export default function BrandIcon({
   variant = "legacy",
 }: BrandIconProps) {
   if (variant === "full") {
-    const w = width || 140;
-    const h = height || 56;
+    const w = width || 66;
+    const h = height || 80;
     return (
       <Image
         src="/careermonke-logo.png"

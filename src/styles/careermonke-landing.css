@@ -264,7 +264,7 @@
   /* footer */
   .landing-wrapper footer{border-top:1px solid var(--line);background:var(--soft);padding:32px 0 24px;font-size:15px}
   .landing-wrapper .f-top{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px 24px;align-items:center}
-  .landing-wrapper .f-top img{width:140px;height:auto;aspect-ratio:717/291}
+  .landing-wrapper .f-top img{width:auto;height:76px;aspect-ratio:617/749}
   .landing-wrapper .f-contact{color:var(--muted);font-size:14px}
   .landing-wrapper .f-grid{display:grid;gap:8px;margin-top:20px}
   .landing-wrapper .f-group{display:grid;grid-template-columns:1fr 1fr;gap:0 16px}
@@ -815,3 +815,44 @@
   .landing-wrapper .m3{font-size:1.62em}
   .landing-wrapper .m4{font-size:2em}
   .landing-wrapper .mx-line{bottom:-.12em}
+
+  /* Free preview CTA band */
+  .landing-wrapper .free-preview-band{width:100%;margin-top:var(--sec);padding:34px 0;background-color:#2563EB;background-image:radial-gradient(rgba(255,255,255,.16) 1px,transparent 1px);background-size:22px 22px;color:#fff;text-align:center}
+  .landing-wrapper .free-preview{max-width:740px;margin:0 auto}
+  .landing-wrapper .fp-title{margin:0;color:#fff;font-size:28px;line-height:1.15;font-weight:800;letter-spacing:-.02em;text-align:center}
+  .landing-wrapper .fp-sub{margin:10px auto 0;max-width:46ch;color:rgba(255,255,255,.92);font-size:15px;line-height:1.5;font-weight:400}
+  .landing-wrapper .fp-row{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:10px 12px;margin-top:18px}
+  .landing-wrapper .fp-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 18px;border-radius:10px;font-size:14px;font-weight:700;line-height:1;text-decoration:none;white-space:nowrap;transition:background-color .15s ease,transform .15s ease,border-color .15s ease}
+  .landing-wrapper .fp-btn-white{background:#fff;color:#0B1026;box-shadow:0 2px 6px rgba(9,14,52,.14)}
+  .landing-wrapper .fp-btn-white:hover{background:#F8FAFC}
+  .landing-wrapper .fp-btn-outline{background:#1D4ED8;color:#fff;border:1px solid rgba(255,255,255,.32);box-shadow:0 2px 6px rgba(9,14,52,.12)}
+  .landing-wrapper .fp-btn-outline:hover{background:#1E40AF;border-color:rgba(255,255,255,.5)}
+  .landing-wrapper .free-preview-band :focus-visible{outline-color:#fff}
+
+  /* Founder card */
+  .landing-wrapper .founder-section{padding-top:36px}
+  .landing-wrapper .founder{max-width:680px;margin:0 auto;background:#fff;border:1px solid #E4E4E7;border-radius:14px;padding:22px 20px;box-shadow:0 1px 3px rgba(9,14,52,.05);display:grid;grid-template-columns:1fr;justify-items:center;text-align:center;gap:14px}
+  .landing-wrapper .founder img{width:88px;height:88px;border-radius:50%;object-fit:cover;border:2px solid #2563EB;box-shadow:0 4px 12px rgba(37,99,235,.15);background:var(--blue-50)}
+  .landing-wrapper .founder-body{min-width:0}
+  .landing-wrapper .founder h2{font-size:22px;line-height:1.2;font-weight:800;color:#09090B;text-align:center}
+  .landing-wrapper .founder .role{margin-top:2px;font-size:13px;font-weight:500;color:#6B7280}
+  .landing-wrapper .founder p.bio{margin-top:10px;font-size:14px;line-height:1.6;color:#4B5563}
+  .landing-wrapper .founder p.bio+p.bio{margin-top:8px}
+  .landing-wrapper .founder .socials{display:flex;align-items:center;justify-content:center;gap:6px;margin-top:12px}
+  .landing-wrapper .founder .socials a{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;min-height:36px;padding:0;border-radius:999px;color:#6B7280;text-decoration:none;transition:color .15s ease,background-color .15s ease}
+  .landing-wrapper .founder .socials a:hover{color:#111827;background:#F4F4F5}
+
+  @media (min-width:768px){
+    .landing-wrapper .free-preview-band{padding:44px 0}
+    .landing-wrapper .fp-title{font-size:38px}
+    .landing-wrapper .fp-sub{font-size:16px}
+    .landing-wrapper .fp-row{gap:12px;margin-top:20px}
+    .landing-wrapper .fp-btn{padding:0 24px;min-height:46px;font-size:15px}
+    .landing-wrapper .founder-section{padding-top:44px}
+    .landing-wrapper .founder{grid-template-columns:100px 1fr;justify-items:start;text-align:left;gap:24px;padding:28px 32px;margin-left:auto;margin-right:auto}
+    .landing-wrapper .founder img{width:100px;height:100px}
+    .landing-wrapper .founder h2{font-size:24px;text-align:left}
+    .landing-wrapper .founder .role{font-size:14px}
+    .landing-wrapper .founder p.bio{font-size:15px;line-height:1.6}
+    .landing-wrapper .founder .socials{justify-content:flex-start}
+  }
