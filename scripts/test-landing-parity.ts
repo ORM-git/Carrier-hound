@@ -68,24 +68,34 @@ async function runParityTests() {
     "Founder section MUST be placed exactly between Final CTA and Feedback Wall"
   );
 
+  // Ticker placement check (directly above "The whole hunt, in one place")
+  const statsNoteIdx = pageSrc.indexOf('id="stats-note"');
+  const tickerIdx = pageSrc.indexOf('<LandingJobsTickerStrip');
+  const featHeadingIdx = pageSrc.indexOf('id="feat-h"');
+  assert.ok(tickerIdx !== -1, "LandingJobsTickerStrip must be rendered on homepage");
+  assert.ok(
+    statsNoteIdx < tickerIdx && tickerIdx < featHeadingIdx,
+    "LandingJobsTickerStrip MUST be placed directly above 'The whole hunt, in one place'"
+  );
+
   // Founder content checks
   assert.ok(pageSrc.includes('src="/owner.jpg"'), "Founder image must point to /owner.jpg");
   assert.ok(
     pageSrc.includes('alt="Orissa Lee Patnaik, founder of CareerMonke"'),
     "Founder alt text must match 'Orissa Lee Patnaik, founder of CareerMonke'"
   );
-  assert.ok(pageSrc.includes('width="64" height="64"'), "Founder image markup must define width 64 height 64");
+  assert.ok(pageSrc.includes('width="112" height="112"'), "Founder image markup must define width 112 height 112");
   assert.ok(pageSrc.includes("Orissa here!"), "Founder heading must be 'Orissa here!'");
   assert.ok(
-    pageSrc.includes("Orissa Lee Patnaik · Creator of CareerMonke"),
-    "Founder role must be 'Orissa Lee Patnaik · Creator of CareerMonke'"
+    pageSrc.includes('<p className="role">Creator of CareerMonke</p>'),
+    "Founder role must be 'Creator of CareerMonke'"
   );
   assert.ok(
-    pageSrc.includes("Growing up in the US and living in India showed me job hunting is broken everywhere."),
+    pageSrc.includes("Growing up in the US and living in India showed me the friction of job hunting is universal. Broken software discards qualified people, and legacy sites make every role a cattle call."),
     "Founder bio paragraph 1 must match"
   );
   assert.ok(
-    pageSrc.includes("Broken software discards qualified people, and legacy sites make every role a cattle call. I built CareerMonke to cut through the noise and put your story in front of real people."),
+    pageSrc.includes("I built CareerMonke to cut through the noise, give candidates leverage back, and land your story directly with real people without the unnecessary hollow hustle rhetoric."),
     "Founder bio paragraph 2 must match"
   );
   assert.ok(
@@ -96,17 +106,24 @@ async function runParityTests() {
     pageSrc.includes('href="https://www.instagram.com/orissa.patnaik"'),
     "Founder Instagram link must match"
   );
+  assert.ok(
+    pageSrc.includes('href="mailto:support@careermonke.com"'),
+    "Founder Email link must match"
+  );
+  assert.ok(pageSrc.includes("Free preview"), "Free preview CTA heading must exist");
+  assert.ok(pageSrc.includes("View Jobs"), "Free preview CTA must include 'View Jobs'");
+  assert.ok(pageSrc.includes("See my Ideal Match"), "Free preview CTA must include 'See my Ideal Match'");
 
   // 3. Founder CSS Styling & Dimensions
   console.log("Test 3: Founder styling across viewports...");
-  assert.ok(cssSrc.includes(".founder{grid-template-columns:56px 1fr;gap:16px}"), "Founder mobile width must be 56px");
-  assert.ok(cssSrc.includes(".founder img{width:56px;height:56px}"), "Founder mobile img size must be 56x56");
+  assert.ok(cssSrc.includes("grid-template-columns:1fr;justify-items:center;text-align:center"), "Founder mobile card must stack photo above text");
+  assert.ok(cssSrc.includes(".landing-wrapper .founder img{width:88px;height:88px"), "Founder mobile img size must be 88x88");
   // Owner-approved deviation from original HTML: desktop (>=768px) founder card is centered with auto margins
   assert.ok(
-    cssSrc.includes(".founder{grid-template-columns:80px 1fr;gap:24px;margin-left:auto;margin-right:auto}"),
-    "Founder desktop width must be 80px with auto margins for centering"
+    cssSrc.includes("grid-template-columns:100px 1fr;justify-items:start;text-align:left;gap:24px;padding:28px 32px;margin-left:auto;margin-right:auto"),
+    "Founder desktop card must be 100px 1fr with auto margins for centering"
   );
-  assert.ok(cssSrc.includes(".founder img{width:80px;height:80px}"), "Founder desktop img size must be 80x80");
+  assert.ok(cssSrc.includes(".landing-wrapper .founder img{width:100px;height:100px}"), "Founder desktop img size must be 100x100");
 
   // 3b. Desktop (>=768px) Centering Rules Verification
   // NOTE: Owner-approved deviation from the original HTML: on desktop (>=768px), sections below the hero

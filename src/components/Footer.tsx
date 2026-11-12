@@ -24,7 +24,7 @@ function LandingFooter() {
           {/* Brand */}
           <div className="lg:col-span-4">
             <Link href="/" aria-label="CareerMonke Home" className="inline-flex items-center min-h-[44px] rounded-tk-lg">
-              <BrandIcon variant="full" width={140} height={56} className="h-9 w-auto" />
+              <BrandIcon variant="full" width={36} height={44} className="h-9 w-auto" />
             </Link>
           </div>
 
@@ -296,7 +296,7 @@ export default function Footer({ isGuide = false }: FooterProps) {
         {/* Bottom row: Brand & Copyright line */}
         <div className="pt-6 border-t border-[#E2E8F0] flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
           <div className="flex items-center">
-            <BrandIcon variant="full" width={110} height={44} className="h-7 w-auto" />
+            <BrandIcon variant="full" width={28} height={34} className="h-7 w-auto" />
           </div>
           <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-[#64748B]">
             <Link href="/about" className="hover:text-[#2563EB] transition-colors">

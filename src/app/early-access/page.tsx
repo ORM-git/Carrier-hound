@@ -106,7 +106,7 @@ export default function EarlyAccessPage() {
             aria-label="CareerMonke Early Access"
             className="inline-flex items-center min-h-[44px] rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
           >
-            <BrandIcon variant="full" width={140} height={56} className="h-9 w-auto" priority />
+            <BrandIcon variant="full" width={36} height={44} className="h-9 w-auto" priority />
           </Link>
 
           <button
@@ -278,7 +278,7 @@ export default function EarlyAccessPage() {
                 src="/mascot.png"
                 alt="CareerMonke Mascot"
                 width={140}
-                height={118}
+                height={140}
                 priority
                 className="w-24 sm:w-32 lg:w-36 h-auto drop-shadow-md select-none transition-transform hover:scale-105"
               />
