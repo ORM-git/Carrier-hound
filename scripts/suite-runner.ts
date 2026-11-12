@@ -281,6 +281,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-navigation-history.ts", command: "npx tsx scripts/test-navigation-history.ts", classification: "offline" },
   { name: "scripts/test-client-schema-coverage.ts", command: "npx tsx scripts/test-client-schema-coverage.ts", classification: "offline" },
   { name: "scripts/test-cache-posture.ts", command: "npx tsx scripts/test-cache-posture.ts", classification: "offline" },
+  { name: "scripts/test-statement-timeouts.ts", command: "npx tsx scripts/test-statement-timeouts.ts", classification: "offline" },
 ];
 
 export interface RunSummary {
