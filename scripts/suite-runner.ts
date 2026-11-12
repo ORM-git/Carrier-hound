@@ -277,6 +277,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-landing-parity.ts", command: "npx tsx scripts/test-landing-parity.ts", classification: "offline" },
   { name: "scripts/test-custom-domain-types.ts", command: "npx tsx scripts/test-custom-domain-types.ts", classification: "offline" },
   { name: "scripts/test-token-generation-guard.ts", command: "npx tsx scripts/test-token-generation-guard.ts", classification: "offline" },
+  { name: "scripts/test-token-budget.ts", command: "npx tsx scripts/test-token-budget.ts", classification: "offline" },
 ];
 
 export interface RunSummary {
