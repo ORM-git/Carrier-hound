@@ -10,19 +10,19 @@
 | Metric | Count |
 | --- | --- |
 | Total rows audited | 22 |
-| `CLOSE` | 3 |
-| `GAP` | 19 |
-| `GAP` — Owner step only | 7 |
-| `GAP` — Code only | 3 |
-| `GAP` — Code + Owner step | 9 |
+| `CLOSE` | 2 |
+| `GAP` | 20 |
+| `GAP` — Owner step only | 6 |
+| `GAP` — Code only | 4 |
+| `GAP` — Code + Owner step | 10 |
 
 ### Sign-Off Overview Table
 
 | # | Area | Audit Row | Verdict | Gap Classification | Summary |
 | --- | --- | --- | --- | --- | --- |
-| 1 | DB | RPO/RTO targets | `GAP` | Code + Owner step | Docs exist with `[OWNER TO CONFIRM]`; no merged automated backup/restore drill guard on `main` (`PR #554` open) |
+| 1 | DB | RPO/RTO targets | `GAP` | Code + Owner step | Docs define proposed targets (site/Redis 15m, in-place DB 1h, fresh DB 2h; DB user data 24h / 2m Pro); all unverified in production; upstream Free-backup error is a code GAP; current plan tier requires owner check |
 | 2 | DB | Change-history triggers | `GAP` | Code + Owner step | Trigger map + Vitest guard + `20261106c` exist; migration `NOT APPLIED` and `purge_row_change_history()` not wired into retention cron |
-| 3 | DB | Unused index audit | `GAP` | Owner step | Inventory, `db-health.sql`, `explain-checks.sql`, `20261106g`, and `20261108b` exist; migrations `NOT APPLIED` and probe workflow opt-in |
+| 3 | DB | Unused index audit | `GAP` | Owner step | Inventory, `db-health.sql`, `explain-checks.sql`, `20261106g`, and `20261108b` exist; `advisoryUnusedIndexes` checks >=50MiB; migrations `NOT APPLIED` and probe workflow opt-in |
 | 4 | DB | Index bloat monitoring | `GAP` | Code + Owner step | `docs/db-health-probe.md` explicitly leaves physical index bloat unmeasured; `20261106m` & `20261108b` `NOT APPLIED` |
 | 5 | DB | Table size monitoring | `GAP` | Code + Owner step | `db_health_snapshot` samples current bytes, but `docs/db-health-probe.md` leaves growth trends/thresholds open; `20261108b` `NOT APPLIED` |
 | 6 | DB | Index usage monitoring | `GAP` | Owner step | `db-health.sql`, `dbHealth.ts`, `probe-db-health.ts`, and `db-health-probe.yml` exist; `20261108b` `NOT APPLIED` and var-gated |
@@ -30,18 +30,18 @@
 | 8 | DB | Purge jobs for log tables | `GAP` | Code + Owner step | `20261106a`/`20261106f`/`20261108a` `NOT APPLIED`; `purge_row_change_history()` (`20261106c`) omitted from `scripts/retention-cron.ts` |
 | 9 | DB | Views / materialized views | `GAP` | Owner step | `jobs_public`, `worldwide_company_counts`, `jobs_duplicate_roles` + guards exist; `20261101`, `20261106d`, `20261107a`, `20261108a` `NOT APPLIED` (`PR #555` open) |
 | 10 | DB | Connection pooling | `GAP` | Code + Owner step | App uses `@supabase/ssr` HTTP/PostgREST; no dedicated pooling doc/guard on `main`, and Supabase Supavisor/PgBouncer dashboard settings unverified |
-| 11 | DB | PITR | `GAP` | Owner step | Documented as disabled on Supabase Free tier (`docs/rpo-rto-targets.md`, `docs/disaster-recovery.md`); requires Pro upgrade by owner |
+| 11 | DB | PITR | `GAP` | Code + Owner step | Upstream docs erroneously claim Free tier has daily backups; Free has NO backups, daily backups require paid plan, and PITR is a separate paid add-on; current plan tier & PITR require owner check |
 | 12 | DB | Concurrent refresh | `GAP` | Owner step | `REFRESH MATERIALIZED VIEW CONCURRENTLY` + unique index + `matview_refresh_log` + tests exist; `20261101`, `20261106d`, `20261108a` `NOT APPLIED` |
 | 13 | DB | CREATE INDEX CONCURRENTLY | `GAP` | Code + Owner step | `20261106n` standalone `CONCURRENTLY` (`NOT APPLIED`), but newer `20261106k` & `20261107a` create non-concurrent indexes on `jobs` without a blocking CI guard |
 | 14 | DB | Alert on failed cron | `GAP` | Code + Owner step | `workflow-failure-alert` covers 13 names, omitting scheduled `.github/workflows/license-guard.yml`; Sentry/GitHub routing + probe vars require owner config |
-| 15 | DB | Zero-downtime migration discipline | `CLOSE` | None | Policy doc, `test-migration-discipline.ts`, `test-not-valid-validate-policy.ts`, `test-custom-domain-types.ts`, schema drift & `record-migration.cjs` complete |
+| 15 | DB | Zero-downtime migration discipline | `GAP` | Code | Policy doc & `test-migration-discipline.ts` ban destructive DDL, but lack lock-safety enforcement, lock timeouts, or concurrent DDL guards on hot tables (row 13) |
 | 16 | DB | DB health check | `GAP` | Owner step | `/api/health/ready`, `dbHealth.ts`, `probe-db-health.ts`, `db-health.sql` complete; no UptimeRobot monitor on readiness probe, `20261108b` `NOT APPLIED`, probe var off |
 | 17 | DB | Normalization | `GAP` | Code | Core normalized tables/FKs exist, but legacy `jobs.company` text duplication remains alongside nullable `jobs.company_id`, with no normalization audit/guard |
-| 18 | DB | N+1 avoidance | `CLOSE` | None | `docs/db-n-plus-one.md` and Vitest guard `src/lib/__tests__/nPlusOneGuard.test.ts` cover all `src/app/api` and `src/lib` files |
+| 18 | DB | N+1 avoidance | `CLOSE` | None | `docs/db-n-plus-one.md` and Vitest guard `src/lib/__tests__/nPlusOneGuard.test.ts` cover all `src/app/api` and `src/lib` files (narrowed to lexical single-line loop-await scan) |
 | 19 | DB | DB-level RBAC | `GAP` | Code + Owner step | RLS/table revokes/`service_role` separation exist, but admin checks rely on app email allowlist + `service_role`; no DB-role RBAC or merged RLS coverage doc (`PR #542` open) |
-| 20 | FE | SWR caching rows | `CLOSE` | None | `src/lib/cache/swr.ts` (`readSwr`/`swrFetch`/`updateSwr`/`invalidateSwr`/`isSwrStale`), dashboard/jobs wiring, HTTP SWR cache posture, and 8 Vitest/suite guards complete |
+| 20 | FE | SWR caching rows | `CLOSE` | None | `src/lib/cache/swr.ts`, dashboard SWR reads/revalidations, jobs SWR write-through, and 8 Vitest/suite guards complete (narrowed to verified client-cache behavior; HTTP endpoint posture has 25 remediation gaps) |
 | 21 | FE | Concurrent features | `GAP` | Code | Partial `startTransition` in `src/app/jobs/page.tsx` and `<Suspense>` boundaries in 5 app files; no broader concurrent-feature coverage, doc, or guard |
-| 22 | FE | PWA manifest | `GAP` | Code | `public/manifest.webmanifest`, metadata link in `src/app/layout.tsx`, icon/offline assets, and `sw.js` exist; no manifest/PWA test guard, pre-PWA posture noted, `PR #301` open |
+| 22 | FE | PWA manifest | `GAP` | Code | `public/manifest.webmanifest` (`start_url: "/"`), metadata link in `src/app/layout.tsx`, icon/offline assets, and `sw.js` exist; no manifest/PWA test guard, pre-PWA posture noted, `PR #301` open |
 
 ---
 
@@ -53,11 +53,26 @@
 - **Verdict:** `GAP`
 - **Gap Classification:** Code + Owner step
 - **Artifacts Verified on `main`:**
-  - `docs/rpo-rto-targets.md` — Defines target RPO tiers (<= 24h Core User & Application State, <= 7d Job Corpus, <= 0 lost Paid Entitlements via idempotency/replay) and RTO targets (<= 4h Full DB Restore, <= 30m Application/Worker Tier, <= 1h Auth & Secrets), explicitly noting current values are `[OWNER TO CONFIRM]`.
-  - `docs/disaster-recovery.md` — Documents Free-tier daily snapshots, manual dump procedure, and restore rehearsal plan.
+  - `docs/rpo-rto-targets.md` — Defines proposed Recovery Time Objectives:
+    - Scenario 1 (Site Down, Database Healthy): ≤ 15 minutes (Netlify rollback)
+    - Scenario 2 (Upstash Redis Lost / Degraded): ≤ 15 minutes
+    - Scenario 3 (Database Corrupted — In-Place Restore): ≤ 1 hour
+    - Scenario 4 (Catastrophic DB Loss — Fresh Project Replay): ≤ 2 hours
+    And proposed Recovery Point Objectives:
+    - Application Code & Assets: 0 seconds (Git `main`)
+    - Database Schema & Policies: 0 seconds (Git migrations ledger)
+    - Ephemeral Cache & Rate Limits: 0 seconds / N/A
+    - Config & Secrets: 0 seconds
+    - Database User & Transaction Data: Proposed ≤ 24 hours (with daily backups on paid plan) or proposed ≤ 2 minutes (with Supabase Pro PITR add-on).
+    All targets are explicitly marked as proposed and unverified in production (`[OWNER TO CONFIRM]`).
+  - `docs/disaster-recovery.md` — Documents disaster recovery runbook scenarios, manual dump commands, and restore rehearsal plan.
 - **What Is Missing / Owner Sign-Off Action:**
-  - **Owner step:** Confirm SLA targets and current Supabase plan/backup retention in `docs/rpo-rto-targets.md`, and run/record a restore drill per `docs/disaster-recovery.md`.
-  - **Code:** No automated off-site logical backup workflow or RPO/RTO verification guard is merged on `main` (`PR #554` for weekly `pg_dump` remains open and unmerged).
+  - **Code:**
+    1. Upstream documentation error: `docs/rpo-rto-targets.md` and `docs/disaster-recovery.md` erroneously claim the Supabase Free tier provides automatic daily backups retained for 7 days. According to official Supabase documentation (`https://supabase.com/kb/faqs/platform/free-plan-backups` and `https://supabase.com/docs/guides/platform/backups`), the Free plan includes **NO automatic platform backups at all**; automatic daily backups require a paid plan, and PITR is a separate paid add-on. Upstream documentation must be corrected to reflect actual provider tier capabilities.
+    2. No automated off-site logical backup workflow (`pg_dump` export) or automated RPO/RTO verification guard is merged on `main` (`PR #554` for weekly `pg_dump` remains open and unmerged).
+  - **Owner step:**
+    1. Confirm the actual Supabase project plan tier (Free vs Pro) and whether automatic daily backups or PITR are enabled in the Supabase dashboard (current plan tier and backup posture are not established by the repo).
+    2. Officially review and confirm the proposed RPO/RTO targets (`[OWNER TO CONFIRM]`), and execute/record a periodic restore drill per `docs/disaster-recovery.md`.
 
 ### 2. Change-history triggers
 
@@ -81,7 +96,7 @@
   - `docs/db-index-constraint-inventory.md` & `scripts/test-index-constraint-inventory.ts` (registered offline in `scripts/suite-runner.ts`) — Inventories indexes/constraints and guards against volatile predicates.
   - `supabase/migrations/20261106g_drop_redundant_subscriptions_index.sql` & `scripts/test-redundant-index-cleanup.ts` (registered in `scripts/suite-runner.ts`).
   - `scripts/db-health.sql` (sections 2 & 14) and `supabase/scripts/explain-checks.sql` (section 11) — SQL queries over `pg_stat_user_indexes` (`idx_scan = 0`).
-  - `supabase/migrations/20261108b_db_health_snapshot.sql`, `src/lib/health/dbHealth.ts`, `src/lib/__tests__/dbHealth.test.ts`, `docs/db-health-probe.md` — Computes `advisoryUnusedIndexes` for non-unique indexes >= 1MB after 7 days since `stats_reset`.
+  - `supabase/migrations/20261108b_db_health_snapshot.sql`, `src/lib/health/dbHealth.ts`, `src/lib/__tests__/dbHealth.test.ts`, `docs/db-health-probe.md` — Computes `advisoryUnusedIndexes` for non-unique indexes with `scans === 0` and `total_bytes >= 50 * 1024 * 1024` (>= 50 MiB) after 7 days since `stats_reset` (`src/lib/health/dbHealth.ts` lines 93-94).
 - **What Is Missing / Owner Sign-Off Action:**
   - **Owner step:** Apply and record `supabase/migrations/20261106g_drop_redundant_subscriptions_index.sql` and `supabase/migrations/20261108b_db_health_snapshot.sql`, set repository variable `DB_HEALTH_PROBE_ENABLED=true` for `.github/workflows/db-health-probe.yml`, and review live `pg_stat_user_indexes` (`advisoryUnusedIndexes` is advisory-only and does not fail health checks).
 
@@ -178,11 +193,12 @@
 
 - **Domain:** Database
 - **Verdict:** `GAP`
-- **Gap Classification:** Owner step
+- **Gap Classification:** Code + Owner step
 - **Artifacts Verified on `main`:**
-  - `docs/rpo-rto-targets.md` & `docs/disaster-recovery.md` — Explicitly document that Supabase Free tier provides daily backups only and lacks Point-in-Time Recovery (PITR), requiring upgrade to Supabase Pro (`[OWNER TO CONFIRM]`).
+  - `docs/rpo-rto-targets.md` & `docs/disaster-recovery.md` — Discuss Point-in-Time Recovery (PITR) as a recommended Pro capability with ~2 minute RPO (`[OWNER TO CONFIRM]`).
 - **What Is Missing / Owner Sign-Off Action:**
-  - **Owner step:** Upgrade the Supabase project to Pro, enable the PITR add-on in the Supabase dashboard, and confirm RPO/restore testing.
+  - **Code:** Correct upstream documentation in `docs/rpo-rto-targets.md` and `docs/disaster-recovery.md`. Both documents erroneously claim that Supabase Free tier provides daily backups; per Supabase official documentation (`https://supabase.com/kb/faqs/platform/free-plan-backups` and `https://supabase.com/docs/guides/platform/backups`), Free tier has **NO automatic backups**, automated daily backups require a paid plan, and PITR is a separate paid add-on on Pro.
+  - **Owner step:** The current Supabase project tier (Free vs Pro) and whether PITR is enabled are not established by the repo. Owner must verify project plan status in the Supabase dashboard, upgrade to Pro if currently on Free, provision the PITR add-on, and confirm restore capabilities.
 
 ### 12. Concurrent refresh
 
@@ -225,8 +241,8 @@
 ### 15. Zero-downtime migration discipline
 
 - **Domain:** Database
-- **Verdict:** `CLOSE`
-- **Gap Classification:** None
+- **Verdict:** `GAP`
+- **Gap Classification:** Code
 - **Artifacts Verified on `main`:**
   - `docs/zero-downtime-migrations.md` — Defines Expand/Contract rules, `NOT VALID` + `VALIDATE CONSTRAINT`, `CONCURRENTLY`, and manual apply-and-record workflow.
   - `scripts/test-migration-discipline.ts` — Statically scans every `.sql` file in `supabase/migrations/` and fails on executable `DROP TABLE`, `DROP COLUMN`, `TRUNCATE`, `RENAME COLUMN`, `RENAME TO`, or `SET DATA TYPE`.
@@ -234,7 +250,8 @@
   - `supabase/migrations/20261112a_custom_domain_types.sql`, `docs/custom-domain-types.md`, & `scripts/test-custom-domain-types.ts`.
   - `docs/schema-drift-baseline.md`, `src/lib/__tests__/schemaDriftBaseline.test.ts`, `scripts/record-migration.cjs`, & `scripts/test-database-safety.ts`.
 - **What Is Missing / Owner Sign-Off Action:**
-  - **None (row closed by repo policy + CI guards).** *(Informational: open PRs `#541` idempotent DDL and `#544` rollback runbook propose additive docs/guards; individual pending migrations still follow the documented owner apply-and-record flow.)*
+  - **Code:** While `scripts/test-migration-discipline.ts` successfully prevents destructive DDL keywords, true zero-downtime migration discipline is incomplete on `main`. The guard is a lexical regex scan, not lock-safety enforcement: it does not verify `SET lock_timeout = '5s'`, does not prevent table-locking `ALTER TABLE` operations, and does not block non-concurrent `CREATE INDEX` on existing hot tables like `public.jobs` (as recorded in Row 13, where `20261106k` and `20261107a` create non-concurrent indexes). Full closure requires expanding CI migration linting to verify lock timeouts and concurrent DDL on hot tables.
+  - **Owner step:** None.
 
 ### 16. DB health check
 
@@ -267,7 +284,8 @@
   - `docs/db-n-plus-one.md` — Documents bounded-fanout rules and classifies intentional loop queries vs banned N+1 storms.
   - `src/lib/__tests__/nPlusOneGuard.test.ts` — Registered Vitest guard statically scanning every `src/app/api/**/route.ts` and `src/lib/**/*.ts` file for Supabase `await` inside loops, failing CI on any unclassified hit or stale baseline entry.
 - **What Is Missing / Owner Sign-Off Action:**
-  - **None for app request paths (row closed).** *(Informational: offline scripts in `scripts/` sit outside `nPlusOneGuard.test.ts`'s `src/` globs.)*
+  - **None for app request paths (row closed strictly for single-line loop-await patterns).**
+  - *Scope Caveat:* The guard `src/lib/__tests__/nPlusOneGuard.test.ts` is a lexical single-line regex scan (`LOOP_RE` matching loop blocks and `QUERY_RE = /await\b.*(\.from\(|\.rpc\(|supabaseAdmin|supabase\.)/`). It is not proof against helper-mediated database calls, aliased client references, multiline chained queries where `await` and `.from()` sit on different lines, or asynchronous mapping patterns like `await Promise.all(items.map(async ...))`. Furthermore, offline scripts under `scripts/` sit outside the guard's `src/` scan scope.
 
 ### 19. DB-level RBAC
 
@@ -292,12 +310,14 @@
 - **Verdict:** `CLOSE`
 - **Gap Classification:** None
 - **Artifacts Verified on `main`:**
-  - `src/lib/cache/swr.ts` — Implements bounded in-memory SWR cache (`readSwr`, `swrFetch` with 60s `SWR_DEFAULT_TTL_MS` and in-flight deduplication, `updateSwr`, `invalidateSwr`, `isSwrStale`, `SWR_MAX_ENTRIES = 200`).
-  - `src/app/dashboard/page.tsx` & `src/app/jobs/page.tsx` — Instant paint via `readSwr`, background revalidation on mount/visibility via `swrFetch`, and write-through updates via `updateSwr`.
-  - `docs/cache-invalidation.md`, `docs/memory-bounds.md`, `docs/race-condition-audit.md`, `docs/cache-posture.md`.
-  - Guards: `src/lib/__tests__/swrBounds.test.ts`, `src/lib/__tests__/swrInvalidation.test.ts`, `src/lib/__tests__/swrUpdate.test.ts`, `src/lib/__tests__/swrWriteThroughRace.test.ts`, `src/lib/__tests__/cacheInvalidationDoc.test.ts`, `src/lib/__tests__/raceConditionAuditDoc.test.ts`, `scripts/test-memory-bounds.ts`, `scripts/test-cache-posture.ts`.
+  - `src/lib/cache/swr.ts` — Implements client-side bounded in-memory SWR cache (`readSwr`, `swrFetch` with default 60s parameter `ttlMs = 60_000` and in-flight request deduplication, `updateSwr`, `invalidateSwr`, `isSwrStale`, `SWR_MAX_ENTRIES = 200`).
+  - `src/app/dashboard/page.tsx` — Performs cached SWR reads (`readSwr`) for instant paint and background revalidation via `swrFetch`.
+  - `src/app/jobs/page.tsx` — Does NOT perform `readSwr`, `swrFetch`, or visibility revalidation; it only performs optimistic write-through updates (`updateSwr("dashboard:${user.id}", ...)`) when saving/updating tracked applications so the dashboard cache stays fresh.
+  - `docs/cache-invalidation.md`, `docs/memory-bounds.md`, `docs/race-condition-audit.md`.
+  - Guards: `src/lib/__tests__/swrBounds.test.ts`, `src/lib/__tests__/swrInvalidation.test.ts`, `src/lib/__tests__/swrUpdate.test.ts`, `src/lib/__tests__/swrWriteThroughRace.test.ts`, `src/lib/__tests__/cacheInvalidationDoc.test.ts`, `src/lib/__tests__/raceConditionAuditDoc.test.ts`, `scripts/test-memory-bounds.ts`.
 - **What Is Missing / Owner Sign-Off Action:**
-  - **None (row closed).**
+  - **None (row closed strictly for verified client-side in-memory SWR cache behavior).**
+  - *Scope Narrowing & HTTP Cache Caveat:* This closure applies exclusively to client-side in-memory SWR caching (`src/lib/cache/swr.ts`, dashboard reads, and jobs write-through). It does NOT imply that HTTP API caching posture is complete: `scripts/test-cache-posture.ts` and `docs/cache-posture.md` report that 25 API routes currently require Cache-Control header remediation (which is a separate server-side API posture concern).
 
 ### 21. Concurrent features
 
@@ -316,7 +336,7 @@
 - **Verdict:** `GAP`
 - **Gap Classification:** Code
 - **Artifacts Verified on `main`:**
-  - `public/manifest.webmanifest` — Valid JSON manifest defining `name`, `short_name`, `start_url: "/jobs"`, `display: "standalone"`, `192x192` and `512x512` PNG icons.
+  - `public/manifest.webmanifest` — Valid JSON manifest defining `name`, `short_name`, `start_url: "/"`, `display: "standalone"`, `192x192` and `512x512` PNG icons.
   - `public/icon-192.png`, `public/icon.png`, `public/apple-touch-icon.png`, `public/offline.html`, `public/sw.js` — All referenced icon/offline/service-worker assets present on disk.
   - `src/app/layout.tsx` & `src/components/pwa/ServiceWorkerRegistrar.tsx` — Exports `manifest: "/manifest.webmanifest"` in Next.js metadata and registers `/sw.js` in production.
 - **What Is Missing / Owner Sign-Off Action:**
