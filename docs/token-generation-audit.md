@@ -137,11 +137,11 @@ The following sites contain `Math.random` usage for legitimate non-security purp
 
 To prevent regressions, `scripts/test-token-generation-guard.ts` executes static AST analysis and runtime CSPRNG checks:
 
-- **TypeScript AST Scanning (`ts.createSourceFile`)**: Replaces raw regex or substring checks to catch all AST representations of `Math.random`: calls with spaces (`Math.random ()`), multiline accesses, aliases (`const r = Math.random`), destructuring (`const { random } = Math`), and fallback operators (`options.rand ?? Math.random`).
-- **Site-Specific Enclosing Function Checks**: Traverses AST parent scopes to determine enclosing functions, ensuring any unallowlisted function inside an allowlisted file is caught.
-- **Explicit Bypass Testing**: Unit tests that deliberately verify the scanner catches spaced calls, multiline expressions, aliasing, destructuring, and unauthorized functions in jitter files.
+- **TypeScript AST Scanning (`ts.createSourceFile`)**: Replaces raw regex or substring checks to catch all AST representations of `Math.random`: calls with spaces (`Math.random ()`), multiline accesses, element accesses (`Math["random"]()`, `Math['random']()`, `Math[`random`]`), Math identifier aliases (`const M = Math; M.random()`, `M["random"]()`), variable aliasing (`const r = Math.random`), destructuring (`const { random } = Math`), and fallback operators (`options.rand ?? Math.random`).
+- **Site-Specific Innermost Function Checks**: Traverses AST parent scopes to determine strictly the innermost enclosing function, ensuring any nested unauthorized function inside an allowlisted function (e.g. `function withJitter() { function mintSecret() { ... } }`) does not leak the allowlist and is caught.
+- **Explicit Bypass Testing**: Unit tests that deliberately verify the scanner catches spaced calls, multiline expressions, aliasing, destructuring, element accesses, identifier aliases, and unauthorized nested functions in jitter files.
 - **Real Negative Control**: Supports `--negative-control` mode which injects a weak generator snippet into the scanner and asserts guard failure (exit code 1). Normal mode spawns a subprocess verifying this non-zero exit.
-- **Runtime CSPRNG Tests**: Directly tests `src/lib/tracker/storage.ts` `generateUUID()` across native `crypto.randomUUID`, `crypto.getRandomValues` fallback (verifying RFC 4122 v4 version nibble '4' and variant bits), and fail-closed throws before tracker writes when crypto is absent.
+- **Runtime CSPRNG Tests**: Directly tests `src/lib/tracker/storage.ts` `generateUUID()` across native `crypto.randomUUID`, `crypto.getRandomValues` fallback (verifying RFC 4122 v4 version nibble '4' and variant bits), and awaited fail-closed rejection of `addApplicationToTracker` verifying zero storage writes occur before the throw when crypto is absent.
 - **Date.now Heuristic Scanning**: Scans security-critical modules for token/secret variables assigned from `Date.now()`.
 - **Documentation Verification**: Automatically validates that this audit document exists, details all cataloged sites, and accurately bounds audit claims.
 
