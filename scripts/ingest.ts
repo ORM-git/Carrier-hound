@@ -930,7 +930,8 @@ async function main() {
   // function is missing - warn and skip without failing the run.
   if (supabase && !isDryRun) {
     try {
-      const { error: analyzeError } = await supabase.rpc('analyze_after_ingest');
+      const { error: analyzeError } = await supabase.rpc('analyze_after_ingest')
+        .abortSignal(AbortSignal.timeout(15_000));
       if (analyzeError) {
         if (/could not find|does not exist|function|PGRST202/i.test(analyzeError.message)) {
           console.log('- Skipping post-ingest ANALYZE: analyze_after_ingest is not applied yet (migration 20261106q_analyze_after_ingest.sql).');
