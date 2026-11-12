@@ -385,8 +385,8 @@ export function deriveCompanyDomain(
 }
 
 /**
- * Decodes image dimensions directly from file headers without external native binaries.
- * Supports PNG, GIF, JPEG, and WebP.
+ * Sniffs image dimensions from file headers without external native binaries or full raster decoding.
+ * Supports PNG, GIF, JPEG, and WebP header inspection.
  */
 export function getImageDimensions(
   buffer: Buffer

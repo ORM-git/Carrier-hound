@@ -5,13 +5,17 @@
  *
  * Requirements:
  * - Service role client (reads NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY).
- * - Dry-run by default. Pass `--write` to apply uploads and database updates.
+ * - Dry-run by default. Writes a reviewed manifest and prints a scoped `--write` command
+ *   preserving every selection flag (--live-only, --missing-only, --force, --limit, --offset, --manifest).
  * - Pass `--live-only` to target companies with live jobs (`status = 'active' AND is_active = true`),
  *   matched by `company_id` with `lower(btrim(jobs.company)) = lower(btrim(companies.name))`
  *   fallback when `company_id IS NULL`, ordered by active job count descending.
  * - Pass `--missing-only` or `--schedule` to evaluate only companies currently without a logo.
  * - Pass `--force` to re-evaluate rows already hosted in the `company-logos` bucket.
  * - Pass `--limit <n>` and `--offset <n>` to process chunks cleanly.
+ * - Image validation performs header and dimension sniffing (raster headers only, SVG rejected; not full pixel decoding).
+ * - Versioned storage keys (<company_id>-<hash>.<ext>) preserve prior objects across DB writes so
+ *   run-only rollback SQL remains valid; on DB failure the newly uploaded object is removed.
  * - Fully idempotent & polite (max concurrency 8, >= 1s between requests per host,
  *   retry once on 5xx, never retry 404).
  */
@@ -21,6 +25,9 @@ dotenv.config({ path: ".env.local" });
 dotenv.config();
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import crypto from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import {
   cleanDomain as libCleanDomain,
@@ -100,6 +107,7 @@ export interface BackfillCliArgs {
   force: boolean;
   limit: number | undefined;
   offset: number;
+  manifestPath?: string;
 }
 
 export type FetcherFn = (url: string) => Promise<Response>;
@@ -136,13 +144,24 @@ export function parseBackfillCliArgs(argv: string[]): BackfillCliArgs {
   const missingOnly = argv.includes("--missing-only") || argv.includes("--schedule");
   const force = argv.includes("--force");
 
-  const parseIntFlag = (flag: string): number | undefined => {
+  const getFlagValue = (flag: string): string | undefined => {
+    const eqPrefix = `${flag}=`;
+    const eqArg = argv.find((a) => a.startsWith(eqPrefix));
+    if (eqArg !== undefined) {
+      return eqArg.slice(eqPrefix.length);
+    }
     const idx = argv.indexOf(flag);
     if (idx === -1) return undefined;
     const raw = argv[idx + 1];
     if (!raw || raw.startsWith("--")) {
-      throw new Error(`Missing integer value for ${flag}`);
+      throw new Error(`Missing value for ${flag}`);
     }
+    return raw;
+  };
+
+  const parseIntFlag = (flag: string): number | undefined => {
+    const raw = getFlagValue(flag);
+    if (raw === undefined) return undefined;
     const parsed = Number(raw);
     if (!Number.isInteger(parsed)) {
       throw new Error(`Invalid integer value for ${flag}: ${raw}`);
@@ -160,7 +179,61 @@ export function parseBackfillCliArgs(argv: string[]): BackfillCliArgs {
     throw new Error(`--offset must be a non-negative integer, got ${offset}`);
   }
 
-  return { isWrite, liveOnly, missingOnly, force, limit, offset };
+  const manifestPath = getFlagValue("--manifest");
+
+  return { isWrite, liveOnly, missingOnly, force, limit, offset, manifestPath };
+}
+
+/**
+ * Formats an apply command preserving every dry-run selection flag (and optional manifest path)
+ * so running `--write` evaluates the exact same scoped selection.
+ */
+export function buildWriteApplyCommand(
+  cli: BackfillCliArgs,
+  manifestPath: string | undefined = cli.manifestPath
+): string {
+  const parts = ["npx", "tsx", "scripts/backfill-company-logos.ts"];
+  if (cli.liveOnly) parts.push("--live-only");
+  if (cli.missingOnly) parts.push("--missing-only");
+  if (cli.force) parts.push("--force");
+  if (cli.offset > 0) parts.push("--offset", String(cli.offset));
+  if (cli.limit !== undefined) parts.push("--limit", String(cli.limit));
+  if (manifestPath) parts.push("--manifest", manifestPath);
+  parts.push("--write");
+  return parts.join(" ");
+}
+
+export function computeBufferShortHash(buffer: Buffer): string {
+  return crypto.createHash("sha256").update(buffer).digest("hex").slice(0, 12);
+}
+
+/**
+ * Builds a content-hashed storage key (`<company_id>-<hash>.<ext>`) so new uploads never
+ * overwrite previous objects before DB commit and prior versions remain valid for rollback.
+ */
+export function buildLogoStoragePath(companyId: string, buffer: Buffer, ext: string): string {
+  const safeExt = ext.toLowerCase().replace(/[^a-z0-9]/g, "") || "png";
+  return `${companyId}-${computeBufferShortHash(buffer)}.${safeExt}`;
+}
+
+export function getDefaultManifestPath(timestamp: number = Date.now()): string {
+  return path.join(os.tmpdir(), `careermonke-logo-backfill-manifest-${timestamp}.json`);
+}
+
+export function extractStoragePathFromLogoUrl(
+  logoUrl: string | null | undefined
+): string | null {
+  if (!logoUrl || typeof logoUrl !== "string") return null;
+  try {
+    const parsed = new URL(logoUrl.trim());
+    const marker = `/${COMPANY_LOGOS_BUCKET}/`;
+    const idx = parsed.pathname.indexOf(marker);
+    if (idx === -1) return null;
+    const rel = parsed.pathname.slice(idx + marker.length).replace(/^\/+/, "");
+    return rel || null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -616,6 +689,33 @@ export interface LiveMatchResult {
   matchedLiveJobCount: number;
 }
 
+export interface ReviewedManifestEntry {
+  companyId: string;
+  companyName: string;
+  source: CandidateLogo["source"];
+  serviceName?: string;
+  sourceImageUrl: string;
+  storagePath: string;
+  targetLogoUrl: string;
+  ext: string;
+  domain: string | null;
+  previousLogoUrl: string | null;
+  previousDomain: string | null;
+}
+
+export interface BackfillManifest {
+  version: 1;
+  createdAt: string;
+  selection: {
+    liveOnly: boolean;
+    missingOnly: boolean;
+    force: boolean;
+    limit: number | null;
+    offset: number;
+  };
+  entries: ReviewedManifestEntry[];
+}
+
 export interface CandidateSelectionInput {
   allCompanies: CompanyRow[];
   liveJobs: JobInfo[];
@@ -626,6 +726,7 @@ export interface CandidateSelectionInput {
   supabaseUrl?: string;
   limit?: number;
   offset?: number;
+  manifest?: BackfillManifest;
 }
 
 export interface CandidateSelectionResult {
@@ -740,7 +841,12 @@ export function selectCandidateCompanies(
     supabaseUrl,
     limit,
     offset = 0,
+    manifest,
   } = input;
+
+  const manifestIds = manifest
+    ? new Set(manifest.entries.map((e) => e.companyId))
+    : null;
 
   const liveMatch = matchLiveJobsToCompanies(liveJobs, allCompanies);
   const jobsByCompanyId = new Map<string, JobInfo[]>(liveMatch.jobsByCompanyId);
@@ -799,6 +905,9 @@ export function selectCandidateCompanies(
   let skippedAlreadyHosted = 0;
   const filtered: CompanyRow[] = [];
   for (const company of ordered) {
+    if (manifestIds && !manifestIds.has(company.id)) {
+      continue;
+    }
     if (missingOnly && company.logo_url !== null) {
       continue;
     }
@@ -809,8 +918,11 @@ export function selectCandidateCompanies(
     filtered.push(company);
   }
 
-  const end = limit !== undefined ? offset + limit : undefined;
-  const companiesToEvaluate = filtered.slice(offset, end);
+  // When a reviewed manifest is provided, it already defines the exact reviewed slice;
+  // do not re-slice by offset/limit (and never broaden past manifest company IDs).
+  const companiesToEvaluate = manifestIds
+    ? filtered
+    : filtered.slice(offset, limit !== undefined ? offset + limit : undefined);
 
   return {
     companiesToEvaluate,
@@ -835,6 +947,7 @@ function toSqlNullableText(val: string | null | undefined): string {
 export interface GeneratedSqlRow {
   companyId: string;
   companyName: string;
+  storagePath: string;
   targetLogoUrl: string;
   updateSql: string;
   rollbackSql: string;
@@ -842,7 +955,8 @@ export interface GeneratedSqlRow {
 
 /**
  * Generates exact forward UPDATE statements and per-company rollback SQL.
- * Refuses non-self-hosted target URLs so /api/ticker constraints are never violated.
+ * Uses content-hashed versioned storage keys (`<company_id>-<hash>.<ext>`) and refuses
+ * non-self-hosted target URLs so /api/ticker constraints are never violated.
  */
 export function buildCompanyLogoSql(
   candidates: CandidateLogo[],
@@ -853,7 +967,7 @@ export function buildCompanyLogoSql(
   const rows: GeneratedSqlRow[] = [];
 
   for (const item of candidates) {
-    const storagePath = `${item.company.id}.${item.ext}`;
+    const storagePath = buildLogoStoragePath(item.company.id, item.buffer, item.ext);
     const targetLogoUrl = resolvePublicUrl
       ? resolvePublicUrl(storagePath)
       : `${baseUrl}/storage/v1/object/public/${COMPANY_LOGOS_BUCKET}/${storagePath}`;
@@ -879,6 +993,7 @@ export function buildCompanyLogoSql(
     rows.push({
       companyId: item.company.id,
       companyName: item.company.name,
+      storagePath,
       targetLogoUrl,
       updateSql,
       rollbackSql,
@@ -889,15 +1004,127 @@ export function buildCompanyLogoSql(
 }
 
 /**
- * Uploads `<company_id>.<ext>` with upsert, cleans up old extension files after upload succeeds,
- * and updates `companies.logo_url` (+ `companies.domain` when missing/known) via service role.
+ * Builds transactional run-only rollback SQL scoped strictly to the exact company IDs
+ * touched in this run with their prior `logo_url` (and `domain` if modified) values.
+ */
+export function buildRunRollbackSql(rows: GeneratedSqlRow[]): string {
+  if (rows.length === 0) {
+    return "-- Run-only Rollback SQL: 0 companies updated in this run; no rollback needed.";
+  }
+  return [
+    `-- Run-only Rollback SQL (${rows.length} compan${rows.length === 1 ? "y" : "ies"} touched in this run):`,
+    "-- Note: prior versioned storage objects are retained in bucket so rollback SQL restores live URLs.",
+    "BEGIN;",
+    ...rows.map((r) => r.rollbackSql),
+    "COMMIT;",
+  ].join("\n");
+}
+
+export function buildBackfillManifest(
+  cli: BackfillCliArgs,
+  sqlRows: GeneratedSqlRow[],
+  candidates: CandidateLogo[]
+): BackfillManifest {
+  const byId = new Map(candidates.map((c) => [c.company.id, c]));
+  const entries: ReviewedManifestEntry[] = sqlRows.map((row) => {
+    const cand = byId.get(row.companyId)!;
+    return {
+      companyId: row.companyId,
+      companyName: row.companyName,
+      source: cand.source,
+      ...(cand.serviceName ? { serviceName: cand.serviceName } : {}),
+      sourceImageUrl: cand.imageUrl,
+      storagePath: row.storagePath,
+      targetLogoUrl: row.targetLogoUrl,
+      ext: cand.ext,
+      domain: cand.domain ?? null,
+      previousLogoUrl: cand.company.logo_url ?? null,
+      previousDomain: cand.company.domain ?? null,
+    };
+  });
+
+  return {
+    version: 1,
+    createdAt: new Date().toISOString(),
+    selection: {
+      liveOnly: cli.liveOnly,
+      missingOnly: cli.missingOnly,
+      force: cli.force,
+      limit: cli.limit ?? null,
+      offset: cli.offset,
+    },
+    entries,
+  };
+}
+
+export function writeReviewedManifest(manifestPath: string, manifest: BackfillManifest): void {
+  fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
+  fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n", "utf8");
+}
+
+export function readReviewedManifest(manifestPath: string): BackfillManifest {
+  const raw = fs.readFileSync(manifestPath, "utf8");
+  const parsed = JSON.parse(raw) as BackfillManifest;
+  if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.entries)) {
+    throw new Error(`Invalid backfill manifest file: ${manifestPath}`);
+  }
+  return parsed;
+}
+
+export function filterCandidatesByManifest(
+  candidates: CandidateLogo[],
+  manifest: BackfillManifest
+): { approved: CandidateLogo[]; skippedDrift: Array<{ companyId: string; companyName: string; reason: string }> } {
+  const byId = new Map(manifest.entries.map((e) => [e.companyId, e]));
+  const approved: CandidateLogo[] = [];
+  const skippedDrift: Array<{ companyId: string; companyName: string; reason: string }> = [];
+
+  for (const item of candidates) {
+    const entry = byId.get(item.company.id);
+    if (!entry) {
+      skippedDrift.push({
+        companyId: item.company.id,
+        companyName: item.company.name,
+        reason: "Not listed in reviewed manifest",
+      });
+      continue;
+    }
+    const resolvedStoragePath = buildLogoStoragePath(item.company.id, item.buffer, item.ext);
+    if (entry.sourceImageUrl !== item.imageUrl || entry.storagePath !== resolvedStoragePath) {
+      skippedDrift.push({
+        companyId: item.company.id,
+        companyName: item.company.name,
+        reason: `Resolved asset changed since manifest (${entry.storagePath} -> ${resolvedStoragePath})`,
+      });
+      continue;
+    }
+    approved.push(item);
+  }
+
+  return { approved, skippedDrift };
+}
+
+/**
+ * Uploads `<company_id>-<hash>.<ext>` without deleting or overwriting any previous object before
+ * DB commit, updates `companies.logo_url` (+ `companies.domain` when missing/known), and:
+ * - On DB failure: removes only the newly uploaded versioned object, leaving prior storage object and `logo_url` intact.
+ * - On DB success: retains prior versioned storage objects so run-only rollback SQL stays live and functional.
  */
 export async function uploadAndPersistCompanyLogo(
   supabase: SupabaseClient,
   supabaseUrl: string,
   item: CandidateLogo
-): Promise<{ publicUrl: string | null; error?: string }> {
-  const storagePath = `${item.company.id}.${item.ext}`;
+): Promise<{ publicUrl: string | null; storagePath?: string | null; error?: string }> {
+  const storagePath = buildLogoStoragePath(item.company.id, item.buffer, item.ext);
+  const oldStoragePath = extractStoragePathFromLogoUrl(item.company.logo_url);
+  const isSameKey = oldStoragePath === storagePath;
+
+  const removeNewObjectSafely = async () => {
+    if (isSameKey) return;
+    try {
+      await supabase.storage.from(COMPANY_LOGOS_BUCKET).remove([storagePath]);
+    } catch {}
+  };
 
   const { error: uploadError } = await supabase.storage
     .from(COMPANY_LOGOS_BUCKET)
@@ -907,7 +1134,7 @@ export async function uploadAndPersistCompanyLogo(
     });
 
   if (uploadError) {
-    return { publicUrl: null, error: uploadError.message };
+    return { publicUrl: null, storagePath: null, error: uploadError.message };
   }
 
   const { data: publicUrlData } = supabase.storage
@@ -916,27 +1143,12 @@ export async function uploadAndPersistCompanyLogo(
 
   const publicUrl = publicUrlData?.publicUrl;
   if (!isSelfHostedLogoUrl(publicUrl, supabaseUrl)) {
+    await removeNewObjectSafely();
     return {
       publicUrl: null,
+      storagePath: null,
       error: `Refused external or invalid storage public URL: ${String(publicUrl)}`,
     };
-  }
-
-  // Clean up any previous file if extension changed
-  const otherExts = ["png", "jpg", "jpeg", "webp", "gif", "ico"].filter(
-    (e) => e !== item.ext.toLowerCase()
-  );
-  const oldPaths = otherExts.map((e) => `${item.company.id}.${e}`);
-  if (item.company.logo_url && item.company.logo_url.includes(`/${COMPANY_LOGOS_BUCKET}/`)) {
-    const oldPath = item.company.logo_url
-      .split(`/${COMPANY_LOGOS_BUCKET}/`)[1]
-      ?.split("?")[0];
-    if (oldPath && oldPath !== storagePath && !oldPaths.includes(oldPath)) {
-      oldPaths.push(oldPath);
-    }
-  }
-  if (oldPaths.length > 0) {
-    await supabase.storage.from(COMPANY_LOGOS_BUCKET).remove(oldPaths);
   }
 
   const updatePayload: { logo_url: string; domain?: string } = {
@@ -952,10 +1164,11 @@ export async function uploadAndPersistCompanyLogo(
     .eq("id", item.company.id);
 
   if (dbError) {
-    return { publicUrl: null, error: dbError.message };
+    await removeNewObjectSafely();
+    return { publicUrl: null, storagePath: null, error: dbError.message };
   }
 
-  return { publicUrl: publicUrl! };
+  return { publicUrl: publicUrl!, storagePath };
 }
 
 async function fetchAllPages<T>(
@@ -1001,6 +1214,8 @@ async function runWorkerPool<T>(
 
 export async function runBackfill() {
   const cli = parseBackfillCliArgs(process.argv);
+  const loadedManifest =
+    cli.isWrite && cli.manifestPath ? readReviewedManifest(cli.manifestPath) : undefined;
 
   console.log("=========================================================================");
   console.log("CAREERMONKE COMPANY LOGOS BACKFILL & RE-CHECK ENGINE");
@@ -1010,6 +1225,7 @@ export async function runBackfill() {
   console.log(`Force:        ${cli.force ? "YES (--force)" : "NO (skip self-hosted rows)"}`);
   if (cli.offset > 0) console.log(`Offset:       ${cli.offset}`);
   if (cli.limit !== undefined) console.log(`Limit:        ${cli.limit} companies`);
+  if (loadedManifest) console.log(`Manifest:     ${cli.manifestPath} (${loadedManifest.entries.length} reviewed entries)`);
   console.log("=========================================================================\n");
 
   const supabaseUrl =
@@ -1093,6 +1309,7 @@ export async function runBackfill() {
     supabaseUrl,
     limit: cli.limit,
     offset: cli.offset,
+    manifest: loadedManifest,
   });
 
   if (cli.liveOnly) {
@@ -1342,10 +1559,23 @@ export async function runBackfill() {
   }
   console.log("================================\n");
 
-  const sqlRows = buildCompanyLogoSql(validCandidates, supabaseUrl, (storagePath) => {
+  let candidatesForRun = validCandidates;
+  if (loadedManifest) {
+    const manifestFilter = filterCandidatesByManifest(validCandidates, loadedManifest);
+    for (const skipped of manifestFilter.skippedDrift) {
+      console.warn(
+        `Skipping ${skipped.companyName} (${skipped.companyId}): ${skipped.reason}`
+      );
+    }
+    candidatesForRun = manifestFilter.approved;
+  }
+
+  const getPublicStorageUrl = (storagePath: string) => {
     const { data } = supabase.storage.from(COMPANY_LOGOS_BUCKET).getPublicUrl(storagePath);
     return data.publicUrl;
-  });
+  };
+
+  const sqlRows = buildCompanyLogoSql(candidatesForRun, supabaseUrl, getPublicStorageUrl);
 
   // Exact SQL generation for review before any DB write
   console.log("=========================================================================");
@@ -1357,20 +1587,20 @@ export async function runBackfill() {
   for (const row of sqlRows) {
     console.log(row.updateSql);
   }
-  console.log("\n-- Exact per-row Rollback SQL:");
-  for (const row of sqlRows) {
-    console.log(row.rollbackSql);
-  }
+  console.log("");
+  console.log(buildRunRollbackSql(sqlRows));
   console.log("=========================================================================\n");
+
+  const succeededCandidates: CandidateLogo[] = [];
 
   // In write mode: upload and update
   if (cli.isWrite) {
-    console.log(`Uploading ${validCandidates.length} company logos to Supabase Storage...`);
+    console.log(`Uploading ${candidatesForRun.length} company logos to Supabase Storage...`);
     let uploadCount = 0;
     let failedCount = 0;
     const sampleUploaded: Array<{ name: string; url: string }> = [];
 
-    for (const item of validCandidates) {
+    for (const item of candidatesForRun) {
       try {
         const res = await uploadAndPersistCompanyLogo(supabase, supabaseUrl, item);
         if (!res.publicUrl) {
@@ -1379,6 +1609,7 @@ export async function runBackfill() {
           continue;
         }
         uploadCount++;
+        succeededCandidates.push(item);
         if (sampleUploaded.length < 5) {
           sampleUploaded.push({ name: item.company.name, url: res.publicUrl });
         }
@@ -1388,7 +1619,7 @@ export async function runBackfill() {
       }
     }
     console.log(`Successfully uploaded and updated ${uploadCount} companies in database.\n`);
-    const candidateSkipped = validCandidates.length - uploadCount - failedCount;
+    const candidateSkipped = candidatesForRun.length - uploadCount - failedCount;
     console.log("=========================================");
     console.log("REAL BACKFILL WRITE EXECUTION TOTALS:");
     console.log(`  Uploaded: ${uploadCount}`);
@@ -1433,25 +1664,34 @@ export async function runBackfill() {
   );
   console.log("-------------------------------------------------------------------------\n");
 
-  const newlyHosted = cli.force ? 0 : validCandidates.length;
-  const projectedTotalWithLogo = Math.min(totalCompaniesCount, withLogoBefore + newlyHosted);
+  const newlyPopulatedCount = candidatesForRun.filter((c) => c.company.logo_url === null).length;
+  const projectedTotalWithLogo = Math.min(totalCompaniesCount, withLogoBefore + newlyPopulatedCount);
   console.log("=========================================================================");
   console.log("BEFORE VS AFTER COMPANY LOGO AUDIT REPORT");
   console.log("=========================================================================");
   console.log(`Total Companies in Database:       ${totalCompaniesCount}`);
   console.log(`Companies With Logo BEFORE:        ${withLogoBefore} (${pct(withLogoBefore)}%)`);
   console.log(`Companies Without Logo BEFORE:     ${withoutLogoBefore} (${pct(withoutLogoBefore)}%)`);
-  console.log(`Newly Resolved in this run:        +${validCandidates.length}`);
+  console.log(`Newly Resolved in this run:        +${candidatesForRun.length}`);
   console.log(`Companies With Logo AFTER:         ${projectedTotalWithLogo} (${pct(projectedTotalWithLogo)}%)`);
   console.log(`Remaining With Letter Placeholder: ${totalCompaniesCount - projectedTotalWithLogo} (${pct(totalCompaniesCount - projectedTotalWithLogo)}%)`);
   console.log("=========================================================================\n");
 
-  console.log("-- Bulk Rollback SQL:");
-  console.log("UPDATE public.companies SET logo_url = null WHERE logo_url LIKE '%company-logos%';\n");
+  const finalRollbackRows = cli.isWrite
+    ? buildCompanyLogoSql(succeededCandidates, supabaseUrl, getPublicStorageUrl)
+    : sqlRows;
+  console.log(buildRunRollbackSql(finalRollbackRows));
+  console.log();
 
   if (!cli.isWrite) {
+    const manifestOutPath = cli.manifestPath || getDefaultManifestPath();
+    const manifest = buildBackfillManifest(cli, sqlRows, candidatesForRun);
+    writeReviewedManifest(manifestOutPath, manifest);
+    const applyCmd = buildWriteApplyCommand(cli, manifestOutPath);
+
     console.log("Dry-run complete. ZERO files uploaded and ZERO database rows modified.");
-    console.log("To apply changes, review the SQL above and run: npx tsx scripts/backfill-company-logos.ts --write\n");
+    console.log(`Reviewed manifest (${manifest.entries.length} entries) written to: ${manifestOutPath}`);
+    console.log(`To apply these exact reviewed changes, run:\n  ${applyCmd}\n`);
   } else {
     console.log("Live write complete.\n");
   }
