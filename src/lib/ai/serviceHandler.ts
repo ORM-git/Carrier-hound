@@ -346,6 +346,10 @@ export async function executeAiCore(
 ): Promise<AiCoreResponse> {
   const activeDeps: AiServiceDeps = deps;
   let setConsumed = false;
+  let aiQuotaConsumed = false;
+  let confirmedSupabaseAdmin: any = null;
+  let confirmedOperation: Parameters<typeof refundAiQuota>[2] | null = null;
+  let confirmedEstimatedTokens = 0;
   let setConsumeKey = "";
   let confirmedUserId = "";
   let confirmedKind: QuotaKind | undefined;
@@ -760,6 +764,25 @@ export async function executeAiCore(
       }
     };
 
+    // Validate upstream API key BEFORE consuming user quota/sets so a missing
+    // server secret never burns a user's daily tailoring or cover-letter credit.
+    const resolvedGroqApiKey =
+      getRuntimeEnv("GROQ_API_KEY", activeDeps.env)?.trim() ||
+      getRuntimeEnv("AI_PROVIDER_KEY", activeDeps.env)?.trim() ||
+      getRuntimeEnv("GROQ_KEY", activeDeps.env)?.trim();
+    if (!activeDeps.providerAdapter && !activeDeps.callGroq && !resolvedGroqApiKey) {
+      releaseProbeIfAny();
+      await settleBudget(0);
+      log.error("[AI Service] Missing required environment variable: GROQ_API_KEY");
+      return {
+        statusCode: 500,
+        body: {
+          error: "Missing required environment variable: GROQ_API_KEY",
+          missingVariable: "GROQ_API_KEY",
+        },
+      };
+    }
+
     // 4. Quota Enforcement:
     // Metered AI generations (resume_tailor and cover_letter) route strictly through consumeSet,
     // which manages Pro entitlement, plan quotas, add-on credits, client idempotency keys,
@@ -875,18 +898,28 @@ export async function executeAiCore(
           },
         };
       }
+      aiQuotaConsumed = true;
+      confirmedSupabaseAdmin = supabaseAdmin;
+      confirmedOperation = config.operation;
+      confirmedEstimatedTokens = payload.estimatedInputTokens;
     }
 
     const rollbackAllQuotas = async () => {
       if (setConsumed && setConsumeKey) {
         const doRefund = activeDeps.refundSet || refundSet;
+        setConsumed = false;
         try {
           await doRefund(user.id, setConsumeKey, new Date(), config.operation as QuotaKind);
         } catch (rfErr) {
           log.warn("[AI Service] Error refunding consumed set:", { error: rfErr });
         }
-      } else if (!isMeteredOperation) {
-        await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
+      } else if (!isMeteredOperation && aiQuotaConsumed) {
+        aiQuotaConsumed = false;
+        try {
+          await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
+        } catch (rfErr) {
+          log.warn("[AI Service] Error refunding non-metered AI quota:", { error: rfErr });
+        }
       }
     };
 
@@ -1006,7 +1039,7 @@ export async function executeAiCore(
           };
         }
       } else {
-        const groqApiKey = getRuntimeEnv("GROQ_API_KEY", activeDeps.env);
+        const groqApiKey = resolvedGroqApiKey;
         if (!activeDeps.providerAdapter && (!groqApiKey || !groqApiKey.trim())) {
           clearTimeout(timeoutHandle);
           releaseProbeIfAny();
@@ -1267,10 +1300,18 @@ export async function executeAiCore(
     log.error("[AI Service] Unhandled error:", { error: err });
     if (setConsumed && setConsumeKey && confirmedUserId) {
       const doRefund = activeDeps.refundSet || refundSet;
+      setConsumed = false;
       try {
         await doRefund(confirmedUserId, setConsumeKey, new Date(), confirmedKind);
       } catch (rfErr) {
         log.warn("[AI Service] Error refunding consumed set on unhandled error:", { error: rfErr });
+      }
+    } else if (aiQuotaConsumed && confirmedSupabaseAdmin && confirmedUserId && confirmedOperation) {
+      aiQuotaConsumed = false;
+      try {
+        await refundAiQuota(confirmedSupabaseAdmin, confirmedUserId, confirmedOperation, confirmedEstimatedTokens);
+      } catch (rfErr) {
+        log.warn("[AI Service] Error refunding non-metered quota on unhandled error:", { error: rfErr });
       }
     }
     return {
@@ -1284,14 +1325,35 @@ export async function executeAiCore(
  * Next.js App Router Request Handler with injectable dependencies.
  */
 export async function handleAiRequest(req: Request, deps: AiServiceDeps = {}): Promise<Response> {
-  const clientIp = getClientIpFromRequest(req);
-  const authHeader = req.headers.get("authorization") || req.headers.get("Authorization");
-  const body = await req.json().catch(() => ({}));
-  const res = await executeAiCore(clientIp, authHeader, body, deps, "ai:ip:");
-  return NextResponse.json(res.body, {
-    status: res.statusCode,
-    headers: res.headers,
-  });
+  try {
+    const clientIp = getClientIpFromRequest(req);
+    const authHeader = req.headers.get("authorization") || req.headers.get("Authorization");
+    const body = await req.json().catch(() => ({}));
+    const res = await executeAiCore(clientIp, authHeader, body, deps, "ai:ip:");
+    if (res.statusCode >= 500) {
+      log.error("[AI Service] 5xx response returned", {
+        statusCode: res.statusCode,
+        operation: typeof body?.operation === "string" ? body.operation : undefined,
+        error: res.body?.error,
+        code: res.body?.code,
+        missingVariable: res.body?.missingVariable,
+        requestId: req?.headers?.get?.("x-request-id") ?? undefined,
+      });
+    }
+    return NextResponse.json(res.body, {
+      status: res.statusCode,
+      headers: res.headers,
+    });
+  } catch (err: any) {
+    log.error("[AI Service] Unhandled error in handleAiRequest", {
+      error: err,
+      requestId: req?.headers?.get?.("x-request-id") ?? undefined,
+    });
+    return NextResponse.json(
+      { error: "Internal server error occurred." },
+      { status: 500 }
+    );
+  }
 }
 
 /**
@@ -1331,6 +1393,15 @@ export async function handleNetlifyAiRequest(
   }
 
   const res = await executeAiCore(clientIp, authHeader, body, deps, "ip:");
+  if (res.statusCode >= 500) {
+    log.error("[AI Service] 5xx response returned (Netlify)", {
+      statusCode: res.statusCode,
+      operation: typeof body?.operation === "string" ? body.operation : undefined,
+      error: res.body?.error,
+      code: res.body?.code,
+      missingVariable: res.body?.missingVariable,
+    });
+  }
   return {
     statusCode: res.statusCode,
     headers: { ...baseHeaders, ...(res.headers || {}) },

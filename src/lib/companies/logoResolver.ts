@@ -385,8 +385,8 @@ export function deriveCompanyDomain(
 }
 
 /**
- * Decodes image dimensions directly from file headers without external native binaries.
- * Supports PNG, GIF, JPEG, and WebP.
+ * Sniffs image dimensions from file headers without external native binaries or full raster decoding.
+ * Supports PNG, GIF, JPEG, and WebP header inspection.
  */
 export function getImageDimensions(
   buffer: Buffer
@@ -703,10 +703,11 @@ export async function fetchWithTimeout(
  */
 export async function downloadAndValidateImage(
   url: string,
-  minSize: number = 32
+  minSize: number = 32,
+  fetcher: (targetUrl: string) => Promise<Response> = fetchWithTimeout
 ): Promise<ValidatedImage | null> {
   try {
-    const imgRes = await fetchWithTimeout(url);
+    const imgRes = await fetcher(url);
     if (!imgRes.ok) return null;
 
     const arrayBuf = await imgRes.arrayBuffer();
@@ -889,12 +890,13 @@ export async function inspectCompanyHomepage(
  */
 export async function fetchFreeLogoService(
   domain: string,
-  minSize: number = 32
+  minSize: number = 32,
+  fetcher: (targetUrl: string) => Promise<Response> = fetchWithTimeout
 ): Promise<ResolvedLogoResult | null> {
   // Service 1: Unavatar (returns HTTP 200 image or 404 when fallback=false)
   try {
     const unavUrl = `https://unavatar.io/${domain}?fallback=false`;
-    const unavData = await downloadAndValidateImage(unavUrl, minSize);
+    const unavData = await downloadAndValidateImage(unavUrl, minSize, fetcher);
     if (unavData) {
       return {
         imageUrl: unavUrl,
@@ -913,7 +915,7 @@ export async function fetchFreeLogoService(
   // Service 2: Google Favicon service (returns 128x128 PNG or defaults)
   try {
     const gglUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
-    const gglData = await downloadAndValidateImage(gglUrl, minSize);
+    const gglData = await downloadAndValidateImage(gglUrl, minSize, fetcher);
     if (gglData) {
       return {
         imageUrl: gglUrl,
@@ -932,7 +934,7 @@ export async function fetchFreeLogoService(
   // Service 3: DuckDuckGo Icons
   try {
     const ddgUrl = `https://icons.duckduckgo.com/ip3/${domain}.ico`;
-    const ddgData = await downloadAndValidateImage(ddgUrl, minSize);
+    const ddgData = await downloadAndValidateImage(ddgUrl, minSize, fetcher);
     if (ddgData) {
       return {
         imageUrl: ddgUrl,

@@ -295,6 +295,9 @@ async function postHandler(req: Request) {
       message: "You're on the list",
     });
   } catch (_err) {
+    try {
+      baseLog.error("[EarlyAccess] Unhandled error in POST /api/early-access", { error: _err });
+    } catch {}
     reportRequestErrorToSentry(req, _err);
     return NextResponse.json(
       { ok: false, error: GENERIC_TRY_AGAIN_MESSAGE },
@@ -304,5 +307,15 @@ async function postHandler(req: Request) {
 }
 
 export async function POST(req: Request) {
-  return measureRouteBudget("/api/early-access", () => postHandler(req));
+  try {
+    return await measureRouteBudget("/api/early-access", () => postHandler(req));
+  } catch (err) {
+    try {
+      baseLog.error("[EarlyAccess] Outer POST handler error", { error: err });
+    } catch {}
+    return NextResponse.json(
+      { ok: false, error: GENERIC_TRY_AGAIN_MESSAGE },
+      { status: 500 }
+    );
+  }
 }

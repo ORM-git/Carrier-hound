@@ -1,5 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
 import { WORLDWIDE_COMPANIES, WorldwideCompany } from "@/data/companies";
+import { createLogger } from "@/lib/observability/logger";
+import {
+  ClientSchemaValidationError,
+  parseWorldwideCompanyRows,
+} from "./clientSchemas";
+
+const log = createLogger({ context: { module: "api/worldwide" } });
 
 export interface WorldwideCompanyRow {
   name: string;
@@ -36,14 +43,19 @@ export async function getWorldwideCompanies(clientOverride?: any): Promise<World
       .from("worldwide_company_counts")
       .select("name, slug, country, active_job_count");
 
-    if (error || !Array.isArray(data) || data.length === 0) {
+    if (error || data == null) {
+      return WORLDWIDE_COMPANIES;
+    }
+
+    const validatedRows = parseWorldwideCompanyRows(data);
+    if (validatedRows.length === 0) {
       return WORLDWIDE_COMPANIES;
     }
 
     const countMap = new Map<string, number>();
-    for (const row of data) {
-      const slug = (row.slug || "").toLowerCase().trim();
-      const count = Number(row.active_job_count ?? 0);
+    for (const row of validatedRows) {
+      const slug = row.slug.toLowerCase().trim();
+      const count = row.active_job_count;
       if (slug && count > 0) {
         countMap.set(slug, count);
       }
@@ -73,7 +85,13 @@ export async function getWorldwideCompanies(clientOverride?: any): Promise<World
         jobCount: company.jobCount,
       };
     });
-  } catch {
+  } catch (err) {
+    if (err instanceof ClientSchemaValidationError) {
+      log.warn("CLIENT_SCHEMA_VALIDATION_FAILED", {
+        schema: err.schema,
+        reason: err.reason,
+      });
+    }
     return WORLDWIDE_COMPANIES;
   }
 }

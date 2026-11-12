@@ -4,7 +4,7 @@
   "files": {
     "netlify.toml": "f3079a9dcca3ce25ddd5a6ef86e1032da81732567b7957817ca76b11b7aad737",
     "next.config.mjs": "58594e645a0160175f696a26ab3103cf7a682a3ea98f5d3341fad267a216f5f0",
-    "package.json": "22fa5e4ae473eb8fe2488208c89fcb0cbd35c6a6aca93529e4a8eef1a10ee539",
+    "package.json": "74cd8bea41438ecc9ab724a6a268ee8c11d07c3a240ca99064127c5fcf543701",
     ".github/workflows/board-ingest.yml": "bcf686171a7390e3fdeb115b44364fab05f6bbed7a70b0f00411d3bce38b1976",
     ".github/workflows/capacity-report-cron.yml": "79592676f1e0611debba80ab3e5b641ffab96a85ed7b1d7ba77b6c81bca9bdbf",
     ".github/workflows/ci.yml": "9deb8716faa81cb9fbb32da8160e374461be0c8c71acd06c8f68acb1724e87d8",
