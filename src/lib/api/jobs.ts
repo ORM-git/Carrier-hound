@@ -3,6 +3,7 @@ import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { expandCategoryFilter, normalizeCategorySlug } from "@/lib/taxonomy";
 import type { Job } from "@/data/jobs";
 import { sanitizeExternalUrl, stripHtmlAndExecutableMarkup } from "@/lib/security/xss";
+import { parseSearchJobsFacetRows, parseSearchJobsRows } from "./clientSchemas";
 import { COUNTRY_CODE_TO_NAME } from "@/lib/countries";
 
 export interface SearchJobsParams {
@@ -226,7 +227,9 @@ export async function searchJobs(
   const total = count || 0;
   const totalPages = Math.ceil(total / pageSize) || 1;
 
-  const mappedJobs: Job[] = (data || []).map((d: any) => ({
+  const validatedJobs = parseSearchJobsRows(data ?? []);
+
+  const mappedJobs: Job[] = validatedJobs.map((d) => ({
     id: d.id,
     title: stripHtmlAndExecutableMarkup(d.title),
     company: stripHtmlAndExecutableMarkup(d.company),
@@ -261,8 +264,9 @@ export async function searchJobs(
   const countryFacets: Record<string, number> = {};
   const availableSet = new Set<string>();
 
-  if (facetData) {
-    facetData.forEach((row: any) => {
+  if (facetData != null) {
+    const validatedFacets = parseSearchJobsFacetRows(facetData);
+    validatedFacets.forEach((row) => {
       if (row.category) {
         const canonical = normalizeCategorySlug(row.category);
         categoryFacets[canonical] = (categoryFacets[canonical] || 0) + 1;
