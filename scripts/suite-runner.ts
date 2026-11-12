@@ -276,6 +276,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-ingest-board-scale.ts", command: "npx tsx scripts/test-ingest-board-scale.ts", classification: "offline" },
   { name: "scripts/test-landing-parity.ts", command: "npx tsx scripts/test-landing-parity.ts", classification: "offline" },
   { name: "scripts/test-custom-domain-types.ts", command: "npx tsx scripts/test-custom-domain-types.ts", classification: "offline" },
+  { name: "scripts/test-cache-posture.ts", command: "npx tsx scripts/test-cache-posture.ts", classification: "offline" },
 ];
 
 export interface RunSummary {
