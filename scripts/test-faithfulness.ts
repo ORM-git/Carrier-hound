@@ -44,6 +44,16 @@ function testDesignDocCoverage() {
   const docPath = path.join(ROOT, "docs", "hallucination-guard-design.md");
   assert.ok(fs.existsSync(docPath), "docs/hallucination-guard-design.md must exist");
   const doc = fs.readFileSync(docPath, "utf8");
+  assert.equal(
+    /near-zero false-positive rate/i.test(doc),
+    false,
+    "Design doc must NOT claim a near-zero false-positive rate"
+  );
+  assert.equal(
+    /Enforce First/i.test(doc),
+    false,
+    "Design doc must NOT recommend enforce-first before golden eval tests exist"
+  );
   for (const required of [
     "resume_extraction",
     "cover_letter",
@@ -52,6 +62,8 @@ function testDesignDocCoverage() {
     "executeAiCore",
     "Staged Rollout Order",
     "src/lib/ai/faithfulness.ts",
+    "Lexical support is NOT semantic entailment",
+    "inconclusive",
   ]) {
     assert.ok(doc.includes(required), `Design doc missing required section/term: ${required}`);
   }
@@ -86,11 +98,7 @@ function testNegativeControlSubprocess() {
     cwd: ROOT,
     encoding: "utf8",
   });
-  assert.notEqual(
-    result.status,
-    0,
-    "Subprocess negative-control run must exit non-zero"
-  );
+  assert.notEqual(result.status, 0, "Subprocess negative-control run must exit non-zero");
 }
 
 const SAMPLE_RAW_RESUME = `
@@ -145,14 +153,13 @@ const SAMPLE_JOB = {
 };
 
 function testBehavioralFaithfulness() {
-  // Helpers
   assert.deepEqual(extractTaxonomySkillsFromText("Ready to go and handle the rest of the work."), []);
   assert.ok(extractTaxonomySkillsFromText("Built Go APIs and REST endpoints").includes("go"));
   assert.deepEqual(extractNumericFactsFromText("10,000+ users and 35% faster"), ["10000+", "35%"]);
 
-  // 1. resume_extraction grounded vs fabricated
   const cleanExtract = verifyResumeExtractionFaithfulness(SAMPLE_CANDIDATE, SAMPLE_RAW_RESUME);
   assert.equal(cleanExtract.faithful, true, `Clean extract failed: ${JSON.stringify(cleanExtract.violations)}`);
+  assert.equal(cleanExtract.verdict, "faithful");
 
   const badExtract = verifyAiOutputFaithfulness(
     "resume_extraction",
@@ -173,10 +180,10 @@ function testBehavioralFaithfulness() {
     { rawText: SAMPLE_RAW_RESUME }
   );
   assert.equal(badExtract.faithful, false);
+  assert.equal(badExtract.verdict, "unfaithful");
   assert.ok(badExtract.violations.some((v) => v.kind === "employer_or_organization"));
   assert.ok(badExtract.violations.some((v) => v.kind === "numeric_metric"));
 
-  // 2. cover_letter grounded vs fabricated skill / employer / contact
   const cleanLetter = verifyCoverLetterFaithfulness(
     "Dear Linear Systems team, at Acme Corp I built React and TypeScript interfaces and reduced bundle size by 35%. Reach me at alex.chen@example.com.",
     SAMPLE_CANDIDATE,
@@ -194,7 +201,6 @@ function testBehavioralFaithfulness() {
   assert.ok(hallucinatedLetter.violations.some((v) => v.kind === "employer_or_organization"));
   assert.ok(hallucinatedLetter.violations.some((v) => v.kind === "contact_or_link"));
 
-  // 3. job_fit grounded vs contradiction / ungrounded matched skill
   const cleanFit = verifyMatchExplanationFaithfulness(
     {
       score: 86,
@@ -224,12 +230,102 @@ function testBehavioralFaithfulness() {
   assert.ok(badFit.violations.some((v) => v.kind === "employer_or_organization"));
 }
 
+function testAdversarialCases() {
+  // 1. Target job company claimed as candidate employment
+  const case1 = verifyCoverLetterFaithfulness(
+    "I worked at Google.",
+    { skills: ["React"], experience: [{ id: "1", company: "Acme", role: "Engineer", bullets: [] }] },
+    { title: "Engineer", company: "Google", description: "React" }
+  );
+  assert.equal(case1.faithful, false);
+  assert.equal(case1.verdict, "unfaithful");
+  assert.ok(case1.violations.some((v) => v.kind === "employer_or_organization" && v.claim === "Google"));
+
+  // 2. Job title outside greeting/application span
+  const case2 = verifyCoverLetterFaithfulness(
+    "I am a Kubernetes Engineer.",
+    { skills: ["React"] },
+    { title: "Kubernetes Engineer", company: "CloudCo", description: "Kubernetes" }
+  );
+  assert.equal(case2.faithful, false);
+  assert.equal(case2.verdict, "unfaithful");
+  assert.ok(case2.checkedCount > 0);
+  assert.ok(case2.violations.some((v) => v.kind === "skill_or_tool" && v.claim === "kubernetes"));
+
+  // 3. JD number not laundered into candidate achievements
+  const case3 = verifyCoverLetterFaithfulness(
+    "I increased revenue by 80%.",
+    { skills: ["React"], experience: [{ id: "1", company: "Acme", role: "Engineer", bullets: ["Shipped UI"] }] },
+    { title: "Engineer", company: "ScaleCo", description: "Company revenue grew 80%." }
+  );
+  assert.equal(case3.faithful, false);
+  assert.equal(case3.verdict, "unfaithful");
+  assert.ok(case3.violations.some((v) => v.kind === "numeric_metric" && v.claim === "80%"));
+
+  // 4. Match explanation subject ownership
+  const case4 = verifyMatchExplanationFaithfulness(
+    { matchedSkills: ["React"], missingSkills: ["Kubernetes"], summary: "Candidate has Kubernetes expertise." },
+    { skills: ["React"] },
+    { title: "DevOps", company: "CloudCo", description: "Requires React and Kubernetes." }
+  );
+  assert.equal(case4.faithful, false);
+  assert.equal(case4.verdict, "unfaithful");
+  assert.ok(case4.violations.some((v) => v.kind === "skill_or_tool" && v.claim === "kubernetes"));
+
+  // 5. Negated/aspirational wording does not produce unsupported-skill error
+  const case5 = verifyCoverLetterFaithfulness(
+    "I have not used Kubernetes yet, and want to learn it.",
+    { skills: ["React"], experience: [{ id: "1", company: "Acme", role: "Engineer", bullets: [] }] },
+    { title: "Engineer", company: "CloudCo", description: "Kubernetes and React" }
+  );
+  assert.equal(case5.violations.some((v) => v.kind === "skill_or_tool"), false);
+  assert.equal(case5.faithful, false);
+  assert.equal(case5.verdict, "inconclusive");
+
+  // 6. Resume extraction cross-employer reassignment caught
+  const case6 = verifyResumeExtractionFaithfulness(
+    {
+      experience: [
+        { id: "1", company: "Acme", role: "Director", startDate: "2022", bullets: ["Grew sales 80%"] },
+      ],
+    },
+    "Acme Engineer 2020 UI 20%, Beta Director 2022 sales 80%"
+  );
+  assert.equal(case6.faithful, false);
+  assert.equal(case6.verdict, "unfaithful");
+  assert.ok(case6.violations.some((v) => v.kind === "cross_employer_relation"));
+
+  // 7a. endDate Present when source ended 2021
+  const case7a = verifyResumeExtractionFaithfulness(
+    {
+      experience: [
+        { id: "1", company: "Acme", role: "Engineer", startDate: "2019", endDate: "Present", bullets: [] },
+      ],
+    },
+    "Acme | Engineer | 2019 - 2021"
+  );
+  assert.equal(case7a.faithful, false);
+  assert.equal(case7a.verdict, "unfaithful");
+  assert.ok(case7a.violations.some((v) => v.kind === "date_or_year"));
+
+  // 7b. Empty {} extracted or missing shape -> inconclusive, never faithful
+  const case7b = verifyResumeExtractionFaithfulness({}, SAMPLE_RAW_RESUME);
+  assert.equal(case7b.faithful, false);
+  assert.equal(case7b.verdict, "inconclusive");
+  assert.equal(case7b.checkedCount, 0);
+
+  const case7c = verifyAiOutputFaithfulness("resume_extraction", null, { rawText: SAMPLE_RAW_RESUME });
+  assert.equal(case7c.faithful, false);
+  assert.equal(case7c.verdict, "inconclusive");
+}
+
 function main() {
   const checks: Array<[string, () => void]> = [
     ["design-doc-coverage", testDesignDocCoverage],
     ["not-wired-into-live-paths", testNotWiredIntoLivePaths],
     ["negative-control-subprocess", testNegativeControlSubprocess],
     ["behavioral-faithfulness", testBehavioralFaithfulness],
+    ["adversarial-cases-1-to-7", testAdversarialCases],
   ];
 
   let passed = 0;
