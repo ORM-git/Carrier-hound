@@ -20,7 +20,7 @@
 
 | # | Area | Audit Row | Verdict | Gap Classification | Summary |
 | --- | --- | --- | --- | --- | --- |
-| 1 | DB | RPO/RTO targets | `GAP` | Code + Owner step | Docs define proposed targets (site/Redis 15m, in-place DB 1h, fresh DB 2h; DB user data 24h / 2m Pro); all unverified in production; upstream Free-backup error is a code GAP; current plan tier requires owner check |
+| 1 | DB | RPO/RTO targets | `GAP` | Code + Owner step | Docs define proposed targets (site/Redis 15m, in-place DB 1h, fresh DB 2h; DB user data 24h / 2m Pro); all unverified in production; upstream Free-backup error in `docs/rpo-rto-targets.md` is a code GAP; current plan tier requires owner check |
 | 2 | DB | Change-history triggers | `GAP` | Code + Owner step | Trigger map + Vitest guard + `20261106c` exist; migration `NOT APPLIED` and `purge_row_change_history()` not wired into retention cron |
 | 3 | DB | Unused index audit | `GAP` | Owner step | Inventory, `db-health.sql`, `explain-checks.sql`, `20261106g`, and `20261108b` exist; `advisoryUnusedIndexes` checks >=50MiB; migrations `NOT APPLIED` and probe workflow opt-in |
 | 4 | DB | Index bloat monitoring | `GAP` | Code + Owner step | `docs/db-health-probe.md` explicitly leaves physical index bloat unmeasured; `20261106m` & `20261108b` `NOT APPLIED` |
@@ -65,10 +65,10 @@
     - Config & Secrets: 0 seconds
     - Database User & Transaction Data: Proposed ≤ 24 hours (with daily backups on paid plan) or proposed ≤ 2 minutes (with Supabase Pro PITR add-on).
     All targets are explicitly marked as proposed and unverified in production (`[OWNER TO CONFIRM]`).
-  - `docs/disaster-recovery.md` — Documents disaster recovery runbook scenarios, manual dump commands, and restore rehearsal plan.
+  - `docs/disaster-recovery.md` — Minimum viable disaster recovery and restore rehearsal runbook covering site rollback, in-place Supabase restore / fresh schema replay, and ephemeral Redis recovery (defers RPO/RTO to the project plan's backup cadence and owner confirmation).
 - **What Is Missing / Owner Sign-Off Action:**
   - **Code:**
-    1. Upstream documentation error: `docs/rpo-rto-targets.md` and `docs/disaster-recovery.md` erroneously claim the Supabase Free tier provides automatic daily backups retained for 7 days. According to official Supabase documentation (`https://supabase.com/kb/faqs/platform/free-plan-backups` and `https://supabase.com/docs/guides/platform/backups`), the Free plan includes **NO automatic platform backups at all**; automatic daily backups require a paid plan, and PITR is a separate paid add-on. Upstream documentation must be corrected to reflect actual provider tier capabilities.
+    1. Upstream documentation error: `docs/rpo-rto-targets.md` erroneously claims the Supabase Free tier provides automatic daily backups retained for 7 days. According to official Supabase documentation (`https://supabase.com/kb/faqs/platform/free-plan-backups` and `https://supabase.com/docs/guides/platform/backups`), the Free plan includes **NO automatic platform backups at all**; automatic daily backups require a paid plan, and PITR is a separate paid add-on. `docs/rpo-rto-targets.md` must be corrected to reflect actual provider tier capabilities.
     2. No automated off-site logical backup workflow (`pg_dump` export) or automated RPO/RTO verification guard is merged on `main` (`PR #554` for weekly `pg_dump` remains open and unmerged).
   - **Owner step:**
     1. Confirm the actual Supabase project plan tier (Free vs Pro) and whether automatic daily backups or PITR are enabled in the Supabase dashboard (current plan tier and backup posture are not established by the repo).
@@ -195,9 +195,10 @@
 - **Verdict:** `GAP`
 - **Gap Classification:** Code + Owner step
 - **Artifacts Verified on `main`:**
-  - `docs/rpo-rto-targets.md` & `docs/disaster-recovery.md` — Discuss Point-in-Time Recovery (PITR) as a recommended Pro capability with ~2 minute RPO (`[OWNER TO CONFIRM]`).
+  - `docs/rpo-rto-targets.md` — Discusses Point-in-Time Recovery (PITR) as a recommended Pro capability with ~2 minute RPO (`[OWNER TO CONFIRM]`).
+  - `docs/disaster-recovery.md` — Disaster recovery and restore runbook deferring PITR and platform backup execution to owner dashboard actions based on the project plan's backup cadence.
 - **What Is Missing / Owner Sign-Off Action:**
-  - **Code:** Correct upstream documentation in `docs/rpo-rto-targets.md` and `docs/disaster-recovery.md`. Both documents erroneously claim that Supabase Free tier provides daily backups; per Supabase official documentation (`https://supabase.com/kb/faqs/platform/free-plan-backups` and `https://supabase.com/docs/guides/platform/backups`), Free tier has **NO automatic backups**, automated daily backups require a paid plan, and PITR is a separate paid add-on on Pro.
+  - **Code:** Correct upstream documentation in `docs/rpo-rto-targets.md`. The document erroneously claims that Supabase Free tier provides daily backups; per Supabase official documentation (`https://supabase.com/kb/faqs/platform/free-plan-backups` and `https://supabase.com/docs/guides/platform/backups`), Free tier has **NO automatic backups**, automated daily backups require a paid plan, and PITR is a separate paid add-on on Pro.
   - **Owner step:** The current Supabase project tier (Free vs Pro) and whether PITR is enabled are not established by the repo. Owner must verify project plan status in the Supabase dashboard, upgrade to Pro if currently on Free, provision the PITR add-on, and confirm restore capabilities.
 
 ### 12. Concurrent refresh
