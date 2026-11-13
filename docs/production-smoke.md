@@ -15,7 +15,7 @@ The manual release checklist (`docs/release-smoke-checklist.md` - *Pending in-fl
 The smoke probe performs basic HTTP and structural assertions against edge routing and shell delivery:
 - **Shell-Only Checks**: Checks for `/`, `/jobs`, and `/login` assert the presence of server-rendered HTML shells, route-specific markup, and distinct content bodies. They **do not** prove client-side React hydration, live data fetching in mounted components, or client-side interactivity.
 - **Readiness Scope**: `/api/health/ready` verifies that environment variables are populated and executes a **single anonymous read query** on `jobs_public`. It does not prove authenticated access, write permissions, or background worker health.
-- **Billing Scope**: The probe dispatches a non-wallet-bearing probe (unauthenticated empty POST `{}`) to `/api/billing/razorpay/order`. It passes **only** if the endpoint returns HTTP 503 with `BILLING_DISABLED`. Any other response (such as 401 auth challenge, 403 early-access intercept, 404, or 405) is marked `NOT VERIFIED / inconclusive` (FAIL), because those statuses cannot prove that order creation is disabled.
+- **Billing Scope**: The probe dispatches a non-wallet-bearing probe (unauthenticated empty POST `{}`) to `/api/billing/razorpay/order`. It records an **observed unauthenticated disabled-gate response** (requiring exact HTTP 503 with JSON `{ code: "BILLING_DISABLED" }`). It does not provide global checkout certification or verify authenticated payment flows. Any other response (such as 401, 403, 404, 405, 500, HTML/text bodies, or missing/wrong code) is marked `NOT VERIFIED / inconclusive` (FAIL).
 - **Not a Launch Sign-Off**: The probe provides partial automated verification; it does not replace end-to-end human verification or constitute launch sign-off.
 
 ---
@@ -27,7 +27,7 @@ The smoke probe performs basic HTTP and structural assertions against edge routi
    - Catches edge routing regressions, misconfigured environment variables, or broken SSR bundles before user traffic encounters them.
 
 2. **Pre-Launch Canary Verification**:
-   - Run with `--json` and `--sha <commit>` to record dated local evidence in `reports/smoke/` tied to the deployed commit SHA.
+   - Run with `--json` and `--sha <commit>` to record dated local evidence in `reports/smoke/` with an operator-supplied commit annotation.
 
 3. **Following Rollback or Host Failover**:
    - Run after a Cloudflare Pages rollback or DNS failover to the Netlify backup host (`docs/ops-runbook.md#web-deployment-rollback` - *Pending in-flight PR #593*).
@@ -42,14 +42,17 @@ The smoke probe performs basic HTTP and structural assertions against edge routi
 node scripts/smoke-production.cjs https://careermonke.com
 ```
 
-### Recording Dated Local Evidence (with Deployment SHA)
+### Recording Dated Local Evidence (with Operator-Supplied Commit SHA Annotation)
 ```bash
 node scripts/smoke-production.cjs https://careermonke.com --json --sha $(git rev-parse HEAD)
 ```
+> [!NOTE]
+> `--sha <commit>` is an **operator-supplied annotation**, not verified deployment identity. The probe cannot cryptographically attest to the commit SHA running on the remote host; it records the operator's annotation in the local evidence log for operational traceability.
+
 Appends a dated result line to `reports/smoke/smoke-YYYY-MM-DD.jsonl` recording:
 - Timestamp (ISO 8601)
 - Target URL
-- Deployment SHA (for commit identity)
+- Deployment SHA (operator-supplied annotation)
 - Pass/Fail summary and per-check latencies, status codes, and diagnostic details.
 
 ### Testing Preview Deployments or Staging
@@ -62,7 +65,7 @@ node scripts/smoke-production.cjs https://careermonke12.netlify.app
 ```
 
 ### Running the Offline Test Suite
-The probe includes an offline fixture test suite using a local HTTP mock server to verify error handling, timeouts, redirects, soft-404 detection, and negative controls:
+The probe includes an offline fixture test suite using a local HTTP mock server to verify error handling, active wall-clock abort timers (slow headers, drip bodies, late-starting probes), timeouts, redirects, soft-404 detection, and billing negative controls:
 ```bash
 node scripts/test-smoke-production.cjs
 ```
@@ -77,7 +80,7 @@ node scripts/test-smoke-production.cjs
 | **2** | **Readiness Probe** | `/api/health/ready` | `GET` | HTTP 200, JSON `{ status: "ready", checks: { env: "ok", database: "ok" } }` | **Shallow read probe**: Verifies edge functions have database credentials and successfully executes a single anonymous `SELECT` on `jobs_public`. Proves nothing beyond this single query. |
 | **3** | **Public Jobs Feed** | `/jobs` | `GET` | HTTP 200, distinct body, jobs directory structural markup (`jobs-skeleton-list`, `JobFilterBar`, or `jobs-main-content`) | **Shell-only check**: Proves the applicant directory shell renders and is not gated behind early-access redirects (`HTTP 307`). Fails if identical generic fallback HTML is served. Does not prove hydration or populated feed data. |
 | **4** | **Auth Entry Page** | `/login` | `GET` | HTTP 200, distinct body, email input and auth action elements (`Sign in`, `Log in`, `Magic link`, or `Google`) | **Shell-only check**: Proves login shell renders without crashing and serves distinct markup. Does not prove auth service readiness or email delivery. |
-| **5** | **Payments-OFF Gate** | `/api/billing/razorpay/order` | `POST` (`{}`) | HTTP 503 with code `BILLING_DISABLED` | **Non-wallet-bearing probe**: Verifies that the order creation endpoint explicitly rejects requests with HTTP 503 and `BILLING_DISABLED`. Any other code (401, 403, 404, 405, 3xx) is flagged `NOT VERIFIED / inconclusive` (FAIL). |
+| **5** | **Payments-OFF Gate** | `/api/billing/razorpay/order` | `POST` (`{}`) | HTTP 503 with JSON `{ code: "BILLING_DISABLED" }` | **Non-wallet-bearing probe**: Observes unauthenticated disabled-gate response. Requires exact HTTP 503 and valid JSON with `code === "BILLING_DISABLED"`. Any other status (401, 403, 404, 405, 500, 3xx) or non-JSON body is flagged `NOT VERIFIED / inconclusive` (FAIL). Does not certify global payment system integrity. |
 
 ---
 
@@ -86,8 +89,9 @@ node scripts/test-smoke-production.cjs
 The smoke probe is built with strict operational safeguards to protect production services and prevent false passes:
 
 1. **Overall Wall-Clock Abort Deadline**:
-   - Caps total execution time at 25 seconds (`WALL_CLOCK_TIMEOUT_MS = 25000`, configurable via `--wall-timeout <ms>`).
-   - If cumulative latency exceeds the deadline, subsequent requests are aborted immediately, preventing stuck runs.
+   - Caps total suite execution time at 25 seconds (`WALL_CLOCK_TIMEOUT_MS = 25000`, configurable via `--wall-timeout <ms>`).
+   - Covered by active absolute abort timers spanning every in-flight request and response stream from start to completion.
+   - On expiry, actively destroys the in-flight request and response streams, clears timers on every finish path, and starts no later requests.
 
 2. **Per-Request Timeout Guard**:
    - Each request has a strict 6-second timeout (`PER_REQUEST_TIMEOUT_MS = 6000`, configurable via `--timeout <ms>`).
@@ -143,13 +147,13 @@ If any check reports `[FAIL]`, the script exits with non-zero status (`1`). Cons
 - **Runbook Ref**: `docs/ops-runbook.md#scenario-c-payment-webhooks-failing-subscriptions-not-activating` (*Pending PR #593*).
 - **First Response**:
   1. If status is `200` or `201`: **P0 Alert** - live checkout creation is responding when payments must remain OFF. Immediately ensure `NEXT_PUBLIC_BILLING_ENABLED=false` and redeploy.
-  2. If status is `401`, `403`, `404`, or `405`: Check why the request was intercepted before reaching the billing gate (e.g. middleware or routing). The probe requires an explicit `503 BILLING_DISABLED` response to prove payments are safely gated.
+  2. If status is `401`, `403`, `404`, `405`, or `500`: Check why the request was intercepted before reaching the billing gate (e.g. middleware or routing). The probe requires an explicit `503 BILLING_DISABLED` response to prove payments are safely gated.
 
 ---
 
-## 7. Current Production Baseline (Partial Probe Output)
+## 7. Production Baseline Observed on 2026-11-13 (Partial Probe Output)
 
-When executed against current live production (`https://careermonke.com`), the probe outputs:
+When executed against live production (`https://careermonke.com`) on 2026-11-13, the probe outputs:
 ```text
 [PASS] 1. Homepage (/)                                       687ms  HTTP 200 OK (shell rendered, 68783 bytes)
        (Shell-only check: verifies root layout and branding HTML shell)
@@ -159,15 +163,15 @@ When executed against current live production (`https://careermonke.com`), the p
        (Shell-only check: verifies jobs directory HTML shell (no claim of hydration or live feed))
 [PASS] 4. Auth Entry Page (/login)                           193ms  HTTP 200 OK (login shell rendered, distinct body, 36212 bytes)
        (Shell-only check: verifies login gateway HTML shell (no claim of auth service readiness))
-[FAIL] 5. Payments-OFF Gate (/api/billing/razorpay/order)    178ms  NOT VERIFIED / inconclusive: returned HTTP 403 ({"error":"Early access only"}); cannot prove payments disabled (requires exact 503 + BILLING_DISABLED)
-       (Non-wallet-bearing probe: verifies exact 503 + BILLING_DISABLED)
+[FAIL] 5. Payments-OFF Gate (/api/billing/razorpay/order)    178ms  NOT VERIFIED / inconclusive: returned HTTP 403 ({"error":"Early access only"}); cannot verify disabled gate (requires exact HTTP 503 with JSON code 'BILLING_DISABLED')
+       (Non-wallet-bearing probe: observes unauthenticated disabled-gate response (exact 503 + code: 'BILLING_DISABLED'))
 
 SUMMARY: 3/5 checks passed against https://careermonke.com
 VERDICT: FAIL (One or more smoke checks failed or inconclusive; see details above)
 ```
 
-### Analysis of Current Live Results
+### Analysis of 2026-11-13 Live Results
 - **Checks 1, 2, 4 Pass**: Homepage shell, anonymous database readiness, and login shell are healthy and responsive.
 - **Check 3 Fails (Expected Pre-Launch)**: `/jobs` redirects to `/early-access` because the early-access middleware gate has not yet been lifted in production.
-- **Check 5 Inconclusive (Expected Pre-Launch)**: The billing endpoint is intercepted by the early-access middleware returning HTTP 403 `{"error":"Early access only"}` before reaching the billing handler. As mandated by the probe's verification rules, HTTP 403 cannot prove POST billing is disabled; only an explicit `503 BILLING_DISABLED` response satisfies the probe.
-- **Launch Day Transition**: Once early access is removed at launch, both `/jobs` and the payments gate will transition to public evaluation, allowing all 5 checks to verify successfully.
+- **Check 5 Inconclusive (Expected Pre-Launch)**: The billing endpoint is intercepted by the early-access middleware returning HTTP 403 `{"error":"Early access only"}` before reaching the billing handler. As mandated by the probe's verification rules, HTTP 403 cannot prove POST billing is disabled; only an observed unauthenticated disabled-gate response (`503 BILLING_DISABLED`) satisfies the probe.
+- **Launch Day Transition**: Once early access is removed at launch, both `/jobs` and the payments gate become eligible to evaluate; results still need checks.

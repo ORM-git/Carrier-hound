@@ -9,10 +9,21 @@
  *   3. Cross-route identical generic fallback detection (exit code 1).
  *   4. Soft-404 and wrong bodies detection (exit code 1).
  *   5. Degraded /api/health/ready payload detection (exit code 1).
- *   6. Billing enabled/unknown statuses (401, 403, 200; exit code 1, marked NOT VERIFIED / FAIL).
+ *   6. Billing checks & negative controls (parse JSON, require code === 'BILLING_DISABLED'):
+ *      - 503 with HTML containing string fails.
+ *      - 503 with plain text containing string fails.
+ *      - 503 with malformed JSON fails.
+ *      - 503 with missing code fails.
+ *      - 503 with wrong code fails.
+ *      - 503 with negated code fails.
+ *      - 401, 403, 404, 405, 302 redirect, 500 fail (inconclusive / NOT VERIFIED).
+ *      - 200 live checkout fails.
  *   7. Per-request timeout handling (exit code 1).
  *   8. Transport failure handling (socket destroyed, exit code 1).
- *   9. Wall-clock abort deadline (exit code 1).
+ *   9. Wall-clock abort deadline:
+ *      - Slow headers aborts within elapsed bound.
+ *      - Drip body (12 bytes every 20ms with 40-50ms wall budget) aborts within elapsed bound.
+ *      - Request starting just before suite deadline aborts within elapsed bound and skips later checks.
  *  10. Response body size cap (512KB cap exceeded, exit code 1).
  *  11. Dated JSON report output and deployment SHA parameter.
  *
@@ -140,6 +151,7 @@ let activeHandler = null;
 
 function runSmokeCli(port, extraArgs = []) {
   return new Promise((resolve, reject) => {
+    const startTime = Date.now();
     const args = [SMOKE_SCRIPT, `http://127.0.0.1:${port}`, ...extraArgs];
     const child = spawn(process.execPath, args, {
       env: { ...process.env, DEPLOY_SHA: "" },
@@ -159,10 +171,12 @@ function runSmokeCli(port, extraArgs = []) {
     child.on("error", reject);
 
     child.on("close", (code) => {
+      const elapsedMs = Date.now() - startTime;
       resolve({
         exitCode: code,
         stdout,
         stderr,
+        elapsedMs,
       });
     });
   });
@@ -211,6 +225,7 @@ async function runTests() {
       "1. Valid responses: All 5 checks pass and exit code is 0",
       t1.exitCode === 0 &&
         t1.stdout.includes("SUMMARY: 5/5 checks passed") &&
+        t1.stdout.includes("observed unauthenticated disabled-gate response") &&
         t1.stdout.includes("VERDICT: PASS"),
       `Expected exit code 0 and VERDICT: PASS, got code ${t1.exitCode}\nOutput: ${t1.stdout}`
     );
@@ -246,7 +261,6 @@ async function runTests() {
         defaultValidHandler(req, res, fixturePort);
         return;
       }
-      // Return identical generic SPA body for /, /jobs, and /login
       res.writeHead(200, { "Content-Type": "text/html" });
       res.end(GENERIC_FALLBACK_BODY);
     };
@@ -289,7 +303,6 @@ async function runTests() {
       const url = new URL(req.url, `http://127.0.0.1:${fixturePort}`);
       if (url.pathname === "/jobs") {
         res.writeHead(200, { "Content-Type": "text/html" });
-        // Valid length and valid HTML but missing any jobs skeleton/filter elements
         res.end(createMockHtml("Arbitrary Page", `<p>Arbitrary non-jobs text content without any directory structure.</p>`.repeat(10)));
         return;
       }
@@ -328,8 +341,200 @@ async function runTests() {
     );
 
     // -------------------------------------------------------------------------
-    // Test 6a: Billing unknown (HTTP 401 Unauthorized -> Exit code 1)
+    // Test 6: Comprehensive Billing Gate Controls & Non-Pass Cases
     // -------------------------------------------------------------------------
+
+    // 6a: Billing 503 with HTML containing "BILLING_DISABLED" (Must NOT pass)
+    activeHandler = (req, res) => {
+      const url = new URL(req.url, `http://127.0.0.1:${fixturePort}`);
+      if (url.pathname === "/api/billing/razorpay/order") {
+        res.writeHead(503, { "Content-Type": "text/html" });
+        res.end("<!DOCTYPE html><html><body><h1>503</h1><p>BILLING_DISABLED</p></body></html>");
+        return;
+      }
+      defaultValidHandler(req, res, fixturePort);
+    };
+    const t6_html = await runSmokeCli(fixturePort);
+    assertTest(
+      "6a. Billing HTML body: 503 HTML containing string fails JSON parse requirement",
+      t6_html.exitCode !== 0 &&
+        t6_html.stdout.includes("HTTP 503 body is not valid JSON") &&
+        t6_html.stdout.includes("VERDICT: FAIL"),
+      `Expected HTML 503 to fail, got: ${t6_html.stdout}`
+    );
+
+    // 6b: Billing 503 with plain text containing "BILLING_DISABLED" (Must NOT pass)
+    activeHandler = (req, res) => {
+      const url = new URL(req.url, `http://127.0.0.1:${fixturePort}`);
+      if (url.pathname === "/api/billing/razorpay/order") {
+        res.writeHead(503, { "Content-Type": "text/plain" });
+        res.end("BILLING_DISABLED");
+        return;
+      }
+      defaultValidHandler(req, res, fixturePort);
+    };
+    const t6_text = await runSmokeCli(fixturePort);
+    assertTest(
+      "6b. Billing text body: 503 plain text containing string fails JSON requirement",
+      t6_text.exitCode !== 0 &&
+        t6_text.stdout.includes("HTTP 503 body is not valid JSON") &&
+        t6_text.stdout.includes("VERDICT: FAIL"),
+      `Expected plain text 503 to fail, got: ${t6_text.stdout}`
+    );
+
+    // 6c: Billing 503 with malformed JSON (Must NOT pass)
+    activeHandler = (req, res) => {
+      const url = new URL(req.url, `http://127.0.0.1:${fixturePort}`);
+      if (url.pathname === "/api/billing/razorpay/order") {
+        res.writeHead(503, { "Content-Type": "application/json" });
+        res.end('{"error": "Unavailable", "code": "BILLING_DISABLED"'); // missing closing brace
+        return;
+      }
+      defaultValidHandler(req, res, fixturePort);
+    };
+    const t6_malformed = await runSmokeCli(fixturePort);
+    assertTest(
+      "6c. Billing malformed JSON: 503 malformed JSON fails with non-zero exit code",
+      t6_malformed.exitCode !== 0 &&
+        t6_malformed.stdout.includes("HTTP 503 body is not valid JSON") &&
+        t6_malformed.stdout.includes("VERDICT: FAIL"),
+      `Expected malformed JSON 503 to fail, got: ${t6_malformed.stdout}`
+    );
+
+    // 6d: Billing 503 with missing code field (Must NOT pass)
+    activeHandler = (req, res) => {
+      const url = new URL(req.url, `http://127.0.0.1:${fixturePort}`);
+      if (url.pathname === "/api/billing/razorpay/order") {
+        res.writeHead(503, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Billing is disabled", reason: "maintenance" }));
+        return;
+      }
+      defaultValidHandler(req, res, fixturePort);
+    };
+    const t6_missing_code = await runSmokeCli(fixturePort);
+    assertTest(
+      "6d. Billing missing code: 503 JSON without code field fails with non-zero exit code",
+      t6_missing_code.exitCode !== 0 &&
+        t6_missing_code.stdout.includes("missing expected code 'BILLING_DISABLED'") &&
+        t6_missing_code.stdout.includes("VERDICT: FAIL"),
+      `Expected missing code to fail, got: ${t6_missing_code.stdout}`
+    );
+
+    // 6e: Billing 503 with wrong code (Must NOT pass)
+    activeHandler = (req, res) => {
+      const url = new URL(req.url, `http://127.0.0.1:${fixturePort}`);
+      if (url.pathname === "/api/billing/razorpay/order") {
+        res.writeHead(503, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Unavailable", code: "DATABASE_OVERLOAD" }));
+        return;
+      }
+      defaultValidHandler(req, res, fixturePort);
+    };
+    const t6_wrong_code = await runSmokeCli(fixturePort);
+    assertTest(
+      "6e. Billing wrong code: 503 JSON with wrong code fails with non-zero exit code",
+      t6_wrong_code.exitCode !== 0 &&
+        t6_wrong_code.stdout.includes("missing expected code 'BILLING_DISABLED'") &&
+        t6_wrong_code.stdout.includes("VERDICT: FAIL"),
+      `Expected wrong code to fail, got: ${t6_wrong_code.stdout}`
+    );
+
+    // 6f: Billing 503 with negated code (Must NOT pass)
+    activeHandler = (req, res) => {
+      const url = new URL(req.url, `http://127.0.0.1:${fixturePort}`);
+      if (url.pathname === "/api/billing/razorpay/order") {
+        res.writeHead(503, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Active", code: "NOT_BILLING_DISABLED" }));
+        return;
+      }
+      defaultValidHandler(req, res, fixturePort);
+    };
+    const t6_negated_code = await runSmokeCli(fixturePort);
+    assertTest(
+      "6f. Billing negated code: 503 JSON with 'NOT_BILLING_DISABLED' fails with non-zero exit code",
+      t6_negated_code.exitCode !== 0 &&
+        t6_negated_code.stdout.includes("missing expected code 'BILLING_DISABLED'") &&
+        t6_negated_code.stdout.includes("VERDICT: FAIL"),
+      `Expected negated code to fail, got: ${t6_negated_code.stdout}`
+    );
+
+    // 6g: Billing 405 Method Not Allowed (Must NOT pass)
+    activeHandler = (req, res) => {
+      const url = new URL(req.url, `http://127.0.0.1:${fixturePort}`);
+      if (url.pathname === "/api/billing/razorpay/order") {
+        res.writeHead(405, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Method Not Allowed" }));
+        return;
+      }
+      defaultValidHandler(req, res, fixturePort);
+    };
+    const t6_405 = await runSmokeCli(fixturePort);
+    assertTest(
+      "6g. Billing 405: Method Not Allowed is marked inconclusive and fails with non-zero exit code",
+      t6_405.exitCode !== 0 &&
+        t6_405.stdout.includes("NOT VERIFIED / inconclusive: returned HTTP 405") &&
+        t6_405.stdout.includes("VERDICT: FAIL"),
+      `Expected 405 to fail, got: ${t6_405.stdout}`
+    );
+
+    // 6h: Billing 404 Not Found (Must NOT pass)
+    activeHandler = (req, res) => {
+      const url = new URL(req.url, `http://127.0.0.1:${fixturePort}`);
+      if (url.pathname === "/api/billing/razorpay/order") {
+        res.writeHead(404, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Route Not Found" }));
+        return;
+      }
+      defaultValidHandler(req, res, fixturePort);
+    };
+    const t6_404 = await runSmokeCli(fixturePort);
+    assertTest(
+      "6h. Billing 404: Not Found is marked inconclusive and fails with non-zero exit code",
+      t6_404.exitCode !== 0 &&
+        t6_404.stdout.includes("NOT VERIFIED / inconclusive: returned HTTP 404") &&
+        t6_404.stdout.includes("VERDICT: FAIL"),
+      `Expected 404 to fail, got: ${t6_404.stdout}`
+    );
+
+    // 6i: Billing 302/307 Redirect (Must NOT pass)
+    activeHandler = (req, res) => {
+      const url = new URL(req.url, `http://127.0.0.1:${fixturePort}`);
+      if (url.pathname === "/api/billing/razorpay/order") {
+        res.writeHead(302, { Location: "/login" });
+        res.end();
+        return;
+      }
+      defaultValidHandler(req, res, fixturePort);
+    };
+    const t6_redirect = await runSmokeCli(fixturePort);
+    assertTest(
+      "6i. Billing redirect: HTTP 302 redirect is marked inconclusive and fails with non-zero exit code",
+      t6_redirect.exitCode !== 0 &&
+        t6_redirect.stdout.includes("NOT VERIFIED / inconclusive: returned HTTP 302") &&
+        t6_redirect.stdout.includes("VERDICT: FAIL"),
+      `Expected 302 redirect to fail, got: ${t6_redirect.stdout}`
+    );
+
+    // 6j: Billing 500 Internal Server Error (Must NOT pass)
+    activeHandler = (req, res) => {
+      const url = new URL(req.url, `http://127.0.0.1:${fixturePort}`);
+      if (url.pathname === "/api/billing/razorpay/order") {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Internal Server Error" }));
+        return;
+      }
+      defaultValidHandler(req, res, fixturePort);
+    };
+    const t6_500 = await runSmokeCli(fixturePort);
+    assertTest(
+      "6j. Billing 500: Internal Server Error is marked inconclusive and fails with non-zero exit code",
+      t6_500.exitCode !== 0 &&
+        t6_500.stdout.includes("NOT VERIFIED / inconclusive: returned HTTP 500") &&
+        t6_500.stdout.includes("VERDICT: FAIL"),
+      `Expected 500 to fail, got: ${t6_500.stdout}`
+    );
+
+    // 6k: Billing 401 Unauthorized (Must NOT pass)
     activeHandler = (req, res) => {
       const url = new URL(req.url, `http://127.0.0.1:${fixturePort}`);
       if (url.pathname === "/api/billing/razorpay/order") {
@@ -339,19 +544,16 @@ async function runTests() {
       }
       defaultValidHandler(req, res, fixturePort);
     };
-
-    const t6a = await runSmokeCli(fixturePort);
+    const t6_401 = await runSmokeCli(fixturePort);
     assertTest(
-      "6a. Billing unknown: HTTP 401 is marked NOT VERIFIED / inconclusive and exits non-zero",
-      t6a.exitCode !== 0 &&
-        t6a.stdout.includes("NOT VERIFIED / inconclusive: returned HTTP 401") &&
-        t6a.stdout.includes("VERDICT: FAIL"),
-      `Expected inconclusive billing failure on 401, got code ${t6a.exitCode}`
+      "6k. Billing 401: Unauthorized is marked inconclusive and fails with non-zero exit code",
+      t6_401.exitCode !== 0 &&
+        t6_401.stdout.includes("NOT VERIFIED / inconclusive: returned HTTP 401") &&
+        t6_401.stdout.includes("VERDICT: FAIL"),
+      `Expected 401 to fail, got: ${t6_401.stdout}`
     );
 
-    // -------------------------------------------------------------------------
-    // Test 6b: Billing unknown (HTTP 403 Early access -> Exit code 1)
-    // -------------------------------------------------------------------------
+    // 6l: Billing 403 Forbidden (Must NOT pass)
     activeHandler = (req, res) => {
       const url = new URL(req.url, `http://127.0.0.1:${fixturePort}`);
       if (url.pathname === "/api/billing/razorpay/order") {
@@ -361,19 +563,16 @@ async function runTests() {
       }
       defaultValidHandler(req, res, fixturePort);
     };
-
-    const t6b = await runSmokeCli(fixturePort);
+    const t6_403 = await runSmokeCli(fixturePort);
     assertTest(
-      "6b. Billing unknown: HTTP 403 is marked NOT VERIFIED / inconclusive and exits non-zero",
-      t6b.exitCode !== 0 &&
-        t6b.stdout.includes("NOT VERIFIED / inconclusive: returned HTTP 403") &&
-        t6b.stdout.includes("VERDICT: FAIL"),
-      `Expected inconclusive billing failure on 403, got code ${t6b.exitCode}`
+      "6l. Billing 403: Early access intercept is marked inconclusive and fails with non-zero exit code",
+      t6_403.exitCode !== 0 &&
+        t6_403.stdout.includes("NOT VERIFIED / inconclusive: returned HTTP 403") &&
+        t6_403.stdout.includes("VERDICT: FAIL"),
+      `Expected 403 to fail, got: ${t6_403.stdout}`
     );
 
-    // -------------------------------------------------------------------------
-    // Test 6c: Billing live (HTTP 200 Order Created -> Exit code 1)
-    // -------------------------------------------------------------------------
+    // 6m: Billing 200 Order Created (Must NOT pass - Live Checkout Security Violation)
     activeHandler = (req, res) => {
       const url = new URL(req.url, `http://127.0.0.1:${fixturePort}`);
       if (url.pathname === "/api/billing/razorpay/order") {
@@ -383,14 +582,13 @@ async function runTests() {
       }
       defaultValidHandler(req, res, fixturePort);
     };
-
-    const t6c = await runSmokeCli(fixturePort);
+    const t6_200 = await runSmokeCli(fixturePort);
     assertTest(
-      "6c. Billing live: HTTP 200 from order endpoint fails with non-zero exit code",
-      t6c.exitCode !== 0 &&
-        t6c.stdout.includes("Unexpected HTTP 200 from checkout creation route") &&
-        t6c.stdout.includes("VERDICT: FAIL"),
-      `Expected live billing failure, got code ${t6c.exitCode}`
+      "6m. Billing 200: Live checkout response fails with non-zero exit code",
+      t6_200.exitCode !== 0 &&
+        t6_200.stdout.includes("Unexpected HTTP 200 from checkout creation route") &&
+        t6_200.stdout.includes("VERDICT: FAIL"),
+      `Expected 200 live checkout to fail, got: ${t6_200.stdout}`
     );
 
     // -------------------------------------------------------------------------
@@ -418,7 +616,6 @@ async function runTests() {
     // Test 8: Transport failure (Exit code 1)
     // -------------------------------------------------------------------------
     activeHandler = (req, res) => {
-      // Abruptly destroy socket to simulate transport error
       req.socket.destroy();
     };
 
@@ -432,31 +629,104 @@ async function runTests() {
     );
 
     // -------------------------------------------------------------------------
-    // Test 9: Wall-clock abort deadline (Exit code 1)
+    // Test 9a: Wall-clock deadline: Slow headers aborts within elapsed bound
     // -------------------------------------------------------------------------
     activeHandler = (req, res) => {
       const url = new URL(req.url, `http://127.0.0.1:${fixturePort}`);
       if (url.pathname === "/") {
+        // Delay headers by 250ms with a wall budget of 60ms
         setTimeout(() => {
-          defaultValidHandler(req, res, fixturePort);
-        }, 150);
-      } else if (url.pathname === "/api/health/ready") {
-        setTimeout(() => {
-          defaultValidHandler(req, res, fixturePort);
-        }, 150);
-      } else {
-        defaultValidHandler(req, res, fixturePort);
+          try {
+            res.writeHead(200, { "Content-Type": "text/html" });
+            res.end(VALID_HOME_BODY);
+          } catch (_) {}
+        }, 250);
+        return;
       }
+      defaultValidHandler(req, res, fixturePort);
     };
 
-    // Set wall deadline to 200ms (check 1 + check 2 will exceed 200ms total)
-    const t9 = await runSmokeCli(fixturePort, ["--wall-timeout", "200", "--timeout", "1000"]);
+    const t9a = await runSmokeCli(fixturePort, ["--wall-timeout", "60", "--timeout", "2000"]);
     assertTest(
-      "9. Wall-clock deadline: Exceeding wall deadline aborts remaining checks with non-zero exit code",
-      t9.exitCode !== 0 &&
-        t9.stdout.includes("ABORTED: Exceeded overall wall-clock deadline") &&
-        t9.stdout.includes("VERDICT: FAIL"),
-      `Expected wall-clock deadline abort, got code ${t9.exitCode}`
+      "9a. Wall-clock deadline (slow headers): Aborts within elapsed bound (~60ms) and fails",
+      t9a.exitCode !== 0 &&
+        t9a.stdout.includes("ABORTED: Exceeded overall wall-clock deadline") &&
+        t9a.stdout.includes("VERDICT: FAIL") &&
+        t9a.elapsedMs >= 45 &&
+        t9a.elapsedMs < 600,
+      `Expected slow headers to abort near 60ms, took ${t9a.elapsedMs}ms, exitCode: ${t9a.exitCode}`
+    );
+
+    // -------------------------------------------------------------------------
+    // Test 9b: Wall-clock deadline: Drip body (12 bytes every 20ms with 40-50ms budget)
+    // -------------------------------------------------------------------------
+    activeHandler = (req, res) => {
+      const url = new URL(req.url, `http://127.0.0.1:${fixturePort}`);
+      if (url.pathname === "/") {
+        res.writeHead(200, { "Content-Type": "text/html" });
+        const interval = setInterval(() => {
+          try {
+            res.write("123456789012"); // 12 bytes
+          } catch (_) {
+            clearInterval(interval);
+          }
+        }, 20);
+
+        req.on("close", () => clearInterval(interval));
+        res.on("close", () => clearInterval(interval));
+        return;
+      }
+      defaultValidHandler(req, res, fixturePort);
+    };
+
+    const t9b = await runSmokeCli(fixturePort, ["--wall-timeout", "50", "--timeout", "2000"]);
+    assertTest(
+      "9b. Wall-clock deadline (drip body): 12 bytes/20ms aborts within elapsed bound (~50ms) and fails",
+      t9b.exitCode !== 0 &&
+        t9b.stdout.includes("ABORTED: Exceeded overall wall-clock deadline") &&
+        t9b.stdout.includes("VERDICT: FAIL") &&
+        t9b.elapsedMs >= 40 &&
+        t9b.elapsedMs < 600,
+      `Expected drip body to abort near 50ms, took ${t9b.elapsedMs}ms, exitCode: ${t9b.exitCode}`
+    );
+
+    // -------------------------------------------------------------------------
+    // Test 9c: Wall-clock deadline: Request starting just before suite deadline
+    // -------------------------------------------------------------------------
+    activeHandler = (req, res) => {
+      const url = new URL(req.url, `http://127.0.0.1:${fixturePort}`);
+      if (url.pathname === "/") {
+        // Fast response for check 1 (~20ms)
+        setTimeout(() => {
+          res.writeHead(200, { "Content-Type": "text/html" });
+          res.end(VALID_HOME_BODY);
+        }, 20);
+        return;
+      } else if (url.pathname === "/api/health/ready") {
+        // Starts with ~30ms remaining of an 60ms wall budget; server delays by 300ms
+        setTimeout(() => {
+          try {
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(READY_OK_JSON);
+          } catch (_) {}
+        }, 300);
+        return;
+      }
+      defaultValidHandler(req, res, fixturePort);
+    };
+
+    const t9c = await runSmokeCli(fixturePort, ["--wall-timeout", "70", "--timeout", "2000"]);
+    assertTest(
+      "9c. Wall-clock deadline (request near deadline): In-flight probe aborts at remaining wall budget and skips later checks",
+      t9c.exitCode !== 0 &&
+        t9c.stdout.includes("1. Homepage (/)") &&
+        t9c.stdout.includes("2. Readiness Probe (/api/health/ready)") &&
+        t9c.stdout.includes("ABORTED: Exceeded overall wall-clock deadline") &&
+        t9c.stdout.includes("(check skipped)") &&
+        t9c.stdout.includes("VERDICT: FAIL") &&
+        t9c.elapsedMs >= 60 &&
+        t9c.elapsedMs < 600,
+      `Expected check 2 to abort at remaining deadline and skip checks 3-5, took ${t9c.elapsedMs}ms, exitCode: ${t9c.exitCode}`
     );
 
     // -------------------------------------------------------------------------

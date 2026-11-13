@@ -15,11 +15,12 @@
  *   3. Public jobs feed (/jobs): Shell-only check; asserts jobs directory structure and distinct body.
  *   4. Auth entry page (/login): Shell-only check; asserts login form elements and distinct body.
  *   5. Payments-OFF gate (/api/billing/razorpay/order): Non-wallet-bearing probe;
- *      verifies exact 503 + BILLING_DISABLED. Any other status (401, 403, 404, 405, 3xx)
- *      is marked NOT VERIFIED / inconclusive, NEVER pass.
+ *      observes unauthenticated disabled-gate response (exact 503 + code: 'BILLING_DISABLED').
+ *      Any other status (401, 403, 404, 405, 3xx, 500, HTML/text bodies) is marked
+ *      NOT VERIFIED / inconclusive or FAIL, NEVER pass.
  *
  * Safeguards:
- *   - Overall wall-clock abort deadline (default 25s).
+ *   - Overall wall-clock abort deadline (default 25s) with active abort timers on in-flight sockets/streams.
  *   - Per-request timeout (default 6s).
  *   - Per-response body size cap (512KB) with stream error handling.
  *   - Detects identical generic fallback bodies across distinct routes.
@@ -60,7 +61,7 @@ function parseArgs() {
     } else if (arg.startsWith("http://") || arg.startsWith("https://")) {
       baseUrl = arg;
     } else if (arg === "--help" || arg === "-h") {
-      console.log("Usage: node scripts/smoke-production.cjs [baseUrl] [--json] [--sha <commit>]");
+      console.log("Usage: node scripts/smoke-production.cjs [baseUrl] [--json] [--sha <commit>] [--timeout <ms>] [--wall-timeout <ms>]");
       process.exit(0);
     }
   }
@@ -78,7 +79,6 @@ function parseArgs() {
  * Computes a normalized content hash for detecting identical generic fallback bodies across routes.
  */
 function hashBody(body) {
-  // Strip whitespace and dynamic timestamps/nonces if any
   const normalized = body.replace(/\s+/g, " ").trim();
   return crypto.createHash("sha256").update(normalized).digest("hex");
 }
@@ -106,12 +106,16 @@ function isErrorOrSoft404(body, statusCode) {
 }
 
 /**
- * Executes a single polite HTTP/HTTPS request with body size cap and stream error guards.
+ * Executes a single polite HTTP/HTTPS request with body size cap, stream error guards,
+ * and active wall-clock + request abort timers covering start to completion.
  */
 function politeRequest(urlStr, options = {}, suiteStartTime, wallTimeoutMs, reqTimeoutMs) {
   return new Promise((resolve) => {
-    // Check overall wall-clock deadline
-    if (Date.now() - suiteStartTime > wallTimeoutMs) {
+    const elapsedSinceSuiteStart = Date.now() - suiteStartTime;
+    const remainingWallMs = wallTimeoutMs - elapsedSinceSuiteStart;
+
+    // Check overall suite wall-clock deadline before starting
+    if (remainingWallMs <= 0) {
       return resolve({
         statusCode: 0,
         headers: {},
@@ -150,7 +154,6 @@ function politeRequest(urlStr, options = {}, suiteStartTime, wallTimeoutMs, reqT
         "Accept": options.accept || "*/*",
         ...(options.headers || {}),
       },
-      timeout: reqTimeoutMs,
     };
 
     if (postData) {
@@ -161,18 +164,74 @@ function politeRequest(urlStr, options = {}, suiteStartTime, wallTimeoutMs, reqT
     let totalBytes = 0;
     let data = "";
     let completed = false;
+    let activeReq = null;
+    let activeRes = null;
+
+    let wallTimer = null;
+    let reqTimer = null;
+
+    function clearTimers() {
+      if (wallTimer) {
+        clearTimeout(wallTimer);
+        wallTimer = null;
+      }
+      if (reqTimer) {
+        clearTimeout(reqTimer);
+        reqTimer = null;
+      }
+    }
 
     function finish(resObj) {
       if (completed) return;
       completed = true;
+      clearTimers();
       resolve(resObj);
     }
 
+    // Wall-clock abort timer covering the entire request + response lifecycle
+    wallTimer = setTimeout(() => {
+      if (completed) return;
+      if (activeReq && !activeReq.destroyed) {
+        activeReq.destroy();
+      }
+      if (activeRes && !activeRes.destroyed) {
+        activeRes.destroy();
+      }
+      finish({
+        statusCode: activeRes?.statusCode || 0,
+        headers: activeRes?.headers || {},
+        body: data,
+        latencyMs: Date.now() - start,
+        error: `ABORTED: Exceeded overall wall-clock deadline of ${wallTimeoutMs}ms`,
+      });
+    }, Math.max(1, remainingWallMs));
+
+    // Per-request timeout timer covering request + response lifecycle
+    reqTimer = setTimeout(() => {
+      if (completed) return;
+      if (activeReq && !activeReq.destroyed) {
+        activeReq.destroy();
+      }
+      if (activeRes && !activeRes.destroyed) {
+        activeRes.destroy();
+      }
+      finish({
+        statusCode: activeRes?.statusCode || 0,
+        headers: activeRes?.headers || {},
+        body: data,
+        latencyMs: Date.now() - start,
+        error: `Request timed out after ${reqTimeoutMs}ms`,
+      });
+    }, reqTimeoutMs);
+
     const req = client.request(reqOptions, (res) => {
+      activeRes = res;
+
       res.on("data", (chunk) => {
         totalBytes += chunk.length;
         if (totalBytes > MAX_BODY_BYTES) {
           req.destroy();
+          res.destroy();
           finish({
             statusCode: res.statusCode || 0,
             headers: res.headers,
@@ -206,16 +265,7 @@ function politeRequest(urlStr, options = {}, suiteStartTime, wallTimeoutMs, reqT
       });
     });
 
-    req.on("timeout", () => {
-      req.destroy();
-      finish({
-        statusCode: 0,
-        headers: {},
-        body: "",
-        latencyMs: Date.now() - start,
-        error: `Request timed out after ${reqTimeoutMs}ms`,
-      });
-    });
+    activeReq = req;
 
     req.on("error", (err) => {
       finish({
@@ -243,11 +293,27 @@ async function runSmokeSuite(baseUrl, config = {}) {
   const reqTimeoutMs = config.reqTimeoutMs || PER_REQUEST_TIMEOUT_MS;
   const results = [];
   const routeBodyHashes = new Map();
+  let suiteAborted = false;
 
-  // Helper for sequential execution
+  // Helper for sequential execution; checks deadline and skips remaining if aborted
   async function execCheck(name, label, fn) {
+    if (suiteAborted || (Date.now() - suiteStartTime >= wallTimeoutMs)) {
+      suiteAborted = true;
+      return {
+        name,
+        label,
+        ok: false,
+        status: 0,
+        latencyMs: 0,
+        detail: `ABORTED: Exceeded overall wall-clock deadline of ${wallTimeoutMs}ms (check skipped)`,
+      };
+    }
+
     try {
       const res = await fn();
+      if (res.detail && res.detail.startsWith("ABORTED: Exceeded overall wall-clock deadline")) {
+        suiteAborted = true;
+      }
       return { name, label, ...res };
     } catch (err) {
       return {
@@ -533,7 +599,7 @@ async function runSmokeSuite(baseUrl, config = {}) {
   results.push(
     await execCheck(
       "5. Payments-OFF Gate (/api/billing/razorpay/order)",
-      "Non-wallet-bearing probe: verifies exact 503 + BILLING_DISABLED",
+      "Non-wallet-bearing probe: observes unauthenticated disabled-gate response (exact 503 + code: 'BILLING_DISABLED')",
       async () => {
         // Dispatches unauthenticated empty POST to live order creation route
         const res = await politeRequest(
@@ -547,20 +613,7 @@ async function runSmokeSuite(baseUrl, config = {}) {
           return { ok: false, status: 0, latencyMs: res.latencyMs, detail: res.error };
         }
 
-        // Strict disabled-gate verification:
-        // Must return exactly HTTP 503 with BILLING_DISABLED in body.
-        const isExact503Disabled =
-          res.statusCode === 503 && res.body.includes("BILLING_DISABLED");
-
-        if (isExact503Disabled) {
-          return {
-            ok: true,
-            status: res.statusCode,
-            latencyMs: res.latencyMs,
-            detail: "HTTP 503 BILLING_DISABLED verified (live checkout creation strictly disabled)",
-          };
-        }
-
+        // Live checkout active: HTTP 200 or 201 is a critical security failure
         if (res.statusCode === 200 || res.statusCode === 201) {
           return {
             ok: false,
@@ -570,13 +623,46 @@ async function runSmokeSuite(baseUrl, config = {}) {
           };
         }
 
-        // Any other status (401, 403, 404, 405, 3xx) cannot prove that POST billing is disabled
-        const snippet = res.body.trim().slice(0, 100);
+        // Must be exactly HTTP 503
+        if (res.statusCode !== 503) {
+          const snippet = res.body.trim().slice(0, 100);
+          return {
+            ok: false,
+            status: res.statusCode,
+            latencyMs: res.latencyMs,
+            detail: `NOT VERIFIED / inconclusive: returned HTTP ${res.statusCode} ${snippet ? `(${snippet})` : ""}; cannot verify disabled gate (requires exact HTTP 503 with JSON code 'BILLING_DISABLED')`,
+          };
+        }
+
+        // Parse 503 body as JSON: HTML or plain text containing the string must NOT pass
+        let json;
+        try {
+          json = JSON.parse(res.body);
+        } catch {
+          const snippet = res.body.trim().slice(0, 100);
+          return {
+            ok: false,
+            status: res.statusCode,
+            latencyMs: res.latencyMs,
+            detail: `FAIL: HTTP 503 body is not valid JSON ${snippet ? `(${snippet})` : ""}; requires JSON object with code === 'BILLING_DISABLED'`,
+          };
+        }
+
+        // Require code === "BILLING_DISABLED". Missing, wrong, or negated code must NOT pass.
+        if (!json || typeof json !== "object" || json.code !== "BILLING_DISABLED") {
+          return {
+            ok: false,
+            status: res.statusCode,
+            latencyMs: res.latencyMs,
+            detail: `FAIL: HTTP 503 JSON missing expected code 'BILLING_DISABLED' (got code: ${JSON.stringify(json?.code)}); cannot verify disabled gate`,
+          };
+        }
+
         return {
-          ok: false,
+          ok: true,
           status: res.statusCode,
           latencyMs: res.latencyMs,
-          detail: `NOT VERIFIED / inconclusive: returned HTTP ${res.statusCode} ${snippet ? `(${snippet})` : ""}; cannot prove payments disabled (requires exact 503 + BILLING_DISABLED)`,
+          detail: "HTTP 503 BILLING_DISABLED verified (observed unauthenticated disabled-gate response)",
         };
       }
     )
@@ -624,7 +710,7 @@ async function main() {
   console.log("  CAREERMONKE PRODUCTION POST-DEPLOY SMOKE PROBE (STANDALONE READ-ONLY)         ");
   console.log("================================================================================");
   console.log(`Target Base URL:       ${baseUrl}`);
-  console.log(`Deployment SHA:        ${deploySha || "Not specified (use --sha <commit> for identity)"}`);
+  console.log(`Deployment SHA:        ${deploySha || "Not specified (use --sha <commit> for operator annotation)"}`);
   console.log(`Execution Mode:        Sequential, polite (timeout ${reqTimeoutMs}ms, wall deadline ${wallTimeoutMs}ms)`);
   console.log(`Execution Time:        ${new Date().toISOString()}`);
   console.log("--------------------------------------------------------------------------------\n");
