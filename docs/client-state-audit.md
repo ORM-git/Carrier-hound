@@ -1,9 +1,8 @@
 # Client State Audit: Persistent Browser Storage & Invalidation Map
 
-Run command:
-```bash
-node scripts/check-client-state-audit.cjs
-```
+> **Verification Scope**: Manually reviewed 16-pattern inventory plus file-presence and selected invalidation-call consistency checks.
+> **Run Command**: `node scripts/check-client-state-audit.cjs`
+> **Disclaimer & Boundary**: This audit and its accompanying offline checker (`scripts/check-client-state-audit.cjs`) enforce consistency against a manually reviewed 16-pattern inventory plus file-presence and selected invalidation-call consistency checks. The checker verifies that all 16 reviewed canonical patterns, their storage mediums, and versioning statuses match the baseline, and that cited files and invalidation call sites exist. It explicitly does NOT detect new undocumented `setItem`, `getItem`, or `removeItem` calls introduced inside an already-cited file.
 
 This document establishes the formal client-side persistent storage and cache invalidation audit for CareerMonke (`ORM-git/Carrier-hound`). It maps every `localStorage` and `sessionStorage` read, write, and removal site across `src/`, assesses vulnerability to stale schema shapes upon new deployments, cataloges all SWR and memory cache invalidation call sites, and catalogs remaining gaps for follow-up remediation.
 
@@ -16,6 +15,14 @@ When a new production build deploys, returning users frequently retain client st
 
 PRs #440 and #444 introduced the standardized versioned storage helper in `src/lib/storage/versioned.ts`. This audit catalogs all persistent client keys and maps which keys utilize this helper versus unversioned access or bounded exceptions.
 
+### Audit Verification Scope & Boundary Disclaimer
+This audit represents a manually reviewed 16-pattern inventory plus file-presence and selected invalidation-call consistency checks. The accompanying standalone checker (`scripts/check-client-state-audit.cjs`) verifies:
+1. Exact canonical-pattern equality for the 16 reviewed storage keys.
+2. Exact storage medium (`localStorage` vs `sessionStorage`), versioned state, and verdict matching against the reviewed baseline.
+3. Existence and coverage of cited source files and runtime invalidation call sites.
+
+**Explicit Boundary Disclaimer**: This tooling is bounded and does not constitute a full AST compiler pass. A new undocumented `setItem`, `getItem`, or `removeItem` introduced inside an already-cited file is **NOT detected** by this checker.
+
 ### Allowed Conformance Verdicts
 Each persistent storage key is assigned exactly one verdict based on strict criteria:
 
@@ -26,7 +33,7 @@ Each persistent storage key is assigned exactly one verdict based on strict crit
    - Bounded exception / third-party-owned contract. Persisted without a `{ v, data }` envelope, but constrained by explicit defensive parsing limits:
      - The value is a primitive plain text string (e.g. `careermonke_user_email`, `careermonke_resume_title`) where parsing cannot fail due to property drift.
      - The value is a transient boolean flag (e.g. `careermonke_blocked_notice`) checked strictly against `"true"` and immediately removed.
-     - Storage is managed and versioned externally by an official third-party SDK (`sb-*-auth-token` via Supabase GoTrue).
+     - Storage is SDK-owned, application reader assumptions limited: managed by Supabase GoTrue SDK (`sb-*-auth-token`); application code defensively reads tokens with null-checking and falls back to getSession().
      - Storage is session-scoped (`cm_attribution` in `sessionStorage`). **Important parsing limit note**: `sessionStorage` survives page reloads and deployments within an open browser tab, so it is not inherently schema-safe; its safety is strictly bounded by defensive parsing (`JSON.parse` in `try/catch`, `typeof parsed === "object"` check, optional string fields, and clean `null` fallback).
      - The key is deprecated and accessed only for cleanup during sign-out (`careermonke_pro_active`).
 3. `NEEDS-MIGRATION`:
@@ -45,7 +52,7 @@ Each persistent storage key is assigned exactly one verdict based on strict crit
 | `careermonke_user_email` | `localStorage` | `string` (email) | `src/lib/auth/session.ts` | No | **BOUNDED-EXCEPTION** | Bounded exception: primitive string read as fallback for UI display; validated with string truthiness and cleared on signout; cannot cause JSON schema failure. | `src/lib/auth/session.ts`, `src/components/PaywallModal.tsx`, `src/components/UserMenu.tsx` |
 | `careermonke_blocked_notice` | `localStorage` | `string` (`"true"`) | `src/lib/auth/session.ts`, `src/components/auth/BlockedAccountNotice.tsx` | No | **BOUNDED-EXCEPTION** | Bounded exception: transient alert flag parsed with strict equality (`notice === "true"`) and immediately deleted from storage upon user dismissal. | `src/lib/auth/session.ts`, `src/components/auth/BlockedAccountNotice.tsx` |
 | `careermonke_pro_active` | `localStorage` | `None` (purge-only) | `src/lib/auth/session.ts` | No | **BOUNDED-EXCEPTION** | Bounded exception: deprecated legacy client override key targeted solely for removal during user sign-out to prevent entitlement spoofing. | `src/lib/auth/session.ts` |
-| `sb-*-auth-token` | `localStorage` | `Session` JSON object (`access_token`, `refresh_token`, `user`) | `@supabase/supabase-js` (GoTrue Client) | No | **BOUNDED-EXCEPTION** | Third-party-owned contract: managed by Supabase GoTrue SDK; application code defensively reads tokens with null-checking and falls back to getSession(). | `src/app/admin/users/page.tsx`, `src/components/admin/EarlyAccessRequestsSection.tsx`, `src/components/analytics/PageViewTracker.tsx` |
+| `sb-*-auth-token` | `localStorage` | `Session` JSON object (`access_token`, `refresh_token`, `user`) | `@supabase/supabase-js` (GoTrue Client) | No | **BOUNDED-EXCEPTION** | SDK-owned, application reader assumptions limited: managed by Supabase GoTrue SDK; application code defensively reads tokens with null-checking and falls back to getSession(). | `src/app/admin/users/page.tsx`, `src/components/admin/EarlyAccessRequestsSection.tsx`, `src/components/analytics/PageViewTracker.tsx` |
 | `cm_attribution` | `sessionStorage` | `Attribution` JSON object (`utmSource`, `referrer`, `capturedAt`) | `src/lib/analytics/utm.ts` | No | **BOUNDED-EXCEPTION** | Bounded exception: survives reloads in an open tab; defensive parsing limits wrap JSON.parse in try/catch, enforce object typecheck, and treat all fields as optional with null fallback. | `src/lib/analytics/utm.ts`, `src/components/analytics/PageViewTracker.tsx` |
 | `careermonke_resume_title` | `localStorage` | `string` (title) | `src/app/resume/page.tsx` | No | **BOUNDED-EXCEPTION** | Bounded exception: primitive plain text string without nested properties; read defensively with fallback to `${cp.name} - Resume`. | `src/app/resume/page.tsx` |
 | `cm_hidden_jobs_*` (`cm_hidden_jobs_guest`, `cm_hidden_jobs_${userId}`) | `localStorage` | `string[]` (array of job UUIDs) | `src/app/jobs/page.tsx` | No | **NEEDS-MIGRATION** | Unversioned JSON array; evolving to include hide timestamps or reasons requires a `{ v, data }` migration envelope. | `src/app/jobs/page.tsx` |

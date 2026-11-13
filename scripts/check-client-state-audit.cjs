@@ -3,45 +3,13 @@
  * scripts/check-client-state-audit.cjs
  *
  * Standalone offline checker for docs/client-state-audit.md.
- * Verifies:
- *   1. Document exists, is non-empty, and starts with the one-line run command:
- *      node scripts/check-client-state-audit.cjs
- *   2. Re-scans src/ for all localStorage, sessionStorage, and versioned storage access,
- *      validating each row against source:
- *      - Storage key / pattern exists in source code (no invented keys).
- *      - Each cited source call site actually contains reads, writes, removes, or references.
- *      - Storage medium is strictly localStorage or sessionStorage (rejects "Bananas").
- *      - Versioned indicator is strictly Yes or No.
- *      - Verdict is strictly VERSIONED-OK, NEEDS-MIGRATION, or BOUNDED-EXCEPTION (rejects "Bananas").
- *      - Data shape, owner, and justification are present and non-empty.
- *      - Enforces duplicate-key rejection and missing-key rejection.
- *   3. Validates that Section 2 summary counts match the actual table rows exactly:
- *      - VERSIONED-OK: 2
- *      - NEEDS-MIGRATION: 8
- *      - BOUNDED-EXCEPTION: 6
- *      - Total Audited Keys: 16
- *   4. Re-scans src/ for all cache invalidation and mutation call sites:
- *      - updateSwr
- *      - invalidateApprovalCache
- *      - invalidateProAccessCache (direct calls and window event listeners)
- *      - invalidateTrackedApplicationsCache
- *      - clearCandidateProfileMemoryCache
- *      - clearTrackerMemoryState
- *      (Excludes invalidateSwr definition as it has zero runtime callers).
- *   5. Validates each row in Section 3 Cache Invalidation Map against source:
- *      - Call site file and line range exist and contain the documented mechanism.
- *      - Mechanism is in the approved set (rejects invented mechanisms like "madeUpMutation").
- *      - Target cache, trigger, and notes are non-empty and non-"Bananas".
- *      - Status is strictly OK, FLAGGED (TOO BROAD), or FLAGGED (MISSED KEY) (rejects "Bananas").
- *      - Every scanned invalidation call site in the codebase is accounted for.
- *   6. Ensures Section 4 (Key Gaps & Invalidation Blindspots) and Section 5 (Remediation Plan) are present.
- *   7. Built-in negative-control mutations verify that:
- *      - An invented key (cm_invented_fake_key) fails.
- *      - An invented mechanism (madeUpMutation) fails.
- *      - A "Bananas" field value fails.
- *      - A duplicate storage key fails.
- *      - A missing storage key fails.
- *      - A missing invalidation call site fails.
+ * Scope: Manually reviewed 16-pattern inventory plus file-presence and
+ * selected invalidation-call consistency checks.
+ *
+ * Disclaimer: Validates the 16 reviewed canonical patterns, storage mediums,
+ * versioning flags, and cited file presence and selected invalidation call sites.
+ * It does NOT perform full AST compiler analysis; a new undocumented setItem,
+ * getItem, or removeItem introduced inside an already-cited file is NOT detected.
  *
  * Usage:
  *   node scripts/check-client-state-audit.cjs
@@ -70,28 +38,41 @@ const ALLOWED_STATUSES = new Set([
   "FLAGGED (MISSED KEY)",
 ]);
 
-const EXPECTED_STORAGE_KEYS = [
-  "cm_cookie_notice",
-  "careermonke_sidebar_expanded",
-  "careermonke_user_email",
-  "careermonke_blocked_notice",
-  "careermonke_pro_active",
-  "sb-*-auth-token",
-  "cm_attribution",
-  "careermonke_resume_title",
-  "cm_hidden_jobs_*",
-  "cm_job_fit_*",
-  "careermonke:profile-draft:*",
-  "careermonke_preferences",
-  "careermonke_applications_*",
-  "careermonke_candidate_profile_*",
-  "careermonke_tailored_resume_*",
-  "careermonke_tailored_cover_letter_*",
-];
+/**
+ * Labeled reviewed baseline for exact canonical-pattern equality, medium, and versioning.
+ */
+const REVIEWED_BASELINE = {
+  "cm_cookie_notice": { medium: "localStorage", versioned: "Yes", verdict: "VERSIONED-OK" },
+  "careermonke_sidebar_expanded": { medium: "localStorage", versioned: "Yes", verdict: "VERSIONED-OK" },
+  "careermonke_user_email": { medium: "localStorage", versioned: "No", verdict: "BOUNDED-EXCEPTION" },
+  "careermonke_blocked_notice": { medium: "localStorage", versioned: "No", verdict: "BOUNDED-EXCEPTION" },
+  "careermonke_pro_active": { medium: "localStorage", versioned: "No", verdict: "BOUNDED-EXCEPTION" },
+  "sb-*-auth-token": { medium: "localStorage", versioned: "No", verdict: "BOUNDED-EXCEPTION" },
+  "cm_attribution": { medium: "sessionStorage", versioned: "No", verdict: "BOUNDED-EXCEPTION" },
+  "careermonke_resume_title": { medium: "localStorage", versioned: "No", verdict: "BOUNDED-EXCEPTION" },
+  "cm_hidden_jobs_*": { medium: "localStorage", versioned: "No", verdict: "NEEDS-MIGRATION" },
+  "cm_job_fit_*": { medium: "localStorage", versioned: "No", verdict: "NEEDS-MIGRATION" },
+  "careermonke:profile-draft:*": { medium: "localStorage", versioned: "No", verdict: "NEEDS-MIGRATION" },
+  "careermonke_preferences": { medium: "localStorage", versioned: "No", verdict: "NEEDS-MIGRATION" },
+  "careermonke_applications_*": { medium: "localStorage", versioned: "No", verdict: "NEEDS-MIGRATION" },
+  "careermonke_candidate_profile_*": { medium: "localStorage", versioned: "No", verdict: "NEEDS-MIGRATION" },
+  "careermonke_tailored_resume_*": { medium: "localStorage", versioned: "No", verdict: "NEEDS-MIGRATION" },
+  "careermonke_tailored_cover_letter_*": { medium: "localStorage", versioned: "No", verdict: "NEEDS-MIGRATION" },
+};
+
+const EXPECTED_STORAGE_KEYS = Object.keys(REVIEWED_BASELINE);
 
 function cleanCell(cell) {
   if (!cell) return "";
   return cell.trim().replace(/^`+|`+$/g, "").replace(/^\*\*|\*\*$/g, "").trim();
+}
+
+/**
+ * Extracts the exact canonical pattern from markdown cell (e.g. `cm_hidden_jobs_*` -> cm_hidden_jobs_*).
+ */
+function extractCanonicalPattern(cell) {
+  const match = cell.match(/`([^`]+)`/);
+  return match ? match[1].trim() : cell.replace(/[*`]/g, "").trim();
 }
 
 /**
@@ -112,7 +93,7 @@ function walkSourceFiles(dir, list = []) {
 }
 
 /**
- * Scans src/ for all storage access files, key occurrences, and invalidation call sites.
+ * Scans src/ for all storage access files and invalidation call sites.
  */
 function scanSourceCode() {
   const srcDir = path.join(ROOT, "src");
@@ -192,7 +173,7 @@ function extractKeySearchToken(keyPattern) {
 }
 
 /**
- * Validates the contents of docs/client-state-audit.md against source code.
+ * Validates the contents of docs/client-state-audit.md against source code and reviewed baseline.
  */
 function validateAuditDoc(content) {
   const errors = [];
@@ -210,7 +191,7 @@ function validateAuditDoc(content) {
   // 2. Parse Section 2: Persistent Storage Keys Audit Table
   let inKeysTable = false;
   const keyRows = [];
-  const seenKeyPatterns = new Set();
+  const seenCanonicalKeys = new Set();
 
   for (const line of lines) {
     const trimmed = line.trim();
@@ -227,8 +208,7 @@ function validateAuditDoc(content) {
 
       const cells = trimmed.split("|").slice(1, -1).map((c) => c.trim());
       if (cells.length >= 8) {
-        // Strip markdown code backticks while preserving wildcards/asterisks in key patterns like sb-*-auth-token
-        const keyPattern = cells[0].replace(/^`+|`+$/g, "").replace(/^\*\*|\*\*$/g, "").trim();
+        const canonicalKey = extractCanonicalPattern(cells[0]);
         const medium = cleanCell(cells[1]);
         const shape = cleanCell(cells[2]);
         const owner = cleanCell(cells[3]);
@@ -238,7 +218,8 @@ function validateAuditDoc(content) {
         const callSites = cleanCell(cells[7]);
 
         keyRows.push({
-          keyPattern,
+          canonicalKey,
+          rawKeyCell: cells[0],
           medium,
           shape,
           owner,
@@ -261,44 +242,62 @@ function validateAuditDoc(content) {
     "BOUNDED-EXCEPTION": 0,
   };
 
-  // Validate each storage row against source and schema
+  // Validate each storage row against source and reviewed baseline
   for (const row of keyRows) {
-    // Duplicate key control
-    const canonicalKey = row.keyPattern.split(" ")[0];
-    if (seenKeyPatterns.has(canonicalKey)) {
-      errors.push(`Duplicate storage key pattern detected in Section 2: "${canonicalKey}"`);
-    }
-    seenKeyPatterns.add(canonicalKey);
+    const canonical = row.canonicalKey;
 
-    // Field validation
+    // Duplicate canonical key control
+    if (seenCanonicalKeys.has(canonical)) {
+      errors.push(`Duplicate storage key pattern detected in Section 2: "${canonical}"`);
+    }
+    seenCanonicalKeys.add(canonical);
+
+    // Exact canonical-pattern match against reviewed baseline
+    const baseline = REVIEWED_BASELINE[canonical];
+    if (!baseline) {
+      errors.push(`Unrecognized or short-prefix storage key pattern in Section 2 Audit Table: "${canonical}" (must match canonical baseline exactly)`);
+    } else {
+      // Validate medium and versioned against labeled reviewed baseline
+      if (row.medium !== baseline.medium) {
+        errors.push(`Key "${canonical}" storage medium mismatch against reviewed baseline: expected "${baseline.medium}", found "${row.medium}"`);
+      }
+      if (row.versioned !== baseline.versioned) {
+        errors.push(`Key "${canonical}" versioned indicator mismatch against reviewed baseline: expected "${baseline.versioned}", found "${row.versioned}"`);
+      }
+      if (row.verdict !== baseline.verdict) {
+        errors.push(`Key "${canonical}" verdict mismatch against reviewed baseline: expected "${baseline.verdict}", found "${row.verdict}"`);
+      }
+    }
+
+    // Generic field validation
     if (!ALLOWED_VERDICTS.has(row.verdict)) {
-      errors.push(`Key "${row.keyPattern}" has invalid verdict "${row.verdict}"`);
+      errors.push(`Key "${canonical}" has invalid verdict "${row.verdict}"`);
     } else {
       verdictCounts[row.verdict]++;
     }
 
     if (!ALLOWED_MEDIUMS.has(row.medium)) {
-      errors.push(`Key "${row.keyPattern}" has invalid storage medium "${row.medium}"`);
+      errors.push(`Key "${canonical}" has invalid storage medium "${row.medium}"`);
     }
 
     if (!ALLOWED_VERSIONED.has(row.versioned)) {
-      errors.push(`Key "${row.keyPattern}" has invalid versioned indicator "${row.versioned}" (must be Yes or No)`);
+      errors.push(`Key "${canonical}" has invalid versioned indicator "${row.versioned}" (must be Yes or No)`);
     }
 
     if (!row.justification || row.justification === "Bananas" || row.justification.trim().length < 15) {
-      errors.push(`Key "${row.keyPattern}" is missing a substantive justification`);
+      errors.push(`Key "${canonical}" is missing a substantive justification`);
     }
 
     if (!row.shape || row.shape === "Bananas" || row.shape.trim().length === 0) {
-      errors.push(`Key "${row.keyPattern}" is missing data shape description`);
+      errors.push(`Key "${canonical}" is missing data shape description`);
     }
 
     if (!row.owner || row.owner === "Bananas" || row.owner.trim().length === 0) {
-      errors.push(`Key "${row.keyPattern}" is missing owner component / hook`);
+      errors.push(`Key "${canonical}" is missing owner component / hook`);
     }
 
-    // Source validation: verify that key exists in actual codebase (rejects invented keys)
-    const token = extractKeySearchToken(canonicalKey);
+    // Source validation: verify that key token exists in actual codebase (rejects invented keys)
+    const token = extractKeySearchToken(canonical);
     let tokenFoundInSource = false;
     for (const [, fileContent] of scanned.sourceFileContents) {
       if (fileContent.includes(token)) {
@@ -307,23 +306,22 @@ function validateAuditDoc(content) {
       }
     }
     if (!tokenFoundInSource) {
-      errors.push(`Invented storage key "${row.keyPattern}" (token "${token}") has no matching source references in src/`);
+      errors.push(`Invented storage key "${canonical}" (token "${token}") has no matching source references in src/`);
     }
 
-    // Source validation: verify cited call sites exist and contain references
+    // Source validation: verify cited call sites exist on disk
     const sites = row.callSites.split(",").map((s) => s.replace(/[`*]/g, "").trim());
     for (const site of sites) {
       const fullPath = path.join(ROOT, site);
       if (!fs.existsSync(fullPath)) {
-        errors.push(`Cited call site file "${site}" for key "${row.keyPattern}" does not exist on disk`);
+        errors.push(`Cited call site file "${site}" for key "${canonical}" does not exist on disk`);
       }
     }
   }
 
-  // Missing-key control: assert all expected storage keys are present
+  // Exact canonical-pattern equality check against reviewed baseline
   for (const expectedKey of EXPECTED_STORAGE_KEYS) {
-    const present = Array.from(seenKeyPatterns).some((k) => k.startsWith(expectedKey) || expectedKey.startsWith(k));
-    if (!present) {
+    if (!seenCanonicalKeys.has(expectedKey)) {
       errors.push(`Missing required storage key from Section 2 Audit Table: "${expectedKey}"`);
     }
   }
@@ -466,6 +464,8 @@ function validateAuditDoc(content) {
  *   4. Duplicate storage key fails.
  *   5. Missing storage key fails.
  *   6. Missing invalidation call site fails.
+ *   7. Medium flip (cm_attribution sessionStorage -> localStorage) fails.
+ *   8. Short-prefix pattern replacement (cm_hidden_jobs_* -> cm) fails.
  */
 function runNegativeControls(originalContent) {
   console.log("Running built-in negative-control mutation assertions...");
@@ -474,8 +474,8 @@ function runNegativeControls(originalContent) {
   const inventedKeyRow = "| `cm_invented_fake_key` | `localStorage` | `{ data: string }` | `src/app/jobs/page.tsx` | No | **BOUNDED-EXCEPTION** | Invented fake storage key for testing negative controls. | `src/app/jobs/page.tsx` |\n";
   const probe1 = originalContent.replace(/(## 2\. Persistent Storage Keys Audit Table[\s\S]*?\| :--- [^\r\n]*\r?\n)/, `$1${inventedKeyRow}`);
   const res1 = validateAuditDoc(probe1);
-  if (res1.ok || !res1.errors.some((e) => e.includes("Invented storage key") || e.includes("no matching source references"))) {
-    console.error("[FAIL] Negative control 1 failed: checker did not reject invented storage key. Errors:", res1.errors);
+  if (res1.ok || !res1.errors.some((e) => e.includes("Invented storage key") || e.includes("no matching source references") || e.includes("Unrecognized or short-prefix"))) {
+    console.error("[FAIL] Negative control 1 failed: checker did not reject invented storage key.");
     process.exit(1);
   }
   console.log("  [PASS] Negative control 1: Invented storage key correctly rejected.");
@@ -495,7 +495,7 @@ function runNegativeControls(originalContent) {
     "| **Bananas** | Standardized `{ v: 1, data }` envelope with boolean type validation"
   );
   const res3 = validateAuditDoc(probe3);
-  if (res3.ok || !res3.errors.some((e) => e.includes("invalid verdict \"Bananas\""))) {
+  if (res3.ok || !res3.errors.some((e) => e.includes("invalid verdict \"Bananas\"") || e.includes("verdict mismatch"))) {
     console.error("[FAIL] Negative control 3 failed: checker did not reject 'Bananas' verdict value.");
     process.exit(1);
   }
@@ -524,7 +524,7 @@ function runNegativeControls(originalContent) {
   }
   console.log("  [PASS] Negative control 5: Missing storage key correctly rejected.");
 
-  // Control 6: Missing invalidation site
+  // Control 6: Missing invalidation call site
   const invSiteMatch = originalContent.match(/\|\s*`src\/app\/jobs\/page\.tsx:1363`\s*\|[^\r\n]*\r?\n/);
   if (!invSiteMatch) {
     console.error("[FAIL] Setup error: could not locate jobs/page.tsx:1363 row for negative control 6.");
@@ -536,12 +536,34 @@ function runNegativeControls(originalContent) {
     console.error("[FAIL] Negative control 6 failed: checker did not reject removed invalidation call site.");
     process.exit(1);
   }
-  console.log("  [PASS] Negative control 6: Missing invalidation call site correctly rejected.\n");
+  console.log("  [PASS] Negative control 6: Missing invalidation call site correctly rejected.");
+
+  // Control 7: Medium flip (cm_attribution sessionStorage -> localStorage)
+  const probe7 = originalContent.replace(
+    /(\|\s*`cm_attribution`\s*\|\s*)`sessionStorage`/,
+    "$1`localStorage`"
+  );
+  const res7 = validateAuditDoc(probe7);
+  if (res7.ok || !res7.errors.some((e) => e.includes("storage medium mismatch against reviewed baseline") && e.includes("cm_attribution"))) {
+    console.error("[FAIL] Negative control 7 failed: checker did not reject medium flip on cm_attribution. Errors:", res7.errors);
+    process.exit(1);
+  }
+  console.log("  [PASS] Negative control 7: Medium flip (sessionStorage -> localStorage) correctly rejected.");
+
+  // Control 8: Short-prefix pattern replacement (cm_hidden_jobs_* -> cm)
+  const probe8 = originalContent.replace(/`cm_hidden_jobs_\*`/, "`cm`");
+  const res8 = validateAuditDoc(probe8);
+  if (res8.ok || !res8.errors.some((e) => e.includes("Unrecognized or short-prefix storage key pattern") || e.includes("Missing required storage key from Section 2 Audit Table: \"cm_hidden_jobs_*\""))) {
+    console.error("[FAIL] Negative control 8 failed: checker did not reject short-prefix pattern replacement. Errors:", res8.errors);
+    process.exit(1);
+  }
+  console.log("  [PASS] Negative control 8: Short-prefix pattern replacement correctly rejected.\n");
 }
 
 function runCheck() {
   console.log("================================================================================");
-  console.log("  VERIFIER: FRONTEND CLIENT STATE & CACHE INVALIDATION AUDIT (SOURCE-VALIDATED) ");
+  console.log("  VERIFIER: MANUALLY REVIEWED 16-PATTERN INVENTORY PLUS FILE-PRESENCE AND       ");
+  console.log("            SELECTED INVALIDATION-CALL CONSISTENCY CHECKS                       ");
   console.log("================================================================================\n");
 
   if (!fs.existsSync(DOC_PATH)) {
@@ -572,6 +594,8 @@ function runCheck() {
   console.log(`       - VERSIONED-OK: ${details.verdictCounts["VERSIONED-OK"]}`);
   console.log(`       - NEEDS-MIGRATION: ${details.verdictCounts["NEEDS-MIGRATION"]}`);
   console.log(`       - BOUNDED-EXCEPTION: ${details.verdictCounts["BOUNDED-EXCEPTION"]}`);
+  console.log(`       - Exact canonical-pattern equality verified against reviewed 16-pattern baseline.`);
+  console.log(`       - Storage mediums and versioning indicators match baseline.`);
   console.log(`       - All ${details.scannedStorageFilesCount} scanned source files with storage access verified in audit table.`);
   console.log(`       - Section 2 summary counts match table rows exactly.`);
 
@@ -582,7 +606,7 @@ function runCheck() {
   console.log("\n[PASS] Key Gaps, Blindspots & Remediation Plan verified.");
 
   console.log("\n================================================================================");
-  console.log("VERDICT: PASS-LOCAL (Static source validation for persistent storage keys & cache invalidations)");
+  console.log("VERDICT: PASS-LOCAL (manually reviewed 16-pattern inventory plus file-presence and selected invalidation-call consistency checks)");
   console.log("================================================================================");
   process.exit(0);
 }
