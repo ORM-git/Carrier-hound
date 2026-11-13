@@ -8,7 +8,8 @@
  *   2. Required operational sections (Deploy, Rollback, Cron, Migration, Env, Incident) exist.
  *   3. All markdown link targets resolve document-relative from docs/ without root fallback.
  *   4. All backtick file paths and script invocations resolve to existing repository files.
- *   5. Negative control (--negative-control) runs real validator on mutated runbooks and asserts failure.
+ *   5. Narrow guards against reversed flags, fake Groq digest requirements, and blanket claims.
+ *   6. Negative control (--negative-control) runs real validator on mutated runbooks and asserts failure.
  *
  * Usage:
  *   node scripts/check-ops-runbook.cjs
@@ -34,7 +35,8 @@ const REQUIRED_SECTIONS = [
 ];
 
 /**
- * Validates runbook content string against repository files and required sections.
+ * Validates runbook content string against repository files, required sections,
+ * and semantic consistency guards.
  * @param {string} content
  * @returns {{ valid: boolean, errors: string[], verified: string[] }}
  */
@@ -140,6 +142,47 @@ function validateRunbookContent(content) {
     }
   }
 
+  // 4. Semantic Guard: Flag reversal checks for backfill scripts
+  if (/backfill-job-descriptions\.ts[^\n|]*\|[^\n|]*Default:\s*DRY\s*RUN/i.test(content)) {
+    errors.push("Invalid backfill flag: backfill-job-descriptions.ts must not be marked Default: DRY RUN (it writes by default)");
+  }
+  if (/backfill-job-descriptions\.ts[^\n|]*\|[^\n|]*--apply/i.test(content)) {
+    errors.push("Invalid backfill flag: backfill-job-descriptions.ts writes by default and uses --dry/-d to simulate, not --apply");
+  }
+  if (/backfill-company-logos\.ts[^\n|]*\|[^\n|]*\|[^\n|]*--apply/i.test(content)) {
+    errors.push("Invalid backfill flag: backfill-company-logos.ts uses --write to commit, not --apply");
+  }
+  if (/backfill-internships\.ts[^\n|]*\|[^\n|]*--dry/i.test(content)) {
+    errors.push("Invalid backfill flag: backfill-internships.ts has no dry-run flag");
+  }
+
+  // 5. Semantic Guard: Daily digest cron must not claim Groq requirement
+  if (/(?:daily-digest-cron|Daily Candidate Matching)[^\n]*\bGROQ\b/i.test(content) ||
+      /GROQ_API_KEY[^\n]*(?:daily-digest-cron|Daily Candidate Matching)/i.test(content)) {
+    errors.push("Invalid requirement: daily-digest-cron uses deterministic computeFitDiagnostics and must not claim a Groq requirement");
+  }
+
+  // 6. Semantic Guard: Disallow blanket ungrounded claims
+  const blanketClaims = [
+    { pattern: /every operational procedure verified/i, msg: "Blanket ungrounded claim: 'every operational procedure verified'" },
+    { pattern: /\ball admin 401\b/i, msg: "Blanket ungrounded claim: 'all admin 401'" },
+    { pattern: /\ball server 500\b/i, msg: "Blanket ungrounded claim: 'all server 500'" },
+    { pattern: /zero table lock/i, msg: "Blanket ungrounded claim: 'zero table lock'" },
+  ];
+  for (const { pattern, msg } of blanketClaims) {
+    if (pattern.test(content)) {
+      errors.push(msg);
+    }
+  }
+
+  // 7. Semantic Guard: schema_migrations column name & record-migration extension
+  if (/SELECT\s+name\s*,\s*checksum\s*,\s*applied_at\s+FROM\s+public\.schema_migrations/i.test(content)) {
+    errors.push("Invalid SQL: schema_migrations column is filename, not name");
+  }
+  if (/record-migration\.cjs\s+<timestamp>_<name>(?!\.sql)/i.test(content)) {
+    errors.push("Invalid migration record syntax: record-migration.cjs requires .sql extension");
+  }
+
   const uniqueVerified = Array.from(new Set(verified)).sort();
   return {
     valid: errors.length === 0,
@@ -169,7 +212,40 @@ function runNegativeControl(realContent) {
   }
   console.log("  ✓ Real validator correctly caught missing operational section");
 
-  console.log("[PASS] Negative control verified: real validator fails on mutated runbooks.");
+  // Mutation 3: Mutated runbook with reversed backfill flag (claiming job descriptions is dry-run by default)
+  const mutatedFlagContent = realContent.replace(
+    /`scripts\/backfill-job-descriptions\.ts`\s*\|\s*`--dry`[^\n|]*\|\s*\*\*LIVE WRITE BY DEFAULT\*\*/,
+    "`scripts/backfill-job-descriptions.ts` | **Default: DRY RUN** | `--apply`"
+  );
+  const resFlag = validateRunbookContent(mutatedFlagContent);
+  if (resFlag.valid || !resFlag.errors.some((e) => e.includes("backfill-job-descriptions.ts"))) {
+    console.error("[FAIL] Real validator failed to reject reversed backfill flags.");
+    process.exit(1);
+  }
+  console.log("  ✓ Real validator correctly caught reversed backfill flag");
+
+  // Mutation 4: Mutated runbook with fake Groq requirement for daily digest
+  const mutatedGroqContent = realContent.replace(
+    /`computeFitDiagnostics`[^\n|]*/,
+    "Groq LLM API candidate scoring"
+  );
+  const resGroq = validateRunbookContent(mutatedGroqContent);
+  if (resGroq.valid || !resGroq.errors.some((e) => e.includes("Groq requirement"))) {
+    console.error("[FAIL] Real validator failed to reject fake Groq requirement for digest cron.");
+    process.exit(1);
+  }
+  console.log("  ✓ Real validator correctly caught fake Groq requirement for digest cron");
+
+  // Mutation 5: Mutated runbook with blanket claim
+  const mutatedBlanketContent = realContent + "\n\nNote: every operational procedure verified across all hosts.\n";
+  const resBlanket = validateRunbookContent(mutatedBlanketContent);
+  if (resBlanket.valid || !resBlanket.errors.some((e) => e.includes("Blanket ungrounded claim"))) {
+    console.error("[FAIL] Real validator failed to reject blanket ungrounded claim.");
+    process.exit(1);
+  }
+  console.log("  ✓ Real validator correctly caught blanket ungrounded claim");
+
+  console.log("[PASS] Negative control verified: real validator fails on mutated runbooks across all 5 checks.");
   process.exit(0);
 }
 

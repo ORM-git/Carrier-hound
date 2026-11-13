@@ -61,7 +61,7 @@ Rolling back Netlify does **NOT** restore a failing Cloudflare Pages site. When 
 1. Log into Cloudflare Dashboard > **Workers & Pages** > **carrier-hound** > **Deployments**.
 2. Locate the previous known green deployment in the history list.
 3. Click the deployment row, click the three-dots menu or deployment overview, and select **Rollback to this deployment**.
-4. Cloudflare immediately switches global edge routing to the previous worker bundle.
+4. Cloudflare switches global edge routing to the previous worker bundle.
 5. *Wrangler Alternative* (if authenticated locally):
    ```bash
    npx wrangler pages deployment rollback <deployment-id> --project-name carrier-hound
@@ -100,25 +100,28 @@ CareerMonke runs scheduled automation workflows via GitHub Actions in [.github/w
 | Workflow Name | File | Schedule | Script / Command | Purpose |
 | --- | --- | --- | --- | --- |
 | **Scaled Job Ingestion** | [.github/workflows/ingest.yml](../.github/workflows/ingest.yml) | `0 */4 * * *` (Every 4h) | `scripts/ingest.ts` | Ingests ATS job postings across 6 parallel shards; validates company boards and cleans up dead listings. |
-| **Weekly Retention Purge** | [.github/workflows/retention-cron.yml](../.github/workflows/retention-cron.yml) | `30 19 * * 0` (Weekly Sun 19:30 UTC) | `scripts/retention-cron.ts` | Calls `purge_operational_logs()` to prune expired logs, rate limit tables, and soft-deleted records per [docs/retention-policy.md](retention-policy.md). |
-| **Daily Candidate Matching** | [.github/workflows/daily-digest-cron.yml](../.github/workflows/daily-digest-cron.yml) | `30 21 * * *` (Daily 21:30 UTC) | `scripts/daily-digest-cron.ts` | Scores candidate resumes against active jobs using Groq LLM API and queues candidate job digest emails. |
+| **Weekly Retention Purge** | [.github/workflows/retention-cron.yml](../.github/workflows/retention-cron.yml) | `30 19 * * 0` (Weekly Sun 19:30 UTC) | `scripts/retention-cron.ts` | Calls `purge_operational_logs()` to prune operational log tables (`page_views`, `gmail_send_log`, `cron_run_logs`, `admin_audit_log`, `webhook_events`, `failed_events`, `funnel_events`), `archive_expired_jobs()` to move expired listings to `jobs_archive`, and `reindex_bloated_indexes()`. Does not purge accounts. |
+| **Daily Candidate Matching** | [.github/workflows/daily-digest-cron.yml](../.github/workflows/daily-digest-cron.yml) | `30 21 * * *` (Daily 21:30 UTC) | `scripts/daily-digest-cron.ts` | Scores candidate resumes against active jobs using deterministic `computeFitDiagnostics` (offline scoring engine) and queues candidate job digest emails. |
 | **Daily Early-Access Digest** | [.github/workflows/early-access-digest-cron.yml](../.github/workflows/early-access-digest-cron.yml) | `0 18 * * *` (Daily 18:00 UTC) | `scripts/early-access-digest-cron.ts` | Summarizes new subscriber signups and dispatches daily owner email via Google Apps Script mail relay. |
-| **Dunning Outbox Dispatch** | [.github/workflows/dunning-dispatch-cron.yml](../.github/workflows/dunning-dispatch-cron.yml) | `30 4 * * *` (Daily 04:30 UTC) | `scripts/dunning-dispatch-cron.ts` | Drains the `dunning_logs` outbox and dispatches renewal warning notices for failed subscription payments. |
+| **Dunning Outbox Dispatch** | [.github/workflows/dunning-dispatch-cron.yml](../.github/workflows/dunning-dispatch-cron.yml) | `30 4 * * *` (Daily 04:30 UTC) | `scripts/dunning-dispatch-cron.ts` | Drains the `dunning_logs` outbox and dispatches renewal warning notices for failed subscription payments. Exits 0 on missing mail configuration. |
 | **Capacity Headroom Report** | [.github/workflows/capacity-report-cron.yml](../.github/workflows/capacity-report-cron.yml) | `0 5 * * 1` (Weekly Mon 05:00 UTC) | `scripts/report-capacity-headroom.ts` | Audits Supabase storage, row counts, and Groq token usage against documented tier limits per [docs/capacity-headroom.md](capacity-headroom.md). |
 | **Read-only DB Health Probe** | [.github/workflows/db-health-probe.yml](../.github/workflows/db-health-probe.yml) | `13 2 * * 1` (Weekly Mon 02:13 UTC) | `scripts/probe-db-health.ts` | Runs `db_health_snapshot()` to record index bloat, cache hit ratio, and table statistics per [docs/db-health-probe.md](db-health-probe.md). |
 | **DB Reconciliation Audit** | [.github/workflows/db-reconciliation.yml](../.github/workflows/db-reconciliation.yml) | `27 3 * * 1` (Weekly Mon 03:27 UTC) | `scripts/run-db-reconciliation.ts` | Executes data integrity audit comparing `jobs` vs `jobs_public`, unallocated credits, and funnel sanity per [docs/payment-reconciliation.md](payment-reconciliation.md). |
 | **Source Health Monitoring** | [.github/workflows/source-health-cron.yml](../.github/workflows/source-health-cron.yml) | `30 4 * * *` (Daily 04:30 UTC) | `scripts/check-source-health.ts` | Probes upstream ATS endpoints (Greenhouse, Lever, Ashby) to detect dead or rate-limited career boards. |
 | **Inbound Reply Poll** | [.github/workflows/inbound-poll-cron.yml](../.github/workflows/inbound-poll-cron.yml) | `15 */4 * * *` (Every 4h :15) | `scripts/poll-inbound-replies.ts` | Ingests support/feedback email responses into `public.inbound_replies` per [docs/inbound-replies.md](inbound-replies.md). |
-| **Cron Failure Alerter** | [.github/workflows/workflow-failure-alert.yml](../.github/workflows/workflow-failure-alert.yml) | Event-driven on `workflow_run` failure | `scripts/workflow-failure-alert.ts` | Captures cron failures, reports them to Sentry, and opens/updates deduplicated GitHub tracking issues. |
+| **Cron Failure Alerter** | [.github/workflows/workflow-failure-alert.yml](../.github/workflows/workflow-failure-alert.yml) | Event-driven on `workflow_run` failure | `scripts/workflow-failure-alert.ts` | Captures failures only for named workflows whose final conclusion is `failure`. Requires `GITHUB_TOKEN` and `SENTRY_DSN`. Does not detect soft failures. |
+
+### Soft-Deleted Account Purge (Database-level pg_cron)
+Account tombstone deletion is managed outside GitHub Actions via the owner's database-level `pg_cron` schedule `purge-soft-deleted-accounts-daily` (`15 3 * * *`, daily at 03:15 UTC). This job runs `public.purge_soft_deleted_accounts()` directly within PostgreSQL (verified active by owner on Nov 10; current run success unverified). There is deliberately no duplicate scheduler configured in GitHub Actions to avoid concurrent purge contention.
 
 ### First-Response Steps When a Cron Fails
 1. **Locate Logs and Error Details**:
-   - The cron failure alerter ([.github/workflows/workflow-failure-alert.yml](../.github/workflows/workflow-failure-alert.yml)) automatically logs failures to Sentry and creates or updates a deduplicated issue in GitHub with the run URL and job ID.
+   - The cron failure alerter ([.github/workflows/workflow-failure-alert.yml](../.github/workflows/workflow-failure-alert.yml)) automatically logs failures to Sentry and creates or updates a deduplicated issue in GitHub with the run URL and job ID for workflows whose final conclusion is `failure`.
    - Open the GitHub Actions run URL and inspect the failed step output.
 2. **Diagnose Common Failure Reasons**:
    - `missing_env`: If the log reports missing secrets (see [docs/runbooks.md](runbooks.md)), verify that the required secret names are present in GitHub Repository **Settings** > **Secrets and variables** > **Actions**.
    - `statement_timeout`: If database queries timed out, check the timeout bounds documented in [docs/statement-timeouts.md](statement-timeouts.md) and verify database load via [docs/db-health-probe.md](db-health-probe.md).
-   - Upstream API rate limits (e.g. Groq 429 or ATS 403): Groq routes feature circuit breakers and fall back to heuristics automatically; for dead boards, run `scripts/board-verify-all.ts`.
+   - Upstream API rate limits & circuit breaking: When Groq rate limits (upstream 429) or repeatedly fails, `groqCircuitBreaker` trips open and returns HTTP 503 with `{ error: "AI temporarily busy" }` and `Retry-After: 30`, or HTTP 502 with quota/budget rollbacks (`rollbackAllQuotas()`, `settleBudget(0)`). There is no automatic fallback to heuristic text generation on AI completion routes. For dead ATS boards, run `scripts/board-verify-all.ts`.
 3. **Manual Re-run Procedure**:
    - Trigger the workflow manually via GitHub CLI or Web UI:
      ```bash
@@ -134,7 +137,7 @@ CareerMonke runs scheduled automation workflows via GitHub Actions in [.github/w
 4. **Blast Radius / Impact**:
    - *Ingestion Failure*: Live job feed becomes stale, but existing jobs remain searchable.
    - *Digest Failure*: Email notifications delayed; no user data is deleted or corrupted.
-   - *Retention Failure*: Temporary log accumulation; resolved on next successful cycle.
+   - *Retention Failure*: Temporary log accumulation; resolved on next successful cycle provided table bloat does not exceed statement timeout.
 
 ---
 
@@ -149,27 +152,60 @@ Operational preflight checks must distinguish between repo-side metadata and liv
 ### Mandatory Live Preflight Before Apply or Rollback
 Before applying any migration or executing any rollback SQL, the operator must execute a live read-only inspection:
 1. **Inspect Live Migration Ledger**:
+   Verify table and column existence, then inspect applied migrations:
    ```sql
-   SELECT name, checksum, applied_at FROM public.schema_migrations ORDER BY applied_at DESC LIMIT 10;
+   -- Precheck: Verify schema_migrations table and column existence
+   SELECT column_name, data_type
+   FROM information_schema.columns
+   WHERE table_schema = 'public'
+     AND table_name = 'schema_migrations'
+     AND column_name IN ('filename', 'checksum', 'applied_at');
+
+   -- Inspect live migration ledger (template query; verify against live DB)
+   SELECT filename, checksum, applied_at
+   FROM public.schema_migrations
+   ORDER BY applied_at DESC
+   LIMIT 10;
    ```
 2. **Execute Read-Only Preflight**:
    Run [supabase/scripts/preflight-readonly.sql](../supabase/scripts/preflight-readonly.sql) to check table existence, active lock contention, and constraint validity.
 3. **Inspect Target Database Objects Directly**:
-   Verify target schema objects using `psql` or Supabase SQL Editor:
-   ```sql
-   -- Verify table structure
+   Verify target schema objects using `psql` CLI or Supabase Dashboard SQL Editor (template queries tested for syntax; not claimed to be run live during doc creation):
+
+   *Option A: In `psql` CLI only (interactive session)*:
+   ```bash
    \d+ public.jobs
-   -- Verify index status and validity
-   SELECT indexname, indisvalid FROM pg_indexes JOIN pg_index ON pg_indexes.indexname = pg_class.relname WHERE tablename = 'jobs';
+   ```
+
+   *Option B: In Supabase Dashboard SQL Editor (query-based)*:
+   ```sql
+   -- Structure check via information_schema
+   SELECT column_name, data_type, is_nullable, column_default
+   FROM information_schema.columns
+   WHERE table_schema = 'public' AND table_name = 'jobs'
+   ORDER BY ordinal_position;
+
+   -- Index status and validity query
+   SELECT
+     c_idx.relname AS index_name,
+     i.indisvalid,
+     i.indisready
+   FROM pg_catalog.pg_index i
+   JOIN pg_catalog.pg_class c_idx ON c_idx.oid = i.indexrelid
+   JOIN pg_catalog.pg_class c_tbl ON c_tbl.oid = i.indrelid
+   JOIN pg_catalog.pg_namespace n ON n.oid = c_tbl.relnamespace
+   WHERE n.nspname = 'public'
+     AND c_tbl.relname = 'jobs'
+   ORDER BY c_idx.relname;
    ```
 
 ### The NOT APPLIED Header Convention
 Every new migration file placed in `supabase/migrations/` must carry a standardized header declaring its pending status and self-referencing record command (enforced by `scripts/list-pending-migrations.cjs` and `scripts/test-migration-discipline.ts`):
 ```sql
 -- Migration: <timestamp>_<name>.sql
--- Status: NOT APPLIED - record-migration.cjs <timestamp>_<name>
+-- Status: NOT APPLIED - record-migration.cjs <timestamp>_<name>.sql
 -- Apply manually in Supabase SQL editor, then record:
---   node scripts/record-migration.cjs <timestamp>_<name>
+--   node scripts/record-migration.cjs <timestamp>_<name>.sql
 ```
 
 ### Migration Apply Procedure
@@ -181,9 +217,11 @@ Every new migration file placed in `supabase/migrations/` must carry a standardi
    - Log into Supabase Dashboard > **SQL Editor**.
    - Paste and execute the migration SQL.
 3. **Record Migration in Database Ledger**:
-   - Run `scripts/record-migration.cjs` to register the file name, SHA-256 hash, and execution timestamp into the `public.schema_migrations` table:
+   - Run `scripts/record-migration.cjs` to register the exact file name (including `.sql`), SHA-256 hash, and execution timestamp into the `public.schema_migrations` table:
      ```bash
-     node scripts/record-migration.cjs <migration_file_name_or_id>
+     node scripts/record-migration.cjs <timestamp>_<name>.sql
+     # Example:
+     node scripts/record-migration.cjs 20261105c_database_safety.sql
      ```
 4. **Verify Schema Freshness**:
    - Check that the repo's generated schema snapshot reflects the new state:
@@ -196,11 +234,11 @@ Backfill operations must never run as single unbatched transactions. Backfill sc
 
 | Script | Dry-Run Flag / Default | Live Write Flag | Overwrite / Targeting Behavior | Backup Mechanism | Safety Classification |
 | --- | --- | --- | --- | --- | --- |
-| `scripts/backfill-country-code.ts` | **Default: DRY RUN** | `--apply` | NULL-only (`WHERE country_code IS NULL`) | Generates pre-update CSV snapshot | Safe / Non-destructive |
-| `scripts/backfill-salaries.ts` | **Default: DRY RUN** | `--apply` | Updates diffs only; skips suspicious salaries unless `--skip-suspicious`. Supports `--restore <csv> --apply` | Writes pre-update CSV to `backups/` | Safe / Non-destructive |
-| `scripts/backfill-company-logos.ts` | **Default: DRY RUN** | `--write` | Targets missing or invalid logos (`--missing-only`). Uses versioned upload keys to prevent overwriting prior objects before commit | Writes reviewed manifest file; preserves old object rollback on DB failure | Safe / Non-destructive |
-| `scripts/backfill-job-descriptions.ts` | `--dry` or `-d` (**Default: LIVE WRITE**) | Automatic if `--dry` omitted | Targets `NULL` and stub descriptions (`%Apply directly via employer careers portal%`); marks duplicate listings inactive | No automatic backup | **DESTRUCTIVE (writes by default)** |
-| `scripts/backfill-internships.ts` | None (**Default: LIVE WRITE**) | Automatic (no flag) | Overwrites `job_type` in place to `'internship'` or `'job'` | No automatic backup | **DESTRUCTIVE (writes by default, no dry-run flag)** |
+| `scripts/backfill-country-code.ts` | **Default: DRY RUN** | `--apply` | Writes only where `country_code IS NULL` or invalid ISO-2 format | Generates pre-update CSV snapshot | Conditional write (`--apply` required; NULL-only) |
+| `scripts/backfill-salaries.ts` | **Default: DRY RUN** | `--apply` | `--apply` writes only where `salary_min IS NULL`. `--skip-suspicious` excludes suspicious rows only together with `--apply`. `--restore <csv> --apply` is a separate overwriting mode. | Writes pre-update CSV to `backups/` | Conditional write (`--apply` writes only NULL salaries; overwrites only under `--restore`) |
+| `scripts/backfill-company-logos.ts` | **Default: DRY RUN** | `--write` | Optional `--missing-only` / `--schedule` filters `logo_url IS NULL`. Self-hosted URLs in `company-logos` are skipped unless `--force`. Without `--missing-only`, broader replacement is possible. Versioned storage keys prevent DB overwrites. | Reviewed JSON manifest file required for write | Conditional write (`--write` required; broader replacement possible without `--missing-only`) |
+| `scripts/backfill-job-descriptions.ts` | `--dry` or `-d` to simulate | **LIVE WRITE BY DEFAULT** | Mutates job descriptions in place (targets NULL and short stub strings); deduplicates and marks duplicate jobs inactive. | None (manual preflight dump required) | **DESTRUCTIVE: WRITE BY DEFAULT** (destructive unless `--dry` / `-d`) |
+| `scripts/backfill-internships.ts` | **NONE (No dry-run flag exists)** | **LIVE WRITE BY DEFAULT** | Directly mutates `job_type` in place where internship keywords match. **No dry-run flag exists in script.** | None (manual preflight dump required) | **DESTRUCTIVE: WRITE BY DEFAULT** (destructive live execution by default; no `--dry` flag) |
 
 > [!WARNING]
 > Both `scripts/backfill-job-descriptions.ts` and `scripts/backfill-internships.ts` commit live writes by default when executed. Always run `scripts/backfill-job-descriptions.ts` with `--dry` first. For `scripts/backfill-internships.ts`, take an external database snapshot before running.
@@ -219,11 +257,11 @@ All production secrets and environment variables must be managed through hosting
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Frontend & Edge Functions | Build crashes in [next.config.mjs](../next.config.mjs); public read queries (`jobs_public`) fail. |
 | `SUPABASE_SERVICE_ROLE_KEY` | Edge Functions & Server API | Route-specific failure behavior: `/api/stats` returns 500 `{ error, missingVariable }` via `src/lib/api/envCheck.ts`; `/api/jobs/pro` and `/api/jobs/top10` return 500; `/api/track` logs to Sentry and returns 200 `{ ok: true, fallback: true }` (fail-open client telemetry); admin routes return 500 (`getSupabaseAdmin` throws). |
 | `UPSTASH_REDIS_REST_URL` & `UPSTASH_REDIS_REST_TOKEN` | Serverless & Edge | Distributed Redis commands fail; graceful fallback to in-memory rate limiting via `src/lib/api/sharedRateLimit.ts`. |
-| `GROQ_API_KEY` | Edge AI Routes | `/api/ai` completions, resume tailoring, and interview packs fail over to rule-based fallback templates. |
-| `NEXT_PUBLIC_BILLING_ENABLED` | Frontend Build | Feature flag in `src/lib/flags/flags.ts`. When `false` or missing, paywall and checkout routes remain deactivated. |
-| `RAZORPAY_KEY_ID` & `RAZORPAY_KEY_SECRET` | Serverless Billing | Order creation at `/api/billing/razorpay/order` returns 500. |
+| `GROQ_API_KEY` | Edge AI Routes | Edge routes (`/api/ai`, `/api/ai/stream`, `netlify/functions/ai.ts`). When missing, `src/lib/ai/serviceHandler.ts` returns 500 `{ error: "Missing required environment variable: GROQ_API_KEY", missingVariable: "GROQ_API_KEY" }` before quota debit (no rule-based fallback). |
+| `NEXT_PUBLIC_BILLING_ENABLED` | Frontend Build & Serverless API | Feature flag in `src/lib/flags/flags.ts`. When `false` or missing, paywall and checkout routes return 503 `BILLING_DISABLED`. |
+| `RAZORPAY_KEY_ID` / `NEXT_PUBLIC_RAZORPAY_KEY_ID` & `RAZORPAY_KEY_SECRET` | Serverless Billing | Serverless billing endpoints (`/api/billing/razorpay/order`, `/api/billing/razorpay/verify`, and Netlify billing functions). Gate order: billing disabled returns 503 `BILLING_DISABLED`, invalid/missing auth header returns 401, then missing or non-test keys return 503 `{ error: "test keys not configured", code: "RAZORPAY_TEST_KEYS_NOT_CONFIGURED" }`. `NEXT_PUBLIC_RAZORPAY_KEY_ID` alias is supported. |
 | `RAZORPAY_WEBHOOK_SECRET` | Serverless Webhooks | Webhook handler at `/api/billing/razorpay/webhook` returns 500 configuration error; subscription activations stall. |
-| `ADMIN_EMAIL` / `ADMIN_EMAIL_LIST` | Admin Auth Config | Declared in `src/lib/admin/constants.ts`. Admin requests require a verified Supabase admin user whose email is in this list. |
+| `ADMIN_EMAILS` | Admin Auth Config | Declared in `src/lib/admin/constants.ts`. Comma-separated list of authorized admin email addresses (supplements hardcoded `ADMIN_EMAIL` code default). Access requires verified user with `email_confirmed_at` / `confirmed_at` and linked Google OAuth provider (`isVerifiedAdminUser`). (Note: `ADMIN_EMAIL` and `ADMIN_EMAIL_LIST` in `src/lib/admin/constants.ts` are exported code constants, not env vars). |
 | `SENTRY_DSN` | Telemetry & Observability | Errors logged locally to console only; no remote incident telemetry. |
 | `ENABLE_SERVER_TRACING` *(Pending PR #585)* | Edge Observability | Feature flag in `src/lib/flags/flags.ts` (unmerged on main). Evaluated from `process.env` only; runtime dynamic binding via Cloudflare dashboard is unverified. |
 
@@ -234,7 +272,6 @@ All production secrets and environment variables must be managed through hosting
 | `NEXT_PUBLIC_SUPABASE_URL` & `SUPABASE_SERVICE_ROLE_KEY` | Ingest, Retention, Digests, Reconciliation | Ingestion (`ingest.yml`) aborts or falls back to dry-run; retention purge and DB probe jobs fail with exit code 1. |
 | `APPS_SCRIPT_MAIL_URL` & `APPS_SCRIPT_MAIL_SECRET` | Early-Access Digest, Dunning Dispatch | `early-access-digest-cron.ts` fails with `missing_env` error (conclusion=failure). In contrast, `dunning-dispatch-cron.ts` logs a warning and exits with code 0 (soft failure, not detected by `workflow-failure-alert.yml`). |
 | `EARLY_ACCESS_NOTIFY_EMAIL` | Early-Access Digest | `early-access-digest-cron.ts` fails with `missing_env` error. |
-| `GROQ_API_KEY`, `FAST_MODEL`, `SMART_MODEL` | Daily Candidate Matching Digest | AI candidate matching in `daily-digest-cron.ts` fails to generate score rationales. |
 | `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN` | Inbound Reply Poll | `poll-inbound-replies.ts` aborts without polling support inbox. |
 | `GITHUB_TOKEN` | Cron Failure Alerter | Built-in token. `workflow-failure-alert.ts` cannot search or create tracking issues for failed cron runs. |
 
