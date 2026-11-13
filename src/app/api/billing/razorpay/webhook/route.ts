@@ -258,7 +258,7 @@ export async function POST(req: Request) {
       // Query payment_orders authoritatively
       const { data: dbOrder, error: orderLookupErr } = await supabaseAdmin
         .from("payment_orders")
-        .select("*")
+        .select("id, provider, mode, user_id, status, plan_code")
         .eq("provider_order_id", orderId)
         .maybeSingle();
 
