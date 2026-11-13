@@ -183,6 +183,42 @@ function validateRunbookContent(content) {
     errors.push("Invalid migration record syntax: record-migration.cjs requires .sql extension");
   }
 
+  // 8. Semantic Guard: Database purge function name
+  if (/purge_soft_deleted_accounts\b/i.test(content)) {
+    errors.push("Invalid function name: purge_soft_deleted_accounts() does not exist; the actual database function is public.purge_soft_deleted_account_data()");
+  }
+
+  // 9. Semantic Guard: country_code backfill invalid ISO repair claim
+  if (/backfill-country-code\.ts[^\n]*invalid\s+ISO/i.test(content)) {
+    errors.push("Invalid backfill claim: backfill-country-code.ts strictly selects and updates rows where country_code IS NULL; it does not repair invalid ISO-2 format");
+  }
+
+  // 10. Semantic Guard: company-logos backfill manifest & storage key claims
+  if (/(?:reviewed\s+)?(?:json\s+)?manifest\s+(?:file\s+)?required\s+for\s+(?:live\s+)?write/i.test(content)) {
+    errors.push("Invalid manifest claim: manifest is optional in backfill-company-logos.ts; --write writes regardless");
+  }
+  if (/prevent\s+DB\s+overwrites/i.test(content) || /preserve\s+old\s+DB\s+values/i.test(content)) {
+    errors.push("Invalid storage claim: versioned keys in storage bucket preserve old storage objects, not old DB values (DB logo_url replacement is intentional)");
+  }
+
+  // 11. Semantic Guard: UI paywall is not an API endpoint
+  if (/paywall[^\n]*\b503\b/i.test(content)) {
+    errors.push("Invalid API claim: UI paywall is not an API endpoint; billing order and verify endpoints return 503");
+  }
+
+  // 12. Semantic Guard: GROQ_API_KEY alone does not guarantee 500
+  if (/\bGROQ_API_KEY\b[^\n]*returns\s+500[^\n]*before\s+quota/i.test(content) && !/AI_PROVIDER_KEY/i.test(content)) {
+    errors.push("Invalid AI env claim: missing GROQ_API_KEY alone does not guarantee 500; AI_PROVIDER_KEY and GROQ_KEY are also accepted");
+  }
+
+  // 13. Semantic Guard: Razorpay routes breakdown & mode handling
+  if (!/Order Creation/i.test(content) || !/Payment Verification/i.test(content) || !/Webhook Handler/i.test(content)) {
+    errors.push("Missing billing breakdown: billing order creation, payment verification, and webhook handlers must be split into separate rows");
+  }
+  if (!/accepts?\s+known\s+live\s+\(?`?rzp_live_`?\)?\s+OR\s+test\s+\(?`?rzp_test_`?\)?\s+mode/i.test(content)) {
+    errors.push("Invalid billing mode claim: verify/webhook handlers must document accepting known live OR test mode and rejecting unknown mode");
+  }
+
   const uniqueVerified = Array.from(new Set(verified)).sort();
   return {
     valid: errors.length === 0,
@@ -245,7 +281,79 @@ function runNegativeControl(realContent) {
   }
   console.log("  ✓ Real validator correctly caught blanket ungrounded claim");
 
-  console.log("[PASS] Negative control verified: real validator fails on mutated runbooks across all 5 checks.");
+  // Mutation 6: Mutated runbook with invented function name purge_soft_deleted_accounts
+  const mutatedPurgeContent = realContent.replace(
+    "public.purge_soft_deleted_account_data()",
+    "public.purge_soft_deleted_accounts()"
+  );
+  const resPurge = validateRunbookContent(mutatedPurgeContent);
+  if (resPurge.valid || !resPurge.errors.some((e) => e.includes("purge_soft_deleted_accounts() does not exist"))) {
+    console.error("[FAIL] Real validator failed to reject invented function name purge_soft_deleted_accounts.");
+    process.exit(1);
+  }
+  console.log("  ✓ Real validator correctly caught invented function name purge_soft_deleted_accounts");
+
+  // Mutation 7: Mutated runbook claiming country_code backfill repairs invalid ISO-2
+  const mutatedIsoContent = realContent.replace(
+    "Writes only where `country_code IS NULL`",
+    "Writes only where `country_code IS NULL` or invalid ISO-2 format"
+  );
+  const resIso = validateRunbookContent(mutatedIsoContent);
+  if (resIso.valid || !resIso.errors.some((e) => e.includes("repair invalid ISO-2"))) {
+    console.error("[FAIL] Real validator failed to reject invalid ISO-2 repair claim in country-code backfill.");
+    process.exit(1);
+  }
+  console.log("  ✓ Real validator correctly caught invalid ISO-2 repair claim in country-code backfill");
+
+  // Mutation 8: Mutated runbook claiming manifest is required for logo write
+  const mutatedManifestContent = realContent.replace(
+    "manifest is not required for write",
+    "Reviewed JSON manifest file required for write"
+  );
+  const resManifest = validateRunbookContent(mutatedManifestContent);
+  if (resManifest.valid || !resManifest.errors.some((e) => e.includes("manifest is optional"))) {
+    console.error("[FAIL] Real validator failed to reject manifest required claim for company logos.");
+    process.exit(1);
+  }
+  console.log("  ✓ Real validator correctly caught manifest required claim for company logos");
+
+  // Mutation 9: Mutated runbook claiming storage keys prevent DB overwrites
+  const mutatedStorageContent = realContent.replace(
+    "Versioned keys in storage bucket preserve old storage objects, not old DB values.",
+    "Versioned storage keys prevent DB overwrites."
+  );
+  const resStorage = validateRunbookContent(mutatedStorageContent);
+  if (resStorage.valid || !resStorage.errors.some((e) => e.includes("preserve old storage objects, not old DB values"))) {
+    console.error("[FAIL] Real validator failed to reject storage keys prevent DB overwrites claim.");
+    process.exit(1);
+  }
+  console.log("  ✓ Real validator correctly caught storage keys prevent DB overwrites claim");
+
+  // Mutation 10: Mutated runbook claiming UI paywall returns 503
+  const mutatedPaywallContent = realContent.replace(
+    "billing API endpoints (`/api/billing/razorpay/order`, `/api/billing/razorpay/verify`, and Netlify billing functions) return 503",
+    "paywall and checkout routes return 503"
+  );
+  const resPaywall = validateRunbookContent(mutatedPaywallContent);
+  if (resPaywall.valid || !resPaywall.errors.some((e) => e.includes("UI paywall is not an API endpoint"))) {
+    console.error("[FAIL] Real validator failed to reject UI paywall returns 503 claim.");
+    process.exit(1);
+  }
+  console.log("  ✓ Real validator correctly caught UI paywall returns 503 claim");
+
+  // Mutation 11: Mutated runbook claiming missing GROQ_API_KEY alone guarantees 500
+  const mutatedGroqAloneContent = realContent.replace(
+    /`GROQ_API_KEY`[^\n]*Check executes before debiting user quota[^\n]*/,
+    "`GROQ_API_KEY` | Edge AI Routes | When missing, returns 500 before quota debit"
+  );
+  const resGroqAlone = validateRunbookContent(mutatedGroqAloneContent);
+  if (resGroqAlone.valid || !resGroqAlone.errors.some((e) => e.includes("missing GROQ_API_KEY alone does not guarantee 500"))) {
+    console.error("[FAIL] Real validator failed to reject missing GROQ_API_KEY alone guarantees 500 claim.");
+    process.exit(1);
+  }
+  console.log("  ✓ Real validator correctly caught GROQ_API_KEY alone claim");
+
+  console.log("[PASS] Negative control verified: real validator fails on mutated runbooks across all 11 checks.");
   process.exit(0);
 }
 
