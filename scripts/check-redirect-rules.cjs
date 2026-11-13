@@ -6,6 +6,11 @@
  *   - public/_redirects
  *   - netlify.toml
  *
+ * NOTE: This verifier is a strict subset checker that rejects everything else fail-closed.
+ * It does NOT claim to be a general or standards-compliant TOML parser. Any syntax, key,
+ * subtable, backslash escape sequence, duplicate key, or structure outside the strict
+ * canonical subset modeled here is rejected fail-closed.
+ *
  * Statically asserts:
  *   1. Comment-aware strict parsing: Full-line comments and inline comments (#)
  *      are stripped before parsing. Commented-out rules are not treated as active.
@@ -30,6 +35,10 @@
  *      may shadow the 404 fallback rule.
  *   11. Strict shape validation: Incomplete, malformed, or unsupported rule shapes
  *      are rejected explicitly instead of being silently ignored.
+ *   12. Escape sequence fail-closed: Any value containing backslash escapes (e.g. /early\u002daccess)
+ *      is rejected fail-closed; single-quoted strings are kept strictly literal.
+ *   13. Duplicate key fail-closed: Duplicate keys within any redirect block (e.g. status=302 then status=404)
+ *      are rejected fail-closed.
  *
  * Usage:
  *   node scripts/check-redirect-rules.cjs
@@ -408,9 +417,15 @@ function isNonCanonicalRedirectHeader(line) {
 }
 
 /**
- * Parses netlify.toml [[redirects]] blocks with standards-compliant structural
- * section parsing, full unescaping, token status validation, and fail-closed
- * enforcement of canonical headers.
+ * Strict subset checker for netlify.toml [[redirects]] blocks.
+ * This is a strict subset checker that rejects everything else fail-closed:
+ *   - Canonical [[redirects]] headers only (any variation, space, quote, or subtable is rejected)
+ *   - Backslash escape sequences in values (e.g. \uXXXX) are rejected fail-closed
+ *   - Duplicate keys within a redirect block are rejected fail-closed
+ *   - Literal single-quoted strings are kept strictly literal (no unescaping)
+ *   - Full-token HTTP status code validation (no partial parseInt)
+ *   - Structural section and table scoping (foreign sections like [build], [[headers]] delimit blocks)
+ *   - Required from and to fields
  */
 function parseNetlifyTomlRedirects(content) {
   // First, strip all TOML comments line by line while preserving quotes
@@ -498,6 +513,7 @@ function parseNetlifyTomlRedirects(content) {
       continue;
     }
 
+    const seenKeys = new Set();
     let from = null;
     let to = null;
     let status = null;
@@ -533,6 +549,25 @@ function parseNetlifyTomlRedirects(content) {
 
       const key = kvMatch[1].toLowerCase();
       const val = kvMatch[2].trim();
+
+      // Reject duplicate keys within a redirect block fail-closed
+      if (seenKeys.has(key)) {
+        syntaxErrors.push(
+          `netlify.toml [[redirects]] block #${blockIndex}: Duplicate key '${key}' detected; duplicate keys within a redirect block are rejected fail-closed`
+        );
+        hasMalformedLine = true;
+        continue;
+      }
+      seenKeys.add(key);
+
+      // Reject any value that contains a backslash escape fail-closed
+      if (val.includes("\\")) {
+        syntaxErrors.push(
+          `netlify.toml [[redirects]] block #${blockIndex}: Value '${val}' contains backslash escape; escape sequences are not supported in this strict subset checker and are rejected fail-closed`
+        );
+        hasMalformedLine = true;
+        continue;
+      }
 
       if (!KNOWN_TOML_KEYS.has(key)) {
         syntaxErrors.push(
@@ -636,6 +671,12 @@ function parseNetlifyTomlRedirects(content) {
       signRaw,
       raw: lines.join("\n"),
     });
+  }
+
+  // If there are any syntax errors anywhere in netlify.toml, fail closed:
+  // do not certify any redirect rules from this file.
+  if (syntaxErrors.length > 0) {
+    return { rules: [], syntaxErrors };
   }
 
   return { rules, syntaxErrors };
@@ -1268,6 +1309,179 @@ function runNegativeControls() {
       },
       expectedSubstrings: [
         'Unsupported non-canonical redirect header \'[["redirec\\u0074s"]]\'',
+        "Missing required active 404 fallback rule",
+      ],
+    },
+    {
+      name: "26. Negative Control: Escaped value 'from = \"/job\\u0073\"' before fallback fails closed",
+      fn: () => {
+        const toml = `
+[[redirects]]
+  from = "/job\\u0073"
+  to = "/somewhere"
+  status = 302
+
+[[redirects]]
+  from = "/*"
+  to = "/404.html"
+  status = 404
+`;
+        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
+        const res = validateRedirectRules(rules, "netlify.toml");
+        return {
+          violations: [...syntaxErrors, ...res.violations],
+        };
+      },
+      expectedSubstrings: [
+        "contains backslash escape",
+        "Missing required active 404 fallback rule",
+      ],
+    },
+    {
+      name: "27. Negative Control: Escaped value 'from = \"/job\\u0073\"' after fallback fails closed",
+      fn: () => {
+        const toml = `
+[[redirects]]
+  from = "/*"
+  to = "/404.html"
+  status = 404
+
+[[redirects]]
+  from = "/job\\u0073"
+  to = "/somewhere"
+  status = 302
+`;
+        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
+        const res = validateRedirectRules(rules, "netlify.toml");
+        return {
+          violations: [...syntaxErrors, ...res.violations],
+        };
+      },
+      expectedSubstrings: [
+        "contains backslash escape",
+        "Missing required active 404 fallback rule",
+      ],
+    },
+    {
+      name: "28. Negative Control: Escaped value 'to = \"/early\\u002daccess\"' before fallback fails closed",
+      fn: () => {
+        const toml = `
+[[redirects]]
+  from = "/jobs"
+  to = "/early\\u002daccess"
+  status = 302
+
+[[redirects]]
+  from = "/*"
+  to = "/404.html"
+  status = 404
+`;
+        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
+        const res = validateRedirectRules(rules, "netlify.toml");
+        return {
+          violations: [...syntaxErrors, ...res.violations],
+        };
+      },
+      expectedSubstrings: [
+        "contains backslash escape",
+        "Missing required active 404 fallback rule",
+      ],
+    },
+    {
+      name: "29. Negative Control: Escaped value 'to = \"/early\\u002daccess\"' after fallback fails closed",
+      fn: () => {
+        const toml = `
+[[redirects]]
+  from = "/*"
+  to = "/404.html"
+  status = 404
+
+[[redirects]]
+  from = "/jobs"
+  to = "/early\\u002daccess"
+  status = 302
+`;
+        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
+        const res = validateRedirectRules(rules, "netlify.toml");
+        return {
+          violations: [...syntaxErrors, ...res.violations],
+        };
+      },
+      expectedSubstrings: [
+        "contains backslash escape",
+        "Missing required active 404 fallback rule",
+      ],
+    },
+    {
+      name: "30. Negative Control: Duplicate key 'status = 302' then 'status = 404' before fallback fails closed",
+      fn: () => {
+        const toml = `
+[[redirects]]
+  from = "/jobs"
+  to = "/dest"
+  status = 302
+  status = 404
+
+[[redirects]]
+  from = "/*"
+  to = "/404.html"
+  status = 404
+`;
+        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
+        const res = validateRedirectRules(rules, "netlify.toml");
+        return {
+          violations: [...syntaxErrors, ...res.violations],
+        };
+      },
+      expectedSubstrings: [
+        "Duplicate key 'status' detected",
+        "Missing required active 404 fallback rule",
+      ],
+    },
+    {
+      name: "31. Negative Control: Duplicate key 'status = 302' then 'status = 404' after fallback fails closed",
+      fn: () => {
+        const toml = `
+[[redirects]]
+  from = "/*"
+  to = "/404.html"
+  status = 404
+
+[[redirects]]
+  from = "/jobs"
+  to = "/dest"
+  status = 302
+  status = 404
+`;
+        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
+        const res = validateRedirectRules(rules, "netlify.toml");
+        return {
+          violations: [...syntaxErrors, ...res.violations],
+        };
+      },
+      expectedSubstrings: [
+        "Duplicate key 'status' detected",
+        "Missing required active 404 fallback rule",
+      ],
+    },
+    {
+      name: "32. Negative Control: Duplicate key 'status = 302' then 'status = 404' on fallback itself fails closed",
+      fn: () => {
+        const toml = `
+[[redirects]]
+  from = "/*"
+  to = "/404.html"
+  status = 302
+  status = 404
+`;
+        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
+        const res = validateRedirectRules(rules, "netlify.toml");
+        return {
+          violations: [...syntaxErrors, ...res.violations],
+        };
+      },
+      expectedSubstrings: [
+        "Duplicate key 'status' detected",
         "Missing required active 404 fallback rule",
       ],
     },
