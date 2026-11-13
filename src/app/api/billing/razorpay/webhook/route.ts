@@ -22,13 +22,6 @@ export async function OPTIONS() {
   });
 }
 
-export async function GET() {
-  return NextResponse.json(
-    { error: "Method not allowed" },
-    { status: 405, headers: CORS_HEADERS }
-  );
-}
-
 export async function POST(req: Request) {
   const log = baseLog.child({ requestId: req?.headers.get("x-request-id") ?? "unknown" });
   const deps = (req as any).__testDeps || {};

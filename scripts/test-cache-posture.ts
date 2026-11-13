@@ -199,6 +199,13 @@ export const BASELINE_CACHE_CATALOG: Record<string, RouteCacheBaseline> = {
     directiveProvidesNoStore: false,
     needsRemediation: true,
   },
+  "src/app/api/billing/razorpay/webhook/route.ts": {
+    filePath: "src/app/api/billing/razorpay/webhook/route.ts",
+    authRequirement: "Razorpay Webhook Signature",
+    classification: "intentionally uncached",
+    hasCacheControl: false,
+    needsRemediation: false,
+  },
   "src/app/api/early-access/route.ts": {
     filePath: "src/app/api/early-access/route.ts",
     authRequirement: "Public",
@@ -599,8 +606,8 @@ const singleModePrivateMissing = sendingNoneSet.filter(
 );
 const remediationCount = routableEndpoints.filter((r) => r.needsRemediation).length;
 
-check("catalog contains 46 total files (43 endpoints + 3 helpers)", entries.length === 46 && routableEndpoints.length === 43);
-check("catalog records exact header presence counts (14 with Cache-Control, 29 none set)", sendingCacheControl.length === 14 && sendingNoneSet.length === 29);
+check("catalog contains 47 total files (44 endpoints + 3 helpers)", entries.length === 47 && routableEndpoints.length === 44);
+check("catalog records exact header presence counts (14 with Cache-Control, 30 none set)", sendingCacheControl.length === 14 && sendingNoneSet.length === 30);
 check("catalog flags 21 single-mode private/no-store routes omitting Cache-Control and 25 total needing remediation", singleModePrivateMissing.length === 21 && remediationCount === 25);
 
 // Verify dual-mode /api/jobs/search split (both Next and Netlify read Bearer + Pro + prefs)

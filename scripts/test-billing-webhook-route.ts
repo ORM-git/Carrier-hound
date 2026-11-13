@@ -24,15 +24,13 @@
 
 import assert from "assert";
 import crypto from "crypto";
-import {
-  POST,
-  GET,
-  OPTIONS,
-} from "../src/app/api/billing/razorpay/webhook/route";
+import * as webhookRoute from "../src/app/api/billing/razorpay/webhook/route";
 import {
   verifyWebhookSignature,
   constantTimeEqual,
 } from "../src/lib/billing/webhookSignature";
+
+const { POST, OPTIONS } = webhookRoute;
 
 const TEST_WEBHOOK_SECRET = "rzp_webhook_secret_abcdef1234567890";
 const TEST_KEY_ID = "rzp_test_key_1234567890";
@@ -243,11 +241,10 @@ async function runTestSuite() {
   });
 
   // 3. Method checks
-  await runTest("3. GET returns 405 Method Not Allowed", async () => {
-    const res = await GET();
-    assert.strictEqual(res.status, 405);
-    const json = await res.json();
-    assert.strictEqual(json.error, "Method not allowed");
+  await runTest("3. GET is not exported (Next.js disallows unhandled methods with 405)", async () => {
+    assert.strictEqual(typeof (webhookRoute as any).GET, "undefined");
+    assert.strictEqual(typeof (webhookRoute as any).PUT, "undefined");
+    assert.strictEqual(typeof (webhookRoute as any).DELETE, "undefined");
   });
 
   await runTest("4. OPTIONS returns 200 with CORS headers", async () => {

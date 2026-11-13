@@ -184,6 +184,13 @@ paths:
       description: Payments are disabled pre-launch (owner decision).
       responses:
         "200": { description: Verification result }
+  /api/billing/razorpay/webhook:
+    post:
+      tags: [billing]
+      summary: Handle Razorpay webhook events
+      description: Ingests signed Razorpay webhook payloads for payment fulfillment.
+      responses:
+        "200": { description: Webhook processed successfully }
   /api/early-access:
     post:
       tags: [public]
