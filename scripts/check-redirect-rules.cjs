@@ -8,8 +8,8 @@
  *
  * NOTE: This verifier is a strict subset checker that rejects everything else fail-closed.
  * It does NOT claim to be a general or standards-compliant TOML parser. Any syntax, key,
- * subtable, backslash escape sequence, duplicate key, or structure outside the strict
- * canonical subset modeled here is rejected fail-closed.
+ * subtable, backslash escape sequence, duplicate key, malformed quote/comment state, or
+ * structure outside the strict canonical subset modeled here is rejected fail-closed.
  *
  * Statically asserts:
  *   1. Comment-aware strict parsing: Full-line comments and inline comments (#)
@@ -39,6 +39,12 @@
  *      is rejected fail-closed; single-quoted strings are kept strictly literal.
  *   13. Duplicate key fail-closed: Duplicate keys within any redirect block (e.g. status=302 then status=404)
  *      are rejected fail-closed.
+ *   14. Matching string delimiters & quote/comment state: Opening and closing quote on any
+ *      string value must be the exact same delimiter (" with ", ' with '); mismatched delimiters
+ *      and malformed quote or comment states (e.g. unclosed strings at EOL or comment collisions)
+ *      are rejected fail-closed.
+ *   15. Canonical lowercase keys: Keys are never lowercased before validation; any key that is
+ *      not in the exact canonical lowercase set (e.g. FROM, TO, STATUS) is rejected fail-closed.
  *
  * Usage:
  *   node scripts/check-redirect-rules.cjs
@@ -212,20 +218,25 @@ function isExact404Target(target) {
 }
 
 // ============================================================================
-// Comment Stripping
+// Comment Stripping & String Delimiter Processing
 // ============================================================================
 
 /**
- * Strips comments from TOML lines while respecting quoted string literals.
+ * Processes a TOML line respecting string delimiters and comments.
+ * Rejects malformed quote or comment states fail-closed:
+ *   - Opening and closing quote on any string literal must match strictly ('"' with '"', "'" with "'")
+ *   - Unclosed strings across line boundaries (inQuote remaining true at EOL)
+ *   - Comment markers (#) inside unclosed/malformed string delimiters
  */
-function stripTomlComments(line) {
+function processTomlLine(line) {
   let inQuote = false;
   let quoteChar = null;
   let result = "";
+  let malformedQuoteOrComment = false;
 
   for (let i = 0; i < line.length; i++) {
     const ch = line[i];
-    if ((ch === '"' || ch === "'") && (i === 0 || line[i - 1] !== "\\")) {
+    if (ch === '"' || ch === "'") {
       if (!inQuote) {
         inQuote = true;
         quoteChar = ch;
@@ -233,14 +244,74 @@ function stripTomlComments(line) {
         inQuote = false;
         quoteChar = null;
       }
-    }
-    if (ch === "#" && !inQuote) {
+    } else if (ch === "#" && !inQuote) {
       break; // comment starts here
     }
     result += ch;
   }
 
-  return result.trimEnd();
+  // If inQuote is still true at end of line, the string delimiter was never closed
+  // on this line with a matching quote, indicating a malformed quote or comment state.
+  if (inQuote) {
+    malformedQuoteOrComment = true;
+  }
+
+  return {
+    clean: result.trimEnd(),
+    malformedQuoteOrComment,
+  };
+}
+
+/**
+ * Strips comments from TOML lines while respecting quoted string literals.
+ */
+function stripTomlComments(line) {
+  return processTomlLine(line).clean;
+}
+
+/**
+ * Strict subset validator for quoted string values:
+ * - Opening and closing quotes MUST be the exact same delimiter (both '"' or both "'")
+ * - Delimiters must match strictly; mismatched delimiters (e.g. "/path' or '/path") are rejected
+ * - Content must not contain unescaped matching delimiter characters
+ */
+function parseTomlQuotedString(val) {
+  if (typeof val !== "string") return null;
+  const trimmed = val.trim();
+  if (trimmed.length < 2) return null;
+
+  const startsWithDouble = trimmed.startsWith('"');
+  const endsWithDouble = trimmed.endsWith('"');
+  const startsWithSingle = trimmed.startsWith("'");
+  const endsWithSingle = trimmed.endsWith("'");
+
+  // Check for mismatched string delimiters
+  if (
+    (startsWithDouble && !endsWithDouble) ||
+    (!startsWithDouble && endsWithDouble) ||
+    (startsWithSingle && !endsWithSingle) ||
+    (!startsWithSingle && endsWithSingle)
+  ) {
+    return { valid: false, error: "mismatched delimiters" };
+  }
+
+  if (startsWithDouble && endsWithDouble) {
+    const inner = trimmed.slice(1, -1);
+    if (!inner || inner.includes('"')) {
+      return { valid: false, error: "invalid inner content or delimiter inside" };
+    }
+    return { valid: true, value: inner, quote: '"' };
+  }
+
+  if (startsWithSingle && endsWithSingle) {
+    const inner = trimmed.slice(1, -1);
+    if (!inner || inner.includes("'")) {
+      return { valid: false, error: "invalid inner content or delimiter inside" };
+    }
+    return { valid: true, value: inner, quote: "'" };
+  }
+
+  return { valid: false, error: "not a quoted string" };
 }
 
 // ============================================================================
@@ -422,18 +493,31 @@ function isNonCanonicalRedirectHeader(line) {
  *   - Canonical [[redirects]] headers only (any variation, space, quote, or subtable is rejected)
  *   - Backslash escape sequences in values (e.g. \uXXXX) are rejected fail-closed
  *   - Duplicate keys within a redirect block are rejected fail-closed
+ *   - Matching string delimiters (opening and closing quote must be the same: " with ", ' with ')
+ *   - Malformed quote or comment states (unclosed strings, quote-comment collisions) are rejected fail-closed
+ *   - Canonical lowercase keys (keys are not lowercased before validation; FROM, TO, STATUS are rejected)
  *   - Literal single-quoted strings are kept strictly literal (no unescaping)
  *   - Full-token HTTP status code validation (no partial parseInt)
  *   - Structural section and table scoping (foreign sections like [build], [[headers]] delimit blocks)
  *   - Required from and to fields
  */
 function parseNetlifyTomlRedirects(content) {
-  // First, strip all TOML comments line by line while preserving quotes
+  // First, strip all TOML comments line by line while preserving quotes and checking quote/comment states
   const rawLines = content.split(/\r?\n/);
-  const cleanLines = rawLines.map(stripTomlComments);
-
-  const rules = [];
+  const cleanLines = [];
   const syntaxErrors = [];
+  const rules = [];
+
+  for (let lineIdx = 0; lineIdx < rawLines.length; lineIdx++) {
+    const rawLine = rawLines[lineIdx];
+    const { clean, malformedQuoteOrComment } = processTomlLine(rawLine);
+    if (malformedQuoteOrComment) {
+      syntaxErrors.push(
+        `netlify.toml (line ${lineIdx + 1}): Malformed quote or comment state on line '${rawLine.trim()}' (unclosed or mismatched string delimiter)`
+      );
+    }
+    cleanLines.push(clean);
+  }
 
   // 1. File-wide scan before any splitting:
   // Reject ANY redirect array-header or subtable that is not the exact canonical '[[redirects]]'
@@ -451,7 +535,7 @@ function parseNetlifyTomlRedirects(content) {
     }
   }
 
-  // If the file contains any non-canonical redirect headers or subtables,
+  // If the file contains any non-canonical redirect headers, subtables, or malformed quote/comment states,
   // fail closed immediately: no redirect rules from this file can be certified.
   if (syntaxErrors.length > 0) {
     return { rules: [], syntaxErrors };
@@ -547,18 +631,29 @@ function parseNetlifyTomlRedirects(content) {
         continue;
       }
 
-      const key = kvMatch[1].toLowerCase();
+      // DO NOT lowercase keys! Keep raw casing for strict subset validation
+      const key = kvMatch[1];
       const val = kvMatch[2].trim();
 
+      // Check key casing and validity: keys must be exact canonical lowercase
+      if (!KNOWN_TOML_KEYS.has(key)) {
+        syntaxErrors.push(
+          `netlify.toml [[redirects]] block #${blockIndex}: Unsupported, malformed, or non-canonical redirect key '${key}' (keys must be exact canonical lowercase)`
+        );
+        hasMalformedLine = true;
+        continue;
+      }
+
       // Reject duplicate keys within a redirect block fail-closed
-      if (seenKeys.has(key)) {
+      const lowerKey = key.toLowerCase();
+      if (seenKeys.has(lowerKey)) {
         syntaxErrors.push(
           `netlify.toml [[redirects]] block #${blockIndex}: Duplicate key '${key}' detected; duplicate keys within a redirect block are rejected fail-closed`
         );
         hasMalformedLine = true;
         continue;
       }
-      seenKeys.add(key);
+      seenKeys.add(lowerKey);
 
       // Reject any value that contains a backslash escape fail-closed
       if (val.includes("\\")) {
@@ -569,33 +664,25 @@ function parseNetlifyTomlRedirects(content) {
         continue;
       }
 
-      if (!KNOWN_TOML_KEYS.has(key)) {
-        syntaxErrors.push(
-          `netlify.toml [[redirects]] block #${blockIndex}: Unsupported or unrecognized redirect key '${key}'`
-        );
-        hasMalformedLine = true;
-        continue;
-      }
-
       if (key === "from") {
-        const strMatch = val.match(/^["']([^"']+)["']$/);
-        if (!strMatch) {
+        const parsedStr = parseTomlQuotedString(val);
+        if (!parsedStr || !parsedStr.valid || !parsedStr.value) {
           syntaxErrors.push(
-            `netlify.toml [[redirects]] block #${blockIndex}: Malformed 'from' value '${val}' (expected quoted string)`
+            `netlify.toml [[redirects]] block #${blockIndex}: Malformed 'from' value '${val}' (string delimiters must match strictly with same opening and closing quote)`
           );
           hasMalformedLine = true;
         } else {
-          from = strMatch[1];
+          from = parsedStr.value;
         }
       } else if (key === "to") {
-        const strMatch = val.match(/^["']([^"']+)["']$/);
-        if (!strMatch) {
+        const parsedStr = parseTomlQuotedString(val);
+        if (!parsedStr || !parsedStr.valid || !parsedStr.value) {
           syntaxErrors.push(
-            `netlify.toml [[redirects]] block #${blockIndex}: Malformed 'to' value '${val}' (expected quoted string)`
+            `netlify.toml [[redirects]] block #${blockIndex}: Malformed 'to' value '${val}' (string delimiters must match strictly with same opening and closing quote)`
           );
           hasMalformedLine = true;
         } else {
-          to = strMatch[1];
+          to = parsedStr.value;
         }
       } else if (key === "status") {
         // Strict full-token validation: must be strictly numeric digits
@@ -1482,6 +1569,371 @@ function runNegativeControls() {
       },
       expectedSubstrings: [
         "Duplicate key 'status' detected",
+        "Missing required active 404 fallback rule",
+      ],
+    },
+    {
+      name: "33. Negative Control: Mismatched quotes 'from = \"/jobs'\"' before fallback fails closed",
+      fn: () => {
+        const toml = `
+[[redirects]]
+  from = "/jobs'
+  to = "/dest"
+  status = 302
+
+[[redirects]]
+  from = "/*"
+  to = "/404.html"
+  status = 404
+`;
+        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
+        const res = validateRedirectRules(rules, "netlify.toml");
+        return {
+          violations: [...syntaxErrors, ...res.violations],
+        };
+      },
+      expectedSubstrings: [
+        "delimiter",
+        "Missing required active 404 fallback rule",
+      ],
+    },
+    {
+      name: "34. Negative Control: Mismatched quotes 'from = \"/jobs'\"' after fallback fails closed",
+      fn: () => {
+        const toml = `
+[[redirects]]
+  from = "/*"
+  to = "/404.html"
+  status = 404
+
+[[redirects]]
+  from = "/jobs'
+  to = "/dest"
+  status = 302
+`;
+        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
+        const res = validateRedirectRules(rules, "netlify.toml");
+        return {
+          violations: [...syntaxErrors, ...res.violations],
+        };
+      },
+      expectedSubstrings: [
+        "delimiter",
+        "Missing required active 404 fallback rule",
+      ],
+    },
+    {
+      name: "35. Negative Control: Mismatched quotes 'to = \"/dest'\"' before fallback fails closed",
+      fn: () => {
+        const toml = `
+[[redirects]]
+  from = "/jobs"
+  to = "/dest'
+  status = 302
+
+[[redirects]]
+  from = "/*"
+  to = "/404.html"
+  status = 404
+`;
+        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
+        const res = validateRedirectRules(rules, "netlify.toml");
+        return {
+          violations: [...syntaxErrors, ...res.violations],
+        };
+      },
+      expectedSubstrings: [
+        "delimiter",
+        "Missing required active 404 fallback rule",
+      ],
+    },
+    {
+      name: "36. Negative Control: Mismatched quotes 'to = \"/dest'\"' after fallback fails closed",
+      fn: () => {
+        const toml = `
+[[redirects]]
+  from = "/*"
+  to = "/404.html"
+  status = 404
+
+[[redirects]]
+  from = "/jobs"
+  to = "/dest'
+  status = 302
+`;
+        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
+        const res = validateRedirectRules(rules, "netlify.toml");
+        return {
+          violations: [...syntaxErrors, ...res.violations],
+        };
+      },
+      expectedSubstrings: [
+        "delimiter",
+        "Missing required active 404 fallback rule",
+      ],
+    },
+    {
+      name: "37. Negative Control: Mismatched quotes 'from = \"/*\'\"' on fallback itself fails closed",
+      fn: () => {
+        const toml = `
+[[redirects]]
+  from = "/*'
+  to = "/404.html"
+  status = 404
+`;
+        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
+        const res = validateRedirectRules(rules, "netlify.toml");
+        return {
+          violations: [...syntaxErrors, ...res.violations],
+        };
+      },
+      expectedSubstrings: [
+        "delimiter",
+        "Missing required active 404 fallback rule",
+      ],
+    },
+    {
+      name: "38. Negative Control: Mismatched quotes 'from = '/jobs\"'' (single-to-double) before fallback fails closed",
+      fn: () => {
+        const toml = `
+[[redirects]]
+  from = '/jobs"
+  to = "/dest"
+  status = 302
+
+[[redirects]]
+  from = "/*"
+  to = "/404.html"
+  status = 404
+`;
+        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
+        const res = validateRedirectRules(rules, "netlify.toml");
+        return {
+          violations: [...syntaxErrors, ...res.violations],
+        };
+      },
+      expectedSubstrings: [
+        "delimiter",
+        "Missing required active 404 fallback rule",
+      ],
+    },
+    {
+      name: "39. Negative Control: Malformed quote/comment state 'from = \"/jobs # comment\"' before fallback fails closed",
+      fn: () => {
+        const toml = `
+[[redirects]]
+  from = "/jobs # comment without closing quote
+  to = "/dest"
+  status = 302
+
+[[redirects]]
+  from = "/*"
+  to = "/404.html"
+  status = 404
+`;
+        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
+        const res = validateRedirectRules(rules, "netlify.toml");
+        return {
+          violations: [...syntaxErrors, ...res.violations],
+        };
+      },
+      expectedSubstrings: [
+        "Malformed quote or comment state",
+        "Missing required active 404 fallback rule",
+      ],
+    },
+    {
+      name: "40. Negative Control: Malformed quote/comment state 'from = \"/jobs # comment\"' after fallback fails closed",
+      fn: () => {
+        const toml = `
+[[redirects]]
+  from = "/*"
+  to = "/404.html"
+  status = 404
+
+[[redirects]]
+  from = "/jobs # comment without closing quote
+  to = "/dest"
+  status = 302
+`;
+        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
+        const res = validateRedirectRules(rules, "netlify.toml");
+        return {
+          violations: [...syntaxErrors, ...res.violations],
+        };
+      },
+      expectedSubstrings: [
+        "Malformed quote or comment state",
+        "Missing required active 404 fallback rule",
+      ],
+    },
+    {
+      name: "41. Negative Control: Uppercase 'FROM = \"/jobs\"' before fallback fails closed",
+      fn: () => {
+        const toml = `
+[[redirects]]
+  FROM = "/jobs"
+  to = "/dest"
+  status = 302
+
+[[redirects]]
+  from = "/*"
+  to = "/404.html"
+  status = 404
+`;
+        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
+        const res = validateRedirectRules(rules, "netlify.toml");
+        return {
+          violations: [...syntaxErrors, ...res.violations],
+        };
+      },
+      expectedSubstrings: [
+        "non-canonical redirect key 'FROM'",
+        "Missing required active 404 fallback rule",
+      ],
+    },
+    {
+      name: "42. Negative Control: Uppercase 'FROM = \"/jobs\"' after fallback fails closed",
+      fn: () => {
+        const toml = `
+[[redirects]]
+  from = "/*"
+  to = "/404.html"
+  status = 404
+
+[[redirects]]
+  FROM = "/jobs"
+  to = "/dest"
+  status = 302
+`;
+        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
+        const res = validateRedirectRules(rules, "netlify.toml");
+        return {
+          violations: [...syntaxErrors, ...res.violations],
+        };
+      },
+      expectedSubstrings: [
+        "non-canonical redirect key 'FROM'",
+        "Missing required active 404 fallback rule",
+      ],
+    },
+    {
+      name: "43. Negative Control: Uppercase 'TO = \"/dest\"' before fallback fails closed",
+      fn: () => {
+        const toml = `
+[[redirects]]
+  from = "/jobs"
+  TO = "/dest"
+  status = 302
+
+[[redirects]]
+  from = "/*"
+  to = "/404.html"
+  status = 404
+`;
+        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
+        const res = validateRedirectRules(rules, "netlify.toml");
+        return {
+          violations: [...syntaxErrors, ...res.violations],
+        };
+      },
+      expectedSubstrings: [
+        "non-canonical redirect key 'TO'",
+        "Missing required active 404 fallback rule",
+      ],
+    },
+    {
+      name: "44. Negative Control: Uppercase 'TO = \"/dest\"' after fallback fails closed",
+      fn: () => {
+        const toml = `
+[[redirects]]
+  from = "/*"
+  to = "/404.html"
+  status = 404
+
+[[redirects]]
+  from = "/jobs"
+  TO = "/dest"
+  status = 302
+`;
+        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
+        const res = validateRedirectRules(rules, "netlify.toml");
+        return {
+          violations: [...syntaxErrors, ...res.violations],
+        };
+      },
+      expectedSubstrings: [
+        "non-canonical redirect key 'TO'",
+        "Missing required active 404 fallback rule",
+      ],
+    },
+    {
+      name: "45. Negative Control: Uppercase 'STATUS = 302' before fallback fails closed",
+      fn: () => {
+        const toml = `
+[[redirects]]
+  from = "/jobs"
+  to = "/dest"
+  STATUS = 302
+
+[[redirects]]
+  from = "/*"
+  to = "/404.html"
+  status = 404
+`;
+        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
+        const res = validateRedirectRules(rules, "netlify.toml");
+        return {
+          violations: [...syntaxErrors, ...res.violations],
+        };
+      },
+      expectedSubstrings: [
+        "non-canonical redirect key 'STATUS'",
+        "Missing required active 404 fallback rule",
+      ],
+    },
+    {
+      name: "46. Negative Control: Uppercase 'STATUS = 302' after fallback fails closed",
+      fn: () => {
+        const toml = `
+[[redirects]]
+  from = "/*"
+  to = "/404.html"
+  status = 404
+
+[[redirects]]
+  from = "/jobs"
+  to = "/dest"
+  STATUS = 302
+`;
+        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
+        const res = validateRedirectRules(rules, "netlify.toml");
+        return {
+          violations: [...syntaxErrors, ...res.violations],
+        };
+      },
+      expectedSubstrings: [
+        "non-canonical redirect key 'STATUS'",
+        "Missing required active 404 fallback rule",
+      ],
+    },
+    {
+      name: "47. Negative Control: Uppercase 'FROM = \"/*\"', 'TO = \"/404.html\"', 'STATUS = 404' on fallback itself fails closed",
+      fn: () => {
+        const toml = `
+[[redirects]]
+  FROM = "/*"
+  TO = "/404.html"
+  STATUS = 404
+`;
+        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
+        const res = validateRedirectRules(rules, "netlify.toml");
+        return {
+          violations: [...syntaxErrors, ...res.violations],
+        };
+      },
+      expectedSubstrings: [
+        "non-canonical redirect key",
         "Missing required active 404 fallback rule",
       ],
     },
