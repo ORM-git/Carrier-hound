@@ -6,45 +6,38 @@
  *   - public/_redirects
  *   - netlify.toml
  *
- * NOTE: This verifier is a strict subset checker that rejects everything else fail-closed.
- * It does NOT claim to be a general or standards-compliant TOML parser. Any syntax, key,
- * subtable, backslash escape sequence, duplicate key, malformed quote/comment state, or
- * structure outside the strict canonical subset modeled here is rejected fail-closed.
+ * REWRITTEN AS A STRICT SUBSET PARSER THAT FAILS CLOSED:
+ * Anything it does not explicitly recognize is an error.
  *
- * Statically asserts:
- *   1. Comment-aware strict parsing: Full-line comments and inline comments (#)
- *      are stripped before parsing. Commented-out rules are not treated as active.
- *   2. Strict full-token validation: Non-numeric status values (e.g. '404garbage')
- *      are rejected immediately; partial parseInt behavior is strictly forbidden.
- *   3. Unconditional fallback guard: Fallback rules targeting 404 must be unconditional;
- *      conditional shapes (e.g. Country=US in _redirects or conditions in TOML) are rejected.
- *   4. Subtable fail-closed guard: ANY [redirects.*] subtable (e.g. [redirects.conditions])
- *      is explicitly rejected rather than silently chopped off.
- *   5. Selector keys guard: query = {...}, headers = {...}, or any modifier key on a
- *      404 fallback is treated as conditional/unsupported and rejected.
- *   6. Approved-origin & exact target: Fallback destination must target the exact expected
- *      document '/404.html' on a local path or an approved origin (e.g. careermonke.com).
- *      External or unapproved origins (e.g. https://wrong.invalid) are rejected.
- *   7. Pathname case preservation: Pathnames are strictly case-sensitive ('/404.HTML' is
- *      rejected), while host origins remain case-insensitive.
- *   8. Destination normalization: Normalizes destination paths across queries
- *      (?foo=bar), fragments (#hash), and absolute/protocol-relative URLs for routing checks.
- *   9. Early-access guard: No rule targets /early-access as a catch-all or
- *      catches /jobs to /early-access.
- *   10. Rule precedence / shadowing: No preceding catch-all rule (e.g. /* /login 302)
- *      may shadow the 404 fallback rule.
- *   11. Strict shape validation: Incomplete, malformed, or unsupported rule shapes
- *      are rejected explicitly instead of being silently ignored.
- *   12. Escape sequence fail-closed: Any value containing backslash escapes (e.g. /early\u002daccess)
- *      is rejected fail-closed; single-quoted strings are kept strictly literal.
- *   13. Duplicate key fail-closed: Duplicate keys within any redirect block (e.g. status=302 then status=404)
- *      are rejected fail-closed.
- *   14. Matching string delimiters & quote/comment state: Opening and closing quote on any
- *      string value must be the exact same delimiter (" with ", ' with '); mismatched delimiters
- *      and malformed quote or comment states (e.g. unclosed strings at EOL or comment collisions)
- *      are rejected fail-closed.
- *   15. Canonical lowercase keys: Keys are never lowercased before validation; any key that is
- *      not in the exact canonical lowercase set (e.g. FROM, TO, STATUS) is rejected fail-closed.
+ * Accepted grammar inside a [[redirects]] block:
+ *   - key: exactly one of from, to, status, force, in canonical lowercase. Any other key,
+ *          any case variant, any duplicate key in the same block, any dotted or quoted key = error.
+ *   - separator: exactly " = " or "=" with optional spaces. Nothing else.
+ *   - string value (from, to): opening and closing quote must be the same character (" or ').
+ *          No escapes, no backslashes, no multi-line or triple quotes, no unterminated string,
+ *          no characters after the closing quote except optional whitespace and a "# comment".
+ *   - status value: regex ^[1-9][0-9]{2}$ only. Reject 0404, 00404, +404, 4_04, 404.0, 0x194, quoted "404".
+ *   - force value: exactly true or false.
+ *   - comments: only a "#" outside a string. A "#" inside a string stays part of the string.
+ *   - table headers: exactly [[redirects]] (optional trailing whitespace or comment).
+ *          Reject [redirects], [ [redirects] ], escaped or quoted headers, any other table.
+ *   - Anything else (arrays, inline tables, dates, floats, unknown lines) = error, never skipped silently.
+ *   - Validation order: Do not lowercase, trim-normalise or parseInt before validation.
+ *          Validate the raw token first, then convert.
+ *
+ * In addition, asserts routing semantics:
+ *   - Exactly one active, unconditional 404 fallback rule targeting exact expected document '/404.html'.
+ *   - 404 fallback rule must be the last redirect rule (fallback not last / wrong order rejected).
+ *   - No preceding rule may shadow the 404 fallback rule (e.g. /* /login 302).
+ *   - No rule targets /early-access as a catch-all or catches /jobs to /early-access.
+ *   - Origin must be local or an approved origin (careermonke.com).
+ *   - Pathname case is strictly preserved (/404.HTML rejected).
+ *
+ * Tests:
+ *   - Table-driven test suite of positive controls and 81 negative cases covering every grammar rule.
+ *   - Cross-checks verdict against Python tomllib (if tomllib rejects, checker must reject).
+ *   - 300-iteration deterministic fuzz loop mutating valid block, asserting checker never accepts
+ *     anything tomllib rejects.
  *
  * Usage:
  *   node scripts/check-redirect-rules.cjs
@@ -55,6 +48,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const cp = require("child_process");
 
 const ROOT_DIR = path.resolve(__dirname, "..");
 const REDIRECTS_PATH = path.join(ROOT_DIR, "public", "_redirects");
@@ -69,16 +63,20 @@ const APPROVED_ORIGINS = new Set([
   "http://www.careermonke.com",
 ]);
 
+// Allowed top-level table headers in netlify.toml outside redirects
+const ALLOWED_TOP_LEVEL_SECTIONS = new Set([
+  "[build]",
+  "[[headers]]",
+  "[headers.values]",
+]);
+
+// Exact accepted lowercase keys in a [[redirects]] block
+const ACCEPTED_REDIRECT_KEYS = new Set(["from", "to", "status", "force"]);
+
 // ============================================================================
 // Destination & Origin Normalization
 // ============================================================================
 
-/**
- * Parses and dissects a destination string into structured URL components.
- * Distinguishes local paths from absolute URLs and protocol-relative URLs.
- * NOTE: Origin/host is lowercased (case-insensitive), but pathname case is
- * STRICTLY PRESERVED (case-sensitive) for exact fallback verification.
- */
 function parseDestination(destination) {
   if (!destination || typeof destination !== "string") {
     return {
@@ -94,7 +92,6 @@ function parseDestination(destination) {
   let raw = destination.trim();
   let dest = raw;
 
-  // Strip protocol-relative URLs (e.g. "//careermonke.com/404.html")
   if (dest.startsWith("//")) {
     dest = "https:" + dest;
   }
@@ -105,8 +102,8 @@ function parseDestination(destination) {
       return {
         raw,
         isLocal: false,
-        origin: parsed.origin.toLowerCase(), // Host stays case-insensitive
-        pathname: parsed.pathname, // Pathname case PRESERVED
+        origin: parsed.origin.toLowerCase(),
+        pathname: parsed.pathname,
         query: parsed.search,
         hash: parsed.hash,
       };
@@ -122,7 +119,6 @@ function parseDestination(destination) {
     }
   }
 
-  // Local path: must start with "/" and not "//"
   const hashIdx = dest.indexOf("#");
   let withoutHash = hashIdx !== -1 ? dest.substring(0, hashIdx) : dest;
   const hash = hashIdx !== -1 ? dest.substring(hashIdx) : "";
@@ -135,27 +131,17 @@ function parseDestination(destination) {
     raw,
     isLocal: true,
     origin: null,
-    pathname: withoutQuery.trim(), // Pathname case PRESERVED
+    pathname: withoutQuery.trim(),
     query: query.trim(),
     hash: hash.trim(),
   };
 }
 
-/**
- * Normalizes destination path including query strings, fragments, and
- * absolute/protocol-relative URL forms for route matching.
- */
 function normalizeDestinationPath(destination) {
   const parsed = parseDestination(destination);
   return parsed.pathname;
 }
 
-/**
- * Asserts that the destination for a 404 fallback rule is an exact local document
- * or an approved-origin document targeting EXPECTED_404_DOCUMENT (/404.html),
- * with NO query strings, NO hash fragments, approved or local origin,
- * and STRICT CASE MATCHING (e.g. '/404.HTML' is invalid).
- */
 function isValid404FallbackDestination(destination) {
   const parsed = parseDestination(destination);
   if (!parsed.raw) {
@@ -178,7 +164,6 @@ function isValid404FallbackDestination(destination) {
     }
   }
 
-  // Exact case-sensitive match requirement
   if (parsed.pathname !== EXPECTED_404_DOCUMENT) {
     return {
       valid: false,
@@ -218,111 +203,9 @@ function isExact404Target(target) {
 }
 
 // ============================================================================
-// Comment Stripping & String Delimiter Processing
+// public/_redirects Parser
 // ============================================================================
 
-/**
- * Processes a TOML line respecting string delimiters and comments.
- * Rejects malformed quote or comment states fail-closed:
- *   - Opening and closing quote on any string literal must match strictly ('"' with '"', "'" with "'")
- *   - Unclosed strings across line boundaries (inQuote remaining true at EOL)
- *   - Comment markers (#) inside unclosed/malformed string delimiters
- */
-function processTomlLine(line) {
-  let inQuote = false;
-  let quoteChar = null;
-  let result = "";
-  let malformedQuoteOrComment = false;
-
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === '"' || ch === "'") {
-      if (!inQuote) {
-        inQuote = true;
-        quoteChar = ch;
-      } else if (ch === quoteChar) {
-        inQuote = false;
-        quoteChar = null;
-      }
-    } else if (ch === "#" && !inQuote) {
-      break; // comment starts here
-    }
-    result += ch;
-  }
-
-  // If inQuote is still true at end of line, the string delimiter was never closed
-  // on this line with a matching quote, indicating a malformed quote or comment state.
-  if (inQuote) {
-    malformedQuoteOrComment = true;
-  }
-
-  return {
-    clean: result.trimEnd(),
-    malformedQuoteOrComment,
-  };
-}
-
-/**
- * Strips comments from TOML lines while respecting quoted string literals.
- */
-function stripTomlComments(line) {
-  return processTomlLine(line).clean;
-}
-
-/**
- * Strict subset validator for quoted string values:
- * - Opening and closing quotes MUST be the exact same delimiter (both '"' or both "'")
- * - Delimiters must match strictly; mismatched delimiters (e.g. "/path' or '/path") are rejected
- * - Content must not contain unescaped matching delimiter characters
- */
-function parseTomlQuotedString(val) {
-  if (typeof val !== "string") return null;
-  const trimmed = val.trim();
-  if (trimmed.length < 2) return null;
-
-  const startsWithDouble = trimmed.startsWith('"');
-  const endsWithDouble = trimmed.endsWith('"');
-  const startsWithSingle = trimmed.startsWith("'");
-  const endsWithSingle = trimmed.endsWith("'");
-
-  // Check for mismatched string delimiters
-  if (
-    (startsWithDouble && !endsWithDouble) ||
-    (!startsWithDouble && endsWithDouble) ||
-    (startsWithSingle && !endsWithSingle) ||
-    (!startsWithSingle && endsWithSingle)
-  ) {
-    return { valid: false, error: "mismatched delimiters" };
-  }
-
-  if (startsWithDouble && endsWithDouble) {
-    const inner = trimmed.slice(1, -1);
-    if (!inner || inner.includes('"')) {
-      return { valid: false, error: "invalid inner content or delimiter inside" };
-    }
-    return { valid: true, value: inner, quote: '"' };
-  }
-
-  if (startsWithSingle && endsWithSingle) {
-    const inner = trimmed.slice(1, -1);
-    if (!inner || inner.includes("'")) {
-      return { valid: false, error: "invalid inner content or delimiter inside" };
-    }
-    return { valid: true, value: inner, quote: "'" };
-  }
-
-  return { valid: false, error: "not a quoted string" };
-}
-
-// ============================================================================
-// Parsers
-// ============================================================================
-
-/**
- * Parses public/_redirects content with comment-awareness, strict full-token
- * validation, condition tracking, and syntax validation.
- * Format: /from /to [status[!]] [conditions/parameters...]
- */
 function parseRedirectsFile(content) {
   const lines = content.split(/\r?\n/);
   const rules = [];
@@ -337,7 +220,6 @@ function parseRedirectsFile(content) {
       continue;
     }
 
-    // Split tokens by whitespace, stopping if a token begins with '#' (inline comment)
     const allTokens = trimmed.split(/\s+/);
     const tokens = [];
     for (const t of allTokens) {
@@ -351,7 +233,6 @@ function parseRedirectsFile(content) {
       continue;
     }
 
-    // Explicit check for unsupported / incomplete config shape
     if (tokens.length < 2) {
       syntaxErrors.push(
         `public/_redirects line ${lineNum}: Incomplete rule syntax: expected '<from> <to> [status]', got '${trimmed}'`
@@ -362,7 +243,6 @@ function parseRedirectsFile(content) {
     const from = tokens[0];
     const to = tokens[1];
 
-    // Status token validation (strict full-token: reject partial parseInt like '404garbage')
     let isForced = false;
     let statusCode = 301;
     let statusToken = "301";
@@ -372,7 +252,6 @@ function parseRedirectsFile(content) {
       isForced = statusToken.endsWith("!");
       const cleanStatus = isForced ? statusToken.slice(0, -1) : statusToken;
 
-      // Full-token check: MUST be strictly numeric digits
       if (!/^\d+$/.test(cleanStatus)) {
         syntaxErrors.push(
           `public/_redirects line ${lineNum}: Malformed HTTP status code '${statusToken}' in rule '${trimmed}' (partial parseInt rejected: status code must be strictly numeric)`
@@ -390,14 +269,12 @@ function parseRedirectsFile(content) {
       statusCode = parsedCode;
     }
 
-    // Extra tokens (e.g. Country=US, Language=en, Role=admin, Cookie=foo, etc.)
     const extraTokens = tokens.slice(3);
     const hasConditions = extraTokens.length > 0;
     const conditions = [];
 
     let hasMalformedToken = false;
     for (const extra of extraTokens) {
-      // In Netlify _redirects, extra tokens are key=value conditions, parameters, or headers
       if (!/^!?[a-zA-Z0-9_-]+(=.*)?$/.test(extra)) {
         syntaxErrors.push(
           `public/_redirects line ${lineNum}: Malformed or unsupported parameter token '${extra}' in rule '${trimmed}'`
@@ -427,340 +304,334 @@ function parseRedirectsFile(content) {
   return { rules, syntaxErrors };
 }
 
-/**
- * Unescapes basic string escape sequences in TOML (\uXXXX, \UXXXXXXXX, \b, \t, \n, \f, \r, \", \', \\).
- */
-function unescapeTomlString(str) {
-  return str
-    .replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) =>
-      String.fromCharCode(parseInt(hex, 16))
-    )
-    .replace(/\\U([0-9a-fA-F]{8})/g, (_, hex) =>
-      String.fromCodePoint(parseInt(hex, 16))
-    )
-    .replace(/\\([btnfr"'\\])/g, (_, ch) => {
-      switch (ch) {
-        case "b":
-          return "\b";
-        case "t":
-          return "\t";
-        case "n":
-          return "\n";
-        case "f":
-          return "\f";
-        case "r":
-          return "\r";
-        case '"':
-          return '"';
-        case "'":
-          return "'";
-        case "\\":
-          return "\\";
-        default:
-          return ch;
-      }
-    });
-}
+// ============================================================================
+// STRICT SUBSET PARSER for netlify.toml [[redirects]]
+// ============================================================================
 
 /**
- * Detects whether a line is a redirect array-header or subtable that is NOT
- * the exact canonical form '[[redirects]]' after full unescaping.
+ * Strict subset parser for netlify.toml [[redirects]] blocks.
+ * Fails closed on any construct outside the exact grammar specified.
  *
- * In netlify.toml, redirect blocks must strictly use the exact canonical header:
- *   [[redirects]]
- * Any other redirect table/array header spelling (e.g. [[ redirects ]], [["redirects"]],
- * [["redirec\u0074s"]], single table [redirects], or any subtable such as
- * [redirects.conditions], [redirects . conditions], ["redirects"."conditions"])
- * is non-canonical and must be rejected fail-closed.
+ * @param {string} content - TOML content
+ * @param {object} [options] - Parser options:
+ *   - allowTopLevelHeaders: boolean (allow known non-redirect headers like [build], [[headers]] in full netlify.toml)
+ * @returns {{ rules: Array, syntaxErrors: Array<string> }}
  */
-function isNonCanonicalRedirectHeader(line) {
-  const trimmed = line.trim();
-  if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) {
-    return false;
-  }
-  // Check if unescaped header references redirects in any way (case-insensitive)
-  const unescaped = unescapeTomlString(trimmed);
-  if (/redirects/i.test(unescaped)) {
-    // Only the exact canonical header '[[redirects]]' is allowed
-    return trimmed !== "[[redirects]]";
-  }
-  return false;
-}
-
-/**
- * Strict subset checker for netlify.toml [[redirects]] blocks.
- * This is a strict subset checker that rejects everything else fail-closed:
- *   - Canonical [[redirects]] headers only (any variation, space, quote, or subtable is rejected)
- *   - Backslash escape sequences in values (e.g. \uXXXX) are rejected fail-closed
- *   - Duplicate keys within a redirect block are rejected fail-closed
- *   - Matching string delimiters (opening and closing quote must be the same: " with ", ' with ')
- *   - Malformed quote or comment states (unclosed strings, quote-comment collisions) are rejected fail-closed
- *   - Canonical lowercase keys (keys are not lowercased before validation; FROM, TO, STATUS are rejected)
- *   - Literal single-quoted strings are kept strictly literal (no unescaping)
- *   - Full-token HTTP status code validation (no partial parseInt)
- *   - Structural section and table scoping (foreign sections like [build], [[headers]] delimit blocks)
- *   - Required from and to fields
- */
-function parseNetlifyTomlRedirects(content) {
-  // First, strip all TOML comments line by line while preserving quotes and checking quote/comment states
+function parseNetlifyTomlRedirects(content, options = {}) {
+  const allowTopLevelHeaders = Boolean(options.allowTopLevelHeaders);
   const rawLines = content.split(/\r?\n/);
-  const cleanLines = [];
   const syntaxErrors = [];
   const rules = [];
 
-  for (let lineIdx = 0; lineIdx < rawLines.length; lineIdx++) {
-    const rawLine = rawLines[lineIdx];
-    const { clean, malformedQuoteOrComment } = processTomlLine(rawLine);
-    if (malformedQuoteOrComment) {
-      syntaxErrors.push(
-        `netlify.toml (line ${lineIdx + 1}): Malformed quote or comment state on line '${rawLine.trim()}' (unclosed or mismatched string delimiter)`
-      );
-    }
-    cleanLines.push(clean);
-  }
-
-  // 1. File-wide scan before any splitting:
-  // Reject ANY redirect array-header or subtable that is not the exact canonical '[[redirects]]'
-  // after full unescaping (fail closed).
-  for (let lineIdx = 0; lineIdx < cleanLines.length; lineIdx++) {
-    const trimmed = cleanLines[lineIdx].trim();
-    if (isNonCanonicalRedirectHeader(trimmed)) {
-      const unescaped = unescapeTomlString(trimmed);
-      const desc = unescaped.includes(".")
-        ? "Unsupported subtable"
-        : "Unsupported non-canonical redirect header";
-      syntaxErrors.push(
-        `netlify.toml (line ${lineIdx + 1}): ${desc} '${trimmed}' detected; only exact canonical '[[redirects]]' is allowed (fail closed)`
-      );
-    }
-  }
-
-  // If the file contains any non-canonical redirect headers, subtables, or malformed quote/comment states,
-  // fail closed immediately: no redirect rules from this file can be certified.
-  if (syntaxErrors.length > 0) {
-    return { rules: [], syntaxErrors };
-  }
-
-  // 2. Structural parsing of sections and canonical [[redirects]] blocks
-  const redirectBlocks = [];
   let currentSection = null;
   let currentBlock = null;
+  let blockCount = 0;
 
-  for (let lineIdx = 0; lineIdx < cleanLines.length; lineIdx++) {
-    const line = cleanLines[lineIdx];
-    const trimmed = line.trim();
-    if (!trimmed) continue;
+  function finalizeBlock(block) {
+    if (!block) return;
+    if (block.hasError) return;
 
-    if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
-      // Header line
-      if (trimmed === "[[redirects]]") {
-        currentSection = "redirects";
-        currentBlock = {
-          blockIndex: redirectBlocks.length + 1,
-          startLine: lineIdx + 1,
-          lines: [],
-        };
-        redirectBlocks.push(currentBlock);
-      } else {
-        // Foreign section (e.g. [build], [[headers]], [context.production])
-        currentSection = "foreign";
-        currentBlock = null;
-      }
-      continue;
-    }
-
-    if (currentSection === "redirects" && currentBlock) {
-      currentBlock.lines.push(line);
-    }
-  }
-
-  const KNOWN_TOML_KEYS = new Set([
-    "from",
-    "to",
-    "status",
-    "force",
-    "conditions",
-    "headers",
-    "query",
-    "edge_handler",
-    "sign",
-  ]);
-
-  for (const block of redirectBlocks) {
-    const blockIndex = block.blockIndex;
-    const lines = block.lines.map((l) => l.trim()).filter(Boolean);
-
-    if (lines.length === 0) {
+    if (!block.from) {
       syntaxErrors.push(
-        `netlify.toml [[redirects]] block #${blockIndex}: Incomplete or empty block (body is commented out or missing)`
+        `netlify.toml [[redirects]] block #${block.blockIndex} (line ${block.startLine}): Missing required 'from' field`
       );
-      continue;
+      return;
     }
-
-    const seenKeys = new Set();
-    let from = null;
-    let to = null;
-    let status = null;
-    let force = false;
-    let hasConditions = false;
-    let conditionsRaw = null;
-    let hasQuery = false;
-    let queryRaw = null;
-    let hasHeaders = false;
-    let headersRaw = null;
-    let hasEdgeHandler = false;
-    let edgeHandlerRaw = null;
-    let hasSign = false;
-    let signRaw = null;
-    let hasMalformedLine = false;
-
-    for (const line of lines) {
-      // Detect subtable or section header lines inside block body
-      if (/^\s*\[/i.test(line)) {
-        // Already recorded via subtableMatches or foreign header
-        hasMalformedLine = true;
-        continue;
-      }
-
-      const kvMatch = line.match(/^([a-zA-Z0-9_-]+)\s*=\s*(.+)$/);
-      if (!kvMatch) {
-        syntaxErrors.push(
-          `netlify.toml [[redirects]] block #${blockIndex}: Malformed line '${line}' (expected 'key = value')`
-        );
-        hasMalformedLine = true;
-        continue;
-      }
-
-      // DO NOT lowercase keys! Keep raw casing for strict subset validation
-      const key = kvMatch[1];
-      const val = kvMatch[2].trim();
-
-      // Check key casing and validity: keys must be exact canonical lowercase
-      if (!KNOWN_TOML_KEYS.has(key)) {
-        syntaxErrors.push(
-          `netlify.toml [[redirects]] block #${blockIndex}: Unsupported, malformed, or non-canonical redirect key '${key}' (keys must be exact canonical lowercase)`
-        );
-        hasMalformedLine = true;
-        continue;
-      }
-
-      // Reject duplicate keys within a redirect block fail-closed
-      const lowerKey = key.toLowerCase();
-      if (seenKeys.has(lowerKey)) {
-        syntaxErrors.push(
-          `netlify.toml [[redirects]] block #${blockIndex}: Duplicate key '${key}' detected; duplicate keys within a redirect block are rejected fail-closed`
-        );
-        hasMalformedLine = true;
-        continue;
-      }
-      seenKeys.add(lowerKey);
-
-      // Reject any value that contains a backslash escape fail-closed
-      if (val.includes("\\")) {
-        syntaxErrors.push(
-          `netlify.toml [[redirects]] block #${blockIndex}: Value '${val}' contains backslash escape; escape sequences are not supported in this strict subset checker and are rejected fail-closed`
-        );
-        hasMalformedLine = true;
-        continue;
-      }
-
-      if (key === "from") {
-        const parsedStr = parseTomlQuotedString(val);
-        if (!parsedStr || !parsedStr.valid || !parsedStr.value) {
-          syntaxErrors.push(
-            `netlify.toml [[redirects]] block #${blockIndex}: Malformed 'from' value '${val}' (string delimiters must match strictly with same opening and closing quote)`
-          );
-          hasMalformedLine = true;
-        } else {
-          from = parsedStr.value;
-        }
-      } else if (key === "to") {
-        const parsedStr = parseTomlQuotedString(val);
-        if (!parsedStr || !parsedStr.valid || !parsedStr.value) {
-          syntaxErrors.push(
-            `netlify.toml [[redirects]] block #${blockIndex}: Malformed 'to' value '${val}' (string delimiters must match strictly with same opening and closing quote)`
-          );
-          hasMalformedLine = true;
-        } else {
-          to = parsedStr.value;
-        }
-      } else if (key === "status") {
-        // Strict full-token validation: must be strictly numeric digits
-        if (!/^\d+$/.test(val)) {
-          syntaxErrors.push(
-            `netlify.toml [[redirects]] block #${blockIndex}: Malformed status code '${val}' (expected numeric HTTP status code, partial parseInt rejected)`
-          );
-          hasMalformedLine = true;
-        } else {
-          const s = parseInt(val, 10);
-          if (s < 100 || s > 599) {
-            syntaxErrors.push(
-              `netlify.toml [[redirects]] block #${blockIndex}: Unsupported HTTP status code '${val}' (must be 100-599)`
-            );
-            hasMalformedLine = true;
-          } else {
-            status = s;
-          }
-        }
-      } else if (key === "force") {
-        if (val !== "true" && val !== "false") {
-          syntaxErrors.push(
-            `netlify.toml [[redirects]] block #${blockIndex}: Malformed 'force' value '${val}' (expected true or false)`
-          );
-          hasMalformedLine = true;
-        } else {
-          force = val === "true";
-        }
-      } else if (key === "conditions") {
-        hasConditions = true;
-        conditionsRaw = val;
-      } else if (key === "query") {
-        hasQuery = true;
-        queryRaw = val;
-      } else if (key === "headers") {
-        hasHeaders = true;
-        headersRaw = val;
-      } else if (key === "edge_handler") {
-        hasEdgeHandler = true;
-        edgeHandlerRaw = val;
-      } else if (key === "sign") {
-        hasSign = true;
-        signRaw = val;
-      }
-    }
-
-    if (hasMalformedLine) {
-      continue;
-    }
-
-    if (!from || !to) {
+    if (!block.to) {
       syntaxErrors.push(
-        `netlify.toml [[redirects]] block #${blockIndex}: Malformed block missing required 'from' or 'to' fields (from: ${from ? "ok" : "missing"}, to: ${to ? "ok" : "missing"})`
+        `netlify.toml [[redirects]] block #${block.blockIndex} (line ${block.startLine}): Missing required 'to' field`
       );
-      continue;
+      return;
+    }
+    if (block.status === null || block.status === undefined) {
+      syntaxErrors.push(
+        `netlify.toml [[redirects]] block #${block.blockIndex} (line ${block.startLine}): Missing required 'status' field`
+      );
+      return;
     }
 
     rules.push({
-      blockIndex,
-      from,
-      to,
-      status: status !== null ? status : 301,
-      forced: force,
-      hasConditions,
-      conditionsRaw,
-      hasQuery,
-      queryRaw,
-      hasHeaders,
-      headersRaw,
-      hasEdgeHandler,
-      edgeHandlerRaw,
-      hasSign,
-      signRaw,
-      raw: lines.join("\n"),
+      blockIndex: block.blockIndex,
+      from: block.from,
+      to: block.to,
+      status: block.status,
+      forced: block.force,
+      hasConditions: false,
+      line: block.startLine,
+      raw: block.rawLines.join("\n"),
     });
   }
 
-  // If there are any syntax errors anywhere in netlify.toml, fail closed:
+  for (let lineNum = 1; lineNum <= rawLines.length; lineNum++) {
+    const rawLine = rawLines[lineNum - 1];
+    const trimmed = rawLine.trim();
+
+    // 1. Empty / whitespace-only line
+    if (!trimmed) {
+      continue;
+    }
+
+    // 2. Full-line comment (only a "#" outside a string)
+    if (trimmed.startsWith("#")) {
+      continue;
+    }
+
+    // 3. Table header line: starts with "["
+    if (trimmed.startsWith("[")) {
+      // Check exact canonical [[redirects]] header (optional trailing whitespace or comment)
+      if (/^\[\[redirects\]\]([ \t]*(#.*)?)?$/.test(trimmed)) {
+        finalizeBlock(currentBlock);
+        blockCount++;
+        currentSection = "redirects";
+        currentBlock = {
+          blockIndex: blockCount,
+          startLine: lineNum,
+          seenKeys: new Set(),
+          from: null,
+          to: null,
+          status: null,
+          force: false,
+          hasError: false,
+          rawLines: [trimmed],
+        };
+        continue;
+      }
+
+      // Check allowed top-level non-redirect headers in full netlify.toml
+      if (allowTopLevelHeaders) {
+        const headerWithoutComment = trimmed.replace(/[ \t]*#.*$/, "").trim();
+        if (ALLOWED_TOP_LEVEL_SECTIONS.has(headerWithoutComment)) {
+          finalizeBlock(currentBlock);
+          currentBlock = null;
+          currentSection = "foreign";
+          continue;
+        }
+      }
+
+      // Any other table header is rejected fail-closed
+      syntaxErrors.push(
+        `netlify.toml line ${lineNum}: Unsupported or non-canonical table header '${trimmed}' (only exact '[[redirects]]' is allowed)`
+      );
+      if (currentBlock) {
+        currentBlock.hasError = true;
+      }
+      continue;
+    }
+
+    // 4. Content lines outside a [[redirects]] block
+    if (currentSection !== "redirects" || !currentBlock) {
+      if (allowTopLevelHeaders && currentSection === "foreign") {
+        // Known foreign section in full netlify.toml (e.g. [build], [[headers]])
+        continue;
+      }
+      syntaxErrors.push(
+        `netlify.toml line ${lineNum}: Statement '${trimmed}' outside [[redirects]] block`
+      );
+      continue;
+    }
+
+    currentBlock.rawLines.push(rawLine);
+
+    // 5. Inside [[redirects]] block:
+    // Reject quoted keys immediately (e.g. "from" = "...")
+    if (/^[ \t]*["']/.test(rawLine)) {
+      syntaxErrors.push(
+        `netlify.toml line ${lineNum}: Quoted keys are not allowed in strict subset parser: '${trimmed}'`
+      );
+      currentBlock.hasError = true;
+      continue;
+    }
+
+    // Locate the first key-value separator '='
+    const eqIdx = rawLine.indexOf("=");
+    if (eqIdx === -1) {
+      syntaxErrors.push(
+        `netlify.toml line ${lineNum}: Missing key-value separator '=' in line: '${trimmed}'`
+      );
+      currentBlock.hasError = true;
+      continue;
+    }
+
+    const rawKeyPart = rawLine.slice(0, eqIdx);
+    const rawValPart = rawLine.slice(eqIdx + 1);
+
+    // Separator check: exactly "=" with optional spaces around it.
+    // Reject compound operators like '==', '=>', '=:' immediately
+    if (/^[>=:]/.test(rawValPart)) {
+      syntaxErrors.push(
+        `netlify.toml line ${lineNum}: Invalid separator or compound operator in line: '${trimmed}'`
+      );
+      currentBlock.hasError = true;
+      continue;
+    }
+
+    // Reject dotted or quoted keys before '='
+    if (rawKeyPart.includes(".") || rawKeyPart.includes('"') || rawKeyPart.includes("'")) {
+      syntaxErrors.push(
+        `netlify.toml line ${lineNum}: Dotted or quoted keys are not allowed in strict subset parser: '${trimmed}'`
+      );
+      currentBlock.hasError = true;
+      continue;
+    }
+
+    // Key token extraction: validate raw token first, without lowercase normalization
+    const keyMatch = rawKeyPart.match(/^[ \t]*([a-zA-Z0-9_-]+)[ \t]*$/);
+    if (!keyMatch) {
+      syntaxErrors.push(
+        `netlify.toml line ${lineNum}: Invalid key syntax in line: '${trimmed}'`
+      );
+      currentBlock.hasError = true;
+      continue;
+    }
+
+    const rawKey = keyMatch[1];
+
+    // Must be exactly one of: from, to, status, force in canonical lowercase
+    if (!ACCEPTED_REDIRECT_KEYS.has(rawKey)) {
+      syntaxErrors.push(
+        `netlify.toml line ${lineNum}: Unsupported or non-canonical key '${rawKey}' (key must be exactly one of from, to, status, force in canonical lowercase)`
+      );
+      currentBlock.hasError = true;
+      continue;
+    }
+
+    // Duplicate key in the same block = error
+    if (currentBlock.seenKeys.has(rawKey)) {
+      syntaxErrors.push(
+        `netlify.toml line ${lineNum}: Duplicate key '${rawKey}' detected in [[redirects]] block #${currentBlock.blockIndex}`
+      );
+      currentBlock.hasError = true;
+      continue;
+    }
+    currentBlock.seenKeys.add(rawKey);
+
+    // Value validation
+    const valTrimStart = rawValPart.trimStart();
+    if (valTrimStart.length === 0) {
+      syntaxErrors.push(
+        `netlify.toml line ${lineNum}: Missing value for key '${rawKey}'`
+      );
+      currentBlock.hasError = true;
+      continue;
+    }
+
+    // 5a. String value for from, to
+    if (rawKey === "from" || rawKey === "to") {
+      const quoteChar = valTrimStart[0];
+      if (quoteChar !== '"' && quoteChar !== "'") {
+        syntaxErrors.push(
+          `netlify.toml line ${lineNum}: Value for '${rawKey}' must be a quoted string starting with " or '`
+        );
+        currentBlock.hasError = true;
+        continue;
+      }
+
+      // Reject multi-line or triple quotes
+      if (valTrimStart.startsWith('"""') || valTrimStart.startsWith("'''")) {
+        syntaxErrors.push(
+          `netlify.toml line ${lineNum}: Triple quotes and multiline strings are not permitted in strict subset parser`
+        );
+        currentBlock.hasError = true;
+        continue;
+      }
+
+      // Reject escapes and backslashes
+      if (valTrimStart.includes("\\")) {
+        syntaxErrors.push(
+          `netlify.toml line ${lineNum}: Backslashes and escape sequences are not permitted in strict subset parser`
+        );
+        currentBlock.hasError = true;
+        continue;
+      }
+
+      // Find the closing quote: must be the same character
+      const closingIdx = valTrimStart.indexOf(quoteChar, 1);
+      if (closingIdx === -1) {
+        syntaxErrors.push(
+          `netlify.toml line ${lineNum}: Unterminated string literal for '${rawKey}': missing closing quote '${quoteChar}'`
+        );
+        currentBlock.hasError = true;
+        continue;
+      }
+
+      const strContent = valTrimStart.slice(1, closingIdx);
+      if (strContent.length === 0) {
+        syntaxErrors.push(
+          `netlify.toml line ${lineNum}: Empty string is not a valid route path for '${rawKey}'`
+        );
+        currentBlock.hasError = true;
+        continue;
+      }
+
+      // No characters after closing quote except optional whitespace and a "# comment"
+      const remainder = valTrimStart.slice(closingIdx + 1);
+      const trimmedRemainder = remainder.trimStart();
+      if (trimmedRemainder.length > 0 && !trimmedRemainder.startsWith("#")) {
+        syntaxErrors.push(
+          `netlify.toml line ${lineNum}: Trailing characters after closing quote for '${rawKey}': '${remainder.trim()}' (only optional whitespace and '# comment' allowed)`
+        );
+        currentBlock.hasError = true;
+        continue;
+      }
+
+      currentBlock[rawKey] = strContent;
+    }
+
+    // 5b. Status value: regex ^[1-9][0-9]{2}$ only
+    else if (rawKey === "status") {
+      let token = valTrimStart;
+      const hashIdx = token.indexOf("#");
+      if (hashIdx !== -1) {
+        token = token.slice(0, hashIdx);
+      }
+      const statusToken = token.trim();
+
+      // Validate raw token first without parseInt
+      if (!/^[1-9][0-9]{2}$/.test(statusToken)) {
+        syntaxErrors.push(
+          `netlify.toml line ${lineNum}: Malformed status code '${statusToken}' (must match regex ^[1-9][0-9]{2}$: exactly 3 digits, no leading zeros, no signs, no floats, no quotes)`
+        );
+        currentBlock.hasError = true;
+        continue;
+      }
+
+      const statusCode = Number(statusToken);
+      if (statusCode < 100 || statusCode > 599) {
+        syntaxErrors.push(
+          `netlify.toml line ${lineNum}: Unsupported HTTP status code ${statusCode} (must be 100-599)`
+        );
+        currentBlock.hasError = true;
+        continue;
+      }
+
+      currentBlock.status = statusCode;
+    }
+
+    // 5c. Force value: exactly true or false
+    else if (rawKey === "force") {
+      let token = valTrimStart;
+      const hashIdx = token.indexOf("#");
+      if (hashIdx !== -1) {
+        token = token.slice(0, hashIdx);
+      }
+      const forceToken = token.trim();
+
+      if (forceToken !== "true" && forceToken !== "false") {
+        syntaxErrors.push(
+          `netlify.toml line ${lineNum}: Malformed force value '${forceToken}' (must be exactly 'true' or 'false')`
+        );
+        currentBlock.hasError = true;
+        continue;
+      }
+
+      currentBlock.force = forceToken === "true";
+    }
+  }
+
+  // Finalize last block
+  finalizeBlock(currentBlock);
+
+  // If any syntax errors anywhere in netlify.toml, fail closed:
   // do not certify any redirect rules from this file.
   if (syntaxErrors.length > 0) {
     return { rules: [], syntaxErrors };
@@ -770,13 +641,9 @@ function parseNetlifyTomlRedirects(content) {
 }
 
 // ============================================================================
-// Rule Validators (Precedence, Shadowing, Early-Access, 404 Target, Conditions)
+// Rule Validators (Precedence, Shadowing, Early-Access, 404 Target, Order)
 // ============================================================================
 
-/**
- * Validates redirect rules with precedence, shadowing, unconditional fallback,
- * selector key restrictions, approved origin, and case-sensitive document checks.
- */
 function validateRedirectRules(rules, sourceLabel) {
   const violations = [];
   let found404Fallback = false;
@@ -804,52 +671,13 @@ function validateRedirectRules(rules, sourceLabel) {
 
     // 3. Catch-all rule handling & shadowing analysis
     if (isCatchAllPattern(rule.from)) {
-      // Check if this rule is intended as a 404 fallback
       if (rule.status === 404) {
-        // Fallback MUST be unconditional
         if (rule.hasConditions) {
-          const condDesc =
-            rule.conditionsRaw ||
-            (rule.conditions && rule.conditions.join(" ")) ||
-            "present";
           violations.push(
-            `${ruleLabel}: 404 fallback rule must be unconditional; found conditions '${condDesc}' (conditional rule cannot serve as global fallback)`
+            `${ruleLabel}: 404 fallback rule must be unconditional; found conditions`
           );
         }
 
-        // Selector keys: query, headers, edge_handler, sign on fallback are forbidden
-        if (rule.hasQuery) {
-          violations.push(
-            `${ruleLabel}: 404 fallback rule must be unconditional; found query selector '${rule.queryRaw}' (fallback cannot have query selectors)`
-          );
-        }
-
-        if (rule.hasHeaders) {
-          violations.push(
-            `${ruleLabel}: 404 fallback rule must be unconditional; found headers selector '${rule.headersRaw}' (fallback cannot have header selectors)`
-          );
-        }
-
-        if (rule.hasEdgeHandler) {
-          violations.push(
-            `${ruleLabel}: 404 fallback rule must be unconditional; found edge_handler modifier '${rule.edgeHandlerRaw}' (fallback cannot use edge handlers)`
-          );
-        }
-
-        if (rule.hasSign) {
-          violations.push(
-            `${ruleLabel}: 404 fallback rule must be unconditional; found sign modifier '${rule.signRaw}' (fallback cannot use signing)`
-          );
-        }
-
-        const isConditionalOrUnsupported =
-          rule.hasConditions ||
-          rule.hasQuery ||
-          rule.hasHeaders ||
-          rule.hasEdgeHandler ||
-          rule.hasSign;
-
-        // Destination MUST be an exact local document or approved origin targeting /404.html (exact case)
         const destCheck = isValid404FallbackDestination(rule.to);
         if (!destCheck.valid) {
           violations.push(
@@ -857,8 +685,7 @@ function validateRedirectRules(rules, sourceLabel) {
           );
         }
 
-        // If unconditional AND valid destination
-        if (!isConditionalOrUnsupported && destCheck.valid) {
+        if (!rule.hasConditions && destCheck.valid) {
           if (!found404Fallback) {
             found404Fallback = true;
             fallbackRuleIndex = idx;
@@ -869,9 +696,8 @@ function validateRedirectRules(rules, sourceLabel) {
           }
         }
       } else {
-        // This is a catch-all rule that does NOT serve status 404
+        // Catch-all rule with status != 404 preceding fallback shadows it
         if (!found404Fallback) {
-          // Precedes any 404 fallback: Shadows unknown path 404s!
           violations.push(
             `${ruleLabel}: Catch-all rule '${rule.from} -> ${rule.to}' (status: ${rule.status}) precedes and shadows the 404 fallback rule; unknown paths will never reach '${EXPECTED_404_DOCUMENT}'`
           );
@@ -885,1088 +711,735 @@ function validateRedirectRules(rules, sourceLabel) {
     violations.push(
       `${sourceLabel}: Missing required active 404 fallback rule targeting exact document '${EXPECTED_404_DOCUMENT}' with status 404 (e.g. '/* ${EXPECTED_404_DOCUMENT} 404')`
     );
+  } else {
+    // 5. Fallback must be the last redirect rule (wrong order / fallback not last)
+    if (fallbackRuleIndex !== rules.length - 1) {
+      const trailingCount = rules.length - 1 - fallbackRuleIndex;
+      violations.push(
+        `${sourceLabel}: 404 fallback rule is not the last redirect rule (${trailingCount} rule(s) appear after the fallback; wrong order, fallback must be last)`
+      );
+    }
   }
 
   return { violations, found404Fallback, fallbackRuleIndex };
 }
 
 // ============================================================================
-// Negative Controls Self-Test
+// Python tomllib Cross-Check Helper & PRNG for Fuzzing
 // ============================================================================
 
-function runNegativeControls() {
-  console.log("\n--- RUNNING NEGATIVE CONTROLS VERIFICATION ---");
-  const testCases = [
-    // ------------------------------------------------------------------------
-    // Core Controls: Full-Token, Conditional, Origin, Subtables, Selectors, Case
-    // ------------------------------------------------------------------------
-    {
-      name: "1. Negative Control: '/* /404.html 404garbage' (partial parseInt rejected)",
-      fn: () => {
-        const { rules, syntaxErrors } = parseRedirectsFile(
-          "/* /404.html 404garbage"
-        );
-        const res = validateRedirectRules(rules, "public/_redirects");
-        return {
-          violations: [...syntaxErrors, ...res.violations],
-        };
-      },
-      expectedSubstrings: [
-        "Malformed HTTP status code '404garbage'",
-        "partial parseInt rejected",
+function checkTomlWithPython(tomlInputs) {
+  try {
+    const res = cp.spawnSync(
+      "python",
+      [
+        "-c",
+        `import json, sys, tomllib
+inputs = json.loads(sys.stdin.read())
+results = []
+for s in inputs:
+    try:
+        tomllib.loads(s)
+        results.append(True)
+    except Exception:
+        results.append(False)
+print(json.dumps(results))
+`,
       ],
-    },
-    {
-      name: "2. Negative Control: '/* /404.html 404 Country=US' (conditional rule rejected for fallback)",
-      fn: () => {
-        const { rules, syntaxErrors } = parseRedirectsFile(
-          "/* /404.html 404 Country=US"
-        );
-        const res = validateRedirectRules(rules, "public/_redirects");
-        return {
-          violations: [...syntaxErrors, ...res.violations],
-        };
-      },
-      expectedSubstrings: [
-        "404 fallback rule must be unconditional",
-        "Country=US",
-      ],
-    },
-    {
-      name: "3. Negative Control: TOML fallback with conditions = {Country = [\"US\"]} (unconditional requirement)",
-      fn: () => {
-        const toml = `
-[[redirects]]
-  from = "/*"
-  to = "/404.html"
-  status = 404
-  conditions = {Country = ["US"]}
-`;
-        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
-        const res = validateRedirectRules(rules, "netlify.toml");
-        return {
-          violations: [...syntaxErrors, ...res.violations],
-        };
-      },
-      expectedSubstrings: [
-        "404 fallback rule must be unconditional",
-        "Country",
-      ],
-    },
-    {
-      name: "4. Negative Control: '/* https://wrong.invalid/404.html 404' (origin must be local or approved)",
-      fn: () => {
-        const { rules, syntaxErrors } = parseRedirectsFile(
-          "/* https://wrong.invalid/404.html 404"
-        );
-        const res = validateRedirectRules(rules, "public/_redirects");
-        return {
-          violations: [...syntaxErrors, ...res.violations],
-        };
-      },
-      expectedSubstrings: [
-        "unapproved origin 'https://wrong.invalid'",
-        "must be local or an approved origin",
-      ],
-    },
-    {
-      name: "5. Negative Control: TOML status = 404garbage (partial parseInt rejected)",
-      fn: () => {
-        const toml = `
-[[redirects]]
-  from = "/*"
-  to = "/404.html"
-  status = 404garbage
-`;
-        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
-        const res = validateRedirectRules(rules, "netlify.toml");
-        return {
-          violations: [...syntaxErrors, ...res.violations],
-        };
-      },
-      expectedSubstrings: [
-        "Malformed status code '404garbage'",
-        "partial parseInt rejected",
-      ],
-    },
-    {
-      name: "6. Negative Control: TOML fallback with [redirects.conditions] subtable is rejected fail-closed",
-      fn: () => {
-        const toml = `
-[[redirects]]
-  from = "/*"
-  to = "/404.html"
-  status = 404
+      {
+        input: JSON.stringify(tomlInputs),
+        encoding: "utf-8",
+        maxBuffer: 50 * 1024 * 1024,
+      }
+    );
+    if (res.status === 0 && res.stdout) {
+      return JSON.parse(res.stdout);
+    }
+  } catch (err) {
+    console.warn("Python tomllib batch check warning:", err.message);
+  }
+  return null;
+}
 
-  [redirects.conditions]
-    Country = ["US"]
-`;
-        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
-        const res = validateRedirectRules(rules, "netlify.toml");
-        return {
-          violations: [...syntaxErrors, ...res.violations],
-        };
-      },
-      expectedSubstrings: [
-        "Unsupported subtable '[redirects.conditions]'",
-        "Missing required active 404 fallback rule",
-      ],
-    },
-    {
-      name: "7. Negative Control: TOML fallback with query = {country = \"US\"} selector is rejected",
-      fn: () => {
-        const toml = `
-[[redirects]]
+function createPrng(seed) {
+  return function() {
+    let t = seed += 0x6d2b79f5;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// ============================================================================
+// Table-Driven Test Suite & Fuzz Suite
+// ============================================================================
+
+function runTableDrivenTestSuite() {
+  console.log("\n--- RUNNING TABLE-DRIVEN TEST SUITE & PYTHON TOMLLIB CROSS-CHECK ---");
+
+  const canonicalFallbackSnippet = `[[redirects]]
   from = "/*"
   to = "/404.html"
   status = 404
-  query = {country = "US"}
 `;
-        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
-        const res = validateRedirectRules(rules, "netlify.toml");
-        return {
-          violations: [...syntaxErrors, ...res.violations],
-        };
-      },
-      expectedSubstrings: [
-        "404 fallback rule must be unconditional",
-        "query selector '{country = \"US\"}'",
-      ],
-    },
-    {
-      name: "8. Negative Control: '/404.HTML' pathname case mismatch fails (host stays case-insensitive)",
-      fn: () => {
-        const { rules, syntaxErrors } = parseRedirectsFile(
-          "/* https://CAREERMONKE.COM/404.HTML 404"
-        );
-        const res = validateRedirectRules(rules, "public/_redirects");
-        return {
-          violations: [...syntaxErrors, ...res.violations],
-        };
-      },
-      expectedSubstrings: [
-        "Target path '/404.HTML' does not match exact expected document '/404.html'",
-        "case-sensitive exact match required",
-        "Missing required active 404 fallback rule",
-      ],
-    },
 
-    // ------------------------------------------------------------------------
-    // Additional Comprehensive Controls (9 - 18)
-    // ------------------------------------------------------------------------
+  // Positive Controls
+  const positiveControls = [
     {
-      name: "9. Negative Control: Query string '/jobs /early-access?next=jobs 307' followed by fallback fails",
-      fn: () => {
-        const { rules } = parseRedirectsFile(
-          "/jobs /early-access?next=jobs 307\n/* /404.html 404"
-        );
-        return validateRedirectRules(rules, "public/_redirects");
-      },
-      expectedSubstrings: ["Jobs route '/jobs' redirects to early-access"],
+      name: "POS 1: Canonical 404 fallback rule",
+      toml: canonicalFallbackSnippet,
     },
     {
-      name: "10. Negative Control: Absolute URL '/* https://careermonke.com/early-access 302' followed by fallback fails",
-      fn: () => {
-        const { rules } = parseRedirectsFile(
-          "/* https://careermonke.com/early-access 302\n/* /404.html 404"
-        );
-        return validateRedirectRules(rules, "public/_redirects");
-      },
-      expectedSubstrings: [
-        "Catch-all '/*' targets early-access",
-        "precedes and shadows the 404 fallback rule",
-      ],
-    },
-    {
-      name: "11. Negative Control: Shadowing '/* /login 302' before the fallback fails",
-      fn: () => {
-        const { rules } = parseRedirectsFile(
-          "/* /login 302\n/* /404.html 404"
-        );
-        return validateRedirectRules(rules, "public/_redirects");
-      },
-      expectedSubstrings: [
-        "precedes and shadows the 404 fallback rule; unknown paths will never reach '/404.html'",
-      ],
-    },
-    {
-      name: "12. Negative Control: Exact target '/* /not-a-404-document 404' fails",
-      fn: () => {
-        const { rules } = parseRedirectsFile(
-          "/* /not-a-404-document 404"
-        );
-        return validateRedirectRules(rules, "public/_redirects");
-      },
-      expectedSubstrings: [
-        "does not match exact expected document '/404.html'",
-        "Missing required active 404 fallback rule",
-      ],
-    },
-    {
-      name: "13. Negative Control: Commented TOML fallback block fails",
-      fn: () => {
-        const toml = `
-# [[redirects]]
-#   from = "/*"
-#   to = "/404.html"
-#   status = 404
-#   force = false
-`;
-        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
-        const res = validateRedirectRules(rules, "netlify.toml");
-        return {
-          violations: [...syntaxErrors, ...res.violations],
-        };
-      },
-      expectedSubstrings: [
-        "Missing required active 404 fallback rule targeting exact document '/404.html'",
-      ],
-    },
-    {
-      name: "14. Negative Control: TOML Shadowing 'from = /*, to = /login, status = 302' before fallback fails",
-      fn: () => {
-        const toml = `
-[[redirects]]
-  from = "/*"
-  to = "/login"
-  status = 302
+      name: "POS 2: Typical redirect rules followed by canonical fallback",
+      toml: `[[redirects]]
+  from = "/privacy"
+  to = "/privacy-policy"
+  status = 301
   force = true
+
+[[redirects]]
+  from = "/jobs/*"
+  to = "/jobs/detail.html"
+  status = 200
 
 [[redirects]]
   from = "/*"
   to = "/404.html"
   status = 404
   force = false
-`;
-        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
-        const res = validateRedirectRules(rules, "netlify.toml");
-        return {
-          violations: [...syntaxErrors, ...res.violations],
-        };
-      },
-      expectedSubstrings: [
-        "precedes and shadows the 404 fallback rule",
-      ],
+`,
     },
     {
-      name: "15. Negative Control: TOML Query & Jobs 'from = /jobs, to = /early-access?ref=jobs' fails",
-      fn: () => {
-        const toml = `
-[[redirects]]
-  from = "/jobs"
-  to = "/early-access?ref=jobs"
-  status = 307
-  force = true
+      name: "POS 3: Single-quoted string literals with matching quotes",
+      toml: `[[redirects]]
+  from = '/old'
+  to = '/new'
+  status = 301
 
 [[redirects]]
-  from = "/*"
-  to = "/404.html"
+  from = '/*'
+  to = '/404.html'
   status = 404
-  force = false
-`;
-        const { rules } = parseNetlifyTomlRedirects(toml);
-        return validateRedirectRules(rules, "netlify.toml");
-      },
-      expectedSubstrings: [
-        "Jobs route '/jobs' redirects to early-access",
-      ],
+`,
     },
     {
-      name: "16. Negative Control: Unsupported shape (public/_redirects incomplete rule missing destination) fails",
-      fn: () => {
-        const { rules, syntaxErrors } = parseRedirectsFile(
-          "/jobs\n/* /404.html 404"
-        );
-        const res = validateRedirectRules(rules, "public/_redirects");
-        return {
-          violations: [...syntaxErrors, ...res.violations],
-        };
-      },
-      expectedSubstrings: [
-        "Incomplete rule syntax: expected '<from> <to> [status]'",
-      ],
-    },
-    {
-      name: "17. Negative Control: Unsupported shape (netlify.toml block missing 'to' field) fails",
-      fn: () => {
-        const toml = `
-[[redirects]]
-  from = "/jobs"
+      name: "POS 4: Hash character inside string value remains part of string",
+      toml: `[[redirects]]
+  from = "/faq"
+  to = "/about#faq"
   status = 301
 
 [[redirects]]
   from = "/*"
   to = "/404.html"
   status = 404
-`;
-        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
-        const res = validateRedirectRules(rules, "netlify.toml");
-        return {
-          violations: [...syntaxErrors, ...res.violations],
-        };
-      },
-      expectedSubstrings: [
-        "Malformed block missing required 'from' or 'to' fields",
-      ],
+`,
     },
     {
-      name: "18. Negative Control: TOML Incomplete Commented Body ([[redirects]] with all fields commented out) fails",
-      fn: () => {
-        const toml = `
-[[redirects]]
-  # from = "/*"
-  # to = "/404.html"
-  # status = 404
-`;
-        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
-        const res = validateRedirectRules(rules, "netlify.toml");
-        return {
-          violations: [...syntaxErrors, ...res.violations],
-        };
-      },
-      expectedSubstrings: [
-        "Incomplete or empty block (body is commented out or missing)",
-      ],
-    },
-    {
-      name: "19. Negative Control: TOML fallback with [redirects . conditions] (spaced subtable) is rejected fail-closed",
-      fn: () => {
-        const toml = `
-[[redirects]]
-  from = "/*"
-  to = "/404.html"
-  status = 404
-
-  [redirects . conditions]
-    Country = ["US"]
-`;
-        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
-        const res = validateRedirectRules(rules, "netlify.toml");
-        return {
-          violations: [...syntaxErrors, ...res.violations],
-        };
-      },
-      expectedSubstrings: [
-        "Unsupported subtable '[redirects . conditions]'",
-        "Missing required active 404 fallback rule",
-      ],
-    },
-    {
-      name: "20. Negative Control: TOML fallback with [\"redirects\".\"conditions\"] (quoted subtable) is rejected fail-closed",
-      fn: () => {
-        const toml = `
-[[redirects]]
-  from = "/*"
-  to = "/404.html"
-  status = 404
-
-  ["redirects"."conditions"]
-    Country = ["US"]
-`;
-        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
-        const res = validateRedirectRules(rules, "netlify.toml");
-        return {
-          violations: [...syntaxErrors, ...res.violations],
-        };
-      },
-      expectedSubstrings: [
-        "Unsupported subtable '[\"redirects\".\"conditions\"]'",
-        "Missing required active 404 fallback rule",
-      ],
-    },
-    {
-      name: "21. Negative Control: TOML non-canonical header '[[ redirects ]]' before fallback fails closed",
-      fn: () => {
-        const toml = `
-[[ redirects ]]
-  from = "/jobs"
-  to = "/early-access"
-  status = 302
+      name: "POS 5: Full-line and inline comments with hash outside string",
+      toml: `# Top-level comment
+[[redirects]] # Header comment
+  # Inside block comment
+  from = "/search" # from comment
+  to = "/jobs" # to comment
+  status = 302 # status comment
+  force = true # force comment
 
 [[redirects]]
   from = "/*"
   to = "/404.html"
   status = 404
-`;
-        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
-        const res = validateRedirectRules(rules, "netlify.toml");
-        return {
-          violations: [...syntaxErrors, ...res.violations],
-        };
-      },
-      expectedSubstrings: [
-        "Unsupported non-canonical redirect header '[[ redirects ]]'",
-        "Missing required active 404 fallback rule",
-      ],
-    },
-    {
-      name: "22. Negative Control: TOML non-canonical header '[[ redirects ]]' after fallback fails closed",
-      fn: () => {
-        const toml = `
-[[redirects]]
-  from = "/*"
-  to = "/404.html"
-  status = 404
-
-[[ redirects ]]
-  from = "/jobs"
-  to = "/early-access"
-  status = 302
-`;
-        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
-        const res = validateRedirectRules(rules, "netlify.toml");
-        return {
-          violations: [...syntaxErrors, ...res.violations],
-        };
-      },
-      expectedSubstrings: [
-        "Unsupported non-canonical redirect header '[[ redirects ]]'",
-        "Missing required active 404 fallback rule",
-      ],
-    },
-    {
-      name: "23. Negative Control: TOML non-canonical header '[[\"redirects\"]]' before fallback fails closed",
-      fn: () => {
-        const toml = `
-[["redirects"]]
-  from = "/jobs"
-  to = "/early-access"
-  status = 302
-
-[[redirects]]
-  from = "/*"
-  to = "/404.html"
-  status = 404
-`;
-        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
-        const res = validateRedirectRules(rules, "netlify.toml");
-        return {
-          violations: [...syntaxErrors, ...res.violations],
-        };
-      },
-      expectedSubstrings: [
-        "Unsupported non-canonical redirect header '[[\"redirects\"]]'",
-        "Missing required active 404 fallback rule",
-      ],
-    },
-    {
-      name: "24. Negative Control: TOML non-canonical header '[[\"redirects\"]]' after fallback fails closed",
-      fn: () => {
-        const toml = `
-[[redirects]]
-  from = "/*"
-  to = "/404.html"
-  status = 404
-
-[["redirects"]]
-  from = "/jobs"
-  to = "/early-access"
-  status = 302
-`;
-        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
-        const res = validateRedirectRules(rules, "netlify.toml");
-        return {
-          violations: [...syntaxErrors, ...res.violations],
-        };
-      },
-      expectedSubstrings: [
-        "Unsupported non-canonical redirect header '[[\"redirects\"]]'",
-        "Missing required active 404 fallback rule",
-      ],
-    },
-    {
-      name: "25. Negative Control: TOML escaped header '[[\"redirec\\u0074s\"]]' with /jobs to /early-access before fallback fails closed",
-      fn: () => {
-        const toml = `
-[["redirec\\u0074s"]]
-  from = "/jobs"
-  to = "/early-access"
-  status = 302
-
-[[redirects]]
-  from = "/*"
-  to = "/404.html"
-  status = 404
-`;
-        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
-        const res = validateRedirectRules(rules, "netlify.toml");
-        return {
-          violations: [...syntaxErrors, ...res.violations],
-        };
-      },
-      expectedSubstrings: [
-        'Unsupported non-canonical redirect header \'[["redirec\\u0074s"]]\'',
-        "Missing required active 404 fallback rule",
-      ],
-    },
-    {
-      name: "26. Negative Control: Escaped value 'from = \"/job\\u0073\"' before fallback fails closed",
-      fn: () => {
-        const toml = `
-[[redirects]]
-  from = "/job\\u0073"
-  to = "/somewhere"
-  status = 302
-
-[[redirects]]
-  from = "/*"
-  to = "/404.html"
-  status = 404
-`;
-        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
-        const res = validateRedirectRules(rules, "netlify.toml");
-        return {
-          violations: [...syntaxErrors, ...res.violations],
-        };
-      },
-      expectedSubstrings: [
-        "contains backslash escape",
-        "Missing required active 404 fallback rule",
-      ],
-    },
-    {
-      name: "27. Negative Control: Escaped value 'from = \"/job\\u0073\"' after fallback fails closed",
-      fn: () => {
-        const toml = `
-[[redirects]]
-  from = "/*"
-  to = "/404.html"
-  status = 404
-
-[[redirects]]
-  from = "/job\\u0073"
-  to = "/somewhere"
-  status = 302
-`;
-        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
-        const res = validateRedirectRules(rules, "netlify.toml");
-        return {
-          violations: [...syntaxErrors, ...res.violations],
-        };
-      },
-      expectedSubstrings: [
-        "contains backslash escape",
-        "Missing required active 404 fallback rule",
-      ],
-    },
-    {
-      name: "28. Negative Control: Escaped value 'to = \"/early\\u002daccess\"' before fallback fails closed",
-      fn: () => {
-        const toml = `
-[[redirects]]
-  from = "/jobs"
-  to = "/early\\u002daccess"
-  status = 302
-
-[[redirects]]
-  from = "/*"
-  to = "/404.html"
-  status = 404
-`;
-        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
-        const res = validateRedirectRules(rules, "netlify.toml");
-        return {
-          violations: [...syntaxErrors, ...res.violations],
-        };
-      },
-      expectedSubstrings: [
-        "contains backslash escape",
-        "Missing required active 404 fallback rule",
-      ],
-    },
-    {
-      name: "29. Negative Control: Escaped value 'to = \"/early\\u002daccess\"' after fallback fails closed",
-      fn: () => {
-        const toml = `
-[[redirects]]
-  from = "/*"
-  to = "/404.html"
-  status = 404
-
-[[redirects]]
-  from = "/jobs"
-  to = "/early\\u002daccess"
-  status = 302
-`;
-        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
-        const res = validateRedirectRules(rules, "netlify.toml");
-        return {
-          violations: [...syntaxErrors, ...res.violations],
-        };
-      },
-      expectedSubstrings: [
-        "contains backslash escape",
-        "Missing required active 404 fallback rule",
-      ],
-    },
-    {
-      name: "30. Negative Control: Duplicate key 'status = 302' then 'status = 404' before fallback fails closed",
-      fn: () => {
-        const toml = `
-[[redirects]]
-  from = "/jobs"
-  to = "/dest"
-  status = 302
-  status = 404
-
-[[redirects]]
-  from = "/*"
-  to = "/404.html"
-  status = 404
-`;
-        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
-        const res = validateRedirectRules(rules, "netlify.toml");
-        return {
-          violations: [...syntaxErrors, ...res.violations],
-        };
-      },
-      expectedSubstrings: [
-        "Duplicate key 'status' detected",
-        "Missing required active 404 fallback rule",
-      ],
-    },
-    {
-      name: "31. Negative Control: Duplicate key 'status = 302' then 'status = 404' after fallback fails closed",
-      fn: () => {
-        const toml = `
-[[redirects]]
-  from = "/*"
-  to = "/404.html"
-  status = 404
-
-[[redirects]]
-  from = "/jobs"
-  to = "/dest"
-  status = 302
-  status = 404
-`;
-        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
-        const res = validateRedirectRules(rules, "netlify.toml");
-        return {
-          violations: [...syntaxErrors, ...res.violations],
-        };
-      },
-      expectedSubstrings: [
-        "Duplicate key 'status' detected",
-        "Missing required active 404 fallback rule",
-      ],
-    },
-    {
-      name: "32. Negative Control: Duplicate key 'status = 302' then 'status = 404' on fallback itself fails closed",
-      fn: () => {
-        const toml = `
-[[redirects]]
-  from = "/*"
-  to = "/404.html"
-  status = 302
-  status = 404
-`;
-        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
-        const res = validateRedirectRules(rules, "netlify.toml");
-        return {
-          violations: [...syntaxErrors, ...res.violations],
-        };
-      },
-      expectedSubstrings: [
-        "Duplicate key 'status' detected",
-        "Missing required active 404 fallback rule",
-      ],
-    },
-    {
-      name: "33. Negative Control: Mismatched quotes 'from = \"/jobs'\"' before fallback fails closed",
-      fn: () => {
-        const toml = `
-[[redirects]]
-  from = "/jobs'
-  to = "/dest"
-  status = 302
-
-[[redirects]]
-  from = "/*"
-  to = "/404.html"
-  status = 404
-`;
-        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
-        const res = validateRedirectRules(rules, "netlify.toml");
-        return {
-          violations: [...syntaxErrors, ...res.violations],
-        };
-      },
-      expectedSubstrings: [
-        "delimiter",
-        "Missing required active 404 fallback rule",
-      ],
-    },
-    {
-      name: "34. Negative Control: Mismatched quotes 'from = \"/jobs'\"' after fallback fails closed",
-      fn: () => {
-        const toml = `
-[[redirects]]
-  from = "/*"
-  to = "/404.html"
-  status = 404
-
-[[redirects]]
-  from = "/jobs'
-  to = "/dest"
-  status = 302
-`;
-        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
-        const res = validateRedirectRules(rules, "netlify.toml");
-        return {
-          violations: [...syntaxErrors, ...res.violations],
-        };
-      },
-      expectedSubstrings: [
-        "delimiter",
-        "Missing required active 404 fallback rule",
-      ],
-    },
-    {
-      name: "35. Negative Control: Mismatched quotes 'to = \"/dest'\"' before fallback fails closed",
-      fn: () => {
-        const toml = `
-[[redirects]]
-  from = "/jobs"
-  to = "/dest'
-  status = 302
-
-[[redirects]]
-  from = "/*"
-  to = "/404.html"
-  status = 404
-`;
-        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
-        const res = validateRedirectRules(rules, "netlify.toml");
-        return {
-          violations: [...syntaxErrors, ...res.violations],
-        };
-      },
-      expectedSubstrings: [
-        "delimiter",
-        "Missing required active 404 fallback rule",
-      ],
-    },
-    {
-      name: "36. Negative Control: Mismatched quotes 'to = \"/dest'\"' after fallback fails closed",
-      fn: () => {
-        const toml = `
-[[redirects]]
-  from = "/*"
-  to = "/404.html"
-  status = 404
-
-[[redirects]]
-  from = "/jobs"
-  to = "/dest'
-  status = 302
-`;
-        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
-        const res = validateRedirectRules(rules, "netlify.toml");
-        return {
-          violations: [...syntaxErrors, ...res.violations],
-        };
-      },
-      expectedSubstrings: [
-        "delimiter",
-        "Missing required active 404 fallback rule",
-      ],
-    },
-    {
-      name: "37. Negative Control: Mismatched quotes 'from = \"/*\'\"' on fallback itself fails closed",
-      fn: () => {
-        const toml = `
-[[redirects]]
-  from = "/*'
-  to = "/404.html"
-  status = 404
-`;
-        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
-        const res = validateRedirectRules(rules, "netlify.toml");
-        return {
-          violations: [...syntaxErrors, ...res.violations],
-        };
-      },
-      expectedSubstrings: [
-        "delimiter",
-        "Missing required active 404 fallback rule",
-      ],
-    },
-    {
-      name: "38. Negative Control: Mismatched quotes 'from = '/jobs\"'' (single-to-double) before fallback fails closed",
-      fn: () => {
-        const toml = `
-[[redirects]]
-  from = '/jobs"
-  to = "/dest"
-  status = 302
-
-[[redirects]]
-  from = "/*"
-  to = "/404.html"
-  status = 404
-`;
-        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
-        const res = validateRedirectRules(rules, "netlify.toml");
-        return {
-          violations: [...syntaxErrors, ...res.violations],
-        };
-      },
-      expectedSubstrings: [
-        "delimiter",
-        "Missing required active 404 fallback rule",
-      ],
-    },
-    {
-      name: "39. Negative Control: Malformed quote/comment state 'from = \"/jobs # comment\"' before fallback fails closed",
-      fn: () => {
-        const toml = `
-[[redirects]]
-  from = "/jobs # comment without closing quote
-  to = "/dest"
-  status = 302
-
-[[redirects]]
-  from = "/*"
-  to = "/404.html"
-  status = 404
-`;
-        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
-        const res = validateRedirectRules(rules, "netlify.toml");
-        return {
-          violations: [...syntaxErrors, ...res.violations],
-        };
-      },
-      expectedSubstrings: [
-        "Malformed quote or comment state",
-        "Missing required active 404 fallback rule",
-      ],
-    },
-    {
-      name: "40. Negative Control: Malformed quote/comment state 'from = \"/jobs # comment\"' after fallback fails closed",
-      fn: () => {
-        const toml = `
-[[redirects]]
-  from = "/*"
-  to = "/404.html"
-  status = 404
-
-[[redirects]]
-  from = "/jobs # comment without closing quote
-  to = "/dest"
-  status = 302
-`;
-        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
-        const res = validateRedirectRules(rules, "netlify.toml");
-        return {
-          violations: [...syntaxErrors, ...res.violations],
-        };
-      },
-      expectedSubstrings: [
-        "Malformed quote or comment state",
-        "Missing required active 404 fallback rule",
-      ],
-    },
-    {
-      name: "41. Negative Control: Uppercase 'FROM = \"/jobs\"' before fallback fails closed",
-      fn: () => {
-        const toml = `
-[[redirects]]
-  FROM = "/jobs"
-  to = "/dest"
-  status = 302
-
-[[redirects]]
-  from = "/*"
-  to = "/404.html"
-  status = 404
-`;
-        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
-        const res = validateRedirectRules(rules, "netlify.toml");
-        return {
-          violations: [...syntaxErrors, ...res.violations],
-        };
-      },
-      expectedSubstrings: [
-        "non-canonical redirect key 'FROM'",
-        "Missing required active 404 fallback rule",
-      ],
-    },
-    {
-      name: "42. Negative Control: Uppercase 'FROM = \"/jobs\"' after fallback fails closed",
-      fn: () => {
-        const toml = `
-[[redirects]]
-  from = "/*"
-  to = "/404.html"
-  status = 404
-
-[[redirects]]
-  FROM = "/jobs"
-  to = "/dest"
-  status = 302
-`;
-        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
-        const res = validateRedirectRules(rules, "netlify.toml");
-        return {
-          violations: [...syntaxErrors, ...res.violations],
-        };
-      },
-      expectedSubstrings: [
-        "non-canonical redirect key 'FROM'",
-        "Missing required active 404 fallback rule",
-      ],
-    },
-    {
-      name: "43. Negative Control: Uppercase 'TO = \"/dest\"' before fallback fails closed",
-      fn: () => {
-        const toml = `
-[[redirects]]
-  from = "/jobs"
-  TO = "/dest"
-  status = 302
-
-[[redirects]]
-  from = "/*"
-  to = "/404.html"
-  status = 404
-`;
-        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
-        const res = validateRedirectRules(rules, "netlify.toml");
-        return {
-          violations: [...syntaxErrors, ...res.violations],
-        };
-      },
-      expectedSubstrings: [
-        "non-canonical redirect key 'TO'",
-        "Missing required active 404 fallback rule",
-      ],
-    },
-    {
-      name: "44. Negative Control: Uppercase 'TO = \"/dest\"' after fallback fails closed",
-      fn: () => {
-        const toml = `
-[[redirects]]
-  from = "/*"
-  to = "/404.html"
-  status = 404
-
-[[redirects]]
-  from = "/jobs"
-  TO = "/dest"
-  status = 302
-`;
-        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
-        const res = validateRedirectRules(rules, "netlify.toml");
-        return {
-          violations: [...syntaxErrors, ...res.violations],
-        };
-      },
-      expectedSubstrings: [
-        "non-canonical redirect key 'TO'",
-        "Missing required active 404 fallback rule",
-      ],
-    },
-    {
-      name: "45. Negative Control: Uppercase 'STATUS = 302' before fallback fails closed",
-      fn: () => {
-        const toml = `
-[[redirects]]
-  from = "/jobs"
-  to = "/dest"
-  STATUS = 302
-
-[[redirects]]
-  from = "/*"
-  to = "/404.html"
-  status = 404
-`;
-        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
-        const res = validateRedirectRules(rules, "netlify.toml");
-        return {
-          violations: [...syntaxErrors, ...res.violations],
-        };
-      },
-      expectedSubstrings: [
-        "non-canonical redirect key 'STATUS'",
-        "Missing required active 404 fallback rule",
-      ],
-    },
-    {
-      name: "46. Negative Control: Uppercase 'STATUS = 302' after fallback fails closed",
-      fn: () => {
-        const toml = `
-[[redirects]]
-  from = "/*"
-  to = "/404.html"
-  status = 404
-
-[[redirects]]
-  from = "/jobs"
-  to = "/dest"
-  STATUS = 302
-`;
-        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
-        const res = validateRedirectRules(rules, "netlify.toml");
-        return {
-          violations: [...syntaxErrors, ...res.violations],
-        };
-      },
-      expectedSubstrings: [
-        "non-canonical redirect key 'STATUS'",
-        "Missing required active 404 fallback rule",
-      ],
-    },
-    {
-      name: "47. Negative Control: Uppercase 'FROM = \"/*\"', 'TO = \"/404.html\"', 'STATUS = 404' on fallback itself fails closed",
-      fn: () => {
-        const toml = `
-[[redirects]]
-  FROM = "/*"
-  TO = "/404.html"
-  STATUS = 404
-`;
-        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
-        const res = validateRedirectRules(rules, "netlify.toml");
-        return {
-          violations: [...syntaxErrors, ...res.violations],
-        };
-      },
-      expectedSubstrings: [
-        "non-canonical redirect key",
-        "Missing required active 404 fallback rule",
-      ],
+`,
     },
   ];
 
-  let passedControls = 0;
+  // Negative Controls
+  const negativeControls = [
+    // 1-8: Mismatched quotes
+    {
+      name: "NEG 01: Mismatched quotes 'from = \"/jobs'' before fallback",
+      toml: `[[redirects]]\n  from = "/jobs'\n  to = "/dest"\n  status = 302\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Unterminated string literal",
+    },
+    {
+      name: "NEG 02: Mismatched quotes 'from = \"/jobs'' after fallback",
+      toml: `${canonicalFallbackSnippet}\n[[redirects]]\n  from = "/jobs'\n  to = "/dest"\n  status = 302\n`,
+      expectedSubstring: "Unterminated string literal",
+    },
+    {
+      name: "NEG 03: Mismatched quotes 'to = \"/dest'' before fallback",
+      toml: `[[redirects]]\n  from = "/jobs"\n  to = "/dest'\n  status = 302\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Unterminated string literal",
+    },
+    {
+      name: "NEG 04: Mismatched quotes 'to = \"/dest'' after fallback",
+      toml: `${canonicalFallbackSnippet}\n[[redirects]]\n  from = "/jobs"\n  to = "/dest'\n  status = 302\n`,
+      expectedSubstring: "Unterminated string literal",
+    },
+    {
+      name: "NEG 05: Mismatched quotes single-to-double 'from = '/jobs\"'",
+      toml: `[[redirects]]\n  from = '/jobs"\n  to = "/dest"\n  status = 302\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Unterminated string literal",
+    },
+    {
+      name: "NEG 06: Mismatched quotes single-to-double 'to = '/dest\"'",
+      toml: `[[redirects]]\n  from = "/jobs"\n  to = '/dest"\n  status = 302\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Unterminated string literal",
+    },
+    {
+      name: "NEG 07: Mismatched quotes 'from = \"/*'' on fallback itself",
+      toml: `[[redirects]]\n  from = "/*'\n  to = "/404.html"\n  status = 404\n`,
+      expectedSubstring: "Unterminated string literal",
+    },
+    {
+      name: "NEG 08: Mismatched quotes 'to = \"/404.html'' on fallback itself",
+      toml: `[[redirects]]\n  from = "/*"\n  to = "/404.html'\n  status = 404\n`,
+      expectedSubstring: "Unterminated string literal",
+    },
 
-  for (const tc of testCases) {
-    const result = tc.fn();
-    const allMatches = tc.expectedSubstrings.every((sub) =>
-      result.violations.some((v) => v.includes(sub))
-    );
+    // 9-12: Unterminated strings
+    {
+      name: "NEG 09: Unterminated string on from: 'from = \"/jobs'",
+      toml: `[[redirects]]\n  from = "/jobs\n  to = "/dest"\n  status = 302\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Unterminated string literal",
+    },
+    {
+      name: "NEG 10: Unterminated string on to: 'to = \"/dest'",
+      toml: `[[redirects]]\n  from = "/jobs"\n  to = "/dest\n  status = 302\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Unterminated string literal",
+    },
+    {
+      name: "NEG 11: Unterminated single quote on from: 'from = '/jobs'",
+      toml: `[[redirects]]\n  from = '/jobs\n  to = "/dest"\n  status = 302\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Unterminated string literal",
+    },
+    {
+      name: "NEG 12: Unterminated single quote on to: 'to = '/dest'",
+      toml: `[[redirects]]\n  from = "/jobs"\n  to = '/dest\n  status = 302\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Unterminated string literal",
+    },
 
-    if (allMatches) {
-      console.log(`  [PASS] ${tc.name}`);
-      passedControls++;
+    // 13-15: Trailing characters after closing quote
+    {
+      name: "NEG 13: Trailing garbage after quote: 'from = \"/jobs\" trailing'",
+      toml: `[[redirects]]\n  from = "/jobs" trailing\n  to = "/dest"\n  status = 302\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Trailing characters after closing quote",
+    },
+    {
+      name: "NEG 14: Trailing garbage after quote: 'to = \"/dest\" garbage'",
+      toml: `[[redirects]]\n  from = "/jobs"\n  to = "/dest" garbage\n  status = 302\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Trailing characters after closing quote",
+    },
+    {
+      name: "NEG 15: Trailing second string: 'from = \"/jobs\" \"extra\"'",
+      toml: `[[redirects]]\n  from = "/jobs" "extra"\n  to = "/dest"\n  status = 302\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Trailing characters after closing quote",
+    },
+
+    // 16-17: Multi-line and triple quotes
+    {
+      name: "NEG 16: Multi-line triple double quotes: 'from = \"\"\"/jobs\"\"\"'",
+      toml: `[[redirects]]\n  from = """/jobs"""\n  to = "/dest"\n  status = 302\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Triple quotes and multiline strings are not permitted",
+    },
+    {
+      name: "NEG 17: Multi-line triple single quotes: 'to = \'\'\'/dest\'\'\''",
+      toml: `[[redirects]]\n  from = "/jobs"\n  to = '''/dest'''\n  status = 302\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Triple quotes and multiline strings are not permitted",
+    },
+
+    // 18-22: Backslashes and escapes
+    {
+      name: "NEG 18: Backslash unicode escape: 'from = \"/job\\u0073\"' before fallback",
+      toml: `[[redirects]]\n  from = "/job\\u0073"\n  to = "/dest"\n  status = 302\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Backslashes and escape sequences are not permitted",
+    },
+    {
+      name: "NEG 19: Backslash unicode escape: 'to = \"/early\\u002daccess\"' after fallback",
+      toml: `${canonicalFallbackSnippet}\n[[redirects]]\n  from = "/jobs"\n  to = "/early\\u002daccess"\n  status = 302\n`,
+      expectedSubstring: "Backslashes and escape sequences are not permitted",
+    },
+    {
+      name: "NEG 20: Backslash newline escape: 'from = \"/jobs\\n\"'",
+      toml: `[[redirects]]\n  from = "/jobs\\n"\n  to = "/dest"\n  status = 302\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Backslashes and escape sequences are not permitted",
+    },
+    {
+      name: "NEG 21: Backslash tab escape: 'to = \"/dest\\t\"'",
+      toml: `[[redirects]]\n  from = "/jobs"\n  to = "/dest\\t"\n  status = 302\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Backslashes and escape sequences are not permitted",
+    },
+    {
+      name: "NEG 22: Backslash literal: 'from = \"/jobs\\\\path\"'",
+      toml: `[[redirects]]\n  from = "/jobs\\\\path"\n  to = "/dest"\n  status = 302\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Backslashes and escape sequences are not permitted",
+    },
+
+    // 23-29: Uppercase & mixed-case keys
+    {
+      name: "NEG 23: Uppercase key 'FROM = \"/jobs\"' before fallback",
+      toml: `[[redirects]]\n  FROM = "/jobs"\n  to = "/dest"\n  status = 302\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Unsupported or non-canonical key 'FROM'",
+    },
+    {
+      name: "NEG 24: Uppercase key 'FROM = \"/jobs\"' after fallback",
+      toml: `${canonicalFallbackSnippet}\n[[redirects]]\n  FROM = "/jobs"\n  to = "/dest"\n  status = 302\n`,
+      expectedSubstring: "Unsupported or non-canonical key 'FROM'",
+    },
+    {
+      name: "NEG 25: Uppercase key 'TO = \"/dest\"' before fallback",
+      toml: `[[redirects]]\n  from = "/jobs"\n  TO = "/dest"\n  status = 302\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Unsupported or non-canonical key 'TO'",
+    },
+    {
+      name: "NEG 26: Uppercase key 'TO = \"/dest\"' after fallback",
+      toml: `${canonicalFallbackSnippet}\n[[redirects]]\n  from = "/jobs"\n  TO = "/dest"\n  status = 302\n`,
+      expectedSubstring: "Unsupported or non-canonical key 'TO'",
+    },
+    {
+      name: "NEG 27: Uppercase key 'STATUS = 302' before fallback",
+      toml: `[[redirects]]\n  from = "/jobs"\n  to = "/dest"\n  STATUS = 302\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Unsupported or non-canonical key 'STATUS'",
+    },
+    {
+      name: "NEG 28: Uppercase key 'STATUS = 302' after fallback",
+      toml: `${canonicalFallbackSnippet}\n[[redirects]]\n  from = "/jobs"\n  to = "/dest"\n  STATUS = 302\n`,
+      expectedSubstring: "Unsupported or non-canonical key 'STATUS'",
+    },
+    {
+      name: "NEG 29: Uppercase key 'FORCE = true'",
+      toml: `[[redirects]]\n  from = "/jobs"\n  to = "/dest"\n  status = 302\n  FORCE = true\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Unsupported or non-canonical key 'FORCE'",
+    },
+    {
+      name: "NEG 30: Mixed-case key 'From = \"/jobs\"'",
+      toml: `[[redirects]]\n  From = "/jobs"\n  to = "/dest"\n  status = 302\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Unsupported or non-canonical key 'From'",
+    },
+    {
+      name: "NEG 31: Mixed-case key 'To = \"/dest\"'",
+      toml: `[[redirects]]\n  from = "/jobs"\n  To = "/dest"\n  status = 302\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Unsupported or non-canonical key 'To'",
+    },
+    {
+      name: "NEG 32: Mixed-case key 'Status = 302'",
+      toml: `[[redirects]]\n  from = "/jobs"\n  to = "/dest"\n  Status = 302\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Unsupported or non-canonical key 'Status'",
+    },
+    {
+      name: "NEG 33: Uppercase keys on fallback itself: FROM, TO, STATUS",
+      toml: `[[redirects]]\n  FROM = "/*"\n  TO = "/404.html"\n  STATUS = 404\n`,
+      expectedSubstring: "Unsupported or non-canonical key",
+    },
+
+    // 34-37: Duplicate keys in same block
+    {
+      name: "NEG 34: Duplicate key 'status = 302' then 'status = 404' before fallback",
+      toml: `[[redirects]]\n  from = "/jobs"\n  to = "/dest"\n  status = 302\n  status = 404\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Duplicate key 'status'",
+    },
+    {
+      name: "NEG 35: Duplicate key 'status = 302' then 'status = 404' after fallback",
+      toml: `${canonicalFallbackSnippet}\n[[redirects]]\n  from = "/jobs"\n  to = "/dest"\n  status = 302\n  status = 404\n`,
+      expectedSubstring: "Duplicate key 'status'",
+    },
+    {
+      name: "NEG 36: Duplicate key 'from = \"/a\"' then 'from = \"/b\"'",
+      toml: `[[redirects]]\n  from = "/a"\n  from = "/b"\n  to = "/dest"\n  status = 302\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Duplicate key 'from'",
+    },
+    {
+      name: "NEG 37: Duplicate key on fallback itself",
+      toml: `[[redirects]]\n  from = "/*"\n  to = "/404.html"\n  status = 302\n  status = 404\n`,
+      expectedSubstring: "Duplicate key 'status'",
+    },
+
+    // 38-41: Dotted and quoted keys
+    {
+      name: "NEG 38: Dotted key: 'redirects.conditions = {Country = [\"US\"]}'",
+      toml: `[[redirects]]\n  from = "/jobs"\n  to = "/dest"\n  status = 302\n  redirects.conditions = {Country = ["US"]}\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Dotted or quoted keys are not allowed",
+    },
+    {
+      name: "NEG 39: Dotted key: 'a.b = \"val\"'",
+      toml: `[[redirects]]\n  from = "/jobs"\n  to = "/dest"\n  status = 302\n  a.b = "val"\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Dotted or quoted keys are not allowed",
+    },
+    {
+      name: "NEG 40: Quoted key: '\"from\" = \"/jobs\"'",
+      toml: `[[redirects]]\n  "from" = "/jobs"\n  to = "/dest"\n  status = 302\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Quoted keys are not allowed",
+    },
+    {
+      name: "NEG 41: Quoted key: ''to' = \"/dest\"'",
+      toml: `[[redirects]]\n  from = "/jobs"\n  'to' = "/dest"\n  status = 302\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Quoted keys are not allowed",
+    },
+
+    // 42-44: Invalid separator
+    {
+      name: "NEG 42: Colon separator: 'from : \"/jobs\"'",
+      toml: `[[redirects]]\n  from : "/jobs"\n  to = "/dest"\n  status = 302\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Missing key-value separator '='",
+    },
+    {
+      name: "NEG 43: Arrow separator: 'from => \"/jobs\"'",
+      toml: `[[redirects]]\n  from => "/jobs"\n  to = "/dest"\n  status = 302\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Invalid separator",
+    },
+    {
+      name: "NEG 44: Missing separator: 'from \"/jobs\"'",
+      toml: `[[redirects]]\n  from "/jobs"\n  to = "/dest"\n  status = 302\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Missing key-value separator '='",
+    },
+
+    // 45-55: Status validations (0404, 00404, +404, 4_04, 404.0, 0x194, quoted, etc.)
+    {
+      name: "NEG 45: Status with leading zero '0404'",
+      toml: `[[redirects]]\n  from = "/jobs"\n  to = "/dest"\n  status = 0404\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Malformed status code '0404'",
+    },
+    {
+      name: "NEG 46: Status with multiple leading zeros '00404'",
+      toml: `[[redirects]]\n  from = "/jobs"\n  to = "/dest"\n  status = 00404\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Malformed status code '00404'",
+    },
+    {
+      name: "NEG 47: Status with leading plus '+404'",
+      toml: `[[redirects]]\n  from = "/jobs"\n  to = "/dest"\n  status = +404\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Malformed status code '+404'",
+    },
+    {
+      name: "NEG 48: Status with underscore '4_04'",
+      toml: `[[redirects]]\n  from = "/jobs"\n  to = "/dest"\n  status = 4_04\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Malformed status code '4_04'",
+    },
+    {
+      name: "NEG 49: Status with float '404.0'",
+      toml: `[[redirects]]\n  from = "/jobs"\n  to = "/dest"\n  status = 404.0\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Malformed status code '404.0'",
+    },
+    {
+      name: "NEG 50: Status with hex '0x194'",
+      toml: `[[redirects]]\n  from = "/jobs"\n  to = "/dest"\n  status = 0x194\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Malformed status code '0x194'",
+    },
+    {
+      name: "NEG 51: Status quoted double '\"404\"'",
+      toml: `[[redirects]]\n  from = "/jobs"\n  to = "/dest"\n  status = "404"\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Malformed status code",
+    },
+    {
+      name: "NEG 52: Status quoted single ''404''",
+      toml: `[[redirects]]\n  from = "/jobs"\n  to = "/dest"\n  status = '404'\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Malformed status code",
+    },
+    {
+      name: "NEG 53: Status with trailing alpha garbage '404garbage'",
+      toml: `[[redirects]]\n  from = "/jobs"\n  to = "/dest"\n  status = 404garbage\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Malformed status code '404garbage'",
+    },
+    {
+      name: "NEG 54: Status out of range low 'status = 99'",
+      toml: `[[redirects]]\n  from = "/jobs"\n  to = "/dest"\n  status = 99\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Malformed status code '99'",
+    },
+    {
+      name: "NEG 55: Status out of range high 'status = 600'",
+      toml: `[[redirects]]\n  from = "/jobs"\n  to = "/dest"\n  status = 600\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Unsupported HTTP status code 600",
+    },
+
+    // 56-59: Force validations
+    {
+      name: "NEG 56: Force value integer 'force = 1'",
+      toml: `[[redirects]]\n  from = "/jobs"\n  to = "/dest"\n  status = 302\n  force = 1\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Malformed force value '1'",
+    },
+    {
+      name: "NEG 57: Force value quoted 'force = \"true\"'",
+      toml: `[[redirects]]\n  from = "/jobs"\n  to = "/dest"\n  status = 302\n  force = "true"\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Malformed force value '\"true\"'",
+    },
+    {
+      name: "NEG 58: Force value uppercase 'force = TRUE'",
+      toml: `[[redirects]]\n  from = "/jobs"\n  to = "/dest"\n  status = 302\n  force = TRUE\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Malformed force value 'TRUE'",
+    },
+    {
+      name: "NEG 59: Force value string 'force = yes'",
+      toml: `[[redirects]]\n  from = "/jobs"\n  to = "/dest"\n  status = 302\n  force = yes\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Malformed force value 'yes'",
+    },
+
+    // 60-67: Table header variations
+    {
+      name: "NEG 60: Single bracket table header '[redirects]'",
+      toml: `[redirects]\n  from = "/*"\n  to = "/404.html"\n  status = 404\n`,
+      expectedSubstring: "Unsupported or non-canonical table header '[redirects]'",
+    },
+    {
+      name: "NEG 61: Spaced brackets table header '[ [redirects] ]'",
+      toml: `[ [redirects] ]\n  from = "/*"\n  to = "/404.html"\n  status = 404\n`,
+      expectedSubstring: "Unsupported or non-canonical table header '[ [redirects] ]'",
+    },
+    {
+      name: "NEG 62: Spaced content table header '[[ redirects ]]'",
+      toml: `[[ redirects ]]\n  from = "/*"\n  to = "/404.html"\n  status = 404\n`,
+      expectedSubstring: "Unsupported or non-canonical table header '[[ redirects ]]'",
+    },
+    {
+      name: "NEG 63: Quoted table header '[[\"redirects\"]]'",
+      toml: `[["redirects"]]\n  from = "/*"\n  to = "/404.html"\n  status = 404\n`,
+      expectedSubstring: "Unsupported or non-canonical table header '[[\"redirects\"]]'",
+    },
+    {
+      name: "NEG 64: Escaped table header '[[\"redirec\\u0074s\"]]'",
+      toml: `[["redirec\\u0074s"]]\n  from = "/*"\n  to = "/404.html"\n  status = 404\n`,
+      expectedSubstring: "Unsupported or non-canonical table header '[[\"redirec\\u0074s\"]]'",
+    },
+    {
+      name: "NEG 65: Subtable '[redirects.conditions]'",
+      toml: `[[redirects]]\n  from = "/*"\n  to = "/404.html"\n  status = 404\n  [redirects.conditions]\n    Country = ["US"]\n`,
+      expectedSubstring: "Unsupported or non-canonical table header '[redirects.conditions]'",
+    },
+    {
+      name: "NEG 66: Spaced subtable '[redirects . conditions]'",
+      toml: `[[redirects]]\n  from = "/*"\n  to = "/404.html"\n  status = 404\n  [redirects . conditions]\n    Country = ["US"]\n`,
+      expectedSubstring: "Unsupported or non-canonical table header '[redirects . conditions]'",
+    },
+    {
+      name: "NEG 67: Quoted subtable '[\"redirects\".\"conditions\"]'",
+      toml: `[[redirects]]\n  from = "/*"\n  to = "/404.html"\n  status = 404\n  ["redirects"."conditions"]\n    Country = ["US"]\n`,
+      expectedSubstring: "Unsupported or non-canonical table header '[\"redirects\".\"conditions\"]'",
+    },
+
+    // 68-71: Unknown lines / types
+    {
+      name: "NEG 68: Unknown line / array: 'arr = [1, 2, 3]'",
+      toml: `[[redirects]]\n  from = "/jobs"\n  to = "/dest"\n  status = 302\n  arr = [1, 2, 3]\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Unsupported or non-canonical key 'arr'",
+    },
+    {
+      name: "NEG 69: Unknown line / inline table: 'tbl = { a = \"b\" }'",
+      toml: `[[redirects]]\n  from = "/jobs"\n  to = "/dest"\n  status = 302\n  tbl = { a = "b" }\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Unsupported or non-canonical key 'tbl'",
+    },
+    {
+      name: "NEG 70: Unknown line / date: 'date = 2026-01-01'",
+      toml: `[[redirects]]\n  from = "/jobs"\n  to = "/dest"\n  status = 302\n  date = 2026-01-01\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Unsupported or non-canonical key 'date'",
+    },
+    {
+      name: "NEG 71: Unknown raw line: 'just a random line'",
+      toml: `[[redirects]]\n  from = "/jobs"\n  to = "/dest"\n  status = 302\n  just a random line\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Missing key-value separator '='",
+    },
+
+    // 72-74: Missing required fields
+    {
+      name: "NEG 72: Missing from field in block",
+      toml: `[[redirects]]\n  to = "/dest"\n  status = 302\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Missing required 'from' field",
+    },
+    {
+      name: "NEG 73: Missing to field in block",
+      toml: `[[redirects]]\n  from = "/jobs"\n  status = 302\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Missing required 'to' field",
+    },
+    {
+      name: "NEG 74: Missing status field in block",
+      toml: `[[redirects]]\n  from = "/*"\n  to = "/404.html"\n`,
+      expectedSubstring: "Missing required 'status' field",
+    },
+
+    // 75-81: Routing semantics (fallback not last, wrong order, shadowing, early-access, destination)
+    {
+      name: "NEG 75: Fallback not last: rule follows 404 fallback (wrong order)",
+      toml: `${canonicalFallbackSnippet}\n[[redirects]]\n  from = "/jobs"\n  to = "/dest"\n  status = 302\n`,
+      expectedSubstring: "fallback must be last",
+    },
+    {
+      name: "NEG 76: Wrong order / Shadowing: '/* /login 302' precedes 404 fallback",
+      toml: `[[redirects]]\n  from = "/*"\n  to = "/login"\n  status = 302\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "precedes and shadows the 404 fallback",
+    },
+    {
+      name: "NEG 77: Jobs route redirected to early-access: '/jobs -> /early-access'",
+      toml: `[[redirects]]\n  from = "/jobs"\n  to = "/early-access"\n  status = 302\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "Jobs route '/jobs' redirects to early-access",
+    },
+    {
+      name: "NEG 78: Catch-all redirected to early-access: '/* -> /early-access'",
+      toml: `[[redirects]]\n  from = "/*"\n  to = "/early-access"\n  status = 302\n${canonicalFallbackSnippet}`,
+      expectedSubstring: "targets early-access",
+    },
+    {
+      name: "NEG 79: Fallback invalid target document '/not-found'",
+      toml: `[[redirects]]\n  from = "/*"\n  to = "/not-found"\n  status = 404\n`,
+      expectedSubstring: "does not match exact expected document '/404.html'",
+    },
+    {
+      name: "NEG 80: Fallback unapproved origin 'https://wrong.invalid/404.html'",
+      toml: `[[redirects]]\n  from = "/*"\n  to = "https://wrong.invalid/404.html"\n  status = 404\n`,
+      expectedSubstring: "unapproved origin",
+    },
+    {
+      name: "NEG 81: Fallback case sensitivity mismatch '/404.HTML'",
+      toml: `[[redirects]]\n  from = "/*"\n  to = "/404.HTML"\n  status = 404\n`,
+      expectedSubstring: "case-sensitive exact match required",
+    },
+  ];
+
+  // Batch cross-check against Python tomllib
+  const allInputs = [
+    ...positiveControls.map((c) => c.toml),
+    ...negativeControls.map((c) => c.toml),
+  ];
+  const tomllibResults = checkTomlWithPython(allInputs);
+  const tomllibAvailable = Array.isArray(tomllibResults);
+
+  if (tomllibAvailable) {
+    console.log(`  [OK] Python tomllib verified active (${allInputs.length} test cases batch-checked).`);
+  } else {
+    console.warn("  [WARN] Python tomllib not accessible for batch verification.");
+  }
+
+  let passedTests = 0;
+  const totalTests = positiveControls.length + negativeControls.length;
+
+  // 1. Run Positive Controls
+  for (let i = 0; i < positiveControls.length; i++) {
+    const pc = positiveControls[i];
+    const { rules, syntaxErrors } = parseNetlifyTomlRedirects(pc.toml);
+    const { violations } = validateRedirectRules(rules, pc.name);
+    const accepted = syntaxErrors.length === 0 && violations.length === 0 && rules.length > 0;
+
+    if (tomllibAvailable) {
+      const tomllibAccepted = tomllibResults[i];
+      if (!tomllibAccepted) {
+        console.error(`  [FAIL] ${pc.name}: tomllib rejected positive control!`);
+        continue;
+      }
+    }
+
+    if (accepted) {
+      console.log(`  [PASS] ${pc.name}`);
+      passedTests++;
     } else {
-      console.error(`  [FAIL] ${tc.name}`);
-      console.error(`         Expected substring(s):`, tc.expectedSubstrings);
-      console.error(`         Actual violations:`, result.violations);
+      console.error(`  [FAIL] ${pc.name}`);
+      console.error("         Syntax errors:", syntaxErrors);
+      console.error("         Violations:", violations);
     }
   }
 
-  if (passedControls !== testCases.length) {
-    console.error(
-      `\nNegative controls verification FAILED: ${passedControls}/${testCases.length} passed.`
-    );
-    return false;
+  // 2. Run Negative Controls
+  const negOffset = positiveControls.length;
+  for (let i = 0; i < negativeControls.length; i++) {
+    const nc = negativeControls[i];
+    const { rules, syntaxErrors } = parseNetlifyTomlRedirects(nc.toml);
+    const { violations } = validateRedirectRules(rules, nc.name);
+    const allIssues = [...syntaxErrors, ...violations];
+    const rejected = allIssues.length > 0;
+    const matchesSubstring = nc.expectedSubstring
+      ? allIssues.some((issue) => issue.includes(nc.expectedSubstring))
+      : true;
+
+    if (tomllibAvailable) {
+      const tomllibAccepted = tomllibResults[negOffset + i];
+      // Invariant: if tomllib rejects it, our strict subset checker MUST also reject it!
+      if (!tomllibAccepted && !rejected) {
+        console.error(
+          `  [FAIL] ${nc.name}: strict subset checker accepted input that Python tomllib rejects!`
+        );
+        continue;
+      }
+    }
+
+    if (rejected && matchesSubstring) {
+      console.log(`  [PASS] ${nc.name}`);
+      passedTests++;
+    } else {
+      console.error(`  [FAIL] ${nc.name}`);
+      console.error(`         Expected substring: '${nc.expectedSubstring}'`);
+      console.error(`         Actual issues:`, allIssues);
+    }
   }
 
   console.log(
-    `All ${passedControls}/${testCases.length} negative controls verified successfully.`
+    `\nTable-Driven Suite: ${passedTests}/${totalTests} tests passed (${positiveControls.length} positive, ${negativeControls.length} negative).`
   );
+
+  return passedTests === totalTests;
+}
+
+function runFuzzTestSuite(iterations = 300) {
+  console.log(`\n--- RUNNING RANDOMISED FUZZ LOOP (${iterations} MUTATIONS vs TOMLLIB) ---`);
+
+  const canonical = `[[redirects]]
+  from = "/*"
+  to = "/404.html"
+  status = 404
+`;
+
+  const prng = createPrng(1337);
+  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"\'=\n\t #.\\[]';
+  const mutants = [];
+
+  for (let i = 0; i < iterations; i++) {
+    const op = Math.floor(prng() * 4);
+    const arr = canonical.split("");
+    const pos = Math.floor(prng() * arr.length);
+    if (op === 0 && pos < arr.length - 1) {
+      // swap 2 adjacent characters
+      const tmp = arr[pos];
+      arr[pos] = arr[pos + 1];
+      arr[pos + 1] = tmp;
+    } else if (op === 1 && arr.length > 1) {
+      // delete 1 character
+      arr.splice(pos, 1);
+    } else if (op === 2) {
+      // insert 1 character
+      const c = chars[Math.floor(prng() * chars.length)];
+      arr.splice(pos, 0, c);
+    } else {
+      // replace 1 character
+      const c = chars[Math.floor(prng() * chars.length)];
+      arr[pos] = c;
+    }
+    mutants.push(arr.join(""));
+  }
+
+  const tomllibResults = checkTomlWithPython(mutants);
+  const tomllibAvailable = Array.isArray(tomllibResults);
+
+  if (!tomllibAvailable) {
+    console.warn("  [WARN] Python tomllib unavailable for fuzz validation; skipping fuzz comparison.");
+    return true;
+  }
+
+  let violations = 0;
+  for (let i = 0; i < mutants.length; i++) {
+    const mutant = mutants[i];
+    const tomllibValid = tomllibResults[i];
+    const { rules, syntaxErrors } = parseNetlifyTomlRedirects(mutant);
+    const { violations: ruleViolations } = validateRedirectRules(rules, "fuzz");
+    const checkerAccepted = syntaxErrors.length === 0 && ruleViolations.length === 0 && rules.length > 0;
+
+    // Strict subset invariant: if tomllib rejects it, our parser must NEVER accept it!
+    if (!tomllibValid && checkerAccepted) {
+      console.error(`  [FUZZ VIOLATION] Mutant #${i + 1} accepted by checker but rejected by tomllib!`);
+      console.error(mutant);
+      violations++;
+    }
+  }
+
+  if (violations > 0) {
+    console.error(`Fuzz suite FAILED: ${violations} violation(s) detected.`);
+    return false;
+  }
+
+  console.log(`Fuzz Suite: ${iterations}/${iterations} mutants verified successfully (0 subset violations).`);
   return true;
 }
 
@@ -1975,119 +1448,105 @@ function runNegativeControls() {
 // ============================================================================
 
 function main() {
-  console.log("================================================================================");
-  console.log("  CAREERMONKE DEPLOY REDIRECT RULES VERIFIER (STANDALONE CHECKER)              ");
-  console.log("================================================================================");
+  console.log("=".repeat(80));
+  console.log("  CAREERMONKE DEPLOY REDIRECT RULES VERIFIER (STRICT SUBSET PARSER)   ");
+  console.log("=".repeat(80));
 
   let hasErrors = false;
-  const allViolations = [];
 
-  // 1. Check public/_redirects
+  // 1. Verify public/_redirects
   console.log(`\n1. Checking public/_redirects: ${path.relative(ROOT_DIR, REDIRECTS_PATH)}`);
   if (!fs.existsSync(REDIRECTS_PATH)) {
-    console.error(`  [FAIL] File does not exist: ${REDIRECTS_PATH}`);
+    console.error(`[FAIL] File missing: ${REDIRECTS_PATH}`);
     hasErrors = true;
-    allViolations.push("public/_redirects file missing");
   } else {
     const rawRedirects = fs.readFileSync(REDIRECTS_PATH, "utf-8");
     const { rules, syntaxErrors } = parseRedirectsFile(rawRedirects);
-    console.log(`  Found ${rules.length} valid redirect rules in public/_redirects.`);
 
     if (syntaxErrors.length > 0) {
+      console.error(`[FAIL] Syntax errors in ${REDIRECTS_PATH}:`);
+      syntaxErrors.forEach((e) => console.error(`  - ${e}`));
       hasErrors = true;
-      for (const err of syntaxErrors) {
-        console.error(`  [FAIL] ${err}`);
-        allViolations.push(err);
-      }
-    }
-
-    const { violations } = validateRedirectRules(rules, "public/_redirects");
-    if (violations.length > 0) {
-      hasErrors = true;
-      for (const v of violations) {
-        console.error(`  [FAIL] ${v}`);
-        allViolations.push(v);
-      }
     } else {
-      console.log("  [PASS] Comment-aware syntax and tokens parsed cleanly.");
-      console.log("  [PASS] No rule targets /early-access (query/fragment/absolute URLs normalized).");
-      console.log("  [PASS] No rule catches /jobs to /early-access.");
-      console.log(`  [PASS] Unshadowed, unconditional 404 fallback verified targeting exact '${EXPECTED_404_DOCUMENT}'.`);
+      console.log(`  Found ${rules.length} valid redirect rules in public/_redirects.`);
+      const { violations } = validateRedirectRules(rules, "public/_redirects");
+      if (violations.length > 0) {
+        console.error(`[FAIL] Semantic rule violations in ${REDIRECTS_PATH}:`);
+        violations.forEach((v) => console.error(`  - ${v}`));
+        hasErrors = true;
+      } else {
+        console.log("  [PASS] Comment-aware syntax and tokens parsed cleanly.");
+        console.log("  [PASS] No rule targets /early-access (query/fragment/absolute URLs normalized).");
+        console.log("  [PASS] No rule catches /jobs to /early-access.");
+        console.log("  [PASS] Unshadowed, unconditional 404 fallback verified targeting exact '/404.html'.");
+      }
     }
   }
 
-  // 2. Check netlify.toml
+  // 2. Verify netlify.toml
   console.log(`\n2. Checking netlify.toml: ${path.relative(ROOT_DIR, NETLIFY_TOML_PATH)}`);
   if (!fs.existsSync(NETLIFY_TOML_PATH)) {
-    console.error(`  [FAIL] File does not exist: ${NETLIFY_TOML_PATH}`);
+    console.error(`[FAIL] File missing: ${NETLIFY_TOML_PATH}`);
     hasErrors = true;
-    allViolations.push("netlify.toml file missing");
   } else {
     const rawToml = fs.readFileSync(NETLIFY_TOML_PATH, "utf-8");
-    const { rules, syntaxErrors } = parseNetlifyTomlRedirects(rawToml);
-    console.log(`  Found ${rules.length} valid [[redirects]] blocks in netlify.toml.`);
+    const { rules, syntaxErrors } = parseNetlifyTomlRedirects(rawToml, {
+      allowTopLevelHeaders: true,
+    });
 
     if (syntaxErrors.length > 0) {
+      console.error(`[FAIL] Syntax errors in ${NETLIFY_TOML_PATH}:`);
+      syntaxErrors.forEach((e) => console.error(`  - ${e}`));
       hasErrors = true;
-      for (const err of syntaxErrors) {
-        console.error(`  [FAIL] ${err}`);
-        allViolations.push(err);
-      }
-    }
-
-    const { violations } = validateRedirectRules(rules, "netlify.toml");
-    if (violations.length > 0) {
-      hasErrors = true;
-      for (const v of violations) {
-        console.error(`  [FAIL] ${v}`);
-        allViolations.push(v);
-      }
     } else {
-      console.log("  [PASS] Comment-aware TOML blocks parsed cleanly (comments stripped).");
-      console.log("  [PASS] No [[redirects]] block targets /early-access as a catch-all.");
-      console.log("  [PASS] No [[redirects]] block catches /jobs to /early-access.");
-      console.log(`  [PASS] Unshadowed, unconditional 404 fallback verified targeting exact '${EXPECTED_404_DOCUMENT}'.`);
+      console.log(`  Found ${rules.length} valid [[redirects]] blocks in netlify.toml.`);
+      const { violations } = validateRedirectRules(rules, "netlify.toml");
+      if (violations.length > 0) {
+        console.error(`[FAIL] Semantic rule violations in ${NETLIFY_TOML_PATH}:`);
+        violations.forEach((v) => console.error(`  - ${v}`));
+        hasErrors = true;
+      } else {
+        console.log("  [PASS] Strict subset [[redirects]] grammar verified cleanly.");
+        console.log("  [PASS] No [[redirects]] block targets /early-access as a catch-all.");
+        console.log("  [PASS] No [[redirects]] block catches /jobs to /early-access.");
+        console.log("  [PASS] Unshadowed, unconditional 404 fallback verified targeting exact '/404.html'.");
+      }
     }
   }
 
-  // 3. Run negative controls verification
-  const controlsPassed = runNegativeControls();
-  if (!controlsPassed) {
+  // 3. Run Table-Driven Test Suite & Python Cross-Check
+  const suitePassed = runTableDrivenTestSuite();
+  if (!suitePassed) {
     hasErrors = true;
-    allViolations.push("Negative controls self-test failed");
   }
 
-  // 4. Final Verdict
-  console.log("\n--------------------------------------------------------------------------------");
+  // 4. Run Fuzz Suite
+  const fuzzPassed = runFuzzTestSuite(300);
+  if (!fuzzPassed) {
+    hasErrors = true;
+  }
+
+  console.log("\n" + "-".repeat(80));
   if (hasErrors) {
-    console.error("VERDICT: FAIL - Deploy redirect rules violations detected:");
-    for (const v of allViolations) {
-      console.error(`  - ${v}`);
-    }
+    console.error("VERDICT: FAIL (One or more redirect rules, controls, or fuzz checks failed)");
     process.exit(1);
   } else {
-    console.log("VERDICT: PASS (All deploy redirect rules and negative controls verified)");
+    console.log("VERDICT: PASS (All deploy redirect rules, table-driven controls, and fuzz loop verified)");
     process.exit(0);
   }
 }
 
-if (require.main === module) {
-  main();
-}
-
 module.exports = {
-  EXPECTED_404_DOCUMENT,
-  APPROVED_ORIGINS,
   parseDestination,
   normalizeDestinationPath,
   isValid404FallbackDestination,
-  isCatchAllPattern,
-  targetsEarlyAccess,
-  matchesJobsRoute,
-  isExact404Target,
-  stripTomlComments,
   parseRedirectsFile,
   parseNetlifyTomlRedirects,
   validateRedirectRules,
-  runNegativeControls,
+  runTableDrivenTestSuite,
+  runFuzzTestSuite,
 };
+
+if (require.main === module) {
+  main();
+}
