@@ -234,6 +234,51 @@ global.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
     });
   }
 
+  // 8. Supabase RPCs (rate limits, global budget, concurrency, and quotas)
+  if (urlStr.includes("/rest/v1/rpc/")) {
+    if (urlStr.includes("ai_global_budget_reserve")) {
+      return new Response(JSON.stringify([{ allowed: true, remaining: 100000 }]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (urlStr.includes("ai_concurrency_acquire")) {
+      return new Response(JSON.stringify([{ allowed: true }]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (urlStr.includes("ai_concurrency_release") || urlStr.includes("ai_global_budget_settle")) {
+      return new Response(JSON.stringify(null), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (urlStr.includes("check_and_increment_ai_quota")) {
+      return new Response(JSON.stringify([{ allowed: true, current_count: 1, daily_limit: 100 }]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (urlStr.includes("check_shared_rate_limit")) {
+      return new Response(JSON.stringify([{ allowed: true, remaining: 100, reset_ms: 1000 }]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    return new Response(JSON.stringify([{ allowed: true }]), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  if (urlStr.includes("mock-supabase.local") || urlStr.includes("/rest/v1/")) {
+    return new Response(JSON.stringify([]), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
   return originalFetch(input, init);
 };
 
@@ -607,13 +652,22 @@ async function runTests() {
   const { handleAiRequest, handleNetlifyAiRequest } = await import("../src/lib/ai/serviceHandler");
   const aiDeps = {
     checkSharedRateLimit: async () => ({ allowed: true, remaining: 10, resetMs: 1000 }),
-    consumeSet: async () => ({ allowed: true }),
-    providerAdapter: {
-      complete: async () => ({
-        text: JSON.stringify({ overview: "AI summary generated successfully" }),
+    consumeSet: async () => ({ success: true, allowed: true, remaining: 10 }),
+    callGroq: async () => {
+      const payloadStr = JSON.stringify({
+        name: "Test Candidate",
+        headline: "Senior Software Engineer",
+        summary: "Senior Software Engineer with TypeScript and React experience.",
+        skills: ["TypeScript", "React"],
+        experience: [],
+      });
+      return {
+        content: payloadStr,
+        result: payloadStr,
+        text: payloadStr,
         tokenUsage: { totalTokens: 25 },
-      }),
-    } as any,
+      };
+    },
   };
 
   // 6d. Shared AI service: unpaid new signed-in user hits PRO_REQUIRED, not Early access only
@@ -678,7 +732,7 @@ async function runTests() {
     }),
     aiDeps
   );
-  assert.notStrictEqual(proAiRes.status, 403, "Paid new user is not blocked with 403 on Next.js AI service");
+  assert.strictEqual(proAiRes.status, 200, "Paid new user receives exact 200 on Next.js AI service");
   const proAiBody = await proAiRes.json().catch(() => ({}));
   assert.ok(!String(proAiBody.error || "").includes("Early access only"), "Must not return Early access only");
 
@@ -698,7 +752,7 @@ async function runTests() {
     } as any,
     aiDeps
   );
-  assert.notStrictEqual(proNetlifyAiRes.statusCode, 403, "Paid new user is not blocked with 403 on Netlify AI service");
+  assert.strictEqual(proNetlifyAiRes.statusCode, 200, "Paid new user receives exact 200 on Netlify AI service");
   const proNetlifyBody = JSON.parse(proNetlifyAiRes.body || "{}");
   assert.ok(!String(proNetlifyBody.error || "").includes("Early access only"), "Must not return Early access only");
 

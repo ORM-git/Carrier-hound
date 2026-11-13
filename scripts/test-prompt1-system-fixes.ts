@@ -762,7 +762,7 @@ async function run() {
     const mockProAdmin = () => ({
       auth: {
         getUser: async () => ({
-          data: { user: { id: "pro-user-1", email: "xbsuryakant@gmail.com", email_confirmed_at: "2026-01-01", app_metadata: { provider: "google" }, user_metadata: {} } },
+          data: { user: { id: "pro-user-1", user_metadata: {} } },
           error: null,
         }),
       },

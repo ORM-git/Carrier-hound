@@ -441,8 +441,9 @@ async function verifyAuthenticatedRequest(
             if (typeof mockAuth.signOut === "function") {
               await mockAuth.signOut().catch(() => {});
             }
+            _clearAuthCookiesOnResponse(request, response);
             return {
-              hasValidSession: true,
+              hasValidSession: false,
               isAllowedEarlyAccess: false,
               isVerifiedAdmin: false,
               signedOutNonAllowedUser: true,
@@ -513,8 +514,9 @@ async function verifyAuthenticatedRequest(
         // Rule 5: Google login only, no magic links
         if (!isGoogleProvider(verifiedUser)) {
           await supabase.auth.signOut().catch(() => {});
+          _clearAuthCookiesOnResponse(request, response);
           return {
-            hasValidSession: true,
+            hasValidSession: false,
             isAllowedEarlyAccess: false,
             isVerifiedAdmin: false,
             signedOutNonAllowedUser: true,
@@ -587,8 +589,8 @@ async function middlewareImpl(request: NextRequest) {
   // 2. Server-side Admin Route & API Gate:
   // Signed-in user's email must be in the admin list AND email must be verified; otherwise 403.
   if (isAdminRouteOrApi(pathname)) {
-    const { hasValidSession, isVerifiedAdmin } = await verifyAuthenticatedRequest(request);
-    if (!hasValidSession || !isVerifiedAdmin) {
+    const { hasValidSession, isVerifiedAdmin, signedOutNonAllowedUser } = await verifyAuthenticatedRequest(request);
+    if (!hasValidSession || !isVerifiedAdmin || signedOutNonAllowedUser) {
       return NextResponse.json(
         { error: "Forbidden: Admin access only." },
         { status: 403 }
@@ -621,17 +623,21 @@ async function middlewareImpl(request: NextRequest) {
       pathname === "/login" ||
       pathname === "/auth/callback"
     ) {
-      const { hasValidSession } = await verifyAuthenticatedRequest(request);
-      if (hasValidSession) {
+      const { hasValidSession, signedOutNonAllowedUser, response: authResponse } =
+        await verifyAuthenticatedRequest(request);
+      if (hasValidSession && !signedOutNonAllowedUser) {
         return NextResponse.redirect(new URL("/dashboard", request.url));
+      }
+      if (signedOutNonAllowedUser) {
+        return authResponse;
       }
     }
     return NextResponse.next();
   }
 
   // 5. Protected pages require an active session
-  const { hasValidSession, response } = await verifyAuthenticatedRequest(request);
-  if (hasValidSession) {
+  const { hasValidSession, signedOutNonAllowedUser, response } = await verifyAuthenticatedRequest(request);
+  if (hasValidSession && !signedOutNonAllowedUser) {
     return response;
   }
 
@@ -639,7 +645,12 @@ async function middlewareImpl(request: NextRequest) {
   const loginUrl = new URL("/login", request.url);
   loginUrl.searchParams.set("returnTo", returnTo);
 
-  return NextResponse.redirect(loginUrl);
+  const redirectResponse = NextResponse.redirect(loginUrl);
+  for (const cookie of response.cookies.getAll()) {
+    redirectResponse.cookies.set(cookie);
+  }
+
+  return redirectResponse;
 }
 
 export const config = {
