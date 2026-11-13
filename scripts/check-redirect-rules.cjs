@@ -348,74 +348,43 @@ function parseRedirectsFile(content) {
 }
 
 /**
- * Detects whether a line is an unsupported or ambiguous redirect subtable
- * or table header. Netlify redirects must only use [[redirects]].
- * Matches any variations with spaces, quotes, or subkeys such as:
- *   [redirects.conditions], [redirects . conditions], ["redirects"."conditions"],
- *   ['redirects'.'conditions'], [ "redirects" . "conditions" ],
- *   [[redirects.conditions]], [[redirects . conditions]],
- *   [redirects.headers], [redirects.query], [redirects], etc.
+ * Detects whether a line is a redirect array-header or subtable that is NOT
+ * the exact canonical form '[[redirects]]'.
+ *
+ * In netlify.toml, redirect blocks must strictly use the exact canonical header:
+ *   [[redirects]]
+ * Any other redirect table/array header spelling (e.g. [[ redirects ]], [["redirects"]],
+ * [['redirects']], [[REDIRECTS]], single table [redirects], or any subtable such as
+ * [redirects.conditions], [redirects . conditions], ["redirects"."conditions"])
+ * is non-canonical and must be rejected fail-closed.
  */
-function isRedirectSubtableOrAmbiguousHeader(line) {
+function isNonCanonicalRedirectHeader(line) {
   const trimmed = line.trim();
-  if (!trimmed.startsWith("[")) return false;
-
-  // Single table [redirects] (with optional quotes/spaces) is ambiguous/invalid
-  // since redirects must be an array of tables [[redirects]].
-  if (/^\[\s*(?:"redirects"|'redirects'|redirects)\s*\]$/i.test(trimmed)) {
-    return true;
+  if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) {
+    return false;
   }
-
-  // Any subtable header starting with redirects followed by a dot,
-  // supporting any spacing, quotes (single or double), or brackets:
-  // e.g. [redirects.conditions], [redirects . conditions], ["redirects"."conditions"],
-  // ["redirects" . "conditions"], ['redirects' . 'conditions'],
-  // [[redirects.conditions]], [[redirects . conditions]], [ "redirects.conditions" ]
-  if (
-    /^\[+\s*(?:"redirects"|'redirects'|redirects)\s*\./i.test(trimmed) ||
-    /^\[+\s*["']redirects\./i.test(trimmed)
-  ) {
-    return true;
+  // Check if this header line references redirects in any way (case-insensitive)
+  if (/redirects/i.test(trimmed)) {
+    // Only the exact canonical header '[[redirects]]' is allowed
+    return trimmed !== "[[redirects]]";
   }
-
-  // Also check general TOML key splitting if brackets wrap dotted keys
-  const headerMatch = trimmed.match(/^\[+(.*?)\]+$/);
-  if (headerMatch) {
-    const inner = headerMatch[1].trim();
-    const dotIdx = inner.indexOf(".");
-    if (dotIdx !== -1) {
-      const firstSeg = inner
-        .slice(0, dotIdx)
-        .trim()
-        .replace(/^["']|["']$/g, "")
-        .toLowerCase();
-      if (firstSeg === "redirects") {
-        return true;
-      }
-    }
-  }
-
   return false;
 }
 
 /**
  * Detects whether a line starts a new foreign TOML section (e.g. [build], [[headers]],
  * [context.production]) that is NOT part of the redirect block.
- * Redirect subtable headers are explicitly NOT foreign section headers.
+ * Any header referencing redirects is explicitly NOT a foreign section header.
  */
 function isForeignSectionHeader(line) {
   const trimmed = line.trim();
-  if (!trimmed.startsWith("[")) return false;
+  if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) return false;
 
-  if (isRedirectSubtableOrAmbiguousHeader(trimmed)) {
+  if (/redirects/i.test(trimmed)) {
     return false;
   }
 
-  if (/^\[\[\s*(?:"redirects"|'redirects'|redirects)\s*\]\]$/i.test(trimmed)) {
-    return false;
-  }
-
-  return /^\[+.*\]+$/.test(trimmed);
+  return true;
 }
 
 /**
@@ -432,15 +401,24 @@ function parseNetlifyTomlRedirects(content) {
   const rules = [];
   const syntaxErrors = [];
 
-  // Preamble check: detect any redirect subtable before the first [[redirects]]
-  const preamble = cleanContent.split("[[redirects]]")[0];
-  for (const rawLine of preamble.split(/\r?\n/)) {
-    const trimmed = rawLine.trim();
-    if (isRedirectSubtableOrAmbiguousHeader(trimmed)) {
+  // File-wide scan before any splitting:
+  // Reject ANY redirect array-header or subtable that is not the exact canonical '[[redirects]]' (fail closed).
+  for (let lineIdx = 0; lineIdx < cleanLines.length; lineIdx++) {
+    const trimmed = cleanLines[lineIdx].trim();
+    if (isNonCanonicalRedirectHeader(trimmed)) {
+      const desc = trimmed.includes(".")
+        ? "Unsupported subtable"
+        : "Unsupported non-canonical redirect header";
       syntaxErrors.push(
-        `netlify.toml: Unsupported subtable or ambiguous redirect header '${trimmed}' detected before first [[redirects]]; subtable shapes are not modeled and must be rejected fail-closed`
+        `netlify.toml (line ${lineIdx + 1}): ${desc} '${trimmed}' detected; only exact canonical '[[redirects]]' is allowed (fail closed)`
       );
     }
+  }
+
+  // If the file contains any non-canonical redirect headers or subtables,
+  // fail closed immediately: no redirect rules from this file can be certified.
+  if (syntaxErrors.length > 0) {
+    return { rules: [], syntaxErrors };
   }
 
   const redirectBlocks = cleanContent.split("[[redirects]]").slice(1);
@@ -462,21 +440,7 @@ function parseNetlifyTomlRedirects(content) {
     const rawBlock = redirectBlocks[i];
     const rawBlockLines = rawBlock.split(/\r?\n/);
 
-    // Reject every unsupported or ambiguous redirect subtable spelling BEFORE section chopping.
-    // Fail closed: the checker does not model subtable shapes.
-    let hasSubtable = false;
-    for (const rawLine of rawBlockLines) {
-      const trimmed = rawLine.trim();
-      if (isRedirectSubtableOrAmbiguousHeader(trimmed)) {
-        hasSubtable = true;
-        syntaxErrors.push(
-          `netlify.toml [[redirects]] block #${blockIndex}: Unsupported subtable '${trimmed}' detected; subtable shapes are not modeled and must be rejected fail-closed`
-        );
-      }
-    }
-
     // Stop only at true foreign section headers (e.g. [build], [[headers]]).
-    // Redirect subtables are NEVER chopped off as foreign sections.
     const blockLines = [];
     for (const rawLine of rawBlockLines) {
       const trimmed = rawLine.trim();
@@ -514,7 +478,7 @@ function parseNetlifyTomlRedirects(content) {
     let edgeHandlerRaw = null;
     let hasSign = false;
     let signRaw = null;
-    let hasMalformedLine = hasSubtable; // subtable automatically invalidates block shape
+    let hasMalformedLine = false;
 
     for (const line of lines) {
       // Detect subtable or section header lines inside block body
@@ -1145,6 +1109,106 @@ function runNegativeControls() {
       },
       expectedSubstrings: [
         "Unsupported subtable '[\"redirects\".\"conditions\"]'",
+        "Missing required active 404 fallback rule",
+      ],
+    },
+    {
+      name: "21. Negative Control: TOML non-canonical header '[[ redirects ]]' before fallback fails closed",
+      fn: () => {
+        const toml = `
+[[ redirects ]]
+  from = "/jobs"
+  to = "/early-access"
+  status = 302
+
+[[redirects]]
+  from = "/*"
+  to = "/404.html"
+  status = 404
+`;
+        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
+        const res = validateRedirectRules(rules, "netlify.toml");
+        return {
+          violations: [...syntaxErrors, ...res.violations],
+        };
+      },
+      expectedSubstrings: [
+        "Unsupported non-canonical redirect header '[[ redirects ]]'",
+        "Missing required active 404 fallback rule",
+      ],
+    },
+    {
+      name: "22. Negative Control: TOML non-canonical header '[[ redirects ]]' after fallback fails closed",
+      fn: () => {
+        const toml = `
+[[redirects]]
+  from = "/*"
+  to = "/404.html"
+  status = 404
+
+[[ redirects ]]
+  from = "/jobs"
+  to = "/early-access"
+  status = 302
+`;
+        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
+        const res = validateRedirectRules(rules, "netlify.toml");
+        return {
+          violations: [...syntaxErrors, ...res.violations],
+        };
+      },
+      expectedSubstrings: [
+        "Unsupported non-canonical redirect header '[[ redirects ]]'",
+        "Missing required active 404 fallback rule",
+      ],
+    },
+    {
+      name: "23. Negative Control: TOML non-canonical header '[[\"redirects\"]]' before fallback fails closed",
+      fn: () => {
+        const toml = `
+[["redirects"]]
+  from = "/jobs"
+  to = "/early-access"
+  status = 302
+
+[[redirects]]
+  from = "/*"
+  to = "/404.html"
+  status = 404
+`;
+        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
+        const res = validateRedirectRules(rules, "netlify.toml");
+        return {
+          violations: [...syntaxErrors, ...res.violations],
+        };
+      },
+      expectedSubstrings: [
+        "Unsupported non-canonical redirect header '[[\"redirects\"]]'",
+        "Missing required active 404 fallback rule",
+      ],
+    },
+    {
+      name: "24. Negative Control: TOML non-canonical header '[[\"redirects\"]]' after fallback fails closed",
+      fn: () => {
+        const toml = `
+[[redirects]]
+  from = "/*"
+  to = "/404.html"
+  status = 404
+
+[["redirects"]]
+  from = "/jobs"
+  to = "/early-access"
+  status = 302
+`;
+        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
+        const res = validateRedirectRules(rules, "netlify.toml");
+        return {
+          violations: [...syntaxErrors, ...res.violations],
+        };
+      },
+      expectedSubstrings: [
+        "Unsupported non-canonical redirect header '[[\"redirects\"]]'",
         "Missing required active 404 fallback rule",
       ],
     },
