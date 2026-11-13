@@ -15,6 +15,7 @@ export default function AuthCallbackPage() {
 
   useEffect(() => {
     let resolved = false;
+    let cancelled = false;
 
     // Read search params via window.location (safe for static export)
     const search = typeof window !== "undefined" ? window.location.search : "";
@@ -28,7 +29,7 @@ export default function AuthCallbackPage() {
     const supabase = createClient();
 
     const finish = (destination: string) => {
-      if (!resolved) {
+      if (!cancelled && !resolved) {
         resolved = true;
         clearCandidateProfileMemoryCache();
         if (typeof window !== "undefined") {
@@ -44,6 +45,7 @@ export default function AuthCallbackPage() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event: any, session: any) => {
+      if (cancelled || resolved) return;
       if (session && (event === "SIGNED_IN" || event === "INITIAL_SESSION" || event === "TOKEN_REFRESHED")) {
         if (event === "SIGNED_IN") {
           trackFunnelEvent("signup_completed", { path: "/auth/callback" });
@@ -52,10 +54,14 @@ export default function AuthCallbackPage() {
       }
     });
 
+    let hashTimeoutId: ReturnType<typeof setTimeout> | null = null;
+    let fallbackTimeoutId: ReturnType<typeof setTimeout> | null = null;
+
     const handleAuth = async () => {
       // 2. PKCE code exchange
       if (code) {
         const { error } = await supabase.auth.exchangeCodeForSession(code);
+        if (cancelled || resolved) return;
         if (!error) {
           finish(next);
           return;
@@ -70,6 +76,7 @@ export default function AuthCallbackPage() {
       const {
         data: { session },
       } = await supabase.auth.getSession();
+      if (cancelled || resolved) return;
       if (session) {
         finish(next);
         return;
@@ -77,8 +84,11 @@ export default function AuthCallbackPage() {
 
       // 4. If window has hash (e.g. #access_token=... from magic link), give it 1.5 seconds to complete
       if (typeof window !== "undefined" && window.location.hash.includes("access_token")) {
-        setTimeout(() => {
+        if (cancelled || resolved) return;
+        hashTimeoutId = setTimeout(() => {
+          if (cancelled || resolved) return;
           supabase.auth.getSession().then(({ data }: any) => {
+            if (cancelled || resolved) return;
             const hashSession = data?.session;
             if (hashSession) {
               finish(next);
@@ -91,8 +101,9 @@ export default function AuthCallbackPage() {
       }
 
       // Fallback
-      setTimeout(() => {
-        if (!resolved) {
+      if (cancelled || resolved) return;
+      fallbackTimeoutId = setTimeout(() => {
+        if (!cancelled && !resolved) {
           finish(`/login?error=${encodeURIComponent("Could not authenticate session. Please try again.")}`);
         }
       }, 1000);
@@ -101,6 +112,10 @@ export default function AuthCallbackPage() {
     handleAuth();
 
     return () => {
+      cancelled = true;
+      resolved = true;
+      if (hashTimeoutId !== null) clearTimeout(hashTimeoutId);
+      if (fallbackTimeoutId !== null) clearTimeout(fallbackTimeoutId);
       subscription.unsubscribe();
     };
   }, [router]);
