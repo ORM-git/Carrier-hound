@@ -723,10 +723,11 @@ describe("uniform error shape guard (Backend sheet rank 72)", () => {
       allUnverified.push(...res.unverified);
     });
 
-    // 127+ direct literals at introduction (2026-11-07, post-merge main; 128 with balanced brace scanning).
-    // At least 100 are fully statically verified (static string error + ok: false where present).
-    expect(totalHits).toBeGreaterThanOrEqual(127);
-    expect(totalVerified).toBeGreaterThanOrEqual(100);
+    // 127+ direct literals at introduction (2026-11-07, post-merge main; 128 with balanced brace scanning;
+    // 122 after removal of duplicate JavaScript verify fallback error responses).
+    // At least 95 are fully statically verified (static string error + ok: false where present).
+    expect(totalHits).toBeGreaterThanOrEqual(120);
+    expect(totalVerified).toBeGreaterThanOrEqual(95);
 
     // Unresolved dynamic/helper/spread forms are surfaced as unverified, never claimed in verified.
     expect(allUnverified.length).toBeGreaterThan(0);
