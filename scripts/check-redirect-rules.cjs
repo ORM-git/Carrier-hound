@@ -348,13 +348,48 @@ function parseRedirectsFile(content) {
 }
 
 /**
+ * Unescapes basic string escape sequences in TOML (\uXXXX, \UXXXXXXXX, \b, \t, \n, \f, \r, \", \', \\).
+ */
+function unescapeTomlString(str) {
+  return str
+    .replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) =>
+      String.fromCharCode(parseInt(hex, 16))
+    )
+    .replace(/\\U([0-9a-fA-F]{8})/g, (_, hex) =>
+      String.fromCodePoint(parseInt(hex, 16))
+    )
+    .replace(/\\([btnfr"'\\])/g, (_, ch) => {
+      switch (ch) {
+        case "b":
+          return "\b";
+        case "t":
+          return "\t";
+        case "n":
+          return "\n";
+        case "f":
+          return "\f";
+        case "r":
+          return "\r";
+        case '"':
+          return '"';
+        case "'":
+          return "'";
+        case "\\":
+          return "\\";
+        default:
+          return ch;
+      }
+    });
+}
+
+/**
  * Detects whether a line is a redirect array-header or subtable that is NOT
- * the exact canonical form '[[redirects]]'.
+ * the exact canonical form '[[redirects]]' after full unescaping.
  *
  * In netlify.toml, redirect blocks must strictly use the exact canonical header:
  *   [[redirects]]
  * Any other redirect table/array header spelling (e.g. [[ redirects ]], [["redirects"]],
- * [['redirects']], [[REDIRECTS]], single table [redirects], or any subtable such as
+ * [["redirec\u0074s"]], single table [redirects], or any subtable such as
  * [redirects.conditions], [redirects . conditions], ["redirects"."conditions"])
  * is non-canonical and must be rejected fail-closed.
  */
@@ -363,8 +398,9 @@ function isNonCanonicalRedirectHeader(line) {
   if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) {
     return false;
   }
-  // Check if this header line references redirects in any way (case-insensitive)
-  if (/redirects/i.test(trimmed)) {
+  // Check if unescaped header references redirects in any way (case-insensitive)
+  const unescaped = unescapeTomlString(trimmed);
+  if (/redirects/i.test(unescaped)) {
     // Only the exact canonical header '[[redirects]]' is allowed
     return trimmed !== "[[redirects]]";
   }
@@ -372,41 +408,26 @@ function isNonCanonicalRedirectHeader(line) {
 }
 
 /**
- * Detects whether a line starts a new foreign TOML section (e.g. [build], [[headers]],
- * [context.production]) that is NOT part of the redirect block.
- * Any header referencing redirects is explicitly NOT a foreign section header.
- */
-function isForeignSectionHeader(line) {
-  const trimmed = line.trim();
-  if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) return false;
-
-  if (/redirects/i.test(trimmed)) {
-    return false;
-  }
-
-  return true;
-}
-
-/**
- * Parses netlify.toml [[redirects]] blocks with strict comment-awareness,
- * full-token status validation, subtable detection, selector key detection,
- * and required field checks.
+ * Parses netlify.toml [[redirects]] blocks with standards-compliant structural
+ * section parsing, full unescaping, token status validation, and fail-closed
+ * enforcement of canonical headers.
  */
 function parseNetlifyTomlRedirects(content) {
   // First, strip all TOML comments line by line while preserving quotes
   const rawLines = content.split(/\r?\n/);
   const cleanLines = rawLines.map(stripTomlComments);
-  const cleanContent = cleanLines.join("\n");
 
   const rules = [];
   const syntaxErrors = [];
 
-  // File-wide scan before any splitting:
-  // Reject ANY redirect array-header or subtable that is not the exact canonical '[[redirects]]' (fail closed).
+  // 1. File-wide scan before any splitting:
+  // Reject ANY redirect array-header or subtable that is not the exact canonical '[[redirects]]'
+  // after full unescaping (fail closed).
   for (let lineIdx = 0; lineIdx < cleanLines.length; lineIdx++) {
     const trimmed = cleanLines[lineIdx].trim();
     if (isNonCanonicalRedirectHeader(trimmed)) {
-      const desc = trimmed.includes(".")
+      const unescaped = unescapeTomlString(trimmed);
+      const desc = unescaped.includes(".")
         ? "Unsupported subtable"
         : "Unsupported non-canonical redirect header";
       syntaxErrors.push(
@@ -421,7 +442,38 @@ function parseNetlifyTomlRedirects(content) {
     return { rules: [], syntaxErrors };
   }
 
-  const redirectBlocks = cleanContent.split("[[redirects]]").slice(1);
+  // 2. Structural parsing of sections and canonical [[redirects]] blocks
+  const redirectBlocks = [];
+  let currentSection = null;
+  let currentBlock = null;
+
+  for (let lineIdx = 0; lineIdx < cleanLines.length; lineIdx++) {
+    const line = cleanLines[lineIdx];
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+      // Header line
+      if (trimmed === "[[redirects]]") {
+        currentSection = "redirects";
+        currentBlock = {
+          blockIndex: redirectBlocks.length + 1,
+          startLine: lineIdx + 1,
+          lines: [],
+        };
+        redirectBlocks.push(currentBlock);
+      } else {
+        // Foreign section (e.g. [build], [[headers]], [context.production])
+        currentSection = "foreign";
+        currentBlock = null;
+      }
+      continue;
+    }
+
+    if (currentSection === "redirects" && currentBlock) {
+      currentBlock.lines.push(line);
+    }
+  }
 
   const KNOWN_TOML_KEYS = new Set([
     "from",
@@ -435,34 +487,16 @@ function parseNetlifyTomlRedirects(content) {
     "sign",
   ]);
 
-  for (let i = 0; i < redirectBlocks.length; i++) {
-    const blockIndex = i + 1;
-    const rawBlock = redirectBlocks[i];
-    const rawBlockLines = rawBlock.split(/\r?\n/);
+  for (const block of redirectBlocks) {
+    const blockIndex = block.blockIndex;
+    const lines = block.lines.map((l) => l.trim()).filter(Boolean);
 
-    // Stop only at true foreign section headers (e.g. [build], [[headers]]).
-    const blockLines = [];
-    for (const rawLine of rawBlockLines) {
-      const trimmed = rawLine.trim();
-      if (isForeignSectionHeader(trimmed)) {
-        break;
-      }
-      blockLines.push(rawLine);
-    }
-    const blockContent = blockLines.join("\n").trim();
-
-    if (!blockContent) {
-      // Entire block body was commented out or empty
+    if (lines.length === 0) {
       syntaxErrors.push(
         `netlify.toml [[redirects]] block #${blockIndex}: Incomplete or empty block (body is commented out or missing)`
       );
       continue;
     }
-
-    const lines = blockContent
-      .split(/\r?\n/)
-      .map((l) => l.trim())
-      .filter(Boolean);
 
     let from = null;
     let to = null;
@@ -600,7 +634,7 @@ function parseNetlifyTomlRedirects(content) {
       edgeHandlerRaw,
       hasSign,
       signRaw,
-      raw: blockContent,
+      raw: lines.join("\n"),
     });
   }
 
@@ -1209,6 +1243,31 @@ function runNegativeControls() {
       },
       expectedSubstrings: [
         "Unsupported non-canonical redirect header '[[\"redirects\"]]'",
+        "Missing required active 404 fallback rule",
+      ],
+    },
+    {
+      name: "25. Negative Control: TOML escaped header '[[\"redirec\\u0074s\"]]' with /jobs to /early-access before fallback fails closed",
+      fn: () => {
+        const toml = `
+[["redirec\\u0074s"]]
+  from = "/jobs"
+  to = "/early-access"
+  status = 302
+
+[[redirects]]
+  from = "/*"
+  to = "/404.html"
+  status = 404
+`;
+        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
+        const res = validateRedirectRules(rules, "netlify.toml");
+        return {
+          violations: [...syntaxErrors, ...res.violations],
+        };
+      },
+      expectedSubstrings: [
+        'Unsupported non-canonical redirect header \'[["redirec\\u0074s"]]\'',
         "Missing required active 404 fallback rule",
       ],
     },
