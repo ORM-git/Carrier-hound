@@ -2,11 +2,6 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getRazorpayKeyMode } from "@/lib/billing/mode";
 import { rpcWithRetry } from "@/lib/db/rpcRetry";
-import {
-  PLAN_DEFINITIONS,
-  ADDON_PACK_DEFINITIONS,
-  type PlanCode,
-} from "@/lib/billing/quota";
 
 import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
 
@@ -261,29 +256,31 @@ export async function POST(req: Request) {
       });
     }
 
-    // Test mode safety: strictly NEVER grant Pro or add-on sets for test payments.
-    // The RPC alone must mark test orders.
-    if (serverMode === "test") {
-      const { data: fulfilRes, error: fulfilErr } = await rpcWithRetry(() => supabaseAdmin.rpc("fulfil_payment_order", {
+    // Fulfillment happens only through the atomic SQL RPC fulfil_payment_order
+    const { data: fulfilRes, error: fulfilErr } = await rpcWithRetry(() =>
+      supabaseAdmin.rpc("fulfil_payment_order", {
         p_provider_order_id: orderId,
         p_user_id: user.id,
-        p_expected_mode: "test",
-      }));
+        p_expected_mode: serverMode,
+      })
+    );
 
-      if (fulfilErr) {
-        return NextResponse.json(
-          { error: "Payment fulfillment failed", code: "FULFILLMENT_FAILED" },
-          { status: 500 }
-        );
-      }
+    if (fulfilErr) {
+      log.error("Payment fulfillment RPC error", { error: fulfilErr.message });
+      return NextResponse.json(
+        { error: "Payment fulfillment failed", code: "FULFILLMENT_FAILED" },
+        { status: 500 }
+      );
+    }
 
-      if (!fulfilRes || !fulfilRes.success) {
-        return NextResponse.json(
-          { error: fulfilRes?.error || "Payment fulfillment failed", code: fulfilRes?.code || "FULFILLMENT_FAILED" },
-          { status: fulfilRes?.code === "PRO_REQUIRED" ? 403 : 400 }
-        );
-      }
+    if (!fulfilRes || !fulfilRes.success) {
+      return NextResponse.json(
+        { error: fulfilRes?.error || "Payment fulfillment failed", code: fulfilRes?.code || "FULFILLMENT_FAILED" },
+        { status: fulfilRes?.code === "PRO_REQUIRED" ? 403 : 400 }
+      );
+    }
 
+    if (serverMode === "test") {
       return NextResponse.json({
         ...fulfilRes,
         success: true,
@@ -294,357 +291,7 @@ export async function POST(req: Request) {
       });
     }
 
-    // Attempt atomic fulfillment via Postgres RPC function for live mode
-    try {
-      const { data: fulfilRes, error: fulfilErr } = await rpcWithRetry(() => supabaseAdmin.rpc("fulfil_payment_order", {
-        p_provider_order_id: orderId,
-        p_user_id: user.id,
-        p_expected_mode: "live",
-      }));
-
-      if (!fulfilErr && fulfilRes) {
-        if (fulfilRes.success) {
-          return NextResponse.json(fulfilRes);
-        }
-        return NextResponse.json(
-          { error: fulfilRes.error || "Payment fulfillment failed", code: fulfilRes.code || "FULFILLMENT_FAILED" },
-          { status: fulfilRes.code === "PRO_REQUIRED" ? 403 : 400 }
-        );
-      }
-    } catch {
-      // Fall through to atomic conditional update if RPC is not registered
-    }
-
-    // Next fallback: Fail-closed and atomic (LIVE MODE ONLY).
-    // NEVER mark an order paid before the entitlement grant succeeds.
-    // Retries re-attempt the grant if previously incomplete.
-    if (serverMode !== "live" || orderRow.mode !== "live") {
-      return NextResponse.json(
-        { error: "Cannot fulfil non-live order in live fallback", code: "MODE_MISMATCH" },
-        { status: 400 }
-      );
-    }
-
-    if (orderRow.status === "paid") {
-      if (orderRow.addon_code) {
-        const { data: existingCredit } = await supabaseAdmin
-          .from("user_addon_credits")
-          .select("*")
-          .eq("order_id", orderRow.id)
-          .maybeSingle();
-
-        if (existingCredit) {
-          return NextResponse.json({
-            success: true,
-            alreadyPaid: true,
-            type: "addon",
-            addonCode: orderRow.addon_code,
-            credit: existingCredit,
-          });
-        }
-      } else if (orderRow.plan_code) {
-        const { data: existingSub } = await supabaseAdmin
-          .from("subscriptions")
-          .select("*")
-          .eq("user_id", user.id)
-          .maybeSingle();
-
-        if (
-          existingSub &&
-          (existingSub.metadata?.payment_order_id === orderRow.id ||
-            existingSub.metadata?.provider_order_id === orderId)
-        ) {
-          return NextResponse.json({
-            success: true,
-            alreadyPaid: true,
-            type: "plan",
-            planCode: orderRow.plan_code,
-            isPro: true,
-            subscription: existingSub,
-          });
-        }
-      }
-      // If order was marked paid but entitlement grant is missing, retry re-attempts the grant below!
-    } else if (orderRow.status !== "created") {
-      return NextResponse.json(
-        { error: "Payment order is not in created or paid state", code: "ORDER_INVALID_STATE" },
-        { status: 400 }
-      );
-    }
-
-    // Fulfill based strictly on orderRow (never defaulting to monthly)
-    if (orderRow.addon_code) {
-      const addonCode = orderRow.addon_code;
-
-      // Query addon_packs table to grant exactly what fulfil_payment_order grants
-      let sets: number | undefined;
-      let validityDays: number | undefined;
-
-      try {
-        const { data: dbAddon } = await supabaseAdmin
-          .from("addon_packs")
-          .select("sets, validity_days")
-          .eq("code", addonCode)
-          .maybeSingle();
-
-        if (dbAddon?.sets && dbAddon.sets > 0) {
-          sets = dbAddon.sets;
-        }
-        if (dbAddon?.validity_days && dbAddon.validity_days > 0) {
-          validityDays = dbAddon.validity_days;
-        }
-      } catch {
-        // Fallback to in-code definition if addon_packs table query fails
-      }
-
-      if (!sets) {
-        sets = ADDON_PACK_DEFINITIONS[addonCode]?.sets;
-      }
-      if (!validityDays) {
-        validityDays = ADDON_PACK_DEFINITIONS[addonCode]?.validity_days;
-      }
-
-      if (!sets || !validityDays) {
-        return NextResponse.json({ error: "Unknown add-on pack", code: "UNKNOWN_ADDON" }, { status: 400 });
-      }
-
-      // Tie add-on credit expiry to the active subscription end date
-      const { data: subRow, error: subReadErr } = await supabaseAdmin
-        .from("subscriptions")
-        .select("current_period_end, status")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (subReadErr) {
-        log.error("Failed to query subscription for add-on expiry sync", { error: subReadErr.message });
-        return NextResponse.json(
-          { error: "Failed to verify subscription status", code: "DATABASE_ERROR" },
-          { status: 500 }
-        );
-      }
-
-      const nowMs = Date.now();
-      const isActiveOrTrialing = subRow?.status === "active" || subRow?.status === "trialing";
-      const subEnd = subRow?.current_period_end ? new Date(subRow.current_period_end) : null;
-      const isFuture = Boolean(subEnd && !isNaN(subEnd.getTime()) && subEnd.getTime() > nowMs);
-
-      if (!subRow || !isActiveOrTrialing || !isFuture) {
-        log.warn("Cannot fulfill add-on: user has no active subscription or subscription expired", {
-          userId: user.id,
-          status: subRow?.status,
-          currentPeriodEnd: subRow?.current_period_end,
-        });
-        return NextResponse.json(
-          {
-            error: "Active Pro subscription required to activate add-on credits",
-            code: "PRO_REQUIRED",
-          },
-          { status: 403 }
-        );
-      }
-
-      const expiresAt = subEnd!.toISOString();
-
-      // Grant add-on credit entitlement FIRST (fail-closed: do NOT mark order paid before this succeeds)
-      const { data: creditRow, error: creditErr } = await supabaseAdmin
-        .from("user_addon_credits")
-        .insert({
-          user_id: user.id,
-          pack_code: addonCode,
-          sets_total: sets,
-          sets_remaining: sets,
-          expires_at: expiresAt,
-          order_id: orderRow.id,
-        })
-        .select()
-        .single();
-
-      if (creditErr) {
-        if (creditErr.code === "23505") {
-          return NextResponse.json({ success: true, alreadyPaid: true });
-        }
-        log.error("Add-on credit persistence error", { error: creditErr?.message || String(creditErr) });
-        // Fail closed: order is NOT marked paid!
-        return NextResponse.json({ error: creditErr.message }, { status: 500 });
-      }
-
-      // Entitlement grant succeeded: ONLY NOW mark the order as paid
-      await supabaseAdmin
-        .from("payment_orders")
-        .update({
-          status: "paid",
-          paid_at: new Date().toISOString(),
-        })
-        .eq("id", orderRow.id);
-
-      return NextResponse.json({
-        success: true,
-        type: "addon",
-        addonCode,
-        setsGranted: sets,
-        expiresAt,
-        credit: creditRow,
-      });
-    } else if (orderRow.plan_code) {
-      const planCode = orderRow.plan_code as PlanCode;
-
-      // Query plans table to grant exactly what fulfil_payment_order grants
-      let durationDays: number | undefined;
-      let pricePaise: number | undefined;
-
-      try {
-        const { data: dbPlan } = await supabaseAdmin
-          .from("plans")
-          .select("duration_days, price_paise")
-          .eq("code", planCode)
-          .maybeSingle();
-
-        if (dbPlan?.duration_days && dbPlan.duration_days > 0) {
-          durationDays = dbPlan.duration_days;
-        }
-        if (dbPlan?.price_paise && dbPlan.price_paise > 0) {
-          pricePaise = dbPlan.price_paise;
-        }
-      } catch {
-        // Fallback to in-code definition if plans table query fails
-      }
-
-      if (!durationDays) {
-        durationDays = PLAN_DEFINITIONS[planCode]?.duration_days;
-      }
-      if (!pricePaise) {
-        pricePaise = PLAN_DEFINITIONS[planCode]?.price_paise;
-      }
-
-      if (!durationDays) {
-        return NextResponse.json({ error: "Unknown plan code", code: "UNKNOWN_PLAN" }, { status: 400 });
-      }
-
-      // Query existing subscription for renewal/upgrade logic:
-      // When a user with an active plan buys any plan,
-      // new period end = max(current_period_end, now) + new plan duration; never shorten an existing period.
-      const { data: existingSub } = await supabaseAdmin
-        .from("subscriptions")
-        .select("status, current_period_start, current_period_end, metadata")
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      const now = new Date();
-      let currentPeriodStart = now.toISOString();
-      let currentPeriodEnd: string;
-
-      // Idempotency: if this exact order was already applied to the subscription
-      // (e.g. prior attempt updated subscriptions but failed on add-on credit update or network timeout),
-      // reuse the existing period end without re-adding durationDays (prevents 25 -> 55 -> 85 day drift)!
-      const alreadyGrantedForThisOrder = Boolean(
-        existingSub &&
-        (existingSub.metadata?.payment_order_id === orderRow.id ||
-          existingSub.metadata?.provider_order_id === orderId)
-      );
-
-      if (alreadyGrantedForThisOrder && existingSub?.current_period_end) {
-        currentPeriodEnd = existingSub.current_period_end;
-        currentPeriodStart = existingSub.current_period_start || now.toISOString();
-      } else if (
-        existingSub &&
-        (existingSub.status === "active" || existingSub.status === "trialing") &&
-        existingSub.current_period_end
-      ) {
-        const existingEnd = new Date(existingSub.current_period_end);
-        const baseDate = existingEnd.getTime() > now.getTime() ? existingEnd : now;
-        currentPeriodEnd = new Date(baseDate.getTime() + durationDays * 86400000).toISOString();
-        if (existingSub.current_period_start) {
-          currentPeriodStart = existingSub.current_period_start;
-        }
-      } else {
-        currentPeriodEnd = new Date(now.getTime() + durationDays * 86400000).toISOString();
-      }
-
-      // Guarantee never shorten an existing period
-      if (existingSub?.current_period_end) {
-        const existingEnd = new Date(existingSub.current_period_end);
-        if (new Date(currentPeriodEnd).getTime() < existingEnd.getTime()) {
-          currentPeriodEnd = existingSub.current_period_end;
-        }
-      }
-
-      // Grant subscription entitlement FIRST (fail-closed: do NOT mark order paid before this succeeds)
-      const { data: sub, error: subError } = await supabaseAdmin
-        .from("subscriptions")
-        .upsert(
-          {
-            user_id: user.id,
-            plan_id: planCode,
-            provider: "razorpay",
-            currency: "INR",
-            amount: pricePaise || orderRow.amount_paise,
-            status: "active",
-            current_period_start: currentPeriodStart,
-            current_period_end: currentPeriodEnd,
-            cancel_at_period_end: false,
-            metadata: {
-              provider_order_id: orderId,
-              payment_order_id: orderRow.id,
-              verified_at: new Date().toISOString(),
-              mode: "live",
-              source: "razorpay_standard_checkout",
-            },
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "user_id" }
-        )
-        .select()
-        .single();
-
-      if (subError) {
-        log.error("Subscription persistence error", { error: subError?.message || String(subError) });
-        // Fail closed: order is NOT marked paid!
-        return NextResponse.json({ error: subError.message }, { status: 500 });
-      }
-
-      // Also extend active unexpired add-on credits to match newly extended subscription period (like the SQL RPC)
-      const nowIso = new Date().toISOString();
-      const { error: addonExtendErr } = await supabaseAdmin
-        .from("user_addon_credits")
-        .update({ expires_at: currentPeriodEnd })
-        .eq("user_id", user.id)
-        .gte("expires_at", nowIso)
-        .gt("sets_remaining", 0);
-
-      if (addonExtendErr) {
-        log.error("Failed to extend unexpired add-on credits on subscription renewal", {
-          error: addonExtendErr.message,
-        });
-        return NextResponse.json(
-          { error: "Failed to extend add-on credits on subscription renewal", code: "DATABASE_ERROR" },
-          { status: 500 }
-        );
-      }
-
-      // Entitlement grant succeeded: ONLY NOW mark the order as paid
-      await supabaseAdmin
-        .from("payment_orders")
-        .update({
-          status: "paid",
-          paid_at: new Date().toISOString(),
-        })
-        .eq("id", orderRow.id);
-
-      return NextResponse.json({
-        success: true,
-        isPro: true,
-        type: "plan",
-        planCode,
-        subscription: sub,
-      });
-    } else {
-      return NextResponse.json(
-        { error: "Order record missing valid item", code: "INVALID_ORDER" },
-        { status: 400 }
-      );
-    }
+    return NextResponse.json(fulfilRes);
   } catch (err: any) {
     reportRequestErrorToSentry(req, err);
     return NextResponse.json(

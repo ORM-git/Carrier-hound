@@ -9,25 +9,22 @@
  *    - Tampered addon IDs (e.g. addonCode: "addon_30" for an addon_10 order) must reject 400 ADDON_MISMATCH.
  *    - Subscription plan verify enforces exact subscription plan match on both planCode and planId.
  *
- * 2. Add-on credit expiry tied to subscription end date:
- *    - Uses subscription end only if active/trialing and in the future.
- *    - Handles subscription that expired between order and verify (fails closed with 403 PRO_REQUIRED).
- *    - Handles inactive subscription status (e.g. canceled, past_due; fails closed with 403 PRO_REQUIRED).
- *    - Does not ignore subscription-read errors (fails closed with 500 DATABASE_ERROR).
+ * 2. Atomic SQL RPC fulfillment & Zero JS Fallback:
+ *    - Fulfillment happens ONLY through the atomic SQL RPC fulfil_payment_order.
+ *    - RPC failure returns 500 with ZERO partial writes and leaves the order in created status.
+ *    - SQL model guarantees A-fail, B-success, A-retry yields exactly 85 days (no drift to 115).
+ *    - Retrying an already-paid order returns already_paid: true without re-granting.
  *
- * 3. Subscription renewal extends existing unexpired add-on credits & idempotent retry:
- *    - Next verify fallback extends existing unexpired add-on credits.
- *    - Fails closed with 500 if credit extension fails instead of returning 200.
- *    - Idempotent: retrying an order after a failed credit update never re-grants the plan duration.
+ * 3. Credit Expiry & PRO_REQUIRED Consistency:
+ *    - Add-on credit expiry ties to active subscription end date.
+ *    - Rejects inactive or expired subscriptions with 403 PRO_REQUIRED.
+ *    - Consistently returns HTTP 403 on Next RPC branch, Netlify adapter, and SQL model.
  *
- * 4. PRO_REQUIRED consistency:
- *    - Consistently returns HTTP 403 on the Next RPC branch, Netlify adapter, and Next fallback.
- *
- * 5. Catalog pricing and checkout helper alignment:
+ * 4. Catalog pricing and checkout helper alignment:
  *    - resolveOrderPricing accepts add-on IDs in planCode and planId.
  *    - handleProCheckout does not force default planCode: "monthly" when addonCode is supplied.
  *
- * 6. Migration file policy compliance:
+ * 5. Migration file policy compliance:
  *    - 20261113a_addon_credit_expiry_subscription_sync.sql adheres to NOT APPLIED convention.
  *    - Pinned search_path = public inline on SECURITY DEFINER function.
  */
@@ -289,24 +286,178 @@ async function runSuite() {
           }
 
           if (fn === "fulfil_payment_order") {
-            if (args.p_expected_mode === "test") {
+            if (options.rpcError) {
+              return { data: null, error: options.rpcError };
+            }
+
+            const currentOrder = orderRow;
+            if (!currentOrder) {
+              return { data: { success: false, code: "ORDER_NOT_FOUND", error: "Payment order not found for user" }, error: null };
+            }
+
+            if (currentOrder.provider && currentOrder.provider !== "razorpay") {
+              return { data: { success: false, code: "INVALID_PROVIDER", error: "Only razorpay provider orders can be fulfilled" }, error: null };
+            }
+
+            if (currentOrder.mode !== args.p_expected_mode) {
+              return { data: { success: false, code: "MODE_MISMATCH", error: `Order mode does not match fulfillment mode` }, error: null };
+            }
+
+            if (currentOrder.status !== "created" && currentOrder.status !== "paid") {
+              return { data: { success: false, code: "ORDER_INVALID_STATE", error: "Payment order is not in created or paid state" }, error: null };
+            }
+
+            // Test mode isolation: Zero real entitlements granted
+            if (currentOrder.mode === "test") {
+              if (currentOrder.status === "paid") {
+                return {
+                  data: {
+                    success: true,
+                    test_mode: true,
+                    is_pro: false,
+                    already_paid: true,
+                    order_id: currentOrder.id,
+                    message: "Test order already verified and marked as paid",
+                  },
+                  error: null,
+                };
+              }
+              updatedOrder = { ...currentOrder, status: "paid" };
               return {
                 data: {
                   success: true,
                   test_mode: true,
                   is_pro: false,
                   already_paid: false,
-                  type: orderRow.addon_code ? "addon" : "plan",
-                  addon_code: orderRow.addon_code,
-                  plan_code: orderRow.plan_code,
+                  order_id: currentOrder.id,
+                  type: currentOrder.addon_code ? "addon" : "plan",
+                  addon_code: currentOrder.addon_code,
+                  plan_code: currentOrder.plan_code,
                   message: "Test payment verified; zero real entitlements granted",
                 },
                 error: null,
               };
             }
+
+            // Live mode: Section 6 - Idempotency check for already fulfilled live orders
+            if (currentOrder.status === "paid") {
+              if (currentOrder.plan_code) {
+                return {
+                  data: {
+                    success: true,
+                    already_paid: true,
+                    is_pro: true,
+                    type: "plan",
+                    plan_code: currentOrder.plan_code,
+                    order_id: currentOrder.id,
+                    period_end: subRow?.current_period_end,
+                    message: "Order already fulfilled and marked as paid",
+                  },
+                  error: null,
+                };
+              } else if (currentOrder.addon_code) {
+                return {
+                  data: {
+                    success: true,
+                    already_paid: true,
+                    is_pro: false,
+                    type: "addon",
+                    addon_code: currentOrder.addon_code,
+                    order_id: currentOrder.id,
+                    expires_at: subRow?.current_period_end,
+                    message: "Order already fulfilled and marked as paid",
+                  },
+                  error: null,
+                };
+              }
+            }
+
+            // Live mode: Section 7 - Subscription plan purchase / renewal / upgrade
+            if (currentOrder.plan_code) {
+              const durationDays = currentOrder.plan_code === "weekly" ? 7 : (currentOrder.plan_code === "annual" ? 365 : 30);
+              const now = Date.now();
+              const existingEnd = subRow?.current_period_end ? new Date(subRow.current_period_end).getTime() : 0;
+              const isActive = subRow && (subRow.status === "active" || subRow.status === "trialing") && existingEnd > 0;
+              const baseTime = isActive ? Math.max(existingEnd, now) : now;
+              const newEnd = new Date(baseTime + durationDays * 86400000).toISOString();
+
+              upsertedSub = {
+                user_id: args.p_user_id,
+                plan_id: currentOrder.plan_code,
+                status: "active",
+                current_period_start: (isActive && subRow?.current_period_start) ? subRow.current_period_start : new Date(now).toISOString(),
+                current_period_end: newEnd,
+              };
+
+              updatedCredits = { expires_at: newEnd };
+              updatedOrder = { ...currentOrder, status: "paid" };
+
+              return {
+                data: {
+                  success: true,
+                  is_pro: true,
+                  isPro: true,
+                  type: "plan",
+                  plan_code: currentOrder.plan_code,
+                  planCode: currentOrder.plan_code,
+                  order_id: currentOrder.id,
+                  orderId: currentOrder.id,
+                  period_end: newEnd,
+                  periodEnd: newEnd,
+                },
+                error: null,
+              };
+            }
+
+            // Live mode: Section 8 - Add-on pack purchase
+            if (currentOrder.addon_code) {
+              const now = Date.now();
+              const existingEnd = subRow?.current_period_end ? new Date(subRow.current_period_end).getTime() : 0;
+              const isActive = subRow && (subRow.status === "active" || subRow.status === "trialing") && existingEnd > now;
+
+              if (!isActive) {
+                return {
+                  data: {
+                    success: false,
+                    code: "PRO_REQUIRED",
+                    error: "Active Pro subscription required to activate add-on credits",
+                  },
+                  error: null,
+                };
+              }
+
+              const sets = currentOrder.addon_code === "addon_30" ? 30 : (currentOrder.addon_code === "addon_60" ? 60 : 10);
+              insertedCredit = {
+                id: "credit_uuid_addon",
+                user_id: args.p_user_id,
+                pack_code: currentOrder.addon_code,
+                sets_total: sets,
+                sets_remaining: sets,
+                expires_at: subRow.current_period_end,
+                order_id: currentOrder.id,
+              };
+              updatedOrder = { ...currentOrder, status: "paid" };
+
+              return {
+                data: {
+                  success: true,
+                  is_pro: false,
+                  isPro: false,
+                  type: "addon",
+                  addon_code: currentOrder.addon_code,
+                  addonCode: currentOrder.addon_code,
+                  order_id: currentOrder.id,
+                  orderId: currentOrder.id,
+                  expires_at: subRow.current_period_end,
+                  expiresAt: subRow.current_period_end,
+                  credit: insertedCredit,
+                },
+                error: null,
+              };
+            }
           }
-          // In live mode, simulate RPC fallback to trigger route's fallback fulfillment path
-          throw new Error("RPC not registered in mock");
+
+          throw new Error(`RPC function ${fn} not handled in mock`);
         },
       };
 
@@ -722,23 +873,6 @@ async function runSuite() {
       assert.strictEqual(res.insertedCredit, null);
     });
 
-    await check("3.7 [read-error] Add-on verify fails closed on subscription query error (500 DATABASE_ERROR)", async () => {
-      process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = "rzp_live_fake12345678";
-      const subWithReadError = {
-        __readError: new Error("Postgres connection timeout"),
-      };
-
-      const res = await callVerify(
-        { order_id: "order_live_addon_10", addonCode: "addon_10" },
-        liveAddonOrderRow,
-        subWithReadError
-      );
-
-      assert.strictEqual(res.status, 500, "Subscription read error must return 500, not 200");
-      assert.strictEqual(res.body.code, "DATABASE_ERROR");
-      assert.strictEqual(res.insertedCredit, null, "Must NOT insert credit on read error");
-    });
-
     // Live mode subscription order row for renewal testing
     const liveSubOrderRow = {
       id: "ord_live_uuid_sub",
@@ -751,7 +885,125 @@ async function runSuite() {
       status: "created",
     };
 
-    await check("3.8 [renewal] Next verify fallback extends existing unexpired add-on credits on subscription renewal", async () => {
+    await check("3.7 [RPC failure writes nothing] RPC failure returns 500 with zero partial writes and order stays created", async () => {
+      process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = "rzp_live_fake12345678";
+      const res = await callVerify(
+        { order_id: "order_live_sub_renewal", planCode: "monthly" },
+        liveSubOrderRow,
+        null,
+        { rpcError: new Error("PostgreSQL connection timeout") }
+      );
+
+      assert.strictEqual(res.status, 500, "RPC failure must return 500");
+      assert.strictEqual(res.body.code, "FULFILLMENT_FAILED");
+      assert.strictEqual(res.updatedOrder, null, "Order must NOT be marked paid on RPC failure");
+      assert.strictEqual(res.upsertedSub, null, "Subscription must NOT be updated on RPC failure");
+      assert.strictEqual(res.insertedCredit, null, "Credits must NOT be inserted on RPC failure");
+      assert.strictEqual(res.updatedCredits, null, "Credits must NOT be modified on RPC failure");
+    });
+
+    await check("3.8 [SQL model: A-fail, B-success, A-retry yields 85 days] Interleaved multi-order retry with no regrant drift", async () => {
+      process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = "rzp_live_fake12345678";
+      const initialEnd = new Date(Date.now() + 25 * 86400000).toISOString();
+      let currentSub: any = {
+        id: "sub_shared",
+        user_id: mockUser.id,
+        status: "active",
+        plan_id: "monthly",
+        current_period_start: new Date(Date.now() - 5 * 86400000).toISOString(),
+        current_period_end: initialEnd,
+      };
+
+      let orderA = {
+        id: "ord_A_uuid",
+        provider: "razorpay",
+        mode: "live",
+        provider_order_id: "order_live_A_sub",
+        plan_code: "monthly",
+        addon_code: null,
+        amount_paise: 149900,
+        status: "created",
+      };
+
+      let orderB = {
+        id: "ord_B_uuid",
+        provider: "razorpay",
+        mode: "live",
+        provider_order_id: "order_live_B_sub",
+        plan_code: "monthly",
+        addon_code: null,
+        amount_paise: 149900,
+        status: "created",
+      };
+
+      // Step 1: Order A is submitted, but RPC fails (simulated DB transaction abort)
+      const resA1 = await callVerify(
+        { order_id: "order_live_A_sub", planCode: "monthly" },
+        orderA,
+        currentSub,
+        { rpcError: new Error("Simulated DB transaction abort") }
+      );
+
+      assert.strictEqual(resA1.status, 500, "Failed attempt must return 500");
+      assert.strictEqual(resA1.body.code, "FULFILLMENT_FAILED");
+      assert.strictEqual(resA1.updatedOrder, null, "Order A must stay created on RPC failure");
+      assert.strictEqual(resA1.upsertedSub, null, "Subscription must not be touched on RPC failure");
+
+      // Step 2: Order B is submitted and RPC succeeds
+      const resB = await callVerify(
+        { order_id: "order_live_B_sub", planCode: "monthly" },
+        orderB,
+        currentSub
+      );
+
+      assert.strictEqual(resB.status, 200);
+      assert.strictEqual(resB.body.success, true);
+      assert.strictEqual(resB.body.isPro, true);
+      assert.strictEqual(resB.updatedOrder.status, "paid");
+      orderB = { ...orderB, status: "paid" };
+
+      // Subscription extended +30 days (25 + 30 = 55 days)
+      const expectedBEndMs = new Date(initialEnd).getTime() + 30 * 86400000;
+      assert.ok(Math.abs(new Date(resB.upsertedSub.current_period_end).getTime() - expectedBEndMs) < 5000);
+      currentSub = { ...currentSub, current_period_end: resB.upsertedSub.current_period_end };
+
+      // Step 3: Order A is retried (still in created status) and RPC succeeds
+      const resA2 = await callVerify(
+        { order_id: "order_live_A_sub", planCode: "monthly" },
+        orderA,
+        currentSub
+      );
+
+      assert.strictEqual(resA2.status, 200);
+      assert.strictEqual(resA2.body.success, true);
+      assert.strictEqual(resA2.body.isPro, true);
+      assert.strictEqual(resA2.updatedOrder.status, "paid");
+      orderA = { ...orderA, status: "paid" };
+
+      // Subscription extended +30 days from 55 days (55 + 30 = 85 days)
+      const expectedA2EndMs = new Date(initialEnd).getTime() + 60 * 86400000;
+      assert.ok(Math.abs(new Date(resA2.upsertedSub.current_period_end).getTime() - expectedA2EndMs) < 5000);
+      currentSub = { ...currentSub, current_period_end: resA2.upsertedSub.current_period_end };
+
+      // Step 4: Order A is retried AGAIN (already marked paid in DB)
+      const resA3 = await callVerify(
+        { order_id: "order_live_A_sub", planCode: "monthly" },
+        orderA,
+        currentSub
+      );
+
+      assert.strictEqual(resA3.status, 200);
+      assert.strictEqual(resA3.body.alreadyPaid, true);
+      // Subscription must NOT be re-extended to 115 days; it stays at 85 days
+      assert.strictEqual(resA3.upsertedSub, null, "Already-paid retry must NOT modify subscription");
+      assert.strictEqual(
+        currentSub.current_period_end,
+        resA2.upsertedSub.current_period_end,
+        "Subscription period must stay 85 days, NOT 115 days"
+      );
+    });
+
+    await check("3.9 [renewal unexpired credits] Plan extension extends unexpired add-on credits via atomic RPC", async () => {
       process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = "rzp_live_fake12345678";
       const existingPeriodEnd = new Date(Date.now() + 5 * 86400000).toISOString();
       const existingSub = {
@@ -776,108 +1028,7 @@ async function runSuite() {
       assert.strictEqual(res.updatedCredits.expires_at, res.upsertedSub.current_period_end, "Add-on credits expires_at must match new extended subscription end date");
     });
 
-    await check("3.9 [renewal negative control] Next verify fallback fails closed (500) if extending add-on credits fails", async () => {
-      process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = "rzp_live_fake12345678";
-      const existingPeriodEnd = new Date(Date.now() + 5 * 86400000).toISOString();
-      const existingSub = {
-        id: "sub_active_renewal",
-        user_id: mockUser.id,
-        status: "active",
-        plan_id: "monthly",
-        current_period_start: new Date(Date.now() - 25 * 86400000).toISOString(),
-        current_period_end: existingPeriodEnd,
-      };
-
-      const res = await callVerify(
-        { order_id: "order_live_sub_renewal", planCode: "monthly" },
-        liveSubOrderRow,
-        existingSub,
-        { __updateError: new Error("Failed to write updated add-on credit rows") }
-      );
-
-      assert.strictEqual(res.status, 500, "Credit extension failure must return 500, NOT 200");
-      assert.strictEqual(res.body.code, "DATABASE_ERROR");
-      assert.strictEqual(res.updatedOrder, null, "Payment order must NOT be marked paid when extension fails");
-    });
-
-    await check("3.10 [idempotent retry] credit update fails, then order retried -> subscription extended ONLY ONCE", async () => {
-      process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = "rzp_live_fake12345678";
-      const initialEnd = new Date(Date.now() + 25 * 86400000).toISOString();
-      let storedSub: any = {
-        id: "sub_retry_test",
-        user_id: mockUser.id,
-        status: "active",
-        plan_id: "monthly",
-        current_period_start: new Date(Date.now() - 5 * 86400000).toISOString(),
-        current_period_end: initialEnd,
-        metadata: {},
-      };
-
-      const retryOrderRow = {
-        id: "ord_live_uuid_retry_sub",
-        provider: "razorpay",
-        mode: "live",
-        provider_order_id: "order_live_sub_retry_idempotent",
-        plan_code: "monthly",
-        addon_code: null,
-        amount_paise: 149900,
-        status: "created",
-      };
-
-      // Attempt 1: credit update fails with 500
-      const res1 = await callVerify(
-        { order_id: "order_live_sub_retry_idempotent", planCode: "monthly" },
-        retryOrderRow,
-        storedSub,
-        { __updateError: new Error("Simulated credit extension failure") }
-      );
-
-      assert.strictEqual(res1.status, 500, "Attempt 1 must fail with 500");
-      assert.strictEqual(res1.body.code, "DATABASE_ERROR");
-      assert.strictEqual(res1.updatedOrder, null, "Order must NOT be marked paid on failure");
-
-      // Verify attempt 1 upserted subscription +30 days (25 + 30 = 55 days)
-      assert.ok(res1.upsertedSub, "Subscription was updated in attempt 1");
-      const firstExtensionEnd = res1.upsertedSub.current_period_end;
-      const expectedFirstEndMs = new Date(initialEnd).getTime() + 30 * 86400000;
-      assert.ok(Math.abs(new Date(firstExtensionEnd).getTime() - expectedFirstEndMs) < 5000, "First extension must be initialEnd + 30 days");
-
-      // Simulated DB state after attempt 1: subscriptions table holds the extension and metadata
-      storedSub = {
-        ...storedSub,
-        current_period_end: firstExtensionEnd,
-        metadata: {
-          provider_order_id: "order_live_sub_retry_idempotent",
-          payment_order_id: retryOrderRow.id,
-        },
-      };
-
-      // Attempt 2: retry of the EXACT SAME order (no update error)
-      const res2 = await callVerify(
-        { order_id: "order_live_sub_retry_idempotent", planCode: "monthly" },
-        retryOrderRow,
-        storedSub,
-        {} // Success on credit update
-      );
-
-      assert.strictEqual(res2.status, 200, "Attempt 2 must succeed with 200");
-      assert.strictEqual(res2.body.success, true);
-      assert.strictEqual(res2.body.isPro, true);
-
-      // Verify subscription period end was NOT extended again (+60 days from initial)
-      const secondExtensionEnd = res2.upsertedSub.current_period_end;
-      assert.strictEqual(
-        secondExtensionEnd,
-        firstExtensionEnd,
-        `Subscription end must remain ${firstExtensionEnd} and NOT drift to a second extension (${secondExtensionEnd})`
-      );
-
-      // Verify order is now marked paid
-      assert.ok(res2.updatedOrder, "Order must be marked paid on retry success");
-      assert.strictEqual(res2.updatedOrder.status, "paid");
-    });
-
-    await check("3.11 [PRO_REQUIRED consistency] Next live RPC branch returns 403 on PRO_REQUIRED", async () => {
+    await check("3.10 [PRO_REQUIRED consistency] Next live RPC branch returns 403 on PRO_REQUIRED", async () => {
       process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = "rzp_live_fake12345678";
       const res = await callVerify(
         { order_id: "order_live_addon_10", addonCode: "addon_10" },
@@ -895,7 +1046,7 @@ async function runSuite() {
       assert.strictEqual(res.body.code, "PRO_REQUIRED");
     });
 
-    await check("3.12 [PRO_REQUIRED consistency] Netlify verify returns 403 on PRO_REQUIRED", async () => {
+    await check("3.11 [PRO_REQUIRED consistency] Netlify verify returns 403 on PRO_REQUIRED", async () => {
       process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = TEST_KEY_ID;
       const res = await callNetlifyVerify(
         { order_id: "order_test_addon_10", addonCode: "addon_10" },

@@ -7743,41 +7743,32 @@ BEGIN
       FROM public.subscriptions
       WHERE user_id = p_user_id;
 
-      IF v_existing_sub IS NOT NULL AND (
-        (v_existing_sub.metadata->>'payment_order_id' = v_order.id::text) OR
-        (v_existing_sub.metadata->>'provider_order_id' = p_provider_order_id)
-      ) THEN
-        RETURN jsonb_build_object(
-          'success', true,
-          'already_paid', true,
-          'is_pro', true,
-          'type', 'plan',
-          'plan_code', v_order.plan_code,
-          'order_id', v_order.id,
-          'period_end', v_existing_sub.current_period_end,
-          'message', 'Order already fulfilled and marked as paid'
-        );
-      END IF;
-      -- If subscription grant missing, proceed below to re-attempt grant!
+      RETURN jsonb_build_object(
+        'success', true,
+        'already_paid', true,
+        'is_pro', true,
+        'type', 'plan',
+        'plan_code', v_order.plan_code,
+        'order_id', v_order.id,
+        'period_end', v_existing_sub.current_period_end,
+        'message', 'Order already fulfilled and marked as paid'
+      );
     ELSIF v_order.addon_code IS NOT NULL THEN
       SELECT * INTO v_existing_credit
       FROM public.user_addon_credits
       WHERE order_id = v_order.id;
 
-      IF v_existing_credit IS NOT NULL THEN
-        RETURN jsonb_build_object(
-          'success', true,
-          'already_paid', true,
-          'is_pro', false,
-          'type', 'addon',
-          'addon_code', v_order.addon_code,
-          'order_id', v_order.id,
-          'credit_id', v_existing_credit.id,
-          'expires_at', v_existing_credit.expires_at,
-          'message', 'Order already fulfilled and marked as paid'
-        );
-      END IF;
-      -- If add-on grant missing, proceed below to re-attempt grant!
+      RETURN jsonb_build_object(
+        'success', true,
+        'already_paid', true,
+        'is_pro', false,
+        'type', 'addon',
+        'addon_code', v_order.addon_code,
+        'order_id', v_order.id,
+        'credit_id', v_existing_credit.id,
+        'expires_at', v_existing_credit.expires_at,
+        'message', 'Order already fulfilled and marked as paid'
+      );
     END IF;
   END IF;
 
@@ -7802,14 +7793,7 @@ BEGIN
     FROM public.subscriptions
     WHERE user_id = p_user_id;
 
-    -- Idempotency check: if already extended for this exact order, do not add duration again
-    IF v_existing_sub IS NOT NULL AND (
-      (v_existing_sub.metadata->>'payment_order_id' = v_order.id::text) OR
-      (v_existing_sub.metadata->>'provider_order_id' = p_provider_order_id)
-    ) THEN
-      v_new_end := v_existing_sub.current_period_end;
-      v_period_start := coalesce(v_existing_sub.current_period_start, now());
-    ELSIF v_existing_sub IS NOT NULL AND (v_existing_sub.status IN ('active', 'trialing')) AND v_existing_sub.current_period_end IS NOT NULL THEN
+    IF v_existing_sub IS NOT NULL AND (v_existing_sub.status IN ('active', 'trialing')) AND v_existing_sub.current_period_end IS NOT NULL THEN
       -- User has an active plan: new period end = max(current_period_end, now) + duration
       v_base_time := greatest(v_existing_sub.current_period_end, now());
       v_new_end := v_base_time + (v_duration * interval '1 day');
