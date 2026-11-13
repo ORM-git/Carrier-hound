@@ -9,16 +9,21 @@
  * Statically asserts:
  *   1. Comment-aware strict parsing: Full-line comments and inline comments (#)
  *      are stripped before parsing. Commented-out rules are not treated as active.
- *   2. Destination normalization: Normalizes destination paths across queries
+ *   2. Strict full-token validation: Non-numeric status values (e.g. '404garbage')
+ *      are rejected immediately; partial parseInt behavior is strictly forbidden.
+ *   3. Unconditional fallback guard: Fallback rules targeting 404 must be unconditional;
+ *      conditional shapes (e.g. Country=US in _redirects or conditions in TOML) are rejected.
+ *   4. Approved-origin & exact target: Fallback destination must target the exact expected
+ *      document '/404.html' on a local path or an approved origin (e.g. careermonke.com).
+ *      External or unapproved origins (e.g. https://wrong.invalid) are rejected.
+ *   5. Destination normalization: Normalizes destination paths across queries
  *      (?foo=bar), fragments (#hash), and absolute/protocol-relative URLs.
- *   3. Early-access guard: No rule targets /early-access as a catch-all or
+ *   6. Early-access guard: No rule targets /early-access as a catch-all or
  *      catches /jobs to /early-access.
- *   4. Exact expected 404 target: Fallback must target the exact expected
- *      document '/404.html' (not arbitrary documents containing '404').
- *   5. Rule precedence / shadowing: No preceding catch-all rule (e.g. /* /login 302)
+ *   7. Rule precedence / shadowing: No preceding catch-all rule (e.g. /* /login 302)
  *      may shadow the 404 fallback rule.
- *   6. Strict shape validation: Incomplete, malformed, or unsupported rule shapes
- *      are rejected explicitly.
+ *   8. Strict shape validation: Incomplete, malformed, or unsupported rule shapes
+ *      are rejected explicitly instead of being silently ignored.
  *
  * Usage:
  *   node scripts/check-redirect-rules.cjs
@@ -36,51 +41,127 @@ const NETLIFY_TOML_PATH = path.join(ROOT_DIR, "netlify.toml");
 
 const EXPECTED_404_DOCUMENT = "/404.html";
 
+const APPROVED_ORIGINS = new Set([
+  "https://careermonke.com",
+  "https://www.careermonke.com",
+  "http://careermonke.com",
+  "http://www.careermonke.com",
+]);
+
 // ============================================================================
-// Normalization Helpers
+// Destination & Origin Normalization
 // ============================================================================
 
 /**
- * Normalizes destination path including query strings, fragments, and
- * absolute/protocol-relative URL forms.
- *
- * Examples:
- *   "/early-access?next=jobs"                 -> "/early-access"
- *   "https://careermonke.com/early-access"    -> "/early-access"
- *   "//careermonke.com/early-access#section"  -> "/early-access"
- *   "/404.html"                              -> "/404.html"
- *   "/not-a-404-document"                    -> "/not-a-404-document"
+ * Parses and dissects a destination string into structured URL components.
+ * Distinguishes local paths from absolute URLs and protocol-relative URLs.
  */
-function normalizeDestinationPath(destination) {
-  if (!destination || typeof destination !== "string") return "";
-  let dest = destination.trim();
+function parseDestination(destination) {
+  if (!destination || typeof destination !== "string") {
+    return {
+      raw: "",
+      isLocal: false,
+      origin: null,
+      pathname: "",
+      query: "",
+      hash: "",
+    };
+  }
 
-  // Strip protocol-relative URLs
+  let raw = destination.trim();
+  let dest = raw;
+
+  // Strip protocol-relative URLs (e.g. "//careermonke.com/404.html")
   if (dest.startsWith("//")) {
     dest = "https:" + dest;
   }
 
-  // Parse absolute URLs (http:// or https://)
   if (/^https?:\/\//i.test(dest)) {
     try {
       const parsed = new URL(dest);
-      dest = parsed.pathname;
+      return {
+        raw,
+        isLocal: false,
+        origin: parsed.origin.toLowerCase(),
+        pathname: parsed.pathname.toLowerCase(),
+        query: parsed.search,
+        hash: parsed.hash,
+      };
     } catch (_) {
-      dest = dest.replace(/^https?:\/\/[^\/\?#]+/i, "");
+      return {
+        raw,
+        isLocal: false,
+        origin: "invalid-origin",
+        pathname: raw.toLowerCase(),
+        query: "",
+        hash: "",
+      };
     }
   }
 
-  // Strip fragment (#...) and query string (?...)
+  // Local path: must start with "/" and not "//"
   const hashIdx = dest.indexOf("#");
-  if (hashIdx !== -1) {
-    dest = dest.substring(0, hashIdx);
-  }
-  const queryIdx = dest.indexOf("?");
-  if (queryIdx !== -1) {
-    dest = dest.substring(0, queryIdx);
+  let withoutHash = hashIdx !== -1 ? dest.substring(0, hashIdx) : dest;
+  const hash = hashIdx !== -1 ? dest.substring(hashIdx) : "";
+
+  const queryIdx = withoutHash.indexOf("?");
+  let withoutQuery = queryIdx !== -1 ? withoutHash.substring(0, queryIdx) : withoutHash;
+  const query = queryIdx !== -1 ? withoutHash.substring(queryIdx) : "";
+
+  return {
+    raw,
+    isLocal: true,
+    origin: null,
+    pathname: withoutQuery.trim().toLowerCase(),
+    query: query.trim(),
+    hash: hash.trim(),
+  };
+}
+
+/**
+ * Normalizes destination path including query strings, fragments, and
+ * absolute/protocol-relative URL forms for route matching.
+ */
+function normalizeDestinationPath(destination) {
+  const parsed = parseDestination(destination);
+  return parsed.pathname;
+}
+
+/**
+ * Asserts that the destination for a 404 fallback rule is an exact local document
+ * or an approved-origin document targeting EXPECTED_404_DOCUMENT (/404.html),
+ * with NO query strings, NO hash fragments, and an approved or local origin.
+ */
+function isValid404FallbackDestination(destination) {
+  const parsed = parseDestination(destination);
+  if (!parsed.raw) {
+    return { valid: false, reason: "Destination is empty" };
   }
 
-  return dest.trim().toLowerCase();
+  if (parsed.query || parsed.hash) {
+    return {
+      valid: false,
+      reason: `Fallback target cannot have query parameters or fragments; got '${destination}'`,
+    };
+  }
+
+  if (!parsed.isLocal) {
+    if (!APPROVED_ORIGINS.has(parsed.origin)) {
+      return {
+        valid: false,
+        reason: `Target '${destination}' has unapproved origin '${parsed.origin}'; fallback origin must be local or an approved origin (${Array.from(APPROVED_ORIGINS).join(", ")})`,
+      };
+    }
+  }
+
+  if (parsed.pathname !== EXPECTED_404_DOCUMENT) {
+    return {
+      valid: false,
+      reason: `Target path '${parsed.pathname}' does not match exact expected document '${EXPECTED_404_DOCUMENT}'`,
+    };
+  }
+
+  return { valid: true, parsed };
 }
 
 function isCatchAllPattern(pattern) {
@@ -107,8 +188,8 @@ function matchesJobsRoute(pattern) {
 }
 
 function isExact404Target(target) {
-  const normalized = normalizeDestinationPath(target);
-  return normalized === EXPECTED_404_DOCUMENT;
+  const check = isValid404FallbackDestination(target);
+  return check.valid;
 }
 
 // ============================================================================
@@ -148,8 +229,9 @@ function stripTomlComments(line) {
 // ============================================================================
 
 /**
- * Parses public/_redirects content with comment-awareness and syntax validation.
- * Format: /from /to [status[!]]
+ * Parses public/_redirects content with comment-awareness, strict full-token
+ * validation, condition tracking, and syntax validation.
+ * Format: /from /to [status[!]] [conditions/parameters...]
  */
 function parseRedirectsFile(content) {
   const lines = content.split(/\r?\n/);
@@ -189,15 +271,54 @@ function parseRedirectsFile(content) {
 
     const from = tokens[0];
     const to = tokens[1];
-    const statusToken = tokens[2] || "301";
-    const isForced = statusToken.endsWith("!");
-    const cleanStatus = statusToken.replace("!", "");
-    const statusCode = parseInt(cleanStatus, 10);
 
-    if (isNaN(statusCode) || statusCode < 100 || statusCode > 599) {
-      syntaxErrors.push(
-        `public/_redirects line ${lineNum}: Unsupported HTTP status code '${statusToken}' in rule '${trimmed}'`
-      );
+    // Status token validation (strict full-token: reject partial parseInt like '404garbage')
+    let isForced = false;
+    let statusCode = 301;
+    let statusToken = "301";
+
+    if (tokens.length >= 3) {
+      statusToken = tokens[2];
+      isForced = statusToken.endsWith("!");
+      const cleanStatus = isForced ? statusToken.slice(0, -1) : statusToken;
+
+      // Full-token check: MUST be strictly numeric digits
+      if (!/^\d+$/.test(cleanStatus)) {
+        syntaxErrors.push(
+          `public/_redirects line ${lineNum}: Malformed HTTP status code '${statusToken}' in rule '${trimmed}' (partial parseInt rejected: status code must be strictly numeric)`
+        );
+        continue;
+      }
+
+      const parsedCode = parseInt(cleanStatus, 10);
+      if (parsedCode < 100 || parsedCode > 599) {
+        syntaxErrors.push(
+          `public/_redirects line ${lineNum}: Unsupported HTTP status code '${statusToken}' in rule '${trimmed}' (must be 100-599)`
+        );
+        continue;
+      }
+      statusCode = parsedCode;
+    }
+
+    // Extra tokens (e.g. Country=US, Language=en, Role=admin, Cookie=foo, etc.)
+    const extraTokens = tokens.slice(3);
+    const hasConditions = extraTokens.length > 0;
+    const conditions = [];
+
+    let hasMalformedToken = false;
+    for (const extra of extraTokens) {
+      // In Netlify _redirects, extra tokens are key=value conditions, parameters, or headers
+      if (!/^!?[a-zA-Z0-9_-]+(=.*)?$/.test(extra)) {
+        syntaxErrors.push(
+          `public/_redirects line ${lineNum}: Malformed or unsupported parameter token '${extra}' in rule '${trimmed}'`
+        );
+        hasMalformedToken = true;
+        break;
+      }
+      conditions.push(extra);
+    }
+
+    if (hasMalformedToken) {
       continue;
     }
 
@@ -208,6 +329,8 @@ function parseRedirectsFile(content) {
       to,
       status: statusCode,
       forced: isForced,
+      hasConditions,
+      conditions,
     });
   }
 
@@ -215,11 +338,11 @@ function parseRedirectsFile(content) {
 }
 
 /**
- * Parses netlify.toml [[redirects]] blocks with strict comment-awareness.
- * Ignores commented-out blocks and validates required field shapes.
+ * Parses netlify.toml [[redirects]] blocks with strict comment-awareness,
+ * full-token status validation, condition detection, and required field checks.
  */
 function parseNetlifyTomlRedirects(content) {
-  // First, strip all TOML comments line by line
+  // First, strip all TOML comments line by line while preserving quotes
   const rawLines = content.split(/\r?\n/);
   const cleanLines = rawLines.map(stripTomlComments);
   const cleanContent = cleanLines.join("\n");
@@ -227,6 +350,18 @@ function parseNetlifyTomlRedirects(content) {
   const redirectBlocks = cleanContent.split("[[redirects]]").slice(1);
   const rules = [];
   const syntaxErrors = [];
+
+  const KNOWN_TOML_KEYS = new Set([
+    "from",
+    "to",
+    "status",
+    "force",
+    "conditions",
+    "headers",
+    "query",
+    "edge_handler",
+    "sign",
+  ]);
 
   for (let i = 0; i < redirectBlocks.length; i++) {
     const blockIndex = i + 1;
@@ -236,39 +371,119 @@ function parseNetlifyTomlRedirects(content) {
     const blockContent = sectionSplit[0].trim();
 
     if (!blockContent) {
-      // Entire block body was commented out
+      // Entire block body was commented out or empty
       syntaxErrors.push(
         `netlify.toml [[redirects]] block #${blockIndex}: Incomplete or empty block (body is commented out or missing)`
       );
       continue;
     }
 
-    const fromMatch = blockContent.match(/from\s*=\s*["']([^"']+)["']/);
-    const toMatch = blockContent.match(/to\s*=\s*["']([^"']+)["']/);
-    const statusMatch = blockContent.match(/status\s*=\s*(\d+)/);
-    const forceMatch = blockContent.match(/force\s*=\s*(true|false)/);
+    const lines = blockContent
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean);
 
-    if (!fromMatch || !toMatch) {
-      syntaxErrors.push(
-        `netlify.toml [[redirects]] block #${blockIndex}: Malformed block missing required 'from' or 'to' fields`
-      );
+    let from = null;
+    let to = null;
+    let status = null;
+    let force = false;
+    let hasConditions = false;
+    let conditionsRaw = null;
+    let hasMalformedLine = false;
+
+    for (const line of lines) {
+      const kvMatch = line.match(/^([a-zA-Z0-9_-]+)\s*=\s*(.+)$/);
+      if (!kvMatch) {
+        syntaxErrors.push(
+          `netlify.toml [[redirects]] block #${blockIndex}: Malformed line '${line}' (expected 'key = value')`
+        );
+        hasMalformedLine = true;
+        continue;
+      }
+
+      const key = kvMatch[1].toLowerCase();
+      const val = kvMatch[2].trim();
+
+      if (!KNOWN_TOML_KEYS.has(key)) {
+        syntaxErrors.push(
+          `netlify.toml [[redirects]] block #${blockIndex}: Unsupported or unrecognized redirect key '${key}'`
+        );
+        hasMalformedLine = true;
+        continue;
+      }
+
+      if (key === "from") {
+        const strMatch = val.match(/^["']([^"']+)["']$/);
+        if (!strMatch) {
+          syntaxErrors.push(
+            `netlify.toml [[redirects]] block #${blockIndex}: Malformed 'from' value '${val}' (expected quoted string)`
+          );
+          hasMalformedLine = true;
+        } else {
+          from = strMatch[1];
+        }
+      } else if (key === "to") {
+        const strMatch = val.match(/^["']([^"']+)["']$/);
+        if (!strMatch) {
+          syntaxErrors.push(
+            `netlify.toml [[redirects]] block #${blockIndex}: Malformed 'to' value '${val}' (expected quoted string)`
+          );
+          hasMalformedLine = true;
+        } else {
+          to = strMatch[1];
+        }
+      } else if (key === "status") {
+        // Strict full-token validation: must be strictly numeric digits
+        if (!/^\d+$/.test(val)) {
+          syntaxErrors.push(
+            `netlify.toml [[redirects]] block #${blockIndex}: Malformed status code '${val}' (expected numeric HTTP status code, partial parseInt rejected)`
+          );
+          hasMalformedLine = true;
+        } else {
+          const s = parseInt(val, 10);
+          if (s < 100 || s > 599) {
+            syntaxErrors.push(
+              `netlify.toml [[redirects]] block #${blockIndex}: Unsupported HTTP status code '${val}' (must be 100-599)`
+            );
+            hasMalformedLine = true;
+          } else {
+            status = s;
+          }
+        }
+      } else if (key === "force") {
+        if (val !== "true" && val !== "false") {
+          syntaxErrors.push(
+            `netlify.toml [[redirects]] block #${blockIndex}: Malformed 'force' value '${val}' (expected true or false)`
+          );
+          hasMalformedLine = true;
+        } else {
+          force = val === "true";
+        }
+      } else if (key === "conditions") {
+        hasConditions = true;
+        conditionsRaw = val;
+      }
+    }
+
+    if (hasMalformedLine) {
       continue;
     }
 
-    const statusVal = statusMatch ? parseInt(statusMatch[1], 10) : 301;
-    if (isNaN(statusVal) || statusVal < 100 || statusVal > 599) {
+    if (!from || !to) {
       syntaxErrors.push(
-        `netlify.toml [[redirects]] block #${blockIndex}: Unsupported HTTP status code in block`
+        `netlify.toml [[redirects]] block #${blockIndex}: Malformed block missing required 'from' or 'to' fields (from: ${from ? "ok" : "missing"}, to: ${to ? "ok" : "missing"})`
       );
       continue;
     }
 
     rules.push({
       blockIndex,
-      from: fromMatch[1],
-      to: toMatch[1],
-      status: statusVal,
-      forced: forceMatch ? forceMatch[1] === "true" : false,
+      from,
+      to,
+      status: status !== null ? status : 301,
+      forced: force,
+      hasConditions,
+      conditionsRaw,
       raw: blockContent,
     });
   }
@@ -277,11 +492,12 @@ function parseNetlifyTomlRedirects(content) {
 }
 
 // ============================================================================
-// Rule Validators (Precedence, Shadowing, Early-Access, 404 Target)
+// Rule Validators (Precedence, Shadowing, Early-Access, 404 Target, Conditions)
 // ============================================================================
 
 /**
- * Validates redirect rules with precedence and shadowing checks.
+ * Validates redirect rules with precedence, shadowing, unconditional fallback,
+ * approved origin, and destination checks.
  */
 function validateRedirectRules(rules, sourceLabel) {
   const violations = [];
@@ -310,30 +526,44 @@ function validateRedirectRules(rules, sourceLabel) {
 
     // 3. Catch-all rule handling & shadowing analysis
     if (isCatchAllPattern(rule.from)) {
-      const isExpected404 = isExact404Target(rule.to) && rule.status === 404;
-
-      if (isExpected404) {
-        if (!found404Fallback) {
-          found404Fallback = true;
-          fallbackRuleIndex = idx;
-        } else {
+      // Check if this rule is intended as a 404 fallback
+      if (rule.status === 404) {
+        // Fallback MUST be unconditional
+        if (rule.hasConditions) {
+          const condDesc =
+            rule.conditionsRaw ||
+            (rule.conditions && rule.conditions.join(" ")) ||
+            "present";
           violations.push(
-            `${ruleLabel}: Duplicate 404 fallback rule '${rule.from} -> ${rule.to}' detected`
+            `${ruleLabel}: 404 fallback rule must be unconditional; found conditions '${condDesc}' (conditional rule cannot serve as global fallback)`
           );
         }
+
+        // Destination MUST be an exact local document or approved origin targeting /404.html
+        const destCheck = isValid404FallbackDestination(rule.to);
+        if (!destCheck.valid) {
+          violations.push(
+            `${ruleLabel}: 404 fallback rule invalid: ${destCheck.reason}`
+          );
+        }
+
+        // If unconditional AND valid destination
+        if (!rule.hasConditions && destCheck.valid) {
+          if (!found404Fallback) {
+            found404Fallback = true;
+            fallbackRuleIndex = idx;
+          } else {
+            violations.push(
+              `${ruleLabel}: Duplicate 404 fallback rule '${rule.from} -> ${rule.to}' detected`
+            );
+          }
+        }
       } else {
-        // This is a catch-all rule that does NOT serve the exact 404 document with status 404
+        // This is a catch-all rule that does NOT serve status 404
         if (!found404Fallback) {
           // Precedes any 404 fallback: Shadows unknown path 404s!
           violations.push(
             `${ruleLabel}: Catch-all rule '${rule.from} -> ${rule.to}' (status: ${rule.status}) precedes and shadows the 404 fallback rule; unknown paths will never reach '${EXPECTED_404_DOCUMENT}'`
-          );
-        }
-
-        // If it attempted to serve a non-exact 404 target with status 404
-        if (rule.status === 404 && !isExact404Target(rule.to)) {
-          violations.push(
-            `${ruleLabel}: 404 fallback rule targets '${rule.to}' instead of exact expected document '${EXPECTED_404_DOCUMENT}'`
           );
         }
       }
@@ -357,8 +587,104 @@ function validateRedirectRules(rules, sourceLabel) {
 function runNegativeControls() {
   console.log("\n--- RUNNING NEGATIVE CONTROLS VERIFICATION ---");
   const testCases = [
+    // ------------------------------------------------------------------------
+    // Round 3 Core Controls (1 - 5)
+    // ------------------------------------------------------------------------
     {
-      name: "1. Query string: '/jobs /early-access?next=jobs 307' followed by fallback fails",
+      name: "1. Negative Control: '/* /404.html 404garbage' (partial parseInt rejected)",
+      fn: () => {
+        const { rules, syntaxErrors } = parseRedirectsFile(
+          "/* /404.html 404garbage"
+        );
+        const res = validateRedirectRules(rules, "public/_redirects");
+        return {
+          violations: [...syntaxErrors, ...res.violations],
+        };
+      },
+      expectedSubstrings: [
+        "Malformed HTTP status code '404garbage'",
+        "partial parseInt rejected",
+      ],
+    },
+    {
+      name: "2. Negative Control: '/* /404.html 404 Country=US' (conditional rule rejected for fallback)",
+      fn: () => {
+        const { rules, syntaxErrors } = parseRedirectsFile(
+          "/* /404.html 404 Country=US"
+        );
+        const res = validateRedirectRules(rules, "public/_redirects");
+        return {
+          violations: [...syntaxErrors, ...res.violations],
+        };
+      },
+      expectedSubstrings: [
+        "404 fallback rule must be unconditional",
+        "Country=US",
+      ],
+    },
+    {
+      name: "3. Negative Control: TOML fallback with conditions = {Country = [\"US\"]} (unconditional requirement)",
+      fn: () => {
+        const toml = `
+[[redirects]]
+  from = "/*"
+  to = "/404.html"
+  status = 404
+  conditions = {Country = ["US"]}
+`;
+        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
+        const res = validateRedirectRules(rules, "netlify.toml");
+        return {
+          violations: [...syntaxErrors, ...res.violations],
+        };
+      },
+      expectedSubstrings: [
+        "404 fallback rule must be unconditional",
+        "Country",
+      ],
+    },
+    {
+      name: "4. Negative Control: '/* https://wrong.invalid/404.html 404' (origin must be local or approved)",
+      fn: () => {
+        const { rules, syntaxErrors } = parseRedirectsFile(
+          "/* https://wrong.invalid/404.html 404"
+        );
+        const res = validateRedirectRules(rules, "public/_redirects");
+        return {
+          violations: [...syntaxErrors, ...res.violations],
+        };
+      },
+      expectedSubstrings: [
+        "unapproved origin 'https://wrong.invalid'",
+        "must be local or an approved origin",
+      ],
+    },
+    {
+      name: "5. Negative Control: TOML status = 404garbage (partial parseInt rejected)",
+      fn: () => {
+        const toml = `
+[[redirects]]
+  from = "/*"
+  to = "/404.html"
+  status = 404garbage
+`;
+        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
+        const res = validateRedirectRules(rules, "netlify.toml");
+        return {
+          violations: [...syntaxErrors, ...res.violations],
+        };
+      },
+      expectedSubstrings: [
+        "Malformed status code '404garbage'",
+        "partial parseInt rejected",
+      ],
+    },
+
+    // ------------------------------------------------------------------------
+    // Additional Comprehensive Controls (6 - 15)
+    // ------------------------------------------------------------------------
+    {
+      name: "6. Negative Control: Query string '/jobs /early-access?next=jobs 307' followed by fallback fails",
       fn: () => {
         const { rules } = parseRedirectsFile(
           "/jobs /early-access?next=jobs 307\n/* /404.html 404"
@@ -368,7 +694,7 @@ function runNegativeControls() {
       expectedSubstrings: ["Jobs route '/jobs' redirects to early-access"],
     },
     {
-      name: "2. Absolute URL: '/* https://careermonke.com/early-access 302' followed by fallback fails",
+      name: "7. Negative Control: Absolute URL '/* https://careermonke.com/early-access 302' followed by fallback fails",
       fn: () => {
         const { rules } = parseRedirectsFile(
           "/* https://careermonke.com/early-access 302\n/* /404.html 404"
@@ -381,7 +707,7 @@ function runNegativeControls() {
       ],
     },
     {
-      name: "3. Shadowing: '/* /login 302' before the fallback (shadows unknown-path 404) fails",
+      name: "8. Negative Control: Shadowing '/* /login 302' before the fallback fails",
       fn: () => {
         const { rules } = parseRedirectsFile(
           "/* /login 302\n/* /404.html 404"
@@ -393,7 +719,7 @@ function runNegativeControls() {
       ],
     },
     {
-      name: "4. Exact target: '/* /not-a-404-document 404' (must target exact expected document) fails",
+      name: "9. Negative Control: Exact target '/* /not-a-404-document 404' fails",
       fn: () => {
         const { rules } = parseRedirectsFile(
           "/* /not-a-404-document 404"
@@ -401,12 +727,12 @@ function runNegativeControls() {
         return validateRedirectRules(rules, "public/_redirects");
       },
       expectedSubstrings: [
-        "targets '/not-a-404-document' instead of exact expected document '/404.html'",
+        "does not match exact expected document '/404.html'",
         "Missing required active 404 fallback rule",
       ],
     },
     {
-      name: "5. Commented TOML: A fully commented-out TOML fallback block fails",
+      name: "10. Negative Control: Commented TOML fallback block fails",
       fn: () => {
         const toml = `
 # [[redirects]]
@@ -426,7 +752,7 @@ function runNegativeControls() {
       ],
     },
     {
-      name: "6. TOML Shadowing: 'from = /*, to = /login, status = 302' before fallback fails",
+      name: "11. Negative Control: TOML Shadowing 'from = /*, to = /login, status = 302' before fallback fails",
       fn: () => {
         const toml = `
 [[redirects]]
@@ -452,7 +778,7 @@ function runNegativeControls() {
       ],
     },
     {
-      name: "7. TOML Query & Jobs: 'from = /jobs, to = /early-access?ref=jobs' fails",
+      name: "12. Negative Control: TOML Query & Jobs 'from = /jobs, to = /early-access?ref=jobs' fails",
       fn: () => {
         const toml = `
 [[redirects]]
@@ -475,7 +801,7 @@ function runNegativeControls() {
       ],
     },
     {
-      name: "8. Unsupported shape: public/_redirects incomplete rule missing destination fails",
+      name: "13. Negative Control: Unsupported shape (public/_redirects incomplete rule missing destination) fails",
       fn: () => {
         const { rules, syntaxErrors } = parseRedirectsFile(
           "/jobs\n/* /404.html 404"
@@ -490,7 +816,7 @@ function runNegativeControls() {
       ],
     },
     {
-      name: "9. Unsupported shape: netlify.toml block missing 'to' field fails",
+      name: "14. Negative Control: Unsupported shape (netlify.toml block missing 'to' field) fails",
       fn: () => {
         const toml = `
 [[redirects]]
@@ -513,7 +839,7 @@ function runNegativeControls() {
       ],
     },
     {
-      name: "10. TOML Incomplete Commented Body: [[redirects]] with all fields commented out fails",
+      name: "15. Negative Control: TOML Incomplete Commented Body ([[redirects]] with all fields commented out) fails",
       fn: () => {
         const toml = `
 [[redirects]]
@@ -552,11 +878,15 @@ function runNegativeControls() {
   }
 
   if (passedControls !== testCases.length) {
-    console.error(`\nNegative controls verification FAILED: ${passedControls}/${testCases.length} passed.`);
+    console.error(
+      `\nNegative controls verification FAILED: ${passedControls}/${testCases.length} passed.`
+    );
     return false;
   }
 
-  console.log(`All ${passedControls}/${testCases.length} negative controls verified successfully.`);
+  console.log(
+    `All ${passedControls}/${testCases.length} negative controls verified successfully.`
+  );
   return true;
 }
 
@@ -602,7 +932,7 @@ function main() {
       console.log("  [PASS] Comment-aware syntax and tokens parsed cleanly.");
       console.log("  [PASS] No rule targets /early-access (query/fragment/absolute URLs normalized).");
       console.log("  [PASS] No rule catches /jobs to /early-access.");
-      console.log(`  [PASS] Unshadowed 404 fallback verified targeting exact '${EXPECTED_404_DOCUMENT}'.`);
+      console.log(`  [PASS] Unshadowed, unconditional 404 fallback verified targeting exact '${EXPECTED_404_DOCUMENT}'.`);
     }
   }
 
@@ -636,7 +966,7 @@ function main() {
       console.log("  [PASS] Comment-aware TOML blocks parsed cleanly (comments stripped).");
       console.log("  [PASS] No [[redirects]] block targets /early-access as a catch-all.");
       console.log("  [PASS] No [[redirects]] block catches /jobs to /early-access.");
-      console.log(`  [PASS] Unshadowed 404 fallback verified targeting exact '${EXPECTED_404_DOCUMENT}'.`);
+      console.log(`  [PASS] Unshadowed, unconditional 404 fallback verified targeting exact '${EXPECTED_404_DOCUMENT}'.`);
     }
   }
 
@@ -667,7 +997,10 @@ if (require.main === module) {
 
 module.exports = {
   EXPECTED_404_DOCUMENT,
+  APPROVED_ORIGINS,
+  parseDestination,
   normalizeDestinationPath,
+  isValid404FallbackDestination,
   isCatchAllPattern,
   targetsEarlyAccess,
   matchesJobsRoute,
