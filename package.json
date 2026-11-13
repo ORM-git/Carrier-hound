@@ -18,6 +18,7 @@
     "test:all": "tsx scripts/suite-runner.ts && vitest run",
     "prepare": "husky",
     "format:check": "prettier --check .",
+    "graph": "graphify update .",
     "test:unit": "vitest run",
     "check:budget": "node scripts/check-bundle-budget.mjs",
     "analyze:bundle": "node scripts/analyze-bundle.js",
