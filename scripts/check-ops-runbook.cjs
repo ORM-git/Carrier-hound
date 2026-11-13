@@ -219,6 +219,11 @@ function validateRunbookContent(content) {
     errors.push("Invalid billing mode claim: verify/webhook handlers must document accepting known live OR test mode and rejecting unknown mode");
   }
 
+  // 14. Semantic Guard: Webhook 404 condition accuracy
+  if (/Webhook[^\n]*Order row lookup in payment_orders missing returns 404/i.test(content)) {
+    errors.push("Invalid webhook claim: missing payment_orders row does not directly return 404; 404 occurs only when userId cannot be resolved from notes or DB row");
+  }
+
   const uniqueVerified = Array.from(new Set(verified)).sort();
   return {
     valid: errors.length === 0,
@@ -353,7 +358,19 @@ function runNegativeControl(realContent) {
   }
   console.log("  ✓ Real validator correctly caught GROQ_API_KEY alone claim");
 
-  console.log("[PASS] Negative control verified: real validator fails on mutated runbooks across all 11 checks.");
+  // Mutation 12: Mutated runbook claiming missing payment_orders row directly returns 404 in webhook
+  const mutatedWebhook404Content = realContent.replace(
+    /`userId` unresolvable from payload notes[^\n]*fulfil_payment_order` RPC\);/,
+    "Order row lookup in payment_orders missing returns 404 ORDER_NOT_FOUND;"
+  );
+  const resWebhook404 = validateRunbookContent(mutatedWebhook404Content);
+  if (resWebhook404.valid || !resWebhook404.errors.some((e) => e.includes("missing payment_orders row does not directly return 404"))) {
+    console.error("[FAIL] Real validator failed to reject false webhook 404 claim.");
+    process.exit(1);
+  }
+  console.log("  ✓ Real validator correctly caught false webhook 404 claim");
+
+  console.log("[PASS] Negative control verified: real validator fails on mutated runbooks across all 12 checks.");
   process.exit(0);
 }
 
