@@ -79,20 +79,51 @@ const CYCLE_ID = cycleArgIdx !== -1 && args[cycleArgIdx + 1] ? args[cycleArgIdx 
 const isShardedRun = SHARD_INDEX !== null || (TOTAL_SHARDS !== null && TOTAL_SHARDS > 1);
 
 // Per-source timeout configuration (Audit Blocker B8)
+// Absolute upper bound enforced in code; env vars, CLI flags and per-source overrides can never exceed it.
+export const ABSOLUTE_MAX_SOURCE_TIMEOUT_MS = 300_000; // 5 minutes
+const MIN_SOURCE_TIMEOUT_MS = 10_000;
+
+/**
+ * Parse a timeout in milliseconds. Returns null unless the value is a finite number > 0
+ * (rejects NaN, Infinity, zero, negatives, empty and non-numeric strings). Result is
+ * rounded up to a whole millisecond and never above ABSOLUTE_MAX_SOURCE_TIMEOUT_MS.
+ */
+export function parseTimeoutMs(raw: unknown): number | null {
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw !== 'number' && typeof raw !== 'string') return null;
+  if (typeof raw === 'string' && raw.trim() === '') return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.min(Math.ceil(n), ABSOLUTE_MAX_SOURCE_TIMEOUT_MS);
+}
+
+function timeoutFromEnvOrDefault(envName: string, fallbackMs: number): number {
+  const raw = process.env[envName];
+  if (raw === undefined || raw === '') return fallbackMs;
+  const parsed = parseTimeoutMs(raw);
+  if (parsed === null) {
+    console.warn(`[ingest] Ignoring invalid ${envName}="${raw}" (need a finite number > 0); using ${fallbackMs}ms`);
+    return fallbackMs;
+  }
+  return parsed;
+}
+
 const timeoutArgIdx = args.findIndex((a) => a === '--source-timeout' || a === '--timeout');
 const timeoutMsArgIdx = args.findIndex((a) => a === '--source-timeout-ms');
-const CLI_SOURCE_TIMEOUT_MS =
-  timeoutMsArgIdx !== -1 && args[timeoutMsArgIdx + 1]
-    ? parseInt(args[timeoutMsArgIdx + 1], 10)
-    : timeoutArgIdx !== -1 && args[timeoutArgIdx + 1]
-    ? parseInt(args[timeoutArgIdx + 1], 10) * 1000
+const CLI_SOURCE_TIMEOUT_MS: number | null =
+  timeoutMsArgIdx !== -1
+    ? parseTimeoutMs(args[timeoutMsArgIdx + 1])
+    : timeoutArgIdx !== -1
+    ? parseTimeoutMs(Number(args[timeoutArgIdx + 1]) * 1000)
     : null;
+if ((timeoutMsArgIdx !== -1 || timeoutArgIdx !== -1) && CLI_SOURCE_TIMEOUT_MS === null) {
+  console.warn('[ingest] Ignoring invalid --source-timeout / --source-timeout-ms value (need a finite number > 0)');
+}
 
+export const MAX_SOURCE_TIMEOUT_CAP_MS = timeoutFromEnvOrDefault('INGEST_MAX_TIMEOUT_CAP_MS', 240_000); // 240s default cap, never above the absolute bound
 export const DEFAULT_SOURCE_TIMEOUT_MS =
-  CLI_SOURCE_TIMEOUT_MS ||
-  parseInt(process.env.INGEST_SOURCE_TIMEOUT_MS || '60000', 10); // default 60s
-export const LARGE_BOARD_TIMEOUT_MS = parseInt(process.env.INGEST_LARGE_BOARD_TIMEOUT_MS || '180000', 10); // 180s (3m)
-export const MAX_SOURCE_TIMEOUT_CAP_MS = parseInt(process.env.INGEST_MAX_TIMEOUT_CAP_MS || '240000', 10); // 240s (4m) hard cap
+  CLI_SOURCE_TIMEOUT_MS ?? timeoutFromEnvOrDefault('INGEST_SOURCE_TIMEOUT_MS', 60_000); // default 60s
+export const LARGE_BOARD_TIMEOUT_MS = timeoutFromEnvOrDefault('INGEST_LARGE_BOARD_TIMEOUT_MS', 180_000); // 180s (3m)
 
 // Comprehensive list of high-volume / enterprise boards needing extended fetch timeouts
 export const LARGE_BOARD_IDENTIFIERS = new Set([
@@ -136,8 +167,12 @@ export const LARGE_BOARD_IDENTIFIERS = new Set([
 ]);
 
 export function getSourceTimeoutMs(source: SourceConfig): number {
-  if ((source as any).timeoutMs && typeof (source as any).timeoutMs === 'number') {
-    return Math.min((source as any).timeoutMs, MAX_SOURCE_TIMEOUT_CAP_MS);
+  const cap = Math.min(MAX_SOURCE_TIMEOUT_CAP_MS, ABSOLUTE_MAX_SOURCE_TIMEOUT_MS);
+
+  // Per-source override: used only when it is a valid positive number; otherwise ignored.
+  const override = parseTimeoutMs((source as any).timeoutMs);
+  if (override !== null) {
+    return Math.min(override, cap);
   }
 
   const targetLower = (source.target || '').toLowerCase().trim();
@@ -151,7 +186,7 @@ export function getSourceTimeoutMs(source: SourceConfig): number {
     );
 
   const timeout = isLarge ? LARGE_BOARD_TIMEOUT_MS : DEFAULT_SOURCE_TIMEOUT_MS;
-  return Math.min(Math.max(timeout, 10000), MAX_SOURCE_TIMEOUT_CAP_MS);
+  return Math.min(Math.max(timeout, MIN_SOURCE_TIMEOUT_MS), cap);
 }
 
 // Track schema capability flags dynamically
@@ -346,6 +381,84 @@ function isValidJob(job: NormalizedJob): boolean {
 /**
  * Main Ingestion Pipeline Runner
  */
+/** Races a source fetch against a timer; always clears the timer. Rejects with "Timeout after Ns processing <name>". */
+export async function fetchWithTimeout<T>(fetchFn: () => Promise<T>, timeoutMs: number, sourceName: string): Promise<T> {
+  let timeoutId: NodeJS.Timeout | null = null;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(
+      () => reject(new Error(`Timeout after ${Math.round(timeoutMs / 1000)}s processing ${sourceName}`)),
+      timeoutMs
+    );
+  });
+  try {
+    return await Promise.race([fetchFn(), timeoutPromise]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
+/** A source-level failure (timeout, network, adapter error) is ONE warning, never N failed jobs. */
+export function recordSourceFailure(stats: SourceStats, err: unknown): void {
+  stats.warnings = 1;
+  stats.error = err instanceof Error ? err.message : String(err);
+}
+
+/** Only real per-job write failures fail a shard; source warnings do not. */
+export function shouldFailShard(summary: Pick<IngestionRunSummary, 'totalFailed'>): boolean {
+  return summary.totalFailed > 0;
+}
+
+const UPDATE_RETRY_DELAY_MS = 500;
+
+/**
+ * Updates existing jobs row by row. A failed update is retried once (transient statement timeouts),
+ * and only a second failure counts as a failed job. The first error message is returned so it can be logged.
+ */
+export async function updateExistingJobs(
+  supabase: any,
+  toUpdate: Array<{ id: string; item: any; original: NormalizedJob }>,
+  stats: SourceStats,
+  hasJobDescriptionsTable: boolean,
+  retryDelayMs: number = UPDATE_RETRY_DELAY_MS
+): Promise<string | null> {
+  let firstError: string | null = null;
+  await Promise.all(
+    toUpdate.map(async ({ id, item, original }) => {
+      const doUpdate = () =>
+        supabase
+          .from('jobs')
+          .update({
+            ...item,
+            last_seen_at: new Date().toISOString(),
+            is_active: true,
+            status: 'active',
+          })
+          .eq('id', id);
+
+      let { error: updErr } = await doUpdate();
+      if (updErr) {
+        await new Promise((r) => setTimeout(r, retryDelayMs));
+        ({ error: updErr } = await doUpdate());
+      }
+
+      if (!updErr) {
+        stats.updated++;
+        if (hasJobDescriptionsTable && original?.description) {
+          await supabase.from('job_descriptions').upsert({
+            job_id: id,
+            description_text: original.description,
+            updated_at: new Date().toISOString(),
+          });
+        }
+      } else {
+        stats.failed++;
+        if (!firstError) firstError = updErr.message || String(updErr);
+      }
+    })
+  );
+  return firstError;
+}
+
 async function main() {
   const startTime = Date.now();
   console.log(`\n======================================================`);
@@ -483,30 +596,13 @@ async function main() {
 
     console.log(`[${sourceIndex + 1}/${sources.length}] ▶ Processing [${source.type.toUpperCase()}] ${source.name}...`);
 
-    let timeoutId: NodeJS.Timeout | null = null;
     try {
       const adapter = getAdapter(source.type);
       if (!adapter) {
         throw new Error(`No adapter implemented for source type: ${source.type}`);
       }
 
-      const timeoutMs = getSourceTimeoutMs(source);
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        timeoutId = setTimeout(
-          () => reject(new Error(`Timeout after ${Math.round(timeoutMs / 1000)}s processing ${source.name}`)),
-          timeoutMs
-        );
-      });
-
-      const rawJobs = await Promise.race([
-        adapter.fetchJobs(source),
-        timeoutPromise,
-      ]);
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-        timeoutId = null;
-      }
-
+      const rawJobs = await fetchWithTimeout(() => adapter.fetchJobs(source), getSourceTimeoutMs(source), source.name);
       stats.fetched = rawJobs.length;
       summary.totalFetched += rawJobs.length;
 
@@ -769,34 +865,12 @@ async function main() {
                 }
               }
 
-              // 2. Parallel Update for existing items
+              // 2. Parallel Update for existing items (retried once; real failures are counted and logged)
               if (toUpdate.length > 0) {
-                await Promise.all(
-                  toUpdate.map(async ({ id, item, original }) => {
-                    const { error: updErr } = await supabase
-                      .from('jobs')
-                      .update({
-                        ...item,
-                        last_seen_at: new Date().toISOString(),
-                        is_active: true,
-                        status: 'active',
-                      })
-                      .eq('id', id);
-
-                    if (!updErr) {
-                      stats.updated++;
-                      if (hasJobDescriptionsTable && original?.description) {
-                        await supabase.from('job_descriptions').upsert({
-                          job_id: id,
-                          description_text: original.description,
-                          updated_at: new Date().toISOString(),
-                        });
-                      }
-                    } else {
-                      stats.failed++;
-                    }
-                  })
-                );
+                const firstUpdateError = await updateExistingJobs(supabase, toUpdate, stats, hasJobDescriptionsTable);
+                if (firstUpdateError) {
+                  console.warn(`   ⚠️ [Write Error] ${source.name}: job update failed after retry: ${firstUpdateError}`);
+                }
               }
             }
           }
@@ -895,8 +969,7 @@ async function main() {
         }
       }
     } catch (err: any) {
-      stats.warnings = 1;
-      stats.error = err.message;
+      recordSourceFailure(stats, err);
       console.warn(`   ⚠️ [Source Warning] Failed/timed out processing ${source.name}: ${err.message}`);
 
       // Track consecutive board failures
@@ -929,10 +1002,6 @@ async function main() {
         } catch {}
       }
     } finally {
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-        timeoutId = null;
-      }
       const written = stats.inserted + stats.updated;
       const warnings = stats.warnings || 0;
       console.log(
@@ -1065,7 +1134,7 @@ async function main() {
   console.log(`Duration:         ${summary.durationSeconds}s`);
   console.log(`======================================================\n`);
 
-  if (summary.totalFailed > 0) {
+  if (shouldFailShard(summary)) {
     console.error(`❌ [Ingest Failure] Shard encountered ${summary.totalFailed} job write errors. Exiting non-zero.`);
     process.exit(1);
   }
