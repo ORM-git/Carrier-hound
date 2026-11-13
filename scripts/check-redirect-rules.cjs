@@ -348,6 +348,77 @@ function parseRedirectsFile(content) {
 }
 
 /**
+ * Detects whether a line is an unsupported or ambiguous redirect subtable
+ * or table header. Netlify redirects must only use [[redirects]].
+ * Matches any variations with spaces, quotes, or subkeys such as:
+ *   [redirects.conditions], [redirects . conditions], ["redirects"."conditions"],
+ *   ['redirects'.'conditions'], [ "redirects" . "conditions" ],
+ *   [[redirects.conditions]], [[redirects . conditions]],
+ *   [redirects.headers], [redirects.query], [redirects], etc.
+ */
+function isRedirectSubtableOrAmbiguousHeader(line) {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith("[")) return false;
+
+  // Single table [redirects] (with optional quotes/spaces) is ambiguous/invalid
+  // since redirects must be an array of tables [[redirects]].
+  if (/^\[\s*(?:"redirects"|'redirects'|redirects)\s*\]$/i.test(trimmed)) {
+    return true;
+  }
+
+  // Any subtable header starting with redirects followed by a dot,
+  // supporting any spacing, quotes (single or double), or brackets:
+  // e.g. [redirects.conditions], [redirects . conditions], ["redirects"."conditions"],
+  // ["redirects" . "conditions"], ['redirects' . 'conditions'],
+  // [[redirects.conditions]], [[redirects . conditions]], [ "redirects.conditions" ]
+  if (
+    /^\[+\s*(?:"redirects"|'redirects'|redirects)\s*\./i.test(trimmed) ||
+    /^\[+\s*["']redirects\./i.test(trimmed)
+  ) {
+    return true;
+  }
+
+  // Also check general TOML key splitting if brackets wrap dotted keys
+  const headerMatch = trimmed.match(/^\[+(.*?)\]+$/);
+  if (headerMatch) {
+    const inner = headerMatch[1].trim();
+    const dotIdx = inner.indexOf(".");
+    if (dotIdx !== -1) {
+      const firstSeg = inner
+        .slice(0, dotIdx)
+        .trim()
+        .replace(/^["']|["']$/g, "")
+        .toLowerCase();
+      if (firstSeg === "redirects") {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Detects whether a line starts a new foreign TOML section (e.g. [build], [[headers]],
+ * [context.production]) that is NOT part of the redirect block.
+ * Redirect subtable headers are explicitly NOT foreign section headers.
+ */
+function isForeignSectionHeader(line) {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith("[")) return false;
+
+  if (isRedirectSubtableOrAmbiguousHeader(trimmed)) {
+    return false;
+  }
+
+  if (/^\[\[\s*(?:"redirects"|'redirects'|redirects)\s*\]\]$/i.test(trimmed)) {
+    return false;
+  }
+
+  return /^\[+.*\]+$/.test(trimmed);
+}
+
+/**
  * Parses netlify.toml [[redirects]] blocks with strict comment-awareness,
  * full-token status validation, subtable detection, selector key detection,
  * and required field checks.
@@ -358,9 +429,21 @@ function parseNetlifyTomlRedirects(content) {
   const cleanLines = rawLines.map(stripTomlComments);
   const cleanContent = cleanLines.join("\n");
 
-  const redirectBlocks = cleanContent.split("[[redirects]]").slice(1);
   const rules = [];
   const syntaxErrors = [];
+
+  // Preamble check: detect any redirect subtable before the first [[redirects]]
+  const preamble = cleanContent.split("[[redirects]]")[0];
+  for (const rawLine of preamble.split(/\r?\n/)) {
+    const trimmed = rawLine.trim();
+    if (isRedirectSubtableOrAmbiguousHeader(trimmed)) {
+      syntaxErrors.push(
+        `netlify.toml: Unsupported subtable or ambiguous redirect header '${trimmed}' detected before first [[redirects]]; subtable shapes are not modeled and must be rejected fail-closed`
+      );
+    }
+  }
+
+  const redirectBlocks = cleanContent.split("[[redirects]]").slice(1);
 
   const KNOWN_TOML_KEYS = new Set([
     "from",
@@ -377,23 +460,32 @@ function parseNetlifyTomlRedirects(content) {
   for (let i = 0; i < redirectBlocks.length; i++) {
     const blockIndex = i + 1;
     const rawBlock = redirectBlocks[i];
+    const rawBlockLines = rawBlock.split(/\r?\n/);
 
-    // Detect ANY [redirects.*] or [[redirects.*]] subtable before section chopping.
+    // Reject every unsupported or ambiguous redirect subtable spelling BEFORE section chopping.
     // Fail closed: the checker does not model subtable shapes.
-    const subtableMatches = rawBlock.match(/^\s*(\[+redirects\.[^\]]+\]+)/gim);
     let hasSubtable = false;
-    if (subtableMatches && subtableMatches.length > 0) {
-      hasSubtable = true;
-      for (const st of subtableMatches) {
+    for (const rawLine of rawBlockLines) {
+      const trimmed = rawLine.trim();
+      if (isRedirectSubtableOrAmbiguousHeader(trimmed)) {
+        hasSubtable = true;
         syntaxErrors.push(
-          `netlify.toml [[redirects]] block #${blockIndex}: Unsupported subtable '${st.trim()}' detected; subtable shapes are not modeled and must be rejected fail-closed`
+          `netlify.toml [[redirects]] block #${blockIndex}: Unsupported subtable '${trimmed}' detected; subtable shapes are not modeled and must be rejected fail-closed`
         );
       }
     }
 
-    // Split on next foreign section header that is NOT a redirects subtable
-    const sectionSplit = rawBlock.split(/\n\s*\[+(?!\s*redirects\.)/i);
-    const blockContent = sectionSplit[0].trim();
+    // Stop only at true foreign section headers (e.g. [build], [[headers]]).
+    // Redirect subtables are NEVER chopped off as foreign sections.
+    const blockLines = [];
+    for (const rawLine of rawBlockLines) {
+      const trimmed = rawLine.trim();
+      if (isForeignSectionHeader(trimmed)) {
+        break;
+      }
+      blockLines.push(rawLine);
+    }
+    const blockContent = blockLines.join("\n").trim();
 
     if (!blockContent) {
       // Entire block body was commented out or empty
@@ -1008,6 +1100,52 @@ function runNegativeControls() {
       },
       expectedSubstrings: [
         "Incomplete or empty block (body is commented out or missing)",
+      ],
+    },
+    {
+      name: "19. Negative Control: TOML fallback with [redirects . conditions] (spaced subtable) is rejected fail-closed",
+      fn: () => {
+        const toml = `
+[[redirects]]
+  from = "/*"
+  to = "/404.html"
+  status = 404
+
+  [redirects . conditions]
+    Country = ["US"]
+`;
+        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
+        const res = validateRedirectRules(rules, "netlify.toml");
+        return {
+          violations: [...syntaxErrors, ...res.violations],
+        };
+      },
+      expectedSubstrings: [
+        "Unsupported subtable '[redirects . conditions]'",
+        "Missing required active 404 fallback rule",
+      ],
+    },
+    {
+      name: "20. Negative Control: TOML fallback with [\"redirects\".\"conditions\"] (quoted subtable) is rejected fail-closed",
+      fn: () => {
+        const toml = `
+[[redirects]]
+  from = "/*"
+  to = "/404.html"
+  status = 404
+
+  ["redirects"."conditions"]
+    Country = ["US"]
+`;
+        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
+        const res = validateRedirectRules(rules, "netlify.toml");
+        return {
+          violations: [...syntaxErrors, ...res.violations],
+        };
+      },
+      expectedSubstrings: [
+        "Unsupported subtable '[\"redirects\".\"conditions\"]'",
+        "Missing required active 404 fallback rule",
       ],
     },
   ];
