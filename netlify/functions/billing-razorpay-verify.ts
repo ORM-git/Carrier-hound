@@ -248,20 +248,7 @@ export function createHandler(deps: BillingVerifyDeps = {}) {
         }
       }
 
-      const payloadPlan = body.planCode ?? body.plan_code;
-      if (payloadPlan !== undefined && payloadPlan !== null) {
-        if (payloadPlan !== (orderRow.plan_code ?? null)) {
-          return {
-            statusCode: 400,
-            headers,
-            body: JSON.stringify({
-              error: "Plan code does not match recorded order",
-              code: "PLAN_MISMATCH",
-            }),
-          };
-        }
-      }
-
+      const isAddonOrder = Boolean(orderRow.addon_code);
       const payloadAddon = body.addonCode ?? body.addon_code;
       if (payloadAddon !== undefined && payloadAddon !== null) {
         if (payloadAddon !== (orderRow.addon_code ?? null)) {
@@ -271,6 +258,23 @@ export function createHandler(deps: BillingVerifyDeps = {}) {
             body: JSON.stringify({
               error: "Addon code does not match recorded order",
               code: "ADDON_MISMATCH",
+            }),
+          };
+        }
+      }
+
+      const payloadPlan = body.planCode ?? body.plan_code;
+      if (payloadPlan !== undefined && payloadPlan !== null) {
+        const matchesAddon = isAddonOrder && payloadPlan === orderRow.addon_code;
+        const addonMatched = isAddonOrder && payloadAddon && payloadAddon === orderRow.addon_code;
+        const matchesPlan = payloadPlan === (orderRow.plan_code ?? null);
+        if (!matchesPlan && !matchesAddon && !addonMatched) {
+          return {
+            statusCode: 400,
+            headers,
+            body: JSON.stringify({
+              error: "Plan code does not match recorded order",
+              code: "PLAN_MISMATCH",
             }),
           };
         }

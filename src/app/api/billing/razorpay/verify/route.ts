@@ -222,21 +222,21 @@ export async function POST(req: Request) {
       }
     }
 
-    if (payloadPlan !== undefined && payloadPlan !== null) {
-      const recordedPlan = orderRow.plan_code ?? null;
-      if (payloadPlan !== recordedPlan) {
-        return NextResponse.json(
-          { error: "Plan code does not match recorded order", code: "PLAN_MISMATCH" },
-          { status: 400 }
-        );
+    const isAddonOrder = Boolean(orderRow.addon_code);
+    if (payloadAddon !== undefined && payloadAddon !== null) {
+      if (payloadAddon !== (orderRow.addon_code ?? null)) {
+        return NextResponse.json({ error: "Addon code does not match recorded order", code: "ADDON_MISMATCH" },
+          { status: 400 });
       }
     }
 
-    if (payloadAddon !== undefined && payloadAddon !== null) {
-      const recordedAddon = orderRow.addon_code ?? null;
-      if (payloadAddon !== recordedAddon) {
+    if (payloadPlan !== undefined && payloadPlan !== null) {
+      const matchesAddon = isAddonOrder && payloadPlan === orderRow.addon_code;
+      const addonMatched = isAddonOrder && payloadAddon && payloadAddon === orderRow.addon_code;
+      const matchesPlan = payloadPlan === (orderRow.plan_code ?? null);
+      if (!matchesPlan && !matchesAddon && !addonMatched) {
         return NextResponse.json(
-          { error: "Addon code does not match recorded order", code: "ADDON_MISMATCH" },
+          { error: "Plan code does not match recorded order", code: "PLAN_MISMATCH" },
           { status: 400 }
         );
       }
@@ -408,7 +408,24 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "Unknown add-on pack", code: "UNKNOWN_ADDON" }, { status: 400 });
       }
 
-      const expiresAt = new Date(Date.now() + validityDays * 86400000).toISOString();
+      // Tie add-on credit expiry to the active subscription end date (falling back to validity window if absent)
+      let expiresAt: string;
+      const { data: subRow } = await supabaseAdmin
+        .from("subscriptions")
+        .select("current_period_end, status")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const subEnd = subRow?.current_period_end ? new Date(subRow.current_period_end) : null;
+      if (subEnd && !isNaN(subEnd.getTime()) && subEnd.getTime() > Date.now()) {
+        expiresAt = subEnd.toISOString();
+      } else if (subRow?.current_period_end) {
+        expiresAt = subRow.current_period_end;
+      } else {
+        expiresAt = new Date(Date.now() + validityDays * 86400000).toISOString();
+      }
 
       // Grant add-on credit entitlement FIRST (fail-closed: do NOT mark order paid before this succeeds)
       const { data: creditRow, error: creditErr } = await supabaseAdmin
