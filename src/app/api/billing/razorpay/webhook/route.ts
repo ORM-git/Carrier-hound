@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { getRazorpayKeyMode } from "@/lib/billing/mode";
 import { recordFailedEvent } from "@/lib/events/failedEvents";
 import { createLogger } from "@/lib/observability/logger";
+import { verifyWebhookSignature } from "@/lib/billing/webhookSignature";
 
 const baseLog = createLogger({ context: { route: "/api/billing/razorpay/webhook" } });
 
@@ -13,68 +14,6 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, X-Razorpay-Signature, x-razorpay-signature, x-razorpay-event-id, X-Razorpay-Event-Id",
 };
-
-/**
- * Constant-time string comparison preventing timing oracles.
- * Compares every character without early exit.
- */
-export function constantTimeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) {
-    return false;
-  }
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) {
-    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-  return diff === 0;
-}
-
-/**
- * Computes a fixed-length SHA-256 hex digest using Web Crypto.
- */
-export async function computeSha256Hex(value: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(value);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-/**
- * Timing-safe cryptographic signature verification for Razorpay webhooks.
- * Computes HMAC-SHA256 of the raw body using the webhook secret, then
- * performs constant-time comparison over fixed-length SHA-256 digests.
- */
-export async function verifyWebhookSignature(
-  rawBody: string,
-  signature: string,
-  secret: string
-): Promise<boolean> {
-  if (!rawBody || !signature || !secret) return false;
-
-  try {
-    const encoder = new TextEncoder();
-    const key = await crypto.subtle.importKey(
-      "raw",
-      encoder.encode(secret),
-      { name: "HMAC", hash: "SHA-256" },
-      false,
-      ["sign"]
-    );
-    const signatureBuffer = await crypto.subtle.sign("HMAC", key, encoder.encode(rawBody));
-    const hashArray = Array.from(new Uint8Array(signatureBuffer));
-    const expectedHex = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-
-    // Constant-time comparison over fixed-length SHA-256 digests (no early exit or length leakage)
-    const [expectedDigest, signatureDigest] = await Promise.all([
-      computeSha256Hex(expectedHex.toLowerCase()),
-      computeSha256Hex(signature.trim().toLowerCase()),
-    ]);
-    return constantTimeEqual(expectedDigest, signatureDigest);
-  } catch {
-    return false;
-  }
-}
 
 export async function OPTIONS() {
   return new NextResponse(null, {

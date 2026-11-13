@@ -28,9 +28,11 @@ import {
   POST,
   GET,
   OPTIONS,
+} from "../src/app/api/billing/razorpay/webhook/route";
+import {
   verifyWebhookSignature,
   constantTimeEqual,
-} from "../src/app/api/billing/razorpay/webhook/route";
+} from "../src/lib/billing/webhookSignature";
 
 const TEST_WEBHOOK_SECRET = "rzp_webhook_secret_abcdef1234567890";
 const TEST_KEY_ID = "rzp_test_key_1234567890";
