@@ -34,12 +34,7 @@ let testSdkOverride: TracingSdk | null = null;
  * Strictly throws in non-test environments to prevent module-global mutation in production.
  */
 export function setTracingSdkForTesting(mockSdk?: TracingSdk | null): void {
-  const isTest =
-    process.env.NODE_ENV === "test" ||
-    process.env.VITEST === "true" ||
-    process.env.ENABLE_TEST_TRACING_SEAM === "true";
-
-  if (!isTest) {
+  if (process.env.NODE_ENV !== "test") {
     throw new Error(
       "setTracingSdkForTesting is restricted to explicit test environments"
     );

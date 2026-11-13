@@ -636,12 +636,7 @@ async function testInFlightMemoizationAndEdgeCases() {
   // --- Group 4: Production restriction on setTracingSdkForTesting ---
   {
     const prevEnv = process.env.NODE_ENV;
-    const prevVitest = process.env.VITEST;
-    const prevSeam = process.env.ENABLE_TEST_TRACING_SEAM;
-
     process.env.NODE_ENV = "production";
-    delete process.env.VITEST;
-    delete process.env.ENABLE_TEST_TRACING_SEAM;
 
     let threwInProd = false;
     try {
@@ -661,8 +656,6 @@ async function testInFlightMemoizationAndEdgeCases() {
 
     // Restore test environment
     process.env.NODE_ENV = prevEnv;
-    if (prevVitest) process.env.VITEST = prevVitest;
-    if (prevSeam) process.env.ENABLE_TEST_TRACING_SEAM = prevSeam;
   }
 
   // Allow pending async ticks to settle and assert zero unhandled rejections
