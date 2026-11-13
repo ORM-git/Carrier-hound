@@ -220,7 +220,7 @@ async function runSuite() {
       assert.strictEqual(res.status, 200);
       assert.strictEqual(res.headers.get("x-middleware-next"), "1");
     }
-    for (const nonApiPath of ["/login", "/pricing", "/early-access"]) {
+    for (const nonApiPath of ["/login", "/pricing", "/signup"]) {
       const req = new NextRequest(`http://localhost:3000${nonApiPath}`, {
         method: "POST",
         headers: { host: "localhost:3000", origin: "http://localhost:3000", "content-length": overCap },

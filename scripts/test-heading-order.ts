@@ -22,7 +22,6 @@ function check(cond: boolean, label: string): void {
 const PAGES: Array<{ name: string; files: string[] }> = [
   { name: "login", files: ["src/app/login/page.tsx"] },
   { name: "signup", files: ["src/app/signup/page.tsx"] },
-  { name: "early-access", files: ["src/app/early-access/page.tsx"] },
   { name: "pricing", files: ["src/app/pricing/page.tsx"] },
   { name: "privacy-policy", files: ["src/app/privacy-policy/page.tsx"] },
   { name: "terms", files: ["src/app/terms-and-conditions/page.tsx"] },

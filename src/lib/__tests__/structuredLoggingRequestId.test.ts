@@ -15,7 +15,6 @@ const ROUTES: Array<[string, string, number]> = [
   ["src/app/api/jobs/top10/route.ts", "/api/jobs/top10", 1],
   ["src/app/api/jobs/pro/route.ts", "/api/jobs/pro", 2],
   ["src/app/api/jobs/suggest/route.ts", "/api/jobs/suggest", 1],
-  ["src/app/api/early-access/route.ts", "/api/early-access", 1],
   ["src/app/api/track/route.ts", "/api/track", 1],
   ["src/app/api/me/quota/route.ts", "/api/me/quota", 1],
   ["src/app/api/radar/route.ts", "/api/radar", 1],

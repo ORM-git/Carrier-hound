@@ -54,12 +54,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 1.0,
     },
     {
-      url: `${baseUrl}/early-access`,
-      lastModified: lastContentChange(["src/app/early-access"]),
-      changeFrequency: "daily",
-      priority: 0.9,
-    },
-    {
       url: `${baseUrl}/remote`,
       lastModified: lastContentChange(["src/app/remote"]),
       changeFrequency: "daily",

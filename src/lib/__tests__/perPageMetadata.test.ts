@@ -6,7 +6,7 @@
 import { describe, it, expect } from "vitest";
 import * as fs from "fs";
 
-const SEGMENT_LAYOUTS = ["login", "signup", "pricing", "early-access", "radar", "job-detail"];
+const SEGMENT_LAYOUTS = ["login", "signup", "pricing", "radar", "job-detail"];
 
 describe("per-page metadata", () => {
   for (const route of SEGMENT_LAYOUTS) {

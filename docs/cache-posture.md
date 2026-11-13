@@ -56,7 +56,6 @@ This catalog inventories every API route and serverless function in CareerMonke,
 | `src/app/api/auth/security-event/route.ts` | POST | Public | `none set` | `intentionally uncached` | ✅ **Aligned**: Security telemetry ingest returning `204`. |
 | `src/app/api/billing/razorpay/order/route.ts` | POST | User Auth (`Bearer`) | `none set` | `private/no-store` | ⚠️ **Needs Remediation**: Financial order creation lacks explicit `no-store`. |
 | `src/app/api/billing/razorpay/verify/route.ts` | POST | User Auth (`Bearer`) | `none set` | `private/no-store` | ⚠️ **Needs Remediation**: Payment verification mutation (`Bearer`-authed) lacks explicit `no-store`. |
-| `src/app/api/early-access/route.ts` | POST | Public | `none set` | `intentionally uncached` | ✅ **Aligned**: Public waitlist submission POST. |
 | `src/app/api/email/unsubscribe/route.ts` | GET, POST | Signed HMAC Token | `none set` | `private/no-store` | ⚠️ **Needs Remediation**: GET renders HTML containing user's email; POST suppresses email; lacks `no-store`. |
 | `src/app/api/health/ready/route.ts` | GET, HEAD | Public | `"no-store, no-cache, must-revalidate"` | `private/no-store` | ✅ **Compliant**: Readiness probe prohibits caching via `no-store`. |
 | `src/app/api/health/route.ts` | GET, HEAD | Public | `"no-store, no-cache, must-revalidate"` | `private/no-store` | ✅ **Compliant**: Liveness probe prohibits caching via `no-store`. |
@@ -116,7 +115,7 @@ Endpoints handling authenticated sessions (`Bearer`), PII, admin operations, bil
 
 ### 4.3 Intentionally Uncached
 Dynamic write operations, webhook receivers, telemetry ingest, and AI RPC endpoints (with `"no-store"` recommended for defense in depth on authed AI RPCs):
-- `src/app/api/early-access/route.ts`, `src/app/api/auth/security-event/route.ts`, `src/app/api/track/route.ts`
+- `src/app/api/auth/security-event/route.ts`, `src/app/api/track/route.ts`
 - `netlify/functions/billing-razorpay-webhook.ts`
 - `src/app/api/ai/route.ts`, `netlify/functions/ai.ts`
 - Internal utility modules: `netlify/functions/_cors.ts`, `_logger.ts`, `_sharedRateLimit.ts`

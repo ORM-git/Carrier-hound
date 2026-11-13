@@ -805,7 +805,7 @@ export default function LandingTopArtifact() {
               <div className="medal" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></div>
               <h3 tabIndex={-1}>Applied in <span data-f="secs">14</span> seconds.</h3>
               <p>Found early, tailored for the role, and sent straight to <span data-f="co2">Fernway</span>. That&apos;s the whole hunt.</p>
-              <Link className="btn" href="/early-access">Get my real matches</Link>
+              <Link className="btn" href="/signup">Get my real matches</Link>
               <button className="again" data-f="again">Try another field</button>
             </div>
           </div>

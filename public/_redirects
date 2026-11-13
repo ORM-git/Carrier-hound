@@ -5,5 +5,7 @@
 /paywall /jobs 301!
 /applications /tracker 301!
 /privacy /privacy-policy 301!
+/early-access /signup 301!
+/early-access/* /signup 301!
 /jobs/* /jobs/detail 200
 /* /404.html 404

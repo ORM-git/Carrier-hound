@@ -44,8 +44,6 @@ export const FLAGS: readonly FlagDefinition[] = [
     description: "Restores the earlier behavior of sending an empty digest." },
   { envVar: "__CAREERMONKE_LEGACY_EARLY_ACCESS", rule: "strict_true", defaultEnabled: false, scope: "server",
     description: "Restores the earlier early-access behavior." },
-  { envVar: "__CAREERMONKE_LEGACY_EARLY_ACCESS_UNLOCK", rule: "strict_true", defaultEnabled: false, scope: "server",
-    description: "Restores the earlier early-access unlock in middleware." },
   { envVar: "__CAREERMONKE_LEGACY_JOBS_SERVICE", rule: "strict_true", defaultEnabled: false, scope: "server",
     description: "Restores the earlier jobs service behavior." },
   { envVar: "__CAREERMONKE_LEGACY_RATE_LIMIT", rule: "strict_true", defaultEnabled: false, scope: "server",

@@ -81,11 +81,6 @@ exports[`SEO serialized output snapshots > sitemap route list is stable (volatil
   },
   {
     "changeFrequency": "daily",
-    "priority": 0.9,
-    "url": "https://careermonke.com/early-access",
-  },
-  {
-    "changeFrequency": "daily",
     "priority": 0.8,
     "url": "https://careermonke.com/remote",
   },

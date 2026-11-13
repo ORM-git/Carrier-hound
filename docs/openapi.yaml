@@ -184,13 +184,6 @@ paths:
       description: Payments are disabled pre-launch (owner decision).
       responses:
         "200": { description: Verification result }
-  /api/early-access:
-    post:
-      tags: [public]
-      summary: Join the early-access waitlist
-      description: Captures first-touch UTM/referrer attribution.
-      responses:
-        "200": { description: Signup recorded }
   /api/email/unsubscribe:
     get:
       tags: [public]
