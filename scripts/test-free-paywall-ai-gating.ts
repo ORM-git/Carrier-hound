@@ -140,7 +140,7 @@ async function run() {
     }
   }
 
-  // 1b. Invite-only gate check: unapproved user gets 403 Early access only
+  // 1b. Early-access gate removed: new signed-in Pro user is not blocked with Early access only
   const unapprovedReq = new Request("http://localhost:3000/api/ai", {
     method: "POST",
     headers: {
@@ -172,8 +172,8 @@ async function run() {
     getServerEntitlement: async () => ({ isPro: true, status: "active" } as any),
   });
   const unapprovedJson = await unapprovedRes.json().catch(() => ({}));
-  if (unapprovedRes.status !== 403 || unapprovedJson.error !== "Early access only") {
-    failures.push(`SECURITY ERROR: Unapproved user did not get 403 Early access only (status: ${unapprovedRes.status}, error: ${unapprovedJson.error})`);
+  if (unapprovedRes.status === 403 && String(unapprovedJson.error || "").includes("Early access only")) {
+    failures.push(`SECURITY ERROR: New signed-in user was blocked with Early access only (status: ${unapprovedRes.status}, error: ${unapprovedJson.error})`);
   }
   delete (globalThis as any).__mockRateLimitClient;
 
