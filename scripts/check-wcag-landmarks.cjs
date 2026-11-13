@@ -8,11 +8,17 @@
  *   2. Section 2 contains exact, unique WCAG 2.1 AA criterion IDs (all 50 canonical IDs).
  *   3. Every file path cited in the criteria evidence column resolves on disk.
  *   4. Summary counts in Section 2 match the table rows exactly.
- *   5. Section 3 contains all 32 non-landing pages with ground-truth landmark statuses.
- *   6. Summary counts in Section 3 match the landmark table rows exactly.
- *   7. Section 4 "Remaining Gaps" is present with actionable remediation items.
- *   8. Built-in negative-control mutations verify that nonexistent citations,
- *      flipped landmark verdicts, and duplicate criterion IDs are strictly rejected.
+ *   5. Section 3 contains all 32 non-landing pages with exact unique (route, filePath) coverage.
+ *   6. Every landmark field (main, header, nav, aside) matches static manually reviewed expectations.
+ *   7. Every GAP row provides a substantive gap explanation (not None or empty).
+ *   8. Summary counts in Section 3 match the landmark table rows exactly.
+ *   9. Section 4 "Remaining Gaps" is present with actionable remediation items.
+ *  10. Built-in negative-control mutations verify that:
+ *      - Nonexistent cited file path fails
+ *      - Duplicate criterion ID fails
+ *      - Duplicate page route / omitted non-landing page fails
+ *      - Invalid landmark field values (main=99/header=No/nav=No/aside=None) fail
+ *      - Replacing GAP explanations with None fails
  *
  * Usage:
  *   node scripts/check-wcag-landmarks.cjs
@@ -35,52 +41,282 @@ const EXPECTED_CRITERIA = [
   "3.2.2", "3.2.3", "3.2.4", "3.3.1", "3.3.2", "3.3.3", "3.3.4", "4.1.1", "4.1.2", "4.1.3",
 ];
 
-// Ground-truth expected landmark audit status for every non-landing page in src/app
-const EXPECTED_LANDMARK_STATUS = {
-  "/about": "GAP",
-  "/admin": "GAP",
-  "/admin/users": "GAP",
-  "/applications": "GAP",
-  "/auth/callback": "GAP",
-  "/contact": "GAP",
-  "/dashboard": "GAP",
-  "/early-access": "GAP",
-  "/job-detail": "GAP",
-  "/job-search/all": "GAP",
-  "/jobs": "GAP",
-  "/jobs/detail": "GAP",
-  "/jobs/[id]/interview-pack": "GAP",
-  "/jobs/[id]/skill-what-if": "GAP",
-  "/login": "PASS",
-  "/onboarding": "GAP",
-  "/pricing": "GAP",
-  "/privacy": "GAP",
-  "/privacy-policy": "GAP",
-  "/profile": "GAP",
-  "/radar": "GAP",
-  "/refund-policy": "GAP",
-  "/remote": "PASS",
-  "/remote/[slug]": "GAP",
-  "/remote/[slug]/titles": "GAP",
-  "/remote/jobs/[category]": "GAP",
-  "/resume": "GAP",
-  "/settings": "GAP",
-  "/signup": "PASS",
-  "/terms-and-conditions": "GAP",
-  "/tracker": "GAP",
-  "/worldwide": "PASS",
+// Static, manually reviewed baseline expectations derived from composed component inspection
+const EXPECTED_LANDMARKS = {
+  "/about": {
+    filePath: "src/app/about/page.tsx",
+    main: "1 (PASS)",
+    header: "No",
+    nav: "Yes",
+    aside: "None",
+    status: "GAP",
+  },
+  "/admin": {
+    filePath: "src/app/admin/page.tsx",
+    main: "0 (0)",
+    header: "No",
+    nav: "No",
+    aside: "None",
+    status: "GAP",
+  },
+  "/admin/users": {
+    filePath: "src/app/admin/users/page.tsx",
+    main: "0 (0)",
+    header: "No",
+    nav: "No",
+    aside: "None",
+    status: "GAP",
+  },
+  "/applications": {
+    filePath: "src/app/applications/page.tsx",
+    main: "1 (PASS)",
+    header: "Yes",
+    nav: "Yes",
+    aside: "Unlabeled",
+    status: "GAP",
+  },
+  "/auth/callback": {
+    filePath: "src/app/auth/callback/page.tsx",
+    main: "0 (0)",
+    header: "No",
+    nav: "No",
+    aside: "None",
+    status: "GAP",
+  },
+  "/contact": {
+    filePath: "src/app/contact/page.tsx",
+    main: "1 (PASS)",
+    header: "No",
+    nav: "No",
+    aside: "None",
+    status: "GAP",
+  },
+  "/dashboard": {
+    filePath: "src/app/dashboard/page.tsx",
+    main: "1 (PASS)",
+    header: "Yes",
+    nav: "Yes",
+    aside: "Unlabeled",
+    status: "GAP",
+  },
+  "/early-access": {
+    filePath: "src/app/early-access/page.tsx",
+    main: "1 (PASS)",
+    header: "Yes",
+    nav: "No",
+    aside: "None",
+    status: "GAP",
+  },
+  "/job-detail": {
+    filePath: "src/app/job-detail/page.tsx",
+    main: "0 (0)",
+    header: "No",
+    nav: "No",
+    aside: "None",
+    status: "GAP",
+  },
+  "/job-search/all": {
+    filePath: "src/app/job-search/all/page.tsx",
+    main: "0 (0)",
+    header: "No",
+    nav: "No",
+    aside: "None",
+    status: "GAP",
+  },
+  "/jobs": {
+    filePath: "src/app/jobs/page.tsx",
+    main: "1 (PASS)",
+    header: "Yes",
+    nav: "Yes",
+    aside: "Unlabeled",
+    status: "GAP",
+  },
+  "/jobs/detail": {
+    filePath: "src/app/jobs/detail/page.tsx",
+    main: "0 (0)",
+    header: "No",
+    nav: "No",
+    aside: "None",
+    status: "GAP",
+  },
+  "/jobs/[id]/interview-pack": {
+    filePath: "src/app/jobs/[id]/interview-pack/page.tsx",
+    main: "1 (Conditional)",
+    header: "Yes (Conditional)",
+    nav: "Yes (Conditional)",
+    aside: "Unlabeled (Conditional)",
+    status: "GAP",
+  },
+  "/jobs/[id]/skill-what-if": {
+    filePath: "src/app/jobs/[id]/skill-what-if/page.tsx",
+    main: "1 (Conditional)",
+    header: "Yes (Conditional)",
+    nav: "Yes (Conditional)",
+    aside: "Unlabeled (Conditional)",
+    status: "GAP",
+  },
+  "/login": {
+    filePath: "src/app/login/page.tsx",
+    main: "1 (PASS)",
+    header: "Yes",
+    nav: "Yes",
+    aside: "None",
+    status: "PASS",
+  },
+  "/onboarding": {
+    filePath: "src/app/onboarding/page.tsx",
+    main: "1 (PASS)",
+    header: "Yes",
+    nav: "No",
+    aside: "None",
+    status: "GAP",
+  },
+  "/pricing": {
+    filePath: "src/app/pricing/page.tsx",
+    main: "1 (PASS)",
+    header: "Yes",
+    nav: "Yes",
+    aside: "Unlabeled",
+    status: "GAP",
+  },
+  "/privacy": {
+    filePath: "src/app/privacy/page.tsx",
+    main: "1 (PASS)",
+    header: "No",
+    nav: "No",
+    aside: "None",
+    status: "GAP",
+  },
+  "/privacy-policy": {
+    filePath: "src/app/privacy-policy/page.tsx",
+    main: "1 (PASS)",
+    header: "No",
+    nav: "No",
+    aside: "None",
+    status: "GAP",
+  },
+  "/profile": {
+    filePath: "src/app/profile/page.tsx",
+    main: "1 (PASS)",
+    header: "Yes",
+    nav: "Yes",
+    aside: "Unlabeled",
+    status: "GAP",
+  },
+  "/radar": {
+    filePath: "src/app/radar/page.tsx",
+    main: "1 (PASS)",
+    header: "Yes",
+    nav: "Yes",
+    aside: "Unlabeled",
+    status: "GAP",
+  },
+  "/refund-policy": {
+    filePath: "src/app/refund-policy/page.tsx",
+    main: "1 (PASS)",
+    header: "No",
+    nav: "No",
+    aside: "None",
+    status: "GAP",
+  },
+  "/remote": {
+    filePath: "src/app/remote/page.tsx",
+    main: "1 (PASS)",
+    header: "Yes",
+    nav: "Yes",
+    aside: "None",
+    status: "PASS",
+  },
+  "/remote/[slug]": {
+    filePath: "src/app/remote/[slug]/page.tsx",
+    main: "1 (PASS)",
+    header: "Yes",
+    nav: "No",
+    aside: "None",
+    status: "GAP",
+  },
+  "/remote/[slug]/titles": {
+    filePath: "src/app/remote/[slug]/titles/page.tsx",
+    main: "1 (PASS)",
+    header: "Yes",
+    nav: "No",
+    aside: "None",
+    status: "GAP",
+  },
+  "/remote/jobs/[category]": {
+    filePath: "src/app/remote/jobs/[category]/page.tsx",
+    main: "1 (PASS)",
+    header: "Yes",
+    nav: "No",
+    aside: "None",
+    status: "GAP",
+  },
+  "/resume": {
+    filePath: "src/app/resume/page.tsx",
+    main: "1 (PASS)",
+    header: "Yes",
+    nav: "Yes",
+    aside: "Unlabeled",
+    status: "GAP",
+  },
+  "/settings": {
+    filePath: "src/app/settings/page.tsx",
+    main: "1 (PASS)",
+    header: "Yes",
+    nav: "Yes",
+    aside: "Unlabeled",
+    status: "GAP",
+  },
+  "/signup": {
+    filePath: "src/app/signup/page.tsx",
+    main: "1 (PASS)",
+    header: "Yes",
+    nav: "Yes",
+    aside: "None",
+    status: "PASS",
+  },
+  "/terms-and-conditions": {
+    filePath: "src/app/terms-and-conditions/page.tsx",
+    main: "1 (PASS)",
+    header: "No",
+    nav: "No",
+    aside: "None",
+    status: "GAP",
+  },
+  "/tracker": {
+    filePath: "src/app/tracker/page.tsx",
+    main: "1 (PASS)",
+    header: "Yes",
+    nav: "Yes",
+    aside: "Unlabeled",
+    status: "GAP",
+  },
+  "/worldwide": {
+    filePath: "src/app/worldwide/page.tsx",
+    main: "1 (PASS)",
+    header: "Yes",
+    nav: "Yes",
+    aside: "None",
+    status: "PASS",
+  },
 };
 
-function getAllAppPages(dir, list = []) {
+/**
+ * Recursively locates all non-landing page.tsx files under src/app.
+ */
+function getAppPageFiles(dir, list = []) {
   for (const item of fs.readdirSync(dir)) {
     const full = path.join(dir, item);
     if (fs.statSync(full).isDirectory()) {
-      getAllAppPages(full, list);
+      getAppPageFiles(full, list);
     } else if (item === "page.tsx") {
-      list.push(full.replace(/\\/g, "/"));
+      const rel = path.relative(ROOT, full).replace(/\\/g, "/");
+      if (rel !== "src/app/page.tsx") {
+        list.push(rel);
+      }
     }
   }
-  return list;
+  return list.sort();
 }
 
 /**
@@ -240,16 +476,39 @@ function validateConformanceDoc(content) {
     }
   }
 
-  const allAppPages = getAllAppPages(path.join(ROOT, "src", "app"));
-  const nonLandingPages = allAppPages
-    .filter((p) => !p.endsWith("src/app/page.tsx"))
-    .map((p) => p.replace(ROOT.replace(/\\/g, "/") + "/", ""))
-    .sort();
+  // 3a. Exact unique route/file pair coverage
+  const diskPages = getAppPageFiles(path.join(ROOT, "src", "app"));
+  const seenRoutes = new Set();
+  const seenFiles = new Set();
 
-  if (landmarkRows.length !== nonLandingPages.length) {
-    errors.push(`Landmark table row count (${landmarkRows.length}) does not match non-landing pages on disk (${nonLandingPages.length})`);
+  for (const row of landmarkRows) {
+    if (seenRoutes.has(row.route)) {
+      errors.push(`Duplicate route in landmark table: ${row.route}`);
+    }
+    if (seenFiles.has(row.filePath)) {
+      errors.push(`Duplicate file path in landmark table: ${row.filePath}`);
+    }
+    seenRoutes.add(row.route);
+    seenFiles.add(row.filePath);
   }
 
+  for (const diskFile of diskPages) {
+    if (!seenFiles.has(diskFile)) {
+      errors.push(`Missing non-landing page on disk from landmark table: ${diskFile}`);
+    }
+  }
+
+  for (const row of landmarkRows) {
+    if (!diskPages.includes(row.filePath)) {
+      errors.push(`Landmark table row cites page not found on disk: ${row.filePath} (${row.route})`);
+    }
+  }
+
+  if (landmarkRows.length !== diskPages.length) {
+    errors.push(`Landmark table row count (${landmarkRows.length}) does not match non-landing pages on disk (${diskPages.length})`);
+  }
+
+  // 3b. Validate each landmark field (main, header, nav, aside, status) & gap explanations
   let passPages = 0;
   let gapPages = 0;
 
@@ -260,14 +519,45 @@ function validateConformanceDoc(content) {
       errors.push(`Invalid landmark status "${row.status}" for ${row.filePath}`);
     }
 
-    // Verify ground-truth expected status
-    const expected = EXPECTED_LANDMARK_STATUS[row.route];
-    if (expected && row.status !== expected) {
-      errors.push(`Page ${row.route} (${row.filePath}) landmark status is ${row.status}, expected ground-truth ${expected}`);
+    const expected = EXPECTED_LANDMARKS[row.route];
+    if (!expected) {
+      errors.push(`Unexpected or unregistered route in landmark table: ${row.route}`);
+      continue;
+    }
+
+    if (row.filePath !== expected.filePath) {
+      errors.push(`Page ${row.route} file path is "${row.filePath}", expected "${expected.filePath}"`);
+    }
+    if (row.main !== expected.main) {
+      errors.push(`Page ${row.route} main landmark is "${row.main}", expected "${expected.main}"`);
+    }
+    if (row.header !== expected.header) {
+      errors.push(`Page ${row.route} header landmark is "${row.header}", expected "${expected.header}"`);
+    }
+    if (row.nav !== expected.nav) {
+      errors.push(`Page ${row.route} nav landmark is "${row.nav}", expected "${expected.nav}"`);
+    }
+    if (row.aside !== expected.aside) {
+      errors.push(`Page ${row.route} complementary landmark is "${row.aside}", expected "${expected.aside}"`);
+    }
+    if (row.status !== expected.status) {
+      errors.push(`Page ${row.route} landmark status is "${row.status}", expected "${expected.status}"`);
+    }
+
+    // Require gap explanation for every GAP row
+    const gapText = (row.gaps || "").trim();
+    if (row.status === "GAP") {
+      if (!gapText || gapText.toLowerCase() === "none" || gapText === "-") {
+        errors.push(`Page ${row.route} has status GAP but is missing a valid gap explanation (found: "${row.gaps}")`);
+      }
+    } else if (row.status === "PASS") {
+      if (!gapText.toLowerCase().startsWith("none")) {
+        errors.push(`Page ${row.route} has status PASS but gap explanation does not indicate None (found: "${row.gaps}")`);
+      }
     }
   }
 
-  // Validate Section 3 summary counts
+  // 3c. Validate Section 3 summary counts
   const totalPagesMatch = content.match(/-\s*\*\*Total Audited Pages\*\*:\s*(\d+)/i);
   const passPagesMatch = content.match(/-\s*\*\*Landmark PASS\*\*:\s*(\d+)/i);
   const gapPagesMatch = content.match(/-\s*\*\*Landmark GAP\*\*:\s*(\d+)/i);
@@ -304,13 +594,15 @@ function validateConformanceDoc(content) {
  * Runs built-in negative-control mutations to verify that the checker fails
  * when presented with invalid documents:
  *   1. Nonexistent cited file path
- *   2. Flipped landmark row (/dashboard GAP -> PASS)
- *   3. Duplicate criterion ID (replacing 3.1.2 with 3.1.1)
+ *   2. Duplicate criterion ID
+ *   3. Duplicate route+path (replacing /worldwide with duplicate /login)
+ *   4. Landmark field mutation (changing /pricing to main=99/header=No/nav=No/aside=None while keeping GAP)
+ *   5. Empty/None gap explanation on GAP rows (replacing all unlabeled-aside reasons with None)
  */
 function runNegativeControls(originalContent) {
   console.log("Running built-in negative-control mutation assertions...");
 
-  // Probe 1: Nonexistent citation
+  // Control 1: Nonexistent cited file
   const probe1 = originalContent.replace(
     "scripts/audit-static-a11y.ts",
     "scripts/nonexistent-fixture-script-xyz.ts"
@@ -322,29 +614,49 @@ function runNegativeControls(originalContent) {
   }
   console.log("  [PASS] Negative control 1: Nonexistent file citation correctly rejected.");
 
-  // Probe 2: Flipped landmark row (/dashboard GAP -> PASS)
+  // Control 2: Duplicate criterion ID
   const probe2 = originalContent.replace(
-    "| `/dashboard` | `src/app/dashboard/page.tsx` | 1 (PASS) | Yes | Yes | Unlabeled | **GAP** |",
-    "| `/dashboard` | `src/app/dashboard/page.tsx` | 1 (PASS) | Yes | Yes | None | **PASS** |"
-  );
-  const res2 = validateConformanceDoc(probe2);
-  if (res2.ok || !res2.errors.some((e) => e.includes("/dashboard"))) {
-    console.error("[FAIL] Negative control 2 failed: checker did not reject flipped /dashboard GAP -> PASS.");
-    process.exit(1);
-  }
-  console.log("  [PASS] Negative control 2: Flipped landmark status correctly rejected.");
-
-  // Probe 3: Duplicate criterion ID
-  const probe3 = originalContent.replace(
     "**3.1.2 Language of Parts**",
     "**3.1.1 Language of Parts**"
   );
-  const res3 = validateConformanceDoc(probe3);
-  if (res3.ok || !res3.errors.some((e) => e.includes("Duplicate criterion IDs"))) {
-    console.error("[FAIL] Negative control 3 failed: checker did not reject duplicate criterion ID.");
+  const res2 = validateConformanceDoc(probe2);
+  if (res2.ok || !res2.errors.some((e) => e.includes("Duplicate criterion IDs"))) {
+    console.error("[FAIL] Negative control 2 failed: checker did not reject duplicate criterion ID.");
     process.exit(1);
   }
-  console.log("  [PASS] Negative control 3: Duplicate criterion ID correctly rejected.\n");
+  console.log("  [PASS] Negative control 2: Duplicate criterion ID correctly rejected.");
+
+  // Control 3: Replace /worldwide route+path with duplicate /login route+path
+  const worldwideRegex = /\|\s*`\/worldwide`\s*\|\s*`src\/app\/worldwide\/page\.tsx`[^\r\n]*/;
+  const duplicateLoginRow = "| `/login` | `src/app/login/page.tsx` | 1 (PASS) | Yes | Yes | None | **PASS** | None |";
+  const probe3 = originalContent.replace(worldwideRegex, duplicateLoginRow);
+  const res3 = validateConformanceDoc(probe3);
+  if (res3.ok || !res3.errors.some((e) => e.includes("Duplicate") || e.includes("Missing non-landing page"))) {
+    console.error("[FAIL] Negative control 3 failed: checker did not reject duplicate login replacing worldwide.");
+    process.exit(1);
+  }
+  console.log("  [PASS] Negative control 3: Duplicate route/path and omitted non-landing page correctly rejected.");
+
+  // Control 4: Change /pricing to main=99/header=No/nav=No/aside=None while keeping GAP
+  const pricingRegex = /\|\s*`\/pricing`\s*\|\s*`src\/app\/pricing\/page\.tsx`[^\r\n]*/;
+  const mutatedPricingRow = "| `/pricing` | `src/app/pricing/page.tsx` | 99 | No | No | None | **GAP** | Unlabeled complementary region (`<aside>` in `src/components/shell/AppIconRail.tsx:107` missing `aria-label`/`aria-labelledby`) |";
+  const probe4 = originalContent.replace(pricingRegex, mutatedPricingRow);
+  const res4 = validateConformanceDoc(probe4);
+  if (res4.ok || !res4.errors.some((e) => e.includes("/pricing") && (e.includes("main") || e.includes("header") || e.includes("nav") || e.includes("aside")))) {
+    console.error("[FAIL] Negative control 4 failed: checker did not reject landmark field mismatch on /pricing.");
+    process.exit(1);
+  }
+  console.log("  [PASS] Negative control 4: Landmark field value mutations (main=99/header=No/nav=No/aside=None) correctly rejected.");
+
+  // Control 5: Replace all unlabeled-aside gap reasons with None
+  const unlabeledAsideReason = "Unlabeled complementary region (`<aside>` in `src/components/shell/AppIconRail.tsx:107` missing `aria-label`/`aria-labelledby`)";
+  const probe5 = originalContent.split(unlabeledAsideReason).join("None");
+  const res5 = validateConformanceDoc(probe5);
+  if (res5.ok || !res5.errors.some((e) => e.includes("missing a valid gap explanation"))) {
+    console.error("[FAIL] Negative control 5 failed: checker did not reject GAP rows with 'None' gap explanation.");
+    process.exit(1);
+  }
+  console.log("  [PASS] Negative control 5: Replacement of GAP explanations with None correctly rejected.\n");
 }
 
 function runCheck() {
@@ -385,9 +697,11 @@ function runCheck() {
 
   console.log("\n[PASS] Per-Page Landmark Table verified:");
   console.log(`       - Total Audited Non-Landing Pages: ${details.pagesCount}/32`);
+  console.log(`       - Exact unique route and file path coverage validated against disk.`);
   console.log(`       - Landmark PASS: ${details.landmarkPass}`);
   console.log(`       - Landmark GAP: ${details.landmarkGap}`);
-  console.log(`       - Ground-truth expected landmark statuses matched.`);
+  console.log(`       - Static manually reviewed landmark expectations matched across all fields.`);
+  console.log(`       - Actionable gap explanations verified for all GAP rows.`);
   console.log(`       - Section 3 summary counts match table rows exactly.`);
 
   console.log("\n[PASS] Remaining Gaps Section verified with actionable remediation items.");
