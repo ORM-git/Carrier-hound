@@ -409,18 +409,24 @@ async function main() {
 
     let timeoutId: NodeJS.Timeout | null = null;
     try {
+      const adapter = getAdapter(source.type);
+      if (!adapter) {
+        throw new Error(`No adapter implemented for source type: ${source.type}`);
+      }
+
       const timeoutPromise = new Promise<never>((_, reject) => {
         timeoutId = setTimeout(() => reject(new Error(`Timeout after 45s processing ${source.name}`)), 45000);
       });
 
-      await Promise.race([
-        (async () => {
-          const adapter = getAdapter(source.type);
-          if (!adapter) {
-            throw new Error(`No adapter implemented for source type: ${source.type}`);
-          }
+      const rawJobs = await Promise.race([
+        adapter.fetchJobs(source),
+        timeoutPromise,
+      ]);
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
 
-          const rawJobs = await adapter.fetchJobs(source);
       stats.fetched = rawJobs.length;
       summary.totalFetched += rawJobs.length;
 
@@ -808,10 +814,7 @@ async function main() {
           }
         }
       }
-    })(),
-    timeoutPromise,
-  ]);
-  } catch (err: any) {
+    } catch (err: any) {
     stats.failed = stats.fetched || 1;
     stats.error = err.message;
     console.error(`   ❌ Failed processing source: ${err.message}`);
