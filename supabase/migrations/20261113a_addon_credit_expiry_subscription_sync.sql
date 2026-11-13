@@ -26,6 +26,7 @@ CREATE OR REPLACE FUNCTION public.fulfil_payment_order(
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public
 AS $$
 DECLARE
   v_order record;
