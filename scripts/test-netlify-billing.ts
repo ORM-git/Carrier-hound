@@ -226,8 +226,10 @@ async function runSuite() {
   const origKeyId = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
   const origKeySecret = process.env.RAZORPAY_KEY_SECRET;
   const origWebhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+  const origMode = process.env.RAZORPAY_MODE;
 
   try {
+    process.env.RAZORPAY_MODE = "test";
     process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = TEST_KEY_ID;
     process.env.RAZORPAY_KEY_SECRET = TEST_SECRET;
     process.env.RAZORPAY_WEBHOOK_SECRET = TEST_WEBHOOK_SECRET;
@@ -235,7 +237,9 @@ async function runSuite() {
     // ---------------------------------------------------------------------------
     // TEST 1: Flag Off (NEXT_PUBLIC_BILLING_ENABLED !== "true")
     // ---------------------------------------------------------------------------
-    console.log("Test 1: Verifying all 3 functions reject with 503 BILLING_DISABLED when flag is off...");
+    console.log(
+      "Test 1: Verifying all 3 functions reject with 503 BILLING_DISABLED when flag is off..."
+    );
     process.env.NEXT_PUBLIC_BILLING_ENABLED = "false";
 
     const orderFlagOff = await orderHandler({
@@ -249,7 +253,11 @@ async function runSuite() {
     const verifyFlagOff = await verifyHandler({
       httpMethod: "POST",
       headers: { authorization: "Bearer valid-token-pro" },
-      body: JSON.stringify({ order_id: "order_123", payment_id: "pay_123", razorpay_signature: "sig" }),
+      body: JSON.stringify({
+        order_id: "order_123",
+        payment_id: "pay_123",
+        razorpay_signature: "sig",
+      }),
     });
     assert.strictEqual(verifyFlagOff.statusCode, 503);
     assert.strictEqual(JSON.parse(verifyFlagOff.body).code, "BILLING_DISABLED");
@@ -311,7 +319,9 @@ async function runSuite() {
     // ---------------------------------------------------------------------------
     // TEST 3: Authoritative Pricing & Order Creation Happy Path
     // ---------------------------------------------------------------------------
-    console.log("\nTest 3: Verifying server-authoritative order creation and Pro check on add-ons...");
+    console.log(
+      "\nTest 3: Verifying server-authoritative order creation and Pro check on add-ons..."
+    );
 
     // 3A: Weekly plan order (client specifies tampered amount: 1 rupee; server must force 69200 paise)
     const weeklyOrderRes = await orderHandler({
@@ -321,7 +331,11 @@ async function runSuite() {
     });
     assert.strictEqual(weeklyOrderRes.statusCode, 200);
     const weeklyOrder = JSON.parse(weeklyOrderRes.body);
-    assert.strictEqual(weeklyOrder.amount, 69200, "Weekly plan MUST resolve to 69200 paise (Rs 692)");
+    assert.strictEqual(
+      weeklyOrder.amount,
+      69200,
+      "Weekly plan MUST resolve to 69200 paise (Rs 692)"
+    );
     assert.strictEqual(weeklyOrder.currency, "INR");
     assert(weeklyOrder.orderId.startsWith("order_test_"));
 
@@ -340,7 +354,11 @@ async function runSuite() {
     });
     assert.strictEqual(monthlyOrderRes.statusCode, 200);
     const monthlyOrder = JSON.parse(monthlyOrderRes.body);
-    assert.strictEqual(monthlyOrder.amount, 149900, "Monthly plan MUST resolve to 149900 paise (Rs 1,499)");
+    assert.strictEqual(
+      monthlyOrder.amount,
+      149900,
+      "Monthly plan MUST resolve to 149900 paise (Rs 1,499)"
+    );
 
     // 3C: Free user attempts to buy Add-on 10 -> MUST be rejected with 403 PRO_REQUIRED
     const freeAddonRes = await orderHandler({
@@ -359,7 +377,11 @@ async function runSuite() {
     });
     assert.strictEqual(proAddonRes.statusCode, 200);
     const proAddonOrder = JSON.parse(proAddonRes.body);
-    assert.strictEqual(proAddonOrder.amount, 14900, "Addon 10 must resolve to 14900 paise (Rs 149)");
+    assert.strictEqual(
+      proAddonOrder.amount,
+      14900,
+      "Addon 10 must resolve to 14900 paise (Rs 149)"
+    );
 
     console.log("  -> [PASS-LOCAL] Server-authoritative pricing and add-on Pro gating verified.");
 
@@ -491,9 +513,15 @@ async function runSuite() {
     assert.strictEqual(verifyRepeat.statusCode, 200);
     const repeatBody = JSON.parse(verifyRepeat.body);
     assert.strictEqual(repeatBody.alreadyPaid, true);
-    assert.strictEqual(mockDb.rpcFulfilCalls.length, 1, "Must NOT re-execute RPC on already paid order");
+    assert.strictEqual(
+      mockDb.rpcFulfilCalls.length,
+      1,
+      "Must NOT re-execute RPC on already paid order"
+    );
 
-    console.log("  -> [PASS-LOCAL] Verification fulfills order and handles repeat calls idempotently.");
+    console.log(
+      "  -> [PASS-LOCAL] Verification fulfills order and handles repeat calls idempotently."
+    );
 
     // ---------------------------------------------------------------------------
     // TEST 7: Webhook - RPC returns success: false (non-200, no dedupe row left)
@@ -537,9 +565,17 @@ async function runSuite() {
     });
 
     // Must return non-200 (HTTP 500 for retry)
-    assert.strictEqual(webhookRpcFailRes.statusCode, 500, "Must return HTTP 500 on RPC success:false");
+    assert.strictEqual(
+      webhookRpcFailRes.statusCode,
+      500,
+      "Must return HTTP 500 on RPC success:false"
+    );
     const failResBody = JSON.parse(webhookRpcFailRes.body);
-    assert.strictEqual(failResBody.fulfilled, undefined, "Must NEVER return fulfilled:true when RPC fails");
+    assert.strictEqual(
+      failResBody.fulfilled,
+      undefined,
+      "Must NEVER return fulfilled:true when RPC fails"
+    );
     assert.strictEqual(failResBody.code, "ORDER_INVALID_STATE");
 
     // Dedupe row must NOT be left in webhook_events!
@@ -549,7 +585,9 @@ async function runSuite() {
       "Must NOT leave dedupe row in webhook_events when fulfillment failed"
     );
 
-    console.log("  -> [PASS-LOCAL] Webhook properly returns non-200 and leaves no dedupe row when RPC returns success:false.");
+    console.log(
+      "  -> [PASS-LOCAL] Webhook properly returns non-200 and leaves no dedupe row when RPC returns success:false."
+    );
 
     // ---------------------------------------------------------------------------
     // TEST 8: Webhook - RPC throws error, then retry succeeds
@@ -623,7 +661,11 @@ async function runSuite() {
 
     assert.strictEqual(webhookRetrySuccessRes.statusCode, 200, "Retry must succeed with HTTP 200");
     const retrySuccessBody = JSON.parse(webhookRetrySuccessRes.body);
-    assert.strictEqual(retrySuccessBody.fulfilled, true, "Must return fulfilled:true on successful retry");
+    assert.strictEqual(
+      retrySuccessBody.fulfilled,
+      true,
+      "Must return fulfilled:true on successful retry"
+    );
     assert.strictEqual(mockDb.rpcFulfilCalls.length, 1, "Must execute fulfillment RPC on retry");
     assert.strictEqual(mockDb.rpcFulfilCalls[0].orderId, retryOrderId);
 
@@ -634,7 +676,9 @@ async function runSuite() {
       "Dedupe row must be inserted into webhook_events after fulfillment succeeds"
     );
 
-    console.log("  -> [PASS-LOCAL] Webhook survives transient RPC throw and successfully fulfills on retry.");
+    console.log(
+      "  -> [PASS-LOCAL] Webhook survives transient RPC throw and successfully fulfills on retry."
+    );
 
     // ---------------------------------------------------------------------------
     // TEST 9: Webhook - Duplicate event delivery AFTER success
@@ -651,20 +695,196 @@ async function runSuite() {
 
     assert.strictEqual(webhookDupAfterSuccessRes.statusCode, 200);
     const dupBody = JSON.parse(webhookDupAfterSuccessRes.body);
-    assert.strictEqual(dupBody.alreadyProcessed, true, "Must return alreadyProcessed:true on duplicate event");
-    assert.strictEqual(mockDb.rpcFulfilCalls.length, 0, "Must NOT re-execute RPC on duplicate event after success");
+    assert.strictEqual(
+      dupBody.alreadyProcessed,
+      true,
+      "Must return alreadyProcessed:true on duplicate event"
+    );
+    assert.strictEqual(
+      mockDb.rpcFulfilCalls.length,
+      0,
+      "Must NOT re-execute RPC on duplicate event after success"
+    );
 
-    console.log("  -> [PASS-LOCAL] Duplicate webhook delivery after success safely recognized without re-fulfilment.");
+    console.log(
+      "  -> [PASS-LOCAL] Duplicate webhook delivery after success safely recognized without re-fulfilment."
+    );
+
+    // ---------------------------------------------------------------------------
+    // TEST 10: Audit Blocker B2: Host Canonicalization, Zero Razorpay Calls, and Live Key Success
+    // ---------------------------------------------------------------------------
+    console.log(
+      "\nTest 10: Verifying host canonicalization, zero Razorpay calls on rejection, and live key success..."
+    );
+
+    let netlifyB2FetchCalls = 0;
+    const trackedB2Fetch = async () => {
+      netlifyB2FetchCalls++;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          id: "order_b2_netlify_mock",
+          amount: 69200,
+          currency: "INR",
+          status: "created",
+        }),
+      };
+    };
+
+    const b2OrderHandler = createOrderHandler({
+      getSupabaseAdmin: mockAdminGetter,
+      getServerEntitlement: mockEntitlement,
+      fetchFn: trackedB2Fetch as any,
+    });
+
+    // 10A: Host canonicalization rejections with test key (trailing dot, uppercase, port, conflicting headers)
+    process.env.RAZORPAY_MODE = "test";
+    process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = TEST_KEY_ID;
+    process.env.RAZORPAY_KEY_SECRET = TEST_SECRET;
+
+    const netlifyProdHostCases = [
+      { desc: "host: careermonke.com", headers: { host: "careermonke.com" } },
+      { desc: "host: www.careermonke.com", headers: { host: "www.careermonke.com" } },
+      { desc: "host: careermonke.com. (trailing dot)", headers: { host: "careermonke.com." } },
+      {
+        desc: "host: www.careermonke.com. (trailing dot)",
+        headers: { host: "www.careermonke.com." },
+      },
+      { desc: "host: CAREERMONKE.COM (uppercase)", headers: { host: "CAREERMONKE.COM" } },
+      {
+        desc: "host: CAREERMONKE.COM. (uppercase + trailing dot)",
+        headers: { host: "CAREERMONKE.COM." },
+      },
+      { desc: "host: careermonke.com:443 (port)", headers: { host: "careermonke.com:443" } },
+      {
+        desc: "host: careermonke.com.:443 (trailing dot + port)",
+        headers: { host: "careermonke.com.:443" },
+      },
+      {
+        desc: "host: WWW.CAREERMONKE.COM.:8443 (uppercase + trailing dot + port)",
+        headers: { host: "WWW.CAREERMONKE.COM.:8443" },
+      },
+      // Conflicting preview x-forwarded-host with a production Host
+      {
+        desc: "conflicting preview x-forwarded-host with careermonke.com.",
+        headers: {
+          "x-forwarded-host": "preview-branch.careermonke.netlify.app",
+          host: "careermonke.com.",
+        },
+      },
+      {
+        desc: "conflicting preview x-forwarded-host with www.careermonke.com.",
+        headers: {
+          "x-forwarded-host": "preview-branch.careermonke.netlify.app",
+          host: "www.careermonke.com.",
+        },
+      },
+    ];
+
+    for (const tc of netlifyProdHostCases) {
+      netlifyB2FetchCalls = 0;
+      const res = await b2OrderHandler({
+        httpMethod: "POST",
+        headers: { authorization: "Bearer valid-token-pro", ...tc.headers },
+        body: JSON.stringify({ planCode: "weekly" }),
+      });
+      assert.strictEqual(
+        res.statusCode,
+        503,
+        `Netlify order must reject test key on production host (${tc.desc})`
+      );
+      assert.strictEqual(
+        netlifyB2FetchCalls,
+        0,
+        `Netlify must NEVER call Razorpay API on rejection (${tc.desc})`
+      );
+      assert.strictEqual(JSON.parse(res.body).code, "RAZORPAY_CONFIG_ERROR");
+    }
+
+    // rawUrl variations (trailing dot, port, with conflicting x-forwarded-host)
+    const rawUrlCases = [
+      "https://careermonke.com/.netlify/functions/billing-razorpay-order",
+      "https://careermonke.com./.netlify/functions/billing-razorpay-order",
+      "https://www.careermonke.com./.netlify/functions/billing-razorpay-order",
+      "https://CAREERMONKE.COM:443/.netlify/functions/billing-razorpay-order",
+    ];
+    for (const rawUrl of rawUrlCases) {
+      netlifyB2FetchCalls = 0;
+      const res = await b2OrderHandler({
+        httpMethod: "POST",
+        rawUrl,
+        headers: {
+          authorization: "Bearer valid-token-pro",
+          "x-forwarded-host": "preview-branch.netlify.app",
+        },
+        body: JSON.stringify({ planCode: "weekly" }),
+      });
+      assert.strictEqual(res.statusCode, 503, `Netlify must reject test key for rawUrl: ${rawUrl}`);
+      assert.strictEqual(netlifyB2FetchCalls, 0, `Netlify must NEVER call Razorpay on ${rawUrl}`);
+    }
+
+    // 10B: Live key on production host succeeds (200 OK, calls Razorpay)
+    process.env.RAZORPAY_MODE = "live";
+    process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = "rzp_live_key_valid_123456";
+    process.env.RAZORPAY_KEY_SECRET = "rzp_live_secret_valid_654321";
+
+    const liveProdCases = [
+      { desc: "host: careermonke.com", headers: { host: "careermonke.com" } },
+      { desc: "host: careermonke.com. (trailing dot)", headers: { host: "careermonke.com." } },
+      {
+        desc: "host: www.careermonke.com. (trailing dot)",
+        headers: { host: "www.careermonke.com." },
+      },
+      {
+        desc: "host: CAREERMONKE.COM:443 (uppercase + port)",
+        headers: { host: "CAREERMONKE.COM:443" },
+      },
+      {
+        desc: "conflicting preview x-forwarded-host with careermonke.com.",
+        headers: { "x-forwarded-host": "preview-branch.netlify.app", host: "careermonke.com." },
+      },
+    ];
+
+    for (const lc of liveProdCases) {
+      netlifyB2FetchCalls = 0;
+      const res = await b2OrderHandler({
+        httpMethod: "POST",
+        headers: { authorization: "Bearer valid-token-pro", ...lc.headers },
+        body: JSON.stringify({ planCode: "weekly" }),
+      });
+      assert.strictEqual(
+        res.statusCode,
+        200,
+        `Live key on production host must succeed on Netlify (${lc.desc})`
+      );
+      assert.strictEqual(
+        netlifyB2FetchCalls,
+        1,
+        `Live key on production host must call Razorpay API (${lc.desc})`
+      );
+      const parsed = JSON.parse(res.body);
+      assert.strictEqual(parsed.orderId, "order_b2_netlify_mock");
+    }
+
+    console.log(
+      "  -> [PASS-LOCAL] Host canonicalization, zero Razorpay calls on rejection, and live key success verified on Netlify."
+    );
   } finally {
     // Restore original env vars
     process.env.NEXT_PUBLIC_BILLING_ENABLED = origBilling;
     process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = origKeyId;
     process.env.RAZORPAY_KEY_SECRET = origKeySecret;
     process.env.RAZORPAY_WEBHOOK_SECRET = origWebhookSecret;
+    if (origMode !== undefined) {
+      process.env.RAZORPAY_MODE = origMode;
+    } else {
+      delete process.env.RAZORPAY_MODE;
+    }
   }
 
   console.log("\n--------------------------------------------------------------------------------");
-  console.log("ALL 9 NETLIFY BILLING TEST SUITES PASSED [PASS-LOCAL]");
+  console.log("ALL 10 NETLIFY BILLING TEST SUITES PASSED [PASS-LOCAL]");
   console.log("--------------------------------------------------------------------------------\n");
 }
 
