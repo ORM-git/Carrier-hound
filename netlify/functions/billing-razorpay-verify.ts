@@ -22,6 +22,8 @@ interface VerifyPayload {
   amount?: number;
   planCode?: string;
   plan_code?: string;
+  planId?: string;
+  plan_id?: string;
   addonCode?: string;
   addon_code?: string;
 }
@@ -263,17 +265,29 @@ export function createHandler(deps: BillingVerifyDeps = {}) {
         }
       }
 
+      const expectedItem = isAddonOrder ? orderRow.addon_code : (orderRow.plan_code ?? null);
       const payloadPlan = body.planCode ?? body.plan_code;
       if (payloadPlan !== undefined && payloadPlan !== null) {
-        const matchesAddon = isAddonOrder && payloadPlan === orderRow.addon_code;
-        const addonMatched = isAddonOrder && payloadAddon && payloadAddon === orderRow.addon_code;
-        const matchesPlan = payloadPlan === (orderRow.plan_code ?? null);
-        if (!matchesPlan && !matchesAddon && !addonMatched) {
+        if (payloadPlan !== expectedItem) {
           return {
             statusCode: 400,
             headers,
             body: JSON.stringify({
               error: "Plan code does not match recorded order",
+              code: "PLAN_MISMATCH",
+            }),
+          };
+        }
+      }
+
+      const payloadPlanId = body.planId ?? body.plan_id;
+      if (payloadPlanId !== undefined && payloadPlanId !== null) {
+        if (payloadPlanId !== expectedItem) {
+          return {
+            statusCode: 400,
+            headers,
+            body: JSON.stringify({
+              error: "Plan ID does not match recorded order",
               code: "PLAN_MISMATCH",
             }),
           };
@@ -328,7 +342,7 @@ export function createHandler(deps: BillingVerifyDeps = {}) {
 
       if (!fulfilRes || !fulfilRes.success) {
         return {
-          statusCode: 400,
+          statusCode: fulfilRes?.code === "PRO_REQUIRED" ? 403 : 400,
           headers,
           body: JSON.stringify({
             error: fulfilRes?.error || "Payment fulfillment failed",

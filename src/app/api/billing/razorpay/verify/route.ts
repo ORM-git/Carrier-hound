@@ -209,6 +209,7 @@ export async function POST(req: Request) {
 
     // Fail closed on payload vs order row mismatch (null-safe and symmetric)
     const payloadPlan = (body as any).planCode ?? (body as any).plan_code;
+    const payloadPlanId = (body as any).planId ?? (body as any).plan_id;
     const payloadAddon = (body as any).addonCode ?? (body as any).addon_code;
     const payloadAmount = (body as any).amount;
 
@@ -223,23 +224,22 @@ export async function POST(req: Request) {
     }
 
     const isAddonOrder = Boolean(orderRow.addon_code);
-    if (payloadAddon !== undefined && payloadAddon !== null) {
-      if (payloadAddon !== (orderRow.addon_code ?? null)) {
-        return NextResponse.json({ error: "Addon code does not match recorded order", code: "ADDON_MISMATCH" },
-          { status: 400 });
-      }
+    if (payloadAddon !== undefined && payloadAddon !== null && payloadAddon !== (orderRow.addon_code ?? null)) {
+      return NextResponse.json({ error: "Addon code does not match recorded order", code: "ADDON_MISMATCH" }, { status: 400 });
+    }
+    const expectedItem = isAddonOrder ? orderRow.addon_code : (orderRow.plan_code ?? null);
+    if (payloadPlan !== undefined && payloadPlan !== null && payloadPlan !== expectedItem) {
+      return NextResponse.json(
+        { error: "Plan code does not match recorded order", code: "PLAN_MISMATCH" },
+        { status: 400 }
+      );
     }
 
-    if (payloadPlan !== undefined && payloadPlan !== null) {
-      const matchesAddon = isAddonOrder && payloadPlan === orderRow.addon_code;
-      const addonMatched = isAddonOrder && payloadAddon && payloadAddon === orderRow.addon_code;
-      const matchesPlan = payloadPlan === (orderRow.plan_code ?? null);
-      if (!matchesPlan && !matchesAddon && !addonMatched) {
-        return NextResponse.json(
-          { error: "Plan code does not match recorded order", code: "PLAN_MISMATCH" },
-          { status: 400 }
-        );
-      }
+    if (payloadPlanId !== undefined && payloadPlanId !== null && payloadPlanId !== expectedItem) {
+      return NextResponse.json(
+        { error: "Plan ID does not match recorded order", code: "PLAN_MISMATCH" },
+        { status: 400 }
+      );
     }
 
     if (!orderRow.plan_code && !orderRow.addon_code) {
@@ -408,9 +408,8 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "Unknown add-on pack", code: "UNKNOWN_ADDON" }, { status: 400 });
       }
 
-      // Tie add-on credit expiry to the active subscription end date (falling back to validity window if absent)
-      let expiresAt: string;
-      const { data: subRow } = await supabaseAdmin
+      // Tie add-on credit expiry to the active subscription end date
+      const { data: subRow, error: subReadErr } = await supabaseAdmin
         .from("subscriptions")
         .select("current_period_end, status")
         .eq("user_id", user.id)
@@ -418,14 +417,35 @@ export async function POST(req: Request) {
         .limit(1)
         .maybeSingle();
 
-      const subEnd = subRow?.current_period_end ? new Date(subRow.current_period_end) : null;
-      if (subEnd && !isNaN(subEnd.getTime()) && subEnd.getTime() > Date.now()) {
-        expiresAt = subEnd.toISOString();
-      } else if (subRow?.current_period_end) {
-        expiresAt = subRow.current_period_end;
-      } else {
-        expiresAt = new Date(Date.now() + validityDays * 86400000).toISOString();
+      if (subReadErr) {
+        log.error("Failed to query subscription for add-on expiry sync", { error: subReadErr.message });
+        return NextResponse.json(
+          { error: "Failed to verify subscription status", code: "DATABASE_ERROR" },
+          { status: 500 }
+        );
       }
+
+      const nowMs = Date.now();
+      const isActiveOrTrialing = subRow?.status === "active" || subRow?.status === "trialing";
+      const subEnd = subRow?.current_period_end ? new Date(subRow.current_period_end) : null;
+      const isFuture = Boolean(subEnd && !isNaN(subEnd.getTime()) && subEnd.getTime() > nowMs);
+
+      if (!subRow || !isActiveOrTrialing || !isFuture) {
+        log.warn("Cannot fulfill add-on: user has no active subscription or subscription expired", {
+          userId: user.id,
+          status: subRow?.status,
+          currentPeriodEnd: subRow?.current_period_end,
+        });
+        return NextResponse.json(
+          {
+            error: "Active Pro subscription required to activate add-on credits",
+            code: "PRO_REQUIRED",
+          },
+          { status: 403 }
+        );
+      }
+
+      const expiresAt = subEnd!.toISOString();
 
       // Grant add-on credit entitlement FIRST (fail-closed: do NOT mark order paid before this succeeds)
       const { data: creditRow, error: creditErr } = await supabaseAdmin
@@ -570,6 +590,25 @@ export async function POST(req: Request) {
         log.error("Subscription persistence error", { error: subError?.message || String(subError) });
         // Fail closed: order is NOT marked paid!
         return NextResponse.json({ error: subError.message }, { status: 500 });
+      }
+
+      // Also extend active unexpired add-on credits to match newly extended subscription period (like the SQL RPC)
+      const nowIso = new Date().toISOString();
+      const { error: addonExtendErr } = await supabaseAdmin
+        .from("user_addon_credits")
+        .update({ expires_at: currentPeriodEnd })
+        .eq("user_id", user.id)
+        .gte("expires_at", nowIso)
+        .gt("sets_remaining", 0);
+
+      if (addonExtendErr) {
+        log.error("Failed to extend unexpired add-on credits on subscription renewal", {
+          error: addonExtendErr.message,
+        });
+        return NextResponse.json(
+          { error: "Failed to extend add-on credits on subscription renewal", code: "DATABASE_ERROR" },
+          { status: 500 }
+        );
       }
 
       // Entitlement grant succeeded: ONLY NOW mark the order as paid

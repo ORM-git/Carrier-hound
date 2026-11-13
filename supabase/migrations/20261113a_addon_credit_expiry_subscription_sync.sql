@@ -290,16 +290,15 @@ BEGIN
     FROM public.subscriptions
     WHERE user_id = p_user_id;
 
-    IF v_existing_sub IS NOT NULL AND v_existing_sub.current_period_end IS NOT NULL AND v_existing_sub.current_period_end > now() THEN
-      v_new_end := v_existing_sub.current_period_end;
-    ELSIF v_existing_sub IS NOT NULL AND v_existing_sub.current_period_end IS NOT NULL THEN
-      v_new_end := v_existing_sub.current_period_end;
-    ELSE
-      IF v_validity IS NULL OR v_validity <= 0 THEN
-        v_validity := 60;
-      END IF;
-      v_new_end := now() + (v_validity * interval '1 day');
+    IF v_existing_sub IS NULL OR v_existing_sub.status NOT IN ('active', 'trialing') OR v_existing_sub.current_period_end IS NULL OR v_existing_sub.current_period_end <= now() THEN
+      RETURN jsonb_build_object(
+        'success', false,
+        'code', 'PRO_REQUIRED',
+        'error', 'Active Pro subscription required to activate add-on credits'
+      );
     END IF;
+
+    v_new_end := v_existing_sub.current_period_end;
 
     -- Grant add-on credit entitlement FIRST
     INSERT INTO public.user_addon_credits (
