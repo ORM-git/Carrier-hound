@@ -9,15 +9,21 @@
  *      - The 5 hottest routes (/api/track, /api/jobs/search, /api/jobs/top10, /api/jobs/pro, /api/stats)
  *      - Evaluation of all 3 options + compatibility risk assessment + recommended path (Option 1)
  *      - Unverified platform behaviors (Cloudflare build/runtime, 5% sampling, process.env toggle)
- *   2. src/lib/monitoring/tracing.ts behavior (tested via SDK seam, no global mock):
+ *   2. src/lib/monitoring/tracing.ts behavior (tested via factory seam & explicit test context):
  *      - Default OFF: isServerTracingEnabled() returns false when env var is unset
  *      - withRouteSpan executes fn() directly when OFF
- *      - Real wrapper tested with SDK seam:
- *        a) Setup failure (startSpan/continueTrace throws before callback): handler runs once and returns
- *        b) setAttributes throwing: handler runs once, returns original response (telemetry error swallowed)
- *        c) startSpan finalization throwing after handler ran: returns original response
- *        d) setStatus throwing while handler threw: original business error surfaces
- *        e) handler success returns once with the same response
+ *      - Exactly-once in-flight memoization:
+ *        a) callback started then SDK sync throw (startSpan & continueTrace; delayed success & error)
+ *        b) callback started then rejected finalizer (startSpan & continueTrace; delayed success & error)
+ *        c) repeated callback (startSpan & continueTrace; delayed success & error)
+ *        d) handler count strictly = 1, original response/error returned, zero unhandled rejections
+ *      - Telemetry isolation:
+ *        e) setup failure before callback (handler runs once, returns)
+ *        f) setAttributes throwing (handler runs once, response returned)
+ *        g) startSpan finalization throwing (response returned)
+ *        h) setStatus throwing while handler threw (original business error surfaces)
+ *      - Production protection:
+ *        i) setTracingSdkForTesting throws in non-test / production environments
  *   3. Static AST/source verification:
  *      - All 5 hottest routes import withRouteSpan from "@/lib/monitoring/tracing"
  *      - All 5 hottest routes wrap their handlers with withRouteSpan("<route>", req, ...)
@@ -35,6 +41,7 @@ import { spawnSync } from "node:child_process";
 import {
   isServerTracingEnabled,
   withRouteSpan,
+  createRouteSpanRunner,
   setTracingSdkForTesting,
   TracingSdk,
 } from "../src/lib/monitoring/tracing";
@@ -49,6 +56,14 @@ if (isNegativeControl) {
   assert.ok(fakeDoc.includes("autoInstrumentServerFunctions: false"), "Negative control assertion failed as expected");
   process.exit(0);
 }
+
+// Track any unhandled promise rejections across all async tests
+const unhandledRejections: any[] = [];
+process.on("unhandledRejection", (reason) => {
+  unhandledRejections.push(reason);
+});
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function runNegativeControlSubprocess() {
   const res = spawnSync(
@@ -182,7 +197,7 @@ async function testTracingModuleBehavior() {
     "isServerTracingEnabled() must return true when ENABLE_SERVER_TRACING=true"
   );
 
-  // 2. Real wrapper with SDK seam: Handler success returns once with same response and tags attributes
+  // 2. Real wrapper with factory seam: Handler success returns once with same response and tags attributes
   let recordedSpanName = "";
   let recordedAttributes: Record<string, any> = {};
   let setAttributesCalled = false;
@@ -206,10 +221,10 @@ async function testTracingModuleBehavior() {
     },
   };
 
-  setTracingSdkForTesting(normalMockSdk);
+  const normalRunner = createRouteSpanRunner(normalMockSdk);
 
   let successHandlerCallCount = 0;
-  const successResult = await withRouteSpan("/api/jobs/search", fakeReq, async () => {
+  const successResult = await normalRunner("/api/jobs/search", fakeReq, async () => {
     successHandlerCallCount++;
     return { status: 200, jobs: ["job-1"] };
   });
@@ -234,10 +249,10 @@ async function testTracingModuleBehavior() {
       throw new Error("SDK startSpan crash during setup");
     },
   };
-  setTracingSdkForTesting(setupFailSdk);
+  const setupFailRunner = createRouteSpanRunner(setupFailSdk);
 
   let setupFailCallCount = 0;
-  const setupFailResult = await withRouteSpan("/api/track", fakeReq, async () => {
+  const setupFailResult = await setupFailRunner("/api/track", fakeReq, async () => {
     setupFailCallCount++;
     return { status: 201, tracked: true };
   });
@@ -256,10 +271,10 @@ async function testTracingModuleBehavior() {
       return await cb(span);
     },
   };
-  setTracingSdkForTesting(setAttrsThrowSdk);
+  const setAttrsRunner = createRouteSpanRunner(setAttrsThrowSdk);
 
   let setAttrsCallCount = 0;
-  const setAttrsResult = await withRouteSpan("/api/jobs/top10", fakeReq, async () => {
+  const setAttrsResult = await setAttrsRunner("/api/jobs/top10", fakeReq, async () => {
     setAttrsCallCount++;
     return { status: 200, top10: true };
   });
@@ -274,10 +289,10 @@ async function testTracingModuleBehavior() {
       throw new Error("startSpan finalization / span.end() crashed");
     },
   };
-  setTracingSdkForTesting(finalizeThrowSdk);
+  const finalizeRunner = createRouteSpanRunner(finalizeThrowSdk);
 
   let finalizeCallCount = 0;
-  const finalizeResult = await withRouteSpan("/api/stats", fakeReq, async () => {
+  const finalizeResult = await finalizeRunner("/api/stats", fakeReq, async () => {
     finalizeCallCount++;
     return { status: 200, statsCount: 42 };
   });
@@ -296,12 +311,12 @@ async function testTracingModuleBehavior() {
       return await cb(span);
     },
   };
-  setTracingSdkForTesting(setStatusThrowSdk);
+  const setStatusRunner = createRouteSpanRunner(setStatusThrowSdk);
 
   let businessErrCallCount = 0;
   let caughtBusinessErr: any = null;
   try {
-    await withRouteSpan("/api/jobs/pro", fakeReq, async () => {
+    await setStatusRunner("/api/jobs/pro", fakeReq, async () => {
       businessErrCallCount++;
       throw new Error("Original business error: subscriber entitlement expired");
     });
@@ -316,10 +331,352 @@ async function testTracingModuleBehavior() {
     "Original business error must surface, not the setStatus telemetry error"
   );
 
-  // Reset testing SDK seam and env
-  setTracingSdkForTesting(null);
+  console.log("  [PASS] Basic fail-open and telemetry isolation verified via factory seam.");
+}
+
+async function testInFlightMemoizationAndEdgeCases() {
+  console.log("Testing in-flight exactly-once memoization (delayed success/error, sync throw, finalizer, repeated)...");
+
+  const reqWithTrace = new Request("https://example.com/api/jobs/search", {
+    method: "GET",
+    headers: {
+      "sentry-trace": "trace-edge-test-12345-67890-1",
+      baggage: "sentry-environment=test",
+    },
+  });
+
+  process.env.ENABLE_SERVER_TRACING = "true";
+
+  // --- Group 1: Callback started then SDK sync throw ---
+
+  // 1A. startSpan: callback started then SDK sync throw (delayed success)
+  {
+    const sdk: TracingSdk = {
+      continueTrace: async (_ctx, cb) => cb(),
+      startSpan: (_ctx, cb) => {
+        cb({});
+        throw new Error("SDK startSpan synchronous throw after calling callback");
+      },
+    };
+    const runner = createRouteSpanRunner(sdk);
+    let count = 0;
+    const res = await runner("/api/jobs/search", reqWithTrace, async () => {
+      count++;
+      await sleep(25);
+      return { status: 200, data: "startSpan-sync-throw-success" };
+    });
+    assert.strictEqual(count, 1, "startSpan sync throw (delayed success): handler must run exactly once");
+    assert.strictEqual(res.data, "startSpan-sync-throw-success");
+  }
+
+  // 1B. startSpan: callback started then SDK sync throw (delayed error)
+  {
+    const sdk: TracingSdk = {
+      continueTrace: async (_ctx, cb) => cb(),
+      startSpan: (_ctx, cb) => {
+        cb({});
+        throw new Error("SDK startSpan synchronous throw after calling callback");
+      },
+    };
+    const runner = createRouteSpanRunner(sdk);
+    let count = 0;
+    let caught: any = null;
+    try {
+      await runner("/api/jobs/search", reqWithTrace, async () => {
+        count++;
+        await sleep(25);
+        throw new Error("business-startSpan-sync-throw-error");
+      });
+    } catch (err) {
+      caught = err;
+    }
+    assert.strictEqual(count, 1, "startSpan sync throw (delayed error): handler must run exactly once");
+    assert.ok(caught !== null);
+    assert.strictEqual(caught.message, "business-startSpan-sync-throw-error");
+  }
+
+  // 1C. continueTrace: callback started then SDK sync throw (delayed success)
+  {
+    const sdk: TracingSdk = {
+      continueTrace: (_ctx, cb) => {
+        cb();
+        throw new Error("SDK continueTrace synchronous throw after calling callback");
+      },
+      startSpan: async (_ctx, cb) => cb({}),
+    };
+    const runner = createRouteSpanRunner(sdk);
+    let count = 0;
+    const res = await runner("/api/jobs/search", reqWithTrace, async () => {
+      count++;
+      await sleep(25);
+      return { status: 200, data: "continueTrace-sync-throw-success" };
+    });
+    assert.strictEqual(count, 1, "continueTrace sync throw (delayed success): handler must run exactly once");
+    assert.strictEqual(res.data, "continueTrace-sync-throw-success");
+  }
+
+  // 1D. continueTrace: callback started then SDK sync throw (delayed error)
+  {
+    const sdk: TracingSdk = {
+      continueTrace: (_ctx, cb) => {
+        cb();
+        throw new Error("SDK continueTrace synchronous throw after calling callback");
+      },
+      startSpan: async (_ctx, cb) => cb({}),
+    };
+    const runner = createRouteSpanRunner(sdk);
+    let count = 0;
+    let caught: any = null;
+    try {
+      await runner("/api/jobs/search", reqWithTrace, async () => {
+        count++;
+        await sleep(25);
+        throw new Error("business-continueTrace-sync-throw-error");
+      });
+    } catch (err) {
+      caught = err;
+    }
+    assert.strictEqual(count, 1, "continueTrace sync throw (delayed error): handler must run exactly once");
+    assert.ok(caught !== null);
+    assert.strictEqual(caught.message, "business-continueTrace-sync-throw-error");
+  }
+
+  // --- Group 2: Callback started then rejected finalizer ---
+
+  // 2A. startSpan: callback started then rejected finalizer (delayed success)
+  {
+    const sdk: TracingSdk = {
+      continueTrace: async (_ctx, cb) => cb(),
+      startSpan: async (_ctx, cb) => {
+        await cb({});
+        throw new Error("SDK startSpan rejected finalizer");
+      },
+    };
+    const runner = createRouteSpanRunner(sdk);
+    let count = 0;
+    const res = await runner("/api/track", reqWithTrace, async () => {
+      count++;
+      await sleep(25);
+      return { status: 201, data: "startSpan-finalizer-success" };
+    });
+    assert.strictEqual(count, 1, "startSpan rejected finalizer (delayed success): handler must run exactly once");
+    assert.strictEqual(res.data, "startSpan-finalizer-success");
+  }
+
+  // 2B. startSpan: callback started then rejected finalizer (delayed error)
+  {
+    const sdk: TracingSdk = {
+      continueTrace: async (_ctx, cb) => cb(),
+      startSpan: async (_ctx, cb) => {
+        await cb({});
+        throw new Error("SDK startSpan rejected finalizer");
+      },
+    };
+    const runner = createRouteSpanRunner(sdk);
+    let count = 0;
+    let caught: any = null;
+    try {
+      await runner("/api/track", reqWithTrace, async () => {
+        count++;
+        await sleep(25);
+        throw new Error("business-startSpan-finalizer-error");
+      });
+    } catch (err) {
+      caught = err;
+    }
+    assert.strictEqual(count, 1, "startSpan rejected finalizer (delayed error): handler must run exactly once");
+    assert.ok(caught !== null);
+    assert.strictEqual(caught.message, "business-startSpan-finalizer-error");
+  }
+
+  // 2C. continueTrace: callback started then rejected finalizer (delayed success)
+  {
+    const sdk: TracingSdk = {
+      continueTrace: async (_ctx, cb) => {
+        await cb();
+        throw new Error("SDK continueTrace rejected finalizer");
+      },
+      startSpan: async (_ctx, cb) => cb({}),
+    };
+    const runner = createRouteSpanRunner(sdk);
+    let count = 0;
+    const res = await runner("/api/jobs/top10", reqWithTrace, async () => {
+      count++;
+      await sleep(25);
+      return { status: 200, data: "continueTrace-finalizer-success" };
+    });
+    assert.strictEqual(count, 1, "continueTrace rejected finalizer (delayed success): handler must run exactly once");
+    assert.strictEqual(res.data, "continueTrace-finalizer-success");
+  }
+
+  // 2D. continueTrace: callback started then rejected finalizer (delayed error)
+  {
+    const sdk: TracingSdk = {
+      continueTrace: async (_ctx, cb) => {
+        await cb();
+        throw new Error("SDK continueTrace rejected finalizer");
+      },
+      startSpan: async (_ctx, cb) => cb({}),
+    };
+    const runner = createRouteSpanRunner(sdk);
+    let count = 0;
+    let caught: any = null;
+    try {
+      await runner("/api/jobs/top10", reqWithTrace, async () => {
+        count++;
+        await sleep(25);
+        throw new Error("business-continueTrace-finalizer-error");
+      });
+    } catch (err) {
+      caught = err;
+    }
+    assert.strictEqual(count, 1, "continueTrace rejected finalizer (delayed error): handler must run exactly once");
+    assert.ok(caught !== null);
+    assert.strictEqual(caught.message, "business-continueTrace-finalizer-error");
+  }
+
+  // --- Group 3: Repeated callback ---
+
+  // 3A. startSpan: repeated callback (delayed success)
+  {
+    const sdk: TracingSdk = {
+      continueTrace: async (_ctx, cb) => cb(),
+      startSpan: async (_ctx, cb) => {
+        const p1 = cb({});
+        const p2 = cb({});
+        await Promise.all([p1, p2]);
+      },
+    };
+    const runner = createRouteSpanRunner(sdk);
+    let count = 0;
+    const res = await runner("/api/jobs/pro", reqWithTrace, async () => {
+      count++;
+      await sleep(25);
+      return { status: 200, data: "startSpan-repeated-success" };
+    });
+    assert.strictEqual(count, 1, "startSpan repeated callback (delayed success): handler must run exactly once");
+    assert.strictEqual(res.data, "startSpan-repeated-success");
+  }
+
+  // 3B. startSpan: repeated callback (delayed error)
+  {
+    const sdk: TracingSdk = {
+      continueTrace: async (_ctx, cb) => cb(),
+      startSpan: async (_ctx, cb) => {
+        const p1 = cb({});
+        const p2 = cb({});
+        await Promise.all([p1, p2]);
+      },
+    };
+    const runner = createRouteSpanRunner(sdk);
+    let count = 0;
+    let caught: any = null;
+    try {
+      await runner("/api/jobs/pro", reqWithTrace, async () => {
+        count++;
+        await sleep(25);
+        throw new Error("business-startSpan-repeated-error");
+      });
+    } catch (err) {
+      caught = err;
+    }
+    assert.strictEqual(count, 1, "startSpan repeated callback (delayed error): handler must run exactly once");
+    assert.ok(caught !== null);
+    assert.strictEqual(caught.message, "business-startSpan-repeated-error");
+  }
+
+  // 3C. continueTrace: repeated callback (delayed success)
+  {
+    const sdk: TracingSdk = {
+      continueTrace: async (_ctx, cb) => {
+        const p1 = cb();
+        const p2 = cb();
+        await Promise.all([p1, p2]);
+      },
+      startSpan: async (_ctx, cb) => cb({}),
+    };
+    const runner = createRouteSpanRunner(sdk);
+    let count = 0;
+    const res = await runner("/api/stats", reqWithTrace, async () => {
+      count++;
+      await sleep(25);
+      return { status: 200, data: "continueTrace-repeated-success" };
+    });
+    assert.strictEqual(count, 1, "continueTrace repeated callback (delayed success): handler must run exactly once");
+    assert.strictEqual(res.data, "continueTrace-repeated-success");
+  }
+
+  // 3D. continueTrace: repeated callback (delayed error)
+  {
+    const sdk: TracingSdk = {
+      continueTrace: async (_ctx, cb) => {
+        const p1 = cb();
+        const p2 = cb();
+        await Promise.all([p1, p2]);
+      },
+      startSpan: async (_ctx, cb) => cb({}),
+    };
+    const runner = createRouteSpanRunner(sdk);
+    let count = 0;
+    let caught: any = null;
+    try {
+      await runner("/api/stats", reqWithTrace, async () => {
+        count++;
+        await sleep(25);
+        throw new Error("business-continueTrace-repeated-error");
+      });
+    } catch (err) {
+      caught = err;
+    }
+    assert.strictEqual(count, 1, "continueTrace repeated callback (delayed error): handler must run exactly once");
+    assert.ok(caught !== null);
+    assert.strictEqual(caught.message, "business-continueTrace-repeated-error");
+  }
+
+  // --- Group 4: Production restriction on setTracingSdkForTesting ---
+  {
+    const prevEnv = process.env.NODE_ENV;
+    const prevVitest = process.env.VITEST;
+    const prevSeam = process.env.ENABLE_TEST_TRACING_SEAM;
+
+    process.env.NODE_ENV = "production";
+    delete process.env.VITEST;
+    delete process.env.ENABLE_TEST_TRACING_SEAM;
+
+    let threwInProd = false;
+    try {
+      setTracingSdkForTesting({});
+    } catch (err: any) {
+      threwInProd = true;
+      assert.ok(
+        err.message.includes("restricted to explicit test environments"),
+        "Error message must specify restriction to test environments"
+      );
+    }
+    assert.strictEqual(
+      threwInProd,
+      true,
+      "setTracingSdkForTesting must throw in production to prevent module-global mutation"
+    );
+
+    // Restore test environment
+    process.env.NODE_ENV = prevEnv;
+    if (prevVitest) process.env.VITEST = prevVitest;
+    if (prevSeam) process.env.ENABLE_TEST_TRACING_SEAM = prevSeam;
+  }
+
+  // Allow pending async ticks to settle and assert zero unhandled rejections
+  await sleep(50);
+  assert.strictEqual(
+    unhandledRejections.length,
+    0,
+    `Expected 0 unhandled rejections, but got ${unhandledRejections.length}: ${JSON.stringify(
+      unhandledRejections.map((e) => e?.message || String(e))
+    )}`
+  );
+
   delete process.env.ENABLE_SERVER_TRACING;
-  console.log("  [PASS] Real wrapper tested: setup failure, setAttributes throw, finalization throw, setStatus throw, and normal success.");
+  console.log("  [PASS] Exactly-once in-flight memoization verified across all sync-throw, finalizer, and repeated callback edge cases with 0 unhandled rejections.");
 }
 
 function testStaticRouteWiring() {
@@ -373,6 +730,7 @@ function testStaticRouteWiring() {
 async function main() {
   testDocumentation();
   await testTracingModuleBehavior();
+  await testInFlightMemoizationAndEdgeCases();
   testStaticRouteWiring();
   runNegativeControlSubprocess();
   console.log("\n[PASS] All tracing enablement checks passed successfully.");

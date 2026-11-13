@@ -27,31 +27,41 @@ export interface TracingSdk {
   ) => any;
 }
 
-let activeSdk: TracingSdk = Sentry;
+let testSdkOverride: TracingSdk | null = null;
 
 /**
- * For testing only: overrides the underlying tracing SDK seam.
+ * For testing only: overrides the tracing SDK seam in explicit test environments.
+ * Strictly throws in non-test environments to prevent module-global mutation in production.
  */
 export function setTracingSdkForTesting(mockSdk?: TracingSdk | null): void {
-  activeSdk = mockSdk || Sentry;
+  const isTest =
+    process.env.NODE_ENV === "test" ||
+    process.env.VITEST === "true" ||
+    process.env.ENABLE_TEST_TRACING_SEAM === "true";
+
+  if (!isTest) {
+    throw new Error(
+      "setTracingSdkForTesting is restricted to explicit test environments"
+    );
+  }
+  testSdkOverride = mockSdk || null;
 }
 
-type HandlerOutcome<T> =
-  | { kind: "success"; value: T }
-  | { kind: "error"; error: unknown };
-
 /**
- * Wraps an Edge API route handler in a manual Sentry trace span.
+ * Core route span execution engine.
  *
  * Truly fail-open:
  * - When ENABLE_SERVER_TRACING is not "true" (default OFF), it directly invokes fn().
- * - When enabled, it captures the handler's outcome (result or error) exactly once.
- * - All telemetry work (continueTrace, startSpan, setAttributes, setStatus, span finalization)
- *   is strictly isolated in try/catch blocks.
- * - Always returns the original handler response or throws the original business error,
+ * - When enabled, it captures the handler promise immediately upon invocation,
+ *   guaranteeing exactly-once execution even if the handler is in flight when the SDK
+ *   crashes or throws synchronously.
+ * - All telemetry operations (continueTrace, startSpan, setAttributes, setStatus)
+ *   are isolated in try/catch blocks.
+ * - Always returns the original handler response or rethrows the original business error,
  *   even if the SDK fails before, during, or after the callback.
  */
-export async function withRouteSpan<T>(
+async function executeRouteSpan<T>(
+  sdk: TracingSdk,
   route: string,
   req: Request,
   fn: () => Promise<T>,
@@ -61,21 +71,20 @@ export async function withRouteSpan<T>(
     return await fn();
   }
 
-  let outcome: HandlerOutcome<T> | undefined;
+  // Memoize the handler PROMISE immediately before calling fn so that
+  // in-flight executions cannot be re-triggered.
+  let handlerPromise: Promise<T> | undefined;
 
-  const invokeHandlerOnce = async (): Promise<T> => {
-    if (outcome) {
-      if (outcome.kind === "success") return outcome.value;
-      throw outcome.error;
+  const invokeHandlerOnce = (): Promise<T> => {
+    if (!handlerPromise) {
+      handlerPromise = (async () => {
+        return await fn();
+      })();
+      // Attach an inert rejection handler to prevent unhandledRejection events in Node.js
+      // if telemetry throws or swallows the callback promise before it is awaited at the end.
+      handlerPromise.catch(() => {});
     }
-    try {
-      const res = await fn();
-      outcome = { kind: "success", value: res };
-      return res;
-    } catch (err) {
-      outcome = { kind: "error", error: err };
-      throw err;
-    }
+    return handlerPromise;
   };
 
   try {
@@ -87,25 +96,53 @@ export async function withRouteSpan<T>(
     const baggage = req?.headers?.get?.("baggage") || undefined;
     const requestId = req?.headers?.get?.("x-request-id") || undefined;
 
-    const continueFn = (cb: () => Promise<void>): Promise<void> => {
+    let cbCalled = false;
+    const guardedCb = async (span?: any): Promise<void> => {
+      if (cbCalled) return;
+      cbCalled = true;
+
+      let res: T;
       try {
-        if (sentryTrace && typeof activeSdk.continueTrace === "function") {
-          return activeSdk.continueTrace({ sentryTrace, baggage }, cb);
+        res = await invokeHandlerOnce();
+      } catch (_businessErr) {
+        try {
+          if (span && typeof (span as any).setStatus === "function") {
+            (span as any).setStatus({ code: 2, message: "internal_error" });
+          }
+        } catch {
+          // Isolate setStatus failure
+        }
+        // Do not rethrow out of the telemetry callback:
+        // If the SDK threw synchronously or discarded the callback promise,
+        // rethrowing here causes an unhandled promise rejection.
+        // The original business error is naturally surfaced when handlerPromise
+        // is awaited at the end of executeRouteSpan.
+        return;
+      }
+
+      try {
+        if (span && res && typeof (res as any).status === "number") {
+          if (typeof (span as any).setAttributes === "function") {
+            (span as any).setAttributes({
+              "http.status_code": (res as any).status,
+            });
+          } else if (typeof (span as any).setAttribute === "function") {
+            (span as any).setAttribute("http.status_code", (res as any).status);
+          }
         }
       } catch {
-        // Any failure in continueTrace setup is swallowed
+        // Isolate setAttributes failure
       }
-      return cb();
     };
 
-    await continueFn(async () => {
-      if (typeof activeSdk.startSpan !== "function") {
+    const runSpan = async (): Promise<void> => {
+      if (typeof sdk.startSpan !== "function") {
         await invokeHandlerOnce().catch(() => {});
         return;
       }
 
       try {
-        await activeSdk.startSpan(
+        await sdk.startSpan(
           {
             name: spanName,
             op,
@@ -117,52 +154,65 @@ export async function withRouteSpan<T>(
             },
           },
           async (span) => {
-            let res: T;
-            try {
-              res = await invokeHandlerOnce();
-            } catch (businessErr) {
-              try {
-                if (span && typeof (span as any).setStatus === "function") {
-                  (span as any).setStatus({ code: 2, message: "internal_error" });
-                }
-              } catch {
-                // Isolate setStatus failure
-              }
-              throw businessErr;
-            }
-
-            try {
-              if (span && res && typeof (res as any).status === "number") {
-                if (typeof (span as any).setAttributes === "function") {
-                  (span as any).setAttributes({
-                    "http.status_code": (res as any).status,
-                  });
-                } else if (typeof (span as any).setAttribute === "function") {
-                  (span as any).setAttribute("http.status_code", (res as any).status);
-                }
-              }
-            } catch {
-              // Isolate setAttributes failure
-            }
-
-            return res;
+            await guardedCb(span);
           }
         );
       } catch {
-        // Isolate startSpan finalization / callback rethrows
+        // Isolate startSpan setup or finalization failure
       }
-    });
+    };
+
+    let continueTraceInvokedCb = false;
+    const continueTraceCb = async (): Promise<void> => {
+      continueTraceInvokedCb = true;
+      await runSpan();
+    };
+
+    try {
+      if (sentryTrace && typeof sdk.continueTrace === "function") {
+        await sdk.continueTrace({ sentryTrace, baggage }, continueTraceCb);
+      } else {
+        await continueTraceCb();
+      }
+    } catch {
+      // Isolate continueTrace setup or finalization failure
+    }
+
+    // If continueTrace failed before invoking its callback, ensure span runs
+    if (!continueTraceInvokedCb) {
+      try {
+        await runSpan();
+      } catch {
+        // Isolate fallback runSpan failure
+      }
+    }
   } catch {
     // Isolate overall telemetry setup failure
   }
 
-  // Ensure fn was invoked at least once (e.g. if SDK threw before callback)
-  if (!outcome) {
-    return await invokeHandlerOnce();
-  }
-
-  if (outcome.kind === "success") {
-    return outcome.value;
-  }
-  throw outcome.error;
+  // Always await and return the exact same memoized handler promise.
+  // Guarantees fn() was started (if not already), runs exactly once,
+  // and surfaces original response or original business error.
+  return await invokeHandlerOnce();
 }
+
+/**
+ * Factory seam for creating an isolated route span runner bound to an explicit TracingSdk.
+ * Does not mutate module-global state.
+ */
+export function createRouteSpanRunner(customSdk?: TracingSdk) {
+  return async function withCustomRouteSpan<T>(
+    route: string,
+    req: Request,
+    fn: () => Promise<T>,
+    options: RouteSpanOptions = {}
+  ): Promise<T> {
+    const sdk = customSdk || testSdkOverride || Sentry;
+    return await executeRouteSpan(sdk, route, req, fn, options);
+  };
+}
+
+/**
+ * Production route span wrapper bound permanently to Sentry (or testSdkOverride in test context).
+ */
+export const withRouteSpan = createRouteSpanRunner();
