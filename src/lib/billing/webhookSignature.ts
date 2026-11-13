@@ -1,47 +1,47 @@
 /**
- * Web Crypto Timing-Safe Signature Verification for Razorpay Webhooks.
+ * Web Crypto Signature Verification for Razorpay Webhooks.
  *
- * Implements HMAC-SHA256 verification and constant-time string comparison
- * to eliminate timing oracle vulnerabilities without external native dependencies.
+ * Uses the WebCrypto `crypto.subtle.verify` primitive with HMAC-SHA256
+ * over raw bounded byte buffers.
  */
 
 /**
- * Constant-time string comparison preventing timing oracles.
- * Compares every character without early exit.
+ * Converts a 64-character hexadecimal SHA-256 signature string into a 32-byte Uint8Array.
+ * Returns null if the string is not a valid 64-character hex sequence.
  */
-export function constantTimeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) {
-    return false;
+export function hexToBytes(hex: string): Uint8Array | null {
+  if (!hex || typeof hex !== "string") return null;
+  const clean = hex.trim().toLowerCase();
+  if (clean.length !== 64 || !/^[0-9a-f]{64}$/.test(clean)) {
+    return null;
   }
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) {
-    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  const bytes = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) {
+    bytes[i] = parseInt(clean.substring(i * 2, i * 2 + 2), 16);
   }
-  return diff === 0;
+  return bytes;
 }
 
 /**
- * Computes a fixed-length SHA-256 hex digest using Web Crypto.
+ * Verifies a Razorpay HMAC-SHA256 webhook signature using native WebCrypto verify.
+ *
+ * @param rawBytes Exact raw request bytes received over the wire.
+ * @param signatureHex 64-character hex signature from X-Razorpay-Signature header.
+ * @param secret Configured webhook secret.
  */
-export async function computeSha256Hex(value: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(value);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-/**
- * Timing-safe cryptographic signature verification for Razorpay webhooks.
- * Computes HMAC-SHA256 of the raw body using the webhook secret, then
- * performs constant-time comparison over fixed-length SHA-256 digests.
- */
-export async function verifyWebhookSignature(
-  rawBody: string,
-  signature: string,
+export async function verifyWebhookSignatureBytes(
+  rawBytes: Uint8Array,
+  signatureHex: string,
   secret: string
 ): Promise<boolean> {
-  if (!rawBody || !signature || !secret) return false;
+  if (!signatureHex || !secret || !rawBytes || rawBytes.length === 0) {
+    return false;
+  }
+
+  const signatureBytes = hexToBytes(signatureHex);
+  if (!signatureBytes) {
+    return false;
+  }
 
   try {
     const encoder = new TextEncoder();
@@ -50,20 +50,29 @@ export async function verifyWebhookSignature(
       encoder.encode(secret),
       { name: "HMAC", hash: "SHA-256" },
       false,
-      ["sign"]
+      ["verify"]
     );
 
-    const macBuffer = await crypto.subtle.sign("HMAC", key, encoder.encode(rawBody));
-    const macArray = Array.from(new Uint8Array(macBuffer));
-    const expectedSignature = macArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-
-    const [hashExpected, hashReceived] = await Promise.all([
-      computeSha256Hex(expectedSignature),
-      computeSha256Hex(signature),
-    ]);
-
-    return constantTimeEqual(hashExpected, hashReceived);
+    return await crypto.subtle.verify(
+      "HMAC",
+      key,
+      signatureBytes as any,
+      rawBytes as any
+    );
   } catch {
     return false;
   }
+}
+
+/**
+ * Convenience wrapper converting string raw body to UTF-8 bytes before verifying.
+ */
+export async function verifyWebhookSignature(
+  rawBody: string,
+  signatureHex: string,
+  secret: string
+): Promise<boolean> {
+  if (!rawBody || typeof rawBody !== "string") return false;
+  const encoder = new TextEncoder();
+  return verifyWebhookSignatureBytes(encoder.encode(rawBody), signatureHex, secret);
 }

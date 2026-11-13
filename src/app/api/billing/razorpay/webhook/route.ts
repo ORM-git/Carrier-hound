@@ -3,37 +3,81 @@ import { createClient } from "@supabase/supabase-js";
 import { getRazorpayKeyMode } from "@/lib/billing/mode";
 import { recordFailedEvent } from "@/lib/events/failedEvents";
 import { createLogger } from "@/lib/observability/logger";
-import { verifyWebhookSignature } from "@/lib/billing/webhookSignature";
+import { verifyWebhookSignatureBytes } from "@/lib/billing/webhookSignature";
 
 const baseLog = createLogger({ context: { route: "/api/billing/razorpay/webhook" } });
 
 export const runtime = "edge";
 
-const CORS_HEADERS = {
-  "Allow": "POST, OPTIONS",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, X-Razorpay-Signature, x-razorpay-signature, x-razorpay-event-id, X-Razorpay-Event-Id",
-};
+const MAX_BODY_BYTES = 256 * 1024; // 256 KB max payload to protect Edge memory
 
 export async function OPTIONS() {
   return new NextResponse(null, {
     status: 200,
-    headers: CORS_HEADERS,
+    headers: {
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Headers":
+        "Content-Type, X-Razorpay-Signature, x-razorpay-signature, x-razorpay-event-id, X-Razorpay-Event-Id",
+    },
   });
+}
+
+/**
+ * Reads the request body stream up to maxBytes.
+ * Works uniformly for chunked, streamed, or missing Content-Length requests.
+ */
+async function readBoundedRawBody(
+  req: Request,
+  maxBytes: number
+): Promise<{ rawBytes: Uint8Array; oversize: boolean }> {
+  if (!req.body) {
+    return { rawBytes: new Uint8Array(0), oversize: false };
+  }
+
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        totalBytes += value.byteLength;
+        if (totalBytes > maxBytes) {
+          try {
+            await reader.cancel();
+          } catch (_) {}
+          return { rawBytes: new Uint8Array(0), oversize: true };
+        }
+        chunks.push(value);
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const result = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return { rawBytes: result, oversize: false };
 }
 
 export async function POST(req: Request) {
   const log = baseLog.child({ requestId: req?.headers.get("x-request-id") ?? "unknown" });
   const deps = (req as any).__testDeps || {};
 
-  // 1. Gating: Payments must be enabled
+  // 1. Feature Flag Gating
   if (process.env.NEXT_PUBLIC_BILLING_ENABLED !== "true") {
     return NextResponse.json(
       {
         error: "Billing is currently unavailable",
         code: "BILLING_DISABLED",
       },
-      { status: 503, headers: CORS_HEADERS }
+      { status: 503 }
     );
   }
 
@@ -42,17 +86,21 @@ export async function POST(req: Request) {
   let supabaseAdmin: any = null;
 
   try {
-    // 2. Secret configuration validation
+    // 2. Gateway and Secret Configuration
     const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
     if (!webhookSecret) {
       log.error("[Razorpay Webhook] Missing RAZORPAY_WEBHOOK_SECRET");
       return NextResponse.json(
         { error: "Webhook secret is not configured" },
-        { status: 500, headers: CORS_HEADERS }
+        { status: 500 }
       );
     }
 
-    const serverKeyId = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID || "";
+    // Key precedence: NEXT_PUBLIC_RAZORPAY_KEY_ID || RAZORPAY_KEY_ID
+    const serverKeyId =
+      process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID ||
+      process.env.RAZORPAY_KEY_ID ||
+      "";
     const serverMode = getRazorpayKeyMode(serverKeyId);
     if (serverMode === "unknown") {
       log.error("[Razorpay Webhook] Server Razorpay key configuration missing or invalid prefix");
@@ -61,183 +109,276 @@ export async function POST(req: Request) {
           error: "Server Razorpay key configuration invalid",
           code: "RAZORPAY_CONFIG_INVALID",
         },
-        { status: 500, headers: CORS_HEADERS }
+        { status: 500 }
       );
     }
 
-    // 3. Signature verification BEFORE any payload processing
+    // 3. Signature Header Extraction
     const signature =
       req.headers.get("x-razorpay-signature") ||
       req.headers.get("X-Razorpay-Signature");
 
     if (!signature) {
       return NextResponse.json(
-        {
-          error: "Missing signature header",
-          code: "MISSING_SIGNATURE",
-        },
-        { status: 400, headers: CORS_HEADERS }
+        { error: "Missing signature header", code: "MISSING_SIGNATURE" },
+        { status: 400 }
       );
     }
 
-    const rawBody = await req.text();
+    // 4. Bounded Byte Ingestion (413 on oversize)
+    const { rawBytes, oversize } = await readBoundedRawBody(req, MAX_BODY_BYTES);
+    if (oversize) {
+      log.warn("[Razorpay Webhook] Payload exceeded size limit", { maxBytes: MAX_BODY_BYTES });
+      return NextResponse.json(
+        { error: "Payload too large", code: "PAYLOAD_TOO_LARGE" },
+        { status: 413 }
+      );
+    }
 
-    const isValidSignature = await verifyWebhookSignature(rawBody, signature, webhookSecret);
+    // 5. Signature Verification via WebCrypto verify primitive
+    const isValidSignature = await verifyWebhookSignatureBytes(
+      rawBytes,
+      signature,
+      webhookSecret
+    );
+
     if (!isValidSignature) {
       return NextResponse.json(
-        {
-          error: "Invalid webhook signature",
-          code: "INVALID_SIGNATURE",
-        },
-        { status: 400, headers: CORS_HEADERS }
+        { error: "Invalid webhook signature", code: "INVALID_SIGNATURE" },
+        { status: 400 }
       );
     }
 
-    // 4. JSON body parsing after signature is cryptographically verified
+    // 6. JSON Parse
     try {
-      payload = JSON.parse(rawBody);
+      const text = new TextDecoder().decode(rawBytes);
+      payload = JSON.parse(text);
     } catch {
       return NextResponse.json(
         { error: "Invalid JSON request body" },
-        { status: 400, headers: CORS_HEADERS }
+        { status: 400 }
       );
     }
 
-    eventId =
-      payload.id ||
-      payload.event_id ||
-      req.headers.get("x-razorpay-event-id") ||
-      req.headers.get("X-Razorpay-Event-Id") ||
-      `rzp_evt_${payload.event}_${payload.payload?.payment?.entity?.id || payload.payload?.order?.entity?.id}_${payload.created_at || Date.now()}`;
-
-    // 5. Database client initialization
-    if (deps.getSupabaseAdmin) {
-      supabaseAdmin = deps.getSupabaseAdmin();
-    } else {
-      const supabaseUrl =
-        process.env.NEXT_PUBLIC_SUPABASE_URL ||
-        process.env.SUPABASE_URL ||
-        "https://szakevhxhwpeskidvtfs.supabase.co";
-      const serviceKey =
-        process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
-
-      if (!supabaseUrl || !serviceKey) {
-        log.error("[Razorpay Webhook] Supabase service configuration missing");
-        return NextResponse.json(
-          { error: "Supabase service configuration missing" },
-          { status: 500, headers: CORS_HEADERS }
-        );
-      }
-
-      supabaseAdmin = createClient(supabaseUrl, serviceKey, {
-        auth: { persistSession: false },
-      });
+    // 7. Validate Payload Shape
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      return NextResponse.json(
+        { error: "Malformed payload shape", code: "MALFORMED_PAYLOAD" },
+        { status: 400 }
+      );
     }
 
     const eventType = payload.event;
+    if (!eventType || typeof eventType !== "string" || !eventType.trim()) {
+      return NextResponse.json(
+        { error: "Missing or invalid event field in payload", code: "MALFORMED_PAYLOAD" },
+        { status: 400 }
+      );
+    }
 
-    // 6. Handle payment fulfillment events: order.paid and payment.captured
-    if (eventType === "order.paid" || eventType === "payment.captured") {
-      const orderId =
+    const isFulfillmentEvent =
+      eventType === "order.paid" || eventType === "payment.captured";
+
+    let orderId = "";
+    if (isFulfillmentEvent) {
+      orderId =
         payload.payload?.order?.entity?.id ||
-        payload.payload?.payment?.entity?.order_id;
+        payload.payload?.payment?.entity?.order_id ||
+        "";
 
-      if (!orderId) {
+      if (!orderId || typeof orderId !== "string" || !orderId.trim()) {
         return NextResponse.json(
-          {
-            error: "Missing order_id in webhook payload",
-            code: "MISSING_ORDER_ID",
-          },
-          { status: 400, headers: CORS_HEADERS }
+          { error: "Missing order_id in webhook payload", code: "MISSING_ORDER_ID" },
+          { status: 400 }
         );
       }
+      orderId = orderId.trim();
+    }
 
-      let userId =
-        payload.payload?.payment?.entity?.notes?.user_id ||
-        payload.payload?.order?.entity?.notes?.user_id;
+    // 8. Event ID Resolution (Validated stable ID, no Date.now fallback)
+    const headerEventId =
+      req.headers.get("x-razorpay-event-id") ||
+      req.headers.get("X-Razorpay-Event-Id");
 
-      // Fetch order row from payment_orders to check current status and user_id
-      let orderRow: any = null;
-      const { data: dbOrder } = await supabaseAdmin
+    const payloadEventId =
+      typeof payload.event_id === "string" && payload.event_id.trim()
+        ? payload.event_id.trim()
+        : typeof payload.id === "string" && payload.id.trim()
+          ? payload.id.trim()
+          : "";
+
+    if (headerEventId && headerEventId.trim()) {
+      eventId = headerEventId.trim();
+    } else if (payloadEventId) {
+      eventId = payloadEventId;
+    } else if (orderId) {
+      // Stable composite order:event
+      eventId = `${orderId}:${eventType}`;
+    } else if (payload.payload?.payment?.entity?.id) {
+      eventId = `${payload.payload.payment.entity.id}:${eventType}`;
+    }
+
+    if (!eventId) {
+      return NextResponse.json(
+        { error: "Unable to determine stable event identifier", code: "MALFORMED_PAYLOAD" },
+        { status: 400 }
+      );
+    }
+
+    // 9. Supabase Admin Initialization
+    try {
+      if (deps.getSupabaseAdmin) {
+        supabaseAdmin = deps.getSupabaseAdmin();
+      } else {
+        const supabaseUrl =
+          process.env.NEXT_PUBLIC_SUPABASE_URL ||
+          process.env.SUPABASE_URL ||
+          "https://szakevhxhwpeskidvtfs.supabase.co";
+        const serviceKey =
+          process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
+
+        if (!supabaseUrl || !serviceKey) {
+          throw new Error("Supabase service configuration missing");
+        }
+
+        supabaseAdmin = createClient(supabaseUrl, serviceKey, {
+          auth: { persistSession: false },
+        });
+      }
+    } catch (err: any) {
+      log.error("[Razorpay Webhook] Supabase admin init error", { error: err?.message || String(err) });
+      return NextResponse.json(
+        { error: "Supabase service configuration missing" },
+        { status: 500 }
+      );
+    }
+
+    // 10. Process Fulfillment Events
+    if (isFulfillmentEvent) {
+      // Query payment_orders authoritatively
+      const { data: dbOrder, error: orderLookupErr } = await supabaseAdmin
         .from("payment_orders")
         .select("*")
         .eq("provider_order_id", orderId)
         .maybeSingle();
 
-      orderRow = dbOrder;
-      if (!userId && orderRow?.user_id) {
-        userId = orderRow.user_id;
-      }
-
-      if (!userId) {
+      if (orderLookupErr) {
+        log.error("[Razorpay Webhook] DB error querying payment_orders", {
+          error: orderLookupErr.message,
+          orderId,
+        });
+        try {
+          await recordFailedEvent({
+            source: "razorpay_webhook",
+            eventId,
+            payload: { order_id: orderId, event: eventType, error: orderLookupErr.message },
+            error: orderLookupErr,
+            supabaseClient: supabaseAdmin,
+          });
+        } catch (_) {}
         return NextResponse.json(
-          {
-            error: "Order record or associated user not found",
-            code: "ORDER_NOT_FOUND",
-          },
-          { status: 404, headers: CORS_HEADERS }
+          { error: "Database error querying order", code: "DATABASE_ERROR" },
+          { status: 500 }
         );
       }
 
-      // Validate provider
-      if (orderRow?.provider && orderRow.provider !== "razorpay") {
+      if (!dbOrder) {
         return NextResponse.json(
-          {
-            error: "Invalid payment provider",
-            code: "INVALID_PROVIDER",
-          },
-          { status: 400, headers: CORS_HEADERS }
+          { error: "Order record not found", code: "ORDER_NOT_FOUND" },
+          { status: 404 }
         );
       }
 
-      // Mode Isolation: Server environment mode must match order mode
-      const orderMode =
-        orderRow?.mode ||
-        (orderRow?.provider_order_id?.startsWith("order_test_") ? "test" : "live");
-      if (orderRow && orderMode !== serverMode) {
+      // Require authoritative provider
+      if (!dbOrder.provider || dbOrder.provider !== "razorpay") {
+        return NextResponse.json(
+          { error: "Invalid payment provider", code: "INVALID_PROVIDER" },
+          { status: 400 }
+        );
+      }
+
+      // Require authoritative mode matching server mode
+      const orderMode = dbOrder.mode;
+      if (!orderMode || orderMode !== serverMode) {
         log.error("[Razorpay Webhook] Mode mismatch between order and server credentials", {
           orderMode,
           serverMode,
         });
         return NextResponse.json(
           {
-            error: `Webhook mode mismatch: cannot process ${orderMode} order with ${serverMode} credentials`,
+            error: `Webhook mode mismatch: cannot process ${orderMode || "unknown"} order with ${serverMode} credentials`,
             code: "MODE_MISMATCH",
           },
-          { status: 400, headers: CORS_HEADERS }
+          { status: 400 }
         );
       }
 
-      // 7. Deduplication: Check if event was previously processed
-      const { data: existingDedupe } = await supabaseAdmin
+      // Derive authoritative user from row
+      const userId = dbOrder.user_id;
+      if (!userId) {
+        return NextResponse.json(
+          { error: "Order record has no associated user", code: "ORDER_NOT_FOUND" },
+          { status: 404 }
+        );
+      }
+
+      // Reject mismatch between authoritative user and payload notes
+      const payloadNotesUserId =
+        payload.payload?.payment?.entity?.notes?.user_id ||
+        payload.payload?.order?.entity?.notes?.user_id ||
+        payload.notes?.user_id ||
+        payload.notes?.userId;
+
+      if (payloadNotesUserId && String(payloadNotesUserId).trim() !== String(userId).trim()) {
+        log.error("[Razorpay Webhook] User mismatch between payload notes and order row", {
+          payloadUserId: payloadNotesUserId,
+          orderUserId: userId,
+        });
+        return NextResponse.json(
+          { error: "Payload user does not match order record", code: "USER_MISMATCH" },
+          { status: 400 }
+        );
+      }
+
+      // Check deduplication in webhook_events
+      const { data: existingDedupe, error: dedupeLookupErr } = await supabaseAdmin
         .from("webhook_events")
         .select("event_id")
         .eq("event_id", eventId)
         .maybeSingle();
 
+      if (dedupeLookupErr) {
+        log.error("[Razorpay Webhook] DB error querying webhook_events dedupe", {
+          error: dedupeLookupErr.message,
+          eventId,
+        });
+        return NextResponse.json(
+          { error: "Database error checking webhook idempotency", code: "DATABASE_ERROR" },
+          { status: 500 }
+        );
+      }
+
       if (existingDedupe) {
-        // On a dedupe hit, re-attempt fulfillment if the order is still unpaid
-        if (orderRow && orderRow.status !== "paid") {
-          log.warn("[Razorpay Webhook] Dedupe hit but order is still unpaid; retrying fulfillment", {
+        if (dbOrder.status !== "paid") {
+          log.warn("[Razorpay Webhook] Dedupe hit but order is still unpaid. Retrying fulfillment.", {
             eventId,
             orderId,
           });
         } else {
-          // Order is genuinely already paid / fulfilled
           return NextResponse.json(
             {
               received: true,
               alreadyProcessed: true,
               eventId,
               testMode: serverMode === "test",
-              isPro: serverMode === "live" && Boolean(orderRow?.plan_code),
+              isPro: serverMode === "live" && Boolean(dbOrder.plan_code),
             },
-            { status: 200, headers: CORS_HEADERS }
+            { status: 200 }
           );
         }
       }
 
-      // 8. Fulfil atomically via database function
+      // Call database atomic procedure
       const { data: fulfilRes, error: fulfilErr } = await supabaseAdmin.rpc("fulfil_payment_order", {
         p_provider_order_id: orderId,
         p_user_id: userId,
@@ -246,9 +387,7 @@ export async function POST(req: Request) {
 
       if (fulfilErr) {
         log.error("[Razorpay Webhook] fulfil_payment_order RPC error", {
-          eventId,
-          orderId,
-          error: String(fulfilErr),
+          error: fulfilErr.message || String(fulfilErr),
         });
         try {
           await recordFailedEvent({
@@ -259,42 +398,44 @@ export async function POST(req: Request) {
               order_id: orderId,
               user_id: userId,
               mode: serverMode,
-              payload,
             },
             error: fulfilErr,
             supabaseClient: supabaseAdmin,
           });
-        } catch (dlErr) {
-          log.warn("[Razorpay Webhook] Failed to record dead-letter event", { error: String(dlErr) });
-        }
+        } catch (_) {}
 
-        // Do not record dedupe row on RPC failure: return 500 so Razorpay retries
         return NextResponse.json(
-          {
-            error: "Payment fulfillment failed",
-            code: "FULFILLMENT_FAILED",
-          },
-          { status: 500, headers: CORS_HEADERS }
+          { error: "Payment fulfillment failed", code: "FULFILLMENT_FAILED" },
+          { status: 500 }
         );
       }
 
-      // 9. Strictly check fulfilRes.success
       if (!fulfilRes || !fulfilRes.success) {
-        // Check if order was already paid (e.g. via verify endpoint race or ORDER_INVALID_STATE when genuinely paid)
         const isGenuinelyPaid =
           fulfilRes?.already_paid === true ||
-          (fulfilRes?.code === "ORDER_INVALID_STATE" && orderRow?.status === "paid");
+          (fulfilRes?.code === "ORDER_INVALID_STATE" && dbOrder.status === "paid");
 
         if (isGenuinelyPaid) {
-          // Genuinely already paid: record dedupe row and return 200
-          await supabaseAdmin.from("webhook_events").upsert(
-            {
-              event_id: eventId,
-              provider: "razorpay",
-              event_type: eventType,
-            },
-            { onConflict: "event_id" }
-          );
+          const { error: dedupeWriteErr } = await supabaseAdmin
+            .from("webhook_events")
+            .upsert(
+              {
+                event_id: eventId,
+                provider: "razorpay",
+                event_type: eventType,
+              },
+              { onConflict: "event_id" }
+            );
+
+          if (dedupeWriteErr) {
+            log.error("[Razorpay Webhook] Failed to record dedupe for already-paid order", {
+              error: dedupeWriteErr.message,
+            });
+            return NextResponse.json(
+              { error: "Failed to record webhook event receipt", code: "RECEIPT_WRITE_FAILED" },
+              { status: 500 }
+            );
+          }
 
           return NextResponse.json(
             {
@@ -302,18 +443,16 @@ export async function POST(req: Request) {
               alreadyPaid: true,
               eventId,
               testMode: serverMode === "test",
-              isPro: serverMode === "live" && Boolean(orderRow?.plan_code),
+              isPro: serverMode === "live" && Boolean(dbOrder.plan_code),
               details: fulfilRes,
             },
-            { status: 200, headers: CORS_HEADERS }
+            { status: 200 }
           );
         }
 
-        // Unsuccessful: DO NOT record dedupe row!
         log.error("[Razorpay Webhook] fulfil_payment_order returned failure", {
-          eventId,
-          orderId,
           code: fulfilRes?.code,
+          error: fulfilRes?.error,
         });
         try {
           await recordFailedEvent({
@@ -324,14 +463,11 @@ export async function POST(req: Request) {
               order_id: orderId,
               user_id: userId,
               mode: serverMode,
-              payload,
             },
             error: fulfilRes?.error || "fulfil_payment_order returned failure",
             supabaseClient: supabaseAdmin,
           });
-        } catch (dlErr) {
-          log.warn("[Razorpay Webhook] Failed to record dead-letter event", { error: String(dlErr) });
-        }
+        } catch (_) {}
 
         const statusCode = fulfilRes?.code === "ORDER_NOT_FOUND" ? 404 : 500;
         return NextResponse.json(
@@ -339,12 +475,48 @@ export async function POST(req: Request) {
             error: fulfilRes?.error || "Payment fulfillment failed",
             code: fulfilRes?.code || "FULFILLMENT_FAILED",
           },
-          { status: statusCode, headers: CORS_HEADERS }
+          { status: statusCode }
         );
       }
 
-      // 10. Fulfillment succeeded (fulfilRes.success is true): Record dedupe row
-      await supabaseAdmin.from("webhook_events").upsert(
+      // Fulfillment succeeded -> Record receipt in webhook_events
+      const { error: dedupeWriteErr } = await supabaseAdmin
+        .from("webhook_events")
+        .upsert(
+          {
+            event_id: eventId,
+            provider: "razorpay",
+            event_type: eventType,
+          },
+          { onConflict: "event_id" }
+        );
+
+      if (dedupeWriteErr) {
+        log.error("[Razorpay Webhook] Failed to record dedupe on successful fulfillment", {
+          error: dedupeWriteErr.message,
+        });
+        return NextResponse.json(
+          { error: "Failed to record webhook event receipt", code: "RECEIPT_WRITE_FAILED" },
+          { status: 500 }
+        );
+      }
+
+      return NextResponse.json(
+        {
+          received: true,
+          fulfilled: true,
+          eventId,
+          testMode: serverMode === "test",
+          isPro: serverMode === "live" && Boolean(dbOrder.plan_code),
+        },
+        { status: 200 }
+      );
+    }
+
+    // 11. Handle Non-Fulfillment Events (payment.failed, refund.created, etc.)
+    const { error: nonFulfilDedupeErr } = await supabaseAdmin
+      .from("webhook_events")
+      .upsert(
         {
           event_id: eventId,
           provider: "razorpay",
@@ -353,37 +525,29 @@ export async function POST(req: Request) {
         { onConflict: "event_id" }
       );
 
+    if (nonFulfilDedupeErr) {
+      log.error("[Razorpay Webhook] Failed to record dedupe for non-fulfillment event", {
+        error: nonFulfilDedupeErr.message,
+      });
       return NextResponse.json(
-        {
-          received: true,
-          fulfilled: true,
-          alreadyPaid: Boolean(fulfilRes.already_paid),
-          testMode: serverMode === "test",
-          isPro: serverMode === "live" && Boolean(fulfilRes?.is_pro ?? orderRow?.plan_code),
-          eventId,
-          details: fulfilRes,
-        },
-        { status: 200, headers: CORS_HEADERS }
+        { error: "Failed to record webhook event receipt", code: "RECEIPT_WRITE_FAILED" },
+        { status: 500 }
       );
     }
-
-    // 11. For non-fulfillment events (e.g. payment.failed, refund.created)
-    await supabaseAdmin.from("webhook_events").insert({
-      event_id: eventId,
-      provider: "razorpay",
-      event_type: eventType || "unknown",
-    });
 
     return NextResponse.json(
       {
         received: true,
         ignored: true,
         event: eventType,
+        eventId,
       },
-      { status: 200, headers: CORS_HEADERS }
+      { status: 200 }
     );
   } catch (err: any) {
-    log.error("[Razorpay Webhook] Unexpected webhook handler error", { error: err?.message || String(err) });
+    log.error("[Razorpay Webhook] Unexpected webhook handler error", {
+      error: err?.message || String(err),
+    });
     if (eventId && supabaseAdmin) {
       try {
         await recordFailedEvent({
@@ -397,7 +561,7 @@ export async function POST(req: Request) {
     }
     return NextResponse.json(
       { error: err?.message || "Internal server error" },
-      { status: 500, headers: CORS_HEADERS }
+      { status: 500 }
     );
   }
 }

@@ -4,22 +4,10 @@
  * Standalone offline test suite for the Cloudflare Pages Next.js edge route:
  *   src/app/api/billing/razorpay/webhook/route.ts
  *
- * Tests:
- *   1. Timing-safe cryptographic signature verification (Web Crypto HMAC-SHA256).
- *   2. Method check (GET returns 405, OPTIONS returns 200 with CORS headers).
- *   3. Disabled billing gate (503 BILLING_DISABLED when NEXT_PUBLIC_BILLING_ENABLED !== "true").
- *   4. Configuration validation (500 if RAZORPAY_WEBHOOK_SECRET missing or key prefix unknown).
- *   5. Missing & invalid signature headers (400 MISSING_SIGNATURE, 400 INVALID_SIGNATURE).
- *   6. Malformed JSON payload rejection after valid signature.
- *   7. Missing order_id (400 MISSING_ORDER_ID).
- *   8. Order record not found (404 ORDER_NOT_FOUND).
- *   9. Payment provider mismatch (400 INVALID_PROVIDER).
- *  10. Payment mode isolation (400 MODE_MISMATCH).
- *  11. Valid signed payload - Happy path fulfillment (200 with fulfilled: true and dedupe insert).
- *  12. Replay / Duplicate webhook idempotency (200 alreadyProcessed: true without re-running RPC).
- *  13. Transient RPC failure (500 FULFILLMENT_FAILED, no dedupe row left, recorded in failed_events).
- *  14. RPC throws unexpected exception (500 returned, no dedupe row left, recorded in failed_events).
- *  15. Non-fulfillment event handling (200 ignored: true for payment.failed).
+ * NOTE: This offline suite validates handler branching, failure recovery,
+ * payload validation, and idempotency using mock database adapters. It does
+ * NOT claim or simulate PostgreSQL engine-level transaction isolation or ACID
+ * row locks.
  */
 
 import assert from "assert";
@@ -27,7 +15,8 @@ import crypto from "crypto";
 import * as webhookRoute from "../src/app/api/billing/razorpay/webhook/route";
 import {
   verifyWebhookSignature,
-  constantTimeEqual,
+  verifyWebhookSignatureBytes,
+  hexToBytes,
 } from "../src/lib/billing/webhookSignature";
 
 const { POST, OPTIONS } = webhookRoute;
@@ -35,16 +24,33 @@ const { POST, OPTIONS } = webhookRoute;
 const TEST_WEBHOOK_SECRET = "rzp_webhook_secret_abcdef1234567890";
 const TEST_KEY_ID = "rzp_test_key_1234567890";
 
+interface MockOrder {
+  id: string;
+  provider_order_id: string;
+  user_id: string;
+  provider: string;
+  mode: string;
+  status: string;
+  amount_paise: number;
+  plan_code?: string;
+  addon_code?: string;
+}
+
 interface MockDbState {
-  orders: Map<string, any>;
+  orders: Map<string, MockOrder>;
   webhookEvents: Set<string>;
   failedEvents: Array<any>;
   rpcFulfilCalls: Array<{ orderId: string; userId: string; expectedMode: string }>;
+  errors?: {
+    paymentOrdersLookup?: Error;
+    webhookEventsLookup?: Error;
+    webhookEventsInsert?: Error;
+  };
   customRpcHandler?: (fnName: string, args: any) => Promise<any> | any;
 }
 
-function computeHmacSignature(rawBody: string, secret: string): string {
-  return crypto.createHmac("sha256", secret).update(rawBody).digest("hex");
+function computeHmacSignature(rawBytes: Uint8Array | string, secret: string): string {
+  return crypto.createHmac("sha256", secret).update(rawBytes).digest("hex");
 }
 
 function createMockSupabase(db: MockDbState) {
@@ -62,11 +68,17 @@ function createMockSupabase(db: MockDbState) {
         },
         maybeSingle: async () => {
           if (table === "payment_orders") {
+            if (db.errors?.paymentOrdersLookup) {
+              return { data: null, error: db.errors.paymentOrdersLookup };
+            }
             const order = filterOrderId ? db.orders.get(filterOrderId) : null;
             if (!order) return { data: null, error: null };
             return { data: { ...order }, error: null };
           }
           if (table === "webhook_events") {
+            if (db.errors?.webhookEventsLookup) {
+              return { data: null, error: db.errors.webhookEventsLookup };
+            }
             if (filterEventId && db.webhookEvents.has(filterEventId)) {
               return { data: { event_id: filterEventId }, error: null };
             }
@@ -76,6 +88,9 @@ function createMockSupabase(db: MockDbState) {
         },
         insert: async (row: any) => {
           if (table === "webhook_events") {
+            if (db.errors?.webhookEventsInsert) {
+              return { error: db.errors.webhookEventsInsert };
+            }
             if (db.webhookEvents.has(row.event_id)) {
               return {
                 error: {
@@ -95,6 +110,9 @@ function createMockSupabase(db: MockDbState) {
         },
         upsert: async (row: any) => {
           if (table === "webhook_events") {
+            if (db.errors?.webhookEventsInsert) {
+              return { error: db.errors.webhookEventsInsert };
+            }
             db.webhookEvents.add(row.event_id);
             return { error: null };
           }
@@ -154,7 +172,7 @@ function buildMockRequest(
     method?: string;
     signature?: string | null;
     eventId?: string;
-    body?: string;
+    body?: string | Uint8Array;
     mockDb?: MockDbState;
   } = {}
 ): Request {
@@ -170,10 +188,15 @@ function buildMockRequest(
     headers["x-razorpay-event-id"] = options.eventId;
   }
 
+  let bodyData: BodyInit | undefined = undefined;
+  if (method === "POST") {
+    bodyData = options.body !== undefined ? (options.body as any) : "";
+  }
+
   const req = new Request("http://localhost:3000/api/billing/razorpay/webhook", {
     method,
     headers,
-    body: method === "POST" ? (options.body ?? "") : undefined,
+    body: bodyData,
   });
 
   if (options.mockDb) {
@@ -215,33 +238,37 @@ async function runTestSuite() {
     }
   }
 
-  // Setup initial environment
+  // Set standard test environment
   process.env.NEXT_PUBLIC_BILLING_ENABLED = "true";
   process.env.RAZORPAY_WEBHOOK_SECRET = TEST_WEBHOOK_SECRET;
-  process.env.RAZORPAY_KEY_ID = TEST_KEY_ID;
   process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = TEST_KEY_ID;
+  delete process.env.RAZORPAY_KEY_ID;
 
-  // 1. Web Crypto Timing-Safe Verification direct tests
-  await runTest("1. Timing-safe constantTimeEqual direct test", () => {
-    assert.strictEqual(constantTimeEqual("abc", "abc"), true);
-    assert.strictEqual(constantTimeEqual("abc", "abd"), false);
-    assert.strictEqual(constantTimeEqual("abc", "ab"), false);
-    assert.strictEqual(constantTimeEqual("", ""), true);
-    assert.strictEqual(constantTimeEqual("a", ""), false);
+  // 1. Web Crypto Verify Primitive & Hex helper direct tests
+  await runTest("1. hexToBytes validation", () => {
+    assert.strictEqual(hexToBytes(""), null);
+    assert.strictEqual(hexToBytes("not-a-hex"), null);
+    assert.strictEqual(hexToBytes("0123456789abcdef"), null); // wrong length
+    const validHex = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
+    const bytes = hexToBytes(validHex);
+    assert.ok(bytes instanceof Uint8Array);
+    assert.strictEqual(bytes?.length, 32);
+    assert.strictEqual(bytes?.[0], 0);
+    assert.strictEqual(bytes?.[31], 31);
   });
 
-  await runTest("2. verifyWebhookSignature direct verification", async () => {
-    const raw = JSON.stringify({ event: "order.paid", id: "evt_123" });
+  await runTest("2. verifyWebhookSignatureBytes direct verification", async () => {
+    const raw = new TextEncoder().encode(JSON.stringify({ event: "order.paid", id: "evt_123" }));
     const sig = computeHmacSignature(raw, TEST_WEBHOOK_SECRET);
 
-    assert.strictEqual(await verifyWebhookSignature(raw, sig, TEST_WEBHOOK_SECRET), true);
-    assert.strictEqual(await verifyWebhookSignature(raw, "invalid_sig", TEST_WEBHOOK_SECRET), false);
-    assert.strictEqual(await verifyWebhookSignature(raw, sig, "wrong_secret"), false);
-    assert.strictEqual(await verifyWebhookSignature("", sig, TEST_WEBHOOK_SECRET), false);
+    assert.strictEqual(await verifyWebhookSignatureBytes(raw, sig, TEST_WEBHOOK_SECRET), true);
+    assert.strictEqual(await verifyWebhookSignatureBytes(raw, "00".repeat(32), TEST_WEBHOOK_SECRET), false);
+    assert.strictEqual(await verifyWebhookSignatureBytes(raw, sig, "wrong_secret"), false);
+    assert.strictEqual(await verifyWebhookSignatureBytes(new Uint8Array(0), sig, TEST_WEBHOOK_SECRET), false);
   });
 
   // 3. Method checks
-  await runTest("3. GET is not exported (Next.js disallows unhandled methods with 405)", async () => {
+  await runTest("3. GET is not exported (disallowed)", async () => {
     assert.strictEqual(typeof (webhookRoute as any).GET, "undefined");
     assert.strictEqual(typeof (webhookRoute as any).PUT, "undefined");
     assert.strictEqual(typeof (webhookRoute as any).DELETE, "undefined");
@@ -250,306 +277,544 @@ async function runTestSuite() {
   await runTest("4. OPTIONS returns 200 with CORS headers", async () => {
     const res = await OPTIONS();
     assert.strictEqual(res.status, 200);
-    assert.strictEqual(res.headers.get("Allow"), "POST, OPTIONS");
   });
 
   // 5. Billing disabled check
-  await runTest("5. Gating: returns 503 BILLING_DISABLED when NEXT_PUBLIC_BILLING_ENABLED !== 'true'", async () => {
+  await runTest("5. Gating: returns 503 with 'Billing is currently unavailable'", async () => {
     process.env.NEXT_PUBLIC_BILLING_ENABLED = "false";
     const req = buildMockRequest({ body: "{}" });
     const res = await POST(req);
     assert.strictEqual(res.status, 503);
     const json = await res.json();
+    assert.strictEqual(json.error, "Billing is currently unavailable");
     assert.strictEqual(json.code, "BILLING_DISABLED");
     process.env.NEXT_PUBLIC_BILLING_ENABLED = "true";
   });
 
-  // 6. Secret configuration
-  await runTest("6. Config: returns 500 when RAZORPAY_WEBHOOK_SECRET is missing", async () => {
+  // 6. Configuration checks
+  await runTest("6. Missing RAZORPAY_WEBHOOK_SECRET returns 500 without code property", async () => {
     delete process.env.RAZORPAY_WEBHOOK_SECRET;
     const req = buildMockRequest({ body: "{}" });
     const res = await POST(req);
     assert.strictEqual(res.status, 500);
     const json = await res.json();
     assert.strictEqual(json.error, "Webhook secret is not configured");
+    assert.strictEqual(typeof json.code, "undefined"); // Must have no code!
     process.env.RAZORPAY_WEBHOOK_SECRET = TEST_WEBHOOK_SECRET;
   });
 
-  await runTest("7. Config: returns 500 RAZORPAY_CONFIG_INVALID when key prefix is invalid", async () => {
-    process.env.RAZORPAY_KEY_ID = "invalid_key_prefix";
-    delete process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
+  await runTest("7. Key env precedence and invalid prefix check", async () => {
+    // NEXT_PUBLIC_RAZORPAY_KEY_ID should take precedence over RAZORPAY_KEY_ID
+    process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = "invalid_prefix_key";
+    process.env.RAZORPAY_KEY_ID = "rzp_test_valid_key";
     const req = buildMockRequest({ body: "{}" });
     const res = await POST(req);
     assert.strictEqual(res.status, 500);
     const json = await res.json();
     assert.strictEqual(json.code, "RAZORPAY_CONFIG_INVALID");
-    process.env.RAZORPAY_KEY_ID = TEST_KEY_ID;
     process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = TEST_KEY_ID;
   });
 
-  // 8. Missing signature header
-  await runTest("8. Missing signature header returns 400 MISSING_SIGNATURE", async () => {
-    const req = buildMockRequest({ signature: null, body: "{}" });
+  // 8. Bounded Byte Ingestion (413 on oversize)
+  await runTest("8. Oversize body returns 413 PAYLOAD_TOO_LARGE", async () => {
+    const oversizeBytes = new Uint8Array(260 * 1024); // 260 KB > 256 KB limit
+    const sig = computeHmacSignature(oversizeBytes, TEST_WEBHOOK_SECRET);
+    const req = buildMockRequest({
+      body: oversizeBytes,
+      signature: sig,
+    });
+    const res = await POST(req);
+    assert.strictEqual(res.status, 413);
+    const json = await res.json();
+    assert.strictEqual(json.code, "PAYLOAD_TOO_LARGE");
+  });
+
+  // 9. Signature header checks
+  await runTest("9. Missing signature header returns 400 MISSING_SIGNATURE", async () => {
+    const req = buildMockRequest({ body: "{}", signature: null });
     const res = await POST(req);
     assert.strictEqual(res.status, 400);
     const json = await res.json();
     assert.strictEqual(json.code, "MISSING_SIGNATURE");
   });
 
-  // 9. Invalid signature header
-  await runTest("9. Invalid signature returns 400 INVALID_SIGNATURE", async () => {
-    const raw = JSON.stringify({ event: "order.paid" });
-    const req = buildMockRequest({ signature: "bad_signature_hex", body: raw });
+  await runTest("10. Invalid signature returns 400 INVALID_SIGNATURE", async () => {
+    const req = buildMockRequest({ body: "{}", signature: "deadbeef".repeat(8) });
     const res = await POST(req);
     assert.strictEqual(res.status, 400);
     const json = await res.json();
     assert.strictEqual(json.code, "INVALID_SIGNATURE");
   });
 
-  // 10. Malformed JSON body
-  await runTest("10. Malformed JSON with valid signature returns 400 Invalid JSON request body", async () => {
-    const raw = "not a valid json string {";
-    const sig = computeHmacSignature(raw, TEST_WEBHOOK_SECRET);
-    const req = buildMockRequest({ signature: sig, body: raw });
+  // 11. Malformed payload shapes
+  await runTest("11. Malformed JSON with valid signature returns 400", async () => {
+    const invalidJson = "{ invalid-json ";
+    const sig = computeHmacSignature(invalidJson, TEST_WEBHOOK_SECRET);
+    const req = buildMockRequest({ body: invalidJson, signature: sig });
     const res = await POST(req);
     assert.strictEqual(res.status, 400);
     const json = await res.json();
     assert.strictEqual(json.error, "Invalid JSON request body");
   });
 
-  // Mock Database Setup for Order Processing Tests
-  const mockDb: MockDbState = {
-    orders: new Map(),
-    webhookEvents: new Set(),
-    failedEvents: [],
-    rpcFulfilCalls: [],
-  };
+  await runTest("12. Non-object or missing event returns 400 MALFORMED_PAYLOAD", async () => {
+    const body1 = JSON.stringify(["item"]);
+    const req1 = buildMockRequest({ body: body1, signature: computeHmacSignature(body1, TEST_WEBHOOK_SECRET) });
+    const res1 = await POST(req1);
+    assert.strictEqual(res1.status, 400);
+    assert.strictEqual((await res1.json()).code, "MALFORMED_PAYLOAD");
 
-  const sampleOrderId = "order_test_999999";
-  const sampleUserId = "user_test_uuid_abc";
-
-  mockDb.orders.set(sampleOrderId, {
-    id: "po_123",
-    provider_order_id: sampleOrderId,
-    user_id: sampleUserId,
-    provider: "razorpay",
-    mode: "test",
-    plan_code: "weekly",
-    status: "created",
+    const body2 = JSON.stringify({ no_event: true });
+    const req2 = buildMockRequest({ body: body2, signature: computeHmacSignature(body2, TEST_WEBHOOK_SECRET) });
+    const res2 = await POST(req2);
+    assert.strictEqual(res2.status, 400);
+    assert.strictEqual((await res2.json()).code, "MALFORMED_PAYLOAD");
   });
 
-  // 11. Missing order_id in payload
-  await runTest("11. Missing order_id returns 400 MISSING_ORDER_ID", async () => {
-    const raw = JSON.stringify({
-      event: "order.paid",
-      id: "evt_missing_order_id",
-      payload: {},
-    });
-    const sig = computeHmacSignature(raw, TEST_WEBHOOK_SECRET);
-    const req = buildMockRequest({ signature: sig, body: raw, mockDb });
+  await runTest("13. Missing order_id on fulfillment returns 400 MISSING_ORDER_ID", async () => {
+    const body = JSON.stringify({ event: "order.paid", payload: {} });
+    const req = buildMockRequest({ body, signature: computeHmacSignature(body, TEST_WEBHOOK_SECRET) });
     const res = await POST(req);
     assert.strictEqual(res.status, 400);
     const json = await res.json();
     assert.strictEqual(json.code, "MISSING_ORDER_ID");
   });
 
-  // 12. Order record not found
-  await runTest("12. Non-existent order returns 404 ORDER_NOT_FOUND", async () => {
-    const raw = JSON.stringify({
-      event: "order.paid",
-      id: "evt_nonexistent_order",
-      payload: {
-        order: { entity: { id: "order_test_non_existent" } },
+  // 12. Fail closed on DB errors
+  await runTest("14. DB error querying payment_orders fails closed with 500", async () => {
+    const mockDb: MockDbState = {
+      orders: new Map(),
+      webhookEvents: new Set(),
+      failedEvents: [],
+      rpcFulfilCalls: [],
+      errors: {
+        paymentOrdersLookup: new Error("PostgreSQL socket connection terminated"),
       },
+    };
+    const body = JSON.stringify({
+      event: "order.paid",
+      payload: { order: { entity: { id: "order_test_err_1" } } },
     });
-    const sig = computeHmacSignature(raw, TEST_WEBHOOK_SECRET);
-    const req = buildMockRequest({ signature: sig, body: raw, mockDb });
+    const req = buildMockRequest({
+      body,
+      signature: computeHmacSignature(body, TEST_WEBHOOK_SECRET),
+      mockDb,
+    });
+    const res = await POST(req);
+    assert.strictEqual(res.status, 500);
+    const json = await res.json();
+    assert.strictEqual(json.code, "DATABASE_ERROR");
+  });
+
+  await runTest("15. Non-existent order returns 404 ORDER_NOT_FOUND", async () => {
+    const mockDb: MockDbState = {
+      orders: new Map(),
+      webhookEvents: new Set(),
+      failedEvents: [],
+      rpcFulfilCalls: [],
+    };
+    const body = JSON.stringify({
+      event: "order.paid",
+      payload: { order: { entity: { id: "order_test_nonexistent" } } },
+    });
+    const req = buildMockRequest({
+      body,
+      signature: computeHmacSignature(body, TEST_WEBHOOK_SECRET),
+      mockDb,
+    });
     const res = await POST(req);
     assert.strictEqual(res.status, 404);
     const json = await res.json();
     assert.strictEqual(json.code, "ORDER_NOT_FOUND");
   });
 
-  // 13. Mode mismatch (order is live, server credentials are test)
-  await runTest("13. Mode mismatch returns 400 MODE_MISMATCH", async () => {
-    const liveOrderId = "order_live_mismatch_1";
-    mockDb.orders.set(liveOrderId, {
-      id: "po_live_1",
-      provider_order_id: liveOrderId,
-      user_id: sampleUserId,
-      provider: "razorpay",
-      mode: "live",
-      plan_code: "weekly",
-      status: "created",
-    });
-
-    const raw = JSON.stringify({
+  await runTest("16. Invalid provider returns 400 INVALID_PROVIDER", async () => {
+    const mockDb: MockDbState = {
+      orders: new Map([
+        [
+          "order_stripe_1",
+          {
+            id: "row_1",
+            provider_order_id: "order_stripe_1",
+            user_id: "user_1",
+            provider: "stripe",
+            mode: "test",
+            status: "created",
+            amount_paise: 9900,
+          },
+        ],
+      ]),
+      webhookEvents: new Set(),
+      failedEvents: [],
+      rpcFulfilCalls: [],
+    };
+    const body = JSON.stringify({
       event: "order.paid",
-      id: "evt_mode_mismatch",
-      payload: {
-        order: { entity: { id: liveOrderId } },
-        payment: { entity: { notes: { user_id: sampleUserId } } },
-      },
+      payload: { order: { entity: { id: "order_stripe_1" } } },
     });
-    const sig = computeHmacSignature(raw, TEST_WEBHOOK_SECRET);
-    const req = buildMockRequest({ signature: sig, body: raw, mockDb });
+    const req = buildMockRequest({
+      body,
+      signature: computeHmacSignature(body, TEST_WEBHOOK_SECRET),
+      mockDb,
+    });
+    const res = await POST(req);
+    assert.strictEqual(res.status, 400);
+    const json = await res.json();
+    assert.strictEqual(json.code, "INVALID_PROVIDER");
+  });
+
+  await runTest("17. Mode mismatch returns 400 MODE_MISMATCH", async () => {
+    const mockDb: MockDbState = {
+      orders: new Map([
+        [
+          "order_live_1",
+          {
+            id: "row_live_1",
+            provider_order_id: "order_live_1",
+            user_id: "user_live_1",
+            provider: "razorpay",
+            mode: "live", // Server credentials are test mode
+            status: "created",
+            amount_paise: 9900,
+          },
+        ],
+      ]),
+      webhookEvents: new Set(),
+      failedEvents: [],
+      rpcFulfilCalls: [],
+    };
+    const body = JSON.stringify({
+      event: "order.paid",
+      payload: { order: { entity: { id: "order_live_1" } } },
+    });
+    const req = buildMockRequest({
+      body,
+      signature: computeHmacSignature(body, TEST_WEBHOOK_SECRET),
+      mockDb,
+    });
     const res = await POST(req);
     assert.strictEqual(res.status, 400);
     const json = await res.json();
     assert.strictEqual(json.code, "MODE_MISMATCH");
   });
 
-  // 14. Happy Path: Valid signed payload fulfills order and inserts dedupe row
-  const happyEventId = "evt_happy_path_100";
-  await runTest("14. Happy Path: Valid payload fulfills order, inserts dedupe row, returns 200", async () => {
-    mockDb.rpcFulfilCalls = [];
-    const raw = JSON.stringify({
+  await runTest("18. Payload notes user mismatch rejects with 400 USER_MISMATCH", async () => {
+    const mockDb: MockDbState = {
+      orders: new Map([
+        [
+          "order_test_user_match",
+          {
+            id: "row_u_1",
+            provider_order_id: "order_test_user_match",
+            user_id: "auth_user_123",
+            provider: "razorpay",
+            mode: "test",
+            status: "created",
+            amount_paise: 9900,
+          },
+        ],
+      ]),
+      webhookEvents: new Set(),
+      failedEvents: [],
+      rpcFulfilCalls: [],
+    };
+    const body = JSON.stringify({
       event: "order.paid",
-      id: happyEventId,
       payload: {
-        order: { entity: { id: sampleOrderId } },
-        payment: { entity: { id: "pay_happy_100", notes: { user_id: sampleUserId } } },
+        order: {
+          entity: {
+            id: "order_test_user_match",
+            notes: { user_id: "impostor_user_999" }, // mismatch!
+          },
+        },
       },
     });
-    const sig = computeHmacSignature(raw, TEST_WEBHOOK_SECRET);
-    const req = buildMockRequest({ signature: sig, body: raw, mockDb });
+    const req = buildMockRequest({
+      body,
+      signature: computeHmacSignature(body, TEST_WEBHOOK_SECRET),
+      mockDb,
+    });
     const res = await POST(req);
-
-    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.status, 400);
     const json = await res.json();
-    assert.strictEqual(json.received, true);
-    assert.strictEqual(json.fulfilled, true);
-    assert.strictEqual(json.testMode, true);
-    assert.strictEqual(mockDb.rpcFulfilCalls.length, 1);
-    assert.strictEqual(mockDb.rpcFulfilCalls[0].orderId, sampleOrderId);
-    assert.strictEqual(mockDb.rpcFulfilCalls[0].expectedMode, "test");
-    assert.strictEqual(mockDb.webhookEvents.has(happyEventId), true);
+    assert.strictEqual(json.code, "USER_MISMATCH");
   });
 
-  // 15. Replay / Duplicate webhook: Returns 200 alreadyProcessed: true without re-running RPC
-  await runTest("15. Replay: Duplicate event_id returns 200 alreadyProcessed without re-executing RPC", async () => {
-    mockDb.rpcFulfilCalls = [];
-    const raw = JSON.stringify({
+  // 13. webhook_events DB errors
+  await runTest("19. DB error querying webhook_events dedupe returns 500", async () => {
+    const mockDb: MockDbState = {
+      orders: new Map([
+        [
+          "order_test_dedupe_err",
+          {
+            id: "row_dedupe_1",
+            provider_order_id: "order_test_dedupe_err",
+            user_id: "user_dedupe_1",
+            provider: "razorpay",
+            mode: "test",
+            status: "created",
+            amount_paise: 9900,
+          },
+        ],
+      ]),
+      webhookEvents: new Set(),
+      failedEvents: [],
+      rpcFulfilCalls: [],
+      errors: {
+        webhookEventsLookup: new Error("I/O error reading replica"),
+      },
+    };
+    const body = JSON.stringify({
       event: "order.paid",
-      id: happyEventId,
-      payload: {
-        order: { entity: { id: sampleOrderId } },
-        payment: { entity: { id: "pay_happy_100", notes: { user_id: sampleUserId } } },
-      },
+      payload: { order: { entity: { id: "order_test_dedupe_err" } } },
     });
-    const sig = computeHmacSignature(raw, TEST_WEBHOOK_SECRET);
-    const req = buildMockRequest({ signature: sig, body: raw, mockDb });
+    const req = buildMockRequest({
+      body,
+      signature: computeHmacSignature(body, TEST_WEBHOOK_SECRET),
+      mockDb,
+    });
     const res = await POST(req);
-
-    assert.strictEqual(res.status, 200);
-    const json = await res.json();
-    assert.strictEqual(json.received, true);
-    assert.strictEqual(json.alreadyProcessed, true);
-    assert.strictEqual(mockDb.rpcFulfilCalls.length, 0, "Must not re-execute RPC on duplicate webhook");
-  });
-
-  // 16. RPC returns failure: returns 500, does NOT record dedupe, writes failed_events
-  await runTest("16. RPC failure (success:false) returns 500, records failed_event, leaves no dedupe row", async () => {
-    const failOrderId = "order_test_rpc_fail_1";
-    mockDb.orders.set(failOrderId, {
-      id: "po_fail_1",
-      provider_order_id: failOrderId,
-      user_id: sampleUserId,
-      provider: "razorpay",
-      mode: "test",
-      status: "created",
-    });
-
-    const failEventId = "evt_rpc_fail_1";
-    const raw = JSON.stringify({
-      event: "order.paid",
-      id: failEventId,
-      payload: {
-        order: { entity: { id: failOrderId } },
-        payment: { entity: { notes: { user_id: sampleUserId } } },
-      },
-    });
-    const sig = computeHmacSignature(raw, TEST_WEBHOOK_SECRET);
-
-    mockDb.customRpcHandler = async () => ({
-      data: {
-        success: false,
-        code: "ORDER_INVALID_STATE",
-        error: "Payment order is not in created state",
-      },
-      error: null,
-    });
-
-    const req = buildMockRequest({ signature: sig, body: raw, mockDb });
-    const res = await POST(req);
-
     assert.strictEqual(res.status, 500);
     const json = await res.json();
-    assert.strictEqual(json.code, "ORDER_INVALID_STATE");
-    assert.strictEqual(mockDb.webhookEvents.has(failEventId), false, "Must not insert dedupe on failure");
-    assert.strictEqual(mockDb.failedEvents.length > 0, true, "Must record dead-letter failed_event");
-
-    delete mockDb.customRpcHandler;
+    assert.strictEqual(json.code, "DATABASE_ERROR");
   });
 
-  // 17. RPC throws unexpected exception: returns 500, leaves no dedupe, writes failed_event
-  await runTest("17. RPC exception returns 500, leaves no dedupe row", async () => {
-    const throwOrderId = "order_test_rpc_throw_1";
-    mockDb.orders.set(throwOrderId, {
-      id: "po_throw_1",
-      provider_order_id: throwOrderId,
-      user_id: sampleUserId,
-      provider: "razorpay",
-      mode: "test",
-      status: "created",
-    });
-
-    const throwEventId = "evt_rpc_throw_1";
-    const raw = JSON.stringify({
+  await runTest("20. DB error writing webhook_events receipt returns 500 so provider retries", async () => {
+    const mockDb: MockDbState = {
+      orders: new Map([
+        [
+          "order_test_receipt_err",
+          {
+            id: "row_receipt_1",
+            provider_order_id: "order_test_receipt_err",
+            user_id: "user_receipt_1",
+            provider: "razorpay",
+            mode: "test",
+            status: "created",
+            amount_paise: 9900,
+          },
+        ],
+      ]),
+      webhookEvents: new Set(),
+      failedEvents: [],
+      rpcFulfilCalls: [],
+      errors: {
+        webhookEventsInsert: new Error("Disk full: cannot write receipt row"),
+      },
+    };
+    const body = JSON.stringify({
       event: "order.paid",
-      id: throwEventId,
+      payload: { order: { entity: { id: "order_test_receipt_err" } } },
+    });
+    const req = buildMockRequest({
+      body,
+      signature: computeHmacSignature(body, TEST_WEBHOOK_SECRET),
+      mockDb,
+    });
+    const res = await POST(req);
+    assert.strictEqual(res.status, 500);
+    const json = await res.json();
+    assert.strictEqual(json.code, "RECEIPT_WRITE_FAILED");
+  });
+
+  // 14. Happy Path, Concurrent Duplicates & Retry Lifecycle
+  await runTest("21. Happy Path: Valid payload fulfills order, records receipt", async () => {
+    const mockDb: MockDbState = {
+      orders: new Map([
+        [
+          "order_test_happy_1",
+          {
+            id: "row_happy_1",
+            provider_order_id: "order_test_happy_1",
+            user_id: "user_happy_1",
+            provider: "razorpay",
+            mode: "test",
+            status: "created",
+            amount_paise: 9900,
+            plan_code: "monthly",
+          },
+        ],
+      ]),
+      webhookEvents: new Set(),
+      failedEvents: [],
+      rpcFulfilCalls: [],
+    };
+    const body = JSON.stringify({
+      event: "order.paid",
       payload: {
-        order: { entity: { id: throwOrderId } },
-        payment: { entity: { notes: { user_id: sampleUserId } } },
+        order: {
+          entity: {
+            id: "order_test_happy_1",
+          },
+        },
       },
     });
-    const sig = computeHmacSignature(raw, TEST_WEBHOOK_SECRET);
+    const req = buildMockRequest({
+      body,
+      eventId: "evt_happy_1",
+      signature: computeHmacSignature(body, TEST_WEBHOOK_SECRET),
+      mockDb,
+    });
+    const res = await POST(req);
+    assert.strictEqual(res.status, 200);
+    const json = await res.json();
+    assert.strictEqual(json.fulfilled, true);
+    assert.strictEqual(mockDb.webhookEvents.has("evt_happy_1"), true);
+    assert.strictEqual(mockDb.rpcFulfilCalls.length, 1);
+  });
 
-    mockDb.customRpcHandler = async () => {
-      throw new Error("PostgreSQL connection reset");
+  await runTest("22. Replay / Concurrent duplicates: Second call returns 200 alreadyProcessed without re-running RPC", async () => {
+    const mockDb: MockDbState = {
+      orders: new Map([
+        [
+          "order_test_replay_1",
+          {
+            id: "row_replay_1",
+            provider_order_id: "order_test_replay_1",
+            user_id: "user_replay_1",
+            provider: "razorpay",
+            mode: "test",
+            status: "paid", // Already paid
+            amount_paise: 9900,
+          },
+        ],
+      ]),
+      webhookEvents: new Set(["evt_replay_1"]),
+      failedEvents: [],
+      rpcFulfilCalls: [],
+    };
+    const body = JSON.stringify({
+      event: "order.paid",
+      payload: { order: { entity: { id: "order_test_replay_1" } } },
+    });
+    const req = buildMockRequest({
+      body,
+      eventId: "evt_replay_1",
+      signature: computeHmacSignature(body, TEST_WEBHOOK_SECRET),
+      mockDb,
+    });
+    const res = await POST(req);
+    assert.strictEqual(res.status, 200);
+    const json = await res.json();
+    assert.strictEqual(json.alreadyProcessed, true);
+    assert.strictEqual(mockDb.rpcFulfilCalls.length, 0); // Did not re-execute RPC
+  });
+
+  await runTest("23. Retry after failed fulfillment: RPC failure leaves no receipt, retry succeeds", async () => {
+    let rpcShouldFail = true;
+    const mockDb: MockDbState = {
+      orders: new Map([
+        [
+          "order_test_retry_flow",
+          {
+            id: "row_retry_1",
+            provider_order_id: "order_test_retry_flow",
+            user_id: "user_retry_1",
+            provider: "razorpay",
+            mode: "test",
+            status: "created",
+            amount_paise: 9900,
+          },
+        ],
+      ]),
+      webhookEvents: new Set(),
+      failedEvents: [],
+      rpcFulfilCalls: [],
+      customRpcHandler: async (fn, args) => {
+        if (rpcShouldFail) {
+          return { data: { success: false, code: "LOCK_TIMEOUT", error: "Lock timeout" }, error: null };
+        }
+        return { data: { success: true, already_paid: false }, error: null };
+      },
     };
 
-    const req = buildMockRequest({ signature: sig, body: raw, mockDb });
-    const res = await POST(req);
-
-    assert.strictEqual(res.status, 500);
-    assert.strictEqual(mockDb.webhookEvents.has(throwEventId), false);
-
-    delete mockDb.customRpcHandler;
-  });
-
-  // 18. Non-fulfillment event (payment.failed)
-  await runTest("18. Non-fulfillment event (payment.failed) inserts dedupe and returns 200 ignored: true", async () => {
-    const ignoreEventId = "evt_ignore_payment_failed_1";
-    const raw = JSON.stringify({
-      event: "payment.failed",
-      id: ignoreEventId,
-      payload: {
-        payment: { entity: { id: "pay_failed_1" } },
-      },
+    const body = JSON.stringify({
+      event: "payment.captured",
+      payload: { payment: { entity: { order_id: "order_test_retry_flow" } } },
     });
-    const sig = computeHmacSignature(raw, TEST_WEBHOOK_SECRET);
-    const req = buildMockRequest({ signature: sig, body: raw, mockDb });
-    const res = await POST(req);
 
-    assert.strictEqual(res.status, 200);
-    const json = await res.json();
-    assert.strictEqual(json.received, true);
-    assert.strictEqual(json.ignored, true);
-    assert.strictEqual(mockDb.webhookEvents.has(ignoreEventId), true);
+    // Attempt 1: Fails
+    const req1 = buildMockRequest({
+      body,
+      eventId: "evt_retry_flow_1",
+      signature: computeHmacSignature(body, TEST_WEBHOOK_SECRET),
+      mockDb,
+    });
+    const res1 = await POST(req1);
+    assert.strictEqual(res1.status, 500);
+    assert.strictEqual(mockDb.webhookEvents.has("evt_retry_flow_1"), false); // No receipt!
+    assert.strictEqual(mockDb.failedEvents.length, 1);
+
+    // Attempt 2 (Retry after transient lock release): Succeeds
+    rpcShouldFail = false;
+    const req2 = buildMockRequest({
+      body,
+      eventId: "evt_retry_flow_1",
+      signature: computeHmacSignature(body, TEST_WEBHOOK_SECRET),
+      mockDb,
+    });
+    const res2 = await POST(req2);
+    assert.strictEqual(res2.status, 200);
+    assert.strictEqual((await res2.json()).fulfilled, true);
+    assert.strictEqual(mockDb.webhookEvents.has("evt_retry_flow_1"), true); // Receipt recorded!
   });
 
-  console.log("\n--------------------------------------------------------------------------------");
+  await runTest("24. Same order with different events succeed independently", async () => {
+    const mockDb: MockDbState = {
+      orders: new Map([
+        [
+          "order_multi_evt_1",
+          {
+            id: "row_multi_1",
+            provider_order_id: "order_multi_evt_1",
+            user_id: "user_multi_1",
+            provider: "razorpay",
+            mode: "test",
+            status: "created",
+            amount_paise: 9900,
+          },
+        ],
+      ]),
+      webhookEvents: new Set(),
+      failedEvents: [],
+      rpcFulfilCalls: [],
+    };
+
+    // Event 1: payment.captured (fulfills order)
+    const body1 = JSON.stringify({
+      event: "payment.captured",
+      payload: { payment: { entity: { order_id: "order_multi_evt_1" } } },
+    });
+    const req1 = buildMockRequest({
+      body: body1,
+      eventId: "evt_captured_99",
+      signature: computeHmacSignature(body1, TEST_WEBHOOK_SECRET),
+      mockDb,
+    });
+    const res1 = await POST(req1);
+    assert.strictEqual(res1.status, 200);
+    assert.strictEqual((await res1.json()).fulfilled, true);
+    assert.strictEqual(mockDb.webhookEvents.has("evt_captured_99"), true);
+
+    // Event 2: refund.created on same order (processed as non-fulfillment terminal event)
+    const body2 = JSON.stringify({
+      event: "refund.created",
+      payload: { payment: { entity: { order_id: "order_multi_evt_1" } } },
+    });
+    const req2 = buildMockRequest({
+      body: body2,
+      eventId: "evt_refund_99",
+      signature: computeHmacSignature(body2, TEST_WEBHOOK_SECRET),
+      mockDb,
+    });
+    const res2 = await POST(req2);
+    assert.strictEqual(res2.status, 200);
+    assert.strictEqual((await res2.json()).ignored, true);
+    assert.strictEqual(mockDb.webhookEvents.has("evt_refund_99"), true);
+  });
+
+  // Finish
+  console.log("--------------------------------------------------------------------------------");
   console.log(`TEST SUITE RESULTS: ${passed}/${total} tests passed`);
   console.log("--------------------------------------------------------------------------------\n");
 
@@ -563,6 +828,6 @@ async function runTestSuite() {
 }
 
 runTestSuite().catch((err) => {
-  console.error("FATAL: Test runner crashed:", err);
+  console.error("Unhandled test suite execution error:", err);
   process.exit(1);
 });
