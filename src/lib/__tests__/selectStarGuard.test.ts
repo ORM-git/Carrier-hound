@@ -28,8 +28,6 @@ const ALLOWLIST = new Set([
   "src/lib/account/exportHandler.ts:161",
   "src/lib/account/exportHandler.ts:175",
   "src/lib/account/deleteHandler.ts:283",
-  "src/app/api/billing/razorpay/verify/route.ts:332",
-  "src/app/api/billing/razorpay/verify/route.ts:348",
   "src/lib/resume/storage.ts:155",
   "src/lib/tracker/storage.ts:133",
   "src/lib/cron/dailyDigestCron.ts:121",
