@@ -14,15 +14,12 @@ const log = createLogger({ context: { module: "middleware" } });
  */
 export const PROTECTED_ROUTES: readonly string[] = [
   "/dashboard",
-  "/jobs",
   "/resume",
   "/tracker",
   "/profile",
   "/radar",
   "/settings",
   "/applications",
-  "/job-search",
-  "/job-detail",
   "/onboarding",
 ];
 
@@ -31,6 +28,9 @@ export const PROTECTED_ROUTES: readonly string[] = [
  */
 export const PUBLIC_ROUTES: readonly string[] = [
   "/",
+  "/jobs",
+  "/job-search",
+  "/job-detail",
   "/remote",
   "/worldwide",
   "/login",

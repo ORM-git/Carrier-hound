@@ -198,6 +198,26 @@ async function main() {
   console.log("  [PASS-LOCAL] src/lib/early-access/gmail.ts preserved for dependent services.");
 
   // ---------------------------------------------------------------------------
+  // TEST 6b: Verifying guest requests to /jobs are not redirected
+  // ---------------------------------------------------------------------------
+  console.log("\nTest 6b: Verifying guest requests to /jobs are not redirected...");
+  for (const jobsPath of ["/jobs", "/jobs?location=Remote", "/jobs/"]) {
+    const jobsReq = new NextRequest(`http://localhost:3000${jobsPath}`);
+    const jobsRes = await middleware(jobsReq);
+    assert.strictEqual(
+      jobsRes.status,
+      200,
+      `Guest request to '${jobsPath}' must not be redirected (expected 200, got ${jobsRes.status})`
+    );
+    assert.strictEqual(
+      jobsRes.headers.get("location"),
+      null,
+      `Guest request to '${jobsPath}' must not have a Location redirect header`
+    );
+  }
+  console.log("  [PASS-LOCAL] Guest requests to /jobs proceed without redirection to /login or /early-access.");
+
+  // ---------------------------------------------------------------------------
   // TEST 7: Subprocess Negative Control Execution
   // ---------------------------------------------------------------------------
   console.log("\n--- TEST 7: SUBPROCESS NEGATIVE CONTROL EXECUTION ---");

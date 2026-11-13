@@ -3,7 +3,6 @@ import { createClient } from "@supabase/supabase-js";
 import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
 import { verifyUserNotBanned } from "@/lib/admin/auth";
 import { checkRequiredEnv } from "@/lib/api/envCheck";
-import { isUserApproved } from "@/lib/auth/approval";
 import type { InterviewPackData } from "@/data/interviewPackFixture";
 
 import { createLogger } from "@/lib/observability/logger";
@@ -102,18 +101,6 @@ export async function handleInterviewPackRequest(
       );
     }
 
-    // Invite-only early-access approval check
-    const isApproved = await isUserApproved(supabaseAdmin, user);
-    if (!isApproved) {
-      return NextResponse.json(
-        {
-          error: "Early access only",
-          message: "Invite-only access: your account is pending approval.",
-          isPro: false,
-        },
-        { status: 403 }
-      );
-    }
 
     // Ban check (fails closed on lookup error)
     const banCheck = await verifyUserNotBanned(supabaseAdmin, user.id, user.user_metadata);

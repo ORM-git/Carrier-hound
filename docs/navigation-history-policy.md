@@ -22,7 +22,7 @@ This document establishes the canonical browser history policy (`push` vs `repla
 
 Audit baseline: `origin/main` (`539c1c8b`). Sites corrected in this PR: **0** (all audited sites in non-open-PR files conform to the policy; five `router.push("/")` sign-out/account-deletion sites reside in files owned by open PRs and are documented as deferred follow-ups).
 
-### 2A. `router.replace(` Sites (23 sites across 17 files)
+### 2A. `router.replace(` Sites (22 sites across 17 files)
 
 | File | Line | Trigger / Context | Current Method | Policy Method | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -37,7 +37,6 @@ Audit baseline: `origin/main` (`539c1c8b`). Sites corrected in this PR: **0** (a
 | `src/app/jobs/[id]/skill-what-if/SkillWhatIfClient.tsx` | 38 | Disabled feature-flag mount guard to `/dashboard` | `router.replace("/dashboard")` | `replace` | Compliant |
 | `src/app/jobs/[id]/skill-what-if/SkillWhatIfClient.tsx` | 45 | Unauthenticated mount guard to `/login` | ``router.replace(`/login?returnTo=/jobs/${jobId}/skill-what-if`)`` | `replace` | Compliant |
 | `src/app/jobs/page.tsx` | 598 | Filter/search/tab/sort URL query param sync (`useEffect`) | `router.replace(newUrl, { scroll: false })` | `replace` | Compliant |
-| `src/app/jobs/page.tsx` | 812 | Unauthenticated mount guard on `/jobs` | ``router.replace(`/login?returnTo=${encodeURIComponent(returnPath)}`)`` | `replace` | Compliant |
 | `src/app/jobs/page.tsx` | 1312 | Reset all filters clearing query params in place | `router.replace(newUrl, { scroll: false })` | `replace` | Compliant |
 | `src/app/login/page.tsx` | 75 | Already-authenticated auto-redirect off `/login` | `router.replace(next)` | `replace` | Compliant |
 | `src/app/onboarding/page.tsx` | 141 | Unauthenticated mount guard on `/onboarding` | ``router.replace(`/login?returnTo=${encodeURIComponent(returnUrl)}`)`` | `replace` | Compliant |

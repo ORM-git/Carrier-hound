@@ -723,9 +723,9 @@ describe("uniform error shape guard (Backend sheet rank 72)", () => {
       allUnverified.push(...res.unverified);
     });
 
-    // 120+ direct literals following retirement of /api/early-access.
+    // 115+ direct literals following retirement of /api/early-access and invite-only gates.
     // At least 90 are fully statically verified (static string error + ok: false where present).
-    expect(totalHits).toBeGreaterThanOrEqual(120);
+    expect(totalHits).toBeGreaterThanOrEqual(115);
     expect(totalVerified).toBeGreaterThanOrEqual(90);
 
     // Unresolved dynamic/helper/spread forms are surfaced as unverified, never claimed in verified.

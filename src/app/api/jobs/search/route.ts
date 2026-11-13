@@ -9,7 +9,6 @@ import { getCountryFilterClause } from "@/lib/countries";
 import { decodeCursor, encodeCursor } from "@/lib/pagination/cursor";
 import { capJobsPerCompany } from "@/lib/jobs/capping";
 import { normalizeUserCountries, applyEligibilityFilter, isJobEligible } from "@/lib/jobs/eligibility";
-import { isUserApproved } from "@/lib/auth/approval";
 
 import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
 import { withRouteSpan } from "@/lib/monitoring/tracing";
@@ -145,18 +144,6 @@ async function getHandler(req: Request) {
       try {
         const { data: { user } } = await supabaseAdmin.auth.getUser(token);
         if (user) {
-          const isApproved = await isUserApproved(supabaseAdmin, user);
-          if (!isApproved) {
-            return NextResponse.json(
-              {
-                error: "Early access only",
-                message: "Invite-only access: your account is pending approval.",
-                jobs: [],
-                total: 0,
-              },
-              { status: 403 }
-            );
-          }
           userId = user.id;
           const entitlement = await getServerEntitlement(user.id);
           isPro = Boolean(entitlement.isPro);

@@ -45,13 +45,11 @@ async function runAuthGuardSuite() {
 
   const protectedTestCases = [
     { path: "/dashboard", expectedReturnTo: "/dashboard" },
-    { path: "/jobs", expectedReturnTo: "/jobs" },
     { path: "/resume", expectedReturnTo: "/resume" },
     { path: "/tracker", expectedReturnTo: "/tracker" },
     { path: "/profile", expectedReturnTo: "/profile" },
     { path: "/radar", expectedReturnTo: "/radar" },
     { path: "/settings", expectedReturnTo: "/settings" },
-    { path: "/jobs?location=Remote&level=Senior", expectedReturnTo: "/jobs?location=Remote&level=Senior" },
     { path: "/tracker?stage=saved", expectedReturnTo: "/tracker?stage=saved" },
   ];
 
@@ -102,6 +100,10 @@ async function runAuthGuardSuite() {
 
   const publicTestCases = [
     "/",
+    "/jobs",
+    "/jobs?location=Remote&level=Senior",
+    "/job-search",
+    "/job-detail",
     "/remote",
     "/remote/jobs/engineering",
     "/remote/hidden-job-market-guide",

@@ -806,18 +806,11 @@ function JobsPageInner() {
         ]);
         if (cancelled) return;
 
-        if (!u) {
-          const currentSearch = typeof window !== "undefined" ? window.location.search : "";
-          const returnPath = `/jobs${currentSearch}`;
-          router.replace(`/login?returnTo=${encodeURIComponent(returnPath)}`);
-          return;
-        }
-
-        const apps = await getTrackedApplications(u.id);
+        const apps = u ? await getTrackedApplications(u.id) : [];
 
         setUser(u);
-        setIsPro(proRes.isPro);
-        setIsProDefinitive(Boolean(proRes.isDefinitive));
+        setIsPro(Boolean(proRes?.isPro));
+        setIsProDefinitive(Boolean(proRes?.isDefinitive));
         setCandidate(cp && cp.confirmedAt ? cp : null);
         setTrackedApplications(apps);
         const savedApps = apps.filter((a) => a.stage === "saved");

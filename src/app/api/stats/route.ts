@@ -8,7 +8,6 @@ import {
   STATS_RATE_LIMIT,
   statsRateLimitStore,
 } from "@/lib/api/sharedRateLimit";
-import { isUserApproved } from "@/lib/auth/approval";
 import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
 import { withRouteSpan } from "@/lib/monitoring/tracing";
 import { computeWeakEtag, notModifiedResponse } from "@/lib/api/etag";
@@ -93,7 +92,6 @@ async function getHandler(req: Request) {
     const authHeader = req?.headers?.get("authorization") || req?.headers?.get("Authorization");
 
     let isAuthenticated = false;
-    let isApproved = false;
 
     if (authHeader && authHeader.startsWith("Bearer ")) {
       const token = authHeader.replace("Bearer ", "").trim();
@@ -105,22 +103,6 @@ async function getHandler(req: Request) {
 
         if (user && !userErr) {
           isAuthenticated = true;
-          isApproved = await isUserApproved(supabase, user);
-          if (!isApproved) {
-            return NextResponse.json(
-              {
-                error: "Early access only",
-                message: "Invite-only access: your account is pending approval.",
-              },
-              {
-                status: 403,
-                headers: {
-                  "Cache-Control": "no-store",
-                  Vary: "Authorization",
-                },
-              }
-            );
-          }
         }
       } catch (authErr) {
         log.warn("Token verification error", { error: String(authErr) });
@@ -150,10 +132,10 @@ async function getHandler(req: Request) {
       );
     }
 
-    // Anonymous or unapproved: return ONLY fields the public UI needs
+    // Anonymous: return ONLY fields the public UI needs
     // (jobsToday, updatedAt). Strictly DO NOT expose totalJobs, companiesScanned,
     // activeJobs, or companies (zero aggregate job counts).
-    if (!isAuthenticated || !isApproved) {
+    if (!isAuthenticated) {
       // Identical body for every anonymous caller: safe for weak ETag / 304.
       const publicStats = {
         jobsToday: recentJobs ?? 0,

@@ -115,6 +115,16 @@ global.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
     }
+    if (authHeader.includes("Bearer mock-token-pro-unapproved")) {
+      return new Response(
+        JSON.stringify({
+          id: "00000000-0000-4000-a000-000000000031",
+          email: "pro-unapproved@example.com",
+          user_metadata: {},
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    }
     return new Response(
       JSON.stringify({ message: "Invalid or expired JWT token" }),
       { status: 401, headers: { "Content-Type": "application/json" } }
@@ -145,12 +155,15 @@ global.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
 
   // 4. Supabase DB: subscriptions
   if (urlStr.includes("/rest/v1/subscriptions")) {
-    if (urlStr.includes("00000000-0000-4000-a000-000000000030")) {
+    if (urlStr.includes("00000000-0000-4000-a000-000000000030") || urlStr.includes("00000000-0000-4000-a000-000000000031")) {
+      const targetUserId = urlStr.includes("00000000-0000-4000-a000-000000000030")
+        ? "00000000-0000-4000-a000-000000000030"
+        : "00000000-0000-4000-a000-000000000031";
       return new Response(
         JSON.stringify([
           {
             id: "sub-pro-001",
-            user_id: "00000000-0000-4000-a000-000000000030",
+            user_id: targetUserId,
             status: "active",
             plan_id: "weekly_plan_9",
             current_period_start: "2026-01-01T00:00:00Z",
@@ -283,34 +296,34 @@ async function runTests() {
   console.log("  [PASS] Anonymous stats returns ONLY jobsToday & updatedAt; 0 aggregate counts exposed");
 
   // ---------------------------------------------------------------------------
-  // TEST 2: Authenticated Unapproved User on /api/stats -> 403 Forbidden
+  // TEST 2: Authenticated New Signed-in User on /api/stats -> 200 OK
   // ---------------------------------------------------------------------------
-  console.log("\n[TEST 2] Verifying authenticated unapproved user receives 403 on stats...");
+  console.log("\n[TEST 2] Verifying authenticated new signed-in user receives 200 on stats (not 403)...");
   _clearApprovalCacheForTesting();
 
-  // 2a. Netlify handler with unapproved token
+  // 2a. Netlify handler with new signed-in token
   const netlifyUnapprovedStats = await netlifyStatsHandler({
     httpMethod: "GET",
     headers: {
       Authorization: "Bearer mock-token-unapproved",
     },
   });
-  assert.strictEqual(netlifyUnapprovedStats.statusCode, 403, "Unapproved user must get 403 on Netlify stats");
+  assert.strictEqual(netlifyUnapprovedStats.statusCode, 200, "New signed-in user must get 200 on Netlify stats");
   const netlifyUnapprovedBody = JSON.parse(netlifyUnapprovedStats.body);
-  assert.ok(netlifyUnapprovedBody.error.includes("Early access only"), "Must explain early access error");
-  assert.strictEqual(netlifyUnapprovedBody.jobsToday, undefined, "Must not leak jobsToday on 403");
+  assert.strictEqual(typeof netlifyUnapprovedBody.jobsToday, "number");
+  assert.ok(!netlifyUnapprovedBody.error, "Must not return early access error");
 
-  // 2b. Next.js route with unapproved token
+  // 2b. Next.js route with new signed-in token
   const nextUnapprovedStats = await nextStatsGet(
     new Request("https://careermonke.com/api/stats", {
       headers: { Authorization: "Bearer mock-token-unapproved" },
     })
   );
-  assert.strictEqual(nextUnapprovedStats.status, 403, "Unapproved user must get 403 on Next.js stats");
+  assert.strictEqual(nextUnapprovedStats.status, 200, "New signed-in user must get 200 on Next.js stats");
   const nextUnapprovedBody = await nextUnapprovedStats.json();
-  assert.ok(nextUnapprovedBody.error.includes("Early access only"));
+  assert.ok(!nextUnapprovedBody.error);
 
-  console.log("  [PASS] Authenticated unapproved user gets 403 on stats endpoint");
+  console.log("  [PASS] Authenticated new signed-in user gets 200 on stats endpoint (early-access gate removed)");
 
   // ---------------------------------------------------------------------------
   // TEST 3: Authenticated Approved User on /api/stats -> 200 with full corpus metrics
@@ -358,26 +371,27 @@ async function runTests() {
   });
   assert.strictEqual(netlifyAnonSearch.statusCode, 200);
 
-  // 4b. Authenticated unapproved user receives 403 and empty jobs
+  // 4b. Authenticated new signed-in user receives 200 and jobs on Netlify (not 403)
   const netlifyUnapprovedSearch = await netlifyJobsSearchHandler({
     httpMethod: "GET",
     queryStringParameters: { q: "platform" },
     headers: { Authorization: "Bearer mock-token-unapproved" },
   });
-  assert.strictEqual(netlifyUnapprovedSearch.statusCode, 403, "Unapproved search must return 403");
+  assert.strictEqual(netlifyUnapprovedSearch.statusCode, 200, "New signed-in user search must return 200");
   const unapprovedSearchBody = JSON.parse(netlifyUnapprovedSearch.body);
-  assert.deepStrictEqual(unapprovedSearchBody.jobs, [], "Must return empty jobs array");
-  assert.ok(unapprovedSearchBody.error.includes("Early access only"));
+  assert.ok(Array.isArray(unapprovedSearchBody.jobs), "Must return jobs array");
+  assert.ok(!unapprovedSearchBody.error, "Must not return early access error");
 
-  // 4c. Next.js search unapproved
+  // 4c. Next.js search new signed-in user receives 200 (not 403)
   const nextUnapprovedSearch = await nextJobsSearchGet(
     new Request("https://careermonke.com/api/jobs/search?q=platform", {
       headers: { Authorization: "Bearer mock-token-unapproved" },
     })
   );
-  assert.strictEqual(nextUnapprovedSearch.status, 403);
+  assert.strictEqual(nextUnapprovedSearch.status, 200, "Next.js search must return 200 for new signed-in user");
   const nextUnapprovedSearchBody = await nextUnapprovedSearch.json();
-  assert.deepStrictEqual(nextUnapprovedSearchBody.jobs, []);
+  assert.ok(Array.isArray(nextUnapprovedSearchBody.jobs));
+  assert.ok(!nextUnapprovedSearchBody.error);
 
   // 4d. Authenticated approved user receives 200 with jobs
   const netlifyApprovedSearch = await netlifyJobsSearchHandler({
@@ -389,7 +403,7 @@ async function runTests() {
   const approvedSearchBody = JSON.parse(netlifyApprovedSearch.body);
   assert.ok(Array.isArray(approvedSearchBody.jobs), "Must return jobs array for approved user");
 
-  console.log("  [PASS] Jobs search properly gates unapproved authenticated users with 403 & 0 jobs");
+  console.log("  [PASS] Jobs search does not block new signed-in users with 403");
 
   // ---------------------------------------------------------------------------
   // TEST 5: Invite-Only Gate on Jobs Pro & Top10 Endpoints
@@ -410,20 +424,24 @@ async function runTests() {
   );
   assert.strictEqual(nextAnonPro.status, 401);
 
-  // 5b. Pro Endpoint Unapproved Authenticated -> 403
+  // 5b. Pro Endpoint New Signed-in User without subscription -> 403 Pro subscription required (NOT Early access only!)
   const netlifyUnapprovedPro = await netlifyJobsProHandler({
     httpMethod: "GET",
     queryStringParameters: { id: "job-001" },
     headers: { Authorization: "Bearer mock-token-unapproved" },
   });
-  assert.strictEqual(netlifyUnapprovedPro.statusCode, 403);
+  const netlifyProBody = JSON.parse(netlifyUnapprovedPro.body);
+  assert.ok(!String(netlifyProBody.error || "").includes("Early access only"), "Must not block on Early access only");
+  assert.strictEqual(netlifyProBody.error, "Pro subscription required to access full job details.", "Paid subscription gate preserved");
 
   const nextUnapprovedPro = await nextJobsProGet(
     new Request("https://careermonke.com/api/jobs/pro?id=job-001", {
       headers: { Authorization: "Bearer mock-token-unapproved" },
     })
   );
-  assert.strictEqual(nextUnapprovedPro.status, 403);
+  const nextProBody = await nextUnapprovedPro.json();
+  assert.ok(!String(nextProBody.error || "").includes("Early access only"), "Must not block on Early access only");
+  assert.strictEqual(nextProBody.error, "Pro subscription required to access full job details.", "Paid subscription gate preserved");
 
   // 5c. Top10 Endpoint Anonymous -> 401
   const netlifyAnonTop10 = await netlifyJobsTop10Handler({
@@ -442,15 +460,16 @@ async function runTests() {
   );
   assert.strictEqual(nextAnonTop10.status, 401);
 
-  // 5d. Top10 Endpoint Unapproved Authenticated -> 403
+  // 5d. Top10 Endpoint Unpaid New User -> 403 PRO_REQUIRED (NOT Early access only!)
   const netlifyUnapprovedTop10 = await netlifyJobsTop10Handler({
     httpMethod: "POST",
     headers: { Authorization: "Bearer mock-token-unapproved" },
     body: JSON.stringify({}),
   });
-  assert.strictEqual(netlifyUnapprovedTop10.statusCode, 403);
+  assert.strictEqual(netlifyUnapprovedTop10.statusCode, 403, "Unpaid user hits paid gate");
   const unapprovedTop10Body = JSON.parse(netlifyUnapprovedTop10.body);
-  assert.deepStrictEqual(unapprovedTop10Body.jobs, []);
+  assert.ok(!String(unapprovedTop10Body.error || "").includes("Early access only"), "Must not return Early access only");
+  assert.strictEqual(unapprovedTop10Body.code, "PRO_REQUIRED", "Paid subscription gate preserved on top10");
 
   const nextUnapprovedTop10 = await nextJobsTop10Post(
     new Request("https://careermonke.com/api/jobs/top10", {
@@ -462,43 +481,228 @@ async function runTests() {
       body: JSON.stringify({}),
     })
   );
-  assert.strictEqual(nextUnapprovedTop10.status, 403);
+  assert.strictEqual(nextUnapprovedTop10.status, 403, "Unpaid user hits paid gate");
   const nextUnapprovedTop10Body = await nextUnapprovedTop10.json();
-  assert.deepStrictEqual(nextUnapprovedTop10Body.jobs, []);
+  assert.ok(!String(nextUnapprovedTop10Body.error || "").includes("Early access only"), "Must not return Early access only");
+  assert.strictEqual(nextUnapprovedTop10Body.code, "PRO_REQUIRED", "Paid subscription gate preserved on top10");
 
-  console.log("  [PASS] jobs-pro and jobs-top10 return 401 for anonymous and 403 for unapproved");
+  // 5e. Pro & Top10 Endpoints Paid New Signed-in User (NOT in early access) -> 200 (not blocked by early access!)
+  const candidatePayload = {
+    candidate: { name: "Test Candidate", skills: ["TypeScript", "Node.js"], experience: [] },
+  };
+
+  const netlifyProNewUserTop10 = await netlifyJobsTop10Handler({
+    httpMethod: "POST",
+    headers: { Authorization: "Bearer mock-token-pro-unapproved" },
+    body: JSON.stringify(candidatePayload),
+  });
+  assert.strictEqual(netlifyProNewUserTop10.statusCode, 200, "New signed-in paid user gets 200 on Netlify jobs-top10");
+
+  const nextProNewUserTop10 = await nextJobsTop10Post(
+    new Request("https://careermonke.com/api/jobs/top10", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer mock-token-pro-unapproved",
+      },
+      body: JSON.stringify(candidatePayload),
+    })
+  );
+  assert.strictEqual(nextProNewUserTop10.status, 200, "New signed-in paid user gets 200 on Next.js jobs-top10");
+
+  const netlifyProNewUserPro = await netlifyJobsProHandler({
+    httpMethod: "GET",
+    queryStringParameters: { id: "job-001" },
+    headers: { Authorization: "Bearer mock-token-pro-unapproved" },
+  });
+  assert.strictEqual(netlifyProNewUserPro.statusCode, 200, "New signed-in paid user gets 200 on Netlify jobs-pro");
+
+  const nextProNewUserPro = await nextJobsProGet(
+    new Request("https://careermonke.com/api/jobs/pro?id=job-001", {
+      headers: { Authorization: "Bearer mock-token-pro-unapproved" },
+    })
+  );
+  assert.strictEqual(nextProNewUserPro.status, 200, "New signed-in paid user gets 200 on Next.js jobs-pro");
+
+  console.log("  [PASS] jobs-pro and jobs-top10 enforce paid gating while completely removing early-access restrictions");
 
   // ---------------------------------------------------------------------------
-  // TEST 6: Authenticated Endpoints: Interview Pack, Skill What-If, Quota
+  // TEST 6: Authenticated Endpoints: Interview Pack, Skill What-If, Quota, Shared AI
   // ---------------------------------------------------------------------------
-  console.log("\n[TEST 6] Verifying interview pack, skill what-if, and quota endpoints...");
+  console.log("\n[TEST 6] Verifying interview pack, skill what-if, quota, and shared AI endpoints do not block new signed-in user...");
   _clearApprovalCacheForTesting();
 
-  // 6a. Interview pack: unapproved -> 403
+  // 6a. Interview pack: new signed-in user without subscription gets PRO_REQUIRED, not Early access only
   const unapprovedInterview = await handleInterviewPackRequest(
     new Request("https://careermonke.com/api/jobs/interview-pack?jobId=job-001", {
       headers: { Authorization: "Bearer mock-token-unapproved" },
-    })
+    }),
+    { jobId: "job-001" }
   );
-  assert.strictEqual(unapprovedInterview.status, 403);
+  assert.strictEqual(unapprovedInterview.status, 403, "Unpaid user hits pro gate");
+  const interviewBody = await unapprovedInterview.json().catch(() => ({}));
+  assert.ok(!String(interviewBody.error || "").includes("Early access only"), "Must not return Early access only");
+  assert.strictEqual(interviewBody.code, "PRO_REQUIRED", "Pro subscription gate preserved");
 
-  // 6b. Skill What-If: unapproved -> 403
+  // Paid new user (not in early access) gets 200 on interview pack
+  const proNewInterview = await handleInterviewPackRequest(
+    new Request("https://careermonke.com/api/jobs/interview-pack?jobId=job-001", {
+      headers: { Authorization: "Bearer mock-token-pro-unapproved" },
+    }),
+    {
+      jobId: "job-001",
+      generateInterviewPack: async () => ({
+        jobId: "job-001",
+        jobTitle: "Software Engineer",
+        companyName: "Acme Corp",
+        cards: [{ question: "Tell me about yourself", category: "intro", answer: "Sample answer" }],
+      }),
+    } as any
+  );
+  assert.strictEqual(proNewInterview.status, 200, "Paid new user gets 200 on interview pack");
+
+  // 6b. Skill What-If: new signed-in user without subscription gets PRO_REQUIRED, not Early access only
   const unapprovedSkill = await handleSkillWhatIfRequest(
     new Request("https://careermonke.com/api/jobs/skill-what-if?jobId=job-001&skill=Rust", {
       headers: { Authorization: "Bearer mock-token-unapproved" },
-    })
+    }),
+    { jobId: "job-001", skill: "Rust" }
   );
-  assert.strictEqual(unapprovedSkill.status, 403);
+  assert.strictEqual(unapprovedSkill.status, 403, "Unpaid user hits pro gate");
+  const skillBody = await unapprovedSkill.json().catch(() => ({}));
+  assert.ok(!String(skillBody.error || "").includes("Early access only"), "Must not return Early access only");
+  assert.strictEqual(skillBody.code, "PRO_REQUIRED", "Pro subscription gate preserved");
 
-  // 6c. Me Quota: unapproved -> 403
+  // Paid new user (not in early access) gets 200 on skill what-if
+  const proNewSkill = await handleSkillWhatIfRequest(
+    new Request("https://careermonke.com/api/jobs/skill-what-if?jobId=job-001&skill=Rust", {
+      headers: { Authorization: "Bearer mock-token-pro-unapproved" },
+    }),
+    {
+      jobId: "job-001",
+      skill: "Rust",
+      generateSkillWhatIf: async () => ({
+        jobId: "job-001",
+        jobTitle: "Software Engineer",
+        companyName: "Acme Corp",
+        missingSkills: ["Rust"],
+        matchDelta: 10,
+        explanation: "Adding Rust increases match",
+      }),
+    } as any
+  );
+  assert.strictEqual(proNewSkill.status, 200, "Paid new user gets 200 on skill what-if");
+
+  // 6c. Me Quota: new signed-in user -> 200 (not 403 Early access only)
   const unapprovedQuota = await nextMeQuotaGet(
     new Request("https://careermonke.com/api/me/quota", {
       headers: { Authorization: "Bearer mock-token-unapproved" },
     })
   );
-  assert.strictEqual(unapprovedQuota.status, 403);
+  assert.strictEqual(unapprovedQuota.status, 200, "Me Quota must return 200 for new signed-in user");
+  const quotaBody = await unapprovedQuota.json().catch(() => ({}));
+  assert.ok(!String(quotaBody.error || "").includes("Early access only"));
 
-  console.log("  [PASS] Interview pack, skill what-if, and quota strictly reject unapproved users with 403");
+  // 6d. Shared AI service: new signed-in user -> does not return 403 Early access only
+  const { handleAiRequest, handleNetlifyAiRequest } = await import("../src/lib/ai/serviceHandler");
+  const aiDeps = {
+    checkSharedRateLimit: async () => ({ allowed: true, remaining: 10, resetMs: 1000 }),
+    consumeSet: async () => ({ allowed: true }),
+    providerAdapter: {
+      complete: async () => ({
+        text: JSON.stringify({ overview: "AI summary generated successfully" }),
+        tokenUsage: { totalTokens: 25 },
+      }),
+    } as any,
+  };
+
+  // 6d. Shared AI service: unpaid new signed-in user hits PRO_REQUIRED, not Early access only
+  const nextAiRes = await handleAiRequest(
+    new Request("https://careermonke.com/api/ai", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer mock-token-unapproved",
+      },
+      body: JSON.stringify({
+        operation: "cover_letter",
+        payload: {
+          candidate: { name: "Test Candidate", skills: ["TypeScript"] },
+          job: { title: "Software Engineer", description: "Need TypeScript engineer" },
+        },
+      }),
+    }),
+    aiDeps
+  );
+  assert.strictEqual(nextAiRes.status, 403, "Unpaid user hits pro gate on Next.js AI service");
+  const aiBody = await nextAiRes.json().catch(() => ({}));
+  assert.ok(!String(aiBody.error || "").includes("Early access only"), "Must not return Early access only");
+  assert.strictEqual(aiBody.code, "PRO_REQUIRED", "Pro subscription gate preserved on Next.js AI service");
+
+  const netlifyAiRes = await handleNetlifyAiRequest(
+    {
+      httpMethod: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: "Bearer mock-token-unapproved",
+      },
+      body: JSON.stringify({
+        operation: "cover_letter",
+        payload: {
+          candidate: { name: "Test Candidate", skills: ["TypeScript"] },
+          job: { title: "Software Engineer", description: "Need TypeScript engineer" },
+        },
+      }),
+    } as any,
+    aiDeps
+  );
+  assert.strictEqual(netlifyAiRes.statusCode, 403, "Unpaid user hits pro gate on Netlify AI service");
+  const netlifyAiBody = JSON.parse(netlifyAiRes.body || "{}");
+  assert.ok(!String(netlifyAiBody.error || "").includes("Early access only"), "Must not return Early access only");
+  assert.strictEqual(netlifyAiBody.code, "PRO_REQUIRED", "Pro subscription gate preserved on Netlify AI service");
+
+  // Paid new signed-in user (not in early access) gets 200 on Next.js and Netlify AI service
+  const proAiRes = await handleAiRequest(
+    new Request("https://careermonke.com/api/ai", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer mock-token-pro-unapproved",
+      },
+      body: JSON.stringify({
+        operation: "resume_extraction",
+        params: {
+          rawText: "Senior Software Engineer with TypeScript and React experience.",
+        },
+      }),
+    }),
+    aiDeps
+  );
+  assert.notStrictEqual(proAiRes.status, 403, "Paid new user is not blocked with 403 on Next.js AI service");
+  const proAiBody = await proAiRes.json().catch(() => ({}));
+  assert.ok(!String(proAiBody.error || "").includes("Early access only"), "Must not return Early access only");
+
+  const proNetlifyAiRes = await handleNetlifyAiRequest(
+    {
+      httpMethod: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: "Bearer mock-token-pro-unapproved",
+      },
+      body: JSON.stringify({
+        operation: "resume_extraction",
+        params: {
+          rawText: "Senior Software Engineer with TypeScript and React experience.",
+        },
+      }),
+    } as any,
+    aiDeps
+  );
+  assert.notStrictEqual(proNetlifyAiRes.statusCode, 403, "Paid new user is not blocked with 403 on Netlify AI service");
+  const proNetlifyBody = JSON.parse(proNetlifyAiRes.body || "{}");
+  assert.ok(!String(proNetlifyBody.error || "").includes("Early access only"), "Must not return Early access only");
+
+  console.log("  [PASS] Interview pack, skill what-if, quota, and AI endpoints do not block new signed-in users with Early access only");
 
   // ---------------------------------------------------------------------------
   // TEST 7: Client Service (src/lib/jobs/service.ts) Fallback Safety
@@ -541,6 +745,18 @@ async function runTests() {
   }
 
   console.log("  [PASS] Client service returns empty results on 403 without direct DB query fallback");
+
+  // ---------------------------------------------------------------------------
+  // TEST 7b: Guest request to /jobs is not redirected
+  // ---------------------------------------------------------------------------
+  console.log("\n[TEST 7b] Verifying guest requests to /jobs are not redirected server-side...");
+  const { middleware: appMiddleware } = await import("../src/middleware");
+  const { NextRequest: AppNextRequest } = await import("next/server");
+  const guestJobsReq = new AppNextRequest("http://localhost:3000/jobs");
+  const guestJobsRes = await appMiddleware(guestJobsReq);
+  assert.strictEqual(guestJobsRes.status, 200, "Guest request to /jobs must return 200");
+  assert.strictEqual(guestJobsRes.headers.get("location"), null, "Guest request to /jobs must not redirect");
+  console.log("  [PASS] Guest request to /jobs returns 200 without redirect (blurred view preserved)");
 
   // ---------------------------------------------------------------------------
   // TEST 8: Automated Negative Control Execution

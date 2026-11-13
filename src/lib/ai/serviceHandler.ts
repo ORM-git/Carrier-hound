@@ -17,7 +17,6 @@ import { checkRequiredEnv } from "@/lib/api/envCheck";
 import { consumeSet, refundSet, QuotaKind } from "@/lib/billing/consume";
 import { checkSharedRateLimit, checkSharedRateLimitStrict } from "@/lib/api/sharedRateLimit";
 import { buildCorsHeaders, handleCorsPreflight } from "../../../netlify/functions/_cors";
-import { isUserApproved } from "@/lib/auth/approval";
 import {
   GroqCircuitBreaker,
   groqCircuitBreaker,
@@ -444,18 +443,6 @@ export async function executeAiCore(
       };
     }
 
-    // Invite-only early-access approval check
-    const checkApproved = activeDeps.isUserApproved || isUserApproved;
-    const isApproved = await checkApproved(supabaseAdmin, user);
-    if (!isApproved) {
-      return {
-        statusCode: 403,
-        body: {
-          error: "Early access only",
-          message: "Invite-only access: your account is pending approval.",
-        },
-      };
-    }
     confirmedUserId = user.id;
 
     // 1.1 Per-User Burst Rate Limiting (strict fail-closed shared store)
