@@ -53,10 +53,10 @@ function getCronSupabaseClient(isDryRun = false) {
  * 4. Logs full run statistics and errors to cron_run_logs
  */
 export async function runDailyDigestCron(options: {
-  dryRun?: boolean;
-  forceDate?: string;
-  minMatchScore?: number;
-  maxDigestItems?: number;
+  dryRun?: boolean; forceDate?: string;
+  minMatchScore?: number; maxDigestItems?: number;
+  scannedWindowDays?: number;
+  maxScannedJobs?: number;
 } = {}): Promise<CronRunStats> {
   const isDryRun = Boolean(options.dryRun);
   const minScore = options.minMatchScore ?? 60;
@@ -145,22 +145,54 @@ export async function runDailyDigestCron(options: {
       }
     }
 
-    // 3. Fetch active job listings (limit 500 most recent active)
+    // 3. Fetch active job listings (bounded window & keyset pagination to avoid statement timeouts)
     let activeJobs: any[] = [];
     if (!supabase) {
       activeJobs = [];
     } else {
-      const { data: jobsData, error: jobsError } = await supabase
-        .from("jobs")
-        .select("id, title, company, location, remote_scope, category, salary_text, apply_url, discovered_at")
-        .order("discovered_at", { ascending: false })
-        .limit(500);
+      const windowDays = options.scannedWindowDays ?? 14;
+      const windowCutoff = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
+      const PAGE_SIZE = 250;
+      const MAX_TOTAL_JOBS = options.maxScannedJobs ?? 500;
 
-      if (jobsError) {
-        log.warn("Notice: jobs table query returned error", { error: jobsError.message });
+      try {
+        let lastDiscoveredAt: string | null = null;
+        while (activeJobs.length < MAX_TOTAL_JOBS) {
+          const pageSize = Math.min(PAGE_SIZE, MAX_TOTAL_JOBS - activeJobs.length);
+          let query = supabase
+            .from("jobs")
+            .select("id, title, company, location, remote_scope, category, salary_text, apply_url, discovered_at")
+            .eq("status", "active")
+            .eq("is_active", true)
+            .gte("discovered_at", windowCutoff);
+
+          if (lastDiscoveredAt) {
+            query = query.lt("discovered_at", lastDiscoveredAt);
+          }
+
+          query = query.order("discovered_at", { ascending: false }).limit(pageSize);
+
+          const { data: pageData, error: pageError } = await query;
+
+          if (pageError) {
+            log.warn("Notice: jobs table query returned error", { error: pageError.message });
+            break;
+          }
+
+          if (!pageData || pageData.length === 0) {
+            break;
+          }
+
+          activeJobs.push(...pageData);
+          if (pageData.length < pageSize) {
+            break;
+          }
+          lastDiscoveredAt = pageData[pageData.length - 1].discovered_at;
+          if (!lastDiscoveredAt) break;
+        }
+      } catch (err: any) {
+        log.warn("Notice: exception querying jobs table", { error: err.message });
         activeJobs = [];
-      } else {
-        activeJobs = jobsData || [];
       }
     }
 

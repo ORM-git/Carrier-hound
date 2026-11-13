@@ -74,6 +74,7 @@ export interface SourceStats {
   updated: number;
   skipped: number;
   failed: number;
+  warnings?: number;
   error?: string;
 }
 
@@ -87,6 +88,7 @@ export interface IngestionRunSummary {
   totalUpdated: number;
   totalSkipped: number;
   totalFailed: number;
+  totalWarnings?: number;
   sources: SourceStats[];
   cleanup: {
     markedExpired: number;

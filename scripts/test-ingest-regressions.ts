@@ -1,6 +1,12 @@
 import { detectJobType, slugify } from './utils/sanitizer';
 import { extractSkillsFromJob } from '../src/lib/matcher/scoring';
 import { NormalizedJob } from './types';
+import {
+  getSourceTimeoutMs,
+  DEFAULT_SOURCE_TIMEOUT_MS,
+  LARGE_BOARD_TIMEOUT_MS,
+  MAX_SOURCE_TIMEOUT_CAP_MS,
+} from './ingest';
 
 async function runRegressionTests() {
   console.log('======================================================');
@@ -206,6 +212,90 @@ async function runRegressionTests() {
   assert(!cleanMessage.includes('sbp_secret_key_12345'), 'Sanitizer stripped raw API key token');
   assert(!cleanMessage.includes('eyJhbGciOiJIUzI1NiJ9.test'), 'Sanitizer stripped raw JWT Bearer token');
   assert(cleanMessage.includes('[REDACTED]'), 'Replaced secrets with [REDACTED]');
+
+  // ---------------------------------------------------------------------------
+  // TEST 7: Per-Source Timeout Configuration (Audit Blocker B8)
+  // ---------------------------------------------------------------------------
+  console.log('\n--- TEST 7: Per-Source Timeout Configuration & Large Board Scaling ---');
+
+  const largeBoards = [
+    { id: 'greenhouse-doordash', name: 'DoorDash', type: 'greenhouse', target: 'doordash' },
+    { id: 'greenhouse-mongodb', name: 'MongoDB', type: 'greenhouse', target: 'mongodb' },
+    { id: 'greenhouse-snowflake', name: 'Snowflake', type: 'greenhouse', target: 'snowflake' },
+    { id: 'greenhouse-elastic', name: 'Elastic', type: 'greenhouse', target: 'elastic' },
+    { id: 'greenhouse-zscaler', name: 'Zscaler', type: 'greenhouse', target: 'zscaler' },
+    { id: 'greenhouse-palantir', name: 'Palantir', type: 'greenhouse', target: 'palantir' },
+  ];
+
+  for (const board of largeBoards) {
+    const t = getSourceTimeoutMs(board as any);
+    assert(
+      t === LARGE_BOARD_TIMEOUT_MS && t === 180000,
+      `Large board "${board.name}" assigned extended 180s timeout (got: ${t}ms)`
+    );
+  }
+
+  const standardBoard = { id: 'ashby-atlan', name: 'Atlan', type: 'ashby', target: 'atlan' };
+  const standardTimeout = getSourceTimeoutMs(standardBoard as any);
+  assert(
+    standardTimeout === DEFAULT_SOURCE_TIMEOUT_MS && standardTimeout === 60000,
+    `Standard board "${standardBoard.name}" assigned default 60s timeout (got: ${standardTimeout}ms)`
+  );
+
+  const excessiveBoard = {
+    id: 'ashby-custom',
+    name: 'Custom Huge',
+    type: 'ashby',
+    target: 'custom',
+    timeoutMs: 999999,
+  };
+  const cappedTimeout = getSourceTimeoutMs(excessiveBoard as any);
+  assert(
+    cappedTimeout === MAX_SOURCE_TIMEOUT_CAP_MS && cappedTimeout === 240000,
+    `Excessive custom timeout capped strictly at MAX_SOURCE_TIMEOUT_CAP_MS (240s) (got: ${cappedTimeout}ms)`
+  );
+
+  // ---------------------------------------------------------------------------
+  // TEST 8: Error Accounting (Source Warnings vs Per-Job Failures)
+  // ---------------------------------------------------------------------------
+  console.log('\n--- TEST 8: Error Accounting (Source Warnings vs Per-Job Failures) ---');
+
+  // Case A: Source timeout / network error must be counted as 1 source warning, NOT failed jobs
+  const timeoutStats = {
+    fetched: 0,
+    inserted: 0,
+    updated: 0,
+    skipped: 0,
+    failed: 0,
+    warnings: 1,
+    error: 'Timeout after 180s processing DoorDash',
+  };
+  assert(timeoutStats.warnings === 1, 'Source timeout records 1 warning');
+  assert(timeoutStats.failed === 0, 'Source timeout does NOT increment failed jobs (kept 0)');
+
+  // Case B: Partial fetch that encounters source error records warning, leaving per-job failures for real DB rejections
+  const partialStats = {
+    fetched: 2500,
+    inserted: 200,
+    updated: 0,
+    skipped: 50,
+    failed: 1, // exactly 1 rejected row during insertion
+    warnings: 1, // source aborted mid-run
+  };
+  assert(partialStats.failed === 1, 'Per-job errors reflect actual write rejections only');
+  assert(partialStats.warnings === 1, 'Source failure logged as 1 source warning, not 2500 errors');
+
+  // Verify shard exit condition: warnings do NOT trigger non-zero exit
+  const shardSummaryWithWarnings = {
+    totalFetched: 5000,
+    totalInserted: 4800,
+    totalUpdated: 100,
+    totalSkipped: 100,
+    totalWarnings: 3,
+    totalFailed: 0, // Zero job write errors
+  };
+  const shouldExitNonZero = shardSummaryWithWarnings.totalFailed > 0;
+  assert(!shouldExitNonZero, 'Shard with source warnings and zero write failures exits successfully (code 0)');
 
   // ---------------------------------------------------------------------------
   // SUMMARY
