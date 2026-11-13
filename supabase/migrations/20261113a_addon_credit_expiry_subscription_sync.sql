@@ -346,6 +346,8 @@ END;
 $$;
 
 REVOKE ALL ON FUNCTION public.fulfil_payment_order(text, uuid, text) FROM public;
+REVOKE ALL ON FUNCTION public.fulfil_payment_order(text, uuid, text) FROM anon;
+REVOKE ALL ON FUNCTION public.fulfil_payment_order(text, uuid, text) FROM authenticated;
 GRANT EXECUTE ON FUNCTION public.fulfil_payment_order(text, uuid, text) TO service_role;
 ALTER FUNCTION public.fulfil_payment_order(text, uuid, text) SET search_path = public, auth;
 ALTER FUNCTION public.fulfil_payment_order(text, uuid, text) SET statement_timeout = '15s';

@@ -1091,6 +1091,34 @@ async function runSuite() {
       assert.ok(content.includes("scripts/test-addon-verify-and-expiry.ts"), "suite-runner.ts must register test-addon-verify-and-expiry.ts");
     });
 
+    check("4.4 Migration enforces strict ACL: revokes from public, anon, and authenticated, and grants only to service_role", () => {
+      const migPath = path.resolve("supabase/migrations/20261113a_addon_credit_expiry_subscription_sync.sql");
+      const content = fs.readFileSync(migPath, "utf8");
+      assert.ok(
+        content.includes("REVOKE ALL ON FUNCTION public.fulfil_payment_order(text, uuid, text) FROM public;"),
+        "Migration must revoke all privileges from public"
+      );
+      assert.ok(
+        content.includes("REVOKE ALL ON FUNCTION public.fulfil_payment_order(text, uuid, text) FROM anon;"),
+        "Migration must revoke all privileges from anon"
+      );
+      assert.ok(
+        content.includes("REVOKE ALL ON FUNCTION public.fulfil_payment_order(text, uuid, text) FROM authenticated;"),
+        "Migration must revoke all privileges from authenticated"
+      );
+      assert.ok(
+        content.includes("GRANT EXECUTE ON FUNCTION public.fulfil_payment_order(text, uuid, text) TO service_role;"),
+        "Migration must grant execute to service_role"
+      );
+
+      const grantLines = content
+        .split("\n")
+        .map((l) => l.trim())
+        .filter((l) => /^GRANT\s+/i.test(l));
+      assert.strictEqual(grantLines.length, 1, "There must be exactly one GRANT statement");
+      assert.ok(grantLines[0].includes("TO service_role;"), "The sole GRANT statement must grant to service_role");
+    });
+
     console.log("\n--------------------------------------------------------------------------------");
     console.log(`TEST SUITE RESULTS: ${passed} passed, ${failed} failed`);
     console.log("--------------------------------------------------------------------------------\n");
