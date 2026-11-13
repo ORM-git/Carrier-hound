@@ -10,6 +10,7 @@ import { isUserApproved } from "@/lib/auth/approval";
 import { checkRequiredEnv } from "@/lib/api/envCheck";
 
 import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
+import { withRouteSpan } from "@/lib/monitoring/tracing";
 
 import { createLogger } from "@/lib/observability/logger";
 
@@ -97,8 +98,9 @@ async function verifyProUser(req: Request) {
 
 // GET: Unlocks a single job by id or returns filtered jobs for a verified Pro subscriber
 export async function GET(req: Request) {
-  const log = baseLog.child({ requestId: req?.headers.get("x-request-id") ?? "unknown" });
-  try {
+  return withRouteSpan("/api/jobs/pro", req, async () => {
+    const log = baseLog.child({ requestId: req?.headers.get("x-request-id") ?? "unknown" });
+    try {
     const authCheck = await verifyProUser(req);
     if (authCheck.error || !authCheck.user) {
       return NextResponse.json(
@@ -213,12 +215,14 @@ export async function GET(req: Request) {
     reportRequestErrorToSentry(req, err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
+  });
 }
 
 // POST: Unlocks a list of jobs by IDs for a verified Pro subscriber
 export async function POST(req: Request) {
-  const log = baseLog.child({ requestId: req?.headers.get("x-request-id") ?? "unknown" });
-  try {
+  return withRouteSpan("/api/jobs/pro", req, async () => {
+    const log = baseLog.child({ requestId: req?.headers.get("x-request-id") ?? "unknown" });
+    try {
     const authCheck = await verifyProUser(req);
     if (authCheck.error || !authCheck.user) {
       return NextResponse.json(
@@ -294,4 +298,5 @@ export async function POST(req: Request) {
     reportRequestErrorToSentry(req, err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
+  });
 }

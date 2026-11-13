@@ -50,6 +50,8 @@ export const FLAGS: readonly FlagDefinition[] = [
     description: "Restores the earlier jobs service behavior." },
   { envVar: "__CAREERMONKE_LEGACY_RATE_LIMIT", rule: "strict_true", defaultEnabled: false, scope: "server",
     description: "Restores the earlier rate limit behavior on search and track." },
+  { envVar: "ENABLE_SERVER_TRACING", rule: "strict_true", defaultEnabled: false, scope: "server",
+    description: "Enables manual server and edge distributed tracing spans via Sentry SDK." },
 ];
 
 export function getFlagDefinition(envVar: string): FlagDefinition | undefined {

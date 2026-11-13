@@ -5,6 +5,7 @@ import { getClientIpFromRequest, checkRateLimit, getSupabaseAdminClient } from "
 import { extractToken } from "@/lib/admin/auth";
 
 import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
+import { withRouteSpan } from "@/lib/monitoring/tracing";
 
 import { createLogger } from "@/lib/observability/logger";
 
@@ -64,8 +65,9 @@ async function getSessionUserId(req: Request): Promise<string | null> {
 }
 
 export async function POST(req: Request) {
-  const log = baseLog.child({ requestId: req?.headers.get("x-request-id") ?? "unknown" });
-  try {
+  return withRouteSpan("/api/track", req, async () => {
+    const log = baseLog.child({ requestId: req?.headers.get("x-request-id") ?? "unknown" });
+    try {
     // 1. Size cap check via Content-Length header (if present)
     const contentLength = req.headers.get("content-length");
     if (contentLength) {
@@ -337,4 +339,5 @@ export async function POST(req: Request) {
     reportRequestErrorToSentry(req, _err);
     return NextResponse.json({ ok: true, fallback: true });
   }
+  });
 }

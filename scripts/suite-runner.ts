@@ -285,6 +285,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-lifecycle-cleanup.ts", command: "npx tsx scripts/test-lifecycle-cleanup.ts", classification: "offline" },
   { name: "scripts/test-audit-sweep-db-fe-1.ts", command: "npx tsx scripts/test-audit-sweep-db-fe-1.ts", classification: "offline" },
   { name: "scripts/test-be-sweep-1.ts", command: "npx tsx scripts/test-be-sweep-1.ts", classification: "offline" },
+  { name: "scripts/test-tracing-enablement.ts", command: "npx tsx scripts/test-tracing-enablement.ts", classification: "offline" },
 ];
 
 export interface RunSummary {
