@@ -188,7 +188,14 @@ BEGIN
     FROM public.subscriptions
     WHERE user_id = p_user_id;
 
-    IF v_existing_sub IS NOT NULL AND (v_existing_sub.status IN ('active', 'trialing')) AND v_existing_sub.current_period_end IS NOT NULL THEN
+    -- Idempotency check: if already extended for this exact order, do not add duration again
+    IF v_existing_sub IS NOT NULL AND (
+      (v_existing_sub.metadata->>'payment_order_id' = v_order.id::text) OR
+      (v_existing_sub.metadata->>'provider_order_id' = p_provider_order_id)
+    ) THEN
+      v_new_end := v_existing_sub.current_period_end;
+      v_period_start := coalesce(v_existing_sub.current_period_start, now());
+    ELSIF v_existing_sub IS NOT NULL AND (v_existing_sub.status IN ('active', 'trialing')) AND v_existing_sub.current_period_end IS NOT NULL THEN
       -- User has an active plan: new period end = max(current_period_end, now) + duration
       v_base_time := greatest(v_existing_sub.current_period_end, now());
       v_new_end := v_base_time + (v_duration * interval '1 day');

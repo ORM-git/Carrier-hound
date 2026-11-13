@@ -280,7 +280,7 @@ export async function POST(req: Request) {
       if (!fulfilRes || !fulfilRes.success) {
         return NextResponse.json(
           { error: fulfilRes?.error || "Payment fulfillment failed", code: fulfilRes?.code || "FULFILLMENT_FAILED" },
-          { status: 400 }
+          { status: fulfilRes?.code === "PRO_REQUIRED" ? 403 : 400 }
         );
       }
 
@@ -308,7 +308,7 @@ export async function POST(req: Request) {
         }
         return NextResponse.json(
           { error: fulfilRes.error || "Payment fulfillment failed", code: fulfilRes.code || "FULFILLMENT_FAILED" },
-          { status: 400 }
+          { status: fulfilRes.code === "PRO_REQUIRED" ? 403 : 400 }
         );
       }
     } catch {
@@ -527,7 +527,7 @@ export async function POST(req: Request) {
       // new period end = max(current_period_end, now) + new plan duration; never shorten an existing period.
       const { data: existingSub } = await supabaseAdmin
         .from("subscriptions")
-        .select("status, current_period_start, current_period_end")
+        .select("status, current_period_start, current_period_end, metadata")
         .eq("user_id", user.id)
         .maybeSingle();
 
@@ -535,7 +535,19 @@ export async function POST(req: Request) {
       let currentPeriodStart = now.toISOString();
       let currentPeriodEnd: string;
 
-      if (
+      // Idempotency: if this exact order was already applied to the subscription
+      // (e.g. prior attempt updated subscriptions but failed on add-on credit update or network timeout),
+      // reuse the existing period end without re-adding durationDays (prevents 25 -> 55 -> 85 day drift)!
+      const alreadyGrantedForThisOrder = Boolean(
+        existingSub &&
+        (existingSub.metadata?.payment_order_id === orderRow.id ||
+          existingSub.metadata?.provider_order_id === orderId)
+      );
+
+      if (alreadyGrantedForThisOrder && existingSub?.current_period_end) {
+        currentPeriodEnd = existingSub.current_period_end;
+        currentPeriodStart = existingSub.current_period_start || now.toISOString();
+      } else if (
         existingSub &&
         (existingSub.status === "active" || existingSub.status === "trialing") &&
         existingSub.current_period_end

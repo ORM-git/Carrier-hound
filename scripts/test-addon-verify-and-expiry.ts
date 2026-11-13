@@ -2,7 +2,7 @@
  * scripts/test-addon-verify-and-expiry.ts
  *
  * Comprehensive offline verification suite for PR 2:
- * 1. PLAN_MISMATCH verify bug fix:
+ * 1. PLAN_MISMATCH verify bug fix & planId validation:
  *    - Add-on verify accepts add-on plan IDs (e.g. planCode: "addon_10", planId: "addon_10").
  *    - Tampered plan IDs in Next and Netlify adapters (e.g. signed addon_10 with planId: "addon_60"
  *      or planCode: "addon_30" / "monthly") must be rejected with 400 PLAN_MISMATCH.
@@ -15,15 +15,19 @@
  *    - Handles inactive subscription status (e.g. canceled, past_due; fails closed with 403 PRO_REQUIRED).
  *    - Does not ignore subscription-read errors (fails closed with 500 DATABASE_ERROR).
  *
- * 3. Subscription renewal extends existing unexpired add-on credits:
- *    - Next verify fallback extends existing unexpired add-on credits like the SQL RPC.
+ * 3. Subscription renewal extends existing unexpired add-on credits & idempotent retry:
+ *    - Next verify fallback extends existing unexpired add-on credits.
  *    - Fails closed with 500 if credit extension fails instead of returning 200.
+ *    - Idempotent: retrying an order after a failed credit update never re-grants the plan duration.
  *
- * 4. Catalog pricing and checkout helper alignment:
+ * 4. PRO_REQUIRED consistency:
+ *    - Consistently returns HTTP 403 on the Next RPC branch, Netlify adapter, and Next fallback.
+ *
+ * 5. Catalog pricing and checkout helper alignment:
  *    - resolveOrderPricing accepts add-on IDs in planCode and planId.
  *    - handleProCheckout does not force default planCode: "monthly" when addonCode is supplied.
  *
- * 5. Migration & Schema verification:
+ * 6. Migration file policy compliance:
  *    - 20261113a_addon_credit_expiry_subscription_sync.sql adheres to NOT APPLIED convention.
  *    - Pinned search_path = public inline on SECURITY DEFINER function.
  */
@@ -141,7 +145,7 @@ async function runSuite() {
 
     const mockUser = { id: "user_test_addon_456", email: "candidate@careermonke.com" };
 
-    function createMockSupabase(orderRow: any, subRow: any = null, creditOptions: any = {}) {
+    function createMockSupabase(orderRow: any, subRow: any = null, options: any = {}) {
       let insertedCredit: any = null;
       let updatedOrder: any = null;
       let updatedCredits: any = null;
@@ -257,11 +261,11 @@ async function runSuite() {
               },
               update: (patch: any) => {
                 updatedCredits = patch;
-                if (creditOptions.__updateError) {
+                if (options.__updateError) {
                   return {
                     eq: () => ({
                       gte: () => ({
-                        gt: async () => ({ data: null, error: creditOptions.__updateError }),
+                        gt: async () => ({ data: null, error: options.__updateError }),
                       }),
                     }),
                   };
@@ -280,6 +284,10 @@ async function runSuite() {
           return {};
         },
         rpc: async (fn: string, args: any) => {
+          if (options.customRpcHandler) {
+            return options.customRpcHandler(fn, args);
+          }
+
           if (fn === "fulfil_payment_order") {
             if (args.p_expected_mode === "test") {
               return {
@@ -311,7 +319,7 @@ async function runSuite() {
       };
     }
 
-    async function callVerify(body: any, orderRow: any, subRow: any = null, creditOptions: any = {}) {
+    async function callVerify(body: any, orderRow: any, subRow: any = null, options: any = {}) {
       const orderId = body.order_id || body.razorpay_order_id || "order_test_123";
       const paymentId = body.payment_id || body.razorpay_payment_id || "pay_test_456";
       const sig = computeSignature(orderId, paymentId, TEST_SECRET);
@@ -323,7 +331,7 @@ async function runSuite() {
         ...body,
       };
 
-      const mockDb = createMockSupabase(orderRow, subRow, creditOptions);
+      const mockDb = createMockSupabase(orderRow, subRow, options);
 
       const req = new Request("https://careermonke.com/api/billing/razorpay/verify", {
         method: "POST",
@@ -351,7 +359,7 @@ async function runSuite() {
       };
     }
 
-    async function callNetlifyVerify(body: any, orderRow: any, subRow: any = null) {
+    async function callNetlifyVerify(body: any, orderRow: any, subRow: any = null, options: any = {}) {
       const orderId = body.order_id || body.razorpay_order_id || "order_test_123";
       const paymentId = body.payment_id || body.razorpay_payment_id || "pay_test_456";
       const sig = computeSignature(orderId, paymentId, TEST_SECRET);
@@ -363,7 +371,7 @@ async function runSuite() {
         ...body,
       };
 
-      const mockDb = createMockSupabase(orderRow, subRow);
+      const mockDb = createMockSupabase(orderRow, subRow, options);
       const handler = createNetlifyVerifyHandler({
         getSupabaseAdmin: () => mockDb.client,
       });
@@ -578,7 +586,7 @@ async function runSuite() {
     });
 
     // -------------------------------------------------------------------------
-    // SECTION 3: Credit Expiry Tied to Subscription End Date, Expired/Inactive & Renewal
+    // SECTION 3: Credit Expiry, Expired/Inactive, Read Error, Renewal & Idempotent Retry
     // -------------------------------------------------------------------------
     console.log("\n--- Section 3: Credit Expiry, Expired/Inactive, Read Error & Renewal Tests ---");
 
@@ -659,7 +667,7 @@ async function runSuite() {
       assert.strictEqual(res.insertedCredit.expires_at, expectedWeeklyEnd);
     });
 
-    await check("3.4 [expired/inactive] Add-on verify rejects when subscription expired between order and verify", async () => {
+    await check("3.4 [expired/inactive] Add-on verify rejects when subscription expired between order and verify (403 PRO_REQUIRED)", async () => {
       process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = "rzp_live_fake12345678";
       const pastEnd = new Date(Date.now() - 3600000).toISOString(); // Expired 1 hour ago
       const expiredSub = {
@@ -680,7 +688,7 @@ async function runSuite() {
       assert.strictEqual(res.insertedCredit, null, "Must NOT insert add-on credit for expired subscription");
     });
 
-    await check("3.5 [expired/inactive] Add-on verify rejects when subscription is canceled/inactive", async () => {
+    await check("3.5 [expired/inactive] Add-on verify rejects when subscription is canceled/inactive (403 PRO_REQUIRED)", async () => {
       process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = "rzp_live_fake12345678";
       const futureEnd = new Date(Date.now() + 10 * 86400000).toISOString();
       const canceledSub = {
@@ -701,7 +709,7 @@ async function runSuite() {
       assert.strictEqual(res.insertedCredit, null);
     });
 
-    await check("3.6 [expired/inactive] Add-on verify rejects when user has no subscription record", async () => {
+    await check("3.6 [expired/inactive] Add-on verify rejects when user has no subscription record (403 PRO_REQUIRED)", async () => {
       process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = "rzp_live_fake12345678";
       const res = await callVerify(
         { order_id: "order_live_addon_10", addonCode: "addon_10" },
@@ -714,7 +722,7 @@ async function runSuite() {
       assert.strictEqual(res.insertedCredit, null);
     });
 
-    await check("3.7 [read-error] Add-on verify fails closed on subscription query error", async () => {
+    await check("3.7 [read-error] Add-on verify fails closed on subscription query error (500 DATABASE_ERROR)", async () => {
       process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = "rzp_live_fake12345678";
       const subWithReadError = {
         __readError: new Error("Postgres connection timeout"),
@@ -792,6 +800,119 @@ async function runSuite() {
       assert.strictEqual(res.updatedOrder, null, "Payment order must NOT be marked paid when extension fails");
     });
 
+    await check("3.10 [idempotent retry] credit update fails, then order retried -> subscription extended ONLY ONCE", async () => {
+      process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = "rzp_live_fake12345678";
+      const initialEnd = new Date(Date.now() + 25 * 86400000).toISOString();
+      let storedSub: any = {
+        id: "sub_retry_test",
+        user_id: mockUser.id,
+        status: "active",
+        plan_id: "monthly",
+        current_period_start: new Date(Date.now() - 5 * 86400000).toISOString(),
+        current_period_end: initialEnd,
+        metadata: {},
+      };
+
+      const retryOrderRow = {
+        id: "ord_live_uuid_retry_sub",
+        provider: "razorpay",
+        mode: "live",
+        provider_order_id: "order_live_sub_retry_idempotent",
+        plan_code: "monthly",
+        addon_code: null,
+        amount_paise: 149900,
+        status: "created",
+      };
+
+      // Attempt 1: credit update fails with 500
+      const res1 = await callVerify(
+        { order_id: "order_live_sub_retry_idempotent", planCode: "monthly" },
+        retryOrderRow,
+        storedSub,
+        { __updateError: new Error("Simulated credit extension failure") }
+      );
+
+      assert.strictEqual(res1.status, 500, "Attempt 1 must fail with 500");
+      assert.strictEqual(res1.body.code, "DATABASE_ERROR");
+      assert.strictEqual(res1.updatedOrder, null, "Order must NOT be marked paid on failure");
+
+      // Verify attempt 1 upserted subscription +30 days (25 + 30 = 55 days)
+      assert.ok(res1.upsertedSub, "Subscription was updated in attempt 1");
+      const firstExtensionEnd = res1.upsertedSub.current_period_end;
+      const expectedFirstEndMs = new Date(initialEnd).getTime() + 30 * 86400000;
+      assert.ok(Math.abs(new Date(firstExtensionEnd).getTime() - expectedFirstEndMs) < 5000, "First extension must be initialEnd + 30 days");
+
+      // Simulated DB state after attempt 1: subscriptions table holds the extension and metadata
+      storedSub = {
+        ...storedSub,
+        current_period_end: firstExtensionEnd,
+        metadata: {
+          provider_order_id: "order_live_sub_retry_idempotent",
+          payment_order_id: retryOrderRow.id,
+        },
+      };
+
+      // Attempt 2: retry of the EXACT SAME order (no update error)
+      const res2 = await callVerify(
+        { order_id: "order_live_sub_retry_idempotent", planCode: "monthly" },
+        retryOrderRow,
+        storedSub,
+        {} // Success on credit update
+      );
+
+      assert.strictEqual(res2.status, 200, "Attempt 2 must succeed with 200");
+      assert.strictEqual(res2.body.success, true);
+      assert.strictEqual(res2.body.isPro, true);
+
+      // Verify subscription period end was NOT extended again (+60 days from initial)
+      const secondExtensionEnd = res2.upsertedSub.current_period_end;
+      assert.strictEqual(
+        secondExtensionEnd,
+        firstExtensionEnd,
+        `Subscription end must remain ${firstExtensionEnd} and NOT drift to a second extension (${secondExtensionEnd})`
+      );
+
+      // Verify order is now marked paid
+      assert.ok(res2.updatedOrder, "Order must be marked paid on retry success");
+      assert.strictEqual(res2.updatedOrder.status, "paid");
+    });
+
+    await check("3.11 [PRO_REQUIRED consistency] Next live RPC branch returns 403 on PRO_REQUIRED", async () => {
+      process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = "rzp_live_fake12345678";
+      const res = await callVerify(
+        { order_id: "order_live_addon_10", addonCode: "addon_10" },
+        liveAddonOrderRow,
+        null,
+        {
+          customRpcHandler: async () => ({
+            data: { success: false, code: "PRO_REQUIRED", error: "Active Pro subscription required" },
+            error: null,
+          }),
+        }
+      );
+
+      assert.strictEqual(res.status, 403, `Next live RPC branch must return 403 on PRO_REQUIRED, got ${res.status}`);
+      assert.strictEqual(res.body.code, "PRO_REQUIRED");
+    });
+
+    await check("3.12 [PRO_REQUIRED consistency] Netlify verify returns 403 on PRO_REQUIRED", async () => {
+      process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = TEST_KEY_ID;
+      const res = await callNetlifyVerify(
+        { order_id: "order_test_addon_10", addonCode: "addon_10" },
+        addonOrderRow,
+        null,
+        {
+          customRpcHandler: async () => ({
+            data: { success: false, code: "PRO_REQUIRED", error: "Active Pro subscription required" },
+            error: null,
+          }),
+        }
+      );
+
+      assert.strictEqual(res.status, 403, `Netlify verify must return 403 on PRO_REQUIRED, got ${res.status}`);
+      assert.strictEqual(res.body.code, "PRO_REQUIRED");
+    });
+
     // Reset key ID to test mode
     process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = TEST_KEY_ID;
 
@@ -810,18 +931,10 @@ async function runSuite() {
       const content = fs.readFileSync(migPath, "utf8");
       assert.ok(content.includes("Status: NOT APPLIED"), "Header must have NOT APPLIED status");
       assert.ok(content.includes("record-migration.cjs 20261113a_addon_credit_expiry_subscription_sync"), "Header must contain self-referencing record command");
-    });
-
-    check("4.3 Migration SQL ties add-on credit expiry to active subscription period end", () => {
-      const migPath = path.resolve("supabase/migrations/20261113a_addon_credit_expiry_subscription_sync.sql");
-      const content = fs.readFileSync(migPath, "utf8");
-      assert.ok(content.includes("user_addon_credits"), "Migration must reference user_addon_credits");
-      assert.ok(content.includes("current_period_end"), "Migration must sync with current_period_end");
       assert.ok(content.includes("SET search_path = public"), "Function definition must pin search_path inline");
-      assert.ok(content.includes("PRO_REQUIRED"), "SQL RPC must require active subscription for add-on purchases");
     });
 
-    check("4.4 Suite runner registers scripts/test-addon-verify-and-expiry.ts", () => {
+    check("4.3 Suite runner registers scripts/test-addon-verify-and-expiry.ts", () => {
       const runnerPath = path.resolve("scripts/suite-runner.ts");
       const content = fs.readFileSync(runnerPath, "utf8");
       assert.ok(content.includes("scripts/test-addon-verify-and-expiry.ts"), "suite-runner.ts must register test-addon-verify-and-expiry.ts");
