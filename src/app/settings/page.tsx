@@ -30,6 +30,7 @@ import {
   AlertCircle
 } from "lucide-react";
 import { toast } from "react-toastify";
+import InstallAppButton from "@/components/pwa/InstallAppButton";
 
 function SettingsPageInner() {
   const { isExpanded } = useSidebarMode();
@@ -219,13 +220,16 @@ function SettingsPageInner() {
   return (
     <LoggedInAppShell pageLabel="SETTINGS" user={user} isPro={isPro}>
       <div className="max-w-5xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-12 space-y-8">
-        <div>
-          <h1 className="text-[18px] font-bold uppercase tracking-wider text-[#0F172A]">
-            SETTINGS
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            Manage your target preferences, notifications, billing, and privacy controls.
-          </p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-[18px] font-bold uppercase tracking-wider text-[#0F172A]">
+              SETTINGS
+            </h1>
+            <p className="text-xs sm:text-sm text-slate-500 mt-1">
+              Manage your target preferences, notifications, billing, and privacy controls.
+            </p>
+          </div>
+          <InstallAppButton />
         </div>
 
         {/* Signed-in Account Identity Card */}
