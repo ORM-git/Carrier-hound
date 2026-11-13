@@ -12,6 +12,63 @@ const baseLog = createLogger({ context: { route: "/api/billing/razorpay/order" }
 
 export const runtime = "edge";
 
+function isProductionHost(req: Request, deps?: any): boolean {
+  if (deps?.isProductionHost !== undefined) {
+    return Boolean(deps.isProductionHost);
+  }
+  const prodHosts = new Set(["careermonke.com", "www.careermonke.com"]);
+
+  const getHeader = (name: string): string | null => {
+    if (!req?.headers) return null;
+    if (typeof req.headers.get === "function") {
+      return req.headers.get(name);
+    }
+    const h = req.headers as any;
+    return h[name] || h[name.toLowerCase()] || null;
+  };
+
+  const xForwardedHost = getHeader("x-forwarded-host");
+  if (xForwardedHost) {
+    const parts = xForwardedHost.split(",");
+    for (const part of parts) {
+      const host = part.trim().split(":")[0].toLowerCase();
+      if (prodHosts.has(host)) return true;
+    }
+  }
+
+  const hostHeader = getHeader("host");
+  if (hostHeader) {
+    const parts = hostHeader.split(",");
+    for (const part of parts) {
+      const host = part.trim().split(":")[0].toLowerCase();
+      if (prodHosts.has(host)) return true;
+    }
+  }
+
+  if (req?.url) {
+    try {
+      const url = new URL(req.url);
+      if (prodHosts.has(url.hostname.toLowerCase())) return true;
+    } catch {
+      // ignore
+    }
+  }
+
+  const envUrls = [process.env.NEXT_PUBLIC_SITE_URL, process.env.URL, process.env.SITE_URL];
+  for (const envUrl of envUrls) {
+    if (envUrl) {
+      try {
+        const parsed = new URL(envUrl.startsWith("http") ? envUrl : `https://${envUrl}`);
+        if (prodHosts.has(parsed.hostname.toLowerCase())) return true;
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  return false;
+}
+
 export async function POST(req: Request) {
   const log = baseLog.child({ requestId: req?.headers.get("x-request-id") ?? "unknown" });
   const deps = (req as any).__testDeps || {};
@@ -25,7 +82,10 @@ export async function POST(req: Request) {
 
     const authHeader = req.headers.get("authorization") || req.headers.get("Authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return NextResponse.json({ error: "Missing or invalid authorization header" }, { status: 401 });
+      return NextResponse.json(
+        { error: "Missing or invalid authorization header" },
+        { status: 401 }
+      );
     }
 
     const token = authHeader.replace("Bearer ", "").trim();
@@ -42,7 +102,10 @@ export async function POST(req: Request) {
         process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
 
       if (!supabaseUrl || !serviceRoleKey) {
-        return NextResponse.json({ error: "Supabase service configuration missing" }, { status: 500 });
+        return NextResponse.json(
+          { error: "Supabase service configuration missing" },
+          { status: 500 }
+        );
       }
 
       // Verify user session token
@@ -60,27 +123,62 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid user session token" }, { status: 401 });
     }
 
-    // Server-authoritative key validation and mode determination
-    const keyId = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID;
-    const keySecret = process.env.RAZORPAY_KEY_SECRET;
-
-    if (!keyId || !keySecret) {
+    // Server-authoritative mode & key validation (Audit Blocker B2)
+    // 1. Explicit env var RAZORPAY_MODE is strictly required: allowed values "test" or "live".
+    // If unset or any other value, return 503 with generic config error (never env var name or value).
+    const configuredMode = process.env.RAZORPAY_MODE;
+    if (configuredMode !== "test" && configuredMode !== "live") {
+      log.error("Payment configuration error: invalid or missing mode");
       return NextResponse.json(
         {
-          error: "test keys not configured",
-          code: "RAZORPAY_TEST_KEYS_NOT_CONFIGURED",
+          error: "Payment configuration error",
+          code: "RAZORPAY_CONFIG_ERROR",
         },
         { status: 503 }
       );
     }
 
-    // Key validation: test mode keys only (must start with rzp_test_), strictly required
-    const resolvedMode = getRazorpayKeyMode(keyId);
-    if (!keyId.startsWith("rzp_test_") || resolvedMode !== "test") {
+    const keyId = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID;
+    const keySecret = process.env.RAZORPAY_KEY_SECRET;
+
+    if (!keyId || !keySecret) {
+      log.error("Payment configuration error: missing credentials");
       return NextResponse.json(
         {
-          error: "test keys not configured",
-          code: "RAZORPAY_TEST_KEYS_NOT_CONFIGURED",
+          error: "Payment configuration error",
+          code: "RAZORPAY_CONFIG_ERROR",
+        },
+        { status: 503 }
+      );
+    }
+
+    // 2. Mode must match configured key prefix:
+    // RAZORPAY_MODE=test requires an rzp_test_ key
+    // RAZORPAY_MODE=live requires an rzp_live_ key
+    // Any mismatch returns the same 503 config error.
+    const resolvedMode = getRazorpayKeyMode(keyId);
+    const expectedPrefix = configuredMode === "test" ? "rzp_test_" : "rzp_live_";
+    if (!keyId.startsWith(expectedPrefix) || resolvedMode !== configuredMode) {
+      log.error("Payment configuration error: key prefix does not match configured mode");
+      return NextResponse.json(
+        {
+          error: "Payment configuration error",
+          code: "RAZORPAY_CONFIG_ERROR",
+        },
+        { status: 503 }
+      );
+    }
+
+    // 3. On production host (careermonke.com and www.careermonke.com), refuse rzp_test_ keys even if RAZORPAY_MODE=test.
+    if (
+      isProductionHost(req, deps) &&
+      (keyId.startsWith("rzp_test_") || configuredMode === "test")
+    ) {
+      log.error("FATAL CONFIGURATION ERROR: Razorpay test keys refused on production host");
+      return NextResponse.json(
+        {
+          error: "Payment configuration error",
+          code: "RAZORPAY_CONFIG_ERROR",
         },
         { status: 503 }
       );
@@ -95,10 +193,7 @@ export async function POST(req: Request) {
     });
 
     if (!pricing) {
-      return NextResponse.json(
-        { error: "Invalid plan or addon code" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Invalid plan or addon code" }, { status: 400 });
     }
 
     // Add-ons require active Pro subscription
@@ -166,9 +261,14 @@ export async function POST(req: Request) {
     });
 
     if (insertErr) {
-      log.error("Critical: payment_orders insert failed; failing closed", { error: insertErr?.message || String(insertErr) });
+      log.error("Critical: payment_orders insert failed; failing closed", {
+        error: insertErr?.message || String(insertErr),
+      });
       return NextResponse.json(
-        { error: "Failed to initialize order tracking. Please try again.", code: "ORDER_RECORD_FAILED" },
+        {
+          error: "Failed to initialize order tracking. Please try again.",
+          code: "ORDER_RECORD_FAILED",
+        },
         { status: 500 }
       );
     }
@@ -181,9 +281,6 @@ export async function POST(req: Request) {
     });
   } catch (err: any) {
     reportRequestErrorToSentry(req, err);
-    return NextResponse.json(
-      { error: err?.message || "Internal server error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: err?.message || "Internal server error" }, { status: 500 });
   }
 }

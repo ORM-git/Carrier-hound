@@ -14,6 +14,56 @@ export interface BillingOrderDeps {
   getSupabaseAdmin?: () => any;
   getServerEntitlement?: (userId: string) => Promise<any>;
   fetchFn?: typeof fetch;
+  isProductionHost?: boolean;
+}
+
+function isProductionHost(event: any, deps?: BillingOrderDeps): boolean {
+  if (deps?.isProductionHost !== undefined) {
+    return Boolean(deps.isProductionHost);
+  }
+  const prodHosts = new Set(["careermonke.com", "www.careermonke.com"]);
+
+  const headers = event?.headers || {};
+  const xForwardedHost = headers["x-forwarded-host"] || headers["X-Forwarded-Host"];
+  if (xForwardedHost) {
+    const parts = xForwardedHost.split(",");
+    for (const part of parts) {
+      const host = part.trim().split(":")[0].toLowerCase();
+      if (prodHosts.has(host)) return true;
+    }
+  }
+
+  const hostHeader = headers.host || headers.Host;
+  if (hostHeader) {
+    const parts = hostHeader.split(",");
+    for (const part of parts) {
+      const host = part.trim().split(":")[0].toLowerCase();
+      if (prodHosts.has(host)) return true;
+    }
+  }
+
+  if (event?.rawUrl) {
+    try {
+      const url = new URL(event.rawUrl);
+      if (prodHosts.has(url.hostname.toLowerCase())) return true;
+    } catch {
+      // ignore
+    }
+  }
+
+  const envUrls = [process.env.NEXT_PUBLIC_SITE_URL, process.env.URL, process.env.SITE_URL];
+  for (const envUrl of envUrls) {
+    if (envUrl) {
+      try {
+        const parsed = new URL(envUrl.startsWith("http") ? envUrl : `https://${envUrl}`);
+        if (prodHosts.has(parsed.hostname.toLowerCase())) return true;
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  return false;
 }
 
 function getDefaultSupabaseAdmin() {
@@ -21,8 +71,7 @@ function getDefaultSupabaseAdmin() {
     process.env.NEXT_PUBLIC_SUPABASE_URL ||
     process.env.SUPABASE_URL ||
     "https://szakevhxhwpeskidvtfs.supabase.co";
-  const serviceRoleKey =
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
 
   if (!supabaseUrl || !serviceRoleKey) {
     throw new Error("Supabase service configuration missing");
@@ -102,29 +151,75 @@ export function createHandler(deps: BillingOrderDeps = {}) {
         };
       }
 
-      const keyId = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID;
-      const keySecret = process.env.RAZORPAY_KEY_SECRET;
-
-      if (!keyId || !keySecret) {
+      // Server-authoritative mode & key validation (Audit Blocker B2)
+      // 1. Explicit env var RAZORPAY_MODE is strictly required: allowed values "test" or "live".
+      // If unset or any other value, return 503 with generic config error (never env var name or value).
+      const configuredMode = process.env.RAZORPAY_MODE;
+      if (configuredMode !== "test" && configuredMode !== "live") {
+        safeLog.error(
+          "[Netlify /billing-razorpay-order] Payment configuration error: invalid or missing mode"
+        );
         return {
           statusCode: 503,
           headers,
           body: JSON.stringify({
-            error: "test keys not configured",
-            code: "RAZORPAY_TEST_KEYS_NOT_CONFIGURED",
+            error: "Payment configuration error",
+            code: "RAZORPAY_CONFIG_ERROR",
           }),
         };
       }
 
-      // Key validation: test mode keys only (must start with rzp_test_), strictly required
-      const resolvedMode = getRazorpayKeyMode(keyId);
-      if (!keyId.startsWith("rzp_test_") || resolvedMode !== "test") {
+      const keyId = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID;
+      const keySecret = process.env.RAZORPAY_KEY_SECRET;
+
+      if (!keyId || !keySecret) {
+        safeLog.error(
+          "[Netlify /billing-razorpay-order] Payment configuration error: missing credentials"
+        );
         return {
           statusCode: 503,
           headers,
           body: JSON.stringify({
-            error: "test keys not configured",
-            code: "RAZORPAY_TEST_KEYS_NOT_CONFIGURED",
+            error: "Payment configuration error",
+            code: "RAZORPAY_CONFIG_ERROR",
+          }),
+        };
+      }
+
+      // 2. Mode must match configured key prefix:
+      // RAZORPAY_MODE=test requires an rzp_test_ key
+      // RAZORPAY_MODE=live requires an rzp_live_ key
+      // Any mismatch returns the same 503 config error.
+      const resolvedMode = getRazorpayKeyMode(keyId);
+      const expectedPrefix = configuredMode === "test" ? "rzp_test_" : "rzp_live_";
+      if (!keyId.startsWith(expectedPrefix) || resolvedMode !== configuredMode) {
+        safeLog.error(
+          "[Netlify /billing-razorpay-order] Payment configuration error: key prefix does not match configured mode"
+        );
+        return {
+          statusCode: 503,
+          headers,
+          body: JSON.stringify({
+            error: "Payment configuration error",
+            code: "RAZORPAY_CONFIG_ERROR",
+          }),
+        };
+      }
+
+      // 3. On production host (careermonke.com and www.careermonke.com), refuse rzp_test_ keys even if RAZORPAY_MODE=test.
+      if (
+        isProductionHost(event, deps) &&
+        (keyId.startsWith("rzp_test_") || configuredMode === "test")
+      ) {
+        safeLog.error(
+          "[Netlify /billing-razorpay-order] FATAL CONFIGURATION ERROR: Razorpay test keys refused on production host"
+        );
+        return {
+          statusCode: 503,
+          headers,
+          body: JSON.stringify({
+            error: "Payment configuration error",
+            code: "RAZORPAY_CONFIG_ERROR",
           }),
         };
       }
@@ -200,7 +295,9 @@ export function createHandler(deps: BillingOrderDeps = {}) {
         return {
           statusCode: rzpRes.status || 500,
           headers,
-          body: JSON.stringify({ error: err.error?.description || "Failed to create Razorpay order" }),
+          body: JSON.stringify({
+            error: err.error?.description || "Failed to create Razorpay order",
+          }),
         };
       }
 

@@ -175,7 +175,10 @@ function createMockSupabase(db: MockDbState, validUsers: Record<string, any>) {
 
         const order = db.orders.get(orderId);
         if (!order || order.user_id !== userId) {
-          return { data: { success: false, code: "ORDER_NOT_FOUND", error: "Order not found" }, error: null };
+          return {
+            data: { success: false, code: "ORDER_NOT_FOUND", error: "Order not found" },
+            error: null,
+          };
         }
 
         // Mode Isolation Check: must match expected mode
@@ -267,7 +270,9 @@ async function runRazorpayModeIsolationSuite() {
 
   // Negative control mode check
   if (process.argv.includes("--negative-control")) {
-    console.log("\n[NEGATIVE CONTROL] Intentionally asserting invalid condition (test payment gives Pro)...");
+    console.log(
+      "\n[NEGATIVE CONTROL] Intentionally asserting invalid condition (test payment gives Pro)..."
+    );
     const testModeIsPro = true; // Invariant violation
     assert.strictEqual(
       testModeIsPro,
@@ -281,9 +286,16 @@ async function runRazorpayModeIsolationSuite() {
   const origKeyId = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
   const origSecret = process.env.RAZORPAY_KEY_SECRET;
   const origWebhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+  const origMode = process.env.RAZORPAY_MODE;
 
-  const validTestUser = { id: "00000000-0000-4000-a000-000000000001", email: "test-user@careermonke.com" };
-  const validLiveUser = { id: "00000000-0000-4000-a000-000000000002", email: "live-user@careermonke.com" };
+  const validTestUser = {
+    id: "00000000-0000-4000-a000-000000000001",
+    email: "test-user@careermonke.com",
+  };
+  const validLiveUser = {
+    id: "00000000-0000-4000-a000-000000000002",
+    email: "live-user@careermonke.com",
+  };
 
   const validTokens: Record<string, any> = {
     "token-test-user": validTestUser,
@@ -304,8 +316,12 @@ async function runRazorpayModeIsolationSuite() {
   const netlifyOrder = createNetlifyOrderHandler({
     getSupabaseAdmin: mockSupabaseAdmin,
     fetchFn: async () =>
-      new Response(JSON.stringify({ id: "order_test_mock_1", amount: 69200, currency: "INR" }), { status: 200 }),
-    getServerEntitlement: async (userId: string) => ({ isPro: Boolean(mockDb.subscriptions.get(userId)) }),
+      new Response(JSON.stringify({ id: "order_test_mock_1", amount: 69200, currency: "INR" }), {
+        status: 200,
+      }),
+    getServerEntitlement: async (userId: string) => ({
+      isPro: Boolean(mockDb.subscriptions.get(userId)),
+    }),
   });
 
   const netlifyVerify = createNetlifyVerifyHandler({
@@ -320,8 +336,11 @@ async function runRazorpayModeIsolationSuite() {
     // -------------------------------------------------------------------------
     // TEST 1: Flag-off gate: 503 BILLING_DISABLED across ALL order, verify & webhook paths
     // -------------------------------------------------------------------------
-    console.log("\n[TEST 1] Verifying billing flag-off safety (503 BILLING_DISABLED across all endpoints)...");
+    console.log(
+      "\n[TEST 1] Verifying billing flag-off safety (503 BILLING_DISABLED across all endpoints)..."
+    );
     process.env.NEXT_PUBLIC_BILLING_ENABLED = "false";
+    process.env.RAZORPAY_MODE = "test";
     process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = TEST_KEY_ID;
     process.env.RAZORPAY_KEY_SECRET = TEST_KEY_SECRET;
     process.env.RAZORPAY_WEBHOOK_SECRET = TEST_WEBHOOK_SECRET;
@@ -339,7 +358,11 @@ async function runRazorpayModeIsolationSuite() {
     const nVerifyOff = await netlifyVerify({
       httpMethod: "POST",
       headers: { authorization: "Bearer token-test-user" },
-      body: JSON.stringify({ order_id: "order_test_1", payment_id: "pay_1", razorpay_signature: "sig" }),
+      body: JSON.stringify({
+        order_id: "order_test_1",
+        payment_id: "pay_1",
+        razorpay_signature: "sig",
+      }),
     });
     assert.strictEqual(nVerifyOff.statusCode, 503);
     assert.strictEqual(JSON.parse(nVerifyOff.body).code, "BILLING_DISABLED");
@@ -369,7 +392,11 @@ async function runRazorpayModeIsolationSuite() {
     const nextVerifyReq = new Request("http://localhost:3000/api/billing/razorpay/verify", {
       method: "POST",
       headers: { authorization: "Bearer token-test-user", "content-type": "application/json" },
-      body: JSON.stringify({ order_id: "order_test_1", payment_id: "pay_1", razorpay_signature: "sig" }),
+      body: JSON.stringify({
+        order_id: "order_test_1",
+        payment_id: "pay_1",
+        razorpay_signature: "sig",
+      }),
     });
     (nextVerifyReq as any).__testDeps = { getSupabaseAdmin: mockSupabaseAdmin };
     const nextVerifyOff = await handleNextVerify(nextVerifyReq);
@@ -377,7 +404,9 @@ async function runRazorpayModeIsolationSuite() {
     const nextVerifyOffJson = await nextVerifyOff.json();
     assert.strictEqual(nextVerifyOffJson.code, "BILLING_DISABLED");
 
-    console.log("  -> [PASS-LOCAL] All 5 endpoints strictly return 503 BILLING_DISABLED when flag is off.");
+    console.log(
+      "  -> [PASS-LOCAL] All 5 endpoints strictly return 503 BILLING_DISABLED when flag is off."
+    );
 
     // Enable billing flag for subsequent tests
     process.env.NEXT_PUBLIC_BILLING_ENABLED = "true";
@@ -385,7 +414,9 @@ async function runRazorpayModeIsolationSuite() {
     // -------------------------------------------------------------------------
     // TEST 2: Missing, unknown, or conflicting mode configuration rejected fail-closed
     // -------------------------------------------------------------------------
-    console.log("\n[TEST 2] Verifying server-authoritative key mode validation and fail-closed rejection...");
+    console.log(
+      "\n[TEST 2] Verifying server-authoritative key mode validation and fail-closed rejection..."
+    );
 
     // 2A: getRazorpayKeyMode validation
     assert.strictEqual(getRazorpayKeyMode("rzp_test_abc123"), "test");
@@ -400,7 +431,11 @@ async function runRazorpayModeIsolationSuite() {
     const nVerifyMissing = await netlifyVerify({
       httpMethod: "POST",
       headers: { authorization: "Bearer token-test-user" },
-      body: JSON.stringify({ order_id: "order_test_1", payment_id: "pay_1", razorpay_signature: "sig" }),
+      body: JSON.stringify({
+        order_id: "order_test_1",
+        payment_id: "pay_1",
+        razorpay_signature: "sig",
+      }),
     });
     assert.strictEqual(nVerifyMissing.statusCode, 503);
 
@@ -410,7 +445,11 @@ async function runRazorpayModeIsolationSuite() {
     const nVerifyUnknown = await netlifyVerify({
       httpMethod: "POST",
       headers: { authorization: "Bearer token-test-user" },
-      body: JSON.stringify({ order_id: "order_test_1", payment_id: "pay_1", razorpay_signature: "sig" }),
+      body: JSON.stringify({
+        order_id: "order_test_1",
+        payment_id: "pay_1",
+        razorpay_signature: "sig",
+      }),
     });
     assert.strictEqual(nVerifyUnknown.statusCode, 503);
 
@@ -418,15 +457,22 @@ async function runRazorpayModeIsolationSuite() {
     const nextVerifyReqUnknown = new Request("http://localhost:3000/api/billing/razorpay/verify", {
       method: "POST",
       headers: { authorization: "Bearer token-test-user", "content-type": "application/json" },
-      body: JSON.stringify({ order_id: "order_test_1", payment_id: "pay_1", razorpay_signature: "sig" }),
+      body: JSON.stringify({
+        order_id: "order_test_1",
+        payment_id: "pay_1",
+        razorpay_signature: "sig",
+      }),
     });
     (nextVerifyReqUnknown as any).__testDeps = { getSupabaseAdmin: mockSupabaseAdmin };
     const nextVerifyUnknown = await handleNextVerify(nextVerifyReqUnknown);
     assert.strictEqual(nextVerifyUnknown.status, 503);
 
-    console.log("  -> [PASS-LOCAL] Missing and invalid key mode configurations strictly rejected with 503.");
+    console.log(
+      "  -> [PASS-LOCAL] Missing and invalid key mode configurations strictly rejected with 503."
+    );
 
     // Restore test configuration
+    process.env.RAZORPAY_MODE = "test";
     process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = TEST_KEY_ID;
     process.env.RAZORPAY_KEY_SECRET = TEST_KEY_SECRET;
     process.env.RAZORPAY_WEBHOOK_SECRET = TEST_WEBHOOK_SECRET;
@@ -458,7 +504,10 @@ async function runRazorpayModeIsolationSuite() {
     (nextOrderReq2 as any).__testDeps = {
       getSupabaseAdmin: mockSupabaseAdmin,
       fetchFn: async () =>
-        new Response(JSON.stringify({ id: "order_test_next_monthly_2", amount: 149900, currency: "INR" }), { status: 200 }),
+        new Response(
+          JSON.stringify({ id: "order_test_next_monthly_2", amount: 149900, currency: "INR" }),
+          { status: 200 }
+        ),
     };
     const nextOrderRes2 = await handleNextOrder(nextOrderReq2);
     assert.strictEqual(nextOrderRes2.status, 200);
@@ -472,11 +521,16 @@ async function runRazorpayModeIsolationSuite() {
     // -------------------------------------------------------------------------
     // TEST 4: Signed Test-Mode Verification Yields ZERO Real Entitlement Writes
     // -------------------------------------------------------------------------
-    console.log("\n[TEST 4] Verifying signed test verify yields ZERO real entitlements (isPro:false)...");
+    console.log(
+      "\n[TEST 4] Verifying signed test verify yields ZERO real entitlements (isPro:false)..."
+    );
 
     const testPlanOrderId = "order_test_plan_verify_1";
     const testPaymentId = "pay_test_fixture_101";
-    const validTestSig = computeHmacSignature(`${testPlanOrderId}|${testPaymentId}`, TEST_KEY_SECRET);
+    const validTestSig = computeHmacSignature(
+      `${testPlanOrderId}|${testPaymentId}`,
+      TEST_KEY_SECRET
+    );
 
     // Seed test order in payment_orders
     mockDb.orders.set(testPlanOrderId, {
@@ -507,7 +561,11 @@ async function runRazorpayModeIsolationSuite() {
 
     assert.strictEqual(nVerifyPlanData.success, true);
     assert.strictEqual(nVerifyPlanData.testMode, true, "Must return testMode: true");
-    assert.strictEqual(nVerifyPlanData.isPro, false, "CRITICAL: Must return isPro: false for test payments!");
+    assert.strictEqual(
+      nVerifyPlanData.isPro,
+      false,
+      "CRITICAL: Must return isPro: false for test payments!"
+    );
 
     // Verify ZERO writes to public.subscriptions
     assert.strictEqual(
@@ -519,7 +577,10 @@ async function runRazorpayModeIsolationSuite() {
     // 4B: Next Verify of Test Order
     const testNextOrderId = "order_test_next_verify_2";
     const testNextPaymentId = "pay_test_next_202";
-    const validNextSig = computeHmacSignature(`${testNextOrderId}|${testNextPaymentId}`, TEST_KEY_SECRET);
+    const validNextSig = computeHmacSignature(
+      `${testNextOrderId}|${testNextPaymentId}`,
+      TEST_KEY_SECRET
+    );
 
     mockDb.orders.set(testNextOrderId, {
       id: "po_test_next_2",
@@ -548,13 +609,24 @@ async function runRazorpayModeIsolationSuite() {
     const nextVerifyData3 = await nextVerifyRes3.json();
     assert.strictEqual(nextVerifyData3.success, true);
     assert.strictEqual(nextVerifyData3.testMode, true);
-    assert.strictEqual(nextVerifyData3.isPro, false, "CRITICAL: Next verify must return isPro: false for test orders!");
-    assert.strictEqual(mockDb.subscriptions.has(validTestUser.id), false, "Subscriptions table must remain untouched");
+    assert.strictEqual(
+      nextVerifyData3.isPro,
+      false,
+      "CRITICAL: Next verify must return isPro: false for test orders!"
+    );
+    assert.strictEqual(
+      mockDb.subscriptions.has(validTestUser.id),
+      false,
+      "Subscriptions table must remain untouched"
+    );
 
     // 4C: Test Addon Order Verification -> ZERO writes to user_addon_credits
     const testAddonOrderId = "order_test_addon_verify_3";
     const testAddonPaymentId = "pay_test_addon_303";
-    const validAddonSig = computeHmacSignature(`${testAddonOrderId}|${testAddonPaymentId}`, TEST_KEY_SECRET);
+    const validAddonSig = computeHmacSignature(
+      `${testAddonOrderId}|${testAddonPaymentId}`,
+      TEST_KEY_SECRET
+    );
 
     mockDb.orders.set(testAddonOrderId, {
       id: "po_test_addon_3",
@@ -586,12 +658,16 @@ async function runRazorpayModeIsolationSuite() {
       "CRITICAL: user_addon_credits must have ZERO rows for test payments!"
     );
 
-    console.log("  -> [PASS-LOCAL] Signed test verification strictly yields ZERO real entitlement writes.");
+    console.log(
+      "  -> [PASS-LOCAL] Signed test verification strictly yields ZERO real entitlement writes."
+    );
 
     // -------------------------------------------------------------------------
     // TEST 5: Signed Test-Mode Webhooks Yield ZERO Real Entitlement Writes
     // -------------------------------------------------------------------------
-    console.log("\n[TEST 5] Verifying signed test webhooks (order.paid & payment.captured) yield ZERO real entitlements...");
+    console.log(
+      "\n[TEST 5] Verifying signed test webhooks (order.paid & payment.captured) yield ZERO real entitlements..."
+    );
 
     const testWebhookOrderId = "order_test_webhook_505";
     mockDb.orders.set(testWebhookOrderId, {
@@ -628,7 +704,11 @@ async function runRazorpayModeIsolationSuite() {
     assert.strictEqual(webhookData.received, true);
     assert.strictEqual(webhookData.fulfilled, true);
     assert.strictEqual(webhookData.testMode, true, "Webhook must report testMode: true");
-    assert.strictEqual(webhookData.isPro, false, "CRITICAL: Webhook must return isPro: false for test payments!");
+    assert.strictEqual(
+      webhookData.isPro,
+      false,
+      "CRITICAL: Webhook must return isPro: false for test payments!"
+    );
 
     // Check database state
     assert.strictEqual(
@@ -637,16 +717,25 @@ async function runRazorpayModeIsolationSuite() {
       "CRITICAL: Webhook must NEVER insert subscription row for test payment!"
     );
     const updatedOrder = mockDb.orders.get(testWebhookOrderId);
-    assert.strictEqual(updatedOrder.status, "paid", "Test order record may be marked paid for tracking");
+    assert.strictEqual(
+      updatedOrder.status,
+      "paid",
+      "Test order record may be marked paid for tracking"
+    );
 
-    console.log("  -> [PASS-LOCAL] Test webhooks fulfill test order tracking without granting real Pro access.");
+    console.log(
+      "  -> [PASS-LOCAL] Test webhooks fulfill test order tracking without granting real Pro access."
+    );
 
     // -------------------------------------------------------------------------
     // TEST 6: Old Test Order Replay After Key Switch to Live Configuration
     // -------------------------------------------------------------------------
-    console.log("\n[TEST 6] Verifying old test order replay after switching to live credentials is REJECTED...");
+    console.log(
+      "\n[TEST 6] Verifying old test order replay after switching to live credentials is REJECTED..."
+    );
 
     // Switch server environment credentials to LIVE mode
+    process.env.RAZORPAY_MODE = "live";
     process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = LIVE_KEY_ID;
     process.env.RAZORPAY_KEY_SECRET = LIVE_KEY_SECRET;
     process.env.RAZORPAY_WEBHOOK_SECRET = LIVE_WEBHOOK_SECRET;
@@ -654,7 +743,10 @@ async function runRazorpayModeIsolationSuite() {
     // Attacker takes an old test order created in test mode and signs it with live key (or replays it)
     const oldTestOrderId = "order_test_old_replay_606";
     const livePaymentId = "pay_live_606";
-    const liveSignedReplaySig = computeHmacSignature(`${oldTestOrderId}|${livePaymentId}`, LIVE_KEY_SECRET);
+    const liveSignedReplaySig = computeHmacSignature(
+      `${oldTestOrderId}|${livePaymentId}`,
+      LIVE_KEY_SECRET
+    );
 
     mockDb.orders.set(oldTestOrderId, {
       id: "po_old_test_606",
@@ -678,10 +770,18 @@ async function runRazorpayModeIsolationSuite() {
         razorpay_signature: liveSignedReplaySig,
       }),
     });
-    assert.strictEqual(nReplayRes.statusCode, 400, "Must reject test order in live environment with 400");
+    assert.strictEqual(
+      nReplayRes.statusCode,
+      400,
+      "Must reject test order in live environment with 400"
+    );
     const nReplayData = JSON.parse(nReplayRes.body);
     assert.strictEqual(nReplayData.code, "MODE_MISMATCH", "Must return MODE_MISMATCH error code");
-    assert.strictEqual(mockDb.subscriptions.has(validTestUser.id), false, "Subscriptions must NOT be granted");
+    assert.strictEqual(
+      mockDb.subscriptions.has(validTestUser.id),
+      false,
+      "Subscriptions must NOT be granted"
+    );
 
     // 6B: Next Verify replay attempt
     const nextReplayReq = new Request("http://localhost:3000/api/billing/razorpay/verify", {
@@ -709,23 +809,34 @@ async function runRazorpayModeIsolationSuite() {
         payment: { entity: { id: livePaymentId, notes: { user_id: validTestUser.id } } },
       },
     });
-    const liveWebhookReplaySig = computeHmacSignature(liveWebhookReplayPayload, LIVE_WEBHOOK_SECRET);
+    const liveWebhookReplaySig = computeHmacSignature(
+      liveWebhookReplayPayload,
+      LIVE_WEBHOOK_SECRET
+    );
 
     const nWebhookReplayRes = await netlifyWebhook({
       httpMethod: "POST",
       headers: { "x-razorpay-signature": liveWebhookReplaySig },
       body: liveWebhookReplayPayload,
     });
-    assert.strictEqual(nWebhookReplayRes.statusCode, 400, "Webhook must reject test order in live environment");
+    assert.strictEqual(
+      nWebhookReplayRes.statusCode,
+      400,
+      "Webhook must reject test order in live environment"
+    );
     assert.strictEqual(JSON.parse(nWebhookReplayRes.body).code, "MODE_MISMATCH");
     assert.strictEqual(mockDb.subscriptions.has(validTestUser.id), false);
 
-    console.log("  -> [PASS-LOCAL] Mode mismatch protection strictly blocks old test order replay in live environment.");
+    console.log(
+      "  -> [PASS-LOCAL] Mode mismatch protection strictly blocks old test order replay in live environment."
+    );
 
     // -------------------------------------------------------------------------
     // TEST 7: Synthetic Valid Live-Mode Order Retains Exactly-Once Fulfillment
     // -------------------------------------------------------------------------
-    console.log("\n[TEST 7] Verifying synthetic valid live-mode order retains exactly-once atomic fulfillment...");
+    console.log(
+      "\n[TEST 7] Verifying synthetic valid live-mode order retains exactly-once atomic fulfillment..."
+    );
 
     const liveOrderId = "order_live_valid_707";
     const livePayId = "pay_live_valid_707";
@@ -757,7 +868,10 @@ async function runRazorpayModeIsolationSuite() {
     const liveVerifyData = JSON.parse(liveVerifyRes.body);
     assert.strictEqual(liveVerifyData.isPro, true, "Live payment MUST grant isPro: true");
     assert.strictEqual(liveVerifyData.testMode, false);
-    assert.ok(mockDb.subscriptions.has(validLiveUser.id), "Subscription must be recorded in subscriptions table");
+    assert.ok(
+      mockDb.subscriptions.has(validLiveUser.id),
+      "Subscription must be recorded in subscriptions table"
+    );
 
     // 7B: Repeat verify call on already-paid live order -> Idempotent alreadyPaid
     const liveVerifyRepeatRes = await netlifyVerify({
@@ -771,7 +885,11 @@ async function runRazorpayModeIsolationSuite() {
     });
     assert.strictEqual(liveVerifyRepeatRes.statusCode, 200);
     const repeatData = JSON.parse(liveVerifyRepeatRes.body);
-    assert.strictEqual(repeatData.alreadyPaid, true, "Repeat verify must recognize alreadyPaid: true");
+    assert.strictEqual(
+      repeatData.alreadyPaid,
+      true,
+      "Repeat verify must recognize alreadyPaid: true"
+    );
 
     // 7C: Subsequent webhook call for same already-paid order -> Idempotent alreadyProcessed
     const liveWebhookPayload = JSON.stringify({
@@ -793,14 +911,19 @@ async function runRazorpayModeIsolationSuite() {
     const webhookDupData = JSON.parse(liveWebhookRes.body);
     assert.strictEqual(webhookDupData.alreadyPaid, true);
 
-    console.log("  -> [PASS-LOCAL] Synthetic live order fulfilled atomically and idempotent on subsequent calls.");
+    console.log(
+      "  -> [PASS-LOCAL] Synthetic live order fulfilled atomically and idempotent on subsequent calls."
+    );
 
     // -------------------------------------------------------------------------
     // TEST 8: Live Order Replay in Test Environment Rejected
     // -------------------------------------------------------------------------
-    console.log("\n[TEST 8] Verifying live order in test environment is rejected (MODE_MISMATCH)...");
+    console.log(
+      "\n[TEST 8] Verifying live order in test environment is rejected (MODE_MISMATCH)..."
+    );
 
     // Switch back to test keys
+    process.env.RAZORPAY_MODE = "test";
     process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = TEST_KEY_ID;
     process.env.RAZORPAY_KEY_SECRET = TEST_KEY_SECRET;
     process.env.RAZORPAY_WEBHOOK_SECRET = TEST_WEBHOOK_SECRET;
@@ -831,35 +954,409 @@ async function runRazorpayModeIsolationSuite() {
     assert.strictEqual(crossVerifyRes.statusCode, 400);
     assert.strictEqual(JSON.parse(crossVerifyRes.body).code, "MODE_MISMATCH");
 
-    console.log("  -> [PASS-LOCAL] Live order processed in test mode strictly rejected with MODE_MISMATCH.");
+    console.log(
+      "  -> [PASS-LOCAL] Live order processed in test mode strictly rejected with MODE_MISMATCH."
+    );
 
     // -------------------------------------------------------------------------
-    // TEST 9: Sub-process Negative Control Execution
+    // TEST 9: Audit Blocker B2: Explicit RAZORPAY_MODE, Key Prefix Match, and Production Host Guards
     // -------------------------------------------------------------------------
-    console.log("\n[TEST 9] Executing sub-process negative control...");
-    const selfPath = path.resolve(__dirname, "test-razorpay-mode-isolation.ts");
-    const child = spawnSync("npx", ["tsx", selfPath, "--negative-control"], {
-      cwd: path.resolve(__dirname, ".."),
-      shell: true,
-      stdio: "pipe",
-      env: { ...process.env },
+    console.log(
+      "\n[TEST 9] Verifying Audit Blocker B2: RAZORPAY_MODE and production host guards..."
+    );
+
+    // 9A: Live mode + Live key passes key check
+    console.log("  9A. live mode + live key passes the key check...");
+    process.env.RAZORPAY_MODE = "live";
+    process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = LIVE_KEY_ID;
+    process.env.RAZORPAY_KEY_SECRET = LIVE_KEY_SECRET;
+
+    // 9A.1 Netlify order handler with live credentials
+    const b2LiveNetlifyHandler = createNetlifyOrderHandler({
+      getSupabaseAdmin: mockSupabaseAdmin,
+      fetchFn: async () =>
+        new Response(
+          JSON.stringify({ id: "order_live_b2_netlify", amount: 69200, currency: "INR" }),
+          { status: 200 }
+        ),
+      getServerEntitlement: async () => ({ isPro: false }),
     });
+    const b2LiveNetlifyRes = await b2LiveNetlifyHandler({
+      httpMethod: "POST",
+      headers: { authorization: "Bearer token-live-user" },
+      body: JSON.stringify({ planCode: "weekly" }),
+    });
+    assert.strictEqual(
+      b2LiveNetlifyRes.statusCode,
+      200,
+      "live mode + live key must return 200 on Netlify"
+    );
+    const b2LiveNetlifyData = JSON.parse(b2LiveNetlifyRes.body);
+    const b2LiveNetlifySaved = mockDb.orders.get(b2LiveNetlifyData.orderId);
+    assert.ok(b2LiveNetlifySaved, "Live order must be saved in payment_orders");
+    assert.strictEqual(b2LiveNetlifySaved.mode, "live", "Saved order mode must be 'live'");
+
+    // 9A.2 Next order handler with live credentials
+    const b2LiveNextReq = new Request("http://localhost:3000/api/billing/razorpay/order", {
+      method: "POST",
+      headers: { authorization: "Bearer token-live-user", "content-type": "application/json" },
+      body: JSON.stringify({ planCode: "weekly" }),
+    });
+    (b2LiveNextReq as any).__testDeps = {
+      getSupabaseAdmin: mockSupabaseAdmin,
+      fetchFn: async () =>
+        new Response(JSON.stringify({ id: "order_live_b2_next", amount: 69200, currency: "INR" }), {
+          status: 200,
+        }),
+    };
+    const b2LiveNextRes = await handleNextOrder(b2LiveNextReq);
+    assert.strictEqual(
+      b2LiveNextRes.status,
+      200,
+      "live mode + live key must return 200 on Next.js"
+    );
+    const b2LiveNextData = await b2LiveNextRes.json();
+    const b2LiveNextSaved = mockDb.orders.get(b2LiveNextData.orderId);
+    assert.ok(b2LiveNextSaved, "Live order must be saved in payment_orders");
+    assert.strictEqual(b2LiveNextSaved.mode, "live", "Saved order mode must be 'live'");
+
+    // 9B: Live mode + Test key fails (503 RAZORPAY_CONFIG_ERROR)
+    console.log("  9B. live mode + test key fails...");
+    process.env.RAZORPAY_MODE = "live";
+    process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = TEST_KEY_ID;
+    process.env.RAZORPAY_KEY_SECRET = TEST_KEY_SECRET;
+
+    const b2LiveTestNetlifyRes = await b2LiveNetlifyHandler({
+      httpMethod: "POST",
+      headers: { authorization: "Bearer token-test-user" },
+      body: JSON.stringify({ planCode: "weekly" }),
+    });
+    assert.strictEqual(
+      b2LiveTestNetlifyRes.statusCode,
+      503,
+      "live mode + test key must fail with 503 on Netlify"
+    );
+    const b2LiveTestNetlifyBody = JSON.parse(b2LiveTestNetlifyRes.body);
+    assert.strictEqual(b2LiveTestNetlifyBody.code, "RAZORPAY_CONFIG_ERROR");
+    assert.strictEqual(b2LiveTestNetlifyBody.error, "Payment configuration error");
+
+    const b2LiveTestNextReq = new Request("http://localhost:3000/api/billing/razorpay/order", {
+      method: "POST",
+      headers: { authorization: "Bearer token-test-user", "content-type": "application/json" },
+      body: JSON.stringify({ planCode: "weekly" }),
+    });
+    (b2LiveTestNextReq as any).__testDeps = { getSupabaseAdmin: mockSupabaseAdmin };
+    const b2LiveTestNextRes = await handleNextOrder(b2LiveTestNextReq);
+    assert.strictEqual(
+      b2LiveTestNextRes.status,
+      503,
+      "live mode + test key must fail with 503 on Next.js"
+    );
+    const b2LiveTestNextBody = await b2LiveTestNextRes.json();
+    assert.strictEqual(b2LiveTestNextBody.code, "RAZORPAY_CONFIG_ERROR");
+    assert.strictEqual(b2LiveTestNextBody.error, "Payment configuration error");
+
+    // 9C: Test mode + Live key fails (503 RAZORPAY_CONFIG_ERROR)
+    console.log("  9C. test mode + live key fails...");
+    process.env.RAZORPAY_MODE = "test";
+    process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = LIVE_KEY_ID;
+    process.env.RAZORPAY_KEY_SECRET = LIVE_KEY_SECRET;
+
+    const b2TestLiveNetlifyRes = await b2LiveNetlifyHandler({
+      httpMethod: "POST",
+      headers: { authorization: "Bearer token-live-user" },
+      body: JSON.stringify({ planCode: "weekly" }),
+    });
+    assert.strictEqual(
+      b2TestLiveNetlifyRes.statusCode,
+      503,
+      "test mode + live key must fail with 503 on Netlify"
+    );
+    const b2TestLiveNetlifyBody = JSON.parse(b2TestLiveNetlifyRes.body);
+    assert.strictEqual(b2TestLiveNetlifyBody.code, "RAZORPAY_CONFIG_ERROR");
+    assert.strictEqual(b2TestLiveNetlifyBody.error, "Payment configuration error");
+
+    const b2TestLiveNextReq = new Request("http://localhost:3000/api/billing/razorpay/order", {
+      method: "POST",
+      headers: { authorization: "Bearer token-live-user", "content-type": "application/json" },
+      body: JSON.stringify({ planCode: "weekly" }),
+    });
+    (b2TestLiveNextReq as any).__testDeps = { getSupabaseAdmin: mockSupabaseAdmin };
+    const b2TestLiveNextRes = await handleNextOrder(b2TestLiveNextReq);
+    assert.strictEqual(
+      b2TestLiveNextRes.status,
+      503,
+      "test mode + live key must fail with 503 on Next.js"
+    );
+    const b2TestLiveNextBody = await b2TestLiveNextRes.json();
+    assert.strictEqual(b2TestLiveNextBody.code, "RAZORPAY_CONFIG_ERROR");
+    assert.strictEqual(b2TestLiveNextBody.error, "Payment configuration error");
+
+    // 9D: Unset or invalid RAZORPAY_MODE fails (503 RAZORPAY_CONFIG_ERROR)
+    console.log("  9D. unset/invalid RAZORPAY_MODE fails...");
+    process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = TEST_KEY_ID;
+    process.env.RAZORPAY_KEY_SECRET = TEST_KEY_SECRET;
+
+    const invalidModes = [undefined, "", "sandbox", "production", "TEST", "LIVE", "true", "0", "1"];
+    for (const invMode of invalidModes) {
+      if (invMode === undefined) {
+        delete process.env.RAZORPAY_MODE;
+      } else {
+        process.env.RAZORPAY_MODE = invMode;
+      }
+
+      // Netlify
+      const invNetlifyRes = await netlifyOrder({
+        httpMethod: "POST",
+        headers: { authorization: "Bearer token-test-user" },
+        body: JSON.stringify({ planCode: "weekly" }),
+      });
+      assert.strictEqual(
+        invNetlifyRes.statusCode,
+        503,
+        `RAZORPAY_MODE='${invMode}' must fail with 503 on Netlify`
+      );
+      const invNetlifyBody = JSON.parse(invNetlifyRes.body);
+      assert.strictEqual(invNetlifyBody.code, "RAZORPAY_CONFIG_ERROR");
+      assert.strictEqual(invNetlifyBody.error, "Payment configuration error");
+      // Must NEVER leak the env var name or value in response
+      assert.ok(
+        !invNetlifyRes.body.includes("RAZORPAY_MODE"),
+        "Error payload must not leak env var name"
+      );
+      if (invMode) {
+        assert.ok(
+          !invNetlifyRes.body.includes(invMode),
+          "Error payload must not leak env var value"
+        );
+      }
+
+      // Next.js
+      const invNextReq = new Request("http://localhost:3000/api/billing/razorpay/order", {
+        method: "POST",
+        headers: { authorization: "Bearer token-test-user", "content-type": "application/json" },
+        body: JSON.stringify({ planCode: "weekly" }),
+      });
+      (invNextReq as any).__testDeps = { getSupabaseAdmin: mockSupabaseAdmin };
+      const invNextRes = await handleNextOrder(invNextReq);
+      assert.strictEqual(
+        invNextRes.status,
+        503,
+        `RAZORPAY_MODE='${invMode}' must fail with 503 on Next.js`
+      );
+      const invNextBody = await invNextRes.json();
+      assert.strictEqual(invNextBody.code, "RAZORPAY_CONFIG_ERROR");
+      assert.strictEqual(invNextBody.error, "Payment configuration error");
+    }
+
+    // 9E: Test key on production host fails loudly
+    console.log("  9E. test key on production host fails...");
+    process.env.RAZORPAY_MODE = "test";
+    process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = TEST_KEY_ID;
+    process.env.RAZORPAY_KEY_SECRET = TEST_KEY_SECRET;
+
+    const prodHostTestCases = [
+      {
+        desc: "x-forwarded-host: careermonke.com",
+        headers: { "x-forwarded-host": "careermonke.com" },
+      },
+      {
+        desc: "x-forwarded-host: www.careermonke.com",
+        headers: { "x-forwarded-host": "www.careermonke.com" },
+      },
+      {
+        desc: "x-forwarded-host: proxy1, careermonke.com",
+        headers: { "x-forwarded-host": "proxy1, careermonke.com" },
+      },
+      { desc: "host: careermonke.com", headers: { host: "careermonke.com" } },
+      { desc: "host: www.careermonke.com", headers: { host: "www.careermonke.com" } },
+      { desc: "host: careermonke.com:443", headers: { host: "careermonke.com:443" } },
+    ];
+
+    for (const tc of prodHostTestCases) {
+      // Netlify
+      const prodNetlifyRes = await netlifyOrder({
+        httpMethod: "POST",
+        headers: { authorization: "Bearer token-test-user", ...tc.headers },
+        body: JSON.stringify({ planCode: "weekly" }),
+      });
+      assert.strictEqual(
+        prodNetlifyRes.statusCode,
+        503,
+        `Netlify order must reject test key on production host (${tc.desc})`
+      );
+      assert.strictEqual(JSON.parse(prodNetlifyRes.body).code, "RAZORPAY_CONFIG_ERROR");
+
+      // Next.js
+      const prodNextReq = new Request("http://localhost:3000/api/billing/razorpay/order", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer token-test-user",
+          "content-type": "application/json",
+          ...tc.headers,
+        },
+        body: JSON.stringify({ planCode: "weekly" }),
+      });
+      (prodNextReq as any).__testDeps = { getSupabaseAdmin: mockSupabaseAdmin };
+      const prodNextRes = await handleNextOrder(prodNextReq);
+      assert.strictEqual(
+        prodNextRes.status,
+        503,
+        `Next.js order must reject test key on production host (${tc.desc})`
+      );
+      const prodNextBody = await prodNextRes.json();
+      assert.strictEqual(prodNextBody.code, "RAZORPAY_CONFIG_ERROR");
+    }
+
+    // URL detection test
+    const prodUrlNextReq = new Request("https://careermonke.com/api/billing/razorpay/order", {
+      method: "POST",
+      headers: { authorization: "Bearer token-test-user", "content-type": "application/json" },
+      body: JSON.stringify({ planCode: "weekly" }),
+    });
+    (prodUrlNextReq as any).__testDeps = { getSupabaseAdmin: mockSupabaseAdmin };
+    const prodUrlNextRes = await handleNextOrder(prodUrlNextReq);
+    assert.strictEqual(
+      prodUrlNextRes.status,
+      503,
+      "Next.js order must reject test key when req.url has careermonke.com"
+    );
+
+    const prodUrlNetlifyRes = await netlifyOrder({
+      httpMethod: "POST",
+      rawUrl: "https://www.careermonke.com/.netlify/functions/billing-razorpay-order",
+      headers: { authorization: "Bearer token-test-user" },
+      body: JSON.stringify({ planCode: "weekly" }),
+    });
+    assert.strictEqual(
+      prodUrlNetlifyRes.statusCode,
+      503,
+      "Netlify order must reject test key when rawUrl has careermonke.com"
+    );
+
+    // Explicit deps.isProductionHost = true
+    const depsProdNextReq = new Request("http://localhost:3000/api/billing/razorpay/order", {
+      method: "POST",
+      headers: { authorization: "Bearer token-test-user", "content-type": "application/json" },
+      body: JSON.stringify({ planCode: "weekly" }),
+    });
+    (depsProdNextReq as any).__testDeps = {
+      getSupabaseAdmin: mockSupabaseAdmin,
+      isProductionHost: true,
+    };
+    const depsProdNextRes = await handleNextOrder(depsProdNextReq);
+    assert.strictEqual(
+      depsProdNextRes.status,
+      503,
+      "Next.js order must reject test key when deps.isProductionHost is true"
+    );
+
+    const depsProdNetlifyOrder = createNetlifyOrderHandler({
+      getSupabaseAdmin: mockSupabaseAdmin,
+      isProductionHost: true,
+    });
+    const depsProdNetlifyRes = await depsProdNetlifyOrder({
+      httpMethod: "POST",
+      headers: { authorization: "Bearer token-test-user" },
+      body: JSON.stringify({ planCode: "weekly" }),
+    });
+    assert.strictEqual(
+      depsProdNetlifyRes.statusCode,
+      503,
+      "Netlify order must reject test key when deps.isProductionHost is true"
+    );
+
+    // 9F: Production host with LIVE key SUCCEEDS (live payments on live site)
+    console.log("  9F. live key on production host succeeds...");
+    process.env.RAZORPAY_MODE = "live";
+    process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = LIVE_KEY_ID;
+    process.env.RAZORPAY_KEY_SECRET = LIVE_KEY_SECRET;
+
+    const liveProdNetlifyOrder = createNetlifyOrderHandler({
+      getSupabaseAdmin: mockSupabaseAdmin,
+      fetchFn: async () =>
+        new Response(
+          JSON.stringify({ id: "order_live_prod_netlify", amount: 69200, currency: "INR" }),
+          { status: 200 }
+        ),
+    });
+    const liveProdNetlifyRes = await liveProdNetlifyOrder({
+      httpMethod: "POST",
+      headers: { authorization: "Bearer token-live-user", host: "careermonke.com" },
+      body: JSON.stringify({ planCode: "weekly" }),
+    });
+    assert.strictEqual(
+      liveProdNetlifyRes.statusCode,
+      200,
+      "Live key on production host must return 200 on Netlify"
+    );
+
+    const liveProdNextReq = new Request("https://careermonke.com/api/billing/razorpay/order", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer token-live-user",
+        "content-type": "application/json",
+        host: "careermonke.com",
+      },
+      body: JSON.stringify({ planCode: "weekly" }),
+    });
+    (liveProdNextReq as any).__testDeps = {
+      getSupabaseAdmin: mockSupabaseAdmin,
+      fetchFn: async () =>
+        new Response(
+          JSON.stringify({ id: "order_live_prod_next", amount: 69200, currency: "INR" }),
+          { status: 200 }
+        ),
+    };
+    const liveProdNextRes = await handleNextOrder(liveProdNextReq);
+    assert.strictEqual(
+      liveProdNextRes.status,
+      200,
+      "Live key on production host must return 200 on Next.js"
+    );
+
+    console.log(
+      "  -> [PASS-LOCAL] Audit Blocker B2: RAZORPAY_MODE validation and production host safety verified."
+    );
+
+    // -------------------------------------------------------------------------
+    // TEST 10: Sub-process Negative Control Execution
+    // -------------------------------------------------------------------------
+    console.log("\n[TEST 10] Executing sub-process negative control...");
+    const selfPath = path.resolve(__dirname, "test-razorpay-mode-isolation.ts");
+    const child = spawnSync(
+      "node",
+      ["./node_modules/tsx/dist/cli.mjs", selfPath, "--negative-control"],
+      {
+        cwd: path.resolve(__dirname, ".."),
+        shell: true,
+        stdio: "pipe",
+        env: { ...process.env },
+      }
+    );
 
     assert.notStrictEqual(
       child.status,
       0,
       `Negative control MUST exit with non-zero status. Output:\n${child.stderr?.toString()}`
     );
-    console.log("  -> [PASS-LOCAL] Negative control verified: failed with non-zero exit code as expected.");
+    console.log(
+      "  -> [PASS-LOCAL] Negative control verified: failed with non-zero exit code as expected."
+    );
   } finally {
     process.env.NEXT_PUBLIC_BILLING_ENABLED = origBilling;
     process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = origKeyId;
     process.env.RAZORPAY_KEY_SECRET = origSecret;
     process.env.RAZORPAY_WEBHOOK_SECRET = origWebhookSecret;
+    if (origMode !== undefined) {
+      process.env.RAZORPAY_MODE = origMode;
+    } else {
+      delete process.env.RAZORPAY_MODE;
+    }
   }
 
   console.log("\n================================================================================");
-  console.log("ALL 9 RAZORPAY MODE ISOLATION CHECKS PASSED [PASS-LOCAL]");
+  console.log("ALL 10 RAZORPAY MODE ISOLATION CHECKS PASSED [PASS-LOCAL]");
   console.log("================================================================================\n");
 }
 
