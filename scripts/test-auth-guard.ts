@@ -173,11 +173,12 @@ async function runAuthGuardSuite() {
   console.log("  -> [PASS-LOCAL] Expired session correctly routed to /login without redirect loop.");
 
   // ---------------------------------------------------------------------------
-  // TEST 3b: Google-Only Session Policy Regression Tests
-  // Non-Google email session is rejected/signed out and treated as guest on protected pages.
+  // TEST 3b: Session Policy Regression Tests
+  // Unconfirmed-email session is rejected/signed out and treated as guest on protected pages.
+  // Magic-link (confirmed email) and Google sessions are both allowed.
   // Google session passes through on protected pages and redirects on /login.
   // ---------------------------------------------------------------------------
-  console.log("\nTest 3b: Verifying Google-only session enforcement (non-Google rejected/signed out, Google passes)...");
+  console.log("\nTest 3b: Verifying session policy (unconfirmed email rejected/signed out, magic-link and Google pass)...");
 
   let mockSignOutCount = 0;
   const mockAuthClient = {
@@ -190,6 +191,20 @@ async function runAuthGuardSuite() {
                 id: "non-google-user-123",
                 email: "password-user@example.com",
                 email_confirmed_at: "2026-01-01T00:00:00Z",
+                app_metadata: { provider: "email", providers: ["email"] },
+                user_metadata: {},
+              },
+            },
+            error: null,
+          };
+        }
+        if (token === "unconfirmed-auth-token") {
+          return {
+            data: {
+              user: {
+                id: "unconfirmed-user-789",
+                email: "unconfirmed@example.com",
+                email_confirmed_at: null,
                 app_metadata: { provider: "email", providers: ["email"] },
                 user_metadata: {},
               },
@@ -231,7 +246,7 @@ async function runAuthGuardSuite() {
       const initialSignOuts = mockSignOutCount;
       const nonGoogleReq = new NextRequest(`http://localhost:3000${testPage}`, {
         headers: {
-          cookie: "sb-access-token=non-google-auth-token;",
+          cookie: "sb-access-token=unconfirmed-auth-token;",
         },
       });
       const nonGoogleRes = await middleware(nonGoogleReq);
@@ -272,7 +287,7 @@ async function runAuthGuardSuite() {
     // Must NOT redirect to /dashboard; stays on /login (status 200) with sign-out cookies
     const nonGoogleLoginReq = new NextRequest("http://localhost:3000/login", {
       headers: {
-        cookie: "sb-access-token=non-google-auth-token;",
+        cookie: "sb-access-token=unconfirmed-auth-token;",
       },
     });
     const nonGoogleLoginRes = await middleware(nonGoogleLoginReq);
@@ -287,6 +302,20 @@ async function runAuthGuardSuite() {
       "Non-Google session on /login must NOT redirect to /dashboard"
     );
     console.log("  -> [PASS-LOCAL] Non-Google session on /login is NOT redirected to /dashboard");
+
+    // 2b. Magic-link session (confirmed email, provider "email") passes protected pages and /login redirects to /dashboard
+    for (const testPage of protectedPagesToTest) {
+      const magicRes = await middleware(
+        new NextRequest(`http://localhost:3000${testPage}`, { headers: { cookie: "sb-access-token=non-google-auth-token;" } })
+      );
+      assert.strictEqual(magicRes.status, 200, `Magic-link session on '${testPage}' must return 200, got ${magicRes.status}`);
+      assert.strictEqual(magicRes.headers.get("location"), null, `Magic-link session on '${testPage}' must not redirect`);
+    }
+    const magicLoginRes = await middleware(
+      new NextRequest("http://localhost:3000/login", { headers: { cookie: "sb-access-token=non-google-auth-token;" } })
+    );
+    assert.strictEqual(magicLoginRes.status, 307, `Magic-link session on /login must redirect (307), got ${magicLoginRes.status}`);
+    console.log("  -> [PASS-LOCAL] Magic-link session allowed on protected pages");
 
     // 3. Google session hitting protected pages (/dashboard, /resume, /tracker, /settings)
     // Must pass through (status 200, no redirect)

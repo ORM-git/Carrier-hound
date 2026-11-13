@@ -9,7 +9,7 @@ import AppTopBar from "@/components/shell/AppTopBar";
 import LoggedInAppShell from "@/components/shell/LoggedInAppShell";
 import { getAuthUser, getUserPreferences, saveUserPreferences, signOutUser } from "@/lib/auth/session";
 import { UserPreferences } from "@/lib/auth/types";
-import { getUserSubscription, cancelSubscription } from "@/lib/billing/subscription";
+import { getUserSubscription } from "@/lib/billing/subscription";
 import { UserSubscription } from "@/lib/billing/types";
 import { getCandidateProfile, deleteCandidateProfile } from "@/lib/resume/storage";
 import { getTrackedApplications } from "@/lib/tracker/storage";
@@ -111,15 +111,6 @@ function SettingsPageInner() {
       setRoles([...roles, customRole.trim()]);
       setCustomRole("");
     }
-  };
-
-  const handleCancelSubscription = async () => {
-    if (!window.confirm("Are you sure you want to cancel your Pro renewal? You will retain Pro access until the end of the billing period.")) {
-      return;
-    }
-    const updated = await cancelSubscription();
-    setSubscription(updated);
-    toast.info("Subscription marked for cancellation at period end.");
   };
 
   const handleExportData = async () => {
@@ -533,16 +524,8 @@ function SettingsPageInner() {
               {isPro && (
                 <div className="pt-3 border-t border-slate-200/80 flex items-center justify-between text-xs">
                   <span className="text-slate-600">
-                    Auto-renews on: <strong>{new Date(subscription?.currentPeriodEnd || Date.now()).toLocaleDateString()}</strong>
+                    Pro access ends on: <strong>{new Date(subscription?.currentPeriodEnd || Date.now()).toLocaleDateString()}</strong> (plans do not auto-renew)
                   </span>
-
-                  <button
-                    type="button"
-                    onClick={handleCancelSubscription}
-                    className="text-red-600 hover:text-red-800 font-semibold cursor-pointer"
-                  >
-                    Cancel Renewal
-                  </button>
                 </div>
               )}
             </div>

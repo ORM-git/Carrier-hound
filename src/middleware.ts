@@ -143,33 +143,11 @@ function getAllowedEarlyAccessEmails(): Set<string> {
 }
 
 /**
- * Rule 5: Google login only, no magic links.
- * Allows when the user has a linked Google identity (identities[].provider === "google",
- * app_metadata.providers includes "google", or app_metadata.provider === "google")
- * AND user.email_confirmed_at is set.
- * Email-only accounts with no Google identity stay blocked.
+ * Session rule: Google and email magic-link sign-in are both allowed.
+ * A session is accepted only when user.email_confirmed_at is set.
  */
-function isGoogleProvider(user: any): boolean {
-  if (!user) return false;
-
-  const isEmailConfirmed =
-    typeof user.email_confirmed_at === "string" &&
-    user.email_confirmed_at.trim().length > 0;
-  if (!isEmailConfirmed) {
-    return false;
-  }
-
-  const hasGoogleIdentity =
-    Array.isArray(user.identities) &&
-    user.identities.some((id: any) => id?.provider === "google");
-
-  const hasGoogleInProviders =
-    Array.isArray(user.app_metadata?.providers) &&
-    user.app_metadata.providers.includes("google");
-
-  const hasGoogleProvider = user.app_metadata?.provider === "google";
-
-  return Boolean(hasGoogleIdentity || hasGoogleInProviders || hasGoogleProvider);
+function hasConfirmedEmail(user: any): boolean {
+  return Boolean(user) && typeof user.email_confirmed_at === "string" && user.email_confirmed_at.trim().length > 0;
 }
 
 export interface EarlyAccessCacheEntry {
@@ -436,8 +414,8 @@ async function verifyAuthenticatedRequest(
           const _userEmail = String(data.user.email || "").trim().toLowerCase();
           const verifiedAdmin = isVerifiedAdminUser(data.user);
 
-          // Rule 5: Google login only, no magic links
-          if (!isGoogleProvider(data.user)) {
+          // Unconfirmed email sessions are signed out
+          if (!hasConfirmedEmail(data.user)) {
             if (typeof mockAuth.signOut === "function") {
               await mockAuth.signOut().catch(() => {});
             }
@@ -511,8 +489,8 @@ async function verifyAuthenticatedRequest(
         const _userEmail = String(verifiedUser.email || "").trim().toLowerCase();
         const verifiedAdmin = isVerifiedAdminUser(verifiedUser);
 
-        // Rule 5: Google login only, no magic links
-        if (!isGoogleProvider(verifiedUser)) {
+        // Unconfirmed email sessions are signed out
+        if (!hasConfirmedEmail(verifiedUser)) {
           await supabase.auth.signOut().catch(() => {});
           _clearAuthCookiesOnResponse(request, response);
           return {
