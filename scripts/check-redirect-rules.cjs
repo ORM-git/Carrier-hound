@@ -13,16 +13,22 @@
  *      are rejected immediately; partial parseInt behavior is strictly forbidden.
  *   3. Unconditional fallback guard: Fallback rules targeting 404 must be unconditional;
  *      conditional shapes (e.g. Country=US in _redirects or conditions in TOML) are rejected.
- *   4. Approved-origin & exact target: Fallback destination must target the exact expected
+ *   4. Subtable fail-closed guard: ANY [redirects.*] subtable (e.g. [redirects.conditions])
+ *      is explicitly rejected rather than silently chopped off.
+ *   5. Selector keys guard: query = {...}, headers = {...}, or any modifier key on a
+ *      404 fallback is treated as conditional/unsupported and rejected.
+ *   6. Approved-origin & exact target: Fallback destination must target the exact expected
  *      document '/404.html' on a local path or an approved origin (e.g. careermonke.com).
  *      External or unapproved origins (e.g. https://wrong.invalid) are rejected.
- *   5. Destination normalization: Normalizes destination paths across queries
- *      (?foo=bar), fragments (#hash), and absolute/protocol-relative URLs.
- *   6. Early-access guard: No rule targets /early-access as a catch-all or
+ *   7. Pathname case preservation: Pathnames are strictly case-sensitive ('/404.HTML' is
+ *      rejected), while host origins remain case-insensitive.
+ *   8. Destination normalization: Normalizes destination paths across queries
+ *      (?foo=bar), fragments (#hash), and absolute/protocol-relative URLs for routing checks.
+ *   9. Early-access guard: No rule targets /early-access as a catch-all or
  *      catches /jobs to /early-access.
- *   7. Rule precedence / shadowing: No preceding catch-all rule (e.g. /* /login 302)
+ *   10. Rule precedence / shadowing: No preceding catch-all rule (e.g. /* /login 302)
  *      may shadow the 404 fallback rule.
- *   8. Strict shape validation: Incomplete, malformed, or unsupported rule shapes
+ *   11. Strict shape validation: Incomplete, malformed, or unsupported rule shapes
  *      are rejected explicitly instead of being silently ignored.
  *
  * Usage:
@@ -55,6 +61,8 @@ const APPROVED_ORIGINS = new Set([
 /**
  * Parses and dissects a destination string into structured URL components.
  * Distinguishes local paths from absolute URLs and protocol-relative URLs.
+ * NOTE: Origin/host is lowercased (case-insensitive), but pathname case is
+ * STRICTLY PRESERVED (case-sensitive) for exact fallback verification.
  */
 function parseDestination(destination) {
   if (!destination || typeof destination !== "string") {
@@ -82,8 +90,8 @@ function parseDestination(destination) {
       return {
         raw,
         isLocal: false,
-        origin: parsed.origin.toLowerCase(),
-        pathname: parsed.pathname.toLowerCase(),
+        origin: parsed.origin.toLowerCase(), // Host stays case-insensitive
+        pathname: parsed.pathname, // Pathname case PRESERVED
         query: parsed.search,
         hash: parsed.hash,
       };
@@ -92,7 +100,7 @@ function parseDestination(destination) {
         raw,
         isLocal: false,
         origin: "invalid-origin",
-        pathname: raw.toLowerCase(),
+        pathname: raw,
         query: "",
         hash: "",
       };
@@ -112,7 +120,7 @@ function parseDestination(destination) {
     raw,
     isLocal: true,
     origin: null,
-    pathname: withoutQuery.trim().toLowerCase(),
+    pathname: withoutQuery.trim(), // Pathname case PRESERVED
     query: query.trim(),
     hash: hash.trim(),
   };
@@ -130,7 +138,8 @@ function normalizeDestinationPath(destination) {
 /**
  * Asserts that the destination for a 404 fallback rule is an exact local document
  * or an approved-origin document targeting EXPECTED_404_DOCUMENT (/404.html),
- * with NO query strings, NO hash fragments, and an approved or local origin.
+ * with NO query strings, NO hash fragments, approved or local origin,
+ * and STRICT CASE MATCHING (e.g. '/404.HTML' is invalid).
  */
 function isValid404FallbackDestination(destination) {
   const parsed = parseDestination(destination);
@@ -154,10 +163,11 @@ function isValid404FallbackDestination(destination) {
     }
   }
 
+  // Exact case-sensitive match requirement
   if (parsed.pathname !== EXPECTED_404_DOCUMENT) {
     return {
       valid: false,
-      reason: `Target path '${parsed.pathname}' does not match exact expected document '${EXPECTED_404_DOCUMENT}'`,
+      reason: `Target path '${parsed.pathname}' does not match exact expected document '${EXPECTED_404_DOCUMENT}' (case-sensitive exact match required)`,
     };
   }
 
@@ -170,7 +180,7 @@ function isCatchAllPattern(pattern) {
 }
 
 function targetsEarlyAccess(target) {
-  const normalized = normalizeDestinationPath(target);
+  const normalized = normalizeDestinationPath(target).toLowerCase();
   return (
     normalized === "/early-access" ||
     normalized.startsWith("/early-access/") ||
@@ -339,7 +349,8 @@ function parseRedirectsFile(content) {
 
 /**
  * Parses netlify.toml [[redirects]] blocks with strict comment-awareness,
- * full-token status validation, condition detection, and required field checks.
+ * full-token status validation, subtable detection, selector key detection,
+ * and required field checks.
  */
 function parseNetlifyTomlRedirects(content) {
   // First, strip all TOML comments line by line while preserving quotes
@@ -366,8 +377,22 @@ function parseNetlifyTomlRedirects(content) {
   for (let i = 0; i < redirectBlocks.length; i++) {
     const blockIndex = i + 1;
     const rawBlock = redirectBlocks[i];
-    // Split on next section header if present (e.g. [[headers]] or [build])
-    const sectionSplit = rawBlock.split(/\n\s*\[/);
+
+    // Detect ANY [redirects.*] or [[redirects.*]] subtable before section chopping.
+    // Fail closed: the checker does not model subtable shapes.
+    const subtableMatches = rawBlock.match(/^\s*(\[+redirects\.[^\]]+\]+)/gim);
+    let hasSubtable = false;
+    if (subtableMatches && subtableMatches.length > 0) {
+      hasSubtable = true;
+      for (const st of subtableMatches) {
+        syntaxErrors.push(
+          `netlify.toml [[redirects]] block #${blockIndex}: Unsupported subtable '${st.trim()}' detected; subtable shapes are not modeled and must be rejected fail-closed`
+        );
+      }
+    }
+
+    // Split on next foreign section header that is NOT a redirects subtable
+    const sectionSplit = rawBlock.split(/\n\s*\[+(?!\s*redirects\.)/i);
     const blockContent = sectionSplit[0].trim();
 
     if (!blockContent) {
@@ -389,9 +414,24 @@ function parseNetlifyTomlRedirects(content) {
     let force = false;
     let hasConditions = false;
     let conditionsRaw = null;
-    let hasMalformedLine = false;
+    let hasQuery = false;
+    let queryRaw = null;
+    let hasHeaders = false;
+    let headersRaw = null;
+    let hasEdgeHandler = false;
+    let edgeHandlerRaw = null;
+    let hasSign = false;
+    let signRaw = null;
+    let hasMalformedLine = hasSubtable; // subtable automatically invalidates block shape
 
     for (const line of lines) {
+      // Detect subtable or section header lines inside block body
+      if (/^\s*\[/i.test(line)) {
+        // Already recorded via subtableMatches or foreign header
+        hasMalformedLine = true;
+        continue;
+      }
+
       const kvMatch = line.match(/^([a-zA-Z0-9_-]+)\s*=\s*(.+)$/);
       if (!kvMatch) {
         syntaxErrors.push(
@@ -462,6 +502,18 @@ function parseNetlifyTomlRedirects(content) {
       } else if (key === "conditions") {
         hasConditions = true;
         conditionsRaw = val;
+      } else if (key === "query") {
+        hasQuery = true;
+        queryRaw = val;
+      } else if (key === "headers") {
+        hasHeaders = true;
+        headersRaw = val;
+      } else if (key === "edge_handler") {
+        hasEdgeHandler = true;
+        edgeHandlerRaw = val;
+      } else if (key === "sign") {
+        hasSign = true;
+        signRaw = val;
       }
     }
 
@@ -484,6 +536,14 @@ function parseNetlifyTomlRedirects(content) {
       forced: force,
       hasConditions,
       conditionsRaw,
+      hasQuery,
+      queryRaw,
+      hasHeaders,
+      headersRaw,
+      hasEdgeHandler,
+      edgeHandlerRaw,
+      hasSign,
+      signRaw,
       raw: blockContent,
     });
   }
@@ -497,7 +557,7 @@ function parseNetlifyTomlRedirects(content) {
 
 /**
  * Validates redirect rules with precedence, shadowing, unconditional fallback,
- * approved origin, and destination checks.
+ * selector key restrictions, approved origin, and case-sensitive document checks.
  */
 function validateRedirectRules(rules, sourceLabel) {
   const violations = [];
@@ -539,7 +599,39 @@ function validateRedirectRules(rules, sourceLabel) {
           );
         }
 
-        // Destination MUST be an exact local document or approved origin targeting /404.html
+        // Selector keys: query, headers, edge_handler, sign on fallback are forbidden
+        if (rule.hasQuery) {
+          violations.push(
+            `${ruleLabel}: 404 fallback rule must be unconditional; found query selector '${rule.queryRaw}' (fallback cannot have query selectors)`
+          );
+        }
+
+        if (rule.hasHeaders) {
+          violations.push(
+            `${ruleLabel}: 404 fallback rule must be unconditional; found headers selector '${rule.headersRaw}' (fallback cannot have header selectors)`
+          );
+        }
+
+        if (rule.hasEdgeHandler) {
+          violations.push(
+            `${ruleLabel}: 404 fallback rule must be unconditional; found edge_handler modifier '${rule.edgeHandlerRaw}' (fallback cannot use edge handlers)`
+          );
+        }
+
+        if (rule.hasSign) {
+          violations.push(
+            `${ruleLabel}: 404 fallback rule must be unconditional; found sign modifier '${rule.signRaw}' (fallback cannot use signing)`
+          );
+        }
+
+        const isConditionalOrUnsupported =
+          rule.hasConditions ||
+          rule.hasQuery ||
+          rule.hasHeaders ||
+          rule.hasEdgeHandler ||
+          rule.hasSign;
+
+        // Destination MUST be an exact local document or approved origin targeting /404.html (exact case)
         const destCheck = isValid404FallbackDestination(rule.to);
         if (!destCheck.valid) {
           violations.push(
@@ -548,7 +640,7 @@ function validateRedirectRules(rules, sourceLabel) {
         }
 
         // If unconditional AND valid destination
-        if (!rule.hasConditions && destCheck.valid) {
+        if (!isConditionalOrUnsupported && destCheck.valid) {
           if (!found404Fallback) {
             found404Fallback = true;
             fallbackRuleIndex = idx;
@@ -588,7 +680,7 @@ function runNegativeControls() {
   console.log("\n--- RUNNING NEGATIVE CONTROLS VERIFICATION ---");
   const testCases = [
     // ------------------------------------------------------------------------
-    // Round 3 Core Controls (1 - 5)
+    // Core Controls: Full-Token, Conditional, Origin, Subtables, Selectors, Case
     // ------------------------------------------------------------------------
     {
       name: "1. Negative Control: '/* /404.html 404garbage' (partial parseInt rejected)",
@@ -679,12 +771,73 @@ function runNegativeControls() {
         "partial parseInt rejected",
       ],
     },
+    {
+      name: "6. Negative Control: TOML fallback with [redirects.conditions] subtable is rejected fail-closed",
+      fn: () => {
+        const toml = `
+[[redirects]]
+  from = "/*"
+  to = "/404.html"
+  status = 404
+
+  [redirects.conditions]
+    Country = ["US"]
+`;
+        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
+        const res = validateRedirectRules(rules, "netlify.toml");
+        return {
+          violations: [...syntaxErrors, ...res.violations],
+        };
+      },
+      expectedSubstrings: [
+        "Unsupported subtable '[redirects.conditions]'",
+        "Missing required active 404 fallback rule",
+      ],
+    },
+    {
+      name: "7. Negative Control: TOML fallback with query = {country = \"US\"} selector is rejected",
+      fn: () => {
+        const toml = `
+[[redirects]]
+  from = "/*"
+  to = "/404.html"
+  status = 404
+  query = {country = "US"}
+`;
+        const { rules, syntaxErrors } = parseNetlifyTomlRedirects(toml);
+        const res = validateRedirectRules(rules, "netlify.toml");
+        return {
+          violations: [...syntaxErrors, ...res.violations],
+        };
+      },
+      expectedSubstrings: [
+        "404 fallback rule must be unconditional",
+        "query selector '{country = \"US\"}'",
+      ],
+    },
+    {
+      name: "8. Negative Control: '/404.HTML' pathname case mismatch fails (host stays case-insensitive)",
+      fn: () => {
+        const { rules, syntaxErrors } = parseRedirectsFile(
+          "/* https://CAREERMONKE.COM/404.HTML 404"
+        );
+        const res = validateRedirectRules(rules, "public/_redirects");
+        return {
+          violations: [...syntaxErrors, ...res.violations],
+        };
+      },
+      expectedSubstrings: [
+        "Target path '/404.HTML' does not match exact expected document '/404.html'",
+        "case-sensitive exact match required",
+        "Missing required active 404 fallback rule",
+      ],
+    },
 
     // ------------------------------------------------------------------------
-    // Additional Comprehensive Controls (6 - 15)
+    // Additional Comprehensive Controls (9 - 18)
     // ------------------------------------------------------------------------
     {
-      name: "6. Negative Control: Query string '/jobs /early-access?next=jobs 307' followed by fallback fails",
+      name: "9. Negative Control: Query string '/jobs /early-access?next=jobs 307' followed by fallback fails",
       fn: () => {
         const { rules } = parseRedirectsFile(
           "/jobs /early-access?next=jobs 307\n/* /404.html 404"
@@ -694,7 +847,7 @@ function runNegativeControls() {
       expectedSubstrings: ["Jobs route '/jobs' redirects to early-access"],
     },
     {
-      name: "7. Negative Control: Absolute URL '/* https://careermonke.com/early-access 302' followed by fallback fails",
+      name: "10. Negative Control: Absolute URL '/* https://careermonke.com/early-access 302' followed by fallback fails",
       fn: () => {
         const { rules } = parseRedirectsFile(
           "/* https://careermonke.com/early-access 302\n/* /404.html 404"
@@ -707,7 +860,7 @@ function runNegativeControls() {
       ],
     },
     {
-      name: "8. Negative Control: Shadowing '/* /login 302' before the fallback fails",
+      name: "11. Negative Control: Shadowing '/* /login 302' before the fallback fails",
       fn: () => {
         const { rules } = parseRedirectsFile(
           "/* /login 302\n/* /404.html 404"
@@ -719,7 +872,7 @@ function runNegativeControls() {
       ],
     },
     {
-      name: "9. Negative Control: Exact target '/* /not-a-404-document 404' fails",
+      name: "12. Negative Control: Exact target '/* /not-a-404-document 404' fails",
       fn: () => {
         const { rules } = parseRedirectsFile(
           "/* /not-a-404-document 404"
@@ -732,7 +885,7 @@ function runNegativeControls() {
       ],
     },
     {
-      name: "10. Negative Control: Commented TOML fallback block fails",
+      name: "13. Negative Control: Commented TOML fallback block fails",
       fn: () => {
         const toml = `
 # [[redirects]]
@@ -752,7 +905,7 @@ function runNegativeControls() {
       ],
     },
     {
-      name: "11. Negative Control: TOML Shadowing 'from = /*, to = /login, status = 302' before fallback fails",
+      name: "14. Negative Control: TOML Shadowing 'from = /*, to = /login, status = 302' before fallback fails",
       fn: () => {
         const toml = `
 [[redirects]]
@@ -778,7 +931,7 @@ function runNegativeControls() {
       ],
     },
     {
-      name: "12. Negative Control: TOML Query & Jobs 'from = /jobs, to = /early-access?ref=jobs' fails",
+      name: "15. Negative Control: TOML Query & Jobs 'from = /jobs, to = /early-access?ref=jobs' fails",
       fn: () => {
         const toml = `
 [[redirects]]
@@ -801,7 +954,7 @@ function runNegativeControls() {
       ],
     },
     {
-      name: "13. Negative Control: Unsupported shape (public/_redirects incomplete rule missing destination) fails",
+      name: "16. Negative Control: Unsupported shape (public/_redirects incomplete rule missing destination) fails",
       fn: () => {
         const { rules, syntaxErrors } = parseRedirectsFile(
           "/jobs\n/* /404.html 404"
@@ -816,7 +969,7 @@ function runNegativeControls() {
       ],
     },
     {
-      name: "14. Negative Control: Unsupported shape (netlify.toml block missing 'to' field) fails",
+      name: "17. Negative Control: Unsupported shape (netlify.toml block missing 'to' field) fails",
       fn: () => {
         const toml = `
 [[redirects]]
@@ -839,7 +992,7 @@ function runNegativeControls() {
       ],
     },
     {
-      name: "15. Negative Control: TOML Incomplete Commented Body ([[redirects]] with all fields commented out) fails",
+      name: "18. Negative Control: TOML Incomplete Commented Body ([[redirects]] with all fields commented out) fails",
       fn: () => {
         const toml = `
 [[redirects]]
