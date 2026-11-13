@@ -85,19 +85,8 @@ const CASES: Case[] = [
     table: "payment_orders",
     readFile: "src/app/api/billing/razorpay/verify/route.ts",
     readStart: "if (orderErr || !orderRow)",
-    readEnd: "// Query existing subscription for renewal/upgrade logic",
+    readEnd: "// Fulfillment happens only through the atomic SQL RPC fulfil_payment_order",
     vars: ["orderRow"],
-  },
-  {
-    label: "verify route renewal read",
-    selectFile: "src/app/api/billing/razorpay/verify/route.ts",
-    selectStart: "// Query existing subscription for renewal/upgrade logic",
-    selectEnd: "// Grant subscription entitlement FIRST",
-    table: "subscriptions",
-    readFile: "src/app/api/billing/razorpay/verify/route.ts",
-    readStart: "// Query existing subscription for renewal/upgrade logic",
-    readEnd: "// Grant subscription entitlement FIRST",
-    vars: ["existingSub"],
   },
 ];
 
@@ -130,5 +119,13 @@ describe("billing narrowed select lists (DB sheet rank 72)", () => {
       });
       expect(selected, `${c.label}: select list must equal the fields read`).toEqual(read.sort());
     });
+  });
+
+  it("verify route uses RPC-only fulfilment with zero JS grant writes to subscriptions or credits", () => {
+    const src = readFileSync(join(ROOT, "src/app/api/billing/razorpay/verify/route.ts"), "utf8");
+    expect(src).toContain('supabaseAdmin.rpc("fulfil_payment_order"');
+    expect(src).not.toContain('.from("subscriptions")');
+    expect(src).not.toContain('.from("user_addon_credits")');
+    expect(src).not.toContain('.update({ status: "paid"');
   });
 });
