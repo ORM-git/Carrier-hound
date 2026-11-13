@@ -32,16 +32,33 @@ function getSupabaseClient() {
  * Ensures only safe public fields (id, name, slug, country, jobCount) are returned,
  * preserving zero leakage of paid job details.
  */
+export const WORLDWIDE_QUERY_TIMEOUT_MS = 4000;
+
 export async function getWorldwideCompanies(clientOverride?: any): Promise<WorldwideCompany[]> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const client = clientOverride !== undefined ? clientOverride : getSupabaseClient();
     if (!client) {
       return WORLDWIDE_COMPANIES;
     }
 
-    const { data, error } = await client
+    const query = client
       .from("worldwide_company_counts")
       .select("name, slug, country, active_job_count");
+
+    const timeoutPromise = new Promise<{ data: null; error: Error }>((resolve) => {
+      timer = setTimeout(() => {
+        resolve({
+          data: null,
+          error: new Error("worldwide_company_counts query timed out"),
+        });
+      }, WORLDWIDE_QUERY_TIMEOUT_MS);
+    });
+
+    const { data, error } = await Promise.race([
+      Promise.resolve(query),
+      timeoutPromise,
+    ]);
 
     if (error || data == null) {
       return WORLDWIDE_COMPANIES;
@@ -93,5 +110,9 @@ export async function getWorldwideCompanies(clientOverride?: any): Promise<World
       });
     }
     return WORLDWIDE_COMPANIES;
+  } finally {
+    if (timer !== undefined) {
+      clearTimeout(timer);
+    }
   }
 }
