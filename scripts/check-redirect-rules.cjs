@@ -308,6 +308,14 @@ function parseRedirectsFile(content) {
 // STRICT SUBSET PARSER for netlify.toml [[redirects]]
 // ============================================================================
 
+// Valid TOML whitespace is strictly ASCII space (U+0020) and horizontal tab (U+0009).
+// Reject any other whitespace or control character anywhere in a line:
+// - Control characters: U+0000..U+0008, U+000B (\v), U+000C (\f), U+000E..U+001F, U+007F, \r (carriage return outside line endings)
+// - Non-ASCII whitespace: U+00A0 (NBSP), U+1680, U+2000..U+200B (including zero-width space U+200B), U+2028, U+2029, U+202F, U+205F, U+3000
+// - Byte Order Mark (BOM) / zero-width no-break space: U+FEFF
+const DISALLOWED_CHARS_REGEX =
+  /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F\r\u00A0\u1680\u2000-\u200B\u2028\u2029\u202F\u205F\u3000\uFEFF]/;
+
 /**
  * Strict subset parser for netlify.toml [[redirects]] blocks.
  * Fails closed on any construct outside the exact grammar specified.
@@ -364,7 +372,20 @@ function parseNetlifyTomlRedirects(content, options = {}) {
 
   for (let lineNum = 1; lineNum <= rawLines.length; lineNum++) {
     const rawLine = rawLines[lineNum - 1];
-    const trimmed = rawLine.trim();
+
+    // Reject non-ASCII whitespace or control characters anywhere in the line
+    if (DISALLOWED_CHARS_REGEX.test(rawLine)) {
+      syntaxErrors.push(
+        `netlify.toml line ${lineNum}: Invalid whitespace or control character detected (only ASCII space U+0020 and tab U+0009 allowed)`
+      );
+      if (currentBlock) {
+        currentBlock.hasError = true;
+      }
+      continue;
+    }
+
+    // Strip ONLY space and tab explicitly (never use JS trim() or \s)
+    const trimmed = rawLine.replace(/^[ \t]+|[ \t]+$/g, "");
 
     // 1. Empty / whitespace-only line
     if (!trimmed) {
@@ -399,7 +420,7 @@ function parseNetlifyTomlRedirects(content, options = {}) {
 
       // Check allowed top-level non-redirect headers in full netlify.toml
       if (allowTopLevelHeaders) {
-        const headerWithoutComment = trimmed.replace(/[ \t]*#.*$/, "").trim();
+        const headerWithoutComment = trimmed.replace(/[ \t]*#.*$/, "").replace(/^[ \t]+|[ \t]+$/g, "");
         if (ALLOWED_TOP_LEVEL_SECTIONS.has(headerWithoutComment)) {
           finalizeBlock(currentBlock);
           currentBlock = null;
@@ -505,8 +526,8 @@ function parseNetlifyTomlRedirects(content, options = {}) {
     }
     currentBlock.seenKeys.add(rawKey);
 
-    // Value validation
-    const valTrimStart = rawValPart.trimStart();
+    // Value validation: strip only leading ASCII space and tab (never use JS trimStart())
+    const valTrimStart = rawValPart.replace(/^[ \t]+/, "");
     if (valTrimStart.length === 0) {
       syntaxErrors.push(
         `netlify.toml line ${lineNum}: Missing value for key '${rawKey}'`
@@ -565,10 +586,10 @@ function parseNetlifyTomlRedirects(content, options = {}) {
 
       // No characters after closing quote except optional whitespace and a "# comment"
       const remainder = valTrimStart.slice(closingIdx + 1);
-      const trimmedRemainder = remainder.trimStart();
+      const trimmedRemainder = remainder.replace(/^[ \t]+/, "");
       if (trimmedRemainder.length > 0 && !trimmedRemainder.startsWith("#")) {
         syntaxErrors.push(
-          `netlify.toml line ${lineNum}: Trailing characters after closing quote for '${rawKey}': '${remainder.trim()}' (only optional whitespace and '# comment' allowed)`
+          `netlify.toml line ${lineNum}: Trailing characters after closing quote for '${rawKey}': '${remainder.replace(/^[ \t]+|[ \t]+$/g, "")}' (only optional whitespace and '# comment' allowed)`
         );
         currentBlock.hasError = true;
         continue;
@@ -584,7 +605,7 @@ function parseNetlifyTomlRedirects(content, options = {}) {
       if (hashIdx !== -1) {
         token = token.slice(0, hashIdx);
       }
-      const statusToken = token.trim();
+      const statusToken = token.replace(/^[ \t]+|[ \t]+$/g, "");
 
       // Validate raw token first without parseInt
       if (!/^[1-9][0-9]{2}$/.test(statusToken)) {
@@ -614,7 +635,7 @@ function parseNetlifyTomlRedirects(content, options = {}) {
       if (hashIdx !== -1) {
         token = token.slice(0, hashIdx);
       }
-      const forceToken = token.trim();
+      const forceToken = token.replace(/^[ \t]+|[ \t]+$/g, "");
 
       if (forceToken !== "true" && forceToken !== "false") {
         syntaxErrors.push(
@@ -729,34 +750,53 @@ function validateRedirectRules(rules, sourceLabel) {
 // ============================================================================
 
 function checkTomlWithPython(tomlInputs) {
-  try {
-    const res = cp.spawnSync(
-      "python",
-      [
-        "-c",
-        `import json, sys, tomllib
-inputs = json.loads(sys.stdin.read())
-results = []
-for s in inputs:
+  const pythonScript = `import json, sys
+try:
+    import tomllib as toml_parser
+except ImportError:
     try:
-        tomllib.loads(s)
-        results.append(True)
-    except Exception:
-        results.append(False)
-print(json.dumps(results))
-`,
-      ],
-      {
+        import tomli as toml_parser
+    except ImportError:
+        import subprocess
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "tomli"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            import tomli as toml_parser
+        except Exception:
+            sys.stderr.write("NO_TOML_PARSER_AVAILABLE\\n")
+            sys.exit(2)
+
+try:
+    inputs = json.loads(sys.stdin.read())
+    results = []
+    for s in inputs:
+        try:
+            toml_parser.loads(s)
+            results.append(True)
+        except Exception:
+            results.append(False)
+    print(json.dumps(results))
+except Exception as e:
+    sys.stderr.write(f"ERR: {e}\\n")
+    sys.exit(1)
+`;
+
+  const candidates = [process.env.PYTHON || "python", "python3", "py"];
+  for (const cmd of candidates) {
+    try {
+      const res = cp.spawnSync(cmd, ["-c", pythonScript], {
         input: JSON.stringify(tomlInputs),
         encoding: "utf-8",
         maxBuffer: 50 * 1024 * 1024,
+      });
+      if (res.status === 0 && res.stdout) {
+        const parsed = JSON.parse(res.stdout);
+        if (Array.isArray(parsed)) {
+          return parsed;
+        }
       }
-    );
-    if (res.status === 0 && res.stdout) {
-      return JSON.parse(res.stdout);
+    } catch (_) {
+      // try next candidate
     }
-  } catch (err) {
-    console.warn("Python tomllib batch check warning:", err.message);
   }
   return null;
 }
@@ -1289,9 +1329,57 @@ function runTableDrivenTestSuite() {
       toml: `[[redirects]]\n  from = "/*"\n  to = "/404.HTML"\n  status = 404\n`,
       expectedSubstring: "case-sensitive exact match required",
     },
+    {
+      name: "NEG 82: NBSP before table header '\\u00A0[[redirects]]'",
+      toml: `\u00A0[[redirects]]
+  from = "/*"
+  to = "/404.html"
+  status = 404
+`,
+      expectedSubstring: "Invalid whitespace or control character detected",
+    },
+    {
+      name: "NEG 83: NBSP after '=' in status line 'status =\\u00A0404'",
+      toml: `[[redirects]]
+  from = "/*"
+  to = "/404.html"
+  status =\u00A0404
+`,
+      expectedSubstring: "Invalid whitespace or control character detected",
+    },
+    {
+      name: "NEG 84: Zero-width space U+200B in line 'from\\u200B = \"/jobs\"'",
+      toml: `[[redirects]]
+  from\u200B = "/jobs"
+  to = "/jobs-dest"
+  status = 301
+
+${canonicalFallbackSnippet}`,
+      expectedSubstring: "Invalid whitespace or control character detected",
+    },
+    {
+      name: "NEG 85: BOM mid-file U+FEFF",
+      toml: `[[redirects]]
+  from = "/jobs"
+  to = "/jobs-dest"
+  status = 301
+\uFEFF
+${canonicalFallbackSnippet}`,
+      expectedSubstring: "Invalid whitespace or control character detected",
+    },
+    {
+      name: "NEG 86: NBSP after '=' in string line 'from =\\u00A0\"/jobs\"'",
+      toml: `[[redirects]]
+  from =\u00A0"/jobs"
+  to = "/jobs-dest"
+  status = 301
+
+${canonicalFallbackSnippet}`,
+      expectedSubstring: "Invalid whitespace or control character detected",
+    },
   ];
 
-  // Batch cross-check against Python tomllib
+  // Batch cross-check against Python tomllib / tomli
   const allInputs = [
     ...positiveControls.map((c) => c.toml),
     ...negativeControls.map((c) => c.toml),
@@ -1299,11 +1387,14 @@ function runTableDrivenTestSuite() {
   const tomllibResults = checkTomlWithPython(allInputs);
   const tomllibAvailable = Array.isArray(tomllibResults);
 
-  if (tomllibAvailable) {
-    console.log(`  [OK] Python tomllib verified active (${allInputs.length} test cases batch-checked).`);
-  } else {
-    console.warn("  [WARN] Python tomllib not accessible for batch verification.");
+  if (!tomllibAvailable) {
+    console.error(
+      "  [FAIL] Python tomllib/tomli cross-check could not be executed! Test integrity requires tomllib/tomli."
+    );
+    return { passed: false, crossCheckedCount: 0 };
   }
+
+  console.log(`  [OK] Python tomllib/tomli verified active (${allInputs.length} test cases batch-checked).`);
 
   let passedTests = 0;
   const totalTests = positiveControls.length + negativeControls.length;
@@ -1370,7 +1461,7 @@ function runTableDrivenTestSuite() {
     `\nTable-Driven Suite: ${passedTests}/${totalTests} tests passed (${positiveControls.length} positive, ${negativeControls.length} negative).`
   );
 
-  return passedTests === totalTests;
+  return { passed: passedTests === totalTests, crossCheckedCount: allInputs.length };
 }
 
 function runFuzzTestSuite(iterations = 300) {
@@ -1414,8 +1505,10 @@ function runFuzzTestSuite(iterations = 300) {
   const tomllibAvailable = Array.isArray(tomllibResults);
 
   if (!tomllibAvailable) {
-    console.warn("  [WARN] Python tomllib unavailable for fuzz validation; skipping fuzz comparison.");
-    return true;
+    console.error(
+      "  [FAIL] Python tomllib/tomli cross-check unavailable for fuzz validation! Fuzz loop cannot be skipped."
+    );
+    return { passed: false, crossCheckedCount: 0 };
   }
 
   let violations = 0;
@@ -1436,11 +1529,11 @@ function runFuzzTestSuite(iterations = 300) {
 
   if (violations > 0) {
     console.error(`Fuzz suite FAILED: ${violations} violation(s) detected.`);
-    return false;
+    return { passed: false, crossCheckedCount: 0 };
   }
 
   console.log(`Fuzz Suite: ${iterations}/${iterations} mutants verified successfully (0 subset violations).`);
-  return true;
+  return { passed: true, crossCheckedCount: iterations };
 }
 
 // ============================================================================
@@ -1453,6 +1546,7 @@ function main() {
   console.log("=".repeat(80));
 
   let hasErrors = false;
+  let totalCrossChecked = 0;
 
   // 1. Verify public/_redirects
   console.log(`\n1. Checking public/_redirects: ${path.relative(ROOT_DIR, REDIRECTS_PATH)}`);
@@ -1515,18 +1609,21 @@ function main() {
   }
 
   // 3. Run Table-Driven Test Suite & Python Cross-Check
-  const suitePassed = runTableDrivenTestSuite();
-  if (!suitePassed) {
+  const suiteResult = runTableDrivenTestSuite();
+  if (!suiteResult.passed) {
     hasErrors = true;
   }
+  totalCrossChecked += suiteResult.crossCheckedCount;
 
   // 4. Run Fuzz Suite
-  const fuzzPassed = runFuzzTestSuite(300);
-  if (!fuzzPassed) {
+  const fuzzResult = runFuzzTestSuite(300);
+  if (!fuzzResult.passed) {
     hasErrors = true;
   }
+  totalCrossChecked += fuzzResult.crossCheckedCount;
 
   console.log("\n" + "-".repeat(80));
+  console.log(`Cross-checked ${totalCrossChecked} cases against Python tomllib/tomli.`);
   if (hasErrors) {
     console.error("VERDICT: FAIL (One or more redirect rules, controls, or fuzz checks failed)");
     process.exit(1);
