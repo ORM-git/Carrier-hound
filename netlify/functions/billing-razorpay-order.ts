@@ -21,44 +21,68 @@ function isProductionHost(event: any, deps?: BillingOrderDeps): boolean {
   if (deps?.isProductionHost !== undefined) {
     return Boolean(deps.isProductionHost);
   }
-  const prodHosts = new Set(["careermonke.com", "www.careermonke.com"]);
+  const PROD_HOSTS = new Set(["careermonke.com", "www.careermonke.com"]);
+
+  const canonicalizeHost = (raw: string | null | undefined): string => {
+    if (!raw || typeof raw !== "string") return "";
+    let h = raw.trim().toLowerCase();
+    if (h.startsWith("[")) {
+      const endBracket = h.indexOf("]");
+      if (endBracket !== -1) {
+        h = h.slice(1, endBracket);
+      }
+    } else {
+      h = h.split(":")[0];
+    }
+    while (h.endsWith(".")) {
+      h = h.slice(0, -1);
+    }
+    return h.trim();
+  };
+
+  const matchesProd = (candidate: string | null | undefined): boolean => {
+    return PROD_HOSTS.has(canonicalizeHost(candidate));
+  };
 
   const headers = event?.headers || {};
-  const xForwardedHost = headers["x-forwarded-host"] || headers["X-Forwarded-Host"];
-  if (xForwardedHost) {
-    const parts = xForwardedHost.split(",");
-    for (const part of parts) {
-      const host = part.trim().split(":")[0].toLowerCase();
-      if (prodHosts.has(host)) return true;
-    }
-  }
 
+  // 1. Canonical Host header (must not be overridden by caller-supplied forwarding headers)
   const hostHeader = headers.host || headers.Host;
   if (hostHeader) {
     const parts = hostHeader.split(",");
     for (const part of parts) {
-      const host = part.trim().split(":")[0].toLowerCase();
-      if (prodHosts.has(host)) return true;
+      if (matchesProd(part)) return true;
     }
   }
 
+  // 2. Canonical request rawUrl
   if (event?.rawUrl) {
     try {
       const url = new URL(event.rawUrl);
-      if (prodHosts.has(url.hostname.toLowerCase())) return true;
+      if (matchesProd(url.hostname) || matchesProd(url.host)) return true;
     } catch {
       // ignore
     }
   }
 
+  // 3. Forwarded host headers (caller-supplied header must never override a production Host or URL)
+  const xForwardedHost = headers["x-forwarded-host"] || headers["X-Forwarded-Host"];
+  if (xForwardedHost) {
+    const parts = xForwardedHost.split(",");
+    for (const part of parts) {
+      if (matchesProd(part)) return true;
+    }
+  }
+
+  // 4. Deployment environment hints
   const envUrls = [process.env.NEXT_PUBLIC_SITE_URL, process.env.URL, process.env.SITE_URL];
   for (const envUrl of envUrls) {
     if (envUrl) {
       try {
         const parsed = new URL(envUrl.startsWith("http") ? envUrl : `https://${envUrl}`);
-        if (prodHosts.has(parsed.hostname.toLowerCase())) return true;
+        if (matchesProd(parsed.hostname) || matchesProd(parsed.host)) return true;
       } catch {
-        // ignore
+        if (matchesProd(envUrl)) return true;
       }
     }
   }

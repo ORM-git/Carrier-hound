@@ -709,6 +709,167 @@ async function runSuite() {
     console.log(
       "  -> [PASS-LOCAL] Duplicate webhook delivery after success safely recognized without re-fulfilment."
     );
+
+    // ---------------------------------------------------------------------------
+    // TEST 10: Audit Blocker B2: Host Canonicalization, Zero Razorpay Calls, and Live Key Success
+    // ---------------------------------------------------------------------------
+    console.log(
+      "\nTest 10: Verifying host canonicalization, zero Razorpay calls on rejection, and live key success..."
+    );
+
+    let netlifyB2FetchCalls = 0;
+    const trackedB2Fetch = async () => {
+      netlifyB2FetchCalls++;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          id: "order_b2_netlify_mock",
+          amount: 69200,
+          currency: "INR",
+          status: "created",
+        }),
+      };
+    };
+
+    const b2OrderHandler = createOrderHandler({
+      getSupabaseAdmin: mockAdminGetter,
+      getServerEntitlement: mockEntitlement,
+      fetchFn: trackedB2Fetch as any,
+    });
+
+    // 10A: Host canonicalization rejections with test key (trailing dot, uppercase, port, conflicting headers)
+    process.env.RAZORPAY_MODE = "test";
+    process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = TEST_KEY_ID;
+    process.env.RAZORPAY_KEY_SECRET = TEST_SECRET;
+
+    const netlifyProdHostCases = [
+      { desc: "host: careermonke.com", headers: { host: "careermonke.com" } },
+      { desc: "host: www.careermonke.com", headers: { host: "www.careermonke.com" } },
+      { desc: "host: careermonke.com. (trailing dot)", headers: { host: "careermonke.com." } },
+      {
+        desc: "host: www.careermonke.com. (trailing dot)",
+        headers: { host: "www.careermonke.com." },
+      },
+      { desc: "host: CAREERMONKE.COM (uppercase)", headers: { host: "CAREERMONKE.COM" } },
+      {
+        desc: "host: CAREERMONKE.COM. (uppercase + trailing dot)",
+        headers: { host: "CAREERMONKE.COM." },
+      },
+      { desc: "host: careermonke.com:443 (port)", headers: { host: "careermonke.com:443" } },
+      {
+        desc: "host: careermonke.com.:443 (trailing dot + port)",
+        headers: { host: "careermonke.com.:443" },
+      },
+      {
+        desc: "host: WWW.CAREERMONKE.COM.:8443 (uppercase + trailing dot + port)",
+        headers: { host: "WWW.CAREERMONKE.COM.:8443" },
+      },
+      // Conflicting preview x-forwarded-host with a production Host
+      {
+        desc: "conflicting preview x-forwarded-host with careermonke.com.",
+        headers: {
+          "x-forwarded-host": "preview-branch.careermonke.netlify.app",
+          host: "careermonke.com.",
+        },
+      },
+      {
+        desc: "conflicting preview x-forwarded-host with www.careermonke.com.",
+        headers: {
+          "x-forwarded-host": "preview-branch.careermonke.netlify.app",
+          host: "www.careermonke.com.",
+        },
+      },
+    ];
+
+    for (const tc of netlifyProdHostCases) {
+      netlifyB2FetchCalls = 0;
+      const res = await b2OrderHandler({
+        httpMethod: "POST",
+        headers: { authorization: "Bearer valid-token-pro", ...tc.headers },
+        body: JSON.stringify({ planCode: "weekly" }),
+      });
+      assert.strictEqual(
+        res.statusCode,
+        503,
+        `Netlify order must reject test key on production host (${tc.desc})`
+      );
+      assert.strictEqual(
+        netlifyB2FetchCalls,
+        0,
+        `Netlify must NEVER call Razorpay API on rejection (${tc.desc})`
+      );
+      assert.strictEqual(JSON.parse(res.body).code, "RAZORPAY_CONFIG_ERROR");
+    }
+
+    // rawUrl variations (trailing dot, port, with conflicting x-forwarded-host)
+    const rawUrlCases = [
+      "https://careermonke.com/.netlify/functions/billing-razorpay-order",
+      "https://careermonke.com./.netlify/functions/billing-razorpay-order",
+      "https://www.careermonke.com./.netlify/functions/billing-razorpay-order",
+      "https://CAREERMONKE.COM:443/.netlify/functions/billing-razorpay-order",
+    ];
+    for (const rawUrl of rawUrlCases) {
+      netlifyB2FetchCalls = 0;
+      const res = await b2OrderHandler({
+        httpMethod: "POST",
+        rawUrl,
+        headers: {
+          authorization: "Bearer valid-token-pro",
+          "x-forwarded-host": "preview-branch.netlify.app",
+        },
+        body: JSON.stringify({ planCode: "weekly" }),
+      });
+      assert.strictEqual(res.statusCode, 503, `Netlify must reject test key for rawUrl: ${rawUrl}`);
+      assert.strictEqual(netlifyB2FetchCalls, 0, `Netlify must NEVER call Razorpay on ${rawUrl}`);
+    }
+
+    // 10B: Live key on production host succeeds (200 OK, calls Razorpay)
+    process.env.RAZORPAY_MODE = "live";
+    process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = "rzp_live_key_valid_123456";
+    process.env.RAZORPAY_KEY_SECRET = "rzp_live_secret_valid_654321";
+
+    const liveProdCases = [
+      { desc: "host: careermonke.com", headers: { host: "careermonke.com" } },
+      { desc: "host: careermonke.com. (trailing dot)", headers: { host: "careermonke.com." } },
+      {
+        desc: "host: www.careermonke.com. (trailing dot)",
+        headers: { host: "www.careermonke.com." },
+      },
+      {
+        desc: "host: CAREERMONKE.COM:443 (uppercase + port)",
+        headers: { host: "CAREERMONKE.COM:443" },
+      },
+      {
+        desc: "conflicting preview x-forwarded-host with careermonke.com.",
+        headers: { "x-forwarded-host": "preview-branch.netlify.app", host: "careermonke.com." },
+      },
+    ];
+
+    for (const lc of liveProdCases) {
+      netlifyB2FetchCalls = 0;
+      const res = await b2OrderHandler({
+        httpMethod: "POST",
+        headers: { authorization: "Bearer valid-token-pro", ...lc.headers },
+        body: JSON.stringify({ planCode: "weekly" }),
+      });
+      assert.strictEqual(
+        res.statusCode,
+        200,
+        `Live key on production host must succeed on Netlify (${lc.desc})`
+      );
+      assert.strictEqual(
+        netlifyB2FetchCalls,
+        1,
+        `Live key on production host must call Razorpay API (${lc.desc})`
+      );
+      const parsed = JSON.parse(res.body);
+      assert.strictEqual(parsed.orderId, "order_b2_netlify_mock");
+    }
+
+    console.log(
+      "  -> [PASS-LOCAL] Host canonicalization, zero Razorpay calls on rejection, and live key success verified on Netlify."
+    );
   } finally {
     // Restore original env vars
     process.env.NEXT_PUBLIC_BILLING_ENABLED = origBilling;
@@ -723,7 +884,7 @@ async function runSuite() {
   }
 
   console.log("\n--------------------------------------------------------------------------------");
-  console.log("ALL 9 NETLIFY BILLING TEST SUITES PASSED [PASS-LOCAL]");
+  console.log("ALL 10 NETLIFY BILLING TEST SUITES PASSED [PASS-LOCAL]");
   console.log("--------------------------------------------------------------------------------\n");
 }
 

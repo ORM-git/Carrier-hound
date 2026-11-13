@@ -965,6 +965,15 @@ async function runRazorpayModeIsolationSuite() {
       "\n[TEST 9] Verifying Audit Blocker B2: RAZORPAY_MODE and production host guards..."
     );
 
+    let rzpApiCallCount = 0;
+    const trackedFetch = async () => {
+      rzpApiCallCount++;
+      return new Response(
+        JSON.stringify({ id: "order_mock_b2_123", amount: 69200, currency: "INR" }),
+        { status: 200 }
+      );
+    };
+
     // 9A: Live mode + Live key passes key check
     console.log("  9A. live mode + live key passes the key check...");
     process.env.RAZORPAY_MODE = "live";
@@ -974,13 +983,10 @@ async function runRazorpayModeIsolationSuite() {
     // 9A.1 Netlify order handler with live credentials
     const b2LiveNetlifyHandler = createNetlifyOrderHandler({
       getSupabaseAdmin: mockSupabaseAdmin,
-      fetchFn: async () =>
-        new Response(
-          JSON.stringify({ id: "order_live_b2_netlify", amount: 69200, currency: "INR" }),
-          { status: 200 }
-        ),
+      fetchFn: trackedFetch,
       getServerEntitlement: async () => ({ isPro: false }),
     });
+    rzpApiCallCount = 0;
     const b2LiveNetlifyRes = await b2LiveNetlifyHandler({
       httpMethod: "POST",
       headers: { authorization: "Bearer token-live-user" },
@@ -991,6 +997,7 @@ async function runRazorpayModeIsolationSuite() {
       200,
       "live mode + live key must return 200 on Netlify"
     );
+    assert.strictEqual(rzpApiCallCount, 1, "Must call Razorpay API on valid live order");
     const b2LiveNetlifyData = JSON.parse(b2LiveNetlifyRes.body);
     const b2LiveNetlifySaved = mockDb.orders.get(b2LiveNetlifyData.orderId);
     assert.ok(b2LiveNetlifySaved, "Live order must be saved in payment_orders");
@@ -1004,28 +1011,28 @@ async function runRazorpayModeIsolationSuite() {
     });
     (b2LiveNextReq as any).__testDeps = {
       getSupabaseAdmin: mockSupabaseAdmin,
-      fetchFn: async () =>
-        new Response(JSON.stringify({ id: "order_live_b2_next", amount: 69200, currency: "INR" }), {
-          status: 200,
-        }),
+      fetchFn: trackedFetch,
     };
+    rzpApiCallCount = 0;
     const b2LiveNextRes = await handleNextOrder(b2LiveNextReq);
     assert.strictEqual(
       b2LiveNextRes.status,
       200,
       "live mode + live key must return 200 on Next.js"
     );
+    assert.strictEqual(rzpApiCallCount, 1, "Must call Razorpay API on valid live order");
     const b2LiveNextData = await b2LiveNextRes.json();
     const b2LiveNextSaved = mockDb.orders.get(b2LiveNextData.orderId);
     assert.ok(b2LiveNextSaved, "Live order must be saved in payment_orders");
     assert.strictEqual(b2LiveNextSaved.mode, "live", "Saved order mode must be 'live'");
 
-    // 9B: Live mode + Test key fails (503 RAZORPAY_CONFIG_ERROR)
-    console.log("  9B. live mode + test key fails...");
+    // 9B: Live mode + Test key fails (503 RAZORPAY_CONFIG_ERROR, ZERO Razorpay calls)
+    console.log("  9B. live mode + test key fails (zero Razorpay calls)...");
     process.env.RAZORPAY_MODE = "live";
     process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = TEST_KEY_ID;
     process.env.RAZORPAY_KEY_SECRET = TEST_KEY_SECRET;
 
+    rzpApiCallCount = 0;
     const b2LiveTestNetlifyRes = await b2LiveNetlifyHandler({
       httpMethod: "POST",
       headers: { authorization: "Bearer token-test-user" },
@@ -1036,6 +1043,7 @@ async function runRazorpayModeIsolationSuite() {
       503,
       "live mode + test key must fail with 503 on Netlify"
     );
+    assert.strictEqual(rzpApiCallCount, 0, "Must NEVER call Razorpay on key mismatch rejection");
     const b2LiveTestNetlifyBody = JSON.parse(b2LiveTestNetlifyRes.body);
     assert.strictEqual(b2LiveTestNetlifyBody.code, "RAZORPAY_CONFIG_ERROR");
     assert.strictEqual(b2LiveTestNetlifyBody.error, "Payment configuration error");
@@ -1045,23 +1053,29 @@ async function runRazorpayModeIsolationSuite() {
       headers: { authorization: "Bearer token-test-user", "content-type": "application/json" },
       body: JSON.stringify({ planCode: "weekly" }),
     });
-    (b2LiveTestNextReq as any).__testDeps = { getSupabaseAdmin: mockSupabaseAdmin };
+    (b2LiveTestNextReq as any).__testDeps = {
+      getSupabaseAdmin: mockSupabaseAdmin,
+      fetchFn: trackedFetch,
+    };
+    rzpApiCallCount = 0;
     const b2LiveTestNextRes = await handleNextOrder(b2LiveTestNextReq);
     assert.strictEqual(
       b2LiveTestNextRes.status,
       503,
       "live mode + test key must fail with 503 on Next.js"
     );
+    assert.strictEqual(rzpApiCallCount, 0, "Must NEVER call Razorpay on key mismatch rejection");
     const b2LiveTestNextBody = await b2LiveTestNextRes.json();
     assert.strictEqual(b2LiveTestNextBody.code, "RAZORPAY_CONFIG_ERROR");
     assert.strictEqual(b2LiveTestNextBody.error, "Payment configuration error");
 
-    // 9C: Test mode + Live key fails (503 RAZORPAY_CONFIG_ERROR)
-    console.log("  9C. test mode + live key fails...");
+    // 9C: Test mode + Live key fails (503 RAZORPAY_CONFIG_ERROR, ZERO Razorpay calls)
+    console.log("  9C. test mode + live key fails (zero Razorpay calls)...");
     process.env.RAZORPAY_MODE = "test";
     process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = LIVE_KEY_ID;
     process.env.RAZORPAY_KEY_SECRET = LIVE_KEY_SECRET;
 
+    rzpApiCallCount = 0;
     const b2TestLiveNetlifyRes = await b2LiveNetlifyHandler({
       httpMethod: "POST",
       headers: { authorization: "Bearer token-live-user" },
@@ -1072,6 +1086,7 @@ async function runRazorpayModeIsolationSuite() {
       503,
       "test mode + live key must fail with 503 on Netlify"
     );
+    assert.strictEqual(rzpApiCallCount, 0, "Must NEVER call Razorpay on key mismatch rejection");
     const b2TestLiveNetlifyBody = JSON.parse(b2TestLiveNetlifyRes.body);
     assert.strictEqual(b2TestLiveNetlifyBody.code, "RAZORPAY_CONFIG_ERROR");
     assert.strictEqual(b2TestLiveNetlifyBody.error, "Payment configuration error");
@@ -1081,19 +1096,24 @@ async function runRazorpayModeIsolationSuite() {
       headers: { authorization: "Bearer token-live-user", "content-type": "application/json" },
       body: JSON.stringify({ planCode: "weekly" }),
     });
-    (b2TestLiveNextReq as any).__testDeps = { getSupabaseAdmin: mockSupabaseAdmin };
+    (b2TestLiveNextReq as any).__testDeps = {
+      getSupabaseAdmin: mockSupabaseAdmin,
+      fetchFn: trackedFetch,
+    };
+    rzpApiCallCount = 0;
     const b2TestLiveNextRes = await handleNextOrder(b2TestLiveNextReq);
     assert.strictEqual(
       b2TestLiveNextRes.status,
       503,
       "test mode + live key must fail with 503 on Next.js"
     );
+    assert.strictEqual(rzpApiCallCount, 0, "Must NEVER call Razorpay on key mismatch rejection");
     const b2TestLiveNextBody = await b2TestLiveNextRes.json();
     assert.strictEqual(b2TestLiveNextBody.code, "RAZORPAY_CONFIG_ERROR");
     assert.strictEqual(b2TestLiveNextBody.error, "Payment configuration error");
 
-    // 9D: Unset or invalid RAZORPAY_MODE fails (503 RAZORPAY_CONFIG_ERROR)
-    console.log("  9D. unset/invalid RAZORPAY_MODE fails...");
+    // 9D: Unset or invalid RAZORPAY_MODE fails (503 RAZORPAY_CONFIG_ERROR, ZERO Razorpay calls)
+    console.log("  9D. unset/invalid RAZORPAY_MODE fails (zero Razorpay calls)...");
     process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = TEST_KEY_ID;
     process.env.RAZORPAY_KEY_SECRET = TEST_KEY_SECRET;
 
@@ -1106,7 +1126,12 @@ async function runRazorpayModeIsolationSuite() {
       }
 
       // Netlify
-      const invNetlifyRes = await netlifyOrder({
+      const invNetlifyHandler = createNetlifyOrderHandler({
+        getSupabaseAdmin: mockSupabaseAdmin,
+        fetchFn: trackedFetch,
+      });
+      rzpApiCallCount = 0;
+      const invNetlifyRes = await invNetlifyHandler({
         httpMethod: "POST",
         headers: { authorization: "Bearer token-test-user" },
         body: JSON.stringify({ planCode: "weekly" }),
@@ -1116,6 +1141,7 @@ async function runRazorpayModeIsolationSuite() {
         503,
         `RAZORPAY_MODE='${invMode}' must fail with 503 on Netlify`
       );
+      assert.strictEqual(rzpApiCallCount, 0, "Must NEVER call Razorpay on invalid mode rejection");
       const invNetlifyBody = JSON.parse(invNetlifyRes.body);
       assert.strictEqual(invNetlifyBody.code, "RAZORPAY_CONFIG_ERROR");
       assert.strictEqual(invNetlifyBody.error, "Payment configuration error");
@@ -1137,45 +1163,127 @@ async function runRazorpayModeIsolationSuite() {
         headers: { authorization: "Bearer token-test-user", "content-type": "application/json" },
         body: JSON.stringify({ planCode: "weekly" }),
       });
-      (invNextReq as any).__testDeps = { getSupabaseAdmin: mockSupabaseAdmin };
+      (invNextReq as any).__testDeps = {
+        getSupabaseAdmin: mockSupabaseAdmin,
+        fetchFn: trackedFetch,
+      };
+      rzpApiCallCount = 0;
       const invNextRes = await handleNextOrder(invNextReq);
       assert.strictEqual(
         invNextRes.status,
         503,
         `RAZORPAY_MODE='${invMode}' must fail with 503 on Next.js`
       );
+      assert.strictEqual(rzpApiCallCount, 0, "Must NEVER call Razorpay on invalid mode rejection");
       const invNextBody = await invNextRes.json();
       assert.strictEqual(invNextBody.code, "RAZORPAY_CONFIG_ERROR");
       assert.strictEqual(invNextBody.error, "Payment configuration error");
     }
 
-    // 9E: Test key on production host fails loudly
-    console.log("  9E. test key on production host fails...");
+    // 9E: Test key on production host fails loudly (zero Razorpay calls)
+    console.log(
+      "  9E. test key on production host fails (trailing dot, uppercase, ports, conflicting headers, zero Razorpay calls)..."
+    );
     process.env.RAZORPAY_MODE = "test";
     process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = TEST_KEY_ID;
     process.env.RAZORPAY_KEY_SECRET = TEST_KEY_SECRET;
 
+    const prodHostNetlifyOrder = createNetlifyOrderHandler({
+      getSupabaseAdmin: mockSupabaseAdmin,
+      fetchFn: trackedFetch,
+    });
+
     const prodHostTestCases = [
-      {
-        desc: "x-forwarded-host: careermonke.com",
-        headers: { "x-forwarded-host": "careermonke.com" },
-      },
-      {
-        desc: "x-forwarded-host: www.careermonke.com",
-        headers: { "x-forwarded-host": "www.careermonke.com" },
-      },
-      {
-        desc: "x-forwarded-host: proxy1, careermonke.com",
-        headers: { "x-forwarded-host": "proxy1, careermonke.com" },
-      },
+      // Standard production hosts
       { desc: "host: careermonke.com", headers: { host: "careermonke.com" } },
       { desc: "host: www.careermonke.com", headers: { host: "www.careermonke.com" } },
-      { desc: "host: careermonke.com:443", headers: { host: "careermonke.com:443" } },
+      // Trailing dot hosts (DNS root)
+      { desc: "host: careermonke.com. (trailing dot)", headers: { host: "careermonke.com." } },
+      {
+        desc: "host: www.careermonke.com. (trailing dot)",
+        headers: { host: "www.careermonke.com." },
+      },
+      {
+        desc: "host: careermonke.com.. (multiple trailing dots)",
+        headers: { host: "careermonke.com.." },
+      },
+      // Uppercase hosts
+      { desc: "host: CAREERMONKE.COM (uppercase)", headers: { host: "CAREERMONKE.COM" } },
+      { desc: "host: WWW.CAREERMONKE.COM (uppercase)", headers: { host: "WWW.CAREERMONKE.COM" } },
+      {
+        desc: "host: CAREERMONKE.COM. (uppercase + trailing dot)",
+        headers: { host: "CAREERMONKE.COM." },
+      },
+      {
+        desc: "host: WWW.CAREERMONKE.COM. (uppercase + trailing dot)",
+        headers: { host: "WWW.CAREERMONKE.COM." },
+      },
+      // Hosts with port
+      { desc: "host: careermonke.com:443 (port)", headers: { host: "careermonke.com:443" } },
+      {
+        desc: "host: careermonke.com.:443 (trailing dot + port)",
+        headers: { host: "careermonke.com.:443" },
+      },
+      {
+        desc: "host: www.careermonke.com:8443 (port)",
+        headers: { host: "www.careermonke.com:8443" },
+      },
+      {
+        desc: "host: WWW.CAREERMONKE.COM.:443 (uppercase + trailing dot + port)",
+        headers: { host: "WWW.CAREERMONKE.COM.:443" },
+      },
+      // Conflicting preview x-forwarded-host with a production Host (reviewer bypass reproduction)
+      {
+        desc: "conflicting preview x-forwarded-host with careermonke.com",
+        headers: {
+          "x-forwarded-host": "preview-branch.careermonke.netlify.app",
+          host: "careermonke.com",
+        },
+      },
+      {
+        desc: "conflicting preview x-forwarded-host with careermonke.com. (trailing dot)",
+        headers: {
+          "x-forwarded-host": "preview-branch.careermonke.netlify.app",
+          host: "careermonke.com.",
+        },
+      },
+      {
+        desc: "conflicting preview x-forwarded-host with www.careermonke.com. (trailing dot)",
+        headers: {
+          "x-forwarded-host": "preview-branch.careermonke.netlify.app",
+          host: "www.careermonke.com.",
+        },
+      },
+      {
+        desc: "conflicting preview x-forwarded-host with CAREERMONKE.COM.:443",
+        headers: {
+          "x-forwarded-host": "preview-branch.careermonke.netlify.app",
+          host: "CAREERMONKE.COM.:443",
+        },
+      },
+      // x-forwarded-host variants
+      {
+        desc: "x-forwarded-host: careermonke.com.",
+        headers: { "x-forwarded-host": "careermonke.com." },
+      },
+      {
+        desc: "x-forwarded-host: www.careermonke.com.",
+        headers: { "x-forwarded-host": "www.careermonke.com." },
+      },
+      {
+        desc: "x-forwarded-host: proxy1, careermonke.com.",
+        headers: { "x-forwarded-host": "proxy1, careermonke.com." },
+      },
+      {
+        desc: "x-forwarded-host: CAREERMONKE.COM.:443",
+        headers: { "x-forwarded-host": "CAREERMONKE.COM.:443" },
+      },
     ];
 
     for (const tc of prodHostTestCases) {
       // Netlify
-      const prodNetlifyRes = await netlifyOrder({
+      rzpApiCallCount = 0;
+      const prodNetlifyRes = await prodHostNetlifyOrder({
         httpMethod: "POST",
         headers: { authorization: "Bearer token-test-user", ...tc.headers },
         body: JSON.stringify({ planCode: "weekly" }),
@@ -1184,6 +1292,11 @@ async function runRazorpayModeIsolationSuite() {
         prodNetlifyRes.statusCode,
         503,
         `Netlify order must reject test key on production host (${tc.desc})`
+      );
+      assert.strictEqual(
+        rzpApiCallCount,
+        0,
+        `Netlify must NEVER call Razorpay on production host rejection (${tc.desc})`
       );
       assert.strictEqual(JSON.parse(prodNetlifyRes.body).code, "RAZORPAY_CONFIG_ERROR");
 
@@ -1197,42 +1310,87 @@ async function runRazorpayModeIsolationSuite() {
         },
         body: JSON.stringify({ planCode: "weekly" }),
       });
-      (prodNextReq as any).__testDeps = { getSupabaseAdmin: mockSupabaseAdmin };
+      (prodNextReq as any).__testDeps = {
+        getSupabaseAdmin: mockSupabaseAdmin,
+        fetchFn: trackedFetch,
+      };
+      rzpApiCallCount = 0;
       const prodNextRes = await handleNextOrder(prodNextReq);
       assert.strictEqual(
         prodNextRes.status,
         503,
         `Next.js order must reject test key on production host (${tc.desc})`
       );
+      assert.strictEqual(
+        rzpApiCallCount,
+        0,
+        `Next.js must NEVER call Razorpay on production host rejection (${tc.desc})`
+      );
       const prodNextBody = await prodNextRes.json();
       assert.strictEqual(prodNextBody.code, "RAZORPAY_CONFIG_ERROR");
     }
 
-    // URL detection test
-    const prodUrlNextReq = new Request("https://careermonke.com/api/billing/razorpay/order", {
-      method: "POST",
-      headers: { authorization: "Bearer token-test-user", "content-type": "application/json" },
-      body: JSON.stringify({ planCode: "weekly" }),
-    });
-    (prodUrlNextReq as any).__testDeps = { getSupabaseAdmin: mockSupabaseAdmin };
-    const prodUrlNextRes = await handleNextOrder(prodUrlNextReq);
-    assert.strictEqual(
-      prodUrlNextRes.status,
-      503,
-      "Next.js order must reject test key when req.url has careermonke.com"
-    );
+    // URL detection test cases (trailing dot, port, conflicting headers, zero Razorpay calls)
+    const urlTestCases = [
+      { url: "https://careermonke.com/api/billing/razorpay/order", desc: "standard prod url" },
+      { url: "https://careermonke.com./api/billing/razorpay/order", desc: "trailing dot prod url" },
+      {
+        url: "https://www.careermonke.com./api/billing/razorpay/order",
+        desc: "www trailing dot prod url",
+      },
+      {
+        url: "https://CAREERMONKE.COM:443/api/billing/razorpay/order",
+        desc: "uppercase prod url with port",
+      },
+      {
+        url: "https://careermonke.com.:8443/api/billing/razorpay/order",
+        desc: "trailing dot prod url with port",
+      },
+    ];
 
-    const prodUrlNetlifyRes = await netlifyOrder({
-      httpMethod: "POST",
-      rawUrl: "https://www.careermonke.com/.netlify/functions/billing-razorpay-order",
-      headers: { authorization: "Bearer token-test-user" },
-      body: JSON.stringify({ planCode: "weekly" }),
-    });
-    assert.strictEqual(
-      prodUrlNetlifyRes.statusCode,
-      503,
-      "Netlify order must reject test key when rawUrl has careermonke.com"
-    );
+    for (const u of urlTestCases) {
+      // Next.js
+      const prodUrlNextReq = new Request(u.url, {
+        method: "POST",
+        headers: {
+          authorization: "Bearer token-test-user",
+          "content-type": "application/json",
+          // Add conflicting preview x-forwarded-host to prove URL cannot be overridden
+          "x-forwarded-host": "preview-branch.netlify.app",
+        },
+        body: JSON.stringify({ planCode: "weekly" }),
+      });
+      (prodUrlNextReq as any).__testDeps = {
+        getSupabaseAdmin: mockSupabaseAdmin,
+        fetchFn: trackedFetch,
+      };
+      rzpApiCallCount = 0;
+      const prodUrlNextRes = await handleNextOrder(prodUrlNextReq);
+      assert.strictEqual(
+        prodUrlNextRes.status,
+        503,
+        `Next.js order must reject test key when req.url has ${u.desc}`
+      );
+      assert.strictEqual(rzpApiCallCount, 0, `Next.js must NEVER call Razorpay on ${u.desc}`);
+
+      // Netlify
+      rzpApiCallCount = 0;
+      const prodUrlNetlifyRes = await prodHostNetlifyOrder({
+        httpMethod: "POST",
+        rawUrl: u.url,
+        headers: {
+          authorization: "Bearer token-test-user",
+          "x-forwarded-host": "preview-branch.netlify.app",
+        },
+        body: JSON.stringify({ planCode: "weekly" }),
+      });
+      assert.strictEqual(
+        prodUrlNetlifyRes.statusCode,
+        503,
+        `Netlify order must reject test key when rawUrl has ${u.desc}`
+      );
+      assert.strictEqual(rzpApiCallCount, 0, `Netlify must NEVER call Razorpay on ${u.desc}`);
+    }
 
     // Explicit deps.isProductionHost = true
     const depsProdNextReq = new Request("http://localhost:3000/api/billing/razorpay/order", {
@@ -1243,18 +1401,23 @@ async function runRazorpayModeIsolationSuite() {
     (depsProdNextReq as any).__testDeps = {
       getSupabaseAdmin: mockSupabaseAdmin,
       isProductionHost: true,
+      fetchFn: trackedFetch,
     };
+    rzpApiCallCount = 0;
     const depsProdNextRes = await handleNextOrder(depsProdNextReq);
     assert.strictEqual(
       depsProdNextRes.status,
       503,
       "Next.js order must reject test key when deps.isProductionHost is true"
     );
+    assert.strictEqual(rzpApiCallCount, 0);
 
     const depsProdNetlifyOrder = createNetlifyOrderHandler({
       getSupabaseAdmin: mockSupabaseAdmin,
       isProductionHost: true,
+      fetchFn: trackedFetch,
     });
+    rzpApiCallCount = 0;
     const depsProdNetlifyRes = await depsProdNetlifyOrder({
       httpMethod: "POST",
       headers: { authorization: "Bearer token-test-user" },
@@ -1265,55 +1428,84 @@ async function runRazorpayModeIsolationSuite() {
       503,
       "Netlify order must reject test key when deps.isProductionHost is true"
     );
+    assert.strictEqual(rzpApiCallCount, 0);
 
     // 9F: Production host with LIVE key SUCCEEDS (live payments on live site)
-    console.log("  9F. live key on production host succeeds...");
+    console.log(
+      "  9F. live key on production host succeeds (standard, trailing dot, uppercase, ports, conflicting preview header)..."
+    );
     process.env.RAZORPAY_MODE = "live";
     process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = LIVE_KEY_ID;
     process.env.RAZORPAY_KEY_SECRET = LIVE_KEY_SECRET;
 
     const liveProdNetlifyOrder = createNetlifyOrderHandler({
       getSupabaseAdmin: mockSupabaseAdmin,
-      fetchFn: async () =>
-        new Response(
-          JSON.stringify({ id: "order_live_prod_netlify", amount: 69200, currency: "INR" }),
-          { status: 200 }
-        ),
+      fetchFn: trackedFetch,
     });
-    const liveProdNetlifyRes = await liveProdNetlifyOrder({
-      httpMethod: "POST",
-      headers: { authorization: "Bearer token-live-user", host: "careermonke.com" },
-      body: JSON.stringify({ planCode: "weekly" }),
-    });
-    assert.strictEqual(
-      liveProdNetlifyRes.statusCode,
-      200,
-      "Live key on production host must return 200 on Netlify"
-    );
 
-    const liveProdNextReq = new Request("https://careermonke.com/api/billing/razorpay/order", {
-      method: "POST",
-      headers: {
-        authorization: "Bearer token-live-user",
-        "content-type": "application/json",
-        host: "careermonke.com",
+    const liveProdHostCases = [
+      { desc: "host: careermonke.com", headers: { host: "careermonke.com" } },
+      { desc: "host: careermonke.com. (trailing dot)", headers: { host: "careermonke.com." } },
+      {
+        desc: "host: www.careermonke.com. (trailing dot)",
+        headers: { host: "www.careermonke.com." },
       },
-      body: JSON.stringify({ planCode: "weekly" }),
-    });
-    (liveProdNextReq as any).__testDeps = {
-      getSupabaseAdmin: mockSupabaseAdmin,
-      fetchFn: async () =>
-        new Response(
-          JSON.stringify({ id: "order_live_prod_next", amount: 69200, currency: "INR" }),
-          { status: 200 }
-        ),
-    };
-    const liveProdNextRes = await handleNextOrder(liveProdNextReq);
-    assert.strictEqual(
-      liveProdNextRes.status,
-      200,
-      "Live key on production host must return 200 on Next.js"
-    );
+      {
+        desc: "host: CAREERMONKE.COM:443 (uppercase + port)",
+        headers: { host: "CAREERMONKE.COM:443" },
+      },
+      {
+        desc: "conflicting preview x-forwarded-host with careermonke.com.",
+        headers: { "x-forwarded-host": "preview-branch.netlify.app", host: "careermonke.com." },
+      },
+    ];
+
+    for (const lc of liveProdHostCases) {
+      // Netlify
+      rzpApiCallCount = 0;
+      const liveNetlifyRes = await liveProdNetlifyOrder({
+        httpMethod: "POST",
+        headers: { authorization: "Bearer token-live-user", ...lc.headers },
+        body: JSON.stringify({ planCode: "weekly" }),
+      });
+      assert.strictEqual(
+        liveNetlifyRes.statusCode,
+        200,
+        `Live key on production host must return 200 on Netlify (${lc.desc})`
+      );
+      assert.strictEqual(
+        rzpApiCallCount,
+        1,
+        `Live key on production host must call Razorpay API (${lc.desc})`
+      );
+
+      // Next.js
+      const liveNextReq = new Request("https://careermonke.com/api/billing/razorpay/order", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer token-live-user",
+          "content-type": "application/json",
+          ...lc.headers,
+        },
+        body: JSON.stringify({ planCode: "weekly" }),
+      });
+      (liveNextReq as any).__testDeps = {
+        getSupabaseAdmin: mockSupabaseAdmin,
+        fetchFn: trackedFetch,
+      };
+      rzpApiCallCount = 0;
+      const liveNextRes = await handleNextOrder(liveNextReq);
+      assert.strictEqual(
+        liveNextRes.status,
+        200,
+        `Live key on production host must return 200 on Next.js (${lc.desc})`
+      );
+      assert.strictEqual(
+        rzpApiCallCount,
+        1,
+        `Live key on production host must call Razorpay API (${lc.desc})`
+      );
+    }
 
     console.log(
       "  -> [PASS-LOCAL] Audit Blocker B2: RAZORPAY_MODE validation and production host safety verified."
