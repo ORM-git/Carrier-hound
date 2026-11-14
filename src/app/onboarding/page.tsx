@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import BrandIcon from "@/components/BrandIcon";
 import { createClient } from "@/lib/supabase/client";
+import { checkAccountOnboardingCompleted } from "@/lib/auth/onboarding";
 import {
   getValidReturnUrl,
   getAuthUser,
@@ -147,23 +148,14 @@ function OnboardingPageInner() {
 
       try {
         const supabase = createClient();
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("onboarding_completed_at, full_name, target_roles")
-          .eq("user_id", user.id)
-          .maybeSingle();
-
-        if (profile?.onboarding_completed_at || (Array.isArray(profile?.target_roles) && profile.target_roles.length > 0)) {
+        const isCompleted = await checkAccountOnboardingCompleted(supabase, user.id);
+        if (isCompleted) {
           router.replace(next);
           return;
         }
 
         const prefs = await getUserPreferences(user.id);
         if (prefs) {
-          if (prefs.onboardingCompleted || (Array.isArray(prefs.roles) && prefs.roles.length > 0)) {
-            router.replace(next);
-            return;
-          }
           setExistingPrefs(prefs);
           if (Array.isArray(prefs.roles) && prefs.roles.length > 0) setRoles(prefs.roles);
           if (prefs.experienceLevel) setExperienceLevel(prefs.experienceLevel);
@@ -209,8 +201,11 @@ function OnboardingPageInner() {
       };
       await saveUserPreferences(payload, userId);
       setExistingPrefs(payload);
-    } catch (err) {
+    } catch (err: any) {
       console.warn("Could not save preferences snapshot:", err);
+      if (completed) {
+        throw err;
+      }
     }
   };
 
@@ -238,9 +233,13 @@ function OnboardingPageInner() {
   };
 
   const handleSkipResume = async () => {
-    await persistPreferences(true);
-    toast.info("Preferences saved! You can upload your resume anytime from the dashboard.");
-    router.push(next);
+    try {
+      await persistPreferences(true);
+      toast.info("Preferences saved! You can upload your resume anytime from the dashboard.");
+      router.push(next);
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to save preferences. Please try again.");
+    }
   };
 
   // Role toggle

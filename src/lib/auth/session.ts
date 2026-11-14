@@ -1,5 +1,6 @@
 import { createClient } from "../supabase/client";
 import { UserPreferences, DEFAULT_USER_PREFERENCES } from "./types";
+import { markAccountOnboardingCompleted } from "./onboarding";
 import { clearCandidateProfileMemoryCache } from "../resume/storage";
 import { clearTrackerMemoryState } from "../tracker/storage";
 import type { User } from "@supabase/supabase-js";
@@ -144,10 +145,6 @@ export async function getUserPreferences(userId?: string): Promise<UserPreferenc
         .maybeSingle();
 
       if (data && !error) {
-        const isCompleted = Boolean(
-          data.onboarding_completed ||
-            (Array.isArray(data.roles) && data.roles.length > 0)
-        );
         const prefs: UserPreferences = {
           roles: data.roles || [],
           categories: data.categories || [],
@@ -159,7 +156,7 @@ export async function getUserPreferences(userId?: string): Promise<UserPreferenc
           minSalary: data.min_salary,
           salaryCurrency: data.salary_currency || "USD",
           dailyDigestOptIn: data.daily_digest_opt_in ?? true,
-          onboardingCompleted: isCompleted,
+          onboardingCompleted: Boolean(data.onboarding_completed),
           eligibilityFilter: data.eligibility_filter ?? true,
           updatedAt: data.updated_at || new Date().toISOString(),
         };
@@ -211,37 +208,30 @@ export async function saveUserPreferences(prefs: UserPreferences, userId?: strin
 
   const supabase = createClient();
   if (userId && userId !== "local-user") {
-    try {
-      await supabase.from("user_preferences").upsert({
-        user_id: userId,
-        roles: updatedPrefs.roles || [],
-        categories: updatedPrefs.categories || [],
-        experience_level: updatedPrefs.experienceLevel || "mid",
-        employment_types: updatedPrefs.employmentTypes || ["full-time"],
-        locations: updatedPrefs.locations || ["Remote / Global"],
-        remote_preference: updatedPrefs.remotePreference || "remote",
-        work_auth: updatedPrefs.workAuth || null,
-        min_salary: updatedPrefs.minSalary ?? null,
-        salary_currency: updatedPrefs.salaryCurrency || "USD",
-        daily_digest_opt_in: updatedPrefs.dailyDigestOptIn ?? true,
-        onboarding_completed: updatedPrefs.onboardingCompleted ?? false,
-        eligibility_filter: updatedPrefs.eligibilityFilter ?? true,
-        updated_at: updatedPrefs.updatedAt,
-      });
+    const { error: upsertError } = await supabase.from("user_preferences").upsert({
+      user_id: userId,
+      roles: updatedPrefs.roles || [],
+      categories: updatedPrefs.categories || [],
+      experience_level: updatedPrefs.experienceLevel || "mid",
+      employment_types: updatedPrefs.employmentTypes || ["full-time"],
+      locations: updatedPrefs.locations || ["Remote / Global"],
+      remote_preference: updatedPrefs.remotePreference || "remote",
+      work_auth: updatedPrefs.workAuth || null,
+      min_salary: updatedPrefs.minSalary ?? null,
+      salary_currency: updatedPrefs.salaryCurrency || "USD",
+      daily_digest_opt_in: updatedPrefs.dailyDigestOptIn ?? true,
+      onboarding_completed: updatedPrefs.onboardingCompleted ?? false,
+      eligibility_filter: updatedPrefs.eligibilityFilter ?? true,
+      updated_at: updatedPrefs.updatedAt,
+    });
 
-      if (updatedPrefs.onboardingCompleted) {
-        try {
-          await supabase.from("profiles").upsert(
-            {
-              user_id: userId,
-              onboarding_completed_at: new Date().toISOString(),
-            },
-            { onConflict: "user_id" }
-          );
-        } catch (_) {}
-      }
-    } catch (_) {
-      // Graceful offline/missing table handling
+    if (upsertError) {
+      log.error("Failed to save user_preferences", { error: upsertError });
+      throw new Error(`Failed to save preferences: ${upsertError.message || upsertError}`);
+    }
+
+    if (updatedPrefs.onboardingCompleted) {
+      await markAccountOnboardingCompleted(supabase, userId);
     }
   }
 }

@@ -27,6 +27,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import Module from "node:module";
 import { NextRequest } from "next/server";
+import { PGlite } from "@electric-sql/pglite";
 
 // Mock @cloudflare/next-on-pages for edge middleware imports in Node.js
 const originalResolve = (Module as any)._resolveFilename;
@@ -219,20 +220,63 @@ async function runOnboardingSuite() {
     "Self-healing must stamp profiles.onboarding_completed_at for candidate profile users."
   );
 
-  // 1e. Existing user with saved user_preferences (roles or onboarding_completed)
-  dbState.user_preferences.set("user-prefs", {
-    user_id: "user-prefs",
+  // 1e. User with partial answer in user_preferences (roles saved with onboarding_completed: false)
+  // Finding 3: A partial answer must NOT count as completed!
+  dbState.user_preferences.set("user-partial-prefs", {
+    user_id: "user-partial-prefs",
     roles: ["Backend Engineer"],
     onboarding_completed: false,
   });
-  const isPrefsCompleted = await checkAccountOnboardingCompleted(mockClient as any, "user-prefs");
+  const isPartialCompleted = await checkAccountOnboardingCompleted(mockClient as any, "user-partial-prefs");
+  assert.strictEqual(
+    isPartialCompleted,
+    false,
+    "Partial answer (roles saved with onboarding_completed=false) must NOT count as completed."
+  );
+
+  // 1f. User with onboarding_completed = true in user_preferences
+  dbState.user_preferences.set("user-prefs-completed", {
+    user_id: "user-prefs-completed",
+    roles: ["Backend Engineer"],
+    onboarding_completed: true,
+  });
+  const isPrefsCompleted = await checkAccountOnboardingCompleted(mockClient as any, "user-prefs-completed");
   assert.strictEqual(
     isPrefsCompleted,
     true,
-    "Existing user with saved preference roles must be treated as completed."
+    "User with user_preferences.onboarding_completed = true must be treated as completed."
   );
 
-  console.log("  ✓ Database logic passed (first login vs repeat login vs existing users vs self-healing).\n");
+  // 1g. Blank-value profiles (whitespace full_name, empty target_roles array)
+  dbState.profiles.set("user-blank-profile", {
+    user_id: "user-blank-profile",
+    full_name: "   ",
+    target_roles: [],
+    onboarding_completed_at: null,
+  });
+  const isBlankProfileCompleted = await checkAccountOnboardingCompleted(mockClient as any, "user-blank-profile");
+  assert.strictEqual(
+    isBlankProfileCompleted,
+    false,
+    "Blank full_name and empty target_roles in profiles must NOT count as completed."
+  );
+
+  // 1h. Blank-value candidate_profiles (whitespace raw text, empty skills, empty experience array)
+  dbState.candidate_profiles.set("user-blank-candidate", {
+    user_id: "user-blank-candidate",
+    confirmed_at: null,
+    skills: [],
+    raw_resume_text: "   ",
+    experience_json: [],
+  });
+  const isBlankCandidateCompleted = await checkAccountOnboardingCompleted(mockClient as any, "user-blank-candidate");
+  assert.strictEqual(
+    isBlankCandidateCompleted,
+    false,
+    "Blank resume text, empty skills, and empty experience in candidate_profiles must NOT count as completed."
+  );
+
+  console.log("  ✓ Database logic passed (first login vs repeat login vs existing users vs self-healing vs blank guards).\n");
 
   // ---------------------------------------------------------------------------
   // TEST 2: markAccountOnboardingCompleted Persistence
@@ -460,6 +504,294 @@ async function runOnboardingSuite() {
   assert.ok(sql.includes("ROLLBACK"), "SQL must contain explicit rollback instructions.");
 
   console.log("  ✓ SQL migration structure and safety checks passed.\n");
+
+  // ---------------------------------------------------------------------------
+  // TEST 6: PGlite Real SQL Migration Execution Tests
+  // ---------------------------------------------------------------------------
+  console.log("Test 6: Executing real SQL migration (PGlite) against fresh, id-keyed shapes, and blank-value cases...");
+
+  // Helper to initialize baseline tables (auth.users, candidate_profiles, user_preferences)
+  async function setupBaseDb() {
+    const pg = new PGlite();
+    await pg.exec(`
+      CREATE SCHEMA IF NOT EXISTS auth;
+      CREATE TABLE IF NOT EXISTS auth.users (
+        id UUID PRIMARY KEY,
+        email TEXT
+      );
+      CREATE OR REPLACE FUNCTION auth.uid() RETURNS UUID AS $$
+        SELECT NULL::UUID;
+      $$ LANGUAGE SQL;
+
+      CREATE TABLE IF NOT EXISTS public.candidate_profiles (
+        user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+        confirmed_at TIMESTAMPTZ,
+        skills TEXT[],
+        raw_resume_text TEXT,
+        experience_json JSONB,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS public.user_preferences (
+        user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+        roles TEXT[],
+        onboarding_completed BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    return pg;
+  }
+
+  // 6a. Fresh database shape: profiles table does NOT exist beforehand
+  {
+    console.log("  6a. Fresh DB shape (profiles created by migration)...");
+    const pg = await setupBaseDb();
+    await pg.exec(sql);
+
+    // Verify public.profiles table exists with required columns
+    const colsRes = await pg.query<{ column_name: string }>(`
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'profiles'
+    `);
+    const cols = colsRes.rows.map((r) => r.column_name);
+    assert.ok(cols.includes("user_id"), "Fresh migration must create profiles.user_id");
+    assert.ok(cols.includes("onboarding_completed_at"), "Fresh migration must create profiles.onboarding_completed_at");
+    assert.ok(cols.includes("full_name"), "Fresh migration must create profiles.full_name");
+    assert.ok(cols.includes("target_roles"), "Fresh migration must create profiles.target_roles");
+
+    // Verify idempotency: running migration a second time succeeds without error
+    await pg.exec(sql);
+    console.log("    ✓ Fresh DB shape created successfully and verified idempotent.");
+  }
+
+  // 6b. Id-keyed profiles shape: profiles exists with id UUID PRIMARY KEY and lacks user_id
+  {
+    console.log("  6b. Id-keyed profiles shape missing user_id (fail-fast check)...");
+    const pg = await setupBaseDb();
+    await pg.exec(`
+      CREATE TABLE public.profiles (
+        id UUID PRIMARY KEY,
+        full_name TEXT,
+        target_roles TEXT[],
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+
+    let threw = false;
+    try {
+      await pg.exec(sql);
+    } catch (err: any) {
+      threw = true;
+      assert.ok(
+        err.message.includes("Safety check failed: public.profiles is missing required column: user_id"),
+        `Expected fail-fast error for missing user_id column, got: ${err.message}`
+      );
+    }
+    assert.ok(threw, "Migration MUST fail fast when public.profiles is id-keyed without user_id.");
+    console.log("    ✓ Id-keyed shape missing user_id correctly aborted transaction with safety check.");
+  }
+
+  // 6c. Profiles shape with user_id present but lacking PK/UNIQUE constraint
+  {
+    console.log("  6c. Profiles shape missing UNIQUE or PRIMARY KEY on user_id (fail-fast check)...");
+    const pg = await setupBaseDb();
+    await pg.exec(`
+      CREATE TABLE public.profiles (
+        id UUID PRIMARY KEY,
+        user_id UUID,
+        full_name TEXT,
+        target_roles TEXT[],
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+
+    let threw = false;
+    try {
+      await pg.exec(sql);
+    } catch (err: any) {
+      threw = true;
+      assert.ok(
+        err.message.includes("Safety check failed: public.profiles must have a PRIMARY KEY or UNIQUE constraint on user_id"),
+        `Expected fail-fast error for missing PK/UNIQUE constraint on user_id, got: ${err.message}`
+      );
+    }
+    assert.ok(threw, "Migration MUST fail fast when user_id lacks PRIMARY KEY or UNIQUE constraint.");
+    console.log("    ✓ Profiles lacking UNIQUE/PK constraint on user_id correctly aborted transaction.");
+  }
+
+  // 6d. Substantive backfills vs blank-value backfill cases
+  {
+    console.log("  6d. Blank-value vs substantive data backfill rules...");
+    const pg = await setupBaseDb();
+
+    // Create auth users
+    const userIds = {
+      blankAll: "11111111-1111-1111-1111-111111111111",
+      blankNulls: "22222222-2222-2222-2222-222222222222",
+      partialRoles: "33333333-3333-3333-3333-333333333333",
+      blankProfile: "44444444-4444-4444-4444-444444444444",
+      skillsSubstantive: "55555555-5555-5555-5555-555555555555",
+      textSubstantive: "66666666-6666-6666-6666-666666666666",
+      expSubstantive: "77777777-7777-7777-7777-777777777777",
+      confirmedSubstantive: "88888888-8888-8888-8888-888888888888",
+      prefsCompleted: "99999999-9999-9999-9999-999999999999",
+      profileSubstantive: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+    };
+
+    for (const uid of Object.values(userIds)) {
+      await pg.query("INSERT INTO auth.users (id, email) VALUES ($1, $2)", [uid, `${uid}@example.com`]);
+    }
+
+    // Pre-create public.profiles table with initial profiles
+    await pg.exec(`
+      CREATE TABLE public.profiles (
+        user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+        full_name TEXT,
+        target_roles TEXT[],
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+
+    // Insert blank-value rows
+    // Candidate profile with whitespace resume, empty skills array, empty json array
+    await pg.query(`
+      INSERT INTO public.candidate_profiles (user_id, raw_resume_text, skills, experience_json, confirmed_at)
+      VALUES ($1, '   ', '{}', '[]'::jsonb, NULL)
+    `, [userIds.blankAll]);
+
+    // Candidate profile with NULL values and JSON null
+    await pg.query(`
+      INSERT INTO public.candidate_profiles (user_id, raw_resume_text, skills, experience_json, confirmed_at)
+      VALUES ($1, NULL, NULL, 'null'::jsonb, NULL)
+    `, [userIds.blankNulls]);
+
+    // User preferences with partial roles and onboarding_completed = false
+    await pg.query(`
+      INSERT INTO public.user_preferences (user_id, roles, onboarding_completed)
+      VALUES ($1, ARRAY['Frontend Developer'], false)
+    `, [userIds.partialRoles]);
+
+    // Profile with whitespace name and empty target_roles
+    await pg.query(`
+      INSERT INTO public.profiles (user_id, full_name, target_roles)
+      VALUES ($1, '   ', '{}')
+    `, [userIds.blankProfile]);
+
+    // Insert substantive rows
+    // Substantive skills
+    await pg.query(`
+      INSERT INTO public.candidate_profiles (user_id, skills)
+      VALUES ($1, ARRAY['React', 'Next.js'])
+    `, [userIds.skillsSubstantive]);
+
+    // Substantive resume text
+    await pg.query(`
+      INSERT INTO public.candidate_profiles (user_id, raw_resume_text)
+      VALUES ($1, 'Senior Software Engineer with 8 years of experience')
+    `, [userIds.textSubstantive]);
+
+    // Substantive experience JSON
+    await pg.query(`
+      INSERT INTO public.candidate_profiles (user_id, experience_json)
+      VALUES ($1, '[{"company": "Google", "role": "Staff Engineer"}]'::jsonb)
+    `, [userIds.expSubstantive]);
+
+    // Substantive confirmed_at
+    await pg.query(`
+      INSERT INTO public.candidate_profiles (user_id, confirmed_at)
+      VALUES ($1, '2026-10-15T12:00:00Z')
+    `, [userIds.confirmedSubstantive]);
+
+    // Substantive user_preferences (onboarding_completed = true)
+    await pg.query(`
+      INSERT INTO public.user_preferences (user_id, roles, onboarding_completed)
+      VALUES ($1, ARRAY['DevOps'], true)
+    `, [userIds.prefsCompleted]);
+
+    // Substantive profiles (full_name and target_roles)
+    await pg.query(`
+      INSERT INTO public.profiles (user_id, full_name, target_roles)
+      VALUES ($1, 'Bob Dylan', ARRAY['Security Engineer'])
+    `, [userIds.profileSubstantive]);
+
+    // Execute migration
+    await pg.exec(sql);
+
+    // Fetch all profiles and their completion timestamps
+    const rowsRes = await pg.query<{ user_id: string; onboarding_completed_at: string | null }>(`
+      SELECT user_id, onboarding_completed_at FROM public.profiles
+    `);
+    const profilesMap = new Map<string, string | null>(
+      rowsRes.rows.map((r) => [r.user_id, r.onboarding_completed_at])
+    );
+
+    // Assertions on BLANK / PARTIAL rows:
+    assert.strictEqual(
+      profilesMap.has(userIds.blankAll),
+      false,
+      "blank candidate profile (whitespace text, empty skills, [] experience) must NOT be backfilled."
+    );
+    assert.strictEqual(
+      profilesMap.has(userIds.blankNulls),
+      false,
+      "null candidate profile must NOT be backfilled."
+    );
+    assert.strictEqual(
+      profilesMap.has(userIds.partialRoles),
+      false,
+      "partial preferences (roles with onboarding_completed=false) must NOT be backfilled."
+    );
+    assert.strictEqual(
+      profilesMap.get(userIds.blankProfile),
+      null,
+      "blank full_name ('   ') and empty target_roles in profiles must have onboarding_completed_at = NULL."
+    );
+
+    // Assertions on SUBSTANTIVE rows:
+    assert.ok(
+      profilesMap.get(userIds.skillsSubstantive),
+      "candidate with non-empty skills array MUST have onboarding_completed_at backfilled."
+    );
+    assert.ok(
+      profilesMap.get(userIds.textSubstantive),
+      "candidate with trimmed non-empty resume text MUST have onboarding_completed_at backfilled."
+    );
+    assert.ok(
+      profilesMap.get(userIds.expSubstantive),
+      "candidate with non-empty experience_json array MUST have onboarding_completed_at backfilled."
+    );
+    assert.ok(
+      profilesMap.get(userIds.confirmedSubstantive),
+      "candidate with confirmed_at MUST have onboarding_completed_at backfilled."
+    );
+    assert.ok(
+      profilesMap.get(userIds.prefsCompleted),
+      "user with onboarding_completed=true in user_preferences MUST have onboarding_completed_at backfilled."
+    );
+    assert.ok(
+      profilesMap.get(userIds.profileSubstantive),
+      "user with non-empty full_name in profiles MUST have onboarding_completed_at backfilled."
+    );
+
+    // Assert that user_preferences.onboarding_completed was synced to true for backfilled profiles,
+    // and remains false for user with partial roles.
+    const prefsRes = await pg.query<{ user_id: string; onboarding_completed: boolean }>(`
+      SELECT user_id, onboarding_completed FROM public.user_preferences
+    `);
+    const prefsMap = new Map<string, boolean>(
+      prefsRes.rows.map((r) => [r.user_id, r.onboarding_completed])
+    );
+    assert.strictEqual(
+      prefsMap.get(userIds.partialRoles),
+      false,
+      "user_preferences.onboarding_completed must remain false for partial roles user."
+    );
+
+    console.log("    ✓ Blank vs substantive backfill assertions passed with strict precision.\n");
+  }
 
   console.log("================================================================================");
   console.log("  ALL TESTS PASSED: Onboarding persistence, repeat login guard & billing valid. ");

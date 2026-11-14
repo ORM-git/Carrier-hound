@@ -10,12 +10,34 @@ import { createLogger } from "@/lib/observability/logger";
 
 const log = createLogger({ context: { module: "billing/subscription" } });
 
+export type SupportedPlanId = "weekly" | "monthly" | "quarterly";
+
+export interface SupportedPlanSpec {
+  id: SupportedPlanId;
+  price: number; // in INR
+  interval: "week" | "month" | "quarter";
+  displayName: string;
+}
+
+export const SUPPORTED_PLANS: Record<SupportedPlanId, SupportedPlanSpec> = {
+  weekly: { id: "weekly", price: 692, interval: "week", displayName: "Weekly" },
+  monthly: { id: "monthly", price: 1499, interval: "month", displayName: "Monthly" },
+  quarterly: { id: "quarterly", price: 3999, interval: "quarter", displayName: "Quarterly" },
+};
+
+export function normalizePlanId(planId?: string | null): SupportedPlanId | null {
+  if (!planId || typeof planId !== "string") return null;
+  const normalized = planId.trim().toLowerCase();
+  if (normalized === "weekly" || normalized.includes("week")) return "weekly";
+  if (normalized === "monthly" || normalized.includes("month") || normalized === "domestic_monthly_199") return "monthly";
+  if (normalized === "quarterly" || normalized.includes("quarter")) return "quarterly";
+  return null;
+}
+
 function resolvePlanName(planId?: string | null): string {
+  const norm = normalizePlanId(planId);
+  if (norm) return SUPPORTED_PLANS[norm].displayName;
   if (!planId) return "Free Tier";
-  const normalized = planId.toLowerCase();
-  if (normalized.includes("week")) return "Weekly";
-  if (normalized.includes("quarter")) return "Quarterly";
-  if (normalized.includes("month") || normalized === "monthly" || normalized === "domestic_monthly_199") return "Monthly";
   return "Pro Member";
 }
 
@@ -338,13 +360,27 @@ export async function getUserSubscription(
           resolvedStatus = "canceled";
         }
 
+        const normalizedPlan = normalizePlanId(sub.plan_id);
+
+        // Convert subscriptions.amount explicitly from integer paise to rupees.
+        // If amount is missing/null/undefined:
+        // Use the catalog price for the normalized plan, or undefined (never fabricate 1499 for unknown plans).
+        let resolvedAmount: number | undefined;
+        if (typeof sub.amount === "number" && !Number.isNaN(sub.amount)) {
+          resolvedAmount = Math.round(sub.amount / 100);
+        } else if (normalizedPlan) {
+          resolvedAmount = SUPPORTED_PLANS[normalizedPlan].price;
+        } else {
+          resolvedAmount = undefined;
+        }
+
         return {
           id: sub.id,
           userId: sub.user_id,
           provider: sub.provider || "manual",
-          planId: sub.plan_id || "monthly",
+          planId: normalizedPlan || sub.plan_id || undefined,
           currency: sub.currency || "INR",
-          amount: sub.amount || 1499,
+          amount: resolvedAmount,
           status: resolvedStatus,
           currentPeriodStart: sub.current_period_start || new Date().toISOString(),
           currentPeriodEnd: sub.current_period_end ? new Date(sub.current_period_end).toISOString() : undefined,
