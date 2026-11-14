@@ -535,6 +535,7 @@ export async function POST(req: Request) {
       );
     }
 
+    log.info(`[Razorpay Webhook] Recorded and ignored event type ${eventType}`, { eventType, eventId });
     return NextResponse.json(
       {
         received: true,

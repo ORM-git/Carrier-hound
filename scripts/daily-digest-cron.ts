@@ -21,6 +21,7 @@ async function main() {
   const dryRun = args.includes("--dry");
   const dateArg = args.find((a) => a.startsWith("--date="))?.split("=")[1];
   const minScoreArg = args.find((a) => a.startsWith("--min-score="))?.split("=")[1];
+  const windowDaysArg = args.find((a) => a.startsWith("--window-days="))?.split("=")[1];
 
   console.log("============================================================");
   console.log("  CareerMonke Daily Automated Cron — v1.2");
@@ -28,6 +29,7 @@ async function main() {
   console.log(`Mode:       ${dryRun ? "DRY RUN (no DB writes)" : "LIVE EXECUTION"}`);
   if (dateArg) console.log(`Date:       ${dateArg}`);
   if (minScoreArg) console.log(`Min Score:  ${minScoreArg}%`);
+  if (windowDaysArg) console.log(`Window:     ${windowDaysArg} days`);
   console.log("Starting job scan & candidate match evaluation...\n");
 
   const startTime = Date.now();
@@ -35,6 +37,7 @@ async function main() {
     dryRun,
     forceDate: dateArg,
     minMatchScore: minScoreArg ? parseInt(minScoreArg, 10) : undefined,
+    scannedWindowDays: windowDaysArg ? parseInt(windowDaysArg, 10) : undefined,
   });
 
   const durationSec = ((Date.now() - startTime) / 1000).toFixed(2);

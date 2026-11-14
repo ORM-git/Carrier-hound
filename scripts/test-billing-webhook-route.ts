@@ -807,10 +807,19 @@ async function runTestSuite() {
       signature: computeHmacSignature(body2, TEST_WEBHOOK_SECRET),
       mockDb,
     });
-    const res2 = await POST(req2);
+    const logged: string[] = [];
+    const origLog = console.log;
+    console.log = (...a: any[]) => { logged.push(a.join(" ")); };
+    let res2: Response;
+    try {
+      res2 = await POST(req2);
+    } finally {
+      console.log = origLog;
+    }
     assert.strictEqual(res2.status, 200);
     assert.strictEqual((await res2.json()).ignored, true);
     assert.strictEqual(mockDb.webhookEvents.has("evt_refund_99"), true);
+    assert.ok(logged.some((l) => l.includes("Recorded and ignored event type refund.created")), "ignored event type must be logged");
   });
 
   // Finish

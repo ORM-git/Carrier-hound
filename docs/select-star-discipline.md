@@ -22,20 +22,19 @@ acceptable: they are plpgsql row variables, not wire payloads.
 | `src/lib/account/exportHandler.ts:161` | per-table loop | Data-export handler: the whole point is returning every column of the user's rows. A column list would silently drop fields added later. |
 | `src/lib/account/exportHandler.ts:175` | per-table loop | Same export path, email-keyed tables. |
 | `src/lib/account/deleteHandler.ts:283` | subscriptions | Reads the full row immediately before deletion so the audit record captures what was removed. |
-| `src/app/api/billing/razorpay/verify/route.ts:332` | user_addon_credits | The row IS the API payload (`credit: existingCredit` in the verify response). Narrowing changes the response contract, which is out of scope for a docs-only change. |
 | `src/lib/resume/storage.ts:155` | candidate_profiles | The fetched profile is returned whole to the caller. |
 | `src/lib/tracker/storage.ts:133` | applications | The application rows are returned whole to the caller (tracker list). |
 
 ### Billing reads kept as `*` (owner to confirm)
 
-| Site | Table | Why `*` stays |
-| --- | --- | --- |
-| `src/app/api/billing/razorpay/verify/route.ts:348` | subscriptions | The row IS the API payload (`subscription: existingSub` in the already-paid replay response). Narrowing changes the response, so it stays. |
+(None - former verify fallback queries removed in favor of atomic SQL RPC fulfil_payment_order)
 
 ### Narrowed (done)
 
 | Site | Table | Now reads |
 | --- | --- | --- |
+| `src/app/api/billing/razorpay/verify/route.ts:332` | user_addon_credits | Removed: JavaScript fallback removed in favor of atomic SQL RPC fulfil_payment_order. |
+| `src/app/api/billing/razorpay/verify/route.ts:348` | subscriptions | Removed: JavaScript fallback removed in favor of atomic SQL RPC fulfil_payment_order. |
 | `src/lib/billing/quota.ts:307` | subscriptions | `plan_id, current_period_start, current_period_end, created_at` (the only `sub.*` reads in getPlanQuota). |
 | `src/lib/billing/quota.ts:325` | plans | The 10 plan columns the mapper copies (`code` ... `is_active`). Previously documented as 5; the code reads 10. |
 | `src/lib/billing/subscription.ts:63` | subscriptions | `status, plan_id, current_period_end, grace_period_end` (the only reads in getProAccessStatus). |
@@ -49,7 +48,7 @@ acceptable: they are plpgsql row variables, not wire payloads.
 
 | Site | Table | Note |
 | --- | --- | --- |
-| `src/lib/cron/dailyDigestCron.ts:121` | candidate_profiles | Per-user loop already flagged in `docs/db-n-plus-one.md` (rank 46) with a batching recommendation. Column tightening should ride that fix. |
+| `src/lib/cron/dailyDigestCron.ts:168` | candidate_profiles | Per-user loop already flagged in `docs/db-n-plus-one.md` (rank 46) with a batching recommendation. Column tightening should ride that fix. |
 | `src/lib/cron/digestStorage.ts:61` | daily_digests | Single latest digest row per user. |
 | `src/lib/events/failedEvents.ts:626` | failed_events | Replay batch read (bounded batch, see rank 46 doc); the replay needs the full payload column set. |
 
