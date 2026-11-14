@@ -13,6 +13,7 @@ import { getUserSubscription, cancelSubscription } from "@/lib/billing/subscript
 import { UserSubscription } from "@/lib/billing/types";
 import { getCandidateProfile, deleteCandidateProfile } from "@/lib/resume/storage";
 import { getTrackedApplications } from "@/lib/tracker/storage";
+import { PLANS } from "@/config/plans";
 import PaywallModal from "@/components/PaywallModal";
 import { createClient } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
@@ -57,6 +58,26 @@ function SettingsPageInner() {
   // Billing state
   const [subscription, setSubscription] = useState<UserSubscription | null>(null);
   const [isPaywallOpen, setIsPaywallOpen] = useState(false);
+
+  // Derive plan & pricing from real plan catalog and real subscription record
+  const activePlan =
+    PLANS.find((p) => p.id === subscription?.planId) ||
+    PLANS.find((p) => p.isDefault) ||
+    PLANS[1];
+
+  const planCurrency = subscription?.currency || activePlan.currency;
+  const currencySymbol =
+    planCurrency === "USD" ? "$" : planCurrency === "EUR" ? "€" : planCurrency === "GBP" ? "£" : "₹";
+
+  const planPriceNumber = subscription?.amount
+    ? subscription.amount >= 10000
+      ? Math.round(subscription.amount / 100)
+      : subscription.amount
+    : activePlan.price;
+
+  const planInterval =
+    activePlan.interval === "week" ? "week" : activePlan.interval === "quarter" ? "quarter" : "month";
+  const formattedPlanText = `${currencySymbol}${planPriceNumber.toLocaleString()} / ${planInterval}`;
 
   useEffect(() => {
     getAuthUser().then((u) => {
@@ -514,7 +535,7 @@ function SettingsPageInner() {
                   </h3>
                   <p className="text-xs text-slate-500">
                     {isPro
-                      ? "₹199 / month (Domestic) or $9 / month (International). Full direct ATS apply unlocked."
+                      ? `${formattedPlanText}. Full direct ATS apply unlocked.`
                       : "Standard title browsing, 5 tracker slots, 1 ATS resume export."}
                   </p>
                 </div>
@@ -530,19 +551,22 @@ function SettingsPageInner() {
                 )}
               </div>
 
-              {isPro && (
+              {isPro && subscription?.currentPeriodEnd && (
                 <div className="pt-3 border-t border-slate-200/80 flex items-center justify-between text-xs">
                   <span className="text-slate-600">
-                    Auto-renews on: <strong>{new Date(subscription?.currentPeriodEnd || Date.now()).toLocaleDateString()}</strong>
+                    {subscription.cancelAtPeriodEnd ? "Access ends on: " : "Auto-renews on: "}
+                    <strong>{new Date(subscription.currentPeriodEnd).toLocaleDateString()}</strong>
                   </span>
 
-                  <button
-                    type="button"
-                    onClick={handleCancelSubscription}
-                    className="text-red-600 hover:text-red-800 font-semibold cursor-pointer"
-                  >
-                    Cancel Renewal
-                  </button>
+                  {!subscription.cancelAtPeriodEnd && (
+                    <button
+                      type="button"
+                      onClick={handleCancelSubscription}
+                      className="text-red-600 hover:text-red-800 font-semibold cursor-pointer"
+                    >
+                      Cancel Renewal
+                    </button>
+                  )}
                 </div>
               )}
             </div>

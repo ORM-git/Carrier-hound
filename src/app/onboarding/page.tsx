@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import BrandIcon from "@/components/BrandIcon";
+import { createClient } from "@/lib/supabase/client";
 import {
   getValidReturnUrl,
   getAuthUser,
@@ -145,8 +146,24 @@ function OnboardingPageInner() {
       setCheckingAuth(false);
 
       try {
+        const supabase = createClient();
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("onboarding_completed_at, full_name, target_roles")
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+        if (profile?.onboarding_completed_at || (Array.isArray(profile?.target_roles) && profile.target_roles.length > 0)) {
+          router.replace(next);
+          return;
+        }
+
         const prefs = await getUserPreferences(user.id);
         if (prefs) {
+          if (prefs.onboardingCompleted || (Array.isArray(prefs.roles) && prefs.roles.length > 0)) {
+            router.replace(next);
+            return;
+          }
           setExistingPrefs(prefs);
           if (Array.isArray(prefs.roles) && prefs.roles.length > 0) setRoles(prefs.roles);
           if (prefs.experienceLevel) setExperienceLevel(prefs.experienceLevel);

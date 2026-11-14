@@ -22,7 +22,7 @@ export default function AuthCallbackPage() {
     const params = new URLSearchParams(search);
     const next = getValidReturnUrl(
       params.get("returnTo") || params.get("return_to") || params.get("next"),
-      "/onboarding"
+      "/dashboard"
     );
     const code = params.get("code");
 

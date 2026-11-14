@@ -32,7 +32,7 @@ export interface UserSubscription {
   amount: number;
   status: SubscriptionStatus;
   currentPeriodStart: string;
-  currentPeriodEnd: string;
+  currentPeriodEnd?: string;
   gracePeriodEnd?: string | null;
   cancelAtPeriodEnd: boolean;
   metadata?: Record<string, any>;

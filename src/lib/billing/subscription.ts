@@ -306,18 +306,24 @@ export function setLocalProActive(_active: boolean = false) {
 /**
  * Retrieves the full user subscription object if one exists
  */
-export async function getUserSubscription(): Promise<UserSubscription | null> {
-
+export async function getUserSubscription(
+  userId?: string,
+  client?: any
+): Promise<UserSubscription | null> {
   try {
-    const supabase = createClient();
-    const { data: { session } } = await supabase.auth.getSession();
-    const user = session?.user || (await supabase.auth.getUser()).data.user;
+    const supabase = client || createClient();
+    let resolvedUserId = userId;
+    if (!resolvedUserId) {
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user || (await supabase.auth.getUser()).data.user;
+      resolvedUserId = user?.id;
+    }
 
-    if (user) {
+    if (resolvedUserId) {
       const { data: sub, error } = await supabase
         .from("subscriptions")
         .select("id, user_id, provider, plan_id, currency, amount, status, current_period_start, current_period_end, grace_period_end, cancel_at_period_end, metadata")
-        .eq("user_id", user.id)
+        .eq("user_id", resolvedUserId)
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -341,7 +347,7 @@ export async function getUserSubscription(): Promise<UserSubscription | null> {
           amount: sub.amount || 1499,
           status: resolvedStatus,
           currentPeriodStart: sub.current_period_start || new Date().toISOString(),
-          currentPeriodEnd: sub.current_period_end || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+          currentPeriodEnd: sub.current_period_end ? new Date(sub.current_period_end).toISOString() : undefined,
           gracePeriodEnd: sub.grace_period_end,
           cancelAtPeriodEnd: sub.cancel_at_period_end ?? false,
           metadata: sub.metadata,

@@ -144,6 +144,10 @@ export async function getUserPreferences(userId?: string): Promise<UserPreferenc
         .maybeSingle();
 
       if (data && !error) {
+        const isCompleted = Boolean(
+          data.onboarding_completed ||
+            (Array.isArray(data.roles) && data.roles.length > 0)
+        );
         const prefs: UserPreferences = {
           roles: data.roles || [],
           categories: data.categories || [],
@@ -155,7 +159,7 @@ export async function getUserPreferences(userId?: string): Promise<UserPreferenc
           minSalary: data.min_salary,
           salaryCurrency: data.salary_currency || "USD",
           dailyDigestOptIn: data.daily_digest_opt_in ?? true,
-          onboardingCompleted: data.onboarding_completed ?? false,
+          onboardingCompleted: isCompleted,
           eligibilityFilter: data.eligibility_filter ?? true,
           updatedAt: data.updated_at || new Date().toISOString(),
         };
@@ -224,6 +228,18 @@ export async function saveUserPreferences(prefs: UserPreferences, userId?: strin
         eligibility_filter: updatedPrefs.eligibilityFilter ?? true,
         updated_at: updatedPrefs.updatedAt,
       });
+
+      if (updatedPrefs.onboardingCompleted) {
+        try {
+          await supabase.from("profiles").upsert(
+            {
+              user_id: userId,
+              onboarding_completed_at: new Date().toISOString(),
+            },
+            { onConflict: "user_id" }
+          );
+        } catch (_) {}
+      }
     } catch (_) {
       // Graceful offline/missing table handling
     }

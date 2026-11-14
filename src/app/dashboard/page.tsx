@@ -16,7 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { buttonClasses } from "@/components/ui/button";
-import { getAuthUser, getUserPreferences } from "@/lib/auth/session";
+import { getAuthUser, getUserPreferences, saveUserPreferences } from "@/lib/auth/session";
 import { UserPreferences } from "@/lib/auth/types";
 import { getCandidateProfile } from "@/lib/resume/storage";
 import { CandidateProfile } from "@/lib/resume/types";
@@ -171,7 +171,12 @@ export default function DashboardPage() {
       setApplications(appsRes);
 
       // Determine starting step in the guided flow
-      if (!prefRes.onboardingCompleted) {
+      const isCompleted = Boolean(
+        prefRes?.onboardingCompleted ||
+          (Array.isArray(prefRes?.roles) && prefRes.roles.length > 0) ||
+          (profileRes && (profileRes.confirmedAt || (Array.isArray(profileRes.skills) && profileRes.skills.length > 0)))
+      );
+      if (!isCompleted) {
         setActiveStep("onboarding");
       } else if (!profileRes || !profileRes.confirmedAt) {
         setActiveStep("resume");
@@ -273,13 +278,19 @@ export default function DashboardPage() {
     }`;
 
   // Next action derived from the existing guided-flow state
+  const isSetupCompleted = Boolean(
+    preferences?.onboardingCompleted ||
+      (Array.isArray(preferences?.roles) && preferences.roles.length > 0) ||
+      (candidate && (candidate.confirmedAt || (Array.isArray(candidate.skills) && candidate.skills.length > 0)))
+  );
+
   const nextAction: {
     eyebrow: string;
     title: string;
     body: string;
     icon: React.ReactNode;
     action: React.ReactNode;
-  } = !preferences?.onboardingCompleted
+  } = !isSetupCompleted
     ? {
         eyebrow: "Step 1",
         title: "Preferences",
@@ -560,7 +571,10 @@ export default function DashboardPage() {
                   setActiveStep("resume");
                 }
               }}
-              onSkip={() => {
+              onSkip={async () => {
+                if (preferences) {
+                  await saveUserPreferences({ ...preferences, onboardingCompleted: true }, user.id).catch(() => {});
+                }
                 if (candidate?.confirmedAt) {
                   setActiveStep("matches");
                 } else {

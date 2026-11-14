@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import { isVerifiedAdminUser } from "@/lib/admin/constants";
 import { isCrossSiteMutation } from "@/lib/security/sameOrigin";
 import { exceedsGlobalBodyCap } from "@/lib/security/bodySize";
+import { checkAccountOnboardingCompleted } from "@/lib/auth/onboarding";
 import { createLogger } from "@/lib/observability/logger";
 
 const log = createLogger({ context: { module: "middleware" } });
@@ -195,37 +196,32 @@ export function _getEarlyAccessCacheForTesting(): Map<string, EarlyAccessCacheEn
   return earlyAccessApprovalCache;
 }
 
-async function queryEarlyAccessApprovalFromDb(
-  normalizedEmail: string
-): Promise<{ status: "definitive"; approved: boolean } | { status: "error"; error: any }> {
-  // 1. Test-mode mock client support (strictly gated by NODE_ENV === "test")
+export function getAdminSupabaseClient(): any {
   if (process.env.NODE_ENV === "test" && (globalThis as any).__mockSupabaseClient) {
-    try {
-      const mockClient = (globalThis as any).__mockSupabaseClient;
-      if (typeof mockClient.from === "function") {
-        const { data, error } = await mockClient
-          .from("early_access_approved")
-          .select("approved")
-          .eq("email", normalizedEmail)
-          .maybeSingle();
-
-        if (error) {
-          return { status: "error", error };
-        }
-        return { status: "definitive", approved: data?.approved === true };
-      }
-    } catch (err) {
-      return { status: "error", error: err };
+    const mock = (globalThis as any).__mockSupabaseClient;
+    if (typeof mock.from === "function") {
+      return mock;
     }
+    return null;
   }
-
-  // 2. Live server-side query with service role
   const supabaseUrl =
     getServerEnv("NEXT_PUBLIC_SUPABASE_URL") || getServerEnv("SUPABASE_URL");
   const serviceKey =
     getServerEnv("SUPABASE_SERVICE_ROLE_KEY") || getServerEnv("SUPABASE_SERVICE_KEY");
 
   if (!supabaseUrl || !serviceKey) {
+    return null;
+  }
+  return createClient(supabaseUrl, serviceKey, {
+    auth: { persistSession: false },
+  });
+}
+
+async function queryEarlyAccessApprovalFromDb(
+  normalizedEmail: string
+): Promise<{ status: "definitive"; approved: boolean } | { status: "error"; error: any }> {
+  const adminClient = getAdminSupabaseClient();
+  if (!adminClient) {
     return {
       status: "error",
       error: new Error("Missing required Supabase service role environment variables"),
@@ -233,9 +229,6 @@ async function queryEarlyAccessApprovalFromDb(
   }
 
   try {
-    const adminClient = createClient(supabaseUrl, serviceKey, {
-      auth: { persistSession: false },
-    });
     const { data, error } = await adminClient
       .from("early_access_approved")
       .select("approved")
@@ -339,6 +332,7 @@ interface AuthVerificationResult {
   isVerifiedAdmin: boolean;
   signedOutNonAllowedUser: boolean;
   response: NextResponse;
+  userId?: string;
 }
 
 /**
@@ -457,6 +451,7 @@ async function verifyAuthenticatedRequest(
             isVerifiedAdmin: verifiedAdmin,
             signedOutNonAllowedUser: false,
             response,
+            userId: data.user.id,
           };
         }
       }
@@ -530,6 +525,7 @@ async function verifyAuthenticatedRequest(
           isVerifiedAdmin: verifiedAdmin,
           signedOutNonAllowedUser: false,
           response,
+          userId: verifiedUser.id,
         };
       }
     } catch {
@@ -623,16 +619,46 @@ async function middlewareImpl(request: NextRequest) {
       pathname === "/login" ||
       pathname === "/auth/callback"
     ) {
-      const { hasValidSession, signedOutNonAllowedUser, response: authResponse } =
+      const { hasValidSession, signedOutNonAllowedUser, response: authResponse, userId } =
         await verifyAuthenticatedRequest(request);
       if (hasValidSession && !signedOutNonAllowedUser) {
-        return NextResponse.redirect(new URL("/dashboard", request.url));
+        let destination = "/dashboard";
+        if (userId) {
+          const adminClient = getAdminSupabaseClient();
+          if (adminClient) {
+            const completed = await checkAccountOnboardingCompleted(adminClient, userId);
+            destination = completed ? "/dashboard" : "/onboarding";
+          }
+        }
+        return NextResponse.redirect(new URL(destination, request.url));
       }
       if (signedOutNonAllowedUser) {
         return authResponse;
       }
     }
     return NextResponse.next();
+  }
+
+  // 4a. Onboarding route guard: authenticated users who already completed onboarding
+  // must never see onboarding questions again; redirect them server-side to /dashboard.
+  if (pathname === "/onboarding") {
+    const { hasValidSession, signedOutNonAllowedUser, response, userId } =
+      await verifyAuthenticatedRequest(request);
+    if (!hasValidSession || signedOutNonAllowedUser) {
+      const loginUrl = new URL("/login", request.url);
+      loginUrl.searchParams.set("returnTo", "/onboarding");
+      return NextResponse.redirect(loginUrl);
+    }
+    if (userId) {
+      const adminClient = getAdminSupabaseClient();
+      if (adminClient) {
+        const completed = await checkAccountOnboardingCompleted(adminClient, userId);
+        if (completed) {
+          return NextResponse.redirect(new URL("/dashboard", request.url));
+        }
+      }
+    }
+    return response;
   }
 
   // 5. Protected pages require an active session
