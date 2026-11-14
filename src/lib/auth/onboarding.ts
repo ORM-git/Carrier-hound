@@ -27,6 +27,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createLogger } from "@/lib/observability/logger";
+import { updateSwr, invalidateSwr } from "@/lib/cache/swr";
 
 const log = createLogger({ context: { module: "auth/onboarding" } });
 
@@ -153,5 +154,15 @@ export async function markAccountOnboardingCompleted(
 
   if (prefsError) {
     log.warn("Warning syncing onboarding_completed to user_preferences", { error: prefsError });
+  }
+
+  // 3. Immediately update and invalidate the dashboard SWR cache so route remount within 60s
+  // does not show onboarding questions again.
+  try {
+    updateSwr<any>(`dashboard:${userId}`, (current) =>
+      current ? { ...current, onboardingCompleted: true } : current
+    );
+  } catch {
+    // SWR is in-memory client-side cache
   }
 }

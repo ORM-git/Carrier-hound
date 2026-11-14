@@ -72,18 +72,23 @@ BEGIN
     RAISE EXCEPTION 'Safety check failed: public.user_preferences is missing required column: %', missing_col;
   END LOOP;
 
-  -- 2d. Check user_id unique / primary key requirement on public.profiles
+  -- 2d. Check user_id unique / primary key requirement on public.profiles:
+  -- Tight check: requires a valid, immediate, non-partial UNIQUE index or constraint on user_id ALONE (not composite or partial).
   IF NOT EXISTS (
+    -- Unique or primary key constraint on user_id ALONE
     SELECT 1
     FROM pg_constraint c
     JOIN pg_class t ON c.conrelid = t.oid
     JOIN pg_namespace n ON t.relnamespace = n.oid
-    JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(c.conkey)
+    JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = c.conkey[1]
     WHERE n.nspname = 'public'
       AND t.relname = 'profiles'
       AND c.contype IN ('p', 'u')
+      AND array_length(c.conkey, 1) = 1
+      AND c.condeferrable = false
       AND a.attname = 'user_id'
   ) AND NOT EXISTS (
+    -- Unique index on user_id ALONE: valid, immediate, non-partial
     SELECT 1
     FROM pg_index i
     JOIN pg_class t ON i.indrelid = t.oid
@@ -92,9 +97,13 @@ BEGIN
     WHERE n.nspname = 'public'
       AND t.relname = 'profiles'
       AND i.indisunique = true
+      AND i.indisvalid = true
+      AND i.indimmediate = true
+      AND i.indpred IS NULL
+      AND i.indnkeyatts = 1
       AND a.attname = 'user_id'
   ) THEN
-    RAISE EXCEPTION 'Safety check failed: public.profiles must have a PRIMARY KEY or UNIQUE constraint on user_id';
+    RAISE EXCEPTION 'Safety check failed: public.profiles must have a valid, immediate, non-partial PRIMARY KEY or UNIQUE constraint on user_id alone';
   END IF;
 END $$;
 

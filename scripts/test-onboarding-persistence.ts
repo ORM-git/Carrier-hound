@@ -65,6 +65,8 @@ import {
 import { middleware } from "../src/middleware";
 import { PLANS } from "../src/config/plans";
 import { getUserSubscription } from "../src/lib/billing/subscription";
+import { normalizePlanCode, PLAN_DEFINITIONS } from "../src/lib/billing/quota";
+import { swrFetch, readSwr, updateSwr, invalidateSwr } from "../src/lib/cache/swr";
 
 const isNegativeControl = process.argv.includes("--negative-control");
 
@@ -481,6 +483,113 @@ async function runOnboardingSuite() {
     !settingsSource.includes("$9 / month"),
     "src/app/settings/page.tsx must NOT contain hardcoded '$9 / month'."
   );
+  assert.ok(
+    !settingsSource.includes("import { PLANS }"),
+    "src/app/settings/page.tsx must NOT import unused PLANS."
+  );
+  assert.ok(
+    !settingsSource.includes("SUPPORTED_PLANS"),
+    "src/app/settings/page.tsx must NOT use extra SUPPORTED_PLANS."
+  );
+
+  // 4e. Central Plan Normalization (matching resolveOrderPricing)
+  // "3_month" maps to quarterly (3999), not monthly!
+  assert.strictEqual(normalizePlanCode("3_month"), "quarterly", "'3_month' must normalize to 'quarterly'.");
+  assert.strictEqual(normalizePlanCode("quarterly"), "quarterly", "'quarterly' must normalize to 'quarterly'.");
+  assert.strictEqual(normalizePlanCode("quarter"), "quarterly", "'quarter' must normalize to 'quarterly'.");
+  assert.strictEqual(normalizePlanCode("weekly"), "weekly", "'weekly' must normalize to 'weekly'.");
+  assert.strictEqual(normalizePlanCode("week"), "weekly", "'week' must normalize to 'weekly'.");
+  assert.strictEqual(normalizePlanCode("monthly"), "monthly", "'monthly' must normalize to 'monthly'.");
+  assert.strictEqual(normalizePlanCode("month"), "monthly", "'month' must normalize to 'monthly'.");
+  assert.strictEqual(normalizePlanCode("domestic_monthly_199"), "monthly", "'domestic_monthly_199' must normalize to 'monthly'.");
+  assert.strictEqual(normalizePlanCode("intl_monthly_9"), "monthly", "'intl_monthly_9' must normalize to 'monthly'.");
+  assert.strictEqual(normalizePlanCode("unknown_tier_xyz"), null, "Unknown plan must return null.");
+
+  // 4f. Price Fallback: when subscriptions.amount is null, do NOT combine INR catalog price with non-INR currency
+  // USD quarterly must not show $3,999!
+  const mockSubUsdNoAmount = {
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          order: () => ({
+            limit: () => ({
+              maybeSingle: async () => ({
+                data: {
+                  status: "active",
+                  current_period_end: "2026-12-31T23:59:59Z",
+                  amount: null, // Unknown/null amount
+                  currency: "USD",
+                  plan_id: "quarterly",
+                },
+                error: null,
+              }),
+            }),
+          }),
+        }),
+      }),
+    }),
+  };
+  const subUsdResult = await getUserSubscription("user-usd-no-amount", mockSubUsdNoAmount as any);
+  assert.strictEqual(
+    subUsdResult?.amount,
+    undefined,
+    "When subscriptions.amount is null and currency is USD, amount must be undefined (price hidden, not $3,999)."
+  );
+  assert.strictEqual(subUsdResult?.currency, "USD", "Currency must be preserved as USD.");
+
+  // When currency is INR and amount is null, catalog INR price is used
+  const mockSubInrNoAmount = {
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          order: () => ({
+            limit: () => ({
+              maybeSingle: async () => ({
+                data: {
+                  status: "active",
+                  current_period_end: "2026-12-31T23:59:59Z",
+                  amount: null,
+                  currency: "INR",
+                  plan_id: "3_month", // tests 3_month mapping to quarterly 3999
+                },
+                error: null,
+              }),
+            }),
+          }),
+        }),
+      }),
+    }),
+  };
+  const subInrResult = await getUserSubscription("user-inr-3-month", mockSubInrNoAmount as any);
+  assert.strictEqual(subInrResult?.planId, "quarterly", "'3_month' must map to 'quarterly'.");
+  assert.strictEqual(subInrResult?.amount, 3999, "INR quarterly must use catalog price 3999 INR.");
+  assert.strictEqual(subInrResult?.currency, "INR");
+
+  // When amount is present in paise, explicit conversion takes place
+  const mockSubPaise = {
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          order: () => ({
+            limit: () => ({
+              maybeSingle: async () => ({
+                data: {
+                  status: "active",
+                  current_period_end: "2026-12-31T23:59:59Z",
+                  amount: 399900, // 3999 INR in paise
+                  currency: "INR",
+                  plan_id: "quarterly",
+                },
+                error: null,
+              }),
+            }),
+          }),
+        }),
+      }),
+    }),
+  };
+  const subPaiseResult = await getUserSubscription("user-paise", mockSubPaise as any);
+  assert.strictEqual(subPaiseResult?.amount, 3999, "Amount 399900 paise must convert to 3999.");
 
   console.log("  ✓ Billing settings catalog and subscription checks passed.\n");
 
@@ -614,12 +723,87 @@ async function runOnboardingSuite() {
     } catch (err: any) {
       threw = true;
       assert.ok(
-        err.message.includes("Safety check failed: public.profiles must have a PRIMARY KEY or UNIQUE constraint on user_id"),
+        err.message.includes("Safety check failed: public.profiles must have a valid, immediate, non-partial PRIMARY KEY or UNIQUE constraint on user_id alone"),
         `Expected fail-fast error for missing PK/UNIQUE constraint on user_id, got: ${err.message}`
       );
     }
     assert.ok(threw, "Migration MUST fail fast when user_id lacks PRIMARY KEY or UNIQUE constraint.");
     console.log("    ✓ Profiles lacking UNIQUE/PK constraint on user_id correctly aborted transaction.");
+  }
+
+  // 6c2. Tightened Migration Guard: Composite PK on (user_id, team_id) must fail fast!
+  {
+    console.log("  6c2. Composite PK on (user_id, team_id) (tightened guard check)...");
+    const pg = await setupBaseDb();
+    await pg.exec(`
+      CREATE TABLE public.profiles (
+        user_id UUID,
+        team_id INT,
+        full_name TEXT,
+        target_roles TEXT[],
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        PRIMARY KEY (user_id, team_id)
+      );
+    `);
+
+    let threw = false;
+    try {
+      await pg.exec(sql);
+    } catch (err: any) {
+      threw = true;
+      assert.ok(
+        err.message.includes("Safety check failed: public.profiles must have a valid, immediate, non-partial PRIMARY KEY or UNIQUE constraint on user_id alone"),
+        `Expected composite PK rejection, got: ${err.message}`
+      );
+    }
+    assert.ok(threw, "Migration MUST fail fast when user_id is part of a composite constraint.");
+    console.log("    ✓ Composite PK correctly rejected by tightened migration guard.");
+  }
+
+  // 6c3. Tightened Migration Guard: Partial UNIQUE index on user_id must fail fast!
+  {
+    console.log("  6c3. Partial UNIQUE index on user_id (tightened guard check)...");
+    const pg = await setupBaseDb();
+    await pg.exec(`
+      CREATE TABLE public.profiles (
+        user_id UUID,
+        full_name TEXT,
+        target_roles TEXT[],
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE UNIQUE INDEX profiles_user_id_partial_idx ON public.profiles(user_id) WHERE user_id IS NOT NULL;
+    `);
+
+    let threw = false;
+    try {
+      await pg.exec(sql);
+    } catch (err: any) {
+      threw = true;
+      assert.ok(
+        err.message.includes("Safety check failed: public.profiles must have a valid, immediate, non-partial PRIMARY KEY or UNIQUE constraint on user_id alone"),
+        `Expected partial unique index rejection, got: ${err.message}`
+      );
+    }
+    assert.ok(threw, "Migration MUST fail fast when unique index is partial.");
+    console.log("    ✓ Partial unique index correctly rejected by tightened migration guard.");
+  }
+
+  // 6c4. Standalone valid UNIQUE index on user_id alone must PASS
+  {
+    console.log("  6c4. Standalone non-partial UNIQUE index on user_id alone (should pass)...");
+    const pg = await setupBaseDb();
+    await pg.exec(`
+      CREATE TABLE public.profiles (
+        user_id UUID,
+        full_name TEXT,
+        target_roles TEXT[],
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE UNIQUE INDEX profiles_user_id_uniq_idx ON public.profiles(user_id);
+    `);
+
+    await pg.exec(sql);
+    console.log("    ✓ Standalone valid non-partial unique index on user_id alone passed.");
   }
 
   // 6d. Substantive backfills vs blank-value backfill cases
@@ -792,6 +976,68 @@ async function runOnboardingSuite() {
 
     console.log("    ✓ Blank vs substantive backfill assertions passed with strict precision.\n");
   }
+
+  // ---------------------------------------------------------------------------
+  // TEST 7: Route-Remount SWR Cache Invalidation Regression Test
+  // ---------------------------------------------------------------------------
+  console.log("Test 7: Verifying dashboard SWR cache update/invalidation on onboarding completion...");
+
+  const cacheUserId = "user-cache-remount-test";
+  const dashboardKey = `dashboard:${cacheUserId}`;
+
+  // Step 1: Simulate initial dashboard load where user has onboardingCompleted = false (cached for 60s)
+  let dbFetchCount = 0;
+  const initialBundle = {
+    proRes: { isPro: false, isDefinitive: true },
+    prefRes: null,
+    profileRes: null,
+    appsRes: [],
+    onboardingCompleted: false,
+  };
+
+  const firstFetch = await swrFetch(dashboardKey, async () => {
+    dbFetchCount++;
+    return initialBundle;
+  });
+  assert.strictEqual(firstFetch.onboardingCompleted, false, "Initial fetch must have onboardingCompleted = false.");
+  assert.strictEqual(dbFetchCount, 1, "Database fetcher called once.");
+
+  // Verify that immediate SWR read returns the cached entry with onboardingCompleted = false
+  const cachedBefore = readSwr<typeof initialBundle>(dashboardKey);
+  assert.strictEqual(cachedBefore?.onboardingCompleted, false, "SWR must hold initial false state.");
+
+  // Step 2: User completes onboarding -> markAccountOnboardingCompleted is called
+  const mockCacheSupabase = createMockSupabase({
+    profiles: new Map(),
+    candidate_profiles: new Map(),
+    user_preferences: new Map(),
+  });
+
+  await markAccountOnboardingCompleted(mockCacheSupabase as any, cacheUserId);
+
+  // Step 3: Verify the cache entry was updated in place so onboardingCompleted is now true
+  const cachedAfter = readSwr<typeof initialBundle>(dashboardKey);
+  assert.ok(cachedAfter, "Cached entry must exist.");
+  assert.strictEqual(
+    cachedAfter.onboardingCompleted,
+    true,
+    "SWR cache entry for dashboard:<userId> MUST be updated to onboardingCompleted = true."
+  );
+
+  // Step 4: Simulate navigating away and remounting within 60s (SWR fetch within 60s TTL)
+  const remountBundle = await swrFetch(dashboardKey, async () => {
+    dbFetchCount++;
+    return { ...initialBundle, onboardingCompleted: false };
+  });
+
+  assert.strictEqual(
+    remountBundle.onboardingCompleted,
+    true,
+    "Route remount within 60s MUST return onboardingCompleted = true from cache without showing questions again."
+  );
+  assert.strictEqual(dbFetchCount, 1, "Fetcher must NOT be called again within 60s TTL.");
+
+  console.log("  ✓ Route-remount SWR cache regression test passed: onboardingCompleted remains true on remount.\n");
 
   console.log("================================================================================");
   console.log("  ALL TESTS PASSED: Onboarding persistence, repeat login guard & billing valid. ");

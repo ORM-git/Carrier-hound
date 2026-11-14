@@ -27,7 +27,7 @@ import { checkAccountOnboardingCompleted } from "@/lib/auth/onboarding";
 import { toast } from "react-toastify";
 import { TrackedApplication, STAGE_CONFIG, ApplicationStage } from "@/lib/tracker/types";
 import type { User } from "@supabase/supabase-js";
-import { isSwrStale, readSwr, swrFetch } from "@/lib/cache/swr";
+import { isSwrStale, readSwr, swrFetch, updateSwr } from "@/lib/cache/swr";
 import {
   Sparkles,
   Lock,
@@ -564,6 +564,9 @@ export default function DashboardPage() {
               initialPreferences={preferences}
               onComplete={() => {
                 setOnboardingCompleted(true);
+                updateSwr<any>(`dashboard:${user.id}`, (current) =>
+                  current ? { ...current, onboardingCompleted: true } : current
+                );
                 if (candidate?.confirmedAt) {
                   setActiveStep("matches");
                 } else {
@@ -576,6 +579,9 @@ export default function DashboardPage() {
                     await saveUserPreferences({ ...preferences, onboardingCompleted: true }, user.id);
                   }
                   setOnboardingCompleted(true);
+                  updateSwr<any>(`dashboard:${user.id}`, (current) =>
+                    current ? { ...current, onboardingCompleted: true } : current
+                  );
                   if (candidate?.confirmedAt) {
                     setActiveStep("matches");
                   } else {

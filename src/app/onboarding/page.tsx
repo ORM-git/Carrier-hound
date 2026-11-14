@@ -21,6 +21,7 @@ import {
 } from "@/lib/resume/parser";
 import { saveConfirmedCandidateProfile } from "@/lib/resume/storage";
 import { CandidateProfile } from "@/lib/resume/types";
+import { updateSwr, invalidateSwr } from "@/lib/cache/swr";
 import {
   ArrowLeft,
   ArrowRight,
@@ -235,6 +236,12 @@ function OnboardingPageInner() {
   const handleSkipResume = async () => {
     try {
       await persistPreferences(true);
+      if (userId) {
+        updateSwr<any>(`dashboard:${userId}`, (current) =>
+          current ? { ...current, onboardingCompleted: true } : current
+        );
+        invalidateSwr(`dashboard:${userId}`);
+      }
       toast.info("Preferences saved! You can upload your resume anytime from the dashboard.");
       router.push(next);
     } catch (err: any) {
@@ -326,6 +333,12 @@ function OnboardingPageInner() {
       };
       await saveUserPreferences(finalPrefs, userId);
       setExistingPrefs(finalPrefs);
+      if (userId) {
+        updateSwr<any>(`dashboard:${userId}`, (current) =>
+          current ? { ...current, onboardingCompleted: true } : current
+        );
+        invalidateSwr(`dashboard:${userId}`);
+      }
       trackFunnelEvent("onboarding_completed", { path: "/onboarding" });
 
       // Successfully processed: redirect to dashboard

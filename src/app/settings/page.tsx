@@ -9,11 +9,11 @@ import AppTopBar from "@/components/shell/AppTopBar";
 import LoggedInAppShell from "@/components/shell/LoggedInAppShell";
 import { getAuthUser, getUserPreferences, saveUserPreferences, signOutUser } from "@/lib/auth/session";
 import { UserPreferences } from "@/lib/auth/types";
-import { getUserSubscription, normalizePlanId, SUPPORTED_PLANS } from "@/lib/billing/subscription";
+import { getUserSubscription } from "@/lib/billing/subscription";
+import { normalizePlanCode, PLAN_DEFINITIONS } from "@/lib/billing/quota";
 import { UserSubscription } from "@/lib/billing/types";
 import { getCandidateProfile, deleteCandidateProfile } from "@/lib/resume/storage";
 import { getTrackedApplications } from "@/lib/tracker/storage";
-import { PLANS } from "@/config/plans";
 import PaywallModal from "@/components/PaywallModal";
 import { createClient } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
@@ -59,19 +59,21 @@ function SettingsPageInner() {
   const [subscription, setSubscription] = useState<UserSubscription | null>(null);
   const [isPaywallOpen, setIsPaywallOpen] = useState(false);
 
-  // Derive plan & pricing from normalized plan ID and real subscription record
-  const normalizedPlan = normalizePlanId(subscription?.planId);
-  const planConfig = normalizedPlan ? SUPPORTED_PLANS[normalizedPlan] : null;
+  // Derive plan & pricing from central normalized plan ID and real subscription record
+  const normalizedPlan = normalizePlanCode(subscription?.planId);
+  const planDef = normalizedPlan ? PLAN_DEFINITIONS[normalizedPlan] : null;
 
   const planCurrency = subscription?.currency || "INR";
   const currencySymbol =
     planCurrency === "USD" ? "$" : planCurrency === "EUR" ? "€" : planCurrency === "GBP" ? "£" : "₹";
 
+  // When subscriptions.amount is null, do not combine the INR catalog price with a non-INR currency
+  // (USD quarterly must not show $3,999). Hide the price when currency is not INR and amount is unknown.
   const planPriceNumber = typeof subscription?.amount === "number"
     ? subscription.amount
-    : planConfig?.price;
+    : (planCurrency === "INR" && planDef ? Math.round(planDef.price_paise / 100) : undefined);
 
-  const planInterval = planConfig?.interval || "month";
+  const planInterval = normalizedPlan === "weekly" ? "week" : normalizedPlan === "quarterly" ? "quarter" : "month";
 
   const formattedPlanText = typeof planPriceNumber === "number"
     ? `${currencySymbol}${planPriceNumber.toLocaleString()} / ${planInterval}`
