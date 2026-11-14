@@ -101,6 +101,39 @@ async function verifyProUser(event: any) {
   return { error: null, status: 200, user, isPro: true };
 }
 
+function resolveDescription(jobDescription: any, descriptionText: any): string {
+  if (typeof jobDescription === "string" && jobDescription.trim().length > 0) {
+    return jobDescription;
+  }
+  if (typeof descriptionText === "string" && descriptionText.trim().length > 0) {
+    return descriptionText;
+  }
+  return "";
+}
+
+async function loadJobDescriptionsMap(supabaseAdmin: any, ids: string[]): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  const validIds = Array.from(new Set(ids.filter(Boolean)));
+  if (validIds.length === 0) return map;
+
+  try {
+    const { data: descRows } = await (supabaseAdmin as any)
+      .from("job_descriptions")
+      .select("job_id, description_text")
+      .in("job_id", validIds);
+
+    if (Array.isArray(descRows)) {
+      for (const row of descRows) {
+        if (row?.job_id && typeof row.description_text === "string") {
+          map.set(row.job_id, row.description_text);
+        }
+      }
+    }
+  } catch {}
+
+  return map;
+}
+
 import { buildCorsHeaders, handleCorsPreflight } from "./_cors";
 
 const CORS_OPTIONS = {
@@ -176,6 +209,7 @@ export async function handler(event: any) {
           }
 
           const rawJobs = jobs || [];
+          const descMap = await loadJobDescriptionsMap(supabaseAdmin, rawJobs.map((j: any) => j.id));
 
           const formattedJobs = rawJobs.map((j: any) => {
             const originalSalary = formatSalary(j.salary_min, j.salary_max, j.currency, j.salary_period) || j.salary_text || null;
@@ -184,6 +218,7 @@ export async function handler(event: any) {
               : originalSalary;
             return {
               ...j,
+              description: resolveDescription(j.description, descMap.get(j.id)),
               country: j.country_code || j.country || "",
               salary_text: displaySalary || originalSalary || "",
               salary_display: displaySalary,
@@ -219,6 +254,8 @@ export async function handler(event: any) {
         };
       }
 
+      const descMap = await loadJobDescriptionsMap(supabaseAdmin, [job.id]);
+
       const row: any = job;
       const originalSalary = formatSalary(row.salary_min, job.salary_max, job.currency, job.salary_period) || job.salary_text || null;
       const displaySalary = preferredCurrency
@@ -227,6 +264,7 @@ export async function handler(event: any) {
       const isInactive = Boolean(row.is_active === false || row.status === "expired" || row.status === "closed");
       const formattedJob = {
         ...job,
+        description: resolveDescription(job.description, descMap.get(job.id)),
         country: job.country_code || job.country || "",
         salary_text: displaySalary || originalSalary || "",
         salary_display: displaySalary,
@@ -282,6 +320,7 @@ export async function handler(event: any) {
       }
 
       const rawJobs = jobs || [];
+      const descMap = await loadJobDescriptionsMap(supabaseAdmin, rawJobs.map((j: any) => j.id));
 
       const formattedJobs = rawJobs.map((j: any) => {
         const originalSalary = formatSalary(j.salary_min, j.salary_max, j.currency, j.salary_period) || j.salary_text || null;
@@ -290,6 +329,7 @@ export async function handler(event: any) {
           : originalSalary;
         return {
           ...j,
+          description: resolveDescription(j.description, descMap.get(j.id)),
           country: j.country_code || j.country || "",
           salary_text: displaySalary || originalSalary || "",
           salary_display: displaySalary,
