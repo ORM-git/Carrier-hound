@@ -1602,11 +1602,11 @@ async function main() {
     {
       const realClient = (globalThis as any).__mockSupabaseClient;
       const pgrst = { code: "PGRST002", message: "Could not query the database for the schema cache", details: "retrying" };
-      const flakyClient = (failures: number) => {
+      const flakyClient = (failures: number, fail: () => any = () => ({ data: null, error: pgrst, status: 503 })) => {
         let calls = 0;
         const chain: any = {
           select: () => chain, eq: () => chain, order: () => chain, limit: () => chain,
-          maybeSingle: async () => (++calls <= failures ? { data: null, error: pgrst } : { data: null, error: null }),
+          maybeSingle: async () => (++calls <= failures ? fail() : { data: null, error: null }),
         };
         return {
           calls: () => calls,
@@ -1622,13 +1622,55 @@ async function main() {
       assert.strictEqual(alwaysDown.calls(), 2, "gmail_send_log read must be retried exactly once");
       const warnText = capturedWarnings.join("\n");
       assert.ok(warnText.includes("code=PGRST002") && warnText.includes("schema cache"), "underlying PostgREST error must be logged");
+      assert.ok(warnText.includes("status=503"), "HTTP status must be logged");
+      assert.ok(!warnText.includes("details") && !warnText.includes("retrying\""), "raw details must never be logged");
       assert.ok(warnText.includes("retrying once") && warnText.includes("failing closed"));
 
       const blip = flakyClient(1);
       const blipRes = await runEarlyAccessDigestCron({ supabaseClient: blip.client, retryDelayMs: 0, dryRun: true });
       assert.notStrictEqual(blipRes.reason, "log_read_error", "a single transient error must recover on retry");
       assert.strictEqual(blip.calls(), 2);
-      console.log("  [PASS] gmail_send_log read error logs code/message/details, retries once, then fails closed");
+
+      // Sensitive content in the error must be redacted/bounded in both the error-return and thrown paths.
+      const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyLTEyMyJ9.c2lnbmF0dXJlLXNpZ25hdHVyZQ";
+      const configuredSecret = process.env.APPS_SCRIPT_MAIL_SECRET || "";
+      const sensitive =
+        `row (victim@example.com) rejected; Authorization: Bearer sk_live_ABC123XYZ; jwt=${jwt}; ` +
+        `oauth=ya29.a0AfH6SMBxyz; secret=${configuredSecret}; ` + "x".repeat(5000);
+      const detailsMarker = "DETAILS_ROW_DATA_MARKER";
+      const leaks = (text: string) =>
+        ["victim@example.com", "sk_live_ABC123XYZ", jwt.slice(0, 20), "ya29.a0AfH6SMBxyz", detailsMarker, "x".repeat(250)]
+          .concat(configuredSecret.length >= 3 ? [`secret=${configuredSecret}`] : [])
+          .filter((s) => text.includes(s));
+
+      for (const [label, fail] of [
+        ["error-return", () => ({ data: null, error: { code: "PGRST002", message: sensitive, details: `${detailsMarker} owner@example.com` }, status: 503 })],
+        ["thrown", () => { throw new Error(sensitive); }],
+      ] as const) {
+        capturedWarnings.length = 0;
+        const c = flakyClient(99, fail);
+        const r = await runEarlyAccessDigestCron({ supabaseClient: c.client, retryDelayMs: 0, dryRun: true });
+        assert.strictEqual(r.reason, "log_read_error", `${label}: must fail closed`);
+        assert.strictEqual(c.calls(), 2, `${label}: must retry exactly once`);
+        const text = capturedWarnings.join("\n");
+        assert.deepStrictEqual(leaks(text), [], `${label}: sensitive values leaked to logs`);
+        assert.ok(text.includes("[REDACTED_EMAIL]") && text.includes("[REDACTED_TOKEN]"), `${label}: redaction markers expected`);
+        for (const w of capturedWarnings) assert.ok(w.length < 600, `${label}: warning must be bounded (got ${w.length})`);
+      }
+
+      // retryDelayMs must be finite and non-negative; invalid values fall back to the 30s default.
+      const realSetTimeout = globalThis.setTimeout;
+      for (const bad of [Number.NaN, -1, Number.POSITIVE_INFINITY]) {
+        const delays: number[] = [];
+        (globalThis as any).setTimeout = (fn: () => void, ms?: number) => { delays.push(ms ?? 0); return realSetTimeout(fn, 0); };
+        try {
+          await runEarlyAccessDigestCron({ supabaseClient: flakyClient(99).client, retryDelayMs: bad, dryRun: true });
+        } finally {
+          globalThis.setTimeout = realSetTimeout;
+        }
+        assert.ok(delays.includes(30_000) && !delays.includes(bad), `retryDelayMs=${bad} must fall back to 30000ms`);
+      }
+      console.log("  [PASS] gmail_send_log read error logs sanitized code/status/message (no details), retries once, then fails closed");
     }
 
     // 5e. Verify 80/day thank-you cap across gmail_send_log
