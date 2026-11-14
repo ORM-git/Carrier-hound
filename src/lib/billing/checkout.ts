@@ -25,7 +25,7 @@ export async function handleProCheckout(
     onSuccess?: () => void;
   } = {}
 ) {
-  const { planCode = "monthly", addonCode, redirectTarget, onStart, onError, onSuccess } = options;
+  const { planCode = options.addonCode ? undefined : "monthly", addonCode, redirectTarget, onStart, onError, onSuccess } = options;
 
   const supabase = createClient();
   const { data: { session } } = await supabase.auth.getSession();

@@ -129,7 +129,19 @@ export function resolveOrderPricing(input: {
 
   const rawPlan = input.planCode || input.planId;
   if (rawPlan) {
-    const normalized = rawPlan.toLowerCase().trim();
+    const rawTrimmed = rawPlan.trim();
+    if (ADDON_PACK_DEFINITIONS[rawTrimmed]) {
+      const addon = ADDON_PACK_DEFINITIONS[rawTrimmed];
+      return {
+        type: "addon",
+        code: addon.code,
+        name: addon.name,
+        amount_paise: addon.price_paise,
+        currency: "INR",
+        sets: addon.sets,
+      };
+    }
+    const normalized = rawTrimmed.toLowerCase();
     let code: PlanCode | null = null;
     if (normalized === "weekly" || normalized.includes("week")) {
       code = "weekly";
