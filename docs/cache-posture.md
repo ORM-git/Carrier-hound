@@ -13,10 +13,10 @@
 This catalog inventories every API route and serverless function in CareerMonke, detailing its authentication requirements, current `Cache-Control` header handling, target classification (split by caller state for dual-mode endpoints), and remediation posture.
 
 ### Summary Metrics
-- **Total Files Audited**: 46 files (`31` Next.js API route files under `src/app/api/**` + `12` Netlify routable serverless functions + `3` internal Netlify helper modules).
-- **Routable Endpoints**: 43 active endpoints.
+- **Total Files Audited**: 47 files (`32` Next.js API route files under `src/app/api/**` + `12` Netlify routable serverless functions + `3` internal Netlify helper modules).
+- **Routable Endpoints**: 44 active endpoints.
 - **Explicitly Sending `Cache-Control`**: 14 endpoints (`12` fully aligned + `2` with partial/unsafe directives noted below).
-- **Sending `none set` (No Explicit `Cache-Control`)**: 29 endpoints (`6` `intentionally uncached` POST webhooks/telemetry/ingest/AI RPCs + `21` single-mode `private/no-store` routes + `2` dual-mode `/jobs/search` routes).
+- **Sending `none set` (No Explicit `Cache-Control`)**: 30 endpoints (`7` `intentionally uncached` POST webhooks/telemetry/ingest/AI RPCs + `21` single-mode `private/no-store` routes + `2` dual-mode `/jobs/search` routes).
 - **At-Risk / Remediation Needed (25 endpoints total)**:
   - **21 Single-Mode Private / Authed / Sensitive Routes Missing `no-store`** (`none set`): All 8 admin routes (PII, analytics, audit activity, dead-letter replay), subscriber-only Pro feeds (`jobs/pro`, `netlify/functions/jobs-pro`), Bearer-authenticated candidate match routes (`jobs/top10`, `netlify/functions/jobs-top10`), user account actions (`account/delete`, `account/signout-all`), financial checkout/verification (`billing/razorpay/order`, `billing/razorpay/verify`), and HMAC email unsubscribe HTML/POST routes.
   - **2 Dual-Mode Search Routes (`src/app/api/jobs/search/route.ts`, `netlify/functions/jobs-search.ts`)**: Both read optional `Authorization: Bearer` tokens, check approval and Pro entitlement, read `user_preferences` (Next route also writes `eligibility_filter` on `?eligibility=on|off`), and return Pro-unmasked vs preview-masked rows. Neither sets `Cache-Control` (`none set`) or `Vary: Authorization`. Their **anonymous-safe preview** path is `public cacheable`, while their **authenticated/private** path is `private/no-store` and must **never** be shared-cached.
@@ -56,6 +56,7 @@ This catalog inventories every API route and serverless function in CareerMonke,
 | `src/app/api/auth/security-event/route.ts` | POST | Public | `none set` | `intentionally uncached` | ✅ **Aligned**: Security telemetry ingest returning `204`. |
 | `src/app/api/billing/razorpay/order/route.ts` | POST | User Auth (`Bearer`) | `none set` | `private/no-store` | ⚠️ **Needs Remediation**: Financial order creation lacks explicit `no-store`. |
 | `src/app/api/billing/razorpay/verify/route.ts` | POST | User Auth (`Bearer`) | `none set` | `private/no-store` | ⚠️ **Needs Remediation**: Payment verification mutation (`Bearer`-authed) lacks explicit `no-store`. |
+| `src/app/api/billing/razorpay/webhook/route.ts` | POST | Razorpay Webhook Signature | `none set` | `intentionally uncached` | ✅ **Aligned**: Server-to-server webhook receiver. |
 | `src/app/api/email/unsubscribe/route.ts` | GET, POST | Signed HMAC Token | `none set` | `private/no-store` | ⚠️ **Needs Remediation**: GET renders HTML containing user's email; POST suppresses email; lacks `no-store`. |
 | `src/app/api/health/ready/route.ts` | GET, HEAD | Public | `"no-store, no-cache, must-revalidate"` | `private/no-store` | ✅ **Compliant**: Readiness probe prohibits caching via `no-store`. |
 | `src/app/api/health/route.ts` | GET, HEAD | Public | `"no-store, no-cache, must-revalidate"` | `private/no-store` | ✅ **Compliant**: Liveness probe prohibits caching via `no-store`. |
@@ -116,7 +117,7 @@ Endpoints handling authenticated sessions (`Bearer`), PII, admin operations, bil
 ### 4.3 Intentionally Uncached
 Dynamic write operations, webhook receivers, telemetry ingest, and AI RPC endpoints (with `"no-store"` recommended for defense in depth on authed AI RPCs):
 - `src/app/api/auth/security-event/route.ts`, `src/app/api/track/route.ts`
-- `netlify/functions/billing-razorpay-webhook.ts`
+- `netlify/functions/billing-razorpay-webhook.ts`, `src/app/api/billing/razorpay/webhook/route.ts`
 - `src/app/api/ai/route.ts`, `netlify/functions/ai.ts`
 - Internal utility modules: `netlify/functions/_cors.ts`, `_logger.ts`, `_sharedRateLimit.ts`
 
