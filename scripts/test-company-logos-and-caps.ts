@@ -33,6 +33,7 @@ process.env.NEXT_PUBLIC_SUPABASE_URL = "https://mock.supabase.co";
 process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.mock_anon_key";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.mock_service_key";
 process.env.NODE_ENV = "test";
+process.env.COMPANY_GROUP_ID_SECRET = "test-only-company-group-secret-not-for-production";
 
 (globalThis as any).__mockRateLimitClient = {
   rpc: async () => ({ data: { allowed: true, retry_after: 0, current_count: 1 }, error: null }),
@@ -192,7 +193,7 @@ async function runSuite() {
       if (job.company !== "Verified Employer") {
         leakedCompanyNameCount++;
       }
-      if (!job.company_id && !job.companyId) {
+      if (!job.companyGroupId || "company_id" in job || "companyId" in job) {
         missingCompanyIdCount++;
       }
     }
@@ -210,9 +211,9 @@ async function runSuite() {
     }
 
     if (missingCompanyIdCount > 0) {
-      failures.push(`MISSING OPAQUE CAP KEY: ${missingCompanyIdCount} jobs lack opaque company_id for capping`);
+      failures.push(`GUEST COMPANY KEY WRONG: ${missingCompanyIdCount} free jobs lack companyGroupId or still carry company_id/companyId`);
     } else {
-      console.log(`  [PASS] 2c. App Route /api/jobs/search includes opaque company_id for capping on all ${searchJson.jobs.length} free jobs`);
+      console.log(`  [PASS] 2c. App Route /api/jobs/search includes opaque companyGroupId (and no company_id/companyId) on all ${searchJson.jobs.length} free jobs`);
     }
 
     // 2b. Call Netlify functions/jobs-search with Free Token
@@ -251,6 +252,192 @@ async function runSuite() {
     }
   } finally {
     globalThis.fetch = origFetch;
+  }
+
+  // ====================================================================================
+  // TEST 2F: Guest company_id masking - companyGroupId (keyed HMAC), real guest path through both handlers
+  // ====================================================================================
+  console.log("\nTEST 2F: Guest/Free responses carry companyGroupId, never company_id (real handlers, list + single)...");
+
+  {
+    const RAW_X = "raw-company-x-6f1d2c9e-uuid";
+    const RAW_Y = "raw-company-y-0a7b44d1-uuid";
+    const mk = (i: number, rawId: string | null, company: string) => ({
+      id: `grp-job-${i}`,
+      title: `Engineer ${i}`,
+      company,
+      company_id: rawId,
+      logo_url: "https://secret-cdn.com/logo.png",
+      location: "Remote",
+      remote: true,
+      category: "engineering",
+      job_type: "full-time",
+      verified: true,
+      status: "active",
+      is_active: true,
+      apply_url: `https://apply.example.com/${i}`,
+      salary_text: "$100k",
+      description: "secret description",
+      skills: ["go"],
+      posted_at: new Date(Date.now() - i * 60000).toISOString(),
+      created_at: new Date(Date.now() - i * 60000).toISOString(),
+    });
+    const groupRows = [
+      ...Array.from({ length: 12 }, (_, i) => mk(i, RAW_X, "Real Company X")),
+      ...Array.from({ length: 12 }, (_, i) => mk(100 + i, RAW_Y, "Real Company Y")),
+      ...Array.from({ length: 40 }, (_, i) => mk(200 + i, `raw-company-z${i}-uuid`, `Real Company Z${i}`)),
+      mk(300, null, "No Company Id"),
+    ];
+    const rawIds = [RAW_X, RAW_Y, ...Array.from({ length: 40 }, (_, i) => `raw-company-z${i}-uuid`)];
+
+    const prevEmails = process.env.EARLY_ACCESS_ALLOWED_EMAILS;
+    process.env.EARLY_ACCESS_ALLOWED_EMAILS = "pro-user@example.test";
+    const origFetch2f = globalThis.fetch;
+    globalThis.fetch = (async (url: any, opts: any) => {
+      const urlStr = String(url);
+      if (urlStr.includes("/auth/v1/user")) {
+        return new Response(
+          JSON.stringify({ id: "pro-user-uuid", email: "pro-user@example.test", aud: "authenticated", role: "authenticated" }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+      if (urlStr.includes("user_preferences")) {
+        return new Response(JSON.stringify({ user_id: "pro-user-uuid", locations: [], eligibility_filter: false }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (urlStr.includes("subscriptions")) {
+        return new Response(
+          JSON.stringify({ user_id: "pro-user-uuid", status: "active", current_period_end: new Date(Date.now() + 86400000).toISOString() }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+      if (urlStr.includes("jobs")) {
+        const idMatch = urlStr.match(/[?&]id=eq\.([^&]+)/);
+        const rows = idMatch ? groupRows.filter((r) => r.id === decodeURIComponent(idMatch[1])) : groupRows;
+        return new Response(JSON.stringify(rows), {
+          status: 200,
+          headers: { "content-type": "application/json", "content-range": `0-${rows.length - 1}/${rows.length}` },
+        });
+      }
+      return origFetch2f(url, opts);
+    }) as any;
+
+    const check2f = (cond: boolean, pass: string, fail: string) => {
+      if (cond) console.log(`  [PASS] ${pass}`);
+      else failures.push(fail);
+    };
+
+    try {
+      const { GET: searchGet } = await import("../src/app/api/jobs/search/route");
+      const { createHandler: createSearchHandler } = await import("../netlify/functions/jobs-search");
+      const netlifyHandler = createSearchHandler();
+      const { capJobsPerCompany: capClient, computeCompanyGroupId } = await import("../src/lib/jobs/capping");
+      const secret = process.env.COMPANY_GROUP_ID_SECRET as string;
+
+      const guestList = async (which: "next" | "netlify") => {
+        if (which === "next") {
+          const res = await searchGet(new Request("http://localhost:3000/api/jobs/search?page=1&pageSize=100", { method: "GET" }));
+          return { status: res.status, text: await res.text() };
+        }
+        const res = await netlifyHandler({ httpMethod: "GET", queryStringParameters: { page: "1", pageSize: "100" }, headers: {} });
+        return { status: res.statusCode, text: res.body };
+      };
+      const guestSingle = async (which: "next" | "netlify", id: string) => {
+        if (which === "next") {
+          const res = await searchGet(new Request(`http://localhost:3000/api/jobs/search?id=${id}`, { method: "GET" }));
+          return { status: res.status, text: await res.text() };
+        }
+        const res = await netlifyHandler({ httpMethod: "GET", queryStringParameters: { id }, headers: {} });
+        return { status: res.statusCode, text: res.body };
+      };
+
+      const expectedX = await computeCompanyGroupId(RAW_X, secret);
+      const expectedY = await computeCompanyGroupId(RAW_Y, secret);
+      check2f(/^[0-9a-f]{12}$/.test(expectedX) && expectedX !== expectedY, "2f-0 companyGroupId is 12 hex chars and differs per company", "companyGroupId format/uniqueness wrong");
+
+      for (const which of ["next", "netlify"] as const) {
+        const { status, text } = await guestList(which);
+        const json = JSON.parse(text);
+        const jobs: any[] = json.jobs || [];
+        check2f(status === 200 && jobs.length > 0, `2f-1 [${which}] guest list returns jobs`, `[${which}] guest list failed: ${status}`);
+
+        const hasIdFields = jobs.filter((j) => "companyId" in j || "company_id" in j).length;
+        check2f(hasIdFields === 0, `2f-2 [${which}] no companyId/company_id key in any guest job`, `[${which}] ${hasIdFields} guest jobs still have companyId/company_id keys`);
+
+        const leakedRaw = rawIds.filter((id) => text.includes(id));
+        check2f(leakedRaw.length === 0, `2f-3 [${which}] no raw company id appears anywhere in the guest payload`, `[${which}] raw company ids leaked in guest payload: ${leakedRaw.join(",")}`);
+
+        const xJobs = jobs.filter((j) => /^Engineer \d+$/.test(j.title) && j.id.startsWith("grp-job-") && Number(j.id.split("-")[2]) < 12);
+        const yJobs = jobs.filter((j) => Number(j.id.split("-")[2]) >= 100 && Number(j.id.split("-")[2]) < 112);
+        check2f(xJobs.length > 0 && xJobs.every((j) => j.companyGroupId === expectedX), `2f-4 [${which}] same company shares one companyGroupId (HMAC of the real id)`, `[${which}] company X jobs do not share the expected companyGroupId`);
+        check2f(yJobs.length > 0 && yJobs.every((j) => j.companyGroupId === expectedY) && expectedX !== expectedY, `2f-5 [${which}] different companies get different companyGroupIds`, `[${which}] company Y group ids wrong`);
+
+        const noIdJob = jobs.find((j) => j.id === "grp-job-300");
+        check2f(!noIdJob || noIdJob.companyGroupId === null, `2f-6 [${which}] job without company_id gets companyGroupId null`, `[${which}] null company_id did not map to null`);
+
+        const top30 = jobs.slice(0, 30);
+        const perGroup = new Map<string, number>();
+        for (const j of top30) if (j.companyGroupId) perGroup.set(j.companyGroupId, (perGroup.get(j.companyGroupId) || 0) + 1);
+        check2f(Math.max(0, ...perGroup.values()) <= 3, `2f-7 [${which}] guest top-30 has at most 3 jobs per company`, `[${which}] guest top-30 exceeds 3 per company`);
+
+        // Client-side capping on guest payloads (no company ids at all) must keep working via companyGroupId
+        const clientCapped = capClient([...jobs].sort((a, b) => (a.id < b.id ? -1 : 1)), 3, 30).slice(0, 30);
+        const clientCounts = new Map<string, number>();
+        for (const j of clientCapped) if (j.companyGroupId) clientCounts.set(j.companyGroupId, (clientCounts.get(j.companyGroupId) || 0) + 1);
+        check2f(Math.max(0, ...clientCounts.values()) <= 3 && clientCapped.length === 30, `2f-8 [${which}] client capJobsPerCompany caps guest jobs by companyGroupId (max 3 in top-30)`, `[${which}] client capping failed on guest payload`);
+
+        // Masking of name / salary / applyUrl stays byte-identical to the previous guest format
+        const maskBroken = jobs.filter((j) => j.company !== "Verified Employer" || j.salary !== "" || j.applyUrl !== "" || j.description !== "" || j.logoUrl !== null).length;
+        check2f(maskBroken === 0, `2f-9 [${which}] company name, salary, applyUrl, description and logo stay masked`, `[${which}] ${maskBroken} guest jobs lost masking`);
+
+        // Single-job path
+        const single = await guestSingle(which, "grp-job-0");
+        const sj = JSON.parse(single.text).jobs?.[0];
+        check2f(single.status === 200 && !!sj && !("companyId" in sj) && !("company_id" in sj) && sj.companyGroupId === expectedX && !rawIds.some((id) => single.text.includes(id)), `2f-10 [${which}] single-job guest response has companyGroupId and no raw company id`, `[${which}] single-job guest response leaks or lacks companyGroupId`);
+        check2f(sj?.company === "Verified Employer" && sj?.applyUrl === "" && sj?.salary === "", `2f-11 [${which}] single-job masking unchanged`, `[${which}] single-job masking changed`);
+      }
+
+      // Pro responses are unchanged: raw company_id/companyId and no companyGroupId
+      {
+        const res = await searchGet(
+          new Request("http://localhost:3000/api/jobs/search?page=1&pageSize=100", { method: "GET", headers: { Authorization: "Bearer pro-user-token" } })
+        );
+        const json = await res.json();
+        const proJobs: any[] = json.jobs || [];
+        const xPro = proJobs.find((j) => j.id === "grp-job-0");
+        check2f(json.isPro === true && !!xPro && xPro.company_id === RAW_X && xPro.companyId === RAW_X && !("companyGroupId" in xPro) && xPro.company === "Real Company X", "2f-12 Pro list response unchanged (real company_id/companyId/name, no companyGroupId)", "Pro list response changed");
+        const sres = await searchGet(
+          new Request("http://localhost:3000/api/jobs/search?id=grp-job-0", { method: "GET", headers: { Authorization: "Bearer pro-user-token" } })
+        );
+        const spro = (await sres.json()).jobs?.[0];
+        check2f(!!spro && spro.company_id === RAW_X && spro.companyId === RAW_X && !("companyGroupId" in spro), "2f-13 Pro single response unchanged", "Pro single response changed");
+      }
+
+      // Fail closed: no server secret -> no guest payload at all (503), never a raw id
+      {
+        const saved = process.env.COMPANY_GROUP_ID_SECRET;
+        delete process.env.COMPANY_GROUP_ID_SECRET;
+        try {
+          for (const which of ["next", "netlify"] as const) {
+            const list = await guestList(which);
+            const single = await guestSingle(which, "grp-job-0");
+            check2f(
+              list.status === 503 && single.status === 503 && !rawIds.some((id) => list.text.includes(id) || single.text.includes(id)),
+              `2f-14 [${which}] missing COMPANY_GROUP_ID_SECRET fails closed with 503 and no company ids`,
+              `[${which}] did not fail closed without the secret (list ${list.status}, single ${single.status})`
+            );
+          }
+        } finally {
+          process.env.COMPANY_GROUP_ID_SECRET = saved;
+        }
+      }
+    } finally {
+      globalThis.fetch = origFetch2f;
+      if (prevEmails === undefined) delete process.env.EARLY_ACCESS_ALLOWED_EMAILS;
+      else process.env.EARLY_ACCESS_ALLOWED_EMAILS = prevEmails;
+    }
   }
 
   // ====================================================================================
