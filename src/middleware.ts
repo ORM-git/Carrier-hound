@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
-import { createClient } from "@supabase/supabase-js";
 import { isVerifiedAdminUser } from "@/lib/admin/constants";
 import { isCrossSiteMutation } from "@/lib/security/sameOrigin";
 import { exceedsGlobalBodyCap } from "@/lib/security/bodySize";
 import { createLogger } from "@/lib/observability/logger";
 
 const log = createLogger({ context: { module: "middleware" } });
+void log;
 
 /**
  * App routes that strictly require an authenticated Supabase session.
@@ -129,20 +129,6 @@ function getServerEnv(key: string): string | undefined {
 }
 
 /**
- * Parse comma-separated allowlist from EARLY_ACCESS_ALLOWED_EMAILS (lowercase compare).
- * Never hardcodes any email. If env is empty/unset, returns an empty Set.
- */
-function getAllowedEarlyAccessEmails(): Set<string> {
-  const raw = getServerEnv("EARLY_ACCESS_ALLOWED_EMAILS") || "";
-  return new Set(
-    raw
-      .split(",")
-      .map((entry) => entry.trim().toLowerCase())
-      .filter(Boolean)
-  );
-}
-
-/**
  * Session rule: Google and email magic-link sign-in are both allowed.
  * A session is accepted only when user.email_confirmed_at is set.
  */
@@ -160,10 +146,8 @@ export interface EarlyAccessApprovalVerdict {
   shouldSignOut: boolean;
 }
 
-// In-memory per-email TTL cache (60s TTL, 5-minute grace window for lookup errors)
+// In-memory per-email TTL cache
 const earlyAccessApprovalCache = new Map<string, EarlyAccessCacheEntry>();
-const EARLY_ACCESS_CACHE_TTL_MS = 60 * 1000;
-const EARLY_ACCESS_GRACE_WINDOW_MS = 5 * 60 * 1000;
 
 export function _clearEarlyAccessCacheForTesting(): void {
   earlyAccessApprovalCache.clear();
@@ -173,69 +157,9 @@ export function _getEarlyAccessCacheForTesting(): Map<string, EarlyAccessCacheEn
   return earlyAccessApprovalCache;
 }
 
-async function queryEarlyAccessApprovalFromDb(
-  normalizedEmail: string
-): Promise<{ status: "definitive"; approved: boolean } | { status: "error"; error: any }> {
-  // 1. Test-mode mock client support (strictly gated by NODE_ENV === "test")
-  if (process.env.NODE_ENV === "test" && (globalThis as any).__mockSupabaseClient) {
-    try {
-      const mockClient = (globalThis as any).__mockSupabaseClient;
-      if (typeof mockClient.from === "function") {
-        const { data, error } = await mockClient
-          .from("early_access_approved")
-          .select("approved")
-          .eq("email", normalizedEmail)
-          .maybeSingle();
-
-        if (error) {
-          return { status: "error", error };
-        }
-        return { status: "definitive", approved: data?.approved === true };
-      }
-    } catch (err) {
-      return { status: "error", error: err };
-    }
-  }
-
-  // 2. Live server-side query with service role
-  const supabaseUrl =
-    getServerEnv("NEXT_PUBLIC_SUPABASE_URL") || getServerEnv("SUPABASE_URL");
-  const serviceKey =
-    getServerEnv("SUPABASE_SERVICE_ROLE_KEY") || getServerEnv("SUPABASE_SERVICE_KEY");
-
-  if (!supabaseUrl || !serviceKey) {
-    return {
-      status: "error",
-      error: new Error("Missing required Supabase service role environment variables"),
-    };
-  }
-
-  try {
-    const adminClient = createClient(supabaseUrl, serviceKey, {
-      auth: { persistSession: false },
-    });
-    const { data, error } = await adminClient
-      .from("early_access_approved")
-      .select("approved")
-      .eq("email", normalizedEmail)
-      .maybeSingle();
-
-    if (error) {
-      return { status: "error", error };
-    }
-    return { status: "definitive", approved: data?.approved === true };
-  } catch (err) {
-    return { status: "error", error: err };
-  }
-}
-
 /**
- * Server-side early access approval check:
- * 1. Respects existing EARLY_ACCESS_ALLOWED_EMAILS allowlist first (no DB hit).
- * 2. In-memory per-email TTL cache (60s) around approval verdicts.
- * 3. Error hygiene: a definitive "not approved" bounces and signs out;
- *    a lookup ERROR never signs the user out - serves last-known-good within 5m grace,
- *    or bounces to /early-access without signing out if there is no cached verdict.
+ * Early-access gate removed for launch: all signed-in users with a valid email
+ * are approved for platform access. Unauthenticated requests or invalid emails fail closed.
  */
 export async function checkEarlyAccessApproval(
   email: string
@@ -245,56 +169,7 @@ export async function checkEarlyAccessApproval(
     return { approved: false, shouldSignOut: true };
   }
 
-  // 1. Respect existing EARLY_ACCESS_ALLOWED_EMAILS allowlist first
-  if (getAllowedEarlyAccessEmails().has(normalized)) {
-    return { approved: true, shouldSignOut: false };
-  }
-
-  const now = Date.now();
-  const cached = earlyAccessApprovalCache.get(normalized);
-
-  // 2. Fresh in-memory TTL cache hit (within 60s)
-  if (cached && now - cached.cachedAt < EARLY_ACCESS_CACHE_TTL_MS) {
-    return {
-      approved: cached.approved,
-      shouldSignOut: !cached.approved,
-    };
-  }
-
-  // 3. Query early_access_approved table
-  const result = await queryEarlyAccessApprovalFromDb(normalized);
-
-  if (result.status === "definitive") {
-    earlyAccessApprovalCache.set(normalized, {
-      approved: result.approved,
-      cachedAt: now,
-    });
-    return {
-      approved: result.approved,
-      shouldSignOut: !result.approved,
-    };
-  }
-
-  // 4. Lookup ERROR handling:
-  // Must NEVER sign the user out.
-  // Check if we have a last-known-good verdict within 5-minute grace window:
-  if (cached && now - cached.cachedAt <= EARLY_ACCESS_GRACE_WINDOW_MS) {
-    if (cached.approved) {
-      log.warn(
-        `[middleware] approval query error for ${normalized}; serving cached approved verdict within 5m grace window.`
-      );
-      return { approved: true, shouldSignOut: false };
-    }
-    // Cached unapproved within grace window; bounce but do NOT sign out on transient error
-    return { approved: false, shouldSignOut: false };
-  }
-
-  // No cached verdict (or past grace window): bounce to /early-access without signing out (session stays intact)
-  log.warn(
-    `[middleware] approval query error for ${normalized} with no cached verdict; bouncing without sign-out`,
-    { error: result.error?.message || String(result.error) }
-  );
-  return { approved: false, shouldSignOut: false };
+  return { approved: true, shouldSignOut: false };
 }
 
 function _clearAuthCookiesOnResponse(request: NextRequest, response: NextResponse): void {

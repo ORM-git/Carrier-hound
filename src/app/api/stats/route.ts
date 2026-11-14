@@ -49,8 +49,7 @@ function getSupabaseAdmin() {
  * - Anonymous callers: ONLY fields the public UI needs (jobsToday, updatedAt).
  *   Strictly DO NOT expose totalJobs, companiesScanned, activeJobs, or companies
  *   (zero aggregate platform corpus exposure).
- * - Authenticated + approved callers: Complete live corpus metrics.
- * - Authenticated + unapproved callers: 403 Early access only.
+ * - Authenticated callers: Complete live corpus metrics.
  */
 async function getHandler(req: Request) {
   const log = baseLog.child({ requestId: req?.headers.get("x-request-id") ?? "unknown" });
