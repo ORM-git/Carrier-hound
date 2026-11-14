@@ -16,6 +16,11 @@ on:
         required: false
         type: string
         default: '60'
+      window_days:
+        description: 'Scanned window in days for active jobs (default: 14)'
+        required: false
+        type: string
+        default: '14'
 
 permissions:
   contents: read
@@ -51,6 +56,9 @@ jobs:
           fi
           if [ -n "${{ github.event.inputs.min_score }}" ]; then
             ARGS="$ARGS --min-score=${{ github.event.inputs.min_score }}"
+          fi
+          if [ -n "${{ github.event.inputs.window_days }}" ]; then
+            ARGS="$ARGS --window-days=${{ github.event.inputs.window_days }}"
           fi
           echo "Executing: npx tsx scripts/daily-digest-cron.ts $ARGS"
           npx tsx scripts/daily-digest-cron.ts $ARGS
