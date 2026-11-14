@@ -23,9 +23,18 @@ export async function handleProCheckout(
     onStart?: () => void;
     onError?: (errorMsg: string) => void;
     onSuccess?: () => void;
+    onDismiss?: () => void;
   } = {}
 ) {
-  const { planCode = options.addonCode ? undefined : "monthly", addonCode, redirectTarget, onStart, onError, onSuccess } = options;
+  const {
+    planCode = options.addonCode ? undefined : "monthly",
+    addonCode,
+    redirectTarget,
+    onStart,
+    onError,
+    onSuccess,
+    onDismiss,
+  } = options;
 
   const supabase = createClient();
   const { data: { session } } = await supabase.auth.getSession();
@@ -62,6 +71,9 @@ export async function handleProCheckout(
     },
     onError: (err: any) => {
       onError?.(err?.message || "Payment processing failed. Please try again.");
+    },
+    onDismiss: () => {
+      onDismiss?.();
     },
   });
 }
