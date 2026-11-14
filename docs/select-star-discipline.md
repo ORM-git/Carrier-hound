@@ -48,7 +48,7 @@ acceptable: they are plpgsql row variables, not wire payloads.
 
 | Site | Table | Note |
 | --- | --- | --- |
-| `src/lib/cron/dailyDigestCron.ts:121` | candidate_profiles | Per-user loop already flagged in `docs/db-n-plus-one.md` (rank 46) with a batching recommendation. Column tightening should ride that fix. |
+| `src/lib/cron/dailyDigestCron.ts:168` | candidate_profiles | Per-user loop already flagged in `docs/db-n-plus-one.md` (rank 46) with a batching recommendation. Column tightening should ride that fix. |
 | `src/lib/cron/digestStorage.ts:61` | daily_digests | Single latest digest row per user. |
 | `src/lib/events/failedEvents.ts:626` | failed_events | Replay batch read (bounded batch, see rank 46 doc); the replay needs the full payload column set. |
 
