@@ -16,15 +16,18 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { buttonClasses } from "@/components/ui/button";
-import { getAuthUser, getUserPreferences } from "@/lib/auth/session";
+import { getAuthUser, getUserPreferences, saveUserPreferences } from "@/lib/auth/session";
 import { UserPreferences } from "@/lib/auth/types";
 import { getCandidateProfile } from "@/lib/resume/storage";
 import { CandidateProfile } from "@/lib/resume/types";
 import { getProAccessStatus } from "@/lib/billing/subscription";
 import { getTrackedApplications } from "@/lib/tracker/storage";
+import { createClient } from "@/lib/supabase/client";
+import { checkAccountOnboardingCompleted } from "@/lib/auth/onboarding";
+import { toast } from "react-toastify";
 import { TrackedApplication, STAGE_CONFIG, ApplicationStage } from "@/lib/tracker/types";
 import type { User } from "@supabase/supabase-js";
-import { isSwrStale, readSwr, swrFetch } from "@/lib/cache/swr";
+import { isSwrStale, readSwr, swrFetch, updateSwr } from "@/lib/cache/swr";
 import {
   Sparkles,
   Lock,
@@ -152,6 +155,7 @@ export default function DashboardPage() {
   const [candidate, setCandidate] = useState<CandidateProfile | null>(null);
   const [applications, setApplications] = useState<TrackedApplication[]>([]);
   const [activeStep, setActiveStep] = useState<"onboarding" | "resume" | "matches">("matches");
+  const [onboardingCompleted, setOnboardingCompleted] = useState<boolean>(true);
 
   const loadData = useCallback(async (authUser: User) => {
     type DashboardBundle = {
@@ -159,19 +163,21 @@ export default function DashboardPage() {
       prefRes: Awaited<ReturnType<typeof getUserPreferences>>;
       profileRes: Awaited<ReturnType<typeof getCandidateProfile>>;
       appsRes: Awaited<ReturnType<typeof getTrackedApplications>>;
+      onboardingCompleted: boolean;
     };
     const cacheKey = `dashboard:${authUser.id}`;
 
     const applyBundle = (bundle: DashboardBundle) => {
-      const { proRes, prefRes, profileRes, appsRes } = bundle;
+      const { proRes, prefRes, profileRes, appsRes, onboardingCompleted: isCompleted } = bundle;
       setIsPro(proRes.isPro);
       setIsProDefinitive(Boolean(proRes.isDefinitive));
       setPreferences(prefRes);
       setCandidate(profileRes && profileRes.confirmedAt ? profileRes : null);
       setApplications(appsRes);
+      setOnboardingCompleted(isCompleted);
 
       // Determine starting step in the guided flow
-      if (!prefRes.onboardingCompleted) {
+      if (!isCompleted) {
         setActiveStep("onboarding");
       } else if (!profileRes || !profileRes.confirmedAt) {
         setActiveStep("resume");
@@ -191,17 +197,20 @@ export default function DashboardPage() {
       setLoading(true);
     }
     try {
+      const supabase = createClient();
       const bundle = await swrFetch<DashboardBundle>(cacheKey, () =>
         Promise.all([
           getProAccessStatus(authUser.id),
           getUserPreferences(authUser.id),
           getCandidateProfile(authUser.id),
           getTrackedApplications(authUser.id),
-        ]).then(([proRes, prefRes, profileRes, appsRes]) => ({
+          checkAccountOnboardingCompleted(supabase, authUser.id),
+        ]).then(([proRes, prefRes, profileRes, appsRes, isCompleted]) => ({
           proRes,
           prefRes,
           profileRes,
           appsRes,
+          onboardingCompleted: isCompleted,
         }))
       );
       applyBundle(bundle);
@@ -279,7 +288,7 @@ export default function DashboardPage() {
     body: string;
     icon: React.ReactNode;
     action: React.ReactNode;
-  } = !preferences?.onboardingCompleted
+  } = !onboardingCompleted
     ? {
         eyebrow: "Step 1",
         title: "Preferences",
@@ -554,17 +563,32 @@ export default function DashboardPage() {
               userId={user.id}
               initialPreferences={preferences}
               onComplete={() => {
+                setOnboardingCompleted(true);
+                updateSwr<any>(`dashboard:${user.id}`, (current) =>
+                  current ? { ...current, onboardingCompleted: true } : current
+                );
                 if (candidate?.confirmedAt) {
                   setActiveStep("matches");
                 } else {
                   setActiveStep("resume");
                 }
               }}
-              onSkip={() => {
-                if (candidate?.confirmedAt) {
-                  setActiveStep("matches");
-                } else {
-                  setActiveStep("resume");
+              onSkip={async () => {
+                try {
+                  if (preferences) {
+                    await saveUserPreferences({ ...preferences, onboardingCompleted: true }, user.id);
+                  }
+                  setOnboardingCompleted(true);
+                  updateSwr<any>(`dashboard:${user.id}`, (current) =>
+                    current ? { ...current, onboardingCompleted: true } : current
+                  );
+                  if (candidate?.confirmedAt) {
+                    setActiveStep("matches");
+                  } else {
+                    setActiveStep("resume");
+                  }
+                } catch (err: any) {
+                  toast.error(err?.message || "Failed to save preferences. Please try again.");
                 }
               }}
             />

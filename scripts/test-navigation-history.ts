@@ -94,11 +94,14 @@ export const ROUTER_REPLACE_ALLOWLIST: RouterReplaceAllowlistEntry[] = [
     expectedCount: 1,
     requiredSnippets: ["router.replace(next)"],
   },
-  // Unauthenticated mount guard on `/onboarding` replaces protected URL to prevent Back-button loop
+  // Unauthenticated mount guard (guest login) and completed-account auto-redirect on `/onboarding` replace protected URL
   {
     file: "src/app/onboarding/page.tsx",
-    expectedCount: 1,
-    requiredSnippets: ["router.replace(`/login?returnTo=${encodeURIComponent(returnUrl)}`)"],
+    expectedCount: 2,
+    requiredSnippets: [
+      "router.replace(`/login?returnTo=${encodeURIComponent(returnUrl)}`)",
+      "router.replace(next)",
+    ],
   },
   // Unauthenticated mount guard on `/profile` replaces protected URL to prevent Back-button loop
   {

@@ -5,17 +5,20 @@ import {
   SubscriptionStatus,
 } from "./types";
 import { withJitter } from "../reliability/jitter";
+import { normalizePlanCode, PLAN_DEFINITIONS, PlanCode } from "./quota";
 
 import { createLogger } from "@/lib/observability/logger";
 
 const log = createLogger({ context: { module: "billing/subscription" } });
 
+// Re-export central plan normalization from quota
+export const normalizePlanId = normalizePlanCode;
+export type SupportedPlanId = PlanCode;
+
 function resolvePlanName(planId?: string | null): string {
+  const norm = normalizePlanCode(planId);
+  if (norm) return PLAN_DEFINITIONS[norm].name;
   if (!planId) return "Free Tier";
-  const normalized = planId.toLowerCase();
-  if (normalized.includes("week")) return "Weekly";
-  if (normalized.includes("quarter")) return "Quarterly";
-  if (normalized.includes("month") || normalized === "monthly" || normalized === "domestic_monthly_199") return "Monthly";
   return "Pro Member";
 }
 
@@ -306,18 +309,24 @@ export function setLocalProActive(_active: boolean = false) {
 /**
  * Retrieves the full user subscription object if one exists
  */
-export async function getUserSubscription(): Promise<UserSubscription | null> {
-
+export async function getUserSubscription(
+  userId?: string,
+  client?: any
+): Promise<UserSubscription | null> {
   try {
-    const supabase = createClient();
-    const { data: { session } } = await supabase.auth.getSession();
-    const user = session?.user || (await supabase.auth.getUser()).data.user;
+    const supabase = client || createClient();
+    let resolvedUserId = userId;
+    if (!resolvedUserId) {
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user || (await supabase.auth.getUser()).data.user;
+      resolvedUserId = user?.id;
+    }
 
-    if (user) {
+    if (resolvedUserId) {
       const { data: sub, error } = await supabase
         .from("subscriptions")
         .select("id, user_id, provider, plan_id, currency, amount, status, current_period_start, current_period_end, grace_period_end, cancel_at_period_end, metadata")
-        .eq("user_id", user.id)
+        .eq("user_id", resolvedUserId)
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -332,16 +341,39 @@ export async function getUserSubscription(): Promise<UserSubscription | null> {
           resolvedStatus = "canceled";
         }
 
+        const normalizedPlan = normalizePlanCode(sub.plan_id);
+
+        // Convert subscriptions.amount explicitly from integer paise to standard units.
+        // If amount is missing/null/undefined:
+        // Do not combine the INR catalog price with a non-INR currency (USD quarterly must not show $3,999).
+        // Either keep catalog amount and its INR currency together, or hide the price when currency is not INR.
+        let resolvedAmount: number | undefined;
+        const rawCurrency = sub.currency ? String(sub.currency).trim().toUpperCase() : "INR";
+        const isINR = rawCurrency === "INR";
+
+        if (typeof sub.amount === "number" && !Number.isNaN(sub.amount)) {
+          resolvedAmount = Math.round(sub.amount / 100);
+        } else if (normalizedPlan) {
+          const catalogPlan = PLAN_DEFINITIONS[normalizedPlan];
+          if (isINR) {
+            resolvedAmount = Math.round(catalogPlan.price_paise / 100);
+          } else {
+            resolvedAmount = undefined;
+          }
+        } else {
+          resolvedAmount = undefined;
+        }
+
         return {
           id: sub.id,
           userId: sub.user_id,
           provider: sub.provider || "manual",
-          planId: sub.plan_id || "monthly",
-          currency: sub.currency || "INR",
-          amount: sub.amount || 1499,
+          planId: normalizedPlan || sub.plan_id || undefined,
+          currency: rawCurrency,
+          amount: resolvedAmount,
           status: resolvedStatus,
           currentPeriodStart: sub.current_period_start || new Date().toISOString(),
-          currentPeriodEnd: sub.current_period_end || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+          currentPeriodEnd: sub.current_period_end ? new Date(sub.current_period_end).toISOString() : undefined,
           gracePeriodEnd: sub.grace_period_end,
           cancelAtPeriodEnd: sub.cancel_at_period_end ?? false,
           metadata: sub.metadata,

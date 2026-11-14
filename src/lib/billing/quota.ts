@@ -106,6 +106,31 @@ export interface ResolvedOrderPricing {
 }
 
 /**
+ * Central plan normalization shared across order pricing and subscription derivation.
+ * Ensures "3_month" maps to "quarterly" (3999), not monthly.
+ */
+export function normalizePlanCode(raw?: string | null): PlanCode | null {
+  if (!raw || typeof raw !== "string") return null;
+  const rawTrimmed = raw.trim();
+  const normalized = rawTrimmed.toLowerCase();
+  if (normalized === "weekly" || normalized.includes("week")) {
+    return "weekly";
+  }
+  if (normalized === "quarterly" || normalized.includes("quarter") || normalized.includes("3_month")) {
+    return "quarterly";
+  }
+  if (
+    normalized === "monthly" ||
+    normalized.includes("month") ||
+    normalized === "domestic_monthly_199" ||
+    normalized === "intl_monthly_9"
+  ) {
+    return "monthly";
+  }
+  return null;
+}
+
+/**
  * Server-authoritative order price resolution.
  * Ignores any client-supplied amount; retrieves exact price_paise from plans/addon_packs catalog.
  */
@@ -141,20 +166,8 @@ export function resolveOrderPricing(input: {
         sets: addon.sets,
       };
     }
-    const normalized = rawTrimmed.toLowerCase();
-    let code: PlanCode | null = null;
-    if (normalized === "weekly" || normalized.includes("week")) {
-      code = "weekly";
-    } else if (normalized === "quarterly" || normalized.includes("quarter") || normalized.includes("3_month")) {
-      code = "quarterly";
-    } else if (
-      normalized === "monthly" ||
-      normalized.includes("month") ||
-      normalized === "domestic_monthly_199" ||
-      normalized === "intl_monthly_9"
-    ) {
-      code = "monthly";
-    } else {
+    const code = normalizePlanCode(rawTrimmed);
+    if (!code) {
       return null;
     }
 
