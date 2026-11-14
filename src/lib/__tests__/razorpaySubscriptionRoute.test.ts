@@ -13,6 +13,7 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
   };
 
   let mockDbSubscriptions: Map<string, any>;
+  let mockDbPaymentOrders: Map<string, any>;
 
   beforeEach(() => {
     process.env = { ...originalEnv };
@@ -26,6 +27,7 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
     process.env.RAZORPAY_AUTORENEW_PLAN_QUARTERLY = "plan_quarterly_rzp_789";
 
     mockDbSubscriptions = new Map();
+    mockDbPaymentOrders = new Map();
   });
 
   afterEach(() => {
@@ -49,10 +51,12 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
           return { data: { user: null }, error: new Error("Invalid token") };
         },
       },
-      from: (_table: string) => {
+      from: (table: string) => {
         let filterUserId: string | null = null;
         const query: any = {
           select: () => query,
+          order: () => query,
+          limit: () => query,
           eq: (col: string, val: any) => {
             if (col === "user_id") filterUserId = val;
             return query;
@@ -65,24 +69,25 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
           update: (updates: any) => {
             let targetUserId: string | null = null;
             const updateQuery = {
-              eq: (col: string, val: any) => {
+              eq: async (col: string, val: any) => {
                 if (col === "user_id") targetUserId = val;
-                return updateQuery;
-              },
-              then: (resolve: any) => {
-                if (options?.dbError) return resolve({ error: options.dbError });
+                if (options?.dbError) return { error: options.dbError };
                 if (targetUserId) {
                   const existing = mockDbSubscriptions.get(targetUserId) || {};
                   mockDbSubscriptions.set(targetUserId, { ...existing, ...updates });
                 }
-                return resolve({ error: null });
+                return { error: null };
               },
             };
             return updateQuery;
           },
           insert: async (row: any) => {
             if (options?.dbError) return { error: options.dbError };
-            mockDbSubscriptions.set(row.user_id, { ...row });
+            if (table === "payment_orders") {
+              mockDbPaymentOrders.set(row.provider_order_id, { ...row });
+            } else {
+              mockDbSubscriptions.set(row.user_id, { ...row });
+            }
             return { error: null };
           },
         };
@@ -253,12 +258,15 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
     expect(capturedBody.total_count).toBe(52); // 52 weeks = 1 calendar year
     expect(capturedBody.customer_notify).toBe(true);
 
-    const stored = mockDbSubscriptions.get(mockUser.id);
-    expect(stored.subscription_id).toBe("sub_rzp_weekly_123456");
-    expect(stored.plan_id).toBe("weekly");
+    const pendingOrder = mockDbPaymentOrders.get("sub_rzp_weekly_123456");
+    expect(pendingOrder).toBeDefined();
+    expect(pendingOrder.provider_order_id).toBe("sub_rzp_weekly_123456");
+    expect(pendingOrder.plan_code).toBe("weekly");
+    expect(pendingOrder.amount_paise).toBe(69200);
+    expect(pendingOrder.status).toBe("created");
   });
 
-  it("creates monthly subscription with total_count=12 (1 year) and stores subscription_id", async () => {
+  it("creates monthly subscription with total_count=12 (1 year) and stores pending order separately", async () => {
     let capturedBody: any = null;
     const mockFetch = vi.fn().mockImplementation(async (_url: string, init: any) => {
       capturedBody = JSON.parse(init.body);
@@ -292,11 +300,14 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
     expect(capturedBody.total_count).toBe(12); // 12 months = 1 calendar year
     expect(capturedBody.customer_notify).toBe(true);
 
-    const stored = mockDbSubscriptions.get(mockUser.id);
-    expect(stored.subscription_id).toBe("sub_rzp_monthly_654321");
+    const pendingOrder = mockDbPaymentOrders.get("sub_rzp_monthly_654321");
+    expect(pendingOrder).toBeDefined();
+    expect(pendingOrder.provider_order_id).toBe("sub_rzp_monthly_654321");
+    expect(pendingOrder.plan_code).toBe("monthly");
+    expect(pendingOrder.amount_paise).toBe(149900);
   });
 
-  it("creates quarterly subscription with total_count=4 (1 year) and stores subscription_id", async () => {
+  it("creates quarterly subscription with total_count=4 (1 year) and stores pending order separately", async () => {
     let capturedBody: any = null;
     const mockFetch = vi.fn().mockImplementation(async (_url: string, init: any) => {
       capturedBody = JSON.parse(init.body);
@@ -330,15 +341,20 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
     expect(capturedBody.total_count).toBe(4); // 4 quarters = 1 calendar year
     expect(capturedBody.customer_notify).toBe(true);
 
-    const stored = mockDbSubscriptions.get(mockUser.id);
-    expect(stored.subscription_id).toBe("sub_rzp_quarterly_987654");
+    const pendingOrder = mockDbPaymentOrders.get("sub_rzp_quarterly_987654");
+    expect(pendingOrder).toBeDefined();
+    expect(pendingOrder.provider_order_id).toBe("sub_rzp_quarterly_987654");
+    expect(pendingOrder.plan_code).toBe("quarterly");
+    expect(pendingOrder.amount_paise).toBe(399900);
   });
 
-  it("updates existing subscription row if user already has one", async () => {
+  it("does NOT overwrite existing active subscription_id or plan_id, storing pending subscription separately", async () => {
     mockDbSubscriptions.set(mockUser.id, {
       id: "existing_sub_row_1",
       user_id: mockUser.id,
       subscription_id: "old_sub_id",
+      plan_id: "weekly",
+      status: "canceled", // inactive
       metadata: { initial_plan: "free" },
     });
 
@@ -367,10 +383,54 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
     const res = await POST(req);
     expect(res.status).toBe(200);
 
-    const updated = mockDbSubscriptions.get(mockUser.id);
-    expect(updated.subscription_id).toBe("sub_rzp_new_updated_123");
-    expect(updated.metadata.initial_plan).toBe("free");
-    expect(updated.metadata.plan_code).toBe("monthly");
+    const sub = mockDbSubscriptions.get(mockUser.id);
+    // Active columns are NOT overwritten!
+    expect(sub.subscription_id).toBe("old_sub_id");
+    expect(sub.plan_id).toBe("weekly");
+    expect(sub.status).toBe("canceled");
+    // Pending ID is stored separately in metadata
+    expect(sub.metadata.pending_subscription_id).toBe("sub_rzp_new_updated_123");
+    expect(sub.metadata.pending_plan_code).toBe("monthly");
+
+    // Also recorded in payment_orders
+    const pendingOrder = mockDbPaymentOrders.get("sub_rzp_new_updated_123");
+    expect(pendingOrder).toBeDefined();
+    expect(pendingOrder.provider_order_id).toBe("sub_rzp_new_updated_123");
+    expect(pendingOrder.plan_code).toBe("monthly");
+  });
+
+  it("blocks subscription creation with 409 when user already has an active plan", async () => {
+    const futureDate = new Date(Date.now() + 15 * 86400000).toISOString();
+    mockDbSubscriptions.set(mockUser.id, {
+      id: "active_sub_row",
+      user_id: mockUser.id,
+      subscription_id: "active_sub_123",
+      plan_id: "monthly",
+      status: "active",
+      current_period_end: futureDate,
+    });
+
+    const mockFetch = vi.fn();
+    const req = createMockRequest(
+      { planCode: "monthly" },
+      {},
+      {
+        getSupabaseAdmin: () => createMockSupabaseAdmin(),
+        verifyUserNotBanned: async () => ({ isBlocked: false }),
+        fetchFn: mockFetch,
+        isProductionHost: false,
+      }
+    );
+
+    const res = await POST(req);
+    expect(res.status).toBe(409);
+    const json = await res.json();
+    expect(json.code).toBe("ACTIVE_PLAN_EXISTS");
+    expect(json.error).toBe(
+      "You already have an active subscription plan. Please manage your existing subscription in account settings."
+    );
+    // Razorpay must never be called when user already has active plan
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
   it("fails closed with 500 when database update/insert fails", async () => {

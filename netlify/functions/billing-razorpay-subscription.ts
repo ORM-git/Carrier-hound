@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { getRazorpayKeyMode } from "../../src/lib/billing/mode";
 import { verifyUserNotBanned } from "../../src/lib/admin/auth";
+import { getServerEntitlement } from "../../src/lib/billing/serverEntitlement";
 import { buildCorsHeaders, handleCorsPreflight } from "./_cors";
 import { safeLog } from "./_logger";
 
@@ -12,6 +13,7 @@ const CORS_OPTIONS = {
 export interface BillingSubscriptionDeps {
   getSupabaseAdmin?: () => any;
   verifyUserNotBanned?: (supabaseAdmin: any, userId: string, metadata?: any) => Promise<any>;
+  getServerEntitlement?: (userId: string) => Promise<any>;
   fetchFn?: typeof fetch;
   isProductionHost?: boolean;
 }
@@ -288,6 +290,55 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
         };
       }
 
+      // Check if user already has an active plan (block duplicate / overwrite)
+      const { data: existingSub, error: selectErr } = await supabaseAdmin
+        .from("subscriptions")
+        .select("id, status, plan_id, subscription_id, current_period_end, grace_period_end, metadata")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (selectErr) {
+        safeLog.warn(
+          "[Netlify /billing-razorpay-subscription] Subscription lookup error during pre-check:",
+          selectErr
+        );
+      }
+
+      const now = Date.now();
+      const isStatusActive = existingSub && (existingSub.status === "active" || existingSub.status === "trialing");
+      const periodEndMs = existingSub?.current_period_end ? new Date(existingSub.current_period_end).getTime() : 0;
+      const isPeriodActive = isStatusActive && (!existingSub.current_period_end || periodEndMs > now);
+      const isGraceActive = existingSub?.status === "in_grace_period" &&
+        existingSub.grace_period_end &&
+        new Date(existingSub.grace_period_end).getTime() > now;
+
+      let hasActivePlan = Boolean(isPeriodActive || isGraceActive);
+
+      const entitlementChecker = deps.getServerEntitlement || getServerEntitlement;
+      if (!hasActivePlan && typeof entitlementChecker === "function") {
+        try {
+          const ent = await entitlementChecker(user.id);
+          if (ent?.isPro) {
+            hasActivePlan = true;
+          }
+        } catch {
+          // ignore fallback errors
+        }
+      }
+
+      if (hasActivePlan) {
+        return {
+          statusCode: 409,
+          headers,
+          body: JSON.stringify({
+            error: "You already have an active subscription plan. Please manage your existing subscription in account settings.",
+            code: "ACTIVE_PLAN_EXISTS",
+          }),
+        };
+      }
+
       let razorpayPlanId: string | undefined;
       if (planCode === "weekly") {
         razorpayPlanId = process.env.RAZORPAY_AUTORENEW_PLAN_WEEKLY;
@@ -364,58 +415,32 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
 
       const subscriptionData: any = await rzpRes.json();
 
-      const { data: existingSub, error: selectErr } = await supabaseAdmin
-        .from("subscriptions")
-        .select("*")
-        .eq("user_id", user.id)
-        .maybeSingle();
+      // Store pending subscription separately without overwriting existing subscription_id/plan_id
+      const PLAN_PAISE: Record<string, number> = {
+        weekly: 69200,
+        monthly: 149900,
+        quarterly: 399900,
+      };
+      const amountInPaise = PLAN_PAISE[planCode] ?? 149900;
 
-      if (selectErr) {
-        safeLog.warn(
-          "[Netlify /billing-razorpay-subscription] Subscription lookup error during creation:",
-          selectErr
-        );
-      }
+      // Record pending subscription order in payment_orders
+      const { error: orderInsertErr } = await supabaseAdmin
+        .from("payment_orders")
+        .insert({
+          user_id: user.id,
+          provider: "razorpay",
+          provider_order_id: subscriptionData.id,
+          plan_code: planCode,
+          amount_paise: amountInPaise,
+          currency: "INR",
+          status: "created",
+          mode: resolvedMode,
+        });
 
-      let recordError: any = null;
-      if (existingSub) {
-        const { error: updateErr } = await supabaseAdmin
-          .from("subscriptions")
-          .update({
-            subscription_id: subscriptionData.id,
-            plan_id: planCode,
-            provider: "razorpay",
-            updated_at: new Date().toISOString(),
-            metadata: {
-              ...(existingSub.metadata || {}),
-              razorpay_subscription_id: subscriptionData.id,
-              plan_code: planCode,
-            },
-          })
-          .eq("user_id", user.id);
-        recordError = updateErr;
-      } else {
-        const { error: insertErr } = await supabaseAdmin
-          .from("subscriptions")
-          .insert({
-            user_id: user.id,
-            provider: "razorpay",
-            subscription_id: subscriptionData.id,
-            plan_id: planCode,
-            currency: "INR",
-            status: "unpaid",
-            metadata: {
-              razorpay_subscription_id: subscriptionData.id,
-              plan_code: planCode,
-            },
-          });
-        recordError = insertErr;
-      }
-
-      if (recordError) {
+      if (orderInsertErr) {
         safeLog.error(
-          "[Netlify /billing-razorpay-subscription] Failed to store subscription id on user row:",
-          recordError
+          "[Netlify /billing-razorpay-subscription] Failed to insert pending subscription into payment_orders:",
+          orderInsertErr
         );
         return {
           statusCode: 500,
@@ -425,6 +450,30 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
             code: "SUBSCRIPTION_RECORD_FAILED",
           }),
         };
+      }
+
+      // If an existing subscription row exists (e.g. previously canceled/expired), store pending subscription ID
+      // in metadata without overwriting subscription_id, plan_id, or active status before payment is confirmed.
+      if (existingSub) {
+        const { error: updateErr } = await supabaseAdmin
+          .from("subscriptions")
+          .update({
+            updated_at: new Date().toISOString(),
+            metadata: {
+              ...(existingSub.metadata || {}),
+              pending_subscription_id: subscriptionData.id,
+              pending_plan_code: planCode,
+              pending_created_at: new Date().toISOString(),
+            },
+          })
+          .eq("user_id", user.id);
+
+        if (updateErr) {
+          safeLog.warn(
+            "[Netlify /billing-razorpay-subscription] Failed to update pending subscription metadata:",
+            updateErr
+          );
+        }
       }
 
       return {

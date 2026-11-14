@@ -254,4 +254,38 @@ describe("Pricing Page Auto-Renew Subscription Permutations & Lock Behavior", ()
     expect(mockOpenRazorpaySubscription).not.toHaveBeenCalled();
     expect(window.location.href).toBe("/login?returnTo=%2Fpricing");
   });
+
+  it("renders exact 'prepaid, no auto-renew' text when NEXT_PUBLIC_AUTORENEW_ENABLED is false", async () => {
+    process.env.NEXT_PUBLIC_BILLING_ENABLED = "true";
+    process.env.NEXT_PUBLIC_AUTORENEW_ENABLED = "false";
+
+    await mountPage();
+
+    const textContent = container?.textContent || "";
+    expect(textContent).toContain(
+      "Plans are prepaid for a fixed duration and do not auto-renew. Premium access ends automatically when the plan period expires."
+    );
+    expect(textContent).toContain("billed weekly");
+    expect(textContent).toContain("billed monthly");
+    expect(textContent).toContain("billed every 3 months");
+  });
+
+  it("renders auto-renew copy with amounts, renewal date, and cancellation instructions when flag is on", async () => {
+    process.env.NEXT_PUBLIC_BILLING_ENABLED = "true";
+    process.env.NEXT_PUBLIC_AUTORENEW_ENABLED = "true";
+
+    await mountPage();
+
+    const textContent = container?.textContent || "";
+    expect(textContent).toContain("Plans auto-renew every 7 days (Weekly: ₹692");
+    expect(textContent).toContain("30 days (Monthly: ₹1,499");
+    expect(textContent).toContain("90 days (Quarterly: ₹3,999");
+    expect(textContent).toContain("until cancelled");
+    expect(textContent).toContain("next renewal");
+    expect(textContent).toContain("Cancel anytime from your account settings before the renewal date");
+
+    expect(textContent).toContain("auto-renews every 7 days");
+    expect(textContent).toContain("auto-renews every 30 days");
+    expect(textContent).toContain("auto-renews every 90 days");
+  });
 });

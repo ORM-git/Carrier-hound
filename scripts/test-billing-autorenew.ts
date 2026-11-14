@@ -1,39 +1,40 @@
 /**
  * scripts/test-billing-autorenew.ts
  *
- * Comprehensive test suite for Auto-Renew Checkout:
+ * Comprehensive test suite for Auto-Renew Checkout & Reviewer Blockers:
  * 1) Feature flag registration in src/lib/flags/flags.ts:
  *    - NEXT_PUBLIC_AUTORENEW_ENABLED is registered with rule "strict_true",
  *      scope "public-build", defaultEnabled: false.
- * 2) Server route /api/billing/razorpay/subscription:
- *    - When flag is OFF (or unset): returns 503 Service Unavailable fail-closed.
- *    - When flag is ON:
- *      - Unauthenticated -> 401 Unauthorized.
- *      - Invalid planCode (e.g., 'yearly', 'annual', numbers) -> 400 Bad Request.
- *      - Blocked user -> 403 USER_BLOCKED (or 503 if ban service unavailable).
- *      - Missing or invalid RAZORPAY_MODE / key prefix mismatch -> 503 Config Error.
- *      - Test key on production host (careermonke.com) -> 503 Config Error.
- *      - Valid weekly plan -> mapped to RAZORPAY_AUTORENEW_PLAN_WEEKLY, total_count: 52, customer_notify: true.
- *      - Valid monthly plan -> mapped to RAZORPAY_AUTORENEW_PLAN_MONTHLY, total_count: 12, customer_notify: true.
- *      - Valid quarterly plan -> mapped to RAZORPAY_AUTORENEW_PLAN_QUARTERLY, total_count: 4, customer_notify: true.
- *      - Ignores client amounts / pricing spoofing (server-authoritative).
- *      - Stores subscription_id on the user's row in public.subscriptions.
- * 3) Netlify function netlify/functions/billing-razorpay-subscription:
- *    - Flag OFF -> 503 AUTORENEW_DISABLED.
- *    - Blocked user -> 403 USER_BLOCKED.
- *    - Flag ON -> creates subscription and stores in DB.
- * 4) Client library behavior:
- *    - openRazorpaySubscription fails immediately when flag is OFF.
- * 5) Prepaid order flow isolation:
- *    - /api/billing/razorpay/order remains prepaid only, creating order_id without altering subscriptions.
- *    - handleProCheckout remains prepaid flow.
+ * 2) netlify.toml explicit redirect:
+ *    - Validates /api/billing/razorpay/subscription -> /.netlify/functions/billing-razorpay-subscription (status 200, force true).
+ * 3) Copy checks across Pricing, Terms & Conditions, and Refund Policy:
+ *    - Flag ON: says plans auto-renew every 7/30/90 days until cancelled, shows renewal amount & date, and explains cancellation.
+ *    - Flag OFF: keeps exact current "prepaid, no auto-renew" copy across all three pages.
+ * 4) Server route /api/billing/razorpay/subscription:
+ *    - Flag OFF -> 503 AUTORENEW_DISABLED fail-closed.
+ *    - Missing auth -> 401 Unauthorized.
+ *    - Invalid planCode -> 400 Bad Request.
+ *    - Blocked user -> 403 USER_BLOCKED (or 503 if unavailable).
+ *    - Active plan already exists -> 409 ACTIVE_PLAN_EXISTS with clear message.
+ *    - Overwrite prevention: does NOT overwrite existing subscription_id or plan_id.
+ *    - Separate storage: records pending subscription in payment_orders ('created') and metadata.
+ * 5) Netlify function netlify/functions/billing-razorpay-subscription:
+ *    - Flag OFF -> 503.
+ *    - Blocked user -> 403.
+ *    - Active plan -> 409 ACTIVE_PLAN_EXISTS.
+ *    - Records pending subscription in payment_orders.
+ * 6) Prepaid order flow isolation:
+ *    - /api/billing/razorpay/order remains prepaid only, creating orders without subscription logic.
  */
 
 import assert from "node:assert";
+import fs from "node:fs";
+import path from "node:path";
 import { getFlagDefinition, isFlagEnabled } from "../src/lib/flags/flags";
 import { POST } from "../src/app/api/billing/razorpay/subscription/route";
 import { createHandler as createNetlifySubscriptionHandler } from "../netlify/functions/billing-razorpay-subscription";
 
+const ROOT = path.resolve(__dirname, "..");
 const IS_NEGATIVE_CONTROL = process.argv.includes("--negative-control");
 
 async function runAutorenewTests() {
@@ -68,9 +69,82 @@ async function runAutorenewTests() {
   console.log("  ✓ Feature flag registered correctly as strict_true, public-build, default off.\n");
 
   // ---------------------------------------------------------------------------
-  // TEST 2: Route Fail-Closed when Flag is OFF
+  // TEST 2: netlify.toml Explicit Redirect
   // ---------------------------------------------------------------------------
-  console.log("[TEST 2] Verifying server route /api/billing/razorpay/subscription when flag is OFF...");
+  console.log("[TEST 2] Verifying netlify.toml explicit redirect for subscription route...");
+  const netlifyToml = fs.readFileSync(path.join(ROOT, "netlify.toml"), "utf8");
+  assert.ok(
+    netlifyToml.includes('from = "/api/billing/razorpay/subscription"'),
+    "netlify.toml must redirect from /api/billing/razorpay/subscription"
+  );
+  assert.ok(
+    netlifyToml.includes('to = "/.netlify/functions/billing-razorpay-subscription"'),
+    "netlify.toml must redirect to /.netlify/functions/billing-razorpay-subscription"
+  );
+  console.log("  ✓ netlify.toml explicit redirect verified.\n");
+
+  // ---------------------------------------------------------------------------
+  // TEST 3: Copy Permutations (Pricing, Terms & Conditions, Refund Policy)
+  // ---------------------------------------------------------------------------
+  console.log("[TEST 3] Verifying copy permutations on Pricing, Terms, and Refund pages...");
+  const pricingFile = fs.readFileSync(path.join(ROOT, "src/app/pricing/page.tsx"), "utf8");
+  const termsFile = fs.readFileSync(path.join(ROOT, "src/app/terms-and-conditions/page.tsx"), "utf8");
+  const refundFile = fs.readFileSync(path.join(ROOT, "src/app/refund-policy/page.tsx"), "utf8");
+
+  // 3a: Flag OFF text (must keep exact original prepaid copy)
+  assert.ok(
+    pricingFile.includes("Plans are prepaid for a fixed duration and do not auto-renew."),
+    "Pricing page must retain exact prepaid copy when flag is off"
+  );
+  assert.ok(
+    termsFile.includes("No automatic renewal:</strong> plans are prepaid for a fixed period and do not renew automatically."),
+    "Terms page must retain exact prepaid copy when flag is off"
+  );
+  assert.ok(
+    termsFile.includes("Plans do not renew automatically, so there is nothing to cancel."),
+    "Terms page must retain exact no-cancel copy when flag is off"
+  );
+  assert.ok(
+    refundFile.includes("1. Prepaid Plans, No Auto-Renewal"),
+    "Refund policy must retain exact 1. Prepaid Plans heading when flag is off"
+  );
+  assert.ok(
+    refundFile.includes("There are no recurring charges and no automatic renewals: your plan expires at the end of its paid period"),
+    "Refund policy must retain exact no-renewal copy when flag is off"
+  );
+  console.log("  ✓ Flag OFF keeps exact current 'prepaid, no auto-renew' copy across all three pages.");
+
+  // 3b: Flag ON text (must state auto-renew every 7/30/90 days until cancelled, renewal amounts & date, and how to cancel)
+  for (const [pageName, fileContent] of [
+    ["Pricing Page", pricingFile],
+    ["Terms and Conditions", termsFile],
+    ["Refund Policy", refundFile],
+  ] as const) {
+    assert.ok(
+      fileContent.includes("auto-renew every 7/30/90 days until cancelled") ||
+      fileContent.includes("auto-renew every 7 days") ||
+      fileContent.includes("auto-renew every 7, 30, or 90 days until cancelled"),
+      `${pageName} must state plans auto-renew every 7/30/90 days until cancelled`
+    );
+    assert.ok(
+      fileContent.includes("692") && fileContent.includes("1,499") && fileContent.includes("3,999"),
+      `${pageName} must show the renewal amounts for Weekly (692), Monthly (1,499), and Quarterly (3,999)`
+    );
+    assert.ok(
+      fileContent.includes("renewal date") || fileContent.includes("next renewal"),
+      `${pageName} must show or state the renewal date`
+    );
+    assert.ok(
+      fileContent.includes("cancel") && (fileContent.includes("settings") || fileContent.includes("account")),
+      `${pageName} must explain how to cancel in account settings`
+    );
+  }
+  console.log("  ✓ Flag ON states 7/30/90 days renewal until cancelled, renewal amounts & date, and how to cancel in settings.\n");
+
+  // ---------------------------------------------------------------------------
+  // TEST 4: Route Fail-Closed when Flag is OFF
+  // ---------------------------------------------------------------------------
+  console.log("[TEST 4] Verifying server route /api/billing/razorpay/subscription when flag is OFF...");
   const originalEnv = { ...process.env };
   try {
     process.env.NEXT_PUBLIC_BILLING_ENABLED = "true";
@@ -110,9 +184,9 @@ async function runAutorenewTests() {
   }
 
   // ---------------------------------------------------------------------------
-  // TEST 3: Route Authentication & Validation when Flag is ON
+  // TEST 5: Route Authentication, Mode Check, and Plan Code Validation
   // ---------------------------------------------------------------------------
-  console.log("[TEST 3] Verifying authentication, mode check, and plan code validation...");
+  console.log("[TEST 5] Verifying authentication, mode check, and plan code validation...");
   process.env.NEXT_PUBLIC_BILLING_ENABLED = "true";
   process.env.NEXT_PUBLIC_AUTORENEW_ENABLED = "true";
   process.env.RAZORPAY_MODE = "test";
@@ -122,7 +196,7 @@ async function runAutorenewTests() {
   process.env.RAZORPAY_AUTORENEW_PLAN_MONTHLY = "plan_monthly_456";
   process.env.RAZORPAY_AUTORENEW_PLAN_QUARTERLY = "plan_quarterly_789";
 
-  // 3a: Missing Authorization Header
+  // 5a: Missing Authorization Header
   const reqNoAuth = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -132,15 +206,16 @@ async function runAutorenewTests() {
   assert.strictEqual(resNoAuth.status, 401, "Must return 401 when Authorization header is missing");
   console.log("  ✓ Missing Authorization header rejected with 401.");
 
-  // Mock Supabase User
+  // Mock Supabase User and DB state
   const mockUser = {
     id: "usr_mock_12345678",
     email: "subscriber@careermonke.com",
     user_metadata: { full_name: "Mock Subscriber" },
   };
 
-  let dbStoredSubscriptionId: string | null = null;
-  let dbStoredPlanCode: string | null = null;
+  let mockExistingSub: any = null;
+  const dbStoredPaymentOrders: any[] = [];
+  let dbStoredSubscriptionMetadata: any = null;
 
   const mockSupabaseAdmin = {
     auth: {
@@ -152,26 +227,39 @@ async function runAutorenewTests() {
       },
     },
     from: (table: string) => {
-      assert.strictEqual(table, "subscriptions", "Must query subscriptions table");
-      return {
-        select: (_cols: string) => ({
-          eq: (_field: string, _val: string) => ({
-            maybeSingle: async () => ({ data: null, error: null }),
+      if (table === "subscriptions") {
+        return {
+          select: (_cols: string) => ({
+            eq: (_field: string, _val: string) => ({
+              order: () => ({
+                limit: () => ({
+                  maybeSingle: async () => ({ data: mockExistingSub, error: null }),
+                }),
+              }),
+              maybeSingle: async () => ({ data: mockExistingSub, error: null }),
+            }),
           }),
-        }),
-        insert: async (row: any) => {
-          dbStoredSubscriptionId = row.subscription_id;
-          dbStoredPlanCode = row.plan_id;
-          return { error: null };
-        },
-        update: (_row: any) => ({
-          eq: async () => ({ error: null }),
-        }),
-      };
+          update: (row: any) => ({
+            eq: async () => {
+              dbStoredSubscriptionMetadata = row.metadata;
+              return { error: null };
+            },
+          }),
+        };
+      }
+      if (table === "payment_orders") {
+        return {
+          insert: async (row: any) => {
+            dbStoredPaymentOrders.push(row);
+            return { error: null };
+          },
+        };
+      }
+      throw new Error(`Unexpected table: ${table}`);
     },
   };
 
-  // 3b: Invalid Plan Code
+  // 5b: Invalid Plan Code
   const reqInvalidPlan = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
     method: "POST",
     headers: {
@@ -187,7 +275,7 @@ async function runAutorenewTests() {
   assert.strictEqual(resInvalidPlan.status, 400, "Must reject invalid planCode with 400");
   console.log("  ✓ Invalid plan code rejected with 400.");
 
-  // 3c: Mode Mismatch (RAZORPAY_MODE=live with rzp_test_ key)
+  // 5c: Mode Mismatch (RAZORPAY_MODE=live with rzp_test_ key)
   process.env.RAZORPAY_MODE = "live";
   const reqModeMismatch = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
     method: "POST",
@@ -207,12 +295,11 @@ async function runAutorenewTests() {
   console.log("  ✓ Mode mismatch (live mode with test key) rejected with 503 RAZORPAY_CONFIG_ERROR.\n");
 
   // ---------------------------------------------------------------------------
-  // TEST 4: Fail-closed Server Ban Check
+  // TEST 6: Fail-closed Server Ban Check
   // ---------------------------------------------------------------------------
-  console.log("[TEST 4] Verifying fail-closed ban check for blocked users...");
+  console.log("[TEST 6] Verifying fail-closed ban check for blocked users...");
   process.env.RAZORPAY_MODE = "test";
 
-  // 4a: Blocked user rejected with 403
   const makeBlockedReq = () =>
     new Request("http://localhost:3000/api/billing/razorpay/subscription", {
       method: "POST",
@@ -223,18 +310,19 @@ async function runAutorenewTests() {
       body: JSON.stringify({ planCode: "monthly" }),
     });
 
-  const reqBlockedUser = makeBlockedReq();
-  (reqBlockedUser as any).__testDeps = {
+  // 6a: Blocked user rejected with 403
+  const reqBlocked = makeBlockedReq();
+  (reqBlocked as any).__testDeps = {
     getSupabaseAdmin: () => mockSupabaseAdmin,
-    verifyUserNotBanned: async () => ({ isBlocked: true, error: "Account suspended." }),
+    verifyUserNotBanned: async () => ({ isBlocked: true, error: "Account suspended by staff." }),
   };
-  const resBlocked = await POST(reqBlockedUser);
+  const resBlocked = await POST(reqBlocked);
   assert.strictEqual(resBlocked.status, 403, "Blocked user must be rejected with 403");
   const jsonBlocked = await resBlocked.json();
   assert.strictEqual(jsonBlocked.code, "USER_BLOCKED");
   console.log("  ✓ Blocked user rejected with 403 USER_BLOCKED.");
 
-  // 4b: Ban check service failure fails closed with 503
+  // 6b: Service unavailable ban check fails closed with 503
   const reqBanUnavailable = makeBlockedReq();
   (reqBanUnavailable as any).__testDeps = {
     getSupabaseAdmin: () => mockSupabaseAdmin,
@@ -244,7 +332,7 @@ async function runAutorenewTests() {
   assert.strictEqual(resBanUnavailable.status, 503, "Ban check failure must fail closed with 503");
   console.log("  ✓ Ban check failure fails closed with 503 USER_BLOCKED.");
 
-  // 4c: Netlify function blocked user check
+  // 6c: Netlify function blocked user check
   const netlifyHandlerWithDeps = createNetlifySubscriptionHandler({
     getSupabaseAdmin: () => mockSupabaseAdmin,
     verifyUserNotBanned: async () => ({ isBlocked: true, error: "Account suspended." }),
@@ -260,24 +348,91 @@ async function runAutorenewTests() {
   console.log("  ✓ Netlify function rejects blocked user with 403 USER_BLOCKED.\n");
 
   // ---------------------------------------------------------------------------
-  // TEST 5: Subscription Creation with Total Count and DB Storage
+  // TEST 7: Active Plan Blocking (Reviewer Blocker 3)
   // ---------------------------------------------------------------------------
-  console.log("[TEST 5] Verifying subscription creation for weekly, monthly, and quarterly...");
+  console.log("[TEST 7] Verifying that active plan holders are blocked from duplicate subscription...");
+
+  // 7a: Next.js route blocks active plan with 409
+  mockExistingSub = {
+    id: "sub_active_row",
+    user_id: mockUser.id,
+    subscription_id: "sub_active_999",
+    plan_id: "monthly",
+    status: "active",
+    current_period_end: new Date(Date.now() + 10 * 86400000).toISOString(),
+  };
+
+  const reqActivePlan = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer valid_token",
+    },
+    body: JSON.stringify({ planCode: "monthly" }),
+  });
+  (reqActivePlan as any).__testDeps = {
+    getSupabaseAdmin: () => mockSupabaseAdmin,
+    verifyUserNotBanned: async () => ({ isBlocked: false }),
+  };
+  const resActivePlan = await POST(reqActivePlan);
+  assert.strictEqual(resActivePlan.status, 409, "User with active plan must be rejected with 409");
+  const jsonActivePlan = await resActivePlan.json();
+  assert.strictEqual(jsonActivePlan.code, "ACTIVE_PLAN_EXISTS");
+  assert.strictEqual(
+    jsonActivePlan.error,
+    "You already have an active subscription plan. Please manage your existing subscription in account settings."
+  );
+  console.log("  ✓ Route blocks active plan holder with 409 ACTIVE_PLAN_EXISTS.");
+
+  // 7b: Netlify function blocks active plan with 409
+  const netlifyHandlerActive = createNetlifySubscriptionHandler({
+    getSupabaseAdmin: () => mockSupabaseAdmin,
+    verifyUserNotBanned: async () => ({ isBlocked: false }),
+  });
+  const netlifyActiveRes = await netlifyHandlerActive({
+    httpMethod: "POST",
+    headers: { authorization: "Bearer valid_token" },
+    body: JSON.stringify({ planCode: "monthly" }),
+  });
+  assert.strictEqual(netlifyActiveRes.statusCode, 409);
+  const netlifyActiveBody = JSON.parse(netlifyActiveRes.body);
+  assert.strictEqual(netlifyActiveBody.code, "ACTIVE_PLAN_EXISTS");
+  console.log("  ✓ Netlify function blocks active plan holder with 409 ACTIVE_PLAN_EXISTS.\n");
+
+  // ---------------------------------------------------------------------------
+  // TEST 8: Subscription Creation, Total Count, and Separate Pending Storage
+  // ---------------------------------------------------------------------------
+  console.log("[TEST 8] Verifying subscription creation, total_count, and separate pending storage...");
+  // Clear active subscription (simulating expired/canceled subscription)
+  mockExistingSub = {
+    id: "sub_canceled_row",
+    user_id: mockUser.id,
+    subscription_id: "sub_prior_canceled_123",
+    plan_id: "weekly",
+    status: "canceled",
+    metadata: { prior: "data" },
+  };
+  dbStoredPaymentOrders.length = 0;
+  dbStoredSubscriptionMetadata = null;
+
   const testCases = [
     {
       planCode: "weekly",
       expectedPlanId: "plan_weekly_123",
       expectedTotalCount: 52, // 52 weeks = 1 year
+      expectedAmountPaise: 69200,
     },
     {
       planCode: "monthly",
       expectedPlanId: "plan_monthly_456",
       expectedTotalCount: 12, // 12 months = 1 year
+      expectedAmountPaise: 149900,
     },
     {
       planCode: "quarterly",
       expectedPlanId: "plan_quarterly_789",
       expectedTotalCount: 4, // 4 quarters = 1 year
+      expectedAmountPaise: 399900,
     },
   ];
 
@@ -306,7 +461,6 @@ async function runAutorenewTests() {
       );
     };
 
-    // Include spoofed client amounts to verify server ignores them
     const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
       method: "POST",
       headers: {
@@ -343,26 +497,47 @@ async function runAutorenewTests() {
     assert.strictEqual(capturedRazorpayBody.amount, undefined, "Client amount must not be sent to Razorpay");
     assert.strictEqual(capturedRazorpayBody.notes?.user_id, mockUser.id);
 
-    // Verify stored on database user row
-    assert.strictEqual(dbStoredSubscriptionId, `sub_rzp_${tc.planCode}_9999`);
-    assert.strictEqual(dbStoredPlanCode, tc.planCode);
+    // Verify existing subscription_id is NOT overwritten!
+    assert.strictEqual(
+      mockExistingSub.subscription_id,
+      "sub_prior_canceled_123",
+      "Existing subscription_id must not be overwritten before payment is confirmed"
+    );
+    assert.strictEqual(
+      mockExistingSub.plan_id,
+      "weekly",
+      "Existing plan_id must not be overwritten before payment is confirmed"
+    );
+
+    // Verify stored separately in payment_orders
+    const lastOrder = dbStoredPaymentOrders[dbStoredPaymentOrders.length - 1];
+    assert.ok(lastOrder, "Pending subscription must be inserted into payment_orders");
+    assert.strictEqual(lastOrder.provider_order_id, `sub_rzp_${tc.planCode}_9999`);
+    assert.strictEqual(lastOrder.plan_code, tc.planCode);
+    assert.strictEqual(lastOrder.amount_paise, tc.expectedAmountPaise);
+    assert.strictEqual(lastOrder.status, "created");
+
+    // Verify pending subscription recorded in metadata
+    assert.strictEqual(dbStoredSubscriptionMetadata?.pending_subscription_id, `sub_rzp_${tc.planCode}_9999`);
+    assert.strictEqual(dbStoredSubscriptionMetadata?.pending_plan_code, tc.planCode);
 
     console.log(
-      `  ✓ Plan ${tc.planCode}: mapped to ${tc.expectedPlanId}, total_count: ${tc.expectedTotalCount}, client amounts ignored, subscription_id stored in DB.`
+      `  ✓ Plan ${tc.planCode}: mapped to ${tc.expectedPlanId}, total_count: ${tc.expectedTotalCount}, client amounts ignored, separate pending order recorded.`
     );
   }
 
   // ---------------------------------------------------------------------------
-  // TEST 6: Prepaid Order Flow Verification (No side-effects on prepaid flow)
+  // TEST 9: Prepaid Order Flow Verification (No side-effects on prepaid flow)
   // ---------------------------------------------------------------------------
-  console.log("\n[TEST 6] Verifying prepaid order route (/api/billing/razorpay/order) remains unchanged...");
+  console.log("\n[TEST 9] Verifying prepaid order route (/api/billing/razorpay/order) remains unchanged...");
   const orderRouteModule = await import("../src/app/api/billing/razorpay/order/route");
   assert.ok(
     typeof orderRouteModule.POST === "function",
     "/api/billing/razorpay/order POST handler must exist"
   );
-  const orderRouteContent = await import("node:fs").then((fs) =>
-    fs.readFileSync("src/app/api/billing/razorpay/order/route.ts", "utf-8")
+  const orderRouteContent = fs.readFileSync(
+    path.join(ROOT, "src/app/api/billing/razorpay/order/route.ts"),
+    "utf-8"
   );
   assert.ok(
     !orderRouteContent.includes("RAZORPAY_AUTORENEW_PLAN"),

@@ -19,6 +19,12 @@
   force = true
 
 [[redirects]]
+  from = "/api/billing/razorpay/subscription"
+  to = "/.netlify/functions/billing-razorpay-subscription"
+  status = 200
+  force = true
+
+[[redirects]]
   from = "/api/billing/razorpay/verify"
   to = "/.netlify/functions/billing-razorpay-verify"
   status = 200
