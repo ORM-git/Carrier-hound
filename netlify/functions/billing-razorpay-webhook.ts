@@ -163,11 +163,18 @@ export function createHandler(deps: BillingWebhookDeps = {}) {
 
       const eventType = payload.event;
 
-      // Handle payment fulfillment events: order.paid and payment.captured
-      if (eventType === "order.paid" || eventType === "payment.captured") {
-        const orderId =
+      const isOrderFulfillmentEvent =
+        eventType === "order.paid" || eventType === "payment.captured";
+      const isSubscriptionActivated = eventType === "subscription.activated";
+
+      // Handle payment fulfillment events: order.paid, payment.captured, subscription.activated
+      if (isOrderFulfillmentEvent || isSubscriptionActivated) {
+        let orderId =
           payload.payload?.order?.entity?.id ||
-          payload.payload?.payment?.entity?.order_id;
+          payload.payload?.payment?.entity?.order_id ||
+          (isSubscriptionActivated
+            ? payload.payload?.subscription?.entity?.id || payload.subscription_id
+            : "");
 
         if (!orderId) {
           return {
@@ -182,15 +189,35 @@ export function createHandler(deps: BillingWebhookDeps = {}) {
 
         let userId =
           payload.payload?.payment?.entity?.notes?.user_id ||
-          payload.payload?.order?.entity?.notes?.user_id;
+          payload.payload?.order?.entity?.notes?.user_id ||
+          payload.payload?.subscription?.entity?.notes?.user_id;
 
         // Fetch order row from payment_orders to check current status and user_id
         let orderRow: any = null;
-        const { data: dbOrder } = await supabaseAdmin
+        let { data: dbOrder } = await supabaseAdmin
           .from("payment_orders")
           .select("*")
           .eq("provider_order_id", orderId)
           .maybeSingle();
+
+        if (!dbOrder && isSubscriptionActivated) {
+          const altId =
+            payload.payload?.subscription?.entity?.id ||
+            payload.payload?.order?.entity?.id ||
+            payload.payload?.payment?.entity?.order_id ||
+            payload.subscription_id;
+          if (altId && altId !== orderId) {
+            const { data: altOrder } = await supabaseAdmin
+              .from("payment_orders")
+              .select("*")
+              .eq("provider_order_id", altId)
+              .maybeSingle();
+            if (altOrder) {
+              dbOrder = altOrder;
+              orderId = altId;
+            }
+          }
+        }
 
         orderRow = dbOrder;
         if (!userId && orderRow?.user_id) {
@@ -401,6 +428,270 @@ export function createHandler(deps: BillingWebhookDeps = {}) {
             isPro: Boolean(fulfilRes?.is_pro ?? orderRow?.plan_code),
             eventId,
             details: fulfilRes,
+          }),
+        };
+      }
+
+      // Handle subscription renewal event: subscription.charged
+      if (eventType === "subscription.charged") {
+        const subId =
+          payload.payload?.subscription?.entity?.id ||
+          payload.payload?.payment?.entity?.subscription_id ||
+          payload.subscription_id;
+
+        if (!subId) {
+          return {
+            statusCode: 400,
+            headers,
+            body: JSON.stringify({
+              error: "Missing subscription id in webhook payload",
+              code: "MISSING_SUBSCRIPTION_ID",
+            }),
+          };
+        }
+
+        const cleanSubId = String(subId).trim();
+        const paymentId =
+          payload.payload?.payment?.entity?.id ||
+          payload.payment_id ||
+          "";
+
+        // Deduplication check
+        const { data: existingDedupe } = await supabaseAdmin
+          .from("webhook_events")
+          .select("event_id")
+          .eq("event_id", eventId)
+          .maybeSingle();
+
+        if (existingDedupe) {
+          return {
+            statusCode: 200,
+            headers,
+            body: JSON.stringify({
+              received: true,
+              alreadyProcessed: true,
+              eventId,
+              event: eventType,
+            }),
+          };
+        }
+
+        const cleanPaymentId = paymentId ? String(paymentId).trim() : null;
+        const { data: renewalRes, error: renewalErr } = await supabaseAdmin.rpc(
+          "fulfil_subscription_renewal",
+          {
+            p_razorpay_subscription_id: cleanSubId,
+            p_payment_id: cleanPaymentId,
+          }
+        );
+
+        if (renewalErr) {
+          safeLog.error("[Razorpay Webhook] fulfil_subscription_renewal RPC error:", renewalErr);
+          try {
+            await recordFailedEvent({
+              source: "razorpay_webhook",
+              eventId,
+              payload: { event: eventType, subscription_id: cleanSubId, payment_id: cleanPaymentId },
+              error: renewalErr,
+              supabaseClient: supabaseAdmin,
+            });
+          } catch (_) {}
+
+          return {
+            statusCode: 500,
+            headers,
+            body: JSON.stringify({ error: "Subscription renewal failed", code: "RENEWAL_FAILED" }),
+          };
+        }
+
+        if (!renewalRes || !renewalRes.success) {
+          const statusCode = renewalRes?.code === "SUBSCRIPTION_NOT_FOUND" ? 404 : 500;
+          return {
+            statusCode,
+            headers,
+            body: JSON.stringify({
+              error: renewalRes?.error || "Subscription renewal failed",
+              code: renewalRes?.code || "RENEWAL_FAILED",
+            }),
+          };
+        }
+
+        await supabaseAdmin.from("webhook_events").upsert(
+          {
+            event_id: eventId,
+            provider: "razorpay",
+            event_type: eventType,
+          },
+          { onConflict: "event_id" }
+        );
+
+        return {
+          statusCode: 200,
+          headers,
+          body: JSON.stringify({
+            received: true,
+            renewed: true,
+            eventId,
+            alreadyProcessed: Boolean(renewalRes.already_processed),
+            details: renewalRes,
+          }),
+        };
+      }
+
+      // Handle subscription lifecycle events: subscription.pending, subscription.halted, subscription.cancelled
+      const isLifecycleEvent =
+        eventType === "subscription.pending" ||
+        eventType === "subscription.halted" ||
+        eventType === "subscription.cancelled" ||
+        eventType === "subscription.canceled";
+
+      if (isLifecycleEvent) {
+        const subId =
+          payload.payload?.subscription?.entity?.id ||
+          payload.payload?.payment?.entity?.subscription_id ||
+          payload.subscription_id;
+
+        if (!subId) {
+          return {
+            statusCode: 400,
+            headers,
+            body: JSON.stringify({
+              error: "Missing subscription id in webhook payload",
+              code: "MISSING_SUBSCRIPTION_ID",
+            }),
+          };
+        }
+
+        const cleanSubId = String(subId).trim();
+
+        // Deduplication check
+        const { data: existingDedupe } = await supabaseAdmin
+          .from("webhook_events")
+          .select("event_id")
+          .eq("event_id", eventId)
+          .maybeSingle();
+
+        if (existingDedupe) {
+          return {
+            statusCode: 200,
+            headers,
+            body: JSON.stringify({
+              received: true,
+              alreadyProcessed: true,
+              eventId,
+              event: eventType,
+            }),
+          };
+        }
+
+        let targetSubscriptionId: string | null = null;
+        const { data: subRow } = await supabaseAdmin
+          .from("subscriptions")
+          .select("id, user_id, status, metadata")
+          .or(`subscription_id.eq.${cleanSubId},metadata->>razorpay_subscription_id.eq.${cleanSubId},metadata->>subscription_id.eq.${cleanSubId}`)
+          .maybeSingle();
+
+        if (subRow) {
+          targetSubscriptionId = subRow.id;
+        } else {
+          const { data: orderRow } = await supabaseAdmin
+            .from("payment_orders")
+            .select("user_id")
+            .eq("provider_order_id", cleanSubId)
+            .maybeSingle();
+
+          if (orderRow?.user_id) {
+            const { data: userSub } = await supabaseAdmin
+              .from("subscriptions")
+              .select("id, user_id")
+              .eq("user_id", orderRow.user_id)
+              .maybeSingle();
+
+            if (userSub) {
+              targetSubscriptionId = userSub.id;
+            }
+          }
+        }
+
+        if (!targetSubscriptionId) {
+          const payloadNotesUserId =
+            payload.payload?.subscription?.entity?.notes?.user_id ||
+            payload.payload?.payment?.entity?.notes?.user_id;
+
+          if (payloadNotesUserId) {
+            const { data: userSub } = await supabaseAdmin
+              .from("subscriptions")
+              .select("id, user_id")
+              .eq("user_id", payloadNotesUserId)
+              .maybeSingle();
+
+            if (userSub) {
+              targetSubscriptionId = userSub.id;
+            }
+          }
+        }
+
+        if (!targetSubscriptionId) {
+          return {
+            statusCode: 404,
+            headers,
+            body: JSON.stringify({
+              error: "Subscription record not found",
+              code: "SUBSCRIPTION_NOT_FOUND",
+            }),
+          };
+        }
+
+        let updatePayload: Record<string, any> = {};
+        if (eventType === "subscription.pending") {
+          updatePayload = {
+            status: "in_grace_period",
+            grace_period_end: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+            updated_at: new Date().toISOString(),
+          };
+        } else if (eventType === "subscription.halted") {
+          updatePayload = {
+            status: "past_due",
+            updated_at: new Date().toISOString(),
+          };
+        } else if (eventType === "subscription.cancelled" || eventType === "subscription.canceled") {
+          updatePayload = {
+            cancel_at_period_end: true,
+            updated_at: new Date().toISOString(),
+          };
+        }
+
+        const { error: updateErr } = await supabaseAdmin
+          .from("subscriptions")
+          .update(updatePayload)
+          .eq("id", targetSubscriptionId);
+
+        if (updateErr) {
+          return {
+            statusCode: 500,
+            headers,
+            body: JSON.stringify({ error: "Failed to update subscription", code: "DATABASE_ERROR" }),
+          };
+        }
+
+        await supabaseAdmin.from("webhook_events").upsert(
+          {
+            event_id: eventId,
+            provider: "razorpay",
+            event_type: eventType,
+          },
+          { onConflict: "event_id" }
+        );
+
+        return {
+          statusCode: 200,
+          headers,
+          body: JSON.stringify({
+            received: true,
+            event: eventType,
+            eventId,
+            subscriptionId: targetSubscriptionId,
+            ...updatePayload,
           }),
         };
       }

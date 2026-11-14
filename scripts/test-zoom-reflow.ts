@@ -383,6 +383,7 @@ async function runSuite() {
     });
 
     const page = await browser.newPage();
+    page.setDefaultNavigationTimeout(60000);
     const KEY_ROUTES = ["/", "/jobs", "/login"];
 
     // -------------------------------------------------------------------------

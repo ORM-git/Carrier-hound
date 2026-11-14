@@ -36,13 +36,30 @@ interface MockOrder {
   addon_code?: string;
 }
 
+interface MockSubscription {
+  id: string;
+  user_id: string;
+  subscription_id?: string;
+  plan_id: string;
+  status: string;
+  current_period_start?: string;
+  current_period_end?: string;
+  grace_period_end?: string | null;
+  cancel_at_period_end?: boolean;
+  metadata?: any;
+}
+
 interface MockDbState {
   orders: Map<string, MockOrder>;
+  subscriptions?: Map<string, MockSubscription>;
   webhookEvents: Set<string>;
   failedEvents: Array<any>;
   rpcFulfilCalls: Array<{ orderId: string; userId: string; expectedMode: string }>;
+  rpcRenewalCalls?: Array<{ subId: string; paymentId?: string | null }>;
   errors?: {
     paymentOrdersLookup?: Error;
+    subscriptionsLookup?: Error;
+    subscriptionsUpdate?: Error;
     webhookEventsLookup?: Error;
     webhookEventsInsert?: Error;
   };
@@ -58,13 +75,40 @@ function createMockSupabase(db: MockDbState) {
     from: (table: string) => {
       let filterOrderId: string | null = null;
       let filterEventId: string | null = null;
+      let filterSubId: string | null = null;
+      let filterUserId: string | null = null;
+      let filterOrExpr: string | null = null;
+      let updatePayloadData: any = null;
 
       const queryObj: any = {
         select: () => queryObj,
         eq: (col: string, val: any) => {
           if (col === "provider_order_id" || col === "id") filterOrderId = val;
           if (col === "event_id") filterEventId = val;
+          if (col === "id" || col === "subscription_id") filterSubId = val;
+          if (col === "user_id") filterUserId = val;
           return queryObj;
+        },
+        or: (expr: string) => {
+          filterOrExpr = expr;
+          return queryObj;
+        },
+        update: (data: any) => {
+          updatePayloadData = data;
+          return queryObj;
+        },
+        then: (resolve: any, reject: any) => {
+          if (table === "subscriptions" && updatePayloadData) {
+            if (db.errors?.subscriptionsUpdate) {
+              return resolve({ data: null, error: db.errors.subscriptionsUpdate });
+            }
+            const sub = filterSubId ? db.subscriptions?.get(filterSubId) : null;
+            if (sub) {
+              Object.assign(sub, updatePayloadData);
+            }
+            return resolve({ data: sub ? { ...sub } : null, error: null });
+          }
+          return resolve({ data: null, error: null });
         },
         maybeSingle: async () => {
           if (table === "payment_orders") {
@@ -74,6 +118,37 @@ function createMockSupabase(db: MockDbState) {
             const order = filterOrderId ? db.orders.get(filterOrderId) : null;
             if (!order) return { data: null, error: null };
             return { data: { ...order }, error: null };
+          }
+          if (table === "subscriptions") {
+            if (db.errors?.subscriptionsLookup) {
+              return { data: null, error: db.errors.subscriptionsLookup };
+            }
+            const subs = Array.from(db.subscriptions?.values() || []);
+            let match: MockSubscription | undefined;
+            if (filterSubId) {
+              match = subs.find((s) => s.id === filterSubId || s.subscription_id === filterSubId);
+            }
+            if (!match && filterUserId) {
+              match = subs.find((s) => s.user_id === filterUserId);
+            }
+            if (!match && filterOrExpr) {
+              const parts = filterOrExpr.split(",");
+              for (const part of parts) {
+                const subStr = part.split(".eq.")[1]?.trim();
+                if (subStr) {
+                  match = subs.find(
+                    (s) =>
+                      s.id === subStr ||
+                      s.subscription_id === subStr ||
+                      s.metadata?.razorpay_subscription_id === subStr ||
+                      s.metadata?.subscription_id === subStr
+                  );
+                  if (match) break;
+                }
+              }
+            }
+            if (!match) return { data: null, error: null };
+            return { data: { ...match }, error: null };
           }
           if (table === "webhook_events") {
             if (db.errors?.webhookEventsLookup) {
@@ -158,6 +233,68 @@ function createMockSupabase(db: MockDbState) {
             already_paid: false,
             is_pro: Boolean(order.plan_code),
             order_id: args.p_provider_order_id,
+          },
+          error: null,
+        };
+      }
+      if (fnName === "fulfil_subscription_renewal") {
+        db.rpcRenewalCalls = db.rpcRenewalCalls || [];
+        db.rpcRenewalCalls.push({
+          subId: args.p_razorpay_subscription_id,
+          paymentId: args.p_payment_id,
+        });
+
+        const sub = Array.from(db.subscriptions?.values() || []).find(
+          (s) =>
+            s.id === args.p_razorpay_subscription_id ||
+            s.subscription_id === args.p_razorpay_subscription_id ||
+            s.metadata?.razorpay_subscription_id === args.p_razorpay_subscription_id
+        );
+
+        if (!sub) {
+          return {
+            data: { success: false, code: "SUBSCRIPTION_NOT_FOUND", error: "Subscription not found" },
+            error: null,
+          };
+        }
+
+        const processed = sub.metadata?.processed_renewal_payments || [];
+        if (args.p_payment_id && processed.includes(args.p_payment_id)) {
+          return {
+            data: {
+              success: true,
+              already_processed: true,
+              subscription_id: sub.id,
+              user_id: sub.user_id,
+              plan_id: sub.plan_id,
+              current_period_end: sub.current_period_end,
+            },
+            error: null,
+          };
+        }
+
+        const duration = sub.plan_id.includes("week") ? 7 : sub.plan_id.includes("quarter") ? 90 : 30;
+        const currentEnd = sub.current_period_end ? new Date(sub.current_period_end).getTime() : Date.now();
+        const base = Math.max(currentEnd, Date.now());
+        const newEnd = new Date(base + duration * 24 * 60 * 60 * 1000).toISOString();
+
+        sub.current_period_end = newEnd;
+        sub.status = "active";
+        sub.metadata = {
+          ...(sub.metadata || {}),
+          processed_renewal_payments: [...processed, ...(args.p_payment_id ? [args.p_payment_id] : [])],
+          last_renewal_payment_id: args.p_payment_id,
+        };
+
+        return {
+          data: {
+            success: true,
+            already_processed: false,
+            subscription_id: sub.id,
+            user_id: sub.user_id,
+            plan_id: sub.plan_id,
+            duration_days: duration,
+            current_period_end: newEnd,
           },
           error: null,
         };
@@ -820,6 +957,483 @@ async function runTestSuite() {
     assert.strictEqual((await res2.json()).ignored, true);
     assert.strictEqual(mockDb.webhookEvents.has("evt_refund_99"), true);
     assert.ok(logged.some((l) => l.includes("Recorded and ignored event type refund.created")), "ignored event type must be logged");
+  });
+
+  // 15. Auto-Renewal & Subscription Lifecycle Events
+  await runTest("25. subscription.activated: First grant via the same fulfil path", async () => {
+    const mockDb: MockDbState = {
+      orders: new Map([
+        [
+          "order_sub_act_1",
+          {
+            id: "row_sub_act_1",
+            provider_order_id: "order_sub_act_1",
+            user_id: "user_sub_act_1",
+            provider: "razorpay",
+            mode: "test",
+            status: "created",
+            amount_paise: 149900,
+            plan_code: "monthly",
+          },
+        ],
+      ]),
+      webhookEvents: new Set(),
+      failedEvents: [],
+      rpcFulfilCalls: [],
+    };
+    const body = JSON.stringify({
+      event: "subscription.activated",
+      payload: {
+        subscription: {
+          entity: {
+            id: "sub_act_1",
+          },
+        },
+        order: {
+          entity: {
+            id: "order_sub_act_1",
+          },
+        },
+      },
+    });
+    const req = buildMockRequest({
+      body,
+      eventId: "evt_sub_act_1",
+      signature: computeHmacSignature(body, TEST_WEBHOOK_SECRET),
+      mockDb,
+    });
+    const res = await POST(req);
+    assert.strictEqual(res.status, 200);
+    const json = await res.json();
+    assert.strictEqual(json.fulfilled, true);
+    assert.strictEqual(mockDb.webhookEvents.has("evt_sub_act_1"), true);
+    assert.strictEqual(mockDb.rpcFulfilCalls.length, 1);
+    assert.strictEqual(mockDb.rpcFulfilCalls[0].orderId, "order_sub_act_1");
+  });
+
+  await runTest("26. subscription.activated replay: Second call returns alreadyProcessed without re-running RPC", async () => {
+    const mockDb: MockDbState = {
+      orders: new Map([
+        [
+          "order_sub_act_2",
+          {
+            id: "row_sub_act_2",
+            provider_order_id: "order_sub_act_2",
+            user_id: "user_sub_act_2",
+            provider: "razorpay",
+            mode: "test",
+            status: "paid",
+            amount_paise: 149900,
+            plan_code: "monthly",
+          },
+        ],
+      ]),
+      webhookEvents: new Set(["evt_sub_act_2"]),
+      failedEvents: [],
+      rpcFulfilCalls: [],
+    };
+    const body = JSON.stringify({
+      event: "subscription.activated",
+      payload: {
+        order: { entity: { id: "order_sub_act_2" } },
+      },
+    });
+    const req = buildMockRequest({
+      body,
+      eventId: "evt_sub_act_2",
+      signature: computeHmacSignature(body, TEST_WEBHOOK_SECRET),
+      mockDb,
+    });
+    const res = await POST(req);
+    assert.strictEqual(res.status, 200);
+    const json = await res.json();
+    assert.strictEqual(json.alreadyProcessed, true);
+    assert.strictEqual(mockDb.rpcFulfilCalls.length, 0);
+  });
+
+  await runTest("27. subscription.charged: Renews subscription via fulfil_subscription_renewal", async () => {
+    const initialEnd = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString();
+    const mockDb: MockDbState = {
+      orders: new Map(),
+      subscriptions: new Map([
+        [
+          "sub_row_charged_1",
+          {
+            id: "sub_row_charged_1",
+            subscription_id: "sub_rzp_charged_1",
+            user_id: "user_charged_1",
+            plan_id: "monthly",
+            status: "active",
+            current_period_end: initialEnd,
+            metadata: {},
+          },
+        ],
+      ]),
+      webhookEvents: new Set(),
+      failedEvents: [],
+      rpcFulfilCalls: [],
+      rpcRenewalCalls: [],
+    };
+    const body = JSON.stringify({
+      event: "subscription.charged",
+      payload: {
+        subscription: {
+          entity: {
+            id: "sub_rzp_charged_1",
+          },
+        },
+        payment: {
+          entity: {
+            id: "pay_renewal_1",
+          },
+        },
+      },
+    });
+    const req = buildMockRequest({
+      body,
+      eventId: "evt_sub_charged_1",
+      signature: computeHmacSignature(body, TEST_WEBHOOK_SECRET),
+      mockDb,
+    });
+    const res = await POST(req);
+    assert.strictEqual(res.status, 200);
+    const json = await res.json();
+    assert.strictEqual(json.renewed, true);
+    assert.strictEqual(mockDb.webhookEvents.has("evt_sub_charged_1"), true);
+    assert.strictEqual(mockDb.rpcRenewalCalls?.length, 1);
+    assert.strictEqual(mockDb.rpcRenewalCalls[0].subId, "sub_rzp_charged_1");
+    assert.strictEqual(mockDb.rpcRenewalCalls[0].paymentId, "pay_renewal_1");
+  });
+
+  await runTest("28. subscription.charged replay: Duplicate event returns alreadyProcessed without re-running RPC", async () => {
+    const mockDb: MockDbState = {
+      orders: new Map(),
+      subscriptions: new Map([
+        [
+          "sub_row_charged_2",
+          {
+            id: "sub_row_charged_2",
+            subscription_id: "sub_rzp_charged_2",
+            user_id: "user_charged_2",
+            plan_id: "monthly",
+            status: "active",
+            current_period_end: new Date(Date.now() + 35 * 24 * 60 * 60 * 1000).toISOString(),
+            metadata: { processed_renewal_payments: ["pay_renewal_2"] },
+          },
+        ],
+      ]),
+      webhookEvents: new Set(["evt_sub_charged_2"]),
+      failedEvents: [],
+      rpcFulfilCalls: [],
+      rpcRenewalCalls: [],
+    };
+    const body = JSON.stringify({
+      event: "subscription.charged",
+      payload: {
+        subscription: { entity: { id: "sub_rzp_charged_2" } },
+        payment: { entity: { id: "pay_renewal_2" } },
+      },
+    });
+    const req = buildMockRequest({
+      body,
+      eventId: "evt_sub_charged_2",
+      signature: computeHmacSignature(body, TEST_WEBHOOK_SECRET),
+      mockDb,
+    });
+    const res = await POST(req);
+    assert.strictEqual(res.status, 200);
+    const json = await res.json();
+    assert.strictEqual(json.alreadyProcessed, true);
+    assert.strictEqual(mockDb.rpcRenewalCalls?.length || 0, 0);
+  });
+
+  await runTest("29. subscription.charged: Idempotent replay with duplicate payment_id at RPC layer", async () => {
+    const mockDb: MockDbState = {
+      orders: new Map(),
+      subscriptions: new Map([
+        [
+          "sub_row_charged_3",
+          {
+            id: "sub_row_charged_3",
+            subscription_id: "sub_rzp_charged_3",
+            user_id: "user_charged_3",
+            plan_id: "monthly",
+            status: "active",
+            current_period_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+            metadata: { processed_renewal_payments: ["pay_existing_dup"] },
+          },
+        ],
+      ]),
+      webhookEvents: new Set(),
+      failedEvents: [],
+      rpcFulfilCalls: [],
+      rpcRenewalCalls: [],
+    };
+    const body = JSON.stringify({
+      event: "subscription.charged",
+      payload: {
+        subscription: { entity: { id: "sub_rzp_charged_3" } },
+        payment: { entity: { id: "pay_existing_dup" } },
+      },
+    });
+    const req = buildMockRequest({
+      body,
+      eventId: "evt_new_delivery_same_payment",
+      signature: computeHmacSignature(body, TEST_WEBHOOK_SECRET),
+      mockDb,
+    });
+    const res = await POST(req);
+    assert.strictEqual(res.status, 200);
+    const json = await res.json();
+    assert.strictEqual(json.renewed, true);
+    assert.strictEqual(json.alreadyProcessed, true);
+    assert.strictEqual(mockDb.webhookEvents.has("evt_new_delivery_same_payment"), true);
+  });
+
+  await runTest("30. subscription.pending: Sets status 'in_grace_period' and grace_period_end = now()+7d", async () => {
+    const targetSub: MockSubscription = {
+      id: "sub_row_pending_1",
+      subscription_id: "sub_rzp_pending_1",
+      user_id: "user_pending_1",
+      plan_id: "monthly",
+      status: "active",
+      grace_period_end: null,
+      metadata: {},
+    };
+    const mockDb: MockDbState = {
+      orders: new Map(),
+      subscriptions: new Map([["sub_row_pending_1", targetSub]]),
+      webhookEvents: new Set(),
+      failedEvents: [],
+      rpcFulfilCalls: [],
+    };
+    const body = JSON.stringify({
+      event: "subscription.pending",
+      payload: {
+        subscription: { entity: { id: "sub_rzp_pending_1" } },
+      },
+    });
+    const req = buildMockRequest({
+      body,
+      eventId: "evt_sub_pending_1",
+      signature: computeHmacSignature(body, TEST_WEBHOOK_SECRET),
+      mockDb,
+    });
+    const res = await POST(req);
+    assert.strictEqual(res.status, 200);
+    const json = await res.json();
+    assert.strictEqual(json.status, "in_grace_period");
+    assert.ok(json.grace_period_end, "grace_period_end must be set");
+    assert.strictEqual(targetSub.status, "in_grace_period");
+    assert.ok(targetSub.grace_period_end, "subscription grace_period_end must be populated");
+    assert.strictEqual(mockDb.webhookEvents.has("evt_sub_pending_1"), true);
+  });
+
+  await runTest("31. subscription.pending replay: Returns alreadyProcessed on dedupe hit", async () => {
+    const targetSub: MockSubscription = {
+      id: "sub_row_pending_2",
+      subscription_id: "sub_rzp_pending_2",
+      user_id: "user_pending_2",
+      plan_id: "monthly",
+      status: "in_grace_period",
+      metadata: {},
+    };
+    const mockDb: MockDbState = {
+      orders: new Map(),
+      subscriptions: new Map([["sub_row_pending_2", targetSub]]),
+      webhookEvents: new Set(["evt_sub_pending_2"]),
+      failedEvents: [],
+      rpcFulfilCalls: [],
+    };
+    const body = JSON.stringify({
+      event: "subscription.pending",
+      payload: {
+        subscription: { entity: { id: "sub_rzp_pending_2" } },
+      },
+    });
+    const req = buildMockRequest({
+      body,
+      eventId: "evt_sub_pending_2",
+      signature: computeHmacSignature(body, TEST_WEBHOOK_SECRET),
+      mockDb,
+    });
+    const res = await POST(req);
+    assert.strictEqual(res.status, 200);
+    const json = await res.json();
+    assert.strictEqual(json.alreadyProcessed, true);
+  });
+
+  await runTest("32. subscription.halted: Sets status 'past_due'", async () => {
+    const targetSub: MockSubscription = {
+      id: "sub_row_halted_1",
+      subscription_id: "sub_rzp_halted_1",
+      user_id: "user_halted_1",
+      plan_id: "monthly",
+      status: "in_grace_period",
+      metadata: {},
+    };
+    const mockDb: MockDbState = {
+      orders: new Map(),
+      subscriptions: new Map([["sub_row_halted_1", targetSub]]),
+      webhookEvents: new Set(),
+      failedEvents: [],
+      rpcFulfilCalls: [],
+    };
+    const body = JSON.stringify({
+      event: "subscription.halted",
+      payload: {
+        subscription: { entity: { id: "sub_rzp_halted_1" } },
+      },
+    });
+    const req = buildMockRequest({
+      body,
+      eventId: "evt_sub_halted_1",
+      signature: computeHmacSignature(body, TEST_WEBHOOK_SECRET),
+      mockDb,
+    });
+    const res = await POST(req);
+    assert.strictEqual(res.status, 200);
+    const json = await res.json();
+    assert.strictEqual(json.status, "past_due");
+    assert.strictEqual(targetSub.status, "past_due");
+    assert.strictEqual(mockDb.webhookEvents.has("evt_sub_halted_1"), true);
+  });
+
+  await runTest("33. subscription.halted replay: Returns alreadyProcessed on dedupe hit", async () => {
+    const mockDb: MockDbState = {
+      orders: new Map(),
+      subscriptions: new Map(),
+      webhookEvents: new Set(["evt_sub_halted_dup"]),
+      failedEvents: [],
+      rpcFulfilCalls: [],
+    };
+    const body = JSON.stringify({
+      event: "subscription.halted",
+      payload: {
+        subscription: { entity: { id: "sub_rzp_halted_dup" } },
+      },
+    });
+    const req = buildMockRequest({
+      body,
+      eventId: "evt_sub_halted_dup",
+      signature: computeHmacSignature(body, TEST_WEBHOOK_SECRET),
+      mockDb,
+    });
+    const res = await POST(req);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual((await res.json()).alreadyProcessed, true);
+  });
+
+  await runTest("34. subscription.cancelled: Sets cancel_at_period_end = true", async () => {
+    const targetSub: MockSubscription = {
+      id: "sub_row_canc_1",
+      subscription_id: "sub_rzp_canc_1",
+      user_id: "user_canc_1",
+      plan_id: "monthly",
+      status: "active",
+      cancel_at_period_end: false,
+      metadata: {},
+    };
+    const mockDb: MockDbState = {
+      orders: new Map(),
+      subscriptions: new Map([["sub_row_canc_1", targetSub]]),
+      webhookEvents: new Set(),
+      failedEvents: [],
+      rpcFulfilCalls: [],
+    };
+    const body = JSON.stringify({
+      event: "subscription.cancelled",
+      payload: {
+        subscription: { entity: { id: "sub_rzp_canc_1" } },
+      },
+    });
+    const req = buildMockRequest({
+      body,
+      eventId: "evt_sub_canc_1",
+      signature: computeHmacSignature(body, TEST_WEBHOOK_SECRET),
+      mockDb,
+    });
+    const res = await POST(req);
+    assert.strictEqual(res.status, 200);
+    const json = await res.json();
+    assert.strictEqual(json.cancel_at_period_end, true);
+    assert.strictEqual(targetSub.cancel_at_period_end, true);
+    assert.strictEqual(mockDb.webhookEvents.has("evt_sub_canc_1"), true);
+  });
+
+  await runTest("35. subscription.cancelled replay: Returns alreadyProcessed on dedupe hit", async () => {
+    const mockDb: MockDbState = {
+      orders: new Map(),
+      subscriptions: new Map(),
+      webhookEvents: new Set(["evt_sub_canc_dup"]),
+      failedEvents: [],
+      rpcFulfilCalls: [],
+    };
+    const body = JSON.stringify({
+      event: "subscription.cancelled",
+      payload: {
+        subscription: { entity: { id: "sub_rzp_canc_dup" } },
+      },
+    });
+    const req = buildMockRequest({
+      body,
+      eventId: "evt_sub_canc_dup",
+      signature: computeHmacSignature(body, TEST_WEBHOOK_SECRET),
+      mockDb,
+    });
+    const res = await POST(req);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual((await res.json()).alreadyProcessed, true);
+  });
+
+  await runTest("36. Missing subscription ID on subscription events returns 400 MISSING_SUBSCRIPTION_ID", async () => {
+    const mockDb: MockDbState = {
+      orders: new Map(),
+      subscriptions: new Map(),
+      webhookEvents: new Set(),
+      failedEvents: [],
+      rpcFulfilCalls: [],
+    };
+    const body = JSON.stringify({
+      event: "subscription.charged",
+      payload: {
+        payment: { entity: { id: "pay_sub_missing" } },
+      },
+    });
+    const req = buildMockRequest({
+      body,
+      eventId: "evt_sub_missing_id",
+      signature: computeHmacSignature(body, TEST_WEBHOOK_SECRET),
+      mockDb,
+    });
+    const res = await POST(req);
+    assert.strictEqual(res.status, 400);
+    assert.strictEqual((await res.json()).code, "MISSING_SUBSCRIPTION_ID");
+  });
+
+  await runTest("37. Non-existent subscription on lifecycle event returns 404 SUBSCRIPTION_NOT_FOUND", async () => {
+    const mockDb: MockDbState = {
+      orders: new Map(),
+      subscriptions: new Map(),
+      webhookEvents: new Set(),
+      failedEvents: [],
+      rpcFulfilCalls: [],
+    };
+    const body = JSON.stringify({
+      event: "subscription.pending",
+      payload: {
+        subscription: { entity: { id: "sub_non_existent" } },
+      },
+    });
+    const req = buildMockRequest({
+      body,
+      eventId: "evt_sub_404",
+      signature: computeHmacSignature(body, TEST_WEBHOOK_SECRET),
+      mockDb,
+    });
+    const res = await POST(req);
+    assert.strictEqual(res.status, 404);
+    assert.strictEqual((await res.json()).code, "SUBSCRIPTION_NOT_FOUND");
   });
 
   // Finish
