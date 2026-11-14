@@ -191,13 +191,6 @@ paths:
       description: Ingests signed Razorpay webhook payloads for payment fulfillment.
       responses:
         "200": { description: Webhook processed successfully }
-  /api/early-access:
-    post:
-      tags: [public]
-      summary: Join the early-access waitlist
-      description: Captures first-touch UTM/referrer attribution.
-      responses:
-        "200": { description: Signup recorded }
   /api/email/unsubscribe:
     get:
       tags: [public]

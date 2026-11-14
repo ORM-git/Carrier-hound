@@ -15,6 +15,7 @@ import { middleware, isProtectedRoute, PROTECTED_ROUTES, PUBLIC_ROUTES } from ".
 import { getValidReturnUrl } from "../src/lib/auth/session";
 import * as fs from "fs";
 import * as path from "path";
+import { spawnSync } from "child_process";
 
 const isNegativeControl = process.argv.includes("--negative-control");
 process.env.NODE_ENV = "test";
@@ -45,13 +46,11 @@ async function runAuthGuardSuite() {
 
   const protectedTestCases = [
     { path: "/dashboard", expectedReturnTo: "/dashboard" },
-    { path: "/jobs", expectedReturnTo: "/jobs" },
     { path: "/resume", expectedReturnTo: "/resume" },
     { path: "/tracker", expectedReturnTo: "/tracker" },
     { path: "/profile", expectedReturnTo: "/profile" },
     { path: "/radar", expectedReturnTo: "/radar" },
     { path: "/settings", expectedReturnTo: "/settings" },
-    { path: "/jobs?location=Remote&level=Senior", expectedReturnTo: "/jobs?location=Remote&level=Senior" },
     { path: "/tracker?stage=saved", expectedReturnTo: "/tracker?stage=saved" },
   ];
 
@@ -102,6 +101,10 @@ async function runAuthGuardSuite() {
 
   const publicTestCases = [
     "/",
+    "/jobs",
+    "/jobs?location=Remote&level=Senior",
+    "/job-search",
+    "/job-detail",
     "/remote",
     "/remote/jobs/engineering",
     "/remote/hidden-job-market-guide",
@@ -168,6 +171,171 @@ async function runAuthGuardSuite() {
   assert.strictEqual(loginRes.status, 200, "Request to /login with expired token must return HTTP 200 (no loop)");
   assert.strictEqual(loginRes.headers.get("location"), null, "/login must never redirect to itself");
   console.log("  -> [PASS-LOCAL] Expired session correctly routed to /login without redirect loop.");
+
+  // ---------------------------------------------------------------------------
+  // TEST 3b: Google-Only Session Policy Regression Tests
+  // Non-Google email session is rejected/signed out and treated as guest on protected pages.
+  // Google session passes through on protected pages and redirects on /login.
+  // ---------------------------------------------------------------------------
+  console.log("\nTest 3b: Verifying Google-only session enforcement (non-Google rejected/signed out, Google passes)...");
+
+  let mockSignOutCount = 0;
+  const mockAuthClient = {
+    auth: {
+      getUser: async (token: string) => {
+        if (token === "non-google-auth-token") {
+          return {
+            data: {
+              user: {
+                id: "non-google-user-123",
+                email: "password-user@example.com",
+                email_confirmed_at: "2026-01-01T00:00:00Z",
+                app_metadata: { provider: "email", providers: ["email"] },
+                user_metadata: {},
+              },
+            },
+            error: null,
+          };
+        }
+        if (token === "google-auth-token") {
+          return {
+            data: {
+              user: {
+                id: "google-user-456",
+                email: "google-user@gmail.com",
+                email_confirmed_at: "2026-01-01T00:00:00Z",
+                app_metadata: { provider: "google", providers: ["google"] },
+                user_metadata: {},
+              },
+            },
+            error: null,
+          };
+        }
+        return { data: { user: null }, error: new Error("invalid token") };
+      },
+      signOut: async () => {
+        mockSignOutCount++;
+      },
+    },
+  };
+
+  const prevMockSb = (globalThis as any).__mockSupabaseClient;
+  (globalThis as any).__mockSupabaseClient = mockAuthClient;
+
+  try {
+    // 1. Non-Google email session hitting protected pages (/dashboard, /resume, /tracker, /settings)
+    // Must be rejected, signed out, and treated as a guest (redirected to /login with returnTo)
+    // and must preserve cookie updates on the redirect response.
+    const protectedPagesToTest = ["/dashboard", "/resume", "/tracker", "/settings"];
+    for (const testPage of protectedPagesToTest) {
+      const initialSignOuts = mockSignOutCount;
+      const nonGoogleReq = new NextRequest(`http://localhost:3000${testPage}`, {
+        headers: {
+          cookie: "sb-access-token=non-google-auth-token;",
+        },
+      });
+      const nonGoogleRes = await middleware(nonGoogleReq);
+
+      assert.strictEqual(
+        nonGoogleRes.status,
+        307,
+        `Non-Google email session on protected page '${testPage}' must return 307 redirect, got ${nonGoogleRes.status}`
+      );
+      const loc = nonGoogleRes.headers.get("location") || "";
+      assert.ok(
+        loc.includes(`/login?returnTo=${encodeURIComponent(testPage)}`),
+        `Non-Google session must redirect to /login with returnTo=${testPage}, got location: ${loc}`
+      );
+      assert.strictEqual(
+        mockSignOutCount,
+        initialSignOuts + 1,
+        `mockAuth.signOut() must be called when non-Google session accesses '${testPage}'`
+      );
+
+      // Verify cookie updates on redirect response (cookies cleared/deleted)
+      const redirectCookies = nonGoogleRes.cookies.getAll();
+      const sbTokenCookie = redirectCookies.find((c) => c.name === "sb-access-token");
+      assert.ok(
+        sbTokenCookie !== undefined,
+        `Redirect response must include cookie update for 'sb-access-token'`
+      );
+      assert.strictEqual(
+        sbTokenCookie.value,
+        "",
+        `'sb-access-token' cookie must be cleared (empty value) on redirect`
+      );
+
+      console.log(`  -> [PASS-LOCAL] Non-Google session rejected & signed out on '${testPage}', redirected to /login with cleared cookies`);
+    }
+
+    // 2. Non-Google email session hitting /login
+    // Must NOT redirect to /dashboard; stays on /login (status 200) with sign-out cookies
+    const nonGoogleLoginReq = new NextRequest("http://localhost:3000/login", {
+      headers: {
+        cookie: "sb-access-token=non-google-auth-token;",
+      },
+    });
+    const nonGoogleLoginRes = await middleware(nonGoogleLoginReq);
+    assert.strictEqual(
+      nonGoogleLoginRes.status,
+      200,
+      `Non-Google session on /login must return 200, got ${nonGoogleLoginRes.status}`
+    );
+    assert.strictEqual(
+      nonGoogleLoginRes.headers.get("location"),
+      null,
+      "Non-Google session on /login must NOT redirect to /dashboard"
+    );
+    console.log("  -> [PASS-LOCAL] Non-Google session on /login is NOT redirected to /dashboard");
+
+    // 3. Google session hitting protected pages (/dashboard, /resume, /tracker, /settings)
+    // Must pass through (status 200, no redirect)
+    for (const testPage of protectedPagesToTest) {
+      const googleReq = new NextRequest(`http://localhost:3000${testPage}`, {
+        headers: {
+          cookie: "sb-access-token=google-auth-token;",
+        },
+      });
+      const googleRes = await middleware(googleReq);
+      assert.strictEqual(
+        googleRes.status,
+        200,
+        `Google session on protected page '${testPage}' must return 200 (pass through), got ${googleRes.status}`
+      );
+      assert.strictEqual(
+        googleRes.headers.get("location"),
+        null,
+        `Google session on '${testPage}' must not redirect`
+      );
+      console.log(`  -> [PASS-LOCAL] Google session passed through on '${testPage}'`);
+    }
+
+    // 4. Google session hitting /login
+    // Must redirect to /dashboard (status 307)
+    const googleLoginReq = new NextRequest("http://localhost:3000/login", {
+      headers: {
+        cookie: "sb-access-token=google-auth-token;",
+      },
+    });
+    const googleLoginRes = await middleware(googleLoginReq);
+    assert.strictEqual(
+      googleLoginRes.status,
+      307,
+      `Google session on /login must redirect to /dashboard (307), got ${googleLoginRes.status}`
+    );
+    const googleLoginLoc = googleLoginRes.headers.get("location") || "";
+    assert.ok(
+      googleLoginLoc.includes("/dashboard"),
+      `Google session on /login must redirect to /dashboard, got ${googleLoginLoc}`
+    );
+    console.log("  -> [PASS-LOCAL] Google session on /login correctly redirected to /dashboard");
+  } finally {
+    if (prevMockSb !== undefined) {
+      (globalThis as any).__mockSupabaseClient = prevMockSb;
+    } else {
+      delete (globalThis as any).__mockSupabaseClient;
+    }
+  }
 
   // ---------------------------------------------------------------------------
   // TEST 4: Return-To Parameter & Open Redirect Attack Mitigation
@@ -327,6 +495,19 @@ async function runAuthGuardSuite() {
     );
   }
   console.log("  -> [PASS-LOCAL] Verified 0 instances of 'careermonke_auth_user' across all src/ files.");
+
+  // ---------------------------------------------------------------------------
+  // TEST 6: Subprocess Negative Control
+  // ---------------------------------------------------------------------------
+  if (!isNegativeControl) {
+    console.log("\nTest 6: Verifying subprocess negative control exits non-zero...");
+    const neg = spawnSync(process.execPath, ["--import", "tsx", __filename, "--negative-control"], {
+      encoding: "utf-8",
+      env: process.env,
+    });
+    assert.notStrictEqual(neg.status, 0, "Negative control subprocess must exit with non-zero status");
+    console.log(`  -> [PASS-LOCAL] Negative control exited with non-zero code (${neg.status})`);
+  }
 
   console.log("\n================================================================================");
   console.log("            ALL AUTH GUARD & OPEN REDIRECT TESTS PASSED (PASS-LOCAL)            ");

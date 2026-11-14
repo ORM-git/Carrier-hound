@@ -230,8 +230,8 @@ async function runRateLimitTests() {
   }
   console.log("  -> Verdict: PASS-LOCAL (Enforces short-window user and IP rate limits with Retry-After header)\n");
 
-  // 1b. Invite-only gate check: unapproved user gets 403
-  console.log("1b. Verifying unapproved user gets 403 on AI Handler...");
+  // 1b. Early-access gate check: new signed-in user is not blocked with 403
+  console.log("1b. Verifying new signed-in user is not blocked by early access on AI Handler...");
   _resetAiRateLimitStore();
   const unapprovedDb = {
     ...mockDbAi,
@@ -248,11 +248,11 @@ async function runRateLimitTests() {
     callGroq: async () => "output",
   });
   const unapprovedRes = await unapprovedAiHandler(eventAi);
-  if (unapprovedRes.statusCode !== 403) {
-    console.error(`FAIL: Expected unapproved user to receive 403, got ${unapprovedRes.statusCode}`);
+  if (unapprovedRes.statusCode === 403) {
+    console.error(`FAIL: Expected new user not to receive 403 Early access only, got ${unapprovedRes.statusCode}`);
     process.exit(1);
   }
-  console.log("  -> Verdict: PASS-LOCAL (Unapproved user strictly rejected with 403 by invite-only gate)\n");
+  console.log("  -> Verdict: PASS-LOCAL (New signed-in user not blocked by early access gate)\n");
 
   // 1c. Strict fail-closed verification suite (P1 hardening)
   console.log("1c. Running Shared Rate Limit Fail-Closed Suite (tests a-f)...");

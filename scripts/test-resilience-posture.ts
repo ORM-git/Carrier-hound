@@ -35,7 +35,7 @@ function main(): void {
     "45: shared rate-limit helper exists (src/lib/api/sharedRateLimit.ts)");
   check(fs.existsSync(path.join(ROOT, "src/lib/api/envCheck.ts")),
     "45: shared env-check helper exists (src/lib/api/envCheck.ts)");
-  for (const route of ["src/app/api/stats/route.ts", "src/app/api/ticker/route.ts", "src/app/api/early-access/route.ts"]) {
+  for (const route of ["src/app/api/stats/route.ts", "src/app/api/ticker/route.ts"]) {
     const src = read(route);
     check(src.includes("checkSharedRateLimit"),
       `45: public route ${route.split("/").slice(-2).join("/")} keeps the shared rate limiter`);

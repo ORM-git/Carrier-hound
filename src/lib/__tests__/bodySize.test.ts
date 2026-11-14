@@ -304,12 +304,12 @@ describe("exceedsGlobalBodyCap and middleware Content-Length precheck", () => {
     }
 
     // Non-/api/ paths (including prefix lookalikes like /apiary and bare /api) are never rejected with 413
-    for (const nonApiPath of ["/", "/login", "/pricing", "/early-access", "/apiary", "/api"]) {
+    for (const nonApiPath of ["/", "/login", "/pricing", "/signup", "/apiary", "/api"]) {
       expect(exceedsGlobalBodyCap("POST", nonApiPath, overCap)).toBe(false);
       expect(exceedsGlobalBodyCap("POST", nonApiPath, giant)).toBe(false);
     }
 
-    for (const publicNonApiPath of ["/login", "/pricing", "/early-access"]) {
+    for (const publicNonApiPath of ["/login", "/pricing", "/signup"]) {
       const req = new NextRequest(`http://localhost:3000${publicNonApiPath}`, {
         method: "POST",
         headers: {

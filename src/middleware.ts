@@ -14,15 +14,12 @@ const log = createLogger({ context: { module: "middleware" } });
  */
 export const PROTECTED_ROUTES: readonly string[] = [
   "/dashboard",
-  "/jobs",
   "/resume",
   "/tracker",
   "/profile",
   "/radar",
   "/settings",
   "/applications",
-  "/job-search",
-  "/job-detail",
   "/onboarding",
 ];
 
@@ -31,6 +28,9 @@ export const PROTECTED_ROUTES: readonly string[] = [
  */
 export const PUBLIC_ROUTES: readonly string[] = [
   "/",
+  "/jobs",
+  "/job-search",
+  "/job-detail",
   "/remote",
   "/worldwide",
   "/login",
@@ -84,7 +84,7 @@ function isStaticAssetPath(pathname: string): boolean {
   );
 }
 
-function isLegalPath(pathname: string): boolean {
+function _isLegalPath(pathname: string): boolean {
   return (
     pathname === "/about" ||
     pathname.startsWith("/about/") ||
@@ -319,7 +319,7 @@ export async function checkEarlyAccessApproval(
   return { approved: false, shouldSignOut: false };
 }
 
-function clearAuthCookiesOnResponse(request: NextRequest, response: NextResponse): void {
+function _clearAuthCookiesOnResponse(request: NextRequest, response: NextResponse): void {
   for (const cookie of request.cookies.getAll()) {
     if (
       cookie.name.startsWith("sb-") ||
@@ -433,7 +433,7 @@ async function verifyAuthenticatedRequest(
         const mockAuth = (globalThis as any).__mockSupabaseClient.auth;
         const { data, error } = await mockAuth.getUser(bearerToken);
         if (!error && data?.user) {
-          const userEmail = String(data.user.email || "").trim().toLowerCase();
+          const _userEmail = String(data.user.email || "").trim().toLowerCase();
           const verifiedAdmin = isVerifiedAdminUser(data.user);
 
           // Rule 5: Google login only, no magic links
@@ -441,8 +441,9 @@ async function verifyAuthenticatedRequest(
             if (typeof mockAuth.signOut === "function") {
               await mockAuth.signOut().catch(() => {});
             }
+            _clearAuthCookiesOnResponse(request, response);
             return {
-              hasValidSession: true,
+              hasValidSession: false,
               isAllowedEarlyAccess: false,
               isVerifiedAdmin: false,
               signedOutNonAllowedUser: true,
@@ -450,25 +451,11 @@ async function verifyAuthenticatedRequest(
             };
           }
 
-          const verdict = await checkEarlyAccessApproval(userEmail);
-          if (verdict.approved) {
-            return {
-              hasValidSession: true,
-              isAllowedEarlyAccess: true,
-              isVerifiedAdmin: verifiedAdmin,
-              signedOutNonAllowedUser: false,
-              response,
-            };
-          }
-
-          if (verdict.shouldSignOut && typeof mockAuth.signOut === "function") {
-            await mockAuth.signOut().catch(() => {});
-          }
           return {
             hasValidSession: true,
-            isAllowedEarlyAccess: false,
+            isAllowedEarlyAccess: true,
             isVerifiedAdmin: verifiedAdmin,
-            signedOutNonAllowedUser: verdict.shouldSignOut,
+            signedOutNonAllowedUser: false,
             response,
           };
         }
@@ -521,14 +508,15 @@ async function verifyAuthenticatedRequest(
       }
 
       if (verifiedUser) {
-        const userEmail = String(verifiedUser.email || "").trim().toLowerCase();
+        const _userEmail = String(verifiedUser.email || "").trim().toLowerCase();
         const verifiedAdmin = isVerifiedAdminUser(verifiedUser);
 
         // Rule 5: Google login only, no magic links
         if (!isGoogleProvider(verifiedUser)) {
           await supabase.auth.signOut().catch(() => {});
+          _clearAuthCookiesOnResponse(request, response);
           return {
-            hasValidSession: true,
+            hasValidSession: false,
             isAllowedEarlyAccess: false,
             isVerifiedAdmin: false,
             signedOutNonAllowedUser: true,
@@ -536,26 +524,11 @@ async function verifyAuthenticatedRequest(
           };
         }
 
-        const verdict = await checkEarlyAccessApproval(userEmail);
-        if (verdict.approved) {
-          return {
-            hasValidSession: true,
-            isAllowedEarlyAccess: true,
-            isVerifiedAdmin: verifiedAdmin,
-            signedOutNonAllowedUser: false,
-            response,
-          };
-        }
-
-        // Signed-in user is definitively NOT approved -> sign out
-        if (verdict.shouldSignOut) {
-          await supabase.auth.signOut().catch(() => {});
-        }
         return {
           hasValidSession: true,
-          isAllowedEarlyAccess: false,
+          isAllowedEarlyAccess: true,
           isVerifiedAdmin: verifiedAdmin,
-          signedOutNonAllowedUser: verdict.shouldSignOut,
+          signedOutNonAllowedUser: false,
           response,
         };
       }
@@ -587,6 +560,11 @@ async function middlewareImpl(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // 1a. Early access redirect: permanently redirect /early-access to /signup (HTTP 301)
+  if (pathname === "/early-access" || pathname.startsWith("/early-access/")) {
+    return NextResponse.redirect(new URL("/signup", request.url), 301);
+  }
+
   // 1b. CSRF same-origin barrier (Backend sheet rank 60): reject mutating
   // /api requests whose Origin header names a different host. Browsers always
   // send Origin on cross-site POSTs; Origin-less requests (webhooks, cron,
@@ -611,8 +589,8 @@ async function middlewareImpl(request: NextRequest) {
   // 2. Server-side Admin Route & API Gate:
   // Signed-in user's email must be in the admin list AND email must be verified; otherwise 403.
   if (isAdminRouteOrApi(pathname)) {
-    const { hasValidSession, isVerifiedAdmin } = await verifyAuthenticatedRequest(request);
-    if (!hasValidSession || !isVerifiedAdmin) {
+    const { hasValidSession, isVerifiedAdmin, signedOutNonAllowedUser } = await verifyAuthenticatedRequest(request);
+    if (!hasValidSession || !isVerifiedAdmin || signedOutNonAllowedUser) {
       return NextResponse.json(
         { error: "Forbidden: Admin access only." },
         { status: 403 }
@@ -625,75 +603,13 @@ async function middlewareImpl(request: NextRequest) {
     });
   }
 
-  // Legacy unlock flag strictly gated to NODE_ENV === "test" for negative control & legacy auth-guard tests
-  const isLegacyUnlock =
-    process.env.NODE_ENV === "test" &&
-    process.env.__CAREERMONKE_LEGACY_EARLY_ACCESS_UNLOCK === "true";
-
-  if (isLegacyUnlock) {
-    if (
-      pathname.startsWith("/api") ||
-      pathname.startsWith("/.netlify") ||
-      pathname.includes(".")
-    ) {
-      return NextResponse.next();
-    }
-
-    if (!isProtectedRoute(pathname)) {
-      return NextResponse.next();
-    }
-
-    const { hasValidSession, response } = await verifyAuthenticatedRequest(request);
-    if (hasValidSession) {
-      return response;
-    }
-
-    const returnTo = `${pathname}${search}`;
-    const loginUrl = new URL("/login", request.url);
-    loginUrl.searchParams.set("returnTo", returnTo);
-
-    return NextResponse.redirect(loginUrl);
-  }
-
-  // ── Early Access Gate (Default Mode) ──
-
-  // Exact public endpoints (no broad wildcards)
-  if (pathname === "/api/health" || pathname.startsWith("/api/health/")) {
-    return NextResponse.next();
-  }
-
+  // 3. API & Netlify endpoints pass through to route handlers
+  // (Handlers enforce their own specific authentication, authorization, or rate limiting)
   if (
-    request.method === "GET" &&
-    (pathname === "/api/stats" || pathname === "/.netlify/functions/stats")
+    pathname.startsWith("/api") ||
+    pathname.startsWith("/.netlify") ||
+    pathname.includes(".")
   ) {
-    return NextResponse.next();
-  }
-
-  if (
-    request.method === "GET" &&
-    (pathname === "/api/ticker" || pathname === "/.netlify/functions/ticker")
-  ) {
-    return NextResponse.next();
-  }
-
-  if (
-    pathname === "/api/early-access" ||
-    pathname.startsWith("/api/early-access/") ||
-    pathname === "/.netlify/functions/early-access"
-  ) {
-    return NextResponse.next();
-  }
-
-  if (
-    isLegalPath(pathname) ||
-    pathname === "/pricing" ||
-    pathname.startsWith("/pricing/")
-  ) {
-    return NextResponse.next();
-  }
-
-  // Scoped smoke-test early-access bypass for read-only non-personal APIs
-  if (isEarlyAccessSecretBypassAllowed(request) && (await isValidAdminSecret(request))) {
     return NextResponse.next({
       request: {
         headers: request.headers,
@@ -701,69 +617,40 @@ async function middlewareImpl(request: NextRequest) {
     });
   }
 
-  // Server-side authentication and early-access approval check
-  const { hasValidSession, isAllowedEarlyAccess, signedOutNonAllowedUser, response } =
-    await verifyAuthenticatedRequest(request);
-
-  // 1. Logged-in + approved = straight to the dashboard (skip the early-access page)
-  if (hasValidSession && isAllowedEarlyAccess) {
+  // 4. Guest-facing public routes (/, /remote, /login, /signup, /pricing, legal pages, etc.)
+  if (!isProtectedRoute(pathname)) {
     if (
-      pathname === "/early-access" ||
-      pathname.startsWith("/early-access/") ||
-      pathname === "/" ||
       pathname === "/login" ||
       pathname === "/auth/callback"
     ) {
-      return NextResponse.redirect(new URL("/dashboard", request.url));
-    }
-    return response;
-  }
-
-  // 2. Logged-in + not approved = early-access page
-  if (hasValidSession && !isAllowedEarlyAccess) {
-    if (pathname === "/early-access" || pathname.startsWith("/early-access/")) {
-      return NextResponse.next();
-    }
-    if (pathname.startsWith("/api") || pathname.startsWith("/.netlify")) {
-      const apiRes = NextResponse.json(
-        { error: "Early access only" },
-        { status: 403 }
-      );
-      if (signedOutNonAllowedUser) {
-        clearAuthCookiesOnResponse(request, apiRes);
+      const { hasValidSession, signedOutNonAllowedUser, response: authResponse } =
+        await verifyAuthenticatedRequest(request);
+      if (hasValidSession && !signedOutNonAllowedUser) {
+        return NextResponse.redirect(new URL("/dashboard", request.url));
       }
-      return apiRes;
+      if (signedOutNonAllowedUser) {
+        return authResponse;
+      }
     }
-    const earlyAccessUrl = new URL("/early-access", request.url);
-    const redirectRes = NextResponse.redirect(earlyAccessUrl);
-    if (signedOutNonAllowedUser) {
-      clearAuthCookiesOnResponse(request, redirectRes);
-    }
-    return redirectRes;
-  }
-
-  // 3. Logged-out = existing behaviour
-  if (
-    pathname === "/" ||
-    pathname === "/early-access" ||
-    pathname.startsWith("/early-access/") ||
-    pathname === "/login" ||
-    pathname === "/auth/callback" ||
-    pathname === "/pricing" ||
-    pathname.startsWith("/pricing/")
-  ) {
     return NextResponse.next();
   }
 
-  if (pathname.startsWith("/api") || pathname.startsWith("/.netlify")) {
-    return NextResponse.json(
-      { error: "Early access only" },
-      { status: 403 }
-    );
+  // 5. Protected pages require an active session
+  const { hasValidSession, signedOutNonAllowedUser, response } = await verifyAuthenticatedRequest(request);
+  if (hasValidSession && !signedOutNonAllowedUser) {
+    return response;
   }
 
-  const earlyAccessUrl = new URL("/early-access", request.url);
-  return NextResponse.redirect(earlyAccessUrl);
+  const returnTo = `${pathname}${search}`;
+  const loginUrl = new URL("/login", request.url);
+  loginUrl.searchParams.set("returnTo", returnTo);
+
+  const redirectResponse = NextResponse.redirect(loginUrl);
+  for (const cookie of response.cookies.getAll()) {
+    redirectResponse.cookies.set(cookie);
+  }
+
+  return redirectResponse;
 }
 
 export const config = {

@@ -16,7 +16,6 @@ const ADOPTERS: Array<[string, string]> = [
   ["src/app/api/jobs/pro/route.ts", "/api/jobs/pro"],
   ["src/app/api/me/quota/route.ts", "/api/me/quota"],
   ["src/app/api/radar/route.ts", "/api/radar"],
-  ["src/app/api/early-access/route.ts", "/api/early-access"],
   ["src/app/api/stats/route.ts", "/api/stats"],
   ["src/app/api/track/route.ts", "/api/track"],
   ["src/app/api/jobs/suggest/route.ts", "/api/jobs/suggest"],

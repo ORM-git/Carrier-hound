@@ -393,7 +393,7 @@ async function runQuotaConsumeRazorpaySuite() {
   assert.strictEqual(repeatRes.statusCode, 200, "Idempotent repeat must succeed without error");
   assert.strictEqual(repeatConsumeCount, 1, "Idempotent repeat must return previous consume without re-decrement");
 
-  // 5G: Unapproved user MUST receive 403 Early access only
+  // 5G: Early-access gate removed: new signed-in Pro user does not receive 403 Early access only
   const unapprovedRes = await executeAiCore(
     "127.0.0.1",
     "Bearer unapproved-token",
@@ -417,10 +417,9 @@ async function runQuotaConsumeRazorpaySuite() {
       }),
     }
   );
-  assert.strictEqual(unapprovedRes.statusCode, 403, "Unapproved user must receive 403");
   const unapprovedBody =
     typeof unapprovedRes.body === "string" ? JSON.parse(unapprovedRes.body) : unapprovedRes.body;
-  assert.strictEqual(unapprovedBody.error, "Early access only");
+  assert.ok(!String(unapprovedBody.error || "").includes("Early access only"), "Must not return Early access only");
 
   console.log("  -> [PASS-LOCAL] AI service correctly manages consume and refund lifecycle, with idempotent repeat.");
 

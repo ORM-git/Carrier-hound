@@ -128,8 +128,6 @@ export default function UserMenu({
   }
 
   // ── Signed IN ─────────────────────────────────────────────────────────────
-  const isEarlyAccessLocked = signInHref === "/early-access";
-
   const initial = (user.email?.[0] ?? "U").toUpperCase();
   const shortEmail = user.email
     ? user.email.length > 18
@@ -192,7 +190,7 @@ export default function UserMenu({
             </div>
             <div className="p-1.5 space-y-0.5">
               <Link
-                href={isEarlyAccessLocked ? "/early-access" : "/dashboard"}
+                href="/dashboard"
                 prefetch={false}
                 onClick={() => setOpen(false)}
                 className="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 rounded-lg transition-colors font-medium"
@@ -200,7 +198,7 @@ export default function UserMenu({
                 <span>Dashboard</span>
               </Link>
               <Link
-                href={isEarlyAccessLocked ? "/early-access" : "/jobs"}
+                href="/jobs"
                 prefetch={false}
                 onClick={() => setOpen(false)}
                 className="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 rounded-lg transition-colors font-medium"
@@ -208,7 +206,7 @@ export default function UserMenu({
                 <span>Browse All Jobs</span>
               </Link>
               <Link
-                href={isEarlyAccessLocked ? "/early-access" : "/applications"}
+                href="/applications"
                 prefetch={false}
                 onClick={() => setOpen(false)}
                 className="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 rounded-lg transition-colors font-medium"
@@ -216,7 +214,7 @@ export default function UserMenu({
                 <span>Application Tracker</span>
               </Link>
               <Link
-                href={isEarlyAccessLocked ? "/early-access" : "/resume"}
+                href="/resume"
                 prefetch={false}
                 onClick={() => setOpen(false)}
                 className="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 rounded-lg transition-colors font-medium"
@@ -224,7 +222,7 @@ export default function UserMenu({
                 <span>Resume & Facts (ATS)</span>
               </Link>
               <Link
-                href={isEarlyAccessLocked ? "/early-access" : "/radar"}
+                href="/radar"
                 prefetch={false}
                 onClick={() => setOpen(false)}
                 className="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 rounded-lg transition-colors font-medium"

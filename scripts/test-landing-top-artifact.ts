@@ -69,7 +69,7 @@ async function main() {
   assert.ok(pageSrc.includes('href="/signup"'), "Hero CTA must link to /signup");
   assert.ok(pageSrc.includes('href="/login"'), "Top nav must link to /login");
   assert.ok(pageSrc.includes('href="/radar"'), "Top nav must link to /radar");
-  assert.ok(pageSrc.includes('href="/early-access"'), "Top nav must link to /early-access");
+  assert.ok(pageSrc.includes('href="/jobs"'), "Navigation must link to /jobs");
   assert.ok(pageSrc.includes('id="try-demo"'), "Hero must include #try-demo button");
 
   // 3. Interactive Demo Structure and Chips

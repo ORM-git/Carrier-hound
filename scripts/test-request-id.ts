@@ -117,7 +117,7 @@ async function main() {
     };
 
     const methods = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
-    const routes = ["/api/early-access", "/api/health", "/pricing"] as const;
+    const routes = ["/api/stats", "/api/health", "/pricing"] as const;
 
     for (const route of routes) {
       for (const method of methods) {

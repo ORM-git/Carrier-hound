@@ -136,7 +136,6 @@ async function runTests() {
   assert.ok(publicFooterHtml.includes('href="/about"'), "Public footer must include 'About Us' link (/about)");
 
   for (const relFile of [
-    "src/app/early-access/page.tsx",
     "src/app/privacy-policy/page.tsx",
     "src/app/terms-and-conditions/page.tsx",
     "src/app/refund-policy/page.tsx",

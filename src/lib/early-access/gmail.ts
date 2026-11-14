@@ -849,6 +849,8 @@ export async function runEarlyAccessDigestCron(options?: {
   cfEnv?: Record<string, any>;
   dryRun?: boolean;
   nowIso?: string;
+  /** Delay before the single gmail_send_log read retry (default 30s). */
+  retryDelayMs?: number;
 }): Promise<EarlyAccessDigestCronResult> {
   const dryRun = Boolean(options?.dryRun);
   const appsScriptConfig = readAppsScriptConfig(options?.cfEnv);
@@ -893,42 +895,62 @@ export async function runEarlyAccessDigestCron(options?: {
     };
   }
 
-  // 1. Read last_digest_at from gmail_send_log (where kind = 'digest')
+  // 1. Read last_digest_at from gmail_send_log (where kind = 'digest').
+  // One retry after retryDelayMs (transient PostgREST errors such as PGRST002), then fail closed.
   let lastDigestAt: string | null = null;
-  try {
-    const { data: lastDigestRow, error: digestLookupErr } = await supabaseClient
-      .from("gmail_send_log")
-      .select("sent_at")
-      .eq("kind", "digest")
-      .order("sent_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+  const requestedDelay = options?.retryDelayMs;
+  const retryDelayMs =
+    typeof requestedDelay === "number" && Number.isFinite(requestedDelay) && requestedDelay >= 0
+      ? requestedDelay
+      : 30_000;
+  // Bounded, sanitized fields only: never the raw PostgREST details or row data.
+  const safeField = (raw: unknown, max: number) =>
+    sanitizeLogMessage(
+      String(raw ?? "unknown")
+        .replace(/\beyJ[\w-]+(?:\.[\w-]*)*/g, "[REDACTED_TOKEN]")
+        .replace(/\bBearer\s+\S+/gi, "Bearer [REDACTED_TOKEN]"),
+      appsScriptConfig,
+      undefined,
+      notifyEmail
+    ).slice(0, max);
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    let failure: string | null = null;
+    try {
+      const { data: lastDigestRow, error: digestLookupErr, status: httpStatus } = await supabaseClient
+        .from("gmail_send_log")
+        .select("sent_at")
+        .eq("kind", "digest")
+        .order("sent_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-    if (digestLookupErr && !isLegacyFailOpen) {
-      safeWarn("Failed to read last_digest_at from gmail_send_log (failing closed)");
-      return {
-        status: "failed",
-        sent: false,
-        reason: "log_read_error",
-        rowCount: 0,
-        lastDigestAt: null,
-      };
+      if (digestLookupErr && !isLegacyFailOpen) {
+        failure =
+          `Failed to read last_digest_at from gmail_send_log: code=${safeField(digestLookupErr.code, 40)} ` +
+          `status=${typeof httpStatus === "number" ? httpStatus : "unknown"} message=${safeField(digestLookupErr.message, 200)}`;
+      } else if (lastDigestRow?.sent_at && typeof lastDigestRow.sent_at === "string") {
+        lastDigestAt = lastDigestRow.sent_at;
+      }
+    } catch (err: any) {
+      if (!isLegacyFailOpen) {
+        failure = `Exception reading last_digest_at from gmail_send_log: ${safeField(err?.message || err, 200)}`;
+      }
     }
 
-    if (lastDigestRow?.sent_at && typeof lastDigestRow.sent_at === "string") {
-      lastDigestAt = lastDigestRow.sent_at;
+    if (!failure) break;
+    if (attempt === 1) {
+      safeWarn(`${failure} (retrying once in ${retryDelayMs}ms)`);
+      await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+      continue;
     }
-  } catch {
-    if (!isLegacyFailOpen) {
-      safeWarn("Exception reading last_digest_at from gmail_send_log (failing closed)");
-      return {
-        status: "failed",
-        sent: false,
-        reason: "log_read_error",
-        rowCount: 0,
-        lastDigestAt: null,
-      };
-    }
+    safeWarn(`${failure} (failing closed)`);
+    return {
+      status: "failed",
+      sent: false,
+      reason: "log_read_error",
+      rowCount: 0,
+      lastDigestAt: null,
+    };
   }
 
   // 2. Fetch all early_access_emails rows created since last_digest_at

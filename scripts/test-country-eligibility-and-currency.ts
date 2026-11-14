@@ -576,16 +576,16 @@ async function runTests() {
     assert.strictEqual(netlifyOptOutJson.jobs.length, 4);
     console.log("  [PASS] 5e. Netlify functions/jobs-search with eligibility=off returns all jobs");
 
-    // 5f. Invite-only gate check: unapproved user must receive 403
+    // 5f. Early access gate removed: new signed-in user must receive 200 (not 403) from /api/jobs/search
     const unapprovedReq = new Request("http://localhost:3000/api/jobs/search?page=1&pageSize=25", {
       method: "GET",
       headers: { Authorization: "Bearer unapproved-token" },
     });
     const unapprovedRes = await searchGet(unapprovedReq);
-    assert.strictEqual(unapprovedRes.status, 403, "Unapproved user must receive 403 from /api/jobs/search");
+    assert.strictEqual(unapprovedRes.status, 200, "New signed-in user must receive 200 from /api/jobs/search");
     const unapprovedJson = await unapprovedRes.json();
-    assert.strictEqual(unapprovedJson.error, "Early access only");
-    console.log("  [PASS] 5f. Unapproved user strictly rejected with 403 by invite-only gate");
+    assert.ok(!unapprovedJson.error, "Must not return early access error");
+    console.log("  [PASS] 5f. New signed-in user is not blocked by early access on /api/jobs/search");
   } finally {
     globalThis.fetch = origFetch;
   }

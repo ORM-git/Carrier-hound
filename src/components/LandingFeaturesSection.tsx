@@ -16,7 +16,7 @@ const FEATURE_ROWS: FeatureRow[] = [
     title: "Find jobs on company career pages",
     description: "Search roles posted directly on employer career sites.",
     buttonText: "Explore jobs",
-    href: "/early-access",
+    href: "/jobs",
     visual: <cm-find-jobs compact />,
   },
   {
@@ -24,7 +24,7 @@ const FEATURE_ROWS: FeatureRow[] = [
     title: "Tailor your resume to each role",
     description: "Get a resume and cover letter draft matched to the job.",
     buttonText: "Try AI resume tools",
-    href: "/early-access",
+    href: "/signup",
     visual: <cm-tailor-resume compact />,
   },
   {
@@ -32,7 +32,7 @@ const FEATURE_ROWS: FeatureRow[] = [
     title: "Personalized job matches",
     description: "See how well your skills fit each role.",
     buttonText: "Find my matches",
-    href: "/early-access",
+    href: "/signup",
     visual: <cm-job-matches compact />,
   },
 ];

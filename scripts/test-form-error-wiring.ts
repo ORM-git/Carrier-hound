@@ -19,7 +19,6 @@ function check(cond: boolean, label: string): void {
 const FORMS: Array<{ file: string; name: string; errorId: string }> = [
   { file: "src/app/login/page.tsx", name: "login", errorId: "login-error-msg" },
   { file: "src/app/signup/page.tsx", name: "signup", errorId: "signup-error-msg" },
-  { file: "src/app/early-access/page.tsx", name: "early-access", errorId: "early-access-error-msg" },
 ];
 
 for (const { file, name, errorId } of FORMS) {

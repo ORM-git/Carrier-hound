@@ -71,7 +71,7 @@ function TickerCard({ job, keyPrefix = "", index, isDuplicate = false }: TickerC
 
   return (
     <Link
-      href="/early-access"
+      href="/jobs"
       aria-label={`${job.title} at ${job.company}`}
       tabIndex={isDuplicate ? -1 : undefined}
       className="ticker-card flex items-center shrink-0 h-9 md:h-12 gap-4 md:gap-3 mr-12 md:mr-16 group cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-lg select-none"

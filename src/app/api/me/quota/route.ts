@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getPlanQuota } from "@/lib/billing/quota";
-import { isUserApproved } from "@/lib/auth/approval";
 
 import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
 
@@ -62,16 +61,6 @@ export async function GET(req: Request) {
       );
     }
 
-    const isApproved = await isUserApproved(supabaseAdmin, user);
-    if (!isApproved) {
-      return NextResponse.json(
-        {
-          error: "Early access only",
-          message: "Invite-only access: your account is pending approval.",
-        },
-        { status: 403 }
-      );
-    }
 
     const quota = await getPlanQuota(user.id);
 

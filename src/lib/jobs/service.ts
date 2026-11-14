@@ -33,6 +33,7 @@ export interface LiveJob {
   applicantCount?: number;
   company_id?: string | null;
   companyId?: string | null;
+  companyGroupId?: string | null;
   logoUrl?: string | null;
   logo_url?: string | null;
   salary_display?: string | null;

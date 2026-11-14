@@ -171,7 +171,6 @@ function run() {
     { file: "src/app/contact/page.tsx", description: "Contact Us Page" },
     { file: "src/app/refund-policy/page.tsx", description: "Refund Policy Page" },
     { file: "src/app/about/page.tsx", description: "About Us Page" },
-    { file: "src/app/early-access/page.tsx", description: "Early Access Page" },
   ];
   for (const item of sharedFooterPages) {
     const fullPath = path.resolve(process.cwd(), item.file);
