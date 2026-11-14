@@ -405,8 +405,16 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
         };
       }
 
-      if (existingPendingOrder) {
-        if (existingPendingOrder.plan_code === planCode && existingPendingOrder.provider_order_id) {
+      const isSubMandate =
+        typeof existingPendingOrder?.provider_order_id === "string" &&
+        existingPendingOrder.provider_order_id.startsWith("sub_");
+      const isMatchingMode =
+        resolvedMode === "live"
+          ? existingPendingOrder?.mode === "live"
+          : existingPendingOrder?.mode !== "live";
+
+      if (existingPendingOrder && isSubMandate && isMatchingMode) {
+        if (existingPendingOrder.plan_code === planCode) {
           safeLog.info(
             "[Netlify /billing-razorpay-subscription] Reusing existing pending subscription order for user and plan",
             JSON.stringify({
@@ -441,7 +449,15 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
 
       const metadataPendingSubId = existingSub?.metadata?.pending_subscription_id;
       const metadataPendingPlan = existingSub?.metadata?.pending_plan_code;
-      if (metadataPendingSubId && typeof metadataPendingSubId === "string") {
+      const metadataPendingMode = existingSub?.metadata?.pending_mode;
+      const isMetaSub =
+        typeof metadataPendingSubId === "string" && metadataPendingSubId.startsWith("sub_");
+      const isMetaMatchingMode =
+        resolvedMode === "live"
+          ? metadataPendingMode === "live"
+          : metadataPendingMode !== "live";
+
+      if (isMetaSub && isMetaMatchingMode) {
         if (!metadataPendingPlan || metadataPendingPlan === planCode) {
           safeLog.info(
             "[Netlify /billing-razorpay-subscription] Reusing existing pending subscription from metadata",
@@ -481,14 +497,22 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
         // Re-check pending orders inside flight in case another tab or request settled just before
         const { data: racePendingOrder } = await supabaseAdmin
           .from("payment_orders")
-          .select("provider_order_id, plan_code")
+          .select("provider_order_id, plan_code, mode")
           .eq("user_id", user.id)
           .eq("status", "created")
           .order("created_at", { ascending: false })
           .limit(1)
           .maybeSingle();
 
-        if (racePendingOrder?.provider_order_id && racePendingOrder.plan_code === planCode) {
+        const isRaceSub =
+          typeof racePendingOrder?.provider_order_id === "string" &&
+          racePendingOrder.provider_order_id.startsWith("sub_");
+        const isRaceMatchingMode =
+          resolvedMode === "live"
+            ? racePendingOrder?.mode === "live"
+            : racePendingOrder?.mode !== "live";
+
+        if (isRaceSub && isRaceMatchingMode && racePendingOrder.plan_code === planCode) {
           return {
             statusCode: 200,
             headers,
@@ -580,14 +604,22 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
             );
             const { data: existingRace } = await supabaseAdmin
               .from("payment_orders")
-              .select("provider_order_id, plan_code")
+              .select("provider_order_id, plan_code, mode")
               .eq("user_id", user.id)
               .eq("status", "created")
               .order("created_at", { ascending: false })
               .limit(1)
               .maybeSingle();
 
-            if (existingRace?.provider_order_id) {
+            const isRaceSub =
+              typeof existingRace?.provider_order_id === "string" &&
+              existingRace.provider_order_id.startsWith("sub_");
+            const isRaceMatchingMode =
+              resolvedMode === "live"
+                ? existingRace?.mode === "live"
+                : existingRace?.mode !== "live";
+
+            if (isRaceSub && isRaceMatchingMode) {
               return {
                 statusCode: 200,
                 headers,
@@ -634,6 +666,7 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
                 ...(existingSub.metadata || {}),
                 pending_subscription_id: subscriptionData.id,
                 pending_plan_code: planCode,
+                pending_mode: resolvedMode,
                 pending_created_at: new Date().toISOString(),
               },
             })

@@ -585,6 +585,128 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
+  it("never reuses a prepaid order_* row when creating a subscription", async () => {
+    mockDbPaymentOrders.set("order_prepaid_123", {
+      id: "order_prepaid_id",
+      user_id: mockUser.id,
+      provider: "razorpay",
+      provider_order_id: "order_prepaid_123",
+      plan_code: "monthly",
+      amount_paise: 149900,
+      status: "created",
+      mode: "test",
+    });
+
+    const mockFetch = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: "sub_new_mandate_from_gateway",
+          plan_id: "plan_monthly_rzp_456",
+          status: "created",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )
+    );
+
+    const req = createMockRequest(
+      { planCode: "monthly" },
+      {},
+      {
+        getSupabaseAdmin: () => createMockSupabaseAdmin(),
+        verifyUserNotBanned: async () => ({ isBlocked: false }),
+        fetchFn: mockFetch,
+        isProductionHost: false,
+      }
+    );
+
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.subscriptionId).toBe("sub_new_mandate_from_gateway");
+    expect(json.reused).toBeUndefined();
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("never reuses a test-mode row under live config", async () => {
+    process.env.RAZORPAY_MODE = "live";
+    process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = "rzp_live_real_key_123";
+
+    mockDbPaymentOrders.set("sub_test_old", {
+      id: "order_old_test",
+      user_id: mockUser.id,
+      provider: "razorpay",
+      provider_order_id: "sub_test_old",
+      plan_code: "monthly",
+      amount_paise: 149900,
+      status: "created",
+      mode: "test",
+    });
+
+    const mockFetch = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: "sub_live_brand_new_mandate",
+          plan_id: "plan_monthly_rzp_456",
+          status: "created",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )
+    );
+
+    const req = createMockRequest(
+      { planCode: "monthly" },
+      {},
+      {
+        getSupabaseAdmin: () => createMockSupabaseAdmin(),
+        verifyUserNotBanned: async () => ({ isBlocked: false }),
+        fetchFn: mockFetch,
+        isProductionHost: false,
+      }
+    );
+
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.subscriptionId).toBe("sub_live_brand_new_mandate");
+    expect(json.reused).toBeUndefined();
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("reuses a live sub_* row under live config", async () => {
+    process.env.RAZORPAY_MODE = "live";
+    process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = "rzp_live_real_key_123";
+
+    mockDbPaymentOrders.set("sub_live_existing_mandate", {
+      id: "order_live_mandate_id",
+      user_id: mockUser.id,
+      provider: "razorpay",
+      provider_order_id: "sub_live_existing_mandate",
+      plan_code: "monthly",
+      amount_paise: 149900,
+      status: "created",
+      mode: "live",
+    });
+
+    const mockFetch = vi.fn();
+    const req = createMockRequest(
+      { planCode: "monthly" },
+      {},
+      {
+        getSupabaseAdmin: () => createMockSupabaseAdmin(),
+        verifyUserNotBanned: async () => ({ isBlocked: false }),
+        fetchFn: mockFetch,
+        isProductionHost: false,
+      }
+    );
+
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.subscriptionId).toBe("sub_live_existing_mandate");
+    expect(json.reused).toBe(true);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
   it("atomic singleFlight coalesces concurrent double-tab requests for the same user and plan into a single mandate", async () => {
     const mockFetch = vi.fn().mockImplementation(async () => {
       // Simulate gateway latency
