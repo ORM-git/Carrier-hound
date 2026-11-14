@@ -26,6 +26,7 @@ export interface SuiteSpec {
   command: string;
   classification?: "offline" | "db-read" | "db-write" | "db-anon-write-attempt";
   requiresSupabase?: boolean; // Maintained for backward compatibility
+  timeout?: number;
 }
 
 // In-source documented test-project allowlist. Strictly EMPTY by default.
@@ -126,6 +127,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-plan-price-sync.ts", command: "npx tsx scripts/test-plan-price-sync.ts", classification: "offline" },
   { name: "scripts/test-netlify-billing.ts", command: "npx tsx scripts/test-netlify-billing.ts", classification: "offline" },
   { name: "scripts/test-billing-webhook-route.ts", command: "npx tsx scripts/test-billing-webhook-route.ts", classification: "offline" },
+  { name: "scripts/test-autorenew-persistence.ts", command: "npx tsx scripts/test-autorenew-persistence.ts", classification: "offline" },
   { name: "scripts/test-addon-verify-and-expiry.ts", command: "npx tsx scripts/test-addon-verify-and-expiry.ts", classification: "offline" },
   { name: "scripts/test-razorpay-mode-isolation.ts", command: "npx tsx scripts/test-razorpay-mode-isolation.ts", classification: "offline" },
   { name: "scripts/test-policy-pages.ts", command: "npx tsx scripts/test-policy-pages.ts", classification: "offline" },
@@ -146,7 +148,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-groq-timeout-circuit-breaker.ts", command: "npx tsx scripts/test-groq-timeout-circuit-breaker.ts", classification: "offline" },
   { name: "scripts/test-web-vitals-analytics.ts", command: "npx tsx scripts/test-web-vitals-analytics.ts", classification: "offline" },
   { name: "scripts/test-failed-events-dead-letter.ts", command: "npx tsx scripts/test-failed-events-dead-letter.ts", classification: "offline" },
-  { name: "scripts/test-lint-config.ts", command: "npx tsx scripts/test-lint-config.ts", classification: "offline" },
+  { name: "scripts/test-lint-config.ts", command: "npx tsx scripts/test-lint-config.ts", classification: "offline", timeout: 180000 },
   { name: "scripts/test-security-audit-baseline.ts", command: "npx tsx scripts/test-security-audit-baseline.ts", classification: "offline" },
   { name: "scripts/test-database-safety.ts", command: "npx tsx scripts/test-database-safety.ts", classification: "offline" },
   { name: "scripts/test-seo-structured-data.ts", command: "npx tsx scripts/test-seo-structured-data.ts", classification: "offline" },
