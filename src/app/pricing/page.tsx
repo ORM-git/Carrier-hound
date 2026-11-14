@@ -24,7 +24,7 @@ import { getProAccessStatus } from "@/lib/billing/subscription";
 import { createClient } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
 import { BreadcrumbJsonLd } from "@/components/seo/BreadcrumbJsonLd";
-import { handleProCheckout } from "@/lib/billing/checkout";
+import { handleProCheckout, openRazorpaySubscription } from "@/lib/billing/checkout";
 import { toast } from "react-toastify";
 
 export default function PricingPage() {
@@ -69,6 +69,7 @@ export default function PricingPage() {
   }, []);
 
   const isBillingEnabled = process.env.NEXT_PUBLIC_BILLING_ENABLED === "true";
+  const isAutorenewEnabled = process.env.NEXT_PUBLIC_AUTORENEW_ENABLED === "true";
 
   // Single synchronous purchase lock shared by plan and add-on purchases
   const checkoutLockRef = useRef<boolean>(false);
@@ -109,20 +110,37 @@ export default function PricingPage() {
     }
 
     try {
-      await handleProCheckout({
-        planCode,
-        redirectTarget: "/pricing",
-        onError: (errMsg) => {
-          resetLock();
-          toast.error(errMsg || "Payment processing failed. Please try again.");
-        },
-        onSuccess: () => {
-          resetLock();
-        },
-        onDismiss: () => {
-          resetLock();
-        },
-      });
+      if (isAutorenewEnabled) {
+        await openRazorpaySubscription({
+          planCode,
+          redirectTarget: "/pricing",
+          onError: (errMsg) => {
+            resetLock();
+            toast.error(errMsg || "Payment processing failed. Please try again.");
+          },
+          onSuccess: () => {
+            resetLock();
+          },
+          onDismiss: () => {
+            resetLock();
+          },
+        });
+      } else {
+        await handleProCheckout({
+          planCode,
+          redirectTarget: "/pricing",
+          onError: (errMsg) => {
+            resetLock();
+            toast.error(errMsg || "Payment processing failed. Please try again.");
+          },
+          onSuccess: () => {
+            resetLock();
+          },
+          onDismiss: () => {
+            resetLock();
+          },
+        });
+      }
     } catch (err: any) {
       resetLock();
       toast.error(err?.message || "Failed to initiate plan checkout.");
