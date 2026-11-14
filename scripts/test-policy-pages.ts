@@ -106,7 +106,7 @@ async function main() {
     "proprietary ingestion tools",
     "Current prices are shown on the",
     "Pricing page",
-    "plans renew automatically each billing period",
+    "plans are prepaid for a fixed period and do not renew automatically",
     "Add-on packs:",
     "expire together with the subscription",
     "Razorpay",
