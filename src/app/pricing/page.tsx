@@ -24,6 +24,8 @@ import { getProAccessStatus } from "@/lib/billing/subscription";
 import { createClient } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
 import { BreadcrumbJsonLd } from "@/components/seo/BreadcrumbJsonLd";
+import { handleProCheckout } from "@/lib/billing/checkout";
+import { toast } from "react-toastify";
 
 export default function PricingPage() {
   const [user, setUser] = useState<User | null>(null);
@@ -66,8 +68,57 @@ export default function PricingPage() {
     };
   }, []);
 
-  const handleSelectPlan = (planId: PlanConfig["id"]) => {
-    setSelectedPlanId(planId);
+  const [loadingAddon, setLoadingAddon] = useState<string | null>(null);
+
+  const handleBuyAddon = async (addonCode: string) => {
+    let currentUser = user;
+    if (!currentUser) {
+      try {
+        const supabase = createClient();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        currentUser = session?.user || null;
+      } catch {}
+    }
+
+    if (!currentUser) {
+      const loginUrl = `/login?returnTo=${encodeURIComponent("/pricing")}`;
+      if (typeof window !== "undefined") {
+        window.location.href = loginUrl;
+      }
+      return;
+    }
+
+    setLoadingAddon(addonCode);
+    try {
+      await handleProCheckout({
+        addonCode,
+        redirectTarget: "/pricing",
+        onError: (errMsg) => {
+          setLoadingAddon(null);
+          toast.error(errMsg || "Payment processing failed. Please try again.");
+        },
+        onSuccess: () => {
+          setLoadingAddon(null);
+        },
+      });
+    } catch (err: any) {
+      setLoadingAddon(null);
+      toast.error(err?.message || "Failed to initiate add-on checkout.");
+    }
+  };
+
+  const handleSelectPlan = (
+    planId: PlanConfig["id"] | string,
+    options?: { addonCode?: string }
+  ) => {
+    if (options?.addonCode || (typeof planId === "string" && planId.startsWith("addon_"))) {
+      const addonCode = options?.addonCode || planId;
+      handleBuyAddon(addonCode);
+      return;
+    }
+    setSelectedPlanId(planId as PlanConfig["id"]);
   };
 
   const paidPlansToDisplay = PAID_PLANS_DISPLAY_ORDER.map(
@@ -530,27 +581,44 @@ export default function PricingPage() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {ADD_ON_PACKS.map((pack) => (
-              <div
-                key={pack.sets}
-                className="flex flex-col justify-between rounded-xl border border-slate-200 dark:border-slate-800 bg-[#F8F9FA] dark:bg-slate-900/60 p-4 sm:p-5"
-              >
-                <div>
-                  <span className="text-xs font-semibold uppercase tracking-wider text-[#2563EB] dark:text-blue-400">
-                    One-time add-on
-                  </span>
-                  <div className="mt-1 text-2xl font-black text-[#090E34] dark:text-white tracking-tight">
-                    {formatPriceINR(pack.price)}
+            {ADD_ON_PACKS.map((pack) => {
+              const addonCode = pack.code || (pack.sets === 10 ? "addon_10" : pack.sets === 30 ? "addon_30" : "addon_60");
+              const isLoading = loadingAddon === addonCode;
+
+              return (
+                <div
+                  key={pack.sets}
+                  className="flex flex-col justify-between rounded-xl border border-slate-200 dark:border-slate-800 bg-[#F8F9FA] dark:bg-slate-900/60 p-4 sm:p-5"
+                >
+                  <div>
+                    <span className="text-xs font-semibold uppercase tracking-wider text-[#2563EB] dark:text-blue-400">
+                      One-time add-on
+                    </span>
+                    <div className="mt-1 text-2xl font-black text-[#090E34] dark:text-white tracking-tight">
+                      {formatPriceINR(pack.price)}
+                    </div>
+                    <p className="mt-1 text-sm font-semibold text-slate-800 dark:text-slate-200">
+                      {pack.sets} extra generations
+                    </p>
+                    <p className="mt-3 pt-2.5 border-t border-slate-200/80 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400">
+                      Used after plan quota · Expires together with your subscription
+                    </p>
                   </div>
-                  <p className="mt-1 text-sm font-semibold text-slate-800 dark:text-slate-200">
-                    {pack.sets} extra generations
-                  </p>
+
+                  <div className="mt-4 pt-3 border-t border-slate-200/80 dark:border-slate-800">
+                    <button
+                      type="button"
+                      data-addon-code={addonCode}
+                      disabled={isLoading}
+                      onClick={() => handleSelectPlan(addonCode, { addonCode })}
+                      className="w-full min-h-[48px] h-11 rounded-lg font-semibold text-sm flex items-center justify-center transition-colors select-none bg-[#2563EB] text-white hover:bg-blue-700 shadow-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] focus-visible:ring-offset-2 disabled:opacity-75"
+                    >
+                      Buy
+                    </button>
+                  </div>
                 </div>
-                <p className="mt-3 pt-2.5 border-t border-slate-200/80 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400">
-                  Used after plan quota · Expires together with your subscription
-                </p>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           <div className="p-3.5 rounded-xl bg-blue-50/60 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/50 text-center sm:text-left">

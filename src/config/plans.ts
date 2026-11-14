@@ -43,6 +43,7 @@ export interface FreeTierConfig {
 }
 
 export interface AddOnPack {
+  code: "addon_10" | "addon_30" | "addon_60";
   price: number;
   sets: number;
 }
@@ -57,9 +58,9 @@ export interface PlanComparisonRow {
 }
 
 export const ADD_ON_PACKS: AddOnPack[] = [
-  { price: 149, sets: 10 },
-  { price: 399, sets: 30 },
-  { price: 699, sets: 60 },
+  { code: "addon_10", price: 149, sets: 10 },
+  { code: "addon_30", price: 399, sets: 30 },
+  { code: "addon_60", price: 699, sets: 60 },
 ];
 
 export const ADD_ON_PACKS_NOTE =
