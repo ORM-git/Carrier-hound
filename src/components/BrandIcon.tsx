@@ -44,7 +44,7 @@ export default function BrandIcon({
 
   return (
     <Image
-      src="/careermonke-logo.png"
+      src="/icon.png"
       alt="CareerMonke"
       width={w}
       height={h}

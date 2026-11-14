@@ -109,6 +109,54 @@ async function capture() {
     }
   }
 
+  // 1. Scrolled page showing footer (Desktop 1440)
+  console.log("Capturing scrolled footer (Desktop 1440)...");
+  await page.setViewport({ width: 1440, height: 900 });
+  await page.goto(`http://127.0.0.1:${PORT}/terms`, { waitUntil: ["domcontentloaded", "networkidle2"] });
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await new Promise((r) => setTimeout(r, 600));
+  const scrolledFooterDeskPath = path.join(REPORT_DIR, "scrolled-footer-desktop-1440.png");
+  await page.screenshot({ path: scrolledFooterDeskPath, fullPage: false });
+  fs.copyFileSync(scrolledFooterDeskPath, path.join(ARTIFACT_DIR, "scrolled-footer-desktop-1440.png"));
+  console.log("Saved: scrolled-footer-desktop-1440.png");
+
+  // 2. Scrolled page showing footer (Mobile 390)
+  console.log("Capturing scrolled footer (Mobile 390)...");
+  await page.setViewport({ width: 390, height: 844 });
+  await page.goto(`http://127.0.0.1:${PORT}/terms`, { waitUntil: ["domcontentloaded", "networkidle2"] });
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await new Promise((r) => setTimeout(r, 600));
+  const scrolledFooterMobPath = path.join(REPORT_DIR, "scrolled-footer-mobile-390.png");
+  await page.screenshot({ path: scrolledFooterMobPath, fullPage: false });
+  fs.copyFileSync(scrolledFooterMobPath, path.join(ARTIFACT_DIR, "scrolled-footer-mobile-390.png"));
+  console.log("Saved: scrolled-footer-mobile-390.png");
+
+  // 3. Open mobile drawer view (Mobile 390 on /jobs)
+  console.log("Capturing open mobile drawer (Mobile 390)...");
+  await page.setViewport({ width: 390, height: 844 });
+  await page.goto(`http://127.0.0.1:${PORT}/jobs`, { waitUntil: ["domcontentloaded", "networkidle2"] });
+  await new Promise((r) => setTimeout(r, 800));
+  const menuButton = await page.$('button[aria-label="Open navigation menu"]');
+  if (menuButton) {
+    await menuButton.click();
+    await new Promise((r) => setTimeout(r, 600));
+    const drawerOpenPath = path.join(REPORT_DIR, "mobile-drawer-open-390.png");
+    await page.screenshot({ path: drawerOpenPath, fullPage: false });
+    fs.copyFileSync(drawerOpenPath, path.join(ARTIFACT_DIR, "mobile-drawer-open-390.png"));
+    console.log("Saved: mobile-drawer-open-390.png");
+  }
+
+  // 4. BackToTop visible above bottom nav (Mobile 390 on /jobs)
+  console.log("Capturing BackToTop above bottom nav (Mobile 390)...");
+  await page.goto(`http://127.0.0.1:${PORT}/jobs`, { waitUntil: ["domcontentloaded", "networkidle2"] });
+  await new Promise((r) => setTimeout(r, 800));
+  await page.evaluate(() => window.scrollTo(0, 800));
+  await new Promise((r) => setTimeout(r, 600));
+  const backToTopPath = path.join(REPORT_DIR, "mobile-back-to-top-390.png");
+  await page.screenshot({ path: backToTopPath, fullPage: false });
+  fs.copyFileSync(backToTopPath, path.join(ARTIFACT_DIR, "mobile-back-to-top-390.png"));
+  console.log("Saved: mobile-back-to-top-390.png");
+
   await browser.close();
   server.close();
   console.log("All screenshots captured successfully!");

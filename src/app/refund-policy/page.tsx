@@ -16,11 +16,12 @@ export default function RefundPolicyPage() {
   return (
     <div className="min-h-screen bg-white text-[#09090B] flex flex-col font-sans">
       <GuideHeader />
-      <main id="main-content" className="flex-1 max-w-[680px] w-full mx-auto text-sm leading-relaxed text-[#4B5563] space-y-4 px-4 sm:px-6 py-12">
-        <BreadcrumbJsonLd trail={[{ name: "Home", path: "/" }, { name: "Refund Policy", path: "/refund-policy" }]} />
-        <h1 className="text-2xl sm:text-3xl font-bold text-[#09090B] tracking-tight">
-          Cancellation &amp; Refund Policy
-        </h1>
+      <main id="main-content" className="flex-1 py-16 px-6">
+        <div className="max-w-[680px] mx-auto text-sm leading-relaxed text-[#4B5563] space-y-4">
+          <BreadcrumbJsonLd trail={[{ name: "Home", path: "/" }, { name: "Refund Policy", path: "/refund-policy" }]} />
+          <h1 className="text-2xl sm:text-3xl font-bold text-[#09090B] tracking-tight">
+            Cancellation &amp; Refund Policy
+          </h1>
         <p className="text-xs text-gray-500 font-mono">Last updated: November 6, 2026</p>
 
         <p className="mb-2">
@@ -86,6 +87,7 @@ export default function RefundPolicyPage() {
           </a>{" "}
           with your order id and registered account email address. We respond within 5-7 working days.
         </p>
+        </div>
       </main>
       <Footer />
     </div>

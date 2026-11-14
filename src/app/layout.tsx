@@ -54,8 +54,8 @@ export const metadata: Metadata = {
     images: [
       {
         url: ogImageUrl,
-        width: 1200,
-        height: 630,
+        width: 617,
+        height: 749,
         alt: siteTitle,
       },
     ],

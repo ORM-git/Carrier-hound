@@ -16,14 +16,15 @@ export default function AboutUsPage() {
   return (
     <div className="min-h-screen bg-white text-[#09090B] flex flex-col font-sans">
       <GuideHeader />
-      <main id="main-content" className="flex-1 max-w-[680px] w-full mx-auto text-sm sm:text-base leading-relaxed text-[#4B5563] space-y-6 px-4 sm:px-6 py-12">
+      <main id="main-content" className="flex-1 py-16 px-6">
         <BreadcrumbJsonLd
           trail={[
             { name: "Home", path: "/" },
             { name: "About Us", path: "/about" },
           ]}
         />
-        <div className="space-y-2">
+        <div className="max-w-[680px] mx-auto text-sm sm:text-base leading-relaxed text-[#4B5563] space-y-6">
+          <div className="space-y-2">
           <h1 className="text-2xl sm:text-3xl font-bold text-[#09090B] tracking-tight">
             About Us
           </h1>
@@ -70,6 +71,7 @@ export default function AboutUsPage() {
             </a>
             .
           </p>
+        </div>
         </div>
       </main>
       <Footer />

@@ -40,27 +40,67 @@ export default function AppTopBar({
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [avatarMenuOpen, setAvatarMenuOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const drawerRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
   const pathname = usePathname() || "";
   const router = useRouter();
 
-  // Handle Escape key to close mobile drawer and body overflow locking
+  // Mobile drawer focus trapping, initial focus, Escape key to close, and body scroll lock
   useEffect(() => {
+    if (!drawerOpen) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    // Move focus into the drawer upon opening
+    const timer = setTimeout(() => {
+      if (closeButtonRef.current) {
+        closeButtonRef.current.focus();
+      } else if (drawerRef.current) {
+        const first = drawerRef.current.querySelector<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        );
+        first?.focus();
+      }
+    }, 0);
+
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && drawerOpen) {
+      if (e.key === "Escape") {
+        e.preventDefault();
         setDrawerOpen(false);
         menuButtonRef.current?.focus();
+        return;
+      }
+
+      if (e.key === "Tab") {
+        if (!drawerRef.current) return;
+        const focusables = Array.from(
+          drawerRef.current.querySelectorAll<HTMLElement>(
+            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+          )
+        ).filter((el) => !el.hasAttribute("disabled") && !el.getAttribute("aria-hidden"));
+
+        if (focusables.length === 0) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+
+        if (e.shiftKey) {
+          if (document.activeElement === first || !drawerRef.current.contains(document.activeElement)) {
+            e.preventDefault();
+            last.focus();
+          }
+        } else {
+          if (document.activeElement === last || !drawerRef.current.contains(document.activeElement)) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
       }
     };
 
-    if (drawerOpen) {
-      document.body.style.overflow = "hidden";
-      window.addEventListener("keydown", handleKeyDown);
-    } else {
-      document.body.style.overflow = "";
-    }
-
+    window.addEventListener("keydown", handleKeyDown);
     return () => {
-      document.body.style.overflow = "";
+      clearTimeout(timer);
+      document.body.style.overflow = prevOverflow;
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [drawerOpen]);
@@ -358,12 +398,13 @@ export default function AppTopBar({
 
       {/* Drawer: raised to z-[61] above backdrop z-[60] and CookieNotice z-50; scrollable on short screens */}
       <div
+        ref={drawerRef}
         id="mobile-nav-drawer"
         role="dialog"
         aria-label="Mobile Navigation"
         aria-modal="true"
         aria-hidden={!drawerOpen}
-        inert={!drawerOpen}
+        inert={(!drawerOpen ? "" : undefined) as any}
         className={`fixed inset-y-0 right-0 z-[61] w-full max-w-[280px] bg-white h-full shadow-2xl flex flex-col justify-between p-5 transition-transform duration-300 ease-[cubic-bezier(0.2,0,0,1)] md:hidden overflow-y-auto overscroll-contain ${
           drawerOpen ? "translate-x-0" : "translate-x-full invisible pointer-events-none"
         }`}
@@ -380,6 +421,7 @@ export default function AppTopBar({
               <BrandIcon variant="full" width={32} height={39} className="h-8 w-auto" />
             </Link>
             <button
+              ref={closeButtonRef}
               type="button"
               onClick={() => {
                 setDrawerOpen(false);
