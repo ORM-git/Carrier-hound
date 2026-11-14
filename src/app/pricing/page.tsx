@@ -27,11 +27,6 @@ import { BreadcrumbJsonLd } from "@/components/seo/BreadcrumbJsonLd";
 import { handleProCheckout, openRazorpaySubscription } from "@/lib/billing/checkout";
 import { toast } from "react-toastify";
 
-function getRenewalDateString(days: number): string {
-  const d = new Date(Date.now() + days * 86400000);
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-}
-
 export default function PricingPage() {
   const [user, setUser] = useState<User | null>(null);
   const [isPro, setIsPro] = useState(false);
@@ -807,8 +802,8 @@ export default function PricingPage() {
         <div className="pt-2 text-center space-y-2 text-xs text-slate-500 dark:text-slate-400">
           <p className="font-bold text-[#090E34] dark:text-white">All sales final · no refunds</p>
           {isAutorenewEnabled ? (
-            <p suppressHydrationWarning>
-              Plans auto-renew every 7 days (Weekly: ₹692, next renewal: {getRenewalDateString(7)}), 30 days (Monthly: ₹1,499, next renewal: {getRenewalDateString(30)}), or 90 days (Quarterly: ₹3,999, next renewal: {getRenewalDateString(90)}) until cancelled. Renewal amount and date are confirmed at checkout. Cancel anytime from your account settings before the renewal date. Add-on packs expire together with the subscription.
+            <p>
+              Plans auto-renew every 7 days (Weekly: ₹692), 30 days (Monthly: ₹1,499), or 90 days (Quarterly: ₹3,999) from purchase until cancelled (renews every 7/30/90 days from purchase). Renewal amount and schedule are confirmed at checkout. Cancel anytime from your account settings before the renewal date. Add-on packs expire together with the subscription.
             </p>
           ) : (
             <p>Plans are prepaid for a fixed duration and do not auto-renew. Premium access ends automatically when the plan period expires. Add-on packs expire together with the subscription.</p>

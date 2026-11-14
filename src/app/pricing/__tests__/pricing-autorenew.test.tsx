@@ -270,7 +270,7 @@ describe("Pricing Page Auto-Renew Subscription Permutations & Lock Behavior", ()
     expect(textContent).toContain("billed every 3 months");
   });
 
-  it("renders auto-renew copy with amounts, renewal date, and cancellation instructions when flag is on", async () => {
+  it("renders auto-renew copy with amounts, schedule, and cancellation instructions without dynamic Date.now when flag is on", async () => {
     process.env.NEXT_PUBLIC_BILLING_ENABLED = "true";
     process.env.NEXT_PUBLIC_AUTORENEW_ENABLED = "true";
 
@@ -281,7 +281,8 @@ describe("Pricing Page Auto-Renew Subscription Permutations & Lock Behavior", ()
     expect(textContent).toContain("30 days (Monthly: ₹1,499");
     expect(textContent).toContain("90 days (Quarterly: ₹3,999");
     expect(textContent).toContain("until cancelled");
-    expect(textContent).toContain("next renewal");
+    expect(textContent).toContain("renews every 7/30/90 days from purchase");
+    expect(textContent).not.toContain("next renewal");
     expect(textContent).toContain("Cancel anytime from your account settings before the renewal date");
 
     expect(textContent).toContain("auto-renews every 7 days");

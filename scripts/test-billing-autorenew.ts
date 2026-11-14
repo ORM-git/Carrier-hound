@@ -139,6 +139,18 @@ async function runAutorenewTests() {
       `${pageName} must explain how to cancel in account settings`
     );
   }
+  assert.ok(
+    pricingFile.includes("renews every 7/30/90 days from purchase"),
+    "Pricing footer must state 'renews every 7/30/90 days from purchase'"
+  );
+  assert.ok(
+    !pricingFile.includes("getRenewalDateString"),
+    "Pricing page must not use getRenewalDateString or Date.now in static export"
+  );
+  assert.ok(
+    refundFile.includes("CareerMonke is operated by Olive Ridley Media Private Limited. Plans auto-renew every 7/30/90 days until cancelled (renews every 7/30/90 days from purchase)"),
+    "Refund policy intro must be conditional on flag when ON"
+  );
   console.log("  ✓ Flag ON states 7/30/90 days renewal until cancelled, renewal amounts & date, and how to cancel in settings.\n");
 
   // ---------------------------------------------------------------------------
@@ -228,17 +240,12 @@ async function runAutorenewTests() {
     },
     from: (table: string) => {
       if (table === "subscriptions") {
-        return {
-          select: (_cols: string) => ({
-            eq: (_field: string, _val: string) => ({
-              order: () => ({
-                limit: () => ({
-                  maybeSingle: async () => ({ data: mockExistingSub, error: null }),
-                }),
-              }),
-              maybeSingle: async () => ({ data: mockExistingSub, error: null }),
-            }),
-          }),
+        const subQuery: any = {
+          select: () => subQuery,
+          eq: () => subQuery,
+          order: () => subQuery,
+          limit: () => subQuery,
+          maybeSingle: async () => ({ data: mockExistingSub, error: null }),
           update: (row: any) => ({
             eq: async () => {
               dbStoredSubscriptionMetadata = row.metadata;
@@ -246,14 +253,24 @@ async function runAutorenewTests() {
             },
           }),
         };
+        return subQuery;
       }
       if (table === "payment_orders") {
-        return {
+        const orderQuery: any = {
+          select: () => orderQuery,
+          eq: () => orderQuery,
+          order: () => orderQuery,
+          limit: () => orderQuery,
+          maybeSingle: async () => {
+            const match = dbStoredPaymentOrders.find((o) => o.status === "created");
+            return { data: match || null, error: null };
+          },
           insert: async (row: any) => {
             dbStoredPaymentOrders.push(row);
             return { error: null };
           },
         };
+        return orderQuery;
       }
       throw new Error(`Unexpected table: ${table}`);
     },
@@ -397,7 +414,99 @@ async function runAutorenewTests() {
   assert.strictEqual(netlifyActiveRes.statusCode, 409);
   const netlifyActiveBody = JSON.parse(netlifyActiveRes.body);
   assert.strictEqual(netlifyActiveBody.code, "ACTIVE_PLAN_EXISTS");
-  console.log("  ✓ Netlify function blocks active plan holder with 409 ACTIVE_PLAN_EXISTS.\n");
+  console.log("  ✓ Netlify function blocks active plan holder with 409 ACTIVE_PLAN_EXISTS.");
+
+  // 7c: Fail-closed on subscription lookup error (503 before Razorpay call)
+  const reqLookupErr = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer valid_token" },
+    body: JSON.stringify({ planCode: "monthly" }),
+  });
+  let rzpCalledOnLookupErr = false;
+  (reqLookupErr as any).__testDeps = {
+    getSupabaseAdmin: () => ({
+      ...mockSupabaseAdmin,
+      from: () => {
+        const errQuery: any = {
+          select: () => errQuery,
+          eq: () => errQuery,
+          order: () => errQuery,
+          limit: () => errQuery,
+          maybeSingle: async () => ({ data: null, error: new Error("DB read connection lost") }),
+        };
+        return errQuery;
+      },
+    }),
+    fetchFn: async () => {
+      rzpCalledOnLookupErr = true;
+      return new Response();
+    },
+    verifyUserNotBanned: async () => ({ isBlocked: false }),
+  };
+  const resLookupErr = await POST(reqLookupErr);
+  assert.strictEqual(resLookupErr.status, 503, "Lookup failure must fail closed with 503");
+  const jsonLookupErr = await resLookupErr.json();
+  assert.strictEqual(jsonLookupErr.code, "SERVICE_UNAVAILABLE");
+  assert.strictEqual(rzpCalledOnLookupErr, false, "Razorpay must never be called on lookup failure");
+  console.log("  ✓ Subscription lookup error fails closed with 503 before any Razorpay call.");
+
+  // 7d: Idempotent pending attempts: reuses pending payment_orders row for same plan
+  dbStoredPaymentOrders.push({
+    id: "existing_pending_monthly_1",
+    user_id: mockUser.id,
+    provider: "razorpay",
+    provider_order_id: "sub_rzp_reused_monthly_999",
+    plan_code: "monthly",
+    amount_paise: 149900,
+    status: "created",
+  });
+  let rzpCalledOnReuse = false;
+  const reqReuse = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer valid_token" },
+    body: JSON.stringify({ planCode: "monthly" }),
+  });
+  mockExistingSub = null;
+  (reqReuse as any).__testDeps = {
+    getSupabaseAdmin: () => mockSupabaseAdmin,
+    verifyUserNotBanned: async () => ({ isBlocked: false }),
+    fetchFn: async () => {
+      rzpCalledOnReuse = true;
+      return new Response();
+    },
+  };
+  const resReuse = await POST(reqReuse);
+  assert.strictEqual(resReuse.status, 200, "Reusing pending order must return 200");
+  const jsonReuse = await resReuse.json();
+  assert.strictEqual(jsonReuse.subscriptionId, "sub_rzp_reused_monthly_999");
+  assert.strictEqual(jsonReuse.reused, true);
+  assert.strictEqual(rzpCalledOnReuse, false, "Razorpay must not be called when reusing pending mandate");
+  console.log("  ✓ Idempotent check reuses existing pending payment_orders row without creating second mandate.");
+
+  // 7e: Pending order for different plan returns 409
+  const reqDiffPlan = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer valid_token" },
+    body: JSON.stringify({ planCode: "weekly" }),
+  });
+  let rzpCalledOnDiffPlan = false;
+  (reqDiffPlan as any).__testDeps = {
+    getSupabaseAdmin: () => mockSupabaseAdmin,
+    verifyUserNotBanned: async () => ({ isBlocked: false }),
+    fetchFn: async () => {
+      rzpCalledOnDiffPlan = true;
+      return new Response();
+    },
+  };
+  const resDiffPlan = await POST(reqDiffPlan);
+  assert.strictEqual(resDiffPlan.status, 409, "Pending order for different plan must return 409");
+  const jsonDiffPlan = await resDiffPlan.json();
+  assert.strictEqual(jsonDiffPlan.code, "PENDING_SUBSCRIPTION_EXISTS");
+  assert.strictEqual(rzpCalledOnDiffPlan, false);
+  console.log("  ✓ Pending order for different plan returns 409 PENDING_SUBSCRIPTION_EXISTS without calling Razorpay.\n");
+
+  // Clean up stored pending orders for test 8
+  dbStoredPaymentOrders.length = 0;
 
   // ---------------------------------------------------------------------------
   // TEST 8: Subscription Creation, Total Count, and Separate Pending Storage
@@ -437,6 +546,8 @@ async function runAutorenewTests() {
   ];
 
   for (const tc of testCases) {
+    dbStoredPaymentOrders.length = 0;
+    dbStoredSubscriptionMetadata = null;
     let capturedRazorpayBody: any = null;
 
     const mockFetch = async (url: string | URL | Request, init?: RequestInit) => {

@@ -37,7 +37,15 @@ export default function RefundPolicyPage() {
         <p className="text-xs text-gray-500 font-mono">Last updated: November 6, 2026</p>
 
         <p className="mb-2">
-          CareerMonke is operated by Olive Ridley Media Private Limited. All purchases are prepaid fixed-duration plans and add-on packs. As digital services, all sales are final. Only a duplicate or failed-but-debited payment is reviewed and refunded to the original payment method within 5-7 business days.
+          {isAutorenewEnabled ? (
+            <>
+              CareerMonke is operated by Olive Ridley Media Private Limited. Plans auto-renew every 7/30/90 days until cancelled (renews every 7/30/90 days from purchase), alongside add-on packs. As digital services, all sales are final. Only a duplicate or failed-but-debited payment is reviewed and refunded to the original payment method within 5-7 business days.
+            </>
+          ) : (
+            <>
+              CareerMonke is operated by Olive Ridley Media Private Limited. All purchases are prepaid fixed-duration plans and add-on packs. As digital services, all sales are final. Only a duplicate or failed-but-debited payment is reviewed and refunded to the original payment method within 5-7 business days.
+            </>
+          )}
         </p>
 
         <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">

@@ -38,6 +38,7 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
   function createMockSupabaseAdmin(options?: {
     getUserError?: any;
     dbError?: any;
+    insertError?: any;
   }) {
     return {
       auth: {
@@ -53,16 +54,30 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
       },
       from: (table: string) => {
         let filterUserId: string | null = null;
+        let filterStatus: string | null = null;
+        let filterPlanCode: string | null = null;
         const query: any = {
           select: () => query,
           order: () => query,
           limit: () => query,
           eq: (col: string, val: any) => {
             if (col === "user_id") filterUserId = val;
+            if (col === "status") filterStatus = val;
+            if (col === "plan_code") filterPlanCode = val;
             return query;
           },
           maybeSingle: async () => {
             if (options?.dbError) return { data: null, error: options.dbError };
+            if (table === "payment_orders") {
+              const orders = Array.from(mockDbPaymentOrders.values());
+              const match = orders.find((o) => {
+                if (filterUserId && o.user_id !== filterUserId) return false;
+                if (filterStatus && o.status !== filterStatus) return false;
+                if (filterPlanCode && o.plan_code !== filterPlanCode) return false;
+                return true;
+              });
+              return { data: match || null, error: null };
+            }
             const found = filterUserId ? mockDbSubscriptions.get(filterUserId) : null;
             return { data: found || null, error: null };
           },
@@ -71,7 +86,7 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
             const updateQuery = {
               eq: async (col: string, val: any) => {
                 if (col === "user_id") targetUserId = val;
-                if (options?.dbError) return { error: options.dbError };
+                if (options?.insertError || options?.dbError) return { error: options.insertError || options.dbError };
                 if (targetUserId) {
                   const existing = mockDbSubscriptions.get(targetUserId) || {};
                   mockDbSubscriptions.set(targetUserId, { ...existing, ...updates });
@@ -82,7 +97,7 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
             return updateQuery;
           },
           insert: async (row: any) => {
-            if (options?.dbError) return { error: options.dbError };
+            if (options?.insertError || options?.dbError) return { error: options.insertError || options.dbError };
             if (table === "payment_orders") {
               mockDbPaymentOrders.set(row.provider_order_id, { ...row });
             } else {
@@ -433,6 +448,194 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
+  it("fails closed with 503 before Razorpay call when subscription lookup fails", async () => {
+    const mockFetch = vi.fn();
+    const req = createMockRequest(
+      { planCode: "monthly" },
+      {},
+      {
+        getSupabaseAdmin: () =>
+          createMockSupabaseAdmin({ dbError: new Error("Database network failure") }),
+        verifyUserNotBanned: async () => ({ isBlocked: false }),
+        fetchFn: mockFetch,
+        isProductionHost: false,
+      }
+    );
+
+    const res = await POST(req);
+    expect(res.status).toBe(503);
+    const json = await res.json();
+    expect(json.code).toBe("SERVICE_UNAVAILABLE");
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("fails closed with 503 before Razorpay call when entitlement check throws", async () => {
+    const mockFetch = vi.fn();
+    const req = createMockRequest(
+      { planCode: "monthly" },
+      {},
+      {
+        getSupabaseAdmin: () => createMockSupabaseAdmin(),
+        verifyUserNotBanned: async () => ({ isBlocked: false }),
+        getServerEntitlement: async () => {
+          throw new Error("Entitlement service down");
+        },
+        fetchFn: mockFetch,
+        isProductionHost: false,
+      }
+    );
+
+    const res = await POST(req);
+    expect(res.status).toBe(503);
+    const json = await res.json();
+    expect(json.code).toBe("SERVICE_UNAVAILABLE");
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("reuses existing pending payment_orders row for the same user and plan without calling Razorpay", async () => {
+    mockDbPaymentOrders.set("sub_rzp_existing_pending_1", {
+      id: "order_123",
+      user_id: mockUser.id,
+      provider: "razorpay",
+      provider_order_id: "sub_rzp_existing_pending_1",
+      plan_code: "monthly",
+      amount_paise: 149900,
+      status: "created",
+    });
+
+    const mockFetch = vi.fn();
+    const req = createMockRequest(
+      { planCode: "monthly" },
+      {},
+      {
+        getSupabaseAdmin: () => createMockSupabaseAdmin(),
+        verifyUserNotBanned: async () => ({ isBlocked: false }),
+        fetchFn: mockFetch,
+        isProductionHost: false,
+      }
+    );
+
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.subscriptionId).toBe("sub_rzp_existing_pending_1");
+    expect(json.reused).toBe(true);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("blocks with 409 PENDING_SUBSCRIPTION_EXISTS when user has pending order for a different plan", async () => {
+    mockDbPaymentOrders.set("sub_rzp_pending_weekly", {
+      id: "order_weekly_1",
+      user_id: mockUser.id,
+      provider: "razorpay",
+      provider_order_id: "sub_rzp_pending_weekly",
+      plan_code: "weekly",
+      amount_paise: 69200,
+      status: "created",
+    });
+
+    const mockFetch = vi.fn();
+    const req = createMockRequest(
+      { planCode: "monthly" },
+      {},
+      {
+        getSupabaseAdmin: () => createMockSupabaseAdmin(),
+        verifyUserNotBanned: async () => ({ isBlocked: false }),
+        fetchFn: mockFetch,
+        isProductionHost: false,
+      }
+    );
+
+    const res = await POST(req);
+    expect(res.status).toBe(409);
+    const json = await res.json();
+    expect(json.code).toBe("PENDING_SUBSCRIPTION_EXISTS");
+    expect(json.error).toContain("weekly");
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("reuses existing pending subscription from metadata without calling Razorpay", async () => {
+    mockDbSubscriptions.set(mockUser.id, {
+      id: "existing_sub_row",
+      user_id: mockUser.id,
+      status: "canceled",
+      metadata: {
+        pending_subscription_id: "sub_rzp_meta_456",
+        pending_plan_code: "monthly",
+      },
+    });
+
+    const mockFetch = vi.fn();
+    const req = createMockRequest(
+      { planCode: "monthly" },
+      {},
+      {
+        getSupabaseAdmin: () => createMockSupabaseAdmin(),
+        verifyUserNotBanned: async () => ({ isBlocked: false }),
+        fetchFn: mockFetch,
+        isProductionHost: false,
+      }
+    );
+
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.subscriptionId).toBe("sub_rzp_meta_456");
+    expect(json.reused).toBe(true);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("atomic singleFlight coalesces concurrent double-tab requests for the same user and plan into a single mandate", async () => {
+    const mockFetch = vi.fn().mockImplementation(async () => {
+      // Simulate gateway latency
+      await new Promise((r) => setTimeout(r, 50));
+      return new Response(
+        JSON.stringify({
+          id: "sub_rzp_coalesced_789",
+          plan_id: "plan_monthly_rzp_456",
+          status: "created",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    });
+
+    const req1 = createMockRequest(
+      { planCode: "monthly" },
+      {},
+      {
+        getSupabaseAdmin: () => createMockSupabaseAdmin(),
+        verifyUserNotBanned: async () => ({ isBlocked: false }),
+        fetchFn: mockFetch,
+        isProductionHost: false,
+      }
+    );
+
+    const req2 = createMockRequest(
+      { planCode: "monthly" },
+      {},
+      {
+        getSupabaseAdmin: () => createMockSupabaseAdmin(),
+        verifyUserNotBanned: async () => ({ isBlocked: false }),
+        fetchFn: mockFetch,
+        isProductionHost: false,
+      }
+    );
+
+    const [res1, res2] = await Promise.all([POST(req1), POST(req2)]);
+    expect(res1.status).toBe(200);
+    expect(res2.status).toBe(200);
+
+    const json1 = await res1.json();
+    const json2 = await res2.json();
+
+    // Both requests receive the exact same subscription ID
+    expect(json1.subscriptionId).toBe("sub_rzp_coalesced_789");
+    expect(json2.subscriptionId).toBe("sub_rzp_coalesced_789");
+
+    // Razorpay /v1/subscriptions was called EXACTLY ONCE
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
   it("fails closed with 500 when database update/insert fails", async () => {
     const mockFetch = vi.fn().mockResolvedValue(
       new Response(
@@ -450,7 +653,7 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
       {},
       {
         getSupabaseAdmin: () =>
-          createMockSupabaseAdmin({ dbError: new Error("Database disk full") }),
+          createMockSupabaseAdmin({ insertError: new Error("Database disk full") }),
         verifyUserNotBanned: async () => ({ isBlocked: false }),
         fetchFn: mockFetch,
         isProductionHost: false,
