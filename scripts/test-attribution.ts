@@ -81,96 +81,13 @@ async function main() {
     console.log("ok - length caps enforced");
   }
 
-  // 4. Route stores sanitized attribution with the signup insert
+  // 4. Verifying /api/early-access route has been removed for launch
   {
-    let inserted: any = null;
-    (globalThis as any).__mockSupabaseClient = {
-      from: (table: string) => ({
-        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }),
-        insert: (row: any) => { inserted = row; return Promise.resolve({ error: null }); },
-      }),
-    };
-    const { POST } = require("../src/app/api/early-access/route");
-    const req: any = {
-      headers: { get: () => null },
-      json: async () => ({
-        email: "attrib@example.com",
-        attribution: { utmSource: "linkedin", utmCampaign: "waitlist", bogusKey: "drop-me" },
-      }),
-    };
-    const res = await POST(req);
-    const body = await res.json();
-    assert.ok(body.ok, `request must succeed, got ${JSON.stringify(body)}`);
-    assert.ok(inserted, "insert must have happened");
-    assert.strictEqual(inserted.email, "attrib@example.com");
-    assert.strictEqual(inserted.utm_source, "linkedin");
-    assert.strictEqual(inserted.utm_campaign, "waitlist");
-    assert.ok(!("bogusKey" in inserted) && !("bogus_key" in inserted), "unknown keys must not reach the insert");
-    console.log("ok - /api/early-access stores sanitized attribution, drops unknown keys");
-  }
-
-  // 5. Route works unchanged when attribution is absent
-  {
-    let inserted: any = null;
-    (globalThis as any).__mockSupabaseClient = {
-      from: () => ({
-        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }),
-        insert: (row: any) => { inserted = row; return Promise.resolve({ error: null }); },
-      }),
-    };
-    const { POST } = require("../src/app/api/early-access/route");
-    const req: any = { headers: { get: () => null }, json: async () => ({ email: "plain@example.com" }) };
-    const res = await POST(req);
-    assert.ok((await res.json()).ok);
-    assert.deepStrictEqual(Object.keys(inserted).sort(), ["created_at", "email"], "no attribution keys when absent");
-    console.log("ok - plain signup payload unchanged (no attribution keys)");
-  }
-
-  // 6. Migration pending: insert with columns 42703s -> retried without them
-  {
-    const attempts: any[] = [];
-    (globalThis as any).__mockSupabaseClient = {
-      from: () => ({
-        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }),
-        insert: (row: any) => {
-          attempts.push(row);
-          if (attempts.length === 1) {
-            return Promise.resolve({ error: { code: "42703", message: 'column "utm_source" does not exist' } });
-          }
-          return Promise.resolve({ error: null });
-        },
-      }),
-    };
-    const { POST } = require("../src/app/api/early-access/route");
-    const req: any = {
-      headers: { get: () => null },
-      json: async () => ({ email: "retry@example.com", attribution: { utmSource: "x" } }),
-    };
-    const res = await POST(req);
-    assert.ok((await res.json()).ok, "signup must succeed via the retry path");
-    assert.strictEqual(attempts.length, 2, "one retry expected");
-    assert.ok("utm_source" in attempts[0], "first attempt carries attribution");
-    assert.ok(!("utm_source" in attempts[1]), "retry drops attribution columns");
-    console.log("ok - pending-migration insert retries without attribution, signup succeeds");
-  }
-
-  // 7. Non-column insert errors are NOT retried
-  {
-    const attempts: any[] = [];
-    (globalThis as any).__mockSupabaseClient = {
-      from: () => ({
-        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }),
-        insert: (row: any) => { attempts.push(row); return Promise.resolve({ error: { code: "23505", message: "duplicate key" } }); },
-      }),
-    };
-    const { POST } = require("../src/app/api/early-access/route");
-    const req: any = {
-      headers: { get: () => null },
-      json: async () => ({ email: "dup@example.com", attribution: { utmSource: "x" } }),
-    };
-    await POST(req);
-    assert.strictEqual(attempts.length, 1, "duplicate-key errors must not trigger the retry");
-    console.log("ok - non-column errors are not retried");
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const routeFile = path.resolve(process.cwd(), "src/app/api/early-access/route.ts");
+    assert.strictEqual(fs.existsSync(routeFile), false, "/api/early-access/route.ts must be deleted");
+    console.log("ok - /api/early-access route is retired and deleted from disk");
   }
 
   delete (globalThis as any).__mockSupabaseClient;

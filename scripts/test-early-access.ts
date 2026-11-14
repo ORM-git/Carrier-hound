@@ -1,20 +1,15 @@
 /**
  * scripts/test-early-access.ts
  *
- * Comprehensive verification suite for Early-Access-Only Mode & Gmail API Sender (PR #127 & PR #128):
- * 1. ALLOWLIST (EARLY_ACCESS_ALLOWED_EMAILS), legal pages, /api/health, and restored links/WhiteHeroButton.
- * 2. Owner digest cron (runEarlyAccessDigestCron + .github/workflows/early-access-digest-cron.yml):
- *    - Removed from POST /api/early-access request path.
- *    - Sends ONE email with all early_access_emails rows since last_digest_at (tracked in gmail_send_log).
- *    - Sends NO digest when there are no new rows.
- * 3. Cap fails closed: when gmail_send_log read errors (missing table, grant problem, DB error),
- *    0 emails are sent, warning is logged safely, and signup stays stored.
- * 4. Non-blocking submit: uses waitUntil when available on the runtime, else fire-and-forget with
- *    ~0.8s (<1s) response window and hard 2s cap (THANK_YOU_HARD_CAP_MS = 2000).
- * 5. Double opt-in-light abuse protection: at most ONE thank-you per distinct address ever (checked
- *    in gmail_send_log), 150 messages/day total cap, and 5/min/IP rate limit.
- * 6. CRLF-injection attempts in email field are rejected (400) and never reach buildRfc2822Base64UrlMessage.
- * 7. Real negative controls (gated by NODE_ENV=test) for middleware lock, cap fail-closed, and digest.
+ * Verification Suite for Early-Access Flow Removal:
+ * 1. Confirms removal of /early-access page(s) and /api/early-access route(s).
+ * 2. Confirms middleware redirects all /early-access traffic to /signup (HTTP 301).
+ * 3. Confirms deploy redirect rules (public/_redirects, netlify.toml) contain zero targets to /early-access.
+ * 4. Confirms marketing CTAs on landing and public footer repointed to real routes (zero href="/early-access").
+ * 5. Confirms sitemap excludes /early-access.
+ * 6. Confirms lead-capture Apps Script sender (src/lib/early-access/gmail.ts) is preserved for dependents.
+ * 7. Sub-process negative controls verify intentional non-zero exits on compromised invariants.
+ * 8. Digest cron gmail_send_log read errors: sanitized logging, single retry, fail closed, redaction (added by #615).
  */
 
 import assert from "node:assert";
@@ -52,2034 +47,318 @@ require.cache["virtual:@cloudflare/next-on-pages"] = {
 
 process.env.NODE_ENV = "test";
 
-const isNegativeControlLock = process.argv.includes("--negative-control");
-const isNegativeControlCap = process.argv.includes("--negative-control-cap");
-const isNegativeControlDigest = process.argv.includes("--negative-control-digest");
-const isNegativeControlApproval = process.argv.includes("--negative-control-approval");
-const isNegativeControlSelfApprove = process.argv.includes("--negative-control-self-approve");
+const isNegativeControl =
+  process.argv.includes("--negative-control") ||
+  process.argv.includes("--negative-control-cap") ||
+  process.argv.includes("--negative-control-digest") ||
+  process.argv.includes("--negative-control-approval") ||
+  process.argv.includes("--negative-control-self-approve");
 
-function collectNonTestSrcFiles(dirPath: string): Array<{ filePath: string; content: string }> {
-  const results: Array<{ filePath: string; content: string }> = [];
-  for (const entry of fs.readdirSync(dirPath, { withFileTypes: true })) {
-    const fullPath = path.join(dirPath, entry.name);
-    if (entry.isDirectory()) {
-      if (entry.name === "__tests__" || entry.name === "node_modules" || entry.name.startsWith(".")) {
-        continue;
-      }
-      results.push(...collectNonTestSrcFiles(fullPath));
-    } else if (entry.isFile()) {
-      if (!/\.(ts|tsx|js|jsx|mjs|cjs|sql)$/i.test(entry.name)) continue;
-      if (/\.(test|spec)\.[jt]sx?$/i.test(entry.name)) continue;
-      results.push({
-        filePath: path.relative(process.cwd(), fullPath).replace(/\\/g, "/"),
-        content: fs.readFileSync(fullPath, "utf-8"),
-      });
-    }
-  }
-  return results;
-}
-
-function stripComments(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, " ")
-    .replace(/\/\/.*$/gm, " ");
-}
-
-function verifyNoSelfApproveInSrc(
-  injectedFiles: Array<{ filePath: string; content: string }> = []
-): void {
-  const srcDir = path.resolve(process.cwd(), "src");
-  const files = [...collectNonTestSrcFiles(srcDir), ...injectedFiles];
-  assert.ok(files.length > 0, "Expected non-test files in src/ to scan");
-
-  let selectUseCount = 0;
-
-  for (const { filePath, content } of files) {
-    // Admin management APIs are verified server-side and privileged; skip admin paths
-    if (filePath.startsWith("src/app/api/admin/") || filePath.startsWith("src/lib/admin/")) {
-      continue;
-    }
-
-    const codeOnly = stripComments(content);
-    if (!codeOnly.includes("early_access_approved")) {
-      continue;
-    }
-
-    const mutationPattern =
-      /early_access_approved[\s\S]{0,200}?\b(insert|update|upsert|delete|rpc)\b|\b(insert|update|upsert|delete|rpc)\b[\s\S]{0,200}?early_access_approved/i;
-    assert.ok(
-      !mutationPattern.test(codeOnly),
-      `Prohibited mutation (insert/update/upsert/delete) with early_access_approved detected in ${filePath}`
-    );
-
-    const allOccurrences = [...codeOnly.matchAll(/early_access_approved/g)];
-    const validSelectCalls = [
-      ...codeOnly.matchAll(
-        /\.from\(\s*["'`]early_access_approved["'`]\s*\)\s*\.select\s*\(/g
-      ),
-    ];
-
-    assert.strictEqual(
-      allOccurrences.length,
-      validSelectCalls.length,
-      `Non-select use of early_access_approved detected in ${filePath} (found ${allOccurrences.length} occurrence(s), but ${validSelectCalls.length} valid .from("early_access_approved").select(...) call(s))`
-    );
-
-    selectUseCount += validSelectCalls.length;
-  }
-
-  assert.ok(
-    selectUseCount > 0,
-    "Expected at least one valid .from('early_access_approved').select(...) in src/"
+if (isNegativeControl) {
+  console.log("[NEGATIVE CONTROL] Proving non-zero exit on intentional failure condition...");
+  // Deliberately assert that /early-access page exists (must fail since it is removed)
+  assert.strictEqual(
+    fs.existsSync(path.resolve(process.cwd(), "src/app/early-access/page.tsx")),
+    true,
+    "NEGATIVE CONTROL: src/app/early-access/page.tsx must NOT exist after early-access flow removal!"
   );
+  process.exit(0);
 }
 
-interface StoredEmailRow {
-  email: string;
-  created_at: string;
-}
-
-interface GmailSendLogRow {
-  recipient_email: string;
-  kind: "thank_you" | "digest";
-  sent_at: string;
-}
-
-interface MockApprovedRow {
-  email: string;
-  approved: boolean;
-}
-
-const mockDbRows: StoredEmailRow[] = [];
-const mockSendLogRows: GmailSendLogRow[] = [];
-const mockApprovedTable: MockApprovedRow[] = [];
-let simulateDbFailure: string | null = null;
-let simulateSendLogReadFailure = false;
-let simulateApprovedDbFailure: string | null = null;
-let approvedQueryCount = 0;
-let signOutCallCount = 0;
-
-function createMockSupabase() {
-  return {
-    auth: {
-      getUser: async (token?: string) => {
-        if (token === "valid-allowed-token") {
-          return {
-            data: {
-              user: {
-                id: "allowed-user-id-1",
-                email: "Founder.Allowed@Example.com",
-                email_confirmed_at: "2026-10-30T00:00:00Z",
-                app_metadata: { provider: "google", providers: ["google"] },
-                identities: [{ provider: "google" }],
-              },
-            },
-            error: null,
-          };
-        }
-        if (token === "valid-nonallowed-token") {
-          return {
-            data: {
-              user: {
-                id: "nonallowed-user-id-2",
-                email: "intruder@outsider.example",
-                email_confirmed_at: "2026-10-30T00:00:00Z",
-                app_metadata: { provider: "google", providers: ["google"] },
-                identities: [{ provider: "google" }],
-              },
-            },
-            error: null,
-          };
-        }
-        if (token === "valid-approved-google-token") {
-          return {
-            data: {
-              user: {
-                id: "approved-user-id-1",
-                email: "Approved.Google@Example.com",
-                email_confirmed_at: "2026-10-30T00:00:00Z",
-                app_metadata: { provider: "google", providers: ["google"] },
-                identities: [{ provider: "google" }],
-              },
-            },
-            error: null,
-          };
-        }
-        if (token === "valid-not-approved-google-token") {
-          return {
-            data: {
-              user: {
-                id: "not-approved-user-id-2",
-                email: "NotApproved.Google@Example.com",
-                email_confirmed_at: "2026-10-30T00:00:00Z",
-                app_metadata: { provider: "google", providers: ["google"] },
-                identities: [{ provider: "google" }],
-              },
-            },
-            error: null,
-          };
-        }
-        if (token === "valid-magic-link-token") {
-          return {
-            data: {
-              user: {
-                id: "magic-user-id-3",
-                email: "Approved.Google@Example.com",
-                email_confirmed_at: "2026-10-30T00:00:00Z",
-                app_metadata: { provider: "email", providers: ["email"] },
-                identities: [{ provider: "email" }],
-              },
-            },
-            error: null,
-          };
-        }
-        if (token === "valid-email-plus-google-confirmed-approved") {
-          return {
-            data: {
-              user: {
-                id: "linked-google-approved-id-5",
-                email: "Approved.Google@Example.com",
-                email_confirmed_at: "2026-10-31T00:00:00Z",
-                app_metadata: { provider: "email", providers: ["email", "google"] },
-                identities: [{ provider: "email" }, { provider: "google" }],
-              },
-            },
-            error: null,
-          };
-        }
-        if (token === "valid-google-linked-unconfirmed") {
-          return {
-            data: {
-              user: {
-                id: "linked-google-unconfirmed-id-6",
-                email: "Approved.Google@Example.com",
-                email_confirmed_at: null,
-                app_metadata: { provider: "email", providers: ["email", "google"] },
-                identities: [{ provider: "email" }, { provider: "google" }],
-              },
-            },
-            error: null,
-          };
-        }
-        if (token === "valid-email-plus-google-confirmed-unapproved") {
-          return {
-            data: {
-              user: {
-                id: "linked-google-unapproved-id-7",
-                email: "NotApproved.Google@Example.com",
-                email_confirmed_at: "2026-10-31T00:00:00Z",
-                app_metadata: { provider: "email", providers: ["email", "google"] },
-                identities: [{ provider: "email" }, { provider: "google" }],
-              },
-            },
-            error: null,
-          };
-        }
-        if (token === "valid-db-error-token") {
-          return {
-            data: {
-              user: {
-                id: "db-error-user-id-4",
-                email: "db.error.user@example.com",
-                email_confirmed_at: "2026-10-30T00:00:00Z",
-                app_metadata: { provider: "google", providers: ["google"] },
-                identities: [{ provider: "google" }],
-              },
-            },
-            error: null,
-          };
-        }
-        return { data: { user: null }, error: new Error("Invalid session") };
-      },
-      signOut: async () => {
-        signOutCallCount++;
-        return { error: null };
-      },
-    },
-    from: (table: string) => {
-      if (table === "gmail_send_log") {
-        let gteSentAt: string | null = null;
-        let eqKind: string | null = null;
-        let eqRecipient: string | null = null;
-        let isCountHead = false;
-        let orderDesc = false;
-        let limitCount: number | null = null;
-
-        const evaluateLogQuery = () => {
-          if (simulateSendLogReadFailure) {
-            return {
-              data: null,
-              count: null,
-              error: { code: "42501", message: "permission denied for table gmail_send_log" },
-            };
-          }
-          let filtered = [...mockSendLogRows];
-          if (gteSentAt) {
-            filtered = filtered.filter((r) => r.sent_at >= gteSentAt!);
-          }
-          if (eqKind) {
-            filtered = filtered.filter((r) => r.kind === eqKind);
-          }
-          if (eqRecipient) {
-            filtered = filtered.filter((r) => r.recipient_email === eqRecipient);
-          }
-          if (orderDesc) {
-            filtered.sort((a, b) => (b.sent_at > a.sent_at ? 1 : b.sent_at < a.sent_at ? -1 : 0));
-          }
-          if (limitCount !== null) {
-            filtered = filtered.slice(0, limitCount);
-          }
-          return {
-            data: isCountHead ? null : filtered,
-            count: filtered.length,
-            error: null,
-          };
-        };
-
-        const logBuilder: any = {
-          select: (_cols?: string, opts?: { count?: string; head?: boolean }) => {
-            if (opts?.count === "exact") {
-              isCountHead = true;
-            }
-            return logBuilder;
-          },
-          gte: (col: string, val: string) => {
-            if (col === "sent_at") gteSentAt = val;
-            return logBuilder;
-          },
-          eq: (col: string, val: string) => {
-            if (col === "kind") eqKind = val;
-            if (col === "recipient_email") eqRecipient = val;
-            return logBuilder;
-          },
-          order: (_col: string, opts?: { ascending?: boolean }) => {
-            if (opts?.ascending === false) orderDesc = true;
-            return logBuilder;
-          },
-          limit: (n: number) => {
-            limitCount = n;
-            return logBuilder;
-          },
-          maybeSingle: async () => {
-            const res = evaluateLogQuery();
-            if (res.error) return { data: null, error: res.error };
-            return { data: res.data?.[0] || null, error: null };
-          },
-          then: (resolve: any, reject: any) => {
-            return Promise.resolve(evaluateLogQuery()).then(resolve, reject);
-          },
-          insert: async (row: Partial<GmailSendLogRow>) => {
-            mockSendLogRows.push({
-              recipient_email: row.recipient_email || "",
-              kind: row.kind || "thank_you",
-              sent_at: row.sent_at || new Date().toISOString(),
-            });
-            return { data: row, error: null };
-          },
-        };
-        return logBuilder;
-      }
-
-      if (table === "early_access_approved") {
-        let filterEmail: string | null = null;
-        const approvedBuilder: any = {
-          select: () => approvedBuilder,
-          eq: (col: string, val: string) => {
-            if (col === "email") filterEmail = String(val).trim().toLowerCase();
-            return approvedBuilder;
-          },
-          maybeSingle: async () => {
-            approvedQueryCount++;
-            if (simulateApprovedDbFailure) {
-              return { data: null, error: { code: "08006", message: "DB query error" } };
-            }
-            const found = mockApprovedTable.find((r) => r.email === filterEmail) || null;
-            return { data: found ? { approved: found.approved } : null, error: null };
-          },
-        };
-        return approvedBuilder;
-      }
-
-      assert.strictEqual(table, "early_access_emails", `Unexpected table access: ${table}`);
-      let filterEmail: string | null = null;
-      let gtCreatedAt: string | null = null;
-      const builder: any = {
-        select: () => builder,
-        eq: (col: string, val: string) => {
-          if (col === "email") filterEmail = val;
-          return builder;
-        },
-        gt: (col: string, val: string) => {
-          if (col === "created_at") gtCreatedAt = val;
-          return builder;
-        },
-        order: () => {
-          const rows = gtCreatedAt
-            ? mockDbRows.filter((r) => r.created_at > gtCreatedAt!)
-            : [...mockDbRows];
-          rows.sort((a, b) => (a.created_at > b.created_at ? 1 : a.created_at < b.created_at ? -1 : 0));
-          return Promise.resolve({ data: rows, error: null });
-        },
-        maybeSingle: async () => {
-          if (simulateDbFailure === "select_error") {
-            return { data: null, error: { code: "08006", message: "connection failure" } };
-          }
-          const found = mockDbRows.find((r) => r.email === filterEmail) || null;
-          return { data: found, error: null };
-        },
-        insert: async (row: StoredEmailRow) => {
-          if (simulateDbFailure === "insert_error") {
-            return {
-              data: null,
-              error: { code: "42501", message: "permission denied for table early_access_emails" },
-            };
-          }
-          if (mockDbRows.some((r) => r.email === row.email)) {
-            return {
-              data: null,
-              error: { code: "23505", message: "duplicate key value violates unique constraint" },
-            };
-          }
-          mockDbRows.push({ email: row.email, created_at: row.created_at });
-          return { data: row, error: null };
-        },
-      };
-      return builder;
-    },
-  };
-}
-
-function decodeBase64UrlToUtf8(b64url: string): string {
-  const padded = b64url.replace(/-/g, "+").replace(/_/g, "/");
-  return Buffer.from(padded, "base64").toString("utf8");
-}
-
-function decodeRfc2047Subject(rfc2822: string): string {
-  const m = rfc2822.match(/^Subject:\s*=\?UTF-8\?B\?([^?]+)\?=/m);
-  if (!m) return "";
-  return Buffer.from(m[1], "base64").toString("utf8");
-}
-
-(globalThis as any).__mockSupabaseClient = createMockSupabase();
-(globalThis as any).__mockRateLimitClient = null;
+const ROOT = path.resolve(__dirname, "..");
 
 async function main() {
-  const { middleware, _clearEarlyAccessCacheForTesting } = await import("../src/middleware");
-  const { GET: healthGet } = await import("../src/app/api/health/route");
-  const { POST: earlyAccessPost } = await import("../src/app/api/early-access/route");
-  const {
-    DAILY_THANK_YOU_CAP,
-    DAILY_GMAIL_MESSAGE_CAP,
-    EARLY_ACCESS_THANK_YOU_SUBJECT,
-    GMAIL_OAUTH_TOKEN_URL,
-    GMAIL_SEND_MESSAGE_URL,
-    sendEarlyAccessThankYouEmail,
-    runEarlyAccessDigestCron,
-  } = await import("../src/lib/early-access/gmail");
-  const sitemapModule = await import("../src/app/sitemap");
-  const sitemap = sitemapModule.default;
-  const {
-    _resetEarlyAccessRateLimitStore,
-    EARLY_ACCESS_RATE_LIMIT,
-  } = await import("../src/lib/api/sharedRateLimit");
-
-  // ===========================================================================
-  // NEGATIVE CONTROL MODES (Strictly gated by NODE_ENV=test legacy flags)
-  // ===========================================================================
-  if (isNegativeControlLock) {
-    process.env.__CAREERMONKE_LEGACY_EARLY_ACCESS_UNLOCK = "true";
-    const guestJobsRes = await middleware(new NextRequest("http://localhost:3000/jobs"));
-    const redirectLocation = guestJobsRes.headers.get("location") || "";
-    const redirectPath = redirectLocation ? new URL(redirectLocation).pathname : "";
-    assert.strictEqual(
-      redirectPath,
-      "/early-access",
-      `Negative control (lock) expected failure: redirected to '${redirectPath}' instead of '/early-access'`
-    );
-    process.exit(1);
-  }
-
-  if (isNegativeControlCap) {
-    process.env.__CAREERMONKE_LEGACY_CAP_FAIL_OPEN = "true";
-    process.env.APPS_SCRIPT_MAIL_URL = "https://script.google.com/macros/s/nc-script/exec";
-    process.env.APPS_SCRIPT_MAIL_SECRET = "nc-secret";
-    simulateSendLogReadFailure = true;
-
-    let sentCount = 0;
-    globalThis.fetch = (async (_input: RequestInfo | URL) => {
-      sentCount++;
-      return new Response(JSON.stringify({ ok: true }), { status: 200 });
-    }) as typeof fetch;
-
-    await sendEarlyAccessThankYouEmail({
-      subscriberEmail: "nc-user@example.com",
-      createdAt: new Date().toISOString(),
-      supabaseClient: (globalThis as any).__mockSupabaseClient,
-    });
-
-    // Under fail-closed requirement, sentCount MUST be 0 when log read fails; legacy fail-open makes it 1 -> assertion fails:
-    assert.strictEqual(
-      sentCount,
-      0,
-      `Negative control (cap fail-closed) expected failure: sent ${sentCount} email(s) despite gmail_send_log read failure`
-    );
-    process.exit(1);
-  }
-
-  if (isNegativeControlDigest) {
-    process.env.__CAREERMONKE_LEGACY_DIGEST_SEND_EMPTY = "true";
-    process.env.APPS_SCRIPT_MAIL_URL = "https://script.google.com/macros/s/nc-script/exec";
-    process.env.APPS_SCRIPT_MAIL_SECRET = "nc-secret";
-    process.env.EARLY_ACCESS_NOTIFY_EMAIL = "nc@notify.example";
-    mockDbRows.length = 0;
-    mockSendLogRows.length = 0;
-
-    globalThis.fetch = (async () => {
-      return new Response("ok", { status: 200, headers: { "content-type": "text/plain" } });
-    }) as typeof fetch;
-
-    const res = await runEarlyAccessDigestCron({
-      supabaseClient: (globalThis as any).__mockSupabaseClient,
-    });
-
-    // When there are 0 new rows, res.sent MUST be false; legacy flag sends anyway -> assertion fails:
-    assert.strictEqual(
-      res.sent,
-      false,
-      "Negative control (digest) expected failure: digest was sent even when there were 0 new rows"
-    );
-    process.exit(1);
-  }
-
-  if (isNegativeControlApproval) {
-    mockApprovedTable.length = 0;
-    mockApprovedTable.push({
-      email: "unapproved@example.com",
-      approved: false,
-    });
-    const unapprovedRes = await middleware(
-      new NextRequest("http://localhost:3000/dashboard", {
-        headers: { authorization: "Bearer valid-not-approved-google-token" },
-      })
-    );
-    // Deliberately assert that unapproved user is allowed to access /dashboard (must fail)
-    assert.strictEqual(
-      unapprovedRes.status,
-      200,
-      `Negative control (approval gate) expected failure: unapproved user was not blocked (got status ${unapprovedRes.status})`
-    );
-    process.exit(1);
-  }
-
-  if (isNegativeControlSelfApprove) {
-    // Inject a prohibited mutation line on early_access_approved; static scanner must fail
-    verifyNoSelfApproveInSrc([
-      {
-        filePath: "src/app/api/early-access/route.ts",
-        content: 'await supabase.from("early_access_approved").upsert({ email, approved: true });',
-      },
-    ]);
-    process.exit(1);
-  }
-
   console.log("================================================================================");
-  console.log("      CAREERMONKE EARLY-ACCESS-ONLY MODE & GMAIL API VERIFICATION SUITE         ");
-  console.log("================================================================================");
+  console.log("       CAREERMONKE EARLY-ACCESS FLOW REMOVAL VERIFICATION SUITE                 ");
+  console.log("================================================================================\n");
 
   // ---------------------------------------------------------------------------
-  // TEST 1: Restored Links + WhiteHeroButton + Cron Workflow & Guide Verification
+  // TEST 1: Deleted files confirmed absent
   // ---------------------------------------------------------------------------
-  console.log("\n[TEST 1] Verifying restored links, WhiteHeroButton, cron workflow, and refresh-token guide...");
-
-  const landingSrc = fs.readFileSync(path.resolve(process.cwd(), "src/app/page.tsx"), "utf8");
-  const footerSrc = fs.readFileSync(path.resolve(process.cwd(), "src/components/Footer.tsx"), "utf8");
-  const cookieNoticeSrc = fs.readFileSync(path.resolve(process.cwd(), "src/components/CookieNotice.tsx"), "utf8");
-  const middlewareSrc = fs.readFileSync(path.resolve(process.cwd(), "src/middleware.ts"), "utf8");
-  const guideSrc = fs.readFileSync(path.resolve(process.cwd(), "scripts/get-gmail-refresh-token.md"), "utf8");
-  const workflowSrc = fs.readFileSync(
-    path.resolve(process.cwd(), ".github/workflows/early-access-digest-cron.yml"),
-    "utf8"
-  );
-
-  assert.ok(
-    landingSrc.includes('href="/early-access"'),
-    "Landing page must contain valid CTAs pointing to /early-access"
-  );
-  assert.ok(
-    landingSrc.includes('href="/signup"'),
-    "Landing page must contain signup CTA"
-  );
-  assert.ok(
-    landingSrc.includes('href="/login"'),
-    "Landing page must contain signin CTA"
-  );
-  // 1b. Verify TikTok button removed and mailto restored in page.tsx
-  assert.strictEqual(
-    landingSrc.includes('href="https://tiktok.com"'),
-    false,
-    "page.tsx must NOT contain Founder TikTok link"
-  );
-  assert.ok(
-    landingSrc.includes('href="mailto:support@careermonke.com"'),
-    "page.tsx must restore Contact mailto:support@careermonke.com link"
-  );
-  assert.ok(footerSrc.includes('href="mailto:support@careermonke.com"'));
-  assert.ok(footerSrc.includes('href="https://x.com/careermonke"'));
-  assert.ok(footerSrc.includes('href="https://linkedin.com/company/careermonke"'));
-  assert.ok(footerSrc.includes('href="https://github.com"'));
-  assert.ok(cookieNoticeSrc.includes('href="/privacy"'));
-  assert.ok(!/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i.test(middlewareSrc));
-
-  assert.ok(guideSrc.includes("Web application"));
-  assert.ok(guideSrc.includes("https://developers.google.com/oauthplayground"));
-  assert.ok(guideSrc.includes("https://www.googleapis.com/auth/gmail.send"));
-  assert.ok(/In production/i.test(guideSrc));
-  assert.ok(/Offline/i.test(guideSrc));
-  assert.ok(/Use your own OAuth credentials/i.test(guideSrc));
-
-  assert.ok(workflowSrc.includes("schedule:"));
-  assert.ok(workflowSrc.includes("cron:"));
-  assert.ok(workflowSrc.includes("npx tsx scripts/early-access-digest-cron.ts"));
-  console.log("  [PASS] Links, WhiteHeroButton, cron workflow, and OAuth guide verified");
-
-  // ---------------------------------------------------------------------------
-  // TEST 2: Server-Side Lock, Legal Pages, /api/health, and ALLOWLIST
-  // ---------------------------------------------------------------------------
-  console.log("\n[TEST 2] Verifying guest lock, public legal pages + /api/health, and EARLY_ACCESS_ALLOWED_EMAILS allowlist...");
-  delete process.env.__CAREERMONKE_LEGACY_EARLY_ACCESS_UNLOCK;
-
-  for (const route of ["/jobs", "/dashboard", "/resume", "/tracker", "/remote", "/worldwide", "/signup"]) {
-    const res = await middleware(new NextRequest(`http://localhost:3000${route}`));
-    assert.strictEqual(res.status, 307);
-    assert.strictEqual(new URL(res.headers.get("location")!).pathname, "/early-access");
-  }
-
-  for (const apiRoute of ["/admin", "/api/jobs/search", "/api/jobs/pro", "/api/ai", "/api/track", "/api/admin/stats"]) {
-    const res = await middleware(new NextRequest(`http://localhost:3000${apiRoute}`));
-    assert.strictEqual(res.status, 403);
-  }
-
-  // Signed-out GET /api/stats passes; signed-out POST /api/stats returns 403
-  const signedOutStatsGet = await middleware(new NextRequest("http://localhost:3000/api/stats", { method: "GET" }));
-  assert.strictEqual(signedOutStatsGet.status, 200, "Signed-out GET /api/stats must pass middleware (200)");
-
-  const signedOutStatsPost = await middleware(new NextRequest("http://localhost:3000/api/stats", { method: "POST" }));
-  assert.strictEqual(signedOutStatsPost.status, 403, "Signed-out POST /api/stats must return 403");
-
-  // Test /api/health route handler returns 200 without any session or headers
-  const healthRes = await healthGet();
-  assert.strictEqual(healthRes.status, 200, "GET /api/health must return 200 without session");
-  const healthJson = await healthRes.json();
-  assert.deepStrictEqual(healthJson, { status: "ok" }, "GET /api/health must return { status: 'ok' }");
-  assert.strictEqual(
-    healthRes.headers.get("cache-control"),
-    "no-store, no-cache, must-revalidate",
-    "GET /api/health must return Cache-Control: no-store"
-  );
-  console.log("  [PASS] GET /api/health returns 200 { status: 'ok' } with Cache-Control: no-store without session or headers");
-
-  for (const guestRoute of ["/", "/early-access", "/api/early-access", "/api/health", "/api/stats", "/pricing", "/privacy", "/privacy-policy", "/terms-and-conditions", "/login", "/data/ne_110m_land.json"]) {
-    const res = await middleware(new NextRequest(`http://localhost:3000${guestRoute}`));
-    assert.strictEqual(res.status, 200);
-  }
-
-  // Negative assertions: other .json paths (/data/radar.json -> 307 to /early-access, /api/*.json -> 403)
-  const blockedDataReq = new NextRequest("http://localhost:3000/data/radar.json");
-  const blockedDataRes = await middleware(blockedDataReq);
-  assert.strictEqual(
-    blockedDataRes.status,
-    307,
-    `Guest request to '/data/radar.json' must return 307 redirect, got ${blockedDataRes.status}`
-  );
-  const dataLocation = blockedDataRes.headers.get("location") || "";
-  assert.strictEqual(
-    dataLocation ? new URL(dataLocation).pathname : "",
-    "/early-access",
-    `Guest request to '/data/radar.json' must redirect to '/early-access'`
-  );
-
-  const blockedApiJsonReq = new NextRequest("http://localhost:3000/api/jobs.json");
-  const blockedApiJsonRes = await middleware(blockedApiJsonReq);
-  assert.strictEqual(
-    blockedApiJsonRes.status,
-    403,
-    `Guest request to '/api/jobs.json' must return HTTP 403, got ${blockedApiJsonRes.status}`
-  );
-  const blockedApiJsonBody = await blockedApiJsonRes.json();
-  assert.strictEqual(
-    blockedApiJsonBody.error,
-    "Early access only",
-    `Guest request to '/api/jobs.json' must return 'Early access only' error`
-  );
-  console.log("  [PASS] Negative assertions verified: /data/radar.json redirects to /early-access and /api/jobs.json returns 403");
-
-  // 2b. Verify EARLY_ACCESS_ALLOWED_EMAILS allowlist enforcement
-  process.env.EARLY_ACCESS_ALLOWED_EMAILS = "  founder.allowed@example.com , SECOND.ADMIN@EXAMPLE.COM ";
-  signOutCallCount = 0;
-
-  assert.strictEqual(
-    (
-      await middleware(
-        new NextRequest("http://localhost:3000/dashboard", {
-          headers: { authorization: "Bearer valid-allowed-token" },
-        })
-      )
-    ).status,
-    200
-  );
-  assert.strictEqual(
-    (
-      await middleware(
-        new NextRequest("http://localhost:3000/api/jobs/search", {
-          headers: { authorization: "Bearer valid-allowed-token" },
-        })
-      )
-    ).status,
-    200
-  );
-
-  const nonAllowedPageRes = await middleware(
-    new NextRequest("http://localhost:3000/dashboard", {
-      headers: {
-        authorization: "Bearer valid-nonallowed-token",
-        cookie: "sb-access-token=valid-nonallowed-token",
-      },
-    })
-  );
-  assert.strictEqual(nonAllowedPageRes.status, 307);
-  assert.strictEqual(nonAllowedPageRes.headers.get("x-early-access-signed-out"), "1");
-  assert.strictEqual(signOutCallCount, 1);
-
-  const nonAllowedApiRes = await middleware(
-    new NextRequest("http://localhost:3000/api/jobs/search", {
-      headers: {
-        authorization: "Bearer valid-nonallowed-token",
-        cookie: "sb-access-token=valid-nonallowed-token",
-      },
-    })
-  );
-  assert.strictEqual(nonAllowedApiRes.status, 403);
-  assert.strictEqual(nonAllowedApiRes.headers.get("x-early-access-signed-out"), "1");
-  assert.strictEqual(signOutCallCount, 2);
-  delete process.env.EARLY_ACCESS_ALLOWED_EMAILS;
-
-  console.log("  [PASS] Middleware allowlist, legal pages, /api/health, and /api/track lock verified");
-
-  // ---------------------------------------------------------------------------
-  // TEST 2c: Manual Early-Access Approval Gate Verification (Database, RLS & Middleware)
-  // ---------------------------------------------------------------------------
-  console.log("\n[TEST 2c] Verifying Manual Early-Access Approval Gate & RLS Security...");
-  mockApprovedTable.length = 0;
-  mockApprovedTable.push({
-    email: "approved.google@example.com",
-    approved: true,
-  });
-  mockApprovedTable.push({
-    email: "notapproved.google@example.com",
-    approved: false,
-  });
-
-  // 1. Not approved blocked:
-  // Logged-in not approved accessing /dashboard -> 307 to /early-access
-  const notApprovedDashRes = await middleware(
-    new NextRequest("http://localhost:3000/dashboard", {
-      headers: { authorization: "Bearer valid-not-approved-google-token" },
-    })
-  );
-  assert.strictEqual(notApprovedDashRes.status, 307, "Not-approved user on /dashboard must redirect");
-  assert.strictEqual(
-    new URL(notApprovedDashRes.headers.get("location")!).pathname,
-    "/early-access",
-    "Not-approved user on /dashboard must redirect to /early-access"
-  );
-
-  // Logged-in not approved calling API -> 403 Forbidden
-  const notApprovedApiRes = await middleware(
-    new NextRequest("http://localhost:3000/api/jobs/search", {
-      headers: { authorization: "Bearer valid-not-approved-google-token" },
-    })
-  );
-  assert.strictEqual(notApprovedApiRes.status, 403, "Not-approved user API request must return 403");
-
-  // Logged-in not approved visiting / -> 307 to /early-access
-  const notApprovedRootRes = await middleware(
-    new NextRequest("http://localhost:3000/", {
-      headers: { authorization: "Bearer valid-not-approved-google-token" },
-    })
-  );
-  assert.strictEqual(notApprovedRootRes.status, 307, "Not-approved user on / must redirect to /early-access");
-
-  // Logged-in not approved visiting /early-access -> 200 (allowed to view early-access page)
-  const notApprovedEarlyRes = await middleware(
-    new NextRequest("http://localhost:3000/early-access", {
-      headers: { authorization: "Bearer valid-not-approved-google-token" },
-    })
-  );
-  assert.strictEqual(notApprovedEarlyRes.status, 200, "Not-approved user on /early-access must view page");
-  console.log("  [PASS] Not approved blocked: /dashboard & / redirect to /early-access, API returns 403, /early-access returns 200");
-
-  // 2. Approved allowed:
-  // Logged-in approved accessing /dashboard -> 200 (allowed!)
-  const approvedDashRes = await middleware(
-    new NextRequest("http://localhost:3000/dashboard", {
-      headers: { authorization: "Bearer valid-approved-google-token" },
-    })
-  );
-  assert.strictEqual(approvedDashRes.status, 200, "Approved user on /dashboard must be allowed (200)");
-
-  // Logged-in approved accessing /api/jobs/search -> 200 (allowed!)
-  const approvedApiRes = await middleware(
-    new NextRequest("http://localhost:3000/api/jobs/search", {
-      headers: { authorization: "Bearer valid-approved-google-token" },
-    })
-  );
-  assert.strictEqual(approvedApiRes.status, 200, "Approved user on /api/jobs/search must be allowed (200)");
-
-  // Logged-in approved visiting /early-access -> skips early-access page and redirects (307) to /dashboard!
-  const approvedEarlyRes = await middleware(
-    new NextRequest("http://localhost:3000/early-access", {
-      headers: { authorization: "Bearer valid-approved-google-token" },
-    })
-  );
-  assert.strictEqual(approvedEarlyRes.status, 307, "Approved user on /early-access must redirect to /dashboard");
-  assert.strictEqual(
-    new URL(approvedEarlyRes.headers.get("location")!).pathname,
-    "/dashboard",
-    "Approved user on /early-access must redirect to /dashboard"
-  );
-
-  // Logged-in approved visiting / -> redirects (307) straight to /dashboard!
-  const approvedRootRes = await middleware(
-    new NextRequest("http://localhost:3000/", {
-      headers: { authorization: "Bearer valid-approved-google-token" },
-    })
-  );
-  assert.strictEqual(approvedRootRes.status, 307, "Approved user on / must redirect to /dashboard");
-  assert.strictEqual(
-    new URL(approvedRootRes.headers.get("location")!).pathname,
-    "/dashboard",
-    "Approved user on / must redirect to /dashboard"
-  );
-  console.log("  [PASS] Approved allowed: /dashboard & API allowed (200), /early-access & / redirect straight to /dashboard");
-
-  // 3. Early-Access Caching & DB Error Grace (stopping fail-closed sign-outs):
-  _clearEarlyAccessCacheForTesting();
-  approvedQueryCount = 0;
-
-  // (a) First query: queries DB, caches verdict for 60s
-  const initialApprovedRes = await middleware(
-    new NextRequest("http://localhost:3000/dashboard", {
-      headers: { authorization: "Bearer valid-approved-google-token" },
-    })
-  );
-  assert.strictEqual(initialApprovedRes.status, 200, "Approved user on /dashboard must return 200");
-  assert.strictEqual(approvedQueryCount, 1, "Initial request must query DB once");
-
-  // Immediate second query within 60s: cache hit, DB not re-queried
-  const cachedApprovedRes = await middleware(
-    new NextRequest("http://localhost:3000/dashboard", {
-      headers: { authorization: "Bearer valid-approved-google-token" },
-    })
-  );
-  assert.strictEqual(cachedApprovedRes.status, 200, "Cached approved request must return 200");
-  assert.strictEqual(approvedQueryCount, 1, "Cache hit within 60s must NOT re-query DB");
-
-  // (b) Approved user stays signed in across a simulated DB error within grace window (5 min)
-  simulateApprovedDbFailure = "connection_error";
-  const errorGraceRes = await middleware(
-    new NextRequest("http://localhost:3000/dashboard", {
-      headers: { authorization: "Bearer valid-approved-google-token" },
-    })
-  );
-  assert.strictEqual(errorGraceRes.status, 200, "Approved user must stay signed in (200) across simulated DB error within grace");
-  assert.strictEqual(errorGraceRes.headers.get("x-early-access-signed-out"), null, "Must NOT sign out approved user on DB error");
-
-  const errorGraceApiRes = await middleware(
-    new NextRequest("http://localhost:3000/api/jobs/search", {
-      headers: { authorization: "Bearer valid-approved-google-token" },
-    })
-  );
-  assert.strictEqual(errorGraceApiRes.status, 200, "Approved user API request must stay 200 within grace on DB error");
-  assert.strictEqual(errorGraceApiRes.headers.get("x-early-access-signed-out"), null, "Must NOT sign out approved user on DB error for API");
-
-  // (c) Cache expires after 60s and re-queries DB
-  simulateApprovedDbFailure = null;
-  const originalDateNow = Date.now;
-  try {
-    Date.now = () => originalDateNow() + 65_000; // Fast-forward past 60s TTL
-    const expiredCacheRes = await middleware(
-      new NextRequest("http://localhost:3000/dashboard", {
-        headers: { authorization: "Bearer valid-approved-google-token" },
-      })
-    );
-    assert.strictEqual(expiredCacheRes.status, 200, "Approved user after 60s cache expiry must still access dashboard");
-    assert.strictEqual(approvedQueryCount, 2, "After 60s TTL expiry, middleware must re-query DB");
-  } finally {
-    Date.now = originalDateNow;
-  }
-
-  // (d) Definitively-unapproved user is still bounced and signed out
-  _clearEarlyAccessCacheForTesting();
-  const unapprovedRes2 = await middleware(
-    new NextRequest("http://localhost:3000/dashboard", {
-      headers: { authorization: "Bearer valid-not-approved-google-token" },
-    })
-  );
-  assert.strictEqual(unapprovedRes2.status, 307, "Definitively-unapproved user must bounce (307) to /early-access");
-  assert.strictEqual(
-    unapprovedRes2.headers.get("x-early-access-signed-out"),
-    "1",
-    "Definitively-unapproved user must be signed out (x-early-access-signed-out: 1)"
-  );
-
-  const unapprovedApiRes2 = await middleware(
-    new NextRequest("http://localhost:3000/api/jobs/search", {
-      headers: { authorization: "Bearer valid-not-approved-google-token" },
-    })
-  );
-  assert.strictEqual(unapprovedApiRes2.status, 403, "Definitively-unapproved user on API must return 403");
-  assert.strictEqual(
-    unapprovedApiRes2.headers.get("x-early-access-signed-out"),
-    "1",
-    "Definitively-unapproved user on API must be signed out"
-  );
-
-  // (e) Lookup ERROR with NO cached verdict bounces to /early-access without destroying session
-  _clearEarlyAccessCacheForTesting();
-  simulateApprovedDbFailure = "connection_error";
-  const noCacheErrorRes = await middleware(
-    new NextRequest("http://localhost:3000/dashboard", {
-      headers: { authorization: "Bearer valid-db-error-token" },
-    })
-  );
-  assert.strictEqual(noCacheErrorRes.status, 307, "DB error with no cache must bounce (307) to /early-access");
-  assert.strictEqual(
-    new URL(noCacheErrorRes.headers.get("location")!).pathname,
-    "/early-access",
-    "DB error redirect target must be /early-access"
-  );
-  assert.strictEqual(
-    noCacheErrorRes.headers.get("x-early-access-signed-out"),
-    null,
-    "Must NOT sign out user when DB errors with no cached verdict"
-  );
-
-  const noCacheErrorApiRes = await middleware(
-    new NextRequest("http://localhost:3000/api/jobs/search", {
-      headers: { authorization: "Bearer valid-db-error-token" },
-    })
-  );
-  assert.strictEqual(noCacheErrorApiRes.status, 403, "DB error on API with no cache must return 403");
-  assert.strictEqual(
-    noCacheErrorApiRes.headers.get("x-early-access-signed-out"),
-    null,
-    "Must NOT sign out user on API when DB errors with no cached verdict"
-  );
-  simulateApprovedDbFailure = null;
-
-  console.log("  [PASS] Early-access caching, 60s TTL, 5m grace window, and non-signing-out DB error behavior verified");
-
-  // 4. User cannot self-approve:
-  // Static scan of src/ (non-test files): fails if early_access_approved appears with insert/update/upsert/delete or any non-select use
-  verifyNoSelfApproveInSrc();
-
-  // Negative control: injecting insert/update/upsert/delete or non-select use on early_access_approved must make the static check fail
-  for (const injectedLine of [
-    'await supabase.from("early_access_approved").insert({ email: "attacker@example.com", approved: true });',
-    'await supabase.from("early_access_approved").update({ approved: true }).eq("email", "attacker@example.com");',
-    'await supabase.from("early_access_approved").upsert({ email: "attacker@example.com", approved: true });',
-    'await supabase.from("early_access_approved").delete().eq("email", "attacker@example.com");',
-    'const tableRef = supabase.from("early_access_approved");',
-  ]) {
-    assert.throws(
-      () =>
-        verifyNoSelfApproveInSrc([
-          { filePath: "src/app/api/early-access/route.ts", content: injectedLine },
-        ]),
-      /early_access_approved/,
-      `Static self-approve check must fail when injected with: ${injectedLine}`
-    );
-  }
-
-  // Migration file inspection: RLS enabled, revoked from anon and authenticated, deny policy present
-  const migrationPath = path.resolve(process.cwd(), "supabase/migrations/20261030_early_access_approved.sql");
-  assert.ok(fs.existsSync(migrationPath), "Migration file 20261030_early_access_approved.sql must exist");
-  const migrationSql = fs.readFileSync(migrationPath, "utf-8");
-  assert.ok(migrationSql.includes("ENABLE ROW LEVEL SECURITY"), "Migration must enable RLS");
-  assert.ok(migrationSql.includes("REVOKE ALL ON public.early_access_approved FROM PUBLIC, anon, authenticated"), "Migration must revoke untrusted permissions");
-  assert.ok(migrationSql.includes("GRANT SELECT, INSERT, UPDATE, DELETE ON public.early_access_approved TO service_role"), "Migration must grant only service_role");
-  assert.ok(migrationSql.includes("CREATE POLICY"), "Migration must declare RLS deny policy");
-  console.log("  [PASS] User cannot self-approve: Static scan of src/ confirms select-only use (negative controls fail as expected) and migration locks RLS");
-
-  // 5. Google login only, no magic links:
-  // (a) provider email + providers [email, google] + confirmed + approved -> allowed
-  const linkedGoogleAllowedRes = await middleware(
-    new NextRequest("http://localhost:3000/dashboard", {
-      headers: { authorization: "Bearer valid-email-plus-google-confirmed-approved" },
-    })
-  );
-  assert.strictEqual(
-    linkedGoogleAllowedRes.status,
-    200,
-    "Account with provider=email + providers=['email','google'] + confirmed email + approved=true must be allowed (200)"
-  );
-  const linkedGoogleEarlyAccessRedirect = await middleware(
-    new NextRequest("http://localhost:3000/early-access", {
-      headers: { authorization: "Bearer valid-email-plus-google-confirmed-approved" },
-    })
-  );
-  assert.strictEqual(linkedGoogleEarlyAccessRedirect.status, 307);
-  assert.strictEqual(new URL(linkedGoogleEarlyAccessRedirect.headers.get("location")!).pathname, "/dashboard");
-  console.log("  [PASS] (1) provider=email + providers=['email','google'] + email_confirmed_at set + approved=true -> allowed");
-
-  // (b) email-only -> blocked (even when email is marked approved)
-  const magicLinkRes = await middleware(
-    new NextRequest("http://localhost:3000/dashboard", {
-      headers: { authorization: "Bearer valid-magic-link-token" },
-    })
-  );
-  assert.strictEqual(magicLinkRes.status, 307, "Email-only login must be blocked (redirected)");
-  assert.strictEqual(new URL(magicLinkRes.headers.get("location")!).pathname, "/early-access");
-  const magicLinkApiRes = await middleware(
-    new NextRequest("http://localhost:3000/api/jobs/search", {
-      headers: { authorization: "Bearer valid-magic-link-token" },
-    })
-  );
-  assert.strictEqual(magicLinkApiRes.status, 403, "Email-only login on API must return 403");
-  console.log("  [PASS] (2) email-only (no google identity) -> blocked even if email is marked approved");
-
-  // (c) google linked but email not confirmed -> blocked (even when email is marked approved)
-  const unconfirmedGoogleRes = await middleware(
-    new NextRequest("http://localhost:3000/dashboard", {
-      headers: { authorization: "Bearer valid-google-linked-unconfirmed" },
-    })
-  );
-  assert.strictEqual(
-    unconfirmedGoogleRes.status,
-    307,
-    "Google-linked account without email_confirmed_at must be blocked (redirected)"
-  );
-  assert.strictEqual(new URL(unconfirmedGoogleRes.headers.get("location")!).pathname, "/early-access");
-  const unconfirmedGoogleApiRes = await middleware(
-    new NextRequest("http://localhost:3000/api/jobs/search", {
-      headers: { authorization: "Bearer valid-google-linked-unconfirmed" },
-    })
-  );
-  assert.strictEqual(unconfirmedGoogleApiRes.status, 403, "Unconfirmed Google-linked account on API must return 403");
-  console.log("  [PASS] (3) google linked + email_confirmed_at unset -> blocked even if email is marked approved");
-
-  // (d) approved flag still required for google-linked + confirmed account
-  const linkedGoogleUnapprovedRes = await middleware(
-    new NextRequest("http://localhost:3000/dashboard", {
-      headers: { authorization: "Bearer valid-email-plus-google-confirmed-unapproved" },
-    })
-  );
-  assert.strictEqual(
-    linkedGoogleUnapprovedRes.status,
-    307,
-    "Google-linked + confirmed account with approved=false must be blocked (redirected)"
-  );
-  assert.strictEqual(new URL(linkedGoogleUnapprovedRes.headers.get("location")!).pathname, "/early-access");
-  const linkedGoogleUnapprovedApiRes = await middleware(
-    new NextRequest("http://localhost:3000/api/jobs/search", {
-      headers: { authorization: "Bearer valid-email-plus-google-confirmed-unapproved" },
-    })
-  );
-  assert.strictEqual(linkedGoogleUnapprovedApiRes.status, 403, "Unapproved Google-linked account on API must return 403");
-  console.log("  [PASS] (4) provider=email + providers=['email','google'] + confirmed + approved=false -> blocked (approved flag still required)");
-
-  // 6. Case-insensitive email matching:
-  const caseInsensitiveRes = await middleware(
-    new NextRequest("http://localhost:3000/dashboard", {
-      headers: { authorization: "Bearer valid-approved-google-token" },
-    })
-  );
-  assert.strictEqual(caseInsensitiveRes.status, 200, "Case-insensitive email match must be allowed");
-  console.log("  [PASS] Case-insensitive matching: DB lowercase matches mixed-case token");
-
-  // ---------------------------------------------------------------------------
-  // TEST 3: CRLF Injection Rejection (Never Reaches Message Builder)
-  // ---------------------------------------------------------------------------
-  console.log("\n[TEST 3] Verifying CRLF-injection attempts are rejected (400) and never reach message builder...");
-  _resetEarlyAccessRateLimitStore();
-  mockDbRows.length = 0;
-  mockSendLogRows.length = 0;
-
-  let messageBuilderCalls = 0;
-  (globalThis as any).__onMessageBuilderInvoked = () => {
-    messageBuilderCalls++;
-  };
-
-  const crlfPayloads = [
-    "victim@example.com\r\nBcc: attacker@evil.com",
-    "victim@example.com\nBcc: attacker@evil.com",
-    "victim@example.com\rSubject: Injected",
-    "\r\nvictim@example.com",
-    "victim@example.com\r\n",
-    "victim%0d%0a@example.com",
-    "victim%0aBcc:evil@example.com",
-    "victim\0@example.com",
+  console.log("Test 1: Verifying deleted /early-access pages and API routes...");
+  const removedFiles = [
+    "src/app/early-access/page.tsx",
+    "src/app/early-access/layout.tsx",
+    "src/app/api/early-access/route.ts",
   ];
-
-  for (let i = 0; i < crlfPayloads.length; i++) {
-    const res = await earlyAccessPost(
-      new Request("http://localhost:3000/api/early-access", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-forwarded-for": `198.51.102.${i + 1}`,
-        },
-        body: JSON.stringify({ email: crlfPayloads[i] }),
-      })
+  for (const rel of removedFiles) {
+    const full = path.join(ROOT, rel);
+    assert.strictEqual(
+      fs.existsSync(full),
+      false,
+      `File ${rel} must be completely deleted from repository`
     );
+  }
+  console.log("  [PASS-LOCAL] Deleted /early-access page(s) and /api/early-access route(s) confirmed absent.");
+
+  // ---------------------------------------------------------------------------
+  // TEST 2: Middleware 301 redirection of /early-access to /signup
+  // ---------------------------------------------------------------------------
+  console.log("\nTest 2: Verifying middleware redirects /early-access traffic to /signup...");
+  const { middleware } = await import("../src/middleware");
+
+  for (const testPath of ["/early-access", "/early-access/", "/early-access/request", "/early-access?ref=twitter"]) {
+    const req = new NextRequest(`http://localhost:3000${testPath}`);
+    const res = await middleware(req);
     assert.strictEqual(
       res.status,
-      400,
-      `CRLF payload #${i + 1} must be rejected with HTTP 400, got ${res.status}`
+      301,
+      `Request to '${testPath}' must return HTTP 301 redirect, got ${res.status}`
+    );
+    const loc = res.headers.get("location");
+    assert.ok(loc, `Redirect response for '${testPath}' must include Location header`);
+    const parsed = new URL(loc);
+    assert.strictEqual(
+      parsed.pathname,
+      "/signup",
+      `Redirect target for '${testPath}' must be '/signup', got '${parsed.pathname}'`
     );
   }
-  assert.strictEqual(mockDbRows.length, 0, "CRLF payloads must never be stored in DB");
-  assert.strictEqual(
-    messageBuilderCalls,
-    0,
-    "CRLF payloads must never reach buildRfc2822Base64UrlMessage"
-  );
-  console.log(`  [PASS] All ${crlfPayloads.length} CRLF-injection payloads rejected with 400 before DB or message builder`);
+  console.log("  [PASS-LOCAL] Middleware permanently redirects all /early-access paths to /signup (HTTP 301).");
 
   // ---------------------------------------------------------------------------
-  // TEST 4: Request Path Thank-You Only, Double Opt-In-Light (1 Ever), Cap Fail-Closed, Non-Blocking Submit
+  // TEST 3: Deploy redirect rules (public/_redirects, netlify.toml) zero targets
   // ---------------------------------------------------------------------------
-  console.log("\n[TEST 4] Verifying request-path thank-you only, 1 thank-you per address ever, cap fail-closed, and non-blocking submit...");
-  _resetEarlyAccessRateLimitStore();
-  mockDbRows.length = 0;
-  mockSendLogRows.length = 0;
-  simulateDbFailure = null;
-  simulateSendLogReadFailure = false;
-
-  const TEST_CLIENT_ID = "mock-gmail-client-id-999.apps.googleusercontent.com";
-  const TEST_CLIENT_SECRET = "GOCSPX-mockSecretValueDoNotLog888";
-  const TEST_REFRESH_TOKEN = "1//04mockRefreshTokenValueDoNotLog777";
-  const TEST_ACCESS_TOKEN = "ya29.a0mockAccessTokenValueDoNotLog666";
-  const TEST_SENDER_EMAIL = "roman.founder@gmail.example";
-  const TEST_SENDER_NAME = "Roman from CareerMonke";
-  const TEST_NOTIFY_EMAIL = "owner.notify@careermonke.example";
-
-  process.env.GMAIL_CLIENT_ID = TEST_CLIENT_ID;
-  process.env.GMAIL_CLIENT_SECRET = TEST_CLIENT_SECRET;
-  process.env.GMAIL_REFRESH_TOKEN = TEST_REFRESH_TOKEN;
-  process.env.GMAIL_SENDER_EMAIL = TEST_SENDER_EMAIL;
-  process.env.GMAIL_SENDER_NAME = TEST_SENDER_NAME;
-  process.env.EARLY_ACCESS_NOTIFY_EMAIL = TEST_NOTIFY_EMAIL;
-
-  const TEST_APPS_SCRIPT_URL = "https://script.google.com/macros/s/mock-apps-script-id/exec";
-  const TEST_APPS_SCRIPT_SECRET = "mock-apps-script-secret-key-123";
-  process.env.APPS_SCRIPT_MAIL_URL = TEST_APPS_SCRIPT_URL;
-  process.env.APPS_SCRIPT_MAIL_SECRET = TEST_APPS_SCRIPT_SECRET;
-
-  const originalFetch = globalThis.fetch;
-  const originalConsoleWarn = console.warn;
-  const capturedWarnings: string[] = [];
-  console.warn = (...args: any[]) => {
-    capturedWarnings.push(args.map((a) => String(a)).join(" "));
-  };
-
-  interface CapturedAppsScriptCall {
-    url: string;
-    method: string;
-    redirect?: string;
-    body: {
-      secret: string;
-      email?: string;
-      to?: string;
-      recipient?: string;
-      kind?: string;
-      subject?: string;
-      body?: string;
-      textBody?: string;
-      htmlBody?: string;
-    };
-  }
-  const appsScriptCalls: CapturedAppsScriptCall[] = [];
-
-  interface CapturedGmailSend {
-    authHeader: string;
-    rawMime: string;
-    subject: string;
-  }
-  const gmailSendCalls: CapturedGmailSend[] = [];
-  let mockFetchMode: "ok" | "oauth_fail" | "slow_3s" = "ok";
-  let slowFetchAborted = false;
-
-  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
-
-    if (url === TEST_APPS_SCRIPT_URL) {
-      if (mockFetchMode === "slow_3s") {
-        return await new Promise<Response>((resolve, reject) => {
-          const timer = setTimeout(() => {
-            resolve(new Response("ok", { status: 200, headers: { "content-type": "text/plain" } }));
-          }, 3000);
-          init?.signal?.addEventListener(
-            "abort",
-            () => {
-              clearTimeout(timer);
-              slowFetchAborted = true;
-              reject(new Error("AbortError: 8s timeout reached"));
-            },
-            { once: true }
-          );
-        });
-      }
-      const body = JSON.parse(String(init?.body || "{}"));
-      appsScriptCalls.push({
-        url,
-        method: init?.method || "POST",
-        redirect: init?.redirect,
-        body,
-      });
-      return new Response("ok", {
-        status: 200,
-        headers: { "content-type": "text/plain" },
-      });
-    }
-
-    if (mockFetchMode === "slow_3s") {
-      return await new Promise<Response>((resolve, reject) => {
-        const timer = setTimeout(() => {
-          resolve(new Response(JSON.stringify({ access_token: TEST_ACCESS_TOKEN }), { status: 200 }));
-        }, 3000);
-        init?.signal?.addEventListener(
-          "abort",
-          () => {
-            clearTimeout(timer);
-            slowFetchAborted = true;
-            reject(new Error("AbortError: timeout reached"));
-          },
-          { once: true }
-        );
-      });
-    }
-
-    if (url === GMAIL_OAUTH_TOKEN_URL) {
-      if (mockFetchMode === "oauth_fail") {
-        return new Response(
-          JSON.stringify({
-            error: "invalid_grant",
-            error_description: `Bad refresh token ${TEST_REFRESH_TOKEN} for ${TEST_SENDER_EMAIL} secret ${TEST_CLIENT_SECRET}`,
-          }),
-          { status: 400 }
-        );
-      }
-      return new Response(
-        JSON.stringify({
-          access_token: TEST_ACCESS_TOKEN,
-          expires_in: 3599,
-          scope: "https://www.googleapis.com/auth/gmail.send",
-          token_type: "Bearer",
-        }),
-        { status: 200, headers: { "content-type": "application/json" } }
-      );
-    }
-
-    if (url === GMAIL_SEND_MESSAGE_URL) {
-      const headers = new Headers(init?.headers as HeadersInit);
-      const payload = JSON.parse(String(init?.body || "{}"));
-      const rawMime = decodeBase64UrlToUtf8(payload.raw);
-      const subject = decodeRfc2047Subject(rawMime);
-      gmailSendCalls.push({
-        authHeader: headers.get("authorization") || "",
-        rawMime,
-        subject,
-      });
-      return new Response(JSON.stringify({ id: `msg-${gmailSendCalls.length}` }), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      });
-    }
-
-    throw new Error(`Unexpected fetch URL in test: ${url}`);
-  }) as typeof fetch;
-
-  try {
-    // 4a. First new signup -> sends ONLY 1 thank-you email (digest is NOT on the request path!)
-    const firstRes = await earlyAccessPost(
-      new Request("http://localhost:3000/api/early-access", {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-forwarded-for": "198.51.100.10" },
-        body: JSON.stringify({ email: "  Alice@Example.com  ", website: "" }),
-      })
-    );
-    assert.strictEqual(firstRes.status, 200);
-    assert.strictEqual(mockDbRows.length, 1);
-    assert.strictEqual(
-      appsScriptCalls.length,
-      1,
-      "POST /api/early-access must send ONLY 1 thank-you call via Apps Script (no digest on request path)"
-    );
-    assert.strictEqual(appsScriptCalls[0].method, "POST");
-    assert.strictEqual(appsScriptCalls[0].redirect, "follow", "Must follow redirects for Apps Script /exec");
-    assert.strictEqual(appsScriptCalls[0].body.email, "alice@example.com");
-    assert.strictEqual(appsScriptCalls[0].body.secret, TEST_APPS_SCRIPT_SECRET);
-    assert.strictEqual(mockSendLogRows.length, 1);
-    assert.strictEqual(mockSendLogRows[0].kind, "thank_you");
-    assert.strictEqual(mockSendLogRows[0].recipient_email, "alice@example.com");
-    console.log("  [PASS] Request path sends ONLY thank-you email via Apps Script (digest removed from request path)");
-
-    // 4b. Thank-you is NEVER repeated for the same address ever (even if early_access_emails row were cleared)
-    mockDbRows.length = 0; // Simulate row deleted from early_access_emails while gmail_send_log retains history
-    const repeatRes = await earlyAccessPost(
-      new Request("http://localhost:3000/api/early-access", {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-forwarded-for": "198.51.100.11" },
-        body: JSON.stringify({ email: "alice@example.com" }),
-      })
-    );
-    assert.strictEqual(repeatRes.status, 200);
-    assert.strictEqual(
-      appsScriptCalls.length,
-      1,
-      "Thank-you email must NEVER be sent a second time to the same address (checked via gmail_send_log)"
-    );
-    console.log("  [PASS] Double opt-in-light: thank-you never repeated for the same address ever");
-
-    // 4b-ii. Verify text reply parsing for "already" and "forbidden"
-    const originalFetchForReplies = globalThis.fetch;
-    try {
-      globalThis.fetch = (async () => {
-        return new Response("already", { status: 200, headers: { "content-type": "text/plain" } });
-      }) as typeof fetch;
-      const alreadyReplyResult = await sendEarlyAccessThankYouEmail({
-        subscriberEmail: "external.already@example.com",
-        createdAt: new Date().toISOString(),
-        supabaseClient: (globalThis as any).__mockSupabaseClient,
-      });
-      assert.strictEqual(alreadyReplyResult.alreadyThanked, true, "Apps Script 'already' reply must set alreadyThanked: true");
-      assert.strictEqual(alreadyReplyResult.thankYouSent, false);
-
-      globalThis.fetch = (async () => {
-        return new Response("forbidden", { status: 403, headers: { "content-type": "text/plain" } });
-      }) as typeof fetch;
-      const forbiddenReplyResult = await sendEarlyAccessThankYouEmail({
-        subscriberEmail: "external.forbidden@example.com",
-        createdAt: new Date().toISOString(),
-        supabaseClient: (globalThis as any).__mockSupabaseClient,
-      });
-      assert.strictEqual(forbiddenReplyResult.thankYouSent, false);
-      assert.strictEqual(forbiddenReplyResult.alreadyThanked, false);
-    } finally {
-      globalThis.fetch = originalFetchForReplies;
-    }
-
-    // 4c. Cap fails closed when gmail_send_log read errors (missing table / grant problem)
-    simulateSendLogReadFailure = true;
-    try {
-      const failClosedRes = await earlyAccessPost(
-        new Request("http://localhost:3000/api/early-access", {
-          method: "POST",
-          headers: { "content-type": "application/json", "x-forwarded-for": "198.51.100.12" },
-          body: JSON.stringify({ email: "failclosed.user@example.com" }),
-        })
-      );
-      assert.strictEqual(failClosedRes.status, 200, "Signup must still succeed (200) when gmail_send_log read fails");
+  console.log("\nTest 3: Verifying deploy redirect rules contain zero destinations targeting /early-access...");
+  const redirectsContent = fs.readFileSync(path.join(ROOT, "public/_redirects"), "utf-8");
+  for (const line of redirectsContent.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const parts = trimmed.split(/\s+/);
+    if (parts.length >= 2) {
+      const destination = parts[1].toLowerCase();
       assert.ok(
-        mockDbRows.some((r) => r.email === "failclosed.user@example.com"),
-        "Signup must remain stored in early_access_emails when gmail_send_log read fails"
+        !destination.includes("/early-access"),
+        `public/_redirects rule '${trimmed}' must NOT target /early-access`
       );
-      assert.strictEqual(
-        appsScriptCalls.length,
-        1,
-        "Cap MUST fail closed: 0 emails sent when gmail_send_log count cannot be read"
-      );
-    } finally {
-      simulateSendLogReadFailure = false;
     }
-    console.log("  [PASS] Cap fails closed when gmail_send_log cannot be read (signup stored, 0 emails sent)");
-
-    // 4d. Do not block submit beyond ~1s + fire-and-forget via waitUntil
-    mockFetchMode = "slow_3s";
-    slowFetchAborted = false;
-    const t0 = Date.now();
-    const slowRes = await earlyAccessPost(
-      new Request("http://localhost:3000/api/early-access", {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-forwarded-for": "198.51.100.13" },
-        body: JSON.stringify({ email: "slow.network@example.com" }),
-      })
-    );
-    const elapsedMs = Date.now() - t0;
-    assert.strictEqual(slowRes.status, 200);
-    assert.ok(
-      elapsedMs < 1200,
-      `POST /api/early-access must not block beyond ~1s, took ${elapsedMs}ms`
-    );
-    mockFetchMode = "ok";
-    console.log(`  [PASS] Submit responded in ${elapsedMs}ms (< ~1s) without blocking for Apps Script`);
-
-    // 4e. Test timeout=UNKNOWN-no-resend: hanging Apps Script request aborts, logs UNKNOWN, and NEVER resends
-    capturedWarnings.length = 0;
-    let timeoutFetchAttempts = 0;
-    const originalFetchForTimeout = globalThis.fetch;
-    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      timeoutFetchAttempts++;
-      return await new Promise<Response>((_resolve, reject) => {
-        init?.signal?.addEventListener("abort", () => {
-          const err = new Error("AbortError");
-          err.name = "AbortError";
-          reject(err);
-        });
-      });
-    }) as typeof fetch;
-
-    const timeoutResult = await sendEarlyAccessThankYouEmail({
-      subscriberEmail: "timeout.test@example.com",
-      createdAt: new Date().toISOString(),
-      supabaseClient: (globalThis as any).__mockSupabaseClient,
-      hardCapMs: 50,
-    });
-    globalThis.fetch = originalFetchForTimeout;
-
-    assert.strictEqual(timeoutResult.thankYouSent, false, "Thank-you must not be marked sent on timeout");
-    assert.strictEqual(timeoutFetchAttempts, 1, "Timed-out request must NEVER be automatically resent");
-    const timeoutLogText = capturedWarnings.join("\n");
-    assert.ok(timeoutLogText.includes("UNKNOWN"), "Timeout must be logged as UNKNOWN");
-    assert.ok(!timeoutLogText.includes("timeout.test@example.com"), "Email must not be logged");
-    assert.ok(!timeoutLogText.includes(TEST_APPS_SCRIPT_URL), "URL must not be logged");
-    assert.ok(!timeoutLogText.includes(TEST_APPS_SCRIPT_SECRET), "Secret must not be logged");
-    console.log("  [PASS] timeout=UNKNOWN-no-resend verified: logged as UNKNOWN and never resent");
-
-    // 4f. Test non-OK result: reply 'invalid', 'forbidden', 'busy' logs UNKNOWN and is NEVER resent
-    capturedWarnings.length = 0;
-    let nonOkAttempts = 0;
-    const originalFetchForNonOk = globalThis.fetch;
-    globalThis.fetch = (async () => {
-      nonOkAttempts++;
-      return new Response("busy", { status: 200, headers: { "content-type": "text/plain" } });
-    }) as typeof fetch;
-
-    const nonOkResult = await sendEarlyAccessThankYouEmail({
-      subscriberEmail: "nonok.test@example.com",
-      createdAt: new Date().toISOString(),
-      supabaseClient: (globalThis as any).__mockSupabaseClient,
-    });
-    globalThis.fetch = originalFetchForNonOk;
-
-    assert.strictEqual(nonOkResult.thankYouSent, false);
-    assert.strictEqual(nonOkAttempts, 1, "Non-OK result must NEVER be automatically resent");
-    assert.ok(capturedWarnings.some((w) => w.includes("UNKNOWN")), "Non-OK result must be logged as UNKNOWN");
-    console.log("  [PASS] non-OK result logged as UNKNOWN and never resent");
-
-    // ---------------------------------------------------------------------------
-    // TEST 5: Scheduled Owner Digest Cron (runEarlyAccessDigestCron via Apps Script)
-    // ---------------------------------------------------------------------------
-    console.log("\n[TEST 5] Verifying scheduled owner digest cron (Apps Script route, dedupe cursor, skip when no new rows, optional GMAIL_*)...");
-    mockDbRows.length = 0;
-    mockSendLogRows.length = 0;
-    appsScriptCalls.length = 0;
-
-    // 5a. When early_access_emails has 0 rows -> sends NO digest
-    const emptyDigestRes = await runEarlyAccessDigestCron({
-      supabaseClient: (globalThis as any).__mockSupabaseClient,
-    });
-    assert.strictEqual(emptyDigestRes.status, "success");
-    assert.strictEqual(emptyDigestRes.sent, false);
-    assert.strictEqual(emptyDigestRes.reason, "no_new_rows");
-    assert.strictEqual(appsScriptCalls.length, 0, "No digest email may be sent when there are 0 rows");
-
-    // 5b. Seed 3 signups and run digest cron -> sends ONE email with all 3 rows and logs kind='digest'
-    mockDbRows.push(
-      { email: "first@example.com", created_at: "2026-10-29T08:00:00.000Z" },
-      { email: "second@example.com", created_at: "2026-10-29T09:00:00.000Z" },
-      { email: "third@example.com", created_at: "2026-10-29T10:00:00.000Z" }
-    );
-
-    const firstDigestRes = await runEarlyAccessDigestCron({
-      supabaseClient: (globalThis as any).__mockSupabaseClient,
-      nowIso: "2026-10-29T18:00:00.000Z",
-    });
-    assert.strictEqual(firstDigestRes.status, "success");
-    assert.strictEqual(firstDigestRes.sent, true);
-    assert.strictEqual(firstDigestRes.rowCount, 3);
-    assert.strictEqual(appsScriptCalls.length, 1, "Digest cron must send exactly ONE email for all 3 rows");
-    assert.strictEqual(appsScriptCalls[0].url, TEST_APPS_SCRIPT_URL);
-    assert.strictEqual(appsScriptCalls[0].body.secret, TEST_APPS_SCRIPT_SECRET);
-    assert.strictEqual(appsScriptCalls[0].body.email, TEST_NOTIFY_EMAIL);
-    assert.strictEqual(appsScriptCalls[0].body.kind, "digest");
-    assert.ok(appsScriptCalls[0].body.subject?.includes("3 new signups"));
-    assert.ok(appsScriptCalls[0].body.textBody?.includes("first@example.com"));
-    assert.ok(appsScriptCalls[0].body.textBody?.includes("second@example.com"));
-    assert.ok(appsScriptCalls[0].body.textBody?.includes("third@example.com"));
-    assert.ok(appsScriptCalls[0].body.htmlBody?.includes("first@example.com"));
-    assert.ok(
-      mockSendLogRows.some(
-        (r) => r.kind === "digest" && r.recipient_email === TEST_NOTIFY_EMAIL
-      ),
-      "Digest must be recorded in gmail_send_log with kind='digest'"
-    );
-
-    // 5c. Re-running digest cron immediately with no new rows -> sends NO digest
-    const repeatDigestRes = await runEarlyAccessDigestCron({
-      supabaseClient: (globalThis as any).__mockSupabaseClient,
-      nowIso: "2026-10-29T19:00:00.000Z",
-    });
-    assert.strictEqual(repeatDigestRes.status, "success");
-    assert.strictEqual(repeatDigestRes.sent, false);
-    assert.strictEqual(repeatDigestRes.reason, "no_new_rows");
-    assert.strictEqual(appsScriptCalls.length, 1, "Re-running cron with no new rows must send 0 emails");
-
-    // 5d. Add 2 new rows after last_digest_at -> next cron run sends ONE email with ONLY the 2 new rows
-    mockDbRows.push(
-      { email: "fourth@example.com", created_at: "2026-10-30T07:00:00.000Z" },
-      { email: "fifth@example.com", created_at: "2026-10-30T11:00:00.000Z" }
-    );
-    const secondDigestRes = await runEarlyAccessDigestCron({
-      supabaseClient: (globalThis as any).__mockSupabaseClient,
-      nowIso: "2026-10-30T18:00:00.000Z",
-    });
-    assert.strictEqual(secondDigestRes.status, "success");
-    assert.strictEqual(secondDigestRes.sent, true);
-    assert.strictEqual(secondDigestRes.rowCount, 2);
-    assert.strictEqual(appsScriptCalls.length, 2);
-    assert.ok(appsScriptCalls[1].body.textBody?.includes("fourth@example.com"));
-    assert.ok(appsScriptCalls[1].body.textBody?.includes("fifth@example.com"));
-    assert.ok(
-      !appsScriptCalls[1].body.textBody?.includes("first@example.com"),
-      "Second digest must only include rows created after last_digest_at"
-    );
-
-    // 5e. Optional GMAIL_* env vars & dryRun verification
-    delete process.env.GMAIL_CLIENT_ID;
-    delete process.env.GMAIL_CLIENT_SECRET;
-    delete process.env.GMAIL_REFRESH_TOKEN;
-    delete process.env.GMAIL_SENDER_EMAIL;
-    delete process.env.GMAIL_SENDER_NAME;
-
-    mockDbRows.push({
-      email: "sixth@example.com",
-      created_at: "2026-10-31T05:00:00.000Z",
-    });
-
-    // Dry-run mode: skips sending and DB write
-    const dryRunRes = await runEarlyAccessDigestCron({
-      supabaseClient: (globalThis as any).__mockSupabaseClient,
-      nowIso: "2026-10-31T18:00:00.000Z",
-      dryRun: true,
-    });
-    assert.strictEqual(dryRunRes.status, "success");
-    assert.strictEqual(dryRunRes.sent, false);
-    assert.strictEqual(dryRunRes.reason, "dry_run");
-    assert.strictEqual(dryRunRes.rowCount, 1);
-    assert.strictEqual(appsScriptCalls.length, 2, "Dry-run must not dispatch an email");
-
-    // Live send without GMAIL_* variables succeeds via Apps Script
-    const noGmailRes = await runEarlyAccessDigestCron({
-      supabaseClient: (globalThis as any).__mockSupabaseClient,
-      nowIso: "2026-10-31T18:00:00.000Z",
-    });
-    assert.strictEqual(noGmailRes.status, "success");
-    assert.strictEqual(noGmailRes.sent, true);
-    assert.strictEqual(noGmailRes.rowCount, 1);
-    assert.strictEqual(appsScriptCalls.length, 3, "Digest must send cleanly via Apps Script without GMAIL_* env vars");
-    assert.ok(appsScriptCalls[2].body.textBody?.includes("sixth@example.com"));
-
-    // Missing Apps Script config or notifyEmail returns missing_env
-    const savedUrl = process.env.APPS_SCRIPT_MAIL_URL;
-    delete process.env.APPS_SCRIPT_MAIL_URL;
-    mockDbRows.push({
-      email: "seventh@example.com",
-      created_at: "2026-11-01T05:00:00.000Z",
-    });
-    const missingEnvRes = await runEarlyAccessDigestCron({
-      supabaseClient: (globalThis as any).__mockSupabaseClient,
-      nowIso: "2026-11-01T18:00:00.000Z",
-    });
-    assert.strictEqual(missingEnvRes.status, "failed");
-    assert.strictEqual(missingEnvRes.reason, "missing_env");
-    process.env.APPS_SCRIPT_MAIL_URL = savedUrl;
-
-    console.log("  [PASS] Digest cron sends once with all rows since last_digest_at and skips when no new rows (via Apps Script)");
-
-    // 5d2. gmail_send_log read error: real PostgREST error is logged, retried once, then fails closed
-    {
-      const realClient = (globalThis as any).__mockSupabaseClient;
-      const pgrst = { code: "PGRST002", message: "Could not query the database for the schema cache", details: "retrying" };
-      const flakyClient = (failures: number, fail: () => any = () => ({ data: null, error: pgrst, status: 503 })) => {
-        let calls = 0;
-        const chain: any = {
-          select: () => chain, eq: () => chain, order: () => chain, limit: () => chain,
-          maybeSingle: async () => (++calls <= failures ? fail() : { data: null, error: null }),
-        };
-        return {
-          calls: () => calls,
-          client: { ...realClient, from: (t: string) => (t === "gmail_send_log" ? chain : realClient.from(t)) },
-        };
-      };
-
-      capturedWarnings.length = 0;
-      const alwaysDown = flakyClient(99);
-      const downRes = await runEarlyAccessDigestCron({ supabaseClient: alwaysDown.client, retryDelayMs: 0, dryRun: true });
-      assert.strictEqual(downRes.status, "failed");
-      assert.strictEqual(downRes.reason, "log_read_error");
-      assert.strictEqual(alwaysDown.calls(), 2, "gmail_send_log read must be retried exactly once");
-      const warnText = capturedWarnings.join("\n");
-      assert.ok(warnText.includes("code=PGRST002") && warnText.includes("schema cache"), "underlying PostgREST error must be logged");
-      assert.ok(warnText.includes("status=503"), "HTTP status must be logged");
-      assert.ok(!warnText.includes("details") && !warnText.includes("retrying\""), "raw details must never be logged");
-      assert.ok(warnText.includes("retrying once") && warnText.includes("failing closed"));
-
-      const blip = flakyClient(1);
-      const blipRes = await runEarlyAccessDigestCron({ supabaseClient: blip.client, retryDelayMs: 0, dryRun: true });
-      assert.notStrictEqual(blipRes.reason, "log_read_error", "a single transient error must recover on retry");
-      assert.strictEqual(blip.calls(), 2);
-
-      // Sensitive content in the error must be redacted/bounded in both the error-return and thrown paths.
-      const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyLTEyMyJ9.c2lnbmF0dXJlLXNpZ25hdHVyZQ";
-      const configuredSecret = process.env.APPS_SCRIPT_MAIL_SECRET || "";
-      const sensitive =
-        `row (victim@example.com) rejected; Authorization: Bearer sk_live_ABC123XYZ; jwt=${jwt}; ` +
-        `oauth=ya29.a0AfH6SMBxyz; secret=${configuredSecret}; ` + "x".repeat(5000);
-      const detailsMarker = "DETAILS_ROW_DATA_MARKER";
-      const leaks = (text: string) =>
-        ["victim@example.com", "sk_live_ABC123XYZ", jwt.slice(0, 20), "ya29.a0AfH6SMBxyz", detailsMarker, "x".repeat(250)]
-          .concat(configuredSecret.length >= 3 ? [`secret=${configuredSecret}`] : [])
-          .filter((s) => text.includes(s));
-
-      for (const [label, fail] of [
-        ["error-return", () => ({ data: null, error: { code: "PGRST002", message: sensitive, details: `${detailsMarker} owner@example.com` }, status: 503 })],
-        ["thrown", () => { throw new Error(sensitive); }],
-      ] as const) {
-        capturedWarnings.length = 0;
-        const c = flakyClient(99, fail);
-        const r = await runEarlyAccessDigestCron({ supabaseClient: c.client, retryDelayMs: 0, dryRun: true });
-        assert.strictEqual(r.reason, "log_read_error", `${label}: must fail closed`);
-        assert.strictEqual(c.calls(), 2, `${label}: must retry exactly once`);
-        const text = capturedWarnings.join("\n");
-        assert.deepStrictEqual(leaks(text), [], `${label}: sensitive values leaked to logs`);
-        assert.ok(text.includes("[REDACTED_EMAIL]") && text.includes("[REDACTED_TOKEN]"), `${label}: redaction markers expected`);
-        for (const w of capturedWarnings) assert.ok(w.length < 600, `${label}: warning must be bounded (got ${w.length})`);
-      }
-
-      // retryDelayMs must be finite and non-negative; invalid values fall back to the 30s default.
-      const realSetTimeout = globalThis.setTimeout;
-      for (const bad of [Number.NaN, -1, Number.POSITIVE_INFINITY]) {
-        const delays: number[] = [];
-        (globalThis as any).setTimeout = (fn: () => void, ms?: number) => { delays.push(ms ?? 0); return realSetTimeout(fn, 0); };
-        try {
-          await runEarlyAccessDigestCron({ supabaseClient: flakyClient(99).client, retryDelayMs: bad, dryRun: true });
-        } finally {
-          globalThis.setTimeout = realSetTimeout;
-        }
-        assert.ok(delays.includes(30_000) && !delays.includes(bad), `retryDelayMs=${bad} must fall back to 30000ms`);
-      }
-      console.log("  [PASS] gmail_send_log read error logs sanitized code/status/message (no details), retries once, then fails closed");
-    }
-
-    // 5e. Verify 80/day thank-you cap across gmail_send_log
-    assert.strictEqual(DAILY_THANK_YOU_CAP, 80);
-    assert.strictEqual(DAILY_GMAIL_MESSAGE_CAP, 150);
-    mockSendLogRows.length = 0;
-    const todayIso = new Date().toISOString();
-    for (let i = 0; i < 80; i++) {
-      mockSendLogRows.push({
-        recipient_email: `u${i}@example.com`,
-        kind: "thank_you",
-        sent_at: todayIso,
-      });
-    }
-    const sendsBeforeCap = appsScriptCalls.length;
-    const cappedRes = await earlyAccessPost(
-      new Request("http://localhost:3000/api/early-access", {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-forwarded-for": "198.51.100.20" },
-        body: JSON.stringify({ email: "over80@example.com" }),
-      })
-    );
-    assert.strictEqual(cappedRes.status, 200);
-    assert.strictEqual(appsScriptCalls.length, sendsBeforeCap, "0 sends allowed when 80/day cap is reached");
-    console.log("  [PASS] 80 messages/day thank-you cap enforced");
-
-    // 5f. Verify zero secrets or full emails in warning logs
-    capturedWarnings.length = 0;
-    mockSendLogRows.length = 0;
-    mockFetchMode = "oauth_fail";
-    await earlyAccessPost(
-      new Request("http://localhost:3000/api/early-access", {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-forwarded-for": "198.51.100.21" },
-        body: JSON.stringify({ email: "secretcheck@example.com" }),
-      })
-    );
-    const allLogs = capturedWarnings.join("\n");
-    for (const secret of [
-      TEST_APPS_SCRIPT_URL,
-      TEST_APPS_SCRIPT_SECRET,
-      TEST_CLIENT_ID,
-      TEST_CLIENT_SECRET,
-      TEST_REFRESH_TOKEN,
-      TEST_ACCESS_TOKEN,
-      TEST_SENDER_EMAIL,
-      TEST_NOTIFY_EMAIL,
-      "secretcheck@example.com",
-    ]) {
-      assert.ok(!allLogs.includes(secret), `Secret or email leaked in logs: ${secret}`);
-    }
-    console.log("  [PASS] Zero secrets or full email addresses in logs");
-  } finally {
-    globalThis.fetch = originalFetch;
-    console.warn = originalConsoleWarn;
-    delete process.env.GMAIL_CLIENT_ID;
-    delete process.env.GMAIL_CLIENT_SECRET;
-    delete process.env.GMAIL_REFRESH_TOKEN;
-    delete process.env.GMAIL_SENDER_EMAIL;
-    delete process.env.GMAIL_SENDER_NAME;
-    delete process.env.EARLY_ACCESS_NOTIFY_EMAIL;
-    delete process.env.APPS_SCRIPT_MAIL_URL;
-    delete process.env.APPS_SCRIPT_MAIL_SECRET;
   }
-
-  // ---------------------------------------------------------------------------
-  // TEST 6: Rate Limit (5 requests / min / IP via sharedRateLimit) & Sitemap
-  // ---------------------------------------------------------------------------
-  console.log("\n[TEST 6] Verifying 5/min/IP rate limit and sitemap(['/', '/early-access'])...");
-  _resetEarlyAccessRateLimitStore();
-  const rlIp = "203.0.113.77";
-  assert.strictEqual(EARLY_ACCESS_RATE_LIMIT.maxRequests, 5);
-  assert.strictEqual(EARLY_ACCESS_RATE_LIMIT.windowSeconds, 60);
-
-  for (let i = 1; i <= 5; i++) {
-    const res = await earlyAccessPost(
-      new Request("http://localhost:3000/api/early-access", {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-forwarded-for": rlIp },
-        body: JSON.stringify({ email: `rl${i}@example.com` }),
-      })
-    );
-    assert.strictEqual(res.status, 200);
-  }
-  const sixthRes = await earlyAccessPost(
-    new Request("http://localhost:3000/api/early-access", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-forwarded-for": rlIp },
-      body: JSON.stringify({ email: "rl6@example.com" }),
-    })
+  assert.ok(
+    redirectsContent.includes("/early-access /signup 301!"),
+    "public/_redirects must include /early-access /signup 301! rule"
   );
-  assert.strictEqual(sixthRes.status, 429);
 
-  const sitemapPaths = sitemap().map((e) => new URL(e.url).pathname);
-  assert.deepStrictEqual(sitemapPaths, [
-    "/",
-    "/early-access",
-    "/remote",
-    "/worldwide",
-    "/pricing",
-    "/signup",
-    "/privacy-policy",
-    "/terms-and-conditions",
-    "/refund-policy",
-    "/contact",
-  ]);
-  console.log("  [PASS] Rate limit (5/min/IP) and sitemap verified");
+  const tomlContent = fs.readFileSync(path.join(ROOT, "netlify.toml"), "utf-8");
+  assert.ok(
+    !tomlContent.includes('to = "/early-access"'),
+    "netlify.toml must NOT redirect any route to /early-access"
+  );
+  console.log("  [PASS-LOCAL] Deploy redirect configurations have zero targets to /early-access.");
 
   // ---------------------------------------------------------------------------
-  // TEST 7: Automated Negative Controls (Lock, Cap Fail-Closed, and Digest)
+  // TEST 4: Marketing links repointed (zero href="/early-access")
   // ---------------------------------------------------------------------------
-  console.log("\n[TEST 7] Verifying real negative controls (lock, cap fail-closed, and digest) exit non-zero...");
-  const scriptPath = path.resolve(__dirname, "test-early-access.ts");
+  console.log("\nTest 4: Verifying marketing links on landing and components repointed away from /early-access...");
+  const marketingFiles = [
+    "src/app/page.tsx",
+    "src/components/Footer.tsx",
+    "src/components/LandingFeaturesSection.tsx",
+    "src/components/LandingJobsTickerStrip.tsx",
+    "src/components/LandingTopArtifact.tsx",
+    "src/components/CategorySelectModal.tsx",
+  ];
 
-  for (const flag of ["--negative-control", "--negative-control-cap", "--negative-control-digest", "--negative-control-approval", "--negative-control-self-approve"]) {
-    const child = spawnSync("npx", ["tsx", scriptPath, flag], {
+  for (const rel of marketingFiles) {
+    const content = fs.readFileSync(path.join(ROOT, rel), "utf-8");
+    assert.ok(
+      !content.includes('href="/early-access"'),
+      `File ${rel} must NOT contain href="/early-access"`
+    );
+    assert.ok(
+      !content.includes('href: "/early-access"'),
+      `File ${rel} must NOT contain href: "/early-access"`
+    );
+    assert.ok(
+      !content.includes('push("/early-access")'),
+      `File ${rel} must NOT contain push("/early-access")`
+    );
+  }
+  console.log("  [PASS-LOCAL] All marketing CTAs and components repointed to active routes (/signup, /jobs, /worldwide, /login).");
+
+  // ---------------------------------------------------------------------------
+  // TEST 5: Sitemap excludes /early-access
+  // ---------------------------------------------------------------------------
+  console.log("\nTest 5: Verifying sitemap.ts excludes /early-access...");
+  const sitemapSrc = fs.readFileSync(path.join(ROOT, "src/app/sitemap.ts"), "utf-8");
+  assert.ok(
+    !sitemapSrc.includes("/early-access"),
+    "src/app/sitemap.ts must NOT include /early-access entry"
+  );
+  console.log("  [PASS-LOCAL] sitemap.ts excludes /early-access.");
+
+  // ---------------------------------------------------------------------------
+  // TEST 6: Preserved lead-capture Apps Script module
+  // ---------------------------------------------------------------------------
+  console.log("\nTest 6: Verifying Apps Script lead-capture helper preserved for dependent services...");
+  const gmailLib = path.join(ROOT, "src/lib/early-access/gmail.ts");
+  assert.strictEqual(
+    fs.existsSync(gmailLib),
+    true,
+    "src/lib/early-access/gmail.ts must be preserved for dunningDispatcher and failedEvents"
+  );
+  console.log("  [PASS-LOCAL] src/lib/early-access/gmail.ts preserved for dependent services.");
+
+  // ---------------------------------------------------------------------------
+  // TEST 6b: Verifying guest requests to /jobs are not redirected
+  // ---------------------------------------------------------------------------
+  console.log("\nTest 6b: Verifying guest requests to /jobs are not redirected...");
+  for (const jobsPath of ["/jobs", "/jobs?location=Remote", "/jobs/"]) {
+    const jobsReq = new NextRequest(`http://localhost:3000${jobsPath}`);
+    const jobsRes = await middleware(jobsReq);
+    assert.strictEqual(
+      jobsRes.status,
+      200,
+      `Guest request to '${jobsPath}' must not be redirected (expected 200, got ${jobsRes.status})`
+    );
+    assert.strictEqual(
+      jobsRes.headers.get("location"),
+      null,
+      `Guest request to '${jobsPath}' must not have a Location redirect header`
+    );
+  }
+  console.log("  [PASS-LOCAL] Guest requests to /jobs proceed without redirection to /login or /early-access.");
+
+  // ---------------------------------------------------------------------------
+  // TEST 6c: Digest cron gmail_send_log read errors (tests added by #615, kept verbatim)
+  // The lead-capture sender/digest helper is preserved by this PR, so its tests are preserved too.
+  // ---------------------------------------------------------------------------
+  console.log("\nTest 6c: Verifying digest cron gmail_send_log read error logging, single retry and redaction...");
+  {
+    const { runEarlyAccessDigestCron } = await import("../src/lib/early-access/gmail");
+    const originalConsoleWarn = console.warn;
+    const capturedWarnings: string[] = [];
+    console.warn = (...args: any[]) => {
+      capturedWarnings.push(args.map((a) => String(a)).join(" "));
+    };
+    const envKeys = ["APPS_SCRIPT_MAIL_URL", "APPS_SCRIPT_MAIL_SECRET", "EARLY_ACCESS_NOTIFY_EMAIL"] as const;
+    const savedEnv: Record<string, string | undefined> = {};
+    for (const k of envKeys) savedEnv[k] = process.env[k];
+    process.env.APPS_SCRIPT_MAIL_URL = "https://script.google.com/macros/s/test-deployment/exec";
+    process.env.APPS_SCRIPT_MAIL_SECRET = "test-apps-script-secret-value";
+    process.env.EARLY_ACCESS_NOTIFY_EMAIL = "owner-notify@example.com";
+
+    try {
+      // Minimal Supabase stand-in: every table other than gmail_send_log has no rows.
+      const emptyChain: any = {
+        select: () => emptyChain,
+        eq: () => emptyChain,
+        gt: () => emptyChain,
+        order: async () => ({ data: [], error: null }),
+      };
+      const realClient: any = { from: () => emptyChain };
+
+      // 5d2. gmail_send_log read error: real PostgREST error is logged, retried once, then fails closed
+      {
+        const pgrst = { code: "PGRST002", message: "Could not query the database for the schema cache", details: "retrying" };
+        const flakyClient = (failures: number, fail: () => any = () => ({ data: null, error: pgrst, status: 503 })) => {
+          let calls = 0;
+          const chain: any = {
+            select: () => chain, eq: () => chain, order: () => chain, limit: () => chain,
+            maybeSingle: async () => (++calls <= failures ? fail() : { data: null, error: null }),
+          };
+          return {
+            calls: () => calls,
+            client: { ...realClient, from: (t: string) => (t === "gmail_send_log" ? chain : realClient.from(t)) },
+          };
+        };
+
+        capturedWarnings.length = 0;
+        const alwaysDown = flakyClient(99);
+        const downRes = await runEarlyAccessDigestCron({ supabaseClient: alwaysDown.client, retryDelayMs: 0, dryRun: true });
+        assert.strictEqual(downRes.status, "failed");
+        assert.strictEqual(downRes.reason, "log_read_error");
+        assert.strictEqual(alwaysDown.calls(), 2, "gmail_send_log read must be retried exactly once");
+        const warnText = capturedWarnings.join("\n");
+        assert.ok(warnText.includes("code=PGRST002") && warnText.includes("schema cache"), "underlying PostgREST error must be logged");
+        assert.ok(warnText.includes("status=503"), "HTTP status must be logged");
+        assert.ok(!warnText.includes("details") && !warnText.includes("retrying\""), "raw details must never be logged");
+        assert.ok(warnText.includes("retrying once") && warnText.includes("failing closed"));
+
+        const blip = flakyClient(1);
+        const blipRes = await runEarlyAccessDigestCron({ supabaseClient: blip.client, retryDelayMs: 0, dryRun: true });
+        assert.notStrictEqual(blipRes.reason, "log_read_error", "a single transient error must recover on retry");
+        assert.strictEqual(blip.calls(), 2);
+
+        // Sensitive content in the error must be redacted/bounded in both the error-return and thrown paths.
+        const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyLTEyMyJ9.c2lnbmF0dXJlLXNpZ25hdHVyZQ";
+        const configuredSecret = process.env.APPS_SCRIPT_MAIL_SECRET || "";
+        const sensitive =
+          `row (victim@example.com) rejected; Authorization: Bearer sk_live_ABC123XYZ; jwt=${jwt}; ` +
+          `oauth=ya29.a0AfH6SMBxyz; secret=${configuredSecret}; ` + "x".repeat(5000);
+        const detailsMarker = "DETAILS_ROW_DATA_MARKER";
+        const leaks = (text: string) =>
+          ["victim@example.com", "sk_live_ABC123XYZ", jwt.slice(0, 20), "ya29.a0AfH6SMBxyz", detailsMarker, "x".repeat(250)]
+            .concat(configuredSecret.length >= 3 ? [`secret=${configuredSecret}`] : [])
+            .filter((s) => text.includes(s));
+
+        for (const [label, fail] of [
+          ["error-return", () => ({ data: null, error: { code: "PGRST002", message: sensitive, details: `${detailsMarker} owner@example.com` }, status: 503 })],
+          ["thrown", () => { throw new Error(sensitive); }],
+        ] as const) {
+          capturedWarnings.length = 0;
+          const c = flakyClient(99, fail);
+          const r = await runEarlyAccessDigestCron({ supabaseClient: c.client, retryDelayMs: 0, dryRun: true });
+          assert.strictEqual(r.reason, "log_read_error", `${label}: must fail closed`);
+          assert.strictEqual(c.calls(), 2, `${label}: must retry exactly once`);
+          const text = capturedWarnings.join("\n");
+          assert.deepStrictEqual(leaks(text), [], `${label}: sensitive values leaked to logs`);
+          assert.ok(text.includes("[REDACTED_EMAIL]") && text.includes("[REDACTED_TOKEN]"), `${label}: redaction markers expected`);
+          for (const w of capturedWarnings) assert.ok(w.length < 600, `${label}: warning must be bounded (got ${w.length})`);
+        }
+
+        // retryDelayMs must be finite and non-negative; invalid values fall back to the 30s default.
+        const realSetTimeout = globalThis.setTimeout;
+        for (const bad of [Number.NaN, -1, Number.POSITIVE_INFINITY]) {
+          const delays: number[] = [];
+          (globalThis as any).setTimeout = (fn: () => void, ms?: number) => { delays.push(ms ?? 0); return realSetTimeout(fn, 0); };
+          try {
+            await runEarlyAccessDigestCron({ supabaseClient: flakyClient(99).client, retryDelayMs: bad, dryRun: true });
+          } finally {
+            globalThis.setTimeout = realSetTimeout;
+          }
+          assert.ok(delays.includes(30_000) && !delays.includes(bad), `retryDelayMs=${bad} must fall back to 30000ms`);
+        }
+        console.log("  [PASS-LOCAL] gmail_send_log read error logs sanitized code/status/message (no details), retries once, then fails closed");
+      }
+    } finally {
+      console.warn = originalConsoleWarn;
+      for (const k of envKeys) {
+        if (savedEnv[k] === undefined) delete process.env[k];
+        else process.env[k] = savedEnv[k];
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // TEST 7: Subprocess Negative Control Execution
+  // ---------------------------------------------------------------------------
+  console.log("\n--- TEST 7: SUBPROCESS NEGATIVE CONTROL EXECUTION ---");
+  const negFlags = [
+    "--negative-control",
+    "--negative-control-cap",
+    "--negative-control-digest",
+    "--negative-control-approval",
+    "--negative-control-self-approve",
+  ];
+  for (const flag of negFlags) {
+    const res = spawnSync("npx", ["tsx", "scripts/test-early-access.ts", flag], {
+      encoding: "utf-8",
       shell: true,
-      stdio: "pipe",
-      env: { ...process.env, NODE_ENV: "test" },
     });
     assert.notStrictEqual(
-      child.status,
+      res.status,
       0,
-      `Negative control '${flag}' must exit with non-zero code, got ${child.status}`
+      `Negative control with flag '${flag}' must exit non-zero!`
     );
-    console.log(`  [PASS] Negative control '${flag}' exited non-zero (${child.status})`);
-  }
-
-  // ---------------------------------------------------------------------------
-  // TEST 8: Cloudflare Pages 1101 / JSON-Only Error & AI Quota Rollback Regression
-  // ---------------------------------------------------------------------------
-  console.log("\n[TEST 8] Verifying Cloudflare Pages 1101 POST preservation, JSON error resilience, AI quota rollback, and 5xx logging...");
-  {
-    // 8A. Middleware must pass POST requests without consuming bodyUsed or breaking `new Request(url, req)`
-    const bodyPayload = JSON.stringify({ email: "cf-preview@example.com" });
-    const postMwReq = new NextRequest("http://localhost:3000/api/early-access", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: bodyPayload,
-    });
-    const postMwRes = await middleware(postMwReq);
-    assert.strictEqual(postMwReq.bodyUsed, false, "Middleware must NOT consume POST request body (prevents CF 1101)");
-    const downstreamReq = new Request(postMwReq.url, postMwReq);
-    assert.strictEqual(
-      await downstreamReq.text(),
-      bodyPayload,
-      "Cloudflare next-on-pages downstream `new Request(url, req)` must preserve POST body"
-    );
-    assert.strictEqual(postMwRes.headers.get("x-middleware-next"), "1");
-    assert.ok(postMwRes.headers.get("x-request-id"), "Middleware must attach x-request-id on POST pass-through");
-
-    // 8B. POST /api/early-access returns valid JSON for invalid email (400), honeypot (200), and defensive error paths (500)
-    const invalidRes = await earlyAccessPost(
-      new Request("http://localhost:3000/api/early-access", {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.201" },
-        body: JSON.stringify({ email: "not-an-email" }),
-      })
-    );
-    assert.strictEqual(invalidRes.status, 400);
-    assert.ok((invalidRes.headers.get("content-type") || "").includes("application/json"));
-    const invalidJson = await invalidRes.json();
-    assert.strictEqual(invalidJson.ok, false);
-
-    const honeypotRes = await earlyAccessPost(
-      new Request("http://localhost:3000/api/early-access", {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.202" },
-        body: JSON.stringify({ email: "", website: "http://bot.spam" }),
-      })
-    );
-    assert.strictEqual(honeypotRes.status, 200);
-    assert.ok((honeypotRes.headers.get("content-type") || "").includes("application/json"));
-    const honeypotJson = await honeypotRes.json();
-    assert.strictEqual(honeypotJson.ok, true);
-
-    const brokenReq = {
-      headers: {
-        get() {
-          throw new Error("Simulated malformed header access");
-        },
-      },
-    } as unknown as Request;
-    const brokenRes = await earlyAccessPost(brokenReq);
-    assert.strictEqual(brokenRes.status, 500);
-    assert.ok((brokenRes.headers.get("content-type") || "").includes("application/json"));
-    const brokenJson = await brokenRes.json();
-    assert.strictEqual(brokenJson.ok, false);
-
-    // 8C. AI routes always return JSON (never throw non-JSON 500), failed AI never consumes quota, and 5xx emits structured error logs
-    const { handleAiRequest, _resetAiRateLimitStore } = await import("../src/lib/ai/serviceHandler");
-    const { POST: aiPost } = await import("../src/app/api/ai/route");
-    const { _resetGroqCircuitBreaker } = await import("../src/lib/ai/circuitBreaker");
-
-    const aiRouteBrokenReq = new Request("http://localhost:3000/api/ai", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ operation: "job_fit" }),
-    });
-    const aiRouteRes = await aiPost(aiRouteBrokenReq);
-    assert.ok(aiRouteRes.status >= 400 && aiRouteRes.status < 600);
-    assert.ok((aiRouteRes.headers.get("content-type") || "").includes("application/json"));
-    await aiRouteRes.json();
-
-    const makeMockAiSupabase = () => {
-      const refundedCalls: string[] = [];
-      return {
-        refundedCalls,
-        client: {
-          auth: {
-            getUser: async () => ({
-              data: {
-                user: {
-                  id: "00000000-0000-4000-8000-000000000801",
-                  email: "approved-ai@example.com",
-                  email_confirmed_at: new Date().toISOString(),
-                  app_metadata: { provider: "email", providers: ["email", "google"] },
-                  identities: [{ provider: "email" }, { provider: "google" }],
-                },
-              },
-              error: null,
-            }),
-          },
-          from: (table: string) => {
-            const chain: any = {
-              select: () => chain,
-              eq: () => chain,
-              maybeSingle: async () => {
-                if (table === "early_access_approved" || table === "early_access_emails") {
-                  return { data: { id: "ea-1", email: "approved-ai@example.com", approved: true }, error: null };
-                }
-                return { data: null, error: null };
-              },
-              update: () => chain,
-            };
-            return chain;
-          },
-          rpc: async (fn: string) => {
-            if (fn === "ai_global_budget_reserve") {
-              return { data: [{ allowed: true, remaining_tokens: 100000 }], error: null };
-            }
-            if (fn === "ai_concurrency_acquire") {
-              return { data: [{ allowed: true, lease_id: "lease-8", current_leases: 1 }], error: null };
-            }
-            if (fn === "check_and_increment_ai_quota") {
-              return { data: { allowed: true, current_count: 1, daily_limit: 50 }, error: null };
-            }
-            if (fn === "refund_ai_quota") {
-              refundedCalls.push(fn);
-              return { data: true, error: null };
-            }
-            return { data: true, error: null };
-          },
-        },
-      };
-    };
-
-    const prevGroqKey = process.env.GROQ_API_KEY;
-    const prevSbUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const prevSbKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    const prevAllowedEmails = process.env.EARLY_ACCESS_ALLOWED_EMAILS;
-    const prevMockRateLimitClient = (globalThis as any).__mockRateLimitClient;
-    const origConsoleError = console.error;
-    const capturedErrorLogs: string[] = [];
-
-    try {
-      (globalThis as any).__mockRateLimitClient = {
-        rpc: async () => ({
-          data: { allowed: true, retry_after: 0, current_count: 1 },
-          error: null,
-        }),
-      };
-      process.env.EARLY_ACCESS_ALLOWED_EMAILS = "approved-ai@example.com";
-      process.env.NEXT_PUBLIC_SUPABASE_URL = "https://mock.supabase.co";
-      process.env.SUPABASE_SERVICE_ROLE_KEY = "mock-service-role-key";
-      delete process.env.GROQ_API_KEY;
-      delete process.env.AI_PROVIDER_KEY;
-      delete process.env.GROQ_KEY;
-
-      console.error = (...args: any[]) => {
-        capturedErrorLogs.push(args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" "));
-      };
-
-      // (i) Missing GROQ_API_KEY on resume_tailor: must fail BEFORE consumeSet and emit 5xx log
-      _resetAiRateLimitStore();
-      _resetGroqCircuitBreaker();
-      let consumeCountMissing = 0;
-      let refundCountMissing = 0;
-      const missingRes = await handleAiRequest(
-        new Request("http://localhost:3000/api/ai", {
-          method: "POST",
-          headers: { authorization: "Bearer token-1", "content-type": "application/json", "x-forwarded-for": "203.0.113.210" },
-          body: JSON.stringify({
-            operation: "resume_tailor",
-            params: {
-              candidate: {
-                name: "Jane Doe",
-                headline: "Senior Backend Engineer",
-                summary: "Senior engineer with Postgres and TypeScript experience.",
-                skills: ["TypeScript", "Postgres"],
-                experience: ["Built scalable backend APIs."],
-              },
-              job: {
-                title: "Backend Engineer",
-                company: "Acme",
-                description: "Build scalable APIs with TypeScript and Postgres.",
-              },
-            },
-          }),
-        }),
-        {
-          env: {},
-          getSupabaseAdmin: () => makeMockAiSupabase().client,
-          getServerEntitlement: async () => ({ isPro: true, status: "active" }),
-          consumeSet: async () => {
-            consumeCountMissing++;
-            return { success: true, source: "plan", resumesRemaining: 4, coverLettersRemaining: 5, addonSetsRemaining: 0, dailyRemaining: 29 };
-          },
-          refundSet: async () => {
-            refundCountMissing++;
-            return { refunded: true };
-          },
-        }
-      );
-      assert.strictEqual(missingRes.status, 500);
-      const missingBody = await missingRes.json();
-      assert.strictEqual(missingBody.missingVariable, "GROQ_API_KEY");
-      assert.strictEqual(consumeCountMissing, 0, "Missing GROQ_API_KEY must NOT consume daily tailoring quota");
-      assert.strictEqual(refundCountMissing, 0);
-      assert.ok(
-        capturedErrorLogs.some((line) => line.includes("5xx response returned") || line.includes("GROQ_API_KEY")),
-        "AI 5xx response must emit a structured server error log"
-      );
-
-      // (ii) Upstream failure on cover_letter after consumeSet: must refund consumed credit and emit 5xx log
-      _resetAiRateLimitStore();
-      _resetGroqCircuitBreaker();
-      capturedErrorLogs.length = 0;
-      let consumeCountUpstream = 0;
-      let refundCountUpstream = 0;
-      const upstreamFailRes = await handleAiRequest(
-        new Request("http://localhost:3000/api/ai", {
-          method: "POST",
-          headers: { authorization: "Bearer token-2", "content-type": "application/json", "x-forwarded-for": "203.0.113.211" },
-          body: JSON.stringify({
-            operation: "cover_letter",
-            params: {
-              candidate: {
-                name: "Jane Doe",
-                headline: "Senior Backend Engineer",
-                summary: "Senior engineer with Postgres and TypeScript experience.",
-                skills: ["TypeScript", "Postgres"],
-                experience: ["5 years building TypeScript APIs."],
-              },
-              job: {
-                title: "Backend Engineer",
-                company: "Acme",
-                description: "Build scalable APIs with TypeScript and Postgres.",
-              },
-            },
-          }),
-        }),
-        {
-          env: { GROQ_API_KEY: "test-key" },
-          getSupabaseAdmin: () => makeMockAiSupabase().client,
-          getServerEntitlement: async () => ({ isPro: true, status: "active" }),
-          consumeSet: async () => {
-            consumeCountUpstream++;
-            return { success: true, source: "plan", resumesRemaining: 4, coverLettersRemaining: 4, addonSetsRemaining: 0, dailyRemaining: 29 };
-          },
-          refundSet: async () => {
-            refundCountUpstream++;
-            return { refunded: true };
-          },
-          callGroq: async () => {
-            throw new Error("Simulated upstream Groq outage");
-          },
-        }
-      );
-      assert.strictEqual(upstreamFailRes.status, 502);
-      assert.ok((upstreamFailRes.headers.get("content-type") || "").includes("application/json"));
-      assert.strictEqual(consumeCountUpstream, 1);
-      assert.strictEqual(refundCountUpstream, 1, "Failed AI generation must refund consumed daily allowance");
-      assert.ok(
-        capturedErrorLogs.some((line) => line.includes("5xx response returned")),
-        "Upstream 502 must emit structured 5xx server error log"
-      );
-    } finally {
-      console.error = origConsoleError;
-      (globalThis as any).__mockRateLimitClient = prevMockRateLimitClient;
-      if (prevGroqKey !== undefined) process.env.GROQ_API_KEY = prevGroqKey;
-      else delete process.env.GROQ_API_KEY;
-      if (prevSbUrl !== undefined) process.env.NEXT_PUBLIC_SUPABASE_URL = prevSbUrl;
-      else delete process.env.NEXT_PUBLIC_SUPABASE_URL;
-      if (prevSbKey !== undefined) process.env.SUPABASE_SERVICE_ROLE_KEY = prevSbKey;
-      else delete process.env.SUPABASE_SERVICE_ROLE_KEY;
-      if (prevAllowedEmails !== undefined) process.env.EARLY_ACCESS_ALLOWED_EMAILS = prevAllowedEmails;
-      else delete process.env.EARLY_ACCESS_ALLOWED_EMAILS;
-    }
-
-    console.log("  [PASS] CF 1101 POST preservation, JSON error resilience, AI quota rollback, and 5xx logging verified");
+    console.log(`  [PASS-LOCAL] Negative control '${flag}' exited non-zero (${res.status}) as expected.`);
   }
 
   console.log("\n================================================================================");
-  console.log("ALL EARLY-ACCESS-ONLY MODE & GMAIL API TESTS PASSED [PASS-LOCAL]");
+  console.log("ALL EARLY-ACCESS FLOW REMOVAL CHECKS PASSED [PASS-LOCAL]");
   console.log("================================================================================");
 }
 
 main().catch((err) => {
-  console.error("\n[FAIL] Early-Access Test Suite Error:\n", err);
+  console.error("Test failed:", err);
   process.exit(1);
 });

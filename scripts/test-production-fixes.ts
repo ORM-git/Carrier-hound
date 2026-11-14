@@ -427,7 +427,7 @@ async function runSuite() {
     `Expected 500 missing GROQ_API_KEY error, got status ${resMissingGroq.statusCode}`
   );
 
-  // 1.8 AI route executeAiCore returns HTTP 403 when user is unapproved
+  // 1.8 AI route executeAiCore: early-access gate removed, does not return Early access only
   const mockDepsUnapproved: any = {
     ...mockDepsMissingGroq,
     getSupabaseAdmin: () => ({
@@ -461,9 +461,9 @@ async function runSuite() {
       : resUnapproved.body;
 
   assert(
-    resUnapproved.statusCode === 403 && unapprovedPayload.error === "Early access only",
-    "1.8 AI route executeAiCore returns HTTP 403 when user is unapproved",
-    `Expected 403 Early access only, got status ${resUnapproved.statusCode}`
+    !String(unapprovedPayload.error || "").includes("Early access only"),
+    "1.8 AI route executeAiCore does not return Early access only",
+    `Expected no Early access only, got status ${resUnapproved.statusCode}`
   );
 
   if (savedEarlyAccessEmails) {

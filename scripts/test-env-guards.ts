@@ -360,7 +360,7 @@ async function runSuite() {
     );
   }
 
-  // 1.8 /api/ai POST (Unapproved user receives 403 Early access only)
+  // 1.8 /api/ai POST (New signed-in user hits pro gate, not early-access gate)
   {
     restoreEnv();
     process.env.NEXT_PUBLIC_SUPABASE_URL = "https://mock.supabase.co";
@@ -399,9 +399,9 @@ async function runSuite() {
       const data = await res.json();
 
       assert(
-        res.status === 403 && data.error === "Early access only",
-        "Next.js POST /api/ai strictly rejects unapproved user with 403 Early access only",
-        `Expected status 403 and error 'Early access only', got status ${res.status}: ${JSON.stringify(data)}`
+        !String(data.error || "").includes("Early access only"),
+        "Next.js POST /api/ai does not block new user with Early access only",
+        `Expected no Early access only, got status ${res.status}: ${JSON.stringify(data)}`
       );
     } finally {
       global.fetch = origFetch;

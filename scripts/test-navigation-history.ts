@@ -80,13 +80,12 @@ export const ROUTER_REPLACE_ALLOWLIST: RouterReplaceAllowlistEntry[] = [
       "router.replace(`/login?returnTo=/jobs/${jobId}/skill-what-if`)",
     ],
   },
-  // State-only filter/reset URL sync (2 sites) and unauthenticated mount guard (1 site) on `/jobs`
+  // State-only filter/reset URL sync (2 sites) on `/jobs`
   {
     file: "src/app/jobs/page.tsx",
-    expectedCount: 3,
+    expectedCount: 2,
     requiredSnippets: [
       "router.replace(newUrl, { scroll: false })",
-      "router.replace(`/login?returnTo=${encodeURIComponent(returnPath)}`)",
     ],
   },
   // Already-authenticated auto-redirect on `/login` replaces login screen so Back does not revisit it

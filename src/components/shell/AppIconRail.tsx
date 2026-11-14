@@ -147,7 +147,7 @@ export default function AppIconRail({ currentRoute }: AppIconRailProps) {
               <Link
                 href="/dashboard"
                 aria-label="CareerMonke Dashboard"
-                className="w-12 h-12 flex items-center justify-center rounded-xl hover:bg-[#F8FAFC] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+                className="w-[48px] h-[48px] flex items-center justify-center rounded-xl hover:bg-[#F8FAFC] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
               >
                 <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center p-0.5 border border-[#E2E8F0] shadow-xs shrink-0">
                   <BrandIcon className="w-6 h-6" />

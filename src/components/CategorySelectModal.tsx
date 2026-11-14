@@ -16,7 +16,7 @@ export default function CategorySelectModal({ open, onOpenChange }: CategorySele
 
   const handleContinue = () => {
     onOpenChange(false);
-    router.push("/early-access");
+    router.push("/signup");
   };
 
   return (

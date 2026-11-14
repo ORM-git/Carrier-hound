@@ -57,7 +57,6 @@ const adopters: Array<[string, string, string[]]> = [
   ["src/app/api/ticker/route.ts", "reportRequestErrorToSentry(req, _err)", []],
   ["src/app/api/track/route.ts", "reportRequestErrorToSentry(req, _err)", []],
   ["src/app/api/radar/route.ts", "reportRequestErrorToSentry(req, err)", ["export async function GET(req: Request)"]],
-  ["src/app/api/early-access/route.ts", "reportRequestErrorToSentry(req, _err)", []],
   ["src/app/api/jobs/search/route.ts", "reportRequestErrorToSentry(req, err)", []],
   ["src/app/api/jobs/top10/route.ts", "reportRequestErrorToSentry(req, err)", []],
   ["src/app/api/jobs/pro/route.ts", "reportRequestErrorToSentry(req, err)", []],

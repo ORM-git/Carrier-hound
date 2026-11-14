@@ -7,7 +7,6 @@ import { formatSalary } from "@/lib/salary/parser";
 import { extractCandidateRelevanceTerms, LiveJob } from "@/lib/jobs/service";
 import { CandidateProfile } from "@/lib/resume/types";
 import { isJobEligible } from "@/lib/jobs/eligibility";
-import { isUserApproved } from "@/lib/auth/approval";
 
 import { checkRequiredEnv } from "@/lib/api/envCheck";
 
@@ -121,18 +120,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // Invite-only early-access approval check
-    const isApproved = await isUserApproved(supabaseAdmin, user);
-    if (!isApproved) {
-      return NextResponse.json(
-        {
-          error: "Early access only",
-          message: "Invite-only access: your account is pending approval.",
-          jobs: [],
-        },
-        { status: 403 }
-      );
-    }
 
     // Ban check (fails closed on lookup error)
     const banCheck = await verifyUserNotBanned(supabaseAdmin, user.id, user.user_metadata);

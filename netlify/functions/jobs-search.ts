@@ -4,7 +4,6 @@ import { COUNTRY_CODE_TO_NAME, getCountryFilterClause } from "../../src/lib/coun
 import { decodeCursor, encodeCursor } from "../../src/lib/pagination/cursor";
 import { capJobsPerCompany, buildCompanyGroupIdMap, COMPANY_GROUP_SECRET_ENV } from "../../src/lib/jobs/capping";
 import { normalizeUserCountries, applyEligibilityFilter, isJobEligible } from "../../src/lib/jobs/eligibility";
-import { isUserApproved } from "../../src/lib/auth/approval";
 import { safeLog } from "./_logger";
 
 function getSupabaseAdmin() {
@@ -206,19 +205,6 @@ export function createHandler(deps: JobsSearchDeps = {}) {
       try {
         const { data: { user } } = await supabaseAdmin.auth.getUser(token);
         if (user) {
-          const isApproved = await isUserApproved(supabaseAdmin, user);
-          if (!isApproved) {
-            return {
-              statusCode: 403,
-              headers,
-              body: JSON.stringify({
-                error: "Early access only",
-                message: "Invite-only access: your account is pending approval.",
-                jobs: [],
-                total: 0,
-              }),
-            };
-          }
           userId = user.id;
           const { data: sub } = await supabaseAdmin
             .from("subscriptions")

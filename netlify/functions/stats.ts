@@ -31,7 +31,6 @@ function getSupabaseAdmin() {
 
 import { buildCorsHeaders, handleCorsPreflight } from "./_cors";
 import { safeLog } from "./_logger";
-import { isUserApproved } from "../../src/lib/auth/approval";
 
 const CORS_OPTIONS = {
   allowedMethods: "GET, OPTIONS",
@@ -65,20 +64,6 @@ export async function handler(event?: any) {
 
         if (user && !userErr) {
           isAuthenticated = true;
-          isApproved = await isUserApproved(supabase, user);
-          if (!isApproved) {
-            return {
-              statusCode: 403,
-              headers: {
-                ...headers,
-                "Cache-Control": "no-store",
-              },
-              body: JSON.stringify({
-                error: "Early access only",
-                message: "Invite-only access: your account is pending approval.",
-              }),
-            };
-          }
         }
       } catch (authErr) {
         safeLog.warn("[Netlify /stats] Token verification error", authErr);
@@ -106,10 +91,10 @@ export async function handler(event?: any) {
       };
     }
 
-    // Anonymous or non-approved caller: return ONLY fields the public UI needs
+    // Anonymous caller: return ONLY fields the public UI needs
     // (jobsToday, updatedAt). Strictly DO NOT expose totalJobs, companiesScanned,
     // activeJobs, or companies (zero aggregate job counts).
-    if (!isAuthenticated || !isApproved) {
+    if (!isAuthenticated) {
       return {
         statusCode: 200,
         headers,

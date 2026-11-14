@@ -240,7 +240,7 @@ async function run() {
     assert.strictEqual(bodyPro.available, true);
     assert.strictEqual(bodyPro.isPro, true);
 
-    // 4e. Unapproved user -> 403 Early access only
+    // 4e. Early-access gate removed: new signed-in Pro user does not receive 403 Early access only
     const reqUnapproved = new Request("http://localhost:3000/api/jobs/interview-pack?jobId=job_real_123", {
       headers: { Authorization: "Bearer unapproved_token" },
     });
@@ -248,11 +248,11 @@ async function run() {
       getSupabaseAdmin: () => mockAdmin("usr_unapproved", null, "unapproved@test.com"),
       getServerEntitlement: async () => ({ isPro: true }),
     });
-    assert.strictEqual(resUnapproved.status, 403, "Unapproved user must yield status 403");
+    assert.notStrictEqual(resUnapproved.status, 403, "New signed-in Pro user must not yield status 403");
     const bodyUnapproved = await resUnapproved.json();
-    assert.strictEqual(bodyUnapproved.error, "Early access only", "Must return Early access only");
+    assert.ok(!String(bodyUnapproved.error || "").includes("Early access only"), "Must not return Early access only");
 
-    console.log("  [PASS] Endpoint Live Execution: Missing token -> 401, Non-Pro -> 403, Unapproved -> 403, No real AI -> 503, Real AI -> 200");
+    console.log("  [PASS] Endpoint Live Execution: Missing token -> 401, Non-Pro -> 403, Early-access removed -> not 403, No real AI -> 503, Real AI -> 200");
   } catch (err: any) {
     failures.push(`API EXECUTION FAIL: ${err.message}`);
   }

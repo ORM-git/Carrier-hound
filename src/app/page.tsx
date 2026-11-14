@@ -114,7 +114,7 @@ export default function HomePage() {
               <h2 className="q" tabIndex={-1}>Applied in 18 seconds.</h2>
               <p id="applied-sub">Found early, tailored for the role, and sent straight to the company. That&apos;s the whole hunt.</p>
               <div className="done-btns">
-                <a className="btn btn-primary" href="/early-access">Get my real matches</a>
+                <a className="btn btn-primary" href="/signup">Get my real matches</a>
                 <button className="btn btn-ghost" type="button" id="again">Try another field</button>
               </div>
             </div>
@@ -177,7 +177,7 @@ export default function HomePage() {
           </ul>
           <figcaption className="fc-foot">Illustration · sample data</figcaption>
         </figure>
-        <a className="btn btn-ghost fbtn" href="/early-access">Explore jobs</a>
+        <a className="btn btn-ghost fbtn" href="/jobs">Explore jobs</a>
       </li>
       <li className="fxi">
         <div className="fx-copy">
@@ -198,7 +198,7 @@ export default function HomePage() {
           </div>
           <figcaption className="fc-foot">Illustration · sample data</figcaption>
         </figure>
-        <a className="btn btn-ghost fbtn" href="/early-access">Try AI resume tools</a>
+        <a className="btn btn-ghost fbtn" href="/signup">Try AI resume tools</a>
       </li>
       <li className="fxi">
         <div className="fx-copy">
@@ -219,7 +219,7 @@ export default function HomePage() {
           </ul>
           <figcaption className="fc-foot">Illustration · sample data</figcaption>
         </figure>
-        <a className="btn btn-ghost fbtn" href="/early-access">Find my matches</a>
+        <a className="btn btn-ghost fbtn" href="/signup">Find my matches</a>
       </li>
     </ol>
   </section>
@@ -279,8 +279,8 @@ export default function HomePage() {
       <h2 className="fp-title" id="cta-h">Free preview</h2>
       <p className="fp-sub">No commitment. Just window shopping for your dream job. Job maxxing starts here.</p>
       <div className="fp-row">
-        <a className="fp-btn fp-btn-white" href="/early-access">View Jobs <span aria-hidden="true">→</span></a>
-        <a className="fp-btn fp-btn-outline" href="/early-access">See my Ideal Match <span aria-hidden="true">→</span></a>
+        <a className="fp-btn fp-btn-white" href="/jobs">View Jobs <span aria-hidden="true">→</span></a>
+        <a className="fp-btn fp-btn-outline" href="/signup">See my Ideal Match <span aria-hidden="true">→</span></a>
       </div>
     </div>
   </section>
@@ -387,11 +387,11 @@ export default function HomePage() {
     <nav className="f-grid" aria-label="Footer">
       <div className="f-group">
         <h3>Product</h3>
-        <a href="/early-access">Live Job Search</a>
-        <a href="/early-access">Companies Hiring</a>
+        <a href="/jobs">Live Job Search</a>
+        <a href="/worldwide">Companies Hiring</a>
         <a href="/pricing">Pricing &amp; Plans</a>
-        <a href="/early-access">Member Sign In</a>
-        <a href="/early-access">Worldwide Directory</a>
+        <a href="/login">Member Sign In</a>
+        <a href="/worldwide">Worldwide Directory</a>
         <a href="mailto:support@careermonke.com">Support</a>
       </div>
       <div className="f-group">
