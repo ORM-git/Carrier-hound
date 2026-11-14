@@ -2,7 +2,7 @@
  * scripts/test-billing-money-path.ts
  *
  * Comprehensive verification suite for Money-Path Hardening:
- * 1) Renewal/upgrade: in fulfil_payment_order (new migration file) and Next fallback:
+ * 1) Renewal/upgrade: in fulfil_payment_order (migration file) and renewal date calculation:
  *    - When an active plan user buys any plan: new period end = max(current_period_end, now) + duration.
  *    - Never shortens an existing period.
  * 2) Add-ons:
@@ -12,9 +12,9 @@
  *    - Active-Pro precheck added to Cloudflare/Next order route, symmetric with Netlify.
  *    - Rejects free users with HTTP 403 PRO_REQUIRED.
  * 4) Fulfilment fail-closed and atomic:
+ *    - Fulfill strictly through atomic SQL RPC fulfil_payment_order with zero JS grant writes.
  *    - Never mark order paid before entitlement grant succeeds.
- *    - Old fallback path that marked paid first is removed.
- *    - Retries re-attempt the grant if previously incomplete.
+ *    - Fail-closed on RPC error with HTTP 500 FULFILLMENT_FAILED.
  * 5) Negative control:
  *    - Exits non-zero on assertion error.
  */
@@ -324,45 +324,59 @@ async function runMoneyPathTests() {
   );
   const nextVerifyRouteCode = fs.readFileSync(nextVerifyRoutePath, "utf-8");
 
-  const normalizedCode = nextVerifyRouteCode.replace(/\r\n/g, "\n");
-  const fulfillStart = normalizedCode.indexOf("// Fulfill based strictly on orderRow");
-  assert.ok(fulfillStart !== -1, "Fulfillment section must exist in verify route");
-
-  const addonBranchStart = normalizedCode.indexOf("if (orderRow.addon_code) {", fulfillStart);
-  const planBranchStart = normalizedCode.indexOf("} else if (orderRow.plan_code) {", fulfillStart);
-
-  assert.ok(addonBranchStart !== -1, "Addon branch must exist in verify route");
-  assert.ok(planBranchStart !== -1, "Plan branch must exist in verify route");
-
-  const addonBranch = normalizedCode.slice(addonBranchStart, planBranchStart);
-  const planBranch = normalizedCode.slice(planBranchStart);
-
-  const addonInsertPos = addonBranch.indexOf('.from("user_addon_credits")');
-  const addonPaidUpdatePos = addonBranch.indexOf('status: "paid"');
-  assert.ok(addonInsertPos !== -1, "Addon branch must insert into user_addon_credits");
-  assert.ok(addonPaidUpdatePos !== -1, "Addon branch must mark payment_orders paid");
+  // 4A: Verify verify route uses RPC-only fulfilment and has ZERO JS grant writes
   assert.ok(
-    addonInsertPos < addonPaidUpdatePos,
-    "CRITICAL: in addon branch, user_addon_credits must be inserted BEFORE payment_orders is marked paid!"
+    nextVerifyRouteCode.includes('supabaseAdmin.rpc("fulfil_payment_order"'),
+    "Verify route must fulfill only via atomic SQL RPC fulfil_payment_order"
+  );
+  assert.ok(
+    nextVerifyRouteCode.includes("p_provider_order_id: orderId"),
+    "RPC call must pass p_provider_order_id"
+  );
+  assert.ok(
+    nextVerifyRouteCode.includes("p_user_id: user.id"),
+    "RPC call must pass p_user_id"
+  );
+  assert.ok(
+    nextVerifyRouteCode.includes("p_expected_mode: serverMode"),
+    "RPC call must pass p_expected_mode"
   );
 
-  const subUpsertPos = planBranch.indexOf('.from("subscriptions")');
-  const subPaidUpdatePos = planBranch.indexOf('status: "paid"');
-  assert.ok(subUpsertPos !== -1, "Plan branch must upsert into subscriptions");
-  assert.ok(subPaidUpdatePos !== -1, "Plan branch must mark payment_orders paid");
+  // Absence of any JS grant writes in verify route
   assert.ok(
-    subUpsertPos < subPaidUpdatePos,
-    "CRITICAL: in plan branch, subscriptions must be upserted BEFORE payment_orders is marked paid!"
+    !nextVerifyRouteCode.includes('.from("subscriptions")'),
+    "Verify route must not contain JS fallback writes or reads to subscriptions"
+  );
+  assert.ok(
+    !nextVerifyRouteCode.includes('.from("user_addon_credits")'),
+    "Verify route must not contain JS fallback writes or reads to user_addon_credits"
+  );
+  assert.ok(
+    !nextVerifyRouteCode.includes('.update({ status: "paid"'),
+    "Verify route must not directly mark payment_orders paid via JS update"
   );
 
-  // 4B: Verify retry logic re-attempts grant if order status is paid but entitlement missing
+  // Fail-closed on RPC error
+  assert.ok(
+    nextVerifyRouteCode.includes('code: "FULFILLMENT_FAILED"') &&
+      nextVerifyRouteCode.includes("status: 500"),
+    "Verify route must return HTTP 500 FULFILLMENT_FAILED on RPC error"
+  );
+
+  // Consistent 403 on PRO_REQUIRED
+  assert.ok(
+    nextVerifyRouteCode.includes('fulfilRes?.code === "PRO_REQUIRED" ? 403 : 400'),
+    "Verify route must return HTTP 403 when RPC returns PRO_REQUIRED"
+  );
+
+  // 4B: Idempotent short-circuit on already-paid orders without re-granting
   assert.ok(
     nextVerifyRouteCode.includes('if (orderRow.status === "paid") {'),
     "Verify route must handle orderRow.status === 'paid'"
   );
   assert.ok(
-    nextVerifyRouteCode.includes("existingCredit") && nextVerifyRouteCode.includes("existingSub"),
-    "Verify route must check if entitlement record already exists before short-circuiting"
+    nextVerifyRouteCode.includes("alreadyPaid: true"),
+    "Verify route must return alreadyPaid: true for already-paid orders without re-granting"
   );
 
   // 4C: Verify SQL migration ordering
