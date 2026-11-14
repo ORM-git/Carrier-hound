@@ -171,6 +171,15 @@ export async function openRazorpayCheckout(options: RazorpayCheckoutOptions = {}
 
   try {
     const rzp = new (window as any).Razorpay(razorpayOptions);
+    if (typeof rzp.on === "function") {
+      rzp.on("payment.failed", function (resp: any) {
+        const errorDesc =
+          resp?.error?.description ||
+          resp?.error?.reason ||
+          "Payment failed. Please try again.";
+        options.onError?.(new Error(errorDesc));
+      });
+    }
     rzp.open();
   } catch (err) {
     options.onError?.(err);

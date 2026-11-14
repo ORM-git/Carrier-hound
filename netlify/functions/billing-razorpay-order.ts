@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { resolveOrderPricing } from "../../src/lib/billing/quota";
 import { getServerEntitlement } from "../../src/lib/billing/serverEntitlement";
 import { getRazorpayKeyMode } from "../../src/lib/billing/mode";
+import { verifyUserNotBanned } from "../../src/lib/admin/auth";
 import { buildCorsHeaders, handleCorsPreflight } from "./_cors";
 import { safeLog } from "./_logger";
 
@@ -13,6 +14,8 @@ const CORS_OPTIONS = {
 export interface BillingOrderDeps {
   getSupabaseAdmin?: () => any;
   getServerEntitlement?: (userId: string) => Promise<any>;
+  verifyUserNotBanned?: (supabaseAdmin: any, userId: string, metadata?: any) => Promise<any>;
+  checkAddonEligibility?: (userId: string) => Promise<boolean>;
   fetchFn?: typeof fetch;
   isProductionHost?: boolean;
 }
@@ -275,15 +278,83 @@ export function createHandler(deps: BillingOrderDeps = {}) {
         };
       }
 
-      // Add-ons require active Pro subscription
+      // Add-ons require unbanned user and active Pro subscription (aligned with fulfillment SQL)
       if (pricing.type === "addon") {
-        const entitlement = await entitlementChecker(user.id);
-        if (!entitlement?.isPro) {
+        // 1. Fail-closed server ban check (verifyUserNotBanned / blocked_users)
+        const banChecker = deps.verifyUserNotBanned || verifyUserNotBanned;
+        const banCheck = await banChecker(supabaseAdmin, user.id, user.user_metadata);
+        if (banCheck?.isBlocked) {
+          return {
+            statusCode: banCheck.isServiceUnavailable ? 503 : 403,
+            headers,
+            body: JSON.stringify({
+              error: banCheck.error || "Account suspended. Access revoked by administrator.",
+              code: "USER_BLOCKED",
+            }),
+          };
+        }
+
+        // 2. Pre-charge eligibility check: status active/trialing AND current_period_end not null and in future
+        let isEligible = false;
+        if (deps.checkAddonEligibility) {
+          isEligible = Boolean(await deps.checkAddonEligibility(user.id));
+        } else {
+          // Direct query on subscriptions table matching fulfillment SQL
+          let checkedDb = false;
+          if (supabaseAdmin?.from) {
+            try {
+              const { data: sub, error } = await supabaseAdmin
+                .from("subscriptions")
+                .select("status, current_period_end")
+                .eq("user_id", user.id)
+                .order("created_at", { ascending: false })
+                .limit(1)
+                .maybeSingle();
+
+              if (!error && sub) {
+                checkedDb = true;
+                const isStatusValid = sub.status === "active" || sub.status === "trialing";
+                if (isStatusValid && sub.current_period_end) {
+                  const periodEnd = new Date(sub.current_period_end);
+                  if (!isNaN(periodEnd.getTime()) && periodEnd.getTime() > Date.now()) {
+                    isEligible = true;
+                  }
+                }
+              } else if (error) {
+                checkedDb = true;
+              }
+            } catch {
+              // fall through
+            }
+          }
+
+          if (!checkedDb && typeof entitlementChecker === "function") {
+            try {
+              const ent = await entitlementChecker(user.id);
+              if (
+                ent?.isPro &&
+                !ent.inGracePeriod &&
+                ent.status !== "in_grace_period" &&
+                (ent.status === "active" || ent.status === "trialing") &&
+                ent.expirationDate
+              ) {
+                const expDate = new Date(ent.expirationDate);
+                if (!isNaN(expDate.getTime()) && expDate.getTime() > Date.now()) {
+                  isEligible = true;
+                }
+              }
+            } catch {
+              // isEligible remains false
+            }
+          }
+        }
+
+        if (!isEligible) {
           return {
             statusCode: 403,
             headers,
             body: JSON.stringify({
-              error: "Add-on packs require an active Pro subscription",
+              error: "Active Pro subscription required to activate add-on credits",
               code: "PRO_REQUIRED",
             }),
           };

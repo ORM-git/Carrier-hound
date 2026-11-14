@@ -57,6 +57,8 @@ function createMockSupabase(db: MockDbState, validTokens: Record<string, any>) {
 
       const queryObj: any = {
         select: () => queryObj,
+        order: () => queryObj,
+        limit: () => queryObj,
         eq: (col: string, val: any) => {
           if (col === "provider_order_id" || col === "id") filterOrderId = val;
           if (col === "user_id") filterUserId = val;
@@ -64,6 +66,13 @@ function createMockSupabase(db: MockDbState, validTokens: Record<string, any>) {
           return queryObj;
         },
         maybeSingle: async () => {
+          if (table === "subscriptions") {
+            const sub = filterUserId ? db.subscriptions.get(filterUserId) : null;
+            return { data: sub || null, error: null };
+          }
+          if (table === "blocked_users") {
+            return { data: null, error: null };
+          }
           if (table === "payment_orders") {
             const order = filterOrderId ? db.orders.get(filterOrderId) : null;
             if (!order) return { data: null, error: null };
@@ -162,21 +171,59 @@ async function runSuite() {
     return;
   }
 
-  // Setup mock database and tokens
-  const mockDb: MockDbState = {
-    orders: new Map(),
-    webhookEvents: new Set(),
-    subscriptions: new Map(),
-    addonCredits: new Map(),
-    rpcFulfilCalls: [],
-  };
+  const futurePeriodEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  const pastPeriodEnd = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
 
   const validUser = { id: "user_pro_123", email: "candidate@example.com" };
   const freeUser = { id: "user_free_456", email: "free@example.com" };
+  const graceUser = { id: "user_grace_789", email: "grace@example.com" };
+  const nullEndUser = { id: "user_null_end_101", email: "nullend@example.com" };
 
   const validTokens: Record<string, any> = {
     "valid-token-pro": validUser,
     "valid-token-free": freeUser,
+    "valid-token-grace": graceUser,
+    "valid-token-null-end": nullEndUser,
+  };
+
+  // Setup mock database and tokens
+  const mockDb: MockDbState = {
+    orders: new Map(),
+    webhookEvents: new Set(),
+    subscriptions: new Map([
+      [
+        validUser.id,
+        {
+          id: "sub_pro_123",
+          user_id: validUser.id,
+          status: "active",
+          current_period_end: futurePeriodEnd,
+          created_at: new Date().toISOString(),
+        },
+      ],
+      [
+        graceUser.id,
+        {
+          id: "sub_grace_789",
+          user_id: graceUser.id,
+          status: "in_grace_period",
+          current_period_end: pastPeriodEnd,
+          created_at: new Date().toISOString(),
+        },
+      ],
+      [
+        nullEndUser.id,
+        {
+          id: "sub_null_end_101",
+          user_id: nullEndUser.id,
+          status: "active",
+          current_period_end: null,
+          created_at: new Date().toISOString(),
+        },
+      ],
+    ]),
+    addonCredits: new Map(),
+    rpcFulfilCalls: [],
   };
 
   const mockAdminGetter = createMockSupabase(mockDb, validTokens);
@@ -202,7 +249,19 @@ async function runSuite() {
 
   const mockEntitlement = async (userId: string) => {
     if (userId === "user_pro_123") {
-      return { isPro: true, status: "active", planName: "Monthly" };
+      return { isPro: true, status: "active", planName: "Monthly", expirationDate: futurePeriodEnd };
+    }
+    if (userId === "user_grace_789") {
+      return {
+        isPro: true,
+        status: "in_grace_period",
+        inGracePeriod: true,
+        planName: "Monthly",
+        expirationDate: pastPeriodEnd,
+      };
+    }
+    if (userId === "user_null_end_101") {
+      return { isPro: true, status: "active", planName: "Monthly", expirationDate: null };
     }
     return { isPro: false, status: "none", planName: "Free Tier" };
   };
@@ -382,6 +441,24 @@ async function runSuite() {
       14900,
       "Addon 10 must resolve to 14900 paise (Rs 149)"
     );
+
+    // 3E: User in grace period attempts to buy Add-on 10 -> MUST be rejected with 403 PRO_REQUIRED
+    const graceAddonRes = await orderHandler({
+      httpMethod: "POST",
+      headers: { authorization: "Bearer valid-token-grace" },
+      body: JSON.stringify({ addonCode: "addon_10" }),
+    });
+    assert.strictEqual(graceAddonRes.statusCode, 403, "Grace period user must be rejected with 403");
+    assert.strictEqual(JSON.parse(graceAddonRes.body).code, "PRO_REQUIRED");
+
+    // 3F: Active user with missing/null current_period_end attempts to buy Add-on 10 -> MUST be rejected with 403 PRO_REQUIRED
+    const nullEndAddonRes = await orderHandler({
+      httpMethod: "POST",
+      headers: { authorization: "Bearer valid-token-null-end" },
+      body: JSON.stringify({ addonCode: "addon_10" }),
+    });
+    assert.strictEqual(nullEndAddonRes.statusCode, 403, "User with null period end must be rejected with 403");
+    assert.strictEqual(JSON.parse(nullEndAddonRes.body).code, "PRO_REQUIRED");
 
     console.log("  -> [PASS-LOCAL] Server-authoritative pricing and add-on Pro gating verified.");
 

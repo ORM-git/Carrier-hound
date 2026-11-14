@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { resolveOrderPricing } from "@/lib/billing/quota";
 import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
 import { getRazorpayKeyMode } from "@/lib/billing/mode";
+import { verifyUserNotBanned } from "@/lib/admin/auth";
 
 import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
 
@@ -86,6 +87,64 @@ function isProductionHost(req: Request, deps?: any): boolean {
       } catch {
         if (matchesProd(envUrl)) return true;
       }
+    }
+  }
+
+  return false;
+}
+
+async function checkAddonEligibility(
+  supabaseAdmin: any,
+  userId: string,
+  deps?: any
+): Promise<boolean> {
+  if (deps?.checkAddonEligibility) {
+    return Boolean(await deps.checkAddonEligibility(userId));
+  }
+
+  // 1. Direct query on subscriptions table (matching fulfillment SQL in rpc_record_payment_fulfillment:
+  // v_existing_sub IS NOT NULL AND v_existing_sub.status IN ('active', 'trialing')
+  // AND v_existing_sub.current_period_end IS NOT NULL AND v_existing_sub.current_period_end > now())
+  if (supabaseAdmin?.from) {
+    try {
+      const { data: sub, error } = await supabaseAdmin
+        .from("subscriptions")
+        .select("status, current_period_end")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!error && sub) {
+        const isStatusValid = sub.status === "active" || sub.status === "trialing";
+        if (!isStatusValid) return false;
+        if (!sub.current_period_end) return false;
+        const periodEnd = new Date(sub.current_period_end);
+        if (isNaN(periodEnd.getTime()) || periodEnd.getTime() <= Date.now()) return false;
+        return true;
+      }
+      if (error) {
+        return false;
+      }
+    } catch {
+      // If mock client does not support subscriptions table, fall through
+    }
+  }
+
+  // 2. Fallback to deps.getServerEntitlement with strict alignment to fulfillment SQL
+  const entitlementChecker = deps?.getServerEntitlement || getServerEntitlement;
+  if (typeof entitlementChecker === "function") {
+    try {
+      const entitlement = await entitlementChecker(userId);
+      if (!entitlement?.isPro) return false;
+      if (entitlement.inGracePeriod || entitlement.status === "in_grace_period") return false;
+      if (entitlement.status !== "active" && entitlement.status !== "trialing") return false;
+      if (!entitlement.expirationDate) return false;
+      const expDate = new Date(entitlement.expirationDate);
+      if (isNaN(expDate.getTime()) || expDate.getTime() <= Date.now()) return false;
+      return true;
+    } catch {
+      return false;
     }
   }
 
@@ -219,14 +278,27 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid plan or addon code" }, { status: 400 });
     }
 
-    // Add-ons require active Pro subscription
+    // Add-ons require unbanned user and active Pro subscription (aligned with fulfillment SQL)
     if (pricing.type === "addon") {
-      const entitlementChecker = deps.getServerEntitlement || getServerEntitlement;
-      const entitlement = await entitlementChecker(user.id);
-      if (!entitlement?.isPro) {
+      // 1. Fail-closed server ban check (verifyUserNotBanned / blocked_users)
+      const banChecker = deps.verifyUserNotBanned || verifyUserNotBanned;
+      const banCheck = await banChecker(supabaseAdmin, user.id, user.user_metadata);
+      if (banCheck?.isBlocked) {
         return NextResponse.json(
           {
-            error: "Add-on packs require an active Pro subscription",
+            error: banCheck.error || "Account suspended. Access revoked by administrator.",
+            code: "USER_BLOCKED",
+          },
+          { status: banCheck.isServiceUnavailable ? 503 : 403 }
+        );
+      }
+
+      // 2. Pre-charge eligibility check: status active/trialing AND current_period_end not null and in future
+      const isEligible = await checkAddonEligibility(supabaseAdmin, user.id, deps);
+      if (!isEligible) {
+        return NextResponse.json(
+          {
+            error: "Active Pro subscription required to activate add-on credits",
             code: "PRO_REQUIRED",
           },
           { status: 403 }
