@@ -308,4 +308,60 @@ describe("Pricing Page Add-on Pack Buy Flow", () => {
 
     expect(btn30.disabled).toBe(false);
   });
+
+  it("synchronously locks concurrent clicks while getSession is pending, calling handleProCheckout exactly once", async () => {
+    // Initial mount: user is null so handleBuyAddon will await getSession()
+    mockGetSession.mockResolvedValueOnce({
+      data: { session: null },
+    });
+
+    await mountPage();
+
+    let resolveSession: ((val: any) => void) | null = null;
+    const pendingSessionPromise = new Promise((resolve) => {
+      resolveSession = resolve;
+    });
+
+    // When handleBuyAddon calls getSession, return the pending promise
+    mockGetSession.mockImplementation(() => pendingSessionPromise);
+
+    const btn10 = container?.querySelector("button[data-addon-code='addon_10']") as HTMLButtonElement;
+    const btn30 = container?.querySelector("button[data-addon-code='addon_30']") as HTMLButtonElement;
+    expect(btn10).toBeTruthy();
+    expect(btn30).toBeTruthy();
+
+    // Click 1: addon_10 while getSession is pending
+    await act(async () => {
+      btn10.click();
+    });
+
+    // Click 2: different pack (addon_30) in a separate act while getSession is STILL pending
+    await act(async () => {
+      btn30.click();
+    });
+
+    // handleProCheckout must not have been called yet
+    expect(mockHandleProCheckout).not.toHaveBeenCalled();
+
+    // Now resolve getSession with an authenticated user
+    await act(async () => {
+      resolveSession!({
+        data: {
+          session: {
+            user: { id: "test-user-id", email: "candidate@gmail.com" },
+          },
+        },
+      });
+      await Promise.resolve();
+    });
+
+    // Assert handleProCheckout is called exactly once (for the first pack addon_10)
+    expect(mockHandleProCheckout).toHaveBeenCalledTimes(1);
+    expect(mockHandleProCheckout).toHaveBeenCalledWith(
+      expect.objectContaining({
+        addonCode: "addon_10",
+        redirectTarget: "/pricing",
+      })
+    );
+  });
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import LoggedInAppShell from "@/components/shell/LoggedInAppShell";
 import Footer from "@/components/Footer";
@@ -69,12 +69,15 @@ export default function PricingPage() {
   }, []);
 
   const [loadingAddon, setLoadingAddon] = useState<string | null>(null);
+  const addonCheckoutLockRef = useRef<boolean>(false);
 
   const handleBuyAddon = async (addonCode: string) => {
-    // In-flight guard: prevent duplicate orders or concurrent checkouts
-    if (loadingAddon !== null) {
+    // Synchronous in-flight guard: prevent duplicate orders or concurrent checkouts while getSession is pending
+    if (addonCheckoutLockRef.current || loadingAddon !== null) {
       return;
     }
+    addonCheckoutLockRef.current = true;
+    setLoadingAddon(addonCode);
 
     let currentUser = user;
     if (!currentUser) {
@@ -92,26 +95,31 @@ export default function PricingPage() {
       if (typeof window !== "undefined") {
         window.location.href = loginUrl;
       }
+      addonCheckoutLockRef.current = false;
+      setLoadingAddon(null);
       return;
     }
 
-    setLoadingAddon(addonCode);
     try {
       await handleProCheckout({
         addonCode,
         redirectTarget: "/pricing",
         onError: (errMsg) => {
+          addonCheckoutLockRef.current = false;
           setLoadingAddon(null);
           toast.error(errMsg || "Payment processing failed. Please try again.");
         },
         onSuccess: () => {
+          addonCheckoutLockRef.current = false;
           setLoadingAddon(null);
         },
         onDismiss: () => {
+          addonCheckoutLockRef.current = false;
           setLoadingAddon(null);
         },
       });
     } catch (err: any) {
+      addonCheckoutLockRef.current = false;
       setLoadingAddon(null);
       toast.error(err?.message || "Failed to initiate add-on checkout.");
     }

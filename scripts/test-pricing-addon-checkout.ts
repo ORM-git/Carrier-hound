@@ -268,8 +268,9 @@ async function runSuite() {
       "All add-on pack buttons must be disabled when any checkout is in flight"
     );
     assert.ok(
-      pricingSrc.includes("if (loadingAddon !== null)"),
-      "handleBuyAddon must guard against duplicate in-flight invocation"
+      pricingSrc.includes("addonCheckoutLockRef.current") &&
+      pricingSrc.includes("loadingAddon !== null"),
+      "handleBuyAddon must guard synchronously with addonCheckoutLockRef and loadingAddon"
     );
     assert.ok(
       pricingSrc.includes("onDismiss") && pricingSrc.includes("setLoadingAddon(null)"),
