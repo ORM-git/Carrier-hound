@@ -28,6 +28,8 @@ export interface FlagDefinition {
 }
 
 export const FLAGS: readonly FlagDefinition[] = [
+  { envVar: "NEXT_PUBLIC_AUTORENEW_ENABLED", rule: "strict_true", defaultEnabled: false, scope: "public-build",
+    description: "Auto-renew checkout. Uses Razorpay recurring subscriptions when active." },
   { envVar: "NEXT_PUBLIC_BILLING_ENABLED", rule: "strict_true", defaultEnabled: false, scope: "public-build",
     description: "Payments. Stays off until the owner activates billing." },
   { envVar: "NEXT_PUBLIC_ENABLE_INTERVIEW_PACK", rule: "strict_true", defaultEnabled: false, scope: "public-build",

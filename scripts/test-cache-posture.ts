@@ -191,6 +191,14 @@ export const BASELINE_CACHE_CATALOG: Record<string, RouteCacheBaseline> = {
     directiveProvidesNoStore: false,
     needsRemediation: true,
   },
+  "src/app/api/billing/razorpay/subscription/route.ts": {
+    filePath: "src/app/api/billing/razorpay/subscription/route.ts",
+    authRequirement: "User Auth (Bearer)",
+    classification: "private/no-store",
+    hasCacheControl: false,
+    directiveProvidesNoStore: false,
+    needsRemediation: true,
+  },
   "src/app/api/billing/razorpay/verify/route.ts": {
     filePath: "src/app/api/billing/razorpay/verify/route.ts",
     authRequirement: "User Auth (Bearer)",
@@ -350,6 +358,14 @@ export const BASELINE_CACHE_CATALOG: Record<string, RouteCacheBaseline> = {
   },
   "netlify/functions/billing-razorpay-order.ts": {
     filePath: "netlify/functions/billing-razorpay-order.ts",
+    authRequirement: "User Auth (Bearer)",
+    classification: "private/no-store",
+    hasCacheControl: false,
+    directiveProvidesNoStore: false,
+    needsRemediation: true,
+  },
+  "netlify/functions/billing-razorpay-subscription.ts": {
+    filePath: "netlify/functions/billing-razorpay-subscription.ts",
     authRequirement: "User Auth (Bearer)",
     classification: "private/no-store",
     hasCacheControl: false,
@@ -599,9 +615,9 @@ const singleModePrivateMissing = sendingNoneSet.filter(
 );
 const remediationCount = routableEndpoints.filter((r) => r.needsRemediation).length;
 
-check("catalog contains 46 total files (43 endpoints + 3 helpers)", entries.length === 46 && routableEndpoints.length === 43);
-check("catalog records exact header presence counts (14 with Cache-Control, 29 none set)", sendingCacheControl.length === 14 && sendingNoneSet.length === 29);
-check("catalog flags 21 single-mode private/no-store routes omitting Cache-Control and 25 total needing remediation", singleModePrivateMissing.length === 21 && remediationCount === 25);
+check("catalog contains 48 total files (45 endpoints + 3 helpers)", entries.length === 48 && routableEndpoints.length === 45);
+check("catalog records exact header presence counts (14 with Cache-Control, 31 none set)", sendingCacheControl.length === 14 && sendingNoneSet.length === 31);
+check("catalog flags 23 single-mode private/no-store routes omitting Cache-Control and 27 total needing remediation", singleModePrivateMissing.length === 23 && remediationCount === 27);
 
 // Verify dual-mode /api/jobs/search split (both Next and Netlify read Bearer + Pro + prefs)
 for (const searchPath of ["src/app/api/jobs/search/route.ts", "netlify/functions/jobs-search.ts"]) {
