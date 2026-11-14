@@ -1598,6 +1598,39 @@ async function main() {
 
     console.log("  [PASS] Digest cron sends once with all rows since last_digest_at and skips when no new rows (via Apps Script)");
 
+    // 5d2. gmail_send_log read error: real PostgREST error is logged, retried once, then fails closed
+    {
+      const realClient = (globalThis as any).__mockSupabaseClient;
+      const pgrst = { code: "PGRST002", message: "Could not query the database for the schema cache", details: "retrying" };
+      const flakyClient = (failures: number) => {
+        let calls = 0;
+        const chain: any = {
+          select: () => chain, eq: () => chain, order: () => chain, limit: () => chain,
+          maybeSingle: async () => (++calls <= failures ? { data: null, error: pgrst } : { data: null, error: null }),
+        };
+        return {
+          calls: () => calls,
+          client: { ...realClient, from: (t: string) => (t === "gmail_send_log" ? chain : realClient.from(t)) },
+        };
+      };
+
+      capturedWarnings.length = 0;
+      const alwaysDown = flakyClient(99);
+      const downRes = await runEarlyAccessDigestCron({ supabaseClient: alwaysDown.client, retryDelayMs: 0, dryRun: true });
+      assert.strictEqual(downRes.status, "failed");
+      assert.strictEqual(downRes.reason, "log_read_error");
+      assert.strictEqual(alwaysDown.calls(), 2, "gmail_send_log read must be retried exactly once");
+      const warnText = capturedWarnings.join("\n");
+      assert.ok(warnText.includes("code=PGRST002") && warnText.includes("schema cache"), "underlying PostgREST error must be logged");
+      assert.ok(warnText.includes("retrying once") && warnText.includes("failing closed"));
+
+      const blip = flakyClient(1);
+      const blipRes = await runEarlyAccessDigestCron({ supabaseClient: blip.client, retryDelayMs: 0, dryRun: true });
+      assert.notStrictEqual(blipRes.reason, "log_read_error", "a single transient error must recover on retry");
+      assert.strictEqual(blip.calls(), 2);
+      console.log("  [PASS] gmail_send_log read error logs code/message/details, retries once, then fails closed");
+    }
+
     // 5e. Verify 80/day thank-you cap across gmail_send_log
     assert.strictEqual(DAILY_THANK_YOU_CAP, 80);
     assert.strictEqual(DAILY_GMAIL_MESSAGE_CAP, 150);
