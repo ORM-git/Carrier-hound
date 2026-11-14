@@ -156,6 +156,12 @@ describe("Pricing Page Plan Purchase Flow (NEXT_PUBLIC_BILLING_ENABLED)", () => 
       expect(buyButtons.length).toBe(0);
       expect(container?.textContent).toContain("Payments opening soon");
       expect(container?.textContent).toContain("Payments will open soon.");
+
+      const pt2Wrapper = container?.querySelector("div.pt-2");
+      expect(pt2Wrapper).toBeTruthy();
+      const badge = pt2Wrapper?.querySelector("span");
+      expect(badge?.className).not.toContain("invisible");
+      expect(badge?.textContent).toContain("Payments will open soon.");
     });
   });
 
@@ -195,6 +201,18 @@ describe("Pricing Page Plan Purchase Flow (NEXT_PUBLIC_BILLING_ENABLED)", () => 
       // None of the plan cards should have "Payments opening soon" badge, nor header phrase
       expect(container?.textContent).not.toContain("Payments opening soon");
       expect(container?.textContent).not.toContain("Payments will open soon.");
+
+      // Header badge wrapper (pt-2 block) keeps its footprint with an invisible placeholder of the same size
+      const pt2Wrapper = container?.querySelector("div.pt-2");
+      expect(pt2Wrapper).toBeTruthy();
+      const placeholder = pt2Wrapper?.querySelector("span");
+      expect(placeholder?.className).toContain("invisible");
+      expect(placeholder?.className).toContain("inline-flex");
+      expect(placeholder?.className).toContain("px-3.5");
+      expect(placeholder?.className).toContain("py-1.5");
+      expect(placeholder?.className).toContain("rounded-full");
+      expect(placeholder?.className).toContain("border");
+      expect(placeholder?.getAttribute("aria-hidden")).toBe("true");
     });
 
     it("clicking Buy Monthly calls handleProCheckout with planCode 'monthly'", async () => {
@@ -439,13 +457,20 @@ describe("Pricing Page Plan Purchase Flow (NEXT_PUBLIC_BILLING_ENABLED)", () => 
       );
     });
 
-    it("clicking Buy Monthly then addon10 while the first is pending calls handleProCheckout exactly once and keeps all buttons disabled", async () => {
-      let resolveCheckout: (() => void) | null = null;
-      const pendingCheckoutPromise = new Promise<void>((resolve) => {
-        resolveCheckout = resolve;
+    it("shared lock stays held after handleProCheckout resolves until dismiss/success fires, then buttons re-enable", async () => {
+      let capturedCallbacks: { onSuccess?: () => void; onDismiss?: () => void; onError?: (err: string) => void } = {};
+
+      // Real contract: handleProCheckout resolves as soon as rzp.open() is called,
+      // passing lifecycle callbacks to the modal.
+      mockHandleProCheckout.mockImplementation(async (options: any) => {
+        capturedCallbacks = {
+          onSuccess: options.onSuccess,
+          onDismiss: options.onDismiss,
+          onError: options.onError,
+        };
+        return Promise.resolve(); // Resolves immediately after modal opens
       });
 
-      mockHandleProCheckout.mockImplementation(() => pendingCheckoutPromise);
       mockGetSession.mockResolvedValue({
         data: {
           session: {
@@ -467,42 +492,100 @@ describe("Pricing Page Plan Purchase Flow (NEXT_PUBLIC_BILLING_ENABLED)", () => 
       // Click 1: Buy Monthly
       await act(async () => {
         monthlyBtn.click();
-        await Promise.resolve();
       });
 
-      // First click immediately invokes handleProCheckout and acquires the single synchronous lock
+      // handleProCheckout has resolved (returned)
       expect(mockHandleProCheckout).toHaveBeenCalledTimes(1);
-      expect(mockHandleProCheckout).toHaveBeenCalledWith(
-        expect.objectContaining({
-          planCode: "monthly",
-          redirectTarget: "/pricing",
-        })
-      );
 
-      // While locked, ALL plan and add-on buy buttons must be disabled
+      // Even though handleProCheckout resolved, modal is still open, so lock must REMAIN held
+      // and ALL plan and add-on buy buttons must remain disabled!
       expect(monthlyBtn.disabled).toBe(true);
       expect(weeklyBtn.disabled).toBe(true);
       expect(addon10Btn.disabled).toBe(true);
 
-      // Click 2: Click add-on 10 while the first is pending
+      // Click 2: Click add-on 10 while modal is open (after helper resolved)
       await act(async () => {
         addon10Btn.click();
-        await Promise.resolve();
       });
 
-      // handleProCheckout must STILL have been called exactly once
+      // Starts nothing! handleProCheckout still called only once
+      expect(mockHandleProCheckout).toHaveBeenCalledTimes(1);
+      expect(monthlyBtn.disabled).toBe(true);
+      expect(weeklyBtn.disabled).toBe(true);
+      expect(addon10Btn.disabled).toBe(true);
+
+      // Click 3: Click weekly button while modal is open
+      await act(async () => {
+        weeklyBtn.click();
+      });
       expect(mockHandleProCheckout).toHaveBeenCalledTimes(1);
 
-      // Now complete the pending checkout
+      // Now terminal callback fires: user dismisses modal (or payment finishes)
       await act(async () => {
-        resolveCheckout!();
-        await Promise.resolve();
+        capturedCallbacks.onDismiss?.();
       });
 
-      // After release in finally, all buttons are re-enabled
+      // Lock is released and all buttons re-enable!
       expect(monthlyBtn.disabled).toBe(false);
       expect(weeklyBtn.disabled).toBe(false);
       expect(addon10Btn.disabled).toBe(false);
+    });
+
+    it("releases lock on early-exit errors (thrown exceptions before modal opens, order failures, and signed-out visitors)", async () => {
+      // 1. Error thrown before modal opens
+      mockHandleProCheckout.mockRejectedValueOnce(new Error("503 Service Unavailable"));
+      mockGetSession.mockResolvedValue({
+        data: {
+          session: {
+            user: { id: "test-user-id", email: "candidate@gmail.com" },
+          },
+        },
+      });
+
+      await mountPage();
+
+      const monthlyBtn = container?.querySelector("button[data-plan-code='monthly']") as HTMLButtonElement;
+      const addon10Btn = container?.querySelector("button[data-addon-code='addon_10']") as HTMLButtonElement;
+
+      await act(async () => {
+        monthlyBtn.click();
+      });
+
+      // Thrown exception caught in catch block -> lock is released
+      expect(monthlyBtn.disabled).toBe(false);
+      expect(addon10Btn.disabled).toBe(false);
+
+      // 2. Order failure via onError callback
+      mockHandleProCheckout.mockImplementationOnce(async (options: any) => {
+        options.onError?.("403 Account Suspended");
+        return Promise.resolve();
+      });
+
+      await act(async () => {
+        monthlyBtn.click();
+      });
+
+      // onError callback releases the lock
+      expect(monthlyBtn.disabled).toBe(false);
+      expect(addon10Btn.disabled).toBe(false);
+
+      // 3. Signed-out visitor early exit: remount with unauthenticated session
+      mockGetSession.mockResolvedValue({
+        data: { session: null },
+      });
+
+      await mountPage();
+
+      const unauthMonthlyBtn = container?.querySelector("button[data-plan-code='monthly']") as HTMLButtonElement;
+      const unauthAddon10Btn = container?.querySelector("button[data-addon-code='addon_10']") as HTMLButtonElement;
+
+      await act(async () => {
+        unauthMonthlyBtn.click();
+      });
+
+      // Unauthenticated early exit releases the lock
+      expect(unauthMonthlyBtn.disabled).toBe(false);
+      expect(unauthAddon10Btn.disabled).toBe(false);
     });
   });
 });

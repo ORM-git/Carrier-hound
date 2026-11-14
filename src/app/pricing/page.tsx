@@ -88,26 +88,27 @@ export default function PricingPage() {
       setLoadingCheckout(null);
     };
 
+    let currentUser = user;
+    if (!currentUser) {
+      try {
+        const supabase = createClient();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        currentUser = session?.user || null;
+      } catch {}
+    }
+
+    if (!currentUser) {
+      resetLock();
+      const loginUrl = `/login?returnTo=${encodeURIComponent("/pricing")}`;
+      if (typeof window !== "undefined") {
+        window.location.href = loginUrl;
+      }
+      return;
+    }
+
     try {
-      let currentUser = user;
-      if (!currentUser) {
-        try {
-          const supabase = createClient();
-          const {
-            data: { session },
-          } = await supabase.auth.getSession();
-          currentUser = session?.user || null;
-        } catch {}
-      }
-
-      if (!currentUser) {
-        const loginUrl = `/login?returnTo=${encodeURIComponent("/pricing")}`;
-        if (typeof window !== "undefined") {
-          window.location.href = loginUrl;
-        }
-        return;
-      }
-
       await handleProCheckout({
         planCode,
         redirectTarget: "/pricing",
@@ -125,8 +126,6 @@ export default function PricingPage() {
     } catch (err: any) {
       resetLock();
       toast.error(err?.message || "Failed to initiate plan checkout.");
-    } finally {
-      resetLock();
     }
   };
 
@@ -143,26 +142,27 @@ export default function PricingPage() {
       setLoadingCheckout(null);
     };
 
+    let currentUser = user;
+    if (!currentUser) {
+      try {
+        const supabase = createClient();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        currentUser = session?.user || null;
+      } catch {}
+    }
+
+    if (!currentUser) {
+      resetLock();
+      const loginUrl = `/login?returnTo=${encodeURIComponent("/pricing")}`;
+      if (typeof window !== "undefined") {
+        window.location.href = loginUrl;
+      }
+      return;
+    }
+
     try {
-      let currentUser = user;
-      if (!currentUser) {
-        try {
-          const supabase = createClient();
-          const {
-            data: { session },
-          } = await supabase.auth.getSession();
-          currentUser = session?.user || null;
-        } catch {}
-      }
-
-      if (!currentUser) {
-        const loginUrl = `/login?returnTo=${encodeURIComponent("/pricing")}`;
-        if (typeof window !== "undefined") {
-          window.location.href = loginUrl;
-        }
-        return;
-      }
-
       await handleProCheckout({
         addonCode,
         redirectTarget: "/pricing",
@@ -180,8 +180,6 @@ export default function PricingPage() {
     } catch (err: any) {
       resetLock();
       toast.error(err?.message || "Failed to initiate add-on checkout.");
-    } finally {
-      resetLock();
     }
   };
 
@@ -236,13 +234,20 @@ export default function PricingPage() {
         <p className="text-sm sm:text-base text-slate-600 dark:text-slate-400 leading-relaxed max-w-2xl mx-auto">
           Stronger resumes + faster applications tailored to verified unindexed remote roles.
         </p>
-        {!isBillingEnabled && (
-          <div className="pt-2">
+        <div className="pt-2">
+          {isBillingEnabled ? (
+            <span
+              className="invisible inline-flex items-center px-3.5 py-1.5 rounded-full text-xs sm:text-sm font-semibold border border-transparent select-none"
+              aria-hidden="true"
+            >
+              &nbsp;
+            </span>
+          ) : (
             <span className="inline-flex items-center px-3.5 py-1.5 rounded-full text-xs sm:text-sm font-semibold bg-blue-50 text-[#2563EB] dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
               Payments will open soon.
             </span>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* 2 & 3. Main Jobright-Turbo-Style Layout: Left Big Rounded Card (3 Tiles + Table) + Right Grey Panel */}

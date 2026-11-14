@@ -200,16 +200,18 @@ async function main() {
     );
   });
 
-  await check("Pricing page header 'Payments will open soon.' is flag-aware", () => {
+  await check("Pricing page header badge wrapper (pt-2 block) keeps footprint with invisible placeholder when flag is ON", () => {
     const pricingSrc = fs.readFileSync(path.resolve("src/app/pricing/page.tsx"), "utf8");
 
     assert.ok(
-      pricingSrc.includes("!isBillingEnabled &&") && pricingSrc.includes("Payments will open soon."),
-      "Header 'Payments will open soon.' must be wrapped in !isBillingEnabled condition"
+      pricingSrc.includes('<div className="pt-2">') &&
+      pricingSrc.includes("isBillingEnabled ?") &&
+      pricingSrc.includes("invisible inline-flex items-center px-3.5 py-1.5 rounded-full text-xs sm:text-sm font-semibold border border-transparent select-none"),
+      "Header badge wrapper (pt-2 block) must keep its footprint with invisible placeholder when billing is enabled"
     );
   });
 
-  await check("Pricing page enforces single shared purchase lock and finally release", () => {
+  await check("Pricing page enforces single shared purchase lock held until terminal callbacks (no unconditional finally release)", () => {
     const pricingSrc = fs.readFileSync(path.resolve("src/app/pricing/page.tsx"), "utf8");
 
     assert.ok(
@@ -225,8 +227,17 @@ async function main() {
       "Add-on buttons must be disabled when isCheckoutLocked is true"
     );
     assert.ok(
-      pricingSrc.includes("finally") && pricingSrc.includes("resetLock()"),
-      "handleBuyPlan and handleBuyAddon must release purchase lock in finally"
+      !pricingSrc.includes("finally"),
+      "handleBuyPlan and handleBuyAddon must NOT unconditionally release purchase lock in finally"
+    );
+    assert.ok(
+      pricingSrc.includes("onError:") && pricingSrc.includes("onSuccess:") && pricingSrc.includes("onDismiss:"),
+      "handleBuyPlan and handleBuyAddon must release purchase lock in terminal callbacks"
+    );
+    assert.ok(
+      pricingSrc.includes("resetLock();\n      const loginUrl") ||
+      pricingSrc.includes("resetLock();\r\n      const loginUrl"),
+      "handleBuyPlan and handleBuyAddon must release purchase lock explicitly on unauthenticated early exit"
     );
   });
 
