@@ -10,6 +10,7 @@ import LoggedInAppShell from "@/components/shell/LoggedInAppShell";
 import { getAuthUser, getUserPreferences, saveUserPreferences, signOutUser } from "@/lib/auth/session";
 import { UserPreferences } from "@/lib/auth/types";
 import { getUserSubscription } from "@/lib/billing/subscription";
+import { normalizePlanCode, PLAN_DEFINITIONS } from "@/lib/billing/quota";
 import { UserSubscription } from "@/lib/billing/types";
 import { getCandidateProfile, deleteCandidateProfile } from "@/lib/resume/storage";
 import { getTrackedApplications } from "@/lib/tracker/storage";
@@ -57,6 +58,26 @@ function SettingsPageInner() {
   // Billing state
   const [subscription, setSubscription] = useState<UserSubscription | null>(null);
   const [isPaywallOpen, setIsPaywallOpen] = useState(false);
+
+  // Derive plan & pricing from central normalized plan ID and real subscription record
+  const normalizedPlan = normalizePlanCode(subscription?.planId);
+  const planDef = normalizedPlan ? PLAN_DEFINITIONS[normalizedPlan] : null;
+
+  const planCurrency = subscription?.currency || "INR";
+  const currencySymbol =
+    planCurrency === "USD" ? "$" : planCurrency === "EUR" ? "€" : planCurrency === "GBP" ? "£" : "₹";
+
+  // When subscriptions.amount is null, do not combine the INR catalog price with a non-INR currency
+  // (USD quarterly must not show $3,999). Hide the price when currency is not INR and amount is unknown.
+  const planPriceNumber = typeof subscription?.amount === "number"
+    ? subscription.amount
+    : (planCurrency === "INR" && planDef ? Math.round(planDef.price_paise / 100) : undefined);
+
+  const planInterval = normalizedPlan === "weekly" ? "week" : normalizedPlan === "quarterly" ? "quarter" : "month";
+
+  const formattedPlanText = typeof planPriceNumber === "number"
+    ? `${currencySymbol}${planPriceNumber.toLocaleString()} / ${planInterval}`
+    : null;
 
   useEffect(() => {
     getAuthUser().then((u) => {
@@ -505,7 +526,9 @@ function SettingsPageInner() {
                   </h3>
                   <p className="text-xs text-slate-500">
                     {isPro
-                      ? "₹199 / month (Domestic) or $9 / month (International). Full direct ATS apply unlocked."
+                      ? formattedPlanText
+                        ? `${formattedPlanText}. Full direct ATS apply unlocked.`
+                        : "CareerMonke Pro Plan. Full direct ATS apply unlocked."
                       : "Standard title browsing, 5 tracker slots, 1 ATS resume export."}
                   </p>
                 </div>
@@ -521,10 +544,10 @@ function SettingsPageInner() {
                 )}
               </div>
 
-              {isPro && (
+              {isPro && subscription?.currentPeriodEnd && (
                 <div className="pt-3 border-t border-slate-200/80 flex items-center justify-between text-xs">
                   <span className="text-slate-600">
-                    Pro access ends on: <strong>{new Date(subscription?.currentPeriodEnd || Date.now()).toLocaleDateString()}</strong> (plans do not auto-renew)
+                    Pro access ends on: <strong>{new Date(subscription.currentPeriodEnd).toLocaleDateString()}</strong> (plans do not auto-renew)
                   </span>
                 </div>
               )}

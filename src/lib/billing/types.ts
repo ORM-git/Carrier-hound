@@ -27,12 +27,12 @@ export interface UserSubscription {
   id: string;
   userId: string;
   provider: BillingProvider;
-  planId: string;
+  planId?: string;
   currency: string;
-  amount: number;
+  amount?: number;
   status: SubscriptionStatus;
   currentPeriodStart: string;
-  currentPeriodEnd: string;
+  currentPeriodEnd?: string;
   gracePeriodEnd?: string | null;
   cancelAtPeriodEnd: boolean;
   metadata?: Record<string, any>;
