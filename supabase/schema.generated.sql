@@ -7996,6 +7996,8 @@ ALTER FUNCTION public.fulfil_payment_order(text, uuid, text) SET statement_timeo
 --      plan_id / currency / amount / metadata are written only from the NEWER order
 --      (payment_orders.created_at). Missing metadata or equal timestamps keep the existing label.
 --   3. An expired or missing subscription is replaced by this order, as before.
+--   4. Existence of row variables is tested with FOUND, never `record IS [NOT] NULL` (which is
+--      false for a real row with any NULL column and sent stacked orders down the expired branch).
 --   Unchanged: already_paid short-circuit, add-on path, test mode, mode checks, ACL revokes,
 --   statement_timeout. search_path is pinned to public (the function body references no auth.* objects).
 -- ============================================================================
@@ -8028,6 +8030,7 @@ DECLARE
   v_label_currency text;
   v_label_amount numeric;
   v_label_meta jsonb;
+  v_has_sub boolean;
 BEGIN
   -- Validate expected mode parameter
   IF p_expected_mode NOT IN ('test', 'live') THEN
@@ -8045,7 +8048,7 @@ BEGIN
     AND user_id = p_user_id
   FOR UPDATE;
 
-  IF v_order IS NULL THEN
+  IF NOT FOUND THEN
     RETURN jsonb_build_object(
       'success', false,
       'code', 'ORDER_NOT_FOUND',
@@ -8170,6 +8173,8 @@ BEGIN
     SELECT * INTO v_existing_sub
     FROM public.subscriptions
     WHERE user_id = p_user_id;
+    -- record IS NULL is true only when EVERY column is null; real rows have null columns, so use FOUND.
+    v_has_sub := FOUND;
 
     -- Default: label (plan/currency/amount/metadata) comes from this order
     v_label_plan := v_order.plan_code;
@@ -8181,7 +8186,7 @@ BEGIN
       'mode', v_order.mode
     );
 
-    IF v_existing_sub IS NOT NULL AND (v_existing_sub.status IN ('active', 'trialing')) AND v_existing_sub.current_period_end IS NOT NULL THEN
+    IF v_has_sub AND (v_existing_sub.status IN ('active', 'trialing')) AND v_existing_sub.current_period_end IS NOT NULL THEN
       v_period_start := coalesce(v_existing_sub.current_period_start, now());
 
       -- Which order produced the current label?
@@ -8308,7 +8313,7 @@ BEGIN
     FROM public.subscriptions
     WHERE user_id = p_user_id;
 
-    IF v_existing_sub IS NULL OR v_existing_sub.status NOT IN ('active', 'trialing') OR v_existing_sub.current_period_end IS NULL OR v_existing_sub.current_period_end <= now() THEN
+    IF NOT FOUND OR v_existing_sub.status NOT IN ('active', 'trialing') OR v_existing_sub.current_period_end IS NULL OR v_existing_sub.current_period_end <= now() THEN
       RETURN jsonb_build_object(
         'success', false,
         'code', 'PRO_REQUIRED',
@@ -8339,7 +8344,7 @@ BEGIN
     ON CONFLICT (order_id) WHERE order_id IS NOT NULL DO NOTHING
     RETURNING * INTO v_credit;
 
-    IF v_credit IS NULL THEN
+    IF NOT FOUND THEN
       SELECT * INTO v_credit
       FROM public.user_addon_credits
       WHERE order_id = v_order.id;

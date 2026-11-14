@@ -10,7 +10,8 @@
  * (no Postgres is available offline). It covers: older-after-newer, newer-after-older, same order twice,
  * two concurrent orders (serialized by a per-user lock like pg_advisory_xact_lock), missing metadata,
  * equal timestamps and an expired subscription. The model is a port, not the database: apply the migration
- * and re-run the scenarios against Supabase before relying on it.
+ * and re-run the scenarios against Supabase before relying on it. Check 1.9 statically forbids `record IS [NOT] NULL`
+ * (true only when every column is null), the bug a real-Postgres repro found that this JS model cannot see.
  */
 
 import assert from "node:assert";
@@ -74,6 +75,20 @@ async function textChecks() {
     assert.ok(sql.includes("PRO_REQUIRED"));
     assert.ok(sql.includes("Test payment verified; zero real entitlements granted"));
     assert.ok(sql.includes("MODE_MISMATCH"));
+  });
+  await check("1.9 no `IS [NOT] NULL` on composite row variables (use FOUND); false for real rows with NULL columns", () => {
+    const body = sql.slice(sql.indexOf("AS $$"), sql.lastIndexOf("$$;"));
+    const rowVars = [...body.matchAll(/^\s*(v_\w+)\s+record\s*;/gm)].map((m) => m[1]);
+    assert.ok(rowVars.includes("v_existing_sub") && rowVars.includes("v_order"), "record declarations not found");
+    for (const v of rowVars) {
+      assert.ok(!new RegExp(`\\b${v}\\s+IS\\s+(NOT\\s+)?NULL`, "i").test(body), `${v} IS [NOT] NULL on a record`);
+    }
+    // FOUND must be captured by the very next statement after the plan-path subscription SELECT
+    assert.ok(
+      /SELECT \* INTO v_existing_sub\s+FROM public\.subscriptions\s+WHERE user_id = p_user_id;\s+(--[^\n]*\s+)*v_has_sub := FOUND;/.test(body),
+      "plan path must capture FOUND immediately after the subscription SELECT",
+    );
+    assert.ok(/IF v_has_sub AND/.test(body), "stacking branch must test v_has_sub");
   });
   await check("1.8 schema dump contains the new function body", () => {
     const dump = fs.readFileSync(path.resolve(process.cwd(), "supabase/schema.generated.sql"), "utf8");
@@ -159,6 +174,17 @@ async function modelChecks() {
     assert.strictEqual(state.sub!.amount, 49900);
     assert.strictEqual(state.sub!.metadata.payment_order_id, "order-monthly");
     assert.strictEqual(state.sub!.current_period_end, NOW + 37 * DAY);
+  });
+
+  await check("2.1b reviewer repro: older weekly after newer quarterly extends 90 -> 97 days, stays quarterly", async () => {
+    const q = order("2b6f1c1e-6a3e-4c1b-9d0e-1f2a3b4c5d6e", "quarterly", 99900, -1);
+    const w = order("0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "weekly", 14900, -2);
+    const { state, fulfilModel } = makeDb([q, w], null);
+    await fulfilModel(q.id);
+    await fulfilModel(w.id);
+    assert.strictEqual(state.sub!.plan_id, "quarterly");
+    assert.strictEqual(state.sub!.metadata.payment_order_id, q.id);
+    assert.strictEqual(state.sub!.current_period_end, NOW + 97 * DAY);
   });
 
   await check("2.2 newer-after-older: newer order takes over the label and extends", async () => {
