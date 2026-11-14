@@ -220,4 +220,92 @@ describe("Pricing Page Add-on Pack Buy Flow", () => {
     expect(window.location.href).toContain("/login");
     expect(window.location.href).toContain(encodeURIComponent("/pricing"));
   });
+
+  it("disables ALL pack buttons while a checkout is in flight, preventing duplicate orders", async () => {
+    let capturedOptions: any = null;
+    mockHandleProCheckout.mockImplementation((opts: any) => {
+      capturedOptions = opts;
+      return new Promise(() => {}); // Intentionally pending
+    });
+
+    mockGetSession.mockResolvedValue({
+      data: {
+        session: {
+          user: { id: "test-user-id", email: "candidate@gmail.com" },
+        },
+      },
+    });
+
+    await mountPage();
+
+    const btn10 = container?.querySelector("button[data-addon-code='addon_10']") as HTMLButtonElement;
+    const btn30 = container?.querySelector("button[data-addon-code='addon_30']") as HTMLButtonElement;
+    const btn60 = container?.querySelector("button[data-addon-code='addon_60']") as HTMLButtonElement;
+
+    expect(btn10.disabled).toBe(false);
+    expect(btn30.disabled).toBe(false);
+    expect(btn60.disabled).toBe(false);
+
+    // Click addon_30
+    await act(async () => {
+      btn30.click();
+      await Promise.resolve();
+    });
+
+    // ALL pack buttons must now be disabled
+    expect(btn10.disabled).toBe(true);
+    expect(btn30.disabled).toBe(true);
+    expect(btn60.disabled).toBe(true);
+
+    // Attempt second click on addon_60 while in flight - must not invoke checkout again
+    await act(async () => {
+      btn60.click();
+      await Promise.resolve();
+    });
+    expect(mockHandleProCheckout).toHaveBeenCalledTimes(1);
+
+    // Trigger onDismiss - must clear in-flight state and re-enable all buttons
+    await act(async () => {
+      capturedOptions?.onDismiss?.();
+      await Promise.resolve();
+    });
+
+    expect(btn10.disabled).toBe(false);
+    expect(btn30.disabled).toBe(false);
+    expect(btn60.disabled).toBe(false);
+  });
+
+  it("clears in-flight disabled state when checkout triggers onError", async () => {
+    let capturedOptions: any = null;
+    mockHandleProCheckout.mockImplementation((opts: any) => {
+      capturedOptions = opts;
+      return new Promise(() => {});
+    });
+
+    mockGetSession.mockResolvedValue({
+      data: {
+        session: {
+          user: { id: "test-user-id", email: "candidate@gmail.com" },
+        },
+      },
+    });
+
+    await mountPage();
+
+    const btn30 = container?.querySelector("button[data-addon-code='addon_30']") as HTMLButtonElement;
+
+    await act(async () => {
+      btn30.click();
+      await Promise.resolve();
+    });
+    expect(btn30.disabled).toBe(true);
+
+    // Simulate payment error / failure
+    await act(async () => {
+      capturedOptions?.onError?.("Payment cancelled or failed");
+      await Promise.resolve();
+    });
+
+    expect(btn30.disabled).toBe(false);
+  });
 });

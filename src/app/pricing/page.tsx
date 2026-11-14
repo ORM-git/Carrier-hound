@@ -71,6 +71,11 @@ export default function PricingPage() {
   const [loadingAddon, setLoadingAddon] = useState<string | null>(null);
 
   const handleBuyAddon = async (addonCode: string) => {
+    // In-flight guard: prevent duplicate orders or concurrent checkouts
+    if (loadingAddon !== null) {
+      return;
+    }
+
     let currentUser = user;
     if (!currentUser) {
       try {
@@ -100,6 +105,9 @@ export default function PricingPage() {
           toast.error(errMsg || "Payment processing failed. Please try again.");
         },
         onSuccess: () => {
+          setLoadingAddon(null);
+        },
+        onDismiss: () => {
           setLoadingAddon(null);
         },
       });
@@ -583,7 +591,6 @@ export default function PricingPage() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {ADD_ON_PACKS.map((pack) => {
               const addonCode = pack.code || (pack.sets === 10 ? "addon_10" : pack.sets === 30 ? "addon_30" : "addon_60");
-              const isLoading = loadingAddon === addonCode;
 
               return (
                 <div
@@ -609,7 +616,7 @@ export default function PricingPage() {
                     <button
                       type="button"
                       data-addon-code={addonCode}
-                      disabled={isLoading}
+                      disabled={loadingAddon !== null}
                       onClick={() => handleSelectPlan(addonCode, { addonCode })}
                       className="w-full min-h-[48px] h-11 rounded-lg font-semibold text-sm flex items-center justify-center transition-colors select-none bg-[#2563EB] text-white hover:bg-blue-700 shadow-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] focus-visible:ring-offset-2 disabled:opacity-75"
                     >

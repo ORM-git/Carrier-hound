@@ -7,14 +7,23 @@
  * 2. Static & Markup Conformance:
  *    - Each add-on card renders an active "Buy" button with data-addon-code and min-h-[48px].
  *    - Plan upgrade buttons remain disabled Upgrade buttons with UPGRADE_BUTTON_LABEL.
- *    - No regression on pricing layout, notes, or sales policies.
+ *    - Single unified in-flight guard across ALL add-on pack buttons (disabled={loadingAddon !== null}).
+ *    - Re-entrancy guard in handleBuyAddon (if loadingAddon !== null return).
+ *    - Dismiss, error, and success lifecycle handlers clear loadingAddon.
+ *    - Amount is server-side authoritative only (client sends addonCode only).
  * 3. Functional Checkout & Auth Redirection:
  *    - Clicking Buy sends the exact addonCode to /api/billing/razorpay/order.
- *    - Unauthenticated visitors are required to sign in first (redirected to /login).
- * 4. Server-Side Gating & Order Creation:
- *    - resolveOrderPricing resolves server-authoritative amount for all addon codes.
- *    - /api/billing/razorpay/order creates orders with notes.type = "addon" and addon_code.
- *    - Non-pro users attempting to purchase add-ons are rejected with 403 PRO_REQUIRED.
+ * 4. Server-Side Pre-Charge Gating & Order Creation (Next.js route & Netlify function):
+ *    - Fail-closed server ban check (verifyUserNotBanned / blocked_users):
+ *      * Blocks user when user_metadata.is_blocked is true (403 USER_BLOCKED).
+ *      * Blocks user when present in blocked_users table (403 USER_BLOCKED).
+ *      * Fails closed with 503 when ban check service/DB encounters an error.
+ *    - Pre-charge eligibility check aligned with fulfillment SQL:
+ *      * Rejects non-Pro users (403 PRO_REQUIRED).
+ *      * Rejects users in in_grace_period (403 PRO_REQUIRED).
+ *      * Rejects active users with null current_period_end (403 PRO_REQUIRED).
+ *      * Rejects active users with expired/past current_period_end (403 PRO_REQUIRED).
+ *      * Accepts active or trialing users with future current_period_end (200 OK).
  * 5. Verify Route Conformance:
  *    - /api/billing/razorpay/verify accepts matching addonCode.
  *    - Mismatched addonCode is rejected with 400 ADDON_MISMATCH.
@@ -31,6 +40,7 @@ import { resolveOrderPricing, ADDON_PACK_DEFINITIONS } from "../src/lib/billing/
 import { openRazorpayCheckout } from "../src/lib/billing/razorpay";
 import { POST as orderPost } from "../src/app/api/billing/razorpay/order/route";
 import { POST as verifyPost } from "../src/app/api/billing/razorpay/verify/route";
+import { createHandler as createNetlifyOrderHandler } from "../netlify/functions/billing-razorpay-order";
 
 const isNegativeControl = process.argv.includes("--negative-control");
 
@@ -55,27 +65,117 @@ function setEnv(key: string, val: string | undefined) {
 let passed = 0;
 let failed = 0;
 
-function check(name: string, fn: () => void | Promise<void>) {
+async function check(name: string, fn: () => void | Promise<void>) {
   try {
     const res = fn();
     if (res && typeof (res as any).then === "function") {
-      return (res as Promise<void>)
-        .then(() => {
-          console.log(`  [PASS] ${name}`);
-          passed++;
-        })
-        .catch((err: any) => {
-          console.error(`  [FAIL] ${name}: ${err.message}`);
-          failed++;
-        });
-    } else {
-      console.log(`  [PASS] ${name}`);
-      passed++;
+      await res;
     }
+    console.log(`  [PASS] ${name}`);
+    passed++;
   } catch (err: any) {
     console.error(`  [FAIL] ${name}: ${err.message}`);
     failed++;
   }
+}
+
+interface MockSupabaseOptions {
+  userId?: string;
+  email?: string;
+  userMetadata?: any;
+  isBlockedInDb?: boolean;
+  dbErrorOnBlockedCheck?: boolean;
+  subscription?: {
+    status: string;
+    current_period_end: string | null;
+  } | null;
+  dbErrorOnSubscription?: boolean;
+}
+
+function createMockSupabaseAdmin(options: MockSupabaseOptions = {}) {
+  const userId = options.userId || "user_test_pro_123";
+  const user = {
+    id: userId,
+    email: options.email || "pro@careermonke.com",
+    user_metadata: options.userMetadata || {},
+  };
+
+  let insertedOrder: any = null;
+
+  return {
+    getInsertedOrder: () => insertedOrder,
+    client: {
+      auth: {
+        getUser: async (token?: string) => {
+          if (!token || token === "invalid-token") {
+            return { data: { user: null }, error: new Error("Invalid token") };
+          }
+          return { data: { user }, error: null };
+        },
+      },
+      from: (table: string) => {
+        if (table === "blocked_users") {
+          return {
+            select: () => ({
+              eq: () => ({
+                maybeSingle: async () => {
+                  if (options.dbErrorOnBlockedCheck) {
+                    return { data: null, error: new Error("DB connection failure on blocked_users") };
+                  }
+                  if (options.isBlockedInDb) {
+                    return { data: { user_id: userId }, error: null };
+                  }
+                  return { data: null, error: null };
+                },
+              }),
+            }),
+          };
+        }
+
+        if (table === "subscriptions") {
+          return {
+            select: () => ({
+              eq: () => ({
+                order: () => ({
+                  limit: () => ({
+                    maybeSingle: async () => {
+                      if (options.dbErrorOnSubscription) {
+                        return { data: null, error: new Error("DB error on subscriptions") };
+                      }
+                      return { data: options.subscription ?? null, error: null };
+                    },
+                  }),
+                }),
+              }),
+            }),
+          };
+        }
+
+        if (table === "payment_orders") {
+          return {
+            insert: (row: any) => {
+              insertedOrder = row;
+              return {
+                select: () => ({
+                  single: async () => ({ data: row, error: null }),
+                }),
+              };
+            },
+          };
+        }
+
+        return {
+          select: () => ({
+            eq: () => ({
+              eq: () => ({
+                maybeSingle: async () => ({ data: null, error: null }),
+              }),
+            }),
+          }),
+        };
+      },
+    },
+  };
 }
 
 async function runSuite() {
@@ -87,7 +187,7 @@ async function runSuite() {
   // 1. ADD_ON_PACKS Catalog Integrity
   // ---------------------------------------------------------------------------
   console.log("1. Verifying ADD_ON_PACKS catalog definitions in plans.ts and quota.ts...");
-  check("ADD_ON_PACKS defines addon_10, addon_30, addon_60 with exact prices & sets", () => {
+  await check("ADD_ON_PACKS defines addon_10, addon_30, addon_60 with exact prices & sets", () => {
     assert.strictEqual(ADD_ON_PACKS.length, 3, "ADD_ON_PACKS must have 3 packs");
 
     const expected = [
@@ -110,10 +210,10 @@ async function runSuite() {
   });
 
   // ---------------------------------------------------------------------------
-  // 2. Pricing Page Source Code & Button Styling
+  // 2. Pricing Page Source Code, Button Styling, and In-Flight Lifecycle Guards
   // ---------------------------------------------------------------------------
-  console.log("\n2. Verifying /pricing page source and button styling...");
-  check("Pricing page renders Buy button on each add-on card with plan button styling", () => {
+  console.log("\n2. Verifying /pricing page source, button styling, and in-flight guards...");
+  await check("Pricing page renders Buy button on each add-on card with plan button styling", () => {
     const pricingSrc = fs.readFileSync(path.resolve("src/app/pricing/page.tsx"), "utf8");
 
     // Must import handleProCheckout
@@ -157,6 +257,56 @@ async function runSuite() {
     );
   });
 
+  await check("Pricing page and checkout orchestrator enforce single in-flight guard across all pack buttons", () => {
+    const pricingSrc = fs.readFileSync(path.resolve("src/app/pricing/page.tsx"), "utf8");
+    const checkoutSrc = fs.readFileSync(path.resolve("src/lib/billing/checkout.ts"), "utf8");
+    const razorpaySrc = fs.readFileSync(path.resolve("src/lib/billing/razorpay.ts"), "utf8");
+
+    // Unified in-flight guard on pricing page
+    assert.ok(
+      pricingSrc.includes("disabled={loadingAddon !== null}"),
+      "All add-on pack buttons must be disabled when any checkout is in flight"
+    );
+    assert.ok(
+      pricingSrc.includes("if (loadingAddon !== null)"),
+      "handleBuyAddon must guard against duplicate in-flight invocation"
+    );
+    assert.ok(
+      pricingSrc.includes("onDismiss") && pricingSrc.includes("setLoadingAddon(null)"),
+      "handleBuyAddon must forward onDismiss callback to clear loadingAddon"
+    );
+
+    // Amount remains server-side only: client passes only addonCode
+    assert.ok(
+      pricingSrc.includes("handleSelectPlan(addonCode") && pricingSrc.includes("handleProCheckout"),
+      "Pricing page passes addonCode through handleSelectPlan to handleProCheckout"
+    );
+    assert.ok(
+      !pricingSrc.includes("amount: pack.price") && !pricingSrc.includes("amount_paise"),
+      "Pricing page must NOT send client-specified amount to order creation"
+    );
+
+    // Checkout orchestrator forwards onDismiss to openRazorpayCheckout
+    assert.ok(
+      checkoutSrc.includes("onDismiss?: () => void;"),
+      "CheckoutOptions must support onDismiss callback"
+    );
+    assert.ok(
+      checkoutSrc.includes("onDismiss") && checkoutSrc.includes("onDismiss?.()"),
+      "handleProCheckout must forward onDismiss to openRazorpayCheckout"
+    );
+
+    // Razorpay wrapper handles modal ondismiss and payment.failed
+    assert.ok(
+      razorpaySrc.includes("ondismiss") && razorpaySrc.includes("modal:"),
+      "Razorpay SDK options must configure modal ondismiss"
+    );
+    assert.ok(
+      razorpaySrc.includes('rzp.on("payment.failed"'),
+      "Razorpay SDK must listen for payment.failed events"
+    );
+  });
+
   // ---------------------------------------------------------------------------
   // 3. Functional Checkout & Sending addonCode
   // ---------------------------------------------------------------------------
@@ -192,6 +342,7 @@ async function runSuite() {
       Razorpay: function () {
         return {
           open: () => {},
+          on: () => {},
         };
       },
       document: {
@@ -238,10 +389,10 @@ async function runSuite() {
   });
 
   // ---------------------------------------------------------------------------
-  // 4. Server-Authoritative Price Resolution & Pro Requirement
+  // 4. Server-Authoritative Price Resolution, Ban Check & Pre-charge Eligibility
   // ---------------------------------------------------------------------------
-  console.log("\n4. Verifying server-authoritative order pricing and Pro requirement...");
-  check("resolveOrderPricing correctly calculates amounts for all add-ons", () => {
+  console.log("\n4. Verifying server-authoritative order pricing, ban checks, and pre-charge eligibility...");
+  await check("resolveOrderPricing correctly calculates amounts for all add-ons", () => {
     const p10 = resolveOrderPricing({ addonCode: "addon_10" });
     assert.strictEqual(p10?.type, "addon");
     assert.strictEqual(p10?.code, "addon_10");
@@ -264,121 +415,412 @@ async function runSuite() {
     assert.strictEqual(p60?.sets, 60);
   });
 
-  await check("Order creation route rejects non-Pro users with 403 PRO_REQUIRED", async () => {
-    const origBilling = process.env.NEXT_PUBLIC_BILLING_ENABLED;
-    const origKeyId = process.env.RAZORPAY_KEY_ID;
-    const origKeySecret = process.env.RAZORPAY_KEY_SECRET;
-    const origMode = process.env.RAZORPAY_MODE;
+  const mockRazorpayFetch = async () => ({
+    ok: true,
+    json: async () => ({
+      id: "order_test_addon_30_xyz",
+      amount: 39900,
+      currency: "INR",
+    }),
+  });
 
-    process.env.NEXT_PUBLIC_BILLING_ENABLED = "true";
-    process.env.RAZORPAY_KEY_ID = "rzp_test_1234567890ABCD";
-    process.env.RAZORPAY_KEY_SECRET = "test_secret_123456";
-    process.env.RAZORPAY_MODE = "test";
+  const futurePeriodEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  const pastPeriodEnd = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
 
-    try {
-      const mockUser = { id: "non-pro-user-id", email: "nonpro@test.com" };
-      const mockSupabase = {
-        auth: {
-          getUser: async () => ({ data: { user: mockUser }, error: null }),
-        },
-      };
+  // Setup common test env
+  const origBilling = process.env.NEXT_PUBLIC_BILLING_ENABLED;
+  const origKeyId = process.env.RAZORPAY_KEY_ID;
+  const origKeySecret = process.env.RAZORPAY_KEY_SECRET;
+  const origMode = process.env.RAZORPAY_MODE;
 
+  process.env.NEXT_PUBLIC_BILLING_ENABLED = "true";
+  process.env.RAZORPAY_KEY_ID = "rzp_test_1234567890ABCD";
+  process.env.RAZORPAY_KEY_SECRET = "test_secret_123456";
+  process.env.RAZORPAY_MODE = "test";
+
+  try {
+    // -------------------------------------------------------------------------
+    // 4A. Next.js Route (/api/billing/razorpay/order) Tests
+    // -------------------------------------------------------------------------
+    console.log("  4A. Next.js route: /api/billing/razorpay/order");
+
+    await check("Next route rejects non-Pro user (no subscription) with 403 PRO_REQUIRED", async () => {
+      const mock = createMockSupabaseAdmin({ subscription: null });
       const req = new Request("http://localhost:3000/api/billing/razorpay/order", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: "Bearer mock-token",
-        },
+        headers: { "Content-Type": "application/json", Authorization: "Bearer mock-token" },
         body: JSON.stringify({ addonCode: "addon_30" }),
       });
-
       (req as any).__testDeps = {
-        getSupabaseAdmin: () => mockSupabase,
+        getSupabaseAdmin: () => mock.client,
         getServerEntitlement: async () => ({ isPro: false }),
         isProductionHost: false,
+        fetchFn: mockRazorpayFetch,
       };
 
       const res = await orderPost(req);
       assert.strictEqual(res.status, 403, "Non-pro user must receive 403");
       const data = await res.json();
-      assert.strictEqual(data.code, "PRO_REQUIRED", "Error code must be PRO_REQUIRED");
-    } finally {
-      setEnv("NEXT_PUBLIC_BILLING_ENABLED", origBilling);
-      setEnv("RAZORPAY_KEY_ID", origKeyId);
-      setEnv("RAZORPAY_KEY_SECRET", origKeySecret);
-      setEnv("RAZORPAY_MODE", origMode);
-    }
-  });
+      assert.strictEqual(data.code, "PRO_REQUIRED");
+    });
 
-  await check("Order creation route creates order for active Pro user", async () => {
-    const origBilling = process.env.NEXT_PUBLIC_BILLING_ENABLED;
-    const origKeyId = process.env.RAZORPAY_KEY_ID;
-    const origKeySecret = process.env.RAZORPAY_KEY_SECRET;
-    const origMode = process.env.RAZORPAY_MODE;
-
-    process.env.NEXT_PUBLIC_BILLING_ENABLED = "true";
-    process.env.RAZORPAY_KEY_ID = "rzp_test_1234567890ABCD";
-    process.env.RAZORPAY_KEY_SECRET = "test_secret_123456";
-    process.env.RAZORPAY_MODE = "test";
-
-    try {
-      let insertedRow: any = null;
-      const mockUser = { id: "pro-user-id", email: "pro@test.com" };
-      const mockSupabase = {
-        auth: {
-          getUser: async () => ({ data: { user: mockUser }, error: null }),
-        },
-        from: () => ({
-          insert: (row: any) => {
-            insertedRow = row;
-            return {
-              select: () => ({
-                single: async () => ({ data: row, error: null }),
-              }),
-            };
-          },
-        }),
-      };
-
+    await check("Next route rejects user in in_grace_period with 403 PRO_REQUIRED", async () => {
+      const mock = createMockSupabaseAdmin({
+        subscription: { status: "in_grace_period", current_period_end: pastPeriodEnd },
+      });
       const req = new Request("http://localhost:3000/api/billing/razorpay/order", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: "Bearer mock-token",
-        },
+        headers: { "Content-Type": "application/json", Authorization: "Bearer mock-token" },
         body: JSON.stringify({ addonCode: "addon_30" }),
       });
-
       (req as any).__testDeps = {
-        getSupabaseAdmin: () => mockSupabase,
-        getServerEntitlement: async () => ({ isPro: true }),
+        getSupabaseAdmin: () => mock.client,
+        getServerEntitlement: async () => ({ isPro: true, inGracePeriod: true, status: "in_grace_period" }),
+        isProductionHost: false,
+        fetchFn: mockRazorpayFetch,
+      };
+
+      const res = await orderPost(req);
+      assert.strictEqual(res.status, 403, "User in grace period must receive 403");
+      const data = await res.json();
+      assert.strictEqual(data.code, "PRO_REQUIRED");
+    });
+
+    await check("Next route rejects active subscription with null current_period_end with 403 PRO_REQUIRED", async () => {
+      const mock = createMockSupabaseAdmin({
+        subscription: { status: "active", current_period_end: null },
+      });
+      const req = new Request("http://localhost:3000/api/billing/razorpay/order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer mock-token" },
+        body: JSON.stringify({ addonCode: "addon_30" }),
+      });
+      (req as any).__testDeps = {
+        getSupabaseAdmin: () => mock.client,
+        getServerEntitlement: async () => ({ isPro: true, status: "active", expirationDate: null }),
+        isProductionHost: false,
+        fetchFn: mockRazorpayFetch,
+      };
+
+      const res = await orderPost(req);
+      assert.strictEqual(res.status, 403, "Active with null period end must receive 403");
+      const data = await res.json();
+      assert.strictEqual(data.code, "PRO_REQUIRED");
+    });
+
+    await check("Next route rejects active subscription with past current_period_end with 403 PRO_REQUIRED", async () => {
+      const mock = createMockSupabaseAdmin({
+        subscription: { status: "active", current_period_end: pastPeriodEnd },
+      });
+      const req = new Request("http://localhost:3000/api/billing/razorpay/order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer mock-token" },
+        body: JSON.stringify({ addonCode: "addon_30" }),
+      });
+      (req as any).__testDeps = {
+        getSupabaseAdmin: () => mock.client,
+        getServerEntitlement: async () => ({ isPro: true, status: "active", expirationDate: pastPeriodEnd }),
+        isProductionHost: false,
+        fetchFn: mockRazorpayFetch,
+      };
+
+      const res = await orderPost(req);
+      assert.strictEqual(res.status, 403, "Active with expired period end must receive 403");
+      const data = await res.json();
+      assert.strictEqual(data.code, "PRO_REQUIRED");
+    });
+
+    await check("Next route rejects blocked user via metadata with 403 USER_BLOCKED", async () => {
+      const mock = createMockSupabaseAdmin({
+        userMetadata: { is_blocked: true },
+        subscription: { status: "active", current_period_end: futurePeriodEnd },
+      });
+      const req = new Request("http://localhost:3000/api/billing/razorpay/order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer mock-token" },
+        body: JSON.stringify({ addonCode: "addon_30" }),
+      });
+      (req as any).__testDeps = {
+        getSupabaseAdmin: () => mock.client,
+        isProductionHost: false,
+        fetchFn: mockRazorpayFetch,
+      };
+
+      const res = await orderPost(req);
+      assert.strictEqual(res.status, 403, "Blocked user must receive 403");
+      const data = await res.json();
+      assert.strictEqual(data.code, "USER_BLOCKED");
+    });
+
+    await check("Next route rejects blocked user via blocked_users table with 403 USER_BLOCKED", async () => {
+      const mock = createMockSupabaseAdmin({
+        isBlockedInDb: true,
+        subscription: { status: "active", current_period_end: futurePeriodEnd },
+      });
+      const req = new Request("http://localhost:3000/api/billing/razorpay/order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer mock-token" },
+        body: JSON.stringify({ addonCode: "addon_30" }),
+      });
+      (req as any).__testDeps = {
+        getSupabaseAdmin: () => mock.client,
+        isProductionHost: false,
+        fetchFn: mockRazorpayFetch,
+      };
+
+      const res = await orderPost(req);
+      assert.strictEqual(res.status, 403, "Blocked user must receive 403");
+      const data = await res.json();
+      assert.strictEqual(data.code, "USER_BLOCKED");
+    });
+
+    await check("Next route fails closed with 503 on database error during ban check", async () => {
+      const mock = createMockSupabaseAdmin({
+        dbErrorOnBlockedCheck: true,
+        subscription: { status: "active", current_period_end: futurePeriodEnd },
+      });
+      const req = new Request("http://localhost:3000/api/billing/razorpay/order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer mock-token" },
+        body: JSON.stringify({ addonCode: "addon_30" }),
+      });
+      (req as any).__testDeps = {
+        getSupabaseAdmin: () => mock.client,
+        isProductionHost: false,
+        fetchFn: mockRazorpayFetch,
+      };
+
+      const res = await orderPost(req);
+      assert.strictEqual(res.status, 503, "Ban check failure must fail closed with 503");
+      const data = await res.json();
+      assert.strictEqual(data.code, "USER_BLOCKED");
+    });
+
+    await check("Next route creates order for active Pro user with future period end", async () => {
+      const mock = createMockSupabaseAdmin({
+        subscription: { status: "active", current_period_end: futurePeriodEnd },
+      });
+      const req = new Request("http://localhost:3000/api/billing/razorpay/order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer mock-token" },
+        body: JSON.stringify({ addonCode: "addon_30" }),
+      });
+      (req as any).__testDeps = {
+        getSupabaseAdmin: () => mock.client,
+        isProductionHost: false,
+        fetchFn: mockRazorpayFetch,
+      };
+
+      const res = await orderPost(req);
+      assert.strictEqual(res.status, 200, "Eligible Pro user must receive 200");
+      const data = await res.json();
+      assert.strictEqual(data.orderId, "order_test_addon_30_xyz");
+      assert.strictEqual(data.amount, 39900);
+      assert.strictEqual(data.currency, "INR");
+      const inserted = mock.getInsertedOrder();
+      assert.strictEqual(inserted?.addon_code, "addon_30");
+      assert.strictEqual(inserted?.plan_code, null);
+      assert.strictEqual(inserted?.amount_paise, 39900);
+    });
+
+    await check("Next route creates order for trialing user with future period end", async () => {
+      const mock = createMockSupabaseAdmin({
+        subscription: { status: "trialing", current_period_end: futurePeriodEnd },
+      });
+      const req = new Request("http://localhost:3000/api/billing/razorpay/order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer mock-token" },
+        body: JSON.stringify({ addonCode: "addon_10" }),
+      });
+      (req as any).__testDeps = {
+        getSupabaseAdmin: () => mock.client,
         isProductionHost: false,
         fetchFn: async () => ({
           ok: true,
           json: async () => ({
-            id: "order_test_addon_30_xyz",
-            amount: 39900,
+            id: "order_test_addon_10_abc",
+            amount: 14900,
             currency: "INR",
           }),
         }),
       };
 
       const res = await orderPost(req);
-      assert.strictEqual(res.status, 200, "Active Pro user must receive 200");
+      assert.strictEqual(res.status, 200, "Trialing Pro user must receive 200");
       const data = await res.json();
+      assert.strictEqual(data.orderId, "order_test_addon_10_abc");
+      assert.strictEqual(data.amount, 14900);
+      const inserted = mock.getInsertedOrder();
+      assert.strictEqual(inserted?.addon_code, "addon_10");
+    });
+
+    // -------------------------------------------------------------------------
+    // 4B. Netlify Handler (netlify/functions/billing-razorpay-order) Parity Tests
+    // -------------------------------------------------------------------------
+    console.log("  4B. Netlify function: billing-razorpay-order.ts");
+
+    await check("Netlify handler rejects non-Pro user (no subscription) with 403 PRO_REQUIRED", async () => {
+      const mock = createMockSupabaseAdmin({ subscription: null });
+      const handler = createNetlifyOrderHandler({
+        getSupabaseAdmin: () => mock.client,
+        getServerEntitlement: async () => ({ isPro: false }),
+        isProductionHost: false,
+        fetchFn: mockRazorpayFetch as any,
+      });
+
+      const res = await handler({
+        httpMethod: "POST",
+        headers: { authorization: "Bearer mock-token" },
+        body: JSON.stringify({ addonCode: "addon_30" }),
+      });
+
+      assert.strictEqual(res.statusCode, 403, "Netlify must return 403 for non-Pro");
+      const data = JSON.parse(res.body);
+      assert.strictEqual(data.code, "PRO_REQUIRED");
+    });
+
+    await check("Netlify handler rejects user in in_grace_period with 403 PRO_REQUIRED", async () => {
+      const mock = createMockSupabaseAdmin({
+        subscription: { status: "in_grace_period", current_period_end: pastPeriodEnd },
+      });
+      const handler = createNetlifyOrderHandler({
+        getSupabaseAdmin: () => mock.client,
+        getServerEntitlement: async () => ({ isPro: true, inGracePeriod: true, status: "in_grace_period" }),
+        isProductionHost: false,
+        fetchFn: mockRazorpayFetch as any,
+      });
+
+      const res = await handler({
+        httpMethod: "POST",
+        headers: { authorization: "Bearer mock-token" },
+        body: JSON.stringify({ addonCode: "addon_30" }),
+      });
+
+      assert.strictEqual(res.statusCode, 403, "Netlify must return 403 for grace period");
+      const data = JSON.parse(res.body);
+      assert.strictEqual(data.code, "PRO_REQUIRED");
+    });
+
+    await check("Netlify handler rejects active subscription with null current_period_end with 403 PRO_REQUIRED", async () => {
+      const mock = createMockSupabaseAdmin({
+        subscription: { status: "active", current_period_end: null },
+      });
+      const handler = createNetlifyOrderHandler({
+        getSupabaseAdmin: () => mock.client,
+        getServerEntitlement: async () => ({ isPro: true, status: "active", expirationDate: null }),
+        isProductionHost: false,
+        fetchFn: mockRazorpayFetch as any,
+      });
+
+      const res = await handler({
+        httpMethod: "POST",
+        headers: { authorization: "Bearer mock-token" },
+        body: JSON.stringify({ addonCode: "addon_30" }),
+      });
+
+      assert.strictEqual(res.statusCode, 403, "Netlify must return 403 for null period end");
+      const data = JSON.parse(res.body);
+      assert.strictEqual(data.code, "PRO_REQUIRED");
+    });
+
+    await check("Netlify handler rejects active subscription with past current_period_end with 403 PRO_REQUIRED", async () => {
+      const mock = createMockSupabaseAdmin({
+        subscription: { status: "active", current_period_end: pastPeriodEnd },
+      });
+      const handler = createNetlifyOrderHandler({
+        getSupabaseAdmin: () => mock.client,
+        getServerEntitlement: async () => ({ isPro: true, status: "active", expirationDate: pastPeriodEnd }),
+        isProductionHost: false,
+        fetchFn: mockRazorpayFetch as any,
+      });
+
+      const res = await handler({
+        httpMethod: "POST",
+        headers: { authorization: "Bearer mock-token" },
+        body: JSON.stringify({ addonCode: "addon_30" }),
+      });
+
+      assert.strictEqual(res.statusCode, 403, "Netlify must return 403 for expired period end");
+      const data = JSON.parse(res.body);
+      assert.strictEqual(data.code, "PRO_REQUIRED");
+    });
+
+    await check("Netlify handler rejects blocked user with 403 USER_BLOCKED", async () => {
+      const mock = createMockSupabaseAdmin({
+        userMetadata: { is_blocked: true },
+        subscription: { status: "active", current_period_end: futurePeriodEnd },
+      });
+      const handler = createNetlifyOrderHandler({
+        getSupabaseAdmin: () => mock.client,
+        isProductionHost: false,
+        fetchFn: mockRazorpayFetch as any,
+      });
+
+      const res = await handler({
+        httpMethod: "POST",
+        headers: { authorization: "Bearer mock-token" },
+        body: JSON.stringify({ addonCode: "addon_30" }),
+      });
+
+      assert.strictEqual(res.statusCode, 403, "Netlify must return 403 for blocked user");
+      const data = JSON.parse(res.body);
+      assert.strictEqual(data.code, "USER_BLOCKED");
+    });
+
+    await check("Netlify handler fails closed with 503 on database error during ban check", async () => {
+      const mock = createMockSupabaseAdmin({
+        dbErrorOnBlockedCheck: true,
+        subscription: { status: "active", current_period_end: futurePeriodEnd },
+      });
+      const handler = createNetlifyOrderHandler({
+        getSupabaseAdmin: () => mock.client,
+        isProductionHost: false,
+        fetchFn: mockRazorpayFetch as any,
+      });
+
+      const res = await handler({
+        httpMethod: "POST",
+        headers: { authorization: "Bearer mock-token" },
+        body: JSON.stringify({ addonCode: "addon_30" }),
+      });
+
+      assert.strictEqual(res.statusCode, 503, "Netlify ban check failure must fail closed with 503");
+      const data = JSON.parse(res.body);
+      assert.strictEqual(data.code, "USER_BLOCKED");
+    });
+
+    await check("Netlify handler creates order for active Pro user with future period end", async () => {
+      const mock = createMockSupabaseAdmin({
+        subscription: { status: "active", current_period_end: futurePeriodEnd },
+      });
+      const handler = createNetlifyOrderHandler({
+        getSupabaseAdmin: () => mock.client,
+        isProductionHost: false,
+        fetchFn: mockRazorpayFetch as any,
+      });
+
+      const res = await handler({
+        httpMethod: "POST",
+        headers: { authorization: "Bearer mock-token" },
+        body: JSON.stringify({ addonCode: "addon_30" }),
+      });
+
+      assert.strictEqual(res.statusCode, 200, "Netlify must return 200 for eligible Pro user");
+      const data = JSON.parse(res.body);
       assert.strictEqual(data.orderId, "order_test_addon_30_xyz");
       assert.strictEqual(data.amount, 39900);
       assert.strictEqual(data.currency, "INR");
-      assert.strictEqual(insertedRow?.addon_code, "addon_30");
-      assert.strictEqual(insertedRow?.plan_code, null);
-      assert.strictEqual(insertedRow?.amount_paise, 39900);
-    } finally {
-      setEnv("NEXT_PUBLIC_BILLING_ENABLED", origBilling);
-      setEnv("RAZORPAY_KEY_ID", origKeyId);
-      setEnv("RAZORPAY_KEY_SECRET", origKeySecret);
-      setEnv("RAZORPAY_MODE", origMode);
-    }
-  });
+      const inserted = mock.getInsertedOrder();
+      assert.strictEqual(inserted?.addon_code, "addon_30");
+      assert.strictEqual(inserted?.plan_code, null);
+      assert.strictEqual(inserted?.amount_paise, 39900);
+    });
+  } finally {
+    setEnv("NEXT_PUBLIC_BILLING_ENABLED", origBilling);
+    setEnv("RAZORPAY_KEY_ID", origKeyId);
+    setEnv("RAZORPAY_KEY_SECRET", origKeySecret);
+    setEnv("RAZORPAY_MODE", origMode);
+  }
 
   // ---------------------------------------------------------------------------
   // 5. Verify Route Validation with addonCode
