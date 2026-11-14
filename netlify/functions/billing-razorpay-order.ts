@@ -278,23 +278,23 @@ export function createHandler(deps: BillingOrderDeps = {}) {
         };
       }
 
-      // Add-ons require unbanned user and active Pro subscription (aligned with fulfillment SQL)
-      if (pricing.type === "addon") {
-        // 1. Fail-closed server ban check (verifyUserNotBanned / blocked_users)
-        const banChecker = deps.verifyUserNotBanned || verifyUserNotBanned;
-        const banCheck = await banChecker(supabaseAdmin, user.id, user.user_metadata);
-        if (banCheck?.isBlocked) {
-          return {
-            statusCode: banCheck.isServiceUnavailable ? 503 : 403,
-            headers,
-            body: JSON.stringify({
-              error: banCheck.error || "Account suspended. Access revoked by administrator.",
-              code: "USER_BLOCKED",
-            }),
-          };
-        }
+      // Fail-closed server ban check (verifyUserNotBanned / blocked_users) for both plans and add-ons
+      const banChecker = deps.verifyUserNotBanned || verifyUserNotBanned;
+      const banCheck = await banChecker(supabaseAdmin, user.id, user.user_metadata);
+      if (banCheck?.isBlocked) {
+        return {
+          statusCode: banCheck.isServiceUnavailable ? 503 : 403,
+          headers,
+          body: JSON.stringify({
+            error: banCheck.error || "Account suspended. Access revoked by administrator.",
+            code: "USER_BLOCKED",
+          }),
+        };
+      }
 
-        // 2. Pre-charge eligibility check: status active/trialing AND current_period_end not null and in future
+      // Add-ons require active Pro subscription (aligned with fulfillment SQL)
+      if (pricing.type === "addon") {
+        // Pre-charge eligibility check: status active/trialing AND current_period_end not null and in future
         let isEligible = false;
         if (deps.checkAddonEligibility) {
           isEligible = Boolean(await deps.checkAddonEligibility(user.id));

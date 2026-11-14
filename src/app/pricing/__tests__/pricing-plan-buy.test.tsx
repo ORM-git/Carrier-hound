@@ -128,6 +128,7 @@ describe("Pricing Page Plan Purchase Flow (NEXT_PUBLIC_BILLING_ENABLED)", () => 
 
       // "Payments opening soon" badges must be present
       expect(container?.textContent).toContain("Payments opening soon");
+      expect(container?.textContent).toContain("Payments will open soon.");
 
       // Clicking disabled upgrade button must not invoke checkout
       if (upgradeButtons[0]) {
@@ -154,6 +155,7 @@ describe("Pricing Page Plan Purchase Flow (NEXT_PUBLIC_BILLING_ENABLED)", () => 
       const buyButtons = container ? Array.from(container.querySelectorAll("button[data-plan-code]")) : [];
       expect(buyButtons.length).toBe(0);
       expect(container?.textContent).toContain("Payments opening soon");
+      expect(container?.textContent).toContain("Payments will open soon.");
     });
   });
 
@@ -190,8 +192,9 @@ describe("Pricing Page Plan Purchase Flow (NEXT_PUBLIC_BILLING_ENABLED)", () => 
       for (const btn of monthlyBtns) expect(btn.textContent).toBe("Buy Monthly");
       for (const btn of quarterlyBtns) expect(btn.textContent).toBe("Buy Quarterly");
 
-      // None of the plan cards should have "Payments opening soon" badge
+      // None of the plan cards should have "Payments opening soon" badge, nor header phrase
       expect(container?.textContent).not.toContain("Payments opening soon");
+      expect(container?.textContent).not.toContain("Payments will open soon.");
     });
 
     it("clicking Buy Monthly calls handleProCheckout with planCode 'monthly'", async () => {
@@ -434,6 +437,72 @@ describe("Pricing Page Plan Purchase Flow (NEXT_PUBLIC_BILLING_ENABLED)", () => 
           redirectTarget: "/pricing",
         })
       );
+    });
+
+    it("clicking Buy Monthly then addon10 while the first is pending calls handleProCheckout exactly once and keeps all buttons disabled", async () => {
+      let resolveCheckout: (() => void) | null = null;
+      const pendingCheckoutPromise = new Promise<void>((resolve) => {
+        resolveCheckout = resolve;
+      });
+
+      mockHandleProCheckout.mockImplementation(() => pendingCheckoutPromise);
+      mockGetSession.mockResolvedValue({
+        data: {
+          session: {
+            user: { id: "test-user-id", email: "candidate@gmail.com" },
+          },
+        },
+      });
+
+      await mountPage();
+
+      const monthlyBtn = container?.querySelector("button[data-plan-code='monthly']") as HTMLButtonElement;
+      const weeklyBtn = container?.querySelector("button[data-plan-code='weekly']") as HTMLButtonElement;
+      const addon10Btn = container?.querySelector("button[data-addon-code='addon_10']") as HTMLButtonElement;
+
+      expect(monthlyBtn).toBeTruthy();
+      expect(weeklyBtn).toBeTruthy();
+      expect(addon10Btn).toBeTruthy();
+
+      // Click 1: Buy Monthly
+      await act(async () => {
+        monthlyBtn.click();
+        await Promise.resolve();
+      });
+
+      // First click immediately invokes handleProCheckout and acquires the single synchronous lock
+      expect(mockHandleProCheckout).toHaveBeenCalledTimes(1);
+      expect(mockHandleProCheckout).toHaveBeenCalledWith(
+        expect.objectContaining({
+          planCode: "monthly",
+          redirectTarget: "/pricing",
+        })
+      );
+
+      // While locked, ALL plan and add-on buy buttons must be disabled
+      expect(monthlyBtn.disabled).toBe(true);
+      expect(weeklyBtn.disabled).toBe(true);
+      expect(addon10Btn.disabled).toBe(true);
+
+      // Click 2: Click add-on 10 while the first is pending
+      await act(async () => {
+        addon10Btn.click();
+        await Promise.resolve();
+      });
+
+      // handleProCheckout must STILL have been called exactly once
+      expect(mockHandleProCheckout).toHaveBeenCalledTimes(1);
+
+      // Now complete the pending checkout
+      await act(async () => {
+        resolveCheckout!();
+        await Promise.resolve();
+      });
+
+      // After release in finally, all buttons are re-enabled
+      expect(monthlyBtn.disabled).toBe(false);
+      expect(weeklyBtn.disabled).toBe(false);
+      expect(addon10Btn.disabled).toBe(false);
     });
   });
 });

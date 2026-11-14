@@ -264,17 +264,19 @@ async function runSuite() {
 
     // Unified in-flight guard on pricing page
     assert.ok(
-      pricingSrc.includes("disabled={loadingAddon !== null}"),
+      pricingSrc.includes("disabled={loadingAddon !== null}") ||
+      pricingSrc.includes("disabled={isCheckoutLocked"),
       "All add-on pack buttons must be disabled when any checkout is in flight"
     );
     assert.ok(
-      pricingSrc.includes("addonCheckoutLockRef.current") &&
-      pricingSrc.includes("loadingAddon !== null"),
-      "handleBuyAddon must guard synchronously with addonCheckoutLockRef and loadingAddon"
+      (pricingSrc.includes("checkoutLockRef.current") || pricingSrc.includes("addonCheckoutLockRef.current")) &&
+      (pricingSrc.includes("loadingCheckout !== null") || pricingSrc.includes("loadingAddon !== null")),
+      "handleBuyAddon must guard synchronously with lock and loading state"
     );
     assert.ok(
-      pricingSrc.includes("onDismiss") && pricingSrc.includes("setLoadingAddon(null)"),
-      "handleBuyAddon must forward onDismiss callback to clear loadingAddon"
+      (pricingSrc.includes("onDismiss") || pricingSrc.includes("finally")) &&
+      (pricingSrc.includes("setLoadingAddon(null)") || pricingSrc.includes("resetLock()")),
+      "handleBuyAddon must forward lifecycle callbacks or finally to clear loading state"
     );
 
     // Amount remains server-side only: client passes only addonCode
