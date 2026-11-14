@@ -180,7 +180,7 @@ export default function RoleTitlesPage({ params }: PageProps) {
               </p>
               <JobPreview
                 title={`Live ${guide.roleName} Openings`}
-                subtitle="Crawled directly from employer ATS endpoints every 15 minutes"
+                subtitle="Refreshed directly from verified employer career pages"
                 jobs={roleJobs}
                 limit={4}
               />
@@ -389,7 +389,7 @@ export default function RoleTitlesPage({ params }: PageProps) {
                 Ready to find verified {guide.roleName} positions?
               </h2>
               <p className="text-white/90 text-sm sm:text-base leading-relaxed">
-                Skip 500-applicant queues on public boards. Access unindexed direct employer ATS feeds right now.
+                Skip 500-applicant queues on public boards. Access verified direct employer openings right now.
               </p>
               <div className="pt-2">
                 <Link

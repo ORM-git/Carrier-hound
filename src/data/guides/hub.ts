@@ -44,7 +44,7 @@ export const HUB_DATA = {
     {
       id: "trail-2",
       title: "Evaluate Subscription Boards",
-      description: "A comprehensive breakdown comparing traditional paid databases against direct ATS scrapers.",
+      description: "A comprehensive breakdown comparing traditional paid databases against direct employer career feeds.",
       href: "/remote/flexjobs-alternative-review",
     },
     {
@@ -74,7 +74,7 @@ export const HUB_DATA = {
     {
       id: "pg-2",
       title: "Independent Review: Paid Membership Boards vs. Direct Automated Tracking",
-      description: "An unbiased analysis comparing traditional closed job boards against real-time career page scrapers.",
+      description: "An unbiased analysis comparing traditional closed job boards against verified direct employer listings.",
       href: "/remote/flexjobs-alternative-review",
       tag: "ANALYSIS",
     },

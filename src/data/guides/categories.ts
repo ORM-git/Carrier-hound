@@ -36,7 +36,7 @@ export const CATEGORY_LANDINGS: Record<string, CategoryLandingData> = {
     lede: "Discover direct ATS engineering requisitions before they are syndicated to public job aggregators. Filter verified remote infrastructure roles by salary band and tech stack.",
     proofStrip: {
       heading: "Verified Employer Feeds Only",
-      subheading: "Crawled directly from employer ATS endpoints every 15 minutes.",
+      subheading: "Refreshed directly from verified employer career pages.",
       metrics: [
         { label: "Active Postings", value: "Verified Active" },
         { label: "Median Compensation", value: "$168,000" },
@@ -62,7 +62,7 @@ export const CATEGORY_LANDINGS: Record<string, CategoryLandingData> = {
     faqs: [
       {
         question: "How do I apply directly to the employer?",
-        answer: "Clicking 'Sign in to view' unlocks the raw employer ATS link (Greenhouse, Lever, Ashby, or Workday). You submit your application directly on the employer's official subdomain, bypassing intermediary aggregators.",
+        answer: "Clicking 'Sign in to view' unlocks the direct employer application link. You submit your application directly on the employer's official subdomain, bypassing intermediary aggregators.",
       },
       {
         question: "Are these infrastructure roles open to international applicants?",

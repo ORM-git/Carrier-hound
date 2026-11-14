@@ -181,7 +181,7 @@ export const PLAN_COMPARISON_ROWS: PlanComparisonRow[] = [
   {
     category: "Job Search & Data Access",
     feature: "Direct ATS Apply Links",
-    description: "Direct links to apply on Greenhouse, Lever, Ashby, Workable",
+    description: "Direct links to apply on official company career portals",
     free: false,
     premium: true,
   },

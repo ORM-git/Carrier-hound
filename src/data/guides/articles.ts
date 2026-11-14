@@ -54,7 +54,7 @@ export const GUIDE_ARTICLES: Record<string, GuideArticle> = {
     slug: "flexjobs-alternative-review",
     label: "INDEPENDENT TOOL ANALYSIS",
     title: "Why High-Intent Job Seekers Are Moving Beyond Traditional Paid Boards in 2026",
-    lede: "A structural breakdown of closed subscription portals versus modern automated career scrapers, evaluating listing freshness, application friction, and verified offer conversion rates.",
+    lede: "A structural breakdown of closed subscription portals versus modern direct employer job discovery, evaluating listing freshness, application friction, and verified offer conversion rates.",
     updatedDate: "Updated September 2026",
     verdict: {
       label: "THE VERDICT",
@@ -80,7 +80,7 @@ export const GUIDE_ARTICLES: Record<string, GuideArticle> = {
     features: [
       {
         title: "Zero Ingestion Lag",
-        description: "Requisitions are indexed within 15 minutes of being published to employer ATS platforms.",
+        description: "Requisitions are refreshed regularly after being published to employer career pages.",
       },
       {
         title: "Exact Title Parsing",
@@ -88,7 +88,7 @@ export const GUIDE_ARTICLES: Record<string, GuideArticle> = {
       },
       {
         title: "Direct Application Link",
-        description: "Skip 12-page intermediary questionnaires; land directly on Greenhouse, Lever, or Ashby.",
+        description: "Skip 12-page intermediary questionnaires; land directly on official company application portals.",
       },
       {
         title: "Transparent Salary Chips",
@@ -147,7 +147,7 @@ export const GUIDE_ARTICLES: Record<string, GuideArticle> = {
     faqs: [
       {
         question: "How does CareerMonke discover positions that aren't on public portals?",
-        answer: "We monitor employer career pages directly through their applicant tracking systems (Greenhouse, Lever, Ashby, Workday, BambooHR). Most companies open these links internally days before paying for syndication on LinkedIn or Indeed.",
+        answer: "We monitor employer career pages directly. Most companies open these listings internally days before paying for syndication on LinkedIn or Indeed.",
       },
       {
         question: "Is there any subscription fee to search through the jobs?",
@@ -245,7 +245,7 @@ export const GUIDE_ARTICLES: Record<string, GuideArticle> = {
       },
       {
         question: "How frequently is the stealth feed refreshed?",
-        answer: "Our automated crawlers run continuous polling cycles every 10 to 15 minutes across verified company domains.",
+        answer: "Our system refreshes job listings regularly across verified company domains.",
       },
     ],
   },
