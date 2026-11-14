@@ -42,7 +42,7 @@
     "globe.gl": "^2.46.2",
     "js-tiktoken": "1.0.21",
     "jspdf": "^4.2.1",
-    "lucide-react": "^0.453.0",
+    "lucide-react": "^1.72.0",
     "mammoth": "^1.13.0",
     "mapbox-gl": "^3.34.1",
     "motion": "^13.4.4",
