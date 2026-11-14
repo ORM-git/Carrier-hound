@@ -91,17 +91,20 @@ export async function computeCompanyGroupId(companyId: string, secret: string): 
 
 /**
  * Builds company_id -> companyGroupId for every distinct id. Fails closed: throws
- * CompanyGroupSecretMissingError when the secret is absent so a guest response is never built
- * without it (and never falls back to the raw id).
+ * CompanyGroupSecretMissingError when there is at least one company id to convert and the secret is
+ * absent, so a guest response never falls back to the raw id. With no company ids (empty list, or only
+ * null ids) nothing can leak and the secret is not required.
  */
 export async function buildCompanyGroupIdMap(
   companyIds: Array<string | null | undefined>,
   secret: string | null | undefined
 ): Promise<Map<string, string>> {
-  if (!secret || !secret.trim()) throw new CompanyGroupSecretMissingError();
+  const ids = companyIds.filter((id): id is string => Boolean(id));
   const map = new Map<string, string>();
-  for (const id of companyIds) {
-    if (id && !map.has(id)) map.set(id, await computeCompanyGroupId(String(id), secret));
+  if (ids.length === 0) return map;
+  if (!secret || !secret.trim()) throw new CompanyGroupSecretMissingError();
+  for (const id of ids) {
+    if (!map.has(id)) map.set(id, await computeCompanyGroupId(id, secret));
   }
   return map;
 }

@@ -33,7 +33,19 @@ process.env.NEXT_PUBLIC_SUPABASE_URL = "https://mock.supabase.co";
 process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.mock_anon_key";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.mock_service_key";
 process.env.NODE_ENV = "test";
-process.env.COMPANY_GROUP_ID_SECRET = "test-only-company-group-secret-not-for-production";
+
+// Scoped per test (set and restore); never left set globally so tests cannot hide a missing key.
+const TEST_COMPANY_GROUP_SECRET = "test-only-company-group-secret-not-for-production";
+const SECRET_ENV = "COMPANY_GROUP_ID_SECRET";
+delete process.env[SECRET_ENV];
+function setGroupSecret(): () => void {
+  const prev = process.env[SECRET_ENV];
+  process.env[SECRET_ENV] = TEST_COMPANY_GROUP_SECRET;
+  return () => {
+    if (prev === undefined) delete process.env[SECRET_ENV];
+    else process.env[SECRET_ENV] = prev;
+  };
+}
 
 (globalThis as any).__mockRateLimitClient = {
   rpc: async () => ({ data: { allowed: true, retry_after: 0, current_count: 1 }, error: null }),
@@ -168,6 +180,7 @@ async function runSuite() {
     return origFetch(url, opts);
   }) as any;
 
+  const restoreSecret2 = setGroupSecret();
   try {
     const { GET: searchGet } = await import("../src/app/api/jobs/search/route");
     const { createHandler: createSearchHandler } = await import("../netlify/functions/jobs-search");
@@ -252,6 +265,7 @@ async function runSuite() {
     }
   } finally {
     globalThis.fetch = origFetch;
+    restoreSecret2();
   }
 
   // ====================================================================================
@@ -292,6 +306,7 @@ async function runSuite() {
 
     const prevEmails = process.env.EARLY_ACCESS_ALLOWED_EMAILS;
     process.env.EARLY_ACCESS_ALLOWED_EMAILS = "pro-user@example.test";
+    const restoreSecret2f = setGroupSecret();
     const origFetch2f = globalThis.fetch;
     globalThis.fetch = (async (url: any, opts: any) => {
       const urlStr = String(url);
@@ -334,7 +349,7 @@ async function runSuite() {
       const { createHandler: createSearchHandler } = await import("../netlify/functions/jobs-search");
       const netlifyHandler = createSearchHandler();
       const { capJobsPerCompany: capClient, computeCompanyGroupId } = await import("../src/lib/jobs/capping");
-      const secret = process.env.COMPANY_GROUP_ID_SECRET as string;
+      const secret = TEST_COMPANY_GROUP_SECRET;
 
       const guestList = async (which: "next" | "netlify") => {
         if (which === "next") {
@@ -417,8 +432,7 @@ async function runSuite() {
 
       // Fail closed: no server secret -> no guest payload at all (503), never a raw id
       {
-        const saved = process.env.COMPANY_GROUP_ID_SECRET;
-        delete process.env.COMPANY_GROUP_ID_SECRET;
+        delete process.env[SECRET_ENV];
         try {
           for (const which of ["next", "netlify"] as const) {
             const list = await guestList(which);
@@ -430,10 +444,27 @@ async function runSuite() {
             );
           }
         } finally {
-          process.env.COMPANY_GROUP_ID_SECRET = saved;
+          process.env[SECRET_ENV] = TEST_COMPANY_GROUP_SECRET;
+        }
+
+        // Empty result lists and null company ids need no key: nothing can leak
+        const emptyDb = globalThis.fetch;
+        delete process.env[SECRET_ENV];
+        globalThis.fetch = (async (url: any, opts: any) =>
+          String(url).includes("jobs")
+            ? new Response("[]", { status: 200, headers: { "content-type": "application/json", "content-range": "*/0" } })
+            : origFetch2f(url, opts)) as any;
+        try {
+          const empty = await guestList("next");
+          const emptyNetlify = await guestList("netlify");
+          check2f(empty.status === 200 && emptyNetlify.status === 200, "2f-15 empty guest result needs no COMPANY_GROUP_ID_SECRET (200, not 503)", `empty guest result failed without the secret (${empty.status}/${emptyNetlify.status})`);
+        } finally {
+          globalThis.fetch = emptyDb;
+          process.env[SECRET_ENV] = TEST_COMPANY_GROUP_SECRET;
         }
       }
     } finally {
+      restoreSecret2f();
       globalThis.fetch = origFetch2f;
       if (prevEmails === undefined) delete process.env.EARLY_ACCESS_ALLOWED_EMAILS;
       else process.env.EARLY_ACCESS_ALLOWED_EMAILS = prevEmails;
@@ -446,13 +477,12 @@ async function runSuite() {
   console.log("\nTEST 3: Verifying default getLiveJobs list actually caps with company_id present in rows...");
 
   // Mock database rows for default list: 20 jobs from MassiveCorp (comp-mass-a), 30 from diverse employers (total 50)
+  // Rows follow the real jobs_public view projection: no company_id, no logo_url, company masked.
   const mockDefaultJobs = [
     ...Array.from({ length: 20 }, (_, i) => ({
       id: `default-mass-${i}`,
       title: `Platform Engineer ${i}`,
-      company: "Real MassiveCorp Name", // database column
-      company_id: "comp-mass-a",
-      logo_url: "https://mock.supabase.co/storage/v1/object/public/company-logos/mass-a.png",
+      company: "Verified Employer", // jobs_public projection
       location: "Remote",
       remote: true,
       category: "engineering",
@@ -464,9 +494,7 @@ async function runSuite() {
     ...Array.from({ length: 30 }, (_, i) => ({
       id: `default-div-${i}`,
       title: `Software Developer ${i}`,
-      company: `Real Company ${i}`,
-      company_id: `comp-div-${i}`,
-      logo_url: `https://mock.supabase.co/storage/v1/object/public/company-logos/div-${i}.png`,
+      company: "Verified Employer", // jobs_public projection
       location: "Remote",
       remote: true,
       category: "engineering",
@@ -530,12 +558,12 @@ async function runSuite() {
     console.log(`  [PASS] 3a. Default getLiveJobs preserves total list length: ${returnedJobs.length} === ${mockDefaultJobs.length}`);
   }
 
-  // Check 3b: company_id is present in all rows
-  const missingCompanyIdInDefault = returnedJobs.filter((j) => !j.company_id && !j.companyId).length;
-  if (missingCompanyIdInDefault > 0) {
-    failures.push(`MISSING company_id IN DEFAULT LIST: ${missingCompanyIdInDefault} jobs lack company_id`);
+  // Check 3b: the direct jobs_public path exposes no company_id (the view has none)
+  const companyIdLeaked = returnedJobs.filter((j) => j.company_id || j.companyId).length;
+  if (companyIdLeaked > 0) {
+    failures.push(`COMPANY ID IN DEFAULT LIST: ${companyIdLeaked} jobs carry company_id/companyId from jobs_public`);
   } else {
-    console.log(`  [PASS] 3b. company_id is present in all ${returnedJobs.length} returned default jobs`);
+    console.log(`  [PASS] 3b. Default getLiveJobs (jobs_public) carries no company_id on any of ${returnedJobs.length} jobs`);
   }
 
   // Check 3c: Free user default list has zero company name leakage & zero logo leakage
@@ -554,14 +582,13 @@ async function runSuite() {
     console.log(`  [PASS] 3d. Default getLiveJobs returns logoUrl === null & logo_url === null for free/guest users`);
   }
 
-  // Check 3d: Actually caps using company_id! (comp-mass-a must be <= 3 in visible top-30)
-  const top30Default = returnedJobs.slice(0, 30);
-  const massACountInTop30 = top30Default.filter((j) => j.company_id === "comp-mass-a").length;
-
-  if (massACountInTop30 > 3) {
-    failures.push(`DEFAULT LIST CAP VIOLATION: comp-mass-a has ${massACountInTop30} jobs in visible top-30 (expected <= 3)`);
+  // Check 3e (residual, inherited behavior): the direct jobs_public path has no opaque group key, so it cannot be
+  // capped per company. Pin that so a future change either adds a key or consciously updates this expectation.
+  const keyless = returnedJobs.filter((j) => !j.company_id && !j.companyId && !(j as any).companyGroupId).length;
+  if (keyless !== returnedJobs.length) {
+    failures.push(`DIRECT PATH KEY CHANGED: ${returnedJobs.length - keyless} jobs now carry a company key; update the residual note and capping expectations`);
   } else {
-    console.log(`  [PASS] 3e. Default getLiveJobs actually caps comp-mass-a at ${massACountInTop30}/3 in visible top-30 using company_id`);
+    console.log(`  [PASS] 3e. Direct jobs_public path has no company key (known residual: no per-company capping on this fallback)`);
   }
 
   // ====================================================================================
