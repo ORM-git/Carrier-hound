@@ -2658,13 +2658,8 @@ function JobsPageInner() {
         </main>
       </div>
 
-      {!user ? (
-        <Footer />
-      ) : (
-        <footer className="border-t border-slate-200/80 bg-white/50 py-4 px-4 sm:px-6 text-center text-xs text-slate-400 pb-20 lg:pb-4">
-          <p>© 2026 Olive Ridley Media Private Limited. All rights reserved.</p>
-        </footer>
-      )}
+      {/* © 2026 Olive Ridley Media Private Limited. All rights reserved. */}
+      <Footer />
 
       {/* Paywall Modal */}
       <PaywallModal
