@@ -39,26 +39,15 @@ export default function BrandIcon({
     );
   }
 
-  if (variant === "new") {
-    return (
-      <Image
-        src="/icon.png"
-        alt="CareerMonke"
-        width={size || 48}
-        height={size || 48}
-        className={`select-none object-contain ${className}`}
-        draggable={false}
-        priority={priority}
-      />
-    );
-  }
+  const w = width || size || (variant === "new" ? 48 : 36);
+  const h = height || size || (variant === "new" ? 48 : 36);
 
   return (
     <Image
-      src="/icon.png"
+      src="/careermonke-logo.png"
       alt="CareerMonke"
-      width={size || 36}
-      height={size || 36}
+      width={w}
+      height={h}
       className={`select-none object-contain ${className}`}
       draggable={false}
       priority={priority}

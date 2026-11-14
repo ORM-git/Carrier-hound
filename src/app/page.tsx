@@ -20,7 +20,7 @@ export default function HomePage() {
 
 <header className="wrap top band">
   <a className="brand" href="/" aria-label="CareerMonke home">
-    <img src="/icon.png" alt="" width="32" height="32" />CareerMonke
+    <img src="/careermonke-logo.png" alt="CareerMonke" width="140" height="57" className="h-8 w-auto object-contain" />CareerMonke
   </a>
   <nav aria-label="Account">
     <a className="signin" href="/login">Sign in</a>

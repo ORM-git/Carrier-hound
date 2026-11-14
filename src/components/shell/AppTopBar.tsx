@@ -364,8 +364,8 @@ export default function AppTopBar({
         aria-modal="true"
         aria-hidden={!drawerOpen}
         inert={!drawerOpen}
-        className={`fixed inset-y-0 left-0 z-[61] w-full max-w-[280px] bg-white h-full shadow-2xl flex flex-col justify-between p-5 transition-transform duration-300 ease-[cubic-bezier(0.2,0,0,1)] md:hidden overflow-y-auto overscroll-contain ${
-          drawerOpen ? "translate-x-0" : "-translate-x-full invisible pointer-events-none"
+        className={`fixed inset-y-0 right-0 z-[61] w-full max-w-[280px] bg-white h-full shadow-2xl flex flex-col justify-between p-5 transition-transform duration-300 ease-[cubic-bezier(0.2,0,0,1)] md:hidden overflow-y-auto overscroll-contain ${
+          drawerOpen ? "translate-x-0" : "translate-x-full invisible pointer-events-none"
         }`}
       >
         <div className="space-y-4 min-h-0">

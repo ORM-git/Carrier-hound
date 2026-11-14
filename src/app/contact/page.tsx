@@ -1,6 +1,5 @@
 import React from "react";
-import Link from "next/link";
-import BrandIcon from "@/components/BrandIcon";
+import GuideHeader from "@/components/GuideHeader";
 import Footer from "@/components/Footer";
 import { BreadcrumbJsonLd } from "@/components/seo/BreadcrumbJsonLd";
 
@@ -14,21 +13,10 @@ export const metadata = {
 
 export default function ContactUsPage() {
   return (
-    <>
-    <main className="min-h-screen bg-white text-[#09090B] py-16 px-6">
-  <BreadcrumbJsonLd trail={[{ name: "Home", path: "/" }, { name: "Contact", path: "/contact" }]} />
-      {/* Small blue logo (max-width 200px) centered at top */}
-      <div className="max-w-[200px] mx-auto text-center mb-10">
-        <Link href="/" className="inline-flex items-center gap-2 text-blue-600 group">
-          <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center">
-            <BrandIcon className="w-4 h-4 text-white" />
-          </div>
-          <span className="text-xl font-bold tracking-tight text-blue-600">CareerMonke</span>
-        </Link>
-      </div>
-
-      {/* Narrow container with minimal styling */}
-      <div className="max-w-[680px] mx-auto text-sm leading-relaxed text-[#4B5563] space-y-4">
+    <div className="min-h-screen bg-white text-[#09090B] flex flex-col font-sans">
+      <GuideHeader />
+      <main id="main-content" className="flex-1 max-w-[680px] w-full mx-auto text-sm leading-relaxed text-[#4B5563] space-y-4 px-4 sm:px-6 py-12">
+        <BreadcrumbJsonLd trail={[{ name: "Home", path: "/" }, { name: "Contact", path: "/contact" }]} />
         <h1 className="text-2xl sm:text-3xl font-bold text-[#09090B] tracking-tight">
           Contact Us
         </h1>
@@ -101,9 +89,8 @@ export default function ContactUsPage() {
         <p className="mb-2">
           Grievances are acknowledged and resolved within 5-7 working days.
         </p>
-      </div>
-    </main>
-    <Footer />
-    </>
+      </main>
+      <Footer />
+    </div>
   );
 }

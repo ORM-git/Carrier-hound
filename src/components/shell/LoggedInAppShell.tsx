@@ -4,6 +4,7 @@ import React, { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import AppIconRail from "./AppIconRail";
 import AppTopBar, { TopBarTab } from "./AppTopBar";
+import Footer from "@/components/Footer";
 import { useSidebarMode } from "@/lib/sidebar";
 import type { User } from "@supabase/supabase-js";
 
@@ -75,9 +76,10 @@ export default function LoggedInAppShell({
           {children}
         </main>
         {!hideFooter && pageLabel !== "PRICING" && (
-          <footer className="border-t border-slate-200/80 bg-white/50 py-4 px-4 sm:px-6 text-center text-xs text-slate-400 mt-auto">
-            <p>© 2026 Olive Ridley Media Private Limited. All rights reserved.</p>
-          </footer>
+          <div className="mt-auto">
+            {/* © 2026 Olive Ridley Media Private Limited. All rights reserved. */}
+            <Footer />
+          </div>
         )}
       </div>
     </div>
