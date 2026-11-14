@@ -68,8 +68,67 @@ export default function PricingPage() {
     };
   }, []);
 
+  const isBillingEnabled = process.env.NEXT_PUBLIC_BILLING_ENABLED === "true";
+
+  const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
+  const planCheckoutLockRef = useRef<boolean>(false);
+
   const [loadingAddon, setLoadingAddon] = useState<string | null>(null);
   const addonCheckoutLockRef = useRef<boolean>(false);
+
+  const handleBuyPlan = async (planCode: string) => {
+    // Synchronous in-flight guard: prevent duplicate orders or concurrent checkouts while getSession is pending
+    if (planCheckoutLockRef.current || loadingPlan !== null) {
+      return;
+    }
+    planCheckoutLockRef.current = true;
+    setLoadingPlan(planCode);
+
+    let currentUser = user;
+    if (!currentUser) {
+      try {
+        const supabase = createClient();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        currentUser = session?.user || null;
+      } catch {}
+    }
+
+    if (!currentUser) {
+      const loginUrl = `/login?returnTo=${encodeURIComponent("/pricing")}`;
+      if (typeof window !== "undefined") {
+        window.location.href = loginUrl;
+      }
+      planCheckoutLockRef.current = false;
+      setLoadingPlan(null);
+      return;
+    }
+
+    try {
+      await handleProCheckout({
+        planCode,
+        redirectTarget: "/pricing",
+        onError: (errMsg) => {
+          planCheckoutLockRef.current = false;
+          setLoadingPlan(null);
+          toast.error(errMsg || "Payment processing failed. Please try again.");
+        },
+        onSuccess: () => {
+          planCheckoutLockRef.current = false;
+          setLoadingPlan(null);
+        },
+        onDismiss: () => {
+          planCheckoutLockRef.current = false;
+          setLoadingPlan(null);
+        },
+      });
+    } catch (err: any) {
+      planCheckoutLockRef.current = false;
+      setLoadingPlan(null);
+      toast.error(err?.message || "Failed to initiate plan checkout.");
+    }
+  };
 
   const handleBuyAddon = async (addonCode: string) => {
     // Synchronous in-flight guard: prevent duplicate orders or concurrent checkouts while getSession is pending
@@ -127,11 +186,16 @@ export default function PricingPage() {
 
   const handleSelectPlan = (
     planId: PlanConfig["id"] | string,
-    options?: { addonCode?: string }
+    options?: { addonCode?: string; planCode?: string }
   ) => {
     if (options?.addonCode || (typeof planId === "string" && planId.startsWith("addon_"))) {
       const addonCode = options?.addonCode || planId;
       handleBuyAddon(addonCode);
+      return;
+    }
+    if (options?.planCode) {
+      setSelectedPlanId(planId as PlanConfig["id"]);
+      handleBuyPlan(options.planCode);
       return;
     }
     setSelectedPlanId(planId as PlanConfig["id"]);
@@ -257,26 +321,48 @@ export default function PricingPage() {
                             <p className="sr-only">{getPlanBillingLabel(plan)}</p>
                           </div>
 
-                          {/* Upgrade Button (Payments strictly OFF) */}
+                          {/* Upgrade / Buy Button */}
                           <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
-                            <button
-                              type="button"
-                              disabled
-                              aria-disabled="true"
-                              className={cnTokens(
-                                "w-full min-h-[48px] h-11 rounded-lg font-semibold text-sm flex items-center justify-center transition-colors cursor-not-allowed select-none opacity-80",
-                                isSelected
-                                  ? "bg-[#2563EB] text-white shadow-xs"
-                                  : "bg-black text-white dark:bg-slate-100 dark:text-slate-900"
-                              )}
-                            >
-                              Upgrade
-                            </button>
-                            <div className="flex justify-center mt-2">
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
-                                {UPGRADE_BUTTON_LABEL}
-                              </span>
-                            </div>
+                            {isBillingEnabled ? (
+                              <button
+                                type="button"
+                                data-plan-code={plan.id}
+                                disabled={loadingPlan !== null}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleSelectPlan(plan.id, { planCode: plan.id });
+                                }}
+                                className={cnTokens(
+                                  "w-full min-h-[48px] h-11 rounded-lg font-semibold text-sm flex items-center justify-center transition-colors select-none shadow-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] focus-visible:ring-offset-2 disabled:opacity-75 cursor-pointer disabled:cursor-not-allowed",
+                                  isSelected
+                                    ? "bg-[#2563EB] text-white hover:bg-blue-700"
+                                    : "bg-black text-white dark:bg-slate-100 dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-slate-200"
+                                )}
+                              >
+                                Buy {plan.name}
+                              </button>
+                            ) : (
+                              <>
+                                <button
+                                  type="button"
+                                  disabled
+                                  aria-disabled="true"
+                                  className={cnTokens(
+                                    "w-full min-h-[48px] h-11 rounded-lg font-semibold text-sm flex items-center justify-center transition-colors cursor-not-allowed select-none opacity-80",
+                                    isSelected
+                                      ? "bg-[#2563EB] text-white shadow-xs"
+                                      : "bg-black text-white dark:bg-slate-100 dark:text-slate-900"
+                                  )}
+                                >
+                                  Upgrade
+                                </button>
+                                <div className="flex justify-center mt-2">
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                                    {UPGRADE_BUTTON_LABEL}
+                                  </span>
+                                </div>
+                              </>
+                            )}
                           </div>
                         </div>
                       );
@@ -471,19 +557,36 @@ export default function PricingPage() {
                   </div>
 
                   <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
-                    <button
-                      type="button"
-                      disabled
-                      aria-disabled="true"
-                      className="w-full min-h-[48px] h-11 rounded-lg bg-[#2563EB] text-white font-semibold text-sm flex items-center justify-center cursor-not-allowed select-none opacity-80"
-                    >
-                      Upgrade
-                    </button>
-                    <div className="flex justify-center mt-2">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
-                        {UPGRADE_BUTTON_LABEL}
-                      </span>
-                    </div>
+                    {isBillingEnabled ? (
+                      <button
+                        type="button"
+                        data-plan-code={plan.id}
+                        disabled={loadingPlan !== null}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleSelectPlan(plan.id, { planCode: plan.id });
+                        }}
+                        className="w-full min-h-[48px] h-11 rounded-lg bg-[#2563EB] text-white font-semibold text-sm flex items-center justify-center transition-colors hover:bg-blue-700 shadow-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] focus-visible:ring-offset-2 disabled:opacity-75 cursor-pointer disabled:cursor-not-allowed"
+                      >
+                        Buy {plan.name}
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          disabled
+                          aria-disabled="true"
+                          className="w-full min-h-[48px] h-11 rounded-lg bg-[#2563EB] text-white font-semibold text-sm flex items-center justify-center cursor-not-allowed select-none opacity-80"
+                        >
+                          Upgrade
+                        </button>
+                        <div className="flex justify-center mt-2">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                            {UPGRADE_BUTTON_LABEL}
+                          </span>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
               );
@@ -626,7 +729,7 @@ export default function PricingPage() {
                       data-addon-code={addonCode}
                       disabled={loadingAddon !== null}
                       onClick={() => handleSelectPlan(addonCode, { addonCode })}
-                      className="w-full min-h-[48px] h-11 rounded-lg font-semibold text-sm flex items-center justify-center transition-colors select-none bg-[#2563EB] text-white hover:bg-blue-700 shadow-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] focus-visible:ring-offset-2 disabled:opacity-75"
+                      className="w-full min-h-[48px] h-11 rounded-lg font-semibold text-sm flex items-center justify-center transition-colors select-none bg-[#2563EB] text-white hover:bg-blue-700 shadow-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] focus-visible:ring-offset-2 disabled:opacity-75 cursor-pointer disabled:cursor-not-allowed"
                     >
                       Buy
                     </button>
