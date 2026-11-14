@@ -121,6 +121,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-plan-quota.ts", command: "npx tsx scripts/test-plan-quota.ts", classification: "offline" },
   { name: "scripts/test-landing-top-artifact.ts", command: "npx tsx scripts/test-landing-top-artifact.ts", classification: "offline" },
   { name: "scripts/test-quota-consume-razorpay.ts", command: "npx tsx scripts/test-quota-consume-razorpay.ts", classification: "offline" },
+  { name: "scripts/test-payment-plan-stack-guard.ts", command: "npx tsx scripts/test-payment-plan-stack-guard.ts", classification: "offline" },
   { name: "scripts/test-billing-money-path.ts", command: "npx tsx scripts/test-billing-money-path.ts", classification: "offline" },
   { name: "scripts/test-plan-price-sync.ts", command: "npx tsx scripts/test-plan-price-sync.ts", classification: "offline" },
   { name: "scripts/test-netlify-billing.ts", command: "npx tsx scripts/test-netlify-billing.ts", classification: "offline" },
