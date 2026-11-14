@@ -265,6 +265,19 @@ function runSuite() {
   check('Every shard has >= 70 boards', shardSizes.every(size => size >= 70));
   check('Shard sizes perfectly balanced (max - min <= 1)', Math.max(...shardSizes) - Math.min(...shardSizes) <= 1);
 
+  // 4b. Sharding verification across 12 shards (Audit Blocker B8)
+  const report12 = validateBoardList(boards, { minBoards: 400, expectedTotalShards: 12 });
+  check('Full board list validation across 12 shards passes without errors', report12.valid, report12.errors.join('; '));
+
+  const shards12: ScheduledBoard[][] = [];
+  for (let s = 0; s < 12; s++) {
+    shards12.push(boards.filter((_, idx) => idx % 12 === s));
+  }
+  const shardSizes12 = shards12.map(s => s.length);
+  console.log(`   Shard sizes (12 shards): [${shardSizes12.join(', ')}]`);
+  check('Every shard has >= 35 boards (12 shards)', shardSizes12.every(size => size >= 35));
+  check('Shard sizes perfectly balanced across 12 shards (max - min <= 1)', Math.max(...shardSizes12) - Math.min(...shardSizes12) <= 1);
+
   // 5. Check validation report markdown presence
   const reportMdPath = path.resolve(__dirname, '../reports/board-validation.md');
   check('reports/board-validation.md documentation exists', fs.existsSync(reportMdPath));

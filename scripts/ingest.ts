@@ -78,6 +78,117 @@ const CYCLE_ID = cycleArgIdx !== -1 && args[cycleArgIdx + 1] ? args[cycleArgIdx 
 
 const isShardedRun = SHARD_INDEX !== null || (TOTAL_SHARDS !== null && TOTAL_SHARDS > 1);
 
+// Per-source timeout configuration (Audit Blocker B8)
+// Absolute upper bound enforced in code; env vars, CLI flags and per-source overrides can never exceed it.
+export const ABSOLUTE_MAX_SOURCE_TIMEOUT_MS = 300_000; // 5 minutes
+const MIN_SOURCE_TIMEOUT_MS = 10_000;
+
+/**
+ * Parse a timeout in milliseconds. Returns null unless the value is a finite number > 0
+ * (rejects NaN, Infinity, zero, negatives, empty and non-numeric strings). Result is
+ * rounded up to a whole millisecond and never above ABSOLUTE_MAX_SOURCE_TIMEOUT_MS.
+ */
+export function parseTimeoutMs(raw: unknown): number | null {
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw !== 'number' && typeof raw !== 'string') return null;
+  if (typeof raw === 'string' && raw.trim() === '') return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.min(Math.ceil(n), ABSOLUTE_MAX_SOURCE_TIMEOUT_MS);
+}
+
+function timeoutFromEnvOrDefault(envName: string, fallbackMs: number): number {
+  const raw = process.env[envName];
+  if (raw === undefined || raw === '') return fallbackMs;
+  const parsed = parseTimeoutMs(raw);
+  if (parsed === null) {
+    console.warn(`[ingest] Ignoring invalid ${envName}="${raw}" (need a finite number > 0); using ${fallbackMs}ms`);
+    return fallbackMs;
+  }
+  return parsed;
+}
+
+const timeoutArgIdx = args.findIndex((a) => a === '--source-timeout' || a === '--timeout');
+const timeoutMsArgIdx = args.findIndex((a) => a === '--source-timeout-ms');
+const CLI_SOURCE_TIMEOUT_MS: number | null =
+  timeoutMsArgIdx !== -1
+    ? parseTimeoutMs(args[timeoutMsArgIdx + 1])
+    : timeoutArgIdx !== -1
+    ? parseTimeoutMs(Number(args[timeoutArgIdx + 1]) * 1000)
+    : null;
+if ((timeoutMsArgIdx !== -1 || timeoutArgIdx !== -1) && CLI_SOURCE_TIMEOUT_MS === null) {
+  console.warn('[ingest] Ignoring invalid --source-timeout / --source-timeout-ms value (need a finite number > 0)');
+}
+
+export const MAX_SOURCE_TIMEOUT_CAP_MS = timeoutFromEnvOrDefault('INGEST_MAX_TIMEOUT_CAP_MS', 240_000); // 240s default cap, never above the absolute bound
+export const DEFAULT_SOURCE_TIMEOUT_MS =
+  CLI_SOURCE_TIMEOUT_MS ?? timeoutFromEnvOrDefault('INGEST_SOURCE_TIMEOUT_MS', 60_000); // default 60s
+export const LARGE_BOARD_TIMEOUT_MS = timeoutFromEnvOrDefault('INGEST_LARGE_BOARD_TIMEOUT_MS', 180_000); // 180s (3m)
+
+// Comprehensive list of high-volume / enterprise boards needing extended fetch timeouts
+export const LARGE_BOARD_IDENTIFIERS = new Set([
+  'doordash',
+  'doordashusa',
+  'doordashaustralia',
+  'doordashcanada',
+  'doordashhighvolume',
+  'doordashindia',
+  'doordashinternational',
+  'doordashmexico',
+  'elastic',
+  'mongodb',
+  'snowflake',
+  'snowflakecomputing',
+  'zscaler',
+  'zscalerredcanary',
+  'palantir',
+  'stripe',
+  'datadog',
+  'canonical',
+  'gitlab',
+  'uber',
+  'airbnb',
+  'automattic',
+  'cloudflare',
+  'coinbase',
+  'figma',
+  'notion',
+  'pinterest',
+  'reddit',
+  'spotify',
+  'wayfair',
+  'brex',
+  'block',
+  'square',
+  'robinhood',
+  'instacart',
+  'ripple',
+  'splunk',
+]);
+
+export function getSourceTimeoutMs(source: SourceConfig): number {
+  const cap = Math.min(MAX_SOURCE_TIMEOUT_CAP_MS, ABSOLUTE_MAX_SOURCE_TIMEOUT_MS);
+
+  // Per-source override: used only when it is a valid positive number; otherwise ignored.
+  const override = parseTimeoutMs((source as any).timeoutMs);
+  if (override !== null) {
+    return Math.min(override, cap);
+  }
+
+  const targetLower = (source.target || '').toLowerCase().trim();
+  const idLower = (source.id || '').toLowerCase().trim();
+  const nameLower = (source.name || '').toLowerCase().trim();
+
+  const isLarge =
+    LARGE_BOARD_IDENTIFIERS.has(targetLower) ||
+    Array.from(LARGE_BOARD_IDENTIFIERS).some(
+      (slug) => idLower.includes(slug) || nameLower.includes(slug)
+    );
+
+  const timeout = isLarge ? LARGE_BOARD_TIMEOUT_MS : DEFAULT_SOURCE_TIMEOUT_MS;
+  return Math.min(Math.max(timeout, MIN_SOURCE_TIMEOUT_MS), cap);
+}
+
 // Track schema capability flags dynamically
 let hasCompaniesTable = false;
 let hasJobDescriptionsTable = false;
@@ -270,6 +381,84 @@ function isValidJob(job: NormalizedJob): boolean {
 /**
  * Main Ingestion Pipeline Runner
  */
+/** Races a source fetch against a timer; always clears the timer. Rejects with "Timeout after Ns processing <name>". */
+export async function fetchWithTimeout<T>(fetchFn: () => Promise<T>, timeoutMs: number, sourceName: string): Promise<T> {
+  let timeoutId: NodeJS.Timeout | null = null;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(
+      () => reject(new Error(`Timeout after ${Math.round(timeoutMs / 1000)}s processing ${sourceName}`)),
+      timeoutMs
+    );
+  });
+  try {
+    return await Promise.race([fetchFn(), timeoutPromise]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
+/** A source-level failure (timeout, network, adapter error) is ONE warning, never N failed jobs. */
+export function recordSourceFailure(stats: SourceStats, err: unknown): void {
+  stats.warnings = 1;
+  stats.error = err instanceof Error ? err.message : String(err);
+}
+
+/** Only real per-job write failures fail a shard; source warnings do not. */
+export function shouldFailShard(summary: Pick<IngestionRunSummary, 'totalFailed'>): boolean {
+  return summary.totalFailed > 0;
+}
+
+const UPDATE_RETRY_DELAY_MS = 500;
+
+/**
+ * Updates existing jobs row by row. A failed update is retried once (transient statement timeouts),
+ * and only a second failure counts as a failed job. The first error message is returned so it can be logged.
+ */
+export async function updateExistingJobs(
+  supabase: any,
+  toUpdate: Array<{ id: string; item: any; original: NormalizedJob }>,
+  stats: SourceStats,
+  hasJobDescriptionsTable: boolean,
+  retryDelayMs: number = UPDATE_RETRY_DELAY_MS
+): Promise<string | null> {
+  let firstError: string | null = null;
+  await Promise.all(
+    toUpdate.map(async ({ id, item, original }) => {
+      const doUpdate = () =>
+        supabase
+          .from('jobs')
+          .update({
+            ...item,
+            last_seen_at: new Date().toISOString(),
+            is_active: true,
+            status: 'active',
+          })
+          .eq('id', id);
+
+      let { error: updErr } = await doUpdate();
+      if (updErr) {
+        await new Promise((r) => setTimeout(r, retryDelayMs));
+        ({ error: updErr } = await doUpdate());
+      }
+
+      if (!updErr) {
+        stats.updated++;
+        if (hasJobDescriptionsTable && original?.description) {
+          await supabase.from('job_descriptions').upsert({
+            job_id: id,
+            description_text: original.description,
+            updated_at: new Date().toISOString(),
+          });
+        }
+      } else {
+        stats.failed++;
+        if (!firstError) firstError = updErr.message || String(updErr);
+      }
+    })
+  );
+  return firstError;
+}
+
 async function main() {
   const startTime = Date.now();
   console.log(`\n======================================================`);
@@ -323,7 +512,7 @@ async function main() {
       sourceFilter,
       capArgPresent: capArgIdx !== -1,
       capValue: MAX_RUN_JOBS,
-      expectedShards: 6,
+      expectedShards: TOTAL_SHARDS ?? (isScheduledRun ? 12 : 6),
       runs: recentRuns,
       cycleId: CYCLE_ID,
     });
@@ -407,26 +596,13 @@ async function main() {
 
     console.log(`[${sourceIndex + 1}/${sources.length}] ▶ Processing [${source.type.toUpperCase()}] ${source.name}...`);
 
-    let timeoutId: NodeJS.Timeout | null = null;
     try {
       const adapter = getAdapter(source.type);
       if (!adapter) {
         throw new Error(`No adapter implemented for source type: ${source.type}`);
       }
 
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        timeoutId = setTimeout(() => reject(new Error(`Timeout after 45s processing ${source.name}`)), 45000);
-      });
-
-      const rawJobs = await Promise.race([
-        adapter.fetchJobs(source),
-        timeoutPromise,
-      ]);
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-        timeoutId = null;
-      }
-
+      const rawJobs = await fetchWithTimeout(() => adapter.fetchJobs(source), getSourceTimeoutMs(source), source.name);
       stats.fetched = rawJobs.length;
       summary.totalFetched += rawJobs.length;
 
@@ -689,34 +865,12 @@ async function main() {
                 }
               }
 
-              // 2. Parallel Update for existing items
+              // 2. Parallel Update for existing items (retried once; real failures are counted and logged)
               if (toUpdate.length > 0) {
-                await Promise.all(
-                  toUpdate.map(async ({ id, item, original }) => {
-                    const { error: updErr } = await supabase
-                      .from('jobs')
-                      .update({
-                        ...item,
-                        last_seen_at: new Date().toISOString(),
-                        is_active: true,
-                        status: 'active',
-                      })
-                      .eq('id', id);
-
-                    if (!updErr) {
-                      stats.updated++;
-                      if (hasJobDescriptionsTable && original?.description) {
-                        await supabase.from('job_descriptions').upsert({
-                          job_id: id,
-                          description_text: original.description,
-                          updated_at: new Date().toISOString(),
-                        });
-                      }
-                    } else {
-                      stats.failed++;
-                    }
-                  })
-                );
+                const firstUpdateError = await updateExistingJobs(supabase, toUpdate, stats, hasJobDescriptionsTable);
+                if (firstUpdateError) {
+                  console.warn(`   ⚠️ [Write Error] ${source.name}: job update failed after retry: ${firstUpdateError}`);
+                }
               }
             }
           }
@@ -815,48 +969,52 @@ async function main() {
         }
       }
     } catch (err: any) {
-    stats.failed = stats.fetched || 1;
-    stats.error = err.message;
-    console.error(`   ❌ Failed processing source: ${err.message}`);
+      recordSourceFailure(stats, err);
+      console.warn(`   ⚠️ [Source Warning] Failed/timed out processing ${source.name}: ${err.message}`);
 
-    // Track consecutive board failures
-    if (isAtsSource(source.type) && supabase && !isDryRun) {
-      try {
-        const { data: boardRow } = await supabase
-          .from('company_boards')
-          .select('id, failure_count')
-          .eq('ats_type', source.type)
-          .eq('slug', source.target)
-          .maybeSingle();
+      // Track consecutive board failures
+      if (isAtsSource(source.type) && supabase && !isDryRun) {
+        try {
+          const { data: boardRow } = await supabase
+            .from('company_boards')
+            .select('id, failure_count')
+            .eq('ats_type', source.type)
+            .eq('slug', source.target)
+            .maybeSingle();
 
-        const currentFailures = (boardRow?.failure_count || 0) + 1;
-        const shouldDisable = currentFailures >= 3;
+          const currentFailures = (boardRow?.failure_count || 0) + 1;
+          const shouldDisable = currentFailures >= 3;
 
-        await supabase
-          .from('company_boards')
-          .update({
-            failure_count: currentFailures,
-            enabled: !shouldDisable,
-          })
-          .eq('ats_type', source.type)
-          .eq('slug', source.target);
+          await supabase
+            .from('company_boards')
+            .update({
+              failure_count: currentFailures,
+              enabled: !shouldDisable,
+            })
+            .eq('ats_type', source.type)
+            .eq('slug', source.target);
 
-        if (shouldDisable) {
-          console.warn(`   ⚠️ Board [${source.type}] ${source.target} disabled after 3 consecutive failures. Active jobs preserved.`);
-          // DESTRUCTIVE SAFETY: Do NOT mass-expire jobs on fetch failures!
-          // A source fetch returning empty or error must NEVER be treated as proof that jobs disappeared.
-        }
-      } catch {}
+          if (shouldDisable) {
+            console.warn(`   ⚠️ Board [${source.type}] ${source.target} disabled after 3 consecutive failures. Active jobs preserved.`);
+            // DESTRUCTIVE SAFETY: Do NOT mass-expire jobs on fetch failures!
+            // A source fetch returning empty or error must NEVER be treated as proof that jobs disappeared.
+          }
+        } catch {}
+      }
+    } finally {
+      const written = stats.inserted + stats.updated;
+      const warnings = stats.warnings || 0;
+      console.log(
+        `   📋 [Source Summary] ${source.name} (${source.type}): fetched=${stats.fetched}, written=${written}, skipped=${stats.skipped}, warnings=${warnings}`
+      );
     }
-  } finally {
-    if (timeoutId) clearTimeout(timeoutId);
-  }
 
     summary.sources.push(stats);
     summary.totalInserted += stats.inserted;
     summary.totalUpdated += stats.updated;
     summary.totalSkipped += stats.skipped;
     summary.totalFailed += stats.failed;
+    summary.totalWarnings = (summary.totalWarnings || 0) + (stats.warnings || 0);
   }
 
   // Run sources with concurrency worker pool
@@ -896,7 +1054,7 @@ async function main() {
       const coverageData = {
         cycle_id: effectiveCycleId,
         shard_id: SHARD_INDEX ?? 0,
-        expected_shards: TOTAL_SHARDS ?? 1,
+        expected_shards: TOTAL_SHARDS ?? (isScheduledRun ? 12 : 1),
       };
 
       const runRecord: Record<string, any> = {
@@ -915,7 +1073,7 @@ async function main() {
           ),
           coverage: coverageData,
         },
-        status: summary.totalFailed > 0 ? (summary.totalInserted > 0 ? 'warning' : 'failed') : 'success',
+        status: summary.totalFailed > 0 ? (summary.totalInserted > 0 ? 'warning' : 'failed') : ((summary.totalWarnings || 0) > 0 ? 'warning' : 'success'),
       };
 
       if (hasCoverageColumn) {
@@ -957,16 +1115,17 @@ async function main() {
       Source: s.sourceName,
       Type: s.type,
       Fetched: s.fetched,
-      Valid: s.normalized,
-      Upserted: s.inserted,
+      Written: s.inserted + s.updated,
       Skipped: s.skipped,
+      Warnings: s.warnings || 0,
       Errors: s.failed,
     }))
   );
 
   console.log(`Total Fetched:    ${summary.totalFetched}`);
-  console.log(`Total Upserted:   ${summary.totalInserted} ${isDryRun ? '(dry-run)' : ''}`);
+  console.log(`Total Written:    ${summary.totalInserted + summary.totalUpdated} ${isDryRun ? '(dry-run)' : ''}`);
   console.log(`Total Skipped:    ${summary.totalSkipped}`);
+  console.log(`Total Warnings:   ${summary.totalWarnings || 0}`);
   console.log(`Total Errors:     ${summary.totalFailed}`);
   if (!isSkipCleanup && supabase) {
     console.log(`Expired Marked:   ${summary.cleanup.markedExpired}`);
@@ -975,13 +1134,21 @@ async function main() {
   console.log(`Duration:         ${summary.durationSeconds}s`);
   console.log(`======================================================\n`);
 
-  if (summary.totalFailed > 0) {
-    console.error(`❌ [Ingest Failure] Shard encountered ${summary.totalFailed} source failures. Exiting non-zero.`);
+  if (shouldFailShard(summary)) {
+    console.error(`❌ [Ingest Failure] Shard encountered ${summary.totalFailed} job write errors. Exiting non-zero.`);
     process.exit(1);
   }
 }
 
-main().catch((err) => {
-  console.error('Fatal Ingestion Pipeline Failure:', err);
-  process.exit(1);
-});
+const isMainScript =
+  Boolean(process.argv[1]) &&
+  (path.resolve(process.argv[1]) === fileURLToPath(import.meta.url) ||
+    process.argv[1].endsWith('ingest.ts') ||
+    process.argv[1].endsWith('ingest.js'));
+
+if (isMainScript) {
+  main().catch((err) => {
+    console.error('Fatal Ingestion Pipeline Failure:', err);
+    process.exit(1);
+  });
+}

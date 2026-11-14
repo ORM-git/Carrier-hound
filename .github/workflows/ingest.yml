@@ -41,24 +41,37 @@ jobs:
   ingest:
     name: Ingest Jobs (Shard ${{ matrix.label }})
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
+      # max-parallel is kept at 2 to avoid exhausting Supabase connection pool limits and prevent database lock contention during concurrent bulk job upserts.
       max-parallel: 2
       matrix:
         include:
           - shard: 0
-            label: "1-of-6"
+            label: "1-of-12"
           - shard: 1
-            label: "2-of-6"
+            label: "2-of-12"
           - shard: 2
-            label: "3-of-6"
+            label: "3-of-12"
           - shard: 3
-            label: "4-of-6"
+            label: "4-of-12"
           - shard: 4
-            label: "5-of-6"
+            label: "5-of-12"
           - shard: 5
-            label: "6-of-6"
+            label: "6-of-12"
+          - shard: 6
+            label: "7-of-12"
+          - shard: 7
+            label: "8-of-12"
+          - shard: 8
+            label: "9-of-12"
+          - shard: 9
+            label: "10-of-12"
+          - shard: 10
+            label: "11-of-12"
+          - shard: 11
+            label: "12-of-12"
 
     steps:
       - name: Checkout Code
@@ -83,9 +96,9 @@ jobs:
           CYCLE_ID="${{ github.run_id }}-${{ github.run_attempt }}"
           ARGS="--skip-cleanup --cycle-id $CYCLE_ID"
           if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event.inputs.mode }}" = "scheduled" ] || [ -z "${{ github.event.inputs.mode }}" ]; then
-            ARGS="$ARGS --scheduled --shard ${{ matrix.shard }} --total-shards 6"
+            ARGS="$ARGS --scheduled --shard ${{ matrix.shard }} --total-shards 12"
           elif [ "${{ github.event.inputs.mode }}" = "seed" ]; then
-            ARGS="$ARGS --seed --shard ${{ matrix.shard }} --total-shards 6"
+            ARGS="$ARGS --seed --shard ${{ matrix.shard }} --total-shards 12"
           fi
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
             ARGS="$ARGS --dry"
@@ -154,7 +167,7 @@ jobs:
           CYCLE_ID="${{ github.run_id }}-${{ github.run_attempt }}"
           ARGS="--cleanup-only --cycle-id $CYCLE_ID"
           if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event.inputs.mode }}" = "scheduled" ] || [ -z "${{ github.event.inputs.mode }}" ]; then
-            ARGS="$ARGS --scheduled"
+            ARGS="$ARGS --scheduled --total-shards 12"
           elif [ "${{ github.event.inputs.mode }}" = "seed" ]; then
             ARGS="$ARGS --seed"
           fi

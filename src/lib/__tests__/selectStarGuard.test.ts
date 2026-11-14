@@ -30,7 +30,7 @@ const ALLOWLIST = new Set([
   "src/lib/account/deleteHandler.ts:283",
   "src/lib/resume/storage.ts:155",
   "src/lib/tracker/storage.ts:133",
-  "src/lib/cron/dailyDigestCron.ts:121",
+  "src/lib/cron/dailyDigestCron.ts:168",
   "src/lib/cron/digestStorage.ts:61",
   "src/lib/events/failedEvents.ts:626",
 ]);
