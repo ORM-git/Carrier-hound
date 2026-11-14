@@ -7,7 +7,7 @@ import { checkSharedRateLimit, SEARCH_RATE_LIMIT, searchRateLimitStore } from "@
 import { getRequestContext } from "@cloudflare/next-on-pages";
 import { getCountryFilterClause } from "@/lib/countries";
 import { decodeCursor, encodeCursor } from "@/lib/pagination/cursor";
-import { capJobsPerCompany } from "@/lib/jobs/capping";
+import { capJobsPerCompany, buildCompanyGroupIdMap, COMPANY_GROUP_SECRET_ENV } from "@/lib/jobs/capping";
 import { normalizeUserCountries, applyEligibilityFilter, isJobEligible } from "@/lib/jobs/eligibility";
 import { isUserApproved } from "@/lib/auth/approval";
 
@@ -239,6 +239,22 @@ async function getHandler(req: Request) {
       }
 
       const jobRow: any = rawJobRow;
+
+      // Non-Pro responses never carry the real company_id: they get an opaque keyed hash instead (fails closed).
+      let singleGroupId: string | null = null;
+      if (!isPro) {
+        try {
+          const groupMap = await buildCompanyGroupIdMap([jobRow.company_id], getRuntimeEnv(COMPANY_GROUP_SECRET_ENV, cfEnv));
+          singleGroupId = jobRow.company_id ? groupMap.get(jobRow.company_id) ?? null : null;
+        } catch (groupErr: any) {
+          log.error("company group secret unavailable; refusing non-Pro response", { error: groupErr?.message || String(groupErr) });
+          return NextResponse.json(
+          { degraded: true, jobs: [], totalCount: 0, hasNextPage: false, hasMore: false, nextCursor: null },
+          { status: 503 }
+        );
+        }
+      }
+
       const isInactive = Boolean(jobRow.is_active === false || jobRow.status === "expired" || jobRow.status === "closed");
       const resolvedLogo = jobRow.logo_url || jobRow.logoUrl || jobRow.companies?.logo_url || null;
       const originalSalary = formatSalary(jobRow.salary_min, jobRow.salary_max, jobRow.currency, jobRow.salary_period) || jobRow.salary_text || null;
@@ -250,8 +266,9 @@ async function getHandler(req: Request) {
         id: jobRow.id,
         title: jobRow.title || "Untitled Position",
         company: isPro && !isInactive ? (jobRow.company || "Verified Employer") : "Verified Employer",
-        companyId: jobRow.company_id || null,
-        company_id: jobRow.company_id || null,
+        ...(isPro
+          ? { companyId: jobRow.company_id || null, company_id: jobRow.company_id || null }
+          : { companyGroupId: singleGroupId }),
         location: jobRow.location || (jobRow.remote ? "Remote (Worldwide)" : "Remote"),
         category: jobRow.category || "engineering",
         remote: Boolean(jobRow.remote),
@@ -781,6 +798,20 @@ async function getHandler(req: Request) {
     // Ensures mass postings are capped even for free users using opaque company_id
     rows = capJobsPerCompany(rows, 3, 30);
 
+    // Non-Pro responses never carry the real company_id: they get an opaque keyed hash instead (fails closed).
+    let listGroupIds = new Map<string, string>();
+    if (!(isPro && hasServiceKey)) {
+      try {
+        listGroupIds = await buildCompanyGroupIdMap(rows.map((r: any) => r.company_id), getRuntimeEnv(COMPANY_GROUP_SECRET_ENV, cfEnv));
+      } catch (groupErr: any) {
+        log.error("company group secret unavailable; refusing non-Pro response", { error: groupErr?.message || String(groupErr) });
+        return NextResponse.json(
+          { degraded: true, jobs: [], totalCount: 0, hasNextPage: false, hasMore: false, nextCursor: null },
+          { status: 503 }
+        );
+      }
+    }
+
     const formattedJobs = rows.map((row: any) => {
       const resolvedLogo =
         row.logo_url || row.logoUrl || row.companies?.logo_url || null;
@@ -822,8 +853,7 @@ async function getHandler(req: Request) {
         id: row.id,
         title: row.title || "Untitled Position",
         company: "Verified Employer",
-        companyId: row.company_id || null,
-        company_id: row.company_id || null,
+        companyGroupId: row.company_id ? listGroupIds.get(row.company_id) ?? null : null,
         location: row.location || (row.remote ? "Remote (Worldwide)" : "Remote"),
         date: formatDate(row.posted_at || row.created_at),
         salary: "",
