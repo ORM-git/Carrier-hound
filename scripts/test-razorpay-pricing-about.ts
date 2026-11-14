@@ -291,8 +291,8 @@ async function runTests() {
     "/terms-and-conditions must state that add-on packs expire together with the subscription"
   );
   assert.ok(
-    termsText.includes("plans renew automatically each billing period"),
-    "/terms-and-conditions must state that plans renew automatically each billing period"
+    termsText.includes("plans are prepaid for a fixed period and do not renew automatically"),
+    "/terms-and-conditions must state that plans are prepaid for a fixed period and do not renew automatically"
   );
   assert.ok(
     privacyText.includes("Privacy Policy"),

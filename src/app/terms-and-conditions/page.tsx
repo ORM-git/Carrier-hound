@@ -104,7 +104,7 @@ export default function TermsPage() {
             <strong>Add-on packs:</strong> additional generation sets can only be added for additional usage on an active subscription; add-on sets are used only after your plan quota is exhausted and expire together with the subscription.
           </li>
           <li>
-            <strong>Automatic renewal:</strong> plans renew automatically each billing period. You can turn off auto-renewal anytime before the renewal date. Renewing extends your access period.
+            <strong>No automatic renewal:</strong> plans are prepaid for a fixed period and do not renew automatically. You are never charged again unless you choose to buy another plan, which extends your access period.
           </li>
           <li>
             <strong>Payment gateway:</strong> Payments will open soon. When active, all transactions are processed in Indian Rupees (INR) through Razorpay, supporting UPI, NetBanking, and cards. We do not collect or store your complete card numbers, UPI PINs, or netbanking credentials.
@@ -124,10 +124,10 @@ export default function TermsPage() {
         <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">4. Cancellation, Renewal, and Access After Cancellation</h2>
         <ul className="list-disc pl-5 space-y-2 mb-2">
           <li>
-            Plans renew automatically each billing period unless cancelled. You can turn off auto-renewal anytime before the renewal date. When auto-renewal is turned off, your plan expires at the end of its current paid period and your account returns to the free tier unless you choose to renew.
+            Plans do not renew automatically, so there is nothing to cancel. Your plan expires at the end of its paid period and your account returns to the free tier unless you choose to buy again.
           </li>
           <li>
-            If you stop using the service or turn off auto-renewal before the period ends, you keep premium access until the end of the period you already paid for. We do not provide refunds or credits for unused time or unused generation sets, except the limited payment-failure cases described in the{" "}
+            If you stop using the service before the period ends, you keep premium access until the end of the period you already paid for. We do not provide refunds or credits for unused time or unused generation sets, except the limited payment-failure cases described in the{" "}
             <Link href="/refund-policy" className="text-blue-600 underline underline-offset-2 hover:text-blue-800 transition-colors">
               Cancellation &amp; Refund Policy
             </Link>
