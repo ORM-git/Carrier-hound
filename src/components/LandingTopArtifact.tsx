@@ -672,7 +672,7 @@ export default function LandingTopArtifact() {
     <div ref={rootRef} className="landing-top-artifact">
 <header className="nav" id="nav">
   <div className="wrap">
-    <Link className="brand" href="/" aria-label="CareerMonke home"><img src="/icon.png" alt="CareerMonke" width="40" height="40" /><span>CareerMonke</span></Link>
+    <Link className="brand" href="/" aria-label="CareerMonke home"><img src="/careermonke-logo.png" alt="CareerMonke" width="40" height="40" className="object-contain" /><span>CareerMonke</span></Link>
     <div className="nav-actions">
       <Link className="nav-link" href="/login">Sign in</Link>
       <Link className="btn btn-ink btn-sm" href="/signup">Sign up free</Link>

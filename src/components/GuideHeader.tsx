@@ -31,20 +31,64 @@ export default function GuideHeader() {
   const exploreRef = useRef<HTMLDivElement>(null);
   const accountRef = useRef<HTMLDivElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const drawerRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
 
-  // Lock page scroll + Escape to close while mobile drawer is open
+  // Lock page scroll, trap focus, move focus on open, Escape to close while mobile drawer is open
   useEffect(() => {
     if (!drawerOpen) return;
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+
+    // Move focus into the drawer upon opening (focus close button first)
+    const timer = setTimeout(() => {
+      if (closeButtonRef.current) {
+        closeButtonRef.current.focus();
+      } else if (drawerRef.current) {
+        const first = drawerRef.current.querySelector<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        );
+        first?.focus();
+      }
+    }, 0);
+
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        e.preventDefault();
         setDrawerOpen(false);
         menuButtonRef.current?.focus();
+        return;
+      }
+
+      if (e.key === "Tab") {
+        if (!drawerRef.current) return;
+        const focusables = Array.from(
+          drawerRef.current.querySelectorAll<HTMLElement>(
+            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+          )
+        ).filter((el) => !el.hasAttribute("disabled") && !el.getAttribute("aria-hidden"));
+
+        if (focusables.length === 0) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+
+        if (e.shiftKey) {
+          if (document.activeElement === first || !drawerRef.current.contains(document.activeElement)) {
+            e.preventDefault();
+            last.focus();
+          }
+        } else {
+          if (document.activeElement === last || !drawerRef.current.contains(document.activeElement)) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
       }
     };
+
     document.addEventListener("keydown", onKey);
     return () => {
+      clearTimeout(timer);
       document.body.style.overflow = prevOverflow;
       document.removeEventListener("keydown", onKey);
     };
@@ -344,7 +388,10 @@ export default function GuideHeader() {
       {/* Backdrop */}
       <div
         role="presentation"
-        onClick={() => setDrawerOpen(false)}
+        onClick={() => {
+          setDrawerOpen(false);
+          menuButtonRef.current?.focus();
+        }}
         className={`fixed inset-0 bg-[#0F172A]/60 z-50 transition-opacity duration-300 lg:hidden ${
           drawerOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
         }`}
@@ -352,9 +399,15 @@ export default function GuideHeader() {
 
       {/* Drawer */}
       <div
+        ref={drawerRef}
         id="mobile-nav-drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Mobile Navigation"
+        aria-hidden={!drawerOpen}
+        inert={(!drawerOpen ? "" : undefined) as any}
         className={`fixed inset-y-0 right-0 z-50 w-full max-w-[320px] bg-white h-full shadow-2xl flex flex-col justify-between p-6 transition-transform duration-300 ease-[cubic-bezier(0.2,0,0,1)] lg:hidden ${
-          drawerOpen ? "translate-x-0" : "translate-x-full"
+          drawerOpen ? "translate-x-0" : "translate-x-full invisible pointer-events-none"
         }`}
       >
         <div className="space-y-6">
@@ -369,8 +422,12 @@ export default function GuideHeader() {
               <BrandIcon variant="full" width={32} height={39} className="h-8 w-auto" />
             </Link>
             <button
+              ref={closeButtonRef}
               type="button"
-              onClick={() => setDrawerOpen(false)}
+              onClick={() => {
+                setDrawerOpen(false);
+                menuButtonRef.current?.focus();
+              }}
               aria-label="Close navigation menu"
               className="inline-flex items-center justify-center w-10 h-10 rounded-full text-[#475569] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition-colors cursor-pointer"
             >
