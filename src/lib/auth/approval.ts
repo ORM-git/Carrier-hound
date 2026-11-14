@@ -52,6 +52,8 @@ export function getAllowedEarlyAccessEmails(): Set<string> {
 
 /**
  * Checks whether an authenticated user is approved for platform access.
+ * From launch, all authenticated users with a valid email are approved
+ * unless explicitly marked as rejected (approved === false) in the database.
  * Returns true if approved, false if unapproved or unauthenticated.
  */
 export async function isUserApproved(
@@ -67,12 +69,7 @@ export async function isUserApproved(
     return false;
   }
 
-  // 1. Respect EARLY_ACCESS_ALLOWED_EMAILS allowlist first
-  if (getAllowedEarlyAccessEmails().has(normalized)) {
-    return true;
-  }
-
-  // 2. Verified admin user check
+  // 1. Verified admin user check
   try {
     if (isVerifiedAdminUser(user)) {
       return true;
@@ -82,19 +79,19 @@ export async function isUserApproved(
   const now = Date.now();
   const cached = approvalCache.get(normalized);
 
-  // 3. Fresh in-memory TTL cache hit (within 60s)
+  // 2. Fresh in-memory TTL cache hit (within 60s)
   if (cached && now - cached.cachedAt < APPROVAL_CACHE_TTL_MS) {
     return cached.approved;
   }
 
-  // 4. Query early_access_approved table strictly via select
+  // 3. Query early_access_approved table strictly via select
   try {
     const client =
       (process.env.NODE_ENV === "test" && (globalThis as any).__mockSupabaseClient) ||
       supabaseAdmin;
 
     if (!client || typeof client.from !== "function") {
-      return false;
+      return true;
     }
 
     const { data, error } = await client
@@ -104,20 +101,21 @@ export async function isUserApproved(
       .maybeSingle();
 
     if (error) {
-      // In case of query error, serve cached approved verdict if within grace
-      if (cached && cached.approved) {
-        return true;
+      // In case of query error, serve cached verdict if available, or default open
+      if (cached && cached.approved !== undefined) {
+        return cached.approved;
       }
-      return false;
+      return true;
     }
 
-    const approved = data?.approved === true;
+    // Approved for all users unless explicitly rejected (approved === false)
+    const approved = data ? data.approved !== false : true;
     approvalCache.set(normalized, { approved, cachedAt: now });
     return approved;
   } catch {
-    if (cached && cached.approved) {
-      return true;
+    if (cached && cached.approved !== undefined) {
+      return cached.approved;
     }
-    return false;
+    return true;
   }
 }

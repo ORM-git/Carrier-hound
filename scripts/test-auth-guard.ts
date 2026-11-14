@@ -11,7 +11,7 @@
 
 import assert from "assert";
 import { NextRequest } from "next/server";
-import { middleware, isProtectedRoute, PROTECTED_ROUTES, PUBLIC_ROUTES } from "../src/middleware";
+import { middleware, isProtectedRoute, PROTECTED_ROUTES, PUBLIC_ROUTES, checkEarlyAccessApproval } from "../src/middleware";
 import { getValidReturnUrl } from "../src/lib/auth/session";
 import * as fs from "fs";
 import * as path from "path";
@@ -19,7 +19,6 @@ import { spawnSync } from "child_process";
 
 const isNegativeControl = process.argv.includes("--negative-control");
 process.env.NODE_ENV = "test";
-process.env.__CAREERMONKE_LEGACY_EARLY_ACCESS_UNLOCK = "true";
 
 
 async function runAuthGuardSuite() {
@@ -363,6 +362,144 @@ async function runAuthGuardSuite() {
       (globalThis as any).__mockSupabaseClient = prevMockSb;
     } else {
       delete (globalThis as any).__mockSupabaseClient;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // TEST 3c: Early-Access Gate Removal Verification (Launch Open Access)
+  // An unlisted signed-in user (not in EARLY_ACCESS_ALLOWED_EMAILS) is allowed
+  // on all protected routes and redirected from /login to /dashboard.
+  // A signed-out user is still strictly redirected to /login with returnTo param.
+  // ---------------------------------------------------------------------------
+  console.log("\nTest 3c: Verifying unlisted signed-in users are allowed and signed-out users are redirected...");
+
+  const prevEarlyAccessEnv = process.env.EARLY_ACCESS_ALLOWED_EMAILS;
+  process.env.EARLY_ACCESS_ALLOWED_EMAILS = "restricted-allowlist@careermonke.com";
+
+  const unlistedAuthClient = {
+    auth: {
+      getUser: async (token: string) => {
+        if (token === "unlisted-user-token") {
+          return {
+            data: {
+              user: {
+                id: "unlisted-candidate-001",
+                email: "unlisted.candidate@example.com",
+                email_confirmed_at: "2026-11-14T00:00:00Z",
+                app_metadata: { provider: "email", providers: ["email"] },
+                user_metadata: {},
+              },
+            },
+            error: null,
+          };
+        }
+        return { data: { user: null }, error: new Error("invalid token") };
+      },
+      signOut: async () => {},
+    },
+  };
+
+  const prevMockSbFor3c = (globalThis as any).__mockSupabaseClient;
+  (globalThis as any).__mockSupabaseClient = unlistedAuthClient;
+
+  try {
+    const protectedPages = ["/dashboard", "/resume", "/tracker", "/settings", "/profile", "/radar"];
+
+    // 1. Unlisted signed-in user accessing protected routes -> 200 OK (NOT 403, NOT redirected to /login)
+    for (const page of protectedPages) {
+      const unlistedReq = new NextRequest(`http://localhost:3000${page}`, {
+        headers: {
+          cookie: "sb-access-token=unlisted-user-token;",
+        },
+      });
+      const unlistedRes = await middleware(unlistedReq);
+
+      assert.strictEqual(
+        unlistedRes.status,
+        200,
+        `Unlisted signed-in user on '${page}' must return 200 OK without early-access block, got ${unlistedRes.status}`
+      );
+      assert.strictEqual(
+        unlistedRes.headers.get("location"),
+        null,
+        `Unlisted signed-in user on '${page}' must not be redirected`
+      );
+      assert.strictEqual(
+        unlistedRes.headers.get("x-early-access-signed-out"),
+        null,
+        `Unlisted signed-in user must not have x-early-access-signed-out header`
+      );
+    }
+    console.log("  -> [PASS-LOCAL] Unlisted signed-in user allowed on all protected routes (200 OK)");
+
+    // 2. Unlisted signed-in user hitting /login -> redirects (307) to /dashboard
+    const unlistedLoginReq = new NextRequest("http://localhost:3000/login", {
+      headers: {
+        cookie: "sb-access-token=unlisted-user-token;",
+      },
+    });
+    const unlistedLoginRes = await middleware(unlistedLoginReq);
+    assert.strictEqual(
+      unlistedLoginRes.status,
+      307,
+      `Unlisted signed-in user on /login must redirect to /dashboard (307), got ${unlistedLoginRes.status}`
+    );
+    const unlistedLoginLoc = unlistedLoginRes.headers.get("location") || "";
+    assert.ok(
+      unlistedLoginLoc.includes("/dashboard"),
+      `Unlisted signed-in user on /login must redirect to /dashboard, got ${unlistedLoginLoc}`
+    );
+    console.log("  -> [PASS-LOCAL] Unlisted signed-in user on /login redirected to /dashboard");
+
+    // 3. Signed-out user hitting protected routes -> strictly redirected (307) to /login?returnTo=...
+    for (const page of protectedPages) {
+      const signedOutReq = new NextRequest(`http://localhost:3000${page}`);
+      const signedOutRes = await middleware(signedOutReq);
+
+      assert.strictEqual(
+        signedOutRes.status,
+        307,
+        `Signed-out user on protected route '${page}' must be redirected (307), got ${signedOutRes.status}`
+      );
+      const loc = signedOutRes.headers.get("location") || "";
+      assert.ok(
+        loc.includes(`/login?returnTo=${encodeURIComponent(page)}`),
+        `Signed-out user must be redirected to /login with returnTo=${page}, got ${loc}`
+      );
+    }
+    console.log("  -> [PASS-LOCAL] Signed-out user strictly redirected to /login on all protected routes");
+
+    // 4. checkEarlyAccessApproval helper verification
+    const unlistedApproval = await checkEarlyAccessApproval("unlisted.candidate@example.com");
+    assert.strictEqual(
+      unlistedApproval.approved,
+      true,
+      "checkEarlyAccessApproval must approve any valid email from launch"
+    );
+    assert.strictEqual(
+      unlistedApproval.shouldSignOut,
+      false,
+      "checkEarlyAccessApproval must not sign out valid email"
+    );
+
+    const emptyEmailApproval = await checkEarlyAccessApproval("");
+    assert.strictEqual(emptyEmailApproval.approved, false, "Empty email must fail closed");
+    assert.strictEqual(emptyEmailApproval.shouldSignOut, true, "Empty email must require sign out");
+
+    const invalidEmailApproval = await checkEarlyAccessApproval("invalid-no-at-sign");
+    assert.strictEqual(invalidEmailApproval.approved, false, "Invalid email must fail closed");
+    assert.strictEqual(invalidEmailApproval.shouldSignOut, true, "Invalid email must require sign out");
+    console.log("  -> [PASS-LOCAL] checkEarlyAccessApproval verifies open launch access and fail-closed validation");
+  } finally {
+    if (prevMockSbFor3c !== undefined) {
+      (globalThis as any).__mockSupabaseClient = prevMockSbFor3c;
+    } else {
+      delete (globalThis as any).__mockSupabaseClient;
+    }
+    if (prevEarlyAccessEnv !== undefined) {
+      process.env.EARLY_ACCESS_ALLOWED_EMAILS = prevEarlyAccessEnv;
+    } else {
+      delete process.env.EARLY_ACCESS_ALLOWED_EMAILS;
     }
   }
 
