@@ -42,9 +42,10 @@ async function runTests() {
 
   const ingestCode = fs.readFileSync(ingestPath, "utf-8");
 
-  // Verify adapter.fetchJobs is raced against timeoutPromise
-  const hasFetchRace = /const\s+rawJobs\s*=\s*await\s+Promise\.race\(\s*\[\s*adapter\.fetchJobs\(source\)\s*,\s*timeoutPromise\s*,?\s*\]\s*\)/m.test(ingestCode);
-  assert(hasFetchRace, "adapter.fetchJobs(source) is directly raced with timeoutPromise");
+  // Verify adapter.fetchJobs is raced against the timeout via fetchWithTimeout, which does the Promise.race
+  const hasFetchCall = /const\s+rawJobs\s*=\s*await\s+fetchWithTimeout\(\s*\(\)\s*=>\s*adapter\.fetchJobs\(source\)\s*,\s*getSourceTimeoutMs\(source\)\s*,\s*source\.name\s*\)/m.test(ingestCode);
+  const hasRaceInHelper = /Promise\.race\(\s*\[\s*fetchFn\(\)\s*,\s*timeoutPromise\s*,?\s*\]\s*\)/m.test(ingestCode);
+  assert(hasFetchCall && hasRaceInHelper, "adapter.fetchJobs(source) is directly raced with timeoutPromise (via fetchWithTimeout)");
 
   // Verify timeoutId is cleared immediately after fetch completes
   const hasImmediateClear = /clearTimeout\(timeoutId\)/.test(ingestCode);
@@ -52,7 +53,7 @@ async function runTests() {
 
   // Verify that multi-batch DB writes are outside the timeoutPromise
   const dbWriteAfterFetch = ingestCode.indexOf(".from('jobs')\n              .upsert(jobsPayload");
-  const fetchTimeoutIndex = ingestCode.indexOf("Promise.race([");
+  const fetchTimeoutIndex = ingestCode.indexOf("await fetchWithTimeout(");
   assert(
     dbWriteAfterFetch > fetchTimeoutIndex,
     "Database upsert loop occurs sequentially AFTER the fetch Promise.race finishes"
