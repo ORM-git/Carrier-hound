@@ -242,8 +242,9 @@ class PostgresState {
     p_payment_id: string,
     p_expected_mode: string = "live",
     p_amount_paise: number | null = null,
-    nowMs: number = Date.now()
+    p_event_timestamp: number = Date.now()
   ): { success: boolean; code?: string; error?: string; [key: string]: any } {
+    const nowMs = p_event_timestamp;
     // 0. Validate subscription ID
     if (!p_razorpay_subscription_id || !p_razorpay_subscription_id.trim()) {
       return { success: false, code: "INVALID_SUBSCRIPTION_ID", error: "Subscription ID is required" };
@@ -373,41 +374,7 @@ class PostgresState {
       }
     }
 
-    // 9c. Watermark Ordering Check on Paid Events (Gap 1 & 3: normalized ms, cannot bypass existing)
-    let v_stored_ms: number | undefined;
-    if (v_has_sub) {
-      const storedLast = v_sub?.metadata?.last_event_time;
-      if (storedLast !== undefined && typeof storedLast === "number") {
-        v_stored_ms = storedLast >= 1e11 ? Math.round(storedLast) : Math.round(storedLast * 1000);
-        if (nowMs === null || nowMs === undefined || nowMs <= 0) {
-          return {
-            success: true,
-            ignored: true,
-            code: "OUT_OF_ORDER_EVENT",
-            reason: "OUT_OF_ORDER_EVENT",
-            message: `Missing event timestamp cannot bypass existing watermark ${v_stored_ms}`,
-            subscription_id: p_razorpay_subscription_id,
-            last_event_time: v_stored_ms,
-            event_timestamp: nowMs,
-          };
-        }
-        const incomingMs = nowMs >= 1e11 ? Math.round(nowMs) : Math.round(nowMs * 1000);
-        if (incomingMs < v_stored_ms) {
-          return {
-            success: true,
-            ignored: true,
-            code: "OUT_OF_ORDER_EVENT",
-            reason: "OUT_OF_ORDER_EVENT",
-            message: `Paid event timestamp ${incomingMs} is older than stored last event time ${v_stored_ms}`,
-            subscription_id: p_razorpay_subscription_id,
-            last_event_time: v_stored_ms,
-            event_timestamp: nowMs,
-          };
-        }
-      }
-    }
-
-    // 10. Idempotency on payment_id / cycle
+    // 10. Idempotency on payment_id / cycle via payment-cycle ledger
     const v_processed_payments: string[] = v_sub?.metadata?.processed_payments || [];
     if (
       (v_has_sub &&
@@ -430,6 +397,18 @@ class PostgresState {
         amount: v_sub?.amount,
         message: "Payment ID already processed for this cycle; zero duplicate extension",
       };
+    }
+
+    // 11. Watermark resolution (normalized to ms)
+    // A captured payment with an UNSEEN payment id that arrives older than the watermark
+    // must NOT be discarded. We credit it via the payment-cycle ledger while keeping
+    // the watermark monotonic with Math.max().
+    let v_stored_ms: number | undefined;
+    if (v_has_sub) {
+      const storedLast = v_sub?.metadata?.last_event_time;
+      if (storedLast !== undefined && typeof storedLast === "number") {
+        v_stored_ms = storedLast >= 1e11 ? Math.round(storedLast) : Math.round(storedLast * 1000);
+      }
     }
 
     // 11. Validate plan id and amount against configured plans
@@ -468,8 +447,9 @@ class PostgresState {
     const v_duration = v_plan_row.duration_days;
 
     // 12. Compute Period Extension from greatest(current_period_end, now)
+    // Preserves owed time across active, in_grace_period, past_due, trialing, etc.
     let v_base_time = nowMs;
-    if (v_has_sub && v_sub?.current_period_end && (v_sub.status === "active" || v_sub.status === "trialing")) {
+    if (v_has_sub && v_sub?.current_period_end) {
       const existingEndMs = new Date(v_sub.current_period_end).getTime();
       v_base_time = Math.max(existingEndMs, nowMs);
     }
@@ -484,11 +464,11 @@ class PostgresState {
 
     const v_period_start = v_sub?.current_period_start || new Date(nowMs).toISOString();
 
-    // 13. Build updated metadata
-    const incomingNormMs = nowMs && nowMs > 0 ? (nowMs >= 1e11 ? Math.round(nowMs) : Math.round(nowMs * 1000)) : undefined;
-    const finalWatermark = incomingNormMs !== undefined
-      ? (v_stored_ms !== undefined ? Math.max(v_stored_ms, incomingNormMs) : incomingNormMs)
-      : v_stored_ms;
+    // 13. Build updated metadata with monotonic watermark
+    const incomingNormMs = p_event_timestamp && p_event_timestamp > 0 ? (p_event_timestamp >= 1e11 ? Math.round(p_event_timestamp) : Math.round(p_event_timestamp * 1000)) : undefined;
+    const finalWatermark = v_stored_ms !== undefined
+      ? (incomingNormMs !== undefined ? Math.max(v_stored_ms, incomingNormMs) : v_stored_ms)
+      : incomingNormMs;
 
     const v_new_meta = {
       ...(v_sub?.metadata || {}),
@@ -1070,7 +1050,7 @@ async function functionalChecks() {
     assert.strictEqual(resOk.success, true);
   });
 
-  await check("2.18 Missing/NULL event timestamp cannot bypass existing watermark", () => {
+  await check("2.18 Missing/NULL event timestamp cannot bypass existing watermark for lifecycle events", () => {
     const db = new PostgresState();
     db.subs.set("usr_watermark_guard", {
       id: "sub_wm_row",
@@ -1083,12 +1063,7 @@ async function functionalChecks() {
       metadata: { mode: "live", last_event_time: 1700000500000 },
     });
 
-    // Event with null timestamp against existing watermark must be ignored
-    const resNullTs = db.fulfil_subscription_renewal("sub_wm_mandate", "pay_wm_null", "live", 69200, null as any);
-    assert.strictEqual(resNullTs.success, true);
-    assert.strictEqual(resNullTs.ignored, true);
-    assert.strictEqual(resNullTs.code, "OUT_OF_ORDER_EVENT");
-
+    // Lifecycle event with null timestamp against existing watermark must be ignored
     const resNullLife = db.handle_subscription_lifecycle_event("sub_wm_mandate", "subscription.cancelled", null);
     assert.strictEqual(resNullLife.success, true);
     assert.strictEqual(resNullLife.ignored, true);
@@ -1097,6 +1072,104 @@ async function functionalChecks() {
     // Subscription remains unchanged
     assert.strictEqual(db.subs.get("usr_watermark_guard")?.cancel_at_period_end, false);
     assert.strictEqual(db.subs.get("usr_watermark_guard")?.metadata?.last_event_time, 1700000500000);
+  });
+
+  await check("2.21 Paid-credit loss: active entitlement with 20 days left + subscription.pending + 7d renewal gives 27 days", () => {
+    const db = new PostgresState();
+    const now = Date.now();
+    const future20Days = new Date(now + 20 * 86400000).toISOString();
+
+    db.subs.set("usr_credit_loss", {
+      id: "sub_loss_row",
+      user_id: "usr_credit_loss",
+      subscription_id: "sub_loss_mandate",
+      plan_id: "weekly",
+      provider: "razorpay",
+      status: "active",
+      current_period_end: future20Days,
+      cancel_at_period_end: false,
+      metadata: { mode: "live", last_event_time: 1000 },
+    });
+
+    db.orders.set("sub_loss_mandate", {
+      id: "ord_loss",
+      provider_order_id: "sub_loss_mandate",
+      user_id: "usr_credit_loss",
+      provider: "razorpay",
+      mode: "live",
+      status: "created",
+      amount_paise: 69200,
+      plan_code: "weekly",
+    });
+
+    // Step A: Newer subscription.pending sets status 'in_grace_period'
+    const resPending = db.handle_subscription_lifecycle_event("sub_loss_mandate", "subscription.pending", 2000);
+    assert.strictEqual(resPending.success, true);
+    const subMid = db.subs.get("usr_credit_loss");
+    assert.strictEqual(subMid?.status, "in_grace_period");
+    assert.strictEqual(subMid?.current_period_end, future20Days);
+
+    // Step B: Valid paid weekly cycle arrives (7 days)
+    const resRenewal = db.fulfil_subscription_renewal("sub_loss_mandate", "pay_loss_w1", "live", 69200, 2500);
+    assert.strictEqual(resRenewal.success, true);
+    assert.strictEqual(resRenewal.duration_days, 7);
+
+    // Verify: remaining 20 days + 7 days = 27 days! Never 7, never swallowed!
+    const subFinal = db.subs.get("usr_credit_loss");
+    assert.strictEqual(subFinal?.status, "active");
+    assert.strictEqual(subFinal?.grace_period_end, null);
+    const finalEndMs = new Date(subFinal!.current_period_end!).getTime();
+    const expectedEndMs = new Date(future20Days).getTime() + 7 * 86400000;
+    assert.strictEqual(finalEndMs, expectedEndMs, "Must give exactly remaining (20) + 7 = 27 days!");
+  });
+
+  await check("2.22 Captured payment with UNSEEN payment id older than watermark is credited via payment-cycle ledger", () => {
+    const db = new PostgresState();
+    db.subs.set("usr_unseen_older", {
+      id: "sub_unseen_row",
+      user_id: "usr_unseen_older",
+      subscription_id: "sub_unseen_mandate",
+      plan_id: "weekly",
+      provider: "razorpay",
+      status: "active",
+      current_period_end: new Date(Date.now() + 7 * 86400000).toISOString(),
+      cancel_at_period_end: false,
+      metadata: { mode: "live", last_event_time: 2000000000000 },
+    });
+
+    db.orders.set("sub_unseen_mandate", {
+      id: "ord_unseen",
+      provider_order_id: "sub_unseen_mandate",
+      user_id: "usr_unseen_older",
+      provider: "razorpay",
+      mode: "live",
+      status: "created",
+      amount_paise: 69200,
+      plan_code: "weekly",
+    });
+
+    // Step A: Payment arrives with unseen payment id and older timestamp 1900000000 sec
+    const resPaid = db.fulfil_subscription_renewal("sub_unseen_mandate", "pay_unseen_older_1", "live", 69200, 1900000000);
+    assert.strictEqual(resPaid.success, true);
+    assert.strictEqual(resPaid.already_processed, false);
+    assert.strictEqual(resPaid.duration_days, 7);
+
+    // Watermark must not regress
+    const subAfter = db.subs.get("usr_unseen_older");
+    assert.strictEqual(subAfter?.metadata?.last_event_time, 2000000000000);
+    assert.ok(subAfter?.metadata?.processed_payments?.includes("pay_unseen_older_1"));
+
+    // Step B: Replay of same payment id returns already_processed: true
+    const resReplay = db.fulfil_subscription_renewal("sub_unseen_mandate", "pay_unseen_older_1", "live", 69200, 1900000000);
+    assert.strictEqual(resReplay.success, true);
+    assert.strictEqual(resReplay.already_processed, true);
+
+    // Step C: Stale lifecycle event with older timestamp must still be rejected
+    const resStaleLife = db.handle_subscription_lifecycle_event("sub_unseen_mandate", "subscription.halted", 1950000000);
+    assert.strictEqual(resStaleLife.success, true);
+    assert.strictEqual(resStaleLife.ignored, true);
+    assert.strictEqual(resStaleLife.reason, "OUT_OF_ORDER_EVENT");
+    assert.strictEqual(db.subs.get("usr_unseen_older")?.status, "active");
   });
 
   await check("2.19 Seconds vs milliseconds normalization (2200000000000 ms -> 2200000001 sec -> 2200000000.5 sec cancel rejected)", () => {

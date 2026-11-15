@@ -63,7 +63,17 @@ BEGIN
     );
   END IF;
 
-  -- 1. Lock the order row for update
+  -- 1. Advisory xact lock on user ID FIRST (deadlock prevention across all RPCs)
+  PERFORM pg_advisory_xact_lock(hashtext(p_user_id::text));
+
+  -- 2. Lock authoritative subscriptions row for this user SECOND
+  SELECT * INTO v_existing_sub
+  FROM public.subscriptions
+  WHERE user_id = p_user_id
+  FOR UPDATE;
+  v_has_sub := FOUND;
+
+  -- 3. Lock the order row for update THIRD
   SELECT * INTO v_order
   FROM public.payment_orders
   WHERE provider_order_id = p_provider_order_id
@@ -135,9 +145,7 @@ BEGIN
     );
   END IF;
 
-  -- 5b. Serialize all live fulfilments for this user (order-row lock above is kept).
-  -- Lock order is always order row -> user advisory lock, so two orders cannot deadlock.
-  PERFORM pg_advisory_xact_lock(hashtext(p_user_id::text));
+  -- 5b. User advisory lock already acquired at step 1 (lock order: advisory -> subscription -> order)
 
   -- 6. LIVE MODE: Idempotency check for already fulfilled live orders
   IF v_order.status = 'paid' THEN

@@ -351,52 +351,7 @@ BEGIN
     END IF;
   END IF;
 
-  -- 11. Watermark & Event ordering check: apply ordering check to paid events too
-  -- Gap 1: Missing/NULL event timestamp must NOT bypass the ordering check when a newer watermark exists.
-  -- Gap 3: Normalize event timestamps to milliseconds BEFORE comparison and greatest() storage.
-  IF v_has_sub THEN
-    v_last_event_time := NULL;
-    IF v_sub.metadata ? 'last_event_time' AND (v_sub.metadata->>'last_event_time') ~ '^[0-9]+(\.[0-9]+)?$' THEN
-      v_last_event_time := (v_sub.metadata->>'last_event_time')::numeric;
-    END IF;
-
-    IF v_last_event_time IS NOT NULL THEN
-      -- Normalize stored watermark to milliseconds
-      v_stored_ms := CASE WHEN v_last_event_time >= 1e11 THEN round(v_last_event_time) ELSE round(v_last_event_time * 1000) END;
-
-      -- If an existing watermark exists, a missing/NULL/zero incoming event timestamp cannot bypass it
-      IF p_event_timestamp IS NULL OR p_event_timestamp <= 0 THEN
-        RETURN jsonb_build_object(
-          'success', true,
-          'ignored', true,
-          'code', 'OUT_OF_ORDER_EVENT',
-          'reason', 'OUT_OF_ORDER_EVENT',
-          'message', format('Missing event timestamp cannot bypass existing watermark %s ms', v_stored_ms),
-          'subscription_id', p_razorpay_subscription_id,
-          'last_event_time', v_stored_ms,
-          'event_timestamp', p_event_timestamp
-        );
-      END IF;
-
-      -- Normalize incoming event timestamp to milliseconds
-      v_incoming_ms := CASE WHEN p_event_timestamp >= 1e11 THEN round(p_event_timestamp) ELSE round(p_event_timestamp * 1000) END;
-
-      IF v_incoming_ms < v_stored_ms THEN
-        RETURN jsonb_build_object(
-          'success', true,
-          'ignored', true,
-          'code', 'OUT_OF_ORDER_EVENT',
-          'reason', 'OUT_OF_ORDER_EVENT',
-          'message', format('Paid event timestamp %s ms is older than stored last event time %s ms', v_incoming_ms, v_stored_ms),
-          'subscription_id', p_razorpay_subscription_id,
-          'last_event_time', v_stored_ms,
-          'event_timestamp', p_event_timestamp
-        );
-      END IF;
-    END IF;
-  END IF;
-
-  -- 12. Idempotency on payment_id / cycle
+  -- 11. Idempotency on payment_id / cycle via payment-cycle ledger
   v_processed_payments := COALESCE(v_sub.metadata->'processed_payments', '[]'::jsonb);
   IF (v_has_sub AND (
         v_processed_payments ? p_payment_id OR
@@ -419,6 +374,22 @@ BEGIN
       'amount', v_sub.amount,
       'message', 'Payment ID already processed for this cycle; zero duplicate extension'
     );
+  END IF;
+
+  -- 12. Monotonic watermark resolution (normalized to ms)
+  -- A captured payment with an UNSEEN payment id that arrives older than the watermark
+  -- must NOT be discarded. We credit it via the payment-cycle ledger while keeping
+  -- the watermark monotonic with greatest().
+  v_last_event_time := NULL;
+  v_stored_ms := NULL;
+  IF v_has_sub AND v_sub.metadata ? 'last_event_time' AND (v_sub.metadata->>'last_event_time') ~ '^[0-9]+(\.[0-9]+)?$' THEN
+    v_last_event_time := (v_sub.metadata->>'last_event_time')::numeric;
+    v_stored_ms := CASE WHEN v_last_event_time >= 1e11 THEN round(v_last_event_time) ELSE round(v_last_event_time * 1000) END;
+  END IF;
+
+  v_incoming_ms := NULL;
+  IF p_event_timestamp IS NOT NULL AND p_event_timestamp > 0 THEN
+    v_incoming_ms := CASE WHEN p_event_timestamp >= 1e11 THEN round(p_event_timestamp) ELSE round(p_event_timestamp * 1000) END;
   END IF;
 
   -- 13. Validate plan id and amount against configured plans
@@ -475,7 +446,9 @@ BEGIN
   END IF;
 
   -- 14. Compute Period Extension from max(current_period_end, now())
-  IF v_has_sub AND v_sub.current_period_end IS NOT NULL AND v_sub.status IN ('active', 'trialing') THEN
+  -- Preserve owed prepaid time across active, in_grace_period, past_due, trialing, etc.
+  -- Active entitlement with 20 days left + subscription.pending + 7d renewal must yield 27 days, never 7!
+  IF v_has_sub AND v_sub.current_period_end IS NOT NULL THEN
     v_base_time := greatest(v_sub.current_period_end, now());
   ELSE
     v_base_time := now();
@@ -506,13 +479,14 @@ BEGIN
   END IF;
 
   -- Monotonic watermark: normalize to milliseconds before greatest() storage
-  IF p_event_timestamp IS NOT NULL AND p_event_timestamp > 0 THEN
-    v_incoming_ms := CASE WHEN p_event_timestamp >= 1e11 THEN round(p_event_timestamp) ELSE round(p_event_timestamp * 1000) END;
-    IF v_stored_ms IS NOT NULL THEN
+  IF v_stored_ms IS NOT NULL THEN
+    IF v_incoming_ms IS NOT NULL THEN
       v_new_meta := jsonb_set(v_new_meta, '{last_event_time}', to_jsonb(greatest(v_stored_ms, v_incoming_ms)), true);
     ELSE
-      v_new_meta := jsonb_set(v_new_meta, '{last_event_time}', to_jsonb(v_incoming_ms), true);
+      v_new_meta := jsonb_set(v_new_meta, '{last_event_time}', to_jsonb(v_stored_ms), true);
     END IF;
+  ELSIF v_incoming_ms IS NOT NULL THEN
+    v_new_meta := jsonb_set(v_new_meta, '{last_event_time}', to_jsonb(v_incoming_ms), true);
   END IF;
 
   -- 16. Upsert/Update subscriptions row (Store exact paise amount integer: 69200, 149900, 399900)

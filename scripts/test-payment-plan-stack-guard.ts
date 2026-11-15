@@ -48,9 +48,11 @@ async function textChecks() {
     assert.ok(lock > 0, "advisory lock missing");
     assert.ok(lock < firstSubRead, "advisory lock must come before any subscriptions read");
   });
-  await check("1.3 order-row lock is kept and comes before the advisory lock", () => {
-    const rowLock = sql.indexOf("FOR UPDATE;");
-    assert.ok(rowLock > 0 && rowLock < sql.indexOf("PERFORM pg_advisory_xact_lock"));
+  await check("1.3 lock order: advisory lock comes first, then subscription, then order row lock", () => {
+    const lock = sql.indexOf("PERFORM pg_advisory_xact_lock(hashtext(p_user_id::text))");
+    const subLock = sql.indexOf("FROM public.subscriptions\n  WHERE user_id = p_user_id\n  FOR UPDATE;");
+    const orderLock = sql.indexOf("FROM public.payment_orders\n  WHERE provider_order_id = p_provider_order_id\n    AND user_id = p_user_id\n  FOR UPDATE;");
+    assert.ok(lock > 0 && subLock > lock && orderLock > subLock, "lock order must be advisory -> subscription -> order");
   });
   await check("1.4 label is guarded by payment_orders.created_at of the previous order", () => {
     assert.ok(sql.includes("v_order.created_at > v_prev_order_created"));

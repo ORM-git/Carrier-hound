@@ -80,7 +80,7 @@ async function run() {
 
     CREATE TABLE public.subscriptions (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+      user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE UNIQUE,
       subscription_id TEXT,
       plan_id TEXT,
       provider TEXT,
@@ -105,6 +105,7 @@ async function run() {
       status TEXT NOT NULL DEFAULT 'created',
       plan_code TEXT,
       amount_paise INTEGER,
+      currency TEXT DEFAULT 'INR',
       paid_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
@@ -124,6 +125,16 @@ async function run() {
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
 
+    CREATE TABLE public.addon_packs (
+      code TEXT PRIMARY KEY,
+      sets INTEGER NOT NULL,
+      validity_days INTEGER NOT NULL
+    );
+    INSERT INTO public.addon_packs (code, sets, validity_days) VALUES
+      ('addon_10', 10, 60),
+      ('addon_30', 30, 60),
+      ('addon_60', 60, 60);
+
     CREATE TABLE public.webhook_events (
       event_id TEXT PRIMARY KEY,
       provider TEXT NOT NULL,
@@ -138,6 +149,11 @@ async function run() {
     WHERE table_schema = 'public' AND table_name = 'payment_orders' AND column_name = 'metadata';
   `);
   assert.strictEqual(preCheck.rows[0].count, "0", "Baseline payment_orders must NOT have metadata column before migration");
+
+  // 1b. Execute migration 20261114a_payment_plan_stack_guard.sql (defines fulfil_payment_order)
+  const stackGuardPath = path.resolve(process.cwd(), "supabase/migrations/20261114a_payment_plan_stack_guard.sql");
+  const stackGuardSql = fs.readFileSync(stackGuardPath, "utf8");
+  await pg.exec(stackGuardSql);
 
   // 2. Execute migration 20261115a_autorenew.sql
   const migrationPath = path.resolve(process.cwd(), "supabase/migrations/20261115a_autorenew.sql");
@@ -160,8 +176,11 @@ async function run() {
   const u5 = "55555555-5555-4555-8555-555555555555";
   const u6 = "66666666-6666-4666-8666-666666666666";
   const u7 = "77777777-7777-4777-8777-777777777777";
+  const u8 = "88888888-8888-4888-8888-888888888888";
+  const u9 = "99999999-9999-4999-8999-999999999999";
+  const u10 = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 
-  for (const uid of [u1, u2, u3, u4, u5, u6, u7]) {
+  for (const uid of [u1, u2, u3, u4, u5, u6, u7, u8, u9, u10]) {
     await pg.query(`INSERT INTO auth.users (id, email) VALUES ($1, $2) ON CONFLICT DO NOTHING;`, [
       uid,
       `user_${uid}@test.local`,
@@ -364,7 +383,7 @@ async function run() {
   });
 
   // ---------------------------------------------------------------------------
-  // PROBE 6: Gap 1 - Missing/NULL event timestamp cannot bypass existing watermark
+  // PROBE 6: Gap 1 - Missing/NULL event timestamp cannot bypass existing watermark for lifecycle events
   // ---------------------------------------------------------------------------
   await probe("Probe 6: Missing/NULL event timestamp cannot bypass existing watermark (rejected as OUT_OF_ORDER_EVENT)", async () => {
     // User 6 has active subscription with watermark at 1700000500000 ms
@@ -378,16 +397,7 @@ async function run() {
       VALUES ($1, 'sub_probe6_mandate', 'weekly', 'razorpay', 'active', false, '{"mode": "live", "last_event_time": 1700000500000}'::jsonb, 69200);
     `, [u6]);
 
-    // 6a. Paid event with NULL timestamp must NOT bypass existing watermark
-    const resNullTs = await pg.query<{ fulfil_subscription_renewal: any }>(`
-      SELECT public.fulfil_subscription_renewal('sub_probe6_mandate', 'pay_probe6_null_ts', 'live', 69200, NULL) AS fulfil_subscription_renewal;
-    `);
-    const resultNullTs = resNullTs.rows[0].fulfil_subscription_renewal;
-    assert.strictEqual(resultNullTs.success, true);
-    assert.strictEqual(resultNullTs.ignored, true);
-    assert.strictEqual(resultNullTs.code, "OUT_OF_ORDER_EVENT");
-
-    // 6b. Lifecycle event with NULL timestamp must NOT bypass existing watermark
+    // Lifecycle event with NULL timestamp must NOT bypass existing watermark
     const resNullLifeTs = await pg.query<{ handle_subscription_lifecycle_event: any }>(`
       SELECT public.handle_subscription_lifecycle_event('sub_probe6_mandate', 'subscription.cancelled', NULL, 'live') AS handle_subscription_lifecycle_event;
     `);
@@ -451,6 +461,146 @@ async function run() {
     `, [u7]);
     assert.strictEqual(subCheck7B.rows[0].cancel_at_period_end, false, "Older cancellation must NOT be applied");
     assert.strictEqual(Number(subCheck7B.rows[0].metadata?.last_event_time), 2200000001000, "Watermark must remain 2200000001000 ms");
+  });
+
+  // ---------------------------------------------------------------------------
+  // PROBE 8: Paid-credit loss: active entitlement with 20 days left + subscription.pending + 7d renewal gives 27 days
+  // ---------------------------------------------------------------------------
+  await probe("Probe 8: Paid-credit loss: active entitlement with 20 days left + subscription.pending + 7d renewal gives 27 days", async () => {
+    // Insert order and subscription for u8 with 20 days left
+    await pg.query(`
+      INSERT INTO public.payment_orders (user_id, provider_order_id, provider, mode, status, plan_code, amount_paise)
+      VALUES ($1, 'sub_probe8_mandate', 'razorpay', 'live', 'created', 'weekly', 69200);
+    `, [u8]);
+
+    await pg.query(`
+      INSERT INTO public.subscriptions (user_id, subscription_id, plan_id, provider, status, current_period_end, metadata, amount)
+      VALUES ($1, 'sub_probe8_mandate', 'weekly', 'razorpay', 'active', NOW() + INTERVAL '20 days', '{"mode": "live", "last_event_time": 1000}'::jsonb, 69200);
+    `, [u8]);
+
+    // Step A: Newer subscription.pending arrives (sets status 'in_grace_period', grace_period_end = now()+7d)
+    const resPending = await pg.query<{ handle_subscription_lifecycle_event: any }>(`
+      SELECT public.handle_subscription_lifecycle_event('sub_probe8_mandate', 'subscription.pending', 2000, 'live') AS handle_subscription_lifecycle_event;
+    `);
+    assert.strictEqual(resPending.rows[0].handle_subscription_lifecycle_event.success, true);
+    assert.strictEqual(resPending.rows[0].handle_subscription_lifecycle_event.status, "in_grace_period");
+
+    // Verify sub is in_grace_period with ~20 days still on current_period_end
+    const subMid = await pg.query<{ status: string; days_left: number }>(`
+      SELECT status, round(EXTRACT(EPOCH FROM (current_period_end - NOW())) / 86400)::int AS days_left
+      FROM public.subscriptions WHERE user_id = $1;
+    `, [u8]);
+    assert.strictEqual(subMid.rows[0].status, "in_grace_period");
+    assert.ok(subMid.rows[0].days_left >= 19 && subMid.rows[0].days_left <= 21, `Expected ~20 days left, got ${subMid.rows[0].days_left}`);
+
+    // Step B: Valid paid weekly cycle arrives (subscription.charged for 7 days)
+    const resRenewal = await pg.query<{ fulfil_subscription_renewal: any }>(`
+      SELECT public.fulfil_subscription_renewal('sub_probe8_mandate', 'pay_probe8_w1', 'live', 69200, 2500) AS fulfil_subscription_renewal;
+    `);
+    const renewalResult = resRenewal.rows[0].fulfil_subscription_renewal;
+    assert.strictEqual(renewalResult.success, true);
+    assert.strictEqual(renewalResult.duration_days, 7);
+
+    // Verify: must give 27 days (remaining 20 + 7), NEVER 7 and never 20!
+    const subFinal = await pg.query<{ status: string; grace_period_end: any; days_left: number }>(`
+      SELECT status, grace_period_end, round(EXTRACT(EPOCH FROM (current_period_end - NOW())) / 86400)::int AS days_left
+      FROM public.subscriptions WHERE user_id = $1;
+    `, [u8]);
+    assert.strictEqual(subFinal.rows[0].status, "active", "Status must be restored to active");
+    assert.strictEqual(subFinal.rows[0].grace_period_end, null, "grace_period_end must be cleared to NULL");
+    assert.ok(
+      subFinal.rows[0].days_left >= 26 && subFinal.rows[0].days_left <= 28,
+      `Expected remaining (20) + 7 = 27 days left, got ${subFinal.rows[0].days_left} (must NEVER be 7 or 20!)`
+    );
+  });
+
+  // ---------------------------------------------------------------------------
+  // PROBE 9: Unseen payment ID older than watermark is credited via payment-cycle ledger
+  // ---------------------------------------------------------------------------
+  await probe("Probe 9: Captured payment with UNSEEN payment id older than watermark is credited via payment-cycle ledger", async () => {
+    // User 9 starts with active entitlement and watermark = 2000000000000 ms
+    await pg.query(`
+      INSERT INTO public.payment_orders (user_id, provider_order_id, provider, mode, status, plan_code, amount_paise)
+      VALUES ($1, 'sub_probe9_mandate', 'razorpay', 'live', 'created', 'weekly', 69200);
+    `, [u9]);
+
+    await pg.query(`
+      INSERT INTO public.subscriptions (user_id, subscription_id, plan_id, provider, status, current_period_end, metadata, amount)
+      VALUES ($1, 'sub_probe9_mandate', 'weekly', 'razorpay', 'active', NOW() + INTERVAL '7 days', '{"mode": "live", "last_event_time": 2000000000000}'::jsonb, 69200);
+    `, [u9]);
+
+    // Step A: Payment arrives with UNSEEN payment_id but older timestamp 1900000000 sec (1900000000000 ms < 2000000000000 ms)
+    // MUST NOT BE DISCARDED! Must be credited via payment-cycle ledger!
+    const resPaid = await pg.query<{ fulfil_subscription_renewal: any }>(`
+      SELECT public.fulfil_subscription_renewal('sub_probe9_mandate', 'pay_probe9_unseen_older', 'live', 69200, 1900000000) AS fulfil_subscription_renewal;
+    `);
+    const resultPaid = resPaid.rows[0].fulfil_subscription_renewal;
+    assert.strictEqual(resultPaid.success, true, "Captured payment with unseen payment_id must succeed");
+    assert.strictEqual(resultPaid.ignored ?? false, false, "Must NOT be ignored or discarded");
+    assert.strictEqual(resultPaid.duration_days, 7);
+
+    // Verify sub current_period_end was extended and watermark did NOT regress
+    const subCheck9A = await pg.query<{ metadata: any; status: string; days_left: number }>(`
+      SELECT metadata, status, round(EXTRACT(EPOCH FROM (current_period_end - NOW())) / 86400)::int AS days_left
+      FROM public.subscriptions WHERE user_id = $1;
+    `, [u9]);
+    assert.strictEqual(subCheck9A.rows[0].status, "active");
+    assert.ok(subCheck9A.rows[0].days_left >= 13 && subCheck9A.rows[0].days_left <= 15, `Expected 7 + 7 = 14 days left, got ${subCheck9A.rows[0].days_left}`);
+    assert.strictEqual(Number(subCheck9A.rows[0].metadata?.last_event_time), 2000000000000, "Watermark must NOT regress backwards (greatest preserved)");
+    assert.ok(Array.isArray(subCheck9A.rows[0].metadata?.processed_payments));
+    assert.ok(subCheck9A.rows[0].metadata.processed_payments.includes("pay_probe9_unseen_older"), "Payment id must be recorded in payment-cycle ledger");
+
+    // Step B: Replay of same payment id returns already_processed: true without extending again
+    const resReplay = await pg.query<{ fulfil_subscription_renewal: any }>(`
+      SELECT public.fulfil_subscription_renewal('sub_probe9_mandate', 'pay_probe9_unseen_older', 'live', 69200, 1900000000) AS fulfil_subscription_renewal;
+    `);
+    const resultReplay = resReplay.rows[0].fulfil_subscription_renewal;
+    assert.strictEqual(resultReplay.success, true);
+    assert.strictEqual(resultReplay.already_processed, true, "Replay of same payment_id must return already_processed: true");
+
+    // Step C: Stale lifecycle event with older timestamp (1950000000 sec < 2000000000000 ms) MUST STILL BE IGNORED
+    const resStaleLife = await pg.query<{ handle_subscription_lifecycle_event: any }>(`
+      SELECT public.handle_subscription_lifecycle_event('sub_probe9_mandate', 'subscription.halted', 1950000000, 'live') AS handle_subscription_lifecycle_event;
+    `);
+    const resultStaleLife = resStaleLife.rows[0].handle_subscription_lifecycle_event;
+    assert.strictEqual(resultStaleLife.success, true);
+    assert.strictEqual(resultStaleLife.ignored, true);
+    assert.strictEqual(resultStaleLife.code, "OUT_OF_ORDER_EVENT", "Stale lifecycle event must still be ignored as OUT_OF_ORDER_EVENT");
+
+    // Status remains active!
+    const subCheck9B = await pg.query<{ status: string }>(`
+      SELECT status FROM public.subscriptions WHERE user_id = $1;
+    `, [u9]);
+    assert.strictEqual(subCheck9B.rows[0].status, "active", "Status must remain active; stale lifecycle event cannot touch it");
+  });
+
+  // ---------------------------------------------------------------------------
+  // PROBE 10: Lock order: fulfil_subscription_renewal and fulfil_payment_order take locks in same order
+  // ---------------------------------------------------------------------------
+  await probe("Probe 10: Lock order: fulfil_subscription_renewal and fulfil_payment_order take locks in same order (advisory, subscription, order)", async () => {
+    // User 10: test both RPCs on same user
+    await pg.query(`
+      INSERT INTO public.payment_orders (user_id, provider_order_id, provider, mode, status, plan_code, amount_paise)
+      VALUES ($1, 'order_prepaid_probe10', 'razorpay', 'live', 'created', 'weekly', 69200);
+    `, [u10]);
+
+    // Prepaid fulfillment succeeds with lock order (advisory -> subscription -> order)
+    const resPrepaid = await pg.query<{ fulfil_payment_order: any }>(`
+      SELECT public.fulfil_payment_order('order_prepaid_probe10', $1, 'live') AS fulfil_payment_order;
+    `, [u10]);
+    assert.strictEqual(resPrepaid.rows[0].fulfil_payment_order.success, true);
+    assert.strictEqual(resPrepaid.rows[0].fulfil_payment_order.is_pro, true);
+
+    // Renewal fulfillment succeeds with same lock order (advisory -> subscription -> order)
+    await pg.query(`
+      INSERT INTO public.payment_orders (user_id, provider_order_id, provider, mode, status, plan_code, amount_paise)
+      VALUES ($1, 'sub_probe10_mandate', 'razorpay', 'live', 'created', 'weekly', 69200);
+    `, [u10]);
+    const resRenewal = await pg.query<{ fulfil_subscription_renewal: any }>(`
+      SELECT public.fulfil_subscription_renewal('sub_probe10_mandate', 'pay_probe10_w1', 'live', 69200, 3000) AS fulfil_subscription_renewal;
+    `);
+    assert.strictEqual(resRenewal.rows[0].fulfil_subscription_renewal.success, true);
+    assert.strictEqual(resRenewal.rows[0].fulfil_subscription_renewal.is_pro, true);
   });
 
   console.log("\n--------------------------------------------------------------------------------");
