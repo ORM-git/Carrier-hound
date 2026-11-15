@@ -33,14 +33,14 @@ export const CATEGORY_LANDINGS: Record<string, CategoryLandingData> = {
     name: "DevOps & Cloud Infrastructure",
     eyebrow: "FRESH INFRASTRUCTURE ROLES",
     title: "Unindexed DevOps & Cloud Platform Engineering Positions",
-    lede: "Discover direct ATS engineering requisitions before they are syndicated to public job aggregators. Filter verified remote infrastructure roles by salary band and tech stack.",
+    lede: "Discover direct engineering requisitions before they are syndicated to public job aggregators. Filter verified remote infrastructure roles by salary band and tech stack.",
     proofStrip: {
       heading: "Verified Employer Feeds Only",
       subheading: "Refreshed directly from verified employer career pages.",
       metrics: [
         { label: "Active Postings", value: "Verified Active" },
         { label: "Median Compensation", value: "$168,000" },
-        { label: "Direct ATS Ingestion", value: "100%" },
+        { label: "Direct Company Listings", value: "100%" },
         { label: "Ghost Rate", value: "< 0.4%" },
       ],
     },
@@ -70,7 +70,7 @@ export const CATEGORY_LANDINGS: Record<string, CategoryLandingData> = {
       },
       {
         question: "How quickly are filled roles removed from the feed?",
-        answer: "Our automated health check verifies ATS status codes continuously throughout the day. When a job is closed on the host system, it is removed from our live feed within minutes.",
+        answer: "Our automated health check verifies posting status codes continuously throughout the day. When a job is closed on the employer career page, it is removed from our live feed within minutes.",
       },
     ],
     relatedGuides: [
@@ -93,7 +93,7 @@ export const CATEGORY_LANDINGS: Record<string, CategoryLandingData> = {
     title: "Remote Product Design & Design Systems Opportunities",
     lede: "Skip crowded portfolio queues on public boards. Access unindexed Product Designer, Design Technologist, and UX Research openings directly from hiring teams.",
     proofStrip: {
-      heading: "Direct Design Studio Ingestion",
+      heading: "Direct Design Studio Listings",
       subheading: "Vetted digital product studios and high-growth venture design teams.",
       metrics: [
         { label: "Active Postings", value: "Verified Active" },
@@ -188,12 +188,12 @@ export const CATEGORY_LANDINGS: Record<string, CategoryLandingData> = {
     lede: "Direct company requisitions for Snowflake, dbt, Databricks, Apache Spark, and modern analytics platform architects at premier distributed organizations.",
     proofStrip: {
       heading: "Clean Data Pipeline Sources",
-      subheading: "Continuous ATS tracking across data-intensive tech enterprises.",
+      subheading: "Continuous listing verification across data-intensive tech enterprises.",
       metrics: [
         { label: "Active Postings", value: "Verified Active" },
         { label: "Median Compensation", value: "$162,000" },
         { label: "Modern Data Stack", value: "94%" },
-        { label: "Direct Ingestion", value: "100%" },
+        { label: "Direct Company Listings", value: "100%" },
       ],
     },
     openingsCount: "Verified Live Data Openings",

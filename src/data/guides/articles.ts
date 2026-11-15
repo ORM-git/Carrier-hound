@@ -59,12 +59,12 @@ export const GUIDE_ARTICLES: Record<string, GuideArticle> = {
     verdict: {
       label: "THE VERDICT",
       title: "Direct Employer Discovery Wins on Velocity and Signal",
-      description: "While traditional curated boards provide vetted company entries, their multi-day manual ingestion cycle places candidates at a severe chronological disadvantage. Real-time direct company feeds capture positions the instant they hit ATS backends.",
+      description: "While traditional curated boards provide vetted company entries, their multi-day manual review cycle places candidates at a severe chronological disadvantage. Direct employer discovery surfaces fresh listings as soon as companies publish them.",
       startHere: {
         title: "Start with Direct Tracking when:",
         items: [
           "You are targeting high-demand engineering, design, or product positions",
-          "You want immediate access to ATS job URLs without third-party paywalls",
+          "You want immediate access to official application URLs without third-party paywalls",
           "You prioritize applying within the crucial first 48 hours of posting",
         ],
       },
@@ -79,7 +79,7 @@ export const GUIDE_ARTICLES: Record<string, GuideArticle> = {
     },
     features: [
       {
-        title: "Zero Ingestion Lag",
+        title: "Listing Freshness",
         description: "Requisitions are refreshed regularly after being published to employer career pages.",
       },
       {
@@ -100,14 +100,14 @@ export const GUIDE_ARTICLES: Record<string, GuideArticle> = {
       headers: ["Metric / Feature", "CareerMonke Direct Feed", "Legacy Paid Board", "Standard Job Board"],
       rows: [
         {
-          feature: "Ingestion Latency",
+          feature: "Listing Freshness",
           yourBrand: "Sub-hourly automated sync",
           traditional: "24 - 72 hours manual review",
           notes: "3 - 7 days (recruiter syndication)",
         },
         {
           feature: "Application Destination",
-          yourBrand: "Direct employer ATS URL",
+          yourBrand: "Direct employer application URL",
           traditional: "Gated platform redirect",
           notes: "Aggregator native portal",
         },
@@ -128,7 +128,7 @@ export const GUIDE_ARTICLES: Record<string, GuideArticle> = {
     sections: [
       {
         id: "the-real-problem",
-        h2: "The Ingestion Delay Trap in Contemporary Hiring",
+        h2: "The Stale Listing Trap in Contemporary Hiring",
         paragraphs: [
           "When a modern tech company opens a competitive remote requisition, inbound candidate volume frequently tops 400 submissions within the opening 36 hours. Recruiting teams configure applicant tracking systems to automatically cap triage batches after initial thresholds are satisfied.",
           "Legacy subscription models rely on human editorial curation. While this guarantees clean formatting, it introduces a systemic bottleneck of 1 to 3 days. By the time an editor reviews and publishes the listing, early candidate review loops have already commenced.",
@@ -139,7 +139,7 @@ export const GUIDE_ARTICLES: Record<string, GuideArticle> = {
         id: "how-direct-tracking-works",
         h2: "Architectural Shift: From Gatekeepers to Automated Radar",
         paragraphs: [
-          "CareerMonke operates as an automated discovery radar. Rather than asking employers to manually submit listings or wait for staffing agencies, our crawlers query verified career endpoints continuously across verified top software and product companies.",
+          "CareerMonke operates as an automated discovery radar. Rather than asking employers to manually submit listings or wait for staffing agencies, our platform monitors verified career pages continuously across verified top software and product companies.",
           "When an opening is removed or marked filled on the employer's internal board, it immediately drops from our active search index. This eliminates the widespread frustration of spending hours tailoring cover letters for defunct positions.",
         ],
       },
@@ -174,7 +174,7 @@ export const GUIDE_ARTICLES: Record<string, GuideArticle> = {
         items: [
           "Monitor venture portfolio career subdomains directly",
           "Track key engineering managers on GitHub and technical forums",
-          "Subscribe to sub-hourly company ATS changelogs via CareerMonke",
+          "Subscribe to fresh company hiring updates via CareerMonke",
         ],
       },
       addWhen: {
@@ -193,7 +193,7 @@ export const GUIDE_ARTICLES: Record<string, GuideArticle> = {
       },
       {
         title: "Pre-Release Detection",
-        description: "Catch draft ATS jobs moments after initial creation before promotional announcements.",
+        description: "Catch newly published roles moments after initial creation before promotional announcements.",
       },
       {
         title: "Direct Recruiter Attribution",
@@ -234,14 +234,14 @@ export const GUIDE_ARTICLES: Record<string, GuideArticle> = {
         h2: "The Requisition Iceberg: What You Don't See",
         paragraphs: [
           "Over 60% of open requisitions in technical fields are staffed before the company incurs the cost of advertising them on enterprise job syndication networks. Founders and engineering VPs prefer direct referrals and proactive candidates who demonstrate company-specific initiative.",
-          "By intercepting ATS link generation at the source, candidates level the playing field, accessing the exact same pipeline previously reserved for insider networks.",
+          "By discovering direct employer links at the source, candidates level the playing field, accessing the exact same pipeline previously reserved for insider networks.",
         ],
       },
     ],
     faqs: [
       {
-        question: "Is it ethical to apply to an ATS link before it is publicly announced?",
-        answer: "Yes, absolutely! If a company has published the requisition to their public-facing ATS, it is live and actively accepting candidates. Hiring managers consistently appreciate candidates who proactively discover their postings.",
+        question: "Is it ethical to apply to a direct career link before it is publicly announced?",
+        answer: "Yes, absolutely! If a company has published the requisition to their public-facing career portal, it is live and actively accepting candidates. Hiring managers consistently appreciate candidates who proactively discover their postings.",
       },
       {
         question: "How frequently is the stealth feed refreshed?",
@@ -258,11 +258,11 @@ export const GUIDE_ARTICLES: Record<string, GuideArticle> = {
     verdict: {
       label: "PROTOCOL OVERVIEW",
       title: "Validate the Career Page Heartbeat Before Applying",
-      description: "Ghost jobs comprise an estimated 35% of listings on traditional aggregators. By checking the underlying ATS posting timestamp and company financial telemetry, you eliminate dead ends completely.",
+      description: "Ghost jobs comprise an estimated 35% of listings on traditional aggregators. By checking the underlying job posting timestamp and company financial telemetry, you eliminate dead ends completely.",
       startHere: {
         title: "Always verify:",
         items: [
-          "The role exists on the company's official domain ATS",
+          "The role exists on the company's official careers domain",
           "The requisition was updated within the past 21 calendar days",
           "The business has actively recruited or closed rounds in the past 6 months",
         ],
@@ -278,7 +278,7 @@ export const GUIDE_ARTICLES: Record<string, GuideArticle> = {
     },
     features: [
       {
-        title: "ATS Heartbeat Check",
+        title: "Career Page Heartbeat Check",
         description: "Automatic verification that the requisition is currently accepting submissions on the host system.",
       },
       {
@@ -299,7 +299,7 @@ export const GUIDE_ARTICLES: Record<string, GuideArticle> = {
       headers: ["Criterion", "Verified Active Role", "Ghost / Phantom Role"],
       rows: [
         {
-          feature: "ATS Status",
+          feature: "Posting Status",
           yourBrand: "Live endpoint with active token",
           traditional: "Stale index cache or dead link",
           notes: "Critical gating factor",
@@ -331,7 +331,7 @@ export const GUIDE_ARTICLES: Record<string, GuideArticle> = {
     faqs: [
       {
         question: "How does CareerMonke purge ghost jobs?",
-        answer: "We perform automated health checks on every job listing multiple times daily. If an ATS returns a 404, redirects to a generic splash page, or remains open without activity past our threshold, it is automatically archived.",
+        answer: "We perform automated health checks on every job listing multiple times daily. If a career link returns a 404, redirects to a generic splash page, or remains open without activity past our threshold, it is automatically archived.",
       },
     ],
   },

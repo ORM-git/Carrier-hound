@@ -57,7 +57,7 @@ export const HUB_DATA = {
   fieldNote: {
     badge: "FIELD NOTE #42",
     heading: "The 72-Hour Application Window Hypothesis",
-    text: "Empirical telemetry across 45,000 engineering requisitions indicates that candidates applying within 72 hours of first ATS commit receive a 4.2x higher interview invitation rate compared to later cycles.",
+    text: "Empirical telemetry across 45,000 engineering requisitions indicates that candidates applying within 72 hours of initial posting receive a 4.2x higher interview invitation rate compared to later cycles.",
     buttonText: "Read telemetry report",
     buttonHref: "/remote/remote-job-search-secrets",
     secondaryLinkText: "View live data feed",

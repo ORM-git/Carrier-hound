@@ -173,10 +173,10 @@ export default function RoleTitlesPage({ params }: PageProps) {
           {roleJobs && roleJobs.length > 0 && (
             <section className="space-y-4">
               <h3 className="text-xl sm:text-2xl font-bold text-[#09090B]">
-                Live {guide.roleName} ATS Snapshot
+                Live {guide.roleName} Job Snapshot
               </h3>
               <p className="text-[#4B5563] text-sm">
-                Recent openings captured directly from employer applicant tracking systems before public syndication.
+                Recent openings discovered directly from verified employer career pages before public syndication.
               </p>
               <JobPreview
                 title={`Live ${guide.roleName} Openings`}

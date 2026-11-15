@@ -29,7 +29,7 @@ export default function PaywallModal({
   open,
   onOpenChange,
   title = "Unlock CareerMonke Pro Access",
-  subtitle = "Direct access to unlisted company career endpoints, verified compensation bands, and ATS links.",
+  subtitle = "Direct access to unlisted company career endpoints, verified compensation bands, and official application links.",
   user: initialUser,
   redirectUrl,
 }: PaywallModalProps) {

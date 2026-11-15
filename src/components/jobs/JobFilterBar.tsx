@@ -1061,7 +1061,7 @@ export default function JobFilterBar({
                 <div className="space-y-1">
                   {[
                     { val: "", label: "All sources" },
-                    { val: "ats", label: "Direct ATS Portals" },
+                    { val: "ats", label: "Direct Portals" },
                     { val: "direct", label: "Employer Career Pages" },
                     { val: "aggregator", label: "Aggregated Feeds" },
                   ].map((s) => (

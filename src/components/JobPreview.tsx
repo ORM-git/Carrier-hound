@@ -16,8 +16,8 @@ interface JobPreviewProps {
 }
 
 export default function JobPreview({
-  title = "Direct Employer ATS Feed",
-  subtitle = "Real-time crawler stream across verified company subdomains",
+  title = "Direct Employer Openings",
+  subtitle = "Verified openings refreshed directly from company career pages",
   jobs,
   limit = 5,
 }: JobPreviewProps) {

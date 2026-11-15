@@ -34,7 +34,7 @@ export default function TermsPage() {
 
         <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">1. Services Provided</h2>
         <p className="mb-2">
-          CareerMonke is a job discovery and career tools platform. Job listings on CareerMonke are collected, normalized, and kept current by our proprietary ingestion tools, which read publicly available company career pages and Applicant Tracking System (ATS) feeds. On top of this listing database we provide:
+          CareerMonke is a job discovery and career tools platform. Job listings on CareerMonke are collected, organized, and kept current from publicly available company career pages and official job postings. On top of this listing database we provide:
         </p>
         <ul className="list-disc pl-5 space-y-2 mb-2">
           <li>
