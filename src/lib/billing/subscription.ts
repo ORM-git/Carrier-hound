@@ -388,12 +388,46 @@ export async function getUserSubscription(
 }
 
 /**
+ * Cancels customer auto-renewal at cycle end via Razorpay API and updates DB
+ */
+export async function cancelAutoRenewSubscription(): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = createClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    if (!token) {
+      return { success: false, error: "Not authenticated" };
+    }
+
+    const res = await fetch("/api/billing/razorpay/subscription", {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) {
+      return { success: false, error: data.error || "Failed to cancel auto-renew" };
+    }
+
+    invalidateProAccessCache();
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message || "Failed to cancel auto-renew" };
+  }
+}
+
+/**
  * Marks the subscription to cancel at the end of the current period
  */
 export async function cancelSubscription(): Promise<UserSubscription | null> {
   setLocalProActive(false);
 
   try {
+    await cancelAutoRenewSubscription().catch(() => {});
+
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();
     const user = session?.user || (await supabase.auth.getUser()).data.user;

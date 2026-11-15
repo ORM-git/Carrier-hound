@@ -325,68 +325,100 @@ export async function POST(req: Request) {
       );
     }
 
-    // 8. Idempotent pending attempts: before creating a subscription, check for an existing pending
-    // payment_orders row (status created) or metadata.pending_subscription_id for this user and plan;
-    // reuse it or return 409, never create a second mandate.
+    // 8. Authoritative Pending Reuse Query (Requirement 3: no JS filtering, handles query errors)
+    // Select by user + provider + mode + plan + not expired + provider status
+    const EXPIRATION_WINDOW_MS = 24 * 60 * 60 * 1000; // 24 hours
+    const expirationCutoff = new Date(Date.now() - EXPIRATION_WINDOW_MS).toISOString();
+
     const { data: existingPendingOrder, error: pendingOrderErr } = await supabaseAdmin
       .from("payment_orders")
-      .select("id, provider_order_id, plan_code, status, created_at, mode")
+      .select("id, provider_order_id, plan_code, status, created_at, mode, provider")
       .eq("user_id", user.id)
+      .eq("provider", "razorpay")
+      .eq("mode", resolvedMode)
+      .eq("plan_code", planCode)
       .eq("status", "created")
+      .like("provider_order_id", "sub_%")
+      .gte("created_at", expirationCutoff)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
 
     if (pendingOrderErr) {
-      log.error("Failed to check pending payment_orders; failing closed", { error: pendingOrderErr });
+      log.error("Authoritative query for pending subscription order failed; failing closed", { error: pendingOrderErr });
       return NextResponse.json(
         {
-          error: "Unable to verify pending order state. Please try again later.",
+          error: "Unable to verify pending subscription state. Please try again later.",
           code: "SERVICE_UNAVAILABLE",
         },
         { status: 503 }
       );
     }
 
-    const isSubMandate =
-      typeof existingPendingOrder?.provider_order_id === "string" &&
-      existingPendingOrder.provider_order_id.startsWith("sub_");
-    const isMatchingMode =
-      resolvedMode === "live"
-        ? existingPendingOrder?.mode === "live"
-        : existingPendingOrder?.mode !== "live";
+    if (
+      existingPendingOrder &&
+      typeof existingPendingOrder.provider_order_id === "string" &&
+      existingPendingOrder.provider_order_id.startsWith("sub_") &&
+      !existingPendingOrder.provider_order_id.startsWith("sub_pending_")
+    ) {
+      log.info("Reusing existing pending subscription order from authoritative query", {
+        userId: user.id,
+        planCode,
+        subscriptionId: existingPendingOrder.provider_order_id,
+      });
+      return NextResponse.json({
+        subscriptionId: existingPendingOrder.provider_order_id,
+        keyId,
+        planId: razorpayPlanId.trim(),
+        planCode,
+        status: "created",
+        reused: true,
+      });
+    }
 
-    if (existingPendingOrder && isSubMandate && isMatchingMode) {
-      if (existingPendingOrder.plan_code === planCode) {
-        log.info("Reusing existing pending subscription order for user and plan", {
-          userId: user.id,
-          planCode,
-          subscriptionId: existingPendingOrder.provider_order_id,
-        });
-        return NextResponse.json({
-          subscriptionId: existingPendingOrder.provider_order_id,
-          keyId,
-          planId: razorpayPlanId.trim(),
-          planCode,
-          status: "created",
-          reused: true,
-        });
-      } else {
-        return NextResponse.json(
-          {
-            error: `A checkout is already pending for another plan (${existingPendingOrder.plan_code}). Please complete or cancel that checkout first.`,
-            code: "PENDING_SUBSCRIPTION_EXISTS",
-          },
-          { status: 409 }
-        );
-      }
+    // Authoritative check for a pending subscription order for a different plan
+    const { data: otherPendingOrder, error: otherPendingErr } = await supabaseAdmin
+      .from("payment_orders")
+      .select("id, plan_code, provider_order_id")
+      .eq("user_id", user.id)
+      .eq("provider", "razorpay")
+      .eq("mode", resolvedMode)
+      .eq("status", "created")
+      .neq("plan_code", planCode)
+      .like("provider_order_id", "sub_%")
+      .gte("created_at", expirationCutoff)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (otherPendingErr) {
+      log.error("Authoritative query for other pending plans failed; failing closed", { error: otherPendingErr });
+      return NextResponse.json(
+        {
+          error: "Unable to verify pending subscription state. Please try again later.",
+          code: "SERVICE_UNAVAILABLE",
+        },
+        { status: 503 }
+      );
+    }
+
+    if (otherPendingOrder) {
+      return NextResponse.json(
+        {
+          error: `A checkout is already pending for another plan (${otherPendingOrder.plan_code}). Please complete or cancel that checkout first.`,
+          code: "PENDING_SUBSCRIPTION_EXISTS",
+        },
+        { status: 409 }
+      );
     }
 
     const metadataPendingSubId = existingSub?.metadata?.pending_subscription_id;
     const metadataPendingPlan = existingSub?.metadata?.pending_plan_code;
     const metadataPendingMode = existingSub?.metadata?.pending_mode;
     const isMetaSub =
-      typeof metadataPendingSubId === "string" && metadataPendingSubId.startsWith("sub_");
+      typeof metadataPendingSubId === "string" &&
+      metadataPendingSubId.startsWith("sub_") &&
+      !metadataPendingSubId.startsWith("sub_pending_");
     const isMetaMatchingMode =
       resolvedMode === "live"
         ? metadataPendingMode === "live"
@@ -426,22 +458,24 @@ export async function POST(req: Request) {
       // Re-check pending orders inside flight in case another tab or request settled just before
       const { data: racePendingOrder } = await supabaseAdmin
         .from("payment_orders")
-        .select("provider_order_id, plan_code, mode")
+        .select("provider_order_id, plan_code, mode, provider")
         .eq("user_id", user.id)
+        .eq("provider", "razorpay")
+        .eq("mode", resolvedMode)
+        .eq("plan_code", planCode)
         .eq("status", "created")
+        .like("provider_order_id", "sub_%")
+        .gte("created_at", expirationCutoff)
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
 
       const isRaceSub =
         typeof racePendingOrder?.provider_order_id === "string" &&
-        racePendingOrder.provider_order_id.startsWith("sub_");
-      const isRaceMatchingMode =
-        resolvedMode === "live"
-          ? racePendingOrder?.mode === "live"
-          : racePendingOrder?.mode !== "live";
+        racePendingOrder.provider_order_id.startsWith("sub_") &&
+        !racePendingOrder.provider_order_id.startsWith("sub_pending_");
 
-      if (isRaceSub && isRaceMatchingMode && racePendingOrder.plan_code === planCode) {
+      if (isRaceSub) {
         return NextResponse.json({
           subscriptionId: racePendingOrder.provider_order_id,
           keyId,
@@ -450,6 +484,195 @@ export async function POST(req: Request) {
           status: "created",
           reused: true,
         });
+      }
+
+      const credentials = btoa(`${keyId}:${keySecret}`);
+      const fetchCaller = deps.fetchFn || fetch;
+
+      // 10. Requirement 1: Provider Plan Verification
+      // Before creating a Razorpay subscription, fetch the plan from Razorpay and verify amount (paise),
+      // currency INR, period and interval match the selected 7/30/90-day plan; fail closed with clear error otherwise.
+      let planRes: Response;
+      try {
+        planRes = await fetchCaller(`https://api.razorpay.com/v1/plans/${razorpayPlanId.trim()}`, {
+          method: "GET",
+          headers: {
+            Authorization: `Basic ${credentials}`,
+          },
+        });
+      } catch (planFetchErr: any) {
+        log.error("Network error fetching Razorpay plan from provider; failing closed", { error: planFetchErr });
+        return NextResponse.json(
+          { error: "Failed to verify plan with payment provider", code: "PLAN_VERIFICATION_FAILED" },
+          { status: 502 }
+        );
+      }
+
+      if (!planRes.ok) {
+        const planErr = await planRes.json().catch(() => ({}));
+        log.error("Razorpay plan fetch returned non-200 from provider; failing closed", { error: planErr, status: planRes.status });
+        return NextResponse.json(
+          { error: "Failed to verify plan with payment provider", code: "PLAN_VERIFICATION_FAILED" },
+          { status: 502 }
+        );
+      }
+
+      const planData = await planRes.json();
+      const planItem = planData?.item || {};
+      const verifiedAmount = planItem?.amount ?? planData?.amount;
+      const verifiedCurrency = (planItem?.currency ?? planData?.currency ?? "").toUpperCase();
+      const verifiedPeriod = (planData?.period ?? "").toLowerCase();
+      const verifiedInterval = Number(planData?.interval ?? 1);
+
+      const PLAN_SPECS: Record<
+        string,
+        { amount: number; matchPeriodInterval: (period: string, interval: number) => boolean }
+      > = {
+        weekly: {
+          amount: 69200,
+          matchPeriodInterval: (p, i) => (p === "weekly" && i === 1) || (p === "daily" && i === 7),
+        },
+        monthly: {
+          amount: 149900,
+          matchPeriodInterval: (p, i) => p === "monthly" && i === 1,
+        },
+        quarterly: {
+          amount: 399900,
+          matchPeriodInterval: (p, i) => (p === "monthly" && i === 3) || (p === "quarterly" && i === 1),
+        },
+      };
+
+      const expectedSpec = PLAN_SPECS[planCode];
+      const isAmountValid = verifiedAmount === expectedSpec?.amount;
+      const isCurrencyValid = verifiedCurrency === "INR";
+      const isPeriodIntervalValid = expectedSpec
+        ? expectedSpec.matchPeriodInterval(verifiedPeriod, verifiedInterval)
+        : false;
+
+      if (!expectedSpec || !isAmountValid || !isCurrencyValid || !isPeriodIntervalValid) {
+        log.error("Provider plan verification failed; attributes do not match plan definition", {
+          planCode,
+          razorpayPlanId: razorpayPlanId.trim(),
+          expectedAmount: expectedSpec?.amount,
+          verifiedAmount,
+          verifiedCurrency,
+          verifiedPeriod,
+          verifiedInterval,
+        });
+        return NextResponse.json(
+          {
+            error: `Provider plan details do not match ${planCode} plan requirements`,
+            code: "PLAN_VERIFICATION_MISMATCH",
+          },
+          { status: 502 }
+        );
+      }
+
+      // Log the verified values as required by Requirement 1
+      log.info("Verified Razorpay plan with provider", {
+        planCode,
+        razorpayPlanId: razorpayPlanId.trim(),
+        verifiedAmount,
+        verifiedCurrency,
+        verifiedPeriod,
+        verifiedInterval,
+      });
+
+      // 11. Requirement 2: Durable Mandate Creation
+      // Reserve a per-user pending subscription row in the DB (unique per user, any plan) BEFORE calling Razorpay;
+      // if the provider call fails, mark the row failed/cancel any created mandate.
+      // Unique-collision path must check plan equality, never reuse a different plan.
+      const reservationOrderId = `sub_pending_${user.id}`;
+      const { error: reserveInsertErr } = await supabaseAdmin
+        .from("payment_orders")
+        .insert({
+          user_id: user.id,
+          provider: "razorpay",
+          provider_order_id: reservationOrderId,
+          plan_code: planCode,
+          amount_paise: verifiedAmount,
+          currency: "INR",
+          status: "created",
+          mode: resolvedMode,
+        });
+
+      if (reserveInsertErr) {
+        if (
+          reserveInsertErr.code === "23505" ||
+          reserveInsertErr.message?.includes("duplicate") ||
+          reserveInsertErr.message?.includes("unique")
+        ) {
+          log.warn("Unique constraint collision on pending subscription reservation; inspecting existing pending order", {
+            error: reserveInsertErr,
+            userId: user.id,
+          });
+
+          const { data: existingRace, error: raceFetchErr } = await supabaseAdmin
+            .from("payment_orders")
+            .select("id, provider_order_id, plan_code, mode, status, created_at")
+            .eq("user_id", user.id)
+            .eq("provider", "razorpay")
+            .eq("status", "created")
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (raceFetchErr || !existingRace) {
+            log.error("Failed to query conflicting order on unique collision; failing closed", { error: raceFetchErr });
+            return NextResponse.json(
+              { error: "A subscription checkout is already in progress. Please try again.", code: "PENDING_SUBSCRIPTION_EXISTS" },
+              { status: 409 }
+            );
+          }
+
+          // Unique-collision path must check plan equality, never reuse a different plan
+          if (existingRace.plan_code !== planCode) {
+            log.warn("Unique collision with different plan; refusing reuse", {
+              requestedPlan: planCode,
+              existingPlan: existingRace.plan_code,
+            });
+            return NextResponse.json(
+              {
+                error: `A subscription checkout is already pending for another plan (${existingRace.plan_code}). Please complete or cancel that checkout first.`,
+                code: "PENDING_SUBSCRIPTION_EXISTS",
+              },
+              { status: 409 }
+            );
+          }
+
+          // Same plan: check if it already has a completed mandate ID
+          if (
+            typeof existingRace.provider_order_id === "string" &&
+            existingRace.provider_order_id.startsWith("sub_") &&
+            !existingRace.provider_order_id.startsWith("sub_pending_")
+          ) {
+            return NextResponse.json({
+              subscriptionId: existingRace.provider_order_id,
+              keyId,
+              planId: razorpayPlanId.trim(),
+              planCode,
+              status: "created",
+              reused: true,
+            });
+          }
+
+          return NextResponse.json(
+            {
+              error: "A subscription checkout is already in progress. Please complete the pending payment.",
+              code: "PENDING_SUBSCRIPTION_EXISTS",
+            },
+            { status: 409 }
+          );
+        }
+
+        log.error("Failed to insert pending subscription reservation into payment_orders", { error: reserveInsertErr });
+        return NextResponse.json(
+          {
+            error: "Failed to initialize subscription tracking. Please try again.",
+            code: "SUBSCRIPTION_RECORD_FAILED",
+          },
+          { status: 500 }
+        );
       }
 
       // Total count calculation: 1 full year (52 weeks, 12 months, 4 quarters)
@@ -461,29 +684,48 @@ export async function POST(req: Request) {
       const totalCount = TOTAL_COUNTS[planCode] ?? 12;
 
       // Create subscription via Razorpay /v1/subscriptions
-      const credentials = btoa(`${keyId}:${keySecret}`);
-      const fetchCaller = deps.fetchFn || fetch;
-      const rzpRes = await fetchCaller("https://api.razorpay.com/v1/subscriptions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Basic ${credentials}`,
-        },
-        body: JSON.stringify({
-          plan_id: razorpayPlanId.trim(),
-          total_count: totalCount,
-          customer_notify: true,
-          notes: {
-            user_id: user.id,
-            email: user.email || "",
-            plan_code: planCode,
+      let rzpRes: Response;
+      try {
+        rzpRes = await fetchCaller("https://api.razorpay.com/v1/subscriptions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Basic ${credentials}`,
           },
-        }),
-      });
+          body: JSON.stringify({
+            plan_id: razorpayPlanId.trim(),
+            total_count: totalCount,
+            customer_notify: true,
+            notes: {
+              user_id: user.id,
+              email: user.email || "",
+              plan_code: planCode,
+            },
+          }),
+        });
+      } catch (gatewayErr: any) {
+        log.error("Network exception calling Razorpay subscriptions API", { error: gatewayErr });
+        // Mark reserved row failed as required by Requirement 2
+        await supabaseAdmin
+          .from("payment_orders")
+          .update({ status: "failed" })
+          .eq("provider_order_id", reservationOrderId);
+
+        return NextResponse.json(
+          { error: "Failed to connect to payment gateway", code: "GATEWAY_CONNECTION_ERROR" },
+          { status: 502 }
+        );
+      }
 
       if (!rzpRes.ok) {
         const err = await rzpRes.json().catch(() => ({}));
         log.error("Failed to create Razorpay subscription", { error: err });
+        // Mark reserved row failed as required by Requirement 2
+        await supabaseAdmin
+          .from("payment_orders")
+          .update({ status: "failed" })
+          .eq("provider_order_id", reservationOrderId);
+
         return NextResponse.json(
           {
             error: err?.error?.description || "Failed to initialize payment gateway subscription",
@@ -495,82 +737,72 @@ export async function POST(req: Request) {
 
       const subscriptionData = await rzpRes.json();
 
-      const PLAN_PAISE: Record<string, number> = {
-        weekly: 69200,
-        monthly: 149900,
-        quarterly: 399900,
-      };
-      const amountInPaise = PLAN_PAISE[planCode] ?? 149900;
-
-      // Record pending subscription order in payment_orders
-      const { error: orderInsertErr } = await supabaseAdmin
+      // Update reserved order with real Razorpay subscription ID
+      const { error: updateOrderErr } = await supabaseAdmin
         .from("payment_orders")
-        .insert({
-          user_id: user.id,
-          provider: "razorpay",
+        .update({
           provider_order_id: subscriptionData.id,
-          plan_code: planCode,
-          amount_paise: amountInPaise,
-          currency: "INR",
           status: "created",
-          mode: resolvedMode,
+        })
+        .eq("provider_order_id", reservationOrderId);
+
+      if (updateOrderErr) {
+        log.error("Failed to update reserved order with provider subscription ID; cancelling mandate", {
+          error: updateOrderErr,
+          subscriptionId: subscriptionData.id,
         });
 
-      if (orderInsertErr) {
-        // If unique constraint collision occurs across processes
-        if (
-          orderInsertErr.code === "23505" ||
-          orderInsertErr.message?.includes("duplicate") ||
-          orderInsertErr.message?.includes("unique")
-        ) {
-          log.warn("Unique constraint collision on payment_orders; fetching and reusing existing pending order", {
-            error: orderInsertErr,
-          });
-          const { data: existingRace } = await supabaseAdmin
-            .from("payment_orders")
-            .select("provider_order_id, plan_code, mode")
-            .eq("user_id", user.id)
-            .eq("status", "created")
-            .order("created_at", { ascending: false })
-            .limit(1)
-            .maybeSingle();
+        // Mark reserved row failed
+        await supabaseAdmin
+          .from("payment_orders")
+          .update({ status: "failed" })
+          .eq("provider_order_id", reservationOrderId);
 
-          const isRaceSub =
-            typeof existingRace?.provider_order_id === "string" &&
-            existingRace.provider_order_id.startsWith("sub_");
-          const isRaceMatchingMode =
-            resolvedMode === "live"
-              ? existingRace?.mode === "live"
-              : existingRace?.mode !== "live";
-
-          if (isRaceSub && isRaceMatchingMode) {
-            return NextResponse.json({
-              subscriptionId: existingRace.provider_order_id,
-              keyId,
-              planId: razorpayPlanId.trim(),
-              planCode,
-              status: "created",
-              reused: true,
-            });
-          }
-          return NextResponse.json(
-            {
-              error: "A subscription checkout is already in progress. Please complete the pending payment.",
-              code: "PENDING_SUBSCRIPTION_EXISTS",
+        // Cancel any created mandate as required by Requirement 2
+        try {
+          await fetchCaller(`https://api.razorpay.com/v1/subscriptions/${subscriptionData.id}/cancel`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Basic ${credentials}`,
             },
-            { status: 409 }
-          );
+            body: JSON.stringify({ cancel_at_cycle_end: 0 }),
+          });
+        } catch (cancelErr) {
+          log.error("Failed to cancel orphan mandate in Razorpay", { error: cancelErr, subscriptionId: subscriptionData.id });
         }
 
-        log.error("Failed to insert pending subscription into payment_orders", { error: orderInsertErr });
         return NextResponse.json(
           {
-            error: "Failed to initialize subscription tracking. Please try again.",
+            error: "Failed to persist subscription tracking. Please try again.",
             code: "SUBSCRIPTION_RECORD_FAILED",
           },
           { status: 500 }
         );
       }
+
+      // Requirement 1: Use provider current_start/current_end when granting time. Log the verified values.
+      let providerCurrentStart: string | null = null;
+      let providerCurrentEnd: string | null = null;
+      const rawStartSec = subscriptionData.current_start ?? subscriptionData.start_at;
+      const rawEndSec = subscriptionData.current_end ?? subscriptionData.end_at;
+
+      if (typeof rawStartSec === "number" && !isNaN(rawStartSec) && rawStartSec > 0) {
+        providerCurrentStart = new Date(rawStartSec * 1000).toISOString();
+      }
+      if (typeof rawEndSec === "number" && !isNaN(rawEndSec) && rawEndSec > 0) {
+        providerCurrentEnd = new Date(rawEndSec * 1000).toISOString();
+      }
+
+      log.info("Subscription created with provider cycle time bounds", {
+        subscriptionId: subscriptionData.id,
+        providerCurrentStart,
+        providerCurrentEnd,
+        verifiedAmount,
+        verifiedCurrency,
+        verifiedPeriod,
+        verifiedInterval,
+      });
 
       if (existingSub) {
         const { error: updateErr } = await supabaseAdmin
@@ -583,6 +815,12 @@ export async function POST(req: Request) {
               pending_plan_code: planCode,
               pending_mode: resolvedMode,
               pending_created_at: new Date().toISOString(),
+              provider_current_start: providerCurrentStart,
+              provider_current_end: providerCurrentEnd,
+              verified_amount_paise: verifiedAmount,
+              verified_currency: verifiedCurrency,
+              verified_period: verifiedPeriod,
+              verified_interval: verifiedInterval,
             },
           })
           .eq("user_id", user.id);
@@ -598,12 +836,199 @@ export async function POST(req: Request) {
         planId: razorpayPlanId.trim(),
         planCode,
         status: subscriptionData.status,
+        currentStart: providerCurrentStart,
+        currentEnd: providerCurrentEnd,
       });
     });
 
     return resultResponse.clone();
   } catch (err: any) {
     log.error("Unexpected error in subscription route", { error: err?.message || String(err), stack: err?.stack });
+    reportRequestErrorToSentry(req, err);
+    return NextResponse.json({ error: err?.message || "Internal server error" }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: Request) {
+  const log = baseLog.child({ requestId: req?.headers.get("x-request-id") ?? "unknown", action: "cancel_subscription" });
+  const deps = (req as any).__testDeps || {};
+
+  try {
+    if (process.env.NEXT_PUBLIC_BILLING_ENABLED !== "true") {
+      return NextResponse.json(
+        { error: "Billing is currently unavailable", code: "BILLING_DISABLED" },
+        { status: 503 }
+      );
+    }
+
+    const authHeader = req.headers.get("authorization") || req.headers.get("Authorization");
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return NextResponse.json({ error: "Missing or invalid authorization header" }, { status: 401 });
+    }
+
+    const token = authHeader.replace("Bearer ", "").trim();
+    let supabaseAdmin: any;
+
+    if (deps.getSupabaseAdmin) {
+      supabaseAdmin = deps.getSupabaseAdmin();
+    } else {
+      const supabaseUrl =
+        process.env.NEXT_PUBLIC_SUPABASE_URL ||
+        process.env.SUPABASE_URL ||
+        "https://szakevhxhwpeskidvtfs.supabase.co";
+      const serviceRoleKey =
+        process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
+
+      if (!supabaseUrl || !serviceRoleKey) {
+        return NextResponse.json(
+          { error: "Supabase service configuration missing" },
+          { status: 500 }
+        );
+      }
+
+      supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
+        auth: { persistSession: false },
+      });
+    }
+
+    const {
+      data: { user },
+      error: userError,
+    } = await supabaseAdmin.auth.getUser(token);
+
+    if (userError || !user) {
+      return NextResponse.json({ error: "Invalid user session token" }, { status: 401 });
+    }
+
+    // Lookup user subscription
+    const { data: sub, error: subErr } = await supabaseAdmin
+      .from("subscriptions")
+      .select("id, user_id, provider, subscription_id, status, current_period_end, cancel_at_period_end, metadata")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (subErr) {
+      log.error("Failed to query subscription for cancellation; failing closed", { error: subErr });
+      return NextResponse.json(
+        { error: "Unable to verify subscription state. Please try again later.", code: "SERVICE_UNAVAILABLE" },
+        { status: 503 }
+      );
+    }
+
+    if (!sub || (sub.status !== "active" && sub.status !== "trialing" && sub.status !== "in_grace_period")) {
+      return NextResponse.json(
+        { error: "No active subscription found to cancel", code: "NO_ACTIVE_SUBSCRIPTION" },
+        { status: 400 }
+      );
+    }
+
+    if (sub.cancel_at_period_end) {
+      return NextResponse.json({
+        success: true,
+        message: "Subscription is already scheduled to cancel at the end of the billing period",
+        cancelAtPeriodEnd: true,
+      });
+    }
+
+    const keyId =
+      process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID ||
+      process.env.RAZORPAY_KEY_ID;
+    const keySecret = process.env.RAZORPAY_KEY_SECRET;
+    const credentials = keyId && keySecret ? btoa(`${keyId}:${keySecret}`) : "";
+    const fetchCaller = deps.fetchFn || fetch;
+
+    const rzpSubId =
+      sub.subscription_id ||
+      sub.metadata?.pending_subscription_id ||
+      sub.metadata?.provider_subscription_id;
+
+    if (sub.provider === "razorpay" && rzpSubId && rzpSubId.startsWith("sub_")) {
+      if (!keyId || !keySecret) {
+        log.error("Missing Razorpay credentials for subscription cancel");
+        return NextResponse.json(
+          { error: "Payment gateway configuration missing", code: "RAZORPAY_CONFIG_ERROR" },
+          { status: 503 }
+        );
+      }
+
+      try {
+        const rzpCancelRes = await fetchCaller(
+          `https://api.razorpay.com/v1/subscriptions/${rzpSubId}/cancel`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Basic ${credentials}`,
+            },
+            body: JSON.stringify({
+              cancel_at_cycle_end: 1, // Cancel at cycle end via API as required by Requirement 4
+            }),
+          }
+        );
+
+        if (!rzpCancelRes.ok) {
+          const cancelErr = await rzpCancelRes.json().catch(() => ({}));
+          const desc = String(cancelErr?.error?.description || "");
+          const isAlreadyDone =
+            desc.toLowerCase().includes("already cancelled") ||
+            desc.toLowerCase().includes("already canceled") ||
+            desc.toLowerCase().includes("completed");
+
+          if (!isAlreadyDone) {
+            log.error("Razorpay subscription cancel API failed", { error: cancelErr, status: rzpCancelRes.status });
+            return NextResponse.json(
+              {
+                error: cancelErr?.error?.description || "Failed to cancel subscription with payment provider",
+                code: "RAZORPAY_CANCEL_ERROR",
+              },
+              { status: rzpCancelRes.status || 502 }
+            );
+          }
+        }
+      } catch (fetchErr: any) {
+        log.error("Network error during Razorpay subscription cancel", { error: fetchErr });
+        return NextResponse.json(
+          { error: "Network error connecting to payment gateway", code: "GATEWAY_CONNECTION_ERROR" },
+          { status: 502 }
+        );
+      }
+    }
+
+    // Update DB
+    const { error: dbUpdateErr } = await supabaseAdmin
+      .from("subscriptions")
+      .update({
+        cancel_at_period_end: true,
+        updated_at: new Date().toISOString(),
+        metadata: {
+          ...(sub.metadata || {}),
+          cancel_at_period_end: true,
+          canceled_at: new Date().toISOString(),
+          canceled_by: "customer",
+        },
+      })
+      .eq("user_id", user.id);
+
+    if (dbUpdateErr) {
+      log.error("Failed to update subscription in DB after cancellation", { error: dbUpdateErr });
+      return NextResponse.json(
+        { error: "Failed to update subscription status in database", code: "DATABASE_ERROR" },
+        { status: 500 }
+      );
+    }
+
+    log.info("Customer subscription successfully scheduled for cancellation at period end", {
+      userId: user.id,
+      subscriptionId: rzpSubId,
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: "Subscription auto-renew canceled. You retain Pro access until the end of your billing cycle.",
+      cancelAtPeriodEnd: true,
+    });
+  } catch (err: any) {
+    log.error("Unexpected error in subscription cancellation route", { error: err?.message || String(err) });
     reportRequestErrorToSentry(req, err);
     return NextResponse.json({ error: err?.message || "Internal server error" }, { status: 500 });
   }

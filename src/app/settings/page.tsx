@@ -9,7 +9,7 @@ import AppTopBar from "@/components/shell/AppTopBar";
 import LoggedInAppShell from "@/components/shell/LoggedInAppShell";
 import { getAuthUser, getUserPreferences, saveUserPreferences, signOutUser } from "@/lib/auth/session";
 import { UserPreferences } from "@/lib/auth/types";
-import { getUserSubscription } from "@/lib/billing/subscription";
+import { getUserSubscription, cancelAutoRenewSubscription } from "@/lib/billing/subscription";
 import { normalizePlanCode, PLAN_DEFINITIONS } from "@/lib/billing/quota";
 import { UserSubscription } from "@/lib/billing/types";
 import { getCandidateProfile, deleteCandidateProfile } from "@/lib/resume/storage";
@@ -58,6 +58,7 @@ function SettingsPageInner() {
   // Billing state
   const [subscription, setSubscription] = useState<UserSubscription | null>(null);
   const [isPaywallOpen, setIsPaywallOpen] = useState(false);
+  const [cancellingAutoRenew, setCancellingAutoRenew] = useState(false);
 
   // Derive plan & pricing from central normalized plan ID and real subscription record
   const normalizedPlan = normalizePlanCode(subscription?.planId);
@@ -213,6 +214,31 @@ function SettingsPageInner() {
     } catch (err: any) {
       console.error("Delete account error:", err);
       toast.error(err?.message || "An unexpected error occurred while deleting your account.");
+    }
+  };
+
+  const handleCancelAutoRenew = async () => {
+    if (
+      !window.confirm(
+        "Are you sure you want to cancel auto-renewal? You will keep Pro access until the end of your current billing period."
+      )
+    ) {
+      return;
+    }
+    setCancellingAutoRenew(true);
+    try {
+      const res = await cancelAutoRenewSubscription();
+      if (res.success) {
+        toast.success("Auto-renew canceled. You retain Pro access until the end of your billing cycle.");
+        const updatedSub = await getUserSubscription(user?.id);
+        setSubscription(updatedSub);
+      } else {
+        toast.error(res.error || "Failed to cancel auto-renew. Please try again.");
+      }
+    } catch (e: any) {
+      toast.error(e?.message || "An unexpected error occurred.");
+    } finally {
+      setCancellingAutoRenew(false);
     }
   };
 
@@ -544,11 +570,35 @@ function SettingsPageInner() {
                 )}
               </div>
 
-              {isPro && subscription?.currentPeriodEnd && (
+              {isPro && (
                 <div className="pt-3 border-t border-slate-200/80 flex items-center justify-between text-xs">
                   <span className="text-slate-600">
-                    Pro access ends on: <strong>{new Date(subscription.currentPeriodEnd).toLocaleDateString()}</strong> (plans do not auto-renew)
+                    {subscription?.currentPeriodEnd ? (
+                      <>
+                        Pro access ends on: <strong>{new Date(subscription.currentPeriodEnd).toLocaleDateString()}</strong>
+                        {subscription.cancelAtPeriodEnd
+                          ? " (auto-renew canceled)"
+                          : " (auto-renews)"}
+                      </>
+                    ) : (
+                      <>
+                        Pro access active
+                        {subscription?.cancelAtPeriodEnd
+                          ? " (auto-renew canceled)"
+                          : " (auto-renews)"}
+                      </>
+                    )}
                   </span>
+                  {!subscription?.cancelAtPeriodEnd && (
+                    <button
+                      type="button"
+                      onClick={handleCancelAutoRenew}
+                      disabled={cancellingAutoRenew}
+                      className="px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-xl transition shadow-2xs cursor-pointer disabled:opacity-50"
+                    >
+                      {cancellingAutoRenew ? "Canceling..." : "Cancel auto-renew"}
+                    </button>
+                  )}
                 </div>
               )}
             </div>
