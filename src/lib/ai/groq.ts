@@ -166,14 +166,19 @@ export async function callGroqCompletion(options: {
 
     if (!response.ok) {
       const errData = await response.clone().json().catch(() => ({}));
-      log.warn("[AI] Server endpoint returned error:", { detail: errData.code || errData.error || response.status });
+      log.warn("[AI] Server endpoint returned error:", {
+        code: errData?.code || "SERVER_ERROR",
+        status: response.status,
+      });
       return null;
     }
 
     const data = await response.json();
     return data?.content || data?.text || null;
-  } catch (err) {
-    log.warn("[AI] Secure completion request failed, falling back to local engine:", { error: err });
+  } catch (_err) {
+    log.warn("[AI] Secure completion request failed, falling back to local engine:", {
+      code: "COMPLETION_ERROR",
+    });
     return null;
   }
 }
@@ -211,8 +216,10 @@ export async function extractResumeFactsWithGroq(
         certifications: Array.isArray(parsed.certifications) ? parsed.certifications : baseProfile.certifications,
       };
     }
-  } catch (err) {
-    log.warn("Failed to parse AI extraction output, retaining deterministic output:", { error: err });
+  } catch (_err) {
+    log.warn("Failed to parse AI extraction output, retaining deterministic output:", {
+      code: "EXTRACTION_PARSE_ERROR",
+    });
   }
 
   return baseProfile;
@@ -262,7 +269,9 @@ export async function generateGroqTailoredCoverLetter(
       // Validate the generated paragraphs against candidate facts
       const validation = validateCoverLetter(cleanOutput, candidate, job);
       if (!validation.valid) {
-        log.warn("AI cover letter failed strict evidence verification:", { detail: validation.reasons });
+        log.warn("AI cover letter failed strict evidence verification:", {
+          code: "COVER_LETTER_GROUNDING_FAILED",
+        });
         return {
           text: fallback.fullText,
           isValidated: true,
@@ -286,8 +295,10 @@ export async function generateGroqTailoredCoverLetter(
         isAiEnhanced: true,
       };
     }
-  } catch (e) {
-    log.warn("AI cover letter generation failed, using deterministic template:", { error: e });
+  } catch (_e) {
+    log.warn("AI cover letter generation failed, using deterministic template:", {
+      code: "COVER_LETTER_GENERATION_FAILED",
+    });
   }
 
   return {

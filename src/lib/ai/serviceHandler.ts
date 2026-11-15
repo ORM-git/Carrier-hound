@@ -801,8 +801,8 @@ export async function executeAiCore(
             p_actual: Math.max(0, actualTokens),
           }));
           budgetReserved = false;
-        } catch (settleErr) {
-          log.warn("[AI Service] Error settling global AI budget:", { error: settleErr });
+        } catch (_settleErr) {
+          log.warn("[AI Service] Error settling global AI budget", { code: "SETTLE_BUDGET_ERROR" });
         }
       }
     };
@@ -957,15 +957,15 @@ export async function executeAiCore(
         setConsumed = false;
         try {
           await doRefund(user.id, setConsumeKey, new Date(), config.operation as QuotaKind);
-        } catch (rfErr) {
-          log.warn("[AI Service] Error refunding consumed set:", { error: rfErr });
+        } catch (_rfErr) {
+          log.warn("[AI Service] Error refunding consumed set", { code: "REFUND_ERROR" });
         }
       } else if (!isMeteredOperation && aiQuotaConsumed) {
         aiQuotaConsumed = false;
         try {
           await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
-        } catch (rfErr) {
-          log.warn("[AI Service] Error refunding non-metered AI quota:", { error: rfErr });
+        } catch (_rfErr) {
+          log.warn("[AI Service] Error refunding non-metered AI quota", { code: "REFUND_ERROR" });
         }
       }
     };
@@ -1080,7 +1080,7 @@ export async function executeAiCore(
         } catch (mockErr: any) {
           clearTimeout(timeoutHandle);
           activeBreaker.recordFailure();
-          log.warn("[AI Service] Error calling mock Groq provider:", { error: mockErr });
+          log.warn("[AI Service] Error calling mock Groq provider", { code: "MOCK_PROVIDER_ERROR" });
           await settleBudget(0);
           await rollbackAllQuotas();
           return {
@@ -1160,10 +1160,13 @@ export async function executeAiCore(
 
           try {
             groqData = await readChatCompletionStream(groqResponse.body);
-          } catch (parseErr) {
+          } catch (_parseErr) {
             clearTimeout(timeoutHandle);
             activeBreaker.recordFailure();
-            log.warn("[AI Service] Failed to parse upstream provider JSON:", { error: parseErr });
+            log.warn("[AI Service] Failed to parse upstream provider JSON", {
+              code: "PARSE_ERROR",
+              requestId: executionRequestId,
+            });
             await settleBudget(0);
             await rollbackAllQuotas();
             return {
@@ -1361,8 +1364,8 @@ export async function executeAiCore(
         try {
           await rpcWithRetry(() => supabaseAdmin.rpc("ai_concurrency_release", { p_lease_id: leaseId }));
           hasLease = false;
-        } catch (relErr) {
-          log.warn("[AI Service] Error releasing concurrency lease:", { error: relErr });
+        } catch (_relErr) {
+          log.warn("[AI Service] Error releasing concurrency lease", { code: "LEASE_RELEASE_ERROR" });
         }
       }
       if (budgetReserved && typeof supabaseAdmin.rpc === "function") {
@@ -1373,27 +1376,30 @@ export async function executeAiCore(
             p_actual: 0,
           }));
           budgetReserved = false;
-        } catch (setErr) {
-          log.warn("[AI Service] Error settling budget reservation in finally:", { error: setErr });
+        } catch (_setErr) {
+          log.warn("[AI Service] Error settling budget reservation in finally", { code: "SETTLE_BUDGET_ERROR" });
         }
       }
     }
   } catch (err: any) {
-    log.error("[AI Service] Unhandled error: " + (err?.stack || err?.message || String(err)));
+    log.error("[AI Service] Unhandled error", {
+      code: err?.code || "INTERNAL_SERVER_ERROR",
+      status: 500,
+    });
     if (setConsumed && setConsumeKey && confirmedUserId) {
       const doRefund = activeDeps.refundSet || refundSet;
       setConsumed = false;
       try {
         await doRefund(confirmedUserId, setConsumeKey, new Date(), confirmedKind);
-      } catch (rfErr) {
-        log.warn("[AI Service] Error refunding consumed set on unhandled error:", { error: rfErr });
+      } catch (_rfErr) {
+        log.warn("[AI Service] Error refunding consumed set on unhandled error", { code: "REFUND_ERROR" });
       }
     } else if (aiQuotaConsumed && confirmedSupabaseAdmin && confirmedUserId && confirmedOperation) {
       aiQuotaConsumed = false;
       try {
         await refundAiQuota(confirmedSupabaseAdmin, confirmedUserId, confirmedOperation, confirmedEstimatedTokens);
-      } catch (rfErr) {
-        log.warn("[AI Service] Error refunding non-metered quota on unhandled error:", { error: rfErr });
+      } catch (_rfErr) {
+        log.warn("[AI Service] Error refunding non-metered quota on unhandled error", { code: "REFUND_ERROR" });
       }
     }
     return {
