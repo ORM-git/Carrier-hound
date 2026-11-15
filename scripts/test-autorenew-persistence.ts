@@ -336,11 +336,21 @@ class PostgresState {
       };
     }
 
-    // 9b. Rebind Protection (Blocker 4)
+    // 9b. Rebind Protection (Fail CLOSED)
     if (v_has_sub && v_sub?.subscription_id && v_sub.subscription_id !== p_razorpay_subscription_id) {
       let is_valid_pending = false;
       if (v_order && v_order.status === "created") {
-        is_valid_pending = true;
+        let currOrderTime: number | undefined;
+        for (const ord of this.orders.values()) {
+          if (ord.provider_order_id === v_sub.subscription_id) {
+            currOrderTime = ord.created_at ? new Date(ord.created_at).getTime() : undefined;
+            break;
+          }
+        }
+        const incomingOrderTime = v_order.created_at ? new Date(v_order.created_at).getTime() : undefined;
+        if (currOrderTime !== undefined && incomingOrderTime !== undefined && incomingOrderTime > currOrderTime) {
+          is_valid_pending = true;
+        }
       }
       if (!is_valid_pending) {
         return {
@@ -352,6 +362,27 @@ class PostgresState {
           current_mandate: v_sub?.subscription_id,
           attempted_mandate: p_razorpay_subscription_id,
         };
+      }
+    }
+
+    // 9c. Watermark Ordering Check on Paid Events (never move backwards)
+    if (v_has_sub && nowMs > 0) {
+      const storedLast = v_sub?.metadata?.last_event_time;
+      if (storedLast !== undefined && typeof storedLast === "number") {
+        const incomingMs = nowMs > 1e11 ? nowMs : nowMs * 1000;
+        const storedMs = storedLast > 1e11 ? storedLast : storedLast * 1000;
+        if (incomingMs < storedMs) {
+          return {
+            success: true,
+            ignored: true,
+            code: "OUT_OF_ORDER_EVENT",
+            reason: "OUT_OF_ORDER_EVENT",
+            message: `Paid event timestamp ${nowMs} is older than stored last event time ${storedLast}`,
+            subscription_id: p_razorpay_subscription_id,
+            last_event_time: storedLast,
+            event_timestamp: nowMs,
+          };
+        }
       }
     }
 
@@ -375,6 +406,7 @@ class PostgresState {
         plan_id: v_sub?.plan_id,
         current_period_end: v_sub?.current_period_end,
         payment_id: p_payment_id,
+        amount: v_sub?.amount,
         message: "Payment ID already processed for this cycle; zero duplicate extension",
       };
     }
@@ -395,20 +427,19 @@ class PostgresState {
     }
 
     const v_expected_amount = v_plan_row.price_paise;
-    if (p_amount_paise !== null && p_amount_paise > 0) {
+    if (p_expected_mode === "live") {
+      if (p_amount_paise === null || p_amount_paise === undefined || p_amount_paise <= 0) {
+        return {
+          success: false,
+          code: "INVALID_PAYMENT_AMOUNT",
+          error: "Payment amount in paise must be positive for live cycle",
+        };
+      }
       if (p_amount_paise !== v_expected_amount) {
         return {
           success: false,
           code: "PLAN_AMOUNT_MISMATCH",
           error: `Payment amount ${p_amount_paise} does not match plan price ${v_expected_amount}`,
-        };
-      }
-    } else if (v_order?.amount_paise && v_order.amount_paise > 0) {
-      if (v_order.amount_paise !== v_expected_amount) {
-        return {
-          success: false,
-          code: "PLAN_AMOUNT_MISMATCH",
-          error: `Order amount ${v_order.amount_paise} does not match plan price ${v_expected_amount}`,
         };
       }
     }
@@ -441,6 +472,7 @@ class PostgresState {
       last_paid_at: new Date(nowMs).toISOString(),
       razorpay_subscription_id: p_razorpay_subscription_id,
       initial_payment_id: v_sub?.metadata?.initial_payment_id || p_payment_id,
+      last_event_time: v_sub?.metadata?.last_event_time ? Math.max(v_sub.metadata.last_event_time, nowMs) : nowMs,
     };
 
     // 14. Upsert/Update subscriptions row
@@ -453,6 +485,7 @@ class PostgresState {
       v_sub.current_period_end = v_new_end;
       v_sub.cancel_at_period_end = false;
       v_sub.grace_period_end = null;
+      v_sub.amount = v_expected_amount;
       v_sub.metadata = v_new_meta;
     } else {
       v_sub = {
@@ -466,6 +499,7 @@ class PostgresState {
         current_period_end: v_new_end,
         cancel_at_period_end: false,
         grace_period_end: null,
+        amount: v_expected_amount,
         metadata: v_new_meta,
       };
       this.subs.set(v_user_id, v_sub);

@@ -8611,13 +8611,18 @@ COMMIT;
 --
 -- Safety & Transactional Guarantees:
 --   1. Wrapped in a single atomic transaction (BEGIN ... COMMIT).
---   2. Strict pre-flight checks: validates required tables and columns before defining functions.
---   3. Fail-fast error reporting if any required schema dependency is missing.
+--   2. Guarded additive DDL: ensures payment_orders.metadata exists in the real schema.
+--   3. Strict pre-flight checks: validates required tables and columns before defining functions.
+--   4. Deadlock prevention: enforces advisory lock on user first, then row lock everywhere.
+--   5. Fail-closed rebind and monotonic watermark (greatest()) across paid and lifecycle events.
 -- ============================================================================
 
 BEGIN;
 
--- Pre-flight safety check: assert required tables and columns exist
+-- 1. Guarded additive DDL: add metadata column to payment_orders if missing in baseline schema
+ALTER TABLE public.payment_orders ADD COLUMN IF NOT EXISTS metadata jsonb NOT NULL DEFAULT '{}'::jsonb;
+
+-- 2. Pre-flight safety check: assert required tables and columns exist
 DO $$
 DECLARE
   missing_tbl text;
@@ -8726,6 +8731,7 @@ $$;
 
 -- Drop previous overloaded signatures
 DROP FUNCTION IF EXISTS public.fulfil_subscription_renewal(text, text);
+DROP FUNCTION IF EXISTS public.fulfil_subscription_renewal(text, text, text);
 DROP FUNCTION IF EXISTS public.fulfil_subscription_renewal(text, text, text, numeric);
 DROP FUNCTION IF EXISTS public.fulfil_subscription_renewal(text, text, text, numeric, numeric);
 
@@ -8760,6 +8766,9 @@ DECLARE
   v_has_sub boolean := false;
   v_curr_order_time timestamptz;
   v_is_valid_pending boolean := false;
+  v_last_event_time numeric;
+  v_incoming_ms numeric;
+  v_stored_ms numeric;
 BEGIN
   -- 0. Validate subscription ID input
   IF p_razorpay_subscription_id IS NULL OR trim(p_razorpay_subscription_id) = '' THEN
@@ -8782,8 +8791,8 @@ BEGIN
   p_razorpay_subscription_id := trim(p_razorpay_subscription_id);
   p_payment_id := trim(p_payment_id);
 
-  -- 2. Validate expected mode parameter
-  IF p_expected_mode NOT IN ('test', 'live') THEN
+  -- 2. Validate expected mode parameter (Strict: reject NULL or unknown mode)
+  IF p_expected_mode IS NULL OR p_expected_mode NOT IN ('test', 'live') THEN
     RETURN jsonb_build_object(
       'success', false,
       'code', 'INVALID_EXPECTED_MODE',
@@ -8796,8 +8805,7 @@ BEGIN
   FROM public.payment_orders
   WHERE provider_order_id = p_razorpay_subscription_id
   ORDER BY created_at DESC
-  LIMIT 1
-  FOR UPDATE;
+  LIMIT 1;
 
   IF FOUND THEN
     v_user_id := v_order.user_id;
@@ -8808,8 +8816,7 @@ BEGIN
     WHERE subscription_id = p_razorpay_subscription_id
        OR metadata->>'razorpay_subscription_id' = p_razorpay_subscription_id
        OR metadata->>'subscription_id' = p_razorpay_subscription_id
-    LIMIT 1
-    FOR UPDATE;
+    LIMIT 1;
 
     IF FOUND THEN
       v_user_id := v_sub.user_id;
@@ -8824,15 +8831,23 @@ BEGIN
     );
   END IF;
 
-  -- 4. Advisory xact lock on user ID to serialize activations and renewals
+  -- 4. Advisory xact lock on user ID FIRST (deadlock prevention across all RPCs)
   PERFORM pg_advisory_xact_lock(hashtext(v_user_id::text));
 
-  -- 5. Lock and load authoritative subscriptions row for this user
+  -- 5. Lock and load authoritative subscriptions row for this user SECOND
   SELECT * INTO v_sub
   FROM public.subscriptions
   WHERE user_id = v_user_id
   FOR UPDATE;
   v_has_sub := FOUND;
+
+  -- Also lock the payment order if found
+  IF v_order.id IS NOT NULL THEN
+    SELECT * INTO v_order
+    FROM public.payment_orders
+    WHERE id = v_order.id
+    FOR UPDATE;
+  END IF;
 
   -- 6. Provider Verification
   IF v_order.id IS NOT NULL AND v_order.provider IS NOT NULL AND v_order.provider <> 'razorpay' THEN
@@ -8850,9 +8865,9 @@ BEGIN
     );
   END IF;
 
-  -- 7. Mode Isolation Check (Probe 3: NULL mode defaults to live cleanly)
-  v_mode := COALESCE(v_order.mode, v_sub.metadata->>'mode', 'live');
-  IF v_mode <> p_expected_mode THEN
+  -- 7. Mode Isolation Check
+  v_mode := COALESCE(v_order.mode, v_sub.metadata->>'mode');
+  IF v_mode IS NOT NULL AND v_mode <> p_expected_mode THEN
     RETURN jsonb_build_object(
       'success', false,
       'code', 'MODE_MISMATCH',
@@ -8886,10 +8901,9 @@ BEGIN
     );
   END IF;
 
-  -- 10. Rebind Protection (Blocker 4 / Probe 4):
-  -- An old or abandoned mandate must not overwrite an active mandate.
-  -- Reject (ignored) events for cancelled/completed/expired/abandoned old mandates
-  -- and late charged events that do not match the current or pending mandate.
+  -- 10. Rebind Protection (Fail CLOSED):
+  -- If incoming subscription id is not the currently bound mandate, only accept if it is
+  -- a strictly newer single pending created order with verified order timestamp history.
   IF v_has_sub AND v_sub.subscription_id IS NOT NULL AND v_sub.subscription_id <> p_razorpay_subscription_id THEN
     v_is_valid_pending := false;
     IF v_order.id IS NOT NULL AND v_order.status = 'created' THEN
@@ -8899,8 +8913,17 @@ BEGIN
       ORDER BY created_at DESC
       LIMIT 1;
 
-      IF v_curr_order_time IS NULL OR v_order.created_at > v_curr_order_time THEN
-        v_is_valid_pending := true;
+      -- Fail CLOSED: require current order timestamp to be available AND new order strictly newer
+      IF v_curr_order_time IS NOT NULL AND v_order.created_at > v_curr_order_time THEN
+        IF NOT EXISTS (
+          SELECT 1 FROM public.payment_orders
+          WHERE user_id = v_user_id
+            AND status = 'created'
+            AND id <> v_order.id
+            AND created_at > v_order.created_at
+        ) THEN
+          v_is_valid_pending := true;
+        END IF;
       END IF;
     END IF;
 
@@ -8917,7 +8940,33 @@ BEGIN
     END IF;
   END IF;
 
-  -- 11. Idempotency on payment_id / cycle
+  -- 11. Watermark & Event ordering check: apply ordering check to paid events too
+  IF v_has_sub AND p_event_timestamp IS NOT NULL AND p_event_timestamp > 0 THEN
+    v_last_event_time := NULL;
+    IF v_sub.metadata ? 'last_event_time' AND (v_sub.metadata->>'last_event_time') ~ '^[0-9]+(\.[0-9]+)?$' THEN
+      v_last_event_time := (v_sub.metadata->>'last_event_time')::numeric;
+    END IF;
+
+    IF v_last_event_time IS NOT NULL THEN
+      v_incoming_ms := CASE WHEN p_event_timestamp > 1e11 THEN p_event_timestamp ELSE p_event_timestamp * 1000 END;
+      v_stored_ms := CASE WHEN v_last_event_time > 1e11 THEN v_last_event_time ELSE v_last_event_time * 1000 END;
+
+      IF v_incoming_ms < v_stored_ms THEN
+        RETURN jsonb_build_object(
+          'success', true,
+          'ignored', true,
+          'code', 'OUT_OF_ORDER_EVENT',
+          'reason', 'OUT_OF_ORDER_EVENT',
+          'message', format('Paid event timestamp %s is older than stored last event time %s', p_event_timestamp, v_last_event_time),
+          'subscription_id', p_razorpay_subscription_id,
+          'last_event_time', v_last_event_time,
+          'event_timestamp', p_event_timestamp
+        );
+      END IF;
+    END IF;
+  END IF;
+
+  -- 12. Idempotency on payment_id / cycle
   v_processed_payments := COALESCE(v_sub.metadata->'processed_payments', '[]'::jsonb);
   IF (v_has_sub AND (
         v_processed_payments ? p_payment_id OR
@@ -8937,11 +8986,12 @@ BEGIN
       'plan_id', v_sub.plan_id,
       'current_period_end', v_sub.current_period_end,
       'payment_id', p_payment_id,
+      'amount', v_sub.amount,
       'message', 'Payment ID already processed for this cycle; zero duplicate extension'
     );
   END IF;
 
-  -- 12. Validate plan id and amount against configured plans (Probe 2: paise amount validation)
+  -- 13. Validate plan id and amount against configured plans
   v_plan_code := COALESCE(v_order.plan_code, v_sub.plan_id);
   IF v_plan_code IS NULL OR trim(v_plan_code) = '' THEN
     RETURN jsonb_build_object(
@@ -8964,20 +9014,23 @@ BEGIN
   END IF;
 
   v_expected_amount := v_plan_row.price_paise;
-  IF p_amount_paise IS NOT NULL AND p_amount_paise > 0 THEN
+
+  -- Live cycle requirement: require p_amount_paise > 0 and equal to plan price.
+  -- Zero fallback to pending order amount!
+  IF p_expected_mode = 'live' THEN
+    IF p_amount_paise IS NULL OR p_amount_paise <= 0 THEN
+      RETURN jsonb_build_object(
+        'success', false,
+        'code', 'INVALID_PAYMENT_AMOUNT',
+        'error', 'Payment amount in paise must be positive for live cycle'
+      );
+    END IF;
+
     IF p_amount_paise <> v_expected_amount THEN
       RETURN jsonb_build_object(
         'success', false,
         'code', 'PLAN_AMOUNT_MISMATCH',
         'error', format('Payment amount %s does not match plan price %s for plan %s', p_amount_paise, v_expected_amount, v_plan_code)
-      );
-    END IF;
-  ELSIF v_order.id IS NOT NULL AND v_order.amount_paise IS NOT NULL AND v_order.amount_paise > 0 THEN
-    IF v_order.amount_paise <> v_expected_amount THEN
-      RETURN jsonb_build_object(
-        'success', false,
-        'code', 'PLAN_AMOUNT_MISMATCH',
-        'error', format('Order amount %s does not match plan price %s for plan %s', v_order.amount_paise, v_expected_amount, v_plan_code)
       );
     END IF;
   END IF;
@@ -8991,7 +9044,7 @@ BEGIN
     END IF;
   END IF;
 
-  -- 13. Compute Period Extension from max(current_period_end, now())
+  -- 14. Compute Period Extension from max(current_period_end, now())
   IF v_has_sub AND v_sub.current_period_end IS NOT NULL AND v_sub.status IN ('active', 'trialing') THEN
     v_base_time := greatest(v_sub.current_period_end, now());
   ELSE
@@ -9006,7 +9059,7 @@ BEGIN
 
   v_period_start := COALESCE(v_sub.current_period_start, now());
 
-  -- 14. Build updated metadata including payment_id and durable last_event_time
+  -- 15. Build updated metadata including monotonic last_event_time (greatest())
   v_new_meta := COALESCE(v_sub.metadata, '{}'::jsonb);
   v_new_meta := jsonb_set(
     v_new_meta,
@@ -9021,11 +9074,17 @@ BEGIN
   IF NOT (v_new_meta ? 'initial_payment_id') THEN
     v_new_meta := jsonb_set(v_new_meta, '{initial_payment_id}', to_jsonb(p_payment_id), true);
   END IF;
+
+  -- Monotonic watermark: never move last_event_time backwards
   IF p_event_timestamp IS NOT NULL AND p_event_timestamp > 0 THEN
-    v_new_meta := jsonb_set(v_new_meta, '{last_event_time}', to_jsonb(p_event_timestamp), true);
+    IF v_last_event_time IS NOT NULL THEN
+      v_new_meta := jsonb_set(v_new_meta, '{last_event_time}', to_jsonb(greatest(v_last_event_time, p_event_timestamp)), true);
+    ELSE
+      v_new_meta := jsonb_set(v_new_meta, '{last_event_time}', to_jsonb(p_event_timestamp), true);
+    END IF;
   END IF;
 
-  -- 15. Upsert/Update subscriptions row (Binds subscription_id on the first grant)
+  -- 16. Upsert/Update subscriptions row (Store exact paise amount integer: 69200, 149900, 399900)
   IF v_has_sub THEN
     UPDATE public.subscriptions
     SET
@@ -9039,7 +9098,7 @@ BEGIN
       grace_period_end = NULL,
       metadata = v_new_meta,
       currency = 'INR',
-      amount = round(v_expected_amount / 100),
+      amount = v_expected_amount,
       updated_at = now()
     WHERE user_id = v_user_id
     RETURNING * INTO v_updated_sub;
@@ -9068,13 +9127,13 @@ BEGIN
       false,
       v_new_meta,
       'INR',
-      round(v_expected_amount / 100),
+      v_expected_amount,
       now()
     )
     RETURNING * INTO v_updated_sub;
   END IF;
 
-  -- 16. Mark payment_orders row as paid (Probe 1: COALESCE handles null metadata safely)
+  -- 17. Mark payment_orders row as paid
   IF v_order.id IS NOT NULL THEN
     UPDATE public.payment_orders
     SET
@@ -9084,14 +9143,14 @@ BEGIN
     WHERE id = v_order.id;
   END IF;
 
-  -- 17. Extend active unexpired add-on credits to match newly extended subscription period
+  -- 18. Extend active unexpired add-on credits to match newly extended subscription period
   UPDATE public.user_addon_credits
   SET expires_at = v_new_end
   WHERE user_id = v_user_id
     AND expires_at >= now()
     AND sets_remaining > 0;
 
-  -- 18. Return success payload
+  -- 19. Return success payload
   RETURN jsonb_build_object(
     'success', true,
     'already_processed', false,
@@ -9102,7 +9161,8 @@ BEGIN
     'plan_id', v_plan_code,
     'duration_days', v_duration,
     'current_period_end', v_updated_sub.current_period_end,
-    'payment_id', p_payment_id
+    'payment_id', p_payment_id,
+    'amount', v_updated_sub.amount
   );
 END;
 $$;
@@ -9127,6 +9187,7 @@ AS $$
 DECLARE
   v_sub record;
   v_updated_sub record;
+  v_user_id uuid;
   v_mode text;
   v_order_mode text;
   v_last_event_time numeric;
@@ -9161,8 +9222,8 @@ BEGIN
     );
   END IF;
 
-  -- 2. Validate expected mode
-  IF p_expected_mode NOT IN ('test', 'live') THEN
+  -- 2. Validate expected mode (Strict: reject NULL or unknown mode)
+  IF p_expected_mode IS NULL OR p_expected_mode NOT IN ('test', 'live') THEN
     RETURN jsonb_build_object(
       'success', false,
       'code', 'INVALID_EXPECTED_MODE',
@@ -9170,13 +9231,38 @@ BEGIN
     );
   END IF;
 
-  -- 3. Lock and load authoritative subscriptions row strictly matching the currently bound mandate
+  -- 3. Discover user_id for this mandate
+  SELECT user_id INTO v_user_id
+  FROM public.subscriptions
+  WHERE subscription_id = p_razorpay_subscription_id
+  LIMIT 1;
+
+  IF NOT FOUND THEN
+    SELECT user_id INTO v_user_id
+    FROM public.payment_orders
+    WHERE provider_order_id = p_razorpay_subscription_id
+    LIMIT 1;
+  END IF;
+
+  IF v_user_id IS NULL THEN
+    RETURN jsonb_build_object(
+      'success', true,
+      'ignored', true,
+      'reason', 'UNBOUND_MANDATE',
+      'message', format('Mandate %s is not currently bound', p_razorpay_subscription_id)
+    );
+  END IF;
+
+  -- 4. Advisory xact lock on user ID FIRST (deadlock prevention matching renewal lock order)
+  PERFORM pg_advisory_xact_lock(hashtext(v_user_id::text));
+
+  -- 5. Lock and load authoritative subscriptions row strictly matching the currently bound mandate SECOND
   SELECT * INTO v_sub
   FROM public.subscriptions
   WHERE subscription_id = p_razorpay_subscription_id
   FOR UPDATE;
 
-  -- Requirement 5: Old or abandoned mandates must never touch a newer or prepaid entitlement
+  -- Old or abandoned mandates must never touch a newer or prepaid entitlement
   IF NOT FOUND THEN
     RETURN jsonb_build_object(
       'success', true,
@@ -9186,10 +9272,7 @@ BEGIN
     );
   END IF;
 
-  -- 4. Advisory xact lock on user ID to serialize transitions
-  PERFORM pg_advisory_xact_lock(hashtext(v_sub.user_id::text));
-
-  -- 5. Provider check
+  -- 6. Provider check
   IF v_sub.provider IS NOT NULL AND v_sub.provider <> 'razorpay' THEN
     RETURN jsonb_build_object(
       'success', false,
@@ -9198,7 +9281,7 @@ BEGIN
     );
   END IF;
 
-  -- 6. Mode isolation check (Probe 3: NULL mode defaults to live cleanly)
+  -- 7. Mode isolation check
   v_mode := v_sub.metadata->>'mode';
   IF v_mode IS NULL THEN
     SELECT mode INTO v_order_mode
@@ -9206,10 +9289,10 @@ BEGIN
     WHERE provider_order_id = p_razorpay_subscription_id
     ORDER BY created_at DESC
     LIMIT 1;
-    v_mode := COALESCE(v_order_mode, 'live');
+    v_mode := v_order_mode;
   END IF;
 
-  IF v_mode <> p_expected_mode THEN
+  IF v_mode IS NOT NULL AND v_mode <> p_expected_mode THEN
     RETURN jsonb_build_object(
       'success', false,
       'code', 'MODE_MISMATCH',
@@ -9217,7 +9300,7 @@ BEGIN
     );
   END IF;
 
-  -- 7. Server ban check
+  -- 8. Server ban check
   IF EXISTS (SELECT 1 FROM public.blocked_users WHERE user_id = v_sub.user_id) THEN
     RETURN jsonb_build_object(
       'success', false,
@@ -9226,8 +9309,7 @@ BEGIN
     );
   END IF;
 
-  -- 8. Lifecycle ordering (Blocker 5 / Probe 5): Durable provider last-event timestamp check
-  -- Do NOT compare to local updated_at or created_at!
+  -- 9. Lifecycle ordering: Durable provider last-event timestamp check
   IF p_event_timestamp IS NOT NULL AND p_event_timestamp > 0 THEN
     v_last_event_time := NULL;
     IF v_sub.metadata ? 'last_event_time' AND (v_sub.metadata->>'last_event_time') ~ '^[0-9]+(\.[0-9]+)?$' THEN
@@ -9242,6 +9324,7 @@ BEGIN
         RETURN jsonb_build_object(
           'success', true,
           'ignored', true,
+          'code', 'OUT_OF_ORDER_EVENT',
           'reason', 'OUT_OF_ORDER_EVENT',
           'message', format('Event timestamp %s is older than stored last event time %s', p_event_timestamp, v_last_event_time),
           'subscription_id', p_razorpay_subscription_id,
@@ -9252,10 +9335,14 @@ BEGIN
     END IF;
   END IF;
 
-  -- 9. Atomic DB transition with expected-mandate condition
+  -- 10. Atomic DB transition with monotonic watermark (greatest())
   v_new_meta := COALESCE(v_sub.metadata, '{}'::jsonb);
   IF p_event_timestamp IS NOT NULL AND p_event_timestamp > 0 THEN
-    v_new_meta := jsonb_set(v_new_meta, '{last_event_time}', to_jsonb(p_event_timestamp), true);
+    IF v_last_event_time IS NOT NULL THEN
+      v_new_meta := jsonb_set(v_new_meta, '{last_event_time}', to_jsonb(greatest(v_last_event_time, p_event_timestamp)), true);
+    ELSE
+      v_new_meta := jsonb_set(v_new_meta, '{last_event_time}', to_jsonb(p_event_timestamp), true);
+    END IF;
   END IF;
   v_new_meta := jsonb_set(v_new_meta, '{last_lifecycle_event}', to_jsonb(p_event_type), true);
 
@@ -9299,7 +9386,7 @@ BEGIN
     'cancel_at_period_end', v_updated_sub.cancel_at_period_end,
     'grace_period_end', v_updated_sub.grace_period_end,
     'user_id', v_updated_sub.user_id,
-    'last_event_time', p_event_timestamp
+    'last_event_time', v_updated_sub.metadata->'last_event_time'
   );
 END;
 $$;

@@ -322,6 +322,24 @@ export async function POST(req: Request) {
         payload.amount;
       const amountPaise = typeof rawAmount === "number" && rawAmount > 0 ? rawAmount : null;
 
+      const rawCurrency =
+        payload.payload?.payment?.entity?.currency ??
+        payload.payload?.subscription?.entity?.currency ??
+        payload.currency ??
+        "INR";
+      const cleanCurrency = typeof rawCurrency === "string" ? rawCurrency.trim().toUpperCase() : "INR";
+
+      if (serverMode === "live" && cleanCurrency !== "INR") {
+        log.error("[Razorpay Webhook] Currency mismatch for subscription grant", {
+          currency: cleanCurrency,
+          subId: cleanSubId,
+        });
+        return NextResponse.json(
+          { error: `Currency mismatch: only INR is supported, received ${cleanCurrency}`, code: "INVALID_CURRENCY" },
+          { status: 400 }
+        );
+      }
+
       // Mode isolation, provider, and ban pre-check
       let { data: dbOrder, error: orderLookupErr } = await supabaseAdmin
         .from("payment_orders")
