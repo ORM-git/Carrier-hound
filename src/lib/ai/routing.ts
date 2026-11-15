@@ -16,6 +16,7 @@ import {
   type AiTextCompletionResponse,
 } from "./providerAdapter";
 import type { BuiltAiPayload } from "./security";
+import { countTokens, trimTextToTokens } from "./tokenBudget";
 import { createLogger } from "@/lib/observability/logger";
 
 const log = createLogger({ context: { module: "ai/routing" } });
@@ -110,13 +111,41 @@ export function getMaxRoutingAttempts(hasFallback: boolean): number {
   return hasFallback ? MAX_ROUTING_ATTEMPTS_WITH_FALLBACK : MAX_ROUTING_ATTEMPTS_SINGLE_MODEL;
 }
 
-export const REPAIR_EXTRA_TOKENS_BUFFER = 1500; // ~6000 chars of repair echo & validator instructions
+export const TOKEN_ESTIMATION_SAFETY_MARGIN_PERCENT = 15; // 15% safety buffer for tokenizer estimation variance
+export const MAX_REPAIR_ECHO_TOKENS = 2500; // Cap previous output echo in repair prompt
+export const MAX_REPAIR_FEEDBACK_TOKENS = 300; // Cap validator feedback instructions in repair prompt
+
+export function countMessagesTokens(messages: Array<{ role: string; content: string }>): number {
+  if (!messages || !Array.isArray(messages)) return 0;
+  return messages.reduce((sum, m) => sum + countTokens(m?.content || "") + 4, 3);
+}
+
+export function estimateAttemptWorkTokens(
+  messages: Array<{ role: string; content: string }>,
+  maxOutputTokens: number
+): number {
+  const inputTokens = countMessagesTokens(messages);
+  const total = inputTokens + Math.max(0, maxOutputTokens);
+  return Math.ceil(total * (1 + TOKEN_ESTIMATION_SAFETY_MARGIN_PERCENT / 100));
+}
 
 export function computeMaxWorkTokens(payload: BuiltAiPayload): number {
-  const perAttemptTokens = Math.max(1, (payload.estimatedInputTokens || 0) + (payload.maxOutputTokens || 0));
   const hasFallback = !!(payload.fallbackModel && payload.fallbackModel !== payload.model);
-  const maxAttempts = getMaxRoutingAttempts(hasFallback);
-  return maxAttempts * perAttemptTokens + REPAIR_EXTRA_TOKENS_BUFFER;
+  const maxOutput = Math.max(0, payload.maxOutputTokens || 0);
+
+  // Attempt 1: primary model
+  const primaryCost = estimateAttemptWorkTokens(payload.messages, maxOutput);
+
+  // Attempt 2: fallback model (if configured)
+  const fallbackCost = hasFallback ? primaryCost : 0;
+
+  // Attempt 3: repair retry
+  // Worst-case repair input = original prompt + capped previous output + capped feedback + prompt framing
+  const baseInputTokens = countMessagesTokens(payload.messages);
+  const repairMaxInputTokens = baseInputTokens + MAX_REPAIR_ECHO_TOKENS + MAX_REPAIR_FEEDBACK_TOKENS + 50;
+  const repairCost = Math.ceil((repairMaxInputTokens + maxOutput) * (1 + TOKEN_ESTIMATION_SAFETY_MARGIN_PERCENT / 100));
+
+  return primaryCost + fallbackCost + repairCost;
 }
 
 export function getValidationReasonCode(error: string): string {
@@ -238,7 +267,6 @@ export async function routeCompletion(
   let repairUsed = false;
   let attemptNo = 0;
   let totalBillableTokens = 0;
-  const conservativePerAttemptTokens = (payload.estimatedInputTokens || 0) + (payload.maxOutputTokens || 0);
   let last: { kind: "timeout" | "busy" | "validation" | "config"; retryAfter?: number; message?: string } = {
     kind: "timeout",
   };
@@ -266,9 +294,12 @@ export async function routeCompletion(
 
     // At most two calls per model: the normal one and (once overall) a repair.
     for (let round = 0; round < 2; round++) {
+      // Compute the real estimated cost of this attempt from its actual messages + output
+      const attemptCost = estimateAttemptWorkTokens(messages, payload.maxOutputTokens || 0);
+
       // Before each attempt, check remaining reserved budget: if the next attempt could exceed maxBillableTokens, stop
       if (typeof opts.maxBillableTokens === "number" && opts.maxBillableTokens > 0) {
-        if (totalBillableTokens >= opts.maxBillableTokens || totalBillableTokens + conservativePerAttemptTokens > opts.maxBillableTokens) {
+        if (totalBillableTokens >= opts.maxBillableTokens || totalBillableTokens + attemptCost > opts.maxBillableTokens) {
           last = { kind: "busy", message: "AI token budget limit reached for request." };
           break;
         }
@@ -321,8 +352,8 @@ export async function routeCompletion(
           throw new DOMException("The operation timed out", "AbortError");
         }
       } catch (err) {
-        // Unknown network or failed outcome: count conservatively towards budget
-        totalBillableTokens += conservativePerAttemptTokens;
+        // Unknown network or failed outcome: count conservative attempt cost towards budget
+        totalBillableTokens += attemptCost;
         const f = classifyThrown(err, Boolean(controller.signal.aborted || opts.signal?.aborted));
         emitAttempt({
           model,
@@ -368,7 +399,7 @@ export async function routeCompletion(
       const pTokens = Number(usage?.prompt_tokens) || 0;
       const cTokens = Number(usage?.completion_tokens) || 0;
       const attemptTokens = Number(usage?.total_tokens) || (pTokens + cTokens);
-      totalBillableTokens += attemptTokens > 0 ? attemptTokens : conservativePerAttemptTokens;
+      totalBillableTokens += attemptTokens > 0 ? attemptTokens : attemptCost;
 
       const base = { model, attempt: attemptNo, repair: repairing, latencyMs, finishReason, usage, contentLength: content.length };
 
@@ -395,12 +426,14 @@ export async function routeCompletion(
       if (repairUsed) break;
       repairUsed = true;
       repairing = true;
+      const trimmedEcho = trimTextToTokens(content, MAX_REPAIR_ECHO_TOKENS);
+      const trimmedFeedback = trimTextToTokens(reason, MAX_REPAIR_FEEDBACK_TOKENS);
       messages = [
         ...payload.messages,
-        { role: "assistant", content: content.slice(0, REPAIR_ECHO_MAX_CHARS) },
+        { role: "assistant", content: trimmedEcho },
         {
           role: "user",
-          content: `Your previous JSON was rejected: ${reason}. Return the corrected JSON object only, following every rule.`,
+          content: `Your previous output was rejected: ${trimmedFeedback}. Return the corrected JSON object only, following every rule.`,
         },
       ] as BuiltAiPayload["messages"];
     }
