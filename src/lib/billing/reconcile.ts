@@ -210,6 +210,30 @@ export async function reconcileSubscriptionMandates(
             continue;
           }
 
+          // State-machine guard: Never cancel an active or in_grace_period subscription that is legitimately bound to a user
+          const subQuery = supabaseAdmin.from("subscriptions");
+          const { data: activeSubRow } = typeof subQuery?.select === "function"
+            ? await subQuery
+                .select("id, status")
+                .eq("subscription_id", subId)
+                .in("status", ["active", "in_grace_period"])
+                .maybeSingle()
+            : { data: null };
+
+          if (activeSubRow) {
+            await supabaseAdmin
+              .from("subscription_reconciliations")
+              .update({
+                reconciliation_state: "resolved",
+                recovery_outcome: "active_subscription_preserved",
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", rec.id);
+            result.resolved++;
+            result.details.push({ id: rec.id, subId, action: "active_preserved", status: "resolved" });
+            continue;
+          }
+
           const isCancelled = subData?.status === "cancelled" || subData?.ended_at != null;
           const isCancelAtCycleEnd = subData?.cancel_at_cycle_end === 1 || subData?.cancel_at_cycle_end === true;
 

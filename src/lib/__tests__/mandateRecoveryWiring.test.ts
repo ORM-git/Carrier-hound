@@ -35,10 +35,9 @@ describe("Issue 2: Failed-Mandate Recovery Wiring", () => {
     });
   }
 
-  it("triggers recovery when a payment.failed webhook event arrives", async () => {
-    const insertedReconciliations: any[] = [];
+  it("handles payment.failed webhook safely: retains active mandate, records failure, does not cancel at provider", async () => {
     const insertedDedupe: any[] = [];
-    const updatedReconciliations: any[] = [];
+    const rpcCalls: any[] = [];
     const updatedOrders: any[] = [];
 
     const mockSupabaseAdmin = {
@@ -54,17 +53,33 @@ describe("Issue 2: Failed-Mandate Recovery Wiring", () => {
             }),
           };
         }
+        if (table === "subscriptions") {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: {
+                id: "sub_db_uuid_1",
+                user_id: "user_fail_1",
+                subscription_id: "sub_failed_123",
+                status: "active",
+                cancel_at_period_end: false,
+                metadata: { plan_code: "monthly" },
+              },
+              error: null,
+            }),
+          };
+        }
         if (table === "payment_orders") {
           return {
             select: vi.fn().mockReturnThis(),
-            or: vi.fn().mockReturnThis(),
             eq: vi.fn().mockReturnThis(),
             maybeSingle: vi.fn().mockResolvedValue({
               data: {
                 id: "order_mock_1",
                 user_id: "user_fail_1",
                 provider_order_id: "sub_failed_123",
-                mode: "recurring",
+                status: "created",
               },
               error: null,
             }),
@@ -77,47 +92,15 @@ describe("Issue 2: Failed-Mandate Recovery Wiring", () => {
             }),
           };
         }
-        if (table === "subscription_reconciliations") {
-          return {
-            select: vi.fn().mockReturnThis(),
-            in: vi.fn().mockReturnThis(),
-            order: vi.fn().mockReturnThis(),
-            limit: vi.fn().mockImplementation(() => {
-              // Return pending records
-              return Promise.resolve({
-                data: insertedReconciliations.map((r, i) => ({
-                  id: `rec_${i + 1}`,
-                  ...r,
-                  created_at: new Date().toISOString(),
-                })),
-                error: null,
-              });
-            }),
-            insert: vi.fn((rows: any) => {
-              const rowArr = Array.isArray(rows) ? rows : [rows];
-              insertedReconciliations.push(...rowArr);
-              return Promise.resolve({ data: rowArr, error: null });
-            }),
-            update: vi.fn((patch: any) => {
-              updatedReconciliations.push(patch);
-              return { eq: vi.fn().mockResolvedValue({ data: null, error: null }) };
-            }),
-          };
-        }
         return {};
+      }),
+      rpc: vi.fn((fnName: string, args: any) => {
+        rpcCalls.push({ fnName, args });
+        return Promise.resolve({ data: { success: true }, error: null });
       }),
     };
 
-    const mockFetch = vi.fn().mockResolvedValue({
-      status: 200,
-      ok: true,
-      json: () =>
-        Promise.resolve({
-          id: "sub_failed_123",
-          status: "cancelled",
-          notes: { user_id: "user_fail_1" },
-        }),
-    });
+    const mockFetch = vi.fn();
 
     const payload = {
       event: "payment.failed",
@@ -127,8 +110,9 @@ describe("Issue 2: Failed-Mandate Recovery Wiring", () => {
           entity: {
             id: "pay_failed_101",
             subscription_id: "sub_failed_123",
+            order_id: "order_charge_101",
             error_code: "BAD_REQUEST_ERROR",
-            error_description: "Payment failed due to invalid card or mandate",
+            error_description: "Payment failed due to card decline",
             notes: { user_id: "user_fail_1" },
           },
         },
@@ -145,27 +129,18 @@ describe("Issue 2: Failed-Mandate Recovery Wiring", () => {
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.received).toBe(true);
-    expect(json.recovered).toBe(true);
 
-    // Verify reconciliation record was created
-    expect(insertedReconciliations.length).toBeGreaterThan(0);
-    expect(insertedReconciliations[0].provider_subscription_id).toBe("sub_failed_123");
-    expect(insertedReconciliations[0].reconciliation_state).toBe("pending");
-    expect(insertedReconciliations[0].failure_reason).toContain("Payment failed");
+    // Provider cancel must NEVER be invoked on a payment attempt failure
+    expect(mockFetch).not.toHaveBeenCalled();
 
-    // Verify recovery code was invoked
-    expect(mockFetch).toHaveBeenCalledWith(
-      "https://api.razorpay.com/v1/subscriptions/sub_failed_123",
-      expect.anything()
-    );
+    // Payment failure metadata is recorded on the subscription
+    expect(rpcCalls.some((c) => c.fnName === "merge_subscription_metadata")).toBe(true);
+    const mergeCall = rpcCalls.find((c) => c.fnName === "merge_subscription_metadata");
+    expect(mergeCall.args.p_user_id).toBe("user_fail_1");
+    expect(mergeCall.args.p_metadata.last_failed_payment_id).toBe("pay_failed_101");
 
-    // Verify reconciliation record was updated to resolved
-    expect(updatedReconciliations.length).toBeGreaterThan(0);
-    expect(updatedReconciliations[0].reconciliation_state).toBe("resolved");
-
-    // Verify order was marked cancelled
-    expect(updatedOrders.length).toBeGreaterThan(0);
-    expect(updatedOrders[0].status).toBe("cancelled");
+    // Dedupe event recorded
+    expect(insertedDedupe.some((d) => d.event_id === "evt_payment_failed_101")).toBe(true);
   });
 
   it("is idempotent: second call with the same event is a no-op", async () => {
@@ -190,7 +165,7 @@ describe("Issue 2: Failed-Mandate Recovery Wiring", () => {
             upsert: vi.fn().mockResolvedValue({ data: null, error: null }),
           };
         }
-        if (table === "payment_orders") {
+        if (table === "payment_orders" || table === "subscriptions") {
           return {
             select: vi.fn().mockReturnThis(),
             or: vi.fn().mockReturnThis(),
