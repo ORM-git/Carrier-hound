@@ -92,7 +92,7 @@ export const OPERATION_CONFIGS: Record<AllowedAiOperation, OperationConfig> = {
     model: process.env.SMART_MODEL || "openai/gpt-oss-120b",
     maxInputTokens: 3000,
     maxOutputTokens: 2500,
-    temperature: 0.2,
+    temperature: 0.3,
     jsonMode: false,
     reasoningEffort: "low",
     fallbackModel: process.env.AI_FALLBACK_MODEL || "llama-3.3-70b-versatile",
@@ -241,24 +241,29 @@ export function buildOperationPayload(
         expSummary: string;
         skillsList: string;
       }) => {
-        const sys = `You are an elite career strategist. Draft 3-4 concise, high-impact body paragraphs for a job cover letter.
+        const sys = `You are an elite career strategist. Draft exactly 3 concise, high-impact body paragraphs for a job cover letter (170-230 words total).
 CRITICAL ZERO-FABRICATION RULES:
-1. Generate ONLY the body paragraphs. DO NOT include contact headers (name, email, phone, location), salutations ("Dear..."), or sign-offs ("Sincerely...").
-2. Strictly ground the content in the candidate's verified facts:
+1. Generate EXACTLY 3 body paragraphs totaling between 170 and 230 words. DO NOT include contact headers (name, email, phone, location), salutations ("Dear..."), or sign-offs ("Sincerely...").
+2. Paragraph 1: State target role and company enthusiasm, highlighting 1-2 core evidenced strengths.
+3. Paragraph 2: Connect relevant accomplishments from work history directly to role requirements.
+4. Paragraph 3: Explain forward-looking alignment with company mission, closing with interest in discussion.
+5. Strictly ground the content in the candidate's verified facts:
 - Real skills: ${fields.skillsList}
 - Work history: ${fields.expSummary}
-3. ZERO HALLUCINATIONS:
+6. ZERO HALLUCINATIONS:
 - NEVER invent false employers, project names, metrics, or years of experience.
 - If candidate has NO prior work experience, DO NOT claim "throughout my tenure" or "previous roles". Focus strictly on verified skills and enthusiasm.
 - DO NOT include any emails, phone numbers, or URLs.
-4. Tailor tone to ${jobTitle} at ${jobCompany}.
+7. Tailor tone to ${jobTitle} at ${jobCompany}.
 
 WORKED EXAMPLE:
 Candidate input: Skills: TypeScript, React, Next.js. Experience: Frontend Engineer at Acme Corp (2022 - 2024). Target role: Senior Frontend Engineer at Linear.
 Ideal output body paragraphs:
 At Acme Corp, I engineered responsive user interfaces and modular component systems utilizing TypeScript, React, and Next.js. My focus was delivering performant web applications with high reliability and clean architectural patterns.
 
-Joining Linear as a Senior Frontend Engineer aligns directly with my engineering focus. Your dedication to craft and tool performance is an environment where my experience building scalable frontend applications will drive immediate value.${UNTRUSTED_DATA_SYSTEM_GUARD}`;
+Joining Linear as a Senior Frontend Engineer aligns directly with my engineering focus. Your dedication to craft and tool performance is an environment where my experience building scalable frontend applications will drive immediate value.
+
+I look forward to discussing how my experience with scalable architecture and performant interfaces can contribute to Linear's product excellence.${UNTRUSTED_DATA_SYSTEM_GUARD}`;
 
         const usr = `<untrusted_candidate_data>\nName: ${candName}\nHeadline: ${candHeadline}\nSummary: ${fields.candSummary}\nSkills: ${fields.skillsList}\n</untrusted_candidate_data>\n\n<untrusted_job_data>\nTitle: ${jobTitle}\nCompany: ${jobCompany}\nDescription: ${fields.jobDesc}\n</untrusted_job_data>`;
 
@@ -468,15 +473,19 @@ Ideal output JSON:
 
       systemPrompt = `You are an expert ATS resume tailoring engine.
 CRITICAL ZERO-FABRICATION AND GROUNDING RULES:
-1. ONLY rewrite the candidate's existing professional summary and experience bullets.
-2. NEVER modify, invent, or output employers, roles, dates, degrees, schools, or certifications.
-3. Every numeric fact, percentage, metric, count, and dollar value present in an original bullet MUST be preserved exactly in the rewritten bullet. Do NOT alter numbers or fabricate new metrics.
-4. "highlightedSkills" MUST be a strict subset of the candidate's verified skills list. Do NOT introduce tools or skills not in verified skills.
-5. In "tailoredBullets", each experience ID MUST match an existing ID from the input. The number of rewritten bullets for each experience ID MUST exactly match the number of source bullets.
-6. Return a valid JSON object matching this schema:
+1. Extract key requirements from the target job data.
+2. ONLY rewrite the candidate's existing professional summary and experience bullets.
+3. NEVER modify, invent, or output employers, roles, dates, degrees, schools, or certifications. Zero new facts.
+4. Keep the exact same experience IDs, bullet count, and bullet order for each experience entry. Every input bullet must have exactly one corresponding tailored bullet.
+5. Use strong action verbs. Keep all original numbers, metrics, percentages, counts, dollar values, and proper names completely unchanged.
+6. "highlightedSkills" and "matchedKeywords" MUST be grounded strictly in the candidate's verified facts and evidenced skills.
+7. "unmatchedRequirements" lists target job requirements not evidenced in candidate facts.
+8. Return a valid JSON object matching this schema:
 {
   "tailoredSummary": string,
   "highlightedSkills": string[],
+  "matchedKeywords": string[],
+  "unmatchedRequirements": string[],
   "tailoredBullets": { [experienceId: string]: string[] }
 }
 
@@ -484,13 +493,15 @@ WORKED EXAMPLE:
 Input:
 Candidate Skills: ["Node.js", "PostgreSQL", "Docker"]. Summary: "Backend engineer."
 Experience exp-1: Role: Software Engineer at DataInc. Bullets: ["Optimized SQL queries reducing latency by 40%."].
-Target Job: Senior Backend Engineer at CloudScale.
+Target Job: Senior Backend Engineer at CloudScale requiring Node.js, PostgreSQL, Kubernetes.
 Ideal output JSON:
 {
   "tailoredSummary": "Backend engineer specializing in Node.js, PostgreSQL, and Docker, with proven success optimizing database query performance by 40%.",
   "highlightedSkills": ["Node.js", "PostgreSQL", "Docker"],
+  "matchedKeywords": ["Node.js", "PostgreSQL"],
+  "unmatchedRequirements": ["Kubernetes"],
   "tailoredBullets": {
-    "exp-1": ["Optimized PostgreSQL database queries to reduce backend service latency by 40%."]
+    "exp-1": ["Optimized PostgreSQL database queries using Node.js to reduce backend service latency by 40%."]
   }
 }${UNTRUSTED_DATA_SYSTEM_GUARD}`;
 
@@ -968,7 +979,16 @@ export function validateTailoredResumeOutput(
   parsed: any,
   candidate: CandidateProfile,
   job?: any
-): { ok: true; sanitized: { tailoredSummary: string; highlightedSkills: string[]; tailoredBullets: Record<string, string[]> } } | { ok: false; error: string } {
+): {
+  ok: true;
+  sanitized: {
+    tailoredSummary: string;
+    highlightedSkills: string[];
+    matchedKeywords?: string[];
+    unmatchedRequirements?: string[];
+    tailoredBullets: Record<string, string[]>;
+  };
+} | { ok: false; error: string } {
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     return { ok: false, error: "AI output rejected: expected JSON object for resume_tailor." };
   }
@@ -1040,6 +1060,26 @@ export function validateTailoredResumeOutput(
       };
     }
     validHighlightedSkills.push(s.trim());
+  }
+
+  // 2b. Validate matchedKeywords (if present): strings evidenced in candidate profile
+  const validMatchedKeywords: string[] = [];
+  if (Array.isArray(parsed.matchedKeywords)) {
+    for (const kw of parsed.matchedKeywords) {
+      if (typeof kw !== "string" || !kw.trim()) continue;
+      const cleanKw = stripHtmlAndExecutableMarkup(kw.trim());
+      if (cleanKw) validMatchedKeywords.push(cleanKw);
+    }
+  }
+
+  // 2c. Validate unmatchedRequirements (if present): strings
+  const cleanUnmatchedRequirements: string[] = [];
+  if (Array.isArray(parsed.unmatchedRequirements)) {
+    for (const req of parsed.unmatchedRequirements) {
+      if (typeof req !== "string" || !req.trim()) continue;
+      const cleanReq = stripHtmlAndExecutableMarkup(req.trim());
+      if (cleanReq) cleanUnmatchedRequirements.push(cleanReq);
+    }
   }
 
   // 3. Validate tailoredBullets
@@ -1154,6 +1194,8 @@ export function validateTailoredResumeOutput(
     sanitized: {
       tailoredSummary: cleanSummary,
       highlightedSkills: Array.from(new Set(validHighlightedSkills)),
+      matchedKeywords: Array.from(new Set(validMatchedKeywords)),
+      unmatchedRequirements: Array.from(new Set(cleanUnmatchedRequirements)),
       tailoredBullets: cleanTailoredBullets,
     },
   };
@@ -1304,6 +1346,12 @@ export function validateAndSanitizeAiOutput(
       tailoredSummary: stripHtmlAndExecutableMarkup(String(parsed.tailoredSummary || "")),
       highlightedSkills: Array.isArray(parsed.highlightedSkills)
         ? parsed.highlightedSkills.map((s: any) => stripHtmlAndExecutableMarkup(String(s || ""))).filter(Boolean)
+        : [],
+      matchedKeywords: Array.isArray(parsed.matchedKeywords)
+        ? parsed.matchedKeywords.map((s: any) => stripHtmlAndExecutableMarkup(String(s || ""))).filter(Boolean)
+        : [],
+      unmatchedRequirements: Array.isArray(parsed.unmatchedRequirements)
+        ? parsed.unmatchedRequirements.map((s: any) => stripHtmlAndExecutableMarkup(String(s || ""))).filter(Boolean)
         : [],
       tailoredBullets,
     };

@@ -274,6 +274,8 @@ export interface TailorResumeAiResponse {
   draft?: {
     tailoredSummary: string;
     highlightedSkills: string[];
+    matchedKeywords?: string[];
+    unmatchedRequirements?: string[];
     tailoredBullets: Record<string, string[]>;
   };
   model?: string;

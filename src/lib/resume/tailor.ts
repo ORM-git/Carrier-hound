@@ -629,6 +629,8 @@ export function exportAtsWordDocument(rawCandidate: CandidateProfile): Blob {
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
   <Default Extension="xml" ContentType="application/xml"/>
   <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+  <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
+  <Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>
 </Types>`;
 
   const relsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -636,13 +638,54 @@ export function exportAtsWordDocument(rawCandidate: CandidateProfile): Blob {
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
 </Relationships>`;
 
+  const docRelsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`;
+
+  const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:docDefaults>
+    <w:rPrDefault>
+      <w:rPr>
+        <w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/>
+        <w:sz w:val="22"/>
+        <w:szCs w:val="22"/>
+      </w:rPr>
+    </w:rPrDefault>
+  </w:docDefaults>
+</w:styles>`;
+
+  const numberingXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:abstractNum w:abstractNumId="0">
+    <w:multiLevelType w:val="hybridMultilevel"/>
+    <w:lvl w:ilvl="0">
+      <w:start w:val="1"/>
+      <w:numFmt w:val="bullet"/>
+      <w:lvlText w:val=""/>
+      <w:lvlJc w:val="left"/>
+      <w:pPr>
+        <w:ind w:left="360" w:hanging="360"/>
+      </w:pPr>
+      <w:rPr>
+        <w:rFonts w:ascii="Symbol" w:hAnsi="Symbol" w:hint="default"/>
+      </w:rPr>
+    </w:lvl>
+  </w:abstractNum>
+  <w:num w:numId="1">
+    <w:abstractNumId w:val="0"/>
+  </w:num>
+</w:numbering>`;
+
   const paragraphs: string[] = [];
 
   // Candidate Name
   paragraphs.push(`
     <w:p>
       <w:pPr><w:spacing w:after="60"/></w:pPr>
-      <w:r><w:rPr><w:b/><w:sz w:val="34"/></w:rPr><w:t>${escapeXml((candidate.name || "Resume").toUpperCase())}</w:t></w:r>
+      <w:r><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/><w:b/><w:sz w:val="32"/></w:rPr><w:t>${escapeXml((candidate.name || "Resume").toUpperCase())}</w:t></w:r>
     </w:p>
   `);
 
@@ -652,7 +695,7 @@ export function exportAtsWordDocument(rawCandidate: CandidateProfile): Blob {
     paragraphs.push(`
       <w:p>
         <w:pPr><w:spacing w:after="80"/></w:pPr>
-        <w:r><w:rPr><w:sz w:val="20"/><w:color w:val="555555"/></w:rPr><w:t>${escapeXml(contactParts.join(" | "))}</w:t></w:r>
+        <w:r><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/><w:sz w:val="20"/><w:color w:val="555555"/></w:rPr><w:t>${escapeXml(contactParts.join(" | "))}</w:t></w:r>
       </w:p>
     `);
   }
@@ -662,7 +705,7 @@ export function exportAtsWordDocument(rawCandidate: CandidateProfile): Blob {
     paragraphs.push(`
       <w:p>
         <w:pPr><w:spacing w:after="160"/></w:pPr>
-        <w:r><w:rPr><w:i/><w:sz w:val="22"/><w:color w:val="333333"/></w:rPr><w:t>${escapeXml(candidate.headline)}</w:t></w:r>
+        <w:r><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/><w:i/><w:sz w:val="22"/><w:color w:val="333333"/></w:rPr><w:t>${escapeXml(candidate.headline)}</w:t></w:r>
       </w:p>
     `);
   }
@@ -674,45 +717,47 @@ export function exportAtsWordDocument(rawCandidate: CandidateProfile): Blob {
           <w:spacing w:before="240" w:after="80"/>
           <w:pBdr><w:bottom w:val="single" w:sz="6" w:space="1" w:color="333333"/></w:pBdr>
         </w:pPr>
-        <w:r><w:rPr><w:b/><w:sz w:val="24"/></w:rPr><w:t>${title}</w:t></w:r>
+        <w:r><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/><w:b/><w:sz w:val="24"/></w:rPr><w:t>${title}</w:t></w:r>
       </w:p>
     `);
   };
 
-  // Summary
+  // Section Order Everywhere: Summary, Skills, Experience, Education
+
+  // 1. Summary
   if (candidate.summary) {
     addSectionHeader("PROFESSIONAL SUMMARY");
     paragraphs.push(`
       <w:p>
         <w:pPr><w:spacing w:after="120"/></w:pPr>
-        <w:r><w:rPr><w:sz w:val="21"/></w:rPr><w:t>${escapeXml(candidate.summary)}</w:t></w:r>
+        <w:r><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/><w:sz w:val="22"/></w:rPr><w:t>${escapeXml(candidate.summary)}</w:t></w:r>
       </w:p>
     `);
   }
 
-  // Skills
+  // 2. Skills
   if (candidate.skills && candidate.skills.length > 0) {
     addSectionHeader("TECHNICAL SKILLS");
     paragraphs.push(`
       <w:p>
         <w:pPr><w:spacing w:after="120"/></w:pPr>
-        <w:r><w:rPr><w:sz w:val="21"/></w:rPr><w:t>${escapeXml(candidate.skills.join(" • "))}</w:t></w:r>
+        <w:r><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/><w:sz w:val="22"/></w:rPr><w:t>${escapeXml(candidate.skills.join(" • "))}</w:t></w:r>
       </w:p>
     `);
   }
 
-  // Experience
+  // 3. Experience
   if (candidate.experience && candidate.experience.length > 0) {
     addSectionHeader("PROFESSIONAL EXPERIENCE");
     for (const exp of candidate.experience) {
       paragraphs.push(`
         <w:p>
           <w:pPr><w:spacing w:before="120" w:after="40"/></w:pPr>
-          <w:r><w:rPr><w:b/><w:sz w:val="22"/></w:rPr><w:t>${escapeXml(exp.role)} — ${escapeXml(exp.company)}</w:t></w:r>
+          <w:r><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/><w:b/><w:sz w:val="22"/></w:rPr><w:t>${escapeXml(exp.role)} — ${escapeXml(exp.company)}</w:t></w:r>
         </w:p>
         <w:p>
           <w:pPr><w:spacing w:after="80"/></w:pPr>
-          <w:r><w:rPr><w:i/><w:sz w:val="20"/><w:color w:val="555555"/></w:rPr><w:t>${escapeXml(exp.startDate)} – ${escapeXml(exp.endDate)}</w:t></w:r>
+          <w:r><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/><w:i/><w:sz w:val="20"/><w:color w:val="555555"/></w:rPr><w:t>${escapeXml(exp.startDate)} – ${escapeXml(exp.endDate)}</w:t></w:r>
         </w:p>
       `);
 
@@ -720,26 +765,25 @@ export function exportAtsWordDocument(rawCandidate: CandidateProfile): Blob {
         paragraphs.push(`
           <w:p>
             <w:pPr>
-              <w:ind w:left="360" w:hanging="240"/>
+              <w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>
               <w:spacing w:after="40"/>
             </w:pPr>
-            <w:r><w:rPr><w:sz w:val="20"/></w:rPr><w:t>• </w:t></w:r>
-            <w:r><w:rPr><w:sz w:val="20"/></w:rPr><w:t>${escapeXml(bullet)}</w:t></w:r>
+            <w:r><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/><w:sz w:val="22"/></w:rPr><w:t>${escapeXml(bullet)}</w:t></w:r>
           </w:p>
         `);
       }
     }
   }
 
-  // Education
+  // 4. Education
   if (candidate.education && candidate.education.length > 0) {
     addSectionHeader("EDUCATION");
     for (const edu of candidate.education) {
       paragraphs.push(`
         <w:p>
           <w:pPr><w:spacing w:after="60"/></w:pPr>
-          <w:r><w:rPr><w:b/><w:sz w:val="21"/></w:rPr><w:t>${escapeXml(edu.degree)}</w:t></w:r>
-          <w:r><w:rPr><w:sz w:val="21"/></w:rPr><w:t> — ${escapeXml(edu.institution)} (${escapeXml(edu.year)})</w:t></w:r>
+          <w:r><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/><w:b/><w:sz w:val="22"/></w:rPr><w:t>${escapeXml(edu.degree)}</w:t></w:r>
+          <w:r><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/><w:sz w:val="22"/></w:rPr><w:t> — ${escapeXml(edu.institution)} (${escapeXml(edu.year)})</w:t></w:r>
         </w:p>
       `);
     }
@@ -752,11 +796,10 @@ export function exportAtsWordDocument(rawCandidate: CandidateProfile): Blob {
       paragraphs.push(`
         <w:p>
           <w:pPr>
-            <w:ind w:left="360" w:hanging="240"/>
+            <w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>
             <w:spacing w:after="40"/>
           </w:pPr>
-          <w:r><w:rPr><w:sz w:val="20"/></w:rPr><w:t>• </w:t></w:r>
-          <w:r><w:rPr><w:sz w:val="20"/></w:rPr><w:t>${escapeXml(cert)}</w:t></w:r>
+          <w:r><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/><w:sz w:val="22"/></w:rPr><w:t>${escapeXml(cert)}</w:t></w:r>
         </w:p>
       `);
     }
@@ -777,7 +820,10 @@ export function exportAtsWordDocument(rawCandidate: CandidateProfile): Blob {
   const zipBytes = createZipArchive([
     { name: "[Content_Types].xml", data: encoder.encode(contentTypesXml) },
     { name: "_rels/.rels", data: encoder.encode(relsXml) },
-    { name: "word/document.xml", data: encoder.encode(documentXml) }
+    { name: "word/_rels/document.xml.rels", data: encoder.encode(docRelsXml) },
+    { name: "word/document.xml", data: encoder.encode(documentXml) },
+    { name: "word/styles.xml", data: encoder.encode(stylesXml) },
+    { name: "word/numbering.xml", data: encoder.encode(numberingXml) },
   ]);
 
   return new Blob([zipBytes.buffer as ArrayBuffer], {
