@@ -148,7 +148,8 @@ export async function checkRouteAt320px(
   isNegativeControl = false
 ): Promise<RouteCheckResult> {
   await page.setViewport({ width: 320, height: 640 });
-  await page.goto(`${baseUrl}${route}`, { waitUntil: "networkidle0" });
+  await page.goto(`${baseUrl}${route}`, { waitUntil: "domcontentloaded" });
+  await new Promise((r) => setTimeout(r, 600));
 
   if (isNegativeControl && route === "/") {
     // Deliberately inject a horizontal overflow violation
@@ -254,7 +255,8 @@ export async function checkRouteAt200PctText(
   route: string
 ): Promise<RouteCheckResult> {
   await page.setViewport({ width: 1280, height: 800 });
-  await page.goto(`${baseUrl}${route}`, { waitUntil: "networkidle0" });
+  await page.goto(`${baseUrl}${route}`, { waitUntil: "domcontentloaded" });
+  await new Promise((r) => setTimeout(r, 600));
 
   // Apply 200% font resize (WCAG 1.4.4 Resize Text)
   await page.evaluate(() => {

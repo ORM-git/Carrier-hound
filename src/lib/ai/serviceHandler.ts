@@ -1078,7 +1078,16 @@ export async function executeAiCore(
           if (!groqResponse.ok) {
             clearTimeout(timeoutHandle);
             activeBreaker.recordFailure();
-            log.warn(`[AI Service] Upstream provider returned status ${groqResponse.status}`);
+            let errorBodyText = "";
+            try {
+              errorBodyText = await groqResponse.text();
+            } catch {}
+            log.warn(`[AI Service] Upstream provider returned status ${groqResponse.status}`, {
+              status: groqResponse.status,
+              body: errorBodyText,
+              model: payload.model,
+              operation: config.operation,
+            });
             await settleBudget(0);
             await rollbackAllQuotas();
             return {
@@ -1126,7 +1135,15 @@ export async function executeAiCore(
             activeBreaker.recordFailure();
             if (adapterErr instanceof AiProviderUpstreamError) {
               if (adapterErr.kind === "http_status") {
-                log.warn(`[AI Service] Upstream provider returned status ${adapterErr.status}`);
+                log.warn(`[AI Service] Upstream provider returned status ${adapterErr.status}`, {
+                  status: adapterErr.status,
+                  code: adapterErr.upstreamCode,
+                  message: adapterErr.upstreamMessage,
+                  type: adapterErr.upstreamType,
+                  model: payload.model,
+                  operation: config.operation,
+                  cause: adapterErr.cause,
+                });
                 await settleBudget(0);
                 await rollbackAllQuotas();
                 return {

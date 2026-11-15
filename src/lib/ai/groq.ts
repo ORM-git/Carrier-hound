@@ -36,6 +36,15 @@ export function sanitizeUserFacingAiError(rawError?: string | null): string {
   if (/GROQ_API_KEY|API_KEY|[A-Z0-9_]+_KEY|[A-Z0-9_]+_SECRET/i.test(str)) {
     return GENERIC_AI_UNAVAILABLE_MESSAGE;
   }
+  if (/AI (?:service )?generation failed/i.test(str)) {
+    return "AI service is temporarily busy. Your verified rules-based version is ready.";
+  }
+  if (/rate limit|too many requests|429/i.test(str)) {
+    return "AI service is experiencing high demand. Please try again in a few moments.";
+  }
+  if (/timed out|timeout/i.test(str)) {
+    return "AI service request timed out. Please try again in a moment.";
+  }
   return str;
 }
 
@@ -69,14 +78,41 @@ export async function callGroqCompletion(options: {
       params: options.params || {},
     };
 
-    const response = await fetch("/api/ai", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(body),
-    });
+    let response: Response;
+    try {
+      response = await fetch("/api/ai", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(body),
+      });
+    } catch {
+      // 1 automatic retry on network failure
+      await new Promise((r) => setTimeout(r, 800));
+      response = await fetch("/api/ai", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(body),
+      });
+    }
+
+    // 1 automatic retry on transient 429 or 5xx server error
+    if (!response.ok && (response.status === 429 || response.status >= 500)) {
+      await new Promise((r) => setTimeout(r, 800));
+      response = await fetch("/api/ai", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(body),
+      });
+    }
 
     if (!response.ok) {
       const errData = await response.json().catch(() => ({}));
@@ -253,20 +289,49 @@ export async function generateAiTailoredResume(
       };
     }
 
-    const response = await fetch("/api/ai", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
+    const requestBody = JSON.stringify({
+      operation: "resume_tailor",
+      params: {
+        candidate,
+        job,
       },
-      body: JSON.stringify({
-        operation: "resume_tailor",
-        params: {
-          candidate,
-          job,
-        },
-      }),
     });
+
+    let response: Response;
+    try {
+      response = await fetch("/api/ai", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: requestBody,
+      });
+    } catch {
+      // 1 automatic retry on network failure
+      await new Promise((r) => setTimeout(r, 800));
+      response = await fetch("/api/ai", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: requestBody,
+      });
+    }
+
+    // 1 automatic retry on transient 429 or 5xx server error
+    if (!response.ok && (response.status === 429 || response.status >= 500)) {
+      await new Promise((r) => setTimeout(r, 800));
+      response = await fetch("/api/ai", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: requestBody,
+      });
+    }
 
     const data = await response.json().catch(() => ({}));
 

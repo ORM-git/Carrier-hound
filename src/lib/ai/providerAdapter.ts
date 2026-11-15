@@ -67,17 +67,35 @@ export class AiProviderUpstreamError extends Error {
   readonly kind: AiProviderErrorKind;
   readonly status?: number;
   readonly cause?: unknown;
+  readonly upstreamBody?: string;
+  readonly upstreamCode?: string;
+  readonly upstreamMessage?: string;
+  readonly upstreamType?: string;
+  readonly retryAfter?: number;
 
   constructor(
     kind: AiProviderErrorKind,
     message: string,
-    options?: { status?: number; cause?: unknown }
+    options?: {
+      status?: number;
+      cause?: unknown;
+      upstreamBody?: string;
+      upstreamCode?: string;
+      upstreamMessage?: string;
+      upstreamType?: string;
+      retryAfter?: number;
+    }
   ) {
     super(message);
     this.name = "AiProviderUpstreamError";
     this.kind = kind;
     this.status = options?.status;
     this.cause = options?.cause;
+    this.upstreamBody = options?.upstreamBody;
+    this.upstreamCode = options?.upstreamCode;
+    this.upstreamMessage = options?.upstreamMessage;
+    this.upstreamType = options?.upstreamType;
+    this.retryAfter = options?.retryAfter;
   }
 }
 
@@ -122,42 +140,108 @@ export function createGroqTextCompletionAdapter(
       options?: AiTextCompletionOptions
     ): Promise<AiTextCompletionResponse> {
       const fetchFn = deps.fetchImpl ?? globalThis.fetch;
-      let groqResponse: Response;
-      try {
-        groqResponse = await fetchFn(endpointUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${options?.apiKey ?? ""}`,
-          },
-          body: JSON.stringify(buildGroqChatCompletionBody(request)),
-          signal: options?.signal,
-        });
-      } catch (fetchErr: unknown) {
-        throw new AiProviderUpstreamError(
-          "network",
-          "AI service request failed or timed out. Please try again.",
-          { cause: fetchErr }
-        );
+      let lastErr: unknown;
+
+      for (let attempt = 0; attempt < 2; attempt++) {
+        if (attempt > 0) {
+          if (options?.signal?.aborted) {
+            break;
+          }
+          const retryAfterSec = (lastErr as any)?.retryAfter;
+          const backoffMs =
+            typeof retryAfterSec === "number" && retryAfterSec > 0
+              ? Math.min(retryAfterSec * 1000, 3000)
+              : process.env.NODE_ENV === "test"
+              ? 10
+              : 1000;
+          await new Promise((r) => setTimeout(r, backoffMs));
+          if (options?.signal?.aborted) {
+            break;
+          }
+        }
+
+        let groqResponse: Response;
+        try {
+          groqResponse = await fetchFn(endpointUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${options?.apiKey ?? ""}`,
+            },
+            body: JSON.stringify(buildGroqChatCompletionBody(request)),
+            signal: options?.signal,
+          });
+        } catch (fetchErr: unknown) {
+          lastErr = new AiProviderUpstreamError(
+            "network",
+            "AI service request failed or timed out. Please try again.",
+            { cause: fetchErr }
+          );
+          if (attempt === 0 && !options?.signal?.aborted) {
+            continue;
+          }
+          throw lastErr;
+        }
+
+        if (!groqResponse.ok) {
+          let errorBodyText = "";
+          let errorJson: any = null;
+          try {
+            errorBodyText = await groqResponse.text();
+            errorJson = JSON.parse(errorBodyText);
+          } catch {}
+
+          const upstreamMessage =
+            errorJson?.error?.message || errorBodyText || groqResponse.statusText;
+          const upstreamCode = errorJson?.error?.code;
+          const upstreamType = errorJson?.error?.type;
+          const retryAfterHeader = groqResponse.headers?.get?.("retry-after");
+          const retryAfter = retryAfterHeader ? Number(retryAfterHeader) || undefined : undefined;
+
+          lastErr = new AiProviderUpstreamError(
+            "http_status",
+            "AI service generation failed. Please try again.",
+            {
+              status: groqResponse.status,
+              cause: {
+                message: upstreamMessage,
+                code: upstreamCode,
+                type: upstreamType,
+                rawBody: errorBodyText,
+              },
+              upstreamBody: errorBodyText,
+              upstreamCode,
+              upstreamMessage,
+              upstreamType,
+              retryAfter,
+            }
+          );
+
+          const isRetryable =
+            (groqResponse.status === 429 ||
+              (groqResponse.status >= 500 && groqResponse.status <= 504)) &&
+            attempt === 0 &&
+            !options?.signal?.aborted;
+
+          if (isRetryable) {
+            continue;
+          }
+
+          throw lastErr;
+        }
+
+        try {
+          return (await groqResponse.json()) as AiTextCompletionResponse;
+        } catch (parseErr: unknown) {
+          throw new AiProviderUpstreamError(
+            "invalid_json",
+            "AI service returned an invalid response. Please try again.",
+            { cause: parseErr }
+          );
+        }
       }
 
-      if (!groqResponse.ok) {
-        throw new AiProviderUpstreamError(
-          "http_status",
-          "AI service generation failed. Please try again.",
-          { status: groqResponse.status }
-        );
-      }
-
-      try {
-        return (await groqResponse.json()) as AiTextCompletionResponse;
-      } catch (parseErr: unknown) {
-        throw new AiProviderUpstreamError(
-          "invalid_json",
-          "AI service returned an invalid response. Please try again.",
-          { cause: parseErr }
-        );
-      }
+      throw lastErr;
     },
   };
 }

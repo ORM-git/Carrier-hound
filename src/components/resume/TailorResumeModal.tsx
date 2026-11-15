@@ -260,7 +260,7 @@ export default function TailorResumeModal({
 
       if (!res.success || !res.draft) {
         setAiStatus("failed");
-        const rawMsg = res.error || "AI generation failed. Retaining verified rules-based resume.";
+        const rawMsg = res.error || "AI enhancement is temporarily busy. Retaining verified rules-based resume.";
         const msg = sanitizeUserFacingAiError(rawMsg);
         setAiError(msg);
         toast.error(msg);
@@ -278,7 +278,7 @@ export default function TailorResumeModal({
       toast.info("AI draft generated! Review changes before accepting.");
     } catch (err: any) {
       setAiStatus("failed");
-      const rawMsg = err?.message || "Failed to reach AI service.";
+      const rawMsg = err?.message || "Failed to reach AI service. Retaining verified rules-based resume.";
       const msg = sanitizeUserFacingAiError(rawMsg);
       setAiError(msg);
       toast.error(msg);
@@ -424,7 +424,7 @@ export default function TailorResumeModal({
                 </span>
               ) : aiStatus === "failed" ? (
                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-rose-500/30 text-rose-200 border border-rose-400/40">
-                  AI generation failed
+                  AI enhancement unavailable
                 </span>
               ) : (
                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-slate-500/20 text-slate-300 border border-slate-500/40">
@@ -574,9 +574,9 @@ export default function TailorResumeModal({
                   <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
                   <div className="space-y-0.5">
                     <p className="font-bold">
-                      {aiError && aiError.includes(GENERIC_AI_UNAVAILABLE_MESSAGE)
+                      {aiError && (aiError.includes(GENERIC_AI_UNAVAILABLE_MESSAGE) || aiError.includes("temporarily") || aiError.includes("high demand") || aiError.includes("verified"))
                         ? aiError
-                        : `AI generation failed: ${aiError || "Service temporarily unavailable."}`}
+                        : `AI enhancement unavailable: ${aiError || "Service temporarily busy. Retaining verified rules-based resume."}`}
                     </p>
                     <p className="text-[11px] text-rose-700">Your verified rules-based resume remains active and safe to export.</p>
                   </div>
