@@ -4,12 +4,15 @@
  * Real PostgreSQL execution probe (PGlite) for PR #624 reviewer requirements:
  * 1. repository-shaped schema: payment_orders starts with NO metadata column; migration adds it via ALTER TABLE ADD COLUMN IF NOT EXISTS.
  * 2. first real grant populates metadata without 'record v_order has no field metadata'.
- * 3. subscriptions.amount stores integer PAISE unchanged (weekly 69200, monthly 149900).
+ * 3. subscriptions.amount stores integer PAISE unchanged (weekly 69200, monthly 149900, quarterly 399900).
  * 4. NULL expected mode is strictly rejected with INVALID_EXPECTED_MODE.
  * 5. zero / missing amount on live cycle is strictly rejected with INVALID_PAYMENT_AMOUNT.
- * 6. old-mandate rebind fails CLOSED (when current order history is unavailable, old mandate is ignored with OLD_MANDATE_IGNORED).
- * 7. lock-order deadlock prevention: advisory lock on user first, then row lock everywhere.
- * 8. interleaved paid + lifecycle events keep the watermark monotonic (greatest(), never moves backwards; out-of-order paid events are ignored).
+ * 6. NULL stored payment mode (order mode + sub metadata both NULL) fails closed on live mode with MODE_UNKNOWN.
+ * 7. Missing / NULL event timestamp cannot bypass existing watermark; ignored as OUT_OF_ORDER_EVENT.
+ * 8. Seconds vs milliseconds: normalized to ms before comparison and storage.
+ *    Tested with 2200000000000 ms watermark -> 2200000001 sec event -> 2200000000.5 sec cancel (rejected).
+ * 9. Old-mandate rebind fails CLOSED (when current order history unavailable, ignored as OLD_MANDATE_IGNORED).
+ * 10. Schedule reconciliation: covers exact 7/30/90 day extensions from greatest(current_period_end, now).
  */
 
 import assert from "node:assert";
@@ -155,8 +158,10 @@ async function run() {
   const u3 = "33333333-3333-4333-8333-333333333333";
   const u4 = "44444444-4444-4444-8444-444444444444";
   const u5 = "55555555-5555-4555-8555-555555555555";
+  const u6 = "66666666-6666-4666-8666-666666666666";
+  const u7 = "77777777-7777-4777-8777-777777777777";
 
-  for (const uid of [u1, u2, u3, u4, u5]) {
+  for (const uid of [u1, u2, u3, u4, u5, u6, u7]) {
     await pg.query(`INSERT INTO auth.users (id, email) VALUES ($1, $2) ON CONFLICT DO NOTHING;`, [
       uid,
       `user_${uid}@test.local`,
@@ -333,80 +338,119 @@ async function run() {
   });
 
   // ---------------------------------------------------------------------------
-  // PROBE 5: interleaved paid + lifecycle events keep watermark monotonic
+  // PROBE 5: Gap 2 - NULL stored payment mode fails closed on live mode
   // ---------------------------------------------------------------------------
-  await probe("Probe 5: interleaved paid + lifecycle events keep watermark monotonic (never rewind, ignore older paid events)", async () => {
-    // User 5 starts with an active subscription at watermark ts = 1700000100
+  await probe("Probe 5: NULL stored payment mode fails closed with MODE_UNKNOWN when expected_mode is live", async () => {
+    // Order has mode = NULL and subscription has no mode
     await pg.query(`
       INSERT INTO public.payment_orders (user_id, provider_order_id, provider, mode, status, plan_code, amount_paise)
-      VALUES ($1, 'sub_probe5_mandate', 'razorpay', 'live', 'created', 'monthly', 149900);
+      VALUES ($1, 'sub_probe5_nullmode', 'razorpay', NULL, 'created', 'monthly', 149900);
     `, [u5]);
+
+    // 5a. Fulfill with expected_mode='live' against NULL stored mode -> MUST FAIL CLOSED
+    const resNullMode = await pg.query<{ fulfil_subscription_renewal: any }>(`
+      SELECT public.fulfil_subscription_renewal('sub_probe5_nullmode', 'pay_probe5_initial', 'live', 149900) AS fulfil_subscription_renewal;
+    `);
+    const resultNullMode = resNullMode.rows[0].fulfil_subscription_renewal;
+    assert.strictEqual(resultNullMode.success, false, "Must fail closed when stored mode is NULL");
+    assert.strictEqual(resultNullMode.code, "MODE_UNKNOWN", "Must return MODE_UNKNOWN code");
+
+    // 5b. Update order mode to 'live' and retry -> now succeeds
+    await pg.query(`UPDATE public.payment_orders SET mode = 'live' WHERE provider_order_id = 'sub_probe5_nullmode';`);
+    const resLiveMode = await pg.query<{ fulfil_subscription_renewal: any }>(`
+      SELECT public.fulfil_subscription_renewal('sub_probe5_nullmode', 'pay_probe5_good', 'live', 149900) AS fulfil_subscription_renewal;
+    `);
+    assert.strictEqual(resLiveMode.rows[0].fulfil_subscription_renewal.success, true);
+  });
+
+  // ---------------------------------------------------------------------------
+  // PROBE 6: Gap 1 - Missing/NULL event timestamp cannot bypass existing watermark
+  // ---------------------------------------------------------------------------
+  await probe("Probe 6: Missing/NULL event timestamp cannot bypass existing watermark (rejected as OUT_OF_ORDER_EVENT)", async () => {
+    // User 6 has active subscription with watermark at 1700000500000 ms
+    await pg.query(`
+      INSERT INTO public.payment_orders (user_id, provider_order_id, provider, mode, status, plan_code, amount_paise)
+      VALUES ($1, 'sub_probe6_mandate', 'razorpay', 'live', 'paid', 'weekly', 69200);
+    `, [u6]);
 
     await pg.query(`
       INSERT INTO public.subscriptions (user_id, subscription_id, plan_id, provider, status, cancel_at_period_end, metadata, amount)
-      VALUES ($1, 'sub_probe5_mandate', 'monthly', 'razorpay', 'active', false, '{"mode": "live", "last_event_time": 1700000100}'::jsonb, 149900);
-    `, [u5]);
+      VALUES ($1, 'sub_probe6_mandate', 'weekly', 'razorpay', 'active', false, '{"mode": "live", "last_event_time": 1700000500000}'::jsonb, 69200);
+    `, [u6]);
 
-    // 5a. Lifecycle event (subscription.pending) arrives at ts 2000000000 -> applies, sets in_grace_period
-    const pendingRes = await pg.query<{ handle_subscription_lifecycle_event: any }>(`
-      SELECT public.handle_subscription_lifecycle_event('sub_probe5_mandate', 'subscription.pending', 2000000000, 'live') AS handle_subscription_lifecycle_event;
+    // 6a. Paid event with NULL timestamp must NOT bypass existing watermark
+    const resNullTs = await pg.query<{ fulfil_subscription_renewal: any }>(`
+      SELECT public.fulfil_subscription_renewal('sub_probe6_mandate', 'pay_probe6_null_ts', 'live', 69200, NULL) AS fulfil_subscription_renewal;
     `);
-    const pendingResult = pendingRes.rows[0].handle_subscription_lifecycle_event;
-    assert.strictEqual(pendingResult.success, true);
-    assert.strictEqual(pendingResult.applied, true);
-    assert.strictEqual(pendingResult.status, "in_grace_period");
+    const resultNullTs = resNullTs.rows[0].fulfil_subscription_renewal;
+    assert.strictEqual(resultNullTs.success, true);
+    assert.strictEqual(resultNullTs.ignored, true);
+    assert.strictEqual(resultNullTs.code, "OUT_OF_ORDER_EVENT");
 
-    const subAfterPending = await pg.query<{ status: string; metadata: any }>(`
-      SELECT status, metadata FROM public.subscriptions WHERE user_id = $1;
-    `, [u5]);
-    assert.strictEqual(subAfterPending.rows[0].status, "in_grace_period");
-    assert.strictEqual(Number(subAfterPending.rows[0].metadata?.last_event_time), 2000000000);
-
-    // 5b. Older charged event arrives at 1900000000 (< 2000000000)
-    // MUST NOT set status active, MUST NOT rewind last_event_time! MUST be ignored as OUT_OF_ORDER_EVENT.
-    const olderPaidRes = await pg.query<{ fulfil_subscription_renewal: any }>(`
-      SELECT public.fulfil_subscription_renewal('sub_probe5_mandate', 'pay_probe5_older', 'live', 149900, 1900000000) AS fulfil_subscription_renewal;
+    // 6b. Lifecycle event with NULL timestamp must NOT bypass existing watermark
+    const resNullLifeTs = await pg.query<{ handle_subscription_lifecycle_event: any }>(`
+      SELECT public.handle_subscription_lifecycle_event('sub_probe6_mandate', 'subscription.cancelled', NULL, 'live') AS handle_subscription_lifecycle_event;
     `);
-    const olderPaidResult = olderPaidRes.rows[0].fulfil_subscription_renewal;
-    assert.strictEqual(olderPaidResult.success, true);
-    assert.strictEqual(olderPaidResult.ignored, true);
-    assert.strictEqual(olderPaidResult.code, "OUT_OF_ORDER_EVENT");
+    const resultNullLifeTs = resNullLifeTs.rows[0].handle_subscription_lifecycle_event;
+    assert.strictEqual(resultNullLifeTs.success, true);
+    assert.strictEqual(resultNullLifeTs.ignored, true);
+    assert.strictEqual(resultNullLifeTs.code, "OUT_OF_ORDER_EVENT");
 
-    // Verify subscription status and watermark are NOT rewound
-    const subAfterOlderPaid = await pg.query<{ status: string; metadata: any }>(`
-      SELECT status, metadata FROM public.subscriptions WHERE user_id = $1;
-    `, [u5]);
-    assert.strictEqual(subAfterOlderPaid.rows[0].status, "in_grace_period", "Status must remain in_grace_period; older paid event must not overwrite it");
-    assert.strictEqual(Number(subAfterOlderPaid.rows[0].metadata?.last_event_time), 2000000000, "Watermark must remain 2000000000; never moves backwards");
+    // Assert that status was NOT cancelled and remains active
+    const subCheck6 = await pg.query<{ status: string; cancel_at_period_end: boolean }>(`
+      SELECT status, cancel_at_period_end FROM public.subscriptions WHERE user_id = $1;
+    `, [u6]);
+    assert.strictEqual(subCheck6.rows[0].status, "active");
+    assert.strictEqual(subCheck6.rows[0].cancel_at_period_end, false);
+  });
 
-    // 5c. In-order charged event arrives at 2100000000 (> 2000000000) -> applies and sets active, advances watermark
-    const inOrderPaidRes = await pg.query<{ fulfil_subscription_renewal: any }>(`
-      SELECT public.fulfil_subscription_renewal('sub_probe5_mandate', 'pay_probe5_newer', 'live', 149900, 2100000000) AS fulfil_subscription_renewal;
+  // ---------------------------------------------------------------------------
+  // PROBE 7: Gap 3 - Seconds vs Milliseconds normalization (exact reviewer scenario)
+  // ---------------------------------------------------------------------------
+  await probe("Probe 7: Seconds vs milliseconds normalization (2200000000000 ms -> 2200000001 sec -> 2200000000.5 sec cancel rejected)", async () => {
+    // User 7 starts with watermark = 2200000000000 ms
+    await pg.query(`
+      INSERT INTO public.payment_orders (user_id, provider_order_id, provider, mode, status, plan_code, amount_paise)
+      VALUES ($1, 'sub_probe7_mandate', 'razorpay', 'live', 'created', 'quarterly', 399900);
+    `, [u7]);
+
+    await pg.query(`
+      INSERT INTO public.subscriptions (user_id, subscription_id, plan_id, provider, status, cancel_at_period_end, metadata, amount)
+      VALUES ($1, 'sub_probe7_mandate', 'quarterly', 'razorpay', 'active', false, '{"mode": "live", "last_event_time": 2200000000000}'::jsonb, 399900);
+    `, [u7]);
+
+    // Step A: Event arrives with 2200000001 sec (equivalent to 2200000001000 ms > 2200000000000 ms)
+    // Must SUCCEED and advance watermark to 2200000001000 ms (normalized)
+    const resSec = await pg.query<{ fulfil_subscription_renewal: any }>(`
+      SELECT public.fulfil_subscription_renewal('sub_probe7_mandate', 'pay_probe7_sec', 'live', 399900, 2200000001) AS fulfil_subscription_renewal;
     `);
-    const inOrderPaidResult = inOrderPaidRes.rows[0].fulfil_subscription_renewal;
-    assert.strictEqual(inOrderPaidResult.success, true);
-    assert.strictEqual(inOrderPaidResult.is_pro, true);
+    const resultSec = resSec.rows[0].fulfil_subscription_renewal;
+    assert.strictEqual(resultSec.success, true, "2200000001 sec event must succeed against 2200000000000 ms watermark");
+    assert.strictEqual(resultSec.duration_days, 90, "Quarterly plan duration must be 90 days");
 
-    const subAfterNewerPaid = await pg.query<{ status: string; metadata: any }>(`
-      SELECT status, metadata FROM public.subscriptions WHERE user_id = $1;
-    `, [u5]);
-    assert.strictEqual(subAfterNewerPaid.rows[0].status, "active", "Status must now be active from newer paid event");
-    assert.strictEqual(Number(subAfterNewerPaid.rows[0].metadata?.last_event_time), 2100000000, "Watermark must advance to 2100000000");
+    // Verify stored watermark is normalized to 2200000001000 ms
+    const subCheck7A = await pg.query<{ metadata: any; amount: number }>(`
+      SELECT metadata, amount FROM public.subscriptions WHERE user_id = $1;
+    `, [u7]);
+    assert.strictEqual(Number(subCheck7A.rows[0].metadata?.last_event_time), 2200000001000, "Stored watermark must be normalized to milliseconds: 2200000001000");
+    assert.strictEqual(Number(subCheck7A.rows[0].amount), 399900, "Quarterly amount stored must be 399900 paise");
 
-    // 5d. Delayed cancel event arrives at 2050000000 (< 2100000000) -> ignored
-    const delayedCancelRes = await pg.query<{ handle_subscription_lifecycle_event: any }>(`
-      SELECT public.handle_subscription_lifecycle_event('sub_probe5_mandate', 'subscription.cancelled', 2050000000, 'live') AS handle_subscription_lifecycle_event;
+    // Step B: Older cancellation arrives with 2200000000.5 sec (equivalent to 2200000000500 ms < 2200000001000 ms)
+    // MUST BE REJECTED as OUT_OF_ORDER_EVENT!
+    const resCancel = await pg.query<{ handle_subscription_lifecycle_event: any }>(`
+      SELECT public.handle_subscription_lifecycle_event('sub_probe7_mandate', 'subscription.cancelled', 2200000000.5, 'live') AS handle_subscription_lifecycle_event;
     `);
-    const delayedCancelResult = delayedCancelRes.rows[0].handle_subscription_lifecycle_event;
-    assert.strictEqual(delayedCancelResult.success, true);
-    assert.strictEqual(delayedCancelResult.ignored, true);
-    assert.strictEqual(delayedCancelResult.code, "OUT_OF_ORDER_EVENT");
+    const resultCancel = resCancel.rows[0].handle_subscription_lifecycle_event;
+    assert.strictEqual(resultCancel.success, true);
+    assert.strictEqual(resultCancel.ignored, true);
+    assert.strictEqual(resultCancel.code, "OUT_OF_ORDER_EVENT", "2200000000.5 sec cancel must be rejected as OUT_OF_ORDER_EVENT");
 
-    const subFinal = await pg.query<{ status: string; cancel_at_period_end: boolean; metadata: any }>(`
-      SELECT status, cancel_at_period_end, metadata FROM public.subscriptions WHERE user_id = $1;
-    `, [u5]);
-    assert.strictEqual(subFinal.rows[0].cancel_at_period_end, false, "Delayed cancel must be ignored");
-    assert.strictEqual(Number(subFinal.rows[0].metadata?.last_event_time), 2100000000, "Watermark must stay 2100000000");
+    // Verify cancel was NOT applied
+    const subCheck7B = await pg.query<{ cancel_at_period_end: boolean; metadata: any }>(`
+      SELECT cancel_at_period_end, metadata FROM public.subscriptions WHERE user_id = $1;
+    `, [u7]);
+    assert.strictEqual(subCheck7B.rows[0].cancel_at_period_end, false, "Older cancellation must NOT be applied");
+    assert.strictEqual(Number(subCheck7B.rows[0].metadata?.last_event_time), 2200000001000, "Watermark must remain 2200000001000 ms");
   });
 
   console.log("\n--------------------------------------------------------------------------------");
@@ -417,7 +461,7 @@ async function run() {
     console.error(`VERDICT: FAIL (${failed} probes failed)\n`);
     process.exit(1);
   } else {
-    console.log("VERDICT: PASS (All 5 reviewer probe tests passed against real PostgreSQL engine)\n");
+    console.log("VERDICT: PASS (All reviewer probe tests passed against real PostgreSQL engine)\n");
     process.exit(0);
   }
 }

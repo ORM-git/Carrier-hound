@@ -8614,7 +8614,9 @@ COMMIT;
 --   2. Guarded additive DDL: ensures payment_orders.metadata exists in the real schema.
 --   3. Strict pre-flight checks: validates required tables and columns before defining functions.
 --   4. Deadlock prevention: enforces advisory lock on user first, then row lock everywhere.
---   5. Fail-closed rebind and monotonic watermark (greatest()) across paid and lifecycle events.
+--   5. Fail-closed rebind and monotonic watermark (normalized ms, greatest()) across paid and lifecycle events.
+--   6. Strict mode check: stored mode unknown fails closed against live expected mode.
+--   7. Timestamp gap guard: missing/NULL event timestamp cannot bypass existing watermark.
 -- ============================================================================
 
 BEGIN;
@@ -8866,8 +8868,18 @@ BEGIN
   END IF;
 
   -- 7. Mode Isolation Check
+  -- Gap 2: NULL stored payment mode (order mode + subscription metadata both NULL)
+  -- must NOT grant a live entitlement when p_expected_mode = live. Fail closed!
   v_mode := COALESCE(v_order.mode, v_sub.metadata->>'mode');
-  IF v_mode IS NOT NULL AND v_mode <> p_expected_mode THEN
+  IF v_mode IS NULL OR trim(v_mode) = '' THEN
+    IF p_expected_mode = 'live' THEN
+      RETURN jsonb_build_object(
+        'success', false,
+        'code', 'MODE_UNKNOWN',
+        'error', 'Stored payment mode is missing or unknown; cannot grant live entitlement'
+      );
+    END IF;
+  ELSIF v_mode <> p_expected_mode THEN
     RETURN jsonb_build_object(
       'success', false,
       'code', 'MODE_MISMATCH',
@@ -8941,15 +8953,34 @@ BEGIN
   END IF;
 
   -- 11. Watermark & Event ordering check: apply ordering check to paid events too
-  IF v_has_sub AND p_event_timestamp IS NOT NULL AND p_event_timestamp > 0 THEN
+  -- Gap 1: Missing/NULL event timestamp must NOT bypass the ordering check when a newer watermark exists.
+  -- Gap 3: Normalize event timestamps to milliseconds BEFORE comparison and greatest() storage.
+  IF v_has_sub THEN
     v_last_event_time := NULL;
     IF v_sub.metadata ? 'last_event_time' AND (v_sub.metadata->>'last_event_time') ~ '^[0-9]+(\.[0-9]+)?$' THEN
       v_last_event_time := (v_sub.metadata->>'last_event_time')::numeric;
     END IF;
 
     IF v_last_event_time IS NOT NULL THEN
-      v_incoming_ms := CASE WHEN p_event_timestamp > 1e11 THEN p_event_timestamp ELSE p_event_timestamp * 1000 END;
-      v_stored_ms := CASE WHEN v_last_event_time > 1e11 THEN v_last_event_time ELSE v_last_event_time * 1000 END;
+      -- Normalize stored watermark to milliseconds
+      v_stored_ms := CASE WHEN v_last_event_time >= 1e11 THEN round(v_last_event_time) ELSE round(v_last_event_time * 1000) END;
+
+      -- If an existing watermark exists, a missing/NULL/zero incoming event timestamp cannot bypass it
+      IF p_event_timestamp IS NULL OR p_event_timestamp <= 0 THEN
+        RETURN jsonb_build_object(
+          'success', true,
+          'ignored', true,
+          'code', 'OUT_OF_ORDER_EVENT',
+          'reason', 'OUT_OF_ORDER_EVENT',
+          'message', format('Missing event timestamp cannot bypass existing watermark %s ms', v_stored_ms),
+          'subscription_id', p_razorpay_subscription_id,
+          'last_event_time', v_stored_ms,
+          'event_timestamp', p_event_timestamp
+        );
+      END IF;
+
+      -- Normalize incoming event timestamp to milliseconds
+      v_incoming_ms := CASE WHEN p_event_timestamp >= 1e11 THEN round(p_event_timestamp) ELSE round(p_event_timestamp * 1000) END;
 
       IF v_incoming_ms < v_stored_ms THEN
         RETURN jsonb_build_object(
@@ -8957,9 +8988,9 @@ BEGIN
           'ignored', true,
           'code', 'OUT_OF_ORDER_EVENT',
           'reason', 'OUT_OF_ORDER_EVENT',
-          'message', format('Paid event timestamp %s is older than stored last event time %s', p_event_timestamp, v_last_event_time),
+          'message', format('Paid event timestamp %s ms is older than stored last event time %s ms', v_incoming_ms, v_stored_ms),
           'subscription_id', p_razorpay_subscription_id,
-          'last_event_time', v_last_event_time,
+          'last_event_time', v_stored_ms,
           'event_timestamp', p_event_timestamp
         );
       END IF;
@@ -9059,7 +9090,7 @@ BEGIN
 
   v_period_start := COALESCE(v_sub.current_period_start, now());
 
-  -- 15. Build updated metadata including monotonic last_event_time (greatest())
+  -- 15. Build updated metadata including monotonic last_event_time (normalized to ms)
   v_new_meta := COALESCE(v_sub.metadata, '{}'::jsonb);
   v_new_meta := jsonb_set(
     v_new_meta,
@@ -9075,12 +9106,13 @@ BEGIN
     v_new_meta := jsonb_set(v_new_meta, '{initial_payment_id}', to_jsonb(p_payment_id), true);
   END IF;
 
-  -- Monotonic watermark: never move last_event_time backwards
+  -- Monotonic watermark: normalize to milliseconds before greatest() storage
   IF p_event_timestamp IS NOT NULL AND p_event_timestamp > 0 THEN
-    IF v_last_event_time IS NOT NULL THEN
-      v_new_meta := jsonb_set(v_new_meta, '{last_event_time}', to_jsonb(greatest(v_last_event_time, p_event_timestamp)), true);
+    v_incoming_ms := CASE WHEN p_event_timestamp >= 1e11 THEN round(p_event_timestamp) ELSE round(p_event_timestamp * 1000) END;
+    IF v_stored_ms IS NOT NULL THEN
+      v_new_meta := jsonb_set(v_new_meta, '{last_event_time}', to_jsonb(greatest(v_stored_ms, v_incoming_ms)), true);
     ELSE
-      v_new_meta := jsonb_set(v_new_meta, '{last_event_time}', to_jsonb(p_event_timestamp), true);
+      v_new_meta := jsonb_set(v_new_meta, '{last_event_time}', to_jsonb(v_incoming_ms), true);
     END IF;
   END IF;
 
@@ -9282,6 +9314,7 @@ BEGIN
   END IF;
 
   -- 7. Mode isolation check
+  -- Gap 2: NULL stored payment mode must NOT grant a live entitlement or process live lifecycle event. Fail closed!
   v_mode := v_sub.metadata->>'mode';
   IF v_mode IS NULL THEN
     SELECT mode INTO v_order_mode
@@ -9292,7 +9325,15 @@ BEGIN
     v_mode := v_order_mode;
   END IF;
 
-  IF v_mode IS NOT NULL AND v_mode <> p_expected_mode THEN
+  IF v_mode IS NULL OR trim(v_mode) = '' THEN
+    IF p_expected_mode = 'live' THEN
+      RETURN jsonb_build_object(
+        'success', false,
+        'code', 'MODE_UNKNOWN',
+        'error', 'Subscription mode is missing or unknown; cannot process live lifecycle event'
+      );
+    END IF;
+  ELSIF v_mode <> p_expected_mode THEN
     RETURN jsonb_build_object(
       'success', false,
       'code', 'MODE_MISMATCH',
@@ -9310,38 +9351,53 @@ BEGIN
   END IF;
 
   -- 9. Lifecycle ordering: Durable provider last-event timestamp check
-  IF p_event_timestamp IS NOT NULL AND p_event_timestamp > 0 THEN
-    v_last_event_time := NULL;
-    IF v_sub.metadata ? 'last_event_time' AND (v_sub.metadata->>'last_event_time') ~ '^[0-9]+(\.[0-9]+)?$' THEN
-      v_last_event_time := (v_sub.metadata->>'last_event_time')::numeric;
+  -- Gap 1: Missing/NULL event timestamp must NOT bypass the ordering check when a newer watermark exists.
+  -- Gap 3: Normalize event timestamps to milliseconds BEFORE comparison and greatest() storage.
+  v_last_event_time := NULL;
+  IF v_sub.metadata ? 'last_event_time' AND (v_sub.metadata->>'last_event_time') ~ '^[0-9]+(\.[0-9]+)?$' THEN
+    v_last_event_time := (v_sub.metadata->>'last_event_time')::numeric;
+  END IF;
+
+  IF v_last_event_time IS NOT NULL THEN
+    v_stored_ms := CASE WHEN v_last_event_time >= 1e11 THEN round(v_last_event_time) ELSE round(v_last_event_time * 1000) END;
+
+    IF p_event_timestamp IS NULL OR p_event_timestamp <= 0 THEN
+      RETURN jsonb_build_object(
+        'success', true,
+        'ignored', true,
+        'code', 'OUT_OF_ORDER_EVENT',
+        'reason', 'OUT_OF_ORDER_EVENT',
+        'message', format('Missing event timestamp cannot bypass existing watermark %s ms', v_stored_ms),
+        'subscription_id', p_razorpay_subscription_id,
+        'last_event_time', v_stored_ms,
+        'event_timestamp', p_event_timestamp
+      );
     END IF;
 
-    IF v_last_event_time IS NOT NULL THEN
-      v_incoming_ms := CASE WHEN p_event_timestamp > 1e11 THEN p_event_timestamp ELSE p_event_timestamp * 1000 END;
-      v_stored_ms := CASE WHEN v_last_event_time > 1e11 THEN v_last_event_time ELSE v_last_event_time * 1000 END;
+    v_incoming_ms := CASE WHEN p_event_timestamp >= 1e11 THEN round(p_event_timestamp) ELSE round(p_event_timestamp * 1000) END;
 
-      IF v_incoming_ms < v_stored_ms THEN
-        RETURN jsonb_build_object(
-          'success', true,
-          'ignored', true,
-          'code', 'OUT_OF_ORDER_EVENT',
-          'reason', 'OUT_OF_ORDER_EVENT',
-          'message', format('Event timestamp %s is older than stored last event time %s', p_event_timestamp, v_last_event_time),
-          'subscription_id', p_razorpay_subscription_id,
-          'last_event_time', v_last_event_time,
-          'event_timestamp', p_event_timestamp
-        );
-      END IF;
+    IF v_incoming_ms < v_stored_ms THEN
+      RETURN jsonb_build_object(
+        'success', true,
+        'ignored', true,
+        'code', 'OUT_OF_ORDER_EVENT',
+        'reason', 'OUT_OF_ORDER_EVENT',
+        'message', format('Event timestamp %s ms is older than stored last event time %s ms', v_incoming_ms, v_stored_ms),
+        'subscription_id', p_razorpay_subscription_id,
+        'last_event_time', v_stored_ms,
+        'event_timestamp', p_event_timestamp
+      );
     END IF;
   END IF;
 
-  -- 10. Atomic DB transition with monotonic watermark (greatest())
+  -- 10. Atomic DB transition with monotonic watermark (normalized ms stored)
   v_new_meta := COALESCE(v_sub.metadata, '{}'::jsonb);
   IF p_event_timestamp IS NOT NULL AND p_event_timestamp > 0 THEN
-    IF v_last_event_time IS NOT NULL THEN
-      v_new_meta := jsonb_set(v_new_meta, '{last_event_time}', to_jsonb(greatest(v_last_event_time, p_event_timestamp)), true);
+    v_incoming_ms := CASE WHEN p_event_timestamp >= 1e11 THEN round(p_event_timestamp) ELSE round(p_event_timestamp * 1000) END;
+    IF v_stored_ms IS NOT NULL THEN
+      v_new_meta := jsonb_set(v_new_meta, '{last_event_time}', to_jsonb(greatest(v_stored_ms, v_incoming_ms)), true);
     ELSE
-      v_new_meta := jsonb_set(v_new_meta, '{last_event_time}', to_jsonb(p_event_timestamp), true);
+      v_new_meta := jsonb_set(v_new_meta, '{last_event_time}', to_jsonb(v_incoming_ms), true);
     END IF;
   END IF;
   v_new_meta := jsonb_set(v_new_meta, '{last_lifecycle_event}', to_jsonb(p_event_type), true);

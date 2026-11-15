@@ -517,6 +517,9 @@ export async function POST(req: Request) {
             : renewalRes?.code === "USER_BANNED"
               ? 403
               : renewalRes?.code === "MODE_MISMATCH" ||
+                  renewalRes?.code === "MODE_UNKNOWN" ||
+                  renewalRes?.code === "INVALID_EXPECTED_MODE" ||
+                  renewalRes?.code === "INVALID_PAYMENT_AMOUNT" ||
                   renewalRes?.code === "INVALID_PROVIDER" ||
                   renewalRes?.code === "MISSING_PAYMENT_ID" ||
                   renewalRes?.code === "PLAN_AMOUNT_MISMATCH" ||
@@ -688,6 +691,8 @@ export async function POST(req: Request) {
           lifecycleRes?.code === "USER_BANNED"
             ? 403
             : lifecycleRes?.code === "MODE_MISMATCH" ||
+                lifecycleRes?.code === "MODE_UNKNOWN" ||
+                lifecycleRes?.code === "INVALID_EXPECTED_MODE" ||
                 lifecycleRes?.code === "INVALID_PROVIDER" ||
                 lifecycleRes?.code === "INVALID_EVENT_TYPE" ||
                 lifecycleRes?.code === "INVALID_SUBSCRIPTION_ID"

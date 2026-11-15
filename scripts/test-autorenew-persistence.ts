@@ -307,9 +307,17 @@ class PostgresState {
       return { success: false, code: "INVALID_PROVIDER", error: "Only razorpay subscription orders can be fulfilled" };
     }
 
-    // 7. Mode Isolation Check
-    const v_mode = v_order?.mode || v_sub?.metadata?.mode || "live";
-    if (v_mode !== p_expected_mode) {
+    // 7. Mode Isolation Check (Gap 2: NULL stored mode fails closed on live mode)
+    const v_mode = v_order?.mode || v_sub?.metadata?.mode;
+    if (!v_mode || !v_mode.trim()) {
+      if (p_expected_mode === "live") {
+        return {
+          success: false,
+          code: "MODE_UNKNOWN",
+          error: "Stored payment mode is missing or unknown; cannot grant live entitlement",
+        };
+      }
+    } else if (v_mode !== p_expected_mode) {
       return {
         success: false,
         code: "MODE_MISMATCH",
@@ -365,21 +373,34 @@ class PostgresState {
       }
     }
 
-    // 9c. Watermark Ordering Check on Paid Events (never move backwards)
-    if (v_has_sub && nowMs > 0) {
+    // 9c. Watermark Ordering Check on Paid Events (Gap 1 & 3: normalized ms, cannot bypass existing)
+    let v_stored_ms: number | undefined;
+    if (v_has_sub) {
       const storedLast = v_sub?.metadata?.last_event_time;
       if (storedLast !== undefined && typeof storedLast === "number") {
-        const incomingMs = nowMs > 1e11 ? nowMs : nowMs * 1000;
-        const storedMs = storedLast > 1e11 ? storedLast : storedLast * 1000;
-        if (incomingMs < storedMs) {
+        v_stored_ms = storedLast >= 1e11 ? Math.round(storedLast) : Math.round(storedLast * 1000);
+        if (nowMs === null || nowMs === undefined || nowMs <= 0) {
           return {
             success: true,
             ignored: true,
             code: "OUT_OF_ORDER_EVENT",
             reason: "OUT_OF_ORDER_EVENT",
-            message: `Paid event timestamp ${nowMs} is older than stored last event time ${storedLast}`,
+            message: `Missing event timestamp cannot bypass existing watermark ${v_stored_ms}`,
             subscription_id: p_razorpay_subscription_id,
-            last_event_time: storedLast,
+            last_event_time: v_stored_ms,
+            event_timestamp: nowMs,
+          };
+        }
+        const incomingMs = nowMs >= 1e11 ? Math.round(nowMs) : Math.round(nowMs * 1000);
+        if (incomingMs < v_stored_ms) {
+          return {
+            success: true,
+            ignored: true,
+            code: "OUT_OF_ORDER_EVENT",
+            reason: "OUT_OF_ORDER_EVENT",
+            message: `Paid event timestamp ${incomingMs} is older than stored last event time ${v_stored_ms}`,
+            subscription_id: p_razorpay_subscription_id,
+            last_event_time: v_stored_ms,
             event_timestamp: nowMs,
           };
         }
@@ -464,15 +485,20 @@ class PostgresState {
     const v_period_start = v_sub?.current_period_start || new Date(nowMs).toISOString();
 
     // 13. Build updated metadata
+    const incomingNormMs = nowMs && nowMs > 0 ? (nowMs >= 1e11 ? Math.round(nowMs) : Math.round(nowMs * 1000)) : undefined;
+    const finalWatermark = incomingNormMs !== undefined
+      ? (v_stored_ms !== undefined ? Math.max(v_stored_ms, incomingNormMs) : incomingNormMs)
+      : v_stored_ms;
+
     const v_new_meta = {
       ...(v_sub?.metadata || {}),
       processed_payments: [...v_processed_payments, p_payment_id],
       last_payment_id: p_payment_id,
       last_renewal_payment_id: p_payment_id,
-      last_paid_at: new Date(nowMs).toISOString(),
+      last_paid_at: new Date(nowMs || Date.now()).toISOString(),
       razorpay_subscription_id: p_razorpay_subscription_id,
       initial_payment_id: v_sub?.metadata?.initial_payment_id || p_payment_id,
-      last_event_time: v_sub?.metadata?.last_event_time ? Math.max(v_sub.metadata.last_event_time, nowMs) : nowMs,
+      ...(finalWatermark !== undefined ? { last_event_time: finalWatermark } : {}),
     };
 
     // 14. Upsert/Update subscriptions row
@@ -562,8 +588,16 @@ class PostgresState {
       return { success: false, code: "USER_BANNED", error: "Account is suspended" };
     }
 
-    const mode = targetSub.metadata?.mode || "live";
-    if (mode !== p_expected_mode) {
+    const mode = targetSub.metadata?.mode;
+    if (!mode || !mode.trim()) {
+      if (p_expected_mode === "live") {
+        return {
+          success: false,
+          code: "MODE_UNKNOWN",
+          error: "Subscription mode is missing or unknown; cannot process live lifecycle event",
+        };
+      }
+    } else if (mode !== p_expected_mode) {
       return { success: false, code: "MODE_MISMATCH", error: `Subscription mode does not match expected mode` };
     }
 
@@ -571,26 +605,34 @@ class PostgresState {
       return { success: true, test_mode: true, message: "Test mode subscription event acknowledged" };
     }
 
-    // Durable provider last-event timestamp check
-    if (p_event_timestamp !== null && p_event_timestamp > 0) {
-      const lastTime = targetSub.metadata?.last_event_time;
-      if (typeof lastTime === "number") {
-        const incomingMs = p_event_timestamp > 1e11 ? p_event_timestamp : p_event_timestamp * 1000;
-        const storedMs = lastTime > 1e11 ? lastTime : lastTime * 1000;
-        if (incomingMs < storedMs) {
-          return {
-            success: true,
-            ignored: true,
-            reason: "OUT_OF_ORDER_EVENT",
-            message: `Event timestamp is older than stored last event time`,
-          };
-        }
+    // Durable provider last-event timestamp check (Gap 1 & 3: normalized ms, cannot bypass existing)
+    let storedMs: number | undefined;
+    const lastTime = targetSub.metadata?.last_event_time;
+    if (typeof lastTime === "number") {
+      storedMs = lastTime >= 1e11 ? Math.round(lastTime) : Math.round(lastTime * 1000);
+      if (p_event_timestamp === null || p_event_timestamp === undefined || p_event_timestamp <= 0) {
+        return {
+          success: true,
+          ignored: true,
+          reason: "OUT_OF_ORDER_EVENT",
+          message: `Missing event timestamp cannot bypass existing watermark ${storedMs}`,
+        };
+      }
+      const incomingMs = p_event_timestamp >= 1e11 ? Math.round(p_event_timestamp) : Math.round(p_event_timestamp * 1000);
+      if (incomingMs < storedMs) {
+        return {
+          success: true,
+          ignored: true,
+          reason: "OUT_OF_ORDER_EVENT",
+          message: `Event timestamp is older than stored last event time`,
+        };
       }
     }
 
     targetSub.metadata = targetSub.metadata || {};
     if (p_event_timestamp !== null && p_event_timestamp > 0) {
-      targetSub.metadata.last_event_time = p_event_timestamp;
+      const incomingMs = p_event_timestamp >= 1e11 ? Math.round(p_event_timestamp) : Math.round(p_event_timestamp * 1000);
+      targetSub.metadata.last_event_time = storedMs !== undefined ? Math.max(storedMs, incomingMs) : incomingMs;
     }
 
     if (p_event_type === "subscription.pending") {
@@ -842,7 +884,7 @@ async function functionalChecks() {
       provider: "razorpay",
       status: "active",
       current_period_end: futureEnd,
-      metadata: { processed_payments: ["pay_old"] },
+      metadata: { mode: "live", processed_payments: ["pay_old"] },
     });
 
     const res = db.fulfil_subscription_renewal("sub_mandate_prepaid", "pay_new_cycle", "live", 149900, now);
@@ -867,7 +909,7 @@ async function functionalChecks() {
       provider: "razorpay",
       status: "past_due",
       current_period_end: pastEnd,
-      metadata: { processed_payments: ["pay_old"] },
+      metadata: { mode: "live", processed_payments: ["pay_old"] },
     });
 
     const res = db.fulfil_subscription_renewal("sub_mandate_expired", "pay_reactivate", "live", 69200, now);
@@ -1002,7 +1044,150 @@ async function functionalChecks() {
     assert.strictEqual(resNew.success, true);
     assert.strictEqual(resNew.applied, true);
     assert.strictEqual(sub?.cancel_at_period_end, true);
-    assert.strictEqual(sub?.metadata?.last_event_time, 1700000600);
+    assert.strictEqual(sub?.metadata?.last_event_time, 1700000600000);
+  });
+
+  await check("2.17 NULL stored payment mode fails closed on live mode with MODE_UNKNOWN", () => {
+    const db = new PostgresState();
+    db.orders.set("sub_null_mode", {
+      id: "ord_null_mode",
+      provider_order_id: "sub_null_mode",
+      user_id: "usr_null_mode",
+      provider: "razorpay",
+      mode: undefined, // NULL mode
+      status: "created",
+      amount_paise: 149900,
+      plan_code: "monthly",
+    });
+
+    const res = db.fulfil_subscription_renewal("sub_null_mode", "pay_null_mode", "live", 149900);
+    assert.strictEqual(res.success, false);
+    assert.strictEqual(res.code, "MODE_UNKNOWN");
+
+    // Setting mode to 'live' allows fulfillment
+    db.orders.get("sub_null_mode")!.mode = "live";
+    const resOk = db.fulfil_subscription_renewal("sub_null_mode", "pay_live_mode", "live", 149900);
+    assert.strictEqual(resOk.success, true);
+  });
+
+  await check("2.18 Missing/NULL event timestamp cannot bypass existing watermark", () => {
+    const db = new PostgresState();
+    db.subs.set("usr_watermark_guard", {
+      id: "sub_wm_row",
+      user_id: "usr_watermark_guard",
+      subscription_id: "sub_wm_mandate",
+      plan_id: "weekly",
+      provider: "razorpay",
+      status: "active",
+      cancel_at_period_end: false,
+      metadata: { mode: "live", last_event_time: 1700000500000 },
+    });
+
+    // Event with null timestamp against existing watermark must be ignored
+    const resNullTs = db.fulfil_subscription_renewal("sub_wm_mandate", "pay_wm_null", "live", 69200, null as any);
+    assert.strictEqual(resNullTs.success, true);
+    assert.strictEqual(resNullTs.ignored, true);
+    assert.strictEqual(resNullTs.code, "OUT_OF_ORDER_EVENT");
+
+    const resNullLife = db.handle_subscription_lifecycle_event("sub_wm_mandate", "subscription.cancelled", null);
+    assert.strictEqual(resNullLife.success, true);
+    assert.strictEqual(resNullLife.ignored, true);
+    assert.strictEqual(resNullLife.reason, "OUT_OF_ORDER_EVENT");
+
+    // Subscription remains unchanged
+    assert.strictEqual(db.subs.get("usr_watermark_guard")?.cancel_at_period_end, false);
+    assert.strictEqual(db.subs.get("usr_watermark_guard")?.metadata?.last_event_time, 1700000500000);
+  });
+
+  await check("2.19 Seconds vs milliseconds normalization (2200000000000 ms -> 2200000001 sec -> 2200000000.5 sec cancel rejected)", () => {
+    const db = new PostgresState();
+    db.subs.set("usr_norm_test", {
+      id: "sub_norm_row",
+      user_id: "usr_norm_test",
+      subscription_id: "sub_norm_mandate",
+      plan_id: "quarterly",
+      provider: "razorpay",
+      status: "active",
+      cancel_at_period_end: false,
+      metadata: { mode: "live", last_event_time: 2200000000000 },
+    });
+
+    db.orders.set("sub_norm_mandate", {
+      id: "ord_norm",
+      provider_order_id: "sub_norm_mandate",
+      user_id: "usr_norm_test",
+      provider: "razorpay",
+      mode: "live",
+      status: "created",
+      amount_paise: 399900,
+      plan_code: "quarterly",
+    });
+
+    // Step A: 2200000001 sec event advances watermark to 2200000001000 ms
+    const resA = db.fulfil_subscription_renewal("sub_norm_mandate", "pay_norm_sec", "live", 399900, 2200000001);
+    assert.strictEqual(resA.success, true);
+    assert.strictEqual(resA.duration_days, 90);
+    assert.strictEqual(db.subs.get("usr_norm_test")?.metadata?.last_event_time, 2200000001000);
+
+    // Step B: 2200000000.5 sec older cancellation must be rejected as OUT_OF_ORDER_EVENT
+    const resB = db.handle_subscription_lifecycle_event("sub_norm_mandate", "subscription.cancelled", 2200000000.5);
+    assert.strictEqual(resB.success, true);
+    assert.strictEqual(resB.ignored, true);
+    assert.strictEqual(resB.reason, "OUT_OF_ORDER_EVENT");
+
+    // Cancel must NOT have applied
+    assert.strictEqual(db.subs.get("usr_norm_test")?.cancel_at_period_end, false);
+    assert.strictEqual(db.subs.get("usr_norm_test")?.metadata?.last_event_time, 2200000001000);
+  });
+
+  await check("2.20 Razorpay subscription period/schedule reconciliation (weekly 7d / monthly 30d / quarterly 90d)", () => {
+    const db = new PostgresState();
+    const now = 1700000000000;
+
+    // Weekly: 7 days
+    db.orders.set("sub_rec_w", {
+      id: "ord_w",
+      provider_order_id: "sub_rec_w",
+      user_id: "usr_rec_w",
+      provider: "razorpay",
+      mode: "live",
+      status: "created",
+      amount_paise: 69200,
+      plan_code: "weekly",
+    });
+    const resW = db.fulfil_subscription_renewal("sub_rec_w", "pay_w", "live", 69200, now);
+    assert.strictEqual(resW.duration_days, 7);
+    assert.strictEqual(db.subs.get("usr_rec_w")?.amount, 69200);
+
+    // Monthly: 30 days
+    db.orders.set("sub_rec_m", {
+      id: "ord_m",
+      provider_order_id: "sub_rec_m",
+      user_id: "usr_rec_m",
+      provider: "razorpay",
+      mode: "live",
+      status: "created",
+      amount_paise: 149900,
+      plan_code: "monthly",
+    });
+    const resM = db.fulfil_subscription_renewal("sub_rec_m", "pay_m", "live", 149900, now);
+    assert.strictEqual(resM.duration_days, 30);
+    assert.strictEqual(db.subs.get("usr_rec_m")?.amount, 149900);
+
+    // Quarterly: 90 days
+    db.orders.set("sub_rec_q", {
+      id: "ord_q",
+      provider_order_id: "sub_rec_q",
+      user_id: "usr_rec_q",
+      provider: "razorpay",
+      mode: "live",
+      status: "created",
+      amount_paise: 399900,
+      plan_code: "quarterly",
+    });
+    const resQ = db.fulfil_subscription_renewal("sub_rec_q", "pay_q", "live", 399900, now);
+    assert.strictEqual(resQ.duration_days, 90);
+    assert.strictEqual(db.subs.get("usr_rec_q")?.amount, 399900);
   });
 }
 
