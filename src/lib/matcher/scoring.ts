@@ -54,6 +54,8 @@ export const GENUINE_SKILL_ALIASES: Record<string, string[]> = {
   css: ["css", "css3"],
   tailwind: ["tailwind", "tailwind css", "tailwindcss"],
   sass: ["sass", "scss"],
+  r: ["r", "r programming", "rstats", "r-project"],
+  c: ["c", "c language"],
 };
 
 export function getCanonicalSkillId(skill: string): string | null {
@@ -83,6 +85,57 @@ export function areSkillsGenuineMatch(skillA: string, skillB: string): boolean {
   if (aCanon && bCanon) {
     return aCanon === bCanon;
   }
+  return false;
+}
+
+export function isExactTechMatch(skillA: string, skillB: string): boolean {
+  return areSkillsGenuineMatch(skillA, skillB);
+}
+
+/**
+ * Checks whether a tech keyword exists in a text block using custom word boundaries
+ * that respect symbols (+, #, ., /) and prevents false substring matches
+ * (e.g., "Java" in "JavaScript", "Go" in "MongoDB", "R" in "React").
+ */
+export function isKeywordInText(keyword: string, text: string): boolean {
+  if (!keyword || !text) return false;
+  const cleanKw = keyword.trim().toLowerCase();
+  if (!cleanKw) return false;
+
+  const canon = getCanonicalSkillId(cleanKw);
+  const aliases = canon && GENUINE_SKILL_ALIASES[canon]
+    ? GENUINE_SKILL_ALIASES[canon]
+    : [cleanKw];
+
+  const lowerText = text.toLowerCase();
+
+  for (const alias of aliases) {
+    const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    // Boundary: not preceded by a-z0-9+#, not followed by a-z0-9+#
+    const regex = new RegExp(`(^|[^a-z0-9+#])${escaped}([^a-z0-9+#]|$)`, "i");
+
+    if (regex.test(lowerText)) {
+      if (canon === "java" || alias === "java") {
+        const textWithoutJs = lowerText.replace(/java[\s\-_]?script/gi, " ");
+        if (regex.test(textWithoutJs)) return true;
+      } else if (canon === "react" || alias === "react") {
+        const textWithoutRn = lowerText.replace(/react[\s\-_]?native/gi, " ");
+        if (regex.test(textWithoutRn)) return true;
+      } else if (canon === "c" || alias === "c") {
+        const textWithoutCppOrCs = lowerText.replace(/c(\+\+|#)/gi, " ");
+        if (regex.test(textWithoutCppOrCs)) return true;
+      } else if (canon === "golang" || alias === "go") {
+        // "go" boundary check prevents matching inside "mongodb" or "google"
+        if (regex.test(lowerText)) return true;
+      } else if (canon === "r" || alias === "r") {
+        const textWithoutReact = lowerText.replace(/react/gi, " ");
+        if (regex.test(textWithoutReact)) return true;
+      } else {
+        return true;
+      }
+    }
+  }
+
   return false;
 }
 

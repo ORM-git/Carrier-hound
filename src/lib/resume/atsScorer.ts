@@ -1,5 +1,10 @@
 import { CandidateProfile } from "./types";
-import { extractSkillsFromJob, normalizeSkillToTokens } from "../matcher/scoring";
+import {
+  extractSkillsFromJob,
+  normalizeSkillToTokens,
+  isKeywordInText,
+  isExactTechMatch,
+} from "../matcher/scoring";
 import { SKILLS_TAXONOMY } from "./parser";
 
 export interface AtsScoringResult {
@@ -315,31 +320,6 @@ export function extractJdKeywords(job: {
 }
 
 /**
- * Checks whether a keyword exists in the candidate's searchable text blob.
- */
-function isKeywordInText(keyword: string, text: string): boolean {
-  const cleanKw = keyword.toLowerCase().trim();
-  if (!cleanKw) return false;
-
-  // Exact word boundary or clean substring
-  const escaped = cleanKw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const regex = new RegExp(`\\b${escaped}\\b`, "i");
-  if (regex.test(text)) return true;
-
-  // Check token normalization aliases
-  const { tokens } = normalizeSkillToTokens(cleanKw);
-  for (const token of Array.from(tokens)) {
-    if (token.length > 2) {
-      const tokenEscaped = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const tokenRegex = new RegExp(`\\b${tokenEscaped}\\b`, "i");
-      if (tokenRegex.test(text)) return true;
-    }
-  }
-
-  return false;
-}
-
-/**
  * Calculates ATS score against a specific job's description and requirements.
  * Score = (matched keywords / total JD keywords) * 60% + skills coverage * 25% + title/summary alignment * 15%.
  */
@@ -471,11 +451,8 @@ function getSkillRoleScore(skill: string, domain: JobDomain, jdKeywords: string[
   const lower = skill.toLowerCase();
   let score = 0;
 
-  // Direct match against JD keywords or title terms
-  if (jdKeywords.some((kw) => {
-    const kwLower = kw.toLowerCase();
-    return kwLower === lower || lower.includes(kwLower) || kwLower.includes(lower);
-  })) {
+  // Direct match against JD keywords or title terms using token/alias-aware matching
+  if (jdKeywords.some((kw) => isExactTechMatch(kw, skill) || isKeywordInText(kw, skill))) {
     score += 100;
   }
 
@@ -601,7 +578,7 @@ export function tailorProfileForJobWithAts(
     });
 
     const tailoredBullets = sortedBullets.map((bullet, bIdx) => {
-      if (expIdx === 0 && bIdx === 0) {
+      if (job.category && expIdx === 0 && bIdx === 0) {
         if (domain === "backend" && !bullet.toLowerCase().includes("backend")) {
           return `${bullet.replace(/\.$/, "")}, maintaining resilient backend performance standards.`;
         }
@@ -623,8 +600,12 @@ export function tailorProfileForJobWithAts(
 
   // 3. Role-Targeted Profile Presentation (CareerOps Engine)
   const topRoleSkills = prioritizedSkills.slice(0, 3);
-  const currentHeadline = `${job.title} • ${topRoleSkills.join(" • ")}`;
-  const currentSummary = generateRoleSummary(job, domain, prioritizedSkills);
+  const currentHeadline = job.category
+    ? `${job.title} • ${topRoleSkills.join(" • ")}`
+    : baseProfile.headline;
+  const currentSummary = job.category
+    ? generateRoleSummary(job, domain, prioritizedSkills)
+    : baseProfile.summary;
 
   const currentCandidate: CandidateProfile = {
     ...baseProfile,

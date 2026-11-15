@@ -5,6 +5,8 @@ import {
   GENUINE_SKILL_ALIASES,
   getCanonicalSkillId,
   areSkillsGenuineMatch,
+  isKeywordInText,
+  isExactTechMatch,
 } from "../matcher/scoring";
 import { stripControlChars, stripHtmlAndExecutableMarkup } from "../security/xss";
 import { countTokens, trimTextToTokens } from "./tokenBudget";
@@ -1094,13 +1096,12 @@ export function validateTailoredResumeOutput(
       if (typeof kw !== "string" || !kw.trim()) continue;
       const cleanKw = stripHtmlAndExecutableMarkup(kw.trim());
       if (!cleanKw) continue;
-      const kwLower = cleanKw.toLowerCase();
 
-      // Must appear in BOTH candidate data AND job description
+      // Must appear in BOTH candidate data AND job description using token/alias-aware matching
       const inCandidate =
-        candidateFullText.includes(kwLower) ||
-        (candidate.skills || []).some((cs) => areSkillsGenuineMatch(cs, kwLower));
-      const inJob = jobFullText.includes(kwLower);
+        isKeywordInText(cleanKw, candidateFullText) ||
+        (candidate.skills || []).some((cs) => isExactTechMatch(cs, cleanKw));
+      const inJob = isKeywordInText(cleanKw, jobFullText);
 
       if (inCandidate && inJob) {
         kept.push(cleanKw);
@@ -1116,11 +1117,45 @@ export function validateTailoredResumeOutput(
     if (!Array.isArray(parsed.unmatchedRequirements)) {
       return { ok: false, error: "AI output rejected: 'unmatchedRequirements' must be an array of strings." };
     }
+    const jobFullText = [job?.title, job?.company, job?.description]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    const candidateFullText = [
+      candidate.headline,
+      candidate.summary,
+      ...(candidate.skills || []),
+      ...(candidate.experience || []).flatMap((e) => [e?.role, e?.company, ...(e?.bullets || [])]),
+      ...(candidate.education || []).flatMap((ed) => [ed?.degree, (ed as any)?.field, (ed as any)?.school, ed?.institution]),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+
     const clean: string[] = [];
     for (const req of parsed.unmatchedRequirements) {
       if (typeof req !== "string" || !req.trim()) continue;
       const cleanReq = stripHtmlAndExecutableMarkup(req.trim());
-      if (cleanReq) clean.push(cleanReq);
+      if (!cleanReq) continue;
+
+      // Unmatched requirement must be present in the JD
+      const inJob = isKeywordInText(cleanReq, jobFullText) || jobFullText.includes(cleanReq.toLowerCase());
+      if (!inJob) {
+        return {
+          ok: false,
+          error: `AI output rejected: unmatched requirement '${cleanReq}' not found in job description.`,
+        };
+      }
+
+      // And must be absent in candidate facts (if candidate has it, drop it)
+      const inCandidate =
+        isKeywordInText(cleanReq, candidateFullText) ||
+        (candidate.skills || []).some((cs) => isExactTechMatch(cs, cleanReq));
+      if (inCandidate) {
+        continue;
+      }
+
+      clean.push(cleanReq);
     }
     cleanUnmatchedRequirements = Array.from(new Set(clean));
   }
