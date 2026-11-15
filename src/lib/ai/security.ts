@@ -828,6 +828,208 @@ export const ALL_CANONICAL_TOOLS_AND_SKILLS: string[] = Array.from(
  * - Therefore, automated validation serves as an essential safety gate, but candidate manual review remains mandatory.
  */
 
+export const SPELLED_NUMBER_WORDS: Record<string, number> = {
+  zero: 0,
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+  ten: 10,
+  eleven: 11,
+  twelve: 12,
+  thirteen: 13,
+  fourteen: 14,
+  fifteen: 15,
+  sixteen: 16,
+  seventeen: 17,
+  eighteen: 18,
+  nineteen: 19,
+  twenty: 20,
+  thirty: 30,
+  forty: 40,
+  fifty: 50,
+  sixty: 60,
+  seventy: 70,
+  eighty: 80,
+  ninety: 90,
+  hundred: 100,
+  thousand: 1000,
+  million: 1000000,
+  billion: 1000000000,
+  dozen: 12,
+  double: 2,
+  triple: 3,
+  quadruple: 4,
+};
+
+export interface NumericClaim {
+  raw: string;
+  normalizedNum: string;
+  numericValue: number;
+  isPercent: boolean;
+  isMultiplier: boolean;
+  nounContext?: string;
+  isExperienceYearsClaim?: boolean;
+  isAchievementSentence?: boolean;
+}
+
+/**
+ * Extracts every numeric claim from text: integers, decimals, percentages, currency,
+ * ranges, multipliers (2x, double, triple), and spelled-out numbers.
+ */
+export function extractDetailedNumericClaims(text: string): NumericClaim[] {
+  if (!text || typeof text !== "string") return [];
+  const claims: NumericClaim[] = [];
+
+  const sentences = text.split(/(?<=[.!?\n])\s+/);
+
+  for (const sentence of sentences) {
+    if (!sentence.trim()) continue;
+    const lowerSentence = sentence.toLowerCase();
+    const isAchievementSentence = /\b(i|my|we|our|led|grew|built|managed|increased|drove|delivered|scaled|achieved|spearheaded|improved|expanded|reduced)\b/i.test(sentence);
+
+    // 1. Spelled-out numbers (e.g. "eight engineers", "nine percent", "double revenue")
+    const spelledRegex = /\b(zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|dozen|double|triple|quadruple)\b(?:\s+(percent|%|engineers?|team|developers?|direct reports?|people|users?|clients?|customers?|services?|years?(?:\s+of)?(?:\s+experience)?|revenue|growth))?/gi;
+    let spelledMatch: RegExpExecArray | null;
+    while ((spelledMatch = spelledRegex.exec(lowerSentence)) !== null) {
+      const word = spelledMatch[1].toLowerCase();
+      const val = SPELLED_NUMBER_WORDS[word];
+      if (val === undefined) continue;
+
+      const contextWord = spelledMatch[2] ? spelledMatch[2].toLowerCase() : "";
+      const isPercent = contextWord === "percent" || contextWord === "%";
+      const isYears = contextWord.startsWith("year");
+      const noun = isPercent || isYears ? (isPercent ? "percent" : "years") : contextWord;
+
+      claims.push({
+        raw: spelledMatch[0].trim(),
+        normalizedNum: isPercent ? `${val}%` : String(val),
+        numericValue: val,
+        isPercent,
+        isMultiplier: word === "double" || word === "triple" || word === "quadruple",
+        nounContext: noun || undefined,
+        isExperienceYearsClaim: isYears,
+        isAchievementSentence,
+      });
+    }
+
+    // 2. Digit numbers with prefixes/suffixes (e.g. "9%", "8 engineers", "1.2M", "₹50k", "$100,000", "2x")
+    const digitRegex = /(?:[\$₹€£]|rs\.?|usd|inr)?\s*\b(\d+(?:[.,]\d+)*)\s*(%|percent|x|times|k|m|b|l|cr|lakh|crore|st|nd|rd|th|\+)?(?:\s+([a-zA-Z]+))?/gi;
+    let digitMatch: RegExpExecArray | null;
+    while ((digitMatch = digitRegex.exec(lowerSentence)) !== null) {
+      const numStr = digitMatch[1].replace(/,/g, "");
+      const suffix = digitMatch[2] ? digitMatch[2].toLowerCase() : "";
+      const followingWord = digitMatch[3] ? digitMatch[3].toLowerCase() : "";
+
+      let val = parseFloat(numStr);
+      if (isNaN(val)) continue;
+
+      let isPercent = suffix === "%" || suffix === "percent" || followingWord === "percent";
+      let isMultiplier = suffix === "x" || suffix === "times" || followingWord === "times";
+      let noun = isPercent ? "percent" : (followingWord || undefined);
+
+      if (suffix === "k") val *= 1000;
+      else if (suffix === "m" || suffix === "million") val *= 1000000;
+      else if (suffix === "b" || suffix === "billion") val *= 1000000000;
+      else if (suffix === "l" || suffix === "lakh") val *= 100000;
+      else if (suffix === "cr" || suffix === "crore") val *= 10000000;
+
+      const isYears = followingWord === "years" || followingWord === "year";
+
+      claims.push({
+        raw: digitMatch[0].trim(),
+        normalizedNum: isPercent ? `${val}%` : String(val),
+        numericValue: val,
+        isPercent,
+        isMultiplier,
+        nounContext: noun,
+        isExperienceYearsClaim: isYears,
+        isAchievementSentence,
+      });
+    }
+  }
+
+  return claims;
+}
+
+export function extractCandidateNumericFacts(candidate: CandidateProfile): {
+  values: Set<number>;
+  percentValues: Set<number>;
+  rawTokens: Set<string>;
+  maxExperienceYears: number;
+} {
+  const values = new Set<number>();
+  const percentValues = new Set<number>();
+  const rawTokens = new Set<string>();
+
+  const scanText = (text?: string) => {
+    if (!text || typeof text !== "string") return;
+    const words = text.toLowerCase().split(/[^a-z0-9.%+-]+/);
+    for (const w of words) {
+      if (w) rawTokens.add(w);
+    }
+    const claims = extractDetailedNumericClaims(text);
+    for (const c of claims) {
+      values.add(c.numericValue);
+      rawTokens.add(c.normalizedNum);
+      rawTokens.add(String(c.numericValue));
+      if (c.isPercent) {
+        percentValues.add(c.numericValue);
+        rawTokens.add(`${c.numericValue}%`);
+      }
+    }
+  };
+
+  scanText(candidate.summary);
+  scanText(candidate.headline);
+  for (const exp of candidate.experience || []) {
+    scanText(exp?.role);
+    scanText(exp?.company);
+    for (const b of exp?.bullets || []) {
+      scanText(b);
+    }
+    scanText(exp?.startDate);
+    scanText(exp?.endDate);
+  }
+  for (const edu of candidate.education || []) {
+    scanText(edu?.degree);
+    scanText(edu?.institution);
+    scanText(edu?.year);
+  }
+
+  let maxYears = 0;
+  let minStartYear = 9999;
+  let maxEndYear = 0;
+  let hasCurrentJob = false;
+  for (const exp of candidate.experience || []) {
+    const startMatch = (exp?.startDate || "").match(/\b(19\d\d|20\d\d)\b/);
+    const endStr = (exp?.endDate || "").trim();
+    const endMatch = endStr.match(/\b(19\d\d|20\d\d)\b/);
+    if (startMatch) {
+      const sYear = parseInt(startMatch[1], 10);
+      if (sYear > 1970 && sYear < minStartYear) minStartYear = sYear;
+    }
+    if (/^(present|current|now|ongoing)$/i.test(endStr) || !endStr) {
+      hasCurrentJob = true;
+    } else if (endMatch) {
+      const eYear = parseInt(endMatch[1], 10);
+      if (eYear > maxEndYear) maxEndYear = eYear;
+    }
+  }
+  const currentYear = new Date().getFullYear();
+  const latestYear = hasCurrentJob ? currentYear : (maxEndYear > 0 ? maxEndYear : currentYear);
+  if (minStartYear < 9999) {
+    maxYears = Math.max(1, latestYear - minStartYear + 1);
+  }
+
+  return { values, percentValues, rawTokens, maxExperienceYears: maxYears };
+}
+
 /**
  * Extracts numeric facts, percentages, metrics, and currency from text.
  * e.g., "35%", "$100k", "10,000", "5x", "2.5", "40", "1st"
@@ -1488,39 +1690,40 @@ export function validateAndSanitizeAiOutput(
       }
 
       // 3E. Check numeric facts, percentages, and metrics against candidate profile facts
-      const letterNumbers = extractNumericFacts(stripped);
-      if (letterNumbers.length > 0) {
-        const candidateProfileNumbers = new Set<string>();
-        extractNumericFacts(candidate.summary || "").forEach((n) => candidateProfileNumbers.add(n));
-        extractNumericFacts(candidate.headline || "").forEach((n) => candidateProfileNumbers.add(n));
-        (candidate.experience || []).forEach((e) => {
-          (e?.bullets || []).forEach((b) => {
-            extractNumericFacts(b).forEach((n) => candidateProfileNumbers.add(n));
-          });
-          extractNumericFacts(e?.startDate || "").forEach((n) => candidateProfileNumbers.add(n));
-          extractNumericFacts(e?.endDate || "").forEach((n) => candidateProfileNumbers.add(n));
-        });
-        (candidate.education || []).forEach((ed) => {
-          extractNumericFacts(ed?.year || "").forEach((n) => candidateProfileNumbers.add(n));
-        });
+      const candidateNumericFacts = extractCandidateNumericFacts(candidate);
+      const letterNumericClaims = extractDetailedNumericClaims(stripped);
 
-        // Also check "900 percent" vs "900%" normalization
-        for (const num of letterNumbers) {
-          const normalizedNum = num.replace(/%$/, "").replace(/\+$/, "");
-          if (
-            !candidateProfileNumbers.has(num) &&
-            !candidateProfileNumbers.has(normalizedNum) &&
-            !candidateProfileNumbers.has(`${normalizedNum}%`)
-          ) {
-            const isYearOrSpan = maxYears > 0 && parseInt(normalizedNum, 10) <= maxYears;
-            if (!isYearOrSpan) {
-              return {
-                ok: false,
-                error: `AI output rejected: cover letter introduces unevidenced numeric metric '${num}' not found in candidate profile facts.`,
-              };
-            }
-          }
+      for (const claim of letterNumericClaims) {
+        // Safe allowlist: legitimate candidate experience tenure statement
+        if (claim.isExperienceYearsClaim && claim.numericValue <= candidateNumericFacts.maxExperienceYears + 1) {
+          continue;
         }
+
+        // Percentage check: must match a percentage evidenced in candidate facts
+        if (claim.isPercent) {
+          if (candidateNumericFacts.percentValues.has(claim.numericValue)) {
+            continue;
+          }
+          return {
+            ok: false,
+            error: `AI output rejected: cover letter introduces unevidenced numeric percentage '${claim.raw}' not found in candidate profile facts.`,
+          };
+        }
+
+        // Numeric check: whole-token boundary matching
+        const hasToken =
+          candidateNumericFacts.rawTokens.has(claim.normalizedNum) ||
+          candidateNumericFacts.rawTokens.has(String(claim.numericValue));
+        const hasValue = candidateNumericFacts.values.has(claim.numericValue);
+
+        if (hasToken || hasValue) {
+          continue;
+        }
+
+        return {
+          ok: false,
+          error: `AI output rejected: cover letter introduces unevidenced numeric metric '${claim.raw}' not found in candidate profile facts.`,
+        };
       }
     }
 

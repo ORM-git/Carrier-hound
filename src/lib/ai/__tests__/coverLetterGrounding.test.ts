@@ -187,4 +187,131 @@ Linear's commitment to building fast, high-quality software tools that creators 
     expect(routed.content).not.toContain("Google");
     expect(routed.content).not.toContain("900");
   });
+
+  it("Issue 2: rejects reviewer fixtures 'increased revenue by 9%' and 'led a team of 8 engineers' when resume has no 9% and no 8", () => {
+    const letterWith9Percent = validCoverLetter.replace(
+      "to improve overall client performance standards",
+      "to increased revenue by 9%"
+    );
+    const res9 = validateAndSanitizeAiOutput("cover_letter", letterWith9Percent, {
+      candidate: testCandidate,
+      job: testJob,
+    });
+    expect(res9.ok).toBe(false);
+    if (!res9.ok) {
+      expect(res9.error).toMatch(/9%/);
+    }
+
+    const letterWith8Engineers = validCoverLetter.replace(
+      "to improve overall client performance standards",
+      "where I led a team of 8 engineers"
+    );
+    const res8 = validateAndSanitizeAiOutput("cover_letter", letterWith8Engineers, {
+      candidate: testCandidate,
+      job: testJob,
+    });
+    expect(res8.ok).toBe(false);
+    if (!res8.ok) {
+      expect(res8.error).toMatch(/8/);
+    }
+  });
+
+  it("Issue 2: rejects spelled-out invented numbers like 'eight engineers'", () => {
+    const letterWithSpelled8 = validCoverLetter.replace(
+      "to improve overall client performance standards",
+      "where I led a team of eight engineers"
+    );
+    const res = validateAndSanitizeAiOutput("cover_letter", letterWithSpelled8, {
+      candidate: testCandidate,
+      job: testJob,
+    });
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.error).toMatch(/eight/i);
+    }
+  });
+
+  it("Issue 2: rejects '9%' even when resume contains calendar year '2019' (token boundary check)", () => {
+    const candidateWith2019: CandidateProfile = {
+      ...testCandidate,
+      experience: [
+        {
+          id: "exp-2019",
+          company: "Acme Corp",
+          role: "Frontend Engineer",
+          startDate: "2022",
+          endDate: "2024",
+          bullets: ["Engineered responsive applications in 2019 using modern web tools."],
+        },
+      ],
+    };
+
+    const letterWith9Percent = validCoverLetter.replace(
+      "to improve overall client performance standards",
+      "where I increased revenue by 9%"
+    );
+
+    const res = validateAndSanitizeAiOutput("cover_letter", letterWith9Percent, {
+      candidate: candidateWith2019,
+      job: testJob,
+    });
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.error).toMatch(/9%/);
+    }
+  });
+
+  it("Issue 2: passes when resume contains 'led 8 engineers' and letter says 'led a team of 8 engineers'", () => {
+    const candidateWith8: CandidateProfile = {
+      ...testCandidate,
+      experience: [
+        {
+          id: "exp-8",
+          company: "Acme Corp",
+          role: "Engineering Lead",
+          startDate: "2022",
+          endDate: "2024",
+          bullets: ["Managed development cycles and led 8 engineers across frontend product delivery."],
+        },
+      ],
+    };
+
+    const letterWith8Engineers = validCoverLetter.replace(
+      "to improve overall client performance standards",
+      "where I led a team of 8 engineers"
+    );
+
+    const res = validateAndSanitizeAiOutput("cover_letter", letterWith8Engineers, {
+      candidate: candidateWith8,
+      job: testJob,
+    });
+    expect(res.ok).toBe(true);
+  });
+
+  it("Issue 2: passes when resume contains 'grew revenue 9%' and letter says '9 percent revenue growth'", () => {
+    const candidateWith9Percent: CandidateProfile = {
+      ...testCandidate,
+      experience: [
+        {
+          id: "exp-9",
+          company: "Acme Corp",
+          role: "Senior Engineer",
+          startDate: "2022",
+          endDate: "2024",
+          bullets: ["Optimized customer checkout pipeline and grew revenue 9% year over year."],
+        },
+      ],
+    };
+
+    const letterWith9PercentSpelled = validCoverLetter.replace(
+      "to improve overall client performance standards",
+      "resulting in 9 percent revenue growth"
+    );
+
+    const res = validateAndSanitizeAiOutput("cover_letter", letterWith9PercentSpelled, {
+      candidate: candidateWith9Percent,
+      job: testJob,
+    });
+    expect(res.ok).toBe(true);
+  });
 });
