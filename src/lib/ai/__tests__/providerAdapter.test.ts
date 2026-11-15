@@ -285,9 +285,7 @@ describe("Provider Abstraction Layer (AiTextCompletionProviderAdapter)", () => {
 
     expect(signalAborted).toBe(true);
     expect(response.statusCode).toBe(502);
-    expect(response.body).toMatchObject({
-      error: "AI service request failed or timed out. Please try again.",
-    });
+    expect((response.body as any).error).toMatch(/timed out/i);
     expect(harness.getSettledTokens()[0]).toBeGreaterThan(0);
     expect(harness.getRefundedQuotas()).toBe(1);
     expect(
@@ -310,7 +308,7 @@ describe("Provider Abstraction Layer (AiTextCompletionProviderAdapter)", () => {
             { cause: new Error("ECONNRESET") }
           );
         },
-        expectedError: "AI service request failed or timed out. Please try again.",
+        expectedError: "AI service is busy right now. Please try again.",
       },
       {
         label: "upstream HTTP 503 status",
@@ -321,7 +319,7 @@ describe("Provider Abstraction Layer (AiTextCompletionProviderAdapter)", () => {
             { status: 503 }
           );
         },
-        expectedError: "AI service generation failed. Please try again.",
+        expectedError: "AI service is busy right now. Please try again.",
       },
       {
         label: "invalid upstream JSON",
@@ -332,14 +330,14 @@ describe("Provider Abstraction Layer (AiTextCompletionProviderAdapter)", () => {
             { cause: new SyntaxError("Unexpected token <") }
           );
         },
-        expectedError: "AI service returned an invalid response. Please try again.",
+        expectedError: "AI service is busy right now. Please try again.",
       },
       {
         label: "empty completion content",
         impl: async () => ({
           choices: [{ message: { content: "" } }],
         }),
-        expectedError: "AI service returned an empty generation.",
+        expectedError: "AI service is busy right now. Please try again.",
       },
     ];
 
@@ -419,7 +417,9 @@ describe("Provider Abstraction Layer (AiTextCompletionProviderAdapter)", () => {
     );
 
     expect(res.statusCode).toBe(502);
-    expect(res.body.error).toContain("invalid JSON returned for 'job_fit'");
+    expect((res.body as any).code).toBe("AI_VALIDATION_FAILED");
+    expect((res.body as any).validation_code).toBe("JSON_INVALID");
+    expect((res.body as any).error).toContain("AI output could not be verified");
     expect(harness.getSettledTokens()[0]).toBeGreaterThan(0);
     expect(harness.getRefundedQuotas()).toBe(1);
   });

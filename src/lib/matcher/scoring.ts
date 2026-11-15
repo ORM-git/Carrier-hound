@@ -104,8 +104,20 @@ export function isKeywordInText(keyword: string, text: string): boolean {
 
   const canon = getCanonicalSkillId(cleanKw);
   const aliases = canon && GENUINE_SKILL_ALIASES[canon]
-    ? GENUINE_SKILL_ALIASES[canon]
+    ? [...GENUINE_SKILL_ALIASES[canon]]
     : [cleanKw];
+
+  // If keyword has parentheses like 'sql (postgresql, mysql)', check base keyword too
+  if (cleanKw.includes("(") && cleanKw.includes(")")) {
+    const base = cleanKw.replace(/\s*\(.*?\)/g, "").trim();
+    if (base && base !== cleanKw && !aliases.includes(base)) {
+      const baseCanon = getCanonicalSkillId(base);
+      const baseAliases = baseCanon && GENUINE_SKILL_ALIASES[baseCanon]
+        ? GENUINE_SKILL_ALIASES[baseCanon]
+        : [base];
+      aliases.push(...baseAliases);
+    }
+  }
 
   const lowerText = text.toLowerCase();
 

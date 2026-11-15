@@ -69,6 +69,7 @@ import {
   handleNetlifyAiRequest,
   _resetAiRateLimitStore,
 } from "../src/lib/ai/serviceHandler";
+import { _resetRateLimitClient } from "../src/lib/api/sharedRateLimit";
 import {
   normalizeSkillToTokens,
   doesSkillMatch,
@@ -880,13 +881,13 @@ async function runAllTests() {
     jobDescriptionShortened: false,
   };
 
-  saveCachedTailoredResume(testJob.id, aiAcceptedResult);
-  const loadedCached = getCachedTailoredResume(testJob.id, hash1);
+  saveCachedTailoredResume(testJob.id, aiAcceptedResult, "guest");
+  const loadedCached = getCachedTailoredResume(testJob.id, hash1, "guest");
   assert(loadedCached !== null, "Saved tailored resume is loaded successfully from storage");
   assert(loadedCached?.modelIdentity === "llama-3.3-70b-versatile", "Loaded cache preserves server modelIdentity 'llama-3.3-70b-versatile'");
 
   // Invalidation: if candidate changes, stale hash causes cache miss
-  const staleLoaded = getCachedTailoredResume(testJob.id, hashModCandidate);
+  const staleLoaded = getCachedTailoredResume(testJob.id, hashModCandidate, "guest");
   assert(staleLoaded === null, "Mismatched source hash invalidates stale AI cache cleanly");
 
   // -------------------------------------------------------------
@@ -1043,6 +1044,9 @@ async function runAllTests() {
 
   // 7D. Internal Factory Core Verification (handleAiRequest & handleNetlifyAiRequest with explicit deps)
   console.log("\n--- 7D. INTERNAL FACTORY CORE VERIFICATION WITH INJECTABLE DEPS ---");
+
+  process.env.NEXT_PUBLIC_SUPABASE_URL = "https://szakevhxhwpeskidvtfs.supabase.co";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "synthetic_test_service_key_offline_only";
 
   const validProductionAuthToken = "Bearer prod_test_token_123";
   const validUserPayload = { id: "user_prod_test", email: "pro@example.com" };
@@ -1304,7 +1308,7 @@ async function runAllTests() {
   assert(nextValFailRes.status === 502, "Next factory: Output validation failure returns 502 status");
   const nextValFailBody = await nextValFailRes.json();
   assert(
-    typeof nextValFailBody.error === "string" && (nextValFailBody.error.includes("unevidenced skill") || nextValFailBody.error.includes("not a verified skill")),
+    nextValFailBody.code === "AI_VALIDATION_FAILED" && (nextValFailBody.validation_code === "SKILL_UNGROUNDED" || nextValFailBody.error.includes("could not be verified")),
     "Next factory: Output validation failure returns unevidenced skill error"
   );
   assert(refundCountNext === 1, "Next factory: Quota is refunded exactly once on output validation failure");
@@ -1333,7 +1337,7 @@ async function runAllTests() {
   assert(netlifyValFailRes.statusCode === 502, "Netlify factory: Output validation failure returns 502 status");
   const netlifyValFailBody = JSON.parse(netlifyValFailRes.body);
   assert(
-    typeof netlifyValFailBody.error === "string" && (netlifyValFailBody.error.includes("unevidenced skill") || netlifyValFailBody.error.includes("not a verified skill")),
+    netlifyValFailBody.code === "AI_VALIDATION_FAILED" && (netlifyValFailBody.validation_code === "SKILL_UNGROUNDED" || netlifyValFailBody.error.includes("could not be verified")),
     "Netlify factory: Output validation failure returns unevidenced skill error"
   );
   assert(refundCountNetlify === 1, "Netlify factory: Quota is refunded exactly once on output validation failure");
@@ -1354,6 +1358,10 @@ async function runAllTests() {
   process.env.NEXT_PUBLIC_SUPABASE_URL = "https://szakevhxhwpeskidvtfs.supabase.co";
   process.env.SUPABASE_SERVICE_ROLE_KEY = "synthetic_test_service_key_offline_only";
   process.env.GROQ_API_KEY = "synthetic_test_groq_key_offline_only";
+
+  const savedMockRateLimitClient = (globalThis as any).__mockRateLimitClient;
+  delete (globalThis as any).__mockRateLimitClient;
+  _resetRateLimitClient();
 
   type MockTransportRoute = {
     quotaRow: { count: number; total_tokens: number } | null;
@@ -1674,7 +1682,7 @@ async function runAllTests() {
     assert(nextValFailWrapperRes.status === 502, "Next wrapper: Output validation failure returns 502 status");
     const nextValFailWrapperBody = await nextValFailWrapperRes.json();
     assert(
-      typeof nextValFailWrapperBody.error === "string" && (nextValFailWrapperBody.error.includes("unevidenced skill") || nextValFailWrapperBody.error.includes("not a verified skill")),
+      nextValFailWrapperBody.code === "AI_VALIDATION_FAILED" && (nextValFailWrapperBody.validation_code === "SKILL_UNGROUNDED" || nextValFailWrapperBody.error.includes("could not be verified")),
       "Next wrapper: Output validation failure returns unevidenced skill error"
     );
     assert(wrapperRefundCountNext === 1, "Next wrapper: Quota is refunded exactly once on output validation failure");
@@ -1703,7 +1711,7 @@ async function runAllTests() {
     assert(netlifyValFailWrapperRes.statusCode === 502, "Netlify wrapper: Output validation failure returns 502 status");
     const netlifyValFailWrapperBody = JSON.parse(netlifyValFailWrapperRes.body);
     assert(
-      typeof netlifyValFailWrapperBody.error === "string" && (netlifyValFailWrapperBody.error.includes("unevidenced skill") || netlifyValFailWrapperBody.error.includes("not a verified skill")),
+      netlifyValFailWrapperBody.code === "AI_VALIDATION_FAILED" && (netlifyValFailWrapperBody.validation_code === "SKILL_UNGROUNDED" || netlifyValFailWrapperBody.error.includes("could not be verified")),
       "Netlify wrapper: Output validation failure returns unevidenced skill error"
     );
     assert(wrapperRefundCountNetlify === 1, "Netlify wrapper: Quota is refunded exactly once on output validation failure");
@@ -1791,6 +1799,8 @@ async function runAllTests() {
     assert(lastIpRateLimitKey === "ip:192.168.1.31", "Netlify wrapper: pins rate-limit key to 'ip:<ip>'");
   } finally {
     // Clean teardown: restore original fetch and environment variables
+    (globalThis as any).__mockRateLimitClient = savedMockRateLimitClient;
+    _resetRateLimitClient();
     globalThis.fetch = origFetchGlobal;
     process.env.NEXT_PUBLIC_SUPABASE_URL = origEnvUrl;
     process.env.SUPABASE_SERVICE_ROLE_KEY = origEnvKey;

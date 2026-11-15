@@ -972,6 +972,11 @@ export function findUnevidencedToolOrSkill(
         if (!regex.test(textWithoutFrameworkJs)) {
           continue; // "js" only appeared as part of framework js
         }
+      } else if (skill === "express") {
+        const textWithoutEnglishVerb = lowerText.replace(/\bexpress\s+(my|our|an?|the|keen|interest|gratitude|enthusias\w*|sincere|desire|willingness|concern|hope|confidence|support)\b/gi, " ");
+        if (!regex.test(textWithoutEnglishVerb)) {
+          continue; // "express" was only used as an English verb
+        }
       }
       if (!isSkillEvidencedInCandidate(skill, candidate, candidateTerms)) {
         return skill;

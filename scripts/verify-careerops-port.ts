@@ -112,20 +112,25 @@ console.log(`Tailored Lead Bullet:\n  ${affirmResult.tailoredCandidate.experienc
 const affirmLint = lintCandidateProfileForAts(affirmResult.tailoredCandidate, affirmResult.atsScore);
 console.log(`Career-Ops ATS Lint: ${affirmLint.passed ? "PASSED" : "FAILED"}`);
 
-// 3. Compare differentiation
+// 3. Compare differentiation & Truthful Source Fact Immutability
 console.log("\n--- 3. COMPARISON & DIFFERENTIATION VERIFICATION ---");
-const headlinesDiffer = samsaraResult.tailoredCandidate.headline !== affirmResult.tailoredCandidate.headline;
-const summariesDiffer = samsaraResult.tailoredCandidate.summary !== affirmResult.tailoredCandidate.summary;
+// Under truthful ATS rules, candidate headline & summary remain immutable and grounded to source profile
+const headlinesPreserved =
+  samsaraResult.tailoredCandidate.headline === suryakantProfile.headline &&
+  affirmResult.tailoredCandidate.headline === suryakantProfile.headline;
+const summariesPreserved =
+  samsaraResult.tailoredCandidate.summary === suryakantProfile.summary &&
+  affirmResult.tailoredCandidate.summary === suryakantProfile.summary;
 const skillsDiffer = samsaraResult.tailoredCandidate.skills?.[0] !== affirmResult.tailoredCandidate.skills?.[0];
 const bulletsDiffer = samsaraResult.tailoredCandidate.experience?.[0]?.bullets?.[0] !== affirmResult.tailoredCandidate.experience?.[0]?.bullets?.[0];
 
-console.log(`Headlines Differ: ${headlinesDiffer ? "YES" : "NO"}`);
-console.log(`Summaries Differ: ${summariesDiffer ? "YES" : "NO"}`);
+console.log(`Headlines Truthfully Preserved: ${headlinesPreserved ? "YES" : "NO"}`);
+console.log(`Summaries Truthfully Preserved: ${summariesPreserved ? "YES" : "NO"}`);
 console.log(`Lead Skill Differs: ${skillsDiffer ? "YES" : "NO"} (${samsaraResult.tailoredCandidate.skills?.[0]} vs ${affirmResult.tailoredCandidate.skills?.[0]})`);
 console.log(`Lead Bullet Differs: ${bulletsDiffer ? "YES" : "NO"}`);
 
-if (!headlinesDiffer || !summariesDiffer || !skillsDiffer || !bulletsDiffer) {
-  console.error("FAIL: Resumes are not differentiated across roles!");
+if (!headlinesPreserved || !summariesPreserved || !skillsDiffer || !bulletsDiffer) {
+  console.error("FAIL: Resumes are not differentiated across roles or broke candidate fact immutability!");
   process.exit(1);
 }
 

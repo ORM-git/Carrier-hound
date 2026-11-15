@@ -74,7 +74,7 @@ function harness(upstreamStream?: boolean): Harness {
 const reqBody = (key: string) => ({
   operation: "cover_letter",
   params: {
-    candidate: { name: "Jane Doe", skills: ["TypeScript"] },
+    candidate: { name: "Jane Doe", skills: ["TypeScript", "microservices"] },
     job: { title: "Software Engineer", company: "Acme", description: "Build scalable web applications." },
   },
   idempotencyKey: key,

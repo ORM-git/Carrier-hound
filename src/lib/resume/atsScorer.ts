@@ -598,14 +598,13 @@ export function tailorProfileForJobWithAts(
     };
   });
 
-  // 3. Role-Targeted Profile Presentation (CareerOps Engine)
-  const topRoleSkills = prioritizedSkills.slice(0, 3);
-  const currentHeadline = job.category
-    ? `${job.title} • ${topRoleSkills.join(" • ")}`
-    : baseProfile.headline;
-  const currentSummary = job.category
-    ? generateRoleSummary(job, domain, prioritizedSkills)
-    : baseProfile.summary;
+  // 3. Factual Profile Presentation
+  // Preserve source headline, actual roles, employers, dates, seniority and numeric facts.
+  // Never manufacture candidate qualifications or copy target job title/company into candidate facts.
+  const currentHeadline =
+    baseProfile.headline ||
+    (baseProfile.experience?.[0]?.role ? baseProfile.experience[0].role : "Candidate Profile");
+  const currentSummary = baseProfile.summary || "";
 
   const currentCandidate: CandidateProfile = {
     ...baseProfile,

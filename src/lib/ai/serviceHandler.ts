@@ -558,6 +558,23 @@ export async function executeAiCore(
 
     const isMeteredOperation = config.operation === "resume_tailor" || config.operation === "cover_letter";
 
+    // Validate upstream API key BEFORE reserving budget or checking in-flight operations
+    const resolvedGroqApiKey =
+      getRuntimeEnv("GROQ_API_KEY", activeDeps.env)?.trim() ||
+      getRuntimeEnv("AI_PROVIDER_KEY", activeDeps.env)?.trim() ||
+      getRuntimeEnv("GROQ_KEY", activeDeps.env)?.trim();
+    if (!activeDeps.providerAdapter && !activeDeps.callGroq && !resolvedGroqApiKey) {
+      log.error("[AI Service] Missing required environment variable: GROQ_API_KEY");
+      return {
+        statusCode: 500,
+        body: {
+          error: "Missing required environment variable: GROQ_API_KEY",
+          code: "AI_NOT_CONFIGURED",
+          missingVariable: "GROQ_API_KEY",
+        },
+      };
+    }
+
     // 3A. Global Kill Switch Check (before any quota debit or budget reservation)
     if (isAiGlobalDisabled(activeDeps.env)) {
       emitBudgetAlert("kill_switch", "AI temporarily disabled via emergency kill switch (AI_GLOBAL_DISABLE)", {
@@ -629,7 +646,7 @@ export async function executeAiCore(
     if (cached) {
       isPreVerifiedReplay = true;
       preVerifiedReplayResult = cached;
-    } else if (typeof supabaseAdmin?.from === "function") {
+    } else if (isMeteredOperation && typeof supabaseAdmin?.from === "function") {
       try {
         const { data: dbEvent } = await supabaseAdmin
           .from("plan_usage_events")
@@ -642,7 +659,7 @@ export async function executeAiCore(
         if (dbEvent?.response_payload) {
           isPreVerifiedReplay = true;
           preVerifiedReplayResult = dbEvent.response_payload;
-        } else if (dbEvent) {
+        } else if (dbEvent && typeof dbEvent === "object" && "response_payload" in dbEvent) {
           // Row recorded but result not yet populated -> in flight
           return {
             statusCode: 409,
@@ -807,25 +824,6 @@ export async function executeAiCore(
       }
     };
 
-    // Validate upstream API key BEFORE consuming user quota/sets so a missing
-    // server secret never burns a user's daily tailoring or cover-letter credit.
-    const resolvedGroqApiKey =
-      getRuntimeEnv("GROQ_API_KEY", activeDeps.env)?.trim() ||
-      getRuntimeEnv("AI_PROVIDER_KEY", activeDeps.env)?.trim() ||
-      getRuntimeEnv("GROQ_KEY", activeDeps.env)?.trim();
-    if (!activeDeps.providerAdapter && !activeDeps.callGroq && !resolvedGroqApiKey) {
-      releaseProbeIfAny();
-      await settleBudget(0);
-      log.error("[AI Service] Missing required environment variable: GROQ_API_KEY");
-      return {
-        statusCode: 500,
-        body: {
-          error: "Missing required environment variable: GROQ_API_KEY",
-          code: "AI_NOT_CONFIGURED",
-          missingVariable: "GROQ_API_KEY",
-        },
-      };
-    }
 
     // 4. Quota Enforcement:
     // Metered AI generations (resume_tailor and cover_letter) route strictly through consumeSet,
@@ -833,15 +831,39 @@ export async function executeAiCore(
     // and the 30/day IST fair-use cap. They MUST NOT double-count in ai_usage_quotas.
     // Non-metered operations (e.g. job_fit, extraction) fall under checkAndIncrementAiQuota.
     if (isMeteredOperation) {
-      const doConsume = activeDeps.consumeSet || consumeSet;
+      const doConsume =
+        activeDeps.consumeSet ||
+        ((u: string, k: QuotaKind, key: string) =>
+          consumeSet(
+            u,
+            k,
+            key,
+            undefined,
+            activeDeps.getSupabaseAdmin ? activeDeps.getSupabaseAdmin() : undefined,
+            activeDeps.getServerEntitlement
+          ));
       const consumeRes = await doConsume(user.id, config.operation as QuotaKind, setConsumeKey);
 
       if (!consumeRes.success) {
         releaseProbeIfAny();
         await settleBudget(0);
         const isDailyCap = consumeRes.code === "DAILY_LIMIT_REACHED";
+        if (isDailyCap) {
+          return {
+            statusCode: 429,
+            headers: {
+              "Retry-After": "86400",
+            },
+            body: {
+              error: `Daily AI usage quota exceeded for operation '${config.operation}' (30/30). Quotas reset daily at midnight UTC.`,
+              code: "DAILY_LIMIT_REACHED",
+              currentCount: 30,
+              limit: 30,
+            },
+          };
+        }
         return {
-          statusCode: isDailyCap ? 429 : 403,
+          statusCode: 403,
           body: {
             error: consumeRes.error || "Quota exhausted for operation",
             code: consumeRes.code || "QUOTA_EXHAUSTED",
@@ -953,7 +975,16 @@ export async function executeAiCore(
 
     const rollbackAllQuotas = async () => {
       if (setConsumed && setConsumeKey) {
-        const doRefund = activeDeps.refundSet || refundSet;
+        const doRefund =
+          activeDeps.refundSet ||
+          ((uid: string, key: string, d?: Date, k?: QuotaKind) =>
+            refundSet(
+              uid,
+              key,
+              d,
+              k,
+              activeDeps.getSupabaseAdmin ? activeDeps.getSupabaseAdmin() : undefined
+            ));
         setConsumed = false;
         try {
           await doRefund(user.id, setConsumeKey, new Date(), config.operation as QuotaKind);

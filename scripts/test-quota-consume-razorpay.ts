@@ -373,7 +373,12 @@ async function runQuotaConsumeRazorpaySuite() {
     ...mockDeps,
     consumeSet: async (userId: string, kind: QuotaKind, idempotencyKey: string) => {
       repeatConsumeCount++;
-      return { success: true, source: "addon" as const, alreadyConsumed: true };
+      return {
+        success: true,
+        source: "addon" as const,
+        alreadyConsumed: true,
+        cachedResult: { success: true, result: "Earlier result" },
+      };
     },
   };
 
