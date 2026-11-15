@@ -221,7 +221,7 @@ export default function GuideArticlePage({ params }: PageProps) {
                 {article.comparisonTable.title}
               </h2>
               <p className="text-[rgb(99,115,129)] text-base mb-4">
-                Side-by-side performance indicators between automated crawling pipelines and legacy aggregation portals.
+                Side-by-side performance indicators between direct employer discovery and legacy aggregation portals.
               </p>
               <CmpTable
                 headers={article.comparisonTable.headers}

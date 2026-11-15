@@ -59,7 +59,7 @@ export const GUIDE_ARTICLES: Record<string, GuideArticle> = {
     verdict: {
       label: "THE VERDICT",
       title: "Direct Employer Discovery Wins on Velocity and Signal",
-      description: "While traditional curated boards provide vetted company entries, their multi-day manual review cycle places candidates at a severe chronological disadvantage. Direct employer discovery surfaces fresh listings as soon as companies publish them.",
+      description: "While traditional curated boards provide vetted company entries, their multi-day manual review cycle places candidates at a severe chronological disadvantage. Direct employer discovery surfaces fresh, active listings.",
       startHere: {
         title: "Start with Direct Tracking when:",
         items: [
@@ -101,7 +101,7 @@ export const GUIDE_ARTICLES: Record<string, GuideArticle> = {
       rows: [
         {
           feature: "Listing Freshness",
-          yourBrand: "Sub-hourly automated sync",
+          yourBrand: "Regularly refreshed",
           traditional: "24 - 72 hours manual review",
           notes: "3 - 7 days (recruiter syndication)",
         },
@@ -139,8 +139,8 @@ export const GUIDE_ARTICLES: Record<string, GuideArticle> = {
         id: "how-direct-tracking-works",
         h2: "Architectural Shift: From Gatekeepers to Automated Radar",
         paragraphs: [
-          "CareerMonke operates as an automated discovery radar. Rather than asking employers to manually submit listings or wait for staffing agencies, our platform monitors verified career pages continuously across verified top software and product companies.",
-          "When an opening is removed or marked filled on the employer's internal board, it immediately drops from our active search index. This eliminates the widespread frustration of spending hours tailoring cover letters for defunct positions.",
+          "CareerMonke operates as an automated discovery radar. Rather than asking employers to manually submit listings or wait for staffing agencies, our platform focuses on verified, active openings across verified top software and product companies.",
+          "When an opening is removed or marked filled on the employer's internal board, it is removed from active listings. This eliminates the widespread frustration of spending hours tailoring cover letters for defunct positions.",
         ],
       },
     ],
@@ -193,7 +193,7 @@ export const GUIDE_ARTICLES: Record<string, GuideArticle> = {
       },
       {
         title: "Pre-Release Detection",
-        description: "Catch newly published roles moments after initial creation before promotional announcements.",
+        description: "Find newly posted roles early before promotional announcements.",
       },
       {
         title: "Direct Recruiter Attribution",
@@ -290,8 +290,8 @@ export const GUIDE_ARTICLES: Record<string, GuideArticle> = {
         description: "Direct linking to corporate filings and active venture backing.",
       },
       {
-        title: "Instant Red-Flag Alerts",
-        description: "Immediate visual warnings if a company has undergone hiring freezes.",
+        title: "Red-Flag Alerts",
+        description: "Visual warnings if a company has undergone hiring freezes.",
       },
     ],
     comparisonTable: {

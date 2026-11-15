@@ -1988,7 +1988,7 @@ function JobsPageInner() {
                             : "Try clearing or broadening your filters to view all your applied positions."
                           : hasActiveFilters
                           ? "Try adjusting your search keyword, work model, or level filters to view more opportunities."
-                          : "We refresh verified career site postings continuously. Try checking back shortly."}
+                          : "We refresh verified career site postings regularly. Try checking back shortly."}
                       </p>
                       {hasActiveFilters && (
                         <div className="pt-2">

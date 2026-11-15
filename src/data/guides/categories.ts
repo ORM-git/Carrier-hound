@@ -70,7 +70,7 @@ export const CATEGORY_LANDINGS: Record<string, CategoryLandingData> = {
       },
       {
         question: "How quickly are filled roles removed from the feed?",
-        answer: "Our automated health check verifies posting status codes continuously throughout the day. When a job is closed on the employer career page, it is removed from our live feed within minutes.",
+        answer: "Our automated health check verifies posting status codes regularly throughout the day. When a job is closed on the employer career page, it is removed from our live feed promptly.",
       },
     ],
     relatedGuides: [
