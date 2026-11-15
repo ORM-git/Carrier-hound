@@ -2,6 +2,9 @@
 -- Migration: 20261115b_autorenew_mandate_safety.sql
 -- Status: PENDING APPLICATION
 --
+-- Apply via psql/Supabase SQL Editor, then record:
+--   node scripts/record-migration.cjs 20261115b_autorenew_mandate_safety
+--
 -- Purpose:
 --   Durable mandate safety for auto-renew recurring subscriptions.
 --   Enforces at most one active reservation/creation order per user and mode
