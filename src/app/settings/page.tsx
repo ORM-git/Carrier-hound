@@ -584,29 +584,41 @@ function SettingsPageInner() {
                 )}
               </div>
 
-              {isPro && (
+              {(isPro || isRecurringMandate) && (
                 <div className="pt-3 border-t border-slate-200/80 flex items-center justify-between text-xs">
                   <span className="text-slate-600">
-                    {subscription?.currentPeriodEnd ? (
-                      <>
-                        Pro access ends on: <strong>{new Date(subscription.currentPeriodEnd).toLocaleDateString()}</strong>
-                        {isRecurringMandate ? (
-                          subscription?.cancelAtPeriodEnd
-                            ? " (auto-renew canceled)"
-                            : " (auto-renews)"
-                        ) : (
-                          " (does not auto-renew)"
-                        )}
-                      </>
+                    {isPro ? (
+                      subscription?.currentPeriodEnd ? (
+                        <>
+                          Pro access ends on: <strong>{new Date(subscription.currentPeriodEnd).toLocaleDateString()}</strong>
+                          {isRecurringMandate ? (
+                            subscription?.cancelAtPeriodEnd
+                              ? " (auto-renew canceled)"
+                              : " (auto-renews)"
+                          ) : (
+                            " (does not auto-renew)"
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          Pro access active
+                          {isRecurringMandate ? (
+                            subscription?.cancelAtPeriodEnd
+                              ? " (auto-renew canceled)"
+                              : " (auto-renews)"
+                          ) : (
+                            " (does not auto-renew)"
+                          )}
+                        </>
+                      )
                     ) : (
                       <>
-                        Pro access active
-                        {isRecurringMandate ? (
-                          subscription?.cancelAtPeriodEnd
-                            ? " (auto-renew canceled)"
-                            : " (auto-renews)"
+                        {subscription?.status === "past_due" ? (
+                          <>Payment past due{subscription?.cancelAtPeriodEnd ? " (auto-renew canceled)" : " (auto-renews)"}</>
+                        ) : subscription?.status === "unpaid" ? (
+                          <>Payment unpaid{subscription?.cancelAtPeriodEnd ? " (auto-renew canceled)" : " (auto-renews)"}</>
                         ) : (
-                          " (does not auto-renew)"
+                          <>Mandate pending confirmation{subscription?.cancelAtPeriodEnd ? " (auto-renew canceled)" : " (auto-renews)"}</>
                         )}
                       </>
                     )}

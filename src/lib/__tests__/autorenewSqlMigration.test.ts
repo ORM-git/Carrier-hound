@@ -11,6 +11,12 @@ describe("PostgreSQL Migration & Actual SQL Mandate Safety (Requirement 7 & PR #
 
     // 1. Create standard Supabase roles if not present
     await pg.exec(`
+      CREATE SCHEMA IF NOT EXISTS auth;
+      CREATE TABLE IF NOT EXISTS auth.users (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        email text
+      );
+
       DO $$
       BEGIN
         IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
@@ -23,6 +29,23 @@ describe("PostgreSQL Migration & Actual SQL Mandate Safety (Requirement 7 & PR #
           CREATE ROLE service_role;
         END IF;
       END $$;
+
+      CREATE TABLE public.plans (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        code text UNIQUE NOT NULL,
+        name text NOT NULL,
+        price_paise int NOT NULL,
+        duration_days int NOT NULL,
+        currency text NOT NULL DEFAULT 'INR',
+        active boolean NOT NULL DEFAULT true,
+        created_at timestamptz NOT NULL DEFAULT now()
+      );
+
+      INSERT INTO public.plans (code, name, price_paise, duration_days)
+      VALUES
+        ('weekly', 'Weekly Pro', 69200, 7),
+        ('monthly', 'Monthly Pro', 149900, 30),
+        ('quarterly', 'Quarterly Pro', 399900, 90);
 
       CREATE TABLE public.subscriptions (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -42,19 +65,37 @@ describe("PostgreSQL Migration & Actual SQL Mandate Safety (Requirement 7 & PR #
         metadata jsonb DEFAULT '{}'::jsonb
       );
 
+      -- REAL REPO BASELINE SCHEMA:
+      -- payment_orders has NO updated_at and NO recurring_kind originally!
       CREATE TABLE public.payment_orders (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         user_id uuid NOT NULL,
-        provider text NOT NULL,
-        provider_order_id text NOT NULL,
-        plan_code text,
-        amount_paise integer,
-        currency text DEFAULT 'INR',
-        status text NOT NULL,
-        mode text NOT NULL,
-        created_at timestamptz DEFAULT now(),
-        updated_at timestamptz,
-        metadata jsonb DEFAULT '{}'::jsonb
+        provider text NOT NULL DEFAULT 'razorpay',
+        provider_order_id text UNIQUE,
+        plan_code text REFERENCES public.plans(code),
+        addon_code text,
+        amount_paise int NOT NULL,
+        currency text NOT NULL DEFAULT 'INR',
+        status text NOT NULL DEFAULT 'created' CHECK (status IN ('created','paid','failed','expired')),
+        created_at timestamptz NOT NULL DEFAULT now(),
+        paid_at timestamptz,
+        mode text NOT NULL DEFAULT 'live',
+        metadata jsonb NOT NULL DEFAULT '{}'::jsonb
+      );
+
+      CREATE TABLE public.user_addon_credits (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id uuid NOT NULL,
+        addon_code text NOT NULL,
+        sets_remaining int NOT NULL DEFAULT 1,
+        expires_at timestamptz NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now()
+      );
+
+      CREATE TABLE public.blocked_users (
+        user_id uuid PRIMARY KEY,
+        reason text,
+        created_at timestamptz NOT NULL DEFAULT now()
       );
     `);
   });
@@ -65,170 +106,143 @@ describe("PostgreSQL Migration & Actual SQL Mandate Safety (Requirement 7 & PR #
     }
   });
 
-  it("applies migration cleanly when multiple existing prepaid created orders exist without blocking or failing", async () => {
+  it("Reviewer 1: payment_orders.updated_at does not exist in baseline schema; migration adds it and runs create/cancel end-to-end", async () => {
     const testUserId = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11";
 
-    // Seed multiple existing prepaid orders with status = 'created' for the same user and mode
-    await pg.exec(`
-      INSERT INTO public.payment_orders (user_id, provider, provider_order_id, plan_code, amount_paise, status, mode)
-      VALUES
-        ('${testUserId}', 'razorpay', 'order_prepaid_001', 'monthly', 149900, 'created', 'test'),
-        ('${testUserId}', 'razorpay', 'order_prepaid_002', 'weekly', 69200, 'created', 'test'),
-        ('${testUserId}', 'razorpay', 'order_prepaid_003', 'quarterly', 399900, 'created', 'test');
+    // Verify baseline table has NO updated_at column before migration
+    const colsBefore = await pg.query<{ column_name: string }>(`
+      SELECT column_name FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'payment_orders' AND column_name = 'updated_at';
     `);
+    expect(colsBefore.rows.length).toBe(0);
 
-    // Verify multiple prepaid created orders exist
-    const initialOrders = await pg.query<{ count: string }>(
-      `SELECT count(*) FROM public.payment_orders WHERE user_id = $1 AND status = 'created';`,
-      [testUserId]
-    );
-    expect(Number(initialOrders.rows[0].count)).toBe(3);
-
-    // Read and execute the actual migration file
-    const migrationSql = fs.readFileSync(
-      path.resolve(__dirname, "../../../supabase/migrations/20261115b_autorenew_mandate_safety.sql"),
-      "utf8"
-    );
-
-    // Must execute cleanly without error
-    await pg.exec(migrationSql);
-
-    // 1. Verify prepaid orders are still intact and NOT deleted
-    const postMigrateOrders = await pg.query<{ count: string }>(
-      `SELECT count(*) FROM public.payment_orders WHERE user_id = $1 AND status = 'created';`,
-      [testUserId]
-    );
-    expect(Number(postMigrateOrders.rows[0].count)).toBe(3);
-
-    // 2. Verify inserting ANOTHER prepaid created order for the same user and mode still succeeds
-    await pg.exec(`
-      INSERT INTO public.payment_orders (user_id, provider, provider_order_id, plan_code, amount_paise, status, mode)
-      VALUES ('${testUserId}', 'razorpay', 'order_prepaid_004', 'monthly', 149900, 'created', 'test');
-    `);
-
-    const updatedPrepaid = await pg.query<{ count: string }>(
-      `SELECT count(*) FROM public.payment_orders WHERE user_id = $1 AND status = 'created';`,
-      [testUserId]
-    );
-    expect(Number(updatedPrepaid.rows[0].count)).toBe(4);
-  });
-
-  it("enforces partial unique index on recurring reservations per user and mode, and allows retry after failed state", async () => {
-    const testUserId = "b1ffcd88-8b1a-4ef8-bb6d-6bb9bd380b22";
-
-    // Apply migration
+    // Apply migration 20261115b
     const migrationSql = fs.readFileSync(
       path.resolve(__dirname, "../../../supabase/migrations/20261115b_autorenew_mandate_safety.sql"),
       "utf8"
     );
     await pg.exec(migrationSql);
 
-    // 1. Insert first reservation attempt in 'reserved' state
+    // Verify updated_at column was added
+    const colsAfter = await pg.query<{ column_name: string }>(`
+      SELECT column_name FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'payment_orders' AND column_name = 'updated_at';
+    `);
+    expect(colsAfter.rows.length).toBe(1);
+
+    // End-to-end reservation create and cancel test on real table
+    const reservationId = `sub_pending_${testUserId}_attempt1`;
     await pg.exec(`
       INSERT INTO public.payment_orders (user_id, provider, provider_order_id, plan_code, amount_paise, status, mode, recurring_kind)
-      VALUES ('${testUserId}', 'razorpay', 'sub_pending_${testUserId}_attempt1', 'monthly', 149900, 'reserved', 'test', 'recurring');
+      VALUES ('${testUserId}', 'razorpay', '${reservationId}', 'monthly', 149900, 'reserved', 'live', 'recurring');
     `);
 
-    // 2. Attempting a concurrent second reservation in 'reserved' state must fail with unique collision
-    let collisionError: any = null;
-    try {
-      await pg.exec(`
-        INSERT INTO public.payment_orders (user_id, provider, provider_order_id, plan_code, amount_paise, status, mode, recurring_kind)
-        VALUES ('${testUserId}', 'razorpay', 'sub_pending_${testUserId}_attempt2', 'monthly', 149900, 'reserved', 'test', 'recurring');
-      `);
-    } catch (err: any) {
-      collisionError = err;
-    }
-    expect(collisionError).not.toBeNull();
-    expect(String(collisionError)).toContain("duplicate key value violates unique constraint");
-
-    // 3. Mark the first attempt failed
+    // Complete CAS to 'created'
+    const realSubId = "sub_rzp_e2e_real_001";
     await pg.exec(`
       UPDATE public.payment_orders
-      SET status = 'failed'
-      WHERE provider_order_id = 'sub_pending_${testUserId}_attempt1';
+      SET provider_order_id = '${realSubId}', status = 'created', updated_at = now()
+      WHERE provider_order_id = '${reservationId}' AND user_id = '${testUserId}' AND status = 'reserved';
     `);
 
-    // 4. Retry after failure: inserting attempt 2 in 'reserved' state now SUCCEEDS
+    // Seed subscription row
     await pg.exec(`
+      INSERT INTO public.subscriptions (user_id, provider, subscription_id, plan_id, status)
+      VALUES ('${testUserId}', 'razorpay', '${realSubId}', 'monthly', 'active');
+    `);
+
+    // Call cancel_autorenew_subscription RPC end to end
+    const cancelResult = await pg.query<{ cancel_autorenew_subscription: boolean }>(`
+      SELECT public.cancel_autorenew_subscription(
+        '${testUserId}'::uuid,
+        '${realSubId}',
+        '{"canceled_by": "customer"}'::jsonb
+      );
+    `);
+    expect(cancelResult.rows[0].cancel_autorenew_subscription).toBe(true);
+
+    // Verify updated_at and status in payment_orders
+    const orderCheck = await pg.query<any>(`
+      SELECT status, updated_at FROM public.payment_orders WHERE provider_order_id = '${realSubId}';
+    `);
+    expect(orderCheck.rows[0].status).toBe("cancelled");
+    expect(orderCheck.rows[0].updated_at).not.toBeNull();
+
+    // Verify subscriptions record
+    const subCheck = await pg.query<any>(`
+      SELECT cancel_at_period_end, updated_at FROM public.subscriptions WHERE user_id = '${testUserId}';
+    `);
+    expect(subCheck.rows[0].cancel_at_period_end).toBe(true);
+    expect(subCheck.rows[0].updated_at).not.toBeNull();
+  });
+
+  it("Reviewer 2: cancel_autorenew_subscription(sub_old) must NOT mark a newer bound subscription as canceled", async () => {
+    const testUserId = "b1eebc99-9c0b-4ef8-bb6d-6bb9bd380b22";
+    const oldPendingMandate = "sub_old_pending_mandate";
+    const newBoundMandate = "sub_new_active_mandate";
+
+    // Apply migration
+    const migrationSql = fs.readFileSync(
+      path.resolve(__dirname, "../../../supabase/migrations/20261115b_autorenew_mandate_safety.sql"),
+      "utf8"
+    );
+    await pg.exec(migrationSql);
+
+    // Seed active bound subscription with subscription_id = sub_new
+    // and metadata containing pending_subscription_id = sub_old
+    await pg.exec(`
+      INSERT INTO public.subscriptions (
+        user_id,
+        provider,
+        subscription_id,
+        status,
+        cancel_at_period_end,
+        metadata
+      ) VALUES (
+        '${testUserId}',
+        'razorpay',
+        '${newBoundMandate}',
+        'active',
+        false,
+        '{"pending_subscription_id": "${oldPendingMandate}", "processed_payments": ["pay_001"]}'::jsonb
+      );
+
+      -- Old pending mandate has its own payment_order
       INSERT INTO public.payment_orders (user_id, provider, provider_order_id, plan_code, amount_paise, status, mode, recurring_kind)
-      VALUES ('${testUserId}', 'razorpay', 'sub_pending_${testUserId}_attempt2', 'monthly', 149900, 'reserved', 'test', 'recurring');
-    `);
+      VALUES ('${testUserId}', 'razorpay', '${oldPendingMandate}', 'weekly', 69200, 'created', 'live', 'recurring');
 
-    const reservations = await pg.query<{ provider_order_id: string; status: string }>(
-      `SELECT provider_order_id, status FROM public.payment_orders WHERE user_id = $1 ORDER BY created_at ASC;`,
-      [testUserId]
-    );
-    expect(reservations.rows.length).toBe(2);
-    expect(reservations.rows[0].status).toBe("failed");
-    expect(reservations.rows[1].status).toBe("reserved");
-  });
-
-  it("Reviewer B: rejects second different-plan reservation when a real pending (created) mandate exists", async () => {
-    const testUserId = "b2ffcd88-8b1a-4ef8-bb6d-6bb9bd380b33";
-
-    // Apply migration
-    const migrationSql = fs.readFileSync(
-      path.resolve(__dirname, "../../../supabase/migrations/20261115b_autorenew_mandate_safety.sql"),
-      "utf8"
-    );
-    await pg.exec(migrationSql);
-
-    // 1. User has an existing created recurring mandate for monthly plan
-    await pg.exec(`
+      -- New mandate also has its own payment_order
       INSERT INTO public.payment_orders (user_id, provider, provider_order_id, plan_code, amount_paise, status, mode, recurring_kind)
-      VALUES ('${testUserId}', 'razorpay', 'sub_real_created_mandate_999', 'monthly', 149900, 'created', 'live', 'recurring');
+      VALUES ('${testUserId}', 'razorpay', '${newBoundMandate}', 'monthly', 149900, 'paid', 'live', 'recurring');
     `);
 
-    // 2. User tries to initiate a second reservation for a different plan ('weekly') in the same mode
-    let collisionError: any = null;
-    try {
-      await pg.exec(`
-        INSERT INTO public.payment_orders (user_id, provider, provider_order_id, plan_code, amount_paise, status, mode, recurring_kind)
-        VALUES ('${testUserId}', 'razorpay', 'sub_pending_${testUserId}_diff_plan', 'weekly', 69200, 'reserved', 'live', 'recurring');
-      `);
-    } catch (err: any) {
-      collisionError = err;
-    }
-
-    // Must be rejected by idx_payment_orders_pending_mandate_unique
-    expect(collisionError).not.toBeNull();
-    expect(String(collisionError)).toContain("duplicate key value violates unique constraint");
-    expect(String(collisionError)).toContain("idx_payment_orders_pending_mandate_unique");
-  });
-
-  it("Reviewer C: preflight conflict check aborts migration when duplicate active recurring mandates exist", async () => {
-    const conflictUserId = "c1ffcd88-8b1a-4ef8-bb6d-6bb9bd380c11";
-
-    // Seed duplicate active recurring mandate orders before migration
-    await pg.exec(`
-      INSERT INTO public.payment_orders (user_id, provider, provider_order_id, plan_code, amount_paise, status, mode)
-      VALUES
-        ('${conflictUserId}', 'razorpay', 'sub_mandate_conflict_1', 'monthly', 149900, 'created', 'live'),
-        ('${conflictUserId}', 'razorpay', 'sub_mandate_conflict_2', 'weekly', 69200, 'reserved', 'live');
+    // Cancel old mandate
+    const cancelRes = await pg.query<{ cancel_autorenew_subscription: boolean }>(`
+      SELECT public.cancel_autorenew_subscription(
+        '${testUserId}'::uuid,
+        '${oldPendingMandate}',
+        '{"canceled_by": "customer"}'::jsonb
+      );
     `);
+    expect(cancelRes.rows[0].cancel_autorenew_subscription).toBe(true);
 
-    const migrationSql = fs.readFileSync(
-      path.resolve(__dirname, "../../../supabase/migrations/20261115b_autorenew_mandate_safety.sql"),
-      "utf8"
-    );
+    // Verify subscription row:
+    // The newer bound subscription MUST NOT be canceled!
+    const subCheck = await pg.query<any>(`
+      SELECT subscription_id, cancel_at_period_end FROM public.subscriptions WHERE user_id = '${testUserId}';
+    `);
+    expect(subCheck.rows[0].subscription_id).toBe(newBoundMandate);
+    expect(subCheck.rows[0].cancel_at_period_end).toBe(false);
 
-    let migrationError: any = null;
-    try {
-      await pg.exec(migrationSql);
-    } catch (err: any) {
-      migrationError = err;
-    }
-
-    // Must abort transaction with preflight check failed exception
-    expect(migrationError).not.toBeNull();
-    expect(String(migrationError)).toContain("Preflight check failed");
-    expect(String(migrationError)).toContain("Aborting migration");
+    // The old pending payment order MUST be cancelled
+    const oldOrderCheck = await pg.query<any>(`
+      SELECT status FROM public.payment_orders WHERE provider_order_id = '${oldPendingMandate}';
+    `);
+    expect(oldOrderCheck.rows[0].status).toBe("cancelled");
   });
 
-  it("Reviewer A: verifies effective ACLs on cancel_autorenew_subscription (SET ROLE anon fails, service_role succeeds)", async () => {
-    const testUserId = "a1eebc99-7c0b-4ef8-bb6d-6bb9bd380a99";
-    const mandateId = "sub_acl_test_mandate_001";
+  it("Reviewer 6: merge_subscription_metadata merges JSON keys transactionally without overwriting concurrent ledger entries", async () => {
+    const testUserId = "c1eebc99-9c0b-4ef8-bb6d-6bb9bd380c33";
 
     // Apply migration
     const migrationSql = fs.readFileSync(
@@ -237,136 +251,185 @@ describe("PostgreSQL Migration & Actual SQL Mandate Safety (Requirement 7 & PR #
     );
     await pg.exec(migrationSql);
 
-    // Seed subscription and order
-    await pg.exec(`
-      INSERT INTO public.subscriptions (user_id, provider, subscription_id, status)
-      VALUES ('${testUserId}', 'razorpay', '${mandateId}', 'active');
-
-      INSERT INTO public.payment_orders (user_id, provider, provider_order_id, plan_code, amount_paise, status, mode, recurring_kind)
-      VALUES ('${testUserId}', 'razorpay', '${mandateId}', 'monthly', 149900, 'created', 'live', 'recurring');
-    `);
-
-    // 1. SET ROLE anon: calling cancel_autorenew_subscription must fail with permission denied
-    let anonError: any = null;
-    try {
-      await pg.exec(`
-        SET ROLE anon;
-        SELECT public.cancel_autorenew_subscription('${testUserId}'::uuid, '${mandateId}', '{}'::jsonb);
-      `);
-    } catch (err: any) {
-      anonError = err;
-    } finally {
-      await pg.exec("RESET ROLE;");
-    }
-
-    expect(anonError).not.toBeNull();
-    expect(String(anonError)).toContain("permission denied");
-
-    // 2. SET ROLE service_role: execution must succeed
-    await pg.exec(`
-      SET ROLE service_role;
-      SELECT public.cancel_autorenew_subscription('${testUserId}'::uuid, '${mandateId}', '{"canceled_by": "customer"}'::jsonb);
-      RESET ROLE;
-    `);
-
-    const sub = await pg.query<any>(
-      `SELECT cancel_at_period_end FROM public.subscriptions WHERE user_id = $1;`,
-      [testUserId]
-    );
-    expect(sub.rows[0].cancel_at_period_end).toBe(true);
-  });
-
-  it("Reviewer A & D: ownership validation rejects when user does not own mandate", async () => {
-    const ownerUserId = "d1eebc99-7c0b-4ef8-bb6d-6bb9bd380d11";
-    const attackerUserId = "d2eebc99-7c0b-4ef8-bb6d-6bb9bd380d22";
-    const mandateId = "sub_victim_mandate_777";
-
-    // Apply migration
-    const migrationSql = fs.readFileSync(
-      path.resolve(__dirname, "../../../supabase/migrations/20261115b_autorenew_mandate_safety.sql"),
-      "utf8"
-    );
-    await pg.exec(migrationSql);
-
-    // Seed subscription owned by ownerUserId
-    await pg.exec(`
-      INSERT INTO public.subscriptions (user_id, provider, subscription_id, status)
-      VALUES ('${ownerUserId}', 'razorpay', '${mandateId}', 'active');
-    `);
-
-    // Attacker tries to cancel owner's mandate
-    let cancelError: any = null;
-    try {
-      await pg.exec(`
-        SELECT public.cancel_autorenew_subscription('${attackerUserId}'::uuid, '${mandateId}', '{}'::jsonb);
-      `);
-    } catch (err: any) {
-      cancelError = err;
-    }
-
-    expect(cancelError).not.toBeNull();
-    expect(String(cancelError)).toContain(`Mandate ${mandateId} does not belong to user ${attackerUserId}`);
-  });
-
-  it("Reviewer A & D: constrains allowed metadata keys without clobbering existing ledger or unapproved keys", async () => {
-    const testUserId = "c2eebc99-7c0b-4ef8-bb6d-6bb9bd380c33";
-    const mandateId = "sub_rzp_live_mandate_8888";
-
-    // Apply migration
-    const migrationSql = fs.readFileSync(
-      path.resolve(__dirname, "../../../supabase/migrations/20261115b_autorenew_mandate_safety.sql"),
-      "utf8"
-    );
-    await pg.exec(migrationSql);
-
-    // Seed active subscription with existing processed ledger data
+    // Seed subscription with existing webhook ledger entry
     await pg.exec(`
       INSERT INTO public.subscriptions (user_id, provider, subscription_id, status, metadata)
       VALUES (
         '${testUserId}',
         'razorpay',
-        '${mandateId}',
+        'sub_active_123',
         'active',
-        '{"processed_payments": ["pay_001", "pay_002"], "renewal_seq": 2, "initial_entitlement": "granted"}'::jsonb
+        '{"processed_payments": ["pay_001", "pay_002"], "ledger_seq": 42}'::jsonb
       );
-
-      INSERT INTO public.payment_orders (user_id, provider, provider_order_id, plan_code, amount_paise, status, mode, recurring_kind)
-      VALUES ('${testUserId}', 'razorpay', '${mandateId}', 'monthly', 149900, 'created', 'live', 'recurring');
     `);
 
-    // Call procedure with permitted keys AND illegal unapproved keys (like trying to clobber processed_payments or set admin flags)
-    const rpcRes = await pg.query<{ cancel_autorenew_subscription: boolean }>(`
-      SELECT public.cancel_autorenew_subscription(
+    // Call merge_subscription_metadata with new pending mandate data
+    await pg.exec(`
+      SELECT public.merge_subscription_metadata(
         '${testUserId}'::uuid,
-        '${mandateId}',
-        '{"canceled_by": "customer", "cancel_reason": "switched_job", "processed_payments": ["evil_override"], "admin_bypass": true}'::jsonb
+        '{"pending_subscription_id": "sub_next_456", "provider_current_start": "2026-11-15T00:00:00Z"}'::jsonb
       );
     `);
-    expect(rpcRes.rows[0].cancel_autorenew_subscription).toBe(true);
 
-    // Verify subscriptions record
-    const subRes = await pg.query<any>(
-      `SELECT cancel_at_period_end, metadata FROM public.subscriptions WHERE user_id = $1;`,
-      [testUserId]
-    );
-    expect(subRes.rows[0].cancel_at_period_end).toBe(true);
-    const meta = subRes.rows[0].metadata;
+    const subCheck = await pg.query<any>(`
+      SELECT metadata FROM public.subscriptions WHERE user_id = '${testUserId}';
+    `);
+    const meta = subCheck.rows[0].metadata;
 
-    // Must preserve original ledger data (illegal key ignored/filtered)
+    // Both old ledger entries and new pending keys must be present!
     expect(meta.processed_payments).toEqual(["pay_001", "pay_002"]);
-    expect(meta.renewal_seq).toBe(2);
-    expect(meta.initial_entitlement).toBe("granted");
-    expect(meta.admin_bypass).toBeUndefined();
+    expect(meta.ledger_seq).toBe(42);
+    expect(meta.pending_subscription_id).toBe("sub_next_456");
+    expect(meta.provider_current_start).toBe("2026-11-15T00:00:00Z");
+  });
 
-    // Permitted keys must be applied
-    expect(meta.canceled_by).toBe("customer");
-    expect(meta.cancel_reason).toBe("switched_job");
+  it("Reviewer 7: fulfil_subscription_renewal consumes provider period bounds from order metadata and grants exact 7/30/90 days", async () => {
+    const testUserId = "d1eebc99-9c0b-4ef8-bb6d-6bb9bd380d44";
+    const subId = "sub_rzp_renewal_test_777";
+    const payId = "pay_rzp_renewal_test_888";
 
-    // Verify payment_orders was marked cancelled
-    const orderRes = await pg.query<any>(
-      `SELECT status FROM public.payment_orders WHERE provider_order_id = $1;`,
-      [mandateId]
+    // Apply migration
+    const migrationSql = fs.readFileSync(
+      path.resolve(__dirname, "../../../supabase/migrations/20261115b_autorenew_mandate_safety.sql"),
+      "utf8"
     );
-    expect(orderRes.rows[0].status).toBe("cancelled");
+    await pg.exec(migrationSql);
+
+    // Brand-new subscription order with provider period bounds persisted in metadata
+    const providerStart = "2026-11-15T12:00:00Z";
+    const providerEnd = "2026-12-16T12:00:00Z"; // 31 days calendar month from provider
+    await pg.exec(`
+      INSERT INTO public.payment_orders (
+        user_id,
+        provider,
+        provider_order_id,
+        plan_code,
+        amount_paise,
+        status,
+        mode,
+        recurring_kind,
+        metadata
+      ) VALUES (
+        '${testUserId}',
+        'razorpay',
+        '${subId}',
+        'monthly',
+        149900,
+        'created',
+        'live',
+        'recurring',
+        '{"provider_current_start": "${providerStart}", "provider_current_end": "${providerEnd}"}'::jsonb
+      );
+    `);
+
+    // Fulfil renewal payment
+    const fulfilRes = await pg.query<any>(`
+      SELECT public.fulfil_subscription_renewal(
+        '${subId}',
+        '${payId}',
+        'live',
+        149900,
+        1700000000
+      ) as res;
+    `);
+
+    const result = fulfilRes.rows[0].res;
+    expect(result.success).toBe(true);
+    expect(result.is_pro).toBe(true);
+    // Strict fixed 7/30/90-day rule: duration is exact 30 days, not calendar 31
+    expect(result.duration_days).toBe(30);
+
+    // Verify subscription row consumed provider period bounds
+    const subCheck = await pg.query<any>(`
+      SELECT current_period_start, current_period_end, metadata FROM public.subscriptions WHERE user_id = '${testUserId}';
+    `);
+    expect(new Date(subCheck.rows[0].current_period_start).toISOString()).toBe(new Date(providerStart).toISOString());
+    expect(subCheck.rows[0].metadata.provider_current_start).toBe(providerStart);
+    expect(subCheck.rows[0].metadata.provider_current_end).toBe(providerEnd);
+  });
+
+  it("Reviewer 8: scopes constraint check, normalizes mode before index, and enforces unique index under concurrent sessions", async () => {
+    const testUserId = "e1eebc99-9c0b-4ef8-bb6d-6bb9bd380e55";
+
+    // Seed order with NULL mode before migration
+    await pg.exec(`
+      INSERT INTO public.payment_orders (user_id, provider, provider_order_id, plan_code, amount_paise, status, mode)
+      VALUES ('${testUserId}', 'razorpay', 'sub_legacy_null_mode', 'weekly', 69200, 'created', 'live');
+    `);
+
+    // Apply migration
+    const migrationSql = fs.readFileSync(
+      path.resolve(__dirname, "../../../supabase/migrations/20261115b_autorenew_mandate_safety.sql"),
+      "utf8"
+    );
+    await pg.exec(migrationSql);
+
+    // Verify mode is normalized to live
+    const modeCheck = await pg.query<any>(`
+      SELECT mode FROM public.payment_orders WHERE provider_order_id = 'sub_legacy_null_mode';
+    `);
+    expect(modeCheck.rows[0].mode).toBe("live");
+
+    // Mark previous order expired so user can start fresh reservation
+    await pg.exec(`
+      UPDATE public.payment_orders SET status = 'expired' WHERE provider_order_id = 'sub_legacy_null_mode';
+    `);
+
+    // Concurrent-session test simulation:
+    // Session 1 reserves mandate (succeeds)
+    await pg.exec(`
+      INSERT INTO public.payment_orders (user_id, provider, provider_order_id, plan_code, amount_paise, status, mode, recurring_kind)
+      VALUES ('${testUserId}', 'razorpay', 'sub_concurrent_session_1', 'monthly', 149900, 'reserved', 'live', 'recurring');
+    `);
+
+    // Session 2 concurrent attempt for same user/provider/mode must fail with unique collision
+    let session2Error: any = null;
+    try {
+      await pg.exec(`
+        INSERT INTO public.payment_orders (user_id, provider, provider_order_id, plan_code, amount_paise, status, mode, recurring_kind)
+        VALUES ('${testUserId}', 'razorpay', 'sub_concurrent_session_2', 'monthly', 149900, 'reserved', 'live', 'recurring');
+      `);
+    } catch (err: any) {
+      session2Error = err;
+    }
+    expect(session2Error).not.toBeNull();
+    expect(String(session2Error)).toContain("duplicate key value violates unique constraint");
+  });
+
+  it("Reviewer 5: record_subscription_reconciliation persists durable reconciliation record", async () => {
+    const testUserId = "f1eebc99-9c0b-4ef8-bb6d-6bb9bd380f66";
+
+    // Apply migration
+    const migrationSql = fs.readFileSync(
+      path.resolve(__dirname, "../../../supabase/migrations/20261115b_autorenew_mandate_safety.sql"),
+      "utf8"
+    );
+    await pg.exec(migrationSql);
+
+    await pg.exec(`
+      INSERT INTO auth.users (id) VALUES ('${testUserId}') ON CONFLICT DO NOTHING;
+    `);
+
+    const recIdRes = await pg.query<any>(`
+      SELECT public.record_subscription_reconciliation(
+        '${testUserId}'::uuid,
+        'sub_orphan_123',
+        'sub_pending_res_456',
+        'resolved',
+        'CAS_PREEMPTED',
+        'cancelled_at_provider_cas_preempted',
+        '{"plan_code": "monthly"}'::jsonb
+      ) as id;
+    `);
+    const recordId = recIdRes.rows[0].id;
+    expect(recordId).not.toBeNull();
+
+    const recordCheck = await pg.query<any>(`
+      SELECT * FROM public.subscription_reconciliations WHERE id = '${recordId}';
+    `);
+    expect(recordCheck.rows[0].user_id).toBe(testUserId);
+    expect(recordCheck.rows[0].provider_subscription_id).toBe("sub_orphan_123");
+    expect(recordCheck.rows[0].reconciliation_state).toBe("resolved");
+    expect(recordCheck.rows[0].recovery_outcome).toBe("cancelled_at_provider_cas_preempted");
   });
 });

@@ -352,19 +352,6 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
           };
         }
 
-        // If already scheduled for cancellation and confirmed, return status
-        if (sub && sub.cancel_at_period_end) {
-          return {
-            statusCode: 200,
-            headers,
-            body: JSON.stringify({
-              success: true,
-              message: "Subscription is already scheduled to cancel at the end of the billing period",
-              cancelAtPeriodEnd: true,
-            }),
-          };
-        }
-
         // Cancel mandate at Razorpay (Requirement 2)
         let cancelConfirmed = false;
         let providerCancelErr: any = null;
@@ -716,20 +703,61 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
           const createdAtSec = subData?.created_at || (subData?.start_at ?? 0);
           const ageMs = createdAtSec > 0 ? Date.now() - createdAtSec * 1000 : 0;
           if (ageMs > EXPIRATION_WINDOW_MS) {
-            if (subData?.status !== "active") {
-              try {
-                await fetchCaller(`https://api.razorpay.com/v1/subscriptions/${candidateId}/cancel`, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json", Authorization: `Basic ${credentials}` },
-                  body: JSON.stringify({ cancel_at_cycle_end: 0 }),
-                });
-              } catch (_) {}
+            safeLog.info("Candidate mandate is older than 24 hours; cancelling at provider first", JSON.stringify({ candidateId }));
+            let cancelConfirmed = false;
+            try {
+              const cancelRes = await fetchCaller(`https://api.razorpay.com/v1/subscriptions/${candidateId}/cancel`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: `Basic ${credentials}` },
+                body: JSON.stringify({ cancel_at_cycle_end: 0 }),
+              });
+              if (cancelRes.ok) {
+                const cancelData = await cancelRes.json().catch(() => ({}));
+                if (
+                  cancelData?.status === "cancelled" ||
+                  cancelData?.cancel_at_cycle_end === 1 ||
+                  cancelData?.cancel_at_cycle_end === true ||
+                  cancelData?.ended_at != null
+                ) {
+                  cancelConfirmed = true;
+                }
+              }
+            } catch (_) {}
+
+            if (cancelConfirmed) {
+              await supabaseAdmin
+                .from("payment_orders")
+                .update({ status: "expired", updated_at: new Date().toISOString() })
+                .eq("provider_order_id", candidateId);
+              return null;
+            } else {
+              // Reviewer 4: On network/non-2xx keep the row protected as unknown
+              await supabaseAdmin.rpc("record_subscription_reconciliation", {
+                p_user_id: user.id,
+                p_provider_subscription_id: candidateId,
+                p_reservation_order_id: null,
+                p_reconciliation_state: "pending",
+                p_failure_reason: "STALE_CANDIDATE_CANCEL_FAILED",
+                p_recovery_outcome: "protected_as_unknown",
+                p_metadata: { candidateId, status: subData?.status },
+              }).catch(() => null);
+
+              await supabaseAdmin
+                .from("payment_orders")
+                .update({
+                  status: "unknown",
+                  updated_at: new Date().toISOString(),
+                  metadata: {
+                    reconciliation_required: true,
+                    reconciliation_state: "pending",
+                    reason: "stale_candidate_cancel_failed",
+                    candidateId,
+                  },
+                })
+                .eq("provider_order_id", candidateId);
+
+              return { ok: false, error: "STALE_CANDIDATE_CANCEL_FAILED", status: 502 };
             }
-            await supabaseAdmin
-              .from("payment_orders")
-              .update({ status: "expired" })
-              .eq("provider_order_id", candidateId);
-            return null;
           }
 
           return { ok: true, subData };
@@ -739,7 +767,7 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
         }
       };
 
-      // Stale Order & Lease Reconciliation (Requirement 6 & Reviewer E)
+      // Stale Order & Lease Reconciliation (Requirement 6 & Reviewer 4)
       const expirationCutoff = new Date(Date.now() - EXPIRATION_WINDOW_MS).toISOString();
       const leaseCutoff = new Date(Date.now() - LEASE_DURATION_MS).toISOString();
 
@@ -756,28 +784,119 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
       if (staleOrders && staleOrders.length > 0) {
         for (const st of staleOrders) {
           if (st.provider_order_id?.startsWith("sub_") && !st.provider_order_id.startsWith("sub_pending_")) {
+            let cancelConfirmed = false;
             try {
-              await fetchCaller(`https://api.razorpay.com/v1/subscriptions/${st.provider_order_id}/cancel`, {
+              const cancelRes = await fetchCaller(`https://api.razorpay.com/v1/subscriptions/${st.provider_order_id}/cancel`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json", Authorization: `Basic ${credentials}` },
                 body: JSON.stringify({ cancel_at_cycle_end: 0 }),
               });
+              if (cancelRes.ok) {
+                const cancelData = await cancelRes.json().catch(() => ({}));
+                if (
+                  cancelData?.status === "cancelled" ||
+                  cancelData?.cancel_at_cycle_end === 1 ||
+                  cancelData?.cancel_at_cycle_end === true ||
+                  cancelData?.ended_at != null
+                ) {
+                  cancelConfirmed = true;
+                }
+              }
             } catch (_) {}
+
+            if (cancelConfirmed) {
+              await supabaseAdmin
+                .from("payment_orders")
+                .update({ status: "expired", updated_at: new Date().toISOString() })
+                .eq("id", st.id);
+            } else {
+              // Reviewer 4: On network/non-2xx keep the row protected as unknown
+              await supabaseAdmin.rpc("record_subscription_reconciliation", {
+                p_user_id: user.id,
+                p_provider_subscription_id: st.provider_order_id,
+                p_reservation_order_id: null,
+                p_reconciliation_state: "pending",
+                p_failure_reason: "STALE_ORDER_CANCEL_FAILED",
+                p_recovery_outcome: "protected_as_unknown",
+                p_metadata: { order_id: st.id },
+              }).catch(() => null);
+
+              await supabaseAdmin
+                .from("payment_orders")
+                .update({
+                  status: "unknown",
+                  updated_at: new Date().toISOString(),
+                  metadata: {
+                    reconciliation_required: true,
+                    reconciliation_state: "pending",
+                    reason: "stale_order_cancel_non_200",
+                    order_id: st.id,
+                  },
+                })
+                .eq("id", st.id);
+            }
           }
         }
-        const staleIds = staleOrders.map((st: any) => st.id);
-        await supabaseAdmin.from("payment_orders").update({ status: "expired" }).in("id", staleIds);
       }
 
-      await supabaseAdmin
+      // Reviewer 4: Lease expiry must reconcile with the provider before releasing the reservation
+      const { data: expiredLeases } = await supabaseAdmin
         .from("payment_orders")
-        .update({ status: "expired" })
+        .select("id, provider_order_id, status")
         .eq("user_id", user.id)
         .eq("provider", "razorpay")
         .eq("mode", resolvedMode)
         .eq("recurring_kind", "recurring")
         .eq("status", "reserved")
         .lt("created_at", leaseCutoff);
+
+      if (expiredLeases && expiredLeases.length > 0) {
+        for (const lease of expiredLeases) {
+          if (lease.provider_order_id?.startsWith("sub_") && !lease.provider_order_id.startsWith("sub_pending_")) {
+            let cancelConfirmed = false;
+            try {
+              const cancelRes = await fetchCaller(`https://api.razorpay.com/v1/subscriptions/${lease.provider_order_id}/cancel`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: `Basic ${credentials}` },
+                body: JSON.stringify({ cancel_at_cycle_end: 0 }),
+              });
+              if (cancelRes.ok) {
+                const cancelData = await cancelRes.json().catch(() => ({}));
+                if (
+                  cancelData?.status === "cancelled" ||
+                  cancelData?.cancel_at_cycle_end === 1 ||
+                  cancelData?.cancel_at_cycle_end === true ||
+                  cancelData?.ended_at != null
+                ) {
+                  cancelConfirmed = true;
+                }
+              }
+            } catch (_) {}
+
+            if (cancelConfirmed) {
+              await supabaseAdmin.from("payment_orders").update({ status: "expired", updated_at: new Date().toISOString() }).eq("id", lease.id);
+            } else {
+              await supabaseAdmin
+                .from("payment_orders")
+                .update({
+                  status: "unknown",
+                  updated_at: new Date().toISOString(),
+                  metadata: {
+                    reconciliation_required: true,
+                    reconciliation_state: "pending",
+                    reason: "lease_expiry_cancel_unverified",
+                  },
+                })
+                .eq("id", lease.id);
+            }
+          } else {
+            await supabaseAdmin
+              .from("payment_orders")
+              .update({ status: "expired", updated_at: new Date().toISOString() })
+              .eq("id", lease.id);
+          }
+        }
+      }
 
       // Authoritative Pending Reuse Query (Requirement 3 & 5 & Reviewer B)
       const { data: existingPendingOrder, error: pendingOrderErr } = await supabaseAdmin
@@ -1185,19 +1304,71 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
 
         if (!validSubId || !validStatus) {
           safeLog.error("[Netlify /billing-razorpay-subscription] Invalid subscription data received from Razorpay:", subscriptionData);
-          await supabaseAdmin
-            .from("payment_orders")
-            .update({ status: "failed" })
-            .eq("provider_order_id", reservationOrderId);
+          let cancelConfirmed = false;
 
           if (subscriptionData?.id && typeof subscriptionData.id === "string" && subscriptionData.id.startsWith("sub_")) {
             try {
-              await fetchCaller(`https://api.razorpay.com/v1/subscriptions/${subscriptionData.id}/cancel`, {
+              const cancelRes = await fetchCaller(`https://api.razorpay.com/v1/subscriptions/${subscriptionData.id}/cancel`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json", Authorization: `Basic ${credentials}` },
                 body: JSON.stringify({ cancel_at_cycle_end: 0 }),
               });
+              if (cancelRes.ok) {
+                const cancelData = await cancelRes.json().catch(() => ({}));
+                if (
+                  cancelData?.status === "cancelled" ||
+                  cancelData?.cancel_at_cycle_end === 1 ||
+                  cancelData?.cancel_at_cycle_end === true ||
+                  cancelData?.ended_at != null
+                ) {
+                  cancelConfirmed = true;
+                }
+              }
             } catch (_) {}
+          } else {
+            cancelConfirmed = true;
+          }
+
+          if (cancelConfirmed) {
+            await supabaseAdmin.rpc("record_subscription_reconciliation", {
+              p_user_id: user.id,
+              p_provider_subscription_id: subscriptionData?.id || null,
+              p_reservation_order_id: reservationOrderId,
+              p_reconciliation_state: "resolved",
+              p_failure_reason: "INVALID_SUBSCRIPTION_DATA",
+              p_recovery_outcome: "cancelled_invalid_data",
+              p_metadata: { plan_code: planCode, mode: resolvedMode },
+            }).catch(() => null);
+
+            await supabaseAdmin
+              .from("payment_orders")
+              .update({ status: "failed", updated_at: new Date().toISOString() })
+              .eq("provider_order_id", reservationOrderId);
+          } else {
+            // Reviewer 5: Invalid-ID or boundary failures must keep the obligation until verified stopped
+            await supabaseAdmin.rpc("record_subscription_reconciliation", {
+              p_user_id: user.id,
+              p_provider_subscription_id: subscriptionData?.id || null,
+              p_reservation_order_id: reservationOrderId,
+              p_reconciliation_state: "pending",
+              p_failure_reason: "INVALID_SUBSCRIPTION_DATA_CANCEL_UNVERIFIED",
+              p_recovery_outcome: "obligation_kept_as_unknown",
+              p_metadata: { plan_code: planCode, mode: resolvedMode },
+            }).catch(() => null);
+
+            await supabaseAdmin
+              .from("payment_orders")
+              .update({
+                status: "unknown",
+                provider_order_id: subscriptionData.id,
+                updated_at: new Date().toISOString(),
+                metadata: {
+                  reconciliation_required: true,
+                  reconciliation_state: "pending",
+                  error: "Invalid subscription details and cancel unverified",
+                },
+              })
+              .eq("provider_order_id", reservationOrderId);
           }
 
           return {
@@ -1237,14 +1408,69 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
           });
 
           // Cancel mandate at provider to prevent orphan
+          let cancelConfirmed = false;
           try {
-            await fetchCaller(`https://api.razorpay.com/v1/subscriptions/${subscriptionData.id}/cancel`, {
+            const cancelRes = await fetchCaller(`https://api.razorpay.com/v1/subscriptions/${subscriptionData.id}/cancel`, {
               method: "POST",
               headers: { "Content-Type": "application/json", Authorization: `Basic ${credentials}` },
               body: JSON.stringify({ cancel_at_cycle_end: 0 }),
             });
+            if (cancelRes.ok) {
+              const cancelData = await cancelRes.json().catch(() => ({}));
+              if (
+                cancelData?.status === "cancelled" ||
+                cancelData?.cancel_at_cycle_end === 1 ||
+                cancelData?.cancel_at_cycle_end === true ||
+                cancelData?.ended_at != null
+              ) {
+                cancelConfirmed = true;
+              }
+            }
           } catch (cancelErr) {
             safeLog.error("[Netlify /billing-razorpay-subscription] Exception during orphan mandate cancellation:", cancelErr);
+          }
+
+          const recoveryOutcome = cancelConfirmed
+            ? "cancelled_at_provider_cas_preempted"
+            : "provider_cancel_failed_needs_reconciliation";
+          const reconciliationState = cancelConfirmed ? "resolved" : "pending";
+
+          // Reviewer 5: After a CAS failure persist the provider subscription ID and the recovery outcome
+          await supabaseAdmin.rpc("record_subscription_reconciliation", {
+            p_user_id: user.id,
+            p_provider_subscription_id: subscriptionData.id,
+            p_reservation_order_id: reservationOrderId,
+            p_reconciliation_state: reconciliationState,
+            p_failure_reason: "CAS_PREEMPTED_OR_LEASE_EXPIRED",
+            p_recovery_outcome: recoveryOutcome,
+            p_metadata: {
+              plan_code: planCode,
+              mode: resolvedMode,
+              error: updateOrderErr?.message || "Affected rows is not 1",
+              subscription_data: subscriptionData,
+            },
+          }).catch(() => null);
+
+          if (!cancelConfirmed) {
+            await supabaseAdmin
+              .from("payment_orders")
+              .update({
+                status: "unknown",
+                provider_order_id: subscriptionData.id,
+                updated_at: new Date().toISOString(),
+                metadata: {
+                  reconciliation_required: true,
+                  reconciliation_state: "pending",
+                  attempt_id: attemptId,
+                  reservation_id: reservationOrderId,
+                  provider_subscription_id: subscriptionData.id,
+                  plan_code: planCode,
+                  mode: resolvedMode,
+                  error: "CAS preempted and provider cancel failed",
+                },
+              })
+              .eq("provider_order_id", reservationOrderId)
+              .eq("user_id", user.id);
           }
 
           return {
@@ -1272,18 +1498,66 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
             rawEndSec,
           });
 
+          let cancelConfirmed = false;
           try {
-            await fetchCaller(`https://api.razorpay.com/v1/subscriptions/${subscriptionData.id}/cancel`, {
+            const cancelRes = await fetchCaller(`https://api.razorpay.com/v1/subscriptions/${subscriptionData.id}/cancel`, {
               method: "POST",
               headers: { "Content-Type": "application/json", Authorization: `Basic ${credentials}` },
               body: JSON.stringify({ cancel_at_cycle_end: 0 }),
             });
+            if (cancelRes.ok) {
+              const cancelData = await cancelRes.json().catch(() => ({}));
+              if (
+                cancelData?.status === "cancelled" ||
+                cancelData?.cancel_at_cycle_end === 1 ||
+                cancelData?.cancel_at_cycle_end === true ||
+                cancelData?.ended_at != null
+              ) {
+                cancelConfirmed = true;
+              }
+            }
           } catch (_) {}
 
-          await supabaseAdmin
-            .from("payment_orders")
-            .update({ status: "failed" })
-            .eq("provider_order_id", subscriptionData.id);
+          if (cancelConfirmed) {
+            await supabaseAdmin.rpc("record_subscription_reconciliation", {
+              p_user_id: user.id,
+              p_provider_subscription_id: subscriptionData.id,
+              p_reservation_order_id: reservationOrderId,
+              p_reconciliation_state: "resolved",
+              p_failure_reason: "MISSING_PROVIDER_PERIOD",
+              p_recovery_outcome: "cancelled_at_provider_invalid_boundary",
+              p_metadata: { plan_code: planCode, mode: resolvedMode },
+            }).catch(() => null);
+
+            await supabaseAdmin
+              .from("payment_orders")
+              .update({ status: "failed", updated_at: new Date().toISOString() })
+              .eq("provider_order_id", subscriptionData.id);
+          } else {
+            // Reviewer 5: Boundary failures must keep the obligation until verified stopped
+            await supabaseAdmin.rpc("record_subscription_reconciliation", {
+              p_user_id: user.id,
+              p_provider_subscription_id: subscriptionData.id,
+              p_reservation_order_id: reservationOrderId,
+              p_reconciliation_state: "pending",
+              p_failure_reason: "MISSING_PROVIDER_PERIOD_CANCEL_FAILED",
+              p_recovery_outcome: "provider_cancel_failed_obligation_kept",
+              p_metadata: { plan_code: planCode, mode: resolvedMode },
+            }).catch(() => null);
+
+            await supabaseAdmin
+              .from("payment_orders")
+              .update({
+                status: "unknown",
+                updated_at: new Date().toISOString(),
+                metadata: {
+                  reconciliation_required: true,
+                  reconciliation_state: "pending",
+                  error: "Missing period boundaries and cancel failed",
+                },
+              })
+              .eq("provider_order_id", subscriptionData.id);
+          }
 
           return {
             statusCode: 502,
@@ -1316,9 +1590,32 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
           })
         );
 
+        // Reviewer 7: Persist provider period bounds in payment_orders.metadata for brand-new and existing subscriptions
+        const orderMetadata = {
+          provider_current_start: providerCurrentStart,
+          provider_current_end: providerCurrentEnd,
+          provider_charge_at: providerChargeAt,
+          verified_amount_paise: verifiedAmount,
+          verified_currency: verifiedCurrency,
+          verified_period: verifiedPeriod,
+          verified_interval: verifiedInterval,
+          plan_code: planCode,
+          mode: resolvedMode,
+          attempt_id: attemptId,
+          reservation_id: reservationOrderId,
+        };
+
+        await supabaseAdmin
+          .from("payment_orders")
+          .update({
+            metadata: orderMetadata,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("provider_order_id", subscriptionData.id);
+
+        // Reviewer 6: Replace JS-merged existingSub.metadata write with a transactional JSON merge (jsonb || in SQL)
         if (existingSub) {
-          const mergedMetadata = {
-            ...(existingSub.metadata || {}),
+          const pendingMetadata = {
             pending_subscription_id: subscriptionData.id,
             pending_plan_code: planCode,
             pending_mode: resolvedMode,
@@ -1332,16 +1629,13 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
             verified_interval: verifiedInterval,
           };
 
-          const { error: updateSubErr } = await supabaseAdmin
-            .from("subscriptions")
-            .update({
-              updated_at: new Date().toISOString(),
-              metadata: mergedMetadata,
-            })
-            .eq("user_id", user.id);
+          const { error: mergeSubErr } = await supabaseAdmin.rpc("merge_subscription_metadata", {
+            p_user_id: user.id,
+            p_metadata: pendingMetadata,
+          });
 
-          if (updateSubErr) {
-            safeLog.warn("[Netlify /billing-razorpay-subscription] Failed to update pending subscription metadata:", updateSubErr);
+          if (mergeSubErr) {
+            safeLog.warn("[Netlify /billing-razorpay-subscription] Failed to merge pending subscription metadata:", mergeSubErr);
           }
         }
 

@@ -239,10 +239,21 @@ async function runAutorenewTests() {
       },
     },
     rpc: async (fn: string, params: any) => {
+      if (fn === "merge_subscription_metadata") {
+        if (mockExistingSub && mockExistingSub.user_id === params.p_user_id) {
+          mockExistingSub.metadata = { ...(mockExistingSub.metadata || {}), ...(params.p_metadata || {}) };
+          dbStoredSubscriptionMetadata = mockExistingSub.metadata;
+        }
+        return { data: true, error: null };
+      }
+      if (fn === "record_subscription_reconciliation") {
+        return { data: "mock-reconcile-uuid", error: null };
+      }
       if (fn === "cancel_autorenew_subscription") {
         if (mockExistingSub && mockExistingSub.user_id === params.p_user_id) {
           mockExistingSub.cancel_at_period_end = true;
           mockExistingSub.metadata = { ...(mockExistingSub.metadata || {}), ...(params.p_metadata || {}) };
+          dbStoredSubscriptionMetadata = mockExistingSub.metadata;
         }
         for (const order of dbStoredPaymentOrders) {
           if (order.user_id === params.p_user_id && order.provider_order_id === params.p_mandate_id) {

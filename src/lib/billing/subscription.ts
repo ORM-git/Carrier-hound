@@ -385,6 +385,33 @@ export async function getUserSubscription(
           metadata: sub.metadata,
         };
       }
+
+      // If no subscription row exists, check for pending recurring order in payment_orders (Reviewer 3)
+      const { data: pendingOrder } = await supabase
+        .from("payment_orders")
+        .select("id, user_id, provider, provider_order_id, plan_code, currency, amount_paise, created_at, status, metadata")
+        .eq("user_id", resolvedUserId)
+        .eq("recurring_kind", "recurring")
+        .in("status", ["reserved", "created", "unknown"])
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (pendingOrder) {
+        return {
+          id: pendingOrder.id,
+          userId: resolvedUserId,
+          provider: pendingOrder.provider || "razorpay",
+          subscriptionId: pendingOrder.provider_order_id || undefined,
+          planId: normalizePlanCode(pendingOrder.plan_code) || undefined,
+          currency: pendingOrder.currency || "INR",
+          amount: typeof pendingOrder.amount_paise === "number" ? Math.round(pendingOrder.amount_paise / 100) : undefined,
+          status: "incomplete" as SubscriptionStatus,
+          currentPeriodStart: pendingOrder.created_at,
+          cancelAtPeriodEnd: false,
+          metadata: pendingOrder.metadata || { pending_subscription_id: pendingOrder.provider_order_id },
+        };
+      }
     }
   } catch (e) {
     log.warn("Could not fetch user subscription", { error: e });
@@ -427,6 +454,7 @@ export async function cancelAutoRenewSubscription(): Promise<{ success: boolean;
 
 /**
  * Marks the subscription to cancel at the end of the current period
+ * Reviewer 9: On success keep paid access until period end; do not set status canceled immediately.
  */
 export async function cancelSubscription(): Promise<UserSubscription | null> {
   try {
@@ -436,8 +464,7 @@ export async function cancelSubscription(): Promise<UserSubscription | null> {
       return null;
     }
 
-    setLocalProActive(false);
-
+    // Keep paid access until period end! Do NOT revoke local Pro status immediately.
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();
     const user = session?.user || (await supabase.auth.getUser()).data.user;
@@ -445,8 +472,10 @@ export async function cancelSubscription(): Promise<UserSubscription | null> {
     if (user) {
       await supabase
         .from("subscriptions")
-        .update({ status: "canceled", cancel_at_period_end: true })
+        .update({ cancel_at_period_end: true })
         .eq("user_id", user.id);
+
+      return await getUserSubscription(user.id, supabase);
     }
   } catch (e) {
     log.warn("Could not cancel subscription remotely", { error: e });
