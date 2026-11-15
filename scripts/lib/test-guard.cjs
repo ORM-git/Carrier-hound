@@ -403,7 +403,7 @@ function executeSuiteList(suitesToRun, options) {
       cwd: process.cwd(),
       encoding: "utf8",
       shell: true,
-      timeout: 120000,
+      timeout: suite.timeout || 120000,
       env: childEnv,
     });
 
