@@ -79,12 +79,45 @@ export interface RouteCompletionOptions {
   onAttempt?: (info: AiAttemptInfo) => void;
   /** Aborting this (e.g. the request-level deadline) stops routing immediately. */
   signal?: AbortSignal;
+  /** Maximum billable tokens permitted for all attempts combined. */
+  maxBillableTokens?: number;
 }
 
 export const DEFAULT_TOTAL_MS = 24_000;
 export const DEFAULT_PRIMARY_MS = 20_000;
 export const DEFAULT_FALLBACK_MS = 15_000;
 const REPAIR_ECHO_MAX_CHARS = 6_000;
+
+/**
+ * Attempt Plan:
+ * 1. Primary model initial call (1 call)
+ * 2. If primary model succeeds or fails with non-retryable error: stops.
+ * 3. If primary model returns invalid JSON, repair attempt runs (1 call).
+ *    If repair fails validation, routing stops (no fallback attempted on validation failure).
+ * 4. If primary model times out or encounters 5xx/429/network failure:
+ *    Fallback model initial call runs (1 call).
+ * 5. If fallback model returns invalid JSON and repair has not been used yet:
+ *    Fallback repair attempt runs (1 call).
+ *
+ * Therefore:
+ * - With fallback model configured: maximum 3 LLM calls across any execution path.
+ * - Single model configured: maximum 2 LLM calls across any execution path.
+ */
+export const MAX_ROUTING_ATTEMPTS_WITH_FALLBACK = 3;
+export const MAX_ROUTING_ATTEMPTS_SINGLE_MODEL = 2;
+
+export function getMaxRoutingAttempts(hasFallback: boolean): number {
+  return hasFallback ? MAX_ROUTING_ATTEMPTS_WITH_FALLBACK : MAX_ROUTING_ATTEMPTS_SINGLE_MODEL;
+}
+
+export const REPAIR_EXTRA_TOKENS_BUFFER = 1500; // ~6000 chars of repair echo & validator instructions
+
+export function computeMaxWorkTokens(payload: BuiltAiPayload): number {
+  const perAttemptTokens = Math.max(1, (payload.estimatedInputTokens || 0) + (payload.maxOutputTokens || 0));
+  const hasFallback = !!(payload.fallbackModel && payload.fallbackModel !== payload.model);
+  const maxAttempts = getMaxRoutingAttempts(hasFallback);
+  return maxAttempts * perAttemptTokens + REPAIR_EXTRA_TOKENS_BUFFER;
+}
 
 export function getValidationReasonCode(error: string): string {
   if (!error) return "VALIDATION_FAILED";
@@ -233,6 +266,13 @@ export async function routeCompletion(
 
     // At most two calls per model: the normal one and (once overall) a repair.
     for (let round = 0; round < 2; round++) {
+      // Before each attempt, check remaining reserved budget: if the next attempt could exceed maxBillableTokens, stop
+      if (typeof opts.maxBillableTokens === "number" && opts.maxBillableTokens > 0) {
+        if (totalBillableTokens >= opts.maxBillableTokens || totalBillableTokens + conservativePerAttemptTokens > opts.maxBillableTokens) {
+          last = { kind: "busy", message: "AI token budget limit reached for request." };
+          break;
+        }
+      }
       const remaining = deadline - Date.now();
       if (remaining <= 0 || opts.signal?.aborted) {
         last = { kind: "timeout", message: "AI service request failed or timed out. Please try again." };

@@ -204,6 +204,11 @@ import {
   DEFAULT_TOTAL_MS,
   DEFAULT_PRIMARY_MS,
   DEFAULT_FALLBACK_MS,
+  computeMaxWorkTokens,
+  getValidationReasonCode,
+  MAX_ROUTING_ATTEMPTS_WITH_FALLBACK,
+  MAX_ROUTING_ATTEMPTS_SINGLE_MODEL,
+  getMaxRoutingAttempts,
 } from "./routing";
 
 const log = createLogger({ context: { module: "ai/serviceHandler" } });
@@ -624,7 +629,7 @@ export async function executeAiCore(
     if (cached) {
       isPreVerifiedReplay = true;
       preVerifiedReplayResult = cached;
-    } else if (isMeteredOperation && typeof supabaseAdmin?.from === "function") {
+    } else if (typeof supabaseAdmin?.from === "function") {
       try {
         const { data: dbEvent } = await supabaseAdmin
           .from("plan_usage_events")
@@ -689,8 +694,8 @@ export async function executeAiCore(
       }
     };
 
-    // 3C. Global Daily Token Budget Reservation (Reserve maximum permitted work before calling)
-    const maxPermittedTokens = 2 * Math.max(1, (payload.estimatedInputTokens || 0) + (payload.maxOutputTokens || 0));
+    // 3C. Global Daily Token Budget Reservation (Reserve maximum permitted work across all possible attempts)
+    const maxPermittedTokens = computeMaxWorkTokens(payload);
     const estimatedTokens = maxPermittedTokens;
     const globalDailyCap = getAiGlobalDailyTokenCap(activeDeps.env);
     const periodDate = new Date().toISOString().slice(0, 10);
@@ -890,31 +895,19 @@ export async function executeAiCore(
           // Ignore DB fetch failure on replay
         }
 
-        // If an operation is actively marked in-flight in memory or in DB, return 409
-        if (isOperationInFlight(user.id, config.operation, setConsumeKey)) {
-          return {
-            statusCode: 409,
-            body: {
-              error: "Operation currently in progress. Please retry or poll shortly.",
-              code: "OPERATION_IN_FLIGHT",
-              status: "pending",
-              operation: config.operation,
-              idempotencyKey: setConsumeKey,
-              retryAfter: 2,
-            },
-            headers: {
-              "Retry-After": "2",
-            },
-          };
-        }
-
+        // Fallback: If already consumed but no cached content exists, return 409 (never 200 without content)
         return {
-          statusCode: 200,
+          statusCode: 409,
           body: {
-            success: true,
+            error: "Operation currently in progress or already processed. Please retry or poll shortly.",
+            code: "OPERATION_IN_FLIGHT",
+            status: "pending",
             operation: config.operation,
-            idempotentReplay: true,
-            alreadyConsumed: true,
+            idempotencyKey: setConsumeKey,
+            retryAfter: 2,
+          },
+          headers: {
+            "Retry-After": "2",
           },
         };
       }
@@ -1190,6 +1183,7 @@ export async function executeAiCore(
               primaryMs: Math.min(DEFAULT_PRIMARY_MS, groqTimeoutMs),
               fallbackMs: Math.min(DEFAULT_FALLBACK_MS, groqTimeoutMs),
               signal: abortController.signal,
+              maxBillableTokens: maxPermittedTokens,
               validate: (c) => {
                 const v = validateAndSanitizeAiOutput(config.operation, c, params);
                 return v.ok ? { ok: true } : { ok: false, error: v.error };
@@ -1220,17 +1214,21 @@ export async function executeAiCore(
             }
             const status = re?.statusCode ?? 502;
             const retryAfter = re?.retryAfter;
+            const fixedError =
+              code === "AI_VALIDATION_FAILED"
+                ? "AI output could not be verified against the provided facts."
+                : code === "AI_TIMEOUT"
+                ? "AI service request timed out. Please try again."
+                : code === "AI_BUSY"
+                ? "AI service is busy right now. Please try again."
+                : "AI service generation failed. Please try again.";
             return {
               statusCode: status,
               body: {
-                error:
-                  re?.message ||
-                  (code === "AI_VALIDATION_FAILED"
-                    ? "AI output could not be verified against your resume."
-                    : code === "AI_TIMEOUT"
-                    ? "AI service request timed out. Please try again."
-                    : "AI service generation failed. Please try again."),
+                error: fixedError,
+                message: fixedError,
                 code,
+                ...(code === "AI_VALIDATION_FAILED" ? { validation_code: getValidationReasonCode(re?.message || "") } : {}),
                 ...(retryAfter ? { retryAfter } : {}),
               },
               ...(retryAfter ? { headers: { "Retry-After": String(Math.min(retryAfter, 60)) } } : {}),
@@ -1303,9 +1301,15 @@ export async function executeAiCore(
       if (!validated.ok) {
         await settleBudget(actualTokens);
         await rollbackAllQuotas();
+        const fixedError = "AI output could not be verified against the provided facts.";
         return {
           statusCode: 502,
-          body: { error: validated.error },
+          body: {
+            error: fixedError,
+            message: fixedError,
+            code: "AI_VALIDATION_FAILED",
+            validation_code: getValidationReasonCode(validated.error),
+          },
         };
       }
 
@@ -1324,14 +1328,25 @@ export async function executeAiCore(
       if (setConsumeKey) {
         storeIdempotentResult(user.id, config.operation, setConsumeKey, responsePayload);
       }
-      if (setConsumed && setConsumeKey) {
+      if (setConsumeKey && typeof supabaseAdmin?.from === "function") {
         try {
-          await supabaseAdmin
-            .from("plan_usage_events")
-            .update({ response_payload: responsePayload })
-            .eq("user_id", user.id)
-            .eq("kind", config.operation)
-            .eq("idempotency_key", setConsumeKey);
+          if (setConsumed) {
+            await supabaseAdmin
+              .from("plan_usage_events")
+              .update({ response_payload: responsePayload })
+              .eq("user_id", user.id)
+              .eq("kind", config.operation)
+              .eq("idempotency_key", setConsumeKey);
+          } else {
+            await supabaseAdmin
+              .from("plan_usage_events")
+              .insert({
+                user_id: user.id,
+                kind: config.operation,
+                idempotency_key: setConsumeKey,
+                response_payload: responsePayload,
+              });
+          }
         } catch {}
       }
 
@@ -1364,7 +1379,7 @@ export async function executeAiCore(
       }
     }
   } catch (err: any) {
-    log.error("[AI Service] Unhandled error:", { error: err });
+    log.error("[AI Service] Unhandled error: " + (err?.stack || err?.message || String(err)));
     if (setConsumed && setConsumeKey && confirmedUserId) {
       const doRefund = activeDeps.refundSet || refundSet;
       setConsumed = false;
@@ -1400,12 +1415,9 @@ export async function handleAiRequest(req: Request, deps: AiServiceDeps = {}): P
     const res = await executeAiCore(clientIp, authHeader, body, { ...deps, ...(reqId ? { requestId: reqId } : {}) }, "ai:ip:");
     if (res.statusCode >= 500) {
       log.error("[AI Service] 5xx response returned", {
-        statusCode: res.statusCode,
-        operation: typeof body?.operation === "string" ? body.operation : undefined,
-        error: res.body?.error,
-        code: res.body?.code,
-        missingVariable: res.body?.missingVariable,
-        requestId: req?.headers?.get?.("x-request-id") ?? undefined,
+        status: res.statusCode,
+        code: res.body?.code ?? "INTERNAL_SERVER_ERROR",
+        requestId: req?.headers?.get?.("x-request-id") ?? reqId,
       });
     }
     return NextResponse.json(res.body, {
@@ -1414,7 +1426,8 @@ export async function handleAiRequest(req: Request, deps: AiServiceDeps = {}): P
     });
   } catch (err: any) {
     log.error("[AI Service] Unhandled error in handleAiRequest", {
-      error: err,
+      status: 500,
+      code: "INTERNAL_SERVER_ERROR",
       requestId: req?.headers?.get?.("x-request-id") ?? undefined,
     });
     return NextResponse.json(
@@ -1464,11 +1477,9 @@ export async function handleNetlifyAiRequest(
   const res = await executeAiCore(clientIp, authHeader, body, { ...deps, ...(reqId ? { requestId: reqId } : {}) }, "ip:");
   if (res.statusCode >= 500) {
     log.error("[AI Service] 5xx response returned (Netlify)", {
-      statusCode: res.statusCode,
-      operation: typeof body?.operation === "string" ? body.operation : undefined,
-      error: res.body?.error,
-      code: res.body?.code,
-      missingVariable: res.body?.missingVariable,
+      status: res.statusCode,
+      code: res.body?.code ?? "INTERNAL_SERVER_ERROR",
+      requestId: reqId,
     });
   }
   return {
