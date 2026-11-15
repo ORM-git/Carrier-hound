@@ -29,6 +29,10 @@ export interface OperationConfig {
   jsonMode: boolean;
   dailyQuota: number;
   description: string;
+  /** Groq gpt-oss only: caps hidden reasoning so it cannot starve max_tokens. */
+  reasoningEffort?: "low" | "medium" | "high";
+  /** Used only on timeout/5xx/429/empty/truncated from the primary model. */
+  fallbackModel?: string;
 }
 
 /**
@@ -87,9 +91,11 @@ export const OPERATION_CONFIGS: Record<AllowedAiOperation, OperationConfig> = {
     aliases: ["cover-letter", "coverletter"],
     model: process.env.SMART_MODEL || "openai/gpt-oss-120b",
     maxInputTokens: 3000,
-    maxOutputTokens: 1000,
+    maxOutputTokens: 2500,
     temperature: 0.2,
     jsonMode: false,
+    reasoningEffort: "low",
+    fallbackModel: process.env.AI_FALLBACK_MODEL || "llama-3.3-70b-versatile",
     dailyQuota: 30,
     description: "Factual tailored cover letter body paragraphs strictly grounded in candidate facts",
   },
@@ -109,9 +115,11 @@ export const OPERATION_CONFIGS: Record<AllowedAiOperation, OperationConfig> = {
     aliases: ["resume-tailor", "resumetailor", "tailor_resume", "tailor-resume"],
     model: process.env.SMART_MODEL || "openai/gpt-oss-120b",
     maxInputTokens: 4000,
-    maxOutputTokens: 2000,
+    maxOutputTokens: 3500,
     temperature: 0.2,
     jsonMode: true,
+    reasoningEffort: "low",
+    fallbackModel: process.env.AI_FALLBACK_MODEL || "llama-3.3-70b-versatile",
     dailyQuota: 30,
     description: "Tailor candidate profile bullet points and summary strictly grounded in candidate facts",
   },
@@ -161,6 +169,8 @@ export interface BuiltAiPayload {
   temperature: number;
   jsonMode: boolean;
   estimatedInputTokens: number;
+  reasoningEffort?: "low" | "medium" | "high";
+  fallbackModel?: string;
 }
 
 /**
@@ -755,6 +765,8 @@ Ideal output JSON:
       temperature: config.temperature,
       jsonMode: config.jsonMode,
       estimatedInputTokens,
+      reasoningEffort: config.reasoningEffort,
+      fallbackModel: config.fallbackModel,
       metadata,
     },
   };

@@ -144,11 +144,11 @@ export default function SignupPage() {
       });
 
       if (oauthError) {
-        setError(formatAuthError(oauthError.message, true));
+        setError(formatAuthError(oauthError.message, true, true));
         setGoogleLoading(false);
       }
     } catch (err: any) {
-      setError(formatAuthError(err?.message || "Could not initialize Google Sign In.", true));
+      setError(formatAuthError(err?.message || "Could not initialize Google Sign In.", true, true));
       setGoogleLoading(false);
     }
   };

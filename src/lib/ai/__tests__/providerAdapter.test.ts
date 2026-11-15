@@ -283,7 +283,7 @@ describe("Provider Abstraction Layer (AiTextCompletionProviderAdapter)", () => {
 
     expect(signalAborted).toBe(true);
     expect(response.statusCode).toBe(502);
-    expect(response.body).toEqual({
+    expect(response.body).toMatchObject({
       error: "AI service request failed or timed out. Please try again.",
     });
     expect(harness.getSettledTokens()).toEqual([0]);
@@ -357,7 +357,7 @@ describe("Provider Abstraction Layer (AiTextCompletionProviderAdapter)", () => {
       );
 
       expect(res.statusCode, testCase.label).toBe(502);
-      expect(res.body, testCase.label).toEqual({ error: testCase.expectedError });
+      expect(res.body, testCase.label).toMatchObject({ error: testCase.expectedError });
       expect(harness.getSettledTokens(), testCase.label).toEqual([0]);
       expect(harness.getRefundedQuotas(), testCase.label).toBe(1);
     }

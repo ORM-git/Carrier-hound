@@ -48,6 +48,66 @@ export function sanitizeUserFacingAiError(rawError?: string | null): string {
   return str;
 }
 
+const KEPT = "Your verified rules-based version is kept.";
+
+/** User-facing copy for the typed server error codes. */
+export function aiErrorMessage(data: any, status?: number): string {
+  switch (data?.code) {
+    case "AI_TIMEOUT":
+      return `AI took too long to respond. ${KEPT} You can try again.`;
+    case "AI_BUSY":
+      return `AI is busy right now. ${KEPT} You can try again shortly.`;
+    case "AI_VALIDATION_FAILED":
+      return `AI could not produce a draft that matches your resume facts. ${KEPT}`;
+    case "AI_NOT_CONFIGURED":
+      return `AI is not available right now. ${KEPT}`;
+  }
+  if (!data?.error && (status === 502 || status === 504)) {
+    return `AI took too long to respond. ${KEPT} You can try again.`;
+  }
+  return sanitizeUserFacingAiError(data?.error || `AI generation failed (HTTP ${status}).`);
+}
+
+/**
+ * POSTs to /api/ai with ONE idempotency key per call (i.e. per user click), reused on the
+ * single retry so a retried request can never consume quota twice. Retries only on a network
+ * failure, a platform gateway error with no JSON body, or a code-less 429 whose Retry-After is
+ * short. Coded server responses (quota, budget, kill-switch, typed AI errors) are never retried.
+ */
+export async function postAiRequest(
+  token: string,
+  body: Record<string, any>
+): Promise<{ response: Response; data: any }> {
+  const payload = JSON.stringify({ ...body, idempotencyKey: `ai_${crypto.randomUUID()}` });
+  const send = () =>
+    fetch("/api/ai", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: payload,
+    });
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  let response: Response;
+  try {
+    response = await send();
+  } catch {
+    await wait(800);
+    response = await send();
+    return { response, data: await response.clone().json().catch(() => ({})) };
+  }
+  let data = await response.clone().json().catch(() => null);
+
+  const gatewayNoBody = (response.status === 502 || response.status === 504) && data === null;
+  const retryAfter = Number(response.headers?.get?.("retry-after")) || 0;
+  const plain429 = response.status === 429 && !data?.code && retryAfter > 0 && retryAfter <= 5;
+  if (gatewayNoBody || plain429) {
+    await wait(plain429 ? retryAfter * 1000 : 800);
+    response = await send();
+    data = await response.clone().json().catch(() => null);
+  }
+  return { response, data: data ?? {} };
+}
+
 /**
  * Proxies AI completion requests to our secure server-side endpoint (/api/ai).
  * The server strictly enforces Pro subscription status, operation allowlists,
@@ -73,50 +133,11 @@ export async function callGroqCompletion(options: {
     }
 
     const operation = options.operation || options.feature || "cover_letter";
-    const body: Record<string, any> = {
-      operation,
-      params: options.params || {},
-    };
-
-    let response: Response;
-    try {
-      response = await fetch("/api/ai", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(body),
-      });
-    } catch {
-      // 1 automatic retry on network failure
-      await new Promise((r) => setTimeout(r, 800));
-      response = await fetch("/api/ai", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(body),
-      });
-    }
-
-    // 1 automatic retry on transient 429 or 5xx server error
-    if (!response.ok && (response.status === 429 || response.status >= 500)) {
-      await new Promise((r) => setTimeout(r, 800));
-      response = await fetch("/api/ai", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(body),
-      });
-    }
+    const { response } = await postAiRequest(token, { operation, params: options.params || {} });
 
     if (!response.ok) {
-      const errData = await response.json().catch(() => ({}));
-      log.warn("[AI] Server endpoint returned error:", { detail: errData.error || response.status });
+      const errData = await response.clone().json().catch(() => ({}));
+      log.warn("[AI] Server endpoint returned error:", { detail: errData.code || errData.error || response.status });
       return null;
     }
 
@@ -289,57 +310,15 @@ export async function generateAiTailoredResume(
       };
     }
 
-    const requestBody = JSON.stringify({
+    const { response, data } = await postAiRequest(token, {
       operation: "resume_tailor",
-      params: {
-        candidate,
-        job,
-      },
+      params: { candidate, job },
     });
 
-    let response: Response;
-    try {
-      response = await fetch("/api/ai", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: requestBody,
-      });
-    } catch {
-      // 1 automatic retry on network failure
-      await new Promise((r) => setTimeout(r, 800));
-      response = await fetch("/api/ai", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: requestBody,
-      });
-    }
-
-    // 1 automatic retry on transient 429 or 5xx server error
-    if (!response.ok && (response.status === 429 || response.status >= 500)) {
-      await new Promise((r) => setTimeout(r, 800));
-      response = await fetch("/api/ai", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: requestBody,
-      });
-    }
-
-    const data = await response.json().catch(() => ({}));
-
     if (!response.ok) {
-      const rawError = data.error || `AI generation failed (HTTP ${response.status}).`;
       return {
         success: false,
-        error: sanitizeUserFacingAiError(rawError),
+        error: aiErrorMessage(data, response.status),
       };
     }
 

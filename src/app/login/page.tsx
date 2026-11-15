@@ -150,11 +150,11 @@ export default function LoginPage() {
       });
 
       if (oauthError) {
-        setError(formatAuthError(oauthError.message, false));
+        setError(formatAuthError(oauthError.message, false, true));
         setGoogleLoading(false);
       }
     } catch (err: any) {
-      setError(formatAuthError(err?.message || "Could not initialize Google Sign In.", false));
+      setError(formatAuthError(err?.message || "Could not initialize Google Sign In.", false, true));
       setGoogleLoading(false);
     }
   };

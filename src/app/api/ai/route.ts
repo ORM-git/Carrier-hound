@@ -6,6 +6,7 @@ import { getRequestContext } from "@cloudflare/next-on-pages";
 import { NextResponse } from "next/server";
 
 export const runtime = "edge";
+export const maxDuration = 26;
 
 const log = createLogger({ context: { module: "api:ai" } });
 

@@ -4,14 +4,21 @@
  */
 
 export const FRIENDLY_AUTH_RATE_LIMIT_SIGNUP =
-  "Too many sign-up attempts. Please wait a few minutes before trying again, or continue with Google.";
+  "Too many sign-up attempts. Please try again later, or continue with Google.";
 
 export const FRIENDLY_AUTH_RATE_LIMIT_LOGIN =
-  "Too many sign-in attempts. Please wait a few minutes before trying again, or continue with Google.";
+  "Too many sign-in attempts. Please try again later, or continue with Google.";
+
+export const FRIENDLY_AUTH_RATE_LIMIT_SIGNUP_GOOGLE =
+  "Too many sign-up attempts. Please try again later.";
+
+export const FRIENDLY_AUTH_RATE_LIMIT_LOGIN_GOOGLE =
+  "Too many sign-in attempts. Please try again later.";
 
 export function formatAuthError(
   rawError: string | null | undefined,
-  isSignup = false
+  isSignup = false,
+  isGoogle = false
 ): string {
   if (!rawError || typeof rawError !== "string") return "";
 
@@ -28,6 +35,12 @@ export function formatAuthError(
     lower.includes("too many requests") ||
     lower.includes("429")
   ) {
+    const isGoogleFlow = isGoogle || lower.includes("google") || lower.includes("oauth");
+    if (isGoogleFlow) {
+      return isSignup
+        ? FRIENDLY_AUTH_RATE_LIMIT_SIGNUP_GOOGLE
+        : FRIENDLY_AUTH_RATE_LIMIT_LOGIN_GOOGLE;
+    }
     return isSignup
       ? FRIENDLY_AUTH_RATE_LIMIT_SIGNUP
       : FRIENDLY_AUTH_RATE_LIMIT_LOGIN;

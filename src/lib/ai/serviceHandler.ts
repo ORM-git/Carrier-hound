@@ -194,6 +194,13 @@ import {
 } from "./idempotency";
 
 import { createLogger } from "@/lib/observability/logger";
+import {
+  routeCompletion,
+  AiRoutingError,
+  DEFAULT_TOTAL_MS,
+  DEFAULT_PRIMARY_MS,
+  DEFAULT_FALLBACK_MS,
+} from "./routing";
 
 const log = createLogger({ context: { module: "ai/serviceHandler" } });
 export {
@@ -765,6 +772,7 @@ export async function executeAiCore(
         statusCode: 500,
         body: {
           error: "Missing required environment variable: GROQ_API_KEY",
+          code: "AI_NOT_CONFIGURED",
           missingVariable: "GROQ_API_KEY",
         },
       };
@@ -989,7 +997,7 @@ export async function executeAiCore(
 
     const groqTimeoutMs =
       activeDeps.groqTimeoutMs ??
-      (Number(getRuntimeEnv("GROQ_TIMEOUT_MS", activeDeps.env)) || 25000);
+      (Number(getRuntimeEnv("GROQ_TIMEOUT_MS", activeDeps.env)) || DEFAULT_TOTAL_MS);
 
     const abortController = new AbortController();
     const timeoutHandle = setTimeout(() => {
@@ -999,6 +1007,7 @@ export async function executeAiCore(
     try {
       // 5. Server-Side Groq API Key Check & Upstream Groq Call
       let groqData: any;
+      let servedModel = payload.model;
       if (activeDeps.callGroq) {
         try {
           const mockCall = activeDeps.callGroq(payload, { signal: abortController.signal });
@@ -1037,6 +1046,7 @@ export async function executeAiCore(
             statusCode: 500,
             body: {
               error: "Missing required environment variable: GROQ_API_KEY",
+              code: "AI_NOT_CONFIGURED",
               missingVariable: "GROQ_API_KEY",
             },
           };
@@ -1111,73 +1121,57 @@ export async function executeAiCore(
           }
         } else {
           const adapter = activeDeps.providerAdapter ?? groqTextCompletionAdapter;
-          const timeoutPromise = new Promise<never>((_, reject) => {
-            abortController.signal.addEventListener(
-              "abort",
-              () => {
-                const err = new Error("AI service request timed out after 25s");
-                (err as any).name = "AbortError";
-                reject(err);
-              },
-              { once: true }
-            );
-          });
           try {
-            groqData = await Promise.race([
-              adapter.completeText(payload, {
-                signal: abortController.signal,
-                apiKey: groqApiKey,
-              }),
-              timeoutPromise,
-            ]);
-          } catch (adapterErr: any) {
+            const routed = await routeCompletion({
+              adapter,
+              payload,
+              apiKey: groqApiKey,
+              totalMs: groqTimeoutMs,
+              primaryMs: Math.min(DEFAULT_PRIMARY_MS, groqTimeoutMs),
+              fallbackMs: Math.min(DEFAULT_FALLBACK_MS, groqTimeoutMs),
+              signal: abortController.signal,
+              validate: (c) => {
+                const v = validateAndSanitizeAiOutput(config.operation, c, params);
+                return v.ok ? { ok: true } : { ok: false, error: v.error };
+              },
+            });
+            groqData = routed.data;
+            servedModel = routed.model;
+          } catch (routeErr: any) {
             clearTimeout(timeoutHandle);
-            activeBreaker.recordFailure();
-            if (adapterErr instanceof AiProviderUpstreamError) {
-              if (adapterErr.kind === "http_status") {
-                log.warn(`[AI Service] Upstream provider returned status ${adapterErr.status}`, {
-                  status: adapterErr.status,
-                  code: adapterErr.upstreamCode,
-                  message: adapterErr.upstreamMessage,
-                  type: adapterErr.upstreamType,
-                  model: payload.model,
-                  operation: config.operation,
-                  cause: adapterErr.cause,
-                });
-                await settleBudget(0);
-                await rollbackAllQuotas();
-                return {
-                  statusCode: 502,
-                  body: { error: "AI service generation failed. Please try again." },
-                };
-              }
-              if (adapterErr.kind === "invalid_json") {
-                log.warn("[AI Service] Failed to parse upstream provider JSON:", {
-                  error: adapterErr.cause ?? adapterErr,
-                });
-                await settleBudget(0);
-                await rollbackAllQuotas();
-                return {
-                  statusCode: 502,
-                  body: { error: "AI service returned an invalid response. Please try again." },
-                };
-              }
-              log.warn("[AI Service] Network error calling upstream provider:", {
-                error: adapterErr.cause ?? adapterErr,
-              });
-              await settleBudget(0);
-              await rollbackAllQuotas();
-              return {
-                statusCode: 502,
-                body: { error: "AI service request failed or timed out. Please try again." },
-              };
-            }
-            log.warn("[AI Service] Network error calling upstream provider:", { error: adapterErr });
+            const re: AiRoutingError | null = routeErr instanceof AiRoutingError ? routeErr : null;
+            // Validator rejections are the model's output quality, not provider health.
+            if (!re || re.code !== "AI_VALIDATION_FAILED") activeBreaker.recordFailure();
+            else releaseProbeIfAny();
+            log.warn("[AI Service] AI request failed", {
+              operation: config.operation,
+              code: re?.code ?? "AI_BUSY",
+            });
             await settleBudget(0);
             await rollbackAllQuotas();
+            const code = re?.code ?? "AI_BUSY";
+            if (code === "AI_NOT_CONFIGURED") {
+              return {
+                statusCode: 500,
+                body: { error: "AI service is not configured.", code },
+              };
+            }
+            const status = re?.statusCode ?? 502;
+            const retryAfter = re?.retryAfter;
             return {
-              statusCode: 502,
-              body: { error: "AI service request failed or timed out. Please try again." },
+              statusCode: status,
+              body: {
+                error:
+                  re?.message ||
+                  (code === "AI_VALIDATION_FAILED"
+                    ? "AI output could not be verified against your resume."
+                    : code === "AI_TIMEOUT"
+                    ? "AI service request timed out. Please try again."
+                    : "AI service generation failed. Please try again."),
+                code,
+                ...(retryAfter ? { retryAfter } : {}),
+              },
+              ...(retryAfter ? { headers: { "Retry-After": String(Math.min(retryAfter, 60)) } } : {}),
             };
           }
         }
@@ -1257,7 +1251,7 @@ export async function executeAiCore(
         content: validated.sanitizedText,
         text: validated.sanitizedText,
         operation: config.operation,
-        model: payload.model,
+        model: servedModel,
         jobDescriptionShortened: payload.metadata?.jobDescriptionShortened ?? false,
       };
 

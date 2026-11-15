@@ -24,6 +24,7 @@ export interface AiTextCompletionRequest {
   maxOutputTokens: number;
   temperature: number;
   jsonMode: boolean;
+  reasoningEffort?: "low" | "medium" | "high";
   estimatedInputTokens?: number;
   metadata?: {
     jobDescriptionShortened?: boolean;
@@ -114,6 +115,10 @@ export function buildGroqChatCompletionBody(
     messages: request.messages,
     max_tokens: request.maxOutputTokens,
     temperature: request.temperature,
+    // gpt-oss reasoning models only; other models reject the parameter.
+    ...(request.reasoningEffort && /gpt-oss/i.test(request.model)
+      ? { reasoning_effort: request.reasoningEffort }
+      : {}),
     ...(request.jsonMode ? { response_format: { type: "json_object" } } : {}),
   };
 }
