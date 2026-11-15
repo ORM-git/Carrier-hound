@@ -112,6 +112,20 @@ const PLAN_SPECS: Record<
 const LEASE_DURATION_MS = 5 * 60 * 1000; // 5 minute reservation lease
 const EXPIRATION_WINDOW_MS = 24 * 60 * 60 * 1000; // 24 hours
 
+function checkMandateOwnership(
+  entity: any,
+  expectedUserId: string
+): { matches: boolean; mismatch: boolean; ownerId?: string } {
+  const ownerId = entity?.notes?.user_id || entity?.notes?.userId || entity?.customer_id;
+  if (!ownerId) {
+    return { matches: true, mismatch: false };
+  }
+  if (ownerId === expectedUserId) {
+    return { matches: true, mismatch: false, ownerId };
+  }
+  return { matches: false, mismatch: true, ownerId };
+}
+
 function getDefaultSupabaseAdmin() {
   const supabaseUrl =
     process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -365,43 +379,71 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
           };
         }
 
-        // Cancel mandate at Razorpay (Requirement 2)
+        // Pre-flight verify ownership and stopped status with provider before cancel (Issue 1)
         let cancelConfirmed = false;
         let providerCancelErr: any = null;
 
         try {
-          const rzpCancelRes = await fetchCaller(
-            `https://api.razorpay.com/v1/subscriptions/${rzpSubId}/cancel`,
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Basic ${credentials}`,
-              },
+          const fetchSubRes = await fetchCaller(`https://api.razorpay.com/v1/subscriptions/${rzpSubId}`, {
+            method: "GET",
+            headers: { Authorization: `Basic ${credentials}` },
+          });
+
+          if (!fetchSubRes.ok) {
+            if (fetchSubRes.status === 404) {
+              safeLog.info("[Netlify /billing-razorpay-subscription] Subscription to cancel does not exist at provider (404)", JSON.stringify({ rzpSubId }));
+              return {
+                statusCode: 400,
+                headers,
+                body: JSON.stringify({
+                  error: "No active or pending auto-renew mandate found to cancel",
+                  code: "NOTHING_TO_CANCEL",
+                }),
+              };
+            }
+            safeLog.error("[Netlify /billing-razorpay-subscription] Failed to verify mandate at provider before cancel", JSON.stringify({ rzpSubId, status: fetchSubRes.status }));
+            return {
+              statusCode: 502,
+              headers,
               body: JSON.stringify({
-                cancel_at_cycle_end: 1,
+                error: "Failed to verify mandate with payment provider",
+                code: "GATEWAY_CONNECTION_ERROR",
               }),
-            }
-          );
-
-          if (rzpCancelRes.ok) {
-            const cancelBody = await rzpCancelRes.json().catch(() => ({}));
-            const confirmedStopped =
-              cancelBody &&
-              cancelBody.id === rzpSubId &&
-              (cancelBody.status === "cancelled" ||
-                cancelBody.cancel_at_cycle_end === 1 ||
-                cancelBody.cancel_at_cycle_end === true ||
-                cancelBody.ended_at != null);
-
-            if (confirmedStopped) {
-              cancelConfirmed = true;
-            }
-          } else {
-            providerCancelErr = await rzpCancelRes.json().catch(() => ({}));
+            };
           }
-        } catch (fetchErr: any) {
-          safeLog.error("[Netlify /billing-razorpay-subscription] Network error during Razorpay subscription cancel:", fetchErr);
+
+          const subData = await fetchSubRes.json().catch(() => ({}));
+          const ownership = checkMandateOwnership(subData, user.id);
+          if (ownership.mismatch) {
+            safeLog.error("[Netlify /billing-razorpay-subscription] Mandate ownership mismatch on cancellation", {
+              subscriptionId: rzpSubId,
+              expectedUserId: user.id,
+              actualUserId: ownership.ownerId,
+            });
+            return {
+              statusCode: 403,
+              headers,
+              body: JSON.stringify({
+                error: "Mandate does not belong to authenticated user",
+                code: "MANDATE_OWNERSHIP_MISMATCH",
+              }),
+            };
+          }
+
+          const alreadyStopped =
+            subData &&
+            subData.id === rzpSubId &&
+            (subData.status === "cancelled" ||
+              subData.status === "completed" ||
+              subData.ended_at != null ||
+              subData.cancel_at_cycle_end === 1 ||
+              subData.cancel_at_cycle_end === true);
+
+          if (alreadyStopped) {
+            cancelConfirmed = true;
+          }
+        } catch (preCheckErr: any) {
+          safeLog.error("[Netlify /billing-razorpay-subscription] Network error during pre-cancel mandate verification:", preCheckErr);
           return {
             statusCode: 502,
             headers,
@@ -410,6 +452,52 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
               code: "GATEWAY_CONNECTION_ERROR",
             }),
           };
+        }
+
+        // Cancel mandate at Razorpay (Requirement 2)
+        if (!cancelConfirmed) {
+          try {
+            const rzpCancelRes = await fetchCaller(
+              `https://api.razorpay.com/v1/subscriptions/${rzpSubId}/cancel`,
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Basic ${credentials}`,
+                },
+                body: JSON.stringify({
+                  cancel_at_cycle_end: 1,
+                }),
+              }
+            );
+
+            if (rzpCancelRes.ok) {
+              const cancelBody = await rzpCancelRes.json().catch(() => ({}));
+              const confirmedStopped =
+                cancelBody &&
+                cancelBody.id === rzpSubId &&
+                (cancelBody.status === "cancelled" ||
+                  cancelBody.cancel_at_cycle_end === 1 ||
+                  cancelBody.cancel_at_cycle_end === true ||
+                  cancelBody.ended_at != null);
+
+              if (confirmedStopped) {
+                cancelConfirmed = true;
+              }
+            } else {
+              providerCancelErr = await rzpCancelRes.json().catch(() => ({}));
+            }
+          } catch (fetchErr: any) {
+            safeLog.error("[Netlify /billing-razorpay-subscription] Network error during Razorpay subscription cancel:", fetchErr);
+            return {
+              statusCode: 502,
+              headers,
+              body: JSON.stringify({
+                error: "Network error connecting to payment gateway",
+                code: "GATEWAY_CONNECTION_ERROR",
+              }),
+            };
+          }
         }
 
         // Handle already-cancelled-at-provider (Requirement 2: verify at provider)
@@ -671,6 +759,106 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
       }
       const { verifiedAmount, verifiedCurrency, verifiedPeriod, verifiedInterval } = planVerifyRes.planData;
 
+      // Helper: Paginated Provider Mandates Lookup (Issue 1)
+      const findProviderMandatesByPlan = async (
+        candidateReservationId?: string | null
+      ): Promise<{
+        activeMatch?: any;
+        stoppedMatch?: any;
+        lookupFailed?: boolean;
+        ownershipMismatch?: boolean;
+        paginationExhausted?: boolean;
+        error?: string;
+      }> => {
+        const PAGE_SIZE = 20;
+        const MAX_PAGES = 10;
+        let skip = 0;
+        let pagesFetched = 0;
+        let activeMatch: any = null;
+        let stoppedMatch: any = null;
+        let paginationExhausted = false;
+
+        while (pagesFetched < MAX_PAGES) {
+          pagesFetched++;
+          let listRes: Response;
+          try {
+            listRes = await fetchCaller(
+              `https://api.razorpay.com/v1/subscriptions?plan_id=${encodeURIComponent(activeRazorpayPlanId)}&count=${PAGE_SIZE}&skip=${skip}`,
+              {
+                method: "GET",
+                headers: { Authorization: `Basic ${credentials}` },
+              }
+            );
+          } catch (err: any) {
+            safeLog.error("[Netlify /billing-razorpay-subscription] Network exception listing provider subscriptions mid-pagination:", err);
+            return { lookupFailed: true, error: err?.message || "GATEWAY_CONNECTION_ERROR" };
+          }
+
+          if (!listRes.ok) {
+            safeLog.error("[Netlify /billing-razorpay-subscription] Provider returned non-200 while listing subscriptions:", listRes.status);
+            return { lookupFailed: true, error: `Provider list returned ${listRes.status}` };
+          }
+
+          const listData = await listRes.json().catch(() => ({}));
+          const items = Array.isArray(listData?.items) ? listData.items : [];
+
+          for (const item of items) {
+            const ownership = checkMandateOwnership(item, user.id);
+            const matchesReservation = Boolean(
+              candidateReservationId && item?.notes?.reservation_id === candidateReservationId
+            );
+
+            if (ownership.mismatch) {
+              if (matchesReservation) {
+                safeLog.error("[Netlify /billing-razorpay-subscription] Mandate ownership mismatch:", {
+                  entityId: item?.id,
+                  expectedUserId: user.id,
+                  actualUserId: ownership.ownerId,
+                });
+                return { ownershipMismatch: true, error: "MANDATE_OWNERSHIP_MISMATCH" };
+              }
+              continue;
+            }
+
+            if (ownership.matches || matchesReservation) {
+              const isStopped =
+                (item?.status === "cancelled" || item?.ended_at != null) &&
+                item?.cancel_at_cycle_end !== 1 &&
+                item?.cancel_at_cycle_end !== true;
+
+              if (!isStopped) {
+                activeMatch = item;
+                break;
+              } else if (!stoppedMatch) {
+                stoppedMatch = item;
+              }
+            }
+          }
+
+          if (activeMatch) {
+            break;
+          }
+
+          if (items.length < PAGE_SIZE) {
+            paginationExhausted = true;
+            break;
+          }
+
+          skip += PAGE_SIZE;
+        }
+
+        if (activeMatch) {
+          return { activeMatch };
+        }
+
+        if (!paginationExhausted) {
+          safeLog.error("[Netlify /billing-razorpay-subscription] Provider subscriptions pagination limit reached without exhausting; failing closed");
+          return { lookupFailed: true, error: "PROVIDER_PAGINATION_LIMIT_EXCEEDED" };
+        }
+
+        return { paginationExhausted: true, stoppedMatch };
+      };
+
       // Helper: Verify and Reuse Candidate Mandate (Requirement 5 & 6 & Reviewer E)
       const verifyAndReuseCandidateMandate = async (
         candidateId: string,
@@ -700,6 +888,16 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
           }
 
           const subData = await subRes.json();
+          const ownership = checkMandateOwnership(subData, user.id);
+          if (ownership.mismatch) {
+            safeLog.error("Mandate ownership mismatch: candidate mandate does not belong to user", {
+              candidateId,
+              expectedUserId: user.id,
+              actualUserId: ownership.ownerId,
+            });
+            return { ok: false, error: "MANDATE_OWNERSHIP_MISMATCH", status: 403 };
+          }
+
           const validStatuses = new Set(["created", "authenticated", "active"]);
           if (!validStatuses.has(subData?.status)) {
             await supabaseAdmin
@@ -788,7 +986,14 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
       const confirmMandateStoppedOrNonexistentAtProvider = async (
         candidateId: string | null | undefined,
         metadataProviderSubId: string | null | undefined
-      ): Promise<{ safeToRelease: boolean; matchedId?: string }> => {
+      ): Promise<{
+        safeToRelease: boolean;
+        matchedId?: string;
+        activeMatch?: any;
+        lookupFailed?: boolean;
+        ownershipMismatch?: boolean;
+        error?: string;
+      }> => {
         const targetSubId =
           candidateId?.startsWith("sub_") && !candidateId.startsWith("sub_pending_")
             ? candidateId
@@ -810,13 +1015,25 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
             if (getRes.ok) {
               const data = await getRes.json().catch(() => ({}));
               if (data?.id === targetSubId) {
+                const ownership = checkMandateOwnership(data, user.id);
+                if (ownership.mismatch) {
+                  safeLog.error("[Netlify /billing-razorpay-subscription] Mandate ownership mismatch on targetSubId check", {
+                    targetSubId,
+                    expectedUserId: user.id,
+                    actualUserId: ownership.ownerId,
+                  });
+                  return { safeToRelease: false, matchedId: targetSubId, ownershipMismatch: true };
+                }
+
                 if (data.cancel_at_cycle_end === 1 || data.cancel_at_cycle_end === true) {
-                  return { safeToRelease: false, matchedId: targetSubId };
+                  return { safeToRelease: false, matchedId: targetSubId, activeMatch: data };
                 }
                 if (data.status === "cancelled" || data.ended_at != null) {
                   return { safeToRelease: true, matchedId: targetSubId };
                 }
               }
+            } else {
+              return { safeToRelease: false, matchedId: targetSubId, lookupFailed: true };
             }
 
             // Try cancelling at provider
@@ -837,61 +1054,27 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
                 return { safeToRelease: true, matchedId: targetSubId };
               }
             }
-          } catch (_) {}
+          } catch (_) {
+            return { safeToRelease: false, matchedId: targetSubId, lookupFailed: true };
+          }
 
           return { safeToRelease: false, matchedId: targetSubId };
         }
 
-        // Placeholder reservation: query subscriptions with plan_id to check if a mandate exists for this user/reservation
-        try {
-          const listRes = await fetchCaller(`https://api.razorpay.com/v1/subscriptions?plan_id=${activeRazorpayPlanId}&count=20`, {
-            method: "GET",
-            headers: { Authorization: `Basic ${credentials}` },
-          });
-
-          if (listRes.ok) {
-            const listData = await listRes.json().catch(() => ({}));
-            const items = Array.isArray(listData?.items) ? listData.items : [];
-            const match = items.find(
-              (item: any) =>
-                item?.notes?.reservation_id === candidateId ||
-                (item?.notes?.user_id === user.id && item?.status !== "cancelled" && item?.ended_at == null)
-            );
-
-            if (!match) {
-              return { safeToRelease: true };
-            }
-
-            if (
-              match.id &&
-              (match.status === "cancelled" || match.ended_at != null) &&
-              match.cancel_at_cycle_end !== 1 &&
-              match.cancel_at_cycle_end !== true
-            ) {
-              return { safeToRelease: true, matchedId: match.id };
-            }
-
-            if (match.id) {
-              const cancelRes = await fetchCaller(`https://api.razorpay.com/v1/subscriptions/${match.id}/cancel`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json", Authorization: `Basic ${credentials}` },
-                body: JSON.stringify({ cancel_at_cycle_end: 0 }),
-              });
-
-              if (cancelRes.ok) {
-                const cancelData = await cancelRes.json().catch(() => ({}));
-                if (
-                  cancelData?.id === match.id &&
-                  (cancelData?.status === "cancelled" || cancelData?.ended_at != null) &&
-                  cancelData?.cancel_at_cycle_end !== 1 &&
-                  cancelData?.cancel_at_cycle_end !== true
-                ) {
-                  return { safeToRelease: true, matchedId: match.id };
-                }
-              }
-            }
-          }
-        } catch (_) {}
+        // Placeholder reservation: paginated query for subscriptions with plan_id
+        const lookup = await findProviderMandatesByPlan(candidateId);
+        if (lookup.lookupFailed) {
+          return { safeToRelease: false, lookupFailed: true, error: lookup.error };
+        }
+        if (lookup.ownershipMismatch) {
+          return { safeToRelease: false, ownershipMismatch: true };
+        }
+        if (lookup.activeMatch) {
+          return { safeToRelease: false, matchedId: lookup.activeMatch.id, activeMatch: lookup.activeMatch };
+        }
+        if (lookup.paginationExhausted) {
+          return { safeToRelease: true, matchedId: lookup.stoppedMatch?.id };
+        }
 
         return { safeToRelease: false };
       };
@@ -1214,6 +1397,49 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
                 (existingRace as any).metadata?.provider_subscription_id
               );
 
+              if (providerCheck.ownershipMismatch) {
+                return {
+                  statusCode: 403,
+                  headers,
+                  body: JSON.stringify({
+                    error: "Mandate does not belong to authenticated user",
+                    code: "MANDATE_OWNERSHIP_MISMATCH",
+                  }),
+                };
+              }
+
+              if (providerCheck.lookupFailed) {
+                return {
+                  statusCode: 502,
+                  headers,
+                  body: JSON.stringify({
+                    error: "Unable to verify existing subscription state with payment provider",
+                    code: "GATEWAY_CONNECTION_ERROR",
+                  }),
+                };
+              }
+
+              if (providerCheck.activeMatch) {
+                await supabaseAdmin.from("payment_orders").update({
+                  status: "created",
+                  provider_order_id: providerCheck.activeMatch.id,
+                  updated_at: new Date().toISOString(),
+                }).eq("id", existingRace.id);
+
+                return {
+                  statusCode: 200,
+                  headers,
+                  body: JSON.stringify({
+                    subscriptionId: providerCheck.activeMatch.id,
+                    keyId,
+                    planId: razorpayPlanId.trim(),
+                    planCode,
+                    status: providerCheck.activeMatch.status,
+                    reused: true,
+                  }),
+                };
+              }
+
               if (providerCheck.safeToRelease) {
                 await supabaseAdmin.from("payment_orders").update({ status: "expired", updated_at: new Date().toISOString() }).eq("id", existingRace.id);
                 return {
@@ -1303,6 +1529,48 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
               }
             }
 
+            const raceCheck = await findProviderMandatesByPlan(existingRace.provider_order_id);
+            if (raceCheck.lookupFailed) {
+              return {
+                statusCode: 502,
+                headers,
+                body: JSON.stringify({
+                  error: "Unable to verify existing subscription state with payment provider",
+                  code: "GATEWAY_CONNECTION_ERROR",
+                }),
+              };
+            }
+            if (raceCheck.ownershipMismatch) {
+              return {
+                statusCode: 403,
+                headers,
+                body: JSON.stringify({
+                  error: "Mandate does not belong to authenticated user",
+                  code: "MANDATE_OWNERSHIP_MISMATCH",
+                }),
+              };
+            }
+            if (raceCheck.activeMatch) {
+              await supabaseAdmin.from("payment_orders").update({
+                status: "created",
+                provider_order_id: raceCheck.activeMatch.id,
+                updated_at: new Date().toISOString(),
+              }).eq("id", existingRace.id);
+
+              return {
+                statusCode: 200,
+                headers,
+                body: JSON.stringify({
+                  subscriptionId: raceCheck.activeMatch.id,
+                  keyId,
+                  planId: razorpayPlanId.trim(),
+                  planCode,
+                  status: raceCheck.activeMatch.status,
+                  reused: true,
+                }),
+              };
+            }
+
             return {
               statusCode: 409,
               headers,
@@ -1334,6 +1602,76 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
         };
         const totalCount = TOTAL_COUNTS[planCode] ?? 12;
 
+        // Pre-create check: verify if an active mandate already exists at provider
+        const existingMandateLookup = await findProviderMandatesByPlan(reservationOrderId);
+        if (existingMandateLookup.lookupFailed) {
+          safeLog.error("[Netlify /billing-razorpay-subscription] Provider lookup failed while verifying mandates prior to create", existingMandateLookup.error);
+          await supabaseAdmin
+            .from("payment_orders")
+            .update({
+              status: "unknown",
+              updated_at: new Date().toISOString(),
+              metadata: {
+                reconciliation_required: true,
+                reconciliation_state: "unknown",
+                reason: "provider_lookup_failed_mid_pagination",
+                error: existingMandateLookup.error,
+                reservation_id: reservationOrderId,
+              },
+            })
+            .eq("provider_order_id", reservationOrderId);
+
+          return {
+            statusCode: 502,
+            headers,
+            body: JSON.stringify({
+              error: "Failed to verify existing subscriptions with payment provider",
+              code: "GATEWAY_CONNECTION_ERROR",
+            }),
+          };
+        }
+
+        if (existingMandateLookup.ownershipMismatch) {
+          return {
+            statusCode: 403,
+            headers,
+            body: JSON.stringify({
+              error: "Mandate does not belong to authenticated user",
+              code: "MANDATE_OWNERSHIP_MISMATCH",
+            }),
+          };
+        }
+
+        if (existingMandateLookup.activeMatch) {
+          const activeSub = existingMandateLookup.activeMatch;
+          await supabaseAdmin
+            .from("payment_orders")
+            .update({
+              status: "created",
+              provider_order_id: activeSub.id,
+              updated_at: new Date().toISOString(),
+              metadata: {
+                provider_subscription_id: activeSub.id,
+                reused_from_provider_lookup: true,
+                reused_at: new Date().toISOString(),
+              },
+            })
+            .eq("provider_order_id", reservationOrderId);
+
+          return {
+            statusCode: 200,
+            headers,
+            body: JSON.stringify({
+              subscriptionId: activeSub.id,
+              keyId,
+              planId: razorpayPlanId.trim(),
+              planCode,
+              status: activeSub.status,
+              reused: true,
+            }),
+          };
+        }
+
         let rzpRes: Response;
         try {
           rzpRes = await fetchCaller("https://api.razorpay.com/v1/subscriptions", {
@@ -1341,6 +1679,8 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
             headers: {
               "Content-Type": "application/json",
               Authorization: `Basic ${credentials}`,
+              "X-Razorpay-Idempotency-Key": reservationOrderId,
+              "Idempotency-Key": reservationOrderId,
             },
             body: JSON.stringify({
               plan_id: razorpayPlanId.trim(),
@@ -1348,6 +1688,7 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
               customer_notify: true,
               notes: {
                 user_id: user.id,
+                userId: user.id,
                 email: user.email || "",
                 plan_code: planCode,
                 attempt_id: attemptId,

@@ -194,6 +194,22 @@ export async function reconcileSubscriptionMandates(
         if (getRes.ok) {
           const subData = await getRes.json().catch(() => ({}));
           const isMatching = subData?.id === subId;
+
+          // Verify ownership before cancelling or modifying mandate
+          const ownerId = subData?.notes?.user_id || subData?.notes?.userId || subData?.customer_id;
+          if (ownerId && rec.user_id && ownerId !== rec.user_id) {
+            await supabaseAdmin
+              .from("subscription_reconciliations")
+              .update({
+                reconciliation_state: "failed",
+                recovery_outcome: "ownership_mismatch_aborted",
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", rec.id);
+            result.details.push({ id: rec.id, subId, action: "ownership_mismatch", status: "failed" });
+            continue;
+          }
+
           const isCancelled = subData?.status === "cancelled" || subData?.ended_at != null;
           const isCancelAtCycleEnd = subData?.cancel_at_cycle_end === 1 || subData?.cancel_at_cycle_end === true;
 

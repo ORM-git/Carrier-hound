@@ -770,6 +770,13 @@ async function runAutorenewTests() {
         );
       }
 
+      if (init?.method === "GET" && urlStr.includes("/v1/subscriptions")) {
+        return new Response(
+          JSON.stringify({ entity: "collection", count: 0, items: [] }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
       assert.strictEqual(
         urlStr,
         "https://api.razorpay.com/v1/subscriptions",
@@ -929,7 +936,7 @@ async function runAutorenewTests() {
   (reqGateFail as any).__testDeps = {
     getSupabaseAdmin: () => mockSupabaseAdmin,
     verifyUserNotBanned: async () => ({ isBlocked: false }),
-    fetchFn: async (url: string) => {
+    fetchFn: async (url: string, init?: any) => {
       if (url.includes("/v1/plans/")) {
         return new Response(
           JSON.stringify({
@@ -938,6 +945,12 @@ async function runAutorenewTests() {
             period: "monthly",
             interval: 1,
           }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      if (init?.method === "GET" && url.includes("/v1/subscriptions")) {
+        return new Response(
+          JSON.stringify({ entity: "collection", count: 0, items: [] }),
           { status: 200, headers: { "Content-Type": "application/json" } }
         );
       }
@@ -981,6 +994,16 @@ async function runAutorenewTests() {
         const b = JSON.parse(init.body);
         cancelCycleEndVal = b.cancel_at_cycle_end;
         return new Response(JSON.stringify({ id: "sub_rzp_to_cancel_123", status: "active", cancel_at_cycle_end: 1 }), { status: 200 });
+      }
+      if (init?.method === "GET" && url.includes("/v1/subscriptions/sub_rzp_to_cancel_123")) {
+        return new Response(
+          JSON.stringify({
+            id: "sub_rzp_to_cancel_123",
+            status: "active",
+            notes: { user_id: mockUser.id },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
       }
       return new Response();
     },

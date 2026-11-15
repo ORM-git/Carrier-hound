@@ -236,9 +236,26 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
           insert: async (row: any) => {
             if (options?.insertError || options?.dbError) return { error: options.insertError || options.dbError };
             if (table === "payment_orders") {
-              mockDbPaymentOrders.set(row.provider_order_id, { ...row });
+              if (row.recurring_kind === "recurring" && ["reserved", "created", "unknown"].includes(row.status)) {
+                for (const existing of Array.from(mockDbPaymentOrders.values())) {
+                  if (
+                    existing.user_id === row.user_id &&
+                    existing.mode === row.mode &&
+                    existing.provider === row.provider &&
+                    existing.recurring_kind === "recurring" &&
+                    ["reserved", "created", "unknown"].includes(existing.status)
+                  ) {
+                    return { error: { code: "23505", message: "duplicate key value violates unique constraint idx_payment_orders_user_mode_provider_recurring" } };
+                  }
+                }
+              }
+              const orderRow = {
+                created_at: new Date().toISOString(),
+                ...row,
+              };
+              mockDbPaymentOrders.set(row.provider_order_id, orderRow);
             } else {
-              mockDbSubscriptions.set(row.user_id, { ...row });
+              mockDbSubscriptions.set(row.user_id, { created_at: new Date().toISOString(), ...row });
             }
             return { error: null };
           },
@@ -254,6 +271,8 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
     subData?: any;
     subStatus?: number;
     cancelStatus?: number;
+    listItems?: any[];
+    listStatus?: number;
   }) {
     return vi.fn().mockImplementation(async (url: string, init: any) => {
       const urlStr = url.toString();
@@ -304,12 +323,30 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
       }
 
       if (urlStr.includes("/v1/subscriptions")) {
-        if (overrides?.subStatus && overrides.subStatus !== 200) {
+        // List query
+        if (urlStr.includes("?") || urlStr.includes("plan_id=") || (init?.method === "GET" && !urlStr.match(/\/v1\/subscriptions\/sub_[^?]+/))) {
+          if (overrides?.listStatus && overrides.listStatus !== 200) {
+            return new Response(
+              JSON.stringify({ error: { description: "Subscription list failed" } }),
+              { status: overrides.listStatus, headers: { "Content-Type": "application/json" } }
+            );
+          }
+          const items = overrides?.listItems || [];
           return new Response(
-            JSON.stringify({ error: { description: "Subscription creation failed" } }),
-            { status: overrides.subStatus, headers: { "Content-Type": "application/json" } }
+            JSON.stringify({ entity: "collection", count: items.length, items }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
           );
         }
+
+        if (init?.method === "POST") {
+          if (overrides?.subStatus && overrides.subStatus !== 200) {
+            return new Response(
+              JSON.stringify({ error: { description: "Subscription creation failed" } }),
+              { status: overrides.subStatus, headers: { "Content-Type": "application/json" } }
+            );
+          }
+        }
+
         const body = init?.body ? JSON.parse(init.body) : {};
         const planId = body.plan_id || "plan_123";
         let subId = "sub_rzp_monthly_654321";
@@ -322,6 +359,7 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
           status: "created",
           current_start: Math.floor(Date.now() / 1000),
           current_end: Math.floor(Date.now() / 1000) + 30 * 86400,
+          notes: { user_id: mockUser.id, userId: mockUser.id },
         };
         const subResponse = overrides?.subData ? { ...defaultSub, ...overrides.subData } : defaultSub;
         return new Response(JSON.stringify(subResponse), {
@@ -899,6 +937,12 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
           { status: 200, headers: { "Content-Type": "application/json" } }
         );
       }
+      if (urlStr.includes("/v1/subscriptions") && init?.method === "GET") {
+        return new Response(JSON.stringify({ entity: "collection", count: 0, items: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
       capturedBody = JSON.parse(init.body);
       return new Response(
         JSON.stringify({
@@ -956,6 +1000,12 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
           { status: 200, headers: { "Content-Type": "application/json" } }
         );
       }
+      if (urlStr.includes("/v1/subscriptions") && init?.method === "GET") {
+        return new Response(JSON.stringify({ entity: "collection", count: 0, items: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
       capturedBody = JSON.parse(init.body);
       return new Response(
         JSON.stringify({
@@ -1010,6 +1060,12 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
           }),
           { status: 200, headers: { "Content-Type": "application/json" } }
         );
+      }
+      if (urlStr.includes("/v1/subscriptions") && init?.method === "GET") {
+        return new Response(JSON.stringify({ entity: "collection", count: 0, items: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
       }
       capturedBody = JSON.parse(init.body);
       return new Response(
@@ -1723,6 +1779,367 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
       const json = await res.json();
       expect(json.success).toBe(true);
       expect(rpcMandateId).toBe("sub_rzp_unknown_pending");
+    });
+  });
+
+  describe("Issue 1: Pagination, Ownership, and Idempotency Protection", () => {
+    it("finds match at position 21+ across pages and avoids duplicate creation", async () => {
+      let createCallCount = 0;
+      const pagesRequested: number[] = [];
+
+      const mockFetch = vi.fn().mockImplementation(async (urlStr: string, init?: any) => {
+        const url = new URL(urlStr);
+
+        if (urlStr.includes("/v1/plans/")) {
+          return new Response(
+            JSON.stringify({
+              id: "plan_monthly_rzp_456",
+              item: { amount: 149900, currency: "INR" },
+              period: "monthly",
+              interval: 1,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+
+        if (urlStr.includes("/v1/subscriptions") && init?.method === "GET") {
+          const skip = parseInt(url.searchParams.get("skip") || "0", 10);
+          pagesRequested.push(skip);
+
+          if (skip === 0) {
+            // First page (items 0..19): all belong to other users
+            const page1Items = Array.from({ length: 20 }, (_, idx) => ({
+              id: `sub_other_user_${idx}`,
+              plan_id: "plan_monthly_rzp_456",
+              status: "created",
+              notes: { user_id: `other_user_${idx}` },
+            }));
+            return new Response(
+              JSON.stringify({ entity: "collection", count: 20, items: page1Items }),
+              { status: 200, headers: { "Content-Type": "application/json" } }
+            );
+          } else if (skip === 20) {
+            // Second page (position 21+): item 0 is for mockUser!
+            const matchItem = {
+              id: "sub_rzp_paginated_position_21",
+              plan_id: "plan_monthly_rzp_456",
+              status: "created",
+              notes: { user_id: mockUser.id, userId: mockUser.id },
+            };
+            return new Response(
+              JSON.stringify({ entity: "collection", count: 1, items: [matchItem] }),
+              { status: 200, headers: { "Content-Type": "application/json" } }
+            );
+          }
+        }
+
+        if (urlStr.includes("/v1/subscriptions") && init?.method === "POST") {
+          createCallCount++;
+          return new Response(
+            JSON.stringify({
+              id: "sub_rzp_duplicate_should_not_be_created",
+              plan_id: "plan_monthly_rzp_456",
+              status: "created",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+
+        return new Response(JSON.stringify({}), { status: 200 });
+      });
+
+      const req = createMockRequest(
+        { planCode: "monthly" },
+        {},
+        {
+          getSupabaseAdmin: () => createMockSupabaseAdmin(),
+          fetchFn: mockFetch,
+        }
+      );
+
+      const res = await POST(req);
+      expect(res.status).toBe(200);
+      const json = await res.json();
+
+      expect(pagesRequested).toContain(0);
+      expect(pagesRequested).toContain(20);
+      expect(json.subscriptionId).toBe("sub_rzp_paginated_position_21");
+      expect(json.reused).toBe(true);
+      expect(createCallCount).toBe(0);
+    });
+
+    it("proceeds with creation exactly once when no match exists anywhere after exhausting all pages", async () => {
+      let createCallCount = 0;
+      let capturedIdempotencyHeader: string | null = null;
+      let capturedXIdempotencyHeader: string | null = null;
+      const pagesRequested: number[] = [];
+
+      const mockFetch = vi.fn().mockImplementation(async (urlStr: string, init?: any) => {
+        const url = new URL(urlStr);
+
+        if (urlStr.includes("/v1/plans/")) {
+          return new Response(
+            JSON.stringify({
+              id: "plan_monthly_rzp_456",
+              item: { amount: 149900, currency: "INR" },
+              period: "monthly",
+              interval: 1,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+
+        if (urlStr.includes("/v1/subscriptions") && init?.method === "GET") {
+          const skip = parseInt(url.searchParams.get("skip") || "0", 10);
+          pagesRequested.push(skip);
+
+          if (skip === 0) {
+            const page1Items = Array.from({ length: 20 }, (_, idx) => ({
+              id: `sub_other_user_${idx}`,
+              plan_id: "plan_monthly_rzp_456",
+              status: "created",
+              notes: { user_id: `other_user_${idx}` },
+            }));
+            return new Response(
+              JSON.stringify({ entity: "collection", count: 20, items: page1Items }),
+              { status: 200, headers: { "Content-Type": "application/json" } }
+            );
+          } else if (skip === 20) {
+            // Short page (5 items < 20): exhausted!
+            const page2Items = Array.from({ length: 5 }, (_, idx) => ({
+              id: `sub_other_user_${idx + 20}`,
+              plan_id: "plan_monthly_rzp_456",
+              status: "created",
+              notes: { user_id: `other_user_${idx + 20}` },
+            }));
+            return new Response(
+              JSON.stringify({ entity: "collection", count: 5, items: page2Items }),
+              { status: 200, headers: { "Content-Type": "application/json" } }
+            );
+          }
+        }
+
+        if (urlStr.includes("/v1/subscriptions") && init?.method === "POST") {
+          createCallCount++;
+          capturedIdempotencyHeader = init?.headers?.["Idempotency-Key"] || null;
+          capturedXIdempotencyHeader = init?.headers?.["X-Razorpay-Idempotency-Key"] || null;
+          return new Response(
+            JSON.stringify({
+              id: "sub_rzp_created_exactly_once",
+              plan_id: "plan_monthly_rzp_456",
+              status: "created",
+              current_start: Math.floor(Date.now() / 1000),
+              current_end: Math.floor(Date.now() / 1000) + 30 * 86400,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+
+        return new Response(JSON.stringify({}), { status: 200 });
+      });
+
+      const req = createMockRequest(
+        { planCode: "monthly" },
+        {},
+        {
+          getSupabaseAdmin: () => createMockSupabaseAdmin(),
+          fetchFn: mockFetch,
+        }
+      );
+
+      const res = await POST(req);
+      expect(res.status).toBe(200);
+      const json = await res.json();
+
+      expect(pagesRequested).toContain(0);
+      expect(pagesRequested).toContain(20);
+      expect(createCallCount).toBe(1);
+      expect(json.subscriptionId).toBe("sub_rzp_created_exactly_once");
+      expect(json.reused).toBeUndefined();
+      expect(capturedIdempotencyHeader).toMatch(/^sub_pending_/);
+      expect(capturedXIdempotencyHeader).toMatch(/^sub_pending_/);
+    });
+
+    it("aborts cancellation with 403 and sends no cancel when provider entity belongs to a different user", async () => {
+      let cancelCallCount = 0;
+      mockDbSubscriptions.set(mockUser.id, {
+        id: "sub_db_user_1",
+        user_id: mockUser.id,
+        subscription_id: "sub_rzp_belongs_to_other_user",
+        status: "active",
+        cancel_at_period_end: false,
+      });
+
+      const mockFetch = vi.fn().mockImplementation(async (urlStr: string, init?: any) => {
+        if (urlStr.includes("/v1/subscriptions/sub_rzp_belongs_to_other_user") && init?.method === "GET") {
+          return new Response(
+            JSON.stringify({
+              id: "sub_rzp_belongs_to_other_user",
+              status: "active",
+              customer_id: "cust_different_user_999",
+              notes: { user_id: "different_user_uuid_999", userId: "different_user_uuid_999" },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+
+        if (urlStr.includes("/cancel")) {
+          cancelCallCount++;
+          return new Response(JSON.stringify({ success: true }), { status: 200 });
+        }
+
+        return new Response(JSON.stringify({}), { status: 200 });
+      });
+
+      const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer valid_token",
+        },
+      });
+      (req as any).__testDeps = {
+        getSupabaseAdmin: () => createMockSupabaseAdmin(),
+        fetchFn: mockFetch,
+      };
+
+      const res = await DELETE(req);
+      expect(res.status).toBe(403);
+      const json = await res.json();
+      expect(json.code).toBe("MANDATE_OWNERSHIP_MISMATCH");
+      expect(cancelCallCount).toBe(0);
+    });
+
+    it("fails closed with 502 and creates no mandate when provider errors mid-pagination", async () => {
+      let createCallCount = 0;
+      let cancelCallCount = 0;
+
+      const mockFetch = vi.fn().mockImplementation(async (urlStr: string, init?: any) => {
+        const url = new URL(urlStr);
+
+        if (urlStr.includes("/v1/plans/")) {
+          return new Response(
+            JSON.stringify({
+              id: "plan_monthly_rzp_456",
+              item: { amount: 149900, currency: "INR" },
+              period: "monthly",
+              interval: 1,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+
+        if (urlStr.includes("/v1/subscriptions") && init?.method === "GET") {
+          const skip = parseInt(url.searchParams.get("skip") || "0", 10);
+          if (skip === 0) {
+            // First page returns 20 items (forces next page)
+            const page1Items = Array.from({ length: 20 }, (_, idx) => ({
+              id: `sub_other_user_${idx}`,
+              plan_id: "plan_monthly_rzp_456",
+              status: "created",
+              notes: { user_id: `other_user_${idx}` },
+            }));
+            return new Response(
+              JSON.stringify({ entity: "collection", count: 20, items: page1Items }),
+              { status: 200, headers: { "Content-Type": "application/json" } }
+            );
+          } else {
+            // Second page fails with 500
+            return new Response(
+              JSON.stringify({ error: { description: "Gateway internal error" } }),
+              { status: 500, headers: { "Content-Type": "application/json" } }
+            );
+          }
+        }
+
+        if (urlStr.includes("/v1/subscriptions") && init?.method === "POST") {
+          createCallCount++;
+          return new Response(JSON.stringify({ id: "sub_should_not_exist" }), { status: 200 });
+        }
+
+        if (urlStr.includes("/cancel")) {
+          cancelCallCount++;
+          return new Response(JSON.stringify({ success: true }), { status: 200 });
+        }
+
+        return new Response(JSON.stringify({}), { status: 200 });
+      });
+
+      const req = createMockRequest(
+        { planCode: "monthly" },
+        {},
+        {
+          getSupabaseAdmin: () => createMockSupabaseAdmin(),
+          fetchFn: mockFetch,
+        }
+      );
+
+      const res = await POST(req);
+      expect(res.status).toBe(502);
+      const json = await res.json();
+      expect(json.code).toBe("GATEWAY_CONNECTION_ERROR");
+      expect(createCallCount).toBe(0);
+      expect(cancelCallCount).toBe(0);
+    });
+
+    it("ensures only one mandate is created when two create requests run concurrently", async () => {
+      let createCallCount = 0;
+      let listCallCount = 0;
+
+      const mockFetch = vi.fn().mockImplementation(async (urlStr: string, init?: any) => {
+        if (urlStr.includes("/v1/plans/")) {
+          return new Response(
+            JSON.stringify({
+              id: "plan_monthly_rzp_456",
+              item: { amount: 149900, currency: "INR" },
+              period: "monthly",
+              interval: 1,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+
+        if (urlStr.includes("/v1/subscriptions") && init?.method === "GET") {
+          listCallCount++;
+          return new Response(
+            JSON.stringify({ entity: "collection", count: 0, items: [] }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+
+        if (urlStr.includes("/v1/subscriptions") && init?.method === "POST") {
+          createCallCount++;
+          // Delay to simulate network flight
+          await new Promise((resolve) => setTimeout(resolve, 25));
+          return new Response(
+            JSON.stringify({
+              id: "sub_rzp_concurrent_coalesced_1",
+              plan_id: "plan_monthly_rzp_456",
+              status: "created",
+              current_start: Math.floor(Date.now() / 1000),
+              current_end: Math.floor(Date.now() / 1000) + 30 * 86400,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+
+        return new Response(JSON.stringify({}), { status: 200 });
+      });
+
+      const admin = createMockSupabaseAdmin();
+      const req1 = createMockRequest({ planCode: "monthly" }, {}, { getSupabaseAdmin: () => admin, fetchFn: mockFetch });
+      const req2 = createMockRequest({ planCode: "monthly" }, {}, { getSupabaseAdmin: () => admin, fetchFn: mockFetch });
+
+      const [res1, res2] = await Promise.all([POST(req1), POST(req2)]);
+
+      const json1 = await res1.json();
+      const json2 = await res2.json();
+
+      // Exactly one mandate created at Razorpay
+      expect(createCallCount).toBe(1);
+      // Both requests succeed with the same subscription ID via singleFlight or DB pending reuse
+      expect(json1.subscriptionId).toBe("sub_rzp_concurrent_coalesced_1");
+      expect(json2.subscriptionId).toBe("sub_rzp_concurrent_coalesced_1");
     });
   });
 });

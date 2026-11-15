@@ -107,6 +107,20 @@ const PLAN_SPECS: Record<
 const LEASE_DURATION_MS = 5 * 60 * 1000; // 5 minute reservation lease
 const EXPIRATION_WINDOW_MS = 24 * 60 * 60 * 1000; // 24 hours
 
+function checkMandateOwnership(
+  entity: any,
+  expectedUserId: string
+): { matches: boolean; mismatch: boolean; ownerId?: string } {
+  const ownerId = entity?.notes?.user_id || entity?.notes?.userId || entity?.customer_id;
+  if (!ownerId) {
+    return { matches: true, mismatch: false };
+  }
+  if (ownerId === expectedUserId) {
+    return { matches: true, mismatch: false, ownerId };
+  }
+  return { matches: false, mismatch: true, ownerId };
+}
+
 export async function POST(req: Request) {
   const log = baseLog.child({ requestId: req?.headers.get("x-request-id") ?? "unknown" });
   const deps = (req as any).__testDeps || {};
@@ -398,6 +412,112 @@ export async function POST(req: Request) {
     }
     const { verifiedAmount, verifiedCurrency, verifiedPeriod, verifiedInterval } = planVerifyRes.planData;
 
+    // Helper: Paginated Provider Mandates Lookup (Issue 1)
+    // Paginates through subscriptions?plan_id=... with skip/count until exhausted or match found.
+    // Upper bound MAX_PAGES throws/fails closed instead of assuming absent.
+    const findProviderMandatesByPlan = async (
+      candidateReservationId?: string | null
+    ): Promise<{
+      activeMatch?: any;
+      stoppedMatch?: any;
+      lookupFailed?: boolean;
+      ownershipMismatch?: boolean;
+      paginationExhausted?: boolean;
+      error?: string;
+    }> => {
+      const PAGE_SIZE = 20;
+      const MAX_PAGES = 10;
+      let skip = 0;
+      let pagesFetched = 0;
+      let activeMatch: any = null;
+      let stoppedMatch: any = null;
+      let paginationExhausted = false;
+
+      while (pagesFetched < MAX_PAGES) {
+        pagesFetched++;
+        let listRes: Response;
+        try {
+          listRes = await fetchCaller(
+            `https://api.razorpay.com/v1/subscriptions?plan_id=${encodeURIComponent(razorpayPlanId.trim())}&count=${PAGE_SIZE}&skip=${skip}`,
+            {
+              method: "GET",
+              headers: { Authorization: `Basic ${credentials}` },
+            }
+          );
+        } catch (err: any) {
+          log.error("Network exception listing provider subscriptions mid-pagination", { error: err, skip, pagesFetched });
+          return { lookupFailed: true, error: err?.message || "GATEWAY_CONNECTION_ERROR" };
+        }
+
+        if (!listRes.ok) {
+          log.error("Provider returned non-200 while listing subscriptions mid-pagination", { status: listRes.status, skip });
+          return { lookupFailed: true, error: `Provider list returned ${listRes.status}` };
+        }
+
+        const listData = await listRes.json().catch(() => ({}));
+        const items = Array.isArray(listData?.items) ? listData.items : [];
+
+        for (const item of items) {
+          const ownership = checkMandateOwnership(item, user.id);
+          const matchesReservation = Boolean(
+            candidateReservationId && item?.notes?.reservation_id === candidateReservationId
+          );
+
+          if (ownership.mismatch) {
+            if (matchesReservation) {
+              log.error("Mandate ownership mismatch: reservation matches but owned by different user", {
+                entityId: item?.id,
+                expectedUserId: user.id,
+                actualUserId: ownership.ownerId,
+              });
+              return { ownershipMismatch: true, error: "MANDATE_OWNERSHIP_MISMATCH" };
+            }
+            continue;
+          }
+
+          if (ownership.matches || matchesReservation) {
+            const isStopped =
+              (item?.status === "cancelled" || item?.ended_at != null) &&
+              item?.cancel_at_cycle_end !== 1 &&
+              item?.cancel_at_cycle_end !== true;
+
+            if (!isStopped) {
+              activeMatch = item;
+              break;
+            } else if (!stoppedMatch) {
+              stoppedMatch = item;
+            }
+          }
+        }
+
+        if (activeMatch) {
+          break;
+        }
+
+        if (items.length < PAGE_SIZE) {
+          paginationExhausted = true;
+          break;
+        }
+
+        skip += PAGE_SIZE;
+      }
+
+      if (activeMatch) {
+        return { activeMatch };
+      }
+
+      if (!paginationExhausted) {
+        log.error("Provider subscriptions pagination limit reached without exhausting; failing closed", {
+          pagesFetched,
+          maxPages: MAX_PAGES,
+          userId: user.id,
+        });
+        return { lookupFailed: true, error: "PROVIDER_PAGINATION_LIMIT_EXCEEDED" };
+      }
+
+      return { paginationExhausted: true, stoppedMatch };
+    };
+
     // Helper: Reconcile and Verify Pending Mandate with Provider (Requirement 5 & Requirement 6 & Reviewer E)
     const verifyAndReuseCandidateMandate = async (
       candidateId: string,
@@ -428,6 +548,16 @@ export async function POST(req: Request) {
         }
 
         const subData = await subRes.json();
+        const ownership = checkMandateOwnership(subData, user.id);
+        if (ownership.mismatch) {
+          log.error("Mandate ownership mismatch: candidate mandate does not belong to user", {
+            candidateId,
+            expectedUserId: user.id,
+            actualUserId: ownership.ownerId,
+          });
+          return { ok: false, error: "MANDATE_OWNERSHIP_MISMATCH", status: 403 };
+        }
+
         const validStatuses = new Set(["created", "authenticated", "active"]);
         if (!validStatuses.has(subData?.status)) {
           log.info("Candidate mandate at provider is not in active/created state; skipping reuse", { candidateId, status: subData?.status });
@@ -524,7 +654,14 @@ export async function POST(req: Request) {
     const confirmMandateStoppedOrNonexistentAtProvider = async (
       candidateId: string | null | undefined,
       metadataProviderSubId: string | null | undefined
-    ): Promise<{ safeToRelease: boolean; matchedId?: string }> => {
+    ): Promise<{
+      safeToRelease: boolean;
+      matchedId?: string;
+      activeMatch?: any;
+      lookupFailed?: boolean;
+      ownershipMismatch?: boolean;
+      error?: string;
+    }> => {
       const targetSubId =
         candidateId?.startsWith("sub_") && !candidateId.startsWith("sub_pending_")
           ? candidateId
@@ -546,13 +683,25 @@ export async function POST(req: Request) {
           if (getRes.ok) {
             const data = await getRes.json().catch(() => ({}));
             if (data?.id === targetSubId) {
+              const ownership = checkMandateOwnership(data, user.id);
+              if (ownership.mismatch) {
+                log.error("Mandate ownership mismatch: target subscription does not belong to user", {
+                  targetSubId,
+                  expectedUserId: user.id,
+                  actualUserId: ownership.ownerId,
+                });
+                return { safeToRelease: false, matchedId: targetSubId, ownershipMismatch: true };
+              }
+
               if (data.cancel_at_cycle_end === 1 || data.cancel_at_cycle_end === true) {
-                return { safeToRelease: false, matchedId: targetSubId };
+                return { safeToRelease: false, matchedId: targetSubId, activeMatch: data };
               }
               if (data.status === "cancelled" || data.ended_at != null) {
                 return { safeToRelease: true, matchedId: targetSubId };
               }
             }
+          } else {
+            return { safeToRelease: false, matchedId: targetSubId, lookupFailed: true };
           }
 
           // Try cancelling at provider
@@ -573,61 +722,27 @@ export async function POST(req: Request) {
               return { safeToRelease: true, matchedId: targetSubId };
             }
           }
-        } catch (_) {}
+        } catch (_) {
+          return { safeToRelease: false, matchedId: targetSubId, lookupFailed: true };
+        }
 
         return { safeToRelease: false, matchedId: targetSubId };
       }
 
-      // Placeholder reservation: query subscriptions with plan_id to check if a mandate exists for this user/reservation
-      try {
-        const listRes = await fetchCaller(`https://api.razorpay.com/v1/subscriptions?plan_id=${razorpayPlanId.trim()}&count=20`, {
-          method: "GET",
-          headers: { Authorization: `Basic ${credentials}` },
-        });
-
-        if (listRes.ok) {
-          const listData = await listRes.json().catch(() => ({}));
-          const items = Array.isArray(listData?.items) ? listData.items : [];
-          const match = items.find(
-            (item: any) =>
-              item?.notes?.reservation_id === candidateId ||
-              (item?.notes?.user_id === user.id && item?.status !== "cancelled" && item?.ended_at == null)
-          );
-
-          if (!match) {
-            return { safeToRelease: true };
-          }
-
-          if (
-            match.id &&
-            (match.status === "cancelled" || match.ended_at != null) &&
-            match.cancel_at_cycle_end !== 1 &&
-            match.cancel_at_cycle_end !== true
-          ) {
-            return { safeToRelease: true, matchedId: match.id };
-          }
-
-          if (match.id) {
-            const cancelRes = await fetchCaller(`https://api.razorpay.com/v1/subscriptions/${match.id}/cancel`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json", Authorization: `Basic ${credentials}` },
-              body: JSON.stringify({ cancel_at_cycle_end: 0 }),
-            });
-
-            if (cancelRes.ok) {
-              const cancelData = await cancelRes.json().catch(() => ({}));
-              if (
-                cancelData?.id === match.id &&
-                (cancelData?.status === "cancelled" || cancelData?.ended_at != null) &&
-                cancelData?.cancel_at_cycle_end !== 1 &&
-                cancelData?.cancel_at_cycle_end !== true
-              ) {
-                return { safeToRelease: true, matchedId: match.id };
-              }
-            }
-          }
-        }
-      } catch (_) {}
+      // Placeholder reservation: paginated query for subscriptions with plan_id
+      const lookup = await findProviderMandatesByPlan(candidateId);
+      if (lookup.lookupFailed) {
+        return { safeToRelease: false, lookupFailed: true, error: lookup.error };
+      }
+      if (lookup.ownershipMismatch) {
+        return { safeToRelease: false, ownershipMismatch: true };
+      }
+      if (lookup.activeMatch) {
+        return { safeToRelease: false, matchedId: lookup.activeMatch.id, activeMatch: lookup.activeMatch };
+      }
+      if (lookup.paginationExhausted) {
+        return { safeToRelease: true, matchedId: lookup.stoppedMatch?.id };
+      }
 
       return { safeToRelease: false };
     };
@@ -944,6 +1059,37 @@ export async function POST(req: Request) {
               (existingRace as any).metadata?.provider_subscription_id
             );
 
+            if (providerCheck.ownershipMismatch) {
+              return NextResponse.json(
+                { error: "Mandate does not belong to authenticated user", code: "MANDATE_OWNERSHIP_MISMATCH" },
+                { status: 403 }
+              );
+            }
+
+            if (providerCheck.lookupFailed) {
+              return NextResponse.json(
+                { error: "Unable to verify existing subscription state with payment provider", code: "GATEWAY_CONNECTION_ERROR" },
+                { status: 502 }
+              );
+            }
+
+            if (providerCheck.activeMatch) {
+              await supabaseAdmin.from("payment_orders").update({
+                status: "created",
+                provider_order_id: providerCheck.activeMatch.id,
+                updated_at: new Date().toISOString(),
+              }).eq("id", existingRace.id);
+
+              return NextResponse.json({
+                subscriptionId: providerCheck.activeMatch.id,
+                keyId,
+                planId: razorpayPlanId.trim(),
+                planCode,
+                status: providerCheck.activeMatch.status,
+                reused: true,
+              });
+            }
+
             if (providerCheck.safeToRelease) {
               log.info("Conflicting reservation lease verified stopped at provider; marking expired for retry recovery", { raceOrderId: existingRace.id });
               await supabaseAdmin.from("payment_orders").update({ status: "expired", updated_at: new Date().toISOString() }).eq("id", existingRace.id);
@@ -1022,6 +1168,37 @@ export async function POST(req: Request) {
             }
           }
 
+          // Check if a mandate was already created at the provider for this pending reservation
+          const raceCheck = await findProviderMandatesByPlan(existingRace.provider_order_id);
+          if (raceCheck.lookupFailed) {
+            return NextResponse.json(
+              { error: "Unable to verify existing subscription state with payment provider", code: "GATEWAY_CONNECTION_ERROR" },
+              { status: 502 }
+            );
+          }
+          if (raceCheck.ownershipMismatch) {
+            return NextResponse.json(
+              { error: "Mandate does not belong to authenticated user", code: "MANDATE_OWNERSHIP_MISMATCH" },
+              { status: 403 }
+            );
+          }
+          if (raceCheck.activeMatch) {
+            await supabaseAdmin.from("payment_orders").update({
+              status: "created",
+              provider_order_id: raceCheck.activeMatch.id,
+              updated_at: new Date().toISOString(),
+            }).eq("id", existingRace.id);
+
+            return NextResponse.json({
+              subscriptionId: raceCheck.activeMatch.id,
+              keyId,
+              planId: razorpayPlanId.trim(),
+              planCode,
+              status: raceCheck.activeMatch.status,
+              reused: true,
+            });
+          }
+
           return NextResponse.json(
             {
               error: "A subscription checkout is already in progress. Please complete the pending payment.",
@@ -1048,7 +1225,73 @@ export async function POST(req: Request) {
       };
       const totalCount = TOTAL_COUNTS[planCode] ?? 12;
 
-      // 11. Create subscription via Razorpay with attempt tracking notes
+      // Pre-create check: verify if an active mandate already exists at provider
+      const existingMandateLookup = await findProviderMandatesByPlan(reservationOrderId);
+      if (existingMandateLookup.lookupFailed) {
+        log.error("Provider lookup failed while verifying mandates prior to create; failing closed", {
+          userId: user.id,
+          error: existingMandateLookup.error,
+        });
+        await supabaseAdmin
+          .from("payment_orders")
+          .update({
+            status: "unknown",
+            updated_at: new Date().toISOString(),
+            metadata: {
+              reconciliation_required: true,
+              reconciliation_state: "unknown",
+              reason: "provider_lookup_failed_mid_pagination",
+              error: existingMandateLookup.error,
+              reservation_id: reservationOrderId,
+            },
+          })
+          .eq("provider_order_id", reservationOrderId);
+
+        return NextResponse.json(
+          { error: "Failed to verify existing subscriptions with payment provider", code: "GATEWAY_CONNECTION_ERROR" },
+          { status: 502 }
+        );
+      }
+
+      if (existingMandateLookup.ownershipMismatch) {
+        return NextResponse.json(
+          { error: "Mandate does not belong to authenticated user", code: "MANDATE_OWNERSHIP_MISMATCH" },
+          { status: 403 }
+        );
+      }
+
+      if (existingMandateLookup.activeMatch) {
+        const activeSub = existingMandateLookup.activeMatch;
+        log.info("Found existing active mandate at provider; reusing without creating duplicate", {
+          userId: user.id,
+          subscriptionId: activeSub.id,
+        });
+
+        await supabaseAdmin
+          .from("payment_orders")
+          .update({
+            status: "created",
+            provider_order_id: activeSub.id,
+            updated_at: new Date().toISOString(),
+            metadata: {
+              provider_subscription_id: activeSub.id,
+              reused_from_provider_lookup: true,
+              reused_at: new Date().toISOString(),
+            },
+          })
+          .eq("provider_order_id", reservationOrderId);
+
+        return NextResponse.json({
+          subscriptionId: activeSub.id,
+          keyId,
+          planId: razorpayPlanId.trim(),
+          planCode,
+          status: activeSub.status,
+          reused: true,
+        });
+      }
+
+      // 11. Create subscription via Razorpay with attempt tracking notes and idempotency keys
       let rzpRes: Response;
       try {
         rzpRes = await fetchCaller("https://api.razorpay.com/v1/subscriptions", {
@@ -1056,6 +1299,8 @@ export async function POST(req: Request) {
           headers: {
             "Content-Type": "application/json",
             Authorization: `Basic ${credentials}`,
+            "X-Razorpay-Idempotency-Key": reservationOrderId,
+            "Idempotency-Key": reservationOrderId,
           },
           body: JSON.stringify({
             plan_id: razorpayPlanId.trim(),
@@ -1063,6 +1308,7 @@ export async function POST(req: Request) {
             customer_notify: true,
             notes: {
               user_id: user.id,
+              userId: user.id,
               email: user.email || "",
               plan_code: planCode,
               attempt_id: attemptId,
@@ -1693,47 +1939,105 @@ export async function DELETE(req: Request) {
     const credentials = btoa(`${keyId}:${keySecret}`);
     const fetchCaller = deps.fetchFn || fetch;
 
-    // 4. Cancel mandate at Razorpay (Requirement 2: never return success unless confirmed by provider)
+    // 4. Pre-flight verify ownership and stopped status with provider before cancel (Issue 1)
     let cancelConfirmed = false;
     let providerCancelErr: any = null;
 
     try {
-      const rzpCancelRes = await fetchCaller(
-        `https://api.razorpay.com/v1/subscriptions/${rzpSubId}/cancel`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Basic ${credentials}`,
-          },
-          body: JSON.stringify({
-            cancel_at_cycle_end: 1, // Cancel at cycle end
-          }),
-        }
-      );
+      const fetchSubRes = await fetchCaller(`https://api.razorpay.com/v1/subscriptions/${rzpSubId}`, {
+        method: "GET",
+        headers: { Authorization: `Basic ${credentials}` },
+      });
 
-      if (rzpCancelRes.ok) {
-        const cancelBody = await rzpCancelRes.json().catch(() => ({}));
-        const confirmedStopped =
-          cancelBody &&
-          cancelBody.id === rzpSubId &&
-          (cancelBody.status === "cancelled" ||
-            cancelBody.cancel_at_cycle_end === 1 ||
-            cancelBody.cancel_at_cycle_end === true ||
-            cancelBody.ended_at != null);
-
-        if (confirmedStopped) {
-          cancelConfirmed = true;
+      if (!fetchSubRes.ok) {
+        if (fetchSubRes.status === 404) {
+          log.info("Subscription to cancel does not exist at provider (404)", { rzpSubId });
+          return NextResponse.json(
+            { error: "No active or pending auto-renew mandate found to cancel", code: "NOTHING_TO_CANCEL" },
+            { status: 400 }
+          );
         }
-      } else {
-        providerCancelErr = await rzpCancelRes.json().catch(() => ({}));
+        log.error("Failed to verify mandate at provider before cancel; failing closed", { rzpSubId, status: fetchSubRes.status });
+        return NextResponse.json(
+          { error: "Failed to verify mandate with payment provider", code: "GATEWAY_CONNECTION_ERROR" },
+          { status: 502 }
+        );
       }
-    } catch (fetchErr: any) {
-      log.error("Network error during Razorpay subscription cancel", { error: fetchErr });
+
+      const subData = await fetchSubRes.json().catch(() => ({}));
+      const ownership = checkMandateOwnership(subData, user.id);
+      if (ownership.mismatch) {
+        log.error("Mandate ownership mismatch on cancellation: subscription does not belong to user", {
+          subscriptionId: rzpSubId,
+          expectedUserId: user.id,
+          actualUserId: ownership.ownerId,
+        });
+        return NextResponse.json(
+          { error: "Mandate does not belong to authenticated user", code: "MANDATE_OWNERSHIP_MISMATCH" },
+          { status: 403 }
+        );
+      }
+
+      const alreadyStopped =
+        subData &&
+        subData.id === rzpSubId &&
+        (subData.status === "cancelled" ||
+          subData.status === "completed" ||
+          subData.ended_at != null ||
+          subData.cancel_at_cycle_end === 1 ||
+          subData.cancel_at_cycle_end === true);
+
+      if (alreadyStopped) {
+        cancelConfirmed = true;
+      }
+    } catch (preCheckErr: any) {
+      log.error("Network error during pre-cancel mandate verification", { error: preCheckErr });
       return NextResponse.json(
         { error: "Network error connecting to payment gateway", code: "GATEWAY_CONNECTION_ERROR" },
         { status: 502 }
       );
+    }
+
+    // Cancel mandate at Razorpay (Requirement 2: never return success unless confirmed by provider)
+    if (!cancelConfirmed) {
+      try {
+        const rzpCancelRes = await fetchCaller(
+          `https://api.razorpay.com/v1/subscriptions/${rzpSubId}/cancel`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Basic ${credentials}`,
+            },
+            body: JSON.stringify({
+              cancel_at_cycle_end: 1, // Cancel at cycle end
+            }),
+          }
+        );
+
+        if (rzpCancelRes.ok) {
+          const cancelBody = await rzpCancelRes.json().catch(() => ({}));
+          const confirmedStopped =
+            cancelBody &&
+            cancelBody.id === rzpSubId &&
+            (cancelBody.status === "cancelled" ||
+              cancelBody.cancel_at_cycle_end === 1 ||
+              cancelBody.cancel_at_cycle_end === true ||
+              cancelBody.ended_at != null);
+
+          if (confirmedStopped) {
+            cancelConfirmed = true;
+          }
+        } else {
+          providerCancelErr = await rzpCancelRes.json().catch(() => ({}));
+        }
+      } catch (fetchErr: any) {
+        log.error("Network error during Razorpay subscription cancel", { error: fetchErr });
+        return NextResponse.json(
+          { error: "Network error connecting to payment gateway", code: "GATEWAY_CONNECTION_ERROR" },
+          { status: 502 }
+        );
+      }
     }
 
     // Handle already-cancelled-at-provider (Requirement 2 & D: treat as success ONLY after fetching and seeing confirmed stopped charge)
