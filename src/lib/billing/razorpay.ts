@@ -316,10 +316,37 @@ export async function openRazorpaySubscription(
     theme: {
       color: "#2563EB",
     },
-    handler: function (response: any) {
+    handler: async function (response: any) {
+      const subId = response.razorpay_subscription_id || subData.subscriptionId;
+      const payId = response.razorpay_payment_id || "";
+      if (response.razorpay_signature) {
+        try {
+          const verifyRes = await fetch("/api/billing/razorpay/verify", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              subscription_id: subId,
+              payment_id: payId,
+              razorpay_signature: response.razorpay_signature,
+              planCode: options.planCode,
+            }),
+          });
+          if (!verifyRes.ok) {
+            const verifyErr = await verifyRes.json().catch(() => ({}));
+            options.onError?.(new Error(verifyErr.error || "Subscription verification failed"));
+            return;
+          }
+        } catch (err: any) {
+          options.onError?.(new Error(err?.message || "Failed to verify subscription with server"));
+          return;
+        }
+      }
       options.onSuccess?.({
-        subscriptionId: response.razorpay_subscription_id || subData.subscriptionId,
-        paymentId: response.razorpay_payment_id || "",
+        subscriptionId: subId,
+        paymentId: payId,
       });
     },
     modal: {

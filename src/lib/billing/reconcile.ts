@@ -101,3 +101,282 @@ export function reconcilePayments(input: ReconcileInput): Finding[] {
   });
   return findings;
 }
+
+export interface MandateReconciliationOptions {
+  batchSize?: number;
+  credentials?: string;
+  fetchFn?: typeof fetch;
+}
+
+export interface MandateReconciliationResult {
+  processed: number;
+  resolved: number;
+  failed: number;
+  details: Array<{
+    id: string;
+    subId: string | null;
+    action: string;
+    status: string;
+  }>;
+}
+
+/**
+ * Reviewer 2: Active consumer for subscription_reconciliations table.
+ * Queries pending/unknown reconciliation records, verifies state with Razorpay,
+ * recovers or cancels orphan provider mandates, and updates database state.
+ */
+export async function reconcileSubscriptionMandates(
+  supabaseAdmin: any,
+  options: MandateReconciliationOptions = {}
+): Promise<MandateReconciliationResult> {
+  const batchSize = options.batchSize || 50;
+  const fetchCaller = options.fetchFn || fetch;
+  const result: MandateReconciliationResult = {
+    processed: 0,
+    resolved: 0,
+    failed: 0,
+    details: [],
+  };
+
+  const { data: records, error: fetchErr } = await supabaseAdmin
+    .from("subscription_reconciliations")
+    .select("id, user_id, provider_subscription_id, reservation_order_id, reconciliation_state, metadata, created_at")
+    .in("reconciliation_state", ["pending", "unknown"])
+    .order("created_at", { ascending: true })
+    .limit(batchSize);
+
+  if (fetchErr || !records || records.length === 0) {
+    return result;
+  }
+
+  const credentials = options.credentials || (
+    process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET
+      ? btoa(`${process.env.RAZORPAY_KEY_ID}:${process.env.RAZORPAY_KEY_SECRET}`)
+      : ""
+  );
+
+  for (const rec of records) {
+    result.processed++;
+    const subId = rec.provider_subscription_id;
+
+    if (subId && typeof subId === "string" && subId.startsWith("sub_") && !subId.startsWith("sub_pending_")) {
+      // Real provider subscription ID: query Razorpay
+      try {
+        const getRes = await fetchCaller(`https://api.razorpay.com/v1/subscriptions/${subId}`, {
+          method: "GET",
+          headers: credentials ? { Authorization: `Basic ${credentials}` } : {},
+        });
+
+        if (getRes.status === 404) {
+          // No mandate exists at provider; safe to release
+          await supabaseAdmin
+            .from("subscription_reconciliations")
+            .update({
+              reconciliation_state: "resolved",
+              recovery_outcome: "not_found_on_provider_released",
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", rec.id);
+
+          if (rec.reservation_order_id) {
+            await supabaseAdmin
+              .from("payment_orders")
+              .update({ status: "failed", updated_at: new Date().toISOString() })
+              .eq("provider_order_id", rec.reservation_order_id)
+              .in("status", ["reserved", "created", "unknown"]);
+          }
+
+          result.resolved++;
+          result.details.push({ id: rec.id, subId, action: "released_404", status: "resolved" });
+          continue;
+        }
+
+        if (getRes.ok) {
+          const subData = await getRes.json().catch(() => ({}));
+          const isMatching = subData?.id === subId;
+
+          // Verify ownership before cancelling or modifying mandate
+          const notesUserId = subData?.notes?.user_id || subData?.notes?.userId;
+          if (notesUserId && rec.user_id && notesUserId !== rec.user_id) {
+            await supabaseAdmin
+              .from("subscription_reconciliations")
+              .update({
+                reconciliation_state: "failed",
+                recovery_outcome: "ownership_mismatch_aborted",
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", rec.id);
+            result.details.push({ id: rec.id, subId, action: "ownership_mismatch", status: "failed" });
+            continue;
+          }
+
+          if (subData?.customer_id && rec.user_id) {
+            const { data: otherUserSub } = typeof supabaseAdmin?.from === "function"
+              ? await supabaseAdmin
+                  .from("subscriptions")
+                  .select("user_id")
+                  .eq("customer_id", subData.customer_id)
+                  .neq("user_id", rec.user_id)
+                  .maybeSingle()
+                  .catch(() => ({ data: null }))
+              : { data: null };
+            if (otherUserSub) {
+              await supabaseAdmin
+                .from("subscription_reconciliations")
+                .update({
+                  reconciliation_state: "failed",
+                  recovery_outcome: "customer_id_mismatch_aborted",
+                  updated_at: new Date().toISOString(),
+                })
+                .eq("id", rec.id);
+              result.details.push({ id: rec.id, subId, action: "customer_id_mismatch", status: "failed" });
+              continue;
+            }
+          }
+
+          // State-machine guard: Never cancel an active or in_grace_period subscription that is legitimately bound to a user
+          const subQuery = supabaseAdmin.from("subscriptions");
+          const { data: activeSubRow } = typeof subQuery?.select === "function"
+            ? await subQuery
+                .select("id, status")
+                .eq("subscription_id", subId)
+                .in("status", ["active", "in_grace_period"])
+                .maybeSingle()
+            : { data: null };
+
+          if (activeSubRow) {
+            await supabaseAdmin
+              .from("subscription_reconciliations")
+              .update({
+                reconciliation_state: "resolved",
+                recovery_outcome: "active_subscription_preserved",
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", rec.id);
+            result.resolved++;
+            result.details.push({ id: rec.id, subId, action: "active_preserved", status: "resolved" });
+            continue;
+          }
+
+          const isCancelled = subData?.status === "cancelled" || subData?.ended_at != null;
+          const isCancelAtCycleEnd = subData?.cancel_at_cycle_end === 1 || subData?.cancel_at_cycle_end === true;
+
+          if (isMatching && isCancelled && !isCancelAtCycleEnd) {
+            // Already confirmed stopped
+            await supabaseAdmin
+              .from("subscription_reconciliations")
+              .update({
+                reconciliation_state: "resolved",
+                recovery_outcome: "confirmed_stopped_on_provider",
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", rec.id);
+
+            await supabaseAdmin
+              .from("payment_orders")
+              .update({ status: "cancelled", updated_at: new Date().toISOString() })
+              .eq("provider_order_id", subId)
+              .in("status", ["reserved", "created", "unknown"]);
+
+            result.resolved++;
+            result.details.push({ id: rec.id, subId, action: "confirmed_stopped", status: "resolved" });
+            continue;
+          }
+
+          // If still active or cancel_at_cycle_end: cancel immediately at provider
+          const cancelRes = await fetchCaller(`https://api.razorpay.com/v1/subscriptions/${subId}/cancel`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(credentials ? { Authorization: `Basic ${credentials}` } : {}),
+            },
+            body: JSON.stringify({ cancel_at_cycle_end: 0 }),
+          });
+
+          if (cancelRes.ok) {
+            const cancelData = await cancelRes.json().catch(() => ({}));
+            if (
+              cancelData?.id === subId &&
+              (cancelData?.status === "cancelled" || cancelData?.ended_at != null) &&
+              cancelData?.cancel_at_cycle_end !== 1 &&
+              cancelData?.cancel_at_cycle_end !== true
+            ) {
+              await supabaseAdmin
+                .from("subscription_reconciliations")
+                .update({
+                  reconciliation_state: "resolved",
+                  recovery_outcome: "cancelled_orphan_mandate_at_provider",
+                  updated_at: new Date().toISOString(),
+                })
+                .eq("id", rec.id);
+
+              await supabaseAdmin
+                .from("payment_orders")
+                .update({ status: "cancelled", updated_at: new Date().toISOString() })
+                .eq("provider_order_id", subId)
+                .in("status", ["reserved", "created", "unknown"]);
+
+              result.resolved++;
+              result.details.push({ id: rec.id, subId, action: "cancelled_at_provider", status: "resolved" });
+              continue;
+            }
+          }
+        }
+      } catch (_) {}
+
+      // Provider cancel/verification failed
+      await supabaseAdmin
+        .from("subscription_reconciliations")
+        .update({
+          reconciliation_state: "failed",
+          recovery_outcome: "provider_reconciliation_attempt_failed",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", rec.id);
+
+      result.failed++;
+      result.details.push({ id: rec.id, subId, action: "verification_failed", status: "failed" });
+    } else {
+      // Placeholder sub_pending_ or missing ID
+      const createdAtMs = rec.created_at ? new Date(rec.created_at).getTime() : 0;
+      const isStale = Date.now() - createdAtMs > 24 * 3600 * 1000;
+      const isPaymentFailed =
+        rec.failure_reason === "payment.failed" ||
+        rec.metadata?.event_type === "payment.failed";
+
+      if (isStale || isPaymentFailed) {
+        await supabaseAdmin
+          .from("subscription_reconciliations")
+          .update({
+            reconciliation_state: "resolved",
+            recovery_outcome: isPaymentFailed
+              ? "payment_failed_reservation_released"
+              : "stale_placeholder_without_provider_id_released",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", rec.id);
+
+        if (rec.reservation_order_id) {
+          await supabaseAdmin
+            .from("payment_orders")
+            .update({ status: isPaymentFailed ? "failed" : "expired", updated_at: new Date().toISOString() })
+            .eq("provider_order_id", rec.reservation_order_id)
+            .in("status", ["reserved", "created", "unknown"]);
+        }
+
+        result.resolved++;
+        result.details.push({
+          id: rec.id,
+          subId: null,
+          action: isPaymentFailed ? "payment_failed_released" : "stale_placeholder_released",
+          status: "resolved",
+        });
+      } else {
+        result.failed++;
+        result.details.push({ id: rec.id, subId: null, action: "placeholder_kept_pending", status: "pending" });
+      }
+    }
+  }
+
+  return result;
+}

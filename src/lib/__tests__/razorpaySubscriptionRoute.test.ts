@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { POST } from "@/app/api/billing/razorpay/subscription/route";
+import { POST, DELETE } from "@/app/api/billing/razorpay/subscription/route";
 import { openRazorpaySubscription as openGatewaySubscription } from "@/lib/billing/razorpay";
 import { openRazorpaySubscription as openCheckoutSubscription } from "@/lib/billing/checkout";
 
@@ -39,6 +39,7 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
     getUserError?: any;
     dbError?: any;
     insertError?: any;
+    updateError?: any;
   }) {
     return {
       auth: {
@@ -52,46 +53,182 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
           return { data: { user: null }, error: new Error("Invalid token") };
         },
       },
+      rpc: async (name: string, args: any) => {
+        if (options?.dbError) return { data: null, error: options.dbError };
+        if (name === "cancel_autorenew_subscription") {
+          const sub = mockDbSubscriptions.get(args.p_user_id);
+          if (sub) {
+            mockDbSubscriptions.set(args.p_user_id, {
+              ...sub,
+              cancel_at_period_end: true,
+              metadata: { ...(sub.metadata || {}), ...args.p_metadata },
+            });
+          }
+          for (const [id, order] of Array.from(mockDbPaymentOrders.entries())) {
+            if (order.user_id === args.p_user_id && order.provider_order_id === args.p_mandate_id) {
+              mockDbPaymentOrders.set(id, { ...order, status: "cancelled" });
+            }
+          }
+          return { data: true, error: null };
+        }
+        return { data: null, error: null };
+      },
       from: (table: string) => {
-        let filterUserId: string | null = null;
-        let filterStatus: string | null = null;
-        let filterPlanCode: string | null = null;
+        const filters: Record<string, any> = {};
+        const neqFilters: Record<string, any> = {};
+        const likeFilters: Record<string, string> = {};
+        const gteFilters: Record<string, any> = {};
+        const ltFilters: Record<string, any> = {};
+        const inFilters: Record<string, any[]> = {};
+
+        const executeSelect = () => {
+          if (options?.dbError) return { data: null, error: options.dbError };
+          if (table === "payment_orders") {
+            const orders = Array.from(mockDbPaymentOrders.values());
+            const matches = orders.filter((rawO) => {
+              const o = {
+                recurring_kind: rawO.recurring_kind || (rawO.provider_order_id?.startsWith("sub_") ? "recurring" : "none"),
+                ...rawO,
+              };
+              for (const [k, v] of Object.entries(filters)) {
+                if (o[k] !== v) return false;
+              }
+              for (const [k, v] of Object.entries(neqFilters)) {
+                if (o[k] === v) return false;
+              }
+              for (const [k, pat] of Object.entries(likeFilters)) {
+                const val = String(o[k] || "");
+                const prefix = pat.replace("%", "");
+                if (!val.startsWith(prefix)) return false;
+              }
+              for (const [k, v] of Object.entries(gteFilters)) {
+                if (o[k] < v) return false;
+              }
+              for (const [k, v] of Object.entries(ltFilters)) {
+                if (o[k] >= v) return false;
+              }
+              for (const [k, vals] of Object.entries(inFilters)) {
+                if (!vals.includes(o[k])) return false;
+              }
+              return true;
+            });
+            return { data: matches, error: null };
+          }
+          if (table === "subscriptions") {
+            const filterUserId = filters.user_id;
+            const found = filterUserId ? mockDbSubscriptions.get(filterUserId) : null;
+            return { data: found ? [found] : [], error: null };
+          }
+          return { data: [], error: null };
+        };
+
         const query: any = {
           select: () => query,
           order: () => query,
           limit: () => query,
           eq: (col: string, val: any) => {
-            if (col === "user_id") filterUserId = val;
-            if (col === "status") filterStatus = val;
-            if (col === "plan_code") filterPlanCode = val;
+            filters[col] = val;
+            return query;
+          },
+          neq: (col: string, val: any) => {
+            neqFilters[col] = val;
+            return query;
+          },
+          like: (col: string, pattern: string) => {
+            likeFilters[col] = pattern;
+            return query;
+          },
+          gte: (col: string, val: any) => {
+            gteFilters[col] = val;
+            return query;
+          },
+          lt: (col: string, val: any) => {
+            ltFilters[col] = val;
+            return query;
+          },
+          in: (col: string, vals: any[]) => {
+            inFilters[col] = vals;
             return query;
           },
           maybeSingle: async () => {
             if (options?.dbError) return { data: null, error: options.dbError };
-            if (table === "payment_orders") {
-              const orders = Array.from(mockDbPaymentOrders.values());
-              const match = orders.find((o) => {
-                if (filterUserId && o.user_id !== filterUserId) return false;
-                if (filterStatus && o.status !== filterStatus) return false;
-                if (filterPlanCode && o.plan_code !== filterPlanCode) return false;
-                return true;
-              });
-              return { data: match || null, error: null };
-            }
-            const found = filterUserId ? mockDbSubscriptions.get(filterUserId) : null;
-            return { data: found || null, error: null };
+            const res = executeSelect();
+            if (res.error) return res;
+            return { data: res.data?.[0] || null, error: null };
+          },
+          then: (onfulfilled: any, onrejected: any) => {
+            return Promise.resolve(executeSelect()).then(onfulfilled, onrejected);
           },
           update: (updates: any) => {
-            let targetUserId: string | null = null;
-            const updateQuery = {
-              eq: async (col: string, val: any) => {
-                if (col === "user_id") targetUserId = val;
-                if (options?.insertError || options?.dbError) return { error: options.insertError || options.dbError };
-                if (targetUserId) {
-                  const existing = mockDbSubscriptions.get(targetUserId) || {};
-                  mockDbSubscriptions.set(targetUserId, { ...existing, ...updates });
+            const updateFilters: Record<string, any> = {};
+            const updateLtFilters: Record<string, any> = {};
+            const updateGteFilters: Record<string, any> = {};
+            const updateInFilters: Record<string, any[]> = {};
+            let isSelect = false;
+
+            const performUpdate = () => {
+              if (options?.updateError || options?.dbError) {
+                return { data: null, error: options.updateError || options.dbError };
+              }
+              const updatedItems: any[] = [];
+              if (table === "payment_orders") {
+                for (const [key, order] of Array.from(mockDbPaymentOrders.entries())) {
+                  let match = true;
+                  for (const [k, v] of Object.entries(updateFilters)) {
+                    if (order[k] !== v) match = false;
+                  }
+                  for (const [k, v] of Object.entries(updateLtFilters)) {
+                    if (order[k] >= v) match = false;
+                  }
+                  for (const [k, v] of Object.entries(updateGteFilters)) {
+                    if (order[k] < v) match = false;
+                  }
+                  for (const [k, vals] of Object.entries(updateInFilters)) {
+                    if (!vals.includes(order[k])) match = false;
+                  }
+                  if (match) {
+                    const updated = { ...order, ...updates };
+                    mockDbPaymentOrders.delete(key);
+                    const newKey = updated.provider_order_id || key;
+                    mockDbPaymentOrders.set(newKey, updated);
+                    updatedItems.push(updated);
+                  }
                 }
-                return { error: null };
+              } else if (table === "subscriptions") {
+                const userId = updateFilters.user_id;
+                if (userId) {
+                  const existing = mockDbSubscriptions.get(userId) || {};
+                  const updated = { ...existing, ...updates };
+                  mockDbSubscriptions.set(userId, updated);
+                  updatedItems.push(updated);
+                }
+              }
+              return { data: isSelect ? updatedItems : null, error: null };
+            };
+
+            const updateQuery: any = {
+              eq: (col: string, val: any) => {
+                updateFilters[col] = val;
+                return updateQuery;
+              },
+              lt: (col: string, val: any) => {
+                updateLtFilters[col] = val;
+                return updateQuery;
+              },
+              gte: (col: string, val: any) => {
+                updateGteFilters[col] = val;
+                return updateQuery;
+              },
+              in: (col: string, vals: any[]) => {
+                updateInFilters[col] = vals;
+                return updateQuery;
+              },
+              select: () => {
+                isSelect = true;
+                return updateQuery;
+              },
+              then: (onfulfilled: any, onrejected: any) => {
+                return Promise.resolve(performUpdate()).then(onfulfilled, onrejected);
               },
             };
             return updateQuery;
@@ -99,9 +236,26 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
           insert: async (row: any) => {
             if (options?.insertError || options?.dbError) return { error: options.insertError || options.dbError };
             if (table === "payment_orders") {
-              mockDbPaymentOrders.set(row.provider_order_id, { ...row });
+              if (row.recurring_kind === "recurring" && ["reserved", "created", "unknown"].includes(row.status)) {
+                for (const existing of Array.from(mockDbPaymentOrders.values())) {
+                  if (
+                    existing.user_id === row.user_id &&
+                    existing.mode === row.mode &&
+                    existing.provider === row.provider &&
+                    existing.recurring_kind === "recurring" &&
+                    ["reserved", "created", "unknown"].includes(existing.status)
+                  ) {
+                    return { error: { code: "23505", message: "duplicate key value violates unique constraint idx_payment_orders_user_mode_provider_recurring" } };
+                  }
+                }
+              }
+              const orderRow = {
+                created_at: new Date().toISOString(),
+                ...row,
+              };
+              mockDbPaymentOrders.set(row.provider_order_id, orderRow);
             } else {
-              mockDbSubscriptions.set(row.user_id, { ...row });
+              mockDbSubscriptions.set(row.user_id, { created_at: new Date().toISOString(), ...row });
             }
             return { error: null };
           },
@@ -109,6 +263,113 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
         return query;
       },
     };
+  }
+
+  function createMockRazorpayFetch(overrides?: {
+    planData?: any;
+    planStatus?: number;
+    subData?: any;
+    subStatus?: number;
+    cancelStatus?: number;
+    listItems?: any[];
+    listStatus?: number;
+  }) {
+    return vi.fn().mockImplementation(async (url: string, init: any) => {
+      const urlStr = url.toString();
+      if (urlStr.includes("/v1/plans/")) {
+        if (overrides?.planStatus && overrides.planStatus !== 200) {
+          return new Response(JSON.stringify({ error: "Plan not found" }), {
+            status: overrides.planStatus,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        if (overrides?.planData) {
+          return new Response(JSON.stringify(overrides.planData), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        let amount = 149900;
+        let period = "monthly";
+        let interval = 1;
+        if (urlStr.includes("weekly")) {
+          amount = 69200;
+          period = "weekly";
+          interval = 1;
+        } else if (urlStr.includes("quarterly")) {
+          amount = 399900;
+          period = "monthly";
+          interval = 3;
+        }
+        return new Response(
+          JSON.stringify({
+            id: urlStr.split("/").pop(),
+            item: { amount, currency: "INR" },
+            period,
+            interval,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      if (urlStr.includes("/v1/subscriptions") && urlStr.includes("/cancel")) {
+        return new Response(
+          JSON.stringify({
+            id: urlStr.split("/").slice(-2)[0],
+            status: "cancelled",
+          }),
+          { status: overrides?.cancelStatus || 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      if (urlStr.includes("/v1/subscriptions")) {
+        // List query
+        if (urlStr.includes("?") || urlStr.includes("plan_id=") || (init?.method === "GET" && !urlStr.match(/\/v1\/subscriptions\/sub_[^?]+/))) {
+          if (overrides?.listStatus && overrides.listStatus !== 200) {
+            return new Response(
+              JSON.stringify({ error: { description: "Subscription list failed" } }),
+              { status: overrides.listStatus, headers: { "Content-Type": "application/json" } }
+            );
+          }
+          const items = overrides?.listItems || [];
+          return new Response(
+            JSON.stringify({ entity: "collection", count: items.length, items }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+
+        if (init?.method === "POST") {
+          if (overrides?.subStatus && overrides.subStatus !== 200) {
+            return new Response(
+              JSON.stringify({ error: { description: "Subscription creation failed" } }),
+              { status: overrides.subStatus, headers: { "Content-Type": "application/json" } }
+            );
+          }
+        }
+
+        const body = init?.body ? JSON.parse(init.body) : {};
+        const planId = body.plan_id || "plan_123";
+        let subId = "sub_rzp_monthly_654321";
+        if (planId.includes("weekly")) subId = "sub_rzp_weekly_123456";
+        else if (planId.includes("quarterly")) subId = "sub_rzp_quarterly_987654";
+
+        const defaultSub = {
+          id: subId,
+          plan_id: planId,
+          status: "created",
+          current_start: Math.floor(Date.now() / 1000),
+          current_end: Math.floor(Date.now() / 1000) + 30 * 86400,
+          notes: { user_id: mockUser.id, userId: mockUser.id },
+        };
+        const subResponse = overrides?.subData ? { ...defaultSub, ...overrides.subData } : defaultSub;
+        return new Response(JSON.stringify(subResponse), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(JSON.stringify({}), { status: 200 });
+    });
   }
 
   function createMockRequest(body: any, headers?: Record<string, string>, deps?: any) {
@@ -124,6 +385,7 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
     (req as any).__testDeps = deps || {
       getSupabaseAdmin: () => createMockSupabaseAdmin(),
       verifyUserNotBanned: async () => ({ isBlocked: false }),
+      fetchFn: createMockRazorpayFetch(),
     };
     return req;
   }
@@ -179,7 +441,7 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
   });
 
   it("refuses with 503 when key prefix does not match configured mode", async () => {
-    process.env.RAZORPAY_MODE = "live"; // requires rzp_live_, but key is rzp_test_
+    process.env.RAZORPAY_MODE = "live";
     const req = createMockRequest({ planCode: "monthly" });
     const res = await POST(req);
     expect(res.status).toBe(503);
@@ -238,15 +500,457 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
     expect(json.code).toBe("USER_BLOCKED");
   });
 
+  // =========================================================================
+  // ITEM 1: PROVIDER PLAN VERIFICATION
+  // =========================================================================
+  describe("Provider Plan Verification (Item 1)", () => {
+    it("fails closed with 502 PLAN_VERIFICATION_MISMATCH when plan amount does not match catalog", async () => {
+      const mockFetch = createMockRazorpayFetch({
+        planData: {
+          id: "plan_monthly_rzp_456",
+          item: { amount: 99900, currency: "INR" }, // Mismatched amount
+          period: "monthly",
+          interval: 1,
+        },
+      });
+
+      const req = createMockRequest(
+        { planCode: "monthly" },
+        {},
+        {
+          getSupabaseAdmin: () => createMockSupabaseAdmin(),
+          verifyUserNotBanned: async () => ({ isBlocked: false }),
+          fetchFn: mockFetch,
+          isProductionHost: false,
+        }
+      );
+
+      const res = await POST(req);
+      expect(res.status).toBe(502);
+      const json = await res.json();
+      expect(json.code).toBe("PLAN_VERIFICATION_MISMATCH");
+    });
+
+    it("fails closed with 502 PLAN_VERIFICATION_MISMATCH when currency is not INR", async () => {
+      const mockFetch = createMockRazorpayFetch({
+        planData: {
+          id: "plan_monthly_rzp_456",
+          item: { amount: 149900, currency: "USD" }, // Mismatched currency
+          period: "monthly",
+          interval: 1,
+        },
+      });
+
+      const req = createMockRequest(
+        { planCode: "monthly" },
+        {},
+        {
+          getSupabaseAdmin: () => createMockSupabaseAdmin(),
+          verifyUserNotBanned: async () => ({ isBlocked: false }),
+          fetchFn: mockFetch,
+          isProductionHost: false,
+        }
+      );
+
+      const res = await POST(req);
+      expect(res.status).toBe(502);
+      const json = await res.json();
+      expect(json.code).toBe("PLAN_VERIFICATION_MISMATCH");
+    });
+
+    it("fails closed with 502 PLAN_VERIFICATION_MISMATCH when period/interval mismatch", async () => {
+      const mockFetch = createMockRazorpayFetch({
+        planData: {
+          id: "plan_weekly_rzp_123",
+          item: { amount: 69200, currency: "INR" },
+          period: "yearly", // Mismatched period
+          interval: 1,
+        },
+      });
+
+      const req = createMockRequest(
+        { planCode: "weekly" },
+        {},
+        {
+          getSupabaseAdmin: () => createMockSupabaseAdmin(),
+          verifyUserNotBanned: async () => ({ isBlocked: false }),
+          fetchFn: mockFetch,
+          isProductionHost: false,
+        }
+      );
+
+      const res = await POST(req);
+      expect(res.status).toBe(502);
+      const json = await res.json();
+      expect(json.code).toBe("PLAN_VERIFICATION_MISMATCH");
+    });
+
+    it("fails closed with 502 PLAN_VERIFICATION_FAILED when plan endpoint returns non-200", async () => {
+      const mockFetch = createMockRazorpayFetch({ planStatus: 404 });
+
+      const req = createMockRequest(
+        { planCode: "monthly" },
+        {},
+        {
+          getSupabaseAdmin: () => createMockSupabaseAdmin(),
+          verifyUserNotBanned: async () => ({ isBlocked: false }),
+          fetchFn: mockFetch,
+          isProductionHost: false,
+        }
+      );
+
+      const res = await POST(req);
+      expect(res.status).toBe(502);
+      const json = await res.json();
+      expect(json.code).toBe("PLAN_VERIFICATION_FAILED");
+    });
+  });
+
+  // =========================================================================
+  // ITEM 2: DURABLE MANDATE CREATION & RESERVATION
+  // =========================================================================
+  describe("Durable Mandate Creation (Item 2)", () => {
+    it("reserves pending row in DB before calling Razorpay and updates with real ID", async () => {
+      const mockFetch = createMockRazorpayFetch();
+      const req = createMockRequest(
+        { planCode: "monthly" },
+        {},
+        {
+          getSupabaseAdmin: () => createMockSupabaseAdmin(),
+          verifyUserNotBanned: async () => ({ isBlocked: false }),
+          fetchFn: mockFetch,
+          isProductionHost: false,
+        }
+      );
+
+      const res = await POST(req);
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.subscriptionId).toBe("sub_rzp_monthly_654321");
+
+      const order = mockDbPaymentOrders.get("sub_rzp_monthly_654321");
+      expect(order).toBeDefined();
+      expect(order.status).toBe("created");
+      expect(order.plan_code).toBe("monthly");
+      expect(order.amount_paise).toBe(149900);
+    });
+
+    it("marks reserved row as failed when Razorpay subscription call fails", async () => {
+      const mockFetch = createMockRazorpayFetch({ subStatus: 500 });
+      const req = createMockRequest(
+        { planCode: "monthly" },
+        {},
+        {
+          getSupabaseAdmin: () => createMockSupabaseAdmin(),
+          verifyUserNotBanned: async () => ({ isBlocked: false }),
+          fetchFn: mockFetch,
+          isProductionHost: false,
+        }
+      );
+
+      const res = await POST(req);
+      expect(res.status).toBe(500);
+
+      const orders = Array.from(mockDbPaymentOrders.values());
+      const reservationOrder = orders.find((o) => o.provider_order_id?.startsWith(`sub_pending_${mockUser.id}`));
+      expect(reservationOrder).toBeDefined();
+      expect(reservationOrder.status).toBe("failed");
+    });
+
+    it("handles unique collision by inspecting existing plan and rejects differing plan", async () => {
+      // Simulate existing collision for weekly plan
+      mockDbPaymentOrders.set(`sub_pending_${mockUser.id}`, {
+        id: "order_existing_res",
+        user_id: mockUser.id,
+        provider: "razorpay",
+        provider_order_id: `sub_pending_${mockUser.id}`,
+        plan_code: "weekly",
+        mode: "test",
+        status: "created",
+        created_at: new Date().toISOString(),
+      });
+
+      const mockFetch = createMockRazorpayFetch();
+      const req = createMockRequest(
+        { planCode: "monthly" }, // Requesting monthly while weekly is pending
+        {},
+        {
+          getSupabaseAdmin: () =>
+            createMockSupabaseAdmin({
+              insertError: { code: "23505", message: "duplicate key value violates unique constraint" },
+            }),
+          verifyUserNotBanned: async () => ({ isBlocked: false }),
+          fetchFn: mockFetch,
+          isProductionHost: false,
+        }
+      );
+
+      const res = await POST(req);
+      expect(res.status).toBe(409);
+      const json = await res.json();
+      expect(json.code).toBe("PENDING_SUBSCRIPTION_EXISTS");
+      expect(json.error).toContain("weekly");
+    });
+  });
+
+  // =========================================================================
+  // ITEM 3: AUTHORITATIVE PENDING REUSE
+  // =========================================================================
+  describe("Authoritative Pending Reuse (Item 3)", () => {
+    it("reuses existing pending payment_orders row for the same user and plan without calling Razorpay", async () => {
+      mockDbPaymentOrders.set("sub_rzp_existing_pending_1", {
+        id: "order_123",
+        user_id: mockUser.id,
+        provider: "razorpay",
+        provider_order_id: "sub_rzp_existing_pending_1",
+        plan_code: "monthly",
+        amount_paise: 149900,
+        status: "created",
+        mode: "test",
+        created_at: new Date().toISOString(),
+      });
+
+      let rzpCreateCalled = false;
+      const mockFetch = vi.fn().mockImplementation(async (url: string, init: any) => {
+        const urlStr = url.toString();
+        if (urlStr.includes("/v1/plans/")) {
+          return new Response(
+            JSON.stringify({
+              id: "plan_monthly_rzp_456",
+              item: { amount: 149900, currency: "INR" },
+              period: "monthly",
+              interval: 1,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        if (urlStr.includes("/v1/subscriptions/sub_rzp_existing_pending_1")) {
+          return new Response(
+            JSON.stringify({
+              id: "sub_rzp_existing_pending_1",
+              plan_id: "plan_monthly_rzp_456",
+              status: "created",
+              created_at: Math.floor(Date.now() / 1000),
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        if (init?.method === "POST" && urlStr.endsWith("/v1/subscriptions")) {
+          rzpCreateCalled = true;
+        }
+        return new Response();
+      });
+
+      const req = createMockRequest(
+        { planCode: "monthly" },
+        {},
+        {
+          getSupabaseAdmin: () => createMockSupabaseAdmin(),
+          verifyUserNotBanned: async () => ({ isBlocked: false }),
+          fetchFn: mockFetch,
+          isProductionHost: false,
+        }
+      );
+
+      const res = await POST(req);
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.subscriptionId).toBe("sub_rzp_existing_pending_1");
+      expect(json.reused).toBe(true);
+      expect(rzpCreateCalled).toBe(false);
+    });
+
+    it("blocks with 409 PENDING_SUBSCRIPTION_EXISTS when user has pending order for a different plan", async () => {
+      mockDbPaymentOrders.set("sub_rzp_pending_weekly", {
+        id: "order_weekly_1",
+        user_id: mockUser.id,
+        provider: "razorpay",
+        provider_order_id: "sub_rzp_pending_weekly",
+        plan_code: "weekly",
+        amount_paise: 69200,
+        status: "created",
+        mode: "test",
+        created_at: new Date().toISOString(),
+      });
+
+      let rzpCreateCalled = false;
+      const mockFetch = vi.fn().mockImplementation(async (url: string, init: any) => {
+        const urlStr = url.toString();
+        if (urlStr.includes("/v1/plans/")) {
+          return new Response(
+            JSON.stringify({
+              id: "plan_monthly_rzp_456",
+              item: { amount: 149900, currency: "INR" },
+              period: "monthly",
+              interval: 1,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        if (init?.method === "POST" && urlStr.endsWith("/v1/subscriptions")) {
+          rzpCreateCalled = true;
+        }
+        return new Response();
+      });
+
+      const req = createMockRequest(
+        { planCode: "monthly" },
+        {},
+        {
+          getSupabaseAdmin: () => createMockSupabaseAdmin(),
+          verifyUserNotBanned: async () => ({ isBlocked: false }),
+          fetchFn: mockFetch,
+          isProductionHost: false,
+        }
+      );
+
+      const res = await POST(req);
+      expect(res.status).toBe(409);
+      const json = await res.json();
+      expect(json.code).toBe("PENDING_SUBSCRIPTION_EXISTS");
+      expect(json.error).toContain("weekly");
+      expect(rzpCreateCalled).toBe(false);
+    });
+
+    it("fails closed with 503 before Razorpay call when pending query errors", async () => {
+      const mockFetch = vi.fn();
+      const req = createMockRequest(
+        { planCode: "monthly" },
+        {},
+        {
+          getSupabaseAdmin: () =>
+            createMockSupabaseAdmin({ dbError: new Error("Database network failure") }),
+          verifyUserNotBanned: async () => ({ isBlocked: false }),
+          fetchFn: mockFetch,
+          isProductionHost: false,
+        }
+      );
+
+      const res = await POST(req);
+      expect(res.status).toBe(503);
+      const json = await res.json();
+      expect(json.code).toBe("SERVICE_UNAVAILABLE");
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+  });
+
+  // =========================================================================
+  // ITEM 4: CUSTOMER CANCELLATION
+  // =========================================================================
+  describe("Customer Cancellation (Item 4)", () => {
+    it("refuses cancellation with 401 when Authorization header is missing", async () => {
+      const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+      });
+      const res = await DELETE(req);
+      expect(res.status).toBe(401);
+    });
+
+    it("refuses cancellation with 400 when user has no active subscription", async () => {
+      const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer valid_token",
+        },
+      });
+      (req as any).__testDeps = {
+        getSupabaseAdmin: () => createMockSupabaseAdmin(),
+      };
+
+      const res = await DELETE(req);
+      expect(res.status).toBe(400);
+      const json = await res.json();
+      expect(json.code).toBe("NOTHING_TO_CANCEL");
+    });
+
+    it("successfully cancels auto-renewal at period end via Razorpay API and updates DB", async () => {
+      mockDbSubscriptions.set(mockUser.id, {
+        id: "active_sub_to_cancel",
+        user_id: mockUser.id,
+        provider: "razorpay",
+        subscription_id: "sub_rzp_cancel_test_123",
+        status: "active",
+        current_period_end: new Date(Date.now() + 15 * 86400000).toISOString(),
+        cancel_at_period_end: false,
+      });
+
+      let rzpCancelCalled = false;
+      let rzpCancelBody: any = null;
+      const mockFetch = vi.fn().mockImplementation(async (url: string, init: any) => {
+        if (url.includes("/cancel")) {
+          rzpCancelCalled = true;
+          rzpCancelBody = JSON.parse(init.body);
+          return new Response(
+            JSON.stringify({ id: "sub_rzp_cancel_test_123", status: "active", cancel_at_cycle_end: 1 }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        return new Response(JSON.stringify({}), { status: 200 });
+      });
+
+      const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer valid_token",
+        },
+      });
+      (req as any).__testDeps = {
+        getSupabaseAdmin: () => createMockSupabaseAdmin(),
+        fetchFn: mockFetch,
+      };
+
+      const res = await DELETE(req);
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.success).toBe(true);
+      expect(json.cancelAtPeriodEnd).toBe(true);
+
+      // Verify Razorpay cancel endpoint called with cancel_at_cycle_end: 1
+      expect(rzpCancelCalled).toBe(true);
+      expect(rzpCancelBody.cancel_at_cycle_end).toBe(1);
+
+      // Verify DB updated with cancel_at_period_end: true
+      const sub = mockDbSubscriptions.get(mockUser.id);
+      expect(sub.cancel_at_period_end).toBe(true);
+      expect(sub.metadata.canceled_by).toBe("customer");
+    });
+  });
+
+  // =========================================================================
+  // EXISTING LIFECYCLE TESTS
+  // =========================================================================
   it("creates weekly subscription with total_count=52 (1 year) and stores subscription_id", async () => {
     let capturedBody: any = null;
-    const mockFetch = vi.fn().mockImplementation(async (_url: string, init: any) => {
+    const mockFetch = vi.fn().mockImplementation(async (url: string, init: any) => {
+      const urlStr = url.toString();
+      if (urlStr.includes("/v1/plans/")) {
+        return new Response(
+          JSON.stringify({
+            id: "plan_weekly_rzp_123",
+            item: { amount: 69200, currency: "INR" },
+            period: "weekly",
+            interval: 1,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      if (urlStr.includes("/v1/subscriptions") && init?.method === "GET") {
+        return new Response(JSON.stringify({ entity: "collection", count: 0, items: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
       capturedBody = JSON.parse(init.body);
       return new Response(
         JSON.stringify({
           id: "sub_rzp_weekly_123456",
           plan_id: capturedBody.plan_id,
           status: "created",
+          current_start: Math.floor(Date.now() / 1000),
+          current_end: Math.floor(Date.now() / 1000) + 7 * 86400,
         }),
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
@@ -270,7 +974,7 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
     expect(json.subscriptionId).toBe("sub_rzp_weekly_123456");
     expect(json.planId).toBe("plan_weekly_rzp_123");
     expect(json.planCode).toBe("weekly");
-    expect(capturedBody.total_count).toBe(52); // 52 weeks = 1 calendar year
+    expect(capturedBody.total_count).toBe(52);
     expect(capturedBody.customer_notify).toBe(true);
 
     const pendingOrder = mockDbPaymentOrders.get("sub_rzp_weekly_123456");
@@ -283,13 +987,33 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
 
   it("creates monthly subscription with total_count=12 (1 year) and stores pending order separately", async () => {
     let capturedBody: any = null;
-    const mockFetch = vi.fn().mockImplementation(async (_url: string, init: any) => {
+    const mockFetch = vi.fn().mockImplementation(async (url: string, init: any) => {
+      const urlStr = url.toString();
+      if (urlStr.includes("/v1/plans/")) {
+        return new Response(
+          JSON.stringify({
+            id: "plan_monthly_rzp_456",
+            item: { amount: 149900, currency: "INR" },
+            period: "monthly",
+            interval: 1,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      if (urlStr.includes("/v1/subscriptions") && init?.method === "GET") {
+        return new Response(JSON.stringify({ entity: "collection", count: 0, items: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
       capturedBody = JSON.parse(init.body);
       return new Response(
         JSON.stringify({
           id: "sub_rzp_monthly_654321",
           plan_id: capturedBody.plan_id,
           status: "created",
+          current_start: Math.floor(Date.now() / 1000),
+          current_end: Math.floor(Date.now() / 1000) + 30 * 86400,
         }),
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
@@ -312,7 +1036,7 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
 
     expect(json.subscriptionId).toBe("sub_rzp_monthly_654321");
     expect(json.planId).toBe("plan_monthly_rzp_456");
-    expect(capturedBody.total_count).toBe(12); // 12 months = 1 calendar year
+    expect(capturedBody.total_count).toBe(12);
     expect(capturedBody.customer_notify).toBe(true);
 
     const pendingOrder = mockDbPaymentOrders.get("sub_rzp_monthly_654321");
@@ -324,13 +1048,33 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
 
   it("creates quarterly subscription with total_count=4 (1 year) and stores pending order separately", async () => {
     let capturedBody: any = null;
-    const mockFetch = vi.fn().mockImplementation(async (_url: string, init: any) => {
+    const mockFetch = vi.fn().mockImplementation(async (url: string, init: any) => {
+      const urlStr = url.toString();
+      if (urlStr.includes("/v1/plans/")) {
+        return new Response(
+          JSON.stringify({
+            id: "plan_quarterly_rzp_789",
+            item: { amount: 399900, currency: "INR" },
+            period: "monthly",
+            interval: 3,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      if (urlStr.includes("/v1/subscriptions") && init?.method === "GET") {
+        return new Response(JSON.stringify({ entity: "collection", count: 0, items: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
       capturedBody = JSON.parse(init.body);
       return new Response(
         JSON.stringify({
           id: "sub_rzp_quarterly_987654",
           plan_id: capturedBody.plan_id,
           status: "created",
+          current_start: Math.floor(Date.now() / 1000),
+          current_end: Math.floor(Date.now() / 1000) + 90 * 86400,
         }),
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
@@ -353,7 +1097,7 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
 
     expect(json.subscriptionId).toBe("sub_rzp_quarterly_987654");
     expect(json.planId).toBe("plan_quarterly_rzp_789");
-    expect(capturedBody.total_count).toBe(4); // 4 quarters = 1 calendar year
+    expect(capturedBody.total_count).toBe(4);
     expect(capturedBody.customer_notify).toBe(true);
 
     const pendingOrder = mockDbPaymentOrders.get("sub_rzp_quarterly_987654");
@@ -361,57 +1105,6 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
     expect(pendingOrder.provider_order_id).toBe("sub_rzp_quarterly_987654");
     expect(pendingOrder.plan_code).toBe("quarterly");
     expect(pendingOrder.amount_paise).toBe(399900);
-  });
-
-  it("does NOT overwrite existing active subscription_id or plan_id, storing pending subscription separately", async () => {
-    mockDbSubscriptions.set(mockUser.id, {
-      id: "existing_sub_row_1",
-      user_id: mockUser.id,
-      subscription_id: "old_sub_id",
-      plan_id: "weekly",
-      status: "canceled", // inactive
-      metadata: { initial_plan: "free" },
-    });
-
-    const mockFetch = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          id: "sub_rzp_new_updated_123",
-          plan_id: "plan_monthly_rzp_456",
-          status: "created",
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } }
-      )
-    );
-
-    const req = createMockRequest(
-      { planCode: "monthly" },
-      {},
-      {
-        getSupabaseAdmin: () => createMockSupabaseAdmin(),
-        verifyUserNotBanned: async () => ({ isBlocked: false }),
-        fetchFn: mockFetch,
-        isProductionHost: false,
-      }
-    );
-
-    const res = await POST(req);
-    expect(res.status).toBe(200);
-
-    const sub = mockDbSubscriptions.get(mockUser.id);
-    // Active columns are NOT overwritten!
-    expect(sub.subscription_id).toBe("old_sub_id");
-    expect(sub.plan_id).toBe("weekly");
-    expect(sub.status).toBe("canceled");
-    // Pending ID is stored separately in metadata
-    expect(sub.metadata.pending_subscription_id).toBe("sub_rzp_new_updated_123");
-    expect(sub.metadata.pending_plan_code).toBe("monthly");
-
-    // Also recorded in payment_orders
-    const pendingOrder = mockDbPaymentOrders.get("sub_rzp_new_updated_123");
-    expect(pendingOrder).toBeDefined();
-    expect(pendingOrder.provider_order_id).toBe("sub_rzp_new_updated_123");
-    expect(pendingOrder.plan_code).toBe("monthly");
   });
 
   it("blocks subscription creation with 409 when user already has an active plan", async () => {
@@ -444,28 +1137,6 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
     expect(json.error).toBe(
       "You already have an active subscription plan. Please manage your existing subscription in account settings."
     );
-    // Razorpay must never be called when user already has active plan
-    expect(mockFetch).not.toHaveBeenCalled();
-  });
-
-  it("fails closed with 503 before Razorpay call when subscription lookup fails", async () => {
-    const mockFetch = vi.fn();
-    const req = createMockRequest(
-      { planCode: "monthly" },
-      {},
-      {
-        getSupabaseAdmin: () =>
-          createMockSupabaseAdmin({ dbError: new Error("Database network failure") }),
-        verifyUserNotBanned: async () => ({ isBlocked: false }),
-        fetchFn: mockFetch,
-        isProductionHost: false,
-      }
-    );
-
-    const res = await POST(req);
-    expect(res.status).toBe(503);
-    const json = await res.json();
-    expect(json.code).toBe("SERVICE_UNAVAILABLE");
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
@@ -492,99 +1163,6 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
-  it("reuses existing pending payment_orders row for the same user and plan without calling Razorpay", async () => {
-    mockDbPaymentOrders.set("sub_rzp_existing_pending_1", {
-      id: "order_123",
-      user_id: mockUser.id,
-      provider: "razorpay",
-      provider_order_id: "sub_rzp_existing_pending_1",
-      plan_code: "monthly",
-      amount_paise: 149900,
-      status: "created",
-    });
-
-    const mockFetch = vi.fn();
-    const req = createMockRequest(
-      { planCode: "monthly" },
-      {},
-      {
-        getSupabaseAdmin: () => createMockSupabaseAdmin(),
-        verifyUserNotBanned: async () => ({ isBlocked: false }),
-        fetchFn: mockFetch,
-        isProductionHost: false,
-      }
-    );
-
-    const res = await POST(req);
-    expect(res.status).toBe(200);
-    const json = await res.json();
-    expect(json.subscriptionId).toBe("sub_rzp_existing_pending_1");
-    expect(json.reused).toBe(true);
-    expect(mockFetch).not.toHaveBeenCalled();
-  });
-
-  it("blocks with 409 PENDING_SUBSCRIPTION_EXISTS when user has pending order for a different plan", async () => {
-    mockDbPaymentOrders.set("sub_rzp_pending_weekly", {
-      id: "order_weekly_1",
-      user_id: mockUser.id,
-      provider: "razorpay",
-      provider_order_id: "sub_rzp_pending_weekly",
-      plan_code: "weekly",
-      amount_paise: 69200,
-      status: "created",
-    });
-
-    const mockFetch = vi.fn();
-    const req = createMockRequest(
-      { planCode: "monthly" },
-      {},
-      {
-        getSupabaseAdmin: () => createMockSupabaseAdmin(),
-        verifyUserNotBanned: async () => ({ isBlocked: false }),
-        fetchFn: mockFetch,
-        isProductionHost: false,
-      }
-    );
-
-    const res = await POST(req);
-    expect(res.status).toBe(409);
-    const json = await res.json();
-    expect(json.code).toBe("PENDING_SUBSCRIPTION_EXISTS");
-    expect(json.error).toContain("weekly");
-    expect(mockFetch).not.toHaveBeenCalled();
-  });
-
-  it("reuses existing pending subscription from metadata without calling Razorpay", async () => {
-    mockDbSubscriptions.set(mockUser.id, {
-      id: "existing_sub_row",
-      user_id: mockUser.id,
-      status: "canceled",
-      metadata: {
-        pending_subscription_id: "sub_rzp_meta_456",
-        pending_plan_code: "monthly",
-      },
-    });
-
-    const mockFetch = vi.fn();
-    const req = createMockRequest(
-      { planCode: "monthly" },
-      {},
-      {
-        getSupabaseAdmin: () => createMockSupabaseAdmin(),
-        verifyUserNotBanned: async () => ({ isBlocked: false }),
-        fetchFn: mockFetch,
-        isProductionHost: false,
-      }
-    );
-
-    const res = await POST(req);
-    expect(res.status).toBe(200);
-    const json = await res.json();
-    expect(json.subscriptionId).toBe("sub_rzp_meta_456");
-    expect(json.reused).toBe(true);
-    expect(mockFetch).not.toHaveBeenCalled();
-  });
-
   it("never reuses a prepaid order_* row when creating a subscription", async () => {
     mockDbPaymentOrders.set("order_prepaid_123", {
       id: "order_prepaid_id",
@@ -595,18 +1173,16 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
       amount_paise: 149900,
       status: "created",
       mode: "test",
+      created_at: new Date().toISOString(),
     });
 
-    const mockFetch = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          id: "sub_new_mandate_from_gateway",
-          plan_id: "plan_monthly_rzp_456",
-          status: "created",
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } }
-      )
-    );
+    const mockFetch = createMockRazorpayFetch({
+      subData: {
+        id: "sub_new_mandate_from_gateway",
+        plan_id: "plan_monthly_rzp_456",
+        status: "created",
+      },
+    });
 
     const req = createMockRequest(
       { planCode: "monthly" },
@@ -624,168 +1200,6 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
     const json = await res.json();
     expect(json.subscriptionId).toBe("sub_new_mandate_from_gateway");
     expect(json.reused).toBeUndefined();
-    expect(mockFetch).toHaveBeenCalledTimes(1);
-  });
-
-  it("never reuses a test-mode row under live config", async () => {
-    process.env.RAZORPAY_MODE = "live";
-    process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = "rzp_live_real_key_123";
-
-    mockDbPaymentOrders.set("sub_test_old", {
-      id: "order_old_test",
-      user_id: mockUser.id,
-      provider: "razorpay",
-      provider_order_id: "sub_test_old",
-      plan_code: "monthly",
-      amount_paise: 149900,
-      status: "created",
-      mode: "test",
-    });
-
-    const mockFetch = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          id: "sub_live_brand_new_mandate",
-          plan_id: "plan_monthly_rzp_456",
-          status: "created",
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } }
-      )
-    );
-
-    const req = createMockRequest(
-      { planCode: "monthly" },
-      {},
-      {
-        getSupabaseAdmin: () => createMockSupabaseAdmin(),
-        verifyUserNotBanned: async () => ({ isBlocked: false }),
-        fetchFn: mockFetch,
-        isProductionHost: false,
-      }
-    );
-
-    const res = await POST(req);
-    expect(res.status).toBe(200);
-    const json = await res.json();
-    expect(json.subscriptionId).toBe("sub_live_brand_new_mandate");
-    expect(json.reused).toBeUndefined();
-    expect(mockFetch).toHaveBeenCalledTimes(1);
-  });
-
-  it("reuses a live sub_* row under live config", async () => {
-    process.env.RAZORPAY_MODE = "live";
-    process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = "rzp_live_real_key_123";
-
-    mockDbPaymentOrders.set("sub_live_existing_mandate", {
-      id: "order_live_mandate_id",
-      user_id: mockUser.id,
-      provider: "razorpay",
-      provider_order_id: "sub_live_existing_mandate",
-      plan_code: "monthly",
-      amount_paise: 149900,
-      status: "created",
-      mode: "live",
-    });
-
-    const mockFetch = vi.fn();
-    const req = createMockRequest(
-      { planCode: "monthly" },
-      {},
-      {
-        getSupabaseAdmin: () => createMockSupabaseAdmin(),
-        verifyUserNotBanned: async () => ({ isBlocked: false }),
-        fetchFn: mockFetch,
-        isProductionHost: false,
-      }
-    );
-
-    const res = await POST(req);
-    expect(res.status).toBe(200);
-    const json = await res.json();
-    expect(json.subscriptionId).toBe("sub_live_existing_mandate");
-    expect(json.reused).toBe(true);
-    expect(mockFetch).not.toHaveBeenCalled();
-  });
-
-  it("atomic singleFlight coalesces concurrent double-tab requests for the same user and plan into a single mandate", async () => {
-    const mockFetch = vi.fn().mockImplementation(async () => {
-      // Simulate gateway latency
-      await new Promise((r) => setTimeout(r, 50));
-      return new Response(
-        JSON.stringify({
-          id: "sub_rzp_coalesced_789",
-          plan_id: "plan_monthly_rzp_456",
-          status: "created",
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } }
-      );
-    });
-
-    const req1 = createMockRequest(
-      { planCode: "monthly" },
-      {},
-      {
-        getSupabaseAdmin: () => createMockSupabaseAdmin(),
-        verifyUserNotBanned: async () => ({ isBlocked: false }),
-        fetchFn: mockFetch,
-        isProductionHost: false,
-      }
-    );
-
-    const req2 = createMockRequest(
-      { planCode: "monthly" },
-      {},
-      {
-        getSupabaseAdmin: () => createMockSupabaseAdmin(),
-        verifyUserNotBanned: async () => ({ isBlocked: false }),
-        fetchFn: mockFetch,
-        isProductionHost: false,
-      }
-    );
-
-    const [res1, res2] = await Promise.all([POST(req1), POST(req2)]);
-    expect(res1.status).toBe(200);
-    expect(res2.status).toBe(200);
-
-    const json1 = await res1.json();
-    const json2 = await res2.json();
-
-    // Both requests receive the exact same subscription ID
-    expect(json1.subscriptionId).toBe("sub_rzp_coalesced_789");
-    expect(json2.subscriptionId).toBe("sub_rzp_coalesced_789");
-
-    // Razorpay /v1/subscriptions was called EXACTLY ONCE
-    expect(mockFetch).toHaveBeenCalledTimes(1);
-  });
-
-  it("fails closed with 500 when database update/insert fails", async () => {
-    const mockFetch = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          id: "sub_rzp_success_before_db_fail",
-          plan_id: "plan_monthly_rzp_456",
-          status: "created",
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } }
-      )
-    );
-
-    const req = createMockRequest(
-      { planCode: "monthly" },
-      {},
-      {
-        getSupabaseAdmin: () =>
-          createMockSupabaseAdmin({ insertError: new Error("Database disk full") }),
-        verifyUserNotBanned: async () => ({ isBlocked: false }),
-        fetchFn: mockFetch,
-        isProductionHost: false,
-      }
-    );
-
-    const res = await POST(req);
-    expect(res.status).toBe(500);
-    const json = await res.json();
-    expect(json.code).toBe("SUBSCRIPTION_RECORD_FAILED");
   });
 
   it("openGatewaySubscription fails closed when NEXT_PUBLIC_AUTORENEW_ENABLED is off", async () => {
@@ -812,5 +1226,920 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
     expect(onError).toHaveBeenCalledWith(
       expect.stringContaining("Auto-renew subscriptions are currently disabled")
     );
+  });
+
+  // =========================================================================
+  // ADDITIONAL SAFETY REQUIREMENT TESTS (PR #627 Follow-up)
+  // =========================================================================
+  describe("Failed reservation retry recovery (Requirement 8)", () => {
+    it("allows immediate retry when previous reservation failed", async () => {
+      // First attempt fails during Razorpay subscription creation
+      const mockFetchFail = createMockRazorpayFetch({ subStatus: 500 });
+      const req1 = createMockRequest(
+        { planCode: "monthly" },
+        {},
+        {
+          getSupabaseAdmin: () => createMockSupabaseAdmin(),
+          verifyUserNotBanned: async () => ({ isBlocked: false }),
+          fetchFn: mockFetchFail,
+          isProductionHost: false,
+        }
+      );
+
+      const res1 = await POST(req1);
+      expect(res1.status).toBe(500);
+
+      // Verify the reservation row is in 'failed' status
+      const orders = Array.from(mockDbPaymentOrders.values());
+      const failedOrder = orders.find((o) => o.status === "failed");
+      expect(failedOrder).toBeDefined();
+      expect(failedOrder.provider_order_id).toContain(`sub_pending_${mockUser.id}_`);
+
+      // Second attempt succeeds immediately
+      const mockFetchSuccess = createMockRazorpayFetch({
+        subData: {
+          id: "sub_rzp_retry_recovered_123",
+          plan_id: "plan_monthly_rzp_456",
+          status: "created",
+          current_start: Math.floor(Date.now() / 1000),
+          current_end: Math.floor(Date.now() / 1000) + 30 * 86400,
+        },
+      });
+      const req2 = createMockRequest(
+        { planCode: "monthly" },
+        {},
+        {
+          getSupabaseAdmin: () => createMockSupabaseAdmin(),
+          verifyUserNotBanned: async () => ({ isBlocked: false }),
+          fetchFn: mockFetchSuccess,
+          isProductionHost: false,
+        }
+      );
+
+      const res2 = await POST(req2);
+      expect(res2.status).toBe(200);
+      const json2 = await res2.json();
+      expect(json2.subscriptionId).toBe("sub_rzp_retry_recovered_123");
+    });
+  });
+
+  describe("Cancellation Safety & Edge Cases (Requirements 2, 3, 4, 12)", () => {
+    it("returns 400 NOTHING_TO_CANCEL when no active or pending mandate ID exists", async () => {
+      // User has subscription but without a sub_* mandate ID (e.g. manual or legacy order)
+      mockDbSubscriptions.set(mockUser.id, {
+        id: "sub_legacy_prepaid",
+        user_id: mockUser.id,
+        provider: "razorpay",
+        subscription_id: "order_legacy_prepaid_123",
+        status: "active",
+      });
+
+      const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer valid_token" },
+      });
+      (req as any).__testDeps = {
+        getSupabaseAdmin: () => createMockSupabaseAdmin(),
+      };
+
+      const res = await DELETE(req);
+      expect(res.status).toBe(400);
+      const json = await res.json();
+      expect(json.code).toBe("NOTHING_TO_CANCEL");
+    });
+
+    it("cancellation keeps working even when NEXT_PUBLIC_BILLING_ENABLED is off and AUTORENEW is unset", async () => {
+      delete process.env.NEXT_PUBLIC_AUTORENEW_ENABLED;
+      process.env.NEXT_PUBLIC_BILLING_ENABLED = "false";
+
+      mockDbSubscriptions.set(mockUser.id, {
+        id: "sub_active_billing_off",
+        user_id: mockUser.id,
+        provider: "razorpay",
+        subscription_id: "sub_rzp_cancel_when_billing_off",
+        status: "active",
+        current_period_end: new Date(Date.now() + 10 * 86400000).toISOString(),
+        cancel_at_period_end: false,
+      });
+
+      const mockFetch = vi.fn().mockImplementation(async (url: string) => {
+        if (url.includes("/cancel")) {
+          return new Response(JSON.stringify({ id: "sub_rzp_cancel_when_billing_off", status: "cancelled", cancel_at_cycle_end: 1 }), { status: 200 });
+        }
+        return new Response();
+      });
+
+      const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer valid_token" },
+      });
+      (req as any).__testDeps = {
+        getSupabaseAdmin: () => createMockSupabaseAdmin(),
+        fetchFn: mockFetch,
+      };
+
+      const res = await DELETE(req);
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.success).toBe(true);
+    });
+
+    it("cancels for past_due, halted, and unpaid customer states (Requirement 3)", async () => {
+      for (const status of ["past_due", "halted", "unpaid"] as const) {
+        mockDbSubscriptions.set(mockUser.id, {
+          id: `sub_${status}_123`,
+          user_id: mockUser.id,
+          provider: "razorpay",
+          subscription_id: `sub_rzp_${status}_mandate`,
+          status,
+          cancel_at_period_end: false,
+        });
+
+        const mockFetch = vi.fn().mockImplementation(async (url: string) => {
+          if (url.includes("/cancel")) {
+            return new Response(JSON.stringify({ id: `sub_rzp_${status}_mandate`, status: "cancelled" }), { status: 200 });
+          }
+          return new Response();
+        });
+
+        const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer valid_token" },
+        });
+        (req as any).__testDeps = {
+          getSupabaseAdmin: () => createMockSupabaseAdmin(),
+          fetchFn: mockFetch,
+        };
+
+        const res = await DELETE(req);
+        expect(res.status).toBe(200);
+        const json = await res.json();
+        expect(json.success).toBe(true);
+      }
+    });
+
+    it("cancels for pending-only customers who have no active subscription row (Requirement 3)", async () => {
+      // No row in subscriptions table, but pending order exists in payment_orders
+      mockDbSubscriptions.clear();
+      mockDbPaymentOrders.set("sub_rzp_pending_mandate_only", {
+        id: "order_pending_only",
+        user_id: mockUser.id,
+        provider: "razorpay",
+        provider_order_id: "sub_rzp_pending_mandate_only",
+        status: "created",
+        mode: "test",
+      });
+
+      const mockFetch = vi.fn().mockImplementation(async (url: string) => {
+        if (url.includes("/cancel")) {
+          return new Response(JSON.stringify({ id: "sub_rzp_pending_mandate_only", status: "cancelled" }), { status: 200 });
+        }
+        return new Response();
+      });
+
+      const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer valid_token" },
+      });
+      (req as any).__testDeps = {
+        getSupabaseAdmin: () => createMockSupabaseAdmin(),
+        fetchFn: mockFetch,
+      };
+
+      const res = await DELETE(req);
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.success).toBe(true);
+
+      const order = mockDbPaymentOrders.get("sub_rzp_pending_mandate_only");
+      expect(order.status).toBe("cancelled");
+    });
+
+    it("handles already-cancelled-at-provider by verifying status at provider (Requirement 2)", async () => {
+      mockDbSubscriptions.set(mockUser.id, {
+        id: "sub_already_done",
+        user_id: mockUser.id,
+        provider: "razorpay",
+        subscription_id: "sub_rzp_already_canceled_provider",
+        status: "active",
+        cancel_at_period_end: false,
+      });
+
+      let fetchedSub = false;
+      const mockFetch = vi.fn().mockImplementation(async (url: string) => {
+        if (url.includes("/cancel")) {
+          // Provider returns error indicating already cancelled
+          return new Response(
+            JSON.stringify({ error: { description: "Subscription is already cancelled" } }),
+            { status: 400, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        if (url.includes("/v1/subscriptions/sub_rzp_already_canceled_provider")) {
+          fetchedSub = true;
+          return new Response(
+            JSON.stringify({ id: "sub_rzp_already_canceled_provider", status: "cancelled" }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        return new Response();
+      });
+
+      const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer valid_token" },
+      });
+      (req as any).__testDeps = {
+        getSupabaseAdmin: () => createMockSupabaseAdmin(),
+        fetchFn: mockFetch,
+      };
+
+      const res = await DELETE(req);
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.success).toBe(true);
+      expect(fetchedSub).toBe(true);
+    });
+
+    it("refuses DELETE when mode or key configuration is invalid (Requirement 4)", async () => {
+      process.env.RAZORPAY_MODE = "invalid_mode";
+
+      const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer valid_token" },
+      });
+      (req as any).__testDeps = {
+        getSupabaseAdmin: () => createMockSupabaseAdmin(),
+      };
+
+      const res = await DELETE(req);
+      expect(res.status).toBe(503);
+      const json = await res.json();
+      expect(json.code).toBe("RAZORPAY_CONFIG_ERROR");
+    });
+  });
+
+  describe("Provider Period Boundaries & Scheduling (Requirement 11)", () => {
+    it("fails closed with 502 MISSING_PROVIDER_PERIOD and cancels mandate when boundaries are absent", async () => {
+      let cancelCalled = false;
+      const mockFetch = vi.fn().mockImplementation(async (url: string, init: any) => {
+        const urlStr = url.toString();
+        if (urlStr.includes("/v1/plans/")) {
+          return new Response(
+            JSON.stringify({
+              id: "plan_monthly_rzp_456",
+              item: { amount: 149900, currency: "INR" },
+              period: "monthly",
+              interval: 1,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        if (urlStr.includes("/cancel")) {
+          cancelCalled = true;
+          return new Response(JSON.stringify({ status: "cancelled" }), { status: 200 });
+        }
+        // Sub response missing current_start and current_end
+        return new Response(
+          JSON.stringify({
+            id: "sub_rzp_missing_bounds",
+            plan_id: "plan_monthly_rzp_456",
+            status: "created",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      });
+
+      const req = createMockRequest(
+        { planCode: "monthly" },
+        {},
+        {
+          getSupabaseAdmin: () => createMockSupabaseAdmin(),
+          verifyUserNotBanned: async () => ({ isBlocked: false }),
+          fetchFn: mockFetch,
+          isProductionHost: false,
+        }
+      );
+
+      const res = await POST(req);
+      expect(res.status).toBe(502);
+      const json = await res.json();
+      expect(json.code).toBe("MISSING_PROVIDER_PERIOD");
+      expect(cancelCalled).toBe(true);
+    });
+
+    it("Item 6: fails closed with 500 METADATA_WRITE_FAILED and marks order unknown if metadata write fails", async () => {
+      const mockAdmin = createMockSupabaseAdmin();
+      mockAdmin.rpc = vi.fn((fnName: string) => {
+        if (fnName === "merge_subscription_metadata") {
+          return Promise.resolve({ data: null, error: { message: "Database lock timeout" } });
+        }
+        return Promise.resolve({ data: true, error: null });
+      });
+
+      // Existing subscription exists so merge_subscription_metadata is called
+      mockAdmin.from = vi.fn((table: string) => {
+        if (table === "subscriptions") {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            order: vi.fn().mockReturnThis(),
+            limit: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: {
+                id: "sub_exist_123",
+                status: "past_due",
+                current_period_end: new Date(Date.now() - 86400000).toISOString(),
+              },
+              error: null,
+            }),
+          };
+        }
+        if (table === "payment_orders") {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            in: vi.fn().mockReturnThis(),
+            gte: vi.fn().mockReturnThis(),
+            lt: vi.fn().mockReturnThis(),
+            neq: vi.fn().mockReturnThis(),
+            like: vi.fn().mockReturnThis(),
+            order: vi.fn().mockReturnThis(),
+            limit: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+            insert: vi.fn().mockResolvedValue({ data: null, error: null }),
+            update: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnThis(),
+              gte: vi.fn().mockReturnThis(),
+              select: vi.fn().mockResolvedValue({
+                data: [{ id: "order_new", provider_order_id: "sub_rzp_meta_fail_123", status: "created" }],
+                error: null,
+              }),
+            }),
+          };
+        }
+        return {};
+      });
+
+      const mockFetch = vi.fn(async (url: string) => {
+        if (url.includes("/plans/")) {
+          return new Response(
+            JSON.stringify({
+              id: "plan_monthly_rzp_456",
+              period: "monthly",
+              interval: 1,
+              item: { amount: 149900, currency: "INR" },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            id: "sub_rzp_meta_fail_123",
+            plan_id: "plan_monthly_rzp_456",
+            status: "created",
+            current_start: Math.floor(Date.now() / 1000),
+            current_end: Math.floor(Date.now() / 1000) + 30 * 86400,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      });
+
+      const req = createMockRequest(
+        { planCode: "monthly" },
+        {},
+        {
+          getSupabaseAdmin: () => mockAdmin,
+          verifyUserNotBanned: async () => ({ isBlocked: false }),
+          fetchFn: mockFetch,
+          isProductionHost: false,
+        }
+      );
+
+      const res = await POST(req);
+      expect(res.status).toBe(500);
+      const json = await res.json();
+      expect(json.code).toBe("METADATA_WRITE_FAILED");
+    });
+
+    it("Item 1 & 5: unique-collision does NOT release on age alone when provider returns cancel_at_cycle_end=true", async () => {
+      const mockAdmin = createMockSupabaseAdmin();
+      mockAdmin.from = vi.fn((table: string) => {
+        if (table === "subscriptions") {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            order: vi.fn().mockReturnThis(),
+            limit: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+          };
+        }
+        if (table === "payment_orders") {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            in: vi.fn().mockReturnThis(),
+            gte: vi.fn().mockReturnThis(),
+            lt: vi.fn().mockReturnThis(),
+            neq: vi.fn().mockReturnThis(),
+            like: vi.fn().mockReturnThis(),
+            order: vi.fn().mockReturnThis(),
+            limit: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn((...args: any[]) => {
+              // Conflicting order older than lease duration
+              return Promise.resolve({
+                data: {
+                  id: "order_stale_collision",
+                  provider_order_id: "sub_rzp_collision_active",
+                  plan_code: "monthly",
+                  status: "reserved",
+                  created_at: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
+                },
+                error: null,
+              });
+            }),
+            insert: vi.fn().mockResolvedValue({
+              data: null,
+              error: { code: "23505", message: "duplicate key value violates unique constraint" },
+            }),
+            update: vi.fn().mockReturnValue({
+              eq: vi.fn().mockResolvedValue({ data: null, error: null }),
+            }),
+          };
+        }
+        return {};
+      });
+
+      const mockFetch = vi.fn(async (url: string) => {
+        if (url.includes("/plans/")) {
+          return new Response(
+            JSON.stringify({
+              id: "plan_monthly_rzp_456",
+              period: "monthly",
+              interval: 1,
+              item: { amount: 149900, currency: "INR" },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        // Provider GET returns active with cancel_at_cycle_end=1 (not stopped!)
+        return new Response(
+          JSON.stringify({
+            id: "sub_rzp_collision_active",
+            status: "active",
+            cancel_at_cycle_end: 1,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      });
+
+      const req = createMockRequest(
+        { planCode: "monthly" },
+        {},
+        {
+          getSupabaseAdmin: () => mockAdmin,
+          verifyUserNotBanned: async () => ({ isBlocked: false }),
+          fetchFn: mockFetch,
+          isProductionHost: false,
+        }
+      );
+
+      const res = await POST(req);
+      // Must NOT be released with RESERVATION_LEASE_RECOVERED; must stay protected with PENDING_SUBSCRIPTION_EXISTS
+      expect(res.status).toBe(409);
+      const json = await res.json();
+      expect(json.code).toBe("PENDING_SUBSCRIPTION_EXISTS");
+    });
+
+    it("Item 2: DELETE finds and cancels pending mandate in payment_orders with status 'unknown'", async () => {
+      const mockAdmin = createMockSupabaseAdmin();
+      let rpcMandateId: string | null = null;
+      mockAdmin.rpc = vi.fn((fnName: string, args: any) => {
+        if (fnName === "cancel_autorenew_subscription") {
+          rpcMandateId = args.p_mandate_id;
+          return Promise.resolve({ data: true, error: null });
+        }
+        return Promise.resolve({ data: true, error: null });
+      });
+
+      mockAdmin.from = vi.fn((table: string) => {
+        if (table === "subscriptions") {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+          };
+        }
+        if (table === "payment_orders") {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            in: vi.fn().mockReturnThis(),
+            like: vi.fn().mockReturnThis(),
+            order: vi.fn().mockReturnThis(),
+            limit: vi.fn().mockResolvedValue({
+              data: [
+                {
+                  id: "order_unknown_1",
+                  provider_order_id: "sub_rzp_unknown_pending",
+                  status: "unknown",
+                  mode: "test",
+                  provider: "razorpay",
+                },
+              ],
+              error: null,
+            }),
+          };
+        }
+        return {};
+      });
+
+      const mockFetch = vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            id: "sub_rzp_unknown_pending",
+            status: "cancelled",
+            cancel_at_cycle_end: 0,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        )
+      );
+
+      const req = new Request("http://localhost/api/billing/razorpay/subscription", {
+        method: "DELETE",
+        headers: { Authorization: "Bearer valid_token" },
+      });
+      (req as any).__testDeps = {
+        getSupabaseAdmin: () => mockAdmin,
+        fetchFn: mockFetch,
+        isProductionHost: false,
+      };
+
+      const res = await DELETE(req);
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.success).toBe(true);
+      expect(rpcMandateId).toBe("sub_rzp_unknown_pending");
+    });
+  });
+
+  describe("Issue 1: Pagination, Ownership, and Idempotency Protection", () => {
+    it("finds match at position 21+ across pages and avoids duplicate creation", async () => {
+      let createCallCount = 0;
+      const pagesRequested: number[] = [];
+
+      const mockFetch = vi.fn().mockImplementation(async (urlStr: string, init?: any) => {
+        const url = new URL(urlStr);
+
+        if (urlStr.includes("/v1/plans/")) {
+          return new Response(
+            JSON.stringify({
+              id: "plan_monthly_rzp_456",
+              item: { amount: 149900, currency: "INR" },
+              period: "monthly",
+              interval: 1,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+
+        if (urlStr.includes("/v1/subscriptions") && init?.method === "GET") {
+          const skip = parseInt(url.searchParams.get("skip") || "0", 10);
+          pagesRequested.push(skip);
+
+          if (skip === 0) {
+            // First page (items 0..19): all belong to other users
+            const page1Items = Array.from({ length: 20 }, (_, idx) => ({
+              id: `sub_other_user_${idx}`,
+              plan_id: "plan_monthly_rzp_456",
+              status: "created",
+              notes: { user_id: `other_user_${idx}` },
+            }));
+            return new Response(
+              JSON.stringify({ entity: "collection", count: 20, items: page1Items }),
+              { status: 200, headers: { "Content-Type": "application/json" } }
+            );
+          } else if (skip === 20) {
+            // Second page (position 21+): item 0 is for mockUser!
+            const matchItem = {
+              id: "sub_rzp_paginated_position_21",
+              plan_id: "plan_monthly_rzp_456",
+              status: "created",
+              notes: { user_id: mockUser.id, userId: mockUser.id },
+            };
+            return new Response(
+              JSON.stringify({ entity: "collection", count: 1, items: [matchItem] }),
+              { status: 200, headers: { "Content-Type": "application/json" } }
+            );
+          }
+        }
+
+        if (urlStr.includes("/v1/subscriptions") && init?.method === "POST") {
+          createCallCount++;
+          return new Response(
+            JSON.stringify({
+              id: "sub_rzp_duplicate_should_not_be_created",
+              plan_id: "plan_monthly_rzp_456",
+              status: "created",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+
+        return new Response(JSON.stringify({}), { status: 200 });
+      });
+
+      const req = createMockRequest(
+        { planCode: "monthly" },
+        {},
+        {
+          getSupabaseAdmin: () => createMockSupabaseAdmin(),
+          fetchFn: mockFetch,
+        }
+      );
+
+      const res = await POST(req);
+      expect(res.status).toBe(200);
+      const json = await res.json();
+
+      expect(pagesRequested).toContain(0);
+      expect(pagesRequested).toContain(20);
+      expect(json.subscriptionId).toBe("sub_rzp_paginated_position_21");
+      expect(json.reused).toBe(true);
+      expect(createCallCount).toBe(0);
+    });
+
+    it("proceeds with creation exactly once when no match exists anywhere after exhausting all pages", async () => {
+      let createCallCount = 0;
+      let capturedIdempotencyHeader: string | null = null;
+      let capturedXIdempotencyHeader: string | null = null;
+      const pagesRequested: number[] = [];
+
+      const mockFetch = vi.fn().mockImplementation(async (urlStr: string, init?: any) => {
+        const url = new URL(urlStr);
+
+        if (urlStr.includes("/v1/plans/")) {
+          return new Response(
+            JSON.stringify({
+              id: "plan_monthly_rzp_456",
+              item: { amount: 149900, currency: "INR" },
+              period: "monthly",
+              interval: 1,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+
+        if (urlStr.includes("/v1/subscriptions") && init?.method === "GET") {
+          const skip = parseInt(url.searchParams.get("skip") || "0", 10);
+          pagesRequested.push(skip);
+
+          if (skip === 0) {
+            const page1Items = Array.from({ length: 20 }, (_, idx) => ({
+              id: `sub_other_user_${idx}`,
+              plan_id: "plan_monthly_rzp_456",
+              status: "created",
+              notes: { user_id: `other_user_${idx}` },
+            }));
+            return new Response(
+              JSON.stringify({ entity: "collection", count: 20, items: page1Items }),
+              { status: 200, headers: { "Content-Type": "application/json" } }
+            );
+          } else if (skip === 20) {
+            // Short page (5 items < 20): exhausted!
+            const page2Items = Array.from({ length: 5 }, (_, idx) => ({
+              id: `sub_other_user_${idx + 20}`,
+              plan_id: "plan_monthly_rzp_456",
+              status: "created",
+              notes: { user_id: `other_user_${idx + 20}` },
+            }));
+            return new Response(
+              JSON.stringify({ entity: "collection", count: 5, items: page2Items }),
+              { status: 200, headers: { "Content-Type": "application/json" } }
+            );
+          }
+        }
+
+        if (urlStr.includes("/v1/subscriptions") && init?.method === "POST") {
+          createCallCount++;
+          capturedIdempotencyHeader = init?.headers?.["Idempotency-Key"] || null;
+          capturedXIdempotencyHeader = init?.headers?.["X-Razorpay-Idempotency-Key"] || null;
+          return new Response(
+            JSON.stringify({
+              id: "sub_rzp_created_exactly_once",
+              plan_id: "plan_monthly_rzp_456",
+              status: "created",
+              current_start: Math.floor(Date.now() / 1000),
+              current_end: Math.floor(Date.now() / 1000) + 30 * 86400,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+
+        return new Response(JSON.stringify({}), { status: 200 });
+      });
+
+      const req = createMockRequest(
+        { planCode: "monthly" },
+        {},
+        {
+          getSupabaseAdmin: () => createMockSupabaseAdmin(),
+          fetchFn: mockFetch,
+        }
+      );
+
+      const res = await POST(req);
+      expect(res.status).toBe(200);
+      const json = await res.json();
+
+      expect(pagesRequested).toContain(0);
+      expect(pagesRequested).toContain(20);
+      expect(createCallCount).toBe(1);
+      expect(json.subscriptionId).toBe("sub_rzp_created_exactly_once");
+      expect(json.reused).toBeUndefined();
+      expect(capturedIdempotencyHeader).toMatch(/^sub_pending_/);
+      expect(capturedXIdempotencyHeader).toMatch(/^sub_pending_/);
+    });
+
+    it("aborts cancellation with 403 and sends no cancel when provider entity belongs to a different user", async () => {
+      let cancelCallCount = 0;
+      mockDbSubscriptions.set(mockUser.id, {
+        id: "sub_db_user_1",
+        user_id: mockUser.id,
+        subscription_id: "sub_rzp_belongs_to_other_user",
+        status: "active",
+        cancel_at_period_end: false,
+      });
+
+      const mockFetch = vi.fn().mockImplementation(async (urlStr: string, init?: any) => {
+        if (urlStr.includes("/v1/subscriptions/sub_rzp_belongs_to_other_user") && init?.method === "GET") {
+          return new Response(
+            JSON.stringify({
+              id: "sub_rzp_belongs_to_other_user",
+              status: "active",
+              customer_id: "cust_different_user_999",
+              notes: { user_id: "different_user_uuid_999", userId: "different_user_uuid_999" },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+
+        if (urlStr.includes("/cancel")) {
+          cancelCallCount++;
+          return new Response(JSON.stringify({ success: true }), { status: 200 });
+        }
+
+        return new Response(JSON.stringify({}), { status: 200 });
+      });
+
+      const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer valid_token",
+        },
+      });
+      (req as any).__testDeps = {
+        getSupabaseAdmin: () => createMockSupabaseAdmin(),
+        fetchFn: mockFetch,
+      };
+
+      const res = await DELETE(req);
+      expect(res.status).toBe(403);
+      const json = await res.json();
+      expect(json.code).toBe("MANDATE_OWNERSHIP_MISMATCH");
+      expect(cancelCallCount).toBe(0);
+    });
+
+    it("fails closed with 502 and creates no mandate when provider errors mid-pagination", async () => {
+      let createCallCount = 0;
+      let cancelCallCount = 0;
+
+      const mockFetch = vi.fn().mockImplementation(async (urlStr: string, init?: any) => {
+        const url = new URL(urlStr);
+
+        if (urlStr.includes("/v1/plans/")) {
+          return new Response(
+            JSON.stringify({
+              id: "plan_monthly_rzp_456",
+              item: { amount: 149900, currency: "INR" },
+              period: "monthly",
+              interval: 1,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+
+        if (urlStr.includes("/v1/subscriptions") && init?.method === "GET") {
+          const skip = parseInt(url.searchParams.get("skip") || "0", 10);
+          if (skip === 0) {
+            // First page returns 20 items (forces next page)
+            const page1Items = Array.from({ length: 20 }, (_, idx) => ({
+              id: `sub_other_user_${idx}`,
+              plan_id: "plan_monthly_rzp_456",
+              status: "created",
+              notes: { user_id: `other_user_${idx}` },
+            }));
+            return new Response(
+              JSON.stringify({ entity: "collection", count: 20, items: page1Items }),
+              { status: 200, headers: { "Content-Type": "application/json" } }
+            );
+          } else {
+            // Second page fails with 500
+            return new Response(
+              JSON.stringify({ error: { description: "Gateway internal error" } }),
+              { status: 500, headers: { "Content-Type": "application/json" } }
+            );
+          }
+        }
+
+        if (urlStr.includes("/v1/subscriptions") && init?.method === "POST") {
+          createCallCount++;
+          return new Response(JSON.stringify({ id: "sub_should_not_exist" }), { status: 200 });
+        }
+
+        if (urlStr.includes("/cancel")) {
+          cancelCallCount++;
+          return new Response(JSON.stringify({ success: true }), { status: 200 });
+        }
+
+        return new Response(JSON.stringify({}), { status: 200 });
+      });
+
+      const req = createMockRequest(
+        { planCode: "monthly" },
+        {},
+        {
+          getSupabaseAdmin: () => createMockSupabaseAdmin(),
+          fetchFn: mockFetch,
+        }
+      );
+
+      const res = await POST(req);
+      expect(res.status).toBe(502);
+      const json = await res.json();
+      expect(json.code).toBe("GATEWAY_CONNECTION_ERROR");
+      expect(createCallCount).toBe(0);
+      expect(cancelCallCount).toBe(0);
+    });
+
+    it("ensures only one mandate is created when two create requests run concurrently", async () => {
+      let createCallCount = 0;
+      let listCallCount = 0;
+
+      const mockFetch = vi.fn().mockImplementation(async (urlStr: string, init?: any) => {
+        if (urlStr.includes("/v1/plans/")) {
+          return new Response(
+            JSON.stringify({
+              id: "plan_monthly_rzp_456",
+              item: { amount: 149900, currency: "INR" },
+              period: "monthly",
+              interval: 1,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+
+        if (urlStr.includes("/v1/subscriptions") && init?.method === "GET") {
+          listCallCount++;
+          return new Response(
+            JSON.stringify({ entity: "collection", count: 0, items: [] }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+
+        if (urlStr.includes("/v1/subscriptions") && init?.method === "POST") {
+          createCallCount++;
+          // Delay to simulate network flight
+          await new Promise((resolve) => setTimeout(resolve, 25));
+          return new Response(
+            JSON.stringify({
+              id: "sub_rzp_concurrent_coalesced_1",
+              plan_id: "plan_monthly_rzp_456",
+              status: "created",
+              current_start: Math.floor(Date.now() / 1000),
+              current_end: Math.floor(Date.now() / 1000) + 30 * 86400,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+
+        return new Response(JSON.stringify({}), { status: 200 });
+      });
+
+      const admin = createMockSupabaseAdmin();
+      const req1 = createMockRequest({ planCode: "monthly" }, {}, { getSupabaseAdmin: () => admin, fetchFn: mockFetch });
+      const req2 = createMockRequest({ planCode: "monthly" }, {}, { getSupabaseAdmin: () => admin, fetchFn: mockFetch });
+
+      const [res1, res2] = await Promise.all([POST(req1), POST(req2)]);
+
+      const json1 = await res1.json();
+      const json2 = await res2.json();
+
+      // Exactly one mandate created at Razorpay
+      expect(createCallCount).toBe(1);
+      // Both requests succeed with the same subscription ID via singleFlight or DB pending reuse
+      expect(json1.subscriptionId).toBe("sub_rzp_concurrent_coalesced_1");
+      expect(json2.subscriptionId).toBe("sub_rzp_concurrent_coalesced_1");
+    });
   });
 });

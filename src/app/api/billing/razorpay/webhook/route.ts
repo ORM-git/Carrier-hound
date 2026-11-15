@@ -1026,6 +1026,168 @@ export async function POST(req: Request) {
     // -------------------------------------------------------------------------
     // Handle Non-Fulfillment Events (payment.failed, refund.created, etc.)
     // -------------------------------------------------------------------------
+    // Deduplication check
+    const { data: existingNonFulfilDedupe, error: dedupeLookupErr } = await supabaseAdmin
+      .from("webhook_events")
+      .select("event_id")
+      .eq("event_id", eventId)
+      .maybeSingle();
+
+    if (dedupeLookupErr) {
+      log.error("[Razorpay Webhook] DB error querying webhook_events dedupe", {
+        error: dedupeLookupErr.message,
+        eventId,
+      });
+      return NextResponse.json(
+        { error: "Database error checking webhook idempotency", code: "DATABASE_ERROR" },
+        { status: 500 }
+      );
+    }
+
+    if (existingNonFulfilDedupe) {
+      return NextResponse.json(
+        {
+          received: true,
+          alreadyProcessed: true,
+          eventId,
+          event: eventType,
+        },
+        { status: 200 }
+      );
+    }
+
+    // Separate payment attempt failure from mandate termination for payment.failed
+    // Razorpay retries charges on active subscriptions up to 3 times; a single failed charge attempt
+    // must NOT cancel the mandate.
+    if (eventType === "payment.failed") {
+      const paymentEntity =
+        payload.payload?.payment?.entity ||
+        payload.payment?.entity ||
+        payload.payment ||
+        {};
+      const subId =
+        typeof paymentEntity.subscription_id === "string" && paymentEntity.subscription_id.trim()
+          ? paymentEntity.subscription_id.trim()
+          : typeof payload.payload?.subscription?.entity?.id === "string" && payload.payload.subscription.entity.id.trim()
+            ? payload.payload.subscription.entity.id.trim()
+            : "";
+      const orderId =
+        typeof paymentEntity.order_id === "string" && paymentEntity.order_id.trim()
+          ? paymentEntity.order_id.trim()
+          : typeof payload.payload?.order?.entity?.id === "string" && payload.payload.order.entity.id.trim()
+            ? payload.payload.order.entity.id.trim()
+            : "";
+
+      if (subId) {
+        // Strict lookup: resolve mandate only by exact provider identifier from stored records
+        const { data: subRow } = await supabaseAdmin
+          .from("subscriptions")
+          .select("id, user_id, status, metadata, cancel_at_period_end")
+          .eq("subscription_id", subId)
+          .maybeSingle();
+
+        const { data: orderRow } = await supabaseAdmin
+          .from("payment_orders")
+          .select("id, user_id, status, metadata")
+          .eq("provider_order_id", subId)
+          .maybeSingle();
+
+        if (!subRow && !orderRow) {
+          log.info("[Razorpay Webhook] payment.failed received for unmapped subscription; ignoring without state change", {
+            subId,
+            eventId,
+          });
+          await supabaseAdmin
+            .from("webhook_events")
+            .upsert({ event_id: eventId, provider: "razorpay", event_type: eventType }, { onConflict: "event_id" });
+          return NextResponse.json(
+            { received: true, ignored: true, reason: "MANDATE_NOT_FOUND", eventId, subId },
+            { status: 200 }
+          );
+        }
+
+        const targetUserId = subRow?.user_id || orderRow?.user_id;
+
+        // Verify notes ownership if present: if notes.userId exists and mismatches DB owner, do nothing destructive
+        const notesUserId =
+          paymentEntity.notes?.user_id ||
+          paymentEntity.notes?.userId ||
+          payload.payload?.subscription?.entity?.notes?.user_id ||
+          payload.payload?.subscription?.entity?.notes?.userId;
+
+        if (notesUserId && targetUserId && String(notesUserId).trim() !== String(targetUserId).trim()) {
+          log.warn("[Razorpay Webhook] payment.failed notes.userId mismatch with DB record; failing closed", {
+            notesUserId,
+            targetUserId,
+            subId,
+            eventId,
+          });
+          await supabaseAdmin
+            .from("webhook_events")
+            .upsert({ event_id: eventId, provider: "razorpay", event_type: eventType }, { onConflict: "event_id" });
+          return NextResponse.json(
+            { received: true, ignored: true, reason: "MANDATE_OWNERSHIP_MISMATCH", eventId },
+            { status: 200 }
+          );
+        }
+
+        // Separate "payment failed" from "mandate dead":
+        // A single failed charge attempt on an active subscription must NOT cancel or terminate the mandate!
+        // Razorpay automatically retries up to 3 times. We retain mandate status as active.
+        if (subRow && subRow.status === "active") {
+          log.info("[Razorpay Webhook] payment.failed on active subscription; retaining active mandate and recording attempt", {
+            subId,
+            userId: targetUserId,
+            eventId,
+          });
+
+          // Transactionally record failed attempt details in metadata via merge_subscription_metadata RPC
+          await supabaseAdmin.rpc("merge_subscription_metadata", {
+            p_user_id: targetUserId,
+            p_metadata: {
+              last_failed_payment_id: paymentEntity.id || null,
+              last_payment_failure_at: new Date().toISOString(),
+              last_payment_failure_code: paymentEntity.error_code || null,
+              last_payment_failure_description: paymentEntity.error_description || null,
+            },
+          }).catch(() => null);
+        }
+
+        // If an order exists for this specific payment attempt order_id, mark that single payment attempt failed
+        if (orderId) {
+          await supabaseAdmin
+            .from("payment_orders")
+            .update({ status: "failed", updated_at: new Date().toISOString() })
+            .eq("provider_order_id", orderId)
+            .in("status", ["created", "reserved"]);
+        }
+      } else if (orderId) {
+        // One-time order payment failure
+        const { data: oneTimeOrder } = await supabaseAdmin
+          .from("payment_orders")
+          .select("id, user_id, status")
+          .eq("provider_order_id", orderId)
+          .maybeSingle();
+
+        if (!oneTimeOrder) {
+          log.info("[Razorpay Webhook] payment.failed for unmapped one-time order; ignoring", { orderId, eventId });
+          await supabaseAdmin
+            .from("webhook_events")
+            .upsert({ event_id: eventId, provider: "razorpay", event_type: eventType }, { onConflict: "event_id" });
+          return NextResponse.json(
+            { received: true, ignored: true, reason: "ORDER_NOT_FOUND", eventId, orderId },
+            { status: 200 }
+          );
+        }
+
+        await supabaseAdmin
+          .from("payment_orders")
+          .update({ status: "failed", updated_at: new Date().toISOString() })
+          .eq("provider_order_id", orderId)
+          .in("status", ["created", "reserved"]);
+      }
+    }
+
     const { error: nonFulfilDedupeErr } = await supabaseAdmin
       .from("webhook_events")
       .upsert(
@@ -1047,13 +1209,13 @@ export async function POST(req: Request) {
       );
     }
 
-    log.info(`[Razorpay Webhook] Recorded and ignored event type ${eventType}`, { eventType, eventId });
+    log.info(`[Razorpay Webhook] Recorded event type ${eventType}`, { eventType, eventId });
     return NextResponse.json(
       {
         received: true,
-        ignored: true,
         event: eventType,
         eventId,
+        recovered: eventType === "payment.failed",
       },
       { status: 200 }
     );

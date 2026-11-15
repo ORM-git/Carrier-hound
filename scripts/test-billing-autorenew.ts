@@ -238,41 +238,188 @@ async function runAutorenewTests() {
         return { data: { user: null }, error: new Error("Invalid session") };
       },
     },
+    rpc: async (fn: string, params: any) => {
+      if (fn === "merge_subscription_metadata") {
+        if (mockExistingSub && mockExistingSub.user_id === params.p_user_id) {
+          mockExistingSub.metadata = { ...(mockExistingSub.metadata || {}), ...(params.p_metadata || {}) };
+          dbStoredSubscriptionMetadata = mockExistingSub.metadata;
+        }
+        return { data: true, error: null };
+      }
+      if (fn === "record_subscription_reconciliation") {
+        return { data: "mock-reconcile-uuid", error: null };
+      }
+      if (fn === "cancel_autorenew_subscription") {
+        if (mockExistingSub && mockExistingSub.user_id === params.p_user_id) {
+          mockExistingSub.cancel_at_period_end = true;
+          mockExistingSub.metadata = { ...(mockExistingSub.metadata || {}), ...(params.p_metadata || {}) };
+          dbStoredSubscriptionMetadata = mockExistingSub.metadata;
+        }
+        for (const order of dbStoredPaymentOrders) {
+          if (order.user_id === params.p_user_id && order.provider_order_id === params.p_mandate_id) {
+            order.status = "cancelled";
+          }
+        }
+        return { data: true, error: null };
+      }
+      return { data: true, error: null };
+    },
     from: (table: string) => {
-      if (table === "subscriptions") {
-        const subQuery: any = {
-          select: () => subQuery,
-          eq: () => subQuery,
-          order: () => subQuery,
-          limit: () => subQuery,
-          maybeSingle: async () => ({ data: mockExistingSub, error: null }),
-          update: (row: any) => ({
-            eq: async () => {
-              dbStoredSubscriptionMetadata = row.metadata;
-              return { error: null };
+      let filters: Record<string, any> = {};
+      let neqFilters: Record<string, any> = {};
+      let likeFilters: Record<string, string> = {};
+      let gteFilters: Record<string, any> = {};
+      let ltFilters: Record<string, any> = {};
+      let inFilters: Record<string, any[]> = {};
+
+      const matchesFilters = (rawO: any) => {
+        const o = {
+          recurring_kind: rawO.recurring_kind || (rawO.provider_order_id?.startsWith("sub_") ? "recurring" : "none"),
+          ...rawO,
+        };
+        for (const [k, v] of Object.entries(filters)) {
+          if (o[k] !== v) return false;
+        }
+        for (const [k, v] of Object.entries(neqFilters)) {
+          if (o[k] === v) return false;
+        }
+        for (const [k, pat] of Object.entries(likeFilters)) {
+          const val = String(o[k] || "");
+          const prefix = pat.replace(/%/g, "");
+          if (!val.startsWith(prefix)) return false;
+        }
+        for (const [k, v] of Object.entries(gteFilters)) {
+          if (o[k] < v) return false;
+        }
+        for (const [k, v] of Object.entries(ltFilters)) {
+          if (o[k] >= v) return false;
+        }
+        for (const [k, vals] of Object.entries(inFilters)) {
+          if (!vals.includes(o[k])) return false;
+        }
+        return true;
+      };
+
+      const getMatchingRows = () => {
+        if (table === "payment_orders") {
+          return dbStoredPaymentOrders.filter(matchesFilters);
+        }
+        if (table === "subscriptions") {
+          const subs = mockExistingSub ? [mockExistingSub] : [];
+          return subs.filter(matchesFilters);
+        }
+        return [];
+      };
+
+      const query: any = {
+        select: () => query,
+        order: () => query,
+        limit: () => query,
+        eq: (col: string, val: any) => {
+          filters[col] = val;
+          return query;
+        },
+        neq: (col: string, val: any) => {
+          neqFilters[col] = val;
+          return query;
+        },
+        like: (col: string, pat: string) => {
+          likeFilters[col] = pat;
+          return query;
+        },
+        gte: (col: string, val: any) => {
+          gteFilters[col] = val;
+          return query;
+        },
+        lt: (col: string, val: any) => {
+          ltFilters[col] = val;
+          return query;
+        },
+        in: (col: string, vals: any[]) => {
+          inFilters[col] = vals;
+          return query;
+        },
+        maybeSingle: async () => {
+          const rows = getMatchingRows();
+          return { data: rows[0] || null, error: null };
+        },
+        then: (resolve: (val: any) => void) => {
+          resolve({ data: getMatchingRows(), error: null });
+        },
+        insert: async (row: any) => {
+          if (table === "payment_orders") {
+            dbStoredPaymentOrders.push({ ...row });
+          } else if (table === "subscriptions") {
+            mockExistingSub = { ...row };
+          }
+          return { error: null };
+        },
+        update: (updates: any) => {
+          let updateFilters: Record<string, any> = {};
+          let updateInFilters: Record<string, any[]> = {};
+          let updateLtFilters: Record<string, any> = {};
+          let updateGteFilters: Record<string, any> = {};
+
+          const updateBuilder: any = {
+            eq: (col: string, val: any) => {
+              updateFilters[col] = val;
+              return updateBuilder;
             },
-          }),
-        };
-        return subQuery;
-      }
-      if (table === "payment_orders") {
-        const orderQuery: any = {
-          select: () => orderQuery,
-          eq: () => orderQuery,
-          order: () => orderQuery,
-          limit: () => orderQuery,
-          maybeSingle: async () => {
-            const match = dbStoredPaymentOrders.find((o) => o.status === "created");
-            return { data: match || null, error: null };
-          },
-          insert: async (row: any) => {
-            dbStoredPaymentOrders.push(row);
-            return { error: null };
-          },
-        };
-        return orderQuery;
-      }
-      throw new Error(`Unexpected table: ${table}`);
+            in: (col: string, vals: any[]) => {
+              updateInFilters[col] = vals;
+              return updateBuilder;
+            },
+            lt: (col: string, val: any) => {
+              updateLtFilters[col] = val;
+              return updateBuilder;
+            },
+            gte: (col: string, val: any) => {
+              updateGteFilters[col] = val;
+              return updateBuilder;
+            },
+            select: () => updateBuilder,
+            then: (resolve: (val: any) => void) => {
+              const updatedList: any[] = [];
+              if (table === "payment_orders") {
+                for (const order of dbStoredPaymentOrders) {
+                  let match = true;
+                  for (const [k, v] of Object.entries(updateFilters)) {
+                    if (order[k] !== v) match = false;
+                  }
+                  for (const [k, vals] of Object.entries(updateInFilters)) {
+                    if (!vals.includes(order[k])) match = false;
+                  }
+                  for (const [k, v] of Object.entries(updateLtFilters)) {
+                    if (order[k] >= v) match = false;
+                  }
+                  for (const [k, v] of Object.entries(updateGteFilters)) {
+                    if (order[k] < v) match = false;
+                  }
+                  if (match) {
+                    Object.assign(order, updates);
+                    updatedList.push(order);
+                  }
+                }
+              } else if (table === "subscriptions") {
+                if (mockExistingSub) {
+                  let match = true;
+                  for (const [k, v] of Object.entries(updateFilters)) {
+                    if (mockExistingSub[k] !== v) match = false;
+                  }
+                  if (match) {
+                    Object.assign(mockExistingSub, updates);
+                    dbStoredSubscriptionMetadata = updates.metadata;
+                    updatedList.push(mockExistingSub);
+                  }
+                }
+              }
+              resolve({ data: updatedList, error: null });
+            },
+          };
+          return updateBuilder;
+        },
+      };
+      return query;
     },
   };
 
@@ -459,8 +606,10 @@ async function runAutorenewTests() {
     plan_code: "monthly",
     amount_paise: 149900,
     status: "created",
+    mode: "test",
+    created_at: new Date().toISOString(),
   });
-  let rzpCalledOnReuse = false;
+  let rzpCreateCalledOnReuse = false;
   const reqReuse = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: "Bearer valid_token" },
@@ -470,8 +619,33 @@ async function runAutorenewTests() {
   (reqReuse as any).__testDeps = {
     getSupabaseAdmin: () => mockSupabaseAdmin,
     verifyUserNotBanned: async () => ({ isBlocked: false }),
-    fetchFn: async () => {
-      rzpCalledOnReuse = true;
+    fetchFn: async (url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = url.toString();
+      if (urlStr.includes("/v1/plans/")) {
+        return new Response(
+          JSON.stringify({
+            id: "plan_monthly_456",
+            item: { amount: 149900, currency: "INR" },
+            period: "monthly",
+            interval: 1,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      if (urlStr.includes("/v1/subscriptions/sub_rzp_reused_monthly_999")) {
+        return new Response(
+          JSON.stringify({
+            id: "sub_rzp_reused_monthly_999",
+            plan_id: "plan_monthly_456",
+            status: "created",
+            created_at: Math.floor(Date.now() / 1000),
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      if (init?.method === "POST" && urlStr.endsWith("/v1/subscriptions")) {
+        rzpCreateCalledOnReuse = true;
+      }
       return new Response();
     },
   };
@@ -480,21 +654,47 @@ async function runAutorenewTests() {
   const jsonReuse = await resReuse.json();
   assert.strictEqual(jsonReuse.subscriptionId, "sub_rzp_reused_monthly_999");
   assert.strictEqual(jsonReuse.reused, true);
-  assert.strictEqual(rzpCalledOnReuse, false, "Razorpay must not be called when reusing pending mandate");
+  assert.strictEqual(rzpCreateCalledOnReuse, false, "Razorpay creation must not be called when reusing pending mandate");
   console.log("  ✓ Idempotent check reuses existing pending payment_orders row without creating second mandate.");
 
   // 7e: Pending order for different plan returns 409
+  dbStoredPaymentOrders.length = 0;
+  dbStoredPaymentOrders.push({
+    id: "existing_pending_weekly_diff",
+    user_id: mockUser.id,
+    provider: "razorpay",
+    provider_order_id: "sub_rzp_pending_weekly_diff",
+    plan_code: "weekly",
+    amount_paise: 69200,
+    status: "created",
+    mode: "test",
+    created_at: new Date().toISOString(),
+  });
+  let rzpCalledOnDiffPlan = false;
   const reqDiffPlan = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: "Bearer valid_token" },
-    body: JSON.stringify({ planCode: "weekly" }),
+    body: JSON.stringify({ planCode: "monthly" }),
   });
-  let rzpCalledOnDiffPlan = false;
   (reqDiffPlan as any).__testDeps = {
     getSupabaseAdmin: () => mockSupabaseAdmin,
     verifyUserNotBanned: async () => ({ isBlocked: false }),
-    fetchFn: async () => {
-      rzpCalledOnDiffPlan = true;
+    fetchFn: async (url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = url.toString();
+      if (urlStr.includes("/v1/plans/")) {
+        return new Response(
+          JSON.stringify({
+            id: "plan_monthly_456",
+            item: { amount: 149900, currency: "INR" },
+            period: "monthly",
+            interval: 1,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      if (init?.method === "POST" && urlStr.endsWith("/v1/subscriptions")) {
+        rzpCalledOnDiffPlan = true;
+      }
       return new Response();
     },
   };
@@ -512,7 +712,6 @@ async function runAutorenewTests() {
   // TEST 8: Subscription Creation, Total Count, and Separate Pending Storage
   // ---------------------------------------------------------------------------
   console.log("[TEST 8] Verifying subscription creation, total_count, and separate pending storage...");
-  // Clear active subscription (simulating expired/canceled subscription)
   mockExistingSub = {
     id: "sub_canceled_row",
     user_id: mockUser.id,
@@ -530,29 +729,56 @@ async function runAutorenewTests() {
       expectedPlanId: "plan_weekly_123",
       expectedTotalCount: 52, // 52 weeks = 1 year
       expectedAmountPaise: 69200,
+      period: "weekly",
+      interval: 1,
     },
     {
       planCode: "monthly",
       expectedPlanId: "plan_monthly_456",
       expectedTotalCount: 12, // 12 months = 1 year
       expectedAmountPaise: 149900,
+      period: "monthly",
+      interval: 1,
     },
     {
       planCode: "quarterly",
       expectedPlanId: "plan_quarterly_789",
       expectedTotalCount: 4, // 4 quarters = 1 year
       expectedAmountPaise: 399900,
+      period: "monthly",
+      interval: 3,
     },
   ];
 
   for (const tc of testCases) {
     dbStoredPaymentOrders.length = 0;
     dbStoredSubscriptionMetadata = null;
+    mockExistingSub.metadata = { prior: "data" };
     let capturedRazorpayBody: any = null;
 
     const mockFetch = async (url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = url.toString();
+      if (urlStr.includes("/v1/plans/")) {
+        return new Response(
+          JSON.stringify({
+            id: tc.expectedPlanId,
+            item: { amount: tc.expectedAmountPaise, currency: "INR" },
+            period: tc.period,
+            interval: tc.interval,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      if (init?.method === "GET" && urlStr.includes("/v1/subscriptions")) {
+        return new Response(
+          JSON.stringify({ entity: "collection", count: 0, items: [] }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
       assert.strictEqual(
-        url.toString(),
+        urlStr,
         "https://api.razorpay.com/v1/subscriptions",
         "Must call Razorpay subscriptions API endpoint"
       );
@@ -567,6 +793,8 @@ async function runAutorenewTests() {
           status: "created",
           total_count: capturedRazorpayBody.total_count,
           customer_notify: capturedRazorpayBody.customer_notify,
+          current_start: Math.floor(Date.now() / 1000),
+          current_end: Math.floor(Date.now() / 1000) + 30 * 86400,
         }),
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
@@ -620,13 +848,12 @@ async function runAutorenewTests() {
       "Existing plan_id must not be overwritten before payment is confirmed"
     );
 
-    // Verify stored separately in payment_orders
-    const lastOrder = dbStoredPaymentOrders[dbStoredPaymentOrders.length - 1];
-    assert.ok(lastOrder, "Pending subscription must be inserted into payment_orders");
-    assert.strictEqual(lastOrder.provider_order_id, `sub_rzp_${tc.planCode}_9999`);
-    assert.strictEqual(lastOrder.plan_code, tc.planCode);
-    assert.strictEqual(lastOrder.amount_paise, tc.expectedAmountPaise);
-    assert.strictEqual(lastOrder.status, "created");
+    // Verify stored in payment_orders
+    const createdOrder = dbStoredPaymentOrders.find((o) => o.provider_order_id === `sub_rzp_${tc.planCode}_9999`);
+    assert.ok(createdOrder, "Pending subscription must be inserted into payment_orders");
+    assert.strictEqual(createdOrder.plan_code, tc.planCode);
+    assert.strictEqual(createdOrder.amount_paise, tc.expectedAmountPaise);
+    assert.strictEqual(createdOrder.status, "created");
 
     // Verify pending subscription recorded in metadata
     assert.strictEqual(dbStoredSubscriptionMetadata?.pending_subscription_id, `sub_rzp_${tc.planCode}_9999`);
@@ -659,6 +886,138 @@ async function runAutorenewTests() {
     "Order route must not call Razorpay subscription API"
   );
   console.log("  ✓ Prepaid order route remains isolated, creating orders without subscription logic.\n");
+
+  // ---------------------------------------------------------------------------
+  // TEST 10: Item 1 - Provider Plan Verification Failure Handling
+  // ---------------------------------------------------------------------------
+  console.log("[TEST 10] Verifying provider plan verification fails closed on mismatch...");
+  dbStoredPaymentOrders.length = 0;
+  mockExistingSub = null;
+  const reqPlanMismatch = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer valid_token" },
+    body: JSON.stringify({ planCode: "monthly" }),
+  });
+  (reqPlanMismatch as any).__testDeps = {
+    getSupabaseAdmin: () => mockSupabaseAdmin,
+    verifyUserNotBanned: async () => ({ isBlocked: false }),
+    fetchFn: async (url: string) => {
+      if (url.includes("/v1/plans/")) {
+        return new Response(
+          JSON.stringify({
+            id: "plan_monthly_456",
+            item: { amount: 50000, currency: "INR" }, // Mismatched amount
+            period: "monthly",
+            interval: 1,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      return new Response();
+    },
+  };
+  const resPlanMismatch = await POST(reqPlanMismatch);
+  assert.strictEqual(resPlanMismatch.status, 502, "Mismatched amount must return 502");
+  const jsonPlanMismatch = await resPlanMismatch.json();
+  assert.strictEqual(jsonPlanMismatch.code, "PLAN_VERIFICATION_MISMATCH");
+  console.log("  ✓ Mismatched plan amount fails closed with 502 PLAN_VERIFICATION_MISMATCH.\n");
+
+  // ---------------------------------------------------------------------------
+  // TEST 11: Item 2 - Durable Mandate Reservation & Failure Rollback
+  // ---------------------------------------------------------------------------
+  console.log("[TEST 11] Verifying durable mandate reservation and failure rollback...");
+  dbStoredPaymentOrders.length = 0;
+  mockExistingSub = null;
+  const reqGateFail = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer valid_token" },
+    body: JSON.stringify({ planCode: "monthly" }),
+  });
+  (reqGateFail as any).__testDeps = {
+    getSupabaseAdmin: () => mockSupabaseAdmin,
+    verifyUserNotBanned: async () => ({ isBlocked: false }),
+    fetchFn: async (url: string, init?: any) => {
+      if (url.includes("/v1/plans/")) {
+        return new Response(
+          JSON.stringify({
+            id: "plan_monthly_456",
+            item: { amount: 149900, currency: "INR" },
+            period: "monthly",
+            interval: 1,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      if (init?.method === "GET" && url.includes("/v1/subscriptions")) {
+        return new Response(
+          JSON.stringify({ entity: "collection", count: 0, items: [] }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      return new Response(JSON.stringify({ error: { description: "Gateway error" } }), { status: 500 });
+    },
+  };
+  const resGateFail = await POST(reqGateFail);
+  assert.strictEqual(resGateFail.status, 500);
+  const failedReservation = dbStoredPaymentOrders.find((o) => o.provider_order_id.startsWith(`sub_pending_${mockUser.id}`));
+  assert.ok(failedReservation, "Reservation row must exist in DB");
+  assert.strictEqual(failedReservation.status, "failed", "Reservation status must be marked failed");
+  console.log("  ✓ Gateway failure rolls back reservation row to failed status.\n");
+
+  // ---------------------------------------------------------------------------
+  // TEST 12: Item 4 - Customer Cancellation via DELETE endpoint
+  // ---------------------------------------------------------------------------
+  console.log("[TEST 12] Verifying customer cancellation via DELETE endpoint...");
+  const { DELETE: deleteHandler } = await import("../src/app/api/billing/razorpay/subscription/route");
+  mockExistingSub = {
+    id: "sub_active_to_cancel",
+    user_id: mockUser.id,
+    provider: "razorpay",
+    subscription_id: "sub_rzp_to_cancel_123",
+    status: "active",
+    current_period_end: new Date(Date.now() + 10 * 86400000).toISOString(),
+    cancel_at_period_end: false,
+    metadata: {},
+  };
+
+  let cancelApiCalled = false;
+  let cancelCycleEndVal = -1;
+  const reqCancel = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer valid_token" },
+  });
+  (reqCancel as any).__testDeps = {
+    getSupabaseAdmin: () => mockSupabaseAdmin,
+    fetchFn: async (url: string, init: any) => {
+      if (url.includes("/cancel")) {
+        cancelApiCalled = true;
+        const b = JSON.parse(init.body);
+        cancelCycleEndVal = b.cancel_at_cycle_end;
+        return new Response(JSON.stringify({ id: "sub_rzp_to_cancel_123", status: "active", cancel_at_cycle_end: 1 }), { status: 200 });
+      }
+      if (init?.method === "GET" && url.includes("/v1/subscriptions/sub_rzp_to_cancel_123")) {
+        return new Response(
+          JSON.stringify({
+            id: "sub_rzp_to_cancel_123",
+            status: "active",
+            notes: { user_id: mockUser.id },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      return new Response();
+    },
+  };
+
+  const resCancel = await deleteHandler(reqCancel);
+  assert.strictEqual(resCancel.status, 200);
+  const jsonCancel = await resCancel.json();
+  assert.strictEqual(jsonCancel.success, true);
+  assert.strictEqual(jsonCancel.cancelAtPeriodEnd, true);
+  assert.strictEqual(cancelApiCalled, true, "Razorpay cancel API must be called");
+  assert.strictEqual(cancelCycleEndVal, 1, "cancel_at_cycle_end must be 1 (cycle end)");
+  assert.strictEqual(mockExistingSub.cancel_at_period_end, true, "DB subscription must be updated with cancel_at_period_end: true");
+  console.log("  ✓ Customer cancellation successfully calls Razorpay cancel at cycle end and updates DB.\n");
 
   console.log("================================================================================");
   console.log("   ALL AUTO-RENEW CHECKOUT TESTS PASSED SUCCESSFULLY!                           ");

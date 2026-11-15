@@ -116,3 +116,21 @@ drop trigger if exists jobs_touch_last_seen on public.jobs;
 create trigger jobs_touch_last_seen
   before update on public.jobs
   for each row execute function public.touch_job_last_seen();
+
+-- ── SUBSCRIPTION RECONCILIATIONS TABLE ─────────────────────────────
+create table if not exists public.subscription_reconciliations (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  provider text not null default 'razorpay',
+  provider_subscription_id text,
+  reservation_order_id text,
+  reconciliation_state text not null check (reconciliation_state in ('pending', 'resolved', 'failed', 'unknown')),
+  failure_reason text,
+  recovery_outcome text,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.subscription_reconciliations enable row level security;
+

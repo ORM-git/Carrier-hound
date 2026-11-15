@@ -9,7 +9,7 @@ import AppTopBar from "@/components/shell/AppTopBar";
 import LoggedInAppShell from "@/components/shell/LoggedInAppShell";
 import { getAuthUser, getUserPreferences, saveUserPreferences, signOutUser } from "@/lib/auth/session";
 import { UserPreferences } from "@/lib/auth/types";
-import { getUserSubscription } from "@/lib/billing/subscription";
+import { getUserSubscription, cancelAutoRenewSubscription } from "@/lib/billing/subscription";
 import { normalizePlanCode, PLAN_DEFINITIONS } from "@/lib/billing/quota";
 import { UserSubscription } from "@/lib/billing/types";
 import { getCandidateProfile, deleteCandidateProfile } from "@/lib/resume/storage";
@@ -58,6 +58,7 @@ function SettingsPageInner() {
   // Billing state
   const [subscription, setSubscription] = useState<UserSubscription | null>(null);
   const [isPaywallOpen, setIsPaywallOpen] = useState(false);
+  const [cancellingAutoRenew, setCancellingAutoRenew] = useState(false);
 
   // Derive plan & pricing from central normalized plan ID and real subscription record
   const normalizedPlan = normalizePlanCode(subscription?.planId);
@@ -78,6 +79,20 @@ function SettingsPageInner() {
   const formattedPlanText = typeof planPriceNumber === "number"
     ? `${currencySymbol}${planPriceNumber.toLocaleString()} / ${planInterval}`
     : null;
+
+  // Requirement 1: Explicit recurring mandate discriminator
+  // Only real recurring Razorpay mandates (provider=razorpay + subscription_id starts with "sub_" and not "sub_pending_")
+  // Never inferred from isPro. Prepaid plans keep "does not auto-renew".
+  const mandateSubId =
+    subscription?.subscriptionId ||
+    (subscription?.metadata as any)?.provider_subscription_id ||
+    (subscription?.metadata as any)?.pending_subscription_id;
+
+  const isRecurringMandate =
+    subscription?.provider === "razorpay" &&
+    typeof mandateSubId === "string" &&
+    mandateSubId.startsWith("sub_") &&
+    !mandateSubId.startsWith("sub_pending_");
 
   useEffect(() => {
     getAuthUser().then((u) => {
@@ -216,6 +231,31 @@ function SettingsPageInner() {
     }
   };
 
+  const handleCancelAutoRenew = async () => {
+    if (
+      !window.confirm(
+        "Are you sure you want to cancel auto-renewal? You will keep Pro access until the end of your current billing period."
+      )
+    ) {
+      return;
+    }
+    setCancellingAutoRenew(true);
+    try {
+      const res = await cancelAutoRenewSubscription();
+      if (res.success) {
+        toast.success("Auto-renew canceled. You retain Pro access until the end of your billing cycle.");
+        const updatedSub = await getUserSubscription(user?.id);
+        setSubscription(updatedSub);
+      } else {
+        toast.error(res.error || "Failed to cancel auto-renew. Please try again.");
+      }
+    } catch (e: any) {
+      toast.error(e?.message || "An unexpected error occurred.");
+    } finally {
+      setCancellingAutoRenew(false);
+    }
+  };
+
   if (loading) {
     return (
       <LoggedInAppShell pageLabel="SETTINGS" user={user} isPro={false}>
@@ -227,6 +267,22 @@ function SettingsPageInner() {
   }
 
   const isPro = subscription?.status === "active";
+
+  // A real active auto-renew mandate for a non-Pro (Free plan) user
+  const subStatus = (subscription?.status as string) || "";
+  const hasActiveMandateWithoutPro = Boolean(
+    !isPro &&
+    isRecurringMandate &&
+    subStatus !== "canceled" &&
+    subStatus !== "expired" &&
+    subStatus !== "none" &&
+    (subStatus === "past_due" ||
+      subStatus === "unpaid" ||
+      subStatus === "incomplete" ||
+      subStatus === "created")
+  );
+
+  const showMandateSection = isPro || hasActiveMandateWithoutPro;
 
   return (
     <LoggedInAppShell pageLabel="SETTINGS" user={user} isPro={isPro}>
@@ -544,11 +600,55 @@ function SettingsPageInner() {
                 )}
               </div>
 
-              {isPro && subscription?.currentPeriodEnd && (
+              {showMandateSection && (
                 <div className="pt-3 border-t border-slate-200/80 flex items-center justify-between text-xs">
                   <span className="text-slate-600">
-                    Pro access ends on: <strong>{new Date(subscription.currentPeriodEnd).toLocaleDateString()}</strong> (plans do not auto-renew)
+                    {isPro ? (
+                      subscription?.currentPeriodEnd ? (
+                        <>
+                          Pro access ends on: <strong>{new Date(subscription.currentPeriodEnd).toLocaleDateString()}</strong>
+                          {isRecurringMandate ? (
+                            subscription?.cancelAtPeriodEnd
+                              ? " (auto-renew canceled)"
+                              : " (auto-renews)"
+                          ) : (
+                            " (does not auto-renew)"
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          Pro access active
+                          {isRecurringMandate ? (
+                            subscription?.cancelAtPeriodEnd
+                              ? " (auto-renew canceled)"
+                              : " (auto-renews)"
+                          ) : (
+                            " (does not auto-renew)"
+                          )}
+                        </>
+                      )
+                    ) : (
+                      <>
+                        {subscription?.status === "past_due" ? (
+                          <>Payment past due{subscription?.cancelAtPeriodEnd ? " (auto-renew canceled)" : " (auto-renews)"}</>
+                        ) : subscription?.status === "unpaid" ? (
+                          <>Payment unpaid{subscription?.cancelAtPeriodEnd ? " (auto-renew canceled)" : " (auto-renews)"}</>
+                        ) : (
+                          <>Mandate pending confirmation{subscription?.cancelAtPeriodEnd ? " (auto-renew canceled)" : " (auto-renews)"}</>
+                        )}
+                      </>
+                    )}
                   </span>
+                  {((isPro && isRecurringMandate) || hasActiveMandateWithoutPro) && !subscription?.cancelAtPeriodEnd && (
+                    <button
+                      type="button"
+                      onClick={handleCancelAutoRenew}
+                      disabled={cancellingAutoRenew}
+                      className="px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-xl transition shadow-2xs cursor-pointer disabled:opacity-50"
+                    >
+                      {cancellingAutoRenew ? "Canceling..." : "Cancel auto-renew"}
+                    </button>
+                  )}
                 </div>
               )}
             </div>

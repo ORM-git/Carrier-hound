@@ -54,7 +54,6 @@ jobs:
     if: github.event_name == 'pull_request'
     # FIXME: dependency graph is disabled at repo level and only an org admin
     # can enable it; keep this non-blocking until then.
-    continue-on-error: true
     steps:
       - name: Checkout Code
         uses: actions/checkout@v7

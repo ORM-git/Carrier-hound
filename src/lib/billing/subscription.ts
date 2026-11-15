@@ -325,7 +325,7 @@ export async function getUserSubscription(
     if (resolvedUserId) {
       const { data: sub, error } = await supabase
         .from("subscriptions")
-        .select("id, user_id, provider, plan_id, currency, amount, status, current_period_start, current_period_end, grace_period_end, cancel_at_period_end, metadata")
+        .select("id, user_id, provider, subscription_id, plan_id, currency, amount, status, current_period_start, current_period_end, grace_period_end, cancel_at_period_end, metadata")
         .eq("user_id", resolvedUserId)
         .order("created_at", { ascending: false })
         .limit(1)
@@ -339,6 +339,36 @@ export async function getUserSubscription(
         // Expiry check: if active/trialing but past current_period_end, treat as expired
         if ((resolvedStatus === "active" || resolvedStatus === "trialing") && periodEnd && periodEnd <= now) {
           resolvedStatus = "canceled";
+        }
+
+        // Reviewer 3: If subscription row is expired, canceled, or none, check payment_orders
+        // for an active or pending mandate order so a pending mandate is not hidden!
+        if (resolvedStatus === "canceled" || resolvedStatus === "none" || (sub.status as string) === "expired") {
+          const { data: pendingOrder } = await supabase
+            .from("payment_orders")
+            .select("id, user_id, provider, provider_order_id, plan_code, currency, amount_paise, created_at, status, metadata")
+            .eq("user_id", resolvedUserId)
+            .eq("recurring_kind", "recurring")
+            .in("status", ["reserved", "created", "unknown"])
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (pendingOrder) {
+            return {
+              id: pendingOrder.id,
+              userId: resolvedUserId,
+              provider: pendingOrder.provider || "razorpay",
+              subscriptionId: pendingOrder.provider_order_id || undefined,
+              planId: normalizePlanCode(pendingOrder.plan_code) || undefined,
+              currency: pendingOrder.currency || "INR",
+              amount: typeof pendingOrder.amount_paise === "number" ? Math.round(pendingOrder.amount_paise / 100) : undefined,
+              status: "incomplete" as SubscriptionStatus,
+              currentPeriodStart: pendingOrder.created_at,
+              cancelAtPeriodEnd: false,
+              metadata: pendingOrder.metadata || { pending_subscription_id: pendingOrder.provider_order_id },
+            };
+          }
         }
 
         const normalizedPlan = normalizePlanCode(sub.plan_id);
@@ -364,10 +394,16 @@ export async function getUserSubscription(
           resolvedAmount = undefined;
         }
 
+        const candidateSubId =
+          sub.subscription_id ||
+          sub.metadata?.provider_subscription_id ||
+          sub.metadata?.pending_subscription_id;
+
         return {
           id: sub.id,
           userId: sub.user_id,
           provider: sub.provider || "manual",
+          subscriptionId: candidateSubId || undefined,
           planId: normalizedPlan || sub.plan_id || undefined,
           currency: rawCurrency,
           amount: resolvedAmount,
@@ -379,6 +415,33 @@ export async function getUserSubscription(
           metadata: sub.metadata,
         };
       }
+
+      // If no subscription row exists, check for pending recurring order in payment_orders (Reviewer 3)
+      const { data: pendingOrder } = await supabase
+        .from("payment_orders")
+        .select("id, user_id, provider, provider_order_id, plan_code, currency, amount_paise, created_at, status, metadata")
+        .eq("user_id", resolvedUserId)
+        .eq("recurring_kind", "recurring")
+        .in("status", ["reserved", "created", "unknown"])
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (pendingOrder) {
+        return {
+          id: pendingOrder.id,
+          userId: resolvedUserId,
+          provider: pendingOrder.provider || "razorpay",
+          subscriptionId: pendingOrder.provider_order_id || undefined,
+          planId: normalizePlanCode(pendingOrder.plan_code) || undefined,
+          currency: pendingOrder.currency || "INR",
+          amount: typeof pendingOrder.amount_paise === "number" ? Math.round(pendingOrder.amount_paise / 100) : undefined,
+          status: "incomplete" as SubscriptionStatus,
+          currentPeriodStart: pendingOrder.created_at,
+          cancelAtPeriodEnd: false,
+          metadata: pendingOrder.metadata || { pending_subscription_id: pendingOrder.provider_order_id },
+        };
+      }
     }
   } catch (e) {
     log.warn("Could not fetch user subscription", { error: e });
@@ -388,12 +451,50 @@ export async function getUserSubscription(
 }
 
 /**
+ * Cancels customer auto-renewal at cycle end via Razorpay API and updates DB
+ */
+export async function cancelAutoRenewSubscription(): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = createClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    if (!token) {
+      return { success: false, error: "Not authenticated" };
+    }
+
+    const res = await fetch("/api/billing/razorpay/subscription", {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) {
+      return { success: false, error: data.error || "Failed to cancel auto-renew" };
+    }
+
+    invalidateProAccessCache();
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message || "Failed to cancel auto-renew" };
+  }
+}
+
+/**
  * Marks the subscription to cancel at the end of the current period
+ * Reviewer 9: On success keep paid access until period end; do not set status canceled immediately.
  */
 export async function cancelSubscription(): Promise<UserSubscription | null> {
-  setLocalProActive(false);
-
   try {
+    const cancelResult = await cancelAutoRenewSubscription().catch(() => ({ success: false, error: "Network error" }));
+    if (!cancelResult?.success) {
+      log.warn("Auto-renew cancellation failed; honoring success=false without marking locally canceled", { error: cancelResult?.error });
+      return null;
+    }
+
+    // Keep paid access until period end! Do NOT revoke local Pro status immediately.
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();
     const user = session?.user || (await supabase.auth.getUser()).data.user;
@@ -401,8 +502,10 @@ export async function cancelSubscription(): Promise<UserSubscription | null> {
     if (user) {
       await supabase
         .from("subscriptions")
-        .update({ status: "canceled", cancel_at_period_end: true })
+        .update({ cancel_at_period_end: true })
         .eq("user_id", user.id);
+
+      return await getUserSubscription(user.id, supabase);
     }
   } catch (e) {
     log.warn("Could not cancel subscription remotely", { error: e });
