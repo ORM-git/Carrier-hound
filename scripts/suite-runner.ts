@@ -128,6 +128,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-netlify-billing.ts", command: "npx tsx scripts/test-netlify-billing.ts", classification: "offline" },
   { name: "scripts/test-billing-webhook-route.ts", command: "npx tsx scripts/test-billing-webhook-route.ts", classification: "offline" },
   { name: "scripts/test-autorenew-persistence.ts", command: "npx tsx scripts/test-autorenew-persistence.ts", classification: "offline" },
+  { name: "scripts/test-624v2-probe.ts", command: "npx tsx scripts/test-624v2-probe.ts", classification: "offline" },
   { name: "scripts/test-addon-verify-and-expiry.ts", command: "npx tsx scripts/test-addon-verify-and-expiry.ts", classification: "offline" },
   { name: "scripts/test-razorpay-mode-isolation.ts", command: "npx tsx scripts/test-razorpay-mode-isolation.ts", classification: "offline" },
   { name: "scripts/test-policy-pages.ts", command: "npx tsx scripts/test-policy-pages.ts", classification: "offline" },

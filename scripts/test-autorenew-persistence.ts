@@ -57,12 +57,12 @@ async function textChecks() {
     assert.ok(sql.includes(`node scripts/record-migration.cjs ${MIGRATION}`), "Record command missing");
   });
 
-  await check("1.2 Function signature: takes 4 parameters with expected mode and amount defaults", () => {
+  await check("1.2 Function signature: takes parameters with expected mode, amount, and timestamp defaults", () => {
     assert.ok(
-      /CREATE OR REPLACE FUNCTION public\.fulfil_subscription_renewal\(\s*p_razorpay_subscription_id text,\s*p_payment_id text,\s*p_expected_mode text DEFAULT 'live',\s*p_amount_paise numeric DEFAULT NULL\s*\)/.test(
+      /CREATE OR REPLACE FUNCTION public\.fulfil_subscription_renewal\(\s*p_razorpay_subscription_id text,\s*p_payment_id text,\s*p_expected_mode text DEFAULT 'live',\s*p_amount_paise numeric DEFAULT NULL,\s*p_event_timestamp numeric DEFAULT NULL\s*\)/.test(
         sql
       ),
-      "Function signature must accept 4 parameters"
+      "Function signature must accept 5 parameters"
     );
   });
 
@@ -74,14 +74,14 @@ async function textChecks() {
 
   await check("1.4 Access Control: Revoked from public/anon/authenticated, granted to service_role", () => {
     assert.ok(
-      sql.includes("REVOKE ALL ON FUNCTION public.fulfil_subscription_renewal(text, text, text, numeric) FROM public;") &&
-        sql.includes("REVOKE ALL ON FUNCTION public.fulfil_subscription_renewal(text, text, text, numeric) FROM anon;") &&
-        sql.includes("REVOKE ALL ON FUNCTION public.fulfil_subscription_renewal(text, text, text, numeric) FROM authenticated;"),
+      sql.includes("REVOKE ALL ON FUNCTION public.fulfil_subscription_renewal(text, text, text, numeric, numeric) FROM public;") &&
+        sql.includes("REVOKE ALL ON FUNCTION public.fulfil_subscription_renewal(text, text, text, numeric, numeric) FROM anon;") &&
+        sql.includes("REVOKE ALL ON FUNCTION public.fulfil_subscription_renewal(text, text, text, numeric, numeric) FROM authenticated;"),
       "Must revoke execution from public, anon, and authenticated"
     );
     assert.ok(
       sql.includes(
-        "GRANT EXECUTE ON FUNCTION public.fulfil_subscription_renewal(text, text, text, numeric) TO service_role;"
+        "GRANT EXECUTE ON FUNCTION public.fulfil_subscription_renewal(text, text, text, numeric, numeric) TO service_role;"
       ),
       "Must grant execution to service_role"
     );
@@ -156,6 +156,26 @@ async function textChecks() {
     const dump = fs.readFileSync(path.resolve(process.cwd(), "supabase/schema.generated.sql"), "utf8");
     assert.ok(dump.includes(MIGRATION), "schema dump must reference migration");
     assert.ok(dump.includes("fulfil_subscription_renewal"), "schema dump must include fulfil_subscription_renewal");
+  });
+
+  await check("1.17 Transactional migration: Wrapped in atomic BEGIN and COMMIT", () => {
+    assert.ok(/^\s*BEGIN;/m.test(sql), "Migration must start with BEGIN;");
+    assert.ok(/^\s*COMMIT;/m.test(sql), "Migration must end with COMMIT;");
+  });
+
+  await check("1.18 Safety preconditions: Pre-flight checks on required tables and columns", () => {
+    assert.ok(sql.includes("Precondition failed: table public.% does not exist"), "Precondition table check missing");
+    assert.ok(sql.includes("Precondition failed: column public.subscriptions.% does not exist"), "Precondition column check missing");
+  });
+
+  await check("1.19 Rebind Protection: Old or abandoned mandates rejected with OLD_MANDATE_IGNORED", () => {
+    assert.ok(sql.includes("OLD_MANDATE_IGNORED"), "Rebind protection OLD_MANDATE_IGNORED missing");
+  });
+
+  await check("1.20 Lifecycle RPC: Atomic handle_subscription_lifecycle_event defined with durable ordering", () => {
+    assert.ok(sql.includes("CREATE OR REPLACE FUNCTION public.handle_subscription_lifecycle_event"), "Lifecycle RPC missing");
+    assert.ok(sql.includes("OUT_OF_ORDER_EVENT"), "OUT_OF_ORDER_EVENT check missing");
+    assert.ok(sql.includes("last_event_time"), "Durable last_event_time tracking missing");
   });
 }
 
@@ -316,6 +336,25 @@ class PostgresState {
       };
     }
 
+    // 9b. Rebind Protection (Blocker 4)
+    if (v_has_sub && v_sub?.subscription_id && v_sub.subscription_id !== p_razorpay_subscription_id) {
+      let is_valid_pending = false;
+      if (v_order && v_order.status === "created") {
+        is_valid_pending = true;
+      }
+      if (!is_valid_pending) {
+        return {
+          success: true,
+          ignored: true,
+          code: "OLD_MANDATE_IGNORED",
+          reason: "OLD_MANDATE_IGNORED",
+          message: `Mandate ${p_razorpay_subscription_id} is not current or pending; ignored`,
+          current_mandate: v_sub?.subscription_id,
+          attempted_mandate: p_razorpay_subscription_id,
+        };
+      }
+    }
+
     // 10. Idempotency on payment_id / cycle
     const v_processed_payments: string[] = v_sub?.metadata?.processed_payments || [];
     if (
@@ -459,6 +498,90 @@ class PostgresState {
       duration_days: v_duration,
       current_period_end: v_new_end,
       payment_id: p_payment_id,
+    };
+  }
+
+  handle_subscription_lifecycle_event(
+    p_razorpay_subscription_id: string,
+    p_event_type: string,
+    p_event_timestamp: number | null = null,
+    p_expected_mode: string = "live"
+  ): { success: boolean; code?: string; error?: string; [key: string]: any } {
+    let targetSub: DbSub | undefined;
+    for (const s of this.subs.values()) {
+      if (s.subscription_id === p_razorpay_subscription_id) {
+        targetSub = s;
+        break;
+      }
+    }
+
+    if (!targetSub) {
+      return {
+        success: true,
+        ignored: true,
+        reason: "UNBOUND_MANDATE",
+        message: `Mandate ${p_razorpay_subscription_id} is not currently bound`,
+      };
+    }
+
+    if (this.blockedUsers.has(targetSub.user_id)) {
+      return { success: false, code: "USER_BANNED", error: "Account is suspended" };
+    }
+
+    const mode = targetSub.metadata?.mode || "live";
+    if (mode !== p_expected_mode) {
+      return { success: false, code: "MODE_MISMATCH", error: `Subscription mode does not match expected mode` };
+    }
+
+    if (p_expected_mode === "test" || mode === "test") {
+      return { success: true, test_mode: true, message: "Test mode subscription event acknowledged" };
+    }
+
+    // Durable provider last-event timestamp check
+    if (p_event_timestamp !== null && p_event_timestamp > 0) {
+      const lastTime = targetSub.metadata?.last_event_time;
+      if (typeof lastTime === "number") {
+        const incomingMs = p_event_timestamp > 1e11 ? p_event_timestamp : p_event_timestamp * 1000;
+        const storedMs = lastTime > 1e11 ? lastTime : lastTime * 1000;
+        if (incomingMs < storedMs) {
+          return {
+            success: true,
+            ignored: true,
+            reason: "OUT_OF_ORDER_EVENT",
+            message: `Event timestamp is older than stored last event time`,
+          };
+        }
+      }
+    }
+
+    targetSub.metadata = targetSub.metadata || {};
+    if (p_event_timestamp !== null && p_event_timestamp > 0) {
+      targetSub.metadata.last_event_time = p_event_timestamp;
+    }
+
+    if (p_event_type === "subscription.pending") {
+      targetSub.status = "in_grace_period";
+      targetSub.grace_period_end = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    } else if (p_event_type === "subscription.halted" || p_event_type === "subscription.past_due") {
+      targetSub.status = "past_due";
+    } else if (
+      p_event_type === "subscription.cancelled" ||
+      p_event_type === "subscription.canceled" ||
+      p_event_type === "subscription.completed"
+    ) {
+      targetSub.cancel_at_period_end = true;
+    }
+
+    return {
+      success: true,
+      applied: true,
+      event_type: p_event_type,
+      subscription_id: targetSub.subscription_id,
+      status: targetSub.status,
+      cancel_at_period_end: targetSub.cancel_at_period_end,
+      grace_period_end: targetSub.grace_period_end,
+      user_id: targetSub.user_id,
+      last_event_time: p_event_timestamp,
     };
   }
 }
@@ -751,6 +874,101 @@ async function functionalChecks() {
     const updatedCredit = db.addonCredits.get("credit_1");
     const sub = db.subs.get("usr_addons");
     assert.strictEqual(updatedCredit?.expires_at, sub?.current_period_end);
+  });
+
+  await check("2.14 Rebind protection: Old or abandoned mandate event is ignored without touching active subscription", () => {
+    const db = new PostgresState();
+    const now = 1700000000000;
+    const futureEnd = new Date(now + 25 * 24 * 60 * 60 * 1000).toISOString();
+
+    db.subs.set("usr_rebind_test", {
+      id: "sub_active_row",
+      user_id: "usr_rebind_test",
+      subscription_id: "sub_active_current",
+      plan_id: "monthly",
+      provider: "razorpay",
+      status: "active",
+      current_period_end: futureEnd,
+      metadata: { processed_payments: ["pay_current_1"] },
+    });
+
+    db.orders.set("sub_old_abandoned", {
+      id: "ord_abandoned",
+      provider_order_id: "sub_old_abandoned",
+      user_id: "usr_rebind_test",
+      provider: "razorpay",
+      mode: "live",
+      status: "cancelled", // Abandoned/cancelled order
+      amount_paise: 149900,
+      plan_code: "monthly",
+    });
+
+    const res = db.fulfil_subscription_renewal("sub_old_abandoned", "pay_late_101", "live", 149900, now);
+    assert.strictEqual(res.success, true);
+    assert.strictEqual(res.ignored, true);
+    assert.strictEqual(res.reason, "OLD_MANDATE_IGNORED");
+
+    // Subscription remains completely untouched
+    const sub = db.subs.get("usr_rebind_test");
+    assert.strictEqual(sub?.subscription_id, "sub_active_current");
+    assert.strictEqual(sub?.current_period_end, futureEnd);
+  });
+
+  await check("2.15 Lifecycle RPC: Atomic transitions for pending, halted, cancelled", () => {
+    const db = new PostgresState();
+    db.subs.set("usr_life_1", {
+      id: "sub_life_1",
+      user_id: "usr_life_1",
+      subscription_id: "sub_rzp_life_1",
+      plan_id: "monthly",
+      provider: "razorpay",
+      status: "active",
+      cancel_at_period_end: false,
+      metadata: { mode: "live" },
+    });
+
+    const resPending = db.handle_subscription_lifecycle_event("sub_rzp_life_1", "subscription.pending", 1700000010);
+    assert.strictEqual(resPending.success, true);
+    assert.strictEqual(resPending.status, "in_grace_period");
+
+    const resHalted = db.handle_subscription_lifecycle_event("sub_rzp_life_1", "subscription.halted", 1700000020);
+    assert.strictEqual(resHalted.success, true);
+    assert.strictEqual(resHalted.status, "past_due");
+
+    const resCancelled = db.handle_subscription_lifecycle_event("sub_rzp_life_1", "subscription.cancelled", 1700000030);
+    assert.strictEqual(resCancelled.success, true);
+    assert.strictEqual(resCancelled.cancel_at_period_end, true);
+  });
+
+  await check("2.16 Lifecycle ordering: Out-of-order event rejected with OUT_OF_ORDER_EVENT based on durable last_event_time", () => {
+    const db = new PostgresState();
+    db.subs.set("usr_life_order", {
+      id: "sub_life_order",
+      user_id: "usr_life_order",
+      subscription_id: "sub_rzp_life_order",
+      plan_id: "monthly",
+      provider: "razorpay",
+      status: "active",
+      cancel_at_period_end: false,
+      metadata: { mode: "live", last_event_time: 1700000500 },
+    });
+
+    // Older event (timestamp 1700000100 < 1700000500)
+    const resOld = db.handle_subscription_lifecycle_event("sub_rzp_life_order", "subscription.cancelled", 1700000100);
+    assert.strictEqual(resOld.success, true);
+    assert.strictEqual(resOld.ignored, true);
+    assert.strictEqual(resOld.reason, "OUT_OF_ORDER_EVENT");
+
+    // Subscription remains unchanged
+    const sub = db.subs.get("usr_life_order");
+    assert.strictEqual(sub?.cancel_at_period_end, false);
+
+    // Newer event (timestamp 1700000600 > 1700000500)
+    const resNew = db.handle_subscription_lifecycle_event("sub_rzp_life_order", "subscription.cancelled", 1700000600);
+    assert.strictEqual(resNew.success, true);
+    assert.strictEqual(resNew.applied, true);
+    assert.strictEqual(sub?.cancel_at_period_end, true);
+    assert.strictEqual(sub?.metadata?.last_event_time, 1700000600);
   });
 }
 

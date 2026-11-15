@@ -418,6 +418,102 @@ function createMockSupabase(db: MockDbState) {
           error: null,
         };
       }
+
+      if (fnName === "handle_subscription_lifecycle_event") {
+        const subId = args.p_razorpay_subscription_id;
+        const eventType = args.p_event_type;
+        const eventTimestamp = args.p_event_timestamp;
+        const expectedMode = args.p_expected_mode || "live";
+
+        let sub = Array.from(db.subscriptions?.values() || []).find(
+          (s) => s.subscription_id === subId
+        );
+
+        if (!sub) {
+          return {
+            data: {
+              success: true,
+              ignored: true,
+              reason: "UNBOUND_MANDATE",
+              message: `Mandate ${subId} is not currently bound`,
+            },
+            error: null,
+          };
+        }
+
+        if (sub.user_id && db.bannedUsers?.has(sub.user_id)) {
+          return {
+            data: { success: false, code: "USER_BANNED", error: "Account is suspended" },
+            error: null,
+          };
+        }
+
+        const effectiveMode = sub.metadata?.mode || "live";
+        if (effectiveMode !== expectedMode) {
+          return {
+            data: {
+              success: false,
+              code: "MODE_MISMATCH",
+              error: `Order mode (${effectiveMode}) does not match expected (${expectedMode})`,
+            },
+            error: null,
+          };
+        }
+
+        // Durable provider last-event timestamp check
+        if (eventTimestamp !== null && eventTimestamp > 0) {
+          const lastTime = sub.metadata?.last_event_time;
+          if (typeof lastTime === "number") {
+            const incomingMs = eventTimestamp > 1e11 ? eventTimestamp : eventTimestamp * 1000;
+            const storedMs = lastTime > 1e11 ? lastTime : lastTime * 1000;
+            if (incomingMs < storedMs) {
+              return {
+                data: {
+                  success: true,
+                  ignored: true,
+                  reason: "OUT_OF_ORDER_EVENT",
+                  message: `Event timestamp is older than stored last event time`,
+                },
+                error: null,
+              };
+            }
+          }
+        }
+
+        sub.metadata = sub.metadata || {};
+        if (eventTimestamp !== null && eventTimestamp > 0) {
+          sub.metadata.last_event_time = eventTimestamp;
+        }
+
+        if (eventType === "subscription.pending") {
+          sub.status = "in_grace_period";
+          sub.grace_period_end = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+        } else if (eventType === "subscription.halted" || eventType === "subscription.past_due") {
+          sub.status = "past_due";
+        } else if (
+          eventType === "subscription.cancelled" ||
+          eventType === "subscription.canceled" ||
+          eventType === "subscription.completed"
+        ) {
+          sub.cancel_at_period_end = true;
+        }
+
+        return {
+          data: {
+            success: true,
+            applied: true,
+            test_mode: expectedMode === "test",
+            event_type: eventType,
+            subscription_id: sub.subscription_id,
+            status: sub.status,
+            cancel_at_period_end: sub.cancel_at_period_end,
+            grace_period_end: sub.grace_period_end,
+            user_id: sub.user_id,
+            last_event_time: eventTimestamp,
+          },
+          error: null,
+        };
+      }
       return { data: null, error: new Error(`Unknown RPC: ${fnName}`) };
     },
   };
@@ -1563,13 +1659,14 @@ async function runTestSuite() {
   });
 
   await runTest("36. (Requirement 5) Lifecycle events: out-of-order older event ignored with 200 OUT_OF_ORDER_EVENT", async () => {
+    const currentTimeSec = Math.floor(Date.now() / 1000);
     const targetSub: MockSubscription = {
       id: "sub_row_time_chk",
       subscription_id: "sub_rzp_time_chk",
       user_id: "user_time_chk",
       plan_id: "monthly",
       status: "active",
-      metadata: { mode: "test" },
+      metadata: { mode: "test", last_event_time: currentTimeSec },
       updated_at: new Date(Date.now() - 1000).toISOString(),
     };
     const mockDb: MockDbState = {
