@@ -13,12 +13,14 @@ import {
   type AiTextCompletionResponse,
 } from "./providerAdapter";
 import type { BuiltAiPayload } from "./security";
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger({ context: { module: "ai/routing" } });
 
 export type AiAttemptOutcome =
   | "ok"
   | "timeout"
   | "http"
-  | "network"
   | "empty"
   | "truncated"
   | "validation";
@@ -30,6 +32,7 @@ export type AiErrorCode =
   | "AI_NOT_CONFIGURED";
 
 export interface AiAttemptInfo {
+  requestId?: string;
   model: string;
   attempt: number;
   repair: boolean;
@@ -62,6 +65,7 @@ export interface RouteCompletionOptions {
   adapter: AiTextCompletionProviderAdapter;
   payload: BuiltAiPayload;
   apiKey?: string;
+  requestId?: string;
   validate: (content: string) => RoutingValidation;
   /** Shared deadline for every attempt together. */
   totalMs?: number;
@@ -140,6 +144,27 @@ export async function routeCompletion(
   const started = Date.now();
   const deadline = started + totalMs;
 
+  const reqId = opts.requestId || "unknown";
+  const emitAttempt = (info: AiAttemptInfo) => {
+    const tokens =
+      info.usage?.total_tokens ??
+      (((info.usage?.prompt_tokens ?? 0) + (info.usage?.completion_tokens ?? 0)) || 0);
+    const finishReason = info.finishReason ?? null;
+    const structuredLog: Record<string, any> = {
+      requestId: reqId,
+      model: info.model,
+      latency: info.latencyMs,
+      finish_reason: finishReason,
+      tokens,
+      outcome: info.outcome,
+    };
+    if (info.validationError) {
+      structuredLog.validation_error = redactValidatorError(info.validationError);
+    }
+    log.info("[AI Attempt]", structuredLog);
+    onAttempt?.({ ...info, requestId: reqId });
+  };
+
   const models = [payload.model];
   if (payload.fallbackModel && payload.fallbackModel !== payload.model) {
     models.push(payload.fallbackModel);
@@ -183,8 +208,8 @@ export async function routeCompletion(
           { signal: controller.signal, apiKey }
         );
       } catch (err) {
-        const f = classifyThrown(err, controller.signal.aborted || opts.signal?.aborted);
-        onAttempt?.({
+        const f = classifyThrown(err, Boolean(controller.signal.aborted || opts.signal?.aborted));
+        emitAttempt({
           model,
           attempt: attemptNo,
           repair: repairing,
@@ -218,24 +243,24 @@ export async function routeCompletion(
       const base = { model, attempt: attemptNo, repair: repairing, latencyMs, finishReason, usage, contentLength: content.length };
 
       if (!content.trim()) {
-        onAttempt?.({ ...base, outcome: "empty" });
+        emitAttempt({ ...base, outcome: "empty" });
         last = { kind: "busy", message: "AI service returned an empty generation." };
         break; // next model
       }
       if (finishReason === "length") {
-        onAttempt?.({ ...base, outcome: "truncated" });
+        emitAttempt({ ...base, outcome: "truncated" });
         last = { kind: "busy", message: "AI service response was truncated. Please try again." };
         break; // next model
       }
 
       const v = validate(content);
       if (v.ok) {
-        onAttempt?.({ ...base, outcome: "ok" });
+        emitAttempt({ ...base, outcome: "ok" });
         return { data, content, model, usedFallback: isFallback };
       }
 
       const reason = redactValidatorError(v.error);
-      onAttempt?.({ ...base, outcome: "validation", validationError: reason });
+      emitAttempt({ ...base, outcome: "validation", validationError: reason });
       last = { kind: "validation", message: v.error };
       if (repairUsed) break;
       repairUsed = true;

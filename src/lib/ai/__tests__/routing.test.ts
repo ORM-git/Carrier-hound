@@ -133,4 +133,46 @@ describe("routeCompletion", () => {
   it("redacts echoed resume text from validator errors", () => {
     expect(redactValidatorError("numbers changed. Source: a b Generated: c")).toBe("numbers changed.");
   });
+
+  it("emits structured per-attempt logs with required fields and privacy redaction", async () => {
+    const attempts: any[] = [];
+    const { adapter } = adapterFrom([
+      () => ({ choices: [{ message: { content: '{"bad":1}' }, finish_reason: "stop" }], usage: { total_tokens: 42 } }),
+      () => ({ choices: [{ message: { content: '{"good":1}' }, finish_reason: "stop" }], usage: { total_tokens: 55 } }),
+    ]);
+
+    let count = 0;
+    await routeCompletion({
+      adapter,
+      payload,
+      requestId: "req-123",
+      onAttempt: (info) => attempts.push(info),
+      validate: () => {
+        count++;
+        if (count === 1) {
+          return { ok: false, error: "Count mismatch. Source: Jane Doe resume experience facts" };
+        }
+        return { ok: true };
+      },
+    });
+
+    expect(attempts).toHaveLength(2);
+    expect(attempts[0]).toMatchObject({
+      requestId: "req-123",
+      model: "primary",
+      outcome: "validation",
+      repair: false,
+    });
+    expect(attempts[0].validationError).toBe("Count mismatch.");
+    expect(attempts[0].validationError).not.toContain("Jane Doe");
+    expect((attempts[0] as any).content).toBeUndefined();
+    expect((attempts[0] as any).messages).toBeUndefined();
+
+    expect(attempts[1]).toMatchObject({
+      requestId: "req-123",
+      model: "primary",
+      outcome: "ok",
+      repair: true,
+    });
+  });
 });

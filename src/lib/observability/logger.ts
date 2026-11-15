@@ -25,7 +25,7 @@ export type LogContext = Record<string, unknown>;
 
 /** Keys whose values must never be logged (case-insensitive). */
 const REDACTED_KEY_PATTERN =
-  /pass(word|wd)?|secret|token|authorization|cookie|api[-_]?key|session|cvv|cvc|otp|private/i;
+  /pass(word|wd)?|secret|(?<!prompt_|completion_|total_)token(?!s\b)|authorization|cookie|api[-_]?key|session|cvv|cvc|otp|private/i;
 
 const REDACTED = "[REDACTED]";
 

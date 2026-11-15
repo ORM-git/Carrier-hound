@@ -165,6 +165,7 @@ export interface AiServiceDeps {
    * is returned.
    */
   upstreamStream?: boolean;
+  requestId?: string;
 }
 
 export {
@@ -351,6 +352,10 @@ export async function executeAiCore(
   ipRateLimitPrefix: string = "ai:ip:"
 ): Promise<AiCoreResponse> {
   const activeDeps: AiServiceDeps = deps;
+  const executionRequestId =
+    activeDeps.requestId ||
+    (typeof body === "object" && (body?.requestId || body?.request_id)) ||
+    `req_${crypto.randomUUID()}`;
   let setConsumed = false;
   let aiQuotaConsumed = false;
   let confirmedSupabaseAdmin: any = null;
@@ -1126,6 +1131,7 @@ export async function executeAiCore(
               adapter,
               payload,
               apiKey: groqApiKey,
+              requestId: executionRequestId,
               totalMs: groqTimeoutMs,
               primaryMs: Math.min(DEFAULT_PRIMARY_MS, groqTimeoutMs),
               fallbackMs: Math.min(DEFAULT_FALLBACK_MS, groqTimeoutMs),
@@ -1327,7 +1333,8 @@ export async function handleAiRequest(req: Request, deps: AiServiceDeps = {}): P
     const clientIp = getClientIpFromRequest(req);
     const authHeader = req.headers.get("authorization") || req.headers.get("Authorization");
     const body = await req.json().catch(() => ({}));
-    const res = await executeAiCore(clientIp, authHeader, body, deps, "ai:ip:");
+    const reqId = req.headers.get("x-request-id") || req.headers.get("x-nf-request-id") || undefined;
+    const res = await executeAiCore(clientIp, authHeader, body, { ...deps, ...(reqId ? { requestId: reqId } : {}) }, "ai:ip:");
     if (res.statusCode >= 500) {
       log.error("[AI Service] 5xx response returned", {
         statusCode: res.statusCode,
@@ -1390,7 +1397,8 @@ export async function handleNetlifyAiRequest(
     };
   }
 
-  const res = await executeAiCore(clientIp, authHeader, body, deps, "ip:");
+  const reqId = event.headers?.["x-nf-request-id"] || event.headers?.["x-request-id"] || undefined;
+  const res = await executeAiCore(clientIp, authHeader, body, { ...deps, ...(reqId ? { requestId: reqId } : {}) }, "ip:");
   if (res.statusCode >= 500) {
     log.error("[AI Service] 5xx response returned (Netlify)", {
       statusCode: res.statusCode,
