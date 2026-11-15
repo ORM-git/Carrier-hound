@@ -177,6 +177,13 @@ paths:
       description: Payments are disabled pre-launch (owner decision).
       responses:
         "200": { description: Order created }
+  /api/billing/razorpay/subscription:
+    post:
+      tags: [billing]
+      summary: Create a Razorpay subscription
+      description: Creates a recurring subscription via Razorpay /v1/subscriptions.
+      responses:
+        "200": { description: Subscription created }
   /api/billing/razorpay/verify:
     post:
       tags: [billing]
