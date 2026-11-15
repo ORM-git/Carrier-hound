@@ -14,7 +14,7 @@ the uncovered-table count rises above the baseline. New migrations
 that create tables must extend `schema.sql` (preferred) or this file
 in the same PR.
 
-Measured 7 Nov 2026: 42 tables created by migrations, 0 duplicated in schema.sql, 42 covered only by migrations. Updated 7 Nov 2026 for `20261107b_search_alert_dispatches.sql` (not applied): 43 tables, 43 covered only by migrations. Updated again for `20261107c_outbox_queue.sql` (not applied): 44 tables, 44 covered only by migrations. Updated for `20261107f_search_alert_send_windows.sql` (not applied): 45 tables, 45 covered only by migrations.
+Measured 7 Nov 2026: 42 tables created by migrations, 0 duplicated in schema.sql, 42 covered only by migrations. Updated 7 Nov 2026 for `20261107b_search_alert_dispatches.sql` (not applied): 43 tables, 43 covered only by migrations. Updated again for `20261107c_outbox_queue.sql` (not applied): 44 tables, 44 covered only by migrations. Updated for `20261107f_search_alert_send_windows.sql` (not applied): 45 tables, 45 covered only by migrations. Updated 15 Nov 2026 for `20261115b_autorenew_mandate_safety.sql` (applied): 46 tables, 46 covered only by migrations.
 
 | Table | Owning migration |
 | --- | --- |
@@ -58,6 +58,7 @@ Measured 7 Nov 2026: 42 tables created by migrations, 0 duplicated in schema.sql
 | `search_alert_dispatches` | `20261107b_search_alert_dispatches.sql` |
 | `search_alert_windows` | `20261107f_search_alert_send_windows.sql` |
 | `subscriptions` | `20261008_phase3_subscriptions_and_billing.sql` |
+| `subscription_reconciliations` | `20261115b_autorenew_mandate_safety.sql` |
 | `tailored_resumes` | `20261010_tailored_resumes.sql` |
 | `user_addon_credits` | `20261103_plans_addons_usage.sql` |
 | `user_preferences` | `20261008_phase4_user_preferences_and_onboarding.sql` |
@@ -66,7 +67,7 @@ Measured 7 Nov 2026: 42 tables created by migrations, 0 duplicated in schema.sql
 
 <!-- guard-entries: one per line, parsed by schemaDriftBaseline.test.ts -->
 ```guard
-baseline-count: 45
+baseline-count: 46
 table: addon_packs | 20261103_plans_addons_usage.sql
 table: admin_audit_log | 20261020_admin_audit_log.sql
 table: ai_concurrency_leases | 20261104a_global_ai_budget.sql
@@ -107,6 +108,7 @@ table: schema_migrations | 20261105c_database_safety.sql
 table: search_alert_dispatches | 20261107b_search_alert_dispatches.sql
 table: search_alert_windows | 20261107f_search_alert_send_windows.sql
 table: subscriptions | 20261008_phase3_subscriptions_and_billing.sql
+table: subscription_reconciliations | 20261115b_autorenew_mandate_safety.sql
 table: tailored_resumes | 20261010_tailored_resumes.sql
 table: user_addon_credits | 20261103_plans_addons_usage.sql
 table: user_preferences | 20261008_phase4_user_preferences_and_onboarding.sql

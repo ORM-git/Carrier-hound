@@ -79,7 +79,7 @@ describe("PostgreSQL Migration & Actual SQL Mandate Safety (Requirement 7 & PR #
         status text NOT NULL DEFAULT 'created' CHECK (status IN ('created','paid','failed','expired')),
         created_at timestamptz NOT NULL DEFAULT now(),
         paid_at timestamptz,
-        mode text NOT NULL DEFAULT 'live',
+        mode text,
         metadata jsonb NOT NULL DEFAULT '{}'::jsonb
       );
 
@@ -348,13 +348,13 @@ describe("PostgreSQL Migration & Actual SQL Mandate Safety (Requirement 7 & PR #
     expect(subCheck.rows[0].metadata.provider_current_end).toBe(providerEnd);
   });
 
-  it("Reviewer 8: scopes constraint check, normalizes mode before index, and enforces unique index under concurrent sessions", async () => {
+  it("Reviewer 7 & 8: enforces valid-mode NOT NULL constraint, rejects literal NULL mode insert, and enforces unique index under concurrent sessions", async () => {
     const testUserId = "e1eebc99-9c0b-4ef8-bb6d-6bb9bd380e55";
 
-    // Seed order with NULL mode before migration
+    // Seed order with literal NULL mode before migration
     await pg.exec(`
       INSERT INTO public.payment_orders (user_id, provider, provider_order_id, plan_code, amount_paise, status, mode)
-      VALUES ('${testUserId}', 'razorpay', 'sub_legacy_null_mode', 'weekly', 69200, 'created', 'live');
+      VALUES ('${testUserId}', 'razorpay', 'sub_legacy_null_mode', 'weekly', 69200, 'created', NULL);
     `);
 
     // Apply migration
@@ -364,11 +364,37 @@ describe("PostgreSQL Migration & Actual SQL Mandate Safety (Requirement 7 & PR #
     );
     await pg.exec(migrationSql);
 
-    // Verify mode is normalized to live
+    // Verify legacy NULL mode was normalized to 'live'
     const modeCheck = await pg.query<any>(`
       SELECT mode FROM public.payment_orders WHERE provider_order_id = 'sub_legacy_null_mode';
     `);
     expect(modeCheck.rows[0].mode).toBe("live");
+
+    // Reviewer 7: Make the NULL-mode test really insert NULL after migration and assert rejection
+    let nullInsertErr: any = null;
+    try {
+      await pg.exec(`
+        INSERT INTO public.payment_orders (user_id, provider, provider_order_id, plan_code, amount_paise, status, mode, recurring_kind)
+        VALUES ('${testUserId}', 'razorpay', 'sub_null_mode_rejected', 'monthly', 149900, 'reserved', NULL, 'recurring');
+      `);
+    } catch (err: any) {
+      nullInsertErr = err;
+    }
+    expect(nullInsertErr).not.toBeNull();
+    expect(String(nullInsertErr)).toMatch(/null value in column "mode".*violates not-null constraint/i);
+
+    // Also assert invalid mode value rejection
+    let invalidModeErr: any = null;
+    try {
+      await pg.exec(`
+        INSERT INTO public.payment_orders (user_id, provider, provider_order_id, plan_code, amount_paise, status, mode, recurring_kind)
+        VALUES ('${testUserId}', 'razorpay', 'sub_invalid_mode_rejected', 'monthly', 149900, 'reserved', 'staging', 'recurring');
+      `);
+    } catch (err: any) {
+      invalidModeErr = err;
+    }
+    expect(invalidModeErr).not.toBeNull();
+    expect(String(invalidModeErr)).toMatch(/check_payment_orders_mode_valid|violates check constraint/i);
 
     // Mark previous order expired so user can start fresh reservation
     await pg.exec(`
@@ -394,6 +420,148 @@ describe("PostgreSQL Migration & Actual SQL Mandate Safety (Requirement 7 & PR #
     }
     expect(session2Error).not.toBeNull();
     expect(String(session2Error)).toContain("duplicate key value violates unique constraint");
+  });
+
+  it("Item 4: equal-timestamp paid event must NOT reset cancel_at_period_end to false", async () => {
+    const testUserId = "c1eebc99-9c0b-4ef8-bb6d-6bb9bd380c44";
+    const subId = "sub_equal_watermark_001";
+    const payId = "pay_equal_watermark_001";
+    const watermarkMs = 1710000000000;
+
+    // Apply migration
+    const migrationSql = fs.readFileSync(
+      path.resolve(__dirname, "../../../supabase/migrations/20261115b_autorenew_mandate_safety.sql"),
+      "utf8"
+    );
+    await pg.exec(migrationSql);
+
+    // Seed subscription with cancel_at_period_end = true and watermark
+    await pg.exec(`
+      INSERT INTO public.subscriptions (
+        user_id, provider, subscription_id, plan_id, status,
+        current_period_start, current_period_end, cancel_at_period_end, metadata
+      ) VALUES (
+        '${testUserId}',
+        'razorpay',
+        '${subId}',
+        'monthly',
+        'active',
+        now() - interval '10 days',
+        now() + interval '20 days',
+        true,
+        '{"last_event_time": ${watermarkMs}}'::jsonb
+      );
+    `);
+
+    // Seed created order
+    await pg.exec(`
+      INSERT INTO public.payment_orders (
+        user_id, provider, provider_order_id, plan_code, amount_paise, status, mode, recurring_kind
+      ) VALUES (
+        '${testUserId}',
+        'razorpay',
+        '${subId}',
+        'monthly',
+        149900,
+        'created',
+        'live',
+        'recurring'
+      );
+    `);
+
+    // Fulfil renewal with EXACT SAME watermark timestamp
+    const fulfilRes = await pg.query<any>(`
+      SELECT public.fulfil_subscription_renewal(
+        '${subId}',
+        '${payId}',
+        'live',
+        149900,
+        ${watermarkMs}
+      ) as result;
+    `);
+
+    const resJson = fulfilRes.rows[0].result;
+    expect(resJson.success).toBe(true);
+
+    // Assert cancel_at_period_end remains TRUE!
+    const subCheck = await pg.query<any>(`
+      SELECT cancel_at_period_end, metadata FROM public.subscriptions WHERE subscription_id = '${subId}';
+    `);
+    expect(subCheck.rows[0].cancel_at_period_end).toBe(true);
+    expect(subCheck.rows[0].metadata.processed_payments).toContain(payId);
+  });
+
+  it("Item 8: entitlement duration guarantees fixed 30 days floor against calendar months (e.g. Feb 28 days)", async () => {
+    const testUserId = "b1eebc99-9c0b-4ef8-bb6d-6bb9bd380b33";
+    const subId = "sub_calendar_feb_001";
+    const payId = "pay_calendar_feb_001";
+
+    // Apply migration
+    const migrationSql = fs.readFileSync(
+      path.resolve(__dirname, "../../../supabase/migrations/20261115b_autorenew_mandate_safety.sql"),
+      "utf8"
+    );
+    await pg.exec(migrationSql);
+
+    // Set base time as Feb 1, 2026 00:00:00 UTC (a 28-day month)
+    const feb1 = "2026-02-01T00:00:00.000Z";
+    // Calendar month end would be March 1 (28 days)
+    const providerFebEnd = "2026-03-01T00:00:00.000Z";
+
+    await pg.exec(`
+      INSERT INTO public.subscriptions (
+        user_id, provider, subscription_id, plan_id, status,
+        current_period_start, current_period_end, cancel_at_period_end, metadata
+      ) VALUES (
+        '${testUserId}',
+        'razorpay',
+        '${subId}',
+        'monthly',
+        'active',
+        '${feb1}'::timestamptz,
+        '${feb1}'::timestamptz,
+        false,
+        '{}'::jsonb
+      );
+    `);
+
+    await pg.exec(`
+      INSERT INTO public.payment_orders (
+        user_id, provider, provider_order_id, plan_code, amount_paise, status, mode, recurring_kind, metadata
+      ) VALUES (
+        '${testUserId}',
+        'razorpay',
+        '${subId}',
+        'monthly',
+        149900,
+        'created',
+        'live',
+        'recurring',
+        '{"provider_current_start": "${feb1}", "provider_current_end": "${providerFebEnd}"}'::jsonb
+      );
+    `);
+
+    const fulfilRes = await pg.query<any>(`
+      SELECT public.fulfil_subscription_renewal(
+        '${subId}',
+        '${payId}',
+        'live',
+        149900,
+        1706745600
+      ) as result;
+    `);
+
+    expect(fulfilRes.rows[0].result.success).toBe(true);
+
+    const subCheck = await pg.query<any>(`
+      SELECT current_period_end, metadata FROM public.subscriptions WHERE subscription_id = '${subId}';
+    `);
+
+    // The subscription period must be at least 30 days from now (or base), extending past the 28-day calendar month
+    const endMs = new Date(subCheck.rows[0].current_period_end).getTime();
+    const nowMs = Date.now();
+    // Guarantee at least 30 days (minus 5 seconds execution delta)
+    expect(endMs - nowMs).toBeGreaterThanOrEqual((30 * 86400 - 5) * 1000);
   });
 
   it("Reviewer 5: record_subscription_reconciliation persists durable reconciliation record", async () => {

@@ -1470,5 +1470,259 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
       expect(json.code).toBe("MISSING_PROVIDER_PERIOD");
       expect(cancelCalled).toBe(true);
     });
+
+    it("Item 6: fails closed with 500 METADATA_WRITE_FAILED and marks order unknown if metadata write fails", async () => {
+      const mockAdmin = createMockSupabaseAdmin();
+      mockAdmin.rpc = vi.fn((fnName: string) => {
+        if (fnName === "merge_subscription_metadata") {
+          return Promise.resolve({ data: null, error: { message: "Database lock timeout" } });
+        }
+        return Promise.resolve({ data: true, error: null });
+      });
+
+      // Existing subscription exists so merge_subscription_metadata is called
+      mockAdmin.from = vi.fn((table: string) => {
+        if (table === "subscriptions") {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            order: vi.fn().mockReturnThis(),
+            limit: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: {
+                id: "sub_exist_123",
+                status: "past_due",
+                current_period_end: new Date(Date.now() - 86400000).toISOString(),
+              },
+              error: null,
+            }),
+          };
+        }
+        if (table === "payment_orders") {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            in: vi.fn().mockReturnThis(),
+            gte: vi.fn().mockReturnThis(),
+            lt: vi.fn().mockReturnThis(),
+            neq: vi.fn().mockReturnThis(),
+            like: vi.fn().mockReturnThis(),
+            order: vi.fn().mockReturnThis(),
+            limit: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+            insert: vi.fn().mockResolvedValue({ data: null, error: null }),
+            update: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnThis(),
+              gte: vi.fn().mockReturnThis(),
+              select: vi.fn().mockResolvedValue({
+                data: [{ id: "order_new", provider_order_id: "sub_rzp_meta_fail_123", status: "created" }],
+                error: null,
+              }),
+            }),
+          };
+        }
+        return {};
+      });
+
+      const mockFetch = vi.fn(async (url: string) => {
+        if (url.includes("/plans/")) {
+          return new Response(
+            JSON.stringify({
+              id: "plan_monthly_rzp_456",
+              period: "monthly",
+              interval: 1,
+              item: { amount: 149900, currency: "INR" },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            id: "sub_rzp_meta_fail_123",
+            plan_id: "plan_monthly_rzp_456",
+            status: "created",
+            current_start: Math.floor(Date.now() / 1000),
+            current_end: Math.floor(Date.now() / 1000) + 30 * 86400,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      });
+
+      const req = createMockRequest(
+        { planCode: "monthly" },
+        {},
+        {
+          getSupabaseAdmin: () => mockAdmin,
+          verifyUserNotBanned: async () => ({ isBlocked: false }),
+          fetchFn: mockFetch,
+          isProductionHost: false,
+        }
+      );
+
+      const res = await POST(req);
+      expect(res.status).toBe(500);
+      const json = await res.json();
+      expect(json.code).toBe("METADATA_WRITE_FAILED");
+    });
+
+    it("Item 1 & 5: unique-collision does NOT release on age alone when provider returns cancel_at_cycle_end=true", async () => {
+      const mockAdmin = createMockSupabaseAdmin();
+      mockAdmin.from = vi.fn((table: string) => {
+        if (table === "subscriptions") {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            order: vi.fn().mockReturnThis(),
+            limit: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+          };
+        }
+        if (table === "payment_orders") {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            in: vi.fn().mockReturnThis(),
+            gte: vi.fn().mockReturnThis(),
+            lt: vi.fn().mockReturnThis(),
+            neq: vi.fn().mockReturnThis(),
+            like: vi.fn().mockReturnThis(),
+            order: vi.fn().mockReturnThis(),
+            limit: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn((...args: any[]) => {
+              // Conflicting order older than lease duration
+              return Promise.resolve({
+                data: {
+                  id: "order_stale_collision",
+                  provider_order_id: "sub_rzp_collision_active",
+                  plan_code: "monthly",
+                  status: "reserved",
+                  created_at: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
+                },
+                error: null,
+              });
+            }),
+            insert: vi.fn().mockResolvedValue({
+              data: null,
+              error: { code: "23505", message: "duplicate key value violates unique constraint" },
+            }),
+            update: vi.fn().mockReturnValue({
+              eq: vi.fn().mockResolvedValue({ data: null, error: null }),
+            }),
+          };
+        }
+        return {};
+      });
+
+      const mockFetch = vi.fn(async (url: string) => {
+        if (url.includes("/plans/")) {
+          return new Response(
+            JSON.stringify({
+              id: "plan_monthly_rzp_456",
+              period: "monthly",
+              interval: 1,
+              item: { amount: 149900, currency: "INR" },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        // Provider GET returns active with cancel_at_cycle_end=1 (not stopped!)
+        return new Response(
+          JSON.stringify({
+            id: "sub_rzp_collision_active",
+            status: "active",
+            cancel_at_cycle_end: 1,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      });
+
+      const req = createMockRequest(
+        { planCode: "monthly" },
+        {},
+        {
+          getSupabaseAdmin: () => mockAdmin,
+          verifyUserNotBanned: async () => ({ isBlocked: false }),
+          fetchFn: mockFetch,
+          isProductionHost: false,
+        }
+      );
+
+      const res = await POST(req);
+      // Must NOT be released with RESERVATION_LEASE_RECOVERED; must stay protected with PENDING_SUBSCRIPTION_EXISTS
+      expect(res.status).toBe(409);
+      const json = await res.json();
+      expect(json.code).toBe("PENDING_SUBSCRIPTION_EXISTS");
+    });
+
+    it("Item 2: DELETE finds and cancels pending mandate in payment_orders with status 'unknown'", async () => {
+      const mockAdmin = createMockSupabaseAdmin();
+      let rpcMandateId: string | null = null;
+      mockAdmin.rpc = vi.fn((fnName: string, args: any) => {
+        if (fnName === "cancel_autorenew_subscription") {
+          rpcMandateId = args.p_mandate_id;
+          return Promise.resolve({ data: true, error: null });
+        }
+        return Promise.resolve({ data: true, error: null });
+      });
+
+      mockAdmin.from = vi.fn((table: string) => {
+        if (table === "subscriptions") {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+          };
+        }
+        if (table === "payment_orders") {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            in: vi.fn().mockReturnThis(),
+            like: vi.fn().mockReturnThis(),
+            order: vi.fn().mockReturnThis(),
+            limit: vi.fn().mockResolvedValue({
+              data: [
+                {
+                  id: "order_unknown_1",
+                  provider_order_id: "sub_rzp_unknown_pending",
+                  status: "unknown",
+                  mode: "test",
+                  provider: "razorpay",
+                },
+              ],
+              error: null,
+            }),
+          };
+        }
+        return {};
+      });
+
+      const mockFetch = vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            id: "sub_rzp_unknown_pending",
+            status: "cancelled",
+            cancel_at_cycle_end: 0,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        )
+      );
+
+      const req = new Request("http://localhost/api/billing/razorpay/subscription", {
+        method: "DELETE",
+        headers: { Authorization: "Bearer valid_token" },
+      });
+      (req as any).__testDeps = {
+        getSupabaseAdmin: () => mockAdmin,
+        fetchFn: mockFetch,
+        isProductionHost: false,
+      };
+
+      const res = await DELETE(req);
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.success).toBe(true);
+      expect(rpcMandateId).toBe("sub_rzp_unknown_pending");
+    });
   });
 });

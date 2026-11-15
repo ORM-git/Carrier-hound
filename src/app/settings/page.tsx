@@ -273,7 +273,6 @@ function SettingsPageInner() {
   const hasActiveMandateWithoutPro = Boolean(
     !isPro &&
     isRecurringMandate &&
-    !subscription?.cancelAtPeriodEnd &&
     subStatus !== "canceled" &&
     subStatus !== "expired" &&
     subStatus !== "none" &&

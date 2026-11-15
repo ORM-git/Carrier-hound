@@ -19,7 +19,6 @@ function evaluateSettingsBillingState(subscription: any) {
   const hasActiveMandateWithoutPro = Boolean(
     !isPro &&
     isRecurringMandate &&
-    !subscription?.cancelAtPeriodEnd &&
     subStatus !== "canceled" &&
     subStatus !== "expired" &&
     subStatus !== "none" &&
@@ -147,6 +146,66 @@ describe("Settings > Billing & Plans Mandate Visibility Guard", () => {
     expect(res.showMandateSection).toBe(true);
     expect(res.showCancelButton).toBe(true);
     expect(res.mandateStatusText).toBe("Payment past due (auto-renews)");
+  });
+
+  it("shows status line and hides cancel button for Free-plan user with past_due canceled mandate", () => {
+    const res = evaluateSettingsBillingState({
+      id: "sub_row_4_canceled",
+      provider: "razorpay",
+      subscriptionId: "sub_rzp_past_due_mandate_789",
+      status: "past_due",
+      cancelAtPeriodEnd: true,
+    });
+    expect(res.isPro).toBe(false);
+    expect(res.hasActiveMandateWithoutPro).toBe(true);
+    expect(res.showMandateSection).toBe(true);
+    expect(res.showCancelButton).toBe(false);
+    expect(res.mandateStatusText).toBe("Payment past due (auto-renew canceled)");
+  });
+
+  it("shows status line and cancel button for Free-plan user with unpaid active mandate", () => {
+    const res = evaluateSettingsBillingState({
+      id: "sub_row_unpaid",
+      provider: "razorpay",
+      subscriptionId: "sub_rzp_unpaid_mandate_321",
+      status: "unpaid",
+      cancelAtPeriodEnd: false,
+    });
+    expect(res.isPro).toBe(false);
+    expect(res.hasActiveMandateWithoutPro).toBe(true);
+    expect(res.showMandateSection).toBe(true);
+    expect(res.showCancelButton).toBe(true);
+    expect(res.mandateStatusText).toBe("Payment unpaid (auto-renews)");
+  });
+
+  it("shows status line and hides cancel button for Free-plan user with unpaid canceled mandate", () => {
+    const res = evaluateSettingsBillingState({
+      id: "sub_row_unpaid_canceled",
+      provider: "razorpay",
+      subscriptionId: "sub_rzp_unpaid_mandate_321",
+      status: "unpaid",
+      cancelAtPeriodEnd: true,
+    });
+    expect(res.isPro).toBe(false);
+    expect(res.hasActiveMandateWithoutPro).toBe(true);
+    expect(res.showMandateSection).toBe(true);
+    expect(res.showCancelButton).toBe(false);
+    expect(res.mandateStatusText).toBe("Payment unpaid (auto-renew canceled)");
+  });
+
+  it("shows status line and hides cancel button for pending-only incomplete canceled mandate", () => {
+    const res = evaluateSettingsBillingState({
+      id: "sub_row_incomplete_canceled",
+      provider: "razorpay",
+      subscriptionId: "sub_rzp_incomplete_654",
+      status: "incomplete",
+      cancelAtPeriodEnd: true,
+    });
+    expect(res.isPro).toBe(false);
+    expect(res.hasActiveMandateWithoutPro).toBe(true);
+    expect(res.showMandateSection).toBe(true);
+    expect(res.showCancelButton).toBe(false);
+    expect(res.mandateStatusText).toBe("Mandate pending confirmation (auto-renew canceled)");
   });
 
   it("preserves prepaid Pro layout with does not auto-renew and no cancel button", () => {

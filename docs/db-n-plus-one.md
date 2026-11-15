@@ -22,6 +22,9 @@ flagged cron follow-up below.
 | `src/lib/cron/dailyDigestCron.ts` | `for (let i = 0; i < emails.length; i += 100)` | Bounded: suppression pre-fetch in 100-email chunks; runs once per cron run, not per user. |
 | `src/lib/cron/dailyDigestCron.ts` | `for (const row of pendingDigestRows)` | Fallback only: per-row upserts run solely when the single bulk upsert fails, preserving per-user failure isolation. |
 | `src/lib/events/failedEvents.ts` | `for (const event of events)` | Bounded: retry-queue batch processor; the loop iterates one fetched batch of dead-letter events (batch size capped by the select limit), and per-event state transitions are individual updates by design. |
+| `src/app/api/billing/razorpay/subscription/route.ts` | `for (const st of staleOrders)` | Bounded: iterates stale candidate subscription orders for the current user (> 24h old, at most a couple per user); each mandate cancellation must be verified individually with the provider. |
+| `src/app/api/billing/razorpay/subscription/route.ts` | `for (const lease of expiredLeases)` | Bounded: iterates expired reservation leases for the current user; each mandate must be individually reconciled and cancelled at the provider before releasing. |
+| `src/lib/billing/reconcile.ts` | `for (const rec of records)` | Bounded: iterates a fetched batch of pending subscription reconciliations (batch size capped by limit); each record requires individual provider verification and compensation. |
 
 <!-- guard-entries: file | loop-header-text, parsed by nPlusOneGuard.test.ts -->
 ```guard
@@ -33,4 +36,7 @@ pattern: src/lib/account/exportHandler.ts | for (const table of ACCOUNT_EXPORT_E
 pattern: src/lib/cron/dailyDigestCron.ts | for (let i = 0; i < emails.length; i += 100)
 pattern: src/lib/cron/dailyDigestCron.ts | for (const row of pendingDigestRows)
 pattern: src/lib/events/failedEvents.ts | for (const event of events)
+pattern: src/app/api/billing/razorpay/subscription/route.ts | for (const st of staleOrders)
+pattern: src/app/api/billing/razorpay/subscription/route.ts | for (const lease of expiredLeases)
+pattern: src/lib/billing/reconcile.ts | for (const rec of records)
 ```

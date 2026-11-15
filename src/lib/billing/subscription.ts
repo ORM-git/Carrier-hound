@@ -341,6 +341,36 @@ export async function getUserSubscription(
           resolvedStatus = "canceled";
         }
 
+        // Reviewer 3: If subscription row is expired, canceled, or none, check payment_orders
+        // for an active or pending mandate order so a pending mandate is not hidden!
+        if (resolvedStatus === "canceled" || resolvedStatus === "none" || (sub.status as string) === "expired") {
+          const { data: pendingOrder } = await supabase
+            .from("payment_orders")
+            .select("id, user_id, provider, provider_order_id, plan_code, currency, amount_paise, created_at, status, metadata")
+            .eq("user_id", resolvedUserId)
+            .eq("recurring_kind", "recurring")
+            .in("status", ["reserved", "created", "unknown"])
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (pendingOrder) {
+            return {
+              id: pendingOrder.id,
+              userId: resolvedUserId,
+              provider: pendingOrder.provider || "razorpay",
+              subscriptionId: pendingOrder.provider_order_id || undefined,
+              planId: normalizePlanCode(pendingOrder.plan_code) || undefined,
+              currency: pendingOrder.currency || "INR",
+              amount: typeof pendingOrder.amount_paise === "number" ? Math.round(pendingOrder.amount_paise / 100) : undefined,
+              status: "incomplete" as SubscriptionStatus,
+              currentPeriodStart: pendingOrder.created_at,
+              cancelAtPeriodEnd: false,
+              metadata: pendingOrder.metadata || { pending_subscription_id: pendingOrder.provider_order_id },
+            };
+          }
+        }
+
         const normalizedPlan = normalizePlanCode(sub.plan_id);
 
         // Convert subscriptions.amount explicitly from integer paise to standard units.

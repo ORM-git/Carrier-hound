@@ -9927,8 +9927,26 @@ WHERE provider_order_id LIKE 'sub_%';
 -- Normalize or reject NULL/unknown mode before creating the unique index
 UPDATE public.payment_orders
 SET mode = 'live'
-WHERE (mode IS NULL OR mode NOT IN ('test', 'live'))
-  AND recurring_kind = 'recurring';
+WHERE mode IS NULL OR mode NOT IN ('test', 'live');
+
+-- Reviewer 7: add a NOT NULL / valid-mode constraint for mode
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'check_payment_orders_mode_valid'
+      AND conrelid = 'public.payment_orders'::regclass
+  ) THEN
+    ALTER TABLE public.payment_orders DROP CONSTRAINT check_payment_orders_mode_valid;
+  END IF;
+END $$;
+
+ALTER TABLE public.payment_orders
+  ADD CONSTRAINT check_payment_orders_mode_valid
+  CHECK (mode IN ('test', 'live'));
+
+ALTER TABLE public.payment_orders
+  ALTER COLUMN mode SET NOT NULL;
 
 -- 3. Ensure payment_orders.status accepts 'reserved', 'created', 'unknown', 'paid', 'failed', 'cancelled', 'expired'
 -- Scoped strictly to the target relation public.payment_orders
@@ -10384,7 +10402,8 @@ BEGIN
   IF v_stored_ms IS NOT NULL THEN
     IF v_incoming_ms IS NULL THEN
       v_is_older_payment := true;
-    ELSIF v_incoming_ms < v_stored_ms THEN
+    ELSIF v_incoming_ms <= v_stored_ms THEN
+      -- Item 4: an equal-timestamp (or older) paid event must NOT reset cancel_at_period_end to false
       v_is_older_payment := true;
     END IF;
   END IF;
@@ -10448,6 +10467,23 @@ BEGIN
   v_new_end := v_base_time + (v_duration * interval '1 day');
   IF v_has_sub AND v_sub.current_period_end IS NOT NULL AND v_new_end < v_sub.current_period_end THEN
     v_new_end := v_sub.current_period_end;
+  END IF;
+
+  -- Entitlement access boundary reconciliation (Reviewer 8):
+  -- Calendar months vary (February has 28/29 days, April has 30, March has 31).
+  -- Our billing architecture enforces a deterministic 7/30/90-day floor rule:
+  -- users paying for a monthly cycle are guaranteed at least 30 full days of paid access
+  -- regardless of shorter calendar months (e.g. Feb 28 days -> user receives 30 days).
+  -- If the provider's current_end exceeds this 30-day floor (e.g. 31-day calendar month or leap period),
+  -- we honor the later provider boundary so the customer always gets the maximum access boundary.
+  IF (v_order.metadata ? 'provider_current_end') THEN
+    IF (v_order.metadata->>'provider_current_end')::timestamptz > v_new_end THEN
+      v_new_end := (v_order.metadata->>'provider_current_end')::timestamptz;
+    END IF;
+  ELSIF (v_sub.metadata ? 'provider_current_end') THEN
+    IF (v_sub.metadata->>'provider_current_end')::timestamptz > v_new_end THEN
+      v_new_end := (v_sub.metadata->>'provider_current_end')::timestamptz;
+    END IF;
   END IF;
 
   -- Consume provider period bounds from order metadata (Reviewer 7)
@@ -10626,6 +10662,8 @@ COMMIT;
 
 -- ============================================================================
 -- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
+--   ALTER TABLE public.payment_orders DROP CONSTRAINT IF EXISTS check_payment_orders_mode_valid;
+--   ALTER TABLE public.payment_orders ALTER COLUMN mode DROP NOT NULL;
 --   DROP FUNCTION IF EXISTS public.cancel_autorenew_subscription(uuid, text, jsonb);
 --   DROP FUNCTION IF EXISTS public.record_subscription_reconciliation(uuid, text, text, text, text, text, jsonb);
 --   DROP FUNCTION IF EXISTS public.merge_subscription_metadata(uuid, jsonb);
