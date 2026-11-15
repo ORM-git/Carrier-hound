@@ -611,7 +611,7 @@ function OnboardingPageInner() {
                 What role are you targeting?
               </h2>
               <p className="text-xs sm:text-sm text-slate-500">
-                Select your target titles. We match you with roles directly from career pages before aggregators index them.
+                Select your target titles. We match you with verified roles.
               </p>
             </div>
 
@@ -907,7 +907,7 @@ function OnboardingPageInner() {
               />
               <label htmlFor="daily-digest" className="text-xs text-slate-700 cursor-pointer select-none">
                 <span className="font-bold text-slate-900 block">Enable Automated Daily Job Matching Digest</span>
-                Scan connected company career portals daily and queue verified matching positions into your tracker.
+                Queue verified matching positions into your tracker.
               </label>
             </div>
 

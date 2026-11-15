@@ -36,7 +36,7 @@ export default function TermsPage() {
 
         <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">1. Services Provided</h2>
         <p className="mb-2">
-          CareerMonke is a job discovery and career tools platform. Job listings on CareerMonke are collected, normalized, and kept current by our proprietary ingestion tools, which read publicly available company career pages and Applicant Tracking System (ATS) feeds. On top of this listing database we provide:
+          CareerMonke is a job discovery and career tools platform. Job listings on CareerMonke are collected, organized, and kept current from publicly available company career pages and official job postings. On top of this listing database we provide:
         </p>
         <ul className="list-disc pl-5 space-y-2 mb-2">
           <li>
@@ -62,7 +62,7 @@ export default function TermsPage() {
             To use our services, you must create a member account. You agree to provide accurate, current, and complete information during registration.
           </li>
           <li>
-            You are responsible for safeguarding your account login credentials. Sharing accounts, premium access keys, or scraping data for redistribution is strictly prohibited and will result in immediate termination without a refund.
+            You are responsible for safeguarding your account login credentials. Sharing accounts, premium access keys, or extracting data for redistribution is strictly prohibited and will result in immediate termination without a refund.
           </li>
         </ul>
 
@@ -160,7 +160,7 @@ export default function TermsPage() {
             All software, content, designs, text, and AI model architectures on CareerMonke are the exclusive intellectual property of Olive Ridley Media Private Limited.
           </li>
           <li>
-            You are granted a limited, non-transferable, revocable license to access the platform for individual, personal career discovery. You may not use automated scripts, bots, or scrapers to extract our job feeds or abuse our AI token allocations.
+            You are granted a limited, non-transferable, revocable license to access the platform for individual, personal career discovery. You may not use automated scripts, bots, or extraction tools to extract our job feeds or abuse our AI token allocations.
           </li>
         </ul>
 

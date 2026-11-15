@@ -38,7 +38,7 @@ export default function ProUpgradeScreen({
     {
       icon: Building2,
       title: "Full Job Details",
-      desc: "Verified employer names, salaries, remote scope, and direct ATS apply links.",
+      desc: "Verified employer names, salaries, remote scope, and direct apply links.",
     },
     {
       icon: TrendingUp,

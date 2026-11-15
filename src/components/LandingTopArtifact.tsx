@@ -686,7 +686,7 @@ export default function LandingTopArtifact() {
     <div className="wrap hero-in">
       <p className="live-pill"><span className="pulse" aria-hidden="true"></span><span><span data-stat="jobsToday">1,240</span> new jobs found today</span></p>
       <h1><span className="kicker">Jobs LinkedIn doesn&apos;t show you</span><span className="big">Get there first.</span></h1>
-      <p className="lede">We pull jobs straight from company career pages, match them to you, and tailor your resume in one tap.</p>
+      <p className="lede">We bring you verified jobs, match them to you, and tailor your resume in one tap.</p>
       <div className="hero-cta">
         <Link className="btn btn-ink" href="/signup">Sign up free</Link>
         <a className="try-link" href="#try">or try the demo first<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6"></path></svg></a>

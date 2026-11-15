@@ -103,7 +103,7 @@ async function main() {
     "1. Services Provided",
     "2. Eligibility and User Accounts",
     "3. Plans, Pricing, and Add-ons",
-    "proprietary ingestion tools",
+    "company career pages",
     "Current prices are shown on the",
     "Pricing page",
     "plans are prepaid for a fixed period and do not renew automatically",

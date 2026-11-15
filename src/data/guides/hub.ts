@@ -44,7 +44,7 @@ export const HUB_DATA = {
     {
       id: "trail-2",
       title: "Evaluate Subscription Boards",
-      description: "A comprehensive breakdown comparing traditional paid databases against direct ATS scrapers.",
+      description: "A comprehensive breakdown comparing traditional paid databases against direct employer career feeds.",
       href: "/remote/flexjobs-alternative-review",
     },
     {
@@ -57,7 +57,7 @@ export const HUB_DATA = {
   fieldNote: {
     badge: "FIELD NOTE #42",
     heading: "The 72-Hour Application Window Hypothesis",
-    text: "Empirical telemetry across 45,000 engineering requisitions indicates that candidates applying within 72 hours of first ATS commit receive a 4.2x higher interview invitation rate compared to later cycles.",
+    text: "Empirical telemetry across 45,000 engineering requisitions indicates that candidates applying within 72 hours of initial posting receive a 4.2x higher interview invitation rate compared to later cycles.",
     buttonText: "Read telemetry report",
     buttonHref: "/remote/remote-job-search-secrets",
     secondaryLinkText: "View live data feed",
@@ -73,8 +73,8 @@ export const HUB_DATA = {
     },
     {
       id: "pg-2",
-      title: "Independent Review: Paid Membership Boards vs. Direct Automated Tracking",
-      description: "An unbiased analysis comparing traditional closed job boards against real-time career page scrapers.",
+      title: "Independent Review: Paid Membership Boards vs. Direct Job Discovery",
+      description: "An unbiased analysis comparing traditional closed job boards against verified direct employer listings.",
       href: "/remote/flexjobs-alternative-review",
       tag: "ANALYSIS",
     },

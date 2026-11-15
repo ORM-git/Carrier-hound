@@ -231,7 +231,7 @@ export default function FilterSlideOver({
               onChange={(e) => onChangeDate(e.target.value)}
               className="w-full text-sm px-3.5 py-2.5 min-h-[44px] bg-white border border-gray-200 rounded-lg text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-600 cursor-pointer"
             >
-              <option value="all">Anytime (Live ATS feed)</option>
+              <option value="all">Anytime (Live feed)</option>
               <option value="24h">Past 24 hours</option>
               <option value="7d">Past 7 days</option>
               <option value="30d">Past 30 days</option>

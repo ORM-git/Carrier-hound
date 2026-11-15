@@ -527,8 +527,8 @@ function SettingsPageInner() {
                   <p className="text-xs text-slate-500">
                     {isPro
                       ? formattedPlanText
-                        ? `${formattedPlanText}. Full direct ATS apply unlocked.`
-                        : "CareerMonke Pro Plan. Full direct ATS apply unlocked."
+                        ? `${formattedPlanText}. Full direct apply unlocked.`
+                        : "CareerMonke Pro Plan. Full direct apply unlocked."
                       : "Standard title browsing, 5 tracker slots, 1 ATS resume export."}
                   </p>
                 </div>

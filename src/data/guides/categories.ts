@@ -33,19 +33,19 @@ export const CATEGORY_LANDINGS: Record<string, CategoryLandingData> = {
     name: "DevOps & Cloud Infrastructure",
     eyebrow: "FRESH INFRASTRUCTURE ROLES",
     title: "Unindexed DevOps & Cloud Platform Engineering Positions",
-    lede: "Discover direct ATS engineering requisitions before they are syndicated to public job aggregators. Filter verified remote infrastructure roles by salary band and tech stack.",
+    lede: "Discover direct engineering requisitions before they are syndicated to public job aggregators. Filter verified remote infrastructure roles by salary band and tech stack.",
     proofStrip: {
       heading: "Verified Employer Feeds Only",
-      subheading: "Crawled directly from employer ATS endpoints every 15 minutes.",
+      subheading: "Verified, active openings.",
       metrics: [
         { label: "Active Postings", value: "Verified Active" },
         { label: "Median Compensation", value: "$168,000" },
-        { label: "Direct ATS Ingestion", value: "100%" },
+        { label: "Direct Company Listings", value: "100%" },
         { label: "Ghost Rate", value: "< 0.4%" },
       ],
     },
     openingsCount: "Verified Active Infrastructure Roles",
-    openingsDescription: "The listings below are monitored live. Positions are automatically retired the moment an employer closes their internal requisition.",
+    openingsDescription: "The listings below are verified and kept up to date.",
     titleAliases: [
       "Site Reliability Engineer (SRE)",
       "Platform Engineer",
@@ -62,7 +62,7 @@ export const CATEGORY_LANDINGS: Record<string, CategoryLandingData> = {
     faqs: [
       {
         question: "How do I apply directly to the employer?",
-        answer: "Clicking 'Sign in to view' unlocks the raw employer ATS link (Greenhouse, Lever, Ashby, or Workday). You submit your application directly on the employer's official subdomain, bypassing intermediary aggregators.",
+        answer: "Clicking 'Sign in to view' unlocks the direct employer application link. You submit your application directly on the employer's official subdomain, bypassing intermediary aggregators.",
       },
       {
         question: "Are these infrastructure roles open to international applicants?",
@@ -70,7 +70,7 @@ export const CATEGORY_LANDINGS: Record<string, CategoryLandingData> = {
       },
       {
         question: "How quickly are filled roles removed from the feed?",
-        answer: "Our automated health check verifies ATS status codes continuously throughout the day. When a job is closed on the host system, it is removed from our live feed within minutes.",
+        answer: "Closed listings are removed from active results.",
       },
     ],
     relatedGuides: [
@@ -93,7 +93,7 @@ export const CATEGORY_LANDINGS: Record<string, CategoryLandingData> = {
     title: "Remote Product Design & Design Systems Opportunities",
     lede: "Skip crowded portfolio queues on public boards. Access unindexed Product Designer, Design Technologist, and UX Research openings directly from hiring teams.",
     proofStrip: {
-      heading: "Direct Design Studio Ingestion",
+      heading: "Direct Design Studio Listings",
       subheading: "Vetted digital product studios and high-growth venture design teams.",
       metrics: [
         { label: "Active Postings", value: "Verified Active" },
@@ -188,12 +188,12 @@ export const CATEGORY_LANDINGS: Record<string, CategoryLandingData> = {
     lede: "Direct company requisitions for Snowflake, dbt, Databricks, Apache Spark, and modern analytics platform architects at premier distributed organizations.",
     proofStrip: {
       heading: "Clean Data Pipeline Sources",
-      subheading: "Continuous ATS tracking across data-intensive tech enterprises.",
+      subheading: "Continuous listing verification across data-intensive tech enterprises.",
       metrics: [
         { label: "Active Postings", value: "Verified Active" },
         { label: "Median Compensation", value: "$162,000" },
         { label: "Modern Data Stack", value: "94%" },
-        { label: "Direct Ingestion", value: "100%" },
+        { label: "Direct Company Listings", value: "100%" },
       ],
     },
     openingsCount: "Verified Live Data Openings",

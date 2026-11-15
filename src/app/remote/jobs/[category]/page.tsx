@@ -162,8 +162,8 @@ export default function CategoryLandingPage({ params }: PageProps) {
           {/* Job Preview Component */}
           {sampleJobs && sampleJobs.length > 0 && (
             <JobPreview
-              title={`Real-Time ${data.name} Feed`}
-              subtitle="Scraped from employer subdomains within the last 4 hours"
+              title={`Verified ${data.name} Feed`}
+              subtitle="Regularly refreshed"
               jobs={sampleJobs}
               limit={5}
             />

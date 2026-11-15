@@ -221,7 +221,7 @@ export default function GuideArticlePage({ params }: PageProps) {
                 {article.comparisonTable.title}
               </h2>
               <p className="text-[rgb(99,115,129)] text-base mb-4">
-                Side-by-side performance indicators between automated crawling pipelines and legacy aggregation portals.
+                Side-by-side performance indicators between direct employer discovery and legacy aggregation portals.
               </p>
               <CmpTable
                 headers={article.comparisonTable.headers}
@@ -252,7 +252,7 @@ export default function GuideArticlePage({ params }: PageProps) {
                 Start Discovering Unindexed Roles Now
               </h3>
               <p className="text-[#4B5563] text-sm sm:text-base max-w-lg mx-auto">
-                Explore real-time telemetry from thousands of employer career endpoints across software, design, data, and infrastructure.
+                Explore verified remote openings across software, design, data, and infrastructure.
               </p>
               <div className="pt-2">
                 <Link

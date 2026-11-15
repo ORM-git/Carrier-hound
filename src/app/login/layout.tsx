@@ -3,13 +3,13 @@ import type { ReactNode } from "react";
 
 export const metadata: Metadata = {
   title: "Log in | CareerMonke",
-  description: "Log in to CareerMonke to browse unindexed remote jobs sourced directly from verified employer career pages.",
+  description: "Log in to CareerMonke to browse verified employer jobs.",
   alternates: {
     canonical: "/login",
   },
   openGraph: {
     title: "Log in | CareerMonke",
-    description: "Log in to CareerMonke to browse unindexed remote jobs sourced directly from verified employer career pages.",
+    description: "Log in to CareerMonke to browse verified employer jobs.",
     url: "https://careermonke.com/login",
   },
 };

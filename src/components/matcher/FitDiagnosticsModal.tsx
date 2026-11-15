@@ -349,7 +349,7 @@ export default function FitDiagnosticsModal({
         {/* Footer */}
         <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-3">
           <span className="text-xs text-slate-500">
-            Source: <strong className="text-slate-800">{job.company} Direct ATS</strong>
+            Source: <strong className="text-slate-800">{job.company} Careers</strong>
           </span>
           {sanitizeExternalUrl(job.apply_url) && (
             <a

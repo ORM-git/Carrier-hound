@@ -71,7 +71,7 @@ export default function PrivacyPolicyPage() {
             </a>.
           </li>
           <li>
-            <strong>Platform Security:</strong> Detecting, mitigating, and preventing data scraping, automated bot exploitation, or fraudulent transactions.
+            <strong>Platform Security:</strong> Detecting, mitigating, and preventing automated data extraction, bot exploitation, or fraudulent transactions.
           </li>
         </ul>
 

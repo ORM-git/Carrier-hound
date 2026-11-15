@@ -443,7 +443,7 @@ export default function JobRadarGlobe() {
         const cards: RadarJobCard[] = (data || []).map((row: any) => ({
           id: row.id,
           title: row.title || "Engineering Role",
-          company: row.company || "Verified ATS Company",
+          company: row.company || "Verified Company",
           location: row.location || "Remote",
           countryCode: row.country_code,
           remoteScope: row.remote_scope || "unknown",
@@ -1445,7 +1445,7 @@ export default function JobRadarGlobe() {
           <button
             type="button"
             onClick={() => setVerifiedOnly((prev) => !prev)}
-            title="Toggle Verified ATS roles only"
+            title="Toggle Verified roles only"
             className={`shrink-0 flex items-center gap-1.5 px-3 py-2 min-h-[44px] rounded-xl text-xs font-semibold transition-all border ${
               verifiedOnly
                 ? "bg-emerald-950/80 border-emerald-400 text-emerald-300 shadow-[0_0_10px_rgba(16,185,129,0.3)]"
@@ -1602,7 +1602,7 @@ export default function JobRadarGlobe() {
                   No active openings match the current filter
                 </p>
                 <p className="text-xs text-slate-500">
-                  {hasActiveFilters ? "Try resetting some of the filters above" : "Check back after the next daily ingestion cycle"}
+                  {hasActiveFilters ? "Try resetting some of the filters above" : "Check back soon"}
                 </p>
               </div>
             ) : (
@@ -1729,7 +1729,7 @@ export default function JobRadarGlobe() {
                       {job.verified ? (
                         <div className="flex items-center gap-1 text-[11px] text-emerald-400 font-medium">
                           <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                          <span>Verified Direct ATS</span>
+                          <span>Verified Direct Source</span>
                         </div>
                       ) : (
                         <div className="flex items-center gap-1 text-[11px] text-slate-400 font-medium">
@@ -1871,7 +1871,7 @@ export default function JobRadarGlobe() {
             </div>
             <div className="flex items-center gap-1.5">
               <ShieldCheck className="w-3 h-3 text-emerald-400 shrink-0" />
-              <span>Verified badge: Official ATS origin</span>
+              <span>Verified badge: Official company origin</span>
             </div>
           </div>
         </div>

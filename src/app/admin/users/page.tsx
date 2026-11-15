@@ -509,7 +509,7 @@ export default function AdminUsersPage() {
                 id="block-reason-input"
                 type="text"
                 aria-label="Reason for suspension (optional)"
-                placeholder="e.g. Terms violation, scraping, suspicious activity"
+                placeholder="e.g. Terms violation, data extraction, suspicious activity"
                 value={blockReason}
                 onChange={(e) => setBlockReason(e.target.value)}
                 className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-600"
