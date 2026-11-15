@@ -35,7 +35,7 @@ export default function HomePage() {
     <div className="hero-top">
     <p className="badge"><i aria-hidden="true"></i>1,240 new jobs found today</p>
     <h1 id="hero-h"><span className="l1">Skip LinkedIn competition</span> <span className="l2">Start <span className="nw">job<span className="mx" aria-label="maxx"><span className="m1" aria-hidden="true">m</span><span className="m2" aria-hidden="true">a</span><span className="m3" aria-hidden="true">x</span><span className="m4" aria-hidden="true">x</span></span>ing</span> with&nbsp;AI</span></h1>
-    <p className="sub">Verified employer jobs and tailor your resume to clear their ATS in seconds.</p>
+    <p className="sub">Find verified employer jobs and tailor your resume to clear their ATS in seconds.</p>
     <div className="cta-row">
       <a className="btn btn-primary" href="/signup">Sign up for free</a>
       <a className="btn btn-ghost" href="#demo" id="try-demo">Try the demo</a>
@@ -127,7 +127,7 @@ export default function HomePage() {
     <dl className="stats" aria-label="CareerMonke in numbers" aria-describedby="stats-note">
       <div><dd><span className="wr"><svg className="lf" aria-hidden="true"><use href="#laurel"/></svg><b>3x</b><svg className="lf r" aria-hidden="true"><use href="#laurel"/></svg></span></dd><dt>higher callback rate</dt></div>
       <div><dd><span className="wr"><svg className="lf" aria-hidden="true"><use href="#laurel"/></svg><b>94%</b><svg className="lf r" aria-hidden="true"><use href="#laurel"/></svg></span></dd><dt>ATS keyword alignment</dt></div>
-      <div><dd><span className="wr"><svg className="lf" aria-hidden="true"><use href="#laurel"/></svg><b>1,200+</b><svg className="lf r" aria-hidden="true"><use href="#laurel"/></svg></span></dd><dt>fresh roles</dt></div>
+      <div><dd><span className="wr"><svg className="lf" aria-hidden="true"><use href="#laurel"/></svg><b>1,200+</b><svg className="lf r" aria-hidden="true"><use href="#laurel"/></svg></span></dd><dt>fresh roles <span className="sbr">active</span></dt></div>
     </dl>
     <p className="stats-note" id="stats-note">*Based on early access user surveys</p>
   </section>

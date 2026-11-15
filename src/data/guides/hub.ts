@@ -73,7 +73,7 @@ export const HUB_DATA = {
     },
     {
       id: "pg-2",
-      title: "Independent Review: Paid Membership Boards vs. Direct Automated Tracking",
+      title: "Independent Review: Paid Membership Boards vs. Direct Job Discovery",
       description: "An unbiased analysis comparing traditional closed job boards against verified direct employer listings.",
       href: "/remote/flexjobs-alternative-review",
       tag: "ANALYSIS",

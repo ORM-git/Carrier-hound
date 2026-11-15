@@ -137,7 +137,7 @@ export const GUIDE_ARTICLES: Record<string, GuideArticle> = {
       },
       {
         id: "how-direct-tracking-works",
-        h2: "Architectural Shift: From Gatekeepers to Automated Radar",
+        h2: "The Shift: From Gatekeepers to Direct Discovery",
         paragraphs: [
           "CareerMonke helps you find verified, active openings.",
           "When an opening is removed or marked filled on the employer's internal board, it is removed from active listings. This eliminates the widespread frustration of spending hours tailoring cover letters for defunct positions.",
@@ -278,8 +278,8 @@ export const GUIDE_ARTICLES: Record<string, GuideArticle> = {
     },
     features: [
       {
-        title: "Career Page Heartbeat Check",
-        description: "Automatic verification that the requisition is currently accepting submissions on the host system.",
+        title: "Listing Quality Check",
+        description: "We make sure listings are active and accepting applications.",
       },
       {
         title: "Timestamp Verification",
