@@ -238,92 +238,165 @@ async function runAutorenewTests() {
         return { data: { user: null }, error: new Error("Invalid session") };
       },
     },
+    rpc: async (fn: string, params: any) => {
+      if (fn === "cancel_autorenew_subscription") {
+        if (mockExistingSub && mockExistingSub.user_id === params.p_user_id) {
+          mockExistingSub.cancel_at_period_end = true;
+          mockExistingSub.metadata = { ...(mockExistingSub.metadata || {}), ...(params.p_metadata || {}) };
+        }
+        for (const order of dbStoredPaymentOrders) {
+          if (order.user_id === params.p_user_id && order.provider_order_id === params.p_mandate_id) {
+            order.status = "cancelled";
+          }
+        }
+        return { data: true, error: null };
+      }
+      return { data: true, error: null };
+    },
     from: (table: string) => {
       let filters: Record<string, any> = {};
       let neqFilters: Record<string, any> = {};
       let likeFilters: Record<string, string> = {};
       let gteFilters: Record<string, any> = {};
+      let ltFilters: Record<string, any> = {};
+      let inFilters: Record<string, any[]> = {};
 
-      if (table === "subscriptions") {
-        const subQuery: any = {
-          select: () => subQuery,
-          eq: (col: string, val: any) => {
-            filters[col] = val;
-            return subQuery;
-          },
-          order: () => subQuery,
-          limit: () => subQuery,
-          maybeSingle: async () => ({ data: mockExistingSub, error: null }),
-          update: (row: any) => ({
-            eq: async (col: string, val: any) => {
-              if (mockExistingSub) {
-                mockExistingSub = { ...mockExistingSub, ...row };
-              }
-              dbStoredSubscriptionMetadata = row.metadata;
-              return { error: null };
-            },
-          }),
-        };
-        return subQuery;
-      }
-      if (table === "payment_orders") {
-        const orderQuery: any = {
-          select: () => orderQuery,
-          eq: (col: string, val: any) => {
-            filters[col] = val;
-            return orderQuery;
-          },
-          neq: (col: string, val: any) => {
-            neqFilters[col] = val;
-            return orderQuery;
-          },
-          like: (col: string, pat: string) => {
-            likeFilters[col] = pat;
-            return orderQuery;
-          },
-          gte: (col: string, val: any) => {
-            gteFilters[col] = val;
-            return orderQuery;
-          },
-          order: () => orderQuery,
-          limit: () => orderQuery,
-          maybeSingle: async () => {
-            const match = dbStoredPaymentOrders.find((o) => {
-              for (const [k, v] of Object.entries(filters)) {
-                if (o[k] !== v) return false;
-              }
-              for (const [k, v] of Object.entries(neqFilters)) {
-                if (o[k] === v) return false;
-              }
-              for (const [k, pat] of Object.entries(likeFilters)) {
-                const val = String(o[k] || "");
-                const prefix = pat.replace("%", "");
-                if (!val.startsWith(prefix)) return false;
-              }
-              for (const [k, v] of Object.entries(gteFilters)) {
-                if (o[k] < v) return false;
-              }
-              return true;
-            });
-            return { data: match || null, error: null };
-          },
-          insert: async (row: any) => {
+      const matchesFilters = (o: any) => {
+        for (const [k, v] of Object.entries(filters)) {
+          if (o[k] !== v) return false;
+        }
+        for (const [k, v] of Object.entries(neqFilters)) {
+          if (o[k] === v) return false;
+        }
+        for (const [k, pat] of Object.entries(likeFilters)) {
+          const val = String(o[k] || "");
+          const prefix = pat.replace(/%/g, "");
+          if (!val.startsWith(prefix)) return false;
+        }
+        for (const [k, v] of Object.entries(gteFilters)) {
+          if (o[k] < v) return false;
+        }
+        for (const [k, v] of Object.entries(ltFilters)) {
+          if (o[k] >= v) return false;
+        }
+        for (const [k, vals] of Object.entries(inFilters)) {
+          if (!vals.includes(o[k])) return false;
+        }
+        return true;
+      };
+
+      const getMatchingRows = () => {
+        if (table === "payment_orders") {
+          return dbStoredPaymentOrders.filter(matchesFilters);
+        }
+        if (table === "subscriptions") {
+          const subs = mockExistingSub ? [mockExistingSub] : [];
+          return subs.filter(matchesFilters);
+        }
+        return [];
+      };
+
+      const query: any = {
+        select: () => query,
+        order: () => query,
+        limit: () => query,
+        eq: (col: string, val: any) => {
+          filters[col] = val;
+          return query;
+        },
+        neq: (col: string, val: any) => {
+          neqFilters[col] = val;
+          return query;
+        },
+        like: (col: string, pat: string) => {
+          likeFilters[col] = pat;
+          return query;
+        },
+        gte: (col: string, val: any) => {
+          gteFilters[col] = val;
+          return query;
+        },
+        lt: (col: string, val: any) => {
+          ltFilters[col] = val;
+          return query;
+        },
+        in: (col: string, vals: any[]) => {
+          inFilters[col] = vals;
+          return query;
+        },
+        maybeSingle: async () => {
+          const rows = getMatchingRows();
+          return { data: rows[0] || null, error: null };
+        },
+        then: (resolve: (val: any) => void) => {
+          resolve({ data: getMatchingRows(), error: null });
+        },
+        insert: async (row: any) => {
+          if (table === "payment_orders") {
             dbStoredPaymentOrders.push({ ...row });
-            return { error: null };
-          },
-          update: (updates: any) => ({
-            eq: async (col: string, val: any) => {
-              const target = dbStoredPaymentOrders.find((o) => o[col] === val);
-              if (target) {
-                Object.assign(target, updates);
-              }
-              return { error: null };
+          } else if (table === "subscriptions") {
+            mockExistingSub = { ...row };
+          }
+          return { error: null };
+        },
+        update: (updates: any) => {
+          let updateFilters: Record<string, any> = {};
+          let updateInFilters: Record<string, any[]> = {};
+          let updateLtFilters: Record<string, any> = {};
+
+          const updateBuilder: any = {
+            eq: (col: string, val: any) => {
+              updateFilters[col] = val;
+              return updateBuilder;
             },
-          }),
-        };
-        return orderQuery;
-      }
-      throw new Error(`Unexpected table: ${table}`);
+            in: (col: string, vals: any[]) => {
+              updateInFilters[col] = vals;
+              return updateBuilder;
+            },
+            lt: (col: string, val: any) => {
+              updateLtFilters[col] = val;
+              return updateBuilder;
+            },
+            select: () => updateBuilder,
+            then: (resolve: (val: any) => void) => {
+              const updatedList: any[] = [];
+              if (table === "payment_orders") {
+                for (const order of dbStoredPaymentOrders) {
+                  let match = true;
+                  for (const [k, v] of Object.entries(updateFilters)) {
+                    if (order[k] !== v) match = false;
+                  }
+                  for (const [k, vals] of Object.entries(updateInFilters)) {
+                    if (!vals.includes(order[k])) match = false;
+                  }
+                  for (const [k, v] of Object.entries(updateLtFilters)) {
+                    if (order[k] >= v) match = false;
+                  }
+                  if (match) {
+                    Object.assign(order, updates);
+                    updatedList.push(order);
+                  }
+                }
+              } else if (table === "subscriptions") {
+                if (mockExistingSub) {
+                  let match = true;
+                  for (const [k, v] of Object.entries(updateFilters)) {
+                    if (mockExistingSub[k] !== v) match = false;
+                  }
+                  if (match) {
+                    Object.assign(mockExistingSub, updates);
+                    dbStoredSubscriptionMetadata = updates.metadata;
+                    updatedList.push(mockExistingSub);
+                  }
+                }
+              }
+              resolve({ data: updatedList, error: null });
+            },
+          };
+          return updateBuilder;
+        },
+      };
+      return query;
     },
   };
 
@@ -513,7 +586,7 @@ async function runAutorenewTests() {
     mode: "test",
     created_at: new Date().toISOString(),
   });
-  let rzpCalledOnReuse = false;
+  let rzpCreateCalledOnReuse = false;
   const reqReuse = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: "Bearer valid_token" },
@@ -523,8 +596,33 @@ async function runAutorenewTests() {
   (reqReuse as any).__testDeps = {
     getSupabaseAdmin: () => mockSupabaseAdmin,
     verifyUserNotBanned: async () => ({ isBlocked: false }),
-    fetchFn: async () => {
-      rzpCalledOnReuse = true;
+    fetchFn: async (url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = url.toString();
+      if (urlStr.includes("/v1/plans/")) {
+        return new Response(
+          JSON.stringify({
+            id: "plan_monthly_456",
+            item: { amount: 149900, currency: "INR" },
+            period: "monthly",
+            interval: 1,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      if (urlStr.includes("/v1/subscriptions/sub_rzp_reused_monthly_999")) {
+        return new Response(
+          JSON.stringify({
+            id: "sub_rzp_reused_monthly_999",
+            plan_id: "plan_monthly_456",
+            status: "created",
+            created_at: Math.floor(Date.now() / 1000),
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      if (init?.method === "POST" && urlStr.endsWith("/v1/subscriptions")) {
+        rzpCreateCalledOnReuse = true;
+      }
       return new Response();
     },
   };
@@ -533,7 +631,7 @@ async function runAutorenewTests() {
   const jsonReuse = await resReuse.json();
   assert.strictEqual(jsonReuse.subscriptionId, "sub_rzp_reused_monthly_999");
   assert.strictEqual(jsonReuse.reused, true);
-  assert.strictEqual(rzpCalledOnReuse, false, "Razorpay must not be called when reusing pending mandate");
+  assert.strictEqual(rzpCreateCalledOnReuse, false, "Razorpay creation must not be called when reusing pending mandate");
   console.log("  ✓ Idempotent check reuses existing pending payment_orders row without creating second mandate.");
 
   // 7e: Pending order for different plan returns 409
@@ -558,8 +656,22 @@ async function runAutorenewTests() {
   (reqDiffPlan as any).__testDeps = {
     getSupabaseAdmin: () => mockSupabaseAdmin,
     verifyUserNotBanned: async () => ({ isBlocked: false }),
-    fetchFn: async () => {
-      rzpCalledOnDiffPlan = true;
+    fetchFn: async (url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = url.toString();
+      if (urlStr.includes("/v1/plans/")) {
+        return new Response(
+          JSON.stringify({
+            id: "plan_monthly_456",
+            item: { amount: 149900, currency: "INR" },
+            period: "monthly",
+            interval: 1,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      if (init?.method === "POST" && urlStr.endsWith("/v1/subscriptions")) {
+        rzpCalledOnDiffPlan = true;
+      }
       return new Response();
     },
   };
@@ -811,7 +923,7 @@ async function runAutorenewTests() {
   };
   const resGateFail = await POST(reqGateFail);
   assert.strictEqual(resGateFail.status, 500);
-  const failedReservation = dbStoredPaymentOrders.find((o) => o.provider_order_id === `sub_pending_${mockUser.id}`);
+  const failedReservation = dbStoredPaymentOrders.find((o) => o.provider_order_id.startsWith(`sub_pending_${mockUser.id}`));
   assert.ok(failedReservation, "Reservation row must exist in DB");
   assert.strictEqual(failedReservation.status, "failed", "Reservation status must be marked failed");
   console.log("  ✓ Gateway failure rolls back reservation row to failed status.\n");

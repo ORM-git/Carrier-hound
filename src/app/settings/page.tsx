@@ -80,6 +80,20 @@ function SettingsPageInner() {
     ? `${currencySymbol}${planPriceNumber.toLocaleString()} / ${planInterval}`
     : null;
 
+  // Requirement 1: Explicit recurring mandate discriminator
+  // Only real recurring Razorpay mandates (provider=razorpay + subscription_id starts with "sub_" and not "sub_pending_")
+  // Never inferred from isPro. Prepaid plans keep "does not auto-renew".
+  const mandateSubId =
+    subscription?.subscriptionId ||
+    (subscription?.metadata as any)?.provider_subscription_id ||
+    (subscription?.metadata as any)?.pending_subscription_id;
+
+  const isRecurringMandate =
+    subscription?.provider === "razorpay" &&
+    typeof mandateSubId === "string" &&
+    mandateSubId.startsWith("sub_") &&
+    !mandateSubId.startsWith("sub_pending_");
+
   useEffect(() => {
     getAuthUser().then((u) => {
       if (!u) {
@@ -576,20 +590,28 @@ function SettingsPageInner() {
                     {subscription?.currentPeriodEnd ? (
                       <>
                         Pro access ends on: <strong>{new Date(subscription.currentPeriodEnd).toLocaleDateString()}</strong>
-                        {subscription.cancelAtPeriodEnd
-                          ? " (auto-renew canceled)"
-                          : " (auto-renews)"}
+                        {isRecurringMandate ? (
+                          subscription?.cancelAtPeriodEnd
+                            ? " (auto-renew canceled)"
+                            : " (auto-renews)"
+                        ) : (
+                          " (does not auto-renew)"
+                        )}
                       </>
                     ) : (
                       <>
                         Pro access active
-                        {subscription?.cancelAtPeriodEnd
-                          ? " (auto-renew canceled)"
-                          : " (auto-renews)"}
+                        {isRecurringMandate ? (
+                          subscription?.cancelAtPeriodEnd
+                            ? " (auto-renew canceled)"
+                            : " (auto-renews)"
+                        ) : (
+                          " (does not auto-renew)"
+                        )}
                       </>
                     )}
                   </span>
-                  {!subscription?.cancelAtPeriodEnd && (
+                  {isRecurringMandate && !subscription?.cancelAtPeriodEnd && (
                     <button
                       type="button"
                       onClick={handleCancelAutoRenew}

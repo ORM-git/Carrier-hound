@@ -325,7 +325,7 @@ export async function getUserSubscription(
     if (resolvedUserId) {
       const { data: sub, error } = await supabase
         .from("subscriptions")
-        .select("id, user_id, provider, plan_id, currency, amount, status, current_period_start, current_period_end, grace_period_end, cancel_at_period_end, metadata")
+        .select("id, user_id, provider, subscription_id, plan_id, currency, amount, status, current_period_start, current_period_end, grace_period_end, cancel_at_period_end, metadata")
         .eq("user_id", resolvedUserId)
         .order("created_at", { ascending: false })
         .limit(1)
@@ -364,10 +364,16 @@ export async function getUserSubscription(
           resolvedAmount = undefined;
         }
 
+        const candidateSubId =
+          sub.subscription_id ||
+          sub.metadata?.provider_subscription_id ||
+          sub.metadata?.pending_subscription_id;
+
         return {
           id: sub.id,
           userId: sub.user_id,
           provider: sub.provider || "manual",
+          subscriptionId: candidateSubId || undefined,
           planId: normalizedPlan || sub.plan_id || undefined,
           currency: rawCurrency,
           amount: resolvedAmount,
@@ -423,10 +429,14 @@ export async function cancelAutoRenewSubscription(): Promise<{ success: boolean;
  * Marks the subscription to cancel at the end of the current period
  */
 export async function cancelSubscription(): Promise<UserSubscription | null> {
-  setLocalProActive(false);
-
   try {
-    await cancelAutoRenewSubscription().catch(() => {});
+    const cancelResult = await cancelAutoRenewSubscription().catch(() => ({ success: false, error: "Network error" }));
+    if (!cancelResult?.success) {
+      log.warn("Auto-renew cancellation failed; honoring success=false without marking locally canceled", { error: cancelResult?.error });
+      return null;
+    }
+
+    setLocalProActive(false);
 
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();

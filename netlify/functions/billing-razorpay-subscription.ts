@@ -47,7 +47,7 @@ function isProductionHost(event: any, deps?: BillingSubscriptionDeps): boolean {
 
   const headers = event?.headers || {};
 
-  // 1. Canonical Host header (must not be overridden by caller-supplied forwarding headers)
+  // 1. Canonical Host header
   const hostHeader = headers.host || headers.Host;
   if (hostHeader) {
     const parts = hostHeader.split(",");
@@ -66,7 +66,7 @@ function isProductionHost(event: any, deps?: BillingSubscriptionDeps): boolean {
     }
   }
 
-  // 3. Forwarded host headers (caller-supplied header must never override a production Host or URL)
+  // 3. Forwarded host headers
   const xForwardedHost = headers["x-forwarded-host"] || headers["X-Forwarded-Host"];
   if (xForwardedHost) {
     const parts = xForwardedHost.split(",");
@@ -90,6 +90,27 @@ function isProductionHost(event: any, deps?: BillingSubscriptionDeps): boolean {
 
   return false;
 }
+
+const PLAN_SPECS: Record<
+  string,
+  { amount: number; matchPeriodInterval: (period: string, interval: number) => boolean }
+> = {
+  weekly: {
+    amount: 69200,
+    matchPeriodInterval: (p, i) => (p === "weekly" && i === 1) || (p === "daily" && i === 7),
+  },
+  monthly: {
+    amount: 149900,
+    matchPeriodInterval: (p, i) => p === "monthly" && i === 1,
+  },
+  quarterly: {
+    amount: 399900,
+    matchPeriodInterval: (p, i) => (p === "monthly" && i === 3) || (p === "quarterly" && i === 1),
+  },
+};
+
+const LEASE_DURATION_MS = 5 * 60 * 1000; // 5 minute reservation lease
+const EXPIRATION_WINDOW_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 function getDefaultSupabaseAdmin() {
   const supabaseUrl =
@@ -152,7 +173,8 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
         };
       }
 
-      if (process.env.NEXT_PUBLIC_BILLING_ENABLED !== "true") {
+      // Base billing enabled flag check (cancellation remains permitted even if billing is disabled)
+      if (!isCancelAction && process.env.NEXT_PUBLIC_BILLING_ENABLED !== "true") {
         return {
           statusCode: 503,
           headers,
@@ -163,7 +185,7 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
         };
       }
 
-      // 2. Authentication
+      // 2. Authentication: requires valid Bearer token
       const authHeader =
         event.headers?.authorization ||
         event.headers?.Authorization ||
@@ -203,10 +225,68 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
         };
       }
 
+      // 3. Server-authoritative mode & key validation
+      const configuredMode = process.env.RAZORPAY_MODE;
+      if (configuredMode !== "test" && configuredMode !== "live") {
+        safeLog.error("[Netlify /billing-razorpay-subscription] Payment configuration error: invalid or missing mode");
+        return {
+          statusCode: 503,
+          headers,
+          body: JSON.stringify({ error: "Payment configuration error", code: "RAZORPAY_CONFIG_ERROR" }),
+        };
+      }
+
+      const keyId =
+        process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID ||
+        process.env.RAZORPAY_KEY_ID;
+      const keySecret = process.env.RAZORPAY_KEY_SECRET;
+
+      if (!keyId || !keySecret) {
+        safeLog.error("[Netlify /billing-razorpay-subscription] Payment configuration error: missing Razorpay credentials");
+        return {
+          statusCode: 503,
+          headers,
+          body: JSON.stringify({ error: "Payment configuration error", code: "RAZORPAY_CONFIG_ERROR" }),
+        };
+      }
+
+      const keyPrefixMode = getRazorpayKeyMode(keyId);
+      if (!keyPrefixMode) {
+        safeLog.error("[Netlify /billing-razorpay-subscription] Payment configuration error: unrecognized key prefix");
+        return {
+          statusCode: 503,
+          headers,
+          body: JSON.stringify({ error: "Payment configuration error", code: "RAZORPAY_CONFIG_ERROR" }),
+        };
+      }
+
+      if (keyPrefixMode !== configuredMode) {
+        safeLog.error("[Netlify /billing-razorpay-subscription] Payment configuration error: key prefix does not match configured mode");
+        return {
+          statusCode: 503,
+          headers,
+          body: JSON.stringify({ error: "Payment configuration error", code: "RAZORPAY_CONFIG_ERROR" }),
+        };
+      }
+
+      const resolvedMode = keyPrefixMode;
+
+      if (keyPrefixMode === "test" && isProductionHost(event, deps)) {
+        safeLog.error("[Netlify /billing-razorpay-subscription] FATAL CONFIGURATION ERROR: Razorpay test keys refused on production host");
+        return {
+          statusCode: 503,
+          headers,
+          body: JSON.stringify({ error: "Payment configuration error", code: "RAZORPAY_CONFIG_ERROR" }),
+        };
+      }
+
+      const credentials = Buffer.from(`${keyId}:${keySecret}`).toString("base64");
+
       // =========================================================================
-      // CANCELLATION FLOW (Requirement 4)
+      // CANCELLATION FLOW (DELETE or action=cancel)
       // =========================================================================
       if (isCancelAction) {
+        // Query subscription (covers active, trialing, in_grace_period, past_due, halted, unpaid)
         const { data: sub, error: subErr } = await supabaseAdmin
           .from("subscriptions")
           .select("id, user_id, provider, subscription_id, status, current_period_end, cancel_at_period_end, metadata")
@@ -225,18 +305,55 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
           };
         }
 
-        if (!sub || (sub.status !== "active" && sub.status !== "trialing" && sub.status !== "in_grace_period")) {
+        // Check for pending-only order in payment_orders
+        let pendingOrder: any = null;
+        const { data: pOrders } = await supabaseAdmin
+          .from("payment_orders")
+          .select("id, provider_order_id, status, mode, provider")
+          .eq("user_id", user.id)
+          .eq("provider", "razorpay")
+          .in("status", ["created", "reserved"])
+          .like("provider_order_id", "sub_%")
+          .order("created_at", { ascending: false })
+          .limit(1);
+
+        if (pOrders && pOrders.length > 0) {
+          pendingOrder = pOrders[0];
+        }
+
+        // Identify candidate mandate ID
+        let rzpSubId: string | null = null;
+        if (sub) {
+          const candidateId =
+            sub.subscription_id ||
+            sub.metadata?.provider_subscription_id ||
+            sub.metadata?.pending_subscription_id;
+
+          if (typeof candidateId === "string" && candidateId.startsWith("sub_") && !candidateId.startsWith("sub_pending_")) {
+            rzpSubId = candidateId;
+          }
+        }
+
+        if (!rzpSubId && pendingOrder) {
+          if (typeof pendingOrder.provider_order_id === "string" && pendingOrder.provider_order_id.startsWith("sub_") && !pendingOrder.provider_order_id.startsWith("sub_pending_")) {
+            rzpSubId = pendingOrder.provider_order_id;
+          }
+        }
+
+        // Requirement 2: If no valid mandate id: return clear "nothing to cancel" result, not success, and no "charge stopped" message
+        if (!rzpSubId) {
           return {
             statusCode: 400,
             headers,
             body: JSON.stringify({
-              error: "No active subscription found to cancel",
-              code: "NO_ACTIVE_SUBSCRIPTION",
+              error: "No active or pending auto-renew mandate found to cancel",
+              code: "NOTHING_TO_CANCEL",
             }),
           };
         }
 
-        if (sub.cancel_at_period_end) {
+        // If already scheduled for cancellation and confirmed, return status
+        if (sub && sub.cancel_at_period_end) {
           return {
             statusCode: 200,
             headers,
@@ -248,107 +365,145 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
           };
         }
 
-        const keyId =
-          process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID ||
-          process.env.RAZORPAY_KEY_ID;
-        const keySecret = process.env.RAZORPAY_KEY_SECRET;
-        const credentials = keyId && keySecret ? Buffer.from(`${keyId}:${keySecret}`).toString("base64") : "";
+        // Cancel mandate at Razorpay (Requirement 2)
+        let cancelConfirmed = false;
+        let providerCancelErr: any = null;
 
-        const rzpSubId =
-          sub.subscription_id ||
-          sub.metadata?.pending_subscription_id ||
-          sub.metadata?.provider_subscription_id;
-
-        if (sub.provider === "razorpay" && rzpSubId && rzpSubId.startsWith("sub_")) {
-          if (!keyId || !keySecret) {
-            safeLog.error("[Netlify /billing-razorpay-subscription] Missing Razorpay credentials for subscription cancel");
-            return {
-              statusCode: 503,
-              headers,
+        try {
+          const rzpCancelRes = await fetchCaller(
+            `https://api.razorpay.com/v1/subscriptions/${rzpSubId}/cancel`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Basic ${credentials}`,
+              },
               body: JSON.stringify({
-                error: "Payment gateway configuration missing",
-                code: "RAZORPAY_CONFIG_ERROR",
+                cancel_at_cycle_end: 1,
               }),
-            };
-          }
-
-          try {
-            const rzpCancelRes = await fetchCaller(
-              `https://api.razorpay.com/v1/subscriptions/${rzpSubId}/cancel`,
-              {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  Authorization: `Basic ${credentials}`,
-                },
-                body: JSON.stringify({
-                  cancel_at_cycle_end: 1, // Cancel at cycle end via API as required by Requirement 4
-                }),
-              }
-            );
-
-            if (!rzpCancelRes.ok) {
-              const cancelErr = await rzpCancelRes.json().catch(() => ({}));
-              const desc = String(cancelErr?.error?.description || "");
-              const isAlreadyDone =
-                desc.toLowerCase().includes("already cancelled") ||
-                desc.toLowerCase().includes("already canceled") ||
-                desc.toLowerCase().includes("completed");
-
-              if (!isAlreadyDone) {
-                safeLog.error("[Netlify /billing-razorpay-subscription] Razorpay cancel API error:", cancelErr);
-                return {
-                  statusCode: rzpCancelRes.status || 502,
-                  headers,
-                  body: JSON.stringify({
-                    error: cancelErr?.error?.description || "Failed to cancel subscription with payment provider",
-                    code: "RAZORPAY_CANCEL_ERROR",
-                  }),
-                };
-              }
             }
-          } catch (fetchErr: any) {
-            safeLog.error("[Netlify /billing-razorpay-subscription] Network error calling Razorpay cancel:", fetchErr);
-            return {
-              statusCode: 502,
-              headers,
-              body: JSON.stringify({
-                error: "Network error connecting to payment gateway",
-                code: "GATEWAY_CONNECTION_ERROR",
-              }),
-            };
+          );
+
+          if (rzpCancelRes.ok) {
+            const cancelBody = await rzpCancelRes.json().catch(() => ({}));
+            if (cancelBody && (cancelBody.id === rzpSubId || cancelBody.status)) {
+              cancelConfirmed = true;
+            }
+          } else {
+            providerCancelErr = await rzpCancelRes.json().catch(() => ({}));
           }
-        }
-
-        // Update DB
-        const { error: dbUpdateErr } = await supabaseAdmin
-          .from("subscriptions")
-          .update({
-            cancel_at_period_end: true,
-            updated_at: new Date().toISOString(),
-            metadata: {
-              ...(sub.metadata || {}),
-              cancel_at_period_end: true,
-              canceled_at: new Date().toISOString(),
-              canceled_by: "customer",
-            },
-          })
-          .eq("user_id", user.id);
-
-        if (dbUpdateErr) {
-          safeLog.error("[Netlify /billing-razorpay-subscription] Failed to update subscription in DB after cancellation:", dbUpdateErr);
+        } catch (fetchErr: any) {
+          safeLog.error("[Netlify /billing-razorpay-subscription] Network error during Razorpay subscription cancel:", fetchErr);
           return {
-            statusCode: 500,
+            statusCode: 502,
             headers,
             body: JSON.stringify({
-              error: "Failed to update subscription status in database",
-              code: "DATABASE_ERROR",
+              error: "Network error connecting to payment gateway",
+              code: "GATEWAY_CONNECTION_ERROR",
             }),
           };
         }
 
+        // Handle already-cancelled-at-provider (Requirement 2: verify at provider)
+        if (!cancelConfirmed) {
+          const desc = String(providerCancelErr?.error?.description || "").toLowerCase();
+          const isAlreadyCancelledIndication =
+            desc.includes("already cancelled") ||
+            desc.includes("already canceled") ||
+            desc.includes("completed");
+
+          if (isAlreadyCancelledIndication) {
+            try {
+              const fetchSubRes = await fetchCaller(`https://api.razorpay.com/v1/subscriptions/${rzpSubId}`, {
+                method: "GET",
+                headers: { Authorization: `Basic ${credentials}` },
+              });
+
+              if (fetchSubRes.ok) {
+                const fetchedSubData = await fetchSubRes.json().catch(() => ({}));
+                const verifiedCancelledState =
+                  fetchedSubData?.status === "cancelled" ||
+                  fetchedSubData?.status === "completed" ||
+                  fetchedSubData?.ended_at ||
+                  fetchedSubData?.cancel_at_cycle_end;
+
+                if (verifiedCancelledState) {
+                  cancelConfirmed = true;
+                }
+              }
+            } catch (_) {}
+          }
+
+          if (!cancelConfirmed) {
+            safeLog.error("[Netlify /billing-razorpay-subscription] Razorpay subscription cancel API failed:", providerCancelErr);
+            return {
+              statusCode: 502,
+              headers,
+              body: JSON.stringify({
+                error: providerCancelErr?.error?.description || "Failed to cancel subscription with payment provider",
+                code: "RAZORPAY_CANCEL_ERROR",
+              }),
+            };
+          }
+        }
+
+        // Compare-and-set DB update on the same mandate id with atomic jsonb merge (Requirement 4)
+        let casUpdateDone = false;
+        try {
+          const { data: rpcSuccess } = await supabaseAdmin.rpc("cancel_autorenew_subscription", {
+            p_user_id: user.id,
+            p_mandate_id: rzpSubId,
+            p_metadata: {
+              cancel_at_period_end: true,
+              canceled_at: new Date().toISOString(),
+              canceled_by: "customer",
+              provider_mandate_id: rzpSubId,
+            },
+          });
+          if (rpcSuccess) {
+            casUpdateDone = true;
+          }
+        } catch (_) {}
+
+        if (!casUpdateDone) {
+          if (sub) {
+            const { error: dbUpdateErr } = await supabaseAdmin
+              .from("subscriptions")
+              .update({
+                cancel_at_period_end: true,
+                updated_at: new Date().toISOString(),
+                metadata: {
+                  ...(sub.metadata || {}),
+                  cancel_at_period_end: true,
+                  canceled_at: new Date().toISOString(),
+                  canceled_by: "customer",
+                  provider_mandate_id: rzpSubId,
+                },
+              })
+              .eq("user_id", user.id);
+
+            if (dbUpdateErr) {
+              safeLog.error("[Netlify /billing-razorpay-subscription] Failed to update subscription in DB after cancellation:", dbUpdateErr);
+              return {
+                statusCode: 500,
+                headers,
+                body: JSON.stringify({
+                  error: "Failed to update subscription status in database",
+                  code: "DATABASE_ERROR",
+                }),
+              };
+            }
+          }
+
+          await supabaseAdmin
+            .from("payment_orders")
+            .update({ status: "cancelled" })
+            .eq("user_id", user.id)
+            .eq("provider_order_id", rzpSubId);
+        }
+
         safeLog.info(
-          "[Netlify /billing-razorpay-subscription] Subscription successfully scheduled for cancellation at period end",
+          "[Netlify /billing-razorpay-subscription] Customer subscription successfully scheduled for cancellation at period end:",
           JSON.stringify({ userId: user.id, subscriptionId: rzpSubId })
         );
 
@@ -364,91 +519,9 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
       }
 
       // =========================================================================
-      // MANDATE CREATION FLOW
+      // CHECKOUT / MANDATE CREATION FLOW (POST)
       // =========================================================================
-
-      // 3. Server-authoritative mode & key validation
-      const configuredMode = process.env.RAZORPAY_MODE;
-      if (configuredMode !== "test" && configuredMode !== "live") {
-        safeLog.error(
-          "[Netlify /billing-razorpay-subscription] Payment configuration error: invalid or missing RAZORPAY_MODE"
-        );
-        return {
-          statusCode: 503,
-          headers,
-          body: JSON.stringify({
-            error: "Payment configuration error",
-            code: "RAZORPAY_CONFIG_ERROR",
-          }),
-        };
-      }
-
-      const keyId =
-        process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID ||
-        process.env.RAZORPAY_KEY_ID;
-      const keySecret = process.env.RAZORPAY_KEY_SECRET;
-
-      if (!keyId || !keySecret) {
-        safeLog.error(
-          "[Netlify /billing-razorpay-subscription] Payment configuration error: missing Razorpay credentials"
-        );
-        return {
-          statusCode: 503,
-          headers,
-          body: JSON.stringify({
-            error: "Payment configuration error",
-            code: "RAZORPAY_CONFIG_ERROR",
-          }),
-        };
-      }
-
-      const keyPrefixMode = getRazorpayKeyMode(keyId);
-      if (!keyPrefixMode) {
-        safeLog.error(
-          "[Netlify /billing-razorpay-subscription] Payment configuration error: unrecognized key prefix"
-        );
-        return {
-          statusCode: 503,
-          headers,
-          body: JSON.stringify({
-            error: "Payment configuration error",
-            code: "RAZORPAY_CONFIG_ERROR",
-          }),
-        };
-      }
-
-      if (keyPrefixMode !== configuredMode) {
-        safeLog.error(
-          "[Netlify /billing-razorpay-subscription] Payment configuration error: key prefix does not match RAZORPAY_MODE"
-        );
-        return {
-          statusCode: 503,
-          headers,
-          body: JSON.stringify({
-            error: "Payment configuration error",
-            code: "RAZORPAY_CONFIG_ERROR",
-          }),
-        };
-      }
-
-      const resolvedMode = keyPrefixMode;
-
-      if (keyPrefixMode === "test" && isProductionHost(event, deps)) {
-        safeLog.error(
-          "[Netlify /billing-razorpay-subscription] FATAL CONFIGURATION ERROR: Razorpay test keys refused on production host"
-        );
-        return {
-          statusCode: 503,
-          headers,
-          body: JSON.stringify({
-            error: "Payment configuration error",
-            code: "RAZORPAY_CONFIG_ERROR",
-          }),
-        };
-      }
-
-      // 4. Validate planCode in {weekly, monthly, quarterly}
-      const planCode = body.planCode;
+      const planCode = body?.planCode;
       if (planCode !== "weekly" && planCode !== "monthly" && planCode !== "quarterly") {
         return {
           statusCode: 400,
@@ -459,7 +532,7 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
         };
       }
 
-      // 5. Fail-closed server ban check
+      // Fail-closed server ban check
       const banChecker = deps.verifyUserNotBanned || verifyUserNotBanned;
       const banCheck = await banChecker(supabaseAdmin, user.id, user.user_metadata);
       if (banCheck?.isBlocked) {
@@ -473,7 +546,6 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
         };
       }
 
-      // 6. Map planCode to Razorpay plan ID from env
       let razorpayPlanId: string | undefined;
       if (planCode === "weekly") {
         razorpayPlanId = process.env.RAZORPAY_AUTORENEW_PLAN_WEEKLY;
@@ -484,21 +556,16 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
       }
 
       if (!razorpayPlanId || typeof razorpayPlanId !== "string" || !razorpayPlanId.trim()) {
-        safeLog.error(
-          "[Netlify /billing-razorpay-subscription] Payment configuration error: missing plan ID for planCode",
-          planCode
-        );
+        safeLog.error("[Netlify /billing-razorpay-subscription] Payment configuration error: missing Razorpay plan ID for planCode:", planCode);
         return {
           statusCode: 503,
           headers,
-          body: JSON.stringify({
-            error: "Payment configuration error",
-            code: "RAZORPAY_CONFIG_ERROR",
-          }),
+          body: JSON.stringify({ error: "Payment configuration error", code: "RAZORPAY_CONFIG_ERROR" }),
         };
       }
+      const activeRazorpayPlanId: string = razorpayPlanId.trim();
 
-      // 7. Check if user already has an active plan (block duplicate / overwrite)
+      // Check if user already has an active plan
       const { data: existingSub, error: selectErr } = await supabaseAdmin
         .from("subscriptions")
         .select("id, status, plan_id, subscription_id, current_period_end, grace_period_end, metadata")
@@ -508,10 +575,7 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
         .maybeSingle();
 
       if (selectErr) {
-        safeLog.error(
-          "[Netlify /billing-razorpay-subscription] Subscription lookup error during pre-check; failing closed:",
-          selectErr
-        );
+        safeLog.error("[Netlify /billing-razorpay-subscription] Subscription lookup error during pre-check; failing closed:", selectErr);
         return {
           statusCode: 503,
           headers,
@@ -539,7 +603,7 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
             hasActivePlan = true;
           }
         } catch (entErr) {
-          safeLog.error("[Netlify /billing-razorpay-subscription] Entitlement check error; failing closed:", entErr);
+          safeLog.error("[Netlify /billing-razorpay-subscription] Entitlement lookup failed; failing closed:", entErr);
           return {
             statusCode: 503,
             headers,
@@ -562,10 +626,166 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
         };
       }
 
-      // 8. Requirement 3: Authoritative Pending Reuse Query (zero JS filtering, handles query errors fail-closed)
-      const EXPIRATION_WINDOW_MS = 24 * 60 * 60 * 1000; // 24 hours
-      const expirationCutoff = new Date(Date.now() - EXPIRATION_WINDOW_MS).toISOString();
+      // Helper: Verify Plan with Provider (Requirement 1 & 5)
+      const verifyPlanWithProvider = async (
+        planId: string,
+        expectedPlan: string
+      ): Promise<{ ok: boolean; planData?: any; error?: string }> => {
+        try {
+          const planRes = await fetchCaller(`https://api.razorpay.com/v1/plans/${planId.trim()}`, {
+            method: "GET",
+            headers: { Authorization: `Basic ${credentials}` },
+          });
 
+          if (!planRes.ok) {
+            const err = await planRes.json().catch(() => ({}));
+            safeLog.error("[Netlify /billing-razorpay-subscription] Razorpay plan fetch returned non-200:", { status: planRes.status, err });
+            return { ok: false, error: "PLAN_VERIFICATION_FAILED" };
+          }
+
+          const planData = await planRes.json();
+          const planItem = planData?.item || {};
+          const verifiedAmount = planItem?.amount ?? planData?.amount;
+          const verifiedCurrency = (planItem?.currency ?? planData?.currency ?? "").toUpperCase();
+          const verifiedPeriod = (planData?.period ?? "").toLowerCase();
+          const verifiedInterval = Number(planData?.interval ?? 1);
+
+          const expectedSpec = PLAN_SPECS[expectedPlan];
+          const isAmountValid = verifiedAmount === expectedSpec?.amount;
+          const isCurrencyValid = verifiedCurrency === "INR";
+          const isPeriodIntervalValid = expectedSpec
+            ? expectedSpec.matchPeriodInterval(verifiedPeriod, verifiedInterval)
+            : false;
+
+          if (!expectedSpec || !isAmountValid || !isCurrencyValid || !isPeriodIntervalValid) {
+            safeLog.error("[Netlify /billing-razorpay-subscription] Provider plan verification mismatch:", {
+              expectedPlan,
+              verifiedAmount,
+              verifiedCurrency,
+              verifiedPeriod,
+              verifiedInterval,
+            });
+            return { ok: false, error: "PLAN_VERIFICATION_MISMATCH" };
+          }
+
+          return { ok: true, planData: { verifiedAmount, verifiedCurrency, verifiedPeriod, verifiedInterval } };
+        } catch (e: any) {
+          safeLog.error("[Netlify /billing-razorpay-subscription] Exception verifying plan with provider:", e);
+          return { ok: false, error: "PLAN_VERIFICATION_FAILED" };
+        }
+      };
+
+      // Verify current plan upfront (Requirement 1)
+      const planVerifyRes = await verifyPlanWithProvider(activeRazorpayPlanId, planCode);
+      if (!planVerifyRes.ok) {
+        return {
+          statusCode: 502,
+          headers,
+          body: JSON.stringify({
+            error: planVerifyRes.error === "PLAN_VERIFICATION_MISMATCH"
+              ? `Provider plan details do not match ${planCode} plan requirements`
+              : "Failed to verify plan with payment provider",
+            code: planVerifyRes.error || "PLAN_VERIFICATION_FAILED",
+          }),
+        };
+      }
+      const { verifiedAmount, verifiedCurrency, verifiedPeriod, verifiedInterval } = planVerifyRes.planData;
+
+      // Helper: Verify and Reuse Candidate Mandate (Requirement 5 & 6)
+      const verifyAndReuseCandidateMandate = async (
+        candidateId: string,
+        _candidatePlanCode: string
+      ): Promise<any | null> => {
+        if (!candidateId || typeof candidateId !== "string" || !candidateId.startsWith("sub_") || candidateId.startsWith("sub_pending_")) {
+          return null;
+        }
+
+        try {
+          const subRes = await fetchCaller(`https://api.razorpay.com/v1/subscriptions/${candidateId}`, {
+            method: "GET",
+            headers: { Authorization: `Basic ${credentials}` },
+          });
+
+          if (!subRes.ok) {
+            return null;
+          }
+
+          const subData = await subRes.json();
+          const validStatuses = new Set(["created", "authenticated", "active"]);
+          if (!validStatuses.has(subData?.status)) {
+            await supabaseAdmin
+              .from("payment_orders")
+              .update({ status: "expired" })
+              .eq("provider_order_id", candidateId);
+            return null;
+          }
+
+          if (subData?.plan_id !== activeRazorpayPlanId) {
+            return null;
+          }
+
+          const createdAtSec = subData?.created_at || (subData?.start_at ?? 0);
+          const ageMs = createdAtSec > 0 ? Date.now() - createdAtSec * 1000 : 0;
+          if (ageMs > EXPIRATION_WINDOW_MS) {
+            if (subData?.status !== "active") {
+              try {
+                await fetchCaller(`https://api.razorpay.com/v1/subscriptions/${candidateId}/cancel`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json", Authorization: `Basic ${credentials}` },
+                  body: JSON.stringify({ cancel_at_cycle_end: 0 }),
+                });
+              } catch (_) {}
+            }
+            await supabaseAdmin
+              .from("payment_orders")
+              .update({ status: "expired" })
+              .eq("provider_order_id", candidateId);
+            return null;
+          }
+
+          return subData;
+        } catch (_) {
+          return null;
+        }
+      }
+
+      // Stale Order & Lease Reconciliation (Requirement 6)
+      const expirationCutoff = new Date(Date.now() - EXPIRATION_WINDOW_MS).toISOString();
+      const leaseCutoff = new Date(Date.now() - LEASE_DURATION_MS).toISOString();
+
+      const { data: staleOrders } = await supabaseAdmin
+        .from("payment_orders")
+        .select("id, provider_order_id, status")
+        .eq("user_id", user.id)
+        .eq("provider", "razorpay")
+        .eq("status", "created")
+        .lt("created_at", expirationCutoff);
+
+      if (staleOrders && staleOrders.length > 0) {
+        for (const st of staleOrders) {
+          if (st.provider_order_id?.startsWith("sub_") && !st.provider_order_id.startsWith("sub_pending_")) {
+            try {
+              await fetchCaller(`https://api.razorpay.com/v1/subscriptions/${st.provider_order_id}/cancel`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: `Basic ${credentials}` },
+                body: JSON.stringify({ cancel_at_cycle_end: 0 }),
+              });
+            } catch (_) {}
+          }
+        }
+        const staleIds = staleOrders.map((st: any) => st.id);
+        await supabaseAdmin.from("payment_orders").update({ status: "expired" }).in("id", staleIds);
+      }
+
+      await supabaseAdmin
+        .from("payment_orders")
+        .update({ status: "expired" })
+        .eq("user_id", user.id)
+        .eq("provider", "razorpay")
+        .eq("status", "reserved")
+        .lt("created_at", leaseCutoff);
+
+      // Authoritative Pending Reuse Query (Requirement 3 & 5)
       const { data: existingPendingOrder, error: pendingOrderErr } = await supabaseAdmin
         .from("payment_orders")
         .select("id, provider_order_id, plan_code, status, created_at, mode, provider")
@@ -581,7 +801,7 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
         .maybeSingle();
 
       if (pendingOrderErr) {
-        safeLog.error("[Netlify /billing-razorpay-subscription] Failed to check pending payment_orders; failing closed:", pendingOrderErr);
+        safeLog.error("[Netlify /billing-razorpay-subscription] Authoritative pending query failed; failing closed:", pendingOrderErr);
         return {
           statusCode: 503,
           headers,
@@ -598,29 +818,24 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
         existingPendingOrder.provider_order_id.startsWith("sub_") &&
         !existingPendingOrder.provider_order_id.startsWith("sub_pending_")
       ) {
-        safeLog.info(
-          "[Netlify /billing-razorpay-subscription] Reusing existing pending subscription order for user and plan",
-          JSON.stringify({
-            userId: user.id,
-            planCode,
-            subscriptionId: existingPendingOrder.provider_order_id,
-          })
-        );
-        return {
-          statusCode: 200,
-          headers,
-          body: JSON.stringify({
-            subscriptionId: existingPendingOrder.provider_order_id,
-            keyId,
-            planId: razorpayPlanId.trim(),
-            planCode,
-            status: "created",
-            reused: true,
-          }),
-        };
+        const verifiedSub = await verifyAndReuseCandidateMandate(existingPendingOrder.provider_order_id, planCode);
+        if (verifiedSub) {
+          return {
+            statusCode: 200,
+            headers,
+            body: JSON.stringify({
+              subscriptionId: existingPendingOrder.provider_order_id,
+              keyId,
+              planId: razorpayPlanId.trim(),
+              planCode,
+              status: verifiedSub.status,
+              reused: true,
+            }),
+          };
+        }
       }
 
-      // Authoritative check for other pending plans
+      // Check for pending orders of different plans
       const { data: otherPendingOrder, error: otherPendingErr } = await supabaseAdmin
         .from("payment_orders")
         .select("id, plan_code, provider_order_id")
@@ -636,7 +851,7 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
         .maybeSingle();
 
       if (otherPendingErr) {
-        safeLog.error("[Netlify /billing-razorpay-subscription] Failed to query other pending plans; failing closed:", otherPendingErr);
+        safeLog.error("[Netlify /billing-razorpay-subscription] Authoritative other pending plans query failed:", otherPendingErr);
         return {
           statusCode: 503,
           headers,
@@ -658,6 +873,7 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
         };
       }
 
+      // Metadata candidate verification
       const metadataPendingSubId = existingSub?.metadata?.pending_subscription_id;
       const metadataPendingPlan = existingSub?.metadata?.pending_plan_code;
       const metadataPendingMode = existingSub?.metadata?.pending_mode;
@@ -671,28 +887,7 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
           : metadataPendingMode !== "live";
 
       if (isMetaSub && isMetaMatchingMode) {
-        if (!metadataPendingPlan || metadataPendingPlan === planCode) {
-          safeLog.info(
-            "[Netlify /billing-razorpay-subscription] Reusing existing pending subscription from metadata",
-            JSON.stringify({
-              userId: user.id,
-              planCode,
-              subscriptionId: metadataPendingSubId,
-            })
-          );
-          return {
-            statusCode: 200,
-            headers,
-            body: JSON.stringify({
-              subscriptionId: metadataPendingSubId,
-              keyId,
-              planId: razorpayPlanId.trim(),
-              planCode,
-              status: "created",
-              reused: true,
-            }),
-          };
-        } else {
+        if (metadataPendingPlan && metadataPendingPlan !== planCode) {
           return {
             statusCode: 409,
             headers,
@@ -702,148 +897,32 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
             }),
           };
         }
-      }
 
-      // 9. Atomic Double-Tab Coalescing via singleFlight
-      const flightKey = `sub_mandate:${user.id}:${planCode}`;
-      return await singleFlight(flightKey, async () => {
-        // Re-check pending orders inside flight
-        const { data: racePendingOrder } = await supabaseAdmin
-          .from("payment_orders")
-          .select("provider_order_id, plan_code, mode, provider")
-          .eq("user_id", user.id)
-          .eq("provider", "razorpay")
-          .eq("mode", resolvedMode)
-          .eq("plan_code", planCode)
-          .eq("status", "created")
-          .like("provider_order_id", "sub_%")
-          .gte("created_at", expirationCutoff)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        const isRaceSub =
-          typeof racePendingOrder?.provider_order_id === "string" &&
-          racePendingOrder.provider_order_id.startsWith("sub_") &&
-          !racePendingOrder.provider_order_id.startsWith("sub_pending_");
-
-        if (isRaceSub) {
+        const verifiedMetaSub = await verifyAndReuseCandidateMandate(metadataPendingSubId, planCode);
+        if (verifiedMetaSub) {
           return {
             statusCode: 200,
             headers,
             body: JSON.stringify({
-              subscriptionId: racePendingOrder.provider_order_id,
+              subscriptionId: metadataPendingSubId,
               keyId,
               planId: razorpayPlanId.trim(),
               planCode,
-              status: "created",
+              status: verifiedMetaSub.status,
               reused: true,
             }),
           };
         }
+      }
 
-        const credentials = Buffer.from(`${keyId}:${keySecret}`).toString("base64");
+      // SingleFlight Coalescing & Durable Mandate Creation
+      const flightKey = `sub_mandate:${user.id}:${planCode}`;
+      const result = await singleFlight(flightKey, async () => {
+        // Unique attempt ID per try (Requirement 8)
+        const attemptId = (await import("crypto")).randomUUID().replace(/-/g, "").slice(0, 16);
+        const reservationOrderId = `sub_pending_${user.id}_${attemptId}`;
 
-        // 10. Requirement 1: Provider Plan Verification
-        let planRes: Response;
-        try {
-          planRes = await fetchCaller(`https://api.razorpay.com/v1/plans/${razorpayPlanId.trim()}`, {
-            method: "GET",
-            headers: {
-              Authorization: `Basic ${credentials}`,
-            },
-          });
-        } catch (planFetchErr: any) {
-          safeLog.error("[Netlify /billing-razorpay-subscription] Network error fetching plan; failing closed:", planFetchErr);
-          return {
-            statusCode: 502,
-            headers,
-            body: JSON.stringify({
-              error: "Failed to verify plan with payment provider",
-              code: "PLAN_VERIFICATION_FAILED",
-            }),
-          };
-        }
-
-        if (!planRes.ok) {
-          const planErr = await planRes.json().catch(() => ({}));
-          safeLog.error("[Netlify /billing-razorpay-subscription] Plan fetch non-200 from provider; failing closed:", planErr);
-          return {
-            statusCode: 502,
-            headers,
-            body: JSON.stringify({
-              error: "Failed to verify plan with payment provider",
-              code: "PLAN_VERIFICATION_FAILED",
-            }),
-          };
-        }
-
-        const planData = await planRes.json();
-        const planItem = planData?.item || {};
-        const verifiedAmount = planItem?.amount ?? planData?.amount;
-        const verifiedCurrency = (planItem?.currency ?? planData?.currency ?? "").toUpperCase();
-        const verifiedPeriod = (planData?.period ?? "").toLowerCase();
-        const verifiedInterval = Number(planData?.interval ?? 1);
-
-        const PLAN_SPECS: Record<
-          string,
-          { amount: number; matchPeriodInterval: (period: string, interval: number) => boolean }
-        > = {
-          weekly: {
-            amount: 69200,
-            matchPeriodInterval: (p, i) => (p === "weekly" && i === 1) || (p === "daily" && i === 7),
-          },
-          monthly: {
-            amount: 149900,
-            matchPeriodInterval: (p, i) => p === "monthly" && i === 1,
-          },
-          quarterly: {
-            amount: 399900,
-            matchPeriodInterval: (p, i) => (p === "monthly" && i === 3) || (p === "quarterly" && i === 1),
-          },
-        };
-
-        const expectedSpec = PLAN_SPECS[planCode];
-        const isAmountValid = verifiedAmount === expectedSpec?.amount;
-        const isCurrencyValid = verifiedCurrency === "INR";
-        const isPeriodIntervalValid = expectedSpec
-          ? expectedSpec.matchPeriodInterval(verifiedPeriod, verifiedInterval)
-          : false;
-
-        if (!expectedSpec || !isAmountValid || !isCurrencyValid || !isPeriodIntervalValid) {
-          safeLog.error("[Netlify /billing-razorpay-subscription] Provider plan verification failed mismatch:", {
-            planCode,
-            razorpayPlanId: razorpayPlanId.trim(),
-            expectedAmount: expectedSpec?.amount,
-            verifiedAmount,
-            verifiedCurrency,
-            verifiedPeriod,
-            verifiedInterval,
-          });
-          return {
-            statusCode: 502,
-            headers,
-            body: JSON.stringify({
-              error: `Provider plan details do not match ${planCode} plan requirements`,
-              code: "PLAN_VERIFICATION_MISMATCH",
-            }),
-          };
-        }
-
-        safeLog.info(
-          "[Netlify /billing-razorpay-subscription] Verified Razorpay plan with provider:",
-          JSON.stringify({
-            planCode,
-            razorpayPlanId: razorpayPlanId.trim(),
-            verifiedAmount,
-            verifiedCurrency,
-            verifiedPeriod,
-            verifiedInterval,
-          })
-        );
-
-        // 11. Requirement 2: Durable Mandate Creation
-        const reservationOrderId = `sub_pending_${user.id}`;
+        // Reserve pending row in DB with explicit state 'reserved' (Requirement 8 & 7)
         const { error: reserveInsertErr } = await supabaseAdmin
           .from("payment_orders")
           .insert({
@@ -853,7 +932,7 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
             plan_code: planCode,
             amount_paise: verifiedAmount,
             currency: "INR",
-            status: "created",
+            status: "reserved",
             mode: resolvedMode,
           });
 
@@ -863,23 +942,18 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
             reserveInsertErr.message?.includes("duplicate") ||
             reserveInsertErr.message?.includes("unique")
           ) {
-            safeLog.warn(
-              "[Netlify /billing-razorpay-subscription] Unique constraint collision on pending subscription reservation:",
-              reserveInsertErr
-            );
-
             const { data: existingRace, error: raceFetchErr } = await supabaseAdmin
               .from("payment_orders")
               .select("id, provider_order_id, plan_code, mode, status, created_at")
               .eq("user_id", user.id)
               .eq("provider", "razorpay")
-              .eq("status", "created")
+              .eq("mode", resolvedMode)
+              .in("status", ["reserved", "created"])
               .order("created_at", { ascending: false })
               .limit(1)
               .maybeSingle();
 
             if (raceFetchErr || !existingRace) {
-              safeLog.error("[Netlify /billing-razorpay-subscription] Conflicting order lookup failed; failing closed:", raceFetchErr);
               return {
                 statusCode: 409,
                 headers,
@@ -890,12 +964,20 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
               };
             }
 
-            // Unique-collision path must check plan equality, never reuse a different plan
+            const raceCreatedMs = existingRace.created_at ? new Date(existingRace.created_at).getTime() : 0;
+            if (Date.now() - raceCreatedMs > LEASE_DURATION_MS) {
+              await supabaseAdmin.from("payment_orders").update({ status: "expired" }).eq("id", existingRace.id);
+              return {
+                statusCode: 409,
+                headers,
+                body: JSON.stringify({
+                  error: "Previous checkout attempt expired. Please try again.",
+                  code: "RESERVATION_LEASE_RECOVERED",
+                }),
+              };
+            }
+
             if (existingRace.plan_code !== planCode) {
-              safeLog.warn("[Netlify /billing-razorpay-subscription] Collision with different plan; refusing reuse:", {
-                requestedPlan: planCode,
-                existingPlan: existingRace.plan_code,
-              });
               return {
                 statusCode: 409,
                 headers,
@@ -911,18 +993,21 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
               existingRace.provider_order_id.startsWith("sub_") &&
               !existingRace.provider_order_id.startsWith("sub_pending_")
             ) {
-              return {
-                statusCode: 200,
-                headers,
-                body: JSON.stringify({
-                  subscriptionId: existingRace.provider_order_id,
-                  keyId,
-                  planId: razorpayPlanId.trim(),
-                  planCode,
-                  status: "created",
-                  reused: true,
-                }),
-              };
+              const verifiedSub = await verifyAndReuseCandidateMandate(existingRace.provider_order_id, planCode);
+              if (verifiedSub) {
+                return {
+                  statusCode: 200,
+                  headers,
+                  body: JSON.stringify({
+                    subscriptionId: existingRace.provider_order_id,
+                    keyId,
+                    planId: razorpayPlanId.trim(),
+                    planCode,
+                    status: verifiedSub.status,
+                    reused: true,
+                  }),
+                };
+              }
             }
 
             return {
@@ -972,6 +1057,8 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
                 user_id: user.id,
                 email: user.email || "",
                 plan_code: planCode,
+                attempt_id: attemptId,
+                reservation_id: reservationOrderId,
               },
             }),
           });
@@ -979,7 +1066,10 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
           safeLog.error("[Netlify /billing-razorpay-subscription] Network exception calling Razorpay subscriptions API:", gatewayErr);
           await supabaseAdmin
             .from("payment_orders")
-            .update({ status: "failed" })
+            .update({
+              status: "failed",
+              metadata: { reconciliation_state: "unknown", error: gatewayErr?.message || String(gatewayErr) },
+            })
             .eq("provider_order_id", reservationOrderId);
 
           return {
@@ -994,10 +1084,7 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
 
         if (!rzpRes.ok) {
           const err = await rzpRes.json().catch(() => ({}));
-          safeLog.error(
-            "[Netlify /billing-razorpay-subscription] Failed to create Razorpay subscription:",
-            err
-          );
+          safeLog.error("[Netlify /billing-razorpay-subscription] Failed to create Razorpay subscription:", err);
           await supabaseAdmin
             .from("payment_orders")
             .update({ status: "failed" })
@@ -1013,22 +1100,88 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
           };
         }
 
-        const subscriptionData: any = await rzpRes.json();
+        let subscriptionData: any;
+        try {
+          subscriptionData = await rzpRes.json();
+        } catch (parseErr: any) {
+          safeLog.error("[Netlify /billing-razorpay-subscription] Failed to parse Razorpay subscription response:", parseErr);
+          await supabaseAdmin
+            .from("payment_orders")
+            .update({
+              status: "failed",
+              metadata: { reconciliation_state: "parse_error", error: parseErr?.message },
+            })
+            .eq("provider_order_id", reservationOrderId);
 
-        // Update reserved order with real Razorpay subscription ID
-        const { error: updateOrderErr } = await supabaseAdmin
+          return {
+            statusCode: 502,
+            headers,
+            body: JSON.stringify({
+              error: "Invalid payment gateway response",
+              code: "GATEWAY_RESPONSE_INVALID",
+            }),
+          };
+        }
+
+        // Validate subscriptionData.id and status before persisting (Requirement 9)
+        const validSubId =
+          typeof subscriptionData?.id === "string" &&
+          subscriptionData.id.startsWith("sub_") &&
+          !subscriptionData.id.startsWith("sub_pending_");
+        const validStatus =
+          subscriptionData?.status === "created" ||
+          subscriptionData?.status === "authenticated" ||
+          subscriptionData?.status === "active";
+
+        if (!validSubId || !validStatus) {
+          safeLog.error("[Netlify /billing-razorpay-subscription] Invalid subscription data received from Razorpay:", subscriptionData);
+          await supabaseAdmin
+            .from("payment_orders")
+            .update({ status: "failed" })
+            .eq("provider_order_id", reservationOrderId);
+
+          if (subscriptionData?.id && typeof subscriptionData.id === "string" && subscriptionData.id.startsWith("sub_")) {
+            try {
+              await fetchCaller(`https://api.razorpay.com/v1/subscriptions/${subscriptionData.id}/cancel`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: `Basic ${credentials}` },
+                body: JSON.stringify({ cancel_at_cycle_end: 0 }),
+              });
+            } catch (_) {}
+          }
+
+          return {
+            statusCode: 502,
+            headers,
+            body: JSON.stringify({
+              error: "Invalid subscription details received from provider",
+              code: "GATEWAY_RESPONSE_INVALID",
+            }),
+          };
+        }
+
+        // Reserved-order update with affected row count check (Requirement 10)
+        const { data: updatedOrders, error: updateOrderErr } = await supabaseAdmin
           .from("payment_orders")
           .update({
             provider_order_id: subscriptionData.id,
             status: "created",
           })
-          .eq("provider_order_id", reservationOrderId);
+          .eq("provider_order_id", reservationOrderId)
+          .select("id, provider_order_id");
 
-        if (updateOrderErr) {
-          safeLog.error(
-            "[Netlify /billing-razorpay-subscription] Failed to update reserved order with provider subscription ID; cancelling mandate:",
-            updateOrderErr
-          );
+        if (
+          updateOrderErr ||
+          !updatedOrders ||
+          updatedOrders.length === 0 ||
+          updatedOrders[0].provider_order_id !== subscriptionData.id
+        ) {
+          safeLog.error("[Netlify /billing-razorpay-subscription] Failed to update reserved order (zero rows affected or ID mismatch); cancelling mandate at provider:", {
+            error: updateOrderErr,
+            subscriptionId: subscriptionData.id,
+            affectedCount: updatedOrders?.length ?? 0,
+          });
+
           await supabaseAdmin
             .from("payment_orders")
             .update({ status: "failed" })
@@ -1037,10 +1190,7 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
           try {
             await fetchCaller(`https://api.razorpay.com/v1/subscriptions/${subscriptionData.id}/cancel`, {
               method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Basic ${credentials}`,
-              },
+              headers: { "Content-Type": "application/json", Authorization: `Basic ${credentials}` },
               body: JSON.stringify({ cancel_at_cycle_end: 0 }),
             });
           } catch (cancelErr) {
@@ -1057,18 +1207,50 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
           };
         }
 
-        // Requirement 1: Use provider current_start/current_end when granting time. Log the verified values.
-        let providerCurrentStart: string | null = null;
-        let providerCurrentEnd: string | null = null;
+        // Schedule & Period Boundaries (Requirement 11)
         const rawStartSec = subscriptionData.current_start ?? subscriptionData.start_at;
         const rawEndSec = subscriptionData.current_end ?? subscriptionData.end_at;
+        const rawChargeAtSec = subscriptionData.charge_at;
 
-        if (typeof rawStartSec === "number" && !isNaN(rawStartSec) && rawStartSec > 0) {
-          providerCurrentStart = new Date(rawStartSec * 1000).toISOString();
+        const hasValidStart = typeof rawStartSec === "number" && !isNaN(rawStartSec) && rawStartSec > 0;
+        const hasValidEnd = typeof rawEndSec === "number" && !isNaN(rawEndSec) && rawEndSec > 0;
+
+        if (!hasValidStart || !hasValidEnd) {
+          safeLog.error("[Netlify /billing-razorpay-subscription] Provider response is missing required period boundaries; failing closed:", {
+            subscriptionId: subscriptionData.id,
+            rawStartSec,
+            rawEndSec,
+          });
+
+          try {
+            await fetchCaller(`https://api.razorpay.com/v1/subscriptions/${subscriptionData.id}/cancel`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Basic ${credentials}` },
+              body: JSON.stringify({ cancel_at_cycle_end: 0 }),
+            });
+          } catch (_) {}
+
+          await supabaseAdmin
+            .from("payment_orders")
+            .update({ status: "failed" })
+            .eq("provider_order_id", subscriptionData.id);
+
+          return {
+            statusCode: 502,
+            headers,
+            body: JSON.stringify({
+              error: "Payment provider did not supply required billing cycle boundaries",
+              code: "MISSING_PROVIDER_PERIOD",
+            }),
+          };
         }
-        if (typeof rawEndSec === "number" && !isNaN(rawEndSec) && rawEndSec > 0) {
-          providerCurrentEnd = new Date(rawEndSec * 1000).toISOString();
-        }
+
+        const providerCurrentStart = new Date(rawStartSec * 1000).toISOString();
+        const providerCurrentEnd = new Date(rawEndSec * 1000).toISOString();
+        const providerChargeAt =
+          typeof rawChargeAtSec === "number" && !isNaN(rawChargeAtSec) && rawChargeAtSec > 0
+            ? new Date(rawChargeAtSec * 1000).toISOString()
+            : null;
 
         safeLog.info(
           "[Netlify /billing-razorpay-subscription] Subscription created with provider cycle bounds:",
@@ -1076,6 +1258,7 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
             subscriptionId: subscriptionData.id,
             providerCurrentStart,
             providerCurrentEnd,
+            providerChargeAt,
             verifiedAmount,
             verifiedCurrency,
             verifiedPeriod,
@@ -1084,31 +1267,31 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
         );
 
         if (existingSub) {
-          const { error: updateErr } = await supabaseAdmin
+          const mergedMetadata = {
+            ...(existingSub.metadata || {}),
+            pending_subscription_id: subscriptionData.id,
+            pending_plan_code: planCode,
+            pending_mode: resolvedMode,
+            pending_created_at: new Date().toISOString(),
+            provider_current_start: providerCurrentStart,
+            provider_current_end: providerCurrentEnd,
+            provider_charge_at: providerChargeAt,
+            verified_amount_paise: verifiedAmount,
+            verified_currency: verifiedCurrency,
+            verified_period: verifiedPeriod,
+            verified_interval: verifiedInterval,
+          };
+
+          const { error: updateSubErr } = await supabaseAdmin
             .from("subscriptions")
             .update({
               updated_at: new Date().toISOString(),
-              metadata: {
-                ...(existingSub.metadata || {}),
-                pending_subscription_id: subscriptionData.id,
-                pending_plan_code: planCode,
-                pending_mode: resolvedMode,
-                pending_created_at: new Date().toISOString(),
-                provider_current_start: providerCurrentStart,
-                provider_current_end: providerCurrentEnd,
-                verified_amount_paise: verifiedAmount,
-                verified_currency: verifiedCurrency,
-                verified_period: verifiedPeriod,
-                verified_interval: verifiedInterval,
-              },
+              metadata: mergedMetadata,
             })
             .eq("user_id", user.id);
 
-          if (updateErr) {
-            safeLog.warn(
-              "[Netlify /billing-razorpay-subscription] Failed to update pending subscription metadata:",
-              updateErr
-            );
+          if (updateSubErr) {
+            safeLog.warn("[Netlify /billing-razorpay-subscription] Failed to update pending subscription metadata:", updateSubErr);
           }
         }
 
@@ -1126,6 +1309,8 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
           }),
         };
       });
+
+      return result;
     } catch (err: any) {
       safeLog.error("[Netlify /billing-razorpay-subscription]", err);
       return {

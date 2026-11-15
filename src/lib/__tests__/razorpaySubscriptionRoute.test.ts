@@ -53,11 +53,70 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
           return { data: { user: null }, error: new Error("Invalid token") };
         },
       },
+      rpc: async (name: string, args: any) => {
+        if (options?.dbError) return { data: null, error: options.dbError };
+        if (name === "cancel_autorenew_subscription") {
+          const sub = mockDbSubscriptions.get(args.p_user_id);
+          if (sub) {
+            mockDbSubscriptions.set(args.p_user_id, {
+              ...sub,
+              cancel_at_period_end: true,
+              metadata: { ...(sub.metadata || {}), ...args.p_metadata },
+            });
+          }
+          for (const [id, order] of Array.from(mockDbPaymentOrders.entries())) {
+            if (order.user_id === args.p_user_id && order.provider_order_id === args.p_mandate_id) {
+              mockDbPaymentOrders.set(id, { ...order, status: "cancelled" });
+            }
+          }
+          return { data: true, error: null };
+        }
+        return { data: null, error: null };
+      },
       from: (table: string) => {
-        let filters: Record<string, any> = {};
-        let neqFilters: Record<string, any> = {};
-        let likeFilters: Record<string, string> = {};
-        let gteFilters: Record<string, any> = {};
+        const filters: Record<string, any> = {};
+        const neqFilters: Record<string, any> = {};
+        const likeFilters: Record<string, string> = {};
+        const gteFilters: Record<string, any> = {};
+        const ltFilters: Record<string, any> = {};
+        const inFilters: Record<string, any[]> = {};
+
+        const executeSelect = () => {
+          if (options?.dbError) return { data: null, error: options.dbError };
+          if (table === "payment_orders") {
+            const orders = Array.from(mockDbPaymentOrders.values());
+            const matches = orders.filter((o) => {
+              for (const [k, v] of Object.entries(filters)) {
+                if (o[k] !== v) return false;
+              }
+              for (const [k, v] of Object.entries(neqFilters)) {
+                if (o[k] === v) return false;
+              }
+              for (const [k, pat] of Object.entries(likeFilters)) {
+                const val = String(o[k] || "");
+                const prefix = pat.replace("%", "");
+                if (!val.startsWith(prefix)) return false;
+              }
+              for (const [k, v] of Object.entries(gteFilters)) {
+                if (o[k] < v) return false;
+              }
+              for (const [k, v] of Object.entries(ltFilters)) {
+                if (o[k] >= v) return false;
+              }
+              for (const [k, vals] of Object.entries(inFilters)) {
+                if (!vals.includes(o[k])) return false;
+              }
+              return true;
+            });
+            return { data: matches, error: null };
+          }
+          if (table === "subscriptions") {
+            const filterUserId = filters.user_id;
+            const found = filterUserId ? mockDbSubscriptions.get(filterUserId) : null;
+            return { data: found ? [found] : [], error: null };
+          }
+          return { data: [], error: null };
+        };
 
         const query: any = {
           select: () => query,
@@ -79,56 +138,85 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
             gteFilters[col] = val;
             return query;
           },
+          lt: (col: string, val: any) => {
+            ltFilters[col] = val;
+            return query;
+          },
+          in: (col: string, vals: any[]) => {
+            inFilters[col] = vals;
+            return query;
+          },
           maybeSingle: async () => {
             if (options?.dbError) return { data: null, error: options.dbError };
-            if (table === "payment_orders") {
-              const orders = Array.from(mockDbPaymentOrders.values());
-              const match = orders.find((o) => {
-                for (const [k, v] of Object.entries(filters)) {
-                  if (o[k] !== v) return false;
-                }
-                for (const [k, v] of Object.entries(neqFilters)) {
-                  if (o[k] === v) return false;
-                }
-                for (const [k, pat] of Object.entries(likeFilters)) {
-                  const val = String(o[k] || "");
-                  const prefix = pat.replace("%", "");
-                  if (!val.startsWith(prefix)) return false;
-                }
-                for (const [k, v] of Object.entries(gteFilters)) {
-                  if (o[k] < v) return false;
-                }
-                return true;
-              });
-              return { data: match || null, error: null };
-            }
-            if (table === "subscriptions") {
-              const filterUserId = filters.user_id;
-              const found = filterUserId ? mockDbSubscriptions.get(filterUserId) : null;
-              return { data: found || null, error: null };
-            }
-            return { data: null, error: null };
+            const res = executeSelect();
+            if (res.error) return res;
+            return { data: res.data?.[0] || null, error: null };
+          },
+          then: (onfulfilled: any, onrejected: any) => {
+            return Promise.resolve(executeSelect()).then(onfulfilled, onrejected);
           },
           update: (updates: any) => {
-            const updateQuery = {
-              eq: async (col: string, val: any) => {
-                if (options?.updateError || options?.dbError) {
-                  return { error: options.updateError || options.dbError };
-                }
-                if (table === "payment_orders") {
-                  const existing = mockDbPaymentOrders.get(val);
-                  if (existing) {
-                    const updated = { ...existing, ...updates };
-                    mockDbPaymentOrders.delete(val);
-                    mockDbPaymentOrders.set(updates.provider_order_id || val, updated);
+            const updateFilters: Record<string, any> = {};
+            const updateLtFilters: Record<string, any> = {};
+            const updateInFilters: Record<string, any[]> = {};
+            let isSelect = false;
+
+            const performUpdate = () => {
+              if (options?.updateError || options?.dbError) {
+                return { data: null, error: options.updateError || options.dbError };
+              }
+              const updatedItems: any[] = [];
+              if (table === "payment_orders") {
+                for (const [key, order] of Array.from(mockDbPaymentOrders.entries())) {
+                  let match = true;
+                  for (const [k, v] of Object.entries(updateFilters)) {
+                    if (order[k] !== v) match = false;
                   }
-                } else if (table === "subscriptions") {
-                  if (col === "user_id") {
-                    const existing = mockDbSubscriptions.get(val) || {};
-                    mockDbSubscriptions.set(val, { ...existing, ...updates });
+                  for (const [k, v] of Object.entries(updateLtFilters)) {
+                    if (order[k] >= v) match = false;
+                  }
+                  for (const [k, vals] of Object.entries(updateInFilters)) {
+                    if (!vals.includes(order[k])) match = false;
+                  }
+                  if (match) {
+                    const updated = { ...order, ...updates };
+                    mockDbPaymentOrders.delete(key);
+                    const newKey = updated.provider_order_id || key;
+                    mockDbPaymentOrders.set(newKey, updated);
+                    updatedItems.push(updated);
                   }
                 }
-                return { error: null };
+              } else if (table === "subscriptions") {
+                const userId = updateFilters.user_id;
+                if (userId) {
+                  const existing = mockDbSubscriptions.get(userId) || {};
+                  const updated = { ...existing, ...updates };
+                  mockDbSubscriptions.set(userId, updated);
+                  updatedItems.push(updated);
+                }
+              }
+              return { data: isSelect ? updatedItems : null, error: null };
+            };
+
+            const updateQuery: any = {
+              eq: (col: string, val: any) => {
+                updateFilters[col] = val;
+                return updateQuery;
+              },
+              lt: (col: string, val: any) => {
+                updateLtFilters[col] = val;
+                return updateQuery;
+              },
+              in: (col: string, vals: any[]) => {
+                updateInFilters[col] = vals;
+                return updateQuery;
+              },
+              select: () => {
+                isSelect = true;
+                return updateQuery;
+              },
+              then: (onfulfilled: any, onrejected: any) => {
+                return Promise.resolve(performUpdate()).then(onfulfilled, onrejected);
               },
             };
             return updateQuery;
@@ -216,13 +304,14 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
         if (planId.includes("weekly")) subId = "sub_rzp_weekly_123456";
         else if (planId.includes("quarterly")) subId = "sub_rzp_quarterly_987654";
 
-        const subResponse = overrides?.subData || {
+        const defaultSub = {
           id: subId,
           plan_id: planId,
           status: "created",
           current_start: Math.floor(Date.now() / 1000),
           current_end: Math.floor(Date.now() / 1000) + 30 * 86400,
         };
+        const subResponse = overrides?.subData ? { ...defaultSub, ...overrides.subData } : defaultSub;
         return new Response(JSON.stringify(subResponse), {
           status: 200,
           headers: { "Content-Type": "application/json" },
@@ -512,7 +601,8 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
       const res = await POST(req);
       expect(res.status).toBe(500);
 
-      const reservationOrder = mockDbPaymentOrders.get(`sub_pending_${mockUser.id}`);
+      const orders = Array.from(mockDbPaymentOrders.values());
+      const reservationOrder = orders.find((o) => o.provider_order_id?.startsWith(`sub_pending_${mockUser.id}`));
       expect(reservationOrder).toBeDefined();
       expect(reservationOrder.status).toBe("failed");
     });
@@ -525,7 +615,9 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
         provider: "razorpay",
         provider_order_id: `sub_pending_${mockUser.id}`,
         plan_code: "weekly",
+        mode: "test",
         status: "created",
+        created_at: new Date().toISOString(),
       });
 
       const mockFetch = createMockRazorpayFetch();
@@ -568,7 +660,37 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
         created_at: new Date().toISOString(),
       });
 
-      const mockFetch = vi.fn();
+      let rzpCreateCalled = false;
+      const mockFetch = vi.fn().mockImplementation(async (url: string, init: any) => {
+        const urlStr = url.toString();
+        if (urlStr.includes("/v1/plans/")) {
+          return new Response(
+            JSON.stringify({
+              id: "plan_monthly_rzp_456",
+              item: { amount: 149900, currency: "INR" },
+              period: "monthly",
+              interval: 1,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        if (urlStr.includes("/v1/subscriptions/sub_rzp_existing_pending_1")) {
+          return new Response(
+            JSON.stringify({
+              id: "sub_rzp_existing_pending_1",
+              plan_id: "plan_monthly_rzp_456",
+              status: "created",
+              created_at: Math.floor(Date.now() / 1000),
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        if (init?.method === "POST" && urlStr.endsWith("/v1/subscriptions")) {
+          rzpCreateCalled = true;
+        }
+        return new Response();
+      });
+
       const req = createMockRequest(
         { planCode: "monthly" },
         {},
@@ -585,7 +707,7 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
       const json = await res.json();
       expect(json.subscriptionId).toBe("sub_rzp_existing_pending_1");
       expect(json.reused).toBe(true);
-      expect(mockFetch).not.toHaveBeenCalled();
+      expect(rzpCreateCalled).toBe(false);
     });
 
     it("blocks with 409 PENDING_SUBSCRIPTION_EXISTS when user has pending order for a different plan", async () => {
@@ -601,7 +723,26 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
         created_at: new Date().toISOString(),
       });
 
-      const mockFetch = vi.fn();
+      let rzpCreateCalled = false;
+      const mockFetch = vi.fn().mockImplementation(async (url: string, init: any) => {
+        const urlStr = url.toString();
+        if (urlStr.includes("/v1/plans/")) {
+          return new Response(
+            JSON.stringify({
+              id: "plan_monthly_rzp_456",
+              item: { amount: 149900, currency: "INR" },
+              period: "monthly",
+              interval: 1,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        if (init?.method === "POST" && urlStr.endsWith("/v1/subscriptions")) {
+          rzpCreateCalled = true;
+        }
+        return new Response();
+      });
+
       const req = createMockRequest(
         { planCode: "monthly" },
         {},
@@ -618,7 +759,7 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
       const json = await res.json();
       expect(json.code).toBe("PENDING_SUBSCRIPTION_EXISTS");
       expect(json.error).toContain("weekly");
-      expect(mockFetch).not.toHaveBeenCalled();
+      expect(rzpCreateCalled).toBe(false);
     });
 
     it("fails closed with 503 before Razorpay call when pending query errors", async () => {
@@ -671,7 +812,7 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
       const res = await DELETE(req);
       expect(res.status).toBe(400);
       const json = await res.json();
-      expect(json.code).toBe("NO_ACTIVE_SUBSCRIPTION");
+      expect(json.code).toBe("NOTHING_TO_CANCEL");
     });
 
     it("successfully cancels auto-renewal at period end via Razorpay API and updates DB", async () => {
@@ -752,6 +893,8 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
           id: "sub_rzp_weekly_123456",
           plan_id: capturedBody.plan_id,
           status: "created",
+          current_start: Math.floor(Date.now() / 1000),
+          current_end: Math.floor(Date.now() / 1000) + 7 * 86400,
         }),
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
@@ -807,6 +950,8 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
           id: "sub_rzp_monthly_654321",
           plan_id: capturedBody.plan_id,
           status: "created",
+          current_start: Math.floor(Date.now() / 1000),
+          current_end: Math.floor(Date.now() / 1000) + 30 * 86400,
         }),
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
@@ -860,6 +1005,8 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
           id: "sub_rzp_quarterly_987654",
           plan_id: capturedBody.plan_id,
           status: "created",
+          current_start: Math.floor(Date.now() / 1000),
+          current_end: Math.floor(Date.now() / 1000) + 90 * 86400,
         }),
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
@@ -1011,5 +1158,305 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
     expect(onError).toHaveBeenCalledWith(
       expect.stringContaining("Auto-renew subscriptions are currently disabled")
     );
+  });
+
+  // =========================================================================
+  // ADDITIONAL SAFETY REQUIREMENT TESTS (PR #627 Follow-up)
+  // =========================================================================
+  describe("Failed reservation retry recovery (Requirement 8)", () => {
+    it("allows immediate retry when previous reservation failed", async () => {
+      // First attempt fails during Razorpay subscription creation
+      const mockFetchFail = createMockRazorpayFetch({ subStatus: 500 });
+      const req1 = createMockRequest(
+        { planCode: "monthly" },
+        {},
+        {
+          getSupabaseAdmin: () => createMockSupabaseAdmin(),
+          verifyUserNotBanned: async () => ({ isBlocked: false }),
+          fetchFn: mockFetchFail,
+          isProductionHost: false,
+        }
+      );
+
+      const res1 = await POST(req1);
+      expect(res1.status).toBe(500);
+
+      // Verify the reservation row is in 'failed' status
+      const orders = Array.from(mockDbPaymentOrders.values());
+      const failedOrder = orders.find((o) => o.status === "failed");
+      expect(failedOrder).toBeDefined();
+      expect(failedOrder.provider_order_id).toContain(`sub_pending_${mockUser.id}_`);
+
+      // Second attempt succeeds immediately
+      const mockFetchSuccess = createMockRazorpayFetch({
+        subData: {
+          id: "sub_rzp_retry_recovered_123",
+          plan_id: "plan_monthly_rzp_456",
+          status: "created",
+          current_start: Math.floor(Date.now() / 1000),
+          current_end: Math.floor(Date.now() / 1000) + 30 * 86400,
+        },
+      });
+      const req2 = createMockRequest(
+        { planCode: "monthly" },
+        {},
+        {
+          getSupabaseAdmin: () => createMockSupabaseAdmin(),
+          verifyUserNotBanned: async () => ({ isBlocked: false }),
+          fetchFn: mockFetchSuccess,
+          isProductionHost: false,
+        }
+      );
+
+      const res2 = await POST(req2);
+      expect(res2.status).toBe(200);
+      const json2 = await res2.json();
+      expect(json2.subscriptionId).toBe("sub_rzp_retry_recovered_123");
+    });
+  });
+
+  describe("Cancellation Safety & Edge Cases (Requirements 2, 3, 4, 12)", () => {
+    it("returns 400 NOTHING_TO_CANCEL when no active or pending mandate ID exists", async () => {
+      // User has subscription but without a sub_* mandate ID (e.g. manual or legacy order)
+      mockDbSubscriptions.set(mockUser.id, {
+        id: "sub_legacy_prepaid",
+        user_id: mockUser.id,
+        provider: "razorpay",
+        subscription_id: "order_legacy_prepaid_123",
+        status: "active",
+      });
+
+      const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer valid_token" },
+      });
+      (req as any).__testDeps = {
+        getSupabaseAdmin: () => createMockSupabaseAdmin(),
+      };
+
+      const res = await DELETE(req);
+      expect(res.status).toBe(400);
+      const json = await res.json();
+      expect(json.code).toBe("NOTHING_TO_CANCEL");
+    });
+
+    it("cancellation keeps working even when NEXT_PUBLIC_BILLING_ENABLED is off and AUTORENEW is unset", async () => {
+      delete process.env.NEXT_PUBLIC_AUTORENEW_ENABLED;
+      process.env.NEXT_PUBLIC_BILLING_ENABLED = "false";
+
+      mockDbSubscriptions.set(mockUser.id, {
+        id: "sub_active_billing_off",
+        user_id: mockUser.id,
+        provider: "razorpay",
+        subscription_id: "sub_rzp_cancel_when_billing_off",
+        status: "active",
+        current_period_end: new Date(Date.now() + 10 * 86400000).toISOString(),
+        cancel_at_period_end: false,
+      });
+
+      const mockFetch = vi.fn().mockImplementation(async (url: string) => {
+        if (url.includes("/cancel")) {
+          return new Response(JSON.stringify({ id: "sub_rzp_cancel_when_billing_off", status: "active" }), { status: 200 });
+        }
+        return new Response();
+      });
+
+      const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer valid_token" },
+      });
+      (req as any).__testDeps = {
+        getSupabaseAdmin: () => createMockSupabaseAdmin(),
+        fetchFn: mockFetch,
+      };
+
+      const res = await DELETE(req);
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.success).toBe(true);
+    });
+
+    it("cancels for past_due, halted, and unpaid customer states (Requirement 3)", async () => {
+      for (const status of ["past_due", "halted", "unpaid"] as const) {
+        mockDbSubscriptions.set(mockUser.id, {
+          id: `sub_${status}_123`,
+          user_id: mockUser.id,
+          provider: "razorpay",
+          subscription_id: `sub_rzp_${status}_mandate`,
+          status,
+          cancel_at_period_end: false,
+        });
+
+        const mockFetch = vi.fn().mockImplementation(async (url: string) => {
+          if (url.includes("/cancel")) {
+            return new Response(JSON.stringify({ id: `sub_rzp_${status}_mandate`, status: "cancelled" }), { status: 200 });
+          }
+          return new Response();
+        });
+
+        const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer valid_token" },
+        });
+        (req as any).__testDeps = {
+          getSupabaseAdmin: () => createMockSupabaseAdmin(),
+          fetchFn: mockFetch,
+        };
+
+        const res = await DELETE(req);
+        expect(res.status).toBe(200);
+        const json = await res.json();
+        expect(json.success).toBe(true);
+      }
+    });
+
+    it("cancels for pending-only customers who have no active subscription row (Requirement 3)", async () => {
+      // No row in subscriptions table, but pending order exists in payment_orders
+      mockDbSubscriptions.clear();
+      mockDbPaymentOrders.set("sub_rzp_pending_mandate_only", {
+        id: "order_pending_only",
+        user_id: mockUser.id,
+        provider: "razorpay",
+        provider_order_id: "sub_rzp_pending_mandate_only",
+        status: "created",
+        mode: "test",
+      });
+
+      const mockFetch = vi.fn().mockImplementation(async (url: string) => {
+        if (url.includes("/cancel")) {
+          return new Response(JSON.stringify({ id: "sub_rzp_pending_mandate_only", status: "cancelled" }), { status: 200 });
+        }
+        return new Response();
+      });
+
+      const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer valid_token" },
+      });
+      (req as any).__testDeps = {
+        getSupabaseAdmin: () => createMockSupabaseAdmin(),
+        fetchFn: mockFetch,
+      };
+
+      const res = await DELETE(req);
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.success).toBe(true);
+
+      const order = mockDbPaymentOrders.get("sub_rzp_pending_mandate_only");
+      expect(order.status).toBe("cancelled");
+    });
+
+    it("handles already-cancelled-at-provider by verifying status at provider (Requirement 2)", async () => {
+      mockDbSubscriptions.set(mockUser.id, {
+        id: "sub_already_done",
+        user_id: mockUser.id,
+        provider: "razorpay",
+        subscription_id: "sub_rzp_already_canceled_provider",
+        status: "active",
+        cancel_at_period_end: false,
+      });
+
+      let fetchedSub = false;
+      const mockFetch = vi.fn().mockImplementation(async (url: string) => {
+        if (url.includes("/cancel")) {
+          // Provider returns error indicating already cancelled
+          return new Response(
+            JSON.stringify({ error: { description: "Subscription is already cancelled" } }),
+            { status: 400, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        if (url.includes("/v1/subscriptions/sub_rzp_already_canceled_provider")) {
+          fetchedSub = true;
+          return new Response(
+            JSON.stringify({ id: "sub_rzp_already_canceled_provider", status: "cancelled" }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        return new Response();
+      });
+
+      const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer valid_token" },
+      });
+      (req as any).__testDeps = {
+        getSupabaseAdmin: () => createMockSupabaseAdmin(),
+        fetchFn: mockFetch,
+      };
+
+      const res = await DELETE(req);
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.success).toBe(true);
+      expect(fetchedSub).toBe(true);
+    });
+
+    it("refuses DELETE when mode or key configuration is invalid (Requirement 4)", async () => {
+      process.env.RAZORPAY_MODE = "invalid_mode";
+
+      const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer valid_token" },
+      });
+      (req as any).__testDeps = {
+        getSupabaseAdmin: () => createMockSupabaseAdmin(),
+      };
+
+      const res = await DELETE(req);
+      expect(res.status).toBe(503);
+      const json = await res.json();
+      expect(json.code).toBe("RAZORPAY_CONFIG_ERROR");
+    });
+  });
+
+  describe("Provider Period Boundaries & Scheduling (Requirement 11)", () => {
+    it("fails closed with 502 MISSING_PROVIDER_PERIOD and cancels mandate when boundaries are absent", async () => {
+      let cancelCalled = false;
+      const mockFetch = vi.fn().mockImplementation(async (url: string, init: any) => {
+        const urlStr = url.toString();
+        if (urlStr.includes("/v1/plans/")) {
+          return new Response(
+            JSON.stringify({
+              id: "plan_monthly_rzp_456",
+              item: { amount: 149900, currency: "INR" },
+              period: "monthly",
+              interval: 1,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        if (urlStr.includes("/cancel")) {
+          cancelCalled = true;
+          return new Response(JSON.stringify({ status: "cancelled" }), { status: 200 });
+        }
+        // Sub response missing current_start and current_end
+        return new Response(
+          JSON.stringify({
+            id: "sub_rzp_missing_bounds",
+            plan_id: "plan_monthly_rzp_456",
+            status: "created",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      });
+
+      const req = createMockRequest(
+        { planCode: "monthly" },
+        {},
+        {
+          getSupabaseAdmin: () => createMockSupabaseAdmin(),
+          verifyUserNotBanned: async () => ({ isBlocked: false }),
+          fetchFn: mockFetch,
+          isProductionHost: false,
+        }
+      );
+
+      const res = await POST(req);
+      expect(res.status).toBe(502);
+      const json = await res.json();
+      expect(json.code).toBe("MISSING_PROVIDER_PERIOD");
+      expect(cancelCalled).toBe(true);
+    });
   });
 });

@@ -27,6 +27,7 @@ export interface UserSubscription {
   id: string;
   userId: string;
   provider: BillingProvider;
+  subscriptionId?: string;
   planId?: string;
   currency: string;
   amount?: number;
