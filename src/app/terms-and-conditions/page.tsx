@@ -1,6 +1,6 @@
 import React from "react";
 import Link from "next/link";
-import BrandIcon from "@/components/BrandIcon";
+import GuideHeader from "@/components/GuideHeader";
 import Footer from "@/components/Footer";
 import { BreadcrumbJsonLd } from "@/components/seo/BreadcrumbJsonLd";
 
@@ -13,25 +13,17 @@ export const metadata = {
 };
 
 export default function TermsPage() {
-  return (
-    <>
-    <main className="min-h-screen bg-white text-[#09090B] py-16 px-6">
-  <BreadcrumbJsonLd trail={[{ name: "Home", path: "/" }, { name: "Terms and Conditions", path: "/terms-and-conditions" }]} />
-      {/* Small blue logo (max-width 200px) centered at top */}
-      <div className="max-w-[200px] mx-auto text-center mb-10">
-        <Link href="/" className="inline-flex items-center gap-2 text-blue-600 group">
-          <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center">
-            <BrandIcon className="w-4 h-4 text-white" />
-          </div>
-          <span className="text-xl font-bold tracking-tight text-blue-600">CareerMonke</span>
-        </Link>
-      </div>
+  const isAutorenewEnabled = process.env.NEXT_PUBLIC_AUTORENEW_ENABLED === "true";
 
-      {/* Narrow container with minimal styling */}
-      <div className="max-w-[680px] mx-auto text-sm leading-relaxed text-[#4B5563] space-y-4">
-        <h1 className="text-2xl sm:text-3xl font-bold text-[#09090B] tracking-tight">
-          Terms and Conditions
-        </h1>
+  return (
+    <div className="min-h-screen bg-white text-[#09090B] flex flex-col font-sans">
+      <GuideHeader />
+      <main id="main-content" className="flex-1 py-16 px-6">
+        <div className="max-w-[680px] mx-auto text-sm leading-relaxed text-[#4B5563] space-y-4">
+          <BreadcrumbJsonLd trail={[{ name: "Home", path: "/" }, { name: "Terms and Conditions", path: "/terms-and-conditions" }]} />
+          <h1 className="text-2xl sm:text-3xl font-bold text-[#09090B] tracking-tight">
+            Terms and Conditions
+          </h1>
         <p className="text-xs text-gray-500 font-mono">Last updated: November 10, 2026</p>
 
         <p className="mb-2">
@@ -104,7 +96,15 @@ export default function TermsPage() {
             <strong>Add-on packs:</strong> additional generation sets can only be added for additional usage on an active subscription; add-on sets are used only after your plan quota is exhausted and expire together with the subscription.
           </li>
           <li>
-            <strong>No automatic renewal:</strong> plans are prepaid for a fixed period and do not renew automatically. You are never charged again unless you choose to buy another plan, which extends your access period.
+            {isAutorenewEnabled ? (
+              <>
+                <strong>Automatic renewal:</strong> plans auto-renew every 7/30/90 days until cancelled. Renewal amount: Weekly ₹692 (every 7 days), Monthly ₹1,499 (every 30 days), Quarterly ₹3,999 (every 90 days), debited on the scheduled renewal date at the end of each billing cycle. You may cancel renewal at any time from your account settings before the scheduled renewal date.
+              </>
+            ) : (
+              <>
+                <strong>No automatic renewal:</strong> plans are prepaid for a fixed period and do not renew automatically. You are never charged again unless you choose to buy another plan, which extends your access period.
+              </>
+            )}
           </li>
           <li>
             <strong>Payment gateway:</strong> Payments will open soon. When active, all transactions are processed in Indian Rupees (INR) through Razorpay, supporting UPI, NetBanking, and cards. We do not collect or store your complete card numbers, UPI PINs, or netbanking credentials.
@@ -124,7 +124,15 @@ export default function TermsPage() {
         <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">4. Cancellation, Renewal, and Access After Cancellation</h2>
         <ul className="list-disc pl-5 space-y-2 mb-2">
           <li>
-            Plans do not renew automatically, so there is nothing to cancel. Your plan expires at the end of its paid period and your account returns to the free tier unless you choose to buy again.
+            {isAutorenewEnabled ? (
+              <>
+                Plans auto-renew every 7/30/90 days until cancelled (Weekly: ₹692 every 7 days, Monthly: ₹1,499 every 30 days, Quarterly: ₹3,999 every 90 days). Your upcoming renewal amount and date are displayed in your account settings. To cancel auto-renewal, visit your account settings and select cancel before the scheduled renewal date. Once cancelled, your premium access continues until the end of the paid cycle and no further renewal payments are charged.
+              </>
+            ) : (
+              <>
+                Plans do not renew automatically, so there is nothing to cancel. Your plan expires at the end of its paid period and your account returns to the free tier unless you choose to buy again.
+              </>
+            )}
           </li>
           <li>
             If you stop using the service before the period ends, you keep premium access until the end of the period you already paid for. We do not provide refunds or credits for unused time or unused generation sets, except the limited payment-failure cases described in the{" "}
@@ -170,9 +178,9 @@ export default function TermsPage() {
         <p className="mb-2">
           These Terms shall be governed by and construed in accordance with the laws of India. Any legal actions or disputes arising out of these terms shall be subject to the exclusive jurisdiction of the courts located in Bhubaneswar, India.
         </p>
-      </div>
-    </main>
-    <Footer />
-    </>
+        </div>
+      </main>
+      <Footer />
+    </div>
   );
 }

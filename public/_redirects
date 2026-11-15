@@ -5,6 +5,7 @@
 /paywall /jobs 301!
 /applications /tracker 301!
 /privacy /privacy-policy 301!
+/terms /terms-and-conditions 301!
 /early-access /signup 301!
 /early-access/* /signup 301!
 /jobs/* /jobs/detail 200

@@ -34,7 +34,7 @@ const siteTitle = "CareerMonke — Unindexed Jobs & Remote Career Discovery";
 const siteDescription =
   "Discover unindexed remote engineering, design, marketing, and data roles directly from verified employer career pages before they hit public aggregators.";
 
-const ogImageUrl = "https://careermonke.com/careermonke.png";
+const ogImageUrl = "https://careermonke.com/careermonke-logo.png";
 
 export const metadata: Metadata = {
   title: siteTitle,
@@ -54,8 +54,8 @@ export const metadata: Metadata = {
     images: [
       {
         url: ogImageUrl,
-        width: 1200,
-        height: 630,
+        width: 617,
+        height: 749,
         alt: siteTitle,
       },
     ],
@@ -75,10 +75,10 @@ export const metadata: Metadata = {
   manifest: "/manifest.webmanifest",
   icons: {
     icon: [
-      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
-      { url: "/icon.png", sizes: "512x512", type: "image/png" },
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/careermonke-logo.png", sizes: "512x512", type: "image/png" },
     ],
-    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+    apple: [{ url: "/careermonke-logo.png", sizes: "180x180", type: "image/png" }],
   },
 };
 
