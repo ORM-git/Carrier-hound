@@ -9,6 +9,9 @@
 import {
   AiProviderUpstreamError,
   extractTextCompletionContent,
+  isModelInCooldown,
+  setModelCooldown,
+  getModelCooldownRemaining,
   type AiTextCompletionProviderAdapter,
   type AiTextCompletionResponse,
 } from "./providerAdapter";
@@ -42,7 +45,7 @@ export interface AiAttemptInfo {
   finishReason?: string;
   usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
   contentLength: number;
-  /** Validator reason with echoed resume text removed. Never model output. */
+  /** Validator reason code with no employer names or IDs. Never raw model output. */
   validationError?: string;
 }
 
@@ -50,12 +53,14 @@ export class AiRoutingError extends Error {
   readonly code: AiErrorCode;
   readonly statusCode: number;
   readonly retryAfter?: number;
-  constructor(code: AiErrorCode, message: string, statusCode: number, retryAfter?: number) {
+  billableTokens?: number;
+  constructor(code: AiErrorCode, message: string, statusCode: number, retryAfter?: number, billableTokens?: number) {
     super(message);
     this.name = "AiRoutingError";
     this.code = code;
     this.statusCode = statusCode;
     this.retryAfter = retryAfter;
+    this.billableTokens = billableTokens;
   }
 }
 
@@ -80,6 +85,26 @@ export const DEFAULT_TOTAL_MS = 24_000;
 export const DEFAULT_PRIMARY_MS = 20_000;
 export const DEFAULT_FALLBACK_MS = 15_000;
 const REPAIR_ECHO_MAX_CHARS = 6_000;
+
+export function getValidationReasonCode(error: string): string {
+  if (!error) return "VALIDATION_FAILED";
+  const e = String(error).toLowerCase();
+  if (e.includes("json")) return "JSON_INVALID";
+  if (e.includes("html") || e.includes("markup") || e.includes("script")) return "MARKUP_DISALLOWED";
+  if (e.includes("paragraph")) return "PARAGRAPH_COUNT_MISMATCH";
+  if (e.includes("word count") || e.includes("words")) return "WORD_COUNT_OUT_OF_BOUNDS";
+  if (e.includes("numeric") || e.includes("number")) return "NUMERIC_FACT_MISMATCH";
+  if (e.includes("bullet count")) return "BULLET_COUNT_MISMATCH";
+  if (e.includes("experience id") || e.includes("experienceid")) return "EXPERIENCE_ID_MISMATCH";
+  if (e.includes("cross-employer")) return "CROSS_EMPLOYER_FACT_TRANSFER";
+  if (e.includes("forbidden field") || e.includes("schema")) return "SCHEMA_INVALID";
+  if (e.includes("degree")) return "DEGREE_UNGROUNDED";
+  if (e.includes("employer") || e.includes("company")) return "EMPLOYER_UNGROUNDED";
+  if (e.includes("skill") || e.includes("tool")) return "SKILL_UNGROUNDED";
+  if (e.includes("keyword")) return "KEYWORD_UNGROUNDED";
+  if (e.includes("summary")) return "SUMMARY_UNGROUNDED";
+  return "VALIDATION_FAILED";
+}
 
 /** Drops the validator's echoed resume text ("Source: ... Generated: ..."). */
 export function redactValidatorError(error: string): string {
@@ -109,7 +134,8 @@ function classifyThrown(err: unknown, aborted: boolean): Failure {
         outcome: "http",
         status: s,
         retryAfter: err.retryAfter,
-        eligibleForFallback: s === 429 || (s >= 500 && s <= 599),
+        // On 429, we do NOT immediately try fallback; we place the model in cooldown and report busy
+        eligibleForFallback: (s >= 500 && s <= 599),
         message:
           s === 503 || s === 502
             ? "AI service generation failed. Please try again."
@@ -138,7 +164,13 @@ function classifyThrown(err: unknown, aborted: boolean): Failure {
 
 export async function routeCompletion(
   opts: RouteCompletionOptions
-): Promise<{ data: AiTextCompletionResponse | string; content: string; model: string; usedFallback: boolean }> {
+): Promise<{
+  data: AiTextCompletionResponse | string;
+  content: string;
+  model: string;
+  usedFallback: boolean;
+  totalBillableTokens: number;
+}> {
   const { adapter, payload, apiKey, validate, onAttempt } = opts;
   const totalMs = opts.totalMs ?? DEFAULT_TOTAL_MS;
   const started = Date.now();
@@ -159,7 +191,7 @@ export async function routeCompletion(
       outcome: info.outcome,
     };
     if (info.validationError) {
-      structuredLog.validation_error = redactValidatorError(info.validationError);
+      structuredLog.validation_code = getValidationReasonCode(info.validationError);
     }
     log.info("[AI Attempt]", structuredLog);
     onAttempt?.({ ...info, requestId: reqId });
@@ -172,6 +204,8 @@ export async function routeCompletion(
 
   let repairUsed = false;
   let attemptNo = 0;
+  let totalBillableTokens = 0;
+  const conservativePerAttemptTokens = (payload.estimatedInputTokens || 0) + (payload.maxOutputTokens || 0);
   let last: { kind: "timeout" | "busy" | "validation" | "config"; retryAfter?: number; message?: string } = {
     kind: "timeout",
   };
@@ -179,6 +213,17 @@ export async function routeCompletion(
   for (let mi = 0; mi < models.length; mi++) {
     const model = models[mi];
     const isFallback = mi > 0;
+
+    // Check if model is currently in cooldown
+    if (isModelInCooldown(model)) {
+      if (!isFallback && models.length > 1) {
+        // Skip primary model if cooled down, jump directly to fallback
+        continue;
+      }
+      const remSec = Math.ceil(getModelCooldownRemaining(model) / 1000);
+      throw new AiRoutingError("AI_BUSY", "AI service is busy right now.", 502, remSec || 30, totalBillableTokens);
+    }
+
     const perAttemptCap = isFallback
       ? opts.fallbackMs ?? DEFAULT_FALLBACK_MS
       : opts.primaryMs ?? (models.length > 1 ? DEFAULT_PRIMARY_MS : totalMs);
@@ -195,19 +240,49 @@ export async function routeCompletion(
       }
       const attemptMs = Math.max(1, Math.min(perAttemptCap, remaining));
       const controller = new AbortController();
-      const onParentAbort = () => controller.abort();
-      opts.signal?.addEventListener("abort", onParentAbort, { once: true });
-      const timer = setTimeout(() => controller.abort(), attemptMs);
+
+      let timeoutTimer: NodeJS.Timeout | undefined;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutTimer = setTimeout(() => {
+          controller.abort();
+          const err = new DOMException("The operation timed out", "AbortError");
+          reject(err);
+        }, attemptMs);
+      });
+
+      let parentAbortListener: (() => void) | undefined;
+      const parentAbortPromise = new Promise<never>((_, reject) => {
+        if (opts.signal?.aborted) {
+          controller.abort();
+          const err = new DOMException("The operation was aborted", "AbortError");
+          reject(err);
+          return;
+        }
+        parentAbortListener = () => {
+          controller.abort();
+          const err = new DOMException("The operation was aborted", "AbortError");
+          reject(err);
+        };
+        opts.signal?.addEventListener("abort", parentAbortListener, { once: true });
+      });
+
       const t0 = Date.now();
       attemptNo++;
 
       let data: AiTextCompletionResponse | string;
       try {
-        data = await adapter.completeText(
+        const callPromise = adapter.completeText(
           { ...payload, model, messages },
-          { signal: controller.signal, apiKey }
+          { signal: controller.signal, apiKey, allowRetry: false, deadline }
         );
+        data = await Promise.race([callPromise, timeoutPromise, parentAbortPromise]);
+        // Double-check wall-clock deadline to reject late results
+        if (Date.now() > deadline || opts.signal?.aborted) {
+          throw new DOMException("The operation timed out", "AbortError");
+        }
       } catch (err) {
+        // Unknown network or failed outcome: count conservatively towards budget
+        totalBillableTokens += conservativePerAttemptTokens;
         const f = classifyThrown(err, Boolean(controller.signal.aborted || opts.signal?.aborted));
         emitAttempt({
           model,
@@ -219,7 +294,13 @@ export async function routeCompletion(
           contentLength: 0,
         });
         if (f.status === 401 || f.status === 403) {
-          throw new AiRoutingError("AI_NOT_CONFIGURED", "AI service is not configured.", 500);
+          throw new AiRoutingError("AI_NOT_CONFIGURED", "AI service is not configured.", 500, undefined, totalBillableTokens);
+        }
+        if (f.status === 429) {
+          // Put model in cooldown instead of immediately trying fallback
+          const cdSec = typeof f.retryAfter === "number" && f.retryAfter > 0 ? f.retryAfter : 30;
+          setModelCooldown(model, cdSec * 1000);
+          throw new AiRoutingError("AI_BUSY", "AI service is experiencing high demand. Please try again.", 502, f.retryAfter, totalBillableTokens);
         }
         last = {
           kind: f.outcome === "timeout" ? "timeout" : "busy",
@@ -227,12 +308,15 @@ export async function routeCompletion(
           message: f.message,
         };
         if (!f.eligibleForFallback) {
-          throw new AiRoutingError("AI_BUSY", f.message || "AI service generation failed. Please try again.", 502, f.retryAfter);
+          throw new AiRoutingError("AI_BUSY", f.message || "AI service generation failed. Please try again.", 502, f.retryAfter, totalBillableTokens);
         }
         break; // next model
       } finally {
-        clearTimeout(timer);
-        opts.signal?.removeEventListener("abort", onParentAbort);
+        clearTimeout(timeoutTimer);
+        if (parentAbortListener) {
+          opts.signal?.removeEventListener("abort", parentAbortListener);
+        }
+        controller.abort();
       }
 
       const latencyMs = Date.now() - t0;
@@ -240,6 +324,12 @@ export async function routeCompletion(
       const choice = typeof data === "object" && data ? (data as any).choices?.[0] : undefined;
       const finishReason: string | undefined = choice?.finish_reason ?? undefined;
       const usage = typeof data === "object" && data ? (data as any).usage : undefined;
+
+      const pTokens = Number(usage?.prompt_tokens) || 0;
+      const cTokens = Number(usage?.completion_tokens) || 0;
+      const attemptTokens = Number(usage?.total_tokens) || (pTokens + cTokens);
+      totalBillableTokens += attemptTokens > 0 ? attemptTokens : conservativePerAttemptTokens;
+
       const base = { model, attempt: attemptNo, repair: repairing, latencyMs, finishReason, usage, contentLength: content.length };
 
       if (!content.trim()) {
@@ -256,7 +346,7 @@ export async function routeCompletion(
       const v = validate(content);
       if (v.ok) {
         emitAttempt({ ...base, outcome: "ok" });
-        return { data, content, model, usedFallback: isFallback };
+        return { data, content, model, usedFallback: isFallback, totalBillableTokens };
       }
 
       const reason = redactValidatorError(v.error);
@@ -280,10 +370,10 @@ export async function routeCompletion(
   }
 
   if (last.kind === "validation") {
-    throw new AiRoutingError("AI_VALIDATION_FAILED", last.message || "AI output rejected.", 502);
+    throw new AiRoutingError("AI_VALIDATION_FAILED", last.message || "AI output rejected.", 502, undefined, totalBillableTokens);
   }
   if (last.kind === "timeout") {
-    throw new AiRoutingError("AI_TIMEOUT", last.message || "AI service request failed or timed out. Please try again.", 502);
+    throw new AiRoutingError("AI_TIMEOUT", last.message || "AI service request failed or timed out. Please try again.", 502, undefined, totalBillableTokens);
   }
-  throw new AiRoutingError("AI_BUSY", last.message || "AI service generation failed. Please try again.", 502, last.retryAfter);
+  throw new AiRoutingError("AI_BUSY", last.message || "AI service generation failed. Please try again.", 502, last.retryAfter, totalBillableTokens);
 }

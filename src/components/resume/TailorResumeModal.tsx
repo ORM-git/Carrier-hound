@@ -261,7 +261,7 @@ export default function TailorResumeModal({
       if (!res.success || !res.draft) {
         setAiStatus("failed");
         const rawMsg = res.error || "AI enhancement is temporarily busy. Retaining verified rules-based resume.";
-        const msg = sanitizeUserFacingAiError(rawMsg);
+        const msg = sanitizeUserFacingAiError(rawMsg, true);
         setAiError(msg);
         toast.error(msg);
         return;
@@ -279,7 +279,7 @@ export default function TailorResumeModal({
     } catch (err: any) {
       setAiStatus("failed");
       const rawMsg = err?.message || "Failed to reach AI service. Retaining verified rules-based resume.";
-      const msg = sanitizeUserFacingAiError(rawMsg);
+      const msg = sanitizeUserFacingAiError(rawMsg, true);
       setAiError(msg);
       toast.error(msg);
     }

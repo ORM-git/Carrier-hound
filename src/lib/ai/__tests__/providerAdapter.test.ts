@@ -14,6 +14,7 @@ import {
   GROQ_CHAT_COMPLETIONS_URL,
   buildGroqChatCompletionBody,
   createGroqTextCompletionAdapter,
+  _resetModelCooldownsForTesting,
 } from "../providerAdapter";
 
 class FakeTextCompletionAdapter implements AiTextCompletionProviderAdapter {
@@ -184,6 +185,7 @@ const VALID_JOB_FIT_PARAMS = {
 describe("Provider Abstraction Layer (AiTextCompletionProviderAdapter)", () => {
   beforeEach(() => {
     _resetAiRateLimitStore();
+    _resetModelCooldownsForTesting();
   });
 
   it("swaps in an offline FakeTextCompletionAdapter for successful JSON completion and preserves call/response contracts", async () => {
@@ -286,7 +288,7 @@ describe("Provider Abstraction Layer (AiTextCompletionProviderAdapter)", () => {
     expect(response.body).toMatchObject({
       error: "AI service request failed or timed out. Please try again.",
     });
-    expect(harness.getSettledTokens()).toEqual([0]);
+    expect(harness.getSettledTokens()[0]).toBeGreaterThan(0);
     expect(harness.getRefundedQuotas()).toBe(1);
     expect(
       harness.rpcCalls.some((call) => call.fn === "ai_concurrency_release")
@@ -358,7 +360,7 @@ describe("Provider Abstraction Layer (AiTextCompletionProviderAdapter)", () => {
 
       expect(res.statusCode, testCase.label).toBe(502);
       expect(res.body, testCase.label).toMatchObject({ error: testCase.expectedError });
-      expect(harness.getSettledTokens(), testCase.label).toEqual([0]);
+      expect(harness.getSettledTokens()[0], testCase.label).toBeGreaterThan(0);
       expect(harness.getRefundedQuotas(), testCase.label).toBe(1);
     }
   });
@@ -418,7 +420,7 @@ describe("Provider Abstraction Layer (AiTextCompletionProviderAdapter)", () => {
 
     expect(res.statusCode).toBe(502);
     expect(res.body.error).toContain("invalid JSON returned for 'job_fit'");
-    expect(harness.getSettledTokens()).toEqual([0]);
+    expect(harness.getSettledTokens()[0]).toBeGreaterThan(0);
     expect(harness.getRefundedQuotas()).toBe(1);
   });
 

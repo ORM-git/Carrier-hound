@@ -23,21 +23,29 @@ export function getGroqApiKey(): boolean {
 export const isAiAvailable = getGroqApiKey;
 
 export const GENERIC_AI_UNAVAILABLE_MESSAGE =
-  "AI is temporarily unavailable. Your verified rules-based version is ready.";
+  "AI is temporarily unavailable. Please try again.";
 
 /**
  * Sanitizes any AI service error string for client-side user presentation.
  * Replaces any error message exposing environment variable names (such as GROQ_API_KEY)
- * or sensitive internals with the generic verified rules-based fallback message.
+ * or sensitive internals with a clean, friendly message.
  */
-export function sanitizeUserFacingAiError(rawError?: string | null): string {
-  if (!rawError) return GENERIC_AI_UNAVAILABLE_MESSAGE;
+export function sanitizeUserFacingAiError(rawError?: string | null, isTailoring = false): string {
+  if (!rawError) {
+    return isTailoring
+      ? "AI is temporarily unavailable. Your verified rules-based version is ready."
+      : GENERIC_AI_UNAVAILABLE_MESSAGE;
+  }
   const str = String(rawError);
   if (/GROQ_API_KEY|API_KEY|[A-Z0-9_]+_KEY|[A-Z0-9_]+_SECRET/i.test(str)) {
-    return GENERIC_AI_UNAVAILABLE_MESSAGE;
+    return isTailoring
+      ? "AI is temporarily unavailable. Your verified rules-based version is ready."
+      : GENERIC_AI_UNAVAILABLE_MESSAGE;
   }
   if (/AI (?:service )?generation failed/i.test(str)) {
-    return "AI service is temporarily busy. Your verified rules-based version is ready.";
+    return isTailoring
+      ? "AI service is temporarily busy. Your verified rules-based version is ready."
+      : "AI service is temporarily busy. Please try again.";
   }
   if (/rate limit|too many requests|429/i.test(str)) {
     return "AI service is experiencing high demand. Please try again in a few moments.";
@@ -51,28 +59,42 @@ export function sanitizeUserFacingAiError(rawError?: string | null): string {
 const KEPT = "Your verified rules-based version is kept.";
 
 /** User-facing copy for the typed server error codes. */
-export function aiErrorMessage(data: any, status?: number): string {
+export function aiErrorMessage(data: any, status?: number, operation?: string): string {
+  const op = operation || data?.operation;
+  const isTailoring = op === "resume_tailor";
+
   switch (data?.code) {
     case "AI_TIMEOUT":
-      return `AI took too long to respond. ${KEPT} You can try again.`;
+      return isTailoring
+        ? `AI took too long to respond. ${KEPT} You can try again.`
+        : "AI took too long to respond. Please try again.";
     case "AI_BUSY":
-      return `AI is busy right now. ${KEPT} You can try again shortly.`;
+      return isTailoring
+        ? `AI is busy right now. ${KEPT} You can try again shortly.`
+        : "AI is busy right now. Please try again shortly.";
     case "AI_VALIDATION_FAILED":
-      return `AI could not produce a draft that matches your resume facts. ${KEPT}`;
+      return isTailoring
+        ? `AI could not produce a draft that matches your resume facts. ${KEPT}`
+        : "AI could not produce a response that matches the provided data. Please try again.";
     case "AI_NOT_CONFIGURED":
-      return `AI is not available right now. ${KEPT}`;
+      return isTailoring
+        ? `AI is not available right now. ${KEPT}`
+        : "AI is not available right now.";
   }
   if (!data?.error && (status === 502 || status === 504)) {
-    return `AI took too long to respond. ${KEPT} You can try again.`;
+    return isTailoring
+      ? `AI took too long to respond. ${KEPT} You can try again.`
+      : "AI took too long to respond. Please try again.";
   }
-  return sanitizeUserFacingAiError(data?.error || `AI generation failed (HTTP ${status}).`);
+  return sanitizeUserFacingAiError(data?.error || `AI generation failed (HTTP ${status}).`, isTailoring);
 }
 
 /**
  * POSTs to /api/ai with ONE idempotency key per call (i.e. per user click), reused on the
  * single retry so a retried request can never consume quota twice. Retries only on a network
- * failure, a platform gateway error with no JSON body, or a code-less 429 whose Retry-After is
- * short. Coded server responses (quota, budget, kill-switch, typed AI errors) are never retried.
+ * failure, an in-flight 409 pending state, a platform gateway error with no JSON body, or a
+ * code-less 429 whose Retry-After is short. Coded server responses (quota, budget, kill-switch,
+ * typed AI errors) are never retried.
  */
 export async function postAiRequest(
   token: string,
@@ -100,7 +122,14 @@ export async function postAiRequest(
   const gatewayNoBody = (response.status === 502 || response.status === 504) && data === null;
   const retryAfter = Number(response.headers?.get?.("retry-after")) || 0;
   const plain429 = response.status === 429 && !data?.code && retryAfter > 0 && retryAfter <= 5;
-  if (gatewayNoBody || plain429) {
+  const isInFlight = response.status === 409 || data?.code === "OPERATION_IN_FLIGHT" || data?.status === "pending";
+
+  if (isInFlight) {
+    const pollWaitMs = Math.min(Math.max((retryAfter || 2) * 1000, 1500), 4000);
+    await wait(pollWaitMs);
+    response = await send();
+    data = await response.clone().json().catch(() => null);
+  } else if (gatewayNoBody || plain429) {
     await wait(plain429 ? retryAfter * 1000 : 800);
     response = await send();
     data = await response.clone().json().catch(() => null);
@@ -320,7 +349,7 @@ export async function generateAiTailoredResume(
     if (!response.ok) {
       return {
         success: false,
-        error: aiErrorMessage(data, response.status),
+        error: aiErrorMessage(data, response.status, "resume_tailor"),
       };
     }
 

@@ -25,8 +25,9 @@ let passed = 0;
 function ok(name: string) { passed++; console.log(`PASS ${name}`); }
 
 const TEXT =
-  "Dear Hiring Manager, I am excited to apply for the Software Engineer role at Acme. " +
-  "I have built scalable TypeScript web applications and enjoy shipping reliable products.";
+  "I am writing to express my enthusiastic interest in the Software Engineer position at Acme. With a dedicated background in designing and developing responsive, scalable web applications, I have consistently delivered robust digital solutions that align with core business goals and solve complex technical challenges in production environments.\n\n" +
+  "Throughout my professional journey, I have specialized in TypeScript and modern engineering practices to build resilient, high-performance systems. My development approach centers on writing maintainable code, maintaining comprehensive test coverage, and creating seamless experiences for end users. In my past work, I collaborated closely with cross-functional teams to design reliable backend microservices and responsive user interfaces that improved system performance while reducing latency. My technical background and practical engineering skills directly match the expectations and standards required for this position at Acme.\n\n" +
+  "I would welcome the opportunity to discuss how my practical experience with TypeScript and dedication to product quality can support the engineering objectives at Acme. Thank you for your time and consideration, and I look forward to speaking with you regarding how I can contribute to your ongoing success.";
 
 const sse = (obj: unknown) => `data: ${JSON.stringify(obj)}\n\n`;
 
@@ -120,7 +121,7 @@ async function main() {
   const hOn = harness(true);
   const parts = [
     sse({ choices: [{ delta: { role: "assistant" } }] }),
-    ...TEXT.match(/.{1,25}/g)!.map((t) => sse({ choices: [{ delta: { content: t } }] })),
+    ...TEXT.match(/[\s\S]{1,25}/g)!.map((t) => sse({ choices: [{ delta: { content: t } }] })),
     sse({ choices: [], usage: { prompt_tokens: 40, completion_tokens: 60 } }),
     "data: [DONE]\n\n",
   ];

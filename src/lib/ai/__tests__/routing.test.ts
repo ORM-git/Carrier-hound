@@ -1,6 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import { routeCompletion, AiRoutingError, redactValidatorError } from "../routing";
-import { AiProviderUpstreamError, type AiTextCompletionProviderAdapter } from "../providerAdapter";
+import {
+  AiProviderUpstreamError,
+  type AiTextCompletionProviderAdapter,
+  _resetModelCooldownsForTesting,
+} from "../providerAdapter";
 import type { BuiltAiPayload } from "../security";
 
 const payload: BuiltAiPayload = {
@@ -38,6 +42,9 @@ function adapterFrom(steps: Array<(req: any, signal?: AbortSignal) => any>) {
 const pass = () => ({ ok: true as const });
 
 describe("routeCompletion", () => {
+  beforeEach(() => {
+    _resetModelCooldownsForTesting();
+  });
   it("returns the primary result without touching the fallback", async () => {
     const { adapter, calls } = adapterFrom([() => ok("{}")]);
     const r = await routeCompletion({ adapter, payload, validate: pass });
@@ -46,11 +53,63 @@ describe("routeCompletion", () => {
     expect(calls).toHaveLength(1);
   });
 
-  it.each([429, 500, 503])("falls back on HTTP %i", async (status) => {
+  it.each([500, 503])("falls back on HTTP %i", async (status) => {
     const { adapter } = adapterFrom([() => { throw http(status); }, () => ok("{}")]);
     const r = await routeCompletion({ adapter, payload, validate: pass });
     expect(r.model).toBe("fallback");
     expect(r.usedFallback).toBe(true);
+  });
+
+  it("puts model in cooldown on 429 instead of immediately trying fallback", async () => {
+    const e429 = new AiProviderUpstreamError("http_status", "rate limit", { status: 429, retryAfter: 30 });
+    const { adapter, calls } = adapterFrom([() => { throw e429; }, () => ok("{}")]);
+    await expect(routeCompletion({ adapter, payload, validate: pass })).rejects.toMatchObject({
+      code: "AI_BUSY",
+      retryAfter: 30,
+    });
+    // Should NOT have made the second call to fallback
+    expect(calls).toHaveLength(1);
+  });
+
+  it("enforces hard wall-clock deadline when adapter completely ignores abort signal", async () => {
+    const stubbornAdapter: AiTextCompletionProviderAdapter = {
+      provider: "stubborn",
+      completeText() {
+        return new Promise(() => {}); // never resolves, ignores signal
+      },
+    };
+    const t0 = Date.now();
+    await expect(
+      routeCompletion({
+        adapter: stubbornAdapter,
+        payload,
+        validate: pass,
+        primaryMs: 50,
+        fallbackMs: 50,
+        totalMs: 120,
+      })
+    ).rejects.toMatchObject({ code: "AI_TIMEOUT" });
+    const elapsed = Date.now() - t0;
+    expect(elapsed).toBeLessThan(500);
+  });
+
+  it("honors parent cancellation immediately", async () => {
+    const stubbornAdapter: AiTextCompletionProviderAdapter = {
+      provider: "stubborn",
+      completeText() {
+        return new Promise(() => {});
+      },
+    };
+    const parentController = new AbortController();
+    const promise = routeCompletion({
+      adapter: stubbornAdapter,
+      payload,
+      validate: pass,
+      totalMs: 10000,
+      signal: parentController.signal,
+    });
+    setTimeout(() => parentController.abort(), 30);
+    await expect(promise).rejects.toMatchObject({ code: "AI_TIMEOUT" });
   });
 
   it("falls back on empty and on truncated output", async () => {

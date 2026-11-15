@@ -52,6 +52,39 @@ export interface AiTextCompletionResponse {
 export interface AiTextCompletionOptions {
   signal?: AbortSignal;
   apiKey?: string;
+  allowRetry?: boolean;
+  deadline?: number;
+}
+
+const modelCooldownMap = new Map<string, number>();
+
+export function setModelCooldown(model: string, cooldownMs: number): void {
+  modelCooldownMap.set(model, Date.now() + cooldownMs);
+}
+
+export function isModelInCooldown(model: string): boolean {
+  const until = modelCooldownMap.get(model);
+  if (!until) return false;
+  if (Date.now() >= until) {
+    modelCooldownMap.delete(model);
+    return false;
+  }
+  return true;
+}
+
+export function getModelCooldownRemaining(model: string): number {
+  const until = modelCooldownMap.get(model);
+  if (!until) return 0;
+  const rem = until - Date.now();
+  if (rem <= 0) {
+    modelCooldownMap.delete(model);
+    return 0;
+  }
+  return rem;
+}
+
+export function _resetModelCooldownsForTesting(): void {
+  modelCooldownMap.clear();
 }
 
 export interface AiTextCompletionProviderAdapter {
@@ -146,19 +179,28 @@ export function createGroqTextCompletionAdapter(
     ): Promise<AiTextCompletionResponse> {
       const fetchFn = deps.fetchImpl ?? globalThis.fetch;
       let lastErr: unknown;
+      const maxAttempts = options?.allowRetry === false ? 1 : 2;
 
-      for (let attempt = 0; attempt < 2; attempt++) {
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
         if (attempt > 0) {
           if (options?.signal?.aborted) {
             break;
           }
           const retryAfterSec = (lastErr as any)?.retryAfter;
-          const backoffMs =
-            typeof retryAfterSec === "number" && retryAfterSec > 0
-              ? Math.min(retryAfterSec * 1000, 3000)
-              : process.env.NODE_ENV === "test"
-              ? 10
-              : 1000;
+          let backoffMs = process.env.NODE_ENV === "test" ? 10 : 1000;
+          if (typeof retryAfterSec === "number" && retryAfterSec > 0) {
+            const requestedMs = retryAfterSec * 1000;
+            const remainingDeadline = options?.deadline ? options.deadline - Date.now() : undefined;
+            if (remainingDeadline !== undefined) {
+              if (requestedMs > remainingDeadline) {
+                // Retry-After exceeds remaining deadline: fail immediately, never shrink 120s to 3s
+                throw lastErr;
+              }
+              backoffMs = requestedMs;
+            } else {
+              backoffMs = requestedMs;
+            }
+          }
           await new Promise((r) => setTimeout(r, backoffMs));
           if (options?.signal?.aborted) {
             break;
@@ -182,7 +224,7 @@ export function createGroqTextCompletionAdapter(
             "AI service request failed or timed out. Please try again.",
             { cause: fetchErr }
           );
-          if (attempt === 0 && !options?.signal?.aborted) {
+          if (attempt === 0 && maxAttempts > 1 && !options?.signal?.aborted) {
             continue;
           }
           throw lastErr;
@@ -202,6 +244,11 @@ export function createGroqTextCompletionAdapter(
           const upstreamType = errorJson?.error?.type;
           const retryAfterHeader = groqResponse.headers?.get?.("retry-after");
           const retryAfter = retryAfterHeader ? Number(retryAfterHeader) || undefined : undefined;
+
+          if (groqResponse.status === 429) {
+            const cdSec = typeof retryAfter === "number" && retryAfter > 0 ? retryAfter : 30;
+            setModelCooldown(request.model, cdSec * 1000);
+          }
 
           lastErr = new AiProviderUpstreamError(
             "http_status",
@@ -226,6 +273,7 @@ export function createGroqTextCompletionAdapter(
             (groqResponse.status === 429 ||
               (groqResponse.status >= 500 && groqResponse.status <= 504)) &&
             attempt === 0 &&
+            maxAttempts > 1 &&
             !options?.signal?.aborted;
 
           if (isRetryable) {

@@ -40,7 +40,7 @@ const PARAMS: Record<AllowedAiOperation, any> = {
 
 // Bump `version` and update `sha256` together whenever a prompt or setting changes on purpose.
 const REGISTRY: Record<AllowedAiOperation, { version: string; sha256: string }> = {
-  cover_letter: { version: "4", sha256: "b7dc438fcf3eda219f4a43116bb7ab8a513bb6b93e98f20ebeadffbce8f73b61" },
+  cover_letter: { version: "5", sha256: "fd84edd663bd8690e7a7905bfe50768a6f28fc71179798fffe2df6548ada883f" },
   resume_extraction: { version: "2", sha256: "7e0a560fe264681dbf0a522411d341b6fadd275633d67bac3b83ff65e6e59639" },
   resume_tailor: { version: "4", sha256: "3ea65c0c64b1dd894a1c554b51c4958192b0d95632cf50b22117d04f9913d4df" },
   job_fit: { version: "2", sha256: "e12fdd764ad9ef4ff2ceb4b2542718d7e2cf86786e322991812d0311af51a0cd" },

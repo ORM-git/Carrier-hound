@@ -43,14 +43,31 @@ interface IdempotencyCacheEntry {
 }
 
 const idempotencyResultCache = new Map<string, IdempotencyCacheEntry>();
+const inFlightOperations = new Set<string>();
 const IDEMPOTENCY_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 export function _clearIdempotencyResultCacheForTesting(): void {
   idempotencyResultCache.clear();
+  inFlightOperations.clear();
 }
 
 export function getIdempotencyCacheKey(userId: string, kind: string, key: string): string {
   return `${userId}:${kind}:${key}`;
+}
+
+export function isOperationInFlight(userId: string, kind: string, key: string): boolean {
+  if (!key) return false;
+  return inFlightOperations.has(getIdempotencyCacheKey(userId, kind, key));
+}
+
+export function setOperationInFlight(userId: string, kind: string, key: string): void {
+  if (!key) return;
+  inFlightOperations.add(getIdempotencyCacheKey(userId, kind, key));
+}
+
+export function clearOperationInFlight(userId: string, kind: string, key: string): void {
+  if (!key) return;
+  inFlightOperations.delete(getIdempotencyCacheKey(userId, kind, key));
 }
 
 export function getIdempotentResult(userId: string, kind: string, key: string): any | null {

@@ -259,11 +259,11 @@ CRITICAL ZERO-FABRICATION RULES:
 WORKED EXAMPLE:
 Candidate input: Skills: TypeScript, React, Next.js. Experience: Frontend Engineer at Acme Corp (2022 - 2024). Target role: Senior Frontend Engineer at Linear.
 Ideal output body paragraphs:
-At Acme Corp, I engineered responsive user interfaces and modular component systems utilizing TypeScript, React, and Next.js. My focus was delivering performant web applications with high reliability and clean architectural patterns.
+I am excited to apply for the Senior Frontend Engineer role at Linear. Having followed Linear's relentless focus on craft, speed, and exceptional user experience, I am eager to bring my background in high-performance web development and modular component architecture to your engineering team. My core expertise in TypeScript, React, and modern state architectures aligns directly with Linear's technical standards and product principles.
 
-Joining Linear as a Senior Frontend Engineer aligns directly with my engineering focus. Your dedication to craft and tool performance is an environment where my experience building scalable frontend applications will drive immediate value.
+During my tenure as a Frontend Engineer at Acme Corp from 2022 to 2024, I engineered customer-facing user interfaces, modular design systems, and robust client applications using TypeScript, React, and Next.js. I concentrated on delivering snappy, responsive interactions, refactoring complex data tables, and collaborating across engineering disciplines to maintain high reliability and performance across core production workflows.
 
-I look forward to discussing how my experience with scalable architecture and performant interfaces can contribute to Linear's product excellence.${UNTRUSTED_DATA_SYSTEM_GUARD}`;
+Linear's mission to build tools that creators and engineering teams love to use every day deeply resonates with me. I would welcome the opportunity to discuss how my proven experience building scalable, maintainable frontend systems can help advance Linear's product velocity and craft. Thank you for your time and consideration; I look forward to speaking with you.${UNTRUSTED_DATA_SYSTEM_GUARD}`;
 
         const usr = `<untrusted_candidate_data>\nName: ${candName}\nHeadline: ${candHeadline}\nSummary: ${fields.candSummary}\nSkills: ${fields.skillsList}\n</untrusted_candidate_data>\n\n<untrusted_job_data>\nTitle: ${jobTitle}\nCompany: ${jobCompany}\nDescription: ${fields.jobDesc}\n</untrusted_job_data>`;
 
@@ -1062,24 +1062,62 @@ export function validateTailoredResumeOutput(
     validHighlightedSkills.push(s.trim());
   }
 
-  // 2b. Validate matchedKeywords (if present): strings evidenced in candidate profile
-  const validMatchedKeywords: string[] = [];
-  if (Array.isArray(parsed.matchedKeywords)) {
+  // 2b. Validate matchedKeywords (if present): strings appearing in BOTH candidate data and job description
+  let validMatchedKeywords: string[] | undefined = undefined;
+  if ("matchedKeywords" in parsed && parsed.matchedKeywords !== undefined) {
+    if (!Array.isArray(parsed.matchedKeywords)) {
+      return { ok: false, error: "AI output rejected: 'matchedKeywords' must be an array of strings." };
+    }
+    const candidateFullText = [
+      candidate.headline,
+      candidate.summary,
+      ...(candidate.skills || []),
+      ...(candidate.experience || []).flatMap((e) => [e?.role, e?.company, ...(e?.bullets || [])]),
+      ...(candidate.education || []).flatMap((ed) => [ed?.degree, (ed as any)?.field, (ed as any)?.school, ed?.institution]),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+
+    const jobFullText = [job?.title, job?.company, job?.description]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+
+    const kept: string[] = [];
     for (const kw of parsed.matchedKeywords) {
       if (typeof kw !== "string" || !kw.trim()) continue;
       const cleanKw = stripHtmlAndExecutableMarkup(kw.trim());
-      if (cleanKw) validMatchedKeywords.push(cleanKw);
+      if (!cleanKw) continue;
+      const kwLower = cleanKw.toLowerCase();
+
+      // Must appear in BOTH candidate data AND job description
+      const inCandidate =
+        candidateFullText.includes(kwLower) ||
+        (candidate.skills || []).some((cs) => areSkillsGenuineMatch(cs, kwLower));
+      const inJob = jobFullText.includes(kwLower);
+
+      if (inCandidate && inJob) {
+        kept.push(cleanKw);
+      }
+      // Non-matching keywords are dropped ("drop others")
     }
+    validMatchedKeywords = Array.from(new Set(kept));
   }
 
   // 2c. Validate unmatchedRequirements (if present): strings
-  const cleanUnmatchedRequirements: string[] = [];
-  if (Array.isArray(parsed.unmatchedRequirements)) {
+  let cleanUnmatchedRequirements: string[] | undefined = undefined;
+  if ("unmatchedRequirements" in parsed && parsed.unmatchedRequirements !== undefined) {
+    if (!Array.isArray(parsed.unmatchedRequirements)) {
+      return { ok: false, error: "AI output rejected: 'unmatchedRequirements' must be an array of strings." };
+    }
+    const clean: string[] = [];
     for (const req of parsed.unmatchedRequirements) {
       if (typeof req !== "string" || !req.trim()) continue;
       const cleanReq = stripHtmlAndExecutableMarkup(req.trim());
-      if (cleanReq) cleanUnmatchedRequirements.push(cleanReq);
+      if (cleanReq) clean.push(cleanReq);
     }
+    cleanUnmatchedRequirements = Array.from(new Set(clean));
   }
 
   // 3. Validate tailoredBullets
@@ -1232,6 +1270,102 @@ export function validateAndSanitizeAiOutput(
     if (!stripped) {
       return { ok: false, error: "AI output rejected: output contained only disallowed HTML/script markup." };
     }
+
+    // 1 & 2. Enforce paragraph count and word count bounds when generating a real candidate cover letter
+    if (context?.candidate || context?.job) {
+      // 1. Enforce exactly 3 paragraphs
+      const paragraphs = stripped
+        .split(/\n\s*\n/)
+        .map((p) => p.trim())
+        .filter(Boolean);
+      if (paragraphs.length !== 3) {
+        return {
+          ok: false,
+          error: `AI output rejected: cover letter must contain exactly 3 paragraphs (found ${paragraphs.length}).`,
+        };
+      }
+
+      // 2. Enforce word count between 170 and 230 words
+      const words = stripped.split(/\s+/).filter(Boolean);
+      if (words.length < 170 || words.length > 230) {
+        return {
+          ok: false,
+          error: `AI output rejected: cover letter word count must be between 170 and 230 words (found ${words.length}).`,
+        };
+      }
+    }
+
+    // 3. Grounding: reject ungrounded facts not in candidate data (degrees, employers, years)
+    const candidate = context?.candidate;
+    if (candidate) {
+      const candFullText = [
+        candidate.headline,
+        candidate.summary,
+        ...(candidate.skills || []),
+        ...(candidate.experience || []).flatMap((e) => [e?.role, e?.company, ...(e?.bullets || [])]),
+        ...(candidate.education || []).flatMap((ed) => [ed?.degree, (ed as any)?.field, (ed as any)?.school, ed?.institution]),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      // Check degrees
+      const degreePatterns = [
+        /\b(ph\.?d|doctorate)\b/i,
+        /\b(master'?s|m\.?s\b|m\.?sc|m\.?tech|mba)\b/i,
+        /\b(bachelor'?s|b\.?s\b|b\.?sc|b\.?tech|b\.?a\b)\b/i,
+      ];
+      for (const dp of degreePatterns) {
+        const match = stripped.match(dp);
+        if (match) {
+          const degreeClaim = match[0].toLowerCase();
+          if (!candFullText.includes(degreeClaim)) {
+            return {
+              ok: false,
+              error: `AI output rejected: cover letter mentions unevidenced degree '${match[0]}' not found in candidate profile facts.`,
+            };
+          }
+        }
+      }
+
+      // Check employers: if candidate has no prior work history
+      const hasExp = Array.isArray(candidate.experience) && candidate.experience.length > 0;
+      if (!hasExp) {
+        if (/\b(?:at my previous|at my former|former employer|previous employer|throughout my tenure at)\b/i.test(stripped)) {
+          return {
+            ok: false,
+            error: "AI output rejected: cover letter claims prior employment tenure for a candidate with no work history.",
+          };
+        }
+      }
+
+      // Check years of experience claims
+      const yearsMatch = stripped.match(/\b(\d+)\+?\s+years?(?:\s+of)?(?:\s+experience|\s+tenure)?\b/i);
+      if (yearsMatch) {
+        const claimedYears = parseInt(yearsMatch[1], 10);
+        if (claimedYears > 1) {
+          let maxYears = 0;
+          if (candidate.experience && candidate.experience.length > 0) {
+            let earliestYear = 9999;
+            const latestYear = new Date().getFullYear();
+            for (const exp of candidate.experience) {
+              const startYear = parseInt((exp?.startDate || "").match(/\b(19\d\d|20\d\d)\b/)?.[1] || "0", 10);
+              if (startYear > 1970 && startYear < earliestYear) earliestYear = startYear;
+            }
+            if (earliestYear < 9999) {
+              maxYears = latestYear - earliestYear + 1;
+            }
+          }
+          if (claimedYears > Math.max(maxYears, 1) + 1) {
+            return {
+              ok: false,
+              error: `AI output rejected: cover letter claims ${claimedYears} years of experience, exceeding candidate work history.`,
+            };
+          }
+        }
+      }
+    }
+
     return { ok: true, sanitizedText: stripped };
   }
 

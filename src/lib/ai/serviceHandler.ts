@@ -192,6 +192,9 @@ import {
   validateIdempotencyKey,
   getIdempotentResult,
   storeIdempotentResult,
+  isOperationInFlight,
+  setOperationInFlight,
+  clearOperationInFlight,
 } from "./idempotency";
 
 import { createLogger } from "@/lib/observability/logger";
@@ -211,6 +214,9 @@ export {
   getIdempotencyCacheKey,
   getIdempotentResult,
   storeIdempotentResult,
+  isOperationInFlight,
+  setOperationInFlight,
+  clearOperationInFlight,
   _clearIdempotencyResultCacheForTesting,
 } from "./idempotency";
 
@@ -566,57 +572,89 @@ export async function executeAiCore(
       };
     }
 
-    // 3B. Pre-check for Idempotent Replay (Must NOT reserve budget or take a lease)
+    // 3B. Pre-check for Idempotent Replay & In-Flight Operations (Applies across all operations)
     let isPreVerifiedReplay = false;
     let preVerifiedReplayResult: any = null;
 
-    if (isMeteredOperation) {
-      confirmedKind = config.operation as QuotaKind;
-      const candidateKey =
-        body.idempotencyKey ??
-        body.idempotency_key ??
-        body.requestId ??
-        body.request_id ??
-        params?.idempotencyKey ??
-        params?.idempotency_key ??
-        params?.requestId ??
-        params?.request_id;
+    confirmedKind = isMeteredOperation ? (config.operation as QuotaKind) : undefined;
+    const candidateKey =
+      body.idempotencyKey ??
+      body.idempotency_key ??
+      body.requestId ??
+      body.request_id ??
+      params?.idempotencyKey ??
+      params?.idempotency_key ??
+      params?.requestId ??
+      params?.request_id;
 
-      const keyValidation = validateIdempotencyKey(candidateKey);
-      if (!keyValidation.valid) {
-        return {
-          statusCode: 400,
-          body: {
-            error: keyValidation.error,
-            code: "INVALID_IDEMPOTENCY_KEY",
-          },
-        };
-      }
+    const keyValidation = validateIdempotencyKey(candidateKey);
+    if (!keyValidation.valid) {
+      return {
+        statusCode: 400,
+        body: {
+          error: keyValidation.error,
+          code: "INVALID_IDEMPOTENCY_KEY",
+        },
+      };
+    }
 
-      setConsumeKey =
-        keyValidation.key ||
-        createOperationId("set");
+    setConsumeKey =
+      keyValidation.key ||
+      createOperationId("set");
 
-      const cached = getIdempotentResult(user.id, config.operation, setConsumeKey);
-      if (cached) {
-        isPreVerifiedReplay = true;
-        preVerifiedReplayResult = cached;
-      } else if (typeof supabaseAdmin?.from === "function") {
-        try {
-          const { data: dbEvent } = await supabaseAdmin
-            .from("plan_usage_events")
-            .select("response_payload")
-            .eq("user_id", user.id)
-            .eq("kind", config.operation)
-            .eq("idempotency_key", setConsumeKey)
-            .maybeSingle();
+    // Check if an identical operation is currently running
+    if (isOperationInFlight(user.id, config.operation, setConsumeKey)) {
+      return {
+        statusCode: 409,
+        body: {
+          error: "Operation currently in progress. Please retry or poll shortly.",
+          code: "OPERATION_IN_FLIGHT",
+          status: "pending",
+          operation: config.operation,
+          idempotencyKey: setConsumeKey,
+          retryAfter: 2,
+        },
+        headers: {
+          "Retry-After": "2",
+        },
+      };
+    }
 
-          if (dbEvent?.response_payload) {
-            isPreVerifiedReplay = true;
-            preVerifiedReplayResult = dbEvent.response_payload;
-          }
-        } catch {}
-      }
+    const cached = getIdempotentResult(user.id, config.operation, setConsumeKey);
+    if (cached) {
+      isPreVerifiedReplay = true;
+      preVerifiedReplayResult = cached;
+    } else if (isMeteredOperation && typeof supabaseAdmin?.from === "function") {
+      try {
+        const { data: dbEvent } = await supabaseAdmin
+          .from("plan_usage_events")
+          .select("response_payload")
+          .eq("user_id", user.id)
+          .eq("kind", config.operation)
+          .eq("idempotency_key", setConsumeKey)
+          .maybeSingle();
+
+        if (dbEvent?.response_payload) {
+          isPreVerifiedReplay = true;
+          preVerifiedReplayResult = dbEvent.response_payload;
+        } else if (dbEvent) {
+          // Row recorded but result not yet populated -> in flight
+          return {
+            statusCode: 409,
+            body: {
+              error: "Operation currently in progress. Please retry or poll shortly.",
+              code: "OPERATION_IN_FLIGHT",
+              status: "pending",
+              operation: config.operation,
+              idempotencyKey: setConsumeKey,
+              retryAfter: 2,
+            },
+            headers: {
+              "Retry-After": "2",
+            },
+          };
+        }
+      } catch {}
     }
 
     if (isPreVerifiedReplay) {
@@ -651,8 +689,9 @@ export async function executeAiCore(
       }
     };
 
-    // 3C. Global Daily Token Budget Reservation
-    const estimatedTokens = Math.max(1, (payload.estimatedInputTokens || 0) + (payload.maxOutputTokens || 0));
+    // 3C. Global Daily Token Budget Reservation (Reserve maximum permitted work before calling)
+    const maxPermittedTokens = 2 * Math.max(1, (payload.estimatedInputTokens || 0) + (payload.maxOutputTokens || 0));
+    const estimatedTokens = maxPermittedTokens;
     const globalDailyCap = getAiGlobalDailyTokenCap(activeDeps.env);
     const periodDate = new Date().toISOString().slice(0, 10);
     let budgetReserved = false;
@@ -851,13 +890,28 @@ export async function executeAiCore(
           // Ignore DB fetch failure on replay
         }
 
+        // If an operation is actively marked in-flight in memory or in DB, return 409
+        if (isOperationInFlight(user.id, config.operation, setConsumeKey)) {
+          return {
+            statusCode: 409,
+            body: {
+              error: "Operation currently in progress. Please retry or poll shortly.",
+              code: "OPERATION_IN_FLIGHT",
+              status: "pending",
+              operation: config.operation,
+              idempotencyKey: setConsumeKey,
+              retryAfter: 2,
+            },
+            headers: {
+              "Retry-After": "2",
+            },
+          };
+        }
+
         return {
           statusCode: 200,
           body: {
             success: true,
-            result: "Idempotent replay: operation already processed.",
-            content: "Idempotent replay: operation already processed.",
-            text: "Idempotent replay: operation already processed.",
             operation: config.operation,
             idempotentReplay: true,
             alreadyConsumed: true,
@@ -1009,10 +1063,12 @@ export async function executeAiCore(
       abortController.abort(new Error("AI service request timed out after 25s"));
     }, groqTimeoutMs);
 
+    setOperationInFlight(user.id, config.operation, setConsumeKey);
     try {
       // 5. Server-Side Groq API Key Check & Upstream Groq Call
       let groqData: any;
       let servedModel = payload.model;
+      let routedTokens = 0;
       if (activeDeps.callGroq) {
         try {
           const mockCall = activeDeps.callGroq(payload, { signal: abortController.signal });
@@ -1081,7 +1137,10 @@ export async function executeAiCore(
           } catch (fetchErr: any) {
             clearTimeout(timeoutHandle);
             activeBreaker.recordFailure();
-            log.warn("[AI Service] Network error calling upstream provider:", { error: fetchErr });
+            log.warn("[AI Service] Upstream stream network error", {
+              code: "UPSTREAM_STREAM_FETCH_ERROR",
+              requestId: executionRequestId,
+            });
             await settleBudget(0);
             await rollbackAllQuotas();
             return {
@@ -1093,15 +1152,10 @@ export async function executeAiCore(
           if (!groqResponse.ok) {
             clearTimeout(timeoutHandle);
             activeBreaker.recordFailure();
-            let errorBodyText = "";
-            try {
-              errorBodyText = await groqResponse.text();
-            } catch {}
-            log.warn(`[AI Service] Upstream provider returned status ${groqResponse.status}`, {
+            log.warn("[AI Service] Upstream stream HTTP error", {
               status: groqResponse.status,
-              body: errorBodyText,
-              model: payload.model,
-              operation: config.operation,
+              code: "UPSTREAM_STREAM_HTTP_ERROR",
+              requestId: executionRequestId,
             });
             await settleBudget(0);
             await rollbackAllQuotas();
@@ -1143,9 +1197,11 @@ export async function executeAiCore(
             });
             groqData = routed.data;
             servedModel = routed.model;
+            routedTokens = routed.totalBillableTokens;
           } catch (routeErr: any) {
             clearTimeout(timeoutHandle);
             const re: AiRoutingError | null = routeErr instanceof AiRoutingError ? routeErr : null;
+            routedTokens = re?.billableTokens ?? ((payload.estimatedInputTokens || 0) + (payload.maxOutputTokens || 0));
             // Validator rejections are the model's output quality, not provider health.
             if (!re || re.code !== "AI_VALIDATION_FAILED") activeBreaker.recordFailure();
             else releaseProbeIfAny();
@@ -1153,7 +1209,7 @@ export async function executeAiCore(
               operation: config.operation,
               code: re?.code ?? "AI_BUSY",
             });
-            await settleBudget(0);
+            await settleBudget(routedTokens);
             await rollbackAllQuotas();
             const code = re?.code ?? "AI_BUSY";
             if (code === "AI_NOT_CONFIGURED") {
@@ -1188,7 +1244,7 @@ export async function executeAiCore(
       const content = extractTextCompletionContent(groqData);
       if (!content) {
         activeBreaker.recordFailure();
-        await settleBudget(0);
+        await settleBudget(routedTokens > 0 ? routedTokens : 0);
         await rollbackAllQuotas();
         return {
           statusCode: 502,
@@ -1199,14 +1255,16 @@ export async function executeAiCore(
       activeBreaker.recordSuccess();
 
       // Settle actual tokens from Groq response usage field when present, otherwise estimate
-      let actualTokens = 0;
-      if (groqData && typeof groqData === "object" && groqData.usage) {
-        const promptTokens = Number(groqData.usage.prompt_tokens) || 0;
-        const completionTokens = Number(groqData.usage.completion_tokens) || 0;
-        actualTokens = promptTokens + completionTokens;
-      }
+      let actualTokens = routedTokens;
       if (actualTokens <= 0) {
-        actualTokens = estimatedTokens;
+        if (groqData && typeof groqData === "object" && groqData.usage) {
+          const promptTokens = Number(groqData.usage.prompt_tokens) || 0;
+          const completionTokens = Number(groqData.usage.completion_tokens) || 0;
+          actualTokens = promptTokens + completionTokens;
+        }
+        if (actualTokens <= 0) {
+          actualTokens = estimatedTokens;
+        }
       }
 
       if (activeDeps.callGroq && content === "Simulated AI generated output") {
@@ -1221,8 +1279,10 @@ export async function executeAiCore(
           jobDescriptionShortened: false,
         };
 
-        if (setConsumed && setConsumeKey) {
+        if (setConsumeKey) {
           storeIdempotentResult(user.id, config.operation, setConsumeKey, simulatedPayload);
+        }
+        if (setConsumed && setConsumeKey) {
           try {
             await supabaseAdmin
               .from("plan_usage_events")
@@ -1241,7 +1301,7 @@ export async function executeAiCore(
 
       const validated = validateAndSanitizeAiOutput(config.operation, content, params);
       if (!validated.ok) {
-        await settleBudget(0);
+        await settleBudget(actualTokens);
         await rollbackAllQuotas();
         return {
           statusCode: 502,
@@ -1261,8 +1321,10 @@ export async function executeAiCore(
         jobDescriptionShortened: payload.metadata?.jobDescriptionShortened ?? false,
       };
 
-      if (setConsumed && setConsumeKey) {
+      if (setConsumeKey) {
         storeIdempotentResult(user.id, config.operation, setConsumeKey, responsePayload);
+      }
+      if (setConsumed && setConsumeKey) {
         try {
           await supabaseAdmin
             .from("plan_usage_events")
@@ -1278,6 +1340,7 @@ export async function executeAiCore(
         body: responsePayload,
       };
     } finally {
+      clearOperationInFlight(user.id, config.operation, setConsumeKey);
       clearTimeout(timeoutHandle);
       if (hasLease && typeof supabaseAdmin.rpc === "function") {
         try {

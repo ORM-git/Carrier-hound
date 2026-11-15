@@ -116,8 +116,11 @@ describe("Groq Adapter Automatic Retry & Logging", () => {
 describe("sanitizeUserFacingAiError Friendly Error Formatting", () => {
   it("converts raw AI generation failed messages to friendly copy", () => {
     const raw = "AI service generation failed. Please try again.";
-    expect(sanitizeUserFacingAiError(raw)).toBe(
+    expect(sanitizeUserFacingAiError(raw, true)).toBe(
       "AI service is temporarily busy. Your verified rules-based version is ready."
+    );
+    expect(sanitizeUserFacingAiError(raw, false)).toBe(
+      "AI service is temporarily busy. Please try again."
     );
   });
 
