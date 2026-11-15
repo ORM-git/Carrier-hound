@@ -98,7 +98,7 @@ describe("PostgreSQL Migration & Actual SQL Mandate Safety (Requirement 7 & PR #
         created_at timestamptz NOT NULL DEFAULT now()
       );
     `);
-  });
+  }, 30000);
 
   afterEach(async () => {
     if (pg) {

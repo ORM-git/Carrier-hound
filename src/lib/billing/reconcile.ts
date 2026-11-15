@@ -292,13 +292,18 @@ export async function reconcileSubscriptionMandates(
       // Placeholder sub_pending_ or missing ID
       const createdAtMs = rec.created_at ? new Date(rec.created_at).getTime() : 0;
       const isStale = Date.now() - createdAtMs > 24 * 3600 * 1000;
+      const isPaymentFailed =
+        rec.failure_reason === "payment.failed" ||
+        rec.metadata?.event_type === "payment.failed";
 
-      if (isStale) {
+      if (isStale || isPaymentFailed) {
         await supabaseAdmin
           .from("subscription_reconciliations")
           .update({
             reconciliation_state: "resolved",
-            recovery_outcome: "stale_placeholder_without_provider_id_released",
+            recovery_outcome: isPaymentFailed
+              ? "payment_failed_reservation_released"
+              : "stale_placeholder_without_provider_id_released",
             updated_at: new Date().toISOString(),
           })
           .eq("id", rec.id);
@@ -306,13 +311,18 @@ export async function reconcileSubscriptionMandates(
         if (rec.reservation_order_id) {
           await supabaseAdmin
             .from("payment_orders")
-            .update({ status: "expired", updated_at: new Date().toISOString() })
+            .update({ status: isPaymentFailed ? "failed" : "expired", updated_at: new Date().toISOString() })
             .eq("provider_order_id", rec.reservation_order_id)
             .in("status", ["reserved", "created", "unknown"]);
         }
 
         result.resolved++;
-        result.details.push({ id: rec.id, subId: null, action: "stale_placeholder_released", status: "resolved" });
+        result.details.push({
+          id: rec.id,
+          subId: null,
+          action: isPaymentFailed ? "payment_failed_released" : "stale_placeholder_released",
+          status: "resolved",
+        });
       } else {
         result.failed++;
         result.details.push({ id: rec.id, subId: null, action: "placeholder_kept_pending", status: "pending" });
