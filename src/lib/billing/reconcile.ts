@@ -196,8 +196,8 @@ export async function reconcileSubscriptionMandates(
           const isMatching = subData?.id === subId;
 
           // Verify ownership before cancelling or modifying mandate
-          const ownerId = subData?.notes?.user_id || subData?.notes?.userId || subData?.customer_id;
-          if (ownerId && rec.user_id && ownerId !== rec.user_id) {
+          const notesUserId = subData?.notes?.user_id || subData?.notes?.userId;
+          if (notesUserId && rec.user_id && notesUserId !== rec.user_id) {
             await supabaseAdmin
               .from("subscription_reconciliations")
               .update({
@@ -208,6 +208,30 @@ export async function reconcileSubscriptionMandates(
               .eq("id", rec.id);
             result.details.push({ id: rec.id, subId, action: "ownership_mismatch", status: "failed" });
             continue;
+          }
+
+          if (subData?.customer_id && rec.user_id) {
+            const { data: otherUserSub } = typeof supabaseAdmin?.from === "function"
+              ? await supabaseAdmin
+                  .from("subscriptions")
+                  .select("user_id")
+                  .eq("customer_id", subData.customer_id)
+                  .neq("user_id", rec.user_id)
+                  .maybeSingle()
+                  .catch(() => ({ data: null }))
+              : { data: null };
+            if (otherUserSub) {
+              await supabaseAdmin
+                .from("subscription_reconciliations")
+                .update({
+                  reconciliation_state: "failed",
+                  recovery_outcome: "customer_id_mismatch_aborted",
+                  updated_at: new Date().toISOString(),
+                })
+                .eq("id", rec.id);
+              result.details.push({ id: rec.id, subId, action: "customer_id_mismatch", status: "failed" });
+              continue;
+            }
           }
 
           // State-machine guard: Never cancel an active or in_grace_period subscription that is legitimately bound to a user

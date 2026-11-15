@@ -51,6 +51,7 @@ describe("PostgreSQL Migration & Actual SQL Mandate Safety (Requirement 7 & PR #
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         user_id uuid NOT NULL,
         provider text NOT NULL,
+        customer_id text,
         subscription_id text,
         plan_id text,
         currency text DEFAULT 'INR',

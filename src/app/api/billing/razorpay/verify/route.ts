@@ -18,6 +18,8 @@ interface VerifyPayload {
   // Also accept standard Razorpay handler parameter names
   razorpay_order_id?: string;
   razorpay_payment_id?: string;
+  subscription_id?: string;
+  razorpay_subscription_id?: string;
 }
 
 /**
@@ -46,17 +48,16 @@ async function computeSha256Hex(value: string): Promise<string> {
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-async function verifySignature(
-  orderId: string,
-  paymentId: string,
+async function verifySignatureString(
+  payloadString: string,
   signature: string,
   secret: string
 ): Promise<boolean> {
-  if (!orderId || !paymentId || !signature || !secret) return false;
+  if (!payloadString || !signature || !secret) return false;
 
   try {
     const encoder = new TextEncoder();
-    const data = encoder.encode(`${orderId}|${paymentId}`);
+    const data = encoder.encode(payloadString);
     const key = await crypto.subtle.importKey(
       "raw",
       encoder.encode(secret),
@@ -78,6 +79,28 @@ async function verifySignature(
     baseLog.error("Signature computation error", { error: String(e) });
     return false;
   }
+}
+
+async function verifySignature(
+  orderId: string,
+  paymentId: string,
+  signature: string,
+  secret: string
+): Promise<boolean> {
+  if (!orderId || !paymentId || !signature || !secret) return false;
+  return verifySignatureString(`${orderId}|${paymentId}`, signature, secret);
+}
+
+async function verifySubscriptionSignature(
+  paymentId: string,
+  subscriptionId: string,
+  signature: string,
+  secret: string
+): Promise<boolean> {
+  if (!paymentId || !subscriptionId || !signature || !secret) return false;
+  const match1 = await verifySignatureString(`${paymentId}|${subscriptionId}`, signature, secret);
+  if (match1) return true;
+  return await verifySignatureString(`${subscriptionId}|${paymentId}`, signature, secret);
 }
 
 export async function POST(req: Request) {
@@ -151,15 +174,203 @@ export async function POST(req: Request) {
     const paymentId = body.payment_id || body.razorpay_payment_id;
     const signature = body.razorpay_signature;
 
-    if (!orderId || !paymentId || !signature) {
+    const rawSubId = (body as any).subscription_id || (body as any).razorpay_subscription_id;
+    const isSubscription = Boolean(rawSubId || (orderId && orderId.startsWith("sub_")));
+    const subscriptionId = rawSubId || (orderId && orderId.startsWith("sub_") ? orderId : undefined);
+
+    if ((!orderId && !subscriptionId) || !paymentId || !signature) {
       return NextResponse.json(
         { error: "Missing required order_id, payment_id or razorpay_signature" },
         { status: 400 }
       );
     }
 
-    // Verify HMAC-SHA256 signature
-    const isValid = await verifySignature(orderId, paymentId, signature, keySecret);
+    if (isSubscription && subscriptionId) {
+      // 1. Verify subscription HMAC-SHA256 signature
+      const isValid = await verifySubscriptionSignature(paymentId, subscriptionId, signature, keySecret);
+      if (!isValid) {
+        return NextResponse.json(
+          { error: "Invalid payment signature", code: "INVALID_SIGNATURE" },
+          { status: 400 }
+        );
+      }
+
+      // 2. Fetch subscription entity directly from provider by ID (never trust client claims)
+      const fetchCaller = deps.fetchCaller || fetch;
+      const credentials = typeof btoa === "function"
+        ? btoa(`${keyId}:${keySecret}`)
+        : Buffer.from(`${keyId}:${keySecret}`).toString("base64");
+
+      let rzpRes: Response;
+      try {
+        rzpRes = await fetchCaller(`https://api.razorpay.com/v1/subscriptions/${subscriptionId}`, {
+          method: "GET",
+          headers: {
+            Authorization: `Basic ${credentials}`,
+          },
+        });
+      } catch (gatewayErr: any) {
+        log.error("Network error fetching subscription from provider", { error: String(gatewayErr), subscriptionId });
+        return NextResponse.json(
+          { error: "Failed to verify mandate with provider", code: "GATEWAY_CONNECTION_ERROR" },
+          { status: 502 }
+        );
+      }
+
+      if (!rzpRes.ok) {
+        log.error("Provider returned non-200 for subscription fetch", { status: rzpRes.status, subscriptionId });
+        return NextResponse.json(
+          { error: "Failed to verify mandate with provider", code: "GATEWAY_CONNECTION_ERROR" },
+          { status: 502 }
+        );
+      }
+
+      let subData: any;
+      try {
+        subData = await rzpRes.json();
+      } catch (parseErr: any) {
+        log.error("Failed to parse provider subscription response", { error: String(parseErr), subscriptionId });
+        return NextResponse.json(
+          { error: "Invalid payment gateway response", code: "GATEWAY_RESPONSE_INVALID" },
+          { status: 502 }
+        );
+      }
+
+      // 3. Ownership Check: provider notes.userId == authenticated user
+      const providerUserId = subData?.notes?.userId || subData?.notes?.user_id;
+      if (!providerUserId || providerUserId !== user.id) {
+        log.warn("Mandate ownership mismatch: notes.userId does not match session user", {
+          subscriptionId,
+          sessionUserId: user.id,
+        });
+        return NextResponse.json(
+          { error: "Mandate does not belong to authenticated user", code: "MANDATE_OWNERSHIP_MISMATCH" },
+          { status: 403 }
+        );
+      }
+
+      // 4. DB Order and Nonce Check
+      const { data: orderRow } = await supabaseAdmin
+        .from("payment_orders")
+        .select("id, user_id, provider, mode, provider_order_id, plan_code, amount_paise, status, metadata")
+        .eq("provider_order_id", subscriptionId)
+        .maybeSingle();
+
+      if (orderRow && orderRow.user_id !== user.id) {
+        log.warn("Mandate order ownership mismatch", { subscriptionId, sessionUserId: user.id });
+        return NextResponse.json(
+          { error: "Mandate does not belong to authenticated user", code: "MANDATE_OWNERSHIP_MISMATCH" },
+          { status: 403 }
+        );
+      }
+
+      if (orderRow?.metadata?.nonce && subData?.notes?.nonce) {
+        if (orderRow.metadata.nonce !== subData.notes.nonce) {
+          log.warn("Mandate nonce mismatch", { subscriptionId, sessionUserId: user.id });
+          return NextResponse.json(
+            { error: "Mandate verification failed: nonce mismatch", code: "MANDATE_NONCE_MISMATCH" },
+            { status: 403 }
+          );
+        }
+      }
+
+      // 5. Cross-link check on payment_orders table
+      const { data: crossOrder } = await supabaseAdmin
+        .from("payment_orders")
+        .select("user_id")
+        .eq("provider_order_id", subscriptionId)
+        .neq("user_id", user.id)
+        .maybeSingle();
+
+      if (crossOrder && crossOrder.user_id !== user.id) {
+        log.warn("Mandate cross-linked: order attached to another user", { subscriptionId, sessionUserId: user.id });
+        return NextResponse.json(
+          { error: "Mandate already attached to another user", code: "MANDATE_ATTACHED_TO_ANOTHER_USER" },
+          { status: 403 }
+        );
+      }
+
+      // If provider returned customer_id, store on order metadata so RPC can bind it
+      if (subData?.customer_id && orderRow && !orderRow.metadata?.provider_customer_id) {
+        await supabaseAdmin
+          .from("payment_orders")
+          .update({
+            metadata: {
+              ...(orderRow.metadata || {}),
+              provider_customer_id: subData.customer_id,
+            },
+            updated_at: new Date().toISOString(),
+          })
+          .eq("provider_order_id", subscriptionId);
+      }
+
+      // 6. Check mode
+      const subMode = orderRow?.mode || (subscriptionId.startsWith("sub_test_") ? "test" : "live");
+      if (subMode !== serverMode) {
+        return NextResponse.json(
+          { error: `Order mode mismatch: cannot verify ${subMode} order with ${serverMode} credentials`, code: "MODE_MISMATCH" },
+          { status: 400 }
+        );
+      }
+
+      // 7. Idempotency: already paid returns cleanly
+      if (orderRow?.status === "paid") {
+        return NextResponse.json({
+          success: true,
+          message: "Subscription already verified and active",
+          alreadyPaid: true,
+          testMode: serverMode === "test",
+          isPro: serverMode === "live",
+          subscriptionId,
+        });
+      }
+
+      // 8. Atomic fulfillment via fulfil_subscription_renewal RPC (enforces subscriptions table ownership and customer binding)
+      const { data: fulfilRes, error: fulfilErr } = await rpcWithRetry(() =>
+        supabaseAdmin.rpc("fulfil_subscription_renewal", {
+          p_razorpay_subscription_id: subscriptionId,
+          p_payment_id: paymentId,
+          p_expected_mode: serverMode,
+        })
+      );
+
+      if (fulfilErr) {
+        log.error("Subscription renewal fulfillment RPC error", { error: fulfilErr.message, subscriptionId });
+        return NextResponse.json(
+          { error: "Subscription fulfillment failed", code: "FULFILLMENT_FAILED" },
+          { status: 500 }
+        );
+      }
+
+      if (!fulfilRes || !fulfilRes.success) {
+        if (
+          fulfilRes?.code === "MANDATE_ATTACHED_TO_ANOTHER_USER" ||
+          fulfilRes?.code === "CUSTOMER_OWNERSHIP_MISMATCH" ||
+          fulfilRes?.code === "MANDATE_OWNERSHIP_MISMATCH"
+        ) {
+          return NextResponse.json(
+            { error: fulfilRes.error || "Mandate ownership validation failed", code: fulfilRes.code },
+            { status: 403 }
+          );
+        }
+        return NextResponse.json(
+          { error: fulfilRes?.error || "Subscription fulfillment failed", code: fulfilRes?.code || "FULFILLMENT_FAILED" },
+          { status: 400 }
+        );
+      }
+
+      return NextResponse.json({
+        ...fulfilRes,
+        success: true,
+        isPro: serverMode === "live",
+        testMode: serverMode === "test",
+        subscriptionId,
+        paymentId,
+      });
+    }
+
+    // Verify HMAC-SHA256 signature for one-time order
+    const isValid = await verifySignature(orderId!, paymentId, signature, keySecret);
     if (!isValid) {
       return NextResponse.json(
         { error: "Invalid payment signature", code: "INVALID_SIGNATURE" },
@@ -167,11 +378,29 @@ export async function POST(req: Request) {
       );
     }
 
+    // Check if order exists for ANY user in payment_orders
+    const { data: anyOrder } = await supabaseAdmin
+      .from("payment_orders")
+      .select("user_id")
+      .eq("provider_order_id", orderId!)
+      .maybeSingle();
+
+    if (anyOrder && anyOrder.user_id !== user.id) {
+      log.warn("Order ownership mismatch: order belongs to another user", {
+        orderId,
+        sessionUserId: user.id,
+      });
+      return NextResponse.json(
+        { error: "Payment order belongs to another user", code: "ORDER_OWNERSHIP_MISMATCH" },
+        { status: 403 }
+      );
+    }
+
     // Look up order in payment_orders table belonging to user (REQUIRED - Fail closed)
     const { data: orderRow, error: orderErr } = await supabaseAdmin
       .from("payment_orders")
       .select("id, provider, mode, provider_order_id, plan_code, addon_code, amount_paise, status")
-      .eq("provider_order_id", orderId)
+      .eq("provider_order_id", orderId!)
       .eq("user_id", user.id)
       .maybeSingle();
 

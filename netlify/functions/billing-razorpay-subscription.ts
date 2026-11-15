@@ -1673,6 +1673,7 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
         }
 
         let rzpRes: Response;
+        const mandateNonce = crypto.randomUUID();
         try {
           rzpRes = await fetchCaller("https://api.razorpay.com/v1/subscriptions", {
             method: "POST",
@@ -1693,6 +1694,7 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
                 plan_code: planCode,
                 attempt_id: attemptId,
                 reservation_id: reservationOrderId,
+                nonce: mandateNonce,
               },
             }),
           });
@@ -2082,6 +2084,9 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
           provider_current_start: providerCurrentStart,
           provider_current_end: providerCurrentEnd,
           provider_charge_at: providerChargeAt,
+          provider_customer_id: subscriptionData.customer_id || null,
+          provider_subscription_id: subscriptionData.id,
+          nonce: mandateNonce,
           verified_amount_paise: verifiedAmount,
           verified_currency: verifiedCurrency,
           verified_period: verifiedPeriod,
@@ -2111,6 +2116,8 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
             provider_current_start: providerCurrentStart,
             provider_current_end: providerCurrentEnd,
             provider_charge_at: providerChargeAt,
+            provider_customer_id: subscriptionData.customer_id || null,
+            nonce: mandateNonce,
             verified_amount_paise: verifiedAmount,
             verified_currency: verifiedCurrency,
             verified_period: verifiedPeriod,

@@ -125,6 +125,15 @@ CREATE INDEX idx_payment_orders_pending_lookup
   ON public.payment_orders (user_id, provider, mode, plan_code, status, created_at)
   WHERE recurring_kind = 'recurring' AND status IN ('reserved', 'created', 'unknown');
 
+-- 5b. Subscription Provider Mandate ID Uniqueness Constraint & Customer ID Column Guarantee
+-- Guarantees that a provider subscription_id can never be attached to more than one user account.
+ALTER TABLE public.subscriptions
+  ADD COLUMN IF NOT EXISTS customer_id text;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_subscriptions_subscription_id_unique
+  ON public.subscriptions (subscription_id)
+  WHERE subscription_id IS NOT NULL;
+
 -- 6. Atomic CAS Cancellation Procedure with Strict Ownership & Lock Order
 -- Global lock order aligned with billed RPCs: (1) advisory lock on user, (2) subscriptions row lock, (3) order row lock.
 -- Matches the current mandate independently; an old pending cancel only touches its own order,
@@ -437,6 +446,50 @@ BEGIN
     FOR UPDATE;
   END IF;
 
+  -- 5b. Ownership Check: Ensure this mandate is not already attached to another user
+  IF EXISTS (
+    SELECT 1 FROM public.subscriptions
+    WHERE (
+      subscription_id = p_razorpay_subscription_id
+      OR metadata->>'razorpay_subscription_id' = p_razorpay_subscription_id
+      OR metadata->>'subscription_id' = p_razorpay_subscription_id
+    )
+    AND user_id <> v_user_id
+  ) OR EXISTS (
+    SELECT 1 FROM public.payment_orders
+    WHERE provider_order_id = p_razorpay_subscription_id
+      AND user_id <> v_user_id
+  ) THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'code', 'MANDATE_ATTACHED_TO_ANOTHER_USER',
+      'error', format('Mandate %s is attached to another user account', p_razorpay_subscription_id)
+    );
+  END IF;
+
+  -- 5c. Customer Ownership Check: Ensure customer_id is not already attached to another user
+  IF v_order.metadata ? 'provider_customer_id' AND v_order.metadata->>'provider_customer_id' IS NOT NULL THEN
+    IF EXISTS (
+      SELECT 1 FROM public.subscriptions
+      WHERE customer_id = (v_order.metadata->>'provider_customer_id')
+        AND user_id <> v_user_id
+    ) THEN
+      RETURN jsonb_build_object(
+        'success', false,
+        'code', 'CUSTOMER_OWNERSHIP_MISMATCH',
+        'error', 'Mandate customer belongs to another user account'
+      );
+    END IF;
+
+    IF v_has_sub AND v_sub.customer_id IS NOT NULL AND v_sub.customer_id <> (v_order.metadata->>'provider_customer_id') THEN
+      RETURN jsonb_build_object(
+        'success', false,
+        'code', 'CUSTOMER_OWNERSHIP_MISMATCH',
+        'error', 'Mandate customer mismatch for user account'
+      );
+    END IF;
+  END IF;
+
   -- 6. Provider Verification
   IF v_order.id IS NOT NULL AND v_order.provider IS NOT NULL AND v_order.provider <> 'razorpay' THEN
     RETURN jsonb_build_object(
@@ -690,6 +743,7 @@ BEGIN
     UPDATE public.subscriptions
     SET
       subscription_id = p_razorpay_subscription_id,
+      customer_id = COALESCE(v_order.metadata->>'provider_customer_id', customer_id),
       plan_id = v_plan_code,
       provider = 'razorpay',
       status = v_new_status,
@@ -707,6 +761,7 @@ BEGIN
     INSERT INTO public.subscriptions (
       user_id,
       subscription_id,
+      customer_id,
       plan_id,
       provider,
       status,
@@ -720,6 +775,7 @@ BEGIN
     ) VALUES (
       v_user_id,
       p_razorpay_subscription_id,
+      v_order.metadata->>'provider_customer_id',
       v_plan_code,
       'razorpay',
       'active',

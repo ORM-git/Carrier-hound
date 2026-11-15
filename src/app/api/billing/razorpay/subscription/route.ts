@@ -1292,6 +1292,7 @@ export async function POST(req: Request) {
       }
 
       // 11. Create subscription via Razorpay with attempt tracking notes and idempotency keys
+      const mandateNonce = crypto.randomUUID();
       let rzpRes: Response;
       try {
         rzpRes = await fetchCaller("https://api.razorpay.com/v1/subscriptions", {
@@ -1313,6 +1314,7 @@ export async function POST(req: Request) {
               plan_code: planCode,
               attempt_id: attemptId,
               reservation_id: reservationOrderId,
+              nonce: mandateNonce,
             },
           }),
         });
@@ -1681,6 +1683,9 @@ export async function POST(req: Request) {
         provider_current_start: providerCurrentStart,
         provider_current_end: providerCurrentEnd,
         provider_charge_at: providerChargeAt,
+        provider_customer_id: subscriptionData.customer_id || null,
+        provider_subscription_id: subscriptionData.id,
+        nonce: mandateNonce,
         verified_amount_paise: verifiedAmount,
         verified_currency: verifiedCurrency,
         verified_period: verifiedPeriod,
@@ -1710,6 +1715,8 @@ export async function POST(req: Request) {
           provider_current_start: providerCurrentStart,
           provider_current_end: providerCurrentEnd,
           provider_charge_at: providerChargeAt,
+          provider_customer_id: subscriptionData.customer_id || null,
+          nonce: mandateNonce,
           verified_amount_paise: verifiedAmount,
           verified_currency: verifiedCurrency,
           verified_period: verifiedPeriod,
