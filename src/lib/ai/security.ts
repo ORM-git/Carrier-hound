@@ -259,11 +259,11 @@ CRITICAL ZERO-FABRICATION RULES:
 WORKED EXAMPLE:
 Candidate input: Skills: TypeScript, React, Next.js. Experience: Frontend Engineer at Acme Corp (2022 - 2024). Target role: Senior Frontend Engineer at Linear.
 Ideal output body paragraphs:
-I am excited to apply for the Senior Frontend Engineer role at Linear. Having followed Linear's relentless focus on craft, speed, and exceptional user experience, I am eager to bring my background in high-performance web development and modular component architecture to your engineering team. My core expertise in TypeScript, React, and modern state architectures aligns directly with Linear's technical standards and product principles.
+I am excited to apply for the Senior Frontend Engineer role at Linear. Having followed Linear's focus on user experience and speed, I am eager to contribute my background in web development to your engineering team. My core technical skills in TypeScript, React, and Next.js align directly with Linear's high engineering standards and product quality.
 
-During my tenure as a Frontend Engineer at Acme Corp from 2022 to 2024, I engineered customer-facing user interfaces, modular design systems, and robust client applications using TypeScript, React, and Next.js. I concentrated on delivering snappy, responsive interactions, refactoring complex data tables, and collaborating across engineering disciplines to maintain high reliability and performance across core production workflows.
+During my tenure as a Frontend Engineer at Acme Corp from 2022 to 2024, I developed web applications and modular component interfaces using TypeScript, React, and Next.js. I focused on building reliable user interfaces, improving frontend code maintainability, and collaborating with cross-functional team members to deliver high-quality features across production web workflows.
 
-Linear's mission to build tools that creators and engineering teams love to use every day deeply resonates with me. I would welcome the opportunity to discuss how my proven experience building scalable, maintainable frontend systems can help advance Linear's product velocity and craft. Thank you for your time and consideration; I look forward to speaking with you.${UNTRUSTED_DATA_SYSTEM_GUARD}`;
+Linear's commitment to building fast, high-quality software tools for engineering teams strongly aligns with my own professional values. I would welcome the opportunity to discuss how my background in TypeScript, React, and modern web application development can support Linear's mission and engineering velocity. Thank you for your time and consideration; I look forward to speaking with you.${UNTRUSTED_DATA_SYSTEM_GUARD}`;
 
         const usr = `<untrusted_candidate_data>\nName: ${candName}\nHeadline: ${candHeadline}\nSummary: ${fields.candSummary}\nSkills: ${fields.skillsList}\n</untrusted_candidate_data>\n\n<untrusted_job_data>\nTitle: ${jobTitle}\nCompany: ${jobCompany}\nDescription: ${fields.jobDesc}\n</untrusted_job_data>`;
 
@@ -965,6 +965,11 @@ export function findUnevidencedToolOrSkill(
         if (!regex.test(textWithoutJs)) {
           continue; // "java" only appeared as part of "javascript"
         }
+      } else if (skill === "js") {
+        const textWithoutFrameworkJs = lowerText.replace(/(next|node|vue|nuxt|express|angular|react)[\s\-_.]?js/gi, " ");
+        if (!regex.test(textWithoutFrameworkJs)) {
+          continue; // "js" only appeared as part of framework js
+        }
       }
       if (!isSkillEvidencedInCandidate(skill, candidate, candidateTerms)) {
         return skill;
@@ -1328,7 +1333,7 @@ export function validateAndSanitizeAiOutput(
         }
       }
 
-      // Check employers: if candidate has no prior work history
+      // 3B. Check employers (for freshers and experienced candidates)
       const hasExp = Array.isArray(candidate.experience) && candidate.experience.length > 0;
       if (!hasExp) {
         if (/\b(?:at my previous|at my former|former employer|previous employer|throughout my tenure at)\b/i.test(stripped)) {
@@ -1337,30 +1342,143 @@ export function validateAndSanitizeAiOutput(
             error: "AI output rejected: cover letter claims prior employment tenure for a candidate with no work history.",
           };
         }
+      } else {
+        const verifiedEmployers = new Set(
+          (candidate.experience || [])
+            .map((e) => (e?.company || "").trim().toLowerCase())
+            .filter(Boolean)
+        );
+        const targetCompany = ((context?.job?.company as string) || "").trim().toLowerCase();
+
+        // Check for unevidenced well-known tech employers
+        const wellKnownCompanies = [
+          "google", "meta", "apple", "amazon", "microsoft", "netflix", "uber", "airbnb",
+          "stripe", "salesforce", "oracle", "ibm", "twitter", "spotify", "adobe", "cisco", "intel"
+        ];
+        for (const company of wellKnownCompanies) {
+          const match = stripped.match(new RegExp(`\\b${company}\\b`, "i"));
+          if (match) {
+            const isTarget = targetCompany && targetCompany.includes(company);
+            const isVerified = Array.from(verifiedEmployers).some((ve) => ve.includes(company));
+            if (!isTarget && !isVerified) {
+              return {
+                ok: false,
+                error: `AI output rejected: cover letter mentions employer '${match[0]}' not evidenced in candidate experience or target job.`,
+              };
+            }
+          }
+        }
+
+        // Check employment tenure patterns: "tenure at [Company]", "engineer at [Company]", etc.
+        const tenurePatterns = [
+          /\b(?:tenure at|worked at|employed at|employed by|time at|role at|position at)\s+([A-Z][A-Za-z0-9&.'-]+(?:\s+[A-Z][A-Za-z0-9&.'-]+)*)/g,
+          /\b(?:as an? [A-Za-z\s]+ at)\s+([A-Z][A-Za-z0-9&.'-]+(?:\s+[A-Z][A-Za-z0-9&.'-]+)*)/g,
+        ];
+        for (const pattern of tenurePatterns) {
+          let match: RegExpExecArray | null;
+          while ((match = pattern.exec(stripped)) !== null) {
+            const companyClaim = match[1].trim().toLowerCase();
+            const isTarget = targetCompany && (targetCompany.includes(companyClaim) || companyClaim.includes(targetCompany));
+            const isVerified = Array.from(verifiedEmployers).some(
+              (ve) => ve.includes(companyClaim) || companyClaim.includes(ve)
+            );
+            if (!isTarget && !isVerified && companyClaim.length > 2) {
+              return {
+                ok: false,
+                error: `AI output rejected: cover letter claims unevidenced past employment at '${match[1]}'.`,
+              };
+            }
+          }
+        }
       }
 
-      // Check years of experience claims
+      // 3C. Check tools and skills against candidate facts
+      const candidateTerms = extractCandidateTerms(candidate);
+      const unevidencedSkill = findUnevidencedToolOrSkill(stripped, candidate, candidateTerms);
+      if (unevidencedSkill) {
+        return {
+          ok: false,
+          error: `AI output rejected: cover letter claims unevidenced skill/tool '${unevidencedSkill}' not found in candidate profile facts.`,
+        };
+      }
+
+      // 3D. Check years of experience claims computed from job end dates
+      let maxEndYear = 0;
+      let minStartYear = 9999;
+      let hasCurrentJob = false;
+
+      for (const exp of candidate.experience || []) {
+        const startMatch = (exp?.startDate || "").match(/\b(19\d\d|20\d\d)\b/);
+        const endStr = (exp?.endDate || "").trim();
+        const endMatch = endStr.match(/\b(19\d\d|20\d\d)\b/);
+
+        if (startMatch) {
+          const sYear = parseInt(startMatch[1], 10);
+          if (sYear > 1970 && sYear < minStartYear) {
+            minStartYear = sYear;
+          }
+        }
+
+        if (/^(present|current|now|ongoing)$/i.test(endStr) || !endStr) {
+          hasCurrentJob = true;
+        } else if (endMatch) {
+          const eYear = parseInt(endMatch[1], 10);
+          if (eYear > maxEndYear) {
+            maxEndYear = eYear;
+          }
+        }
+      }
+
+      const currentYear = new Date().getFullYear();
+      const latestYear = hasCurrentJob ? currentYear : (maxEndYear > 0 ? maxEndYear : currentYear);
+      let maxYears = 0;
+      if (minStartYear < 9999) {
+        maxYears = Math.max(1, latestYear - minStartYear + 1);
+      }
+
       const yearsMatch = stripped.match(/\b(\d+)\+?\s+years?(?:\s+of)?(?:\s+experience|\s+tenure)?\b/i);
       if (yearsMatch) {
         const claimedYears = parseInt(yearsMatch[1], 10);
-        if (claimedYears > 1) {
-          let maxYears = 0;
-          if (candidate.experience && candidate.experience.length > 0) {
-            let earliestYear = 9999;
-            const latestYear = new Date().getFullYear();
-            for (const exp of candidate.experience) {
-              const startYear = parseInt((exp?.startDate || "").match(/\b(19\d\d|20\d\d)\b/)?.[1] || "0", 10);
-              if (startYear > 1970 && startYear < earliestYear) earliestYear = startYear;
+        if (claimedYears > Math.max(maxYears, 1) + 1) {
+          return {
+            ok: false,
+            error: `AI output rejected: cover letter claims ${claimedYears} years of experience, exceeding candidate work history.`,
+          };
+        }
+      }
+
+      // 3E. Check numeric facts, percentages, and metrics against candidate profile facts
+      const letterNumbers = extractNumericFacts(stripped);
+      if (letterNumbers.length > 0) {
+        const candidateProfileNumbers = new Set<string>();
+        extractNumericFacts(candidate.summary || "").forEach((n) => candidateProfileNumbers.add(n));
+        extractNumericFacts(candidate.headline || "").forEach((n) => candidateProfileNumbers.add(n));
+        (candidate.experience || []).forEach((e) => {
+          (e?.bullets || []).forEach((b) => {
+            extractNumericFacts(b).forEach((n) => candidateProfileNumbers.add(n));
+          });
+          extractNumericFacts(e?.startDate || "").forEach((n) => candidateProfileNumbers.add(n));
+          extractNumericFacts(e?.endDate || "").forEach((n) => candidateProfileNumbers.add(n));
+        });
+        (candidate.education || []).forEach((ed) => {
+          extractNumericFacts(ed?.year || "").forEach((n) => candidateProfileNumbers.add(n));
+        });
+
+        // Also check "900 percent" vs "900%" normalization
+        for (const num of letterNumbers) {
+          const normalizedNum = num.replace(/%$/, "").replace(/\+$/, "");
+          if (
+            !candidateProfileNumbers.has(num) &&
+            !candidateProfileNumbers.has(normalizedNum) &&
+            !candidateProfileNumbers.has(`${normalizedNum}%`)
+          ) {
+            const isYearOrSpan = maxYears > 0 && parseInt(normalizedNum, 10) <= maxYears;
+            if (!isYearOrSpan) {
+              return {
+                ok: false,
+                error: `AI output rejected: cover letter introduces unevidenced numeric metric '${num}' not found in candidate profile facts.`,
+              };
             }
-            if (earliestYear < 9999) {
-              maxYears = latestYear - earliestYear + 1;
-            }
-          }
-          if (claimedYears > Math.max(maxYears, 1) + 1) {
-            return {
-              ok: false,
-              error: `AI output rejected: cover letter claims ${claimedYears} years of experience, exceeding candidate work history.`,
-            };
           }
         }
       }
