@@ -268,6 +268,23 @@ function SettingsPageInner() {
 
   const isPro = subscription?.status === "active";
 
+  // A real active auto-renew mandate for a non-Pro (Free plan) user
+  const subStatus = (subscription?.status as string) || "";
+  const hasActiveMandateWithoutPro = Boolean(
+    !isPro &&
+    isRecurringMandate &&
+    !subscription?.cancelAtPeriodEnd &&
+    subStatus !== "canceled" &&
+    subStatus !== "expired" &&
+    subStatus !== "none" &&
+    (subStatus === "past_due" ||
+      subStatus === "unpaid" ||
+      subStatus === "incomplete" ||
+      subStatus === "created")
+  );
+
+  const showMandateSection = isPro || hasActiveMandateWithoutPro;
+
   return (
     <LoggedInAppShell pageLabel="SETTINGS" user={user} isPro={isPro}>
       <div className="max-w-5xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-12 space-y-8">
@@ -584,7 +601,7 @@ function SettingsPageInner() {
                 )}
               </div>
 
-              {(isPro || isRecurringMandate) && (
+              {showMandateSection && (
                 <div className="pt-3 border-t border-slate-200/80 flex items-center justify-between text-xs">
                   <span className="text-slate-600">
                     {isPro ? (
@@ -623,7 +640,7 @@ function SettingsPageInner() {
                       </>
                     )}
                   </span>
-                  {isRecurringMandate && !subscription?.cancelAtPeriodEnd && (
+                  {((isPro && isRecurringMandate) || hasActiveMandateWithoutPro) && !subscription?.cancelAtPeriodEnd && (
                     <button
                       type="button"
                       onClick={handleCancelAutoRenew}

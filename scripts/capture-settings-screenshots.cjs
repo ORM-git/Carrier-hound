@@ -222,7 +222,9 @@ function buildPageHtml(state) {
               </div>
 
               <!-- Recurring / Status Banner -->
-              <div class="pt-3 border-t border-slate-200/80 flex items-center justify-between text-xs">
+              ${
+                state.showMandateSection !== false
+                  ? `<div class="pt-3 border-t border-slate-200/80 flex items-center justify-between text-xs">
                 <span class="text-slate-600">
                   ${state.statusText}
                 </span>
@@ -234,7 +236,9 @@ function buildPageHtml(state) {
                       </button>`
                     : ""
                 }
-              </div>
+              </div>`
+                  : ""
+              }
             </div>
           </div>
 
@@ -283,11 +287,22 @@ const STATES = {
     isCanceling: false,
     description: "Pro Active with auto-renew canceled (keeps access until end date)",
   },
+  free_no_mandate: {
+    id: "free-no-mandate",
+    isPro: false,
+    email: "candidate@careermonke.com",
+    statusText: null,
+    showMandateSection: false,
+    showCancelButton: false,
+    isCanceling: false,
+    description: "Free tier with no active mandate or subscription (mandate line & cancel button hidden)",
+  },
   cancel_without_pro: {
     id: "cancel-without-pro",
     isPro: false,
     email: "candidate@careermonke.com",
     statusText: `Mandate pending confirmation (auto-renews)`,
+    showMandateSection: true,
     showCancelButton: true,
     isCanceling: false,
     description: "Free tier with pending recurring mandate (shows Cancel auto-renew without Pro)",
