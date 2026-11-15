@@ -32,7 +32,7 @@ export const viewport: Viewport = {
 
 const siteTitle = "CareerMonke — Unindexed Jobs & Remote Career Discovery";
 const siteDescription =
-  "Discover unindexed remote engineering, design, marketing, and data roles directly from verified employer career pages before they hit public aggregators.";
+  "Discover remote engineering, design, marketing, and data roles from verified employers.";
 
 const ogImageUrl = "https://careermonke.com/careermonke-logo.png";
 

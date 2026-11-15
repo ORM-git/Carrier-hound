@@ -712,7 +712,7 @@ export default function WhyMatchPanel({
               </div>
               <div className="flex items-center gap-1.5 truncate">
                 <span className="text-[#34D399] font-bold">✓</span>
-                <span className="truncate">{job.directSource ? "Direct Feed" : "Active Ingestion"}</span>
+                <span className="truncate">{job.directSource ? "Direct Feed" : "Active Feed"}</span>
               </div>
             </div>
           </>

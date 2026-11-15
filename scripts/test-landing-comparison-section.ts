@@ -58,7 +58,7 @@ async function runTests() {
     ["800+ applicants per listing", "Under 20 applicants, direct"],
     ["Hours tailoring every bullet", "1-tap ATS-matched resume"],
     ["Resumes lost in black holes", "Instant keyword match score"],
-    ["Ghost and expired reposts", "Live from verified career sites"],
+    ["Ghost and expired reposts", "From verified employers"],
     ["Auto-rejected in 10 minutes", "Seen by recruiters early"],
   ];
 

@@ -202,7 +202,7 @@ export const ROLE_GUIDES: Record<string, RoleGuideData> = {
     faqs: [
       {
         question: "Is DevOps still a standalone job title or a cultural philosophy?",
-        answer: "While DevOps began as an engineering philosophy, it remains one of the most widely searched requisition titles in modern ATS backends. However, organizations with mature systems increasingly recruit under 'Platform Engineer' or 'SRE' titles.",
+        answer: "While DevOps began as an engineering philosophy, it remains one of the most widely searched requisition titles in modern employer portals. However, organizations with mature systems increasingly recruit under 'Platform Engineer' or 'SRE' titles.",
       },
       {
         question: "How important are certifications for experienced DevOps engineers?",

@@ -193,7 +193,7 @@ async function runParityTests() {
   assert.ok(pageSrc.includes("<b>94%</b>"), "Stats must include 94%");
   assert.ok(pageSrc.includes("ATS keyword alignment"), "Stats must include 'ATS keyword alignment'");
   assert.ok(pageSrc.includes("<b>1,200+</b>"), "Stats must include 1,200+");
-  assert.ok(pageSrc.includes("fresh roles <span className=\"sbr\">daily</span>"), "Stats must include 'fresh roles daily'");
+  assert.ok(pageSrc.includes('fresh roles <span className="sbr">active</span>'), "Stats must include 'fresh roles active'");
   assert.ok(pageSrc.includes("*Based on early access user surveys"), "Stats must include survey note");
 
   console.log("\n✅ ALL LANDING PARITY & FOUNDER PHOTO TESTS PASSED!");

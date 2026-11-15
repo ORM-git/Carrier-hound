@@ -63,7 +63,7 @@ function runSuite() {
 
   const expectedSteps = [
     "Explore jobs by city",
-    "Jobs from career pages",
+    "Verified employer jobs",
     "A resume for every role",
     "Personalized matches",
   ];

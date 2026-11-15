@@ -3,13 +3,13 @@ import type { ReactNode } from "react";
 
 export const metadata: Metadata = {
   title: "Create your free account | CareerMonke",
-  description: "Create a free CareerMonke account to save and track unindexed remote jobs from verified employer career pages.",
+  description: "Create a free CareerMonke account to save and track verified employer jobs.",
   alternates: {
     canonical: "/signup",
   },
   openGraph: {
     title: "Create your free account | CareerMonke",
-    description: "Create a free CareerMonke account to save and track unindexed remote jobs from verified employer career pages.",
+    description: "Create a free CareerMonke account to save and track verified employer jobs.",
     url: "https://careermonke.com/signup",
   },
 };

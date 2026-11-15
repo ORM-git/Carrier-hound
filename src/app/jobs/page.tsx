@@ -1988,7 +1988,7 @@ function JobsPageInner() {
                             : "Try clearing or broadening your filters to view all your applied positions."
                           : hasActiveFilters
                           ? "Try adjusting your search keyword, work model, or level filters to view more opportunities."
-                          : "We refresh verified career site postings continuously. Try checking back shortly."}
+                          : "We refresh verified career site postings regularly. Try checking back shortly."}
                       </p>
                       {hasActiveFilters && (
                         <div className="pt-2">
@@ -2287,7 +2287,7 @@ function JobsPageInner() {
                                       </div>
                                       <div className="flex items-center gap-1.5 text-slate-300">
                                         <span className="text-emerald-400 font-bold">✓</span>
-                                        <span className="truncate">{job.directSource ? "Direct Feed" : "Active Ingestion"}</span>
+                                        <span className="truncate">{job.directSource ? "Direct Feed" : "Active Feed"}</span>
                                       </div>
                                     </div>
                                   </div>
@@ -2666,7 +2666,7 @@ function JobsPageInner() {
         open={isPaywallOpen}
         onOpenChange={setIsPaywallOpen}
         user={user}
-        featureTitle="Unlock Verified Company Names & Direct ATS Apply"
+        featureTitle="Unlock Verified Company Names & Direct Employer Apply"
       />
     </div>
   );

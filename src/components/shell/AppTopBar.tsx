@@ -229,7 +229,7 @@ export default function AppTopBar({
                   className="hidden xl:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 text-xs font-bold text-[#1E3A8A] hover:border-blue-300 transition-colors shadow-2xs shrink-0"
                 >
                   <span className="w-4 h-4 rounded-full bg-[#2563EB] text-white flex items-center justify-center text-[10px]">⚡</span>
-                  <span>Pro: Direct ATS & AI Tailor</span>
+                  <span>Pro: Direct Apply & AI Tailor</span>
                   <span className="text-[#2563EB] font-bold">›</span>
                 </Link>
               )}

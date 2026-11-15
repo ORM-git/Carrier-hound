@@ -173,14 +173,14 @@ export default function RoleTitlesPage({ params }: PageProps) {
           {roleJobs && roleJobs.length > 0 && (
             <section className="space-y-4">
               <h3 className="text-xl sm:text-2xl font-bold text-[#09090B]">
-                Live {guide.roleName} ATS Snapshot
+                Live {guide.roleName} Job Snapshot
               </h3>
               <p className="text-[#4B5563] text-sm">
-                Recent openings captured directly from employer applicant tracking systems before public syndication.
+                Recent verified openings.
               </p>
               <JobPreview
                 title={`Live ${guide.roleName} Openings`}
-                subtitle="Crawled directly from employer ATS endpoints every 15 minutes"
+                subtitle="Verified, active openings"
                 jobs={roleJobs}
                 limit={4}
               />
@@ -389,7 +389,7 @@ export default function RoleTitlesPage({ params }: PageProps) {
                 Ready to find verified {guide.roleName} positions?
               </h2>
               <p className="text-white/90 text-sm sm:text-base leading-relaxed">
-                Skip 500-applicant queues on public boards. Access unindexed direct employer ATS feeds right now.
+                Skip 500-applicant queues on public boards. Access verified direct employer openings right now.
               </p>
               <div className="pt-2">
                 <Link

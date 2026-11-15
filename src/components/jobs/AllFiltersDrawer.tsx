@@ -613,7 +613,7 @@ export default function AllFiltersDrawer({
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     {[
                       { val: "", label: "All sources" },
-                      { val: "ats", label: "Direct ATS" },
+                      { val: "ats", label: "Direct Portals" },
                       { val: "direct", label: "Employer" },
                       { val: "aggregator", label: "Aggregator" },
                     ].map((item) => (

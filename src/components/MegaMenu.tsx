@@ -71,7 +71,7 @@ export default function MegaMenu({ isOpen, onClose }: MegaMenuProps) {
                   <ChevronRight className="w-3.5 h-3.5 text-gray-400 group-hover:text-blue-600" />
                 </div>
                 <p className="text-xs text-[#4B5563] mt-1 leading-relaxed">
-                  Comparing closed subscription boards against real-time ATS scrapers.
+                  Comparing closed subscription boards against direct employer career feeds.
                 </p>
               </Link>
 
@@ -162,10 +162,10 @@ export default function MegaMenu({ isOpen, onClose }: MegaMenuProps) {
             {/* Blue subheading group */}
             <div className="mt-4 pt-3 border-t border-gray-100 bg-[#F8FAFF] p-3 rounded-lg border border-[#DBE3EF]">
               <h5 className="text-xs font-bold text-[#2563EB] uppercase tracking-wider mb-1">
-                Direct ATS Compensation Benchmarks
+                Verified Compensation Benchmarks
               </h5>
               <p className="text-xs text-[#4B5563]">
-                Access verified salary bands scraped directly from verified employer disclosures.
+                Access verified salary bands sourced directly from verified employer disclosures.
               </p>
             </div>
           </div>

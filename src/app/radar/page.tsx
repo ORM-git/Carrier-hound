@@ -29,7 +29,7 @@ const JobRadarGlobe = dynamic(() => import("@/components/JobRadarGlobe"), {
           INITIALIZING 3D GLOBE RADAR...
         </p>
         <p className="text-xs text-slate-400">
-          Calibrating orbital telemetry & scanning direct-ATS job pipelines
+          Calibrating orbital telemetry & scanning verified direct job feeds
         </p>
       </div>
     </div>

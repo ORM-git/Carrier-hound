@@ -219,7 +219,7 @@ export default function UserMenu({
                 onClick={() => setOpen(false)}
                 className="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 rounded-lg transition-colors font-medium"
               >
-                <span>Resume & Facts (ATS)</span>
+                <span>Resume & Facts</span>
               </Link>
               <Link
                 href="/radar"

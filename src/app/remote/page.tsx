@@ -9,7 +9,7 @@ import { BreadcrumbJsonLd } from "@/components/seo/BreadcrumbJsonLd";
 
 export const metadata = {
   title: "Career Resources & Hiring Guides | CareerMonke",
-  description: "Explore in-depth analysis on direct ATS hiring, salary benchmarks, and remote job search strategies.",
+  description: "Explore in-depth analysis on direct employer hiring, salary benchmarks, and remote job search strategies.",
 };
 
 export default function ResourcesIndexPage() {
@@ -31,7 +31,7 @@ export default function ResourcesIndexPage() {
             CareerMonke Guides & Resources
           </h1>
           <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
-            Data-backed breakdowns of direct ATS application strategies, compensation benchmarks, and hiring trends.
+            Data-backed breakdowns of direct employer application strategies, compensation benchmarks, and hiring trends.
           </p>
         </div>
 

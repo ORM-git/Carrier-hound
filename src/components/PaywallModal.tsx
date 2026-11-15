@@ -29,7 +29,7 @@ export default function PaywallModal({
   open,
   onOpenChange,
   title = "Unlock CareerMonke Pro Access",
-  subtitle = "Direct access to unlisted company career endpoints, verified compensation bands, and ATS links.",
+  subtitle = "Direct access to unlisted company career endpoints, verified compensation bands, and official application links.",
   user: initialUser,
   redirectUrl,
 }: PaywallModalProps) {
@@ -175,7 +175,7 @@ export default function PaywallModal({
                 <li className="flex items-start gap-2">
                   <Check className="w-4 h-4 text-brand-600 shrink-0 mt-0.5" />
                   <span>
-                    <strong className="text-ink">Direct ATS Endpoints:</strong> Apply directly on official Greenhouse, Lever, and Ashby portals.
+                    <strong className="text-ink">Direct Application Links:</strong> Apply directly on official company career portals.
                   </span>
                 </li>
                 <li className="flex items-start gap-2">
