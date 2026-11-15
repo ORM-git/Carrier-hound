@@ -1030,6 +1030,166 @@ export function extractCandidateNumericFacts(candidate: CandidateProfile): {
   return { values, percentValues, rawTokens, maxExperienceYears: maxYears };
 }
 
+export interface OrganizationClaim {
+  raw: string;
+  normalized: string;
+  isPastEmployment: boolean;
+  contextSentence: string;
+}
+
+export function normalizeOrgName(name: string): string {
+  if (!name || typeof name !== "string") return "";
+  return name
+    .toLowerCase()
+    .replace(/['’]s\b/gi, "")
+    .replace(/[.,'’"()]/g, "")
+    .replace(
+      /\b(inc|incorporated|corp|corporation|llc|ltd|limited|pvt|technologies|technology|labs|solutions|systems|group|holdings|company|co|gmbh|sa|bv)\b/gi,
+      ""
+    )
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function isOrgMatch(orgA: string, orgB: string): boolean {
+  const normA = normalizeOrgName(orgA);
+  const normB = normalizeOrgName(orgB);
+  if (!normA || !normB) return false;
+  if (normA === normB) return true;
+  const wordsA = normA.split(" ").filter(Boolean);
+  const wordsB = normB.split(" ").filter(Boolean);
+  if (wordsA.length === 1 && wordsB.includes(normA)) return true;
+  if (wordsB.length === 1 && wordsA.includes(normB)) return true;
+  return false;
+}
+
+export const ORG_SUFFIX_REGEX =
+  /\b([A-Z][A-Za-z0-9&.'-]+(?:\s+[A-Z][A-Za-z0-9&.'-]+)*\s+(?:Inc\.?|Incorporated|LLC|Ltd\.?|Limited|Corp\.?|Corporation|Technologies|Technology|Labs|Solutions|Systems|Group|Holdings|Pvt\.?\s*Ltd\.?))\b/g;
+
+export const ORG_EXCLUSION_WORDS = new Set([
+  "i", "my", "our", "we", "you", "your", "he", "she", "it", "they", "their",
+  "this", "that", "these", "those", "there", "here", "the", "a", "an",
+  "having", "during", "throughout", "with", "in", "at", "as", "for", "to", "from",
+  "after", "before", "while", "when", "since", "because", "although", "if",
+  "thank", "thanks", "sincerely", "regards", "best", "dear", "hello",
+  "senior", "junior", "lead", "principal", "staff", "director", "manager", "head",
+  "engineer", "developer", "architect", "designer", "specialist", "consultant", "analyst",
+  "frontend", "backend", "fullstack", "full", "stack", "data", "cloud", "mobile", "web",
+  "software", "engineering", "product", "team", "department", "company", "organization",
+  "january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december",
+  "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+  "bachelor", "master", "phd", "doctorate", "degree", "diploma", "university", "college", "school",
+  "conference", "conf", "summit", "meetup", "hackathon", "workshop", "event"
+]);
+
+export function extractOrganizationClaims(
+  text: string,
+  candidate?: CandidateProfile,
+  targetCompanyName?: string
+): OrganizationClaim[] {
+  if (!text || typeof text !== "string") return [];
+  const claims: OrganizationClaim[] = [];
+  const seen = new Set<string>();
+
+  const candidateNameTokens = new Set<string>();
+  if (candidate?.name) {
+    candidate.name.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).forEach((t) => candidateNameTokens.add(t));
+  }
+
+  const knownSkills = new Set<string>(ALL_CANONICAL_TOOLS_AND_SKILLS);
+  (candidate?.skills || []).forEach((s) => knownSkills.add(s.toLowerCase().trim()));
+  (candidate?.certifications || []).forEach((c) => knownSkills.add(c.toLowerCase().trim()));
+
+  const isExempt = (rawName: string): boolean => {
+    const norm = normalizeOrgName(rawName);
+    if (!norm || norm.length <= 1) return true;
+    const words = rawName.toLowerCase().split(/[^a-z0-9+#.-]+/).filter(Boolean);
+    if (words.length === 0) return true;
+    if (words.every((w) => ORG_EXCLUSION_WORDS.has(w))) return true;
+    if (words.every((w) => candidateNameTokens.has(w))) return true;
+    if (knownSkills.has(norm) || knownSkills.has(rawName.toLowerCase())) return true;
+    if (words.some((w) => knownSkills.has(w) && (words.includes("conf") || words.includes("conference") || words.includes("summit") || words.includes("meetup") || words.includes("workshop")))) {
+      return true;
+    }
+    return false;
+  };
+
+  const sentences = text.split(/(?<=[.!?\n])\s+/);
+
+  for (const sentence of sentences) {
+    if (!sentence.trim()) continue;
+
+    const isProspectiveContext =
+      /\b(apply|applying|application|applied|excited to|eager to|thrilled to|look forward|looking forward|welcome the opportunity|resonate|resonates|admire|followed|following|mission|velocity|standards|dedication|culture|values|craft|focus|support\b|contribute to)\b/i.test(sentence);
+
+    const isPastContext =
+      /\b(during my tenure|throughout my tenure|my tenure|my time at|during my time|when i was|while at|while working|prior role|previous role|former position|past role|employed at|employed by|worked at|working at|interned at|served as|developed|built|engineered|increased|reduced|managed|scaled|designed|created|spearheaded|achieved|prior|previous|past|former)\b/i.test(sentence);
+
+    // 1. Suffix-based mentions (e.g. "Globex Corporation", "Initech LLC")
+    let suffixMatch: RegExpExecArray | null;
+    const suffixRegex = new RegExp(ORG_SUFFIX_REGEX.source, "g");
+    while ((suffixMatch = suffixRegex.exec(sentence)) !== null) {
+      let raw = suffixMatch[1].replace(/['’]s$/i, "").replace(/[.,;:]+$/, "").trim();
+      if (isExempt(raw)) continue;
+      const key = `${raw.toLowerCase()}:${isPastContext}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        claims.push({
+          raw,
+          normalized: normalizeOrgName(raw),
+          isPastEmployment: isPastContext,
+          contextSentence: sentence,
+        });
+      }
+    }
+
+    // 2. Explicit past employment phrases
+    const pastPhrases = [
+      /\b(?:during my tenure at|throughout my tenure at|my tenure as [^.,;]+ at|my time at|during my time at|when I was at|while at|while working at|prior role at|previous role at|former position at|past role at|employed at|employed by|worked at|working at|interned at|served as [^.,;]+ at|as an? [A-Za-z\s]+ at)\s+([A-Z][A-Za-z0-9&.'-]+(?:\s+[A-Z][A-Za-z0-9&.'-]+)*)/g,
+      /(?:^|[.!?\n]\s*)\s*(?:At|While at|During my time at|In my role at)\s+([A-Z][A-Za-z0-9&.'-]+(?:\s+[A-Z][A-Za-z0-9&.'-]+)*)[,\s]+(?:I|we|my team|my work)\b/g,
+    ];
+
+    for (const regex of pastPhrases) {
+      let m: RegExpExecArray | null;
+      while ((m = regex.exec(sentence)) !== null) {
+        let raw = m[1].replace(/['’]s$/i, "").replace(/[.,;:]+$/, "").trim();
+        if (isExempt(raw)) continue;
+        const key = `${raw.toLowerCase()}:true`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          claims.push({
+            raw,
+            normalized: normalizeOrgName(raw),
+            isPastEmployment: true,
+            contextSentence: sentence,
+          });
+        }
+      }
+    }
+
+    // 3. Preposition mentions ("at", "with", "for", "joined")
+    const prepRegex = /\b(?:at|with|for|joined)\s+([A-Z][A-Za-z0-9&.'-]+(?:\s+[A-Z][A-Za-z0-9&.'-]+)*)/g;
+    let prepMatch: RegExpExecArray | null;
+    while ((prepMatch = prepRegex.exec(sentence)) !== null) {
+      let raw = prepMatch[1].replace(/['’]s$/i, "").replace(/[.,;:]+$/, "").trim();
+      if (isExempt(raw)) continue;
+      const past = isPastContext && !isProspectiveContext;
+      const key = `${raw.toLowerCase()}:${past}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        claims.push({
+          raw,
+          normalized: normalizeOrgName(raw),
+          isPastEmployment: past,
+          contextSentence: sentence,
+        });
+      }
+    }
+  }
+
+  return claims;
+}
+
 /**
  * Extracts numeric facts, percentages, metrics, and currency from text.
  * e.g., "35%", "$100k", "10,000", "5x", "2.5", "40", "1st"
@@ -1575,62 +1735,55 @@ export function validateAndSanitizeAiOutput(
         }
       }
 
-      // 3B. Check employers (for freshers and experienced candidates)
+      // 3B. Check employers & organization grounding (freshers and experienced candidates)
       const hasExp = Array.isArray(candidate.experience) && candidate.experience.length > 0;
+      const orgClaims = extractOrganizationClaims(stripped, candidate, context?.job?.company);
+      const verifiedEmployers = (candidate.experience || []).map((e) => e?.company || "").filter(Boolean);
+      const verifiedEducation = (candidate.education || []).flatMap((ed) => [ed?.institution, (ed as any)?.school]).filter(Boolean);
+      const targetCompany = ((context?.job?.company as string) || "").trim();
+
       if (!hasExp) {
         if (/\b(?:at my previous|at my former|former employer|previous employer|throughout my tenure at)\b/i.test(stripped)) {
           return {
             ok: false,
-            error: "AI output rejected: cover letter claims prior employment tenure for a candidate with no work history.",
+            error: "AI output rejected: cover letter claims prior employment tenure for a candidate with no work history. The following claims are not in the candidate's profile and MUST be removed: prior employment tenure.",
           };
         }
-      } else {
-        const verifiedEmployers = new Set(
-          (candidate.experience || [])
-            .map((e) => (e?.company || "").trim().toLowerCase())
-            .filter(Boolean)
-        );
-        const targetCompany = ((context?.job?.company as string) || "").trim().toLowerCase();
-
-        // Check for unevidenced well-known tech employers
-        const wellKnownCompanies = [
-          "google", "meta", "apple", "amazon", "microsoft", "netflix", "uber", "airbnb",
-          "stripe", "salesforce", "oracle", "ibm", "twitter", "spotify", "adobe", "cisco", "intel"
-        ];
-        for (const company of wellKnownCompanies) {
-          const match = stripped.match(new RegExp(`\\b${company}\\b`, "i"));
-          if (match) {
-            const isTarget = targetCompany && targetCompany.includes(company);
-            const isVerified = Array.from(verifiedEmployers).some((ve) => ve.includes(company));
-            if (!isTarget && !isVerified) {
-              return {
-                ok: false,
-                error: `AI output rejected: cover letter mentions employer '${match[0]}' not evidenced in candidate experience or target job.`,
-              };
-            }
+        for (const claim of orgClaims) {
+          if (claim.isPastEmployment) {
+            return {
+              ok: false,
+              error: `AI output rejected: cover letter claims prior employment tenure for a candidate with no work history. The following claims are not in the candidate's profile and MUST be removed: ${claim.raw}.`,
+            };
           }
         }
+      } else {
+        for (const claim of orgClaims) {
+          const isTarget = Boolean(targetCompany && (isOrgMatch(claim.raw, targetCompany) || (targetCompany && claim.normalized === normalizeOrgName(targetCompany))));
+          const isEmployer = verifiedEmployers.some((ve) => isOrgMatch(claim.raw, ve));
+          const isEducation = verifiedEducation.some((edu) => isOrgMatch(claim.raw, edu));
 
-        // Check employment tenure patterns: "tenure at [Company]", "engineer at [Company]", etc.
-        const tenurePatterns = [
-          /\b(?:tenure at|worked at|employed at|employed by|time at|role at|position at)\s+([A-Z][A-Za-z0-9&.'-]+(?:\s+[A-Z][A-Za-z0-9&.'-]+)*)/g,
-          /\b(?:as an? [A-Za-z\s]+ at)\s+([A-Z][A-Za-z0-9&.'-]+(?:\s+[A-Z][A-Za-z0-9&.'-]+)*)/g,
-        ];
-        for (const pattern of tenurePatterns) {
-          let match: RegExpExecArray | null;
-          while ((match = pattern.exec(stripped)) !== null) {
-            const companyClaim = match[1].trim().toLowerCase();
-            const isTarget = targetCompany && (targetCompany.includes(companyClaim) || companyClaim.includes(targetCompany));
-            const isVerified = Array.from(verifiedEmployers).some(
-              (ve) => ve.includes(companyClaim) || companyClaim.includes(ve)
-            );
-            if (!isTarget && !isVerified && companyClaim.length > 2) {
+          if (isTarget) {
+            // Target company used in past employment context is rejected unless candidate actually worked there
+            if (claim.isPastEmployment && !isEmployer) {
               return {
                 ok: false,
-                error: `AI output rejected: cover letter claims unevidenced past employment at '${match[1]}'.`,
+                error: `AI output rejected: cover letter claims unevidenced past employment at target company '${claim.raw}'. The following claims are not in the candidate's profile and MUST be removed: ${claim.raw}.`,
               };
             }
+            // Prospective context for target company is allowed
+            continue;
           }
+
+          if (isEmployer || isEducation) {
+            continue;
+          }
+
+          // Unverified organization
+          return {
+            ok: false,
+            error: `AI output rejected: cover letter mentions unevidenced organization '${claim.raw}' not found in candidate experience or education. The following claims are not in the candidate's profile and MUST be removed: ${claim.raw}.`,
+          };
         }
       }
 
@@ -1640,7 +1793,7 @@ export function validateAndSanitizeAiOutput(
       if (unevidencedSkill) {
         return {
           ok: false,
-          error: `AI output rejected: cover letter claims unevidenced skill/tool '${unevidencedSkill}' not found in candidate profile facts.`,
+          error: `AI output rejected: cover letter claims unevidenced skill/tool '${unevidencedSkill}' not found in candidate profile facts. The following claims are not in the candidate's profile and MUST be removed: ${unevidencedSkill}.`,
         };
       }
 
@@ -1684,7 +1837,7 @@ export function validateAndSanitizeAiOutput(
         if (claimedYears > Math.max(maxYears, 1) + 1) {
           return {
             ok: false,
-            error: `AI output rejected: cover letter claims ${claimedYears} years of experience, exceeding candidate work history.`,
+            error: `AI output rejected: cover letter claims ${claimedYears} years of experience, exceeding candidate work history. The following claims are not in the candidate's profile and MUST be removed: ${claimedYears} years of experience.`,
           };
         }
       }
@@ -1706,7 +1859,7 @@ export function validateAndSanitizeAiOutput(
           }
           return {
             ok: false,
-            error: `AI output rejected: cover letter introduces unevidenced numeric percentage '${claim.raw}' not found in candidate profile facts.`,
+            error: `AI output rejected: cover letter introduces unevidenced numeric percentage '${claim.raw}' not found in candidate profile facts. The following claims are not in the candidate's profile and MUST be removed: ${claim.raw}.`,
           };
         }
 
@@ -1722,7 +1875,7 @@ export function validateAndSanitizeAiOutput(
 
         return {
           ok: false,
-          error: `AI output rejected: cover letter introduces unevidenced numeric metric '${claim.raw}' not found in candidate profile facts.`,
+          error: `AI output rejected: cover letter introduces unevidenced numeric metric '${claim.raw}' not found in candidate profile facts. The following claims are not in the candidate's profile and MUST be removed: ${claim.raw}.`,
         };
       }
     }

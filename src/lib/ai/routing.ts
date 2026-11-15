@@ -161,7 +161,7 @@ export function getValidationReasonCode(error: string): string {
   if (e.includes("cross-employer")) return "CROSS_EMPLOYER_FACT_TRANSFER";
   if (e.includes("forbidden field") || e.includes("schema")) return "SCHEMA_INVALID";
   if (e.includes("degree")) return "DEGREE_UNGROUNDED";
-  if (e.includes("employer") || e.includes("company")) return "EMPLOYER_UNGROUNDED";
+  if (e.includes("employer") || e.includes("company") || e.includes("organization")) return "EMPLOYER_UNGROUNDED";
   if (e.includes("skill") || e.includes("tool")) return "SKILL_UNGROUNDED";
   if (e.includes("keyword")) return "KEYWORD_UNGROUNDED";
   if (e.includes("summary")) return "SUMMARY_UNGROUNDED";
@@ -170,7 +170,7 @@ export function getValidationReasonCode(error: string): string {
 
 /** Drops the validator's echoed resume text ("Source: ... Generated: ..."). */
 export function redactValidatorError(error: string): string {
-  return String(error).split(" Source:")[0].split("Source:")[0].slice(0, 200).trim();
+  return String(error).split(" Source:")[0].split("Source:")[0].slice(0, 500).trim();
 }
 
 type Failure = {
@@ -433,7 +433,7 @@ export async function routeCompletion(
         { role: "assistant", content: trimmedEcho },
         {
           role: "user",
-          content: `Your previous output was rejected: ${trimmedFeedback}. Return the corrected JSON object only, following every rule.`,
+          content: `Your previous output was rejected: ${trimmedFeedback}. ${payload.jsonMode ? "Return the corrected JSON object only, following every rule." : "Return the corrected 3 body paragraphs only, following every rule."}`,
         },
       ] as BuiltAiPayload["messages"];
     }

@@ -314,4 +314,237 @@ Linear's commitment to building fast, high-quality software tools that creators 
     });
     expect(res.ok).toBe(true);
   });
+
+  it("Issue 3: rejects unevidenced organization 'At Globex, I...'", () => {
+    const letterWithGlobex = validCoverLetter.replace(
+      "During my tenure as a Frontend Engineer at Acme Corp from 2022 to 2024",
+      "At Globex, I developed customer-facing web applications from 2022 to 2024"
+    );
+
+    const res = validateAndSanitizeAiOutput("cover_letter", letterWithGlobex, {
+      candidate: testCandidate,
+      job: testJob,
+    });
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.error).toContain("Globex");
+      expect(res.error).toContain("The following claims are not in the candidate's profile and MUST be removed: Globex");
+    }
+  });
+
+  it("Issue 3: rejects unevidenced organization with suffix 'Globex Corporation' / 'Globex Inc.' regardless of preposition", () => {
+    const letterWithGlobexCorp = validCoverLetter.replace(
+      "During my tenure as a Frontend Engineer at Acme Corp from 2022 to 2024",
+      "During my tenure as a Frontend Engineer at Globex Corporation from 2022 to 2024"
+    );
+
+    const resCorp = validateAndSanitizeAiOutput("cover_letter", letterWithGlobexCorp, {
+      candidate: testCandidate,
+      job: testJob,
+    });
+    expect(resCorp.ok).toBe(false);
+    if (!resCorp.ok) {
+      expect(resCorp.error).toContain("Globex Corporation");
+      expect(resCorp.error).toContain("The following claims are not in the candidate's profile and MUST be removed: Globex Corporation");
+    }
+
+    const letterWithGlobexInc = validCoverLetter.replace(
+      "During my tenure as a Frontend Engineer at Acme Corp from 2022 to 2024",
+      "During my tenure as a Frontend Engineer at Globex Inc. from 2022 to 2024"
+    );
+
+    const resInc = validateAndSanitizeAiOutput("cover_letter", letterWithGlobexInc, {
+      candidate: testCandidate,
+      job: testJob,
+    });
+    expect(resInc.ok).toBe(false);
+    if (!resInc.ok) {
+      expect(resInc.error).toContain("Globex Inc.");
+      expect(resInc.error).toContain("The following claims are not in the candidate's profile and MUST be removed: Globex Inc.");
+    }
+  });
+
+  it("Issue 3: candidate worked at 'Acme Corp', letter says 'Acme' or 'Acme Corporation' -> passes", () => {
+    const letterWithAcme = validCoverLetter.replace(
+      "at Acme Corp from 2022 to 2024",
+      "at Acme from 2022 to 2024"
+    );
+    const resAcme = validateAndSanitizeAiOutput("cover_letter", letterWithAcme, {
+      candidate: testCandidate,
+      job: testJob,
+    });
+    expect(resAcme.ok).toBe(true);
+
+    const letterWithAcmeCorp = validCoverLetter.replace(
+      "at Acme Corp from 2022 to 2024",
+      "at Acme Corporation from 2022 to 2024"
+    );
+    const resCorp = validateAndSanitizeAiOutput("cover_letter", letterWithAcmeCorp, {
+      candidate: testCandidate,
+      job: testJob,
+    });
+    expect(resCorp.ok).toBe(true);
+  });
+
+  it("Issue 3: target company used correctly in prospective context ('excited to apply for the Senior Frontend Engineer role at Linear') -> passes", () => {
+    const res = validateAndSanitizeAiOutput("cover_letter", validCoverLetter, {
+      candidate: testCandidate,
+      job: testJob,
+    });
+    expect(res.ok).toBe(true);
+  });
+
+  it("Issue 3: target company used as past employer ('During my tenure at Linear...') is rejected when not on resume", () => {
+    const letterWithLinearPast = validCoverLetter.replace(
+      "During my tenure as a Frontend Engineer at Acme Corp from 2022 to 2024",
+      "During my tenure as a Frontend Engineer at Linear from 2022 to 2024"
+    );
+
+    const res = validateAndSanitizeAiOutput("cover_letter", letterWithLinearPast, {
+      candidate: testCandidate,
+      job: testJob,
+    });
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.error).toContain("target company 'Linear'");
+      expect(res.error).toContain("The following claims are not in the candidate's profile and MUST be removed: Linear");
+    }
+  });
+
+  it("Issue 3: tech names, tools, and events do not trigger false positives ('At React Conf...', 'worked with Docker')", () => {
+    const letterWithTechAndEvents = validCoverLetter
+      .replace(
+        "refactoring frontend workflows",
+        "speaking at React Conf about architecture"
+      )
+      .replace(
+        "optimizing bundle delivery",
+        "deploying services with Docker"
+      );
+
+    const candidateWithDocker: CandidateProfile = {
+      ...testCandidate,
+      skills: [...testCandidate.skills, "Docker"],
+    };
+
+    const res = validateAndSanitizeAiOutput("cover_letter", letterWithTechAndEvents, {
+      candidate: candidateWithDocker,
+      job: testJob,
+    });
+    expect(res.ok).toBe(true);
+  });
+
+  it("Issue 3: candidate's own name does not trigger a false positive", () => {
+    const letterWithName = validCoverLetter.replace(
+      "I am excited to apply",
+      "As Alex Taylor, I am eager to apply"
+    );
+
+    const res = validateAndSanitizeAiOutput("cover_letter", letterWithName, {
+      candidate: testCandidate,
+      job: testJob,
+    });
+    expect(res.ok).toBe(true);
+  });
+
+  it("Issue 3: end-to-end repair with ungrounded removal list: fabricated letter with Globex repaired to clean letter passes", async () => {
+    let callIndex = 0;
+    let repairPromptReceived = "";
+    const adapter: AiTextCompletionProviderAdapter = {
+      provider: "test-globex-repair",
+      async completeText(req) {
+        callIndex++;
+        if (callIndex === 1) {
+          const badDraft = validCoverLetter.replace(
+            "at Acme Corp from 2022 to 2024",
+            "at Globex from 2022 to 2024"
+          );
+          return {
+            choices: [{ message: { content: badDraft }, finish_reason: "stop" }],
+            usage: { prompt_tokens: 100, completion_tokens: 180, total_tokens: 280 },
+          };
+        }
+        repairPromptReceived = req.messages[req.messages.length - 1]?.content || "";
+        return {
+          choices: [{ message: { content: validCoverLetter }, finish_reason: "stop" }],
+          usage: { prompt_tokens: 120, completion_tokens: 180, total_tokens: 300 },
+        };
+      },
+    };
+
+    const payload = {
+      messages: [{ role: "user" as const, content: "draft cover letter" }],
+      model: "openai/gpt-oss-120b",
+      maxOutputTokens: 500,
+      temperature: 0.3,
+      jsonMode: false,
+      estimatedInputTokens: 100,
+    };
+
+    const routed = await routeCompletion({
+      adapter,
+      payload,
+      validate: (content) => {
+        const val = validateAndSanitizeAiOutput("cover_letter", content, {
+          candidate: testCandidate,
+          job: testJob,
+        });
+        return val.ok ? { ok: true as const } : { ok: false as const, error: val.error };
+      },
+    });
+
+    expect(callIndex).toBe(2);
+    expect(repairPromptReceived).toContain("The following claims are not in the candidate's profile and MUST be removed: Globex");
+    expect(routed.content).toBe(validCoverLetter);
+    expect(routed.content).not.toContain("Globex");
+  });
+
+  it("Issue 3: end-to-end repair failure: dirty repair still containing fabricated company fails typed AiRoutingError(AI_VALIDATION_FAILED)", async () => {
+    let callIndex = 0;
+    const adapter: AiTextCompletionProviderAdapter = {
+      provider: "test-globex-fail",
+      async completeText() {
+        callIndex++;
+        const badDraft = validCoverLetter.replace(
+          "at Acme Corp from 2022 to 2024",
+          "at Globex from 2022 to 2024"
+        );
+        return {
+          choices: [{ message: { content: badDraft }, finish_reason: "stop" }],
+          usage: { prompt_tokens: 100, completion_tokens: 180, total_tokens: 280 },
+        };
+      },
+    };
+
+    const payload = {
+      messages: [{ role: "user" as const, content: "draft cover letter" }],
+      model: "openai/gpt-oss-120b",
+      maxOutputTokens: 500,
+      temperature: 0.3,
+      jsonMode: false,
+      estimatedInputTokens: 100,
+    };
+
+    let thrownError: any = null;
+    try {
+      await routeCompletion({
+        adapter,
+        payload,
+        validate: (content) => {
+          const val = validateAndSanitizeAiOutput("cover_letter", content, {
+            candidate: testCandidate,
+            job: testJob,
+          });
+          return val.ok ? { ok: true as const } : { ok: false as const, error: val.error };
+        },
+      });
+    } catch (err) {
+      thrownError = err;
+    }
+
+    expect(callIndex).toBe(2);
+    expect(thrownError).toBeDefined();
+    expect(thrownError.code).toBe("AI_VALIDATION_FAILED");
+    expect(thrownError.statusCode).toBe(502);
+  });
 });
