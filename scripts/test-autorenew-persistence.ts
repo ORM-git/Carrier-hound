@@ -177,6 +177,17 @@ async function textChecks() {
     assert.ok(sql.includes("OUT_OF_ORDER_EVENT"), "OUT_OF_ORDER_EVENT check missing");
     assert.ok(sql.includes("last_event_time"), "Durable last_event_time tracking missing");
   });
+
+  await check("1.21 Forward Migration: fulfil_payment_order lock order aligned to advisory -> subscription -> order", () => {
+    assert.ok(sql.includes("CREATE OR REPLACE FUNCTION public.fulfil_payment_order"), "fulfil_payment_order forward migration missing");
+    const fnStart = sql.indexOf("CREATE OR REPLACE FUNCTION public.fulfil_payment_order");
+    const fnBody = sql.slice(fnStart);
+    const advisoryLock = fnBody.indexOf("PERFORM pg_advisory_xact_lock(hashtext(p_user_id::text));");
+    const subLock = fnBody.indexOf("FROM public.subscriptions\n  WHERE user_id = p_user_id\n  FOR UPDATE;");
+    const orderLock = fnBody.indexOf("FROM public.payment_orders\n  WHERE provider_order_id = p_provider_order_id\n    AND user_id = p_user_id\n  FOR UPDATE;");
+    assert.ok(advisoryLock > 0 && subLock > advisoryLock && orderLock > subLock, "Lock order must be advisory -> subscription -> order");
+    assert.ok(fnBody.includes("GRANT EXECUTE ON FUNCTION public.fulfil_payment_order(text, uuid, text) TO service_role;"), "service_role grant missing");
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -482,15 +493,27 @@ class PostgresState {
     };
 
     // 14. Upsert/Update subscriptions row
+    // Older unseen payments credit time but do NOT reset newer lifecycle state
+    const v_is_older_payment = v_has_sub && (
+      incomingNormMs === undefined ||
+      (v_stored_ms !== undefined && incomingNormMs < v_stored_ms)
+    );
+
     if (v_has_sub && v_sub) {
       v_sub.subscription_id = p_razorpay_subscription_id;
       v_sub.plan_id = v_plan_code;
       v_sub.provider = "razorpay";
-      v_sub.status = "active";
+      if (v_is_older_payment) {
+        v_sub.status = v_sub.status || "active";
+        v_sub.cancel_at_period_end = v_sub.cancel_at_period_end ?? false;
+        v_sub.grace_period_end = v_sub.grace_period_end ?? null;
+      } else {
+        v_sub.status = "active";
+        v_sub.cancel_at_period_end = false;
+        v_sub.grace_period_end = null;
+      }
       v_sub.current_period_start = v_period_start;
       v_sub.current_period_end = v_new_end;
-      v_sub.cancel_at_period_end = false;
-      v_sub.grace_period_end = null;
       v_sub.amount = v_expected_amount;
       v_sub.metadata = v_new_meta;
     } else {
@@ -1088,7 +1111,7 @@ async function functionalChecks() {
       status: "active",
       current_period_end: future20Days,
       cancel_at_period_end: false,
-      metadata: { mode: "live", last_event_time: 1000 },
+      metadata: { mode: "live", last_event_time: 1700001000 },
     });
 
     db.orders.set("sub_loss_mandate", {
@@ -1103,14 +1126,14 @@ async function functionalChecks() {
     });
 
     // Step A: Newer subscription.pending sets status 'in_grace_period'
-    const resPending = db.handle_subscription_lifecycle_event("sub_loss_mandate", "subscription.pending", 2000);
+    const resPending = db.handle_subscription_lifecycle_event("sub_loss_mandate", "subscription.pending", 1700002000);
     assert.strictEqual(resPending.success, true);
     const subMid = db.subs.get("usr_credit_loss");
     assert.strictEqual(subMid?.status, "in_grace_period");
     assert.strictEqual(subMid?.current_period_end, future20Days);
 
     // Step B: Valid paid weekly cycle arrives (7 days)
-    const resRenewal = db.fulfil_subscription_renewal("sub_loss_mandate", "pay_loss_w1", "live", 69200, 2500);
+    const resRenewal = db.fulfil_subscription_renewal("sub_loss_mandate", "pay_loss_w1", "live", 69200, 1700002500);
     assert.strictEqual(resRenewal.success, true);
     assert.strictEqual(resRenewal.duration_days, 7);
 
@@ -1170,6 +1193,104 @@ async function functionalChecks() {
     assert.strictEqual(resStaleLife.ignored, true);
     assert.strictEqual(resStaleLife.reason, "OUT_OF_ORDER_EVENT");
     assert.strictEqual(db.subs.get("usr_unseen_older")?.status, "active");
+  });
+
+  await check("2.23 Older unseen captured payment credits time via ledger but does NOT reset newer lifecycle state", () => {
+    const db = new PostgresState();
+    const now = 1700000000000;
+    const initialEnd = new Date(now + 7 * 86400000).toISOString();
+
+    db.subs.set("usr_cancel_state", {
+      id: "sub_cancel_row",
+      user_id: "usr_cancel_state",
+      subscription_id: "sub_cancel_mandate",
+      plan_id: "weekly",
+      provider: "razorpay",
+      status: "active",
+      current_period_end: initialEnd,
+      cancel_at_period_end: false,
+      metadata: { mode: "live", last_event_time: 2300000000000 },
+    });
+
+    db.orders.set("sub_cancel_mandate", {
+      id: "ord_cancel_mandate",
+      provider_order_id: "sub_cancel_mandate",
+      user_id: "usr_cancel_state",
+      provider: "razorpay",
+      mode: "live",
+      status: "created",
+      amount_paise: 69200,
+      plan_code: "weekly",
+    });
+
+    // Step A: Cancellation at ts 2400000000 sets cancel_at_period_end = true
+    const resCancel = db.handle_subscription_lifecycle_event("sub_cancel_mandate", "subscription.cancelled", 2400000000);
+    assert.strictEqual(resCancel.success, true);
+    assert.strictEqual(resCancel.applied, true);
+    assert.strictEqual(db.subs.get("usr_cancel_state")?.cancel_at_period_end, true);
+    assert.strictEqual(db.subs.get("usr_cancel_state")?.metadata?.last_event_time, 2400000000000);
+
+    // Step B: Unseen older paid at ts 2350000000 arrives:
+    // Must credit 7 days, keep watermark 2400000000000, but NOT set cancel_at_period_end = false or grace = null
+    const resPaid = db.fulfil_subscription_renewal("sub_cancel_mandate", "pay_older_235", "live", 69200, 2350000000);
+    assert.strictEqual(resPaid.success, true);
+    assert.strictEqual(resPaid.duration_days, 7);
+
+    const subAfter = db.subs.get("usr_cancel_state");
+    assert.strictEqual(subAfter?.cancel_at_period_end, true, "cancel_at_period_end must NOT be reset to false");
+    assert.strictEqual(subAfter?.metadata?.last_event_time, 2400000000000, "Watermark must remain 2400000000000");
+    assert.ok(subAfter?.metadata?.processed_payments?.includes("pay_older_235"), "Payment must be in processed_payments ledger");
+
+    // Step C: Also test newer past_due: set status to past_due at watermark 2500000000
+    const resPastDue = db.handle_subscription_lifecycle_event("sub_cancel_mandate", "subscription.past_due", 2500000000);
+    assert.strictEqual(resPastDue.success, true);
+    assert.strictEqual(db.subs.get("usr_cancel_state")?.status, "past_due");
+
+    // Unseen older paid at 2450000000 arrives:
+    const resPaidPastDue = db.fulfil_subscription_renewal("sub_cancel_mandate", "pay_older_245", "live", 69200, 2450000000);
+    assert.strictEqual(resPaidPastDue.success, true);
+    assert.strictEqual(db.subs.get("usr_cancel_state")?.status, "past_due", "Status past_due must NOT be reset to active by older payment");
+    assert.strictEqual(db.subs.get("usr_cancel_state")?.cancel_at_period_end, true, "cancel_at_period_end preserved");
+    assert.strictEqual(db.subs.get("usr_cancel_state")?.metadata?.last_event_time, 2500000000000, "Watermark preserved");
+  });
+
+  await check("2.24 Captured payment with NO timestamp credits time via ledger but does NOT reset lifecycle state", () => {
+    const db = new PostgresState();
+    db.subs.set("usr_untimestamped", {
+      id: "sub_untimestamped_row",
+      user_id: "usr_untimestamped",
+      subscription_id: "sub_untimestamped_mandate",
+      plan_id: "weekly",
+      provider: "razorpay",
+      status: "in_grace_period",
+      current_period_end: new Date(Date.now() + 5 * 86400000).toISOString(),
+      cancel_at_period_end: true,
+      grace_period_end: new Date(Date.now() + 2 * 86400000).toISOString(),
+      metadata: { mode: "live", last_event_time: 2000000000000 },
+    });
+
+    db.orders.set("sub_untimestamped_mandate", {
+      id: "ord_untimestamped",
+      provider_order_id: "sub_untimestamped_mandate",
+      user_id: "usr_untimestamped",
+      provider: "razorpay",
+      mode: "live",
+      status: "created",
+      amount_paise: 69200,
+      plan_code: "weekly",
+    });
+
+    // Untimestamped payment (p_event_timestamp = undefined)
+    const resPaid = db.fulfil_subscription_renewal("sub_untimestamped_mandate", "pay_notimestamp_1", "live", 69200, undefined);
+    assert.strictEqual(resPaid.success, true);
+    assert.strictEqual(resPaid.duration_days, 7);
+
+    const subAfter = db.subs.get("usr_untimestamped");
+    assert.strictEqual(subAfter?.status, "in_grace_period", "Status must NOT be reset to active");
+    assert.strictEqual(subAfter?.cancel_at_period_end, true, "cancel_at_period_end must NOT be reset to false");
+    assert.ok(subAfter?.grace_period_end !== null, "grace_period_end must NOT be cleared to null");
+    assert.strictEqual(subAfter?.metadata?.last_event_time, 2000000000000, "Watermark preserved");
+    assert.ok(subAfter?.metadata?.processed_payments?.includes("pay_notimestamp_1"));
   });
 
   await check("2.19 Seconds vs milliseconds normalization (2200000000000 ms -> 2200000001 sec -> 2200000000.5 sec cancel rejected)", () => {

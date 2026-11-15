@@ -179,8 +179,11 @@ async function run() {
   const u8 = "88888888-8888-4888-8888-888888888888";
   const u9 = "99999999-9999-4999-8999-999999999999";
   const u10 = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const u11 = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const u12 = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  const u13 = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 
-  for (const uid of [u1, u2, u3, u4, u5, u6, u7, u8, u9, u10]) {
+  for (const uid of [u1, u2, u3, u4, u5, u6, u7, u8, u9, u10, u11, u12, u13]) {
     await pg.query(`INSERT INTO auth.users (id, email) VALUES ($1, $2) ON CONFLICT DO NOTHING;`, [
       uid,
       `user_${uid}@test.local`,
@@ -475,12 +478,12 @@ async function run() {
 
     await pg.query(`
       INSERT INTO public.subscriptions (user_id, subscription_id, plan_id, provider, status, current_period_end, metadata, amount)
-      VALUES ($1, 'sub_probe8_mandate', 'weekly', 'razorpay', 'active', NOW() + INTERVAL '20 days', '{"mode": "live", "last_event_time": 1000}'::jsonb, 69200);
+      VALUES ($1, 'sub_probe8_mandate', 'weekly', 'razorpay', 'active', NOW() + INTERVAL '20 days', '{"mode": "live", "last_event_time": 1700001000}'::jsonb, 69200);
     `, [u8]);
 
     // Step A: Newer subscription.pending arrives (sets status 'in_grace_period', grace_period_end = now()+7d)
     const resPending = await pg.query<{ handle_subscription_lifecycle_event: any }>(`
-      SELECT public.handle_subscription_lifecycle_event('sub_probe8_mandate', 'subscription.pending', 2000, 'live') AS handle_subscription_lifecycle_event;
+      SELECT public.handle_subscription_lifecycle_event('sub_probe8_mandate', 'subscription.pending', 1700002000, 'live') AS handle_subscription_lifecycle_event;
     `);
     assert.strictEqual(resPending.rows[0].handle_subscription_lifecycle_event.success, true);
     assert.strictEqual(resPending.rows[0].handle_subscription_lifecycle_event.status, "in_grace_period");
@@ -495,7 +498,7 @@ async function run() {
 
     // Step B: Valid paid weekly cycle arrives (subscription.charged for 7 days)
     const resRenewal = await pg.query<{ fulfil_subscription_renewal: any }>(`
-      SELECT public.fulfil_subscription_renewal('sub_probe8_mandate', 'pay_probe8_w1', 'live', 69200, 2500) AS fulfil_subscription_renewal;
+      SELECT public.fulfil_subscription_renewal('sub_probe8_mandate', 'pay_probe8_w1', 'live', 69200, 1700002500) AS fulfil_subscription_renewal;
     `);
     const renewalResult = resRenewal.rows[0].fulfil_subscription_renewal;
     assert.strictEqual(renewalResult.success, true);
@@ -572,6 +575,106 @@ async function run() {
       SELECT status FROM public.subscriptions WHERE user_id = $1;
     `, [u9]);
     assert.strictEqual(subCheck9B.rows[0].status, "active", "Status must remain active; stale lifecycle event cannot touch it");
+  });
+
+  // ---------------------------------------------------------------------------
+  // PROBE 9b: Older unseen payment credits 7 days but does NOT reset newer lifecycle state
+  // ---------------------------------------------------------------------------
+  await probe("Probe 9b: Older unseen payment credits 7 days but does NOT reset newer cancel_at_period_end or past_due state", async () => {
+    // Case 1: Cancellation at ts 2400000000 -> sets cancel_at_period_end = true
+    await pg.query(`
+      INSERT INTO public.payment_orders (user_id, provider_order_id, provider, mode, status, plan_code, amount_paise)
+      VALUES ($1, 'sub_probe11_mandate', 'razorpay', 'live', 'created', 'weekly', 69200);
+    `, [u11]);
+
+    await pg.query(`
+      INSERT INTO public.subscriptions (user_id, subscription_id, plan_id, provider, status, current_period_end, metadata, amount)
+      VALUES ($1, 'sub_probe11_mandate', 'weekly', 'razorpay', 'active', NOW() + INTERVAL '7 days', '{"mode": "live", "last_event_time": 2300000000000}'::jsonb, 69200);
+    `, [u11]);
+
+    const resCancel = await pg.query<{ handle_subscription_lifecycle_event: any }>(`
+      SELECT public.handle_subscription_lifecycle_event('sub_probe11_mandate', 'subscription.cancelled', 2400000000, 'live') AS handle_subscription_lifecycle_event;
+    `);
+    assert.strictEqual(resCancel.rows[0].handle_subscription_lifecycle_event.success, true);
+    assert.strictEqual(resCancel.rows[0].handle_subscription_lifecycle_event.cancel_at_period_end, true);
+
+    // Older unseen payment arrives at 2350000000:
+    const resPaidOlder = await pg.query<{ fulfil_subscription_renewal: any }>(`
+      SELECT public.fulfil_subscription_renewal('sub_probe11_mandate', 'pay_probe11_unseen_older', 'live', 69200, 2350000000) AS fulfil_subscription_renewal;
+    `);
+    assert.strictEqual(resPaidOlder.rows[0].fulfil_subscription_renewal.success, true);
+    assert.strictEqual(resPaidOlder.rows[0].fulfil_subscription_renewal.duration_days, 7);
+
+    // Verify: 7 days credited, watermark kept, cancel_at_period_end REMAINS true
+    const subCheck11 = await pg.query<{ cancel_at_period_end: boolean; status: string; metadata: any; days_left: number }>(`
+      SELECT cancel_at_period_end, status, metadata, round(EXTRACT(EPOCH FROM (current_period_end - NOW())) / 86400)::int AS days_left
+      FROM public.subscriptions WHERE user_id = $1;
+    `, [u11]);
+    assert.strictEqual(subCheck11.rows[0].cancel_at_period_end, true, "cancel_at_period_end must NOT be reset to false by older payment");
+    assert.strictEqual(Number(subCheck11.rows[0].metadata?.last_event_time), 2400000000000, "Watermark must remain 2400000000000 ms");
+    assert.ok(subCheck11.rows[0].days_left >= 13 && subCheck11.rows[0].days_left <= 15, "Period must be extended by 7 days");
+
+    // Case 2: Newer past_due/pending state preserved on older payment
+    await pg.query(`
+      INSERT INTO public.payment_orders (user_id, provider_order_id, provider, mode, status, plan_code, amount_paise)
+      VALUES ($1, 'sub_probe12_mandate', 'razorpay', 'live', 'created', 'weekly', 69200);
+    `, [u12]);
+
+    await pg.query(`
+      INSERT INTO public.subscriptions (user_id, subscription_id, plan_id, provider, status, current_period_end, metadata, amount)
+      VALUES ($1, 'sub_probe12_mandate', 'weekly', 'razorpay', 'active', NOW() + INTERVAL '7 days', '{"mode": "live", "last_event_time": 2300000000000}'::jsonb, 69200);
+    `, [u12]);
+
+    const resPending = await pg.query<{ handle_subscription_lifecycle_event: any }>(`
+      SELECT public.handle_subscription_lifecycle_event('sub_probe12_mandate', 'subscription.pending', 2500000000, 'live') AS handle_subscription_lifecycle_event;
+    `);
+    assert.strictEqual(resPending.rows[0].handle_subscription_lifecycle_event.status, "in_grace_period");
+    assert.ok(resPending.rows[0].handle_subscription_lifecycle_event.grace_period_end !== null);
+
+    // Older unseen payment arrives at 2450000000:
+    const resPaidOlder12 = await pg.query<{ fulfil_subscription_renewal: any }>(`
+      SELECT public.fulfil_subscription_renewal('sub_probe12_mandate', 'pay_probe12_unseen_older', 'live', 69200, 2450000000) AS fulfil_subscription_renewal;
+    `);
+    assert.strictEqual(resPaidOlder12.rows[0].fulfil_subscription_renewal.success, true);
+    assert.strictEqual(resPaidOlder12.rows[0].fulfil_subscription_renewal.duration_days, 7);
+
+    // Verify: status remains in_grace_period, grace_period_end NOT cleared to null
+    const subCheck12 = await pg.query<{ status: string; grace_period_end: any; metadata: any }>(`
+      SELECT status, grace_period_end, metadata FROM public.subscriptions WHERE user_id = $1;
+    `, [u12]);
+    assert.strictEqual(subCheck12.rows[0].status, "in_grace_period", "Status must remain in_grace_period");
+    assert.ok(subCheck12.rows[0].grace_period_end !== null, "grace_period_end must NOT be cleared to null");
+    assert.strictEqual(Number(subCheck12.rows[0].metadata?.last_event_time), 2500000000000, "Watermark must remain 2500000000000 ms");
+  });
+
+  // ---------------------------------------------------------------------------
+  // PROBE 9c: Captured payment with NO timestamp credits time but does NOT reset lifecycle
+  // ---------------------------------------------------------------------------
+  await probe("Probe 9c: Captured payment with NO timestamp credits time via ledger but does NOT reset lifecycle", async () => {
+    await pg.query(`
+      INSERT INTO public.payment_orders (user_id, provider_order_id, provider, mode, status, plan_code, amount_paise)
+      VALUES ($1, 'sub_probe13_mandate', 'razorpay', 'live', 'created', 'weekly', 69200);
+    `, [u13]);
+
+    await pg.query(`
+      INSERT INTO public.subscriptions (user_id, subscription_id, plan_id, provider, status, current_period_end, cancel_at_period_end, metadata, amount)
+      VALUES ($1, 'sub_probe13_mandate', 'weekly', 'razorpay', 'active', NOW() + INTERVAL '7 days', true, '{"mode": "live", "last_event_time": 2000000000000}'::jsonb, 69200);
+    `, [u13]);
+
+    // Untimestamped payment (p_event_timestamp = NULL)
+    const resPaidNoTs = await pg.query<{ fulfil_subscription_renewal: any }>(`
+      SELECT public.fulfil_subscription_renewal('sub_probe13_mandate', 'pay_probe13_no_ts', 'live', 69200, NULL) AS fulfil_subscription_renewal;
+    `);
+    assert.strictEqual(resPaidNoTs.rows[0].fulfil_subscription_renewal.success, true);
+    assert.strictEqual(resPaidNoTs.rows[0].fulfil_subscription_renewal.duration_days, 7);
+
+    const subCheck13 = await pg.query<{ cancel_at_period_end: boolean; metadata: any; days_left: number }>(`
+      SELECT cancel_at_period_end, metadata, round(EXTRACT(EPOCH FROM (current_period_end - NOW())) / 86400)::int AS days_left
+      FROM public.subscriptions WHERE user_id = $1;
+    `, [u13]);
+    assert.strictEqual(subCheck13.rows[0].cancel_at_period_end, true, "cancel_at_period_end must NOT be reset to false");
+    assert.strictEqual(Number(subCheck13.rows[0].metadata?.last_event_time), 2000000000000, "Watermark preserved");
+    assert.ok(subCheck13.rows[0].days_left >= 13 && subCheck13.rows[0].days_left <= 15, "Period extended by 7 days");
   });
 
   // ---------------------------------------------------------------------------
