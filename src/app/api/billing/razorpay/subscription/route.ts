@@ -398,11 +398,11 @@ export async function POST(req: Request) {
     }
     const { verifiedAmount, verifiedCurrency, verifiedPeriod, verifiedInterval } = planVerifyRes.planData;
 
-    // Helper: Reconcile and Verify Pending Mandate with Provider (Requirement 5 & Requirement 6)
+    // Helper: Reconcile and Verify Pending Mandate with Provider (Requirement 5 & Requirement 6 & Reviewer E)
     const verifyAndReuseCandidateMandate = async (
       candidateId: string,
       _candidatePlanCode: string
-    ): Promise<any | null> => {
+    ): Promise<{ ok: true; subData: any } | { ok: false; error: string; status: number } | null> => {
       if (!candidateId || typeof candidateId !== "string" || !candidateId.startsWith("sub_") || candidateId.startsWith("sub_pending_")) {
         return null;
       }
@@ -414,15 +414,23 @@ export async function POST(req: Request) {
         });
 
         if (!subRes.ok) {
-          log.warn("Candidate mandate not found or non-200 at provider; skipping reuse", { candidateId, status: subRes.status });
-          return null;
+          if (subRes.status === 404) {
+            log.info("Candidate mandate does not exist at provider (404); marking expired", { candidateId });
+            await supabaseAdmin
+              .from("payment_orders")
+              .update({ status: "expired" })
+              .eq("provider_order_id", candidateId);
+            return null;
+          }
+          // Reviewer E: Non-200 / provider fetch failure must FAIL CLOSED, never skip and recreate!
+          log.error("Provider returned non-200 while fetching candidate mandate; failing closed", { candidateId, status: subRes.status });
+          return { ok: false, error: "PROVIDER_VERIFICATION_FAILED", status: 502 };
         }
 
         const subData = await subRes.json();
         const validStatuses = new Set(["created", "authenticated", "active"]);
         if (!validStatuses.has(subData?.status)) {
           log.info("Candidate mandate at provider is not in active/created state; skipping reuse", { candidateId, status: subData?.status });
-          // Mark order cancelled / expired locally
           await supabaseAdmin
             .from("payment_orders")
             .update({ status: "expired" })
@@ -461,23 +469,25 @@ export async function POST(req: Request) {
           return null;
         }
 
-        return subData;
+        return { ok: true, subData };
       } catch (subErr) {
-        log.warn("Exception checking candidate mandate at provider; skipping reuse", { candidateId, error: subErr });
-        return null;
+        log.error("Network exception checking candidate mandate at provider; failing closed", { candidateId, error: subErr });
+        return { ok: false, error: "GATEWAY_CONNECTION_ERROR", status: 502 };
       }
-    }
+    };
 
-    // 8. Stale Order & Lease Reconciliation (Requirement 6)
+    // 8. Stale Order & Lease Reconciliation (Requirement 6 & Reviewer E)
     const expirationCutoff = new Date(Date.now() - EXPIRATION_WINDOW_MS).toISOString();
     const leaseCutoff = new Date(Date.now() - LEASE_DURATION_MS).toISOString();
 
-    // Query for any stale created orders (> 24h) and reconcile
+    // Query for any stale created orders (> 24h) and reconcile (mode-filtered, recurring-kind only)
     const { data: staleOrders } = await supabaseAdmin
       .from("payment_orders")
       .select("id, provider_order_id, status")
       .eq("user_id", user.id)
       .eq("provider", "razorpay")
+      .eq("mode", resolvedMode)
+      .eq("recurring_kind", "recurring")
       .eq("status", "created")
       .lt("created_at", expirationCutoff);
 
@@ -497,16 +507,18 @@ export async function POST(req: Request) {
       await supabaseAdmin.from("payment_orders").update({ status: "expired" }).in("id", staleIds);
     }
 
-    // Reconcile expired reservation leases (older than lease duration)
+    // Reconcile expired reservation leases (older than lease duration) - mode and recurring-kind filtered
     await supabaseAdmin
       .from("payment_orders")
       .update({ status: "expired" })
       .eq("user_id", user.id)
       .eq("provider", "razorpay")
+      .eq("mode", resolvedMode)
+      .eq("recurring_kind", "recurring")
       .eq("status", "reserved")
       .lt("created_at", leaseCutoff);
 
-    // 9. Authoritative Pending Reuse Query (Requirement 3 & 5)
+    // 9. Authoritative Pending Reuse Query (Requirement 3 & 5 & Reviewer B)
     const { data: existingPendingOrder, error: pendingOrderErr } = await supabaseAdmin
       .from("payment_orders")
       .select("id, provider_order_id, plan_code, status, created_at, mode, provider")
@@ -514,6 +526,7 @@ export async function POST(req: Request) {
       .eq("provider", "razorpay")
       .eq("mode", resolvedMode)
       .eq("plan_code", planCode)
+      .eq("recurring_kind", "recurring")
       .eq("status", "created")
       .like("provider_order_id", "sub_%")
       .gte("created_at", expirationCutoff)
@@ -535,8 +548,14 @@ export async function POST(req: Request) {
       existingPendingOrder.provider_order_id.startsWith("sub_") &&
       !existingPendingOrder.provider_order_id.startsWith("sub_pending_")
     ) {
-      const verifiedSub = await verifyAndReuseCandidateMandate(existingPendingOrder.provider_order_id, planCode);
-      if (verifiedSub) {
+      const verifiedSubRes = await verifyAndReuseCandidateMandate(existingPendingOrder.provider_order_id, planCode);
+      if (verifiedSubRes && !verifiedSubRes.ok) {
+        return NextResponse.json(
+          { error: "Failed to verify existing mandate with payment provider", code: verifiedSubRes.error },
+          { status: verifiedSubRes.status }
+        );
+      }
+      if (verifiedSubRes?.ok) {
         log.info("Reusing existing pending subscription order after provider verification", {
           userId: user.id,
           planCode,
@@ -547,7 +566,7 @@ export async function POST(req: Request) {
           keyId,
           planId: razorpayPlanId.trim(),
           planCode,
-          status: verifiedSub.status,
+          status: verifiedSubRes.subData.status,
           reused: true,
         });
       }
@@ -560,9 +579,9 @@ export async function POST(req: Request) {
       .eq("user_id", user.id)
       .eq("provider", "razorpay")
       .eq("mode", resolvedMode)
-      .eq("status", "created")
+      .eq("recurring_kind", "recurring")
+      .in("status", ["reserved", "created", "unknown"])
       .neq("plan_code", planCode)
-      .like("provider_order_id", "sub_%")
       .gte("created_at", expirationCutoff)
       .order("created_at", { ascending: false })
       .limit(1)
@@ -610,8 +629,14 @@ export async function POST(req: Request) {
         );
       }
 
-      const verifiedMetaSub = await verifyAndReuseCandidateMandate(metadataPendingSubId, planCode);
-      if (verifiedMetaSub) {
+      const verifiedMetaRes = await verifyAndReuseCandidateMandate(metadataPendingSubId, planCode);
+      if (verifiedMetaRes && !verifiedMetaRes.ok) {
+        return NextResponse.json(
+          { error: "Failed to verify existing mandate with payment provider", code: verifiedMetaRes.error },
+          { status: verifiedMetaRes.status }
+        );
+      }
+      if (verifiedMetaRes?.ok) {
         log.info("Reusing existing pending subscription from metadata after provider verification", {
           userId: user.id,
           planCode,
@@ -622,7 +647,7 @@ export async function POST(req: Request) {
           keyId,
           planId: razorpayPlanId.trim(),
           planCode,
-          status: verifiedMetaSub.status,
+          status: verifiedMetaRes.subData.status,
           reused: true,
         });
       }
@@ -635,7 +660,7 @@ export async function POST(req: Request) {
       const attemptId = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
       const reservationOrderId = `sub_pending_${user.id}_${attemptId}`;
 
-      // Reserve pending row in DB with explicit state 'reserved' (Requirement 8 & 7)
+      // Reserve pending row in DB with explicit state 'reserved' and recurring_kind (Requirement B & 7)
       const { error: reserveInsertErr } = await supabaseAdmin
         .from("payment_orders")
         .insert({
@@ -647,6 +672,7 @@ export async function POST(req: Request) {
           currency: "INR",
           status: "reserved",
           mode: resolvedMode,
+          recurring_kind: "recurring",
         });
 
       if (reserveInsertErr) {
@@ -666,7 +692,8 @@ export async function POST(req: Request) {
             .eq("user_id", user.id)
             .eq("provider", "razorpay")
             .eq("mode", resolvedMode)
-            .in("status", ["reserved", "created"])
+            .eq("recurring_kind", "recurring")
+            .in("status", ["reserved", "created", "unknown"])
             .order("created_at", { ascending: false })
             .limit(1)
             .maybeSingle();
@@ -706,14 +733,20 @@ export async function POST(req: Request) {
             existingRace.provider_order_id.startsWith("sub_") &&
             !existingRace.provider_order_id.startsWith("sub_pending_")
           ) {
-            const verifiedSub = await verifyAndReuseCandidateMandate(existingRace.provider_order_id, planCode);
-            if (verifiedSub) {
+            const verifiedSubRes = await verifyAndReuseCandidateMandate(existingRace.provider_order_id, planCode);
+            if (verifiedSubRes && !verifiedSubRes.ok) {
+              return NextResponse.json(
+                { error: "Failed to verify existing mandate with payment provider", code: verifiedSubRes.error },
+                { status: verifiedSubRes.status }
+              );
+            }
+            if (verifiedSubRes?.ok) {
               return NextResponse.json({
                 subscriptionId: existingRace.provider_order_id,
                 keyId,
                 planId: razorpayPlanId.trim(),
                 planCode,
-                status: verifiedSub.status,
+                status: verifiedSubRes.subData.status,
                 reused: true,
               });
             }
@@ -769,14 +802,25 @@ export async function POST(req: Request) {
         });
       } catch (gatewayErr: any) {
         log.error("Ambiguous create failure: Network exception calling Razorpay subscriptions API", { error: gatewayErr });
-        // Requirement 9: Do not mark failed blindly. Mark unknown and reconcile
+        // Requirement E: Unknown create states stay protected until reconciled, with a durable reconciliation record, not a log line
         await supabaseAdmin
           .from("payment_orders")
           .update({
-            status: "failed",
-            metadata: { reconciliation_state: "unknown", error: gatewayErr?.message || String(gatewayErr) },
+            status: "unknown",
+            updated_at: new Date().toISOString(),
+            metadata: {
+              reconciliation_required: true,
+              reconciliation_state: "unknown",
+              attempt_id: attemptId,
+              reservation_id: reservationOrderId,
+              plan_code: planCode,
+              mode: resolvedMode,
+              error: gatewayErr?.message || String(gatewayErr),
+              recorded_at: new Date().toISOString(),
+            },
           })
-          .eq("provider_order_id", reservationOrderId);
+          .eq("provider_order_id", reservationOrderId)
+          .eq("user_id", user.id);
 
         return NextResponse.json(
           { error: "Failed to connect to payment gateway", code: "GATEWAY_CONNECTION_ERROR" },
@@ -805,14 +849,25 @@ export async function POST(req: Request) {
       try {
         subscriptionData = await rzpRes.json();
       } catch (parseErr: any) {
-        log.error("Failed to parse Razorpay subscription response; marking unknown", { error: parseErr });
+        log.error("Failed to parse Razorpay subscription response; marking unknown with durable reconciliation record", { error: parseErr });
         await supabaseAdmin
           .from("payment_orders")
           .update({
-            status: "failed",
-            metadata: { reconciliation_state: "parse_error", error: parseErr?.message },
+            status: "unknown",
+            updated_at: new Date().toISOString(),
+            metadata: {
+              reconciliation_required: true,
+              reconciliation_state: "unknown",
+              attempt_id: attemptId,
+              reservation_id: reservationOrderId,
+              plan_code: planCode,
+              mode: resolvedMode,
+              error: parseErr?.message || String(parseErr),
+              recorded_at: new Date().toISOString(),
+            },
           })
-          .eq("provider_order_id", reservationOrderId);
+          .eq("provider_order_id", reservationOrderId)
+          .eq("user_id", user.id);
 
         return NextResponse.json(
           { error: "Invalid payment gateway response", code: "GATEWAY_RESPONSE_INVALID" },
@@ -853,53 +908,46 @@ export async function POST(req: Request) {
         );
       }
 
-      // 12. Requirement 10: Reserved-order update with affected row count check
+      // 12. Requirement F: Reservation completion needs status/lease/owner compare-and-swap, no JS-merged metadata overwrite
       const { data: updatedOrders, error: updateOrderErr } = await supabaseAdmin
         .from("payment_orders")
         .update({
           provider_order_id: subscriptionData.id,
           status: "created",
+          updated_at: new Date().toISOString(),
         })
         .eq("provider_order_id", reservationOrderId)
-        .select("id, provider_order_id");
+        .eq("user_id", user.id)
+        .eq("status", "reserved")
+        .gte("created_at", leaseCutoff)
+        .select("id, provider_order_id, status");
 
       if (
         updateOrderErr ||
         !updatedOrders ||
-        updatedOrders.length === 0 ||
+        updatedOrders.length !== 1 ||
         updatedOrders[0].provider_order_id !== subscriptionData.id
       ) {
-        log.error("Failed to update reserved order (zero rows affected or ID mismatch); cancelling mandate at provider", {
+        log.error("Failed to complete reservation via status/lease/owner CAS; cancelling mandate at provider", {
           error: updateOrderErr,
           subscriptionId: subscriptionData.id,
           affectedCount: updatedOrders?.length ?? 0,
         });
 
-        await supabaseAdmin
-          .from("payment_orders")
-          .update({ status: "failed" })
-          .eq("provider_order_id", reservationOrderId);
-
-        // Cancel mandate at provider
-        let cancelSucceeded = false;
+        // Cancel mandate at provider to prevent orphan
         try {
-          const cancelRes = await fetchCaller(`https://api.razorpay.com/v1/subscriptions/${subscriptionData.id}/cancel`, {
+          await fetchCaller(`https://api.razorpay.com/v1/subscriptions/${subscriptionData.id}/cancel`, {
             method: "POST",
             headers: { "Content-Type": "application/json", Authorization: `Basic ${credentials}` },
             body: JSON.stringify({ cancel_at_cycle_end: 0 }),
           });
-          cancelSucceeded = cancelRes.ok;
         } catch (cancelErr) {
           log.error("Exception during orphan mandate cancellation", { error: cancelErr });
         }
 
-        if (!cancelSucceeded) {
-          log.error("Orphan mandate cancel failed (non-2xx); queued for retry reconciliation", { subscriptionId: subscriptionData.id });
-        }
-
         return NextResponse.json(
-          { error: "Failed to persist subscription tracking. Please try again.", code: "SUBSCRIPTION_RECORD_FAILED" },
-          { status: 500 }
+          { error: "Reservation lease expired or was preempted", code: "RESERVATION_CAS_FAILED" },
+          { status: 409 }
         );
       }
 
@@ -1183,7 +1231,15 @@ export async function DELETE(req: Request) {
 
       if (rzpCancelRes.ok) {
         const cancelBody = await rzpCancelRes.json().catch(() => ({}));
-        if (cancelBody && (cancelBody.id === rzpSubId || cancelBody.status)) {
+        const confirmedStopped =
+          cancelBody &&
+          cancelBody.id === rzpSubId &&
+          (cancelBody.status === "cancelled" ||
+            cancelBody.cancel_at_cycle_end === 1 ||
+            cancelBody.cancel_at_cycle_end === true ||
+            cancelBody.ended_at != null);
+
+        if (confirmedStopped) {
           cancelConfirmed = true;
         }
       } else {
@@ -1197,7 +1253,7 @@ export async function DELETE(req: Request) {
       );
     }
 
-    // Handle already-cancelled-at-provider (Requirement 2: treat as success ONLY after fetching and seeing cancelled/completed)
+    // Handle already-cancelled-at-provider (Requirement 2 & D: treat as success ONLY after fetching and seeing confirmed stopped charge)
     if (!cancelConfirmed) {
       const desc = String(providerCancelErr?.error?.description || "").toLowerCase();
       const isAlreadyCancelledIndication =
@@ -1215,10 +1271,13 @@ export async function DELETE(req: Request) {
           if (fetchSubRes.ok) {
             const fetchedSubData = await fetchSubRes.json().catch(() => ({}));
             const verifiedCancelledState =
-              fetchedSubData?.status === "cancelled" ||
-              fetchedSubData?.status === "completed" ||
-              fetchedSubData?.ended_at ||
-              fetchedSubData?.cancel_at_cycle_end;
+              fetchedSubData &&
+              fetchedSubData.id === rzpSubId &&
+              (fetchedSubData.status === "cancelled" ||
+                fetchedSubData.status === "completed" ||
+                fetchedSubData.ended_at != null ||
+                fetchedSubData.cancel_at_cycle_end === 1 ||
+                fetchedSubData.cancel_at_cycle_end === true);
 
             if (verifiedCancelledState) {
               cancelConfirmed = true;
@@ -1239,58 +1298,24 @@ export async function DELETE(req: Request) {
       }
     }
 
-    // 5. Compare-and-set DB update on the same mandate id with atomic jsonb merge (Requirement 4)
-    // First attempt atomic RPC procedure if available
-    let casUpdateDone = false;
-    try {
-      const { data: rpcSuccess } = await supabaseAdmin.rpc("cancel_autorenew_subscription", {
-        p_user_id: user.id,
-        p_mandate_id: rzpSubId,
-        p_metadata: {
-          cancel_at_period_end: true,
-          canceled_at: new Date().toISOString(),
-          canceled_by: "customer",
-          provider_mandate_id: rzpSubId,
-        },
-      });
-      if (rpcSuccess) {
-        casUpdateDone = true;
-      }
-    } catch (_) {}
+    // 5. Compare-and-set DB update on the same mandate id via cancel_autorenew_subscription RPC only (Requirement D)
+    const { data: rpcSuccess, error: rpcErr } = await supabaseAdmin.rpc("cancel_autorenew_subscription", {
+      p_user_id: user.id,
+      p_mandate_id: rzpSubId,
+      p_metadata: {
+        cancel_at_period_end: true,
+        canceled_at: new Date().toISOString(),
+        canceled_by: "customer",
+        provider_mandate_id: rzpSubId,
+      },
+    });
 
-    if (!casUpdateDone) {
-      // Direct CAS query matching the exact mandate ID
-      if (sub) {
-        const { error: dbUpdateErr } = await supabaseAdmin
-          .from("subscriptions")
-          .update({
-            cancel_at_period_end: true,
-            updated_at: new Date().toISOString(),
-            metadata: {
-              ...(sub.metadata || {}),
-              cancel_at_period_end: true,
-              canceled_at: new Date().toISOString(),
-              canceled_by: "customer",
-              provider_mandate_id: rzpSubId,
-            },
-          })
-          .eq("user_id", user.id);
-
-        if (dbUpdateErr) {
-          log.error("Failed to update subscription in DB after cancellation", { error: dbUpdateErr });
-          return NextResponse.json(
-            { error: "Failed to update subscription status in database", code: "DATABASE_ERROR" },
-            { status: 500 }
-          );
-        }
-      }
-
-      // Also update matching payment_orders to cancelled
-      await supabaseAdmin
-        .from("payment_orders")
-        .update({ status: "cancelled" })
-        .eq("user_id", user.id)
-        .eq("provider_order_id", rzpSubId);
+    if (rpcErr || !rpcSuccess) {
+      log.error("Failed to cancel subscription in DB via cancel_autorenew_subscription RPC", { error: rpcErr });
+      return NextResponse.json(
+        { error: "Failed to update subscription status in database", code: "DATABASE_ERROR" },
+        { status: 500 }
+      );
     }
 
     log.info("Customer subscription successfully scheduled for cancellation at period end", {

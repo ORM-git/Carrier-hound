@@ -261,7 +261,11 @@ async function runAutorenewTests() {
       let ltFilters: Record<string, any> = {};
       let inFilters: Record<string, any[]> = {};
 
-      const matchesFilters = (o: any) => {
+      const matchesFilters = (rawO: any) => {
+        const o = {
+          recurring_kind: rawO.recurring_kind || (rawO.provider_order_id?.startsWith("sub_") ? "recurring" : "none"),
+          ...rawO,
+        };
         for (const [k, v] of Object.entries(filters)) {
           if (o[k] !== v) return false;
         }
@@ -343,6 +347,7 @@ async function runAutorenewTests() {
           let updateFilters: Record<string, any> = {};
           let updateInFilters: Record<string, any[]> = {};
           let updateLtFilters: Record<string, any> = {};
+          let updateGteFilters: Record<string, any> = {};
 
           const updateBuilder: any = {
             eq: (col: string, val: any) => {
@@ -355,6 +360,10 @@ async function runAutorenewTests() {
             },
             lt: (col: string, val: any) => {
               updateLtFilters[col] = val;
+              return updateBuilder;
+            },
+            gte: (col: string, val: any) => {
+              updateGteFilters[col] = val;
               return updateBuilder;
             },
             select: () => updateBuilder,
@@ -371,6 +380,9 @@ async function runAutorenewTests() {
                   }
                   for (const [k, v] of Object.entries(updateLtFilters)) {
                     if (order[k] >= v) match = false;
+                  }
+                  for (const [k, v] of Object.entries(updateGteFilters)) {
+                    if (order[k] < v) match = false;
                   }
                   if (match) {
                     Object.assign(order, updates);
@@ -957,7 +969,7 @@ async function runAutorenewTests() {
         cancelApiCalled = true;
         const b = JSON.parse(init.body);
         cancelCycleEndVal = b.cancel_at_cycle_end;
-        return new Response(JSON.stringify({ id: "sub_rzp_to_cancel_123", status: "active" }), { status: 200 });
+        return new Response(JSON.stringify({ id: "sub_rzp_to_cancel_123", status: "active", cancel_at_cycle_end: 1 }), { status: 200 });
       }
       return new Response();
     },

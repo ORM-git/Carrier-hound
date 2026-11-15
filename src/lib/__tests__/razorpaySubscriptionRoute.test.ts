@@ -85,7 +85,11 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
           if (options?.dbError) return { data: null, error: options.dbError };
           if (table === "payment_orders") {
             const orders = Array.from(mockDbPaymentOrders.values());
-            const matches = orders.filter((o) => {
+            const matches = orders.filter((rawO) => {
+              const o = {
+                recurring_kind: rawO.recurring_kind || (rawO.provider_order_id?.startsWith("sub_") ? "recurring" : "none"),
+                ...rawO,
+              };
               for (const [k, v] of Object.entries(filters)) {
                 if (o[k] !== v) return false;
               }
@@ -158,6 +162,7 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
           update: (updates: any) => {
             const updateFilters: Record<string, any> = {};
             const updateLtFilters: Record<string, any> = {};
+            const updateGteFilters: Record<string, any> = {};
             const updateInFilters: Record<string, any[]> = {};
             let isSelect = false;
 
@@ -174,6 +179,9 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
                   }
                   for (const [k, v] of Object.entries(updateLtFilters)) {
                     if (order[k] >= v) match = false;
+                  }
+                  for (const [k, v] of Object.entries(updateGteFilters)) {
+                    if (order[k] < v) match = false;
                   }
                   for (const [k, vals] of Object.entries(updateInFilters)) {
                     if (!vals.includes(order[k])) match = false;
@@ -205,6 +213,10 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
               },
               lt: (col: string, val: any) => {
                 updateLtFilters[col] = val;
+                return updateQuery;
+              },
+              gte: (col: string, val: any) => {
+                updateGteFilters[col] = val;
                 return updateQuery;
               },
               in: (col: string, vals: any[]) => {
@@ -833,7 +845,7 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
           rzpCancelCalled = true;
           rzpCancelBody = JSON.parse(init.body);
           return new Response(
-            JSON.stringify({ id: "sub_rzp_cancel_test_123", status: "active" }),
+            JSON.stringify({ id: "sub_rzp_cancel_test_123", status: "active", cancel_at_cycle_end: 1 }),
             { status: 200, headers: { "Content-Type": "application/json" } }
           );
         }
@@ -1256,7 +1268,7 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
 
       const mockFetch = vi.fn().mockImplementation(async (url: string) => {
         if (url.includes("/cancel")) {
-          return new Response(JSON.stringify({ id: "sub_rzp_cancel_when_billing_off", status: "active" }), { status: 200 });
+          return new Response(JSON.stringify({ id: "sub_rzp_cancel_when_billing_off", status: "cancelled", cancel_at_cycle_end: 1 }), { status: 200 });
         }
         return new Response();
       });

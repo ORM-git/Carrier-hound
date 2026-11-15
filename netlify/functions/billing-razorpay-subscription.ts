@@ -386,7 +386,15 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
 
           if (rzpCancelRes.ok) {
             const cancelBody = await rzpCancelRes.json().catch(() => ({}));
-            if (cancelBody && (cancelBody.id === rzpSubId || cancelBody.status)) {
+            const confirmedStopped =
+              cancelBody &&
+              cancelBody.id === rzpSubId &&
+              (cancelBody.status === "cancelled" ||
+                cancelBody.cancel_at_cycle_end === 1 ||
+                cancelBody.cancel_at_cycle_end === true ||
+                cancelBody.ended_at != null);
+
+            if (confirmedStopped) {
               cancelConfirmed = true;
             }
           } else {
@@ -422,10 +430,13 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
               if (fetchSubRes.ok) {
                 const fetchedSubData = await fetchSubRes.json().catch(() => ({}));
                 const verifiedCancelledState =
-                  fetchedSubData?.status === "cancelled" ||
-                  fetchedSubData?.status === "completed" ||
-                  fetchedSubData?.ended_at ||
-                  fetchedSubData?.cancel_at_cycle_end;
+                  fetchedSubData &&
+                  fetchedSubData.id === rzpSubId &&
+                  (fetchedSubData.status === "cancelled" ||
+                    fetchedSubData.status === "completed" ||
+                    fetchedSubData.ended_at != null ||
+                    fetchedSubData.cancel_at_cycle_end === 1 ||
+                    fetchedSubData.cancel_at_cycle_end === true);
 
                 if (verifiedCancelledState) {
                   cancelConfirmed = true;
@@ -447,59 +458,28 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
           }
         }
 
-        // Compare-and-set DB update on the same mandate id with atomic jsonb merge (Requirement 4)
-        let casUpdateDone = false;
-        try {
-          const { data: rpcSuccess } = await supabaseAdmin.rpc("cancel_autorenew_subscription", {
-            p_user_id: user.id,
-            p_mandate_id: rzpSubId,
-            p_metadata: {
-              cancel_at_period_end: true,
-              canceled_at: new Date().toISOString(),
-              canceled_by: "customer",
-              provider_mandate_id: rzpSubId,
-            },
-          });
-          if (rpcSuccess) {
-            casUpdateDone = true;
-          }
-        } catch (_) {}
+        // Compare-and-set DB update on the same mandate id via cancel_autorenew_subscription RPC only (Requirement D)
+        const { data: rpcSuccess, error: rpcErr } = await supabaseAdmin.rpc("cancel_autorenew_subscription", {
+          p_user_id: user.id,
+          p_mandate_id: rzpSubId,
+          p_metadata: {
+            cancel_at_period_end: true,
+            canceled_at: new Date().toISOString(),
+            canceled_by: "customer",
+            provider_mandate_id: rzpSubId,
+          },
+        });
 
-        if (!casUpdateDone) {
-          if (sub) {
-            const { error: dbUpdateErr } = await supabaseAdmin
-              .from("subscriptions")
-              .update({
-                cancel_at_period_end: true,
-                updated_at: new Date().toISOString(),
-                metadata: {
-                  ...(sub.metadata || {}),
-                  cancel_at_period_end: true,
-                  canceled_at: new Date().toISOString(),
-                  canceled_by: "customer",
-                  provider_mandate_id: rzpSubId,
-                },
-              })
-              .eq("user_id", user.id);
-
-            if (dbUpdateErr) {
-              safeLog.error("[Netlify /billing-razorpay-subscription] Failed to update subscription in DB after cancellation:", dbUpdateErr);
-              return {
-                statusCode: 500,
-                headers,
-                body: JSON.stringify({
-                  error: "Failed to update subscription status in database",
-                  code: "DATABASE_ERROR",
-                }),
-              };
-            }
-          }
-
-          await supabaseAdmin
-            .from("payment_orders")
-            .update({ status: "cancelled" })
-            .eq("user_id", user.id)
-            .eq("provider_order_id", rzpSubId);
+        if (rpcErr || !rpcSuccess) {
+          safeLog.error("[Netlify /billing-razorpay-subscription] Failed to cancel subscription in DB via cancel_autorenew_subscription RPC:", rpcErr);
+          return {
+            statusCode: 500,
+            headers,
+            body: JSON.stringify({
+              error: "Failed to update subscription status in database",
+              code: "DATABASE_ERROR",
+            }),
+          };
         }
 
         safeLog.info(
@@ -691,11 +671,11 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
       }
       const { verifiedAmount, verifiedCurrency, verifiedPeriod, verifiedInterval } = planVerifyRes.planData;
 
-      // Helper: Verify and Reuse Candidate Mandate (Requirement 5 & 6)
+      // Helper: Verify and Reuse Candidate Mandate (Requirement 5 & 6 & Reviewer E)
       const verifyAndReuseCandidateMandate = async (
         candidateId: string,
         _candidatePlanCode: string
-      ): Promise<any | null> => {
+      ): Promise<{ ok: true; subData: any } | { ok: false; error: string; status: number } | null> => {
         if (!candidateId || typeof candidateId !== "string" || !candidateId.startsWith("sub_") || candidateId.startsWith("sub_pending_")) {
           return null;
         }
@@ -707,7 +687,16 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
           });
 
           if (!subRes.ok) {
-            return null;
+            if (subRes.status === 404) {
+              safeLog.info("Candidate mandate does not exist at provider (404); marking expired", JSON.stringify({ candidateId }));
+              await supabaseAdmin
+                .from("payment_orders")
+                .update({ status: "expired" })
+                .eq("provider_order_id", candidateId);
+              return null;
+            }
+            safeLog.error("Provider returned non-200 while fetching candidate mandate; failing closed", { candidateId, status: subRes.status });
+            return { ok: false, error: "PROVIDER_VERIFICATION_FAILED", status: 502 };
           }
 
           const subData = await subRes.json();
@@ -743,13 +732,14 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
             return null;
           }
 
-          return subData;
-        } catch (_) {
-          return null;
+          return { ok: true, subData };
+        } catch (subErr) {
+          safeLog.error("Network exception checking candidate mandate at provider; failing closed", { candidateId, error: subErr });
+          return { ok: false, error: "GATEWAY_CONNECTION_ERROR", status: 502 };
         }
-      }
+      };
 
-      // Stale Order & Lease Reconciliation (Requirement 6)
+      // Stale Order & Lease Reconciliation (Requirement 6 & Reviewer E)
       const expirationCutoff = new Date(Date.now() - EXPIRATION_WINDOW_MS).toISOString();
       const leaseCutoff = new Date(Date.now() - LEASE_DURATION_MS).toISOString();
 
@@ -758,6 +748,8 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
         .select("id, provider_order_id, status")
         .eq("user_id", user.id)
         .eq("provider", "razorpay")
+        .eq("mode", resolvedMode)
+        .eq("recurring_kind", "recurring")
         .eq("status", "created")
         .lt("created_at", expirationCutoff);
 
@@ -782,10 +774,12 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
         .update({ status: "expired" })
         .eq("user_id", user.id)
         .eq("provider", "razorpay")
+        .eq("mode", resolvedMode)
+        .eq("recurring_kind", "recurring")
         .eq("status", "reserved")
         .lt("created_at", leaseCutoff);
 
-      // Authoritative Pending Reuse Query (Requirement 3 & 5)
+      // Authoritative Pending Reuse Query (Requirement 3 & 5 & Reviewer B)
       const { data: existingPendingOrder, error: pendingOrderErr } = await supabaseAdmin
         .from("payment_orders")
         .select("id, provider_order_id, plan_code, status, created_at, mode, provider")
@@ -793,6 +787,7 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
         .eq("provider", "razorpay")
         .eq("mode", resolvedMode)
         .eq("plan_code", planCode)
+        .eq("recurring_kind", "recurring")
         .eq("status", "created")
         .like("provider_order_id", "sub_%")
         .gte("created_at", expirationCutoff)
@@ -818,8 +813,18 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
         existingPendingOrder.provider_order_id.startsWith("sub_") &&
         !existingPendingOrder.provider_order_id.startsWith("sub_pending_")
       ) {
-        const verifiedSub = await verifyAndReuseCandidateMandate(existingPendingOrder.provider_order_id, planCode);
-        if (verifiedSub) {
+        const verifiedSubRes = await verifyAndReuseCandidateMandate(existingPendingOrder.provider_order_id, planCode);
+        if (verifiedSubRes && !verifiedSubRes.ok) {
+          return {
+            statusCode: verifiedSubRes.status,
+            headers,
+            body: JSON.stringify({
+              error: "Failed to verify existing mandate with payment provider",
+              code: verifiedSubRes.error,
+            }),
+          };
+        }
+        if (verifiedSubRes?.ok) {
           return {
             statusCode: 200,
             headers,
@@ -828,7 +833,7 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
               keyId,
               planId: razorpayPlanId.trim(),
               planCode,
-              status: verifiedSub.status,
+              status: verifiedSubRes.subData.status,
               reused: true,
             }),
           };
@@ -842,6 +847,7 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
         .eq("user_id", user.id)
         .eq("provider", "razorpay")
         .eq("mode", resolvedMode)
+        .eq("recurring_kind", "recurring")
         .eq("status", "created")
         .neq("plan_code", planCode)
         .like("provider_order_id", "sub_%")
@@ -898,8 +904,18 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
           };
         }
 
-        const verifiedMetaSub = await verifyAndReuseCandidateMandate(metadataPendingSubId, planCode);
-        if (verifiedMetaSub) {
+        const verifiedMetaRes = await verifyAndReuseCandidateMandate(metadataPendingSubId, planCode);
+        if (verifiedMetaRes && !verifiedMetaRes.ok) {
+          return {
+            statusCode: verifiedMetaRes.status,
+            headers,
+            body: JSON.stringify({
+              error: "Failed to verify existing mandate with payment provider",
+              code: verifiedMetaRes.error,
+            }),
+          };
+        }
+        if (verifiedMetaRes?.ok) {
           return {
             statusCode: 200,
             headers,
@@ -908,7 +924,7 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
               keyId,
               planId: razorpayPlanId.trim(),
               planCode,
-              status: verifiedMetaSub.status,
+              status: verifiedMetaRes.subData.status,
               reused: true,
             }),
           };
@@ -922,7 +938,7 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
         const attemptId = (await import("crypto")).randomUUID().replace(/-/g, "").slice(0, 16);
         const reservationOrderId = `sub_pending_${user.id}_${attemptId}`;
 
-        // Reserve pending row in DB with explicit state 'reserved' (Requirement 8 & 7)
+        // Reserve pending row in DB with explicit state 'reserved' and recurring_kind (Requirement B & 7)
         const { error: reserveInsertErr } = await supabaseAdmin
           .from("payment_orders")
           .insert({
@@ -934,6 +950,7 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
             currency: "INR",
             status: "reserved",
             mode: resolvedMode,
+            recurring_kind: "recurring",
           });
 
         if (reserveInsertErr) {
@@ -948,7 +965,8 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
               .eq("user_id", user.id)
               .eq("provider", "razorpay")
               .eq("mode", resolvedMode)
-              .in("status", ["reserved", "created"])
+              .eq("recurring_kind", "recurring")
+              .in("status", ["reserved", "created", "unknown"])
               .order("created_at", { ascending: false })
               .limit(1)
               .maybeSingle();
@@ -993,8 +1011,18 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
               existingRace.provider_order_id.startsWith("sub_") &&
               !existingRace.provider_order_id.startsWith("sub_pending_")
             ) {
-              const verifiedSub = await verifyAndReuseCandidateMandate(existingRace.provider_order_id, planCode);
-              if (verifiedSub) {
+              const verifiedSubRes = await verifyAndReuseCandidateMandate(existingRace.provider_order_id, planCode);
+              if (verifiedSubRes && !verifiedSubRes.ok) {
+                return {
+                  statusCode: verifiedSubRes.status,
+                  headers,
+                  body: JSON.stringify({
+                    error: "Failed to verify existing mandate with payment provider",
+                    code: verifiedSubRes.error,
+                  }),
+                };
+              }
+              if (verifiedSubRes?.ok) {
                 return {
                   statusCode: 200,
                   headers,
@@ -1003,7 +1031,7 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
                     keyId,
                     planId: razorpayPlanId.trim(),
                     planCode,
-                    status: verifiedSub.status,
+                    status: verifiedSubRes.subData.status,
                     reused: true,
                   }),
                 };
@@ -1067,10 +1095,21 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
           await supabaseAdmin
             .from("payment_orders")
             .update({
-              status: "failed",
-              metadata: { reconciliation_state: "unknown", error: gatewayErr?.message || String(gatewayErr) },
+              status: "unknown",
+              updated_at: new Date().toISOString(),
+              metadata: {
+                reconciliation_required: true,
+                reconciliation_state: "unknown",
+                attempt_id: attemptId,
+                reservation_id: reservationOrderId,
+                plan_code: planCode,
+                mode: resolvedMode,
+                error: gatewayErr?.message || String(gatewayErr),
+                recorded_at: new Date().toISOString(),
+              },
             })
-            .eq("provider_order_id", reservationOrderId);
+            .eq("provider_order_id", reservationOrderId)
+            .eq("user_id", user.id);
 
           return {
             statusCode: 502,
@@ -1108,10 +1147,21 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
           await supabaseAdmin
             .from("payment_orders")
             .update({
-              status: "failed",
-              metadata: { reconciliation_state: "parse_error", error: parseErr?.message },
+              status: "unknown",
+              updated_at: new Date().toISOString(),
+              metadata: {
+                reconciliation_required: true,
+                reconciliation_state: "unknown",
+                attempt_id: attemptId,
+                reservation_id: reservationOrderId,
+                plan_code: planCode,
+                mode: resolvedMode,
+                error: parseErr?.message || String(parseErr),
+                recorded_at: new Date().toISOString(),
+              },
             })
-            .eq("provider_order_id", reservationOrderId);
+            .eq("provider_order_id", reservationOrderId)
+            .eq("user_id", user.id);
 
           return {
             statusCode: 502,
@@ -1160,33 +1210,33 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
           };
         }
 
-        // Reserved-order update with affected row count check (Requirement 10)
+        // Reserved-order update with status/lease/owner CAS (Requirement F)
         const { data: updatedOrders, error: updateOrderErr } = await supabaseAdmin
           .from("payment_orders")
           .update({
             provider_order_id: subscriptionData.id,
             status: "created",
+            updated_at: new Date().toISOString(),
           })
           .eq("provider_order_id", reservationOrderId)
-          .select("id, provider_order_id");
+          .eq("user_id", user.id)
+          .eq("status", "reserved")
+          .gte("created_at", leaseCutoff)
+          .select("id, provider_order_id, status");
 
         if (
           updateOrderErr ||
           !updatedOrders ||
-          updatedOrders.length === 0 ||
+          updatedOrders.length !== 1 ||
           updatedOrders[0].provider_order_id !== subscriptionData.id
         ) {
-          safeLog.error("[Netlify /billing-razorpay-subscription] Failed to update reserved order (zero rows affected or ID mismatch); cancelling mandate at provider:", {
+          safeLog.error("[Netlify /billing-razorpay-subscription] Failed to complete reservation via status/lease/owner CAS; cancelling mandate at provider:", {
             error: updateOrderErr,
             subscriptionId: subscriptionData.id,
             affectedCount: updatedOrders?.length ?? 0,
           });
 
-          await supabaseAdmin
-            .from("payment_orders")
-            .update({ status: "failed" })
-            .eq("provider_order_id", reservationOrderId);
-
+          // Cancel mandate at provider to prevent orphan
           try {
             await fetchCaller(`https://api.razorpay.com/v1/subscriptions/${subscriptionData.id}/cancel`, {
               method: "POST",
@@ -1194,15 +1244,15 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
               body: JSON.stringify({ cancel_at_cycle_end: 0 }),
             });
           } catch (cancelErr) {
-            safeLog.error("[Netlify /billing-razorpay-subscription] Failed to cancel orphan mandate in Razorpay:", cancelErr);
+            safeLog.error("[Netlify /billing-razorpay-subscription] Exception during orphan mandate cancellation:", cancelErr);
           }
 
           return {
-            statusCode: 500,
+            statusCode: 409,
             headers,
             body: JSON.stringify({
-              error: "Failed to persist subscription tracking. Please try again.",
-              code: "SUBSCRIPTION_RECORD_FAILED",
+              error: "Reservation lease expired or was preempted",
+              code: "RESERVATION_CAS_FAILED",
             }),
           };
         }
