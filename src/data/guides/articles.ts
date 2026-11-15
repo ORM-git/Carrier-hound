@@ -147,7 +147,7 @@ export const GUIDE_ARTICLES: Record<string, GuideArticle> = {
     faqs: [
       {
         question: "How does CareerMonke discover positions that aren't on public portals?",
-        answer: "We monitor employer career pages directly. Most companies open these listings internally days before paying for syndication on LinkedIn or Indeed.",
+        answer: "We focus on verified, active openings. Most companies open these listings internally days before paying for syndication on LinkedIn or Indeed.",
       },
       {
         question: "Is there any subscription fee to search through the jobs?",
@@ -331,7 +331,7 @@ export const GUIDE_ARTICLES: Record<string, GuideArticle> = {
     faqs: [
       {
         question: "How does CareerMonke purge ghost jobs?",
-        answer: "We perform automated health checks on every job listing multiple times daily. If a career link returns a 404, redirects to a generic splash page, or remains open without activity past our threshold, it is automatically archived.",
+        answer: "We keep listings up to date, and closed or broken listings are removed from active results.",
       },
     ],
   },

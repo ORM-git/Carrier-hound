@@ -1602,7 +1602,7 @@ export default function JobRadarGlobe() {
                   No active openings match the current filter
                 </p>
                 <p className="text-xs text-slate-500">
-                  {hasActiveFilters ? "Try resetting some of the filters above" : "Check back after the next daily refresh"}
+                  {hasActiveFilters ? "Try resetting some of the filters above" : "Check back soon"}
                 </p>
               </div>
             ) : (

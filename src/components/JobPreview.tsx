@@ -17,7 +17,7 @@ interface JobPreviewProps {
 
 export default function JobPreview({
   title = "Direct Employer Openings",
-  subtitle = "Verified openings refreshed directly from company career pages",
+  subtitle = "Verified, active openings",
   jobs,
   limit = 5,
 }: JobPreviewProps) {

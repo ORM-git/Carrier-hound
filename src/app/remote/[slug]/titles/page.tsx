@@ -180,7 +180,7 @@ export default function RoleTitlesPage({ params }: PageProps) {
               </p>
               <JobPreview
                 title={`Live ${guide.roleName} Openings`}
-                subtitle="Refreshed directly from verified employer career pages"
+                subtitle="Verified, active openings"
                 jobs={roleJobs}
                 limit={4}
               />

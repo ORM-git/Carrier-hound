@@ -45,7 +45,7 @@ export const CATEGORY_LANDINGS: Record<string, CategoryLandingData> = {
       ],
     },
     openingsCount: "Verified Active Infrastructure Roles",
-    openingsDescription: "The listings below are monitored live. Positions are automatically retired the moment an employer closes their internal requisition.",
+    openingsDescription: "The listings below are verified and kept up to date.",
     titleAliases: [
       "Site Reliability Engineer (SRE)",
       "Platform Engineer",
