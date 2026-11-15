@@ -163,7 +163,7 @@ export default function CategoryLandingPage({ params }: PageProps) {
           {sampleJobs && sampleJobs.length > 0 && (
             <JobPreview
               title={`Verified ${data.name} Feed`}
-              subtitle="Refreshed directly from verified employer pages, regularly refreshed"
+              subtitle="Regularly refreshed"
               jobs={sampleJobs}
               limit={5}
             />

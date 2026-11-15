@@ -36,7 +36,7 @@ export const CATEGORY_LANDINGS: Record<string, CategoryLandingData> = {
     lede: "Discover direct engineering requisitions before they are syndicated to public job aggregators. Filter verified remote infrastructure roles by salary band and tech stack.",
     proofStrip: {
       heading: "Verified Employer Feeds Only",
-      subheading: "Refreshed directly from verified employer career pages.",
+      subheading: "Verified, active openings.",
       metrics: [
         { label: "Active Postings", value: "Verified Active" },
         { label: "Median Compensation", value: "$168,000" },
@@ -70,7 +70,7 @@ export const CATEGORY_LANDINGS: Record<string, CategoryLandingData> = {
       },
       {
         question: "How quickly are filled roles removed from the feed?",
-        answer: "Our automated health check verifies posting status codes regularly throughout the day. When a job is closed on the employer career page, it is removed from our live feed promptly.",
+        answer: "Closed listings are removed from active results.",
       },
     ],
     relatedGuides: [

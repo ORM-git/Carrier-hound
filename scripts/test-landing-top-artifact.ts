@@ -57,8 +57,8 @@ async function main() {
     "page.tsx must contain exact badge '1,240 new jobs found today'"
   );
   assert.ok(
-    pageSrc.includes("Get direct roles from company sites and tailor your resume to clear their ATS in seconds."),
-    "page.tsx must contain lead copy about direct roles from company sites"
+    pageSrc.includes("Verified employer jobs and tailor your resume to clear their ATS in seconds."),
+    "page.tsx must contain lead copy about verified employer jobs"
   );
   assert.ok(
     pageSrc.includes("Sign up for free"),

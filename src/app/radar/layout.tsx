@@ -3,13 +3,13 @@ import type { ReactNode } from "react";
 
 export const metadata: Metadata = {
   title: "Live Job Radar | CareerMonke",
-  description: "Watch new unindexed remote roles arrive in real time on the CareerMonke live job radar.",
+  description: "Discover fresh remote roles on the CareerMonke job radar.",
   alternates: {
     canonical: "/radar",
   },
   openGraph: {
     title: "Live Job Radar | CareerMonke",
-    description: "Watch new unindexed remote roles arrive in real time on the CareerMonke live job radar.",
+    description: "Discover fresh remote roles on the CareerMonke job radar.",
     url: "https://careermonke.com/radar",
   },
 };

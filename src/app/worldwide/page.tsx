@@ -4,13 +4,13 @@ import { getWorldwideCompanies } from "@/lib/api/worldwide";
 
 export const metadata: Metadata = {
   title: "Worldwide Companies | CareerMonke",
-  description: "Browse verified employers hiring remote roles worldwide, discovered directly from company career pages.",
+  description: "Browse verified employers hiring remote roles worldwide with verified employer jobs.",
   alternates: {
     canonical: "/worldwide",
   },
   openGraph: {
     title: "Worldwide Companies | CareerMonke",
-    description: "Browse verified employers hiring remote roles worldwide, discovered directly from company career pages.",
+    description: "Browse verified employers hiring remote roles worldwide with verified employer jobs.",
     url: "https://careermonke.com/worldwide",
   },
 };

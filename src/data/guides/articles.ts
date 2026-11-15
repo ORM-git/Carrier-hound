@@ -113,7 +113,7 @@ export const GUIDE_ARTICLES: Record<string, GuideArticle> = {
         },
         {
           feature: "Ghost Listing Filtering",
-          yourBrand: "Automated status validation",
+          yourBrand: "Listing quality checks",
           traditional: "Periodic manual cleanup",
           notes: "Infrequent / High ghost rate",
         },
@@ -139,7 +139,7 @@ export const GUIDE_ARTICLES: Record<string, GuideArticle> = {
         id: "how-direct-tracking-works",
         h2: "Architectural Shift: From Gatekeepers to Automated Radar",
         paragraphs: [
-          "CareerMonke operates as an automated discovery radar. Rather than asking employers to manually submit listings or wait for staffing agencies, our platform focuses on verified, active openings across verified top software and product companies.",
+          "CareerMonke helps you find verified, active openings.",
           "When an opening is removed or marked filled on the employer's internal board, it is removed from active listings. This eliminates the widespread frustration of spending hours tailoring cover letters for defunct positions.",
         ],
       },

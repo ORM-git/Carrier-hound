@@ -176,7 +176,7 @@ export default function RoleTitlesPage({ params }: PageProps) {
                 Live {guide.roleName} Job Snapshot
               </h3>
               <p className="text-[#4B5563] text-sm">
-                Recent openings discovered directly from verified employer career pages before public syndication.
+                Recent verified openings.
               </p>
               <JobPreview
                 title={`Live ${guide.roleName} Openings`}
