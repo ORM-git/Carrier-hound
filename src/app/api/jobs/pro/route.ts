@@ -17,6 +17,9 @@ const baseLog = createLogger({ context: { route: "/api/jobs/pro" } });
 
 export const runtime = "edge";
 
+let cachedJobsProAdmin: any = null;
+let cachedJobsProKey = "";
+
 function getSupabaseAdmin() {
   const supabaseUrl =
     process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -36,9 +39,16 @@ function getSupabaseAdmin() {
     throw new Error(JSON.stringify(missing));
   }
 
-  return createClient(supabaseUrl, serviceKey!, {
-    auth: { persistSession: false },
+  const cacheKey = `${supabaseUrl}::${serviceKey}`;
+  if (cachedJobsProAdmin && cachedJobsProKey === cacheKey && process.env.NODE_ENV !== "test") {
+    return cachedJobsProAdmin;
+  }
+  const client = createClient(supabaseUrl, serviceKey!, {
+    auth: { persistSession: false, autoRefreshToken: false },
   });
+  cachedJobsProAdmin = client;
+  cachedJobsProKey = cacheKey;
+  return client;
 }
 
 async function verifyProUser(req: Request) {
