@@ -482,7 +482,7 @@ COMMIT;
 --   - Drops ONLY objects that this migration clearly created (trigger, functions,
 --     perf view, new partial indexes, new check constraints).
 --   - Restores the original jobs_public view definition without Phase 3 columns.
---   - Restores the original jobs_source_type_check constraint ('ats', 'api', 'feed', 'direct').
+--   - Keeps the expanded jobs_source_type_check constraint because rows with vendor values may exist.
 --   - KEEPS all additive columns (jobs.source_id, jobs.canonical_domain, jobs.logo_url,
 --     jobs.role_category, jobs.top_keywords, jobs.dedupe_hash, jobs.is_remote,
 --     jobs.source_priority, companies.canonical_domain, companies.category,
