@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
 import { verifyUserNotBanned } from "@/lib/admin/auth";
 import { computeFitDiagnostics, StandardJobScoringInput } from "@/lib/matcher/scoring";
@@ -19,7 +19,11 @@ const baseLog = createLogger({ context: { route: "/api/jobs/top10" } });
 
 export const runtime = "edge";
 
-function getSupabaseAdmin() {
+let cachedTop10Admin: SupabaseClient | null = null;
+let cachedTop10Key = "";
+let cachedTop10ActiveCount: { value: number; expiresAt: number } | null = null;
+
+function getSupabaseAdmin(): SupabaseClient {
   const supabaseUrl =
     process.env.NEXT_PUBLIC_SUPABASE_URL ||
     process.env.SUPABASE_URL ||
@@ -40,9 +44,16 @@ function getSupabaseAdmin() {
     throw new Error(JSON.stringify(missing));
   }
 
-  return createClient(supabaseUrl, serviceKey!, {
-    auth: { persistSession: false },
+  const cacheKey = `${supabaseUrl}::${serviceKey}`;
+  if (cachedTop10Admin && cachedTop10Key === cacheKey && process.env.NODE_ENV !== "test") {
+    return cachedTop10Admin;
+  }
+  const client = createClient(supabaseUrl, serviceKey!, {
+    auth: { persistSession: false, autoRefreshToken: false },
   });
+  cachedTop10Admin = client;
+  cachedTop10Key = cacheKey;
+  return client;
 }
 
 function formatDate(dateStr?: string | null): string {
@@ -349,12 +360,21 @@ export async function POST(req: Request) {
 
     const topRanked = dedupedScoredJobs.slice(0, limit);
 
-    // Query exact active count for totalCorpus (same source as /api/stats)
-    const { count: totalActiveCount } = await supabaseAdmin
-      .from("jobs_public")
-      .select("id", { count: "exact", head: true })
-      .eq("is_active", true)
-      .eq("status", "active");
+    // Query exact active count for totalCorpus (cached 60s in production to avoid redundant COUNT(*) scans)
+    let totalActiveCount: number | null = null;
+    if (process.env.NODE_ENV !== "test" && cachedTop10ActiveCount && cachedTop10ActiveCount.expiresAt > Date.now()) {
+      totalActiveCount = cachedTop10ActiveCount.value;
+    } else {
+      const { count } = await supabaseAdmin
+        .from("jobs_public")
+        .select("id", { count: "exact", head: true })
+        .eq("is_active", true)
+        .eq("status", "active");
+      totalActiveCount = count;
+      if (typeof count === "number" && process.env.NODE_ENV !== "test") {
+        cachedTop10ActiveCount = { value: count, expiresAt: Date.now() + 60_000 };
+      }
+    }
     const totalCorpus = totalActiveCount ?? dedupedScoredJobs.length;
 
     const responsePayload = {
