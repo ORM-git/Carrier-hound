@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { parseStatsResponse } from "./clientSchemas";
 import { fetchWithRetry } from "./retryFetch";
+import { singleFlight } from "@/lib/cache/singleFlight";
 
 /**
  * Client-side and shared utilities for fetching strictly real platform statistics.
@@ -29,32 +30,34 @@ export async function getLiveStats(): Promise<LiveStatsData | null> {
     return cachedStats;
   }
 
-  try {
-    let token: string | undefined;
+  return singleFlight("client:liveStats", async () => {
     try {
-      const { createClient } = await import("../supabase/client");
-      const supabase = createClient();
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      token = session?.access_token;
-    } catch {}
+      let token: string | undefined;
+      try {
+        const { createClient } = await import("../supabase/client");
+        const supabase = createClient();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        token = session?.access_token;
+      } catch {}
 
-    const headers: Record<string, string> = {};
-    if (token) {
-      headers["Authorization"] = `Bearer ${token}`;
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
+      const res = await fetchWithRetry(() => fetch("/api/stats", { headers }));
+      if (!res.ok) return null;
+      const parsed = parseStatsResponse(await res.json());
+      if (!parsed) return null;
+      cachedStats = parsed;
+      lastFetchTime = Date.now();
+      return cachedStats;
+    } catch {
+      return null;
     }
-
-    const res = await fetchWithRetry(() => fetch("/api/stats", { headers }));
-    if (!res.ok) return null;
-    const parsed = parseStatsResponse(await res.json());
-    if (!parsed) return null;
-    cachedStats = parsed;
-    lastFetchTime = now;
-    return cachedStats;
-  } catch {
-    return null;
-  }
+  });
 }
 
 /**
