@@ -394,13 +394,15 @@ async def run_master_ingestion(
                     })
                     continue
 
-                if persisted_keys:
-                    persisted_board_count = sum(
-                        1 for j in b_info["fetched_jobs"]
-                        if (str(j.get("source_id") or "") == bsid and (str(j.get("source_id") or ""), str(j.get("source_job_id") or "")) in persisted_keys)
-                    )
-                else:
-                    persisted_board_count = len(b_info["fetched_jobs"])
+                # Count only DISTINCT confirmed persisted (source_id, source_job_id) keys for this board.
+                # Zero persisted keys means 0, never fall back to raw fetch length.
+                board_persisted_keys = {
+                    (str(j.get("source_id") or ""), str(j.get("source_job_id") or ""))
+                    for j in b_info["fetched_jobs"]
+                    if str(j.get("source_id") or "") == bsid
+                    and (str(j.get("source_id") or ""), str(j.get("source_job_id") or "")) in persisted_keys
+                }
+                persisted_board_count = len(board_persisted_keys)
 
                 guard = evaluate_count_drop_guard(persisted_board_count, board_baseline, source_name=bsid, min_ratio=0.5)
 

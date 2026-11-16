@@ -453,6 +453,9 @@ class HighVolumeIngestionEngineTests(unittest.TestCase):
         self.assertNotEqual(fp_base, compute_content_fingerprint({**base_job, "verified": False}))
         self.assertNotEqual(fp_base, compute_content_fingerprint({**base_job, "company_id": "comp-999"}))
         self.assertNotEqual(fp_base, compute_content_fingerprint({**base_job, "salary_period": "month"}))
+        self.assertNotEqual(fp_base, compute_content_fingerprint({**base_job, "canonical_domain": "newdomain.com"}))
+        self.assertNotEqual(fp_base, compute_content_fingerprint({**base_job, "source_id": "greenhouse:other"}))
+        self.assertNotEqual(fp_base, compute_content_fingerprint({**base_job, "source_url": "https://other.com/job"}))
 
         # Test partition_set_diff when skills change on existing DB job
         existing_db_row = {"id": "uuid-stripe-101", **base_job}
@@ -465,7 +468,26 @@ class HighVolumeIngestionEngineTests(unittest.TestCase):
         self.assertEqual(to_update[0][1]["skills"], ["python", "django", "fastapi"])
         self.assertEqual(len(unchanged_ids), 0)
 
-        # When skills are identical, job is classified as unchanged
+        # Test domain-only change triggers to_update
+        job_with_new_domain = {**base_job, "canonical_domain": "stripe-payments.com"}
+        to_insert_dom, to_update_dom, unchanged_dom = partition_set_diff([job_with_new_domain], [existing_db_row])
+        self.assertEqual(len(to_insert_dom), 0)
+        self.assertEqual(len(to_update_dom), 1)
+        self.assertEqual(to_update_dom[0][0], "uuid-stripe-101")
+        self.assertEqual(to_update_dom[0][1]["canonical_domain"], "stripe-payments.com")
+        self.assertEqual(len(unchanged_dom), 0)
+
+        # Test adopting source_id on legacy row with source_id=None triggers to_update
+        legacy_db_row = {**base_job, "id": "uuid-legacy-1", "source_id": None}
+        job_with_source_id = {**base_job, "source_id": "greenhouse:stripe"}
+        to_insert_sid, to_update_sid, unchanged_sid = partition_set_diff([job_with_source_id], [legacy_db_row])
+        self.assertEqual(len(to_insert_sid), 0)
+        self.assertEqual(len(to_update_sid), 1)
+        self.assertEqual(to_update_sid[0][0], "uuid-legacy-1")
+        self.assertEqual(to_update_sid[0][1]["source_id"], "greenhouse:stripe")
+        self.assertEqual(len(unchanged_sid), 0)
+
+        # When skills and all fields are identical, job is classified as unchanged
         to_insert2, to_update2, unchanged_ids2 = partition_set_diff([base_job], [existing_db_row])
         self.assertEqual(len(to_insert2), 0)
         self.assertEqual(len(to_update2), 0)
@@ -590,6 +612,115 @@ class HighVolumeIngestionEngineTests(unittest.TestCase):
         expiry_patches = [c for c in patch_calls if "last_seen_at=lt." in c]
         self.assertEqual(len(expiry_patches), 0)
 
+    def test_per_board_expiry_duplicate_response_zero_persisted_and_failure(self) -> None:
+        """Requirement 1: Expiry guard counts distinct persisted keys; duplicate response, zero persisted, or write failure aborts expiry."""
+        board_id = "greenhouse:stripe"
+
+        # Duplicate job payload: 1 job repeated 5 times in the fetch response
+        duplicated_job = {
+            "source_type": "greenhouse",
+            "source_id": board_id,
+            "source_job_id": "stripe:job-1",
+            "title": "Engineer 1",
+            "company": "Stripe",
+            "company_slug": "stripe",
+            "source_priority": 1,
+            "dedupe_hash": "hash_stripe_1",
+            "is_active": True,
+        }
+
+        # 1. Duplicate response test:
+        # Fetcher returns 5 identical jobs.
+        # DB baseline is 4 jobs.
+        # If it counted raw fetch rows (5), 5/4 = 125% would have wrongfully expired jobs.
+        # With distinct persisted key counting, only 1 unique key is counted: 1/4 = 25% < 50% drop guard -> blocks expiration!
+        def handler_duplicate(request: httpx.Request) -> httpx.Response:
+            url = str(request.url)
+            method = request.method
+            if method == "GET" and "/companies" in url:
+                return httpx.Response(200, json=[{"id": "comp-stripe", "slug": "stripe", "ats_type": "greenhouse"}])
+            if method == "GET" and "/jobs" in url:
+                if "count=exact" in request.headers.get("prefer", ""):
+                    # Baseline active count = 4
+                    return httpx.Response(200, headers={"Content-Range": "0-0/4"}, json=[{"id": "job-1"}])
+                return httpx.Response(200, json=[])
+            if method == "POST" and "/jobs" in url:
+                return httpx.Response(201, json=[{"id": "job-1"}])
+            if method == "PATCH" and "/jobs" in url:
+                return httpx.Response(200, json=[])
+            return httpx.Response(200, json=[])
+
+        async def _run_duplicate() -> dict[str, Any]:
+            seeds = {
+                "rate_limit": {"default_rps_per_host": 4.0, "burst_per_host": 1.0},
+                "layer1_public_ats": [{"ats": "greenhouse", "slug": "stripe", "source_priority": 1}],
+                "layer2_enterprise_json": {},
+            }
+            tmp_seeds = Path(__file__).resolve().parent / "_test_seeds_dup.json"
+            tmp_seeds.write_text(json.dumps(seeds), encoding="utf-8")
+            try:
+                with patch.dict(os.environ, {
+                    "NEXT_PUBLIC_SUPABASE_URL": "https://mock.supabase.co",
+                    "SUPABASE_SERVICE_ROLE_KEY": "mock-service-role-key",
+                }):
+                    # Return 5 duplicates in fetch
+                    with patch("scripts.scraper.run_ingestion.fetch_layer1_seed", AsyncMock(return_value=[duplicated_job] * 5)):
+                        transport = httpx.MockTransport(handler_duplicate)
+                        return await run_master_ingestion(sources=["stripe"], seeds_path=tmp_seeds, dry_run=False, transport=transport)
+            finally:
+                if tmp_seeds.exists():
+                    tmp_seeds.unlink()
+
+        res_dup = asyncio.run(_run_duplicate())
+        self.assertEqual(res_dup["db"]["expired"], 0)
+        self.assertEqual(res_dup["expiry_reports"][0]["status"], "skipped_drop_guard")
+        self.assertIn("50% count-drop guard triggered", res_dup["expiry_reports"][0]["guard"]["reason"])
+        # Distinct persisted count must be 1, NOT 5!
+        self.assertEqual(res_dup["expiry_reports"][0]["guard"]["persisted_count"], 1)
+
+        # 2. Zero persisted test:
+        # Zero persisted keys must mean 0 persisted count, NEVER raw fetch length!
+        # Baseline is 2, 0 persisted -> guard blocks expiration.
+        def handler_zero_persisted(request: httpx.Request) -> httpx.Response:
+            url = str(request.url)
+            method = request.method
+            if method == "GET" and "/companies" in url:
+                return httpx.Response(200, json=[{"id": "comp-stripe", "slug": "stripe", "ats_type": "greenhouse"}])
+            if method == "GET" and "/jobs" in url:
+                if "count=exact" in request.headers.get("prefer", ""):
+                    return httpx.Response(200, headers={"Content-Range": "0-0/2"}, json=[{"id": "job-1"}])
+                return httpx.Response(200, json=[])
+            # Simulated write failure returning error on insert
+            if method == "POST" and "/jobs" in url:
+                return httpx.Response(500, text="Internal DB error")
+            return httpx.Response(200, json=[])
+
+        async def _run_zero_persisted() -> dict[str, Any]:
+            seeds = {
+                "rate_limit": {"default_rps_per_host": 4.0, "burst_per_host": 1.0},
+                "layer1_public_ats": [{"ats": "greenhouse", "slug": "stripe", "source_priority": 1}],
+                "layer2_enterprise_json": {},
+            }
+            tmp_seeds = Path(__file__).resolve().parent / "_test_seeds_zero.json"
+            tmp_seeds.write_text(json.dumps(seeds), encoding="utf-8")
+            try:
+                with patch.dict(os.environ, {
+                    "NEXT_PUBLIC_SUPABASE_URL": "https://mock.supabase.co",
+                    "SUPABASE_SERVICE_ROLE_KEY": "mock-service-role-key",
+                }):
+                    with patch("scripts.scraper.run_ingestion.fetch_layer1_seed", AsyncMock(return_value=[duplicated_job])):
+                        transport = httpx.MockTransport(handler_zero_persisted)
+                        return await run_master_ingestion(sources=["stripe"], seeds_path=tmp_seeds, dry_run=False, transport=transport)
+            finally:
+                if tmp_seeds.exists():
+                    tmp_seeds.unlink()
+
+        res_zero = asyncio.run(_run_zero_persisted())
+        # Write failure vetos expiry completely
+        self.assertTrue(res_zero["expiry_vetoed"])
+        self.assertEqual(res_zero["db"]["expired"], 0)
+        self.assertEqual(len(res_zero["db"]["persisted_source_keys"]), 0)
+
     def test_retry_after_above_30s_is_honored_not_cut(self) -> None:
         """Requirement 5: Retry-After above 30s must be honored in full, never cut to 30s."""
         self.assertEqual(parse_retry_after("45"), 45.0)
@@ -620,7 +751,7 @@ class HighVolumeIngestionEngineTests(unittest.TestCase):
         asyncio.run(_test())
 
     def test_pro_search_returns_company_category_and_domain(self) -> None:
-        """Requirement 6: Pro search returns company category and domain, same as Pro endpoints."""
+        """Requirement 6: Pro search returns company category and domain, same as Pro endpoints, and never invents slug.com."""
         mock_pro_job = {
             "id": "22222222-3333-4444-5555-666666666666",
             "title": "Principal Architect",
@@ -641,7 +772,8 @@ class HighVolumeIngestionEngineTests(unittest.TestCase):
         resolved_domain = (
             mock_pro_job.get("canonical_domain") or
             mock_pro_job["companies"].get("canonical_domain") or
-            mock_pro_job["companies"].get("domain")
+            mock_pro_job["companies"].get("domain") or
+            None
         )
 
         formatted = {
@@ -658,6 +790,31 @@ class HighVolumeIngestionEngineTests(unittest.TestCase):
         self.assertEqual(formatted["company_domain"], "figma.com")
         self.assertEqual(formatted["canonical_domain"], "figma.com")
         self.assertEqual(formatted["domain"], "figma.com")
+
+        # Unknown domain must return null, NEVER an invented slug.com
+        mock_unknown_domain_job = {
+            "id": "33333333-4444-5555-6666-777777777777",
+            "title": "Backend Dev",
+            "company": "Stealth AI",
+            "company_slug": "stealth-ai",
+            "canonical_domain": None,
+            "companies": {
+                "name": "Stealth AI",
+                "category": "OTHER_STARTUPS",
+                "domain": None,
+                "canonical_domain": None,
+            },
+        }
+
+        resolved_unknown_domain = (
+            mock_unknown_domain_job.get("canonical_domain") or
+            mock_unknown_domain_job["companies"].get("canonical_domain") or
+            mock_unknown_domain_job["companies"].get("domain") or
+            None
+        )
+
+        self.assertIsNone(resolved_unknown_domain)
+        self.assertNotEqual(resolved_unknown_domain, "stealth-ai.com")
 
 
 if __name__ == "__main__":

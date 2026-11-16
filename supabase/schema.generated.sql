@@ -9867,6 +9867,78 @@ COMMIT;
 --   'INDIAN_IT_AND_OTHER') with role_category, top_keywords (top 8 technical
 --   skills), SHA-256 dedupe_hash, partial indexes on is_active = TRUE, and
 --   priority-based deduplication (Direct ATS priority = 1, Aggregators = 2).
+--
+-- ----------------------------------------------------------------------------
+-- PRE-CHECK SQL (Run in Supabase SQL Editor BEFORE applying migration):
+-- ----------------------------------------------------------------------------
+-- 1. Check existing tables and columns:
+--    SELECT table_name, column_name, data_type
+--    FROM information_schema.columns
+--    WHERE table_schema = 'public'
+--      AND table_name IN ('jobs', 'companies')
+--      AND column_name IN ('source_id', 'canonical_domain', 'logo_url', 'role_category', 'top_keywords', 'dedupe_hash', 'is_remote', 'source_priority')
+--    ORDER BY table_name, column_name;
+--
+-- 2. Check existing constraints on jobs and companies:
+--    SELECT conname, contype, pg_get_constraintdef(c.oid)
+--    FROM pg_constraint c
+--    JOIN pg_namespace n ON n.oid = c.connamespace
+--    WHERE n.nspname = 'public'
+--      AND conname IN ('jobs_source_type_check', 'jobs_role_category_check', 'jobs_source_priority_check', 'companies_category_check', 'jobs_source_type_source_job_id_key');
+--
+-- 3. Check for potential duplicate (source_id, source_job_id) if source_id already populated:
+--    SELECT source_id, source_job_id, count(*)
+--    FROM public.jobs
+--    WHERE source_id IS NOT NULL AND source_job_id IS NOT NULL
+--    GROUP BY source_id, source_job_id
+--    HAVING count(*) > 1;
+--
+-- 4. Check for active duplicate dedupe payloads before hash index build:
+--    SELECT lower(trim(company)), lower(trim(title)), lower(trim(COALESCE(country_code, country, 'any'))), count(*)
+--    FROM public.jobs
+--    WHERE is_active = TRUE
+--    GROUP BY 1, 2, 3
+--    HAVING count(*) > 1;
+--
+-- ----------------------------------------------------------------------------
+-- VERIFY SQL (Run in Supabase SQL Editor AFTER applying migration):
+-- ----------------------------------------------------------------------------
+-- 1. Verify all new columns exist on public.jobs and public.companies:
+--    SELECT table_name, column_name, data_type, is_nullable
+--    FROM information_schema.columns
+--    WHERE table_schema = 'public'
+--      AND (
+--        (table_name = 'jobs' AND column_name IN ('source_id', 'canonical_domain', 'logo_url', 'role_category', 'top_keywords', 'dedupe_hash', 'is_remote', 'source_priority'))
+--        OR (table_name = 'companies' AND column_name IN ('canonical_domain', 'category', 'logo_url'))
+--      )
+--    ORDER BY table_name, column_name;
+--
+-- 2. Verify partial unique indexes exist and are valid:
+--    SELECT indexname, indexdef
+--    FROM pg_indexes
+--    WHERE schemaname = 'public'
+--      AND indexname IN ('idx_jobs_source_id_source_job_id_uniq', 'idx_jobs_active_dedupe_hash_uniq', 'idx_companies_slug_uniq', 'idx_jobs_active_category', 'idx_jobs_active_role_category');
+--
+-- 3. Verify check constraints accept vendors and valid values:
+--    SELECT conname, pg_get_constraintdef(c.oid)
+--    FROM pg_constraint c
+--    JOIN pg_namespace n ON n.oid = c.connamespace
+--    WHERE n.nspname = 'public'
+--      AND conname IN ('jobs_source_type_check', 'jobs_role_category_check', 'jobs_source_priority_check', 'companies_category_check');
+--
+-- 4. Verify trigger trg_jobs_merge_dedupe_priority is active:
+--    SELECT tgname, tgenabled, relname
+--    FROM pg_trigger t
+--    JOIN pg_class c ON c.oid = t.tgrelid
+--    WHERE tgname = 'trg_jobs_merge_dedupe_priority';
+--
+-- 5. Verify backfills:
+--    SELECT
+--      (SELECT count(*) FROM public.jobs WHERE is_active = TRUE AND dedupe_hash IS NULL) AS unhashed_active_jobs,
+--      (SELECT count(*) FROM public.jobs WHERE source_priority IS NULL) AS unprioritized_jobs,
+--      (SELECT count(*) FROM public.jobs WHERE is_remote IS NULL) AS null_remote_jobs,
+--      (SELECT count(*) FROM public.companies WHERE canonical_domain IS NULL AND domain IS NOT NULL AND trim(domain) <> '') AS unmigrated_company_domains;
+--    -- Expected: all 4 counts should be 0.
 -- ============================================================================
 
 BEGIN;
@@ -10212,6 +10284,11 @@ COMMIT;
 
 -- ============================================================================
 -- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
+--   Note: This rollback removes all indexes, triggers, helper functions, check
+--   constraints, and new columns added by this migration. Data backfilled into
+--   pre-existing columns (e.g. remote, domain) is retained, while new metadata
+--   columns (source_id, canonical_domain, logo_url) and views are cleanly reset.
+--
 --   DROP TRIGGER IF EXISTS trg_jobs_merge_dedupe_priority ON public.jobs;
 --   DROP FUNCTION IF EXISTS public.merge_job_by_dedupe_priority();
 --   DROP FUNCTION IF EXISTS public.compute_job_dedupe_hash(text, text, text, text);

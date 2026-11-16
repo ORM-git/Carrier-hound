@@ -279,7 +279,7 @@ async function getHandler(req: Request) {
         jobRow.canonical_domain ||
         jobRow.companies?.canonical_domain ||
         jobRow.companies?.domain ||
-        (jobRow.company_slug ? `${jobRow.company_slug}.com` : null);
+        null;
 
       const formatted = {
         id: jobRow.id,
@@ -871,7 +871,7 @@ async function getHandler(req: Request) {
           row.canonical_domain ||
           row.companies?.canonical_domain ||
           row.companies?.domain ||
-          (row.company_slug ? `${row.company_slug}.com` : null);
+          null;
         return {
           id: row.id,
           title: row.title || "Untitled Position",

@@ -93,6 +93,9 @@ def compute_content_fingerprint(row: dict[str, Any]) -> str:
         str(row.get("salary_min") or ""),
         str(row.get("salary_max") or ""),
         str(row.get("salary_period") or "year").strip().lower(),
+        str(row.get("canonical_domain") or "").strip().lower(),
+        str(row.get("source_id") or "").strip(),
+        str(row.get("source_url") or "").strip(),
         str(int(row.get("source_priority") or 2)),
         ",".join(kws),
         ",".join(skills),
@@ -357,7 +360,7 @@ class SupabaseSetDiffWriter:
             if or_parts:
                 q_url = (
                     f"{self.base_url}/jobs"
-                    f"?select=id,company,company_id,title,location,country,country_code,currency,remote,is_remote,remote_scope,remote_eligibility,job_type,category,role_category,status,description,logo_url,apply_url,salary_text,salary_min,salary_max,salary_period,is_active,verified,source,source_id,source_type,source_job_id,source_priority,dedupe_hash,top_keywords,skills,canonical_domain"
+                    f"?select=id,company,company_id,title,location,country,country_code,currency,remote,is_remote,remote_scope,remote_eligibility,job_type,category,role_category,status,description,logo_url,apply_url,salary_text,salary_min,salary_max,salary_period,is_active,verified,source,source_id,source_type,source_job_id,source_url,source_priority,dedupe_hash,top_keywords,skills,canonical_domain"
                     f"&or=({','.join(or_parts)})"
                 )
                 try:
