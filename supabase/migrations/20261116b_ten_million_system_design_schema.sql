@@ -13,10 +13,19 @@
 --       job_source_records, company_aliases, search_outbox, category_overrides)
 --       STRICTLY isolated and hidden from PostgREST (anon/authenticated revoked)
 --   3.3 High-Scale Data Model (companies columns, jobs columns, dedicated
---       job_postings table, expanded job_descriptions table)
+--       job_postings table, job_postings_public view, expanded job_descriptions)
 --   3.4 High-Throughput Feed Indexes (B-tree, composite, partial, and GIN)
 --   3.5 User Accounting & Privacy Tables (saved_jobs, ai_generations,
 --       consent_logs, user_age_attestations) with strict Row Level Security (RLS)
+--
+-- Architectural Ownership & Coordination Note:
+--   PR #642 owns: scraper worker, 4-category classification endpoints, and
+--                 merge_job_by_dedupe_priority() trigger on public.jobs.
+--   PR #643 owns: internal_ingestion schema, dedicated public.job_postings table,
+--                 public.job_postings_public view, canonical (source_id, source_job_id)
+--                 identity, Section 3.1 enums, and user accounting/privacy tables.
+--   Both migrations are idempotent and guarded by IF NOT EXISTS, allowing safe
+--   application in either order (642 then 643, or 643 then 642).
 -- ============================================================================
 
 -- ============================================================================
@@ -252,10 +261,10 @@ REVOKE ALL ON ALL TABLES IN SCHEMA internal_ingestion FROM PUBLIC, anon, authent
 GRANT ALL ON ALL TABLES IN SCHEMA internal_ingestion TO service_role;
 
 -- ============================================================================
--- 3. SECTION 3.3: COMPANIES, JOB_POSTINGS & JOB_DESCRIPTIONS
+-- 3. SECTION 3.3: COMPANIES, JOBS, JOB_POSTINGS & JOB_DESCRIPTIONS
 -- ============================================================================
 
--- 3.1 PUBLIC.COMPANIES UPDATES
+-- 3.1 PUBLIC.COMPANIES UPDATES (Preserves existing data, adds without drop)
 CREATE TABLE IF NOT EXISTS public.companies (
   id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   name             text NOT NULL,
@@ -276,11 +285,19 @@ ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS twitter_url text;
 ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS is_verified boolean DEFAULT false;
 ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now();
 
-ALTER TABLE public.companies DROP CONSTRAINT IF EXISTS companies_category_check;
-ALTER TABLE public.companies
-  ADD CONSTRAINT companies_category_check
-  CHECK (category IS NULL OR category IN ('MNC_BIGTECH', 'HIGH_PRODUCT_YC', 'OTHER_STARTUPS', 'INDIAN_IT_AND_OTHER'))
-  NOT VALID;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'companies_category_check'
+      AND conrelid = 'public.companies'::regclass
+  ) THEN
+    ALTER TABLE public.companies
+      ADD CONSTRAINT companies_category_check
+      CHECK (category IS NULL OR category IN ('MNC_BIGTECH', 'HIGH_PRODUCT_YC', 'OTHER_STARTUPS', 'INDIAN_IT_AND_OTHER'))
+      NOT VALID;
+  END IF;
+END $$;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_companies_slug_uniq
   ON public.companies (slug);
@@ -293,11 +310,19 @@ CREATE INDEX IF NOT EXISTS idx_companies_canonical_domain
   ON public.companies (canonical_domain)
   WHERE canonical_domain IS NOT NULL;
 
--- 3.2 PUBLIC.JOBS EXPANSION (Additive, preserves existing production rows)
-ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS category text;
+-- 3.2 PUBLIC.JOBS EXPANSION
+-- NOTE ON JOBS.CATEGORY:
+-- Existing public.jobs.category holds job functional disciplines (e.g. 'engineering', 'ai', 'data').
+-- We strictly DO NOT attach company bucket check constraints to jobs.category to prevent breaking
+-- existing production data or application routes. Company buckets are placed on companies.category
+-- and job_postings.company_category (or jobs.company_category).
 ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS role_category text;
+ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS company_category text;
 ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS top_keywords text[] DEFAULT '{}'::text[];
+ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS country text;
+ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS country_code text;
 ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS source_type text;
+ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS source_id uuid REFERENCES internal_ingestion.ingestion_sources(id) ON DELETE SET NULL;
 ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS source_job_id text;
 ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS dedupe_hash text;
 ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS is_remote boolean DEFAULT false;
@@ -317,33 +342,53 @@ ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS salary_period text;
 ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS expires_at timestamptz;
 ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS logo_url text;
 
-ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_role_category_check;
-ALTER TABLE public.jobs
-  ADD CONSTRAINT jobs_role_category_check
-  CHECK (role_category IS NULL OR role_category IN ('SDE', 'AI_ML', 'CLOUD', 'DATA', 'OTHER'))
-  NOT VALID;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'jobs_role_category_check'
+      AND conrelid = 'public.jobs'::regclass
+  ) THEN
+    ALTER TABLE public.jobs
+      ADD CONSTRAINT jobs_role_category_check
+      CHECK (role_category IS NULL OR role_category IN ('SDE', 'AI_ML', 'CLOUD', 'DATA', 'OTHER'))
+      NOT VALID;
+  END IF;
 
-ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_category_check;
-ALTER TABLE public.jobs
-  ADD CONSTRAINT jobs_category_check
-  CHECK (category IS NULL OR category IN ('MNC_BIGTECH', 'HIGH_PRODUCT_YC', 'OTHER_STARTUPS', 'INDIAN_IT_AND_OTHER'))
-  NOT VALID;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'jobs_company_category_check'
+      AND conrelid = 'public.jobs'::regclass
+  ) THEN
+    ALTER TABLE public.jobs
+      ADD CONSTRAINT jobs_company_category_check
+      CHECK (company_category IS NULL OR company_category IN ('MNC_BIGTECH', 'HIGH_PRODUCT_YC', 'OTHER_STARTUPS', 'INDIAN_IT_AND_OTHER'))
+      NOT VALID;
+  END IF;
 
-ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_source_priority_check;
-ALTER TABLE public.jobs
-  ADD CONSTRAINT jobs_source_priority_check
-  CHECK (source_priority IS NULL OR source_priority IN (1, 2))
-  NOT VALID;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'jobs_source_priority_check'
+      AND conrelid = 'public.jobs'::regclass
+  ) THEN
+    ALTER TABLE public.jobs
+      ADD CONSTRAINT jobs_source_priority_check
+      CHECK (source_priority IS NULL OR source_priority IN (1, 2))
+      NOT VALID;
+  END IF;
+END $$;
 
 -- 3.3 HIGH-VOLUME DEDICATED JOB_POSTINGS TABLE
 CREATE TABLE IF NOT EXISTS public.job_postings (
   id                    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  source_id             uuid REFERENCES internal_ingestion.ingestion_sources(id) ON DELETE SET NULL,
   company_id            uuid REFERENCES public.companies(id) ON DELETE CASCADE,
   legacy_job_id         uuid REFERENCES public.jobs(id) ON DELETE SET NULL,
   title                 text NOT NULL,
   company_name          text NOT NULL,
   company_slug          text,
   role_category         text,
+  company_category      text,
   category              text,
   top_keywords          text[] DEFAULT '{}'::text[],
   location              text,
@@ -376,20 +421,34 @@ CREATE TABLE IF NOT EXISTS public.job_postings (
   posted_at             timestamptz DEFAULT now() NOT NULL,
   expires_at            timestamptz,
   created_at            timestamptz DEFAULT now() NOT NULL,
-  updated_at            timestamptz DEFAULT now() NOT NULL
+  updated_at            timestamptz DEFAULT now() NOT NULL,
+  deleted_at            timestamptz
 );
 
-ALTER TABLE public.job_postings DROP CONSTRAINT IF EXISTS job_postings_role_category_check;
-ALTER TABLE public.job_postings
-  ADD CONSTRAINT job_postings_role_category_check
-  CHECK (role_category IS NULL OR role_category IN ('SDE', 'AI_ML', 'CLOUD', 'DATA', 'OTHER'))
-  NOT VALID;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'job_postings_role_category_check'
+      AND conrelid = 'public.job_postings'::regclass
+  ) THEN
+    ALTER TABLE public.job_postings
+      ADD CONSTRAINT job_postings_role_category_check
+      CHECK (role_category IS NULL OR role_category IN ('SDE', 'AI_ML', 'CLOUD', 'DATA', 'OTHER'))
+      NOT VALID;
+  END IF;
 
-ALTER TABLE public.job_postings DROP CONSTRAINT IF EXISTS job_postings_category_check;
-ALTER TABLE public.job_postings
-  ADD CONSTRAINT job_postings_category_check
-  CHECK (category IS NULL OR category IN ('MNC_BIGTECH', 'HIGH_PRODUCT_YC', 'OTHER_STARTUPS', 'INDIAN_IT_AND_OTHER'))
-  NOT VALID;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'job_postings_company_category_check'
+      AND conrelid = 'public.job_postings'::regclass
+  ) THEN
+    ALTER TABLE public.job_postings
+      ADD CONSTRAINT job_postings_company_category_check
+      CHECK (company_category IS NULL OR company_category IN ('MNC_BIGTECH', 'HIGH_PRODUCT_YC', 'OTHER_STARTUPS', 'INDIAN_IT_AND_OTHER'))
+      NOT VALID;
+  END IF;
+END $$;
 
 -- 3.4 JOB DESCRIPTIONS EXPANSION
 CREATE TABLE IF NOT EXISTS public.job_descriptions (
@@ -413,7 +472,7 @@ CREATE INDEX IF NOT EXISTS idx_job_descriptions_posting_id
   WHERE posting_id IS NOT NULL;
 
 -- ============================================================================
--- 4. SECTION 3.4: HIGH-THROUGHPUT FEED INDEXES
+-- 4. SECTION 3.4: HIGH-THROUGHPUT FEED INDEXES & SAFE UNIQUE KEYS
 -- ============================================================================
 
 -- Feed partial indexes on public.jobs
@@ -453,13 +512,28 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_active_dedupe_hash_uniq
   ON public.jobs (dedupe_hash)
   WHERE is_active = TRUE AND dedupe_hash IS NOT NULL;
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_source_type_source_job_id_uniq
-  ON public.jobs (source_type, source_job_id)
-  WHERE source_type IS NOT NULL AND source_job_id IS NOT NULL;
+-- ----------------------------------------------------------------------------
+-- CROSS-VENDOR UNIQUE CONSTRAINT SAFEGUARD (jobs table)
+-- Why (source_id, source_job_id) instead of (source_type, source_job_id):
+-- source_type is a generic category (e.g. 'ats', 'direct', 'aggregator').
+-- Multiple distinct ATS vendors (Greenhouse, Lever, Ashby) and company boards share
+-- the same source_type and generate overlapping short IDs (e.g. job ID '101'
+-- exists simultaneously on multiple distinct company boards).
+-- Enforcing UNIQUE (source_type, source_job_id) would drop legitimate distinct jobs.
+-- Scoping uniqueness to (source_id, source_job_id) and vendor key (source, source_job_id)
+-- guarantees uniqueness per ingestion source / vendor board without cross-vendor collision.
+-- ----------------------------------------------------------------------------
+CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_source_id_source_job_id_uniq
+  ON public.jobs (source_id, source_job_id)
+  WHERE source_id IS NOT NULL AND source_job_id IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_source_vendor_source_job_id_uniq
+  ON public.jobs (source, source_job_id)
+  WHERE source IS NOT NULL AND source_job_id IS NOT NULL;
 
 -- Feed indexes on dedicated public.job_postings
 CREATE INDEX IF NOT EXISTS idx_job_postings_active_feed
-  ON public.job_postings (role_category, category, posted_at DESC)
+  ON public.job_postings (role_category, company_category, posted_at DESC)
   WHERE is_active = TRUE;
 
 CREATE INDEX IF NOT EXISTS idx_job_postings_active_country
@@ -473,6 +547,11 @@ CREATE INDEX IF NOT EXISTS idx_job_postings_active_company
 CREATE UNIQUE INDEX IF NOT EXISTS idx_job_postings_active_dedupe_hash_uniq
   ON public.job_postings (dedupe_hash)
   WHERE is_active = TRUE AND dedupe_hash IS NOT NULL;
+
+-- Cross-vendor unique index on job_postings:
+CREATE UNIQUE INDEX IF NOT EXISTS idx_job_postings_source_id_external_id_uniq
+  ON public.job_postings (source_id, external_id)
+  WHERE source_id IS NOT NULL AND external_id IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_job_postings_top_keywords_gin
   ON public.job_postings USING gin (top_keywords)
@@ -517,7 +596,10 @@ CREATE TABLE IF NOT EXISTS public.ai_generations (
   status             text DEFAULT 'completed' NOT NULL,
   error_message      text,
   metadata           jsonb DEFAULT '{}'::jsonb NOT NULL,
-  created_at         timestamptz DEFAULT now() NOT NULL
+  created_at         timestamptz DEFAULT now() NOT NULL,
+  deleted_at         timestamptz,
+  CONSTRAINT ai_generations_tokens_non_negative
+    CHECK (prompt_tokens >= 0 AND completion_tokens >= 0 AND total_tokens >= 0)
 );
 
 CREATE INDEX IF NOT EXISTS idx_ai_generations_user_created
@@ -537,7 +619,8 @@ CREATE TABLE IF NOT EXISTS public.consent_logs (
   ip_address      text,
   user_agent      text,
   metadata        jsonb DEFAULT '{}'::jsonb NOT NULL,
-  created_at      timestamptz DEFAULT now() NOT NULL
+  created_at      timestamptz DEFAULT now() NOT NULL,
+  deleted_at      timestamptz
 );
 
 CREATE INDEX IF NOT EXISTS idx_consent_logs_user_id
@@ -559,6 +642,7 @@ CREATE TABLE IF NOT EXISTS public.user_age_attestations (
   ip_address             text,
   user_agent             text,
   attested_at            timestamptz DEFAULT now() NOT NULL,
+  deleted_at             timestamptz,
   CONSTRAINT user_age_attestations_user_id_key UNIQUE (user_id)
 );
 
@@ -566,7 +650,7 @@ CREATE INDEX IF NOT EXISTS idx_user_age_attestations_user_id
   ON public.user_age_attestations (user_id);
 
 -- ----------------------------------------------------------------------------
--- 5.5 ROW LEVEL SECURITY (RLS) POLICIES & PERMISSIONS
+-- 5.5 ROW LEVEL SECURITY (RLS) POLICIES & PERMISSIONS (SAFE ADDITIVE ORDER)
 -- ----------------------------------------------------------------------------
 
 -- A. public.saved_jobs RLS
@@ -576,80 +660,143 @@ REVOKE ALL ON TABLE public.saved_jobs FROM anon;
 GRANT ALL ON TABLE public.saved_jobs TO service_role;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.saved_jobs TO authenticated;
 
-DROP POLICY IF EXISTS "Users can manage own saved_jobs" ON public.saved_jobs;
-CREATE POLICY "Users can manage own saved_jobs"
-  ON public.saved_jobs
-  FOR ALL
-  TO authenticated
-  USING (auth.uid() = user_id)
-  WITH CHECK (auth.uid() = user_id);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'saved_jobs'
+      AND policyname = 'Users can manage own saved_jobs'
+  ) THEN
+    CREATE POLICY "Users can manage own saved_jobs"
+      ON public.saved_jobs
+      FOR ALL
+      TO authenticated
+      USING (auth.uid() = user_id)
+      WITH CHECK (auth.uid() = user_id);
+  END IF;
 
-DROP POLICY IF EXISTS "service_role_saved_jobs_all" ON public.saved_jobs;
-CREATE POLICY "service_role_saved_jobs_all"
-  ON public.saved_jobs
-  FOR ALL
-  TO service_role
-  USING (true)
-  WITH CHECK (true);
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'saved_jobs'
+      AND policyname = 'service_role_saved_jobs_all'
+  ) THEN
+    CREATE POLICY "service_role_saved_jobs_all"
+      ON public.saved_jobs
+      FOR ALL
+      TO service_role
+      USING (true)
+      WITH CHECK (true);
+  END IF;
+END $$;
 
--- B. public.ai_generations RLS
+-- B. public.ai_generations RLS & SECURITY NOTE:
+-- Client writes are strictly REVOKED. Quota, rate-limiting, and billing must NEVER trust
+-- client-written rows. AI generation accounting records must be written exclusively by trusted
+-- server-side execution paths using service_role. Authenticated users may read their own history.
 ALTER TABLE public.ai_generations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ai_generations FORCE ROW LEVEL SECURITY;
-REVOKE ALL ON TABLE public.ai_generations FROM anon;
+REVOKE ALL ON TABLE public.ai_generations FROM PUBLIC, anon, authenticated;
 GRANT ALL ON TABLE public.ai_generations TO service_role;
-GRANT SELECT, INSERT ON TABLE public.ai_generations TO authenticated;
+GRANT SELECT ON TABLE public.ai_generations TO authenticated;
 
-DROP POLICY IF EXISTS "Users can view own ai_generations" ON public.ai_generations;
-CREATE POLICY "Users can view own ai_generations"
-  ON public.ai_generations
-  FOR SELECT
-  TO authenticated
-  USING (auth.uid() = user_id);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'ai_generations'
+      AND policyname = 'Users can view own ai_generations'
+  ) THEN
+    CREATE POLICY "Users can view own ai_generations"
+      ON public.ai_generations
+      FOR SELECT
+      TO authenticated
+      USING (auth.uid() = user_id);
+  END IF;
 
-DROP POLICY IF EXISTS "Users can insert own ai_generations" ON public.ai_generations;
-CREATE POLICY "Users can insert own ai_generations"
-  ON public.ai_generations
-  FOR INSERT
-  TO authenticated
-  WITH CHECK (auth.uid() = user_id);
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'ai_generations'
+      AND policyname = 'service_role_ai_generations_all'
+  ) THEN
+    CREATE POLICY "service_role_ai_generations_all"
+      ON public.ai_generations
+      FOR ALL
+      TO service_role
+      USING (true)
+      WITH CHECK (true);
+  END IF;
+END $$;
 
-DROP POLICY IF EXISTS "service_role_ai_generations_all" ON public.ai_generations;
-CREATE POLICY "service_role_ai_generations_all"
-  ON public.ai_generations
-  FOR ALL
-  TO service_role
-  USING (true)
-  WITH CHECK (true);
-
--- C. public.consent_logs RLS
+-- C. public.consent_logs RLS & GUEST IDENTITY PROTECTION
+-- Anonymous guests may ONLY insert consent records where user_id IS NULL.
+-- Authenticated users may ONLY insert consent records for their own auth.uid().
+-- This guarantees anonymous callers cannot forge consent entries for real user IDs.
 ALTER TABLE public.consent_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.consent_logs FORCE ROW LEVEL SECURITY;
-REVOKE ALL ON TABLE public.consent_logs FROM anon;
+REVOKE ALL ON TABLE public.consent_logs FROM PUBLIC, anon;
 GRANT ALL ON TABLE public.consent_logs TO service_role;
 GRANT SELECT, INSERT ON TABLE public.consent_logs TO authenticated;
 GRANT INSERT ON TABLE public.consent_logs TO anon;
 
-DROP POLICY IF EXISTS "Users can view own consent_logs" ON public.consent_logs;
-CREATE POLICY "Users can view own consent_logs"
-  ON public.consent_logs
-  FOR SELECT
-  TO authenticated
-  USING (auth.uid() = user_id);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'consent_logs'
+      AND policyname = 'Users can view own consent_logs'
+  ) THEN
+    CREATE POLICY "Users can view own consent_logs"
+      ON public.consent_logs
+      FOR SELECT
+      TO authenticated
+      USING (auth.uid() = user_id);
+  END IF;
 
-DROP POLICY IF EXISTS "Users and guests can insert consent_logs" ON public.consent_logs;
-CREATE POLICY "Users and guests can insert consent_logs"
-  ON public.consent_logs
-  FOR INSERT
-  TO anon, authenticated
-  WITH CHECK (auth.uid() IS NULL OR auth.uid() = user_id);
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'consent_logs'
+      AND policyname = 'Guests can insert consent_logs'
+  ) THEN
+    CREATE POLICY "Guests can insert consent_logs"
+      ON public.consent_logs
+      FOR INSERT
+      TO anon
+      WITH CHECK (user_id IS NULL);
+  END IF;
 
-DROP POLICY IF EXISTS "service_role_consent_logs_all" ON public.consent_logs;
-CREATE POLICY "service_role_consent_logs_all"
-  ON public.consent_logs
-  FOR ALL
-  TO service_role
-  USING (true)
-  WITH CHECK (true);
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'consent_logs'
+      AND policyname = 'Users can insert own consent_logs'
+  ) THEN
+    CREATE POLICY "Users can insert own consent_logs"
+      ON public.consent_logs
+      FOR INSERT
+      TO authenticated
+      WITH CHECK (auth.uid() = user_id);
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'consent_logs'
+      AND policyname = 'service_role_consent_logs_all'
+  ) THEN
+    CREATE POLICY "service_role_consent_logs_all"
+      ON public.consent_logs
+      FOR ALL
+      TO service_role
+      USING (true)
+      WITH CHECK (true);
+  END IF;
+END $$;
 
 -- D. public.user_age_attestations RLS
 ALTER TABLE public.user_age_attestations ENABLE ROW LEVEL SECURITY;
@@ -658,47 +805,124 @@ REVOKE ALL ON TABLE public.user_age_attestations FROM anon;
 GRANT ALL ON TABLE public.user_age_attestations TO service_role;
 GRANT SELECT, INSERT ON TABLE public.user_age_attestations TO authenticated;
 
-DROP POLICY IF EXISTS "Users can view own user_age_attestations" ON public.user_age_attestations;
-CREATE POLICY "Users can view own user_age_attestations"
-  ON public.user_age_attestations
-  FOR SELECT
-  TO authenticated
-  USING (auth.uid() = user_id);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'user_age_attestations'
+      AND policyname = 'Users can view own user_age_attestations'
+  ) THEN
+    CREATE POLICY "Users can view own user_age_attestations"
+      ON public.user_age_attestations
+      FOR SELECT
+      TO authenticated
+      USING (auth.uid() = user_id);
+  END IF;
 
-DROP POLICY IF EXISTS "Users can insert own user_age_attestations" ON public.user_age_attestations;
-CREATE POLICY "Users can insert own user_age_attestations"
-  ON public.user_age_attestations
-  FOR INSERT
-  TO authenticated
-  WITH CHECK (auth.uid() = user_id);
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'user_age_attestations'
+      AND policyname = 'Users can insert own user_age_attestations'
+  ) THEN
+    CREATE POLICY "Users can insert own user_age_attestations"
+      ON public.user_age_attestations
+      FOR INSERT
+      TO authenticated
+      WITH CHECK (auth.uid() = user_id);
+  END IF;
 
-DROP POLICY IF EXISTS "service_role_user_age_attestations_all" ON public.user_age_attestations;
-CREATE POLICY "service_role_user_age_attestations_all"
-  ON public.user_age_attestations
-  FOR ALL
-  TO service_role
-  USING (true)
-  WITH CHECK (true);
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'user_age_attestations'
+      AND policyname = 'service_role_user_age_attestations_all'
+  ) THEN
+    CREATE POLICY "service_role_user_age_attestations_all"
+      ON public.user_age_attestations
+      FOR ALL
+      TO service_role
+      USING (true)
+      WITH CHECK (true);
+  END IF;
+END $$;
 
--- E. public.job_postings RLS (Public active search feed reads)
+-- E. public.job_postings RLS & PAID-FIELD BOUNDARY ENFORCEMENT
+-- The raw table public.job_postings holds sensitive paid fields (company_name, salary_min,
+-- salary_max, direct_apply_url, raw_payload).
+-- Direct SELECT on the raw table is strictly REVOKED from anon and authenticated.
+-- Only service_role can select from or write to public.job_postings directly.
 ALTER TABLE public.job_postings ENABLE ROW LEVEL SECURITY;
-GRANT SELECT ON TABLE public.job_postings TO anon, authenticated, service_role;
+ALTER TABLE public.job_postings FORCE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.job_postings FROM PUBLIC, anon, authenticated;
 GRANT ALL ON TABLE public.job_postings TO service_role;
 
-DROP POLICY IF EXISTS "Public can view active job_postings" ON public.job_postings;
-CREATE POLICY "Public can view active job_postings"
-  ON public.job_postings
-  FOR SELECT
-  TO anon, authenticated
-  USING (is_active = true AND status = 'active');
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'job_postings'
+      AND policyname = 'service_role_job_postings_all'
+  ) THEN
+    CREATE POLICY "service_role_job_postings_all"
+      ON public.job_postings
+      FOR ALL
+      TO service_role
+      USING (true)
+      WITH CHECK (true);
+  END IF;
+END $$;
 
-DROP POLICY IF EXISTS "service_role_job_postings_all" ON public.job_postings;
-CREATE POLICY "service_role_job_postings_all"
-  ON public.job_postings
-  FOR ALL
-  TO service_role
-  USING (true)
-  WITH CHECK (true);
+-- 5.6 PUBLIC SAFE FEED VIEW (job_postings_public)
+-- Masks company_name, salary, direct_apply_url and raw_payload for anon/auth callers,
+-- perfectly maintaining the paid-field boundary established in 20261010_lock_paid_jobs_data.sql.
+CREATE OR REPLACE VIEW public.job_postings_public AS
+SELECT
+  id,
+  company_id,
+  legacy_job_id,
+  source_id,
+  title,
+  role_category,
+  company_category,
+  category,
+  top_keywords,
+  location,
+  country,
+  country_code,
+  city,
+  is_remote,
+  workplace_type,
+  employment_type,
+  seniority,
+  min_experience_years,
+  max_experience_years,
+  status,
+  is_active,
+  verified,
+  first_seen_at,
+  last_seen_at,
+  posted_at,
+  created_at,
+  updated_at,
+  -- Locked paid fields: Never served to anonymous or free users
+  'Verified Employer'::text AS company_name,
+  NULL::text AS company_slug,
+  NULL::numeric(12, 2) AS salary_min,
+  NULL::numeric(12, 2) AS salary_max,
+  NULL::text AS salary_currency,
+  NULL::text AS salary_period,
+  NULL::text AS salary_text,
+  NULL::text AS direct_apply_url,
+  NULL::text AS source_url,
+  NULL::jsonb AS raw_payload
+FROM public.job_postings
+WHERE is_active = TRUE OR status = 'active';
+
+REVOKE ALL ON public.job_postings_public FROM PUBLIC;
+GRANT SELECT ON public.job_postings_public TO anon, authenticated, service_role;
 
 COMMIT;
 
@@ -710,6 +934,12 @@ COMMIT;
 -- UNION ALL
 -- SELECT 'internal_ingestion PostgREST isolation (0 anon/authenticated grants)',
 --        CASE WHEN (SELECT count(*) FROM information_schema.table_privileges WHERE table_schema = 'internal_ingestion' AND grantee IN ('anon', 'authenticated')) = 0 THEN 'VERIFIED (ISOLATED)' ELSE 'FAILED (LEAKED)' END
+-- UNION ALL
+-- SELECT 'public.job_postings raw table locked from anon/authenticated',
+--        CASE WHEN (SELECT count(*) FROM information_schema.table_privileges WHERE table_schema = 'public' AND table_name = 'job_postings' AND grantee IN ('anon', 'authenticated')) = 0 THEN 'VERIFIED (LOCKED)' ELSE 'FAILED (OPEN)' END
+-- UNION ALL
+-- SELECT 'public.job_postings_public view exists',
+--        CASE WHEN to_regclass('public.job_postings_public') IS NOT NULL THEN 'VERIFIED' ELSE 'FAILED' END
 -- UNION ALL
 -- SELECT 'internal_ingestion.ingestion_sources', CASE WHEN to_regclass('internal_ingestion.ingestion_sources') IS NOT NULL THEN 'VERIFIED' ELSE 'FAILED' END
 -- UNION ALL
@@ -738,33 +968,24 @@ COMMIT;
 
 -- ============================================================================
 -- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
+--   -- 1. DROP VIEW & NEW TABLES (No CASCADE on shared production tables!)
+--   DROP VIEW IF EXISTS public.job_postings_public;
 --   DROP POLICY IF EXISTS "service_role_job_postings_all" ON public.job_postings;
---   DROP POLICY IF EXISTS "Public can view active job_postings" ON public.job_postings;
---   DROP POLICY IF EXISTS "service_role_user_age_attestations_all" ON public.user_age_attestations;
---   DROP POLICY IF EXISTS "Users can insert own user_age_attestations" ON public.user_age_attestations;
---   DROP POLICY IF EXISTS "Users can view own user_age_attestations" ON public.user_age_attestations;
---   DROP POLICY IF EXISTS "service_role_consent_logs_all" ON public.consent_logs;
---   DROP POLICY IF EXISTS "Users and guests can insert consent_logs" ON public.consent_logs;
---   DROP POLICY IF EXISTS "Users can view own consent_logs" ON public.consent_logs;
---   DROP POLICY IF EXISTS "service_role_ai_generations_all" ON public.ai_generations;
---   DROP POLICY IF EXISTS "Users can insert own ai_generations" ON public.ai_generations;
---   DROP POLICY IF EXISTS "Users can view own ai_generations" ON public.ai_generations;
---   DROP POLICY IF EXISTS "service_role_saved_jobs_all" ON public.saved_jobs;
---   DROP POLICY IF EXISTS "Users can manage own saved_jobs" ON public.saved_jobs;
---   DROP TABLE IF EXISTS public.user_age_attestations CASCADE;
---   DROP TABLE IF EXISTS public.consent_logs CASCADE;
---   DROP TABLE IF EXISTS public.ai_generations CASCADE;
---   -- NOTE: public.saved_jobs, public.companies, public.jobs, and public.job_descriptions
---   -- are pre-existing production tables. Only added columns and policies are affected:
+--   DROP TABLE IF EXISTS public.user_age_attestations;
+--   DROP TABLE IF EXISTS public.consent_logs;
+--   DROP TABLE IF EXISTS public.ai_generations;
+--   DROP TABLE IF EXISTS public.job_postings;
+--
+--   -- 2. REVERT ADDED COLUMNS & INDEXES ON SHARED PRE-EXISTING TABLES
+--   -- (public.saved_jobs, public.companies, public.jobs, and public.job_descriptions)
 --   ALTER TABLE public.saved_jobs DROP COLUMN IF EXISTS job_posting_id;
 --   ALTER TABLE public.saved_jobs DROP COLUMN IF EXISTS notes;
---   DROP INDEX IF EXISTS public.idx_job_postings_top_keywords_gin;
---   DROP INDEX IF EXISTS public.idx_job_postings_active_dedupe_hash_uniq;
---   DROP INDEX IF EXISTS public.idx_job_postings_active_company;
---   DROP INDEX IF EXISTS public.idx_job_postings_active_country;
---   DROP INDEX IF EXISTS public.idx_job_postings_active_feed;
---   DROP TABLE IF EXISTS public.job_postings CASCADE;
---   DROP INDEX IF EXISTS public.idx_jobs_source_type_source_job_id_uniq;
+--   DROP INDEX IF EXISTS public.idx_saved_jobs_job_posting_id;
+--   DROP INDEX IF EXISTS public.idx_job_descriptions_posting_id;
+--   ALTER TABLE public.job_descriptions DROP COLUMN IF EXISTS posting_id;
+--
+--   DROP INDEX IF EXISTS public.idx_jobs_source_vendor_source_job_id_uniq;
+--   DROP INDEX IF EXISTS public.idx_jobs_source_id_source_job_id_uniq;
 --   DROP INDEX IF EXISTS public.idx_jobs_active_dedupe_hash_uniq;
 --   DROP INDEX IF EXISTS public.idx_jobs_top_keywords_gin;
 --   DROP INDEX IF EXISTS public.idx_jobs_active_is_remote;
@@ -775,18 +996,30 @@ COMMIT;
 --   DROP INDEX IF EXISTS public.idx_jobs_active_role_category;
 --   DROP INDEX IF EXISTS public.idx_jobs_active_category;
 --   ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_source_priority_check;
---   ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_category_check;
+--   ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_company_category_check;
 --   ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_role_category_check;
+--   ALTER TABLE public.jobs DROP COLUMN IF EXISTS source_id;
+--   ALTER TABLE public.jobs DROP COLUMN IF EXISTS company_category;
+--
 --   ALTER TABLE public.companies DROP CONSTRAINT IF EXISTS companies_category_check;
 --   DROP INDEX IF EXISTS public.idx_companies_canonical_domain;
 --   DROP INDEX IF EXISTS public.idx_companies_category;
 --   DROP INDEX IF EXISTS public.idx_companies_slug_uniq;
---   DROP SCHEMA IF EXISTS internal_ingestion CASCADE;
---   DROP TYPE IF EXISTS user_consent_type CASCADE;
---   DROP TYPE IF EXISTS search_outbox_status CASCADE;
---   DROP TYPE IF EXISTS company_category_type CASCADE;
---   DROP TYPE IF EXISTS role_category_type CASCADE;
---   DROP TYPE IF EXISTS job_posting_status CASCADE;
---   DROP TYPE IF EXISTS ingestion_status CASCADE;
---   DROP TYPE IF EXISTS ingestion_source_type CASCADE;
+--
+--   -- 3. DROP INTERNAL INGESTION SCHEMA & TABLES
+--   DROP TABLE IF EXISTS internal_ingestion.category_overrides;
+--   DROP TABLE IF EXISTS internal_ingestion.search_outbox;
+--   DROP TABLE IF EXISTS internal_ingestion.company_aliases;
+--   DROP TABLE IF EXISTS internal_ingestion.job_source_records;
+--   DROP TABLE IF EXISTS internal_ingestion.ingestion_sources;
+--   DROP SCHEMA IF EXISTS internal_ingestion;
+--
+--   -- 4. DROP SECTION 3.1 ENUMS
+--   DROP TYPE IF EXISTS public.user_consent_type;
+--   DROP TYPE IF EXISTS public.search_outbox_status;
+--   DROP TYPE IF EXISTS public.company_category_type;
+--   DROP TYPE IF EXISTS public.role_category_type;
+--   DROP TYPE IF EXISTS public.job_posting_status;
+--   DROP TYPE IF EXISTS public.ingestion_status;
+--   DROP TYPE IF EXISTS public.ingestion_source_type;
 -- ============================================================================

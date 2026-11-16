@@ -65,7 +65,7 @@ Cross-references: `docs/retention-policy.md` (per-table retention classes),
 | Object | Contents |
 | --- | --- |
 | `jobs` / `jobs_public` view | Job listings. The view masks paid fields (company, salary, description, apply URL) for free users. |
-| `job_postings` | Dedicated high-volume job postings table for 10M scale (Document 1, Section 3.3). Active public search feed read-only, service-role write (20261116b, NOT APPLIED). |
+| `job_postings` / `job_postings_public` view | Dedicated high-volume job postings table for 10M scale (Document 1, Section 3.3). Raw table restricted to service_role; public view masks paid fields (company_name, salary, apply URL) for free users (20261116b, NOT APPLIED). |
 | `job_descriptions` | Full job description text. |
 | `search_alert_dispatches` | Sent-log of (alert id, job id) pairs for search alerts (20261107b, not applied). Ids only, no email or personal text. Service-role only; no client access. |
 | `search_alert_windows` | One row per alert with send-window timestamps (20261107f, not applied). Alert id and timestamps only, no email or personal text. Service-role only; no client access. |
