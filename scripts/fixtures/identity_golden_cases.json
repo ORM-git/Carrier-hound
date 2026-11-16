@@ -1,0 +1,375 @@
+{
+  "version": "v2",
+  "contract": "length_framed_utf8_sha256",
+  "description": "Language-neutral golden test vectors for job identity and similarity hashing",
+  "cases": [
+    {
+      "id": "case_01_paypay_japanese_roles",
+      "name": "PayPay Unrelated Japanese Roles",
+      "description": "Preserves Japanese characters so unrelated roles do not collide and expire rows",
+      "items": [
+        {
+          "label": "Product Manager",
+          "input": {
+            "company": "PayPay Inc.",
+            "title": "プロダクトマネージャー",
+            "country": "JP",
+            "location": "東京都, 日本"
+          },
+          "expected_payload": "v2|c:6:paypay|t:33:プロダクトマネージャー|co:2:jp|loc:9:東京都",
+          "expected_hash": "47a1e880aad0f529ae7f12a56e1ffe02b2b4b3679bc4ee43fde06b126f3c0cfe"
+        },
+        {
+          "label": "Backend Engineer",
+          "input": {
+            "company": "PayPay Inc.",
+            "title": "バックエンドエンジニア",
+            "country": "JP",
+            "location": "東京都, 日本"
+          },
+          "expected_payload": "v2|c:6:paypay|t:33:バックエンドエンジニア|co:2:jp|loc:9:東京都",
+          "expected_hash": "378c114d9186654e22a7140e7202f81f01bd2c0e44ffc280c87d96c9a9c6de6b"
+        }
+      ],
+      "expected_outcome": "distinct_hashes"
+    },
+    {
+      "id": "case_02_new_relic_japanese_territories",
+      "name": "New Relic Japanese Sales Territories",
+      "description": "Preserves Japanese location distinctions across territories",
+      "items": [
+        {
+          "label": "Tokyo Territory",
+          "input": {
+            "company": "New Relic",
+            "title": "Enterprise Account Executive",
+            "country": "JP",
+            "location": "東京"
+          },
+          "expected_payload": "v2|c:9:new relic|t:28:enterprise account executive|co:2:jp|loc:6:東京",
+          "expected_hash": "f6e50cb0d5af0056f7e012ff5d6c053187fedf34e289ea7584e7a3e5a671416c"
+        },
+        {
+          "label": "Osaka Territory",
+          "input": {
+            "company": "New Relic",
+            "title": "Enterprise Account Executive",
+            "country": "JP",
+            "location": "大阪"
+          },
+          "expected_payload": "v2|c:9:new relic|t:28:enterprise account executive|co:2:jp|loc:6:大阪",
+          "expected_hash": "f2a0a09ac852c94c0ae1e96ef5482c859acf77d4db1b6d93e0db3193b3e43da3"
+        }
+      ],
+      "expected_outcome": "distinct_hashes"
+    },
+    {
+      "id": "case_03_clickhouse_support_consulting_tam",
+      "name": "ClickHouse Support vs Consulting vs TAM",
+      "description": "Distinguishes between similar client-facing technical roles",
+      "items": [
+        {
+          "label": "Support Engineer",
+          "input": {
+            "company": "ClickHouse",
+            "title": "Support Engineer",
+            "country": "US",
+            "location": "Remote"
+          },
+          "expected_payload": "v2|c:10:clickhouse|t:16:support engineer|co:2:us|loc:6:remote",
+          "expected_hash": "8ce9815c877c2fbd7cc2dacab7156ad699c036486ca7c6d9456ed4b1cbce1e07"
+        },
+        {
+          "label": "Consulting Engineer",
+          "input": {
+            "company": "ClickHouse",
+            "title": "Consulting Engineer",
+            "country": "US",
+            "location": "Remote"
+          },
+          "expected_payload": "v2|c:10:clickhouse|t:19:consulting engineer|co:2:us|loc:6:remote",
+          "expected_hash": "cfde2a87d4989bcdff2089b0836acfa301bb045734c86fb7cd43300e41ae262f"
+        },
+        {
+          "label": "Technical Account Manager",
+          "input": {
+            "company": "ClickHouse",
+            "title": "Technical Account Manager",
+            "country": "US",
+            "location": "Remote"
+          },
+          "expected_payload": "v2|c:10:clickhouse|t:25:technical account manager|co:2:us|loc:6:remote",
+          "expected_hash": "1e7a936ab36ef51f938ea7f8861d9e76fc639958be9960806071f7f47150546e"
+        }
+      ],
+      "expected_outcome": "all_distinct_hashes"
+    },
+    {
+      "id": "case_04_wolt_obuda_vs_buda",
+      "name": "Wolt Óbuda vs Buda (Accented Ó Preserved)",
+      "description": "Preserves accented Ó in Hungarian locations without stripping to buda",
+      "items": [
+        {
+          "label": "Óbuda Location",
+          "input": {
+            "company": "Wolt",
+            "title": "Courier Partner",
+            "country": "HU",
+            "location": "Óbuda, Budapest"
+          },
+          "expected_payload": "v2|c:4:wolt|t:15:courier partner|co:2:hu|loc:6:óbuda",
+          "expected_hash": "68124c76e14bfe59dabfd27cda0d272c29dc730d6a608507e37b1c482ae3c341"
+        },
+        {
+          "label": "Buda Location",
+          "input": {
+            "company": "Wolt",
+            "title": "Courier Partner",
+            "country": "HU",
+            "location": "Buda, Budapest"
+          },
+          "expected_payload": "v2|c:4:wolt|t:15:courier partner|co:2:hu|loc:4:buda",
+          "expected_hash": "c103f13234ad93411d3454c88c3c36c2d0aa6cf6b787396e50b05a7cdd65a8ea"
+        }
+      ],
+      "expected_outcome": "distinct_hashes"
+    },
+    {
+      "id": "case_05_alan_territory_flags",
+      "name": "Alan Territory Flags",
+      "description": "Preserves country brackets/flags in titles/locations",
+      "items": [
+        {
+          "label": "France Opening",
+          "input": {
+            "company": "Alan",
+            "title": "Software Engineer [FR]",
+            "country": "FR",
+            "location": "Paris"
+          },
+          "expected_payload": "v2|c:4:alan|t:22:software engineer [fr]|co:2:fr|loc:5:paris",
+          "expected_hash": "9161ae7127669aa296029fb61f323482059e12132bec10f13fcd002baff46d87"
+        },
+        {
+          "label": "Spain Opening",
+          "input": {
+            "company": "Alan",
+            "title": "Software Engineer [ES]",
+            "country": "ES",
+            "location": "Madrid"
+          },
+          "expected_payload": "v2|c:4:alan|t:22:software engineer [es]|co:2:es|loc:6:madrid",
+          "expected_hash": "4ae0ae7d38b1affd188c148444b0aef9718e84e2d8c873ebe38afcdcdefaa184"
+        }
+      ],
+      "expected_outcome": "distinct_hashes"
+    },
+    {
+      "id": "case_06_bilingual_punctuation_variants",
+      "name": "Bilingual / ASCII Punctuation Variants",
+      "description": "Preserves distinct punctuation characters (- vs / vs :) without delimiter ambiguity",
+      "items": [
+        {
+          "label": "Dash separator",
+          "input": {
+            "company": "Stripe",
+            "title": "Software Engineer - Platform",
+            "country": "US",
+            "location": "San Francisco, CA"
+          },
+          "expected_payload": "v2|c:6:stripe|t:28:software engineer - platform|co:2:us|loc:13:san francisco",
+          "expected_hash": "bbb7da6da2b6033c52a0749cd768284c7289714fa94f65914fa569ccef82d995"
+        },
+        {
+          "label": "Slash separator",
+          "input": {
+            "company": "Stripe",
+            "title": "Software Engineer / Platform",
+            "country": "US",
+            "location": "San Francisco, CA"
+          },
+          "expected_payload": "v2|c:6:stripe|t:28:software engineer / platform|co:2:us|loc:13:san francisco",
+          "expected_hash": "e47893e0799c0f3d4b0c63bc3161914ef4458a2ed8d266eaf2f9fc14a972e938"
+        },
+        {
+          "label": "Colon separator",
+          "input": {
+            "company": "Stripe",
+            "title": "Software Engineer: Platform",
+            "country": "US",
+            "location": "San Francisco, CA"
+          },
+          "expected_payload": "v2|c:6:stripe|t:27:software engineer: platform|co:2:us|loc:13:san francisco",
+          "expected_hash": "cd2e4533aaf52f7837bcbf89d79a5d5cb59ac65fa37d68988b5a82db1a7161ca"
+        }
+      ],
+      "expected_outcome": "all_distinct_hashes"
+    },
+    {
+      "id": "case_07_nfc_vs_nfd_equivalence",
+      "name": "Composed vs Decomposed Accented Text (NFC vs NFD)",
+      "description": "NFC normalization ensures pre-composed and combining decomposed accents produce identical hashes",
+      "items": [
+        {
+          "label": "NFD Decomposed (e + acute)",
+          "input": {
+            "company": "Café Inc",
+            "title": "Barista",
+            "country": "FR",
+            "location": "Nice"
+          },
+          "expected_payload": "v2|c:5:café|t:7:barista|co:2:fr|loc:4:nice",
+          "expected_hash": "50d4f87149f90cde2f8467cbd2c719186b816f36283412098e25f1578ef08df0"
+        },
+        {
+          "label": "NFC Pre-composed (é)",
+          "input": {
+            "company": "Café Ltd",
+            "title": "Barista",
+            "country": "FR",
+            "location": "Nice"
+          },
+          "expected_payload": "v2|c:5:café|t:7:barista|co:2:fr|loc:4:nice",
+          "expected_hash": "50d4f87149f90cde2f8467cbd2c719186b816f36283412098e25f1578ef08df0"
+        }
+      ],
+      "expected_outcome": "identical_hashes"
+    },
+    {
+      "id": "case_08_null_and_empty_values",
+      "name": "Null and Empty Values",
+      "description": "Gracefully handles null and empty string fields without error",
+      "items": [
+        {
+          "label": "All Nulls",
+          "input": {
+            "company": null,
+            "title": null,
+            "country": null,
+            "location": null
+          },
+          "expected_payload": "v2|c:0:|t:0:|co:0:|loc:0:",
+          "expected_hash": "184f360ac4a49305dc7b81a0725ebf00fde9d3d72bd0d04b9e1abda3fd9d3a3d"
+        },
+        {
+          "label": "All Empty Strings",
+          "input": {
+            "company": "",
+            "title": "",
+            "country": "",
+            "location": ""
+          },
+          "expected_payload": "v2|c:0:|t:0:|co:0:|loc:0:",
+          "expected_hash": "184f360ac4a49305dc7b81a0725ebf00fde9d3d72bd0d04b9e1abda3fd9d3a3d"
+        }
+      ],
+      "expected_outcome": "identical_hashes"
+    },
+    {
+      "id": "case_09_delimiter_characters_injection",
+      "name": "Delimiter Characters Injection Safety",
+      "description": "Values containing length-framing or delimiter characters (| and :) do not shift framing or collide",
+      "items": [
+        {
+          "label": "Pipe and Colon in title and company",
+          "input": {
+            "company": "A | B : C",
+            "title": "Staff Engineer | Platform : Core",
+            "country": "US",
+            "location": "Austin | Remote"
+          },
+          "expected_payload": "v2|c:9:a | b : c|t:32:staff engineer | platform : core|co:2:us|loc:15:austin | remote",
+          "expected_hash": "950798468c6e4213e50b42ba18b3b5c987b288ccde080a0023a0e7b2b2c19c85"
+        },
+        {
+          "label": "Different structure with similar tokens",
+          "input": {
+            "company": "A",
+            "title": "B : C | Staff Engineer",
+            "country": "US",
+            "location": "Platform : Core"
+          },
+          "expected_payload": "v2|c:1:a|t:22:b : c | staff engineer|co:2:us|loc:15:platform : core",
+          "expected_hash": "06788cdfd6ffe4c2c29b5dacdb0a355299478cfe6ebe603e7d5a48f7dd484708"
+        }
+      ],
+      "expected_outcome": "distinct_hashes"
+    },
+    {
+      "id": "case_10_same_posting_distinct_requisitions",
+      "name": "Same Title & Location with Distinct Requisition IDs",
+      "description": "Advisory similarity hash is identical, but authoritative write identity keeps them distinct without collision",
+      "items": [
+        {
+          "label": "Requisition 101",
+          "authoritative": {
+            "sourceId": "greenhouse:google",
+            "sourceJobId": "REQ-101"
+          },
+          "input": {
+            "company": "Google",
+            "title": "Software Engineer",
+            "country": "US",
+            "location": "Mountain View, CA"
+          },
+          "expected_payload": "v2|c:6:google|t:17:software engineer|co:2:us|loc:13:mountain view",
+          "expected_hash": "1a28d47de18ced0da8c7c5910157f16ff882f4e4ac4ba2e7becfab71d3d4b390"
+        },
+        {
+          "label": "Requisition 102",
+          "authoritative": {
+            "sourceId": "greenhouse:google",
+            "sourceJobId": "REQ-102"
+          },
+          "input": {
+            "company": "Google",
+            "title": "Software Engineer",
+            "country": "US",
+            "location": "Mountain View, CA"
+          },
+          "expected_payload": "v2|c:6:google|t:17:software engineer|co:2:us|loc:13:mountain view",
+          "expected_hash": "1a28d47de18ced0da8c7c5910157f16ff882f4e4ac4ba2e7becfab71d3d4b390"
+        }
+      ],
+      "expected_outcome": "identical_similarity_hash_but_distinct_authoritative_keys"
+    },
+    {
+      "id": "case_11_provider_job_ids_duplicated_across_boards",
+      "name": "Provider Job IDs Duplicated Across Different Boards",
+      "description": "Authoritative source_id scopes provider_job_id so identical IDs on different boards never collide",
+      "items": [
+        {
+          "label": "Board Alpha Job 101",
+          "authoritative": {
+            "sourceId": "greenhouse:board_alpha",
+            "sourceJobId": "101"
+          },
+          "input": {
+            "company": "Company Alpha",
+            "title": "Software Engineer",
+            "country": "US",
+            "location": "New York, NY"
+          },
+          "expected_payload": "v2|c:13:company alpha|t:17:software engineer|co:2:us|loc:8:new york",
+          "expected_hash": "221cc3dd82c72d3c197e1a25f92fa9d1f958ab541bbf42f430b4b26ca2499a3c"
+        },
+        {
+          "label": "Board Beta Job 101",
+          "authoritative": {
+            "sourceId": "greenhouse:board_beta",
+            "sourceJobId": "101"
+          },
+          "input": {
+            "company": "Company Beta",
+            "title": "Software Engineer",
+            "country": "US",
+            "location": "New York, NY"
+          },
+          "expected_payload": "v2|c:12:company beta|t:17:software engineer|co:2:us|loc:8:new york",
+          "expected_hash": "b507d285bdec1c0192041feaeebe8915dd13614defbe77ffb689bf6fa5b06c6d"
+        }
+      ],
+      "expected_outcome": "distinct_authoritative_keys"
+    }
+  ]
+}

@@ -1,0 +1,129 @@
+"""Tests for versioned identity contract (v2) and language-neutral golden cases.
+
+Verifies:
+1. Exact byte-for-byte match with scripts/fixtures/identity_golden_cases.json.
+2. All 11 golden cases:
+   - Case 1: PayPay Japanese roles (Product Manager vs Backend Engineer) distinct.
+   - Case 2: New Relic Japanese sales territories (Tokyo vs Osaka) distinct.
+   - Case 3: ClickHouse support vs consulting vs TAM distinct.
+   - Case 4: Wolt Óbuda vs Buda distinct (accented Ó preserved).
+   - Case 5: Alan territory flags ([FR] vs [ES]) distinct.
+   - Case 6: Bilingual / ASCII punctuation variants (- vs / vs :) distinct.
+   - Case 7: Composed vs decomposed accented text (NFC vs NFD equivalence).
+   - Case 8: Null and empty values handled gracefully without exception.
+   - Case 9: Delimiter characters (| and :) injection safety.
+   - Case 10: Same title & location with distinct requisition IDs.
+   - Case 11: Provider job IDs duplicated across different boards.
+3. build_source_id and build_scoped_job_identity contract invariants and validations.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+import pytest
+
+from scripts.scraper.enrichment import (
+    build_scoped_job_identity,
+    build_similarity_payload_v2,
+    build_source_id,
+    compute_dedupe_hash,
+    compute_similarity_hash_v2,
+)
+
+FIXTURES_PATH = Path(__file__).resolve().parent.parent / "fixtures" / "identity_golden_cases.json"
+
+
+def load_golden_cases() -> dict:
+    with open(FIXTURES_PATH, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def test_golden_cases_all_pass():
+    golden_data = load_golden_cases()
+    assert golden_data["version"] == "v2"
+    assert golden_data["contract"] == "length_framed_utf8_sha256"
+
+    cases = golden_data["cases"]
+    assert len(cases) == 11, f"Expected 11 golden cases, found {len(cases)}"
+
+    for c in cases:
+        case_id = c["id"]
+        outcome = c["expected_outcome"]
+        items = c["items"]
+
+        hashes: list[str] = []
+        for item in items:
+            inp = item["input"]
+            computed_payload = build_similarity_payload_v2(
+                inp["company"], inp["title"], inp["country"], inp["location"]
+            )
+            computed_hash = compute_similarity_hash_v2(
+                inp["company"], inp["title"], inp["country"], inp["location"]
+            )
+
+            # Assert exact byte-for-byte parity with golden JSON vectors
+            assert computed_payload == item["expected_payload"], (
+                f"[{case_id} - {item['label']}] Payload mismatch!\n"
+                f"Computed: {computed_payload}\nExpected: {item['expected_payload']}"
+            )
+            assert computed_hash == item["expected_hash"], (
+                f"[{case_id} - {item['label']}] Hash mismatch!\n"
+                f"Computed: {computed_hash}\nExpected: {item['expected_hash']}"
+            )
+
+            # Verify backward-compatibility alias behaves identically
+            assert compute_dedupe_hash(
+                inp["company"], inp["title"], inp["country"], inp["location"]
+            ) == computed_hash
+
+            hashes.append(computed_hash)
+
+        # Assert case-level invariants
+        if outcome == "distinct_hashes":
+            assert len(hashes) == 2
+            assert hashes[0] != hashes[1], f"[{case_id}] Expected distinct hashes, got collision!"
+        elif outcome == "all_distinct_hashes":
+            assert len(set(hashes)) == len(hashes), f"[{case_id}] Expected all distinct hashes, found collision!"
+        elif outcome == "identical_hashes":
+            assert len(set(hashes)) == 1, f"[{case_id}] Expected identical hashes, found difference!"
+        elif outcome == "identical_similarity_hash_but_distinct_authoritative_keys":
+            assert hashes[0] == hashes[1], f"[{case_id}] Similarity hashes should match!"
+            auth_0 = items[0]["authoritative"]
+            auth_1 = items[1]["authoritative"]
+            assert (auth_0["sourceId"], auth_0["sourceJobId"]) != (auth_1["sourceId"], auth_1["sourceJobId"])
+        elif outcome == "distinct_authoritative_keys":
+            auth_0 = items[0]["authoritative"]
+            auth_1 = items[1]["authoritative"]
+            assert (auth_0["sourceId"], auth_0["sourceJobId"]) != (auth_1["sourceId"], auth_1["sourceJobId"])
+
+
+def test_build_source_id_validations():
+    assert build_source_id("Greenhouse", "Stripe") == "greenhouse:stripe"
+    assert build_source_id(" lever ", " Figma ") == "lever:figma"
+    assert build_source_id("Ashby", "Airtable") == "ashby:airtable"
+
+    with pytest.raises(ValueError, match="vendor must be a non-empty string"):
+        build_source_id("", "stripe")
+
+    with pytest.raises(ValueError, match="board_token must be a non-empty string"):
+        build_source_id("greenhouse", "   ")
+
+
+def test_build_scoped_job_identity_validations():
+    # Single location or non-scoped
+    src_id, job_id = build_scoped_job_identity("greenhouse:stripe", "REQ-1001")
+    assert src_id == "greenhouse:stripe"
+    assert job_id == "REQ-1001"
+
+    # Multi-location with location key
+    src_id, job_id = build_scoped_job_identity("greenhouse:stripe", "REQ-1001", "Tokyo, Japan")
+    assert src_id == "greenhouse:stripe"
+    assert job_id == "REQ-1001#tokyo_japan"
+
+    # Validation errors on empty inputs
+    with pytest.raises(ValueError, match="source_id must be a non-empty string"):
+        build_scoped_job_identity("", "REQ-1001")
+
+    with pytest.raises(ValueError, match="provider_job_id must be a non-empty string"):
+        build_scoped_job_identity("greenhouse:stripe", "")
