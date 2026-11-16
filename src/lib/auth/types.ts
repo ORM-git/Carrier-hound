@@ -24,7 +24,7 @@ export const DEFAULT_USER_PREFERENCES: UserPreferences = {
   workAuth: "Authorized",
   minSalary: 80000,
   salaryCurrency: "USD",
-  dailyDigestOptIn: true,
+  dailyDigestOptIn: false,
   onboardingCompleted: false,
   eligibilityFilter: true,
   updatedAt: new Date().toISOString(),

@@ -155,7 +155,7 @@ export async function getUserPreferences(userId?: string): Promise<UserPreferenc
           workAuth: data.work_auth,
           minSalary: data.min_salary,
           salaryCurrency: data.salary_currency || "USD",
-          dailyDigestOptIn: data.daily_digest_opt_in ?? true,
+          dailyDigestOptIn: data.daily_digest_opt_in ?? false,
           onboardingCompleted: Boolean(data.onboarding_completed),
           eligibilityFilter: data.eligibility_filter ?? true,
           updatedAt: data.updated_at || new Date().toISOString(),
@@ -219,7 +219,8 @@ export async function saveUserPreferences(prefs: UserPreferences, userId?: strin
       work_auth: updatedPrefs.workAuth || null,
       min_salary: updatedPrefs.minSalary ?? null,
       salary_currency: updatedPrefs.salaryCurrency || "USD",
-      daily_digest_opt_in: updatedPrefs.dailyDigestOptIn ?? true,
+      // Launch scope: daily digest is Coming Soon; the client never writes an opt-in.
+      daily_digest_opt_in: false,
       onboarding_completed: updatedPrefs.onboardingCompleted ?? false,
       eligibility_filter: updatedPrefs.eligibilityFilter ?? true,
       updated_at: updatedPrefs.updatedAt,

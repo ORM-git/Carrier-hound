@@ -53,7 +53,7 @@ function SettingsPageInner() {
   const [workAuth, setWorkAuth] = useState("");
   const [minSalary, setMinSalary] = useState<number | undefined>(undefined);
   const [salaryCurrency, setSalaryCurrency] = useState("USD");
-  const [dailyDigestOptIn, setDailyDigestOptIn] = useState(true);
+  const [dailyDigestOptIn] = useState(false);
 
   // Billing state
   const [subscription, setSubscription] = useState<UserSubscription | null>(null);
@@ -95,7 +95,6 @@ function SettingsPageInner() {
         setWorkAuth(p.workAuth || "");
         setMinSalary(p.minSalary);
         setSalaryCurrency(p.salaryCurrency || "USD");
-        setDailyDigestOptIn(p.dailyDigestOptIn ?? true);
       });
 
       getUserSubscription().then((sub: UserSubscription | null) => {
@@ -476,8 +475,9 @@ function SettingsPageInner() {
                   type="checkbox"
                   aria-label="Daily AI Matching Digest"
                   checked={dailyDigestOptIn}
-                  onChange={(e) => setDailyDigestOptIn(e.target.checked)}
-                  className="mt-1 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                  disabled
+                  aria-disabled="true"
+                  className="mt-1 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-not-allowed opacity-60"
                 />
               </div>
             </div>

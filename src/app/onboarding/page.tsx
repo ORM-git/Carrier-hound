@@ -119,7 +119,7 @@ function OnboardingPageInner() {
   const [remotePreference, setRemotePreference] = useState<UserPreferences["remotePreference"] | "">("");
   const [locations, setLocations] = useState<string[]>([]);
   const [employmentTypes, setEmploymentTypes] = useState<string[]>([]);
-  const [dailyDigestOptIn, setDailyDigestOptIn] = useState<boolean>(true);
+  const [dailyDigestOptIn] = useState<boolean>(false);
 
   // Resume Processing State (Jobright style)
   const [isProcessing, setIsProcessing] = useState(false);
@@ -164,9 +164,6 @@ function OnboardingPageInner() {
           if (Array.isArray(prefs.locations) && prefs.locations.length > 0) setLocations(prefs.locations);
           if (Array.isArray(prefs.employmentTypes) && prefs.employmentTypes.length > 0) {
             setEmploymentTypes(prefs.employmentTypes);
-          }
-          if (typeof prefs.dailyDigestOptIn === "boolean") {
-            setDailyDigestOptIn(prefs.dailyDigestOptIn);
           }
         }
       } catch (err) {
