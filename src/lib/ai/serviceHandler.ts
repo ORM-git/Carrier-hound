@@ -237,6 +237,9 @@ export function getRuntimeEnv(key: string, envOverrides?: Record<string, any>): 
   return undefined;
 }
 
+let cachedServiceAdminClient: any = null;
+let cachedServiceAdminKey = "";
+
 export function getSupabaseAdminClient(
   envOverrides?: Record<string, any>,
   allowAnonFallback: boolean = false
@@ -264,9 +267,16 @@ export function getSupabaseAdminClient(
     throw new Error(JSON.stringify(missing));
   }
 
-  return createClient(supabaseUrl, serviceKey!, {
-    auth: { persistSession: false },
+  const cacheKey = `${supabaseUrl}::${serviceKey}`;
+  if (cachedServiceAdminClient && cachedServiceAdminKey === cacheKey && process.env.NODE_ENV !== "test") {
+    return cachedServiceAdminClient;
+  }
+  const client = createClient(supabaseUrl, serviceKey!, {
+    auth: { persistSession: false, autoRefreshToken: false },
   });
+  cachedServiceAdminClient = client;
+  cachedServiceAdminKey = cacheKey;
+  return client;
 }
 
 export const DEFAULT_AI_GLOBAL_DAILY_TOKEN_CAP = 2000000;

@@ -1,5 +1,8 @@
 import { createClient } from "@supabase/supabase-js";
 
+let cachedNetlifyStatsAdmin: any = null;
+let cachedNetlifyStatsKey = "";
+
 function getSupabaseAdmin() {
   const supabaseUrl =
     process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -24,9 +27,16 @@ function getSupabaseAdmin() {
     }));
   }
 
-  return createClient(supabaseUrl, serviceKey, {
-    auth: { persistSession: false },
+  const cacheKey = `${supabaseUrl}::${serviceKey}`;
+  if (cachedNetlifyStatsAdmin && cachedNetlifyStatsKey === cacheKey && process.env.NODE_ENV !== "test") {
+    return cachedNetlifyStatsAdmin;
+  }
+  const client = createClient(supabaseUrl, serviceKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
   });
+  cachedNetlifyStatsAdmin = client;
+  cachedNetlifyStatsKey = cacheKey;
+  return client;
 }
 
 import { buildCorsHeaders, handleCorsPreflight } from "./_cors";
