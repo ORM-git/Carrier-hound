@@ -8,6 +8,7 @@ import email.utils
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import unittest
 from unittest.mock import AsyncMock, patch
@@ -427,14 +428,33 @@ class HighVolumeIngestionEngineTests(unittest.TestCase):
             self.assertIn(f"'{f}'", rollback_block, f"Rollback constraint must retain vendor '{f}'")
 
         # Requirement 3: Actually execute forward then rollback SQL on populated Postgres fixture
-        proc = subprocess.run(
-            ["npx", "tsx", "scripts/test-postgres-migration-rollback-fixture.ts"],
-            cwd=str(Path(__file__).resolve().parents[2]),
-            capture_output=True,
-            text=True,
-            shell=True,
+        repo_root = Path(__file__).resolve().parents[2]
+        npx_bin = shutil.which("npx.cmd") if os.name == "nt" else shutil.which("npx")
+        if not npx_bin:
+            npx_bin = shutil.which("npx") or shutil.which("npx.cmd")
+        if not npx_bin:
+            self.fail("npx not found on PATH")
+
+        timeout_seconds = 120
+        try:
+            proc = subprocess.run(
+                [npx_bin, "tsx", "scripts/test-postgres-migration-rollback-fixture.ts"],
+                cwd=str(repo_root),
+                capture_output=True,
+                text=True,
+                timeout=timeout_seconds,
+            )
+        except subprocess.TimeoutExpired as exc:
+            self.fail(
+                f"PostgreSQL forward & rollback fixture timed out after {timeout_seconds}s:\n"
+                f"STDOUT:\n{exc.stdout or ''}\nSTDERR:\n{exc.stderr or ''}"
+            )
+
+        self.assertEqual(
+            proc.returncode,
+            0,
+            f"PostgreSQL forward & rollback fixture execution failed:\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}",
         )
-        self.assertEqual(proc.returncode, 0, f"PostgreSQL forward & rollback fixture execution failed:\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}")
         self.assertIn("[PASS] All post-rollback assertions PASSED", proc.stdout)
 
     def test_change_detection_skills_and_all_mutable_fields(self) -> None:
