@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { GitCompare, CheckCircle2, AlertTriangle, XCircle, ArrowRight } from "lucide-react";
+import { GitCompare, CheckCircle2, AlertTriangle, XCircle } from "lucide-react";
 import type { GapMatrixItem } from "@/data/interviewPackFixture";
 
 interface GapsSectionProps {

@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from "react";
 import Link from "next/link";
-import { Sparkles, Target, Zap } from "lucide-react";
+import { Sparkles } from "lucide-react";
 import dynamic from "next/dynamic";
 import { computeFitDiagnostics, FitDiagnosticsResult, StandardJobScoringInput } from "@/lib/matcher/scoring";
 import { CandidateProfile } from "@/lib/resume/types";

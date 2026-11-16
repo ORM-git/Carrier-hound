@@ -3,22 +3,13 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { SUPPORTED_COUNTRIES } from "@/lib/countries";
 import {
-  MapPin,
-  Briefcase,
-  TrendingUp,
   Clock,
-  Globe,
-  Calendar,
-  Building,
-  Award,
   Lock,
   SlidersHorizontal,
   ArrowUpDown,
   ChevronDown,
   X,
-  Check,
   Search,
-  RotateCcw,
   Sparkles,
 } from "lucide-react";
 

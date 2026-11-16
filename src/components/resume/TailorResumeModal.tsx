@@ -11,8 +11,6 @@ import {
   ShieldCheck,
   CheckCircle2,
   AlertCircle,
-  Briefcase,
-  GraduationCap,
   Eye,
   FileCode,
   RotateCw,

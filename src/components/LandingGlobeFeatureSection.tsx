@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
-import { ArrowRight, Compass, Play, RotateCcw } from "lucide-react";
+import { ArrowRight, Compass, Play } from "lucide-react";
 import * as d3 from "d3";
 
 interface StatsData {

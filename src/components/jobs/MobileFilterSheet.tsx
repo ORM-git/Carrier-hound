@@ -5,11 +5,7 @@ import {
   X,
   ChevronDown,
   ChevronUp,
-  Check,
   Search,
-  Lock,
-  RotateCcw,
-  SlidersHorizontal,
   Building,
 } from "lucide-react";
 import { JobFilterValues } from "./JobFilterBar";

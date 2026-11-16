@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { CheckCircle2, HelpCircle, XCircle, RotateCcw, Award } from "lucide-react";
+import { CheckCircle2, HelpCircle, XCircle, RotateCcw } from "lucide-react";
 import type { QuizQuestion } from "@/data/interviewPackFixture";
 
 interface QuickQuizSectionProps {

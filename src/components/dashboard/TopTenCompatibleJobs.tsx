@@ -9,18 +9,15 @@ import {
   DollarSign,
   FileText,
   FileCheck2,
-  ExternalLink,
   ChevronRight,
   ChevronDown,
   RefreshCw,
   BookmarkPlus,
-  ShieldCheck,
-  CheckCircle2,
 } from "lucide-react";
 import dynamic from "next/dynamic";
 import { CandidateProfile } from "@/lib/resume/types";
-import { getLiveJobs, getTopRankedJobsForCandidate, LiveJob } from "@/lib/jobs/service";
-import { computeFitDiagnostics, FitDiagnosticsResult } from "@/lib/matcher/scoring";
+import { getTopRankedJobsForCandidate, LiveJob } from "@/lib/jobs/service";
+import { FitDiagnosticsResult } from "@/lib/matcher/scoring";
 
 const TailorResumeModal = dynamic(() => import("@/components/resume/TailorResumeModal"), { ssr: false });
 const CoverLetterModal = dynamic(() => import("@/components/resume/CoverLetterModal"), { ssr: false });

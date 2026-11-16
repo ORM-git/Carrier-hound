@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Moon, Database, ChevronDown } from "lucide-react";
+import { Moon, Database } from "lucide-react";
 import type { DossierSection } from "./DossierRail";
 
 interface MobileProgressStripProps {

@@ -2,7 +2,7 @@
 
 import React from "react";
 import LockedPreview from "@/components/billing/LockedPreview";
-import { Sparkles, Layers } from "lucide-react";
+import { Sparkles } from "lucide-react";
 
 export default function FreeDashboardTopTenPreview() {
   // Render 10 structural placeholder rows matching the exact layout of TopTenCompatibleJobs
