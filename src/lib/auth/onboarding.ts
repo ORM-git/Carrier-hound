@@ -31,12 +31,22 @@ import { updateSwr, invalidateSwr } from "@/lib/cache/swr";
 
 const log = createLogger({ context: { module: "auth/onboarding" } });
 
+const ONBOARDING_CACHE_TTL_MS = 60_000;
+const completedOnboardingCache = new Map<string, number>();
+
 export async function checkAccountOnboardingCompleted(
   supabase: SupabaseClient | any,
   userId: string
 ): Promise<boolean> {
   if (!supabase || !userId || typeof userId !== "string") {
     return false;
+  }
+
+  if (process.env.NODE_ENV !== "test") {
+    const cachedAt = completedOnboardingCache.get(userId);
+    if (cachedAt && Date.now() - cachedAt < ONBOARDING_CACHE_TTL_MS) {
+      return true;
+    }
   }
 
   // 1. Check public.profiles
@@ -49,6 +59,7 @@ export async function checkAccountOnboardingCompleted(
 
     if (!error && profile) {
       if (profile.onboarding_completed_at) {
+        if (process.env.NODE_ENV !== "test") completedOnboardingCache.set(userId, Date.now());
         return true;
       }
       const hasSubstantiveProfile = Boolean(
@@ -59,6 +70,7 @@ export async function checkAccountOnboardingCompleted(
         await markAccountOnboardingCompleted(supabase, userId).catch((err) => {
           log.warn("Self-healing onboarding_completed_at on profiles failed", { error: err });
         });
+        if (process.env.NODE_ENV !== "test") completedOnboardingCache.set(userId, Date.now());
         return true;
       }
     }
@@ -85,6 +97,7 @@ export async function checkAccountOnboardingCompleted(
         await markAccountOnboardingCompleted(supabase, userId).catch((err) => {
           log.warn("Self-healing onboarding_completed_at on candidate profile failed", { error: err });
         });
+        if (process.env.NODE_ENV !== "test") completedOnboardingCache.set(userId, Date.now());
         return true;
       }
     }
@@ -105,6 +118,7 @@ export async function checkAccountOnboardingCompleted(
       await markAccountOnboardingCompleted(supabase, userId).catch((err) => {
         log.warn("Self-healing onboarding_completed_at on user_preferences failed", { error: err });
       });
+      if (process.env.NODE_ENV !== "test") completedOnboardingCache.set(userId, Date.now());
       return true;
     }
   } catch (err) {
@@ -154,6 +168,10 @@ export async function markAccountOnboardingCompleted(
 
   if (prefsError) {
     log.warn("Warning syncing onboarding_completed to user_preferences", { error: prefsError });
+  }
+
+  if (process.env.NODE_ENV !== "test") {
+    completedOnboardingCache.set(userId, Date.now());
   }
 
   // 3. Immediately update and invalidate the dashboard SWR cache so route remount within 60s

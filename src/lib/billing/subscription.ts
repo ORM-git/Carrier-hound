@@ -42,9 +42,6 @@ export function invalidateProAccessCache(): void {
 if (typeof window !== "undefined") {
   window.addEventListener("careermonke_auth_updated", invalidateProAccessCache);
   window.addEventListener("careermonke_pro_updated", invalidateProAccessCache);
-  window.addEventListener("careermonke_route_changed", invalidateProAccessCache);
-  window.addEventListener("focus", invalidateProAccessCache);
-  window.addEventListener("popstate", invalidateProAccessCache);
 }
 
 /**

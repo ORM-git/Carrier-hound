@@ -6,10 +6,13 @@ import { clearTrackerMemoryState } from "../tracker/storage";
 import type { User } from "@supabase/supabase-js";
 
 import { createLogger } from "@/lib/observability/logger";
+import { singleFlight } from "@/lib/cache/singleFlight";
 
 const log = createLogger({ context: { module: "auth/session" } });
 
 const PREFS_STORAGE_KEY = "careermonke_preferences";
+const PREFS_CACHE_TTL_MS = 60 * 1000;
+let cachedUserPrefs: { userId: string; prefs: UserPreferences; timestamp: number } | null = null;
 const USER_EMAIL_KEY = "careermonke_user_email";
 const USER_PRO_KEY = "careermonke_pro_active";
 const CANDIDATE_PROFILE_KEY = "careermonke_candidate_profile";
@@ -135,47 +138,65 @@ export async function getAuthUser(): Promise<User | null> {
  * Handles missing row by creating defaults, not by erroring.
  */
 export async function getUserPreferences(userId?: string): Promise<UserPreferences> {
-  const supabase = createClient();
   if (userId && userId !== "local-user") {
-    try {
-      const { data, error } = await supabase
-        .from("user_preferences")
-        .select("roles, categories, experience_level, employment_types, locations, remote_preference, work_auth, min_salary, salary_currency, daily_digest_opt_in, onboarding_completed, eligibility_filter, updated_at")
-        .eq("user_id", userId)
-        .maybeSingle();
-
-      if (data && !error) {
-        const prefs: UserPreferences = {
-          roles: data.roles || [],
-          categories: data.categories || [],
-          experienceLevel: data.experience_level || "mid",
-          employmentTypes: data.employment_types || ["full-time"],
-          locations: data.locations || ["Remote / Global"],
-          remotePreference: data.remote_preference || "remote",
-          workAuth: data.work_auth,
-          minSalary: data.min_salary,
-          salaryCurrency: data.salary_currency || "USD",
-          dailyDigestOptIn: data.daily_digest_opt_in ?? true,
-          onboardingCompleted: Boolean(data.onboarding_completed),
-          eligibilityFilter: data.eligibility_filter ?? true,
-          updatedAt: data.updated_at || new Date().toISOString(),
-        };
-        if (typeof window !== "undefined") {
-          localStorage.setItem(PREFS_STORAGE_KEY, JSON.stringify(prefs));
-        }
-        return prefs;
-      }
-
-      // Handle missing row by saving and returning defaults
-      if (!error && !data) {
-        try {
-          await saveUserPreferences(DEFAULT_USER_PREFERENCES, userId);
-        } catch (_) {}
-        return DEFAULT_USER_PREFERENCES;
-      }
-    } catch (_) {
-      // Graceful fallback to local storage / defaults
+    const now = Date.now();
+    if (cachedUserPrefs && cachedUserPrefs.userId === userId && now - cachedUserPrefs.timestamp < PREFS_CACHE_TTL_MS) {
+      return cachedUserPrefs.prefs;
     }
+    return singleFlight(`prefs:${userId}`, async () => {
+      const supabase = createClient();
+      try {
+        const { data, error } = await supabase
+          .from("user_preferences")
+          .select("roles, categories, experience_level, employment_types, locations, remote_preference, work_auth, min_salary, salary_currency, daily_digest_opt_in, onboarding_completed, eligibility_filter, updated_at")
+          .eq("user_id", userId)
+          .maybeSingle();
+
+        if (data && !error) {
+          const prefs: UserPreferences = {
+            roles: data.roles || [],
+            categories: data.categories || [],
+            experienceLevel: data.experience_level || "mid",
+            employmentTypes: data.employment_types || ["full-time"],
+            locations: data.locations || ["Remote / Global"],
+            remotePreference: data.remote_preference || "remote",
+            workAuth: data.work_auth,
+            minSalary: data.min_salary,
+            salaryCurrency: data.salary_currency || "USD",
+            dailyDigestOptIn: data.daily_digest_opt_in ?? true,
+            onboardingCompleted: Boolean(data.onboarding_completed),
+            eligibilityFilter: data.eligibility_filter ?? true,
+            updatedAt: data.updated_at || new Date().toISOString(),
+          };
+          cachedUserPrefs = { userId, prefs, timestamp: Date.now() };
+          if (typeof window !== "undefined") {
+            localStorage.setItem(PREFS_STORAGE_KEY, JSON.stringify(prefs));
+          }
+          return prefs;
+        }
+
+        // Handle missing row by returning defaults without write-on-read amplification
+        if (!error && !data) {
+          cachedUserPrefs = { userId, prefs: DEFAULT_USER_PREFERENCES, timestamp: Date.now() };
+          return DEFAULT_USER_PREFERENCES;
+        }
+      } catch (_) {
+        // Graceful fallback to local storage / defaults
+      }
+
+      if (typeof window !== "undefined") {
+        const saved = localStorage.getItem(PREFS_STORAGE_KEY);
+        if (saved) {
+          try {
+            return JSON.parse(saved);
+          } catch (_) {
+            // ignore parse error
+          }
+        }
+      }
+
+      return DEFAULT_USER_PREFERENCES;
+    });
   }
 
   if (typeof window !== "undefined") {
@@ -200,6 +221,10 @@ export async function saveUserPreferences(prefs: UserPreferences, userId?: strin
     ...prefs,
     updatedAt: new Date().toISOString(),
   };
+
+  if (userId && userId !== "local-user") {
+    cachedUserPrefs = { userId, prefs: updatedPrefs, timestamp: Date.now() };
+  }
 
   if (typeof window !== "undefined") {
     localStorage.setItem(PREFS_STORAGE_KEY, JSON.stringify(updatedPrefs));
@@ -240,6 +265,7 @@ export async function saveUserPreferences(prefs: UserPreferences, userId?: strin
  * Full Sign-Out with clean private cache purge.
  */
 export async function signOutUser(): Promise<void> {
+  cachedUserPrefs = null;
   const supabase = createClient();
   try {
     await supabase.auth.signOut();
