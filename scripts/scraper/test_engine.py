@@ -405,6 +405,20 @@ class HighVolumeIngestionEngineTests(unittest.TestCase):
             indexed_keys.add(key)
         self.assertEqual(len(indexed_keys), len(all_10_fetchers))
 
+        # Requirement 2: Pre-check #3 must gate source_id read on column existence (safe on fresh baseline)
+        self.assertIn("column_name = 'source_id'", sql_content)
+        self.assertIn("information_schema.columns", sql_content)
+
+        # Requirement 3: Verify SQL must check indisvalid in pg_index, not only pg_indexes
+        self.assertIn("indisvalid", sql_content)
+        self.assertIn("pg_index", sql_content)
+
+        # Requirement 1: Non-destructive rollback must not drop additive columns
+        rollback_block = sql_content.split("-- ROLLBACK", 1)[1] if "-- ROLLBACK" in sql_content else ""
+        self.assertTrue(len(rollback_block) > 0, "Migration must contain ROLLBACK block")
+        self.assertNotIn("DROP COLUMN", rollback_block, "Rollback must be non-destructive and NOT drop additive columns")
+        self.assertIn("jobs_source_type_check", rollback_block, "Rollback must restore legacy source_type check constraint")
+
     def test_change_detection_skills_and_all_mutable_fields(self) -> None:
         """Requirement 3: Fingerprint checks skills and all mutable fields; skills change emits to_update."""
         base_job = {

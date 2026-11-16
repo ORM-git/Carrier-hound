@@ -9886,11 +9886,38 @@ COMMIT;
 --    WHERE n.nspname = 'public'
 --      AND conname IN ('jobs_source_type_check', 'jobs_role_category_check', 'jobs_source_priority_check', 'companies_category_check', 'jobs_source_type_source_job_id_key');
 --
--- 3. Check for potential duplicate (source_id, source_job_id) if source_id already populated:
---    SELECT source_id, source_job_id, count(*)
---    FROM public.jobs
---    WHERE source_id IS NOT NULL AND source_job_id IS NOT NULL
---    GROUP BY source_id, source_job_id
+-- 3. Check for potential duplicate (source_id, source_job_id) gated on column existence (safe on fresh baseline):
+--    DO $$
+--    DECLARE
+--      dup_count integer;
+--    BEGIN
+--      IF EXISTS (
+--        SELECT 1 FROM information_schema.columns
+--        WHERE table_schema = 'public' AND table_name = 'jobs' AND column_name = 'source_id'
+--      ) THEN
+--        EXECUTE '
+--          SELECT count(*) FROM (
+--            SELECT source_id, source_job_id
+--            FROM public.jobs
+--            WHERE source_id IS NOT NULL AND source_job_id IS NOT NULL
+--            GROUP BY source_id, source_job_id
+--            HAVING count(*) > 1
+--          ) s' INTO dup_count;
+--        IF dup_count > 0 THEN
+--          RAISE WARNING 'Found % duplicate (source_id, source_job_id) pairs', dup_count;
+--        ELSE
+--          RAISE NOTICE 'Zero duplicate (source_id, source_job_id) pairs found.';
+--        END IF;
+--      ELSE
+--        RAISE NOTICE 'Column public.jobs.source_id does not exist yet (fresh baseline); duplicate check skipped.';
+--      END IF;
+--    END $$;
+--
+--    -- Or as a single query using to_jsonb (returns 0 rows on fresh baseline without parse error):
+--    SELECT to_jsonb(j)->>'source_id' AS source_id, j.source_job_id, count(*)
+--    FROM public.jobs j
+--    WHERE (to_jsonb(j)->>'source_id') IS NOT NULL AND j.source_job_id IS NOT NULL
+--    GROUP BY 1, 2
 --    HAVING count(*) > 1;
 --
 -- 4. Check for active duplicate dedupe payloads before hash index build:
@@ -9913,11 +9940,34 @@ COMMIT;
 --      )
 --    ORDER BY table_name, column_name;
 --
--- 2. Verify partial unique indexes exist and are valid:
---    SELECT indexname, indexdef
---    FROM pg_indexes
---    WHERE schemaname = 'public'
---      AND indexname IN ('idx_jobs_source_id_source_job_id_uniq', 'idx_jobs_active_dedupe_hash_uniq', 'idx_companies_slug_uniq', 'idx_jobs_active_category', 'idx_jobs_active_role_category');
+-- 2. Verify partial unique indexes exist and are valid (verifying indisvalid in pg_index):
+--    SELECT
+--      c.relname AS indexname,
+--      i.indisvalid,
+--      i.indisready,
+--      pg_get_indexdef(c.oid) AS indexdef
+--    FROM pg_index i
+--    JOIN pg_class c ON c.oid = i.indexrelid
+--    JOIN pg_namespace n ON n.oid = c.relnamespace
+--    WHERE n.nspname = 'public'
+--      AND c.relname IN (
+--        'idx_jobs_source_id_source_job_id_uniq',
+--        'idx_jobs_active_dedupe_hash_uniq',
+--        'idx_companies_slug_uniq',
+--        'idx_jobs_active_category',
+--        'idx_jobs_active_role_category'
+--      );
+--    -- Expected: indisvalid = TRUE and indisready = TRUE for all indexes.
+--
+--    -- Direct assertion query for the new unique index:
+--    SELECT c.relname AS indexname, i.indisvalid
+--    FROM pg_index i
+--    JOIN pg_class c ON c.oid = i.indexrelid
+--    JOIN pg_namespace n ON n.oid = c.relnamespace
+--    WHERE n.nspname = 'public'
+--      AND c.relname = 'idx_jobs_source_id_source_job_id_uniq'
+--      AND i.indisvalid = TRUE;
+--    -- Expected: exactly 1 row returned with indisvalid = true.
 --
 -- 3. Verify check constraints accept vendors and valid values:
 --    SELECT conname, pg_get_constraintdef(c.oid)
@@ -10284,31 +10334,86 @@ COMMIT;
 
 -- ============================================================================
 -- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
---   Note: This rollback removes all indexes, triggers, helper functions, check
---   constraints, and new columns added by this migration. Data backfilled into
---   pre-existing columns (e.g. remote, domain) is retained, while new metadata
---   columns (source_id, canonical_domain, logo_url) and views are cleanly reset.
+--   NON-DESTRUCTIVE ROLLBACK POLICY:
+--   - Restores legacy constraints, views, and database/application behavior.
+--   - Drops ONLY objects that this migration clearly created (trigger, functions,
+--     perf view, new partial indexes, new check constraints).
+--   - Restores the original jobs_public view definition without Phase 3 columns.
+--   - Restores the original jobs_source_type_check constraint ('ats', 'api', 'feed', 'direct').
+--   - KEEPS all additive columns (jobs.source_id, jobs.canonical_domain, jobs.logo_url,
+--     jobs.role_category, jobs.top_keywords, jobs.dedupe_hash, jobs.is_remote,
+--     jobs.source_priority, companies.canonical_domain, companies.category,
+--     companies.logo_url) because they may have existed prior to this migration
+--     or may contain valid ingested data. Additive columns are never removed.
+--   - Retains backfilled data in pre-existing columns without destructive cascades.
 --
+--   -- 1. Drop trigger and dedupe merge functions created by this migration
 --   DROP TRIGGER IF EXISTS trg_jobs_merge_dedupe_priority ON public.jobs;
 --   DROP FUNCTION IF EXISTS public.merge_job_by_dedupe_priority();
 --   DROP FUNCTION IF EXISTS public.compute_job_dedupe_hash(text, text, text, text);
---   DROP INDEX IF EXISTS public.idx_jobs_active_dedupe_hash_uniq;
+--
+--   -- 2. Drop performance view and restore legacy jobs_public view
+--   DROP VIEW IF EXISTS public.v_active_jobs_perf;
+--   CREATE OR REPLACE VIEW public.jobs_public AS
+--   SELECT
+--     id,
+--     company_slug,
+--     title,
+--     location,
+--     country,
+--     country_code,
+--     job_type,
+--     category,
+--     remote,
+--     salary_min,
+--     salary_max,
+--     salary_period,
+--     currency,
+--     created_at,
+--     updated_at,
+--     posted_at,
+--     expires_at,
+--     status,
+--     is_featured,
+--     featured_until,
+--     experience_level,
+--     tags,
+--     workplace_type,
+--     department,
+--     external_id,
+--     source,
+--     source_type,
+--     verified,
+--     is_active,
+--     'Verified Employer'::text AS company,
+--     NULL::text AS salary_text,
+--     NULL::text AS description,
+--     NULL::text AS apply_url,
+--     '{}'::text[] AS skills
+--   FROM public.jobs
+--   WHERE is_active = true OR status = 'active';
+--   GRANT SELECT ON public.jobs_public TO anon, authenticated, service_role;
+--
+--   -- 3. Drop indexes created by this migration
 --   DROP INDEX IF EXISTS public.idx_jobs_source_id_source_job_id_uniq;
+--   DROP INDEX IF EXISTS public.idx_jobs_active_dedupe_hash_uniq;
 --   DROP INDEX IF EXISTS public.idx_jobs_active_category_country_posted_at;
 --   DROP INDEX IF EXISTS public.idx_jobs_active_posted_at_desc;
 --   DROP INDEX IF EXISTS public.idx_jobs_active_country;
 --   DROP INDEX IF EXISTS public.idx_jobs_active_role_category;
 --   DROP INDEX IF EXISTS public.idx_jobs_active_category;
---   ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_source_priority_check;
---   ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_role_category_check;
---   ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_source_type_check;
---   ALTER TABLE public.jobs DROP COLUMN IF EXISTS source_id;
---   ALTER TABLE public.jobs DROP COLUMN IF EXISTS canonical_domain;
---   ALTER TABLE public.jobs DROP COLUMN IF EXISTS logo_url;
---   ALTER TABLE public.companies DROP CONSTRAINT IF EXISTS companies_category_check;
 --   DROP INDEX IF EXISTS public.idx_companies_category;
 --   DROP INDEX IF EXISTS public.idx_companies_slug_uniq;
---   ALTER TABLE public.companies DROP COLUMN IF EXISTS canonical_domain;
---   ALTER TABLE public.companies DROP COLUMN IF EXISTS logo_url;
+--
+--   -- 4. Drop check constraints added by this migration
+--   ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_source_priority_check;
+--   ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_role_category_check;
+--   ALTER TABLE public.companies DROP CONSTRAINT IF EXISTS companies_category_check;
+--
+--   -- 5. Restore legacy CHECK on jobs.source_type
+--   ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_source_type_check;
+--   ALTER TABLE public.jobs ADD CONSTRAINT jobs_source_type_check CHECK (source_type IN ('ats', 'api', 'feed', 'direct'));
+--
+--   -- NOTE: Additive columns are intentionally preserved and NOT dropped.
 -- ============================================================================
 
