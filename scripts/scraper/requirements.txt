@@ -1,0 +1,9 @@
+# CareerHound High-Volume Ingestion Engine Dependencies
+# Install: pip install -r scripts/scraper/requirements.txt
+
+httpx>=0.28.0
+python-dotenv>=1.0.0
+
+# Optional aggregator batch dependencies (required for Layer 3 JobSpy Indian tech hubs)
+# Install: pip install python-jobspy
+python-jobspy>=1.1.60

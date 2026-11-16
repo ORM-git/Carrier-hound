@@ -198,19 +198,19 @@ async function getHandler(req: Request) {
     const normalizedUserCountries = normalizeUserCountries(userLocations);
 
     const selectColumns = (isPro && hasServiceKey)
-      ? "*, companies(name, logo_url)"
+      ? "*, companies(name, logo_url, category, canonical_domain, domain)"
       : hasServiceKey
-      ? "id, title, company, location, category, remote, remote_scope, remote_eligibility, country_code, country, job_type, verified, posted_at, created_at, salary_min, salary_max, currency, salary_period, salary_text, source_type, source, company_id, companies(name, logo_url)"
-      : "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at";
+      ? "id, title, company, location, category, remote, remote_scope, remote_eligibility, country_code, country, job_type, verified, posted_at, created_at, salary_min, salary_max, currency, salary_period, salary_text, source_type, source, company_id, companies(name, logo_url, category, canonical_domain, domain), role_category, top_keywords, is_remote"
+      : "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at, role_category, top_keywords, is_remote";
 
     const idParam = searchParams.get("id");
     if (idParam) {
       const cleanId = sanitizeSearchQuery(idParam).trim();
       const singleColumns = (isPro && hasServiceKey)
-        ? "*, companies(name, logo_url)"
+        ? "*, companies(name, logo_url, category, canonical_domain, domain)"
         : hasServiceKey
-        ? "id, title, company, location, category, remote, remote_scope, remote_eligibility, country_code, country, job_type, verified, posted_at, created_at, status, is_active, company_id, companies(name, logo_url)"
-        : "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at, status, is_active";
+        ? "id, title, company, location, category, remote, remote_scope, remote_eligibility, country_code, country, job_type, verified, posted_at, created_at, status, is_active, company_id, companies(name, logo_url, category, canonical_domain, domain), role_category, top_keywords, is_remote"
+        : "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at, status, is_active, role_category, top_keywords, is_remote";
 
       const { data: rawJobRow, error: singleError } = await (supabaseAdmin
         .from(targetTable)

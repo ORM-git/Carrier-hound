@@ -28,7 +28,7 @@ Measured 7 Nov 2026: 7 triggers across 4 migration files. Updated 7 Nov 2026 for
 | `trg_touch_updated_at_user_preferences` | `user_preferences` | BEFORE UPDATE | `touch_updated_at()` | Sets updated_at = now() when the UPDATE did not change it (20261107g, not applied). Never rejects a write. |
 | `trg_touch_updated_at_resumes` | `resumes` | BEFORE UPDATE | `touch_updated_at()` | Sets updated_at = now() when the UPDATE did not change it (20261107g, not applied). Never rejects a write. |
 | `trg_touch_updated_at_tailored_resumes` | `tailored_resumes` | BEFORE UPDATE | `touch_updated_at()` | Sets updated_at = now() when the UPDATE did not change it (20261107g, not applied). Never rejects a write. |
-| `trg_jobs_merge_dedupe_priority` | `jobs` | BEFORE INSERT | `merge_job_by_dedupe_priority()` | Priority-aware deduplication on active `dedupe_hash` (Direct ATS priority = 1 supersedes Aggregator priority = 2). |
+| `trg_jobs_merge_dedupe_priority` | `jobs` | BEFORE INSERT OR UPDATE | `merge_job_by_dedupe_priority()` | Priority-aware deduplication on active `dedupe_hash` (Direct ATS priority = 1 supersedes Aggregator priority = 2). |
 
 <!-- guard-entries: one per line, parsed by dbTriggersDoc.test.ts -->
 ```guard

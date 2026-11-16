@@ -9936,6 +9936,7 @@ ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS posted_at timestamptz DEFAULT n
 ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS last_seen_at timestamptz DEFAULT now();
 ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS is_active boolean DEFAULT true;
 ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS source_priority smallint DEFAULT 2;
+ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS logo_url text;
 
 ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_role_category_check;
 ALTER TABLE public.jobs
@@ -10020,49 +10021,10 @@ SET dedupe_hash = public.compute_job_dedupe_hash(
 WHERE is_active = TRUE
   AND dedupe_hash IS NULL;
 
--- De-activate duplicate active rows before creating unique indexes:
--- 1) Same (source_type, source_job_id) -> keep newest / active row
-WITH ranked_source_jobs AS (
-  SELECT
-    id,
-    ROW_NUMBER() OVER (
-      PARTITION BY source_type, source_job_id
-      ORDER BY is_active DESC NULLS LAST, source_priority ASC NULLS LAST, last_seen_at DESC NULLS LAST, id DESC
-    ) AS rn
-  FROM public.jobs
-  WHERE source_type IS NOT NULL
-    AND source_job_id IS NOT NULL
-)
-UPDATE public.jobs j
-SET source_job_id = j.source_job_id || '__dup_' || j.id::text,
-    is_active = FALSE,
-    status = 'expired'
-FROM ranked_source_jobs r
-WHERE j.id = r.id
-  AND r.rn > 1;
-
--- 2) Same active dedupe_hash -> keep Direct ATS (source_priority = 1) over Aggregator (source_priority = 2)
-WITH ranked_dedupe AS (
-  SELECT
-    id,
-    ROW_NUMBER() OVER (
-      PARTITION BY dedupe_hash
-      ORDER BY source_priority ASC NULLS LAST, verified DESC NULLS LAST, last_seen_at DESC NULLS LAST, id DESC
-    ) AS rn
-  FROM public.jobs
-  WHERE is_active = TRUE
-    AND dedupe_hash IS NOT NULL
-)
-UPDATE public.jobs j
-SET is_active = FALSE,
-    status = 'expired'
-FROM ranked_dedupe r
-WHERE j.id = r.id
-  AND r.rn > 1;
-
 -- Priority-aware merge trigger function so duplicate jobs across aggregators
 -- (priority = 2) and direct ATS boards (priority = 1) automatically merge
 -- without violating idx_jobs_active_dedupe_hash_uniq.
+-- Handles both INSERT and UPDATE (e.g. reactivating an expired row or updating dedupe_hash).
 CREATE OR REPLACE FUNCTION public.merge_job_by_dedupe_priority()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -10080,7 +10042,7 @@ BEGIN
   v_new_priority := COALESCE(
     NEW.source_priority,
     CASE
-      WHEN NEW.source_type IN ('ats', 'direct')
+      WHEN NEW.source_type IN ('ats', 'direct', 'greenhouse', 'lever', 'ashby', 'smartrecruiters', 'workday', 'amazon', 'microsoft')
         OR lower(COALESCE(NEW.source, '')) IN ('greenhouse', 'lever', 'ashby', 'smartrecruiters', 'recruitee', 'workable', 'breezy', 'teamtailor', 'personio', 'bamboohr', 'join')
       THEN 1
       ELSE 2
@@ -10097,13 +10059,20 @@ BEGIN
     );
   END IF;
 
-  -- Only check active deduplication on INSERT of an active row
-  IF TG_OP = 'INSERT' AND COALESCE(NEW.is_active, true) = TRUE AND NEW.dedupe_hash IS NOT NULL THEN
+  -- Deduplicate active rows on INSERT or when an UPDATE sets an inactive row active / changes dedupe_hash
+  IF (
+    (TG_OP = 'INSERT' AND COALESCE(NEW.is_active, true) = TRUE)
+    OR (TG_OP = 'UPDATE' AND NEW.is_active = TRUE AND (OLD.is_active IS DISTINCT FROM TRUE OR OLD.dedupe_hash IS DISTINCT FROM NEW.dedupe_hash))
+  ) AND NEW.dedupe_hash IS NOT NULL THEN
     SELECT id, source_priority, top_keywords, skills
     INTO v_existing
     FROM public.jobs
     WHERE is_active = TRUE
       AND dedupe_hash = NEW.dedupe_hash
+      AND (
+        TG_OP = 'INSERT'
+        OR id <> NEW.id
+      )
       AND (
         NEW.source_type IS NULL
         OR NEW.source_job_id IS NULL
@@ -10145,7 +10114,7 @@ $$;
 
 DROP TRIGGER IF EXISTS trg_jobs_merge_dedupe_priority ON public.jobs;
 CREATE TRIGGER trg_jobs_merge_dedupe_priority
-  BEFORE INSERT ON public.jobs
+  BEFORE INSERT OR UPDATE OF is_active, dedupe_hash, source_priority ON public.jobs
   FOR EACH ROW
   EXECUTE FUNCTION public.merge_job_by_dedupe_priority();
 
