@@ -365,8 +365,8 @@ async function run() {
   if (onboardingCode.includes('useState<string[]>(["full-time"])')) {
     failures.push("onboarding/page.tsx must NOT initialize employmentTypes state with invented default 'full-time'.");
   }
-  if (!onboardingCode.includes('id="daily-digest"')) {
-    failures.push("onboarding/page.tsx must restore the explicit daily-digest checkbox.");
+  if (/dailyDigestOptIn.*useState<boolean>\(true\)/.test(onboardingCode)) {
+    failures.push("onboarding/page.tsx must NOT default dailyDigestOptIn to true (daily digest is Coming Soon).");
   }
   if (!onboardingCode.includes("Saving your preferences")) {
     failures.push("onboarding/page.tsx processing step 4 must be titled 'Saving your preferences'.");
@@ -391,8 +391,8 @@ async function run() {
   }
 
   const jobDetailCode = fs.readFileSync(jobDetailPath, "utf-8");
-  if (!jobDetailCode.includes("TailorResumeModal") || !jobDetailCode.includes("isPro={isPro}")) {
-    failures.push("JobDetailView.tsx must pass isPro to TailorResumeModal.");
+  if (!jobDetailCode.includes("Tailor Resume is coming soon")) {
+    failures.push("JobDetailView.tsx must gate Tailor Resume behind the Coming Soon toast.");
   }
 
   const resumePageCode = fs.readFileSync(resumePagePath, "utf-8");
@@ -401,8 +401,8 @@ async function run() {
   }
 
   const dashboardCode = fs.readFileSync(dashboardPath, "utf-8");
-  if (!dashboardCode.includes("ResumeUploadAndConfirm") || !dashboardCode.includes("isPro={isPro}")) {
-    failures.push("dashboard/page.tsx must pass isPro to ResumeUploadAndConfirm.");
+  if (dashboardCode.includes("ResumeUploadAndConfirm")) {
+    failures.push("dashboard/page.tsx must not mount ResumeUploadAndConfirm (resume upload is Coming Soon).");
   }
   if (dashboardCode.includes("Your match score is ready")) {
     failures.push("dashboard/page.tsx must NOT claim 'Your match score is ready' for free users.");

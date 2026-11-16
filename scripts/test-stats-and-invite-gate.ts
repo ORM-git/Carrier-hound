@@ -671,7 +671,8 @@ async function runTests() {
       headers: { Authorization: "Bearer mock-token-unapproved" },
     })
   );
-  assert.strictEqual(unapprovedQuota.status, 200, "Me Quota must return 200 for new signed-in user");
+  // Launch scope: quota is Coming Soon (503), but a new signed-in user must not be told "Early access only".
+  assert.strictEqual(unapprovedQuota.status, 503, "Me Quota is gated Coming Soon (503) for a new signed-in user");
   const quotaBody = await unapprovedQuota.json().catch(() => ({}));
   assert.ok(!String(quotaBody.error || "").includes("Early access only"));
 
