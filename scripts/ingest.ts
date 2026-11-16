@@ -422,40 +422,44 @@ export async function updateExistingJobs(
   retryDelayMs: number = UPDATE_RETRY_DELAY_MS
 ): Promise<string | null> {
   let firstError: string | null = null;
-  await Promise.all(
-    toUpdate.map(async ({ id, item, original }) => {
-      const doUpdate = () =>
-        supabase
-          .from('jobs')
-          .update({
-            ...item,
-            last_seen_at: new Date().toISOString(),
-            is_active: true,
-            status: 'active',
-          })
-          .eq('id', id);
+  const UPDATE_CONCURRENCY = 10;
+  for (let i = 0; i < toUpdate.length; i += UPDATE_CONCURRENCY) {
+    const slice = toUpdate.slice(i, i + UPDATE_CONCURRENCY);
+    await Promise.all(
+      slice.map(async ({ id, item, original }) => {
+        const doUpdate = () =>
+          supabase
+            .from('jobs')
+            .update({
+              ...item,
+              last_seen_at: new Date().toISOString(),
+              is_active: true,
+              status: 'active',
+            })
+            .eq('id', id);
 
-      let { error: updErr } = await doUpdate();
-      if (updErr) {
-        await new Promise((r) => setTimeout(r, retryDelayMs));
-        ({ error: updErr } = await doUpdate());
-      }
-
-      if (!updErr) {
-        stats.updated++;
-        if (hasJobDescriptionsTable && original?.description) {
-          await supabase.from('job_descriptions').upsert({
-            job_id: id,
-            description_text: original.description,
-            updated_at: new Date().toISOString(),
-          });
+        let { error: updErr } = await doUpdate();
+        if (updErr) {
+          await new Promise((r) => setTimeout(r, retryDelayMs));
+          ({ error: updErr } = await doUpdate());
         }
-      } else {
-        stats.failed++;
-        if (!firstError) firstError = updErr.message || String(updErr);
-      }
-    })
-  );
+
+        if (!updErr) {
+          stats.updated++;
+          if (hasJobDescriptionsTable && original?.description) {
+            await supabase.from('job_descriptions').upsert({
+              job_id: id,
+              description_text: original.description,
+              updated_at: new Date().toISOString(),
+            });
+          }
+        } else {
+          stats.failed++;
+          if (!firstError) firstError = updErr.message || String(updErr);
+        }
+      })
+    );
+  }
   return firstError;
 }
 
@@ -931,7 +935,7 @@ async function main() {
                   activeQuery.ilike('company', cleanCompName);
                 }
 
-                const { data: dbActiveJobs } = await activeQuery;
+                const { data: dbActiveJobs } = await activeQuery.limit(5000);
                 if (dbActiveJobs && dbActiveJobs.length > 0) {
                   // Destructive safety guard: if returned count drops by >50% on boards with >5 active jobs,
                   // do not mass-expire in a single sync (protect against partial/paginated API outages)
@@ -945,18 +949,27 @@ async function main() {
                       .map((j) => j.id);
 
                     if (disappearedIds.length > 0) {
-                      const { error: expErr } = await supabase
-                        .from('jobs')
-                        .update({
-                          is_active: false,
-                          status: 'expired',
-                          expires_at: new Date().toISOString(),
-                        })
-                        .in('id', disappearedIds);
+                      let expiredCount = 0;
+                      const EXP_BATCH_SIZE = 200;
+                      for (let d = 0; d < disappearedIds.length; d += EXP_BATCH_SIZE) {
+                        const idBatch = disappearedIds.slice(d, d + EXP_BATCH_SIZE);
+                        const { error: expErr } = await supabase
+                          .from('jobs')
+                          .update({
+                            is_active: false,
+                            status: 'expired',
+                            expires_at: new Date().toISOString(),
+                          })
+                          .in('id', idBatch);
 
-                      if (!expErr) {
-                        console.log(`   📉 Disappearance Detection: Expired ${disappearedIds.length} obsolete jobs verified removed from ATS board.`);
-                        summary.cleanup.markedExpired += disappearedIds.length;
+                        if (!expErr) {
+                          expiredCount += idBatch.length;
+                        }
+                      }
+
+                      if (expiredCount > 0) {
+                        console.log(`   📉 Disappearance Detection: Expired ${expiredCount} obsolete jobs verified removed from ATS board.`);
+                        summary.cleanup.markedExpired += expiredCount;
                       }
                     }
                   }
