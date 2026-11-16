@@ -1109,6 +1109,134 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
   return null;
 }
 
+/**
+ * Batch fetches multiple jobs by IDs in at most 1-2 requests (eliminates N+1 on Saved/Applied tabs).
+ */
+export async function getLiveJobByIds(
+  jobIds: string[],
+  isPro: boolean = false
+): Promise<Record<string, LiveJob>> {
+  const cleanIds = Array.from(
+    new Set(jobIds.map((id) => (id ? id.trim() : "")).filter(Boolean))
+  ).slice(0, 25);
+  const results: Record<string, LiveJob> = {};
+  if (cleanIds.length === 0) return results;
+
+  if (isPro) {
+    try {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (token) {
+        const res = await fetch("/api/jobs/pro", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ ids: cleanIds }),
+        });
+        if (res.ok) {
+          const proData = await res.json();
+          if (Array.isArray(proData.jobs)) {
+            for (const job of proData.jobs) {
+              if (!job?.id) continue;
+              const isInactive = Boolean(
+                job.isExpired ||
+                  job.is_expired ||
+                  job.is_active === false ||
+                  job.status === "expired" ||
+                  job.status === "closed"
+              );
+              results[job.id] = {
+                id: job.id,
+                title: stripHtmlAndExecutableMarkup(job.title || "Untitled Position"),
+                company: stripHtmlAndExecutableMarkup(job.company || "Verified Employer"),
+                location: stripHtmlAndExecutableMarkup(
+                  job.location || (job.remote ? "Remote (Worldwide)" : "Remote")
+                ),
+                date: formatDate(job.posted_at || job.first_seen_at || job.created_at),
+                salary: stripHtmlAndExecutableMarkup(
+                  job.salary_display ||
+                    formatSalary(job.salary_min, job.salary_max, job.currency, job.salary_period) ||
+                    job.salary_text ||
+                    ""
+                ),
+                salary_display: job.salary_display || null,
+                salary_original: job.salary_original || null,
+                category: stripHtmlAndExecutableMarkup(job.category || "engineering"),
+                remote: Boolean(job.remote),
+                remoteScope: job.remote_scope || undefined,
+                remoteEligibility: job.remote_eligibility || undefined,
+                country: job.country || job.country_code || "",
+                type: job.job_type === "internship" ? "Internship" : "Full-time",
+                directSource: Boolean(job.verified ?? true),
+                applyUrl: isInactive ? "" : sanitizeExternalUrl(job.apply_url) || "",
+                description: stripHtmlAndExecutableMarkup(job.description || ""),
+                skills: job.skills || [],
+                postedAt: job.posted_at || job.first_seen_at || job.created_at,
+                isExpired: isInactive,
+                status: isInactive ? "expired" : job.status || "active",
+                logoUrl: job.logo_url || job.logoUrl || null,
+                logo_url: job.logo_url || job.logoUrl || null,
+              };
+            }
+          }
+        }
+      }
+    } catch (err) {
+      log.warn("Batch Pro job fetch failed, falling back to public batch:", { error: err });
+    }
+  }
+
+  const remainingIds = cleanIds.filter((id) => !results[id]);
+  if (remainingIds.length === 0) return results;
+
+  try {
+    const supabase = createClient();
+    const selectColumns =
+      "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at, status, is_active";
+    const { data } = await supabase
+      .from("jobs_public")
+      .select(selectColumns)
+      .in("id", remainingIds);
+
+    if (Array.isArray(data)) {
+      for (const row of data as any[]) {
+        if (!row?.id) continue;
+        const expired = Boolean(
+          row.is_active === false || row.status === "expired" || row.status === "closed"
+        );
+        results[row.id] = {
+          id: row.id,
+          title: row.title || "Untitled Position",
+          company: "Verified Employer",
+          location: row.location || (row.remote ? "Remote (Worldwide)" : "Remote"),
+          date: formatDate(row.posted_at || row.created_at),
+          salary: "",
+          category: row.category || "engineering",
+          remote: Boolean(row.remote),
+          remoteScope: row.remote_scope || undefined,
+          remoteEligibility: row.remote_eligibility || undefined,
+          country: row.country_code || row.country || "",
+          type: row.job_type === "internship" ? "Internship" : "Full-time",
+          directSource: Boolean(row.verified),
+          applyUrl: "",
+          description: "",
+          skills: [],
+          postedAt: row.posted_at || row.created_at,
+          isExpired: expired,
+          status: expired ? "expired" : row.status || "active",
+        };
+      }
+    }
+  } catch (err) {
+    log.warn("Batch public job fetch error:", { error: err });
+  }
+
+  return results;
+}
+
 let cachedAllActiveJobs: LiveJob[] | null = null;
 let cacheTimestamp = 0;
 const CACHE_TTL_MS = 5 * 60 * 1000;

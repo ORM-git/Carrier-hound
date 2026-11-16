@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, useReducedMotion } from "motion/react";
-import { getLiveJobs, getLiveJobById, LiveJob, isEarlyApplicant, capJobsPerCompany } from "@/lib/jobs/service";
+import { getLiveJobs, getLiveJobById, getLiveJobByIds, LiveJob, isEarlyApplicant, capJobsPerCompany } from "@/lib/jobs/service";
 import { getAuthUser, getUserPreferences } from "@/lib/auth/session";
 import { getCandidateProfile, calculateProfileCompletion } from "@/lib/resume/storage";
 import { CandidateProfile } from "@/lib/resume/types";
@@ -447,6 +447,7 @@ function JobsPageInner() {
   const [preferences, setPreferences] = useState<UserPreferences | null>(null);
   const [trackedApplications, setTrackedApplications] = useState<TrackedApplication[]>([]);
   const [resolvedJobsMap, setResolvedJobsMap] = useState<Record<string, LiveJob>>({});
+  const attemptedResolveIdsRef = useRef<Set<string>>(new Set());
   const [savedJobIds, setSavedJobIds] = useState<string[]>([]);
   const [_appliedJobIds, setAppliedJobIds] = useState<string[]>([]);
   const [appliedCount, setAppliedCount] = useState<number>(0);
@@ -1040,28 +1041,30 @@ function JobsPageInner() {
 
   // Background resolution for saved/applied jobs that may not be on the current page of Recommended results
   useEffect(() => {
+    attemptedResolveIdsRef.current.clear();
+  }, [isPro]);
+
+  useEffect(() => {
     if (activeTab !== "saved" && activeTab !== "liked" && activeTab !== "applied") return;
     const targetApps = (activeTab === "saved" || activeTab === "liked") ? savedApps : appliedApps;
     const missingJobIds = targetApps
       .map((a) => a.jobId)
-      .filter((id): id is string => Boolean(id) && !liveJobs.some((j) => j.id === id) && !resolvedJobsMap[id!]);
+      .filter(
+        (id): id is string =>
+          Boolean(id) &&
+          !liveJobs.some((j) => j.id === id) &&
+          !resolvedJobsMap[id!] &&
+          !attemptedResolveIdsRef.current.has(id!)
+      );
 
     if (missingJobIds.length === 0) return;
 
+    const batchIds = missingJobIds.slice(0, 15);
+    batchIds.forEach((id) => attemptedResolveIdsRef.current.add(id));
+
     let cancelled = false;
-    Promise.allSettled(
-      missingJobIds.slice(0, 15).map(async (id) => {
-        const fullJob = await getLiveJobById(id, isPro);
-        return { id, job: fullJob };
-      })
-    ).then((results) => {
+    getLiveJobByIds(batchIds, isPro).then((updates) => {
       if (cancelled) return;
-      const updates: Record<string, LiveJob> = {};
-      for (const res of results) {
-        if (res.status === "fulfilled" && res.value.job) {
-          updates[res.value.id] = res.value.job;
-        }
-      }
       if (Object.keys(updates).length > 0) {
         setResolvedJobsMap((prev) => ({ ...prev, ...updates }));
       }
