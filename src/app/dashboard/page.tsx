@@ -599,9 +599,14 @@ export default function DashboardPage() {
             <Card variant="surface" className="p-tk-3 sm:p-tk-2">
               <div className="mb-tk-2 pb-tk-2 border-b border-line flex flex-wrap items-center justify-between gap-tk-1">
                 <div className="space-y-0.5">
-                  <span className="text-tk-caption font-semibold text-brand-700 uppercase tracking-wider">
-                    Step 2 of 2 • Guided Pro Flow
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-tk-caption font-semibold text-brand-700 uppercase tracking-wider">
+                      Step 2 of 2 • Guided Pro Flow
+                    </span>
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800">
+                      Coming soon
+                    </span>
+                  </div>
                   <h2 className="text-tk-h3 sm:text-tk-h2 text-ink">Verify Your Resume Facts</h2>
                   <p className="text-tk-body-sm text-ink-muted">
                     Upload your resume document or skip to fill in verified facts manually.
@@ -631,11 +636,17 @@ export default function DashboardPage() {
 
           {/* STEP 3 & 4: TOP 10 JOBS WITH COMPATIBLE SCORE & PER-JOB AI ACTIONS */}
           {activeStep === "matches" && candidate && (
-            isPro ? (
-              <TopTenCompatibleJobs candidate={candidate} isPro={isPro} userId={user?.id || null} />
-            ) : (
-              <FreeDashboardTopTenPreview />
-            )
+            <div className="space-y-3">
+              <div className="flex items-center justify-between p-2.5 rounded-lg bg-amber-50 border border-amber-200">
+                <span className="text-xs font-medium text-amber-900">AI Top 10 Compatible Matches</span>
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800">Coming soon</span>
+              </div>
+              {isPro ? (
+                <TopTenCompatibleJobs candidate={candidate} isPro={isPro} userId={user?.id || null} />
+              ) : (
+                <FreeDashboardTopTenPreview />
+              )}
+            </div>
           )}
 
           {/* Fallback prompt if step is matches but resume is not uploaded */}

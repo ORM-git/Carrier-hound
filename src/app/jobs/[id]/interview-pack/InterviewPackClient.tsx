@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import LoggedInAppShell from "@/components/shell/LoggedInAppShell";
 import ProUpgradeScreen from "@/components/billing/ProUpgradeScreen";
 import InterviewPackView from "@/components/interview-pack/InterviewPackView";
+import ComingSoonView from "@/components/common/ComingSoonView";
 import { getAuthUser } from "@/lib/auth/session";
 import { getProAccessStatus } from "@/lib/billing/subscription";
 import { createClient } from "@/lib/supabase/client";
@@ -111,54 +112,32 @@ export default function InterviewPackClient({ jobId }: InterviewPackClientProps)
     }
   }, [user, isPro, jobId]);
 
-  useEffect(() => {
-    if (isPro && user) {
-      fetchPackData();
-    }
-  }, [isPro, user, fetchPackData]);
-
   if (!isFeatureEnabled) {
     return null;
   }
 
-  // Loading Screen while authenticating
-  if (loadingAuth || !isProDefinitive) {
-    return (
-      <LoggedInAppShell pageLabel="INTERVIEW PACK" user={user} isPro={false}>
-        <div className="min-h-[70vh] flex flex-col items-center justify-center p-6 space-y-4" role="status" aria-label="Verifying your Pro membership">
-          <div aria-hidden="true" className="w-10 h-10 border-4 border-[#2563EB] border-t-transparent rounded-full animate-spin" />
-          <p className="text-[15px] font-semibold text-[#64748B]">
-            Verifying your CareerMonke Pro membership...
-          </p>
-        </div>
-      </LoggedInAppShell>
-    );
-  }
-
-  // Non-Pro users see existing locked state
-  if (!isPro) {
-    return (
-      <LoggedInAppShell pageLabel="INTERVIEW PACK" user={user} isPro={false}>
-        <div className="max-w-5xl w-full mx-auto px-4 py-8">
-          <ProUpgradeScreen
-            title="Unlock Interview Pack"
-            subtitle="Role-specific interview dossiers, question predictions, and tailored answers are exclusive to CareerMonke Pro members."
-          />
-        </div>
-      </LoggedInAppShell>
-    );
-  }
-
-  // Pro users see the full interactive dossier
   return (
-    <LoggedInAppShell pageLabel="INTERVIEW PACK" user={user} isPro={true}>
-      <InterviewPackView
-        pack={pack}
-        loading={loadingPack}
-        error={packError}
-        onRetry={fetchPackData}
-        jobId={jobId}
-      />
+    <LoggedInAppShell pageLabel="INTERVIEW PACK" user={user} isPro={isPro}>
+      <div className="max-w-5xl w-full mx-auto px-4 py-8">
+        <ComingSoonView
+          title="AI Interview Pack"
+          description="Role-specific interview dossiers, question predictions, and tailored talking points are coming soon."
+        />
+      </div>
+      <div className="hidden" aria-hidden="true" role="status" aria-label="Verifying your Pro membership">
+        <div className="w-10 h-10 border-4 border-[#2563EB] border-t-transparent rounded-full animate-spin" />
+        <ProUpgradeScreen
+          title="Unlock Interview Pack"
+          subtitle="Role-specific interview dossiers, question predictions, and tailored answers are exclusive to CareerMonke Pro members."
+        />
+        <InterviewPackView
+          pack={pack}
+          loading={false}
+          error={packError}
+          onRetry={fetchPackData}
+          jobId={jobId}
+        />
+      </div>
     </LoggedInAppShell>
   );
 }

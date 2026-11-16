@@ -22,6 +22,7 @@ import {
 import AppIconRail from "@/components/shell/AppIconRail";
 import AppTopBar from "@/components/shell/AppTopBar";
 import LoggedInAppShell from "@/components/shell/LoggedInAppShell";
+import ComingSoonView from "@/components/common/ComingSoonView";
 import CompanyLogo from "@/components/CompanyLogo";
 import {
   TrackedApplication,
@@ -106,19 +107,8 @@ export default function TrackerPage() {
         return;
       }
       setUser(u);
-      loadData(u.id);
+      setIsLoading(false);
     });
-
-    const handleUpdate = () => {
-      getAuthUser().then((u) => {
-        if (u) {
-          setUser(u);
-          loadData(u.id);
-        }
-      });
-    };
-    window.addEventListener("careermonke_tracker_updated", handleUpdate);
-    return () => window.removeEventListener("careermonke_tracker_updated", handleUpdate);
   }, [router]);
 
   // Drag and drop handlers
@@ -332,20 +322,6 @@ export default function TrackerPage() {
     );
   }
 
-  // Definitively non-Pro
-  if (!isPro) {
-    return (
-      <LoggedInAppShell pageLabel="TRACKER" user={user} isPro={false}>
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
-          <ProUpgradeScreen
-            title="Unlock Application Tracker"
-            subtitle="Upgrade to CareerMonke Pro to save jobs, track interview stages, and manage your pipeline."
-          />
-        </div>
-              </LoggedInAppShell>
-    );
-  }
-
   return (
     <LoggedInAppShell
       pageLabel="TRACKER"
@@ -353,7 +329,17 @@ export default function TrackerPage() {
       isPro={isPro}
       mainClassName="flex-1 max-w-[1400px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-4 space-y-5 sm:space-y-3.5 pb-24 lg:pb-12"
     >
-          {/* Top row above the board: segmented control, search input pill, primary blue Add button */}
+      <ComingSoonView
+        title="Application Tracker"
+        description="The application tracking board is currently in development and will be available soon."
+      />
+
+      <div className="hidden" aria-hidden="true">
+        <ProUpgradeScreen
+          title="Unlock Application Tracker"
+          subtitle="Upgrade to CareerMonke Pro to save jobs, track interview stages, and manage your pipeline."
+        />
+        {/* Top row above the board: segmented control, search input pill, primary blue Add button */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3.5">
             {/* Segmented control for views (Board / List) */}
             <div className="inline-flex items-center p-1 rounded-full bg-[#F1F5F9] border border-[#E2E8F0] shrink-0 self-start sm:self-auto">
@@ -1071,6 +1057,7 @@ export default function TrackerPage() {
           </div>
         </div>
       )}
+      </div>
     </LoggedInAppShell>
   );
 }

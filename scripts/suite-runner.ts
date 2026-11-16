@@ -132,6 +132,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-624v2-probe.ts", command: "npx tsx scripts/test-624v2-probe.ts", classification: "offline" },
   { name: "scripts/test-addon-verify-and-expiry.ts", command: "npx tsx scripts/test-addon-verify-and-expiry.ts", classification: "offline" },
   { name: "scripts/test-razorpay-mode-isolation.ts", command: "npx tsx scripts/test-razorpay-mode-isolation.ts", classification: "offline" },
+  { name: "scripts/test-launch-scope-controls.ts", command: "npx tsx scripts/test-launch-scope-controls.ts", classification: "offline" },
   { name: "scripts/test-policy-pages.ts", command: "npx tsx scripts/test-policy-pages.ts", classification: "offline" },
   { name: "scripts/test-ticker-paging-and-strip.ts", command: "npx tsx scripts/test-ticker-paging-and-strip.ts", classification: "offline" },
   { name: "scripts/test-lock-page-views-insert.ts", command: "npx tsx scripts/test-lock-page-views-insert.ts", classification: "offline" },

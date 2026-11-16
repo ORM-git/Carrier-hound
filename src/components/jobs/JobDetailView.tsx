@@ -1112,8 +1112,11 @@ export default function JobDetailView({
                 <div className="w-8 h-8 rounded-full bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600 shrink-0">
                   <Sparkles className="w-4 h-4" />
                 </div>
-                <div>
-                  <h3 className="text-sm font-bold text-[#0F172A]">Tailor Resume</h3>
+                <div className="flex-1">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-[#0F172A]">Tailor Resume</h3>
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800">Coming soon</span>
+                  </div>
                   <p className="text-[11px] text-[#64748B]">
                     Customize your resume for this role
                   </p>
@@ -1144,8 +1147,11 @@ export default function JobDetailView({
                 <div className="w-8 h-8 rounded-full bg-blue-50 border border-blue-200 flex items-center justify-center text-[#2563EB] shrink-0">
                   <FileText className="w-4 h-4" />
                 </div>
-                <div>
-                  <h3 className="text-sm font-bold text-[#0F172A]">Interview Pack</h3>
+                <div className="flex-1">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-[#0F172A]">Interview Pack</h3>
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800">Coming soon</span>
+                  </div>
                   <p className="text-[11px] text-[#64748B]">
                     Dossier, questions & tailored answers
                   </p>
@@ -1170,8 +1176,11 @@ export default function JobDetailView({
                 <div className="w-8 h-8 rounded-full bg-blue-50 border border-blue-200 flex items-center justify-center text-[#2563EB] shrink-0">
                   <TrendingUp className="w-4 h-4" />
                 </div>
-                <div>
-                  <h3 className="text-sm font-bold text-[#0F172A]">Skill What-If</h3>
+                <div className="flex-1">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-[#0F172A]">Skill What-If</h3>
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800">Coming soon</span>
+                  </div>
                   <p className="text-[11px] text-[#64748B]">
                     Simulate match gain by adding skills
                   </p>
