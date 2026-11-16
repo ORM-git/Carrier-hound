@@ -4,7 +4,7 @@ import GuideHeader from "@/components/GuideHeader";
 import Footer from "@/components/Footer";
 import { GUIDE_ARTICLES } from "@/data/guides/articles";
 import { CATEGORY_LANDINGS } from "@/data/guides/categories";
-import { BookOpen, ArrowRight, ShieldCheck, Compass, Briefcase, FileText } from "lucide-react";
+import { BookOpen, ArrowRight, Compass } from "lucide-react";
 import { BreadcrumbJsonLd } from "@/components/seo/BreadcrumbJsonLd";
 
 export const metadata = {

@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { copyTextToClipboard } from "@/lib/clipboard";
-import { HelpCircle, Copy, Check, Ear, Sparkles } from "lucide-react";
+import { HelpCircle, Copy, Check, Ear } from "lucide-react";
 import type { ReverseQuestion } from "@/data/interviewPackFixture";
 
 interface AskThemSectionProps {

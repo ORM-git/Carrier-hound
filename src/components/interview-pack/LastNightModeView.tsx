@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Moon, CheckSquare, Square, Sparkles, AlertCircle } from "lucide-react";
+import { Moon, CheckSquare, Square, Sparkles } from "lucide-react";
 import type { InterviewCard } from "@/data/interviewPackFixture";
 import QuestionsCardDeck from "./QuestionsCardDeck";
 

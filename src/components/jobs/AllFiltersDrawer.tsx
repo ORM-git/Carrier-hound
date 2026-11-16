@@ -3,18 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
   X,
-  ChevronRight,
-  Check,
   Search,
-  Lock,
-  RotateCcw,
-  SlidersHorizontal,
-  Briefcase,
-  MapPin,
-  Clock,
-  TrendingUp,
-  Globe,
-  Calendar,
   Building,
 } from "lucide-react";
 import { JobFilterValues } from "./JobFilterBar";

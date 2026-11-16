@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { copyTextToClipboard } from "@/lib/clipboard";
-import { MessageSquareQuote, Copy, Check, FileText, Sparkles } from "lucide-react";
+import { MessageSquareQuote, Copy, Check, FileText } from "lucide-react";
 import type { InterviewCard } from "@/data/interviewPackFixture";
 
 interface YourAnswersSectionProps {

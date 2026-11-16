@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { X, Copy, Download, Check, Sparkles, FileText, ArrowRight, ShieldCheck, AlertCircle, Info } from "lucide-react";
+import { X, Copy, Download, Check, Sparkles, FileText, ShieldCheck, AlertCircle, Info } from "lucide-react";
 import { CandidateProfile } from "@/lib/resume/types";
 import {
   generateTailoredCoverLetter,

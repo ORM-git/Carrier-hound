@@ -12,15 +12,12 @@ import {
   Sparkles,
   ArrowRight,
   RefreshCw,
-  Building,
   Briefcase,
   GraduationCap,
   Award,
-  Calendar,
   Check,
   FileCheck,
   ShieldCheck,
-  Info,
   Edit3,
 } from "lucide-react";
 import {

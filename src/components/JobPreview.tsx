@@ -1,7 +1,6 @@
 "use client";
 
 import React from "react";
-import Link from "next/link";
 import BrandIcon from "./BrandIcon";
 import Chip from "./Chip";
 import { Job } from "@/data/jobs";

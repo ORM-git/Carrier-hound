@@ -19,10 +19,6 @@ import {
   ExternalLink,
   Lock,
   Sparkles,
-  ArrowRight,
-  Check,
-  CheckCircle2,
-  XCircle,
   AlertCircle,
   Clock,
   Briefcase,
@@ -36,7 +32,6 @@ import {
   Laptop,
   TrendingUp,
   Calendar,
-  Building2,
   Globe,
 } from "lucide-react";
 
