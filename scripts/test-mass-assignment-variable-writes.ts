@@ -28,8 +28,6 @@ const BASELINE: Record<string, string> = {
   "src/lib/admin/analytics.ts :: insert(record)": "record assembled server-side from sanitized page-view fields",
   "src/lib/db/optimisticLock.ts :: update(patch)": "helper: caller supplies the patch; helper refuses a patch that sets row_version",
   "src/lib/early-access/gmail.ts :: insert(row)": "send-log row built from server values",
-  "src/lib/cron/dailyDigestCron.ts :: upsert(pendingDigestRows)": "cron-built digest rows",
-  "src/lib/cron/dailyDigestCron.ts :: upsert(row)": "cron-built digest row (per-row retry)",
   "src/lib/billing/razorpay.ts :: update(rawBody)": "NOT a DB write: crypto HMAC update",
   "src/lib/resume/storage.ts :: upsert(payload)": "payload built from the validated candidate profile (two sites: first try and retry)",
 };
