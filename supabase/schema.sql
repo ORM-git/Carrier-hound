@@ -3,32 +3,69 @@
 -- Run this in: Supabase Dashboard → SQL Editor → New query
 -- ============================================================
 
+-- ── COMPANIES TABLE ──────────────────────────────────────────────────────────
+create table if not exists public.companies (
+  id               uuid        primary key default gen_random_uuid(),
+  name             text        not null,
+  slug             text        unique not null,
+  canonical_domain text,
+  category         text        check (category is null or category in ('MNC_BIGTECH', 'HIGH_PRODUCT_YC', 'OTHER_STARTUPS', 'INDIAN_IT_AND_OTHER')),
+  logo_url         text,
+  ats_type         text,
+  careers_url      text,
+  domain           text,
+  country          text,
+  country_code     text,
+  enabled          boolean     default true,
+  failure_count    integer     default 0,
+  last_success_at  timestamptz,
+  last_failure_at  timestamptz,
+  last_job_count   integer     default 0,
+  created_at       timestamptz default now()
+);
+
 -- ── JOBS TABLE ───────────────────────────────────────────────────────────────
 create table if not exists public.jobs (
-  id            uuid        primary key default gen_random_uuid(),
-  company       text        not null,
-  title         text        not null,
-  location      text        not null,
-  remote        boolean     default false,
-  remote_scope  text        check (remote_scope in ('remote', 'hybrid', 'onsite', 'any')),
-  job_type      text        check (job_type in ('job', 'internship', 'full-time', 'part-time', 'contract', 'other')),
-  salary_text   text,                          -- e.g. "$120k–$160k" or null = "Not listed"
-  salary_min    numeric,
-  salary_max    numeric,
-  currency      text        default 'USD',
-  description   text,                          -- Auth-gated — never returned to guests
-  skills        text[],                        -- Auth-gated — never returned to guests
-  apply_url     text,                          -- Auth-gated — direct ATS link
-  source        text,                          -- e.g. 'greenhouse', 'lever', 'ashby', 'remotive'
-  source_job_id text,                          -- ID from source system
-  source_url    text,                          -- The careers page this job was scraped from
-  posted_at     timestamptz default now(),
-  expires_at    timestamptz,
-  first_seen_at timestamptz default now(),
-  last_seen_at  timestamptz default now(),
-  is_active     boolean     default true,
-  status        text        default 'active' check (status in ('active', 'expired')),
-  created_at    timestamptz default now()
+  id              uuid        primary key default gen_random_uuid(),
+  company         text        not null,
+  company_id      uuid        references public.companies(id) on delete set null,
+  title           text        not null,
+  location        text        not null,
+  country         text,
+  country_code    text,
+  remote          boolean     default false,
+  is_remote       boolean     default false,
+  remote_scope    text        check (remote_scope in ('remote', 'hybrid', 'onsite', 'any')),
+  remote_eligibility text,
+  job_type        text        check (job_type in ('job', 'internship', 'full-time', 'part-time', 'contract', 'other')),
+  category        text,
+  role_category   text        check (role_category is null or role_category in ('SDE', 'AI_ML', 'CLOUD', 'DATA', 'OTHER')),
+  top_keywords    text[]      default '{}'::text[],
+  salary_text     text,                          -- e.g. "$120k–$160k" or null = "Not listed"
+  salary_min      numeric,
+  salary_max      numeric,
+  salary_period   text,
+  currency        text        default 'USD',
+  description     text,                          -- Auth-gated — never returned to guests
+  skills          text[],                        -- Auth-gated — never returned to guests
+  apply_url       text,                          -- Auth-gated — direct ATS link
+  logo_url        text,
+  source          text,                          -- e.g. 'greenhouse', 'lever', 'ashby', 'remotive'
+  source_type     text,                          -- e.g. 'ats', 'api', 'feed', 'direct'
+  source_job_id   text,                          -- ID from source system
+  source_url      text,                          -- The careers page this job was scraped from
+  source_priority smallint    default 2 check (source_priority is null or source_priority in (1, 2)),
+  dedupe_hash     text,                          -- SHA-256 of normalized company + normalized title + country + city
+  verified        boolean     default false,
+  posted_at       timestamptz default now(),
+  discovered_at   timestamptz default now(),
+  expires_at      timestamptz,
+  first_seen_at   timestamptz default now(),
+  last_seen_at    timestamptz default now(),
+  is_active       boolean     default true,
+  status          text        default 'active' check (status in ('active', 'expired')),
+  created_at      timestamptz default now(),
+  constraint jobs_source_type_source_job_id_key unique (source_type, source_job_id)
 );
 
 -- ── PROFILES TABLE ───────────────────────────────────────────────────────────
@@ -96,6 +133,37 @@ create index if not exists jobs_company_idx
 create unique index if not exists jobs_source_source_job_id_unique
   on public.jobs (source, source_job_id)
   where source is not null and source_job_id is not null;
+
+-- Unique index on (source_type, source_job_id) for multi-source deduplication
+create unique index if not exists idx_jobs_source_type_source_job_id_uniq
+  on public.jobs (source_type, source_job_id)
+  where source_type is not null and source_job_id is not null;
+
+-- Partial indexes on is_active = true for fast filtering by category, country, and posted_at DESC
+create index if not exists idx_jobs_active_category
+  on public.jobs (category)
+  where is_active = true;
+
+create index if not exists idx_jobs_active_role_category
+  on public.jobs (role_category)
+  where is_active = true;
+
+create index if not exists idx_jobs_active_country
+  on public.jobs (country, country_code)
+  where is_active = true;
+
+create index if not exists idx_jobs_active_posted_at_desc
+  on public.jobs (posted_at desc)
+  where is_active = true;
+
+create index if not exists idx_jobs_active_category_country_posted_at
+  on public.jobs (category, country, posted_at desc)
+  where is_active = true;
+
+-- Unique partial index on active dedupe_hash (Direct ATS priority = 1, Aggregators = 2)
+create unique index if not exists idx_jobs_active_dedupe_hash_uniq
+  on public.jobs (dedupe_hash)
+  where is_active = true and dedupe_hash is not null;
 
 -- Prevent duplicate jobs from the same ATS (same apply URL = same job)
 create unique index if not exists jobs_apply_url_unique

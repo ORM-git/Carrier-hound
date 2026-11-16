@@ -12,7 +12,15 @@ import {
   SourceConfig,
   SourceStats,
 } from './types';
-import { detectCategory, slugify } from './utils/sanitizer';
+import {
+  detectCategory,
+  detectCompanyCategory,
+  detectRoleCategory,
+  extractTopKeywords,
+  computeDedupeHash,
+  getSourcePriority,
+  slugify,
+} from './utils/sanitizer';
 import { dropFeedJobsAlreadyCoveredByAts } from './utils/crossSourceDedupe';
 import { resolveCompanyLogo } from '../src/lib/companies/logoResolver';
 
@@ -191,9 +199,11 @@ export function getSourceTimeoutMs(source: SourceConfig): number {
 
 // Track schema capability flags dynamically
 let hasCompaniesTable = false;
+let hasHighVolumeCompanyColumns = false;
 let hasJobDescriptionsTable = false;
 let hasIngestRunsTable = false;
 let hasVerifiedColumn = false;
+let hasHighVolumeJobColumns = false;
 let hasCoverageColumn = false;
 
 // Entry-count guard, not a measured performance claim. Evicted companies
@@ -235,6 +245,10 @@ async function detectSchemaCapabilities(supabase: SupabaseClient): Promise<void>
   try {
     const { error: compErr } = await supabase.from('companies').select('id').limit(1);
     hasCompaniesTable = !compErr;
+    if (hasCompaniesTable) {
+      const { error: compHvErr } = await supabase.from('companies').select('canonical_domain, category').limit(1);
+      hasHighVolumeCompanyColumns = !compHvErr;
+    }
 
     const { error: descErr } = await supabase.from('job_descriptions').select('job_id').limit(1);
     hasJobDescriptionsTable = !descErr;
@@ -249,7 +263,13 @@ async function detectSchemaCapabilities(supabase: SupabaseClient): Promise<void>
     const { error: verErr } = await supabase.from('jobs').select('verified').limit(1);
     hasVerifiedColumn = !verErr;
 
-    console.log(`Schema capabilities: companies=${hasCompaniesTable}, job_descriptions=${hasJobDescriptionsTable}, ingest_runs=${hasIngestRunsTable}, coverage_col=${hasCoverageColumn}, verified_col=${hasVerifiedColumn}`);
+    const { error: hvJobErr } = await supabase
+      .from('jobs')
+      .select('role_category, top_keywords, dedupe_hash, is_remote, source_priority')
+      .limit(1);
+    hasHighVolumeJobColumns = !hvJobErr;
+
+    console.log(`Schema capabilities: companies=${hasCompaniesTable} (hv=${hasHighVolumeCompanyColumns}), job_descriptions=${hasJobDescriptionsTable}, ingest_runs=${hasIngestRunsTable}, coverage_col=${hasCoverageColumn}, verified_col=${hasVerifiedColumn}, hv_job_cols=${hasHighVolumeJobColumns}`);
   } catch (err: any) {
     console.warn(`[Schema Detection Warning]: ${err.message}`);
   }
@@ -290,6 +310,12 @@ async function getOrCreateCompany(
               .update({
                 logo_url: resolved.imageUrl,
                 ...(resolved.domain && !existing.domain ? { domain: resolved.domain } : {}),
+                ...(hasHighVolumeCompanyColumns
+                  ? {
+                      ...(resolved.domain ? { canonical_domain: resolved.domain } : {}),
+                      category: detectCompanyCategory(companyName, slug, resolved.domain || existing.domain),
+                    }
+                  : {}),
               })
               .eq('id', existing.id);
           }
@@ -328,6 +354,12 @@ async function getOrCreateCompany(
           last_success_at: new Date().toISOString(),
           ...(initialLogoUrl ? { logo_url: initialLogoUrl } : {}),
           ...(initialDomain ? { domain: initialDomain } : {}),
+          ...(hasHighVolumeCompanyColumns
+            ? {
+                ...(initialDomain ? { canonical_domain: initialDomain } : {}),
+                category: detectCompanyCategory(companyName, slug, initialDomain),
+              }
+            : {}),
         },
       ])
       .select('id')
@@ -620,13 +652,23 @@ async function main() {
           continue;
         }
 
-        // Cross-source deduplication: Tier 1 ATS direct vs Tier 2 Aggregator feeds
+        // Cross-source deduplication: Tier 1 ATS direct (priority = 1) vs Tier 2 Aggregator feeds (priority = 2)
         const roleDedupeKey = `${slugify(job.company)}::${slugify(job.title)}::${job.country_code || 'any'}`;
+        const dedupeHash = job.dedupe_hash || computeDedupeHash(job.company, job.title, job.country_code || job.country, job.location);
+        job.dedupe_hash = dedupeHash;
+        job.role_category = job.role_category || detectRoleCategory(job.title, job.category, job.skills);
+        job.top_keywords = job.top_keywords && job.top_keywords.length > 0
+          ? job.top_keywords.slice(0, 8)
+          : extractTopKeywords(job.title, job.description, job.skills, 8);
+        job.is_remote = Boolean(job.is_remote ?? job.remote);
+        job.source_priority = getSourcePriority(job.source_type, job.source || source.type);
+
         if (isAtsSource(source.type)) {
           seenAtsRoles.add(roleDedupeKey);
+          seenAtsRoles.add(dedupeHash);
         } else {
           // If a verified ATS role already exists, drop the feed duplicate
-          if (seenAtsRoles.has(roleDedupeKey)) {
+          if (seenAtsRoles.has(roleDedupeKey) || seenAtsRoles.has(dedupeHash)) {
             stats.skipped++;
             continue;
           }
@@ -725,6 +767,17 @@ async function main() {
                 row.seniority = j.seniority || 'unknown';
                 row.salary_period = j.salary_period || null;
                 if (companyId) row.company_id = companyId;
+              }
+
+              // Include Phase 3 high-volume columns when available in database
+              if (hasHighVolumeJobColumns) {
+                row.role_category = j.role_category || detectRoleCategory(j.title, j.category, j.skills);
+                row.top_keywords = Array.isArray(j.top_keywords) && j.top_keywords.length > 0
+                  ? j.top_keywords.slice(0, 8)
+                  : extractTopKeywords(j.title, j.description, j.skills, 8);
+                row.dedupe_hash = j.dedupe_hash || computeDedupeHash(j.company, j.title, j.country_code || j.country, j.location);
+                row.is_remote = Boolean(j.is_remote ?? j.remote);
+                row.source_priority = j.source_priority || getSourcePriority(j.source_type, j.source);
               }
 
               return row;

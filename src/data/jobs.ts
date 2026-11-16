@@ -6,7 +6,11 @@ export interface Job {
   date: string;
   salary: string;
   category: string;
+  role_category?: string | null;
+  company_category?: string | null;
+  top_keywords?: string[];
   remote: boolean;
+  is_remote?: boolean;
   country: string;
   type: string;
   directSource: boolean;

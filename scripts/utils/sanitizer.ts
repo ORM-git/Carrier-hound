@@ -1150,6 +1150,16 @@ export function detectJobType(title: string = '', rawType: string = ''): 'job' |
 
 export { parseSalary, formatSalary } from '../../src/lib/salary/parser';
 export type { ParsedSalary, ParseSalaryOptions, SalaryPeriod } from '../../src/lib/salary/parser';
+export {
+  COMPANY_CATEGORIES,
+  ROLE_CATEGORIES,
+  detectCompanyCategory,
+  detectRoleCategory,
+  extractTopKeywords,
+  computeDedupeHash,
+  getSourcePriority,
+} from '../../src/lib/jobs/highVolumeEnrichment';
+export type { CompanyCategory, RoleCategory } from '../../src/lib/jobs/highVolumeEnrichment';
 
 /**
  * Normalizes any date into a valid ISO string. Falls back to current time.

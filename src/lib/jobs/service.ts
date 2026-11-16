@@ -7,6 +7,12 @@ import { sanitizeExternalUrl, stripHtmlAndExecutableMarkup } from "@/lib/securit
 import { COUNTRY_CODE_TO_NAME, getCountryFilterClause } from "@/lib/countries";
 import { decodeCursor, encodeCursor } from "@/lib/pagination/cursor";
 import { singleFlight } from "@/lib/cache/singleFlight";
+import {
+  detectRoleCategory,
+  extractTopKeywords,
+  type CompanyCategory,
+  type RoleCategory,
+} from "@/lib/jobs/highVolumeEnrichment";
 
 export interface LiveJob {
   id: string;
@@ -18,7 +24,11 @@ export interface LiveJob {
   date: string;
   salary: string;
   category: string;
+  role_category?: RoleCategory | string | null;
+  company_category?: CompanyCategory | string | null;
+  top_keywords?: string[];
   remote: boolean;
+  is_remote?: boolean;
   remoteScope?: string;
   remoteEligibility?: string;
   country: string;
@@ -804,6 +814,9 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         const resolvedLogo = (isPro && row.company && row.company !== "Verified Employer")
           ? (row.logo_url || row.logoUrl || row.companies?.logo_url || null)
           : null;
+        const resolvedKeywords = Array.isArray(row.top_keywords) && row.top_keywords.length > 0
+          ? row.top_keywords.slice(0, 8)
+          : extractTopKeywords(row.title, null, Array.isArray(row.skills) ? row.skills : null, 8);
         return {
           id: row.id,
           title: row.title || "Untitled Position",
@@ -816,7 +829,10 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
           date: formatDate(row.posted_at || row.created_at),
           salary: "",
           category: row.category || "engineering",
+          role_category: row.role_category || detectRoleCategory(row.title, row.category, row.skills),
+          top_keywords: resolvedKeywords,
           remote: Boolean(row.remote),
+          is_remote: Boolean(row.is_remote ?? row.remote),
           remoteScope: row.remote_scope || undefined,
           remoteEligibility: row.remote_eligibility || undefined,
           country: row.country_code || row.country || "",
@@ -873,6 +889,12 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
                       if (u.apply_url) job.applyUrl = sanitizeExternalUrl(u.apply_url) || "";
                       if (u.description) job.description = stripHtmlAndExecutableMarkup(u.description);
                       if (u.skills) job.skills = u.skills;
+                      if (Array.isArray(u.top_keywords) && u.top_keywords.length > 0) {
+                        job.top_keywords = u.top_keywords.slice(0, 8);
+                      } else if (u.description || u.skills) {
+                        job.top_keywords = extractTopKeywords(job.title, u.description, u.skills, 8);
+                      }
+                      if (u.role_category) job.role_category = u.role_category;
                       if (u.logo_url || u.logoUrl) {
                         job.logoUrl = u.logo_url || u.logoUrl;
                         job.logo_url = u.logo_url || u.logoUrl;
@@ -972,7 +994,12 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
                 salary_display: job.salary_display || null,
                 salary_original: job.salary_original || null,
                 category: stripHtmlAndExecutableMarkup(job.category || "engineering"),
+                role_category: job.role_category || detectRoleCategory(job.title, job.category, job.skills),
+                top_keywords: Array.isArray(job.top_keywords) && job.top_keywords.length > 0
+                  ? job.top_keywords.slice(0, 8)
+                  : extractTopKeywords(job.title, job.description, job.skills, 8),
                 remote: Boolean(job.remote),
+                is_remote: Boolean(job.is_remote ?? job.remote),
                 remoteScope: job.remote_scope || undefined,
                 remoteEligibility: job.remote_eligibility || undefined,
                 country: job.country || job.country_code || "",

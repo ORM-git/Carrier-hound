@@ -5,6 +5,7 @@ import { formatSalary } from "@/lib/salary/parser";
 import { verifyUserNotBanned } from "@/lib/admin/auth";
 import { getCountryFilterClause } from "@/lib/countries";
 import { sanitizeSearchQuery } from "@/lib/api/jobs";
+import { detectRoleCategory, extractTopKeywords } from "@/lib/jobs/highVolumeEnrichment";
 
 import { checkRequiredEnv } from "@/lib/api/envCheck";
 
@@ -183,9 +184,14 @@ export async function GET(req: Request) {
           const displaySalary = preferredCurrency
             ? (formatSalary(j.salary_min, j.salary_max, j.currency, j.salary_period, { displayCurrency: preferredCurrency }) || j.salary_text || null)
             : originalSalary;
+          const resolvedDesc = resolveDescription(j.description, descMap.get(j.id));
           return {
             ...j,
-            description: resolveDescription(j.description, descMap.get(j.id)),
+            description: resolvedDesc,
+            role_category: j.role_category || detectRoleCategory(j.title, j.category, j.skills),
+            top_keywords: Array.isArray(j.top_keywords) && j.top_keywords.length > 0
+              ? j.top_keywords.slice(0, 8)
+              : extractTopKeywords(j.title, resolvedDesc, j.skills, 8),
             country: j.country_code || j.country || "",
             salary_text: displaySalary || originalSalary || "",
             salary_display: displaySalary,
@@ -217,9 +223,14 @@ export async function GET(req: Request) {
       ? (formatSalary(row.salary_min, job.salary_max, job.currency, job.salary_period, { displayCurrency: preferredCurrency }) || job.salary_text || null)
       : originalSalary;
     const isInactive = Boolean(row.is_active === false || row.status === "expired" || row.status === "closed");
+    const resolvedSingleDesc = resolveDescription(job.description, descMap.get(job.id));
     const formattedJob = {
       ...job,
-      description: resolveDescription(job.description, descMap.get(job.id)),
+      description: resolvedSingleDesc,
+      role_category: job.role_category || detectRoleCategory(job.title, job.category, job.skills),
+      top_keywords: Array.isArray(job.top_keywords) && job.top_keywords.length > 0
+        ? job.top_keywords.slice(0, 8)
+        : extractTopKeywords(job.title, resolvedSingleDesc, job.skills, 8),
       country: job.country_code || job.country || "",
       salary_text: displaySalary || originalSalary || "",
       salary_display: displaySalary,

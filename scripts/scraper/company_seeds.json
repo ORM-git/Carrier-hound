@@ -1,0 +1,333 @@
+{
+  "rate_limit": {
+    "default_rps_per_host": 4.0,
+    "burst_per_host": 5,
+    "max_retries_on_429": 4,
+    "base_backoff_seconds": 1.0
+  },
+  "layer1_public_ats": [
+    {
+      "slug": "stripe",
+      "name": "Stripe",
+      "ats": "greenhouse",
+      "token": "stripe",
+      "canonical_domain": "stripe.com",
+      "category": "HIGH_PRODUCT_YC"
+    },
+    {
+      "slug": "airbnb",
+      "name": "Airbnb",
+      "ats": "greenhouse",
+      "token": "airbnb",
+      "canonical_domain": "airbnb.com",
+      "category": "HIGH_PRODUCT_YC"
+    },
+    {
+      "slug": "figma",
+      "name": "Figma",
+      "ats": "greenhouse",
+      "token": "figma",
+      "canonical_domain": "figma.com",
+      "category": "HIGH_PRODUCT_YC"
+    },
+    {
+      "slug": "brex",
+      "name": "Brex",
+      "ats": "greenhouse",
+      "token": "brex",
+      "canonical_domain": "brex.com",
+      "category": "HIGH_PRODUCT_YC"
+    },
+    {
+      "slug": "gitlab",
+      "name": "GitLab",
+      "ats": "greenhouse",
+      "token": "gitlab",
+      "canonical_domain": "gitlab.com",
+      "category": "HIGH_PRODUCT_YC"
+    },
+    {
+      "slug": "scaleai",
+      "name": "Scale AI",
+      "ats": "greenhouse",
+      "token": "scaleai",
+      "canonical_domain": "scale.com",
+      "category": "HIGH_PRODUCT_YC"
+    },
+    {
+      "slug": "anthropic",
+      "name": "Anthropic",
+      "ats": "greenhouse",
+      "token": "anthropic",
+      "canonical_domain": "anthropic.com",
+      "category": "HIGH_PRODUCT_YC"
+    },
+    {
+      "slug": "vercel",
+      "name": "Vercel",
+      "ats": "greenhouse",
+      "token": "vercel",
+      "canonical_domain": "vercel.com",
+      "category": "HIGH_PRODUCT_YC"
+    },
+    {
+      "slug": "datadog",
+      "name": "Datadog",
+      "ats": "greenhouse",
+      "token": "datadog",
+      "canonical_domain": "datadoghq.com",
+      "category": "MNC_BIGTECH"
+    },
+    {
+      "slug": "cloudflare",
+      "name": "Cloudflare",
+      "ats": "greenhouse",
+      "token": "cloudflare",
+      "canonical_domain": "cloudflare.com",
+      "category": "MNC_BIGTECH"
+    },
+    {
+      "slug": "openai",
+      "name": "OpenAI",
+      "ats": "ashby",
+      "token": "openai",
+      "canonical_domain": "openai.com",
+      "category": "HIGH_PRODUCT_YC"
+    },
+    {
+      "slug": "linear",
+      "name": "Linear",
+      "ats": "ashby",
+      "token": "linear",
+      "canonical_domain": "linear.app",
+      "category": "HIGH_PRODUCT_YC"
+    },
+    {
+      "slug": "ramp",
+      "name": "Ramp",
+      "ats": "ashby",
+      "token": "ramp",
+      "canonical_domain": "ramp.com",
+      "category": "HIGH_PRODUCT_YC"
+    },
+    {
+      "slug": "notion",
+      "name": "Notion",
+      "ats": "ashby",
+      "token": "notion",
+      "canonical_domain": "notion.so",
+      "category": "HIGH_PRODUCT_YC"
+    },
+    {
+      "slug": "supabase",
+      "name": "Supabase",
+      "ats": "ashby",
+      "token": "supabase",
+      "canonical_domain": "supabase.com",
+      "category": "HIGH_PRODUCT_YC"
+    },
+    {
+      "slug": "perplexity",
+      "name": "Perplexity AI",
+      "ats": "ashby",
+      "token": "perplexity",
+      "canonical_domain": "perplexity.ai",
+      "category": "HIGH_PRODUCT_YC"
+    },
+    {
+      "slug": "elevenlabs",
+      "name": "ElevenLabs",
+      "ats": "ashby",
+      "token": "elevenlabs",
+      "canonical_domain": "elevenlabs.io",
+      "category": "HIGH_PRODUCT_YC"
+    },
+    {
+      "slug": "posthog",
+      "name": "PostHog",
+      "ats": "ashby",
+      "token": "posthog",
+      "canonical_domain": "posthog.com",
+      "category": "HIGH_PRODUCT_YC"
+    },
+    {
+      "slug": "retool",
+      "name": "Retool",
+      "ats": "greenhouse",
+      "token": "retool",
+      "canonical_domain": "retool.com",
+      "category": "HIGH_PRODUCT_YC"
+    },
+    {
+      "slug": "gusto",
+      "name": "Gusto",
+      "ats": "greenhouse",
+      "token": "gusto",
+      "canonical_domain": "gusto.com",
+      "category": "HIGH_PRODUCT_YC"
+    },
+    {
+      "slug": "mistral",
+      "name": "Mistral AI",
+      "ats": "lever",
+      "token": "mistral",
+      "canonical_domain": "mistral.ai",
+      "category": "HIGH_PRODUCT_YC"
+    },
+    {
+      "slug": "palantir",
+      "name": "Palantir Technologies",
+      "ats": "lever",
+      "token": "palantir",
+      "canonical_domain": "palantir.com",
+      "category": "MNC_BIGTECH"
+    },
+    {
+      "slug": "plaid",
+      "name": "Plaid",
+      "ats": "lever",
+      "token": "plaid",
+      "canonical_domain": "plaid.com",
+      "category": "HIGH_PRODUCT_YC"
+    },
+    {
+      "slug": "anyscale",
+      "name": "Anyscale",
+      "ats": "lever",
+      "token": "anyscale",
+      "canonical_domain": "anyscale.com",
+      "category": "OTHER_STARTUPS"
+    },
+    {
+      "slug": "weaviate",
+      "name": "Weaviate",
+      "ats": "lever",
+      "token": "weaviate",
+      "canonical_domain": "weaviate.io",
+      "category": "OTHER_STARTUPS"
+    },
+    {
+      "slug": "visa",
+      "name": "Visa",
+      "ats": "smartrecruiters",
+      "token": "Visa",
+      "canonical_domain": "visa.com",
+      "category": "MNC_BIGTECH"
+    },
+    {
+      "slug": "bosch",
+      "name": "Bosch Group",
+      "ats": "smartrecruiters",
+      "token": "BoschGroup",
+      "canonical_domain": "bosch.com",
+      "category": "MNC_BIGTECH"
+    },
+    {
+      "slug": "wise",
+      "name": "Wise",
+      "ats": "smartrecruiters",
+      "token": "Wise",
+      "canonical_domain": "wise.com",
+      "category": "HIGH_PRODUCT_YC"
+    },
+    {
+      "slug": "celonis",
+      "name": "Celonis",
+      "ats": "smartrecruiters",
+      "token": "Celonis",
+      "canonical_domain": "celonis.com",
+      "category": "OTHER_STARTUPS"
+    },
+    {
+      "slug": "nagarro",
+      "name": "Nagarro",
+      "ats": "smartrecruiters",
+      "token": "Nagarro1",
+      "canonical_domain": "nagarro.com",
+      "category": "INDIAN_IT_AND_OTHER"
+    }
+  ],
+  "layer2_enterprise_json": {
+    "workday_cxs": [
+      {
+        "slug": "nvidia",
+        "name": "NVIDIA",
+        "tenant": "nvidia",
+        "wd_cluster": "wd5",
+        "site": "NVIDIAExternalCareerSite",
+        "canonical_domain": "nvidia.com",
+        "category": "MNC_BIGTECH"
+      },
+      {
+        "slug": "walmart",
+        "name": "Walmart",
+        "tenant": "walmart",
+        "wd_cluster": "wd5",
+        "site": "WalmartExternal",
+        "canonical_domain": "walmart.com",
+        "category": "MNC_BIGTECH"
+      },
+      {
+        "slug": "salesforce",
+        "name": "Salesforce",
+        "tenant": "salesforce",
+        "wd_cluster": "wd12",
+        "site": "External_Career_Site",
+        "canonical_domain": "salesforce.com",
+        "category": "MNC_BIGTECH"
+      },
+      {
+        "slug": "mastercard",
+        "name": "Mastercard",
+        "tenant": "mastercard",
+        "wd_cluster": "wd1",
+        "site": "CorporateCareers",
+        "canonical_domain": "mastercard.com",
+        "category": "MNC_BIGTECH"
+      },
+      {
+        "slug": "deloitte",
+        "name": "Deloitte",
+        "tenant": "deloitte",
+        "wd_cluster": "wd1",
+        "site": "DeloitteCareers",
+        "canonical_domain": "deloitte.com",
+        "category": "INDIAN_IT_AND_OTHER"
+      },
+      {
+        "slug": "adobe",
+        "name": "Adobe",
+        "tenant": "adobe",
+        "wd_cluster": "wd5",
+        "site": "external_experienced",
+        "canonical_domain": "adobe.com",
+        "category": "MNC_BIGTECH"
+      },
+      {
+        "slug": "cisco",
+        "name": "Cisco",
+        "tenant": "cisco",
+        "wd_cluster": "wd5",
+        "site": "Cisco_Careers",
+        "canonical_domain": "cisco.com",
+        "category": "MNC_BIGTECH"
+      }
+    ],
+    "amazon": {
+      "slug": "amazon",
+      "name": "Amazon",
+      "url": "https://www.amazon.jobs/en/search.json",
+      "canonical_domain": "amazon.com",
+      "category": "MNC_BIGTECH",
+      "result_limit": 100
+    },
+    "microsoft": {
+      "slug": "microsoft",
+      "name": "Microsoft",
+      "url": "https://gcsservices.careers.microsoft.com/search/api/v1/search",
+      "canonical_domain": "microsoft.com",
+      "category": "MNC_BIGTECH",
+      "page_size": 20
+    }
+  }
+}
