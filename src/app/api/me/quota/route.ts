@@ -28,54 +28,15 @@ function getSupabaseAdmin() {
 }
 
 export async function GET(req: Request) {
-  const log = baseLog.child({ requestId: req?.headers.get("x-request-id") ?? "unknown" });
-  try {
-    const authHeader =
-      req.headers.get("authorization") || req.headers.get("Authorization");
-
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return NextResponse.json(
-        { error: "Missing or invalid authorization token" },
-        { status: 401 }
-      );
-    }
-
-    const token = authHeader.replace("Bearer ", "").trim();
-    if (!token) {
-      return NextResponse.json(
-        { error: "Missing or invalid authorization token" },
-        { status: 401 }
-      );
-    }
-
-    const supabaseAdmin = getSupabaseAdmin();
-    const {
-      data: { user },
-      error: userError,
-    } = await supabaseAdmin.auth.getUser(token);
-
-    if (userError || !user) {
-      return NextResponse.json(
-        { error: "Invalid user session token" },
-        { status: 401 }
-      );
-    }
-
-
-    const quota = await getPlanQuota(user.id);
-
-    return NextResponse.json(quota, {
-      status: 200,
+  // Launch scope gate: AI usage quota is Coming Soon
+  return NextResponse.json(
+    { error: "This feature is coming soon.", code: "FEATURE_COMING_SOON" },
+    {
+      status: 503,
       headers: {
+        "Content-Type": "application/json",
         "Cache-Control": "private, no-cache, no-store, must-revalidate",
       },
-    });
-  } catch (err: any) {
-    log.error("request error", { error: err?.message || String(err) });
-    reportRequestErrorToSentry(req, err);
-    return NextResponse.json(
-      { error: "Failed to retrieve quota status" },
-      { status: 500 }
-    );
-  }
+    }
+  );
 }

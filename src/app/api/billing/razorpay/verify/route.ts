@@ -288,15 +288,6 @@ export async function POST(req: Request) {
           { status: 502 }
         );
       }
-    } else if (deps.getSupabaseAdmin) {
-      // Offline unit test fallback when test suite injects mock DB but no fetch mock
-      rzpPayment = {
-        id: paymentId,
-        order_id: orderId,
-        status: "captured",
-        amount: orderRow.amount_paise,
-        currency: orderRow.currency || "INR",
-      };
     } else {
       try {
         const rzpPayRes = await fetch(`https://api.razorpay.com/v1/payments/${paymentId}`, {
@@ -323,9 +314,29 @@ export async function POST(req: Request) {
       }
     }
 
-    if (!rzpPayment) {
+    if (!rzpPayment || typeof rzpPayment !== "object") {
       return NextResponse.json(
         { error: "Unable to retrieve payment details from provider", code: "PAYMENT_NOT_FOUND" },
+        { status: 400 }
+      );
+    }
+
+    // Require exact non-empty payment ID matching request paymentId
+    const rzpId = typeof rzpPayment.id === "string" ? rzpPayment.id.trim() : "";
+    if (!rzpId || rzpId !== paymentId) {
+      log.warn("Payment ID mismatch or missing from provider response", { rzpId, paymentId });
+      return NextResponse.json(
+        { error: "Payment verification failed with provider: invalid payment ID", code: "PAYMENT_ID_MISMATCH" },
+        { status: 400 }
+      );
+    }
+
+    // Require exact non-empty order_id matching request orderId
+    const rzpOrderId = typeof rzpPayment.order_id === "string" ? rzpPayment.order_id.trim() : "";
+    if (!rzpOrderId || rzpOrderId !== orderId) {
+      log.warn("Payment order_id mismatch with request", { paymentOrderId: rzpPayment.order_id, expected: orderId });
+      return NextResponse.json(
+        { error: "Payment order mismatch", code: "ORDER_MISMATCH" },
         { status: 400 }
       );
     }
@@ -339,18 +350,15 @@ export async function POST(req: Request) {
       );
     }
 
-    // Require matching order_id if present on payment
-    if (rzpPayment.order_id && rzpPayment.order_id !== orderId) {
-      log.warn("Payment order_id mismatch with request", { paymentOrderId: rzpPayment.order_id, expected: orderId });
-      return NextResponse.json(
-        { error: "Payment order mismatch", code: "ORDER_MISMATCH" },
-        { status: 400 }
-      );
-    }
-
-    // Require matching amount
+    // Require finite exact amount matching orderRow.amount_paise
     const rzpAmount = Number(rzpPayment.amount);
-    if (isNaN(rzpAmount) || rzpAmount !== Number(orderRow.amount_paise)) {
+    if (
+      rzpPayment.amount === null ||
+      rzpPayment.amount === undefined ||
+      !Number.isFinite(rzpAmount) ||
+      rzpAmount <= 0 ||
+      rzpAmount !== Number(orderRow.amount_paise)
+    ) {
       log.warn("Payment amount mismatch with orderRow", { rzpAmount, orderPaise: orderRow.amount_paise });
       return NextResponse.json(
         { error: "Payment amount does not match recorded order amount", code: "AMOUNT_MISMATCH" },
@@ -358,10 +366,10 @@ export async function POST(req: Request) {
       );
     }
 
-    // Require matching currency
-    const rzpCurrency = (rzpPayment.currency || "").toUpperCase();
-    const expectedCurrency = (orderRow.currency || "INR").toUpperCase();
-    if (rzpCurrency && expectedCurrency && rzpCurrency !== expectedCurrency) {
+    // Require exact non-empty currency matching orderRow.currency
+    const rzpCurrency = typeof rzpPayment.currency === "string" ? rzpPayment.currency.trim().toUpperCase() : "";
+    const expectedCurrency = (orderRow.currency || "INR").trim().toUpperCase();
+    if (!rzpCurrency || rzpCurrency !== expectedCurrency) {
       log.warn("Payment currency mismatch with orderRow", { rzpCurrency, expectedCurrency });
       return NextResponse.json(
         { error: "Payment currency does not match recorded order currency", code: "CURRENCY_MISMATCH" },

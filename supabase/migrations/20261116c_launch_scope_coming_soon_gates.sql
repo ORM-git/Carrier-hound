@@ -2,7 +2,16 @@
 -- Description: Launch scope database gates for coming-soon features
 --              Blocks direct reads and writes on applications, candidate_profiles,
 --              tailored_resumes, and resumes storage bucket at the DB/RLS level.
---              Preserves DELETE policies for account deletion and preserves all existing data.
+--              Preserves all existing data.
+--
+-- IMPORTANT SECURITY & RLS ARCHITECTURE NOTE ON APPLICATIONS DELETION:
+-- Because applications_coming_soon_block_select sets FOR SELECT USING (false),
+-- direct client queries executed by authenticated owners (e.g. DELETE FROM applications WHERE user_id = auth.uid())
+-- match 0 rows in PostgreSQL (or return 0 rows affected via PostgREST due to disabled SELECT visibility).
+-- Direct client DELETE on applications must NOT be relied upon.
+-- Instead, all GDPR / account deletion workflows are executed strictly server-side
+-- via the authenticated service-role route (/api/account/delete and Netlify account-delete),
+-- which runs under PostgreSQL service_role (BYPASSRLS) and reliably purges application rows.
 -- Status: NOT APPLIED
 -- Record with: node scripts/record-migration.cjs 20261116c_launch_scope_coming_soon_gates
 
@@ -44,7 +53,9 @@ CREATE POLICY "applications_coming_soon_block_update"
   USING (false)
   WITH CHECK (false);
 
--- Ensure owner delete policy exists for account deletion
+-- Owner delete policy retained for schema completeness, but note that direct authenticated
+-- DELETE deletes 0 rows when SELECT visibility is disabled (USING false).
+-- Authoritative deletion is executed via the service-role endpoint (/api/account/delete).
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -88,7 +99,9 @@ CREATE POLICY "candidate_profiles_coming_soon_block_update"
   USING (false)
   WITH CHECK (false);
 
--- Ensure owner delete policy exists for account deletion
+-- Owner delete policy retained for schema completeness, but note that direct authenticated
+-- DELETE deletes 0 rows when SELECT visibility is disabled (USING false).
+-- Authoritative deletion is executed via the service-role endpoint (/api/account/delete).
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -132,7 +145,9 @@ CREATE POLICY "tailored_resumes_coming_soon_block_update"
   USING (false)
   WITH CHECK (false);
 
--- Ensure owner delete policy exists for account deletion
+-- Owner delete policy retained for schema completeness, but note that direct authenticated
+-- DELETE deletes 0 rows when SELECT visibility is disabled (USING false).
+-- Authoritative deletion is executed via the service-role endpoint (/api/account/delete).
 DO $$
 BEGIN
   IF NOT EXISTS (

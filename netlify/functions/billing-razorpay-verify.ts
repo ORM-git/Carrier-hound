@@ -363,15 +363,6 @@ export function createHandler(deps: BillingVerifyDeps = {}) {
             }),
           };
         }
-      } else if (deps.getSupabaseAdmin) {
-        // Offline unit test fallback when test suite injects mock DB but no fetch mock
-        rzpPayment = {
-          id: paymentId,
-          order_id: orderId,
-          status: "captured",
-          amount: orderRow.amount_paise,
-          currency: orderRow.currency || "INR",
-        };
       } else {
         try {
           const rzpPayRes = await fetch(`https://api.razorpay.com/v1/payments/${paymentId}`, {
@@ -406,13 +397,41 @@ export function createHandler(deps: BillingVerifyDeps = {}) {
         }
       }
 
-      if (!rzpPayment) {
+      if (!rzpPayment || typeof rzpPayment !== "object") {
         return {
           statusCode: 400,
           headers,
           body: JSON.stringify({
             error: "Unable to retrieve payment details from provider",
             code: "PAYMENT_NOT_FOUND",
+          }),
+        };
+      }
+
+      // Require exact non-empty payment ID matching request paymentId
+      const rzpId = typeof rzpPayment.id === "string" ? rzpPayment.id.trim() : "";
+      if (!rzpId || rzpId !== paymentId) {
+        safeLog.warn("[Netlify /billing-razorpay-verify] Payment ID mismatch or missing from provider response", { rzpId, paymentId });
+        return {
+          statusCode: 400,
+          headers,
+          body: JSON.stringify({
+            error: "Payment verification failed with provider: invalid payment ID",
+            code: "PAYMENT_ID_MISMATCH",
+          }),
+        };
+      }
+
+      // Require exact non-empty order_id matching request orderId
+      const rzpOrderId = typeof rzpPayment.order_id === "string" ? rzpPayment.order_id.trim() : "";
+      if (!rzpOrderId || rzpOrderId !== orderId) {
+        safeLog.warn("[Netlify /billing-razorpay-verify] Payment order_id mismatch with request", { paymentOrderId: rzpPayment.order_id, expected: orderId });
+        return {
+          statusCode: 400,
+          headers,
+          body: JSON.stringify({
+            error: "Payment order mismatch",
+            code: "ORDER_MISMATCH",
           }),
         };
       }
@@ -430,22 +449,15 @@ export function createHandler(deps: BillingVerifyDeps = {}) {
         };
       }
 
-      // Require matching order_id if present on payment
-      if (rzpPayment.order_id && rzpPayment.order_id !== orderId) {
-        safeLog.warn("[Netlify /billing-razorpay-verify] Payment order_id mismatch with request", { paymentOrderId: rzpPayment.order_id, expected: orderId });
-        return {
-          statusCode: 400,
-          headers,
-          body: JSON.stringify({
-            error: "Payment order mismatch",
-            code: "ORDER_MISMATCH",
-          }),
-        };
-      }
-
-      // Require matching amount
+      // Require finite exact amount matching orderRow.amount_paise
       const rzpAmount = Number(rzpPayment.amount);
-      if (isNaN(rzpAmount) || rzpAmount !== Number(orderRow.amount_paise)) {
+      if (
+        rzpPayment.amount === null ||
+        rzpPayment.amount === undefined ||
+        !Number.isFinite(rzpAmount) ||
+        rzpAmount <= 0 ||
+        rzpAmount !== Number(orderRow.amount_paise)
+      ) {
         safeLog.warn("[Netlify /billing-razorpay-verify] Payment amount mismatch with orderRow", { rzpAmount, orderPaise: orderRow.amount_paise });
         return {
           statusCode: 400,
@@ -457,10 +469,10 @@ export function createHandler(deps: BillingVerifyDeps = {}) {
         };
       }
 
-      // Require matching currency
-      const rzpCurrency = (rzpPayment.currency || "").toUpperCase();
-      const expectedCurrency = (orderRow.currency || "INR").toUpperCase();
-      if (rzpCurrency && expectedCurrency && rzpCurrency !== expectedCurrency) {
+      // Require exact non-empty currency matching orderRow.currency
+      const rzpCurrency = typeof rzpPayment.currency === "string" ? rzpPayment.currency.trim().toUpperCase() : "";
+      const expectedCurrency = (orderRow.currency || "INR").trim().toUpperCase();
+      if (!rzpCurrency || rzpCurrency !== expectedCurrency) {
         safeLog.warn("[Netlify /billing-razorpay-verify] Payment currency mismatch with orderRow", { rzpCurrency, expectedCurrency });
         return {
           statusCode: 400,

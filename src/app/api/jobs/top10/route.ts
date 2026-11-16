@@ -94,20 +94,7 @@ function getTop10CacheKey(
  */
 export async function POST(req: Request) {
   return withRouteSpan("/api/jobs/top10", req, async () => {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "https://szakevhxhwpeskidvtfs.supabase.co";
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    const missing = checkRequiredEnv(
-      {
-        NEXT_PUBLIC_SUPABASE_URL: supabaseUrl,
-        SUPABASE_SERVICE_ROLE_KEY: serviceKey,
-      },
-      "API /jobs/top10"
-    );
-    if (missing) {
-      return NextResponse.json(missing, { status: 500 });
-    }
-
-    // Launch scope gate: Top 10 matches are Coming Soon
+    // Launch scope gate: Top 10 matches are Coming Soon (evaluated before env checks so missing keys still return 503)
     return NextResponse.json(
       { error: "This feature is coming soon.", code: "FEATURE_COMING_SOON" },
       { status: 503, headers: { "Content-Type": "application/json" } }

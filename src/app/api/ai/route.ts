@@ -23,21 +23,7 @@ async function postHandler(req: Request) {
 }
 
 export async function POST(req: Request) {
-  // Check required environment variables first for fail-closed env guards (zero auth/DB/provider calls)
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
-  const groqKey = process.env.GROQ_API_KEY || process.env.AI_PROVIDER_KEY || process.env.GROQ_KEY;
-  const missing = checkRequiredEnv(
-    {
-      SUPABASE_SERVICE_ROLE_KEY: serviceKey,
-      GROQ_API_KEY: groqKey,
-    },
-    "API /ai"
-  );
-  if (missing) {
-    return NextResponse.json(missing, { status: 500 });
-  }
-
-  // Launch scope gate: AI features are Coming Soon
+  // Launch scope gate: AI features are Coming Soon (evaluated before env checks so missing keys still return 503)
   return NextResponse.json(
     { error: "This feature is coming soon.", code: "FEATURE_COMING_SOON" },
     { status: 503, headers: { "Content-Type": "application/json" } }

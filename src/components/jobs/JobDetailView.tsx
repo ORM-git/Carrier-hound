@@ -40,8 +40,8 @@ import {
   Globe,
 } from "lucide-react";
 
-const TailorResumeModal = dynamic(() => import("@/components/resume/TailorResumeModal"), { ssr: false });
 import JobAiToolsPanel from "@/components/jobs/JobAiToolsPanel";
+import { toast } from "react-toastify";
 
 export const VERIFIED_SUPPORT_EMAIL = "support@careermonke.com";
 
@@ -652,7 +652,7 @@ export default function JobDetailView({
         onSave={onSave}
         onToggleApplied={onToggleApplied}
         onOpenTailor={() => {
-          setIsTailorOpen(true);
+          toast.info("Tailor Resume is coming soon.");
         }}
         onOpenPaywall={onApply}
       />
@@ -1126,11 +1126,7 @@ export default function JobDetailView({
               <button
                 type="button"
                 onClick={() => {
-                  if (!isUnlocked) {
-                    onApply();
-                  } else {
-                    setIsTailorOpen(true);
-                  }
+                  toast.info("Tailor Resume is coming soon.");
                 }}
                 className="w-full py-2 px-4 rounded-full text-xs font-bold transition border border-blue-200 bg-blue-50 hover:bg-blue-100 text-[#1D4ED8] flex items-center justify-center gap-1.5 cursor-pointer min-h-[38px]"
               >
@@ -1250,17 +1246,6 @@ export default function JobDetailView({
           )}
         </div>
       </div>
-
-      {candidate && isTailorOpen && (
-        <TailorResumeModal
-          isPro={isPro}
-          open={isTailorOpen}
-          onOpenChange={setIsTailorOpen}
-          candidate={candidate}
-          job={job}
-          userId={user?.id || null}
-        />
-      )}
 
       {/* Mobile Sticky Bottom Apply Bar */}
       <div className="md:hidden fixed inset-x-0 bottom-0 z-30 bg-white/95 backdrop-blur-md border-t border-[#E2E8F0] p-3 flex items-center justify-between gap-3 shadow-lg">

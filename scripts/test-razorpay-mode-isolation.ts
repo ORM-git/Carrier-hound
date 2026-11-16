@@ -324,8 +324,53 @@ async function runRazorpayModeIsolationSuite() {
     }),
   });
 
+  const mockFetchRazorpayPayment = async (paymentId: string) => {
+    const paymentMap: Record<string, { orderId: string; amount: number }> = {
+      pay_test_fixture_101: { orderId: "order_test_plan_verify_1", amount: 69200 },
+      pay_test_next_202: { orderId: "order_test_next_verify_2", amount: 149900 },
+      pay_next_fixture_202: { orderId: "order_test_next_verify_2", amount: 69200 },
+      pay_test_addon_303: { orderId: "order_test_addon_verify_3", amount: 14900 },
+      pay_addon_fixture_303: { orderId: "order_test_addon_verify_3", amount: 299900 },
+      pay_replay_fixture_404: { orderId: "order_test_replay_4", amount: 69200 },
+      pay_live_fixture_505: { orderId: "order_live_plan_verify_5", amount: 69200 },
+      pay_live_valid_707: { orderId: "order_live_valid_707", amount: 149900 },
+      pay_cross_fixture_606: { orderId: "order_live_cross_mode_6", amount: 69200 },
+    };
+    const found = paymentMap[paymentId];
+    if (found) {
+      return {
+        id: paymentId,
+        order_id: found.orderId,
+        status: "captured",
+        amount: found.amount,
+        currency: "INR",
+      };
+    }
+    for (const [orderId, order] of mockDb.orders.entries()) {
+      const orderSuffix = orderId.split("_").pop();
+      const paySuffix = paymentId.split("_").pop();
+      if (orderSuffix && paySuffix && orderSuffix === paySuffix) {
+        return {
+          id: paymentId,
+          order_id: orderId,
+          status: "captured",
+          amount: order.amount_paise,
+          currency: order.currency || "INR",
+        };
+      }
+    }
+    return {
+      id: paymentId,
+      order_id: "order_fallback",
+      status: "captured",
+      amount: 69200,
+      currency: "INR",
+    };
+  };
+
   const netlifyVerify = createNetlifyVerifyHandler({
     getSupabaseAdmin: mockSupabaseAdmin,
+    fetchRazorpayPayment: mockFetchRazorpayPayment,
   });
 
   const netlifyWebhook = createNetlifyWebhookHandler({
@@ -603,7 +648,10 @@ async function runRazorpayModeIsolationSuite() {
         razorpay_signature: validNextSig,
       }),
     });
-    (nextVerifyReq3 as any).__testDeps = { getSupabaseAdmin: mockSupabaseAdmin };
+    (nextVerifyReq3 as any).__testDeps = {
+      getSupabaseAdmin: mockSupabaseAdmin,
+      fetchRazorpayPayment: mockFetchRazorpayPayment,
+    };
     const nextVerifyRes3 = await handleNextVerify(nextVerifyReq3);
     assert.strictEqual(nextVerifyRes3.status, 200);
     const nextVerifyData3 = await nextVerifyRes3.json();

@@ -915,6 +915,13 @@ async function runSuite() {
       (validReq as any).__testDeps = {
         getSupabaseAdmin: () => mockSupabase,
         isProductionHost: false,
+        fetchRazorpayPayment: async () => ({
+          id: paymentId,
+          order_id: orderId,
+          status: "captured",
+          amount: 39900,
+          currency: "INR",
+        }),
       };
 
       const validRes = await verifyPost(validReq);

@@ -495,6 +495,13 @@ async function runSuite() {
 
       (req as any).__testDeps = {
         getSupabaseAdmin: () => mockDb.client,
+        fetchRazorpayPayment: async () => ({
+          id: paymentId,
+          order_id: orderId,
+          status: "captured",
+          amount: orderRow.amount_paise,
+          currency: orderRow.currency || "INR",
+        }),
       };
 
       const res = await verifyPost(req);
@@ -525,6 +532,13 @@ async function runSuite() {
       const mockDb = createMockSupabase(orderRow, subRow, options);
       const handler = createNetlifyVerifyHandler({
         getSupabaseAdmin: () => mockDb.client,
+        fetchRazorpayPayment: async () => ({
+          id: paymentId,
+          order_id: orderId,
+          status: "captured",
+          amount: orderRow.amount_paise,
+          currency: orderRow.currency || "INR",
+        }),
       });
 
       const res = await handler({

@@ -106,6 +106,29 @@ export async function runDailyDigestCron(options: {
   maxScannedJobs?: number;
 } = {}): Promise<CronRunStats> {
   const isDryRun = Boolean(options.dryRun);
+  const startedAt = new Date().toISOString();
+
+  // Launch scope gate: daily matching and digest workflows are Coming Soon
+  return {
+    runId: "coming-soon",
+    status: "coming_soon" as any,
+    startedAt,
+    jobsScannedCount: 0,
+    newJobsCount: 0,
+    digestsQueuedCount: 0,
+    usersProcessedCount: 0,
+    errorMessage: "Daily matching and digest workflows are coming soon.",
+    isDryRun,
+  };
+}
+
+async function _legacyRunDailyDigestCron(options: {
+  dryRun?: boolean; forceDate?: string;
+  minMatchScore?: number; maxDigestItems?: number;
+  scannedWindowDays?: number;
+  maxScannedJobs?: number;
+} = {}): Promise<CronRunStats> {
+  const isDryRun = Boolean(options.dryRun);
   const minScore = options.minMatchScore ?? 60;
   const maxItems = options.maxDigestItems ?? 8;
   const digestDate = options.forceDate || new Date().toISOString().split("T")[0]; // YYYY-MM-DD

@@ -847,77 +847,33 @@ function OnboardingPageInner() {
           </div>
         )}
 
-        {/* STEP 6: UPLOAD RESUME */}
+        {/* STEP 6: UPLOAD RESUME (Coming Soon) */}
         {currentStep === 6 && (
           <div className="bg-white rounded-2xl p-5 sm:p-7 border border-slate-200 shadow-sm space-y-5 animate-fadeIn">
             <div className="space-y-1">
-              <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[10px] font-bold uppercase tracking-wider">
-                <FileText className="w-3 h-3" />
-                <span>Resume Upload</span>
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-bold">
+                <FileText className="w-3.5 h-3.5" />
+                <span>Resume Processing • Coming Soon</span>
               </div>
               <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-                Upload your resume to see where you stand
+                Resume parsing & matching is coming soon
               </h2>
               <p className="text-xs sm:text-sm text-slate-500">
-                We extract your verified skills and compute match compatibility with unindexed jobs.
+                We are upgrading our deterministic skill extractor and matching engine. Your career preferences are saved and you can browse live jobs immediately.
               </p>
             </div>
 
-            {/* Drag & Drop Upload Zone */}
-            <div
-              onDrop={handleDrop}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onClick={() => fileInputRef.current?.click()}
-              className={`border-2 border-dashed rounded-2xl p-8 sm:p-10 text-center cursor-pointer transition-all duration-150 ${
-                isDragging
-                  ? "border-blue-500 bg-blue-50/50"
-                  : "border-slate-200 hover:border-blue-400 bg-slate-50/60"
-              }`}
-            >
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".pdf,.docx,.txt"
-                onChange={handleFileChange}
-                className="hidden"
-                aria-label="Upload resume file"
-              />
-
-              <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-3 shadow-2xs">
-                <Upload className="w-6 h-6" />
-              </div>
-
-              <p className="text-xs sm:text-sm font-bold text-slate-900">
-                Click to browse or drag and drop your resume
+            <div className="p-6 rounded-2xl border border-slate-200 bg-slate-50/60 text-center space-y-3">
+              <p className="text-xs sm:text-sm text-slate-600">
+                Click below to complete setup and start exploring unindexed jobs.
               </p>
-              <p className="text-[11px] sm:text-xs text-slate-500 mt-1">
-                Supports PDF, DOCX, and TXT (up to 10MB)
-              </p>
-            </div>
-
-            {/* Daily Digest Opt-In Checkbox */}
-            <div className="p-3.5 rounded-xl border border-blue-100 bg-blue-50/50 flex items-start gap-3 text-left">
-              <input
-                type="checkbox"
-                id="daily-digest"
-                checked={dailyDigestOptIn}
-                onChange={(e) => setDailyDigestOptIn(e.target.checked)}
-                className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-              />
-              <label htmlFor="daily-digest" className="text-xs text-slate-700 cursor-pointer select-none">
-                <span className="font-bold text-slate-900 block">Enable Automated Daily Job Matching Digest</span>
-                Queue verified matching positions into your tracker.
-              </label>
-            </div>
-
-            <div className="text-center pt-2">
               <button
                 type="button"
                 onClick={handleSkipResume}
-                className="text-xs font-semibold text-slate-500 hover:text-slate-800 underline transition cursor-pointer"
+                className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-bold transition shadow-xs cursor-pointer"
               >
-                Skip upload and configure manually on Dashboard →
+                <span>Continue to Dashboard</span>
+                <ArrowRight className="w-4 h-4" />
               </button>
             </div>
           </div>

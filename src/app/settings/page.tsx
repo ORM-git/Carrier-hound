@@ -462,11 +462,14 @@ function SettingsPageInner() {
             <div className="space-y-4">
               <div className="flex items-start justify-between gap-4 p-4 rounded-xl border border-slate-200 bg-slate-50/70">
                 <div className="space-y-1">
-                  <span className="font-bold text-sm text-slate-900 block">
-                    Daily AI Matching Digest
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-sm text-slate-900 block">
+                      Daily AI Matching Digest
+                    </span>
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800">Coming soon</span>
+                  </div>
                   <p className="text-xs text-slate-500">
-                    Receive daily curated job recommendations matching your confirmed resume and target roles.
+                    Receive daily curated job recommendations matching your confirmed resume and target roles (Feature coming soon).
                   </p>
                 </div>
                 <input

@@ -799,34 +799,20 @@ function JobsPageInner() {
 
     async function loadInitialContext() {
       try {
-        const [u, proRes, cp] = await Promise.all([
+        const [u, proRes] = await Promise.all([
           getAuthUser(),
           getProAccessStatus(),
-          getCandidateProfile(),
         ]);
         if (cancelled) return;
-
-        const apps = u ? await getTrackedApplications(u.id) : [];
 
         setUser(u);
         setIsPro(Boolean(proRes?.isPro));
         setIsProDefinitive(Boolean(proRes?.isDefinitive));
-        setCandidate(cp && cp.confirmedAt ? cp : null);
-        setTrackedApplications(apps);
-        const savedApps = apps.filter((a) => a.stage === "saved");
-        setSavedJobIds(savedApps.map((a) => a.jobId || "").filter(Boolean));
-        const appliedApps = apps.filter((a) => a.stage === "applied");
-        const appliedIds = appliedApps.map((a) => a.jobId || "").filter(Boolean);
-        setAppliedJobIds(appliedIds);
-        setAppliedCount(appliedApps.length);
-
-        if (u) {
-          getUserPreferences(u.id).then((p) => {
-            if (!cancelled) {
-              setPreferences(p);
-            }
-          });
-        }
+        setCandidate(null);
+        setTrackedApplications([]);
+        setSavedJobIds([]);
+        setAppliedJobIds([]);
+        setAppliedCount(0);
       } catch (err) {
         console.warn("Failed to load initial context on jobs page:", err);
       }
@@ -841,39 +827,12 @@ function JobsPageInner() {
       });
     };
 
-    const handleProfileUpdate = () => {
-      getCandidateProfile().then((cp) => {
-        if (cp && cp.confirmedAt) {
-          setCandidate(cp);
-        } else {
-          setCandidate(null);
-        }
-      });
-    };
-
-    const handleTrackerUpdate = () => {
-      getTrackedApplications(user?.id).then((apps) => {
-        if (!cancelled) {
-          setTrackedApplications(apps);
-          const savedApps = apps.filter((a) => a.stage === "saved");
-          setSavedJobIds(savedApps.map((a) => a.jobId || "").filter(Boolean));
-          const appliedApps = apps.filter((a) => a.stage === "applied");
-          setAppliedJobIds(appliedApps.map((a) => a.jobId || "").filter(Boolean));
-          setAppliedCount(appliedApps.length);
-        }
-      });
-    };
-
     window.addEventListener("careermonke_pro_updated", handleSubUpdate);
     window.addEventListener("careermonke_auth_updated", handleSubUpdate);
-    window.addEventListener("careermonke_profile_updated", handleProfileUpdate);
-    window.addEventListener("careermonke_tracker_updated", handleTrackerUpdate);
     return () => {
       cancelled = true;
       window.removeEventListener("careermonke_pro_updated", handleSubUpdate);
       window.removeEventListener("careermonke_auth_updated", handleSubUpdate);
-      window.removeEventListener("careermonke_profile_updated", handleProfileUpdate);
-      window.removeEventListener("careermonke_tracker_updated", handleTrackerUpdate);
     };
     // Mount-once bootstrap + event subscriptions. user?.id is read inside the
     // tracker handler via closure; re-running on its change would duplicate
@@ -1306,121 +1265,12 @@ function JobsPageInner() {
     }
   };
 
-  const handleToggleApplied = async (job: LiveJob) => {
-    if (!user) {
-      handleLockedAction();
-      return;
-    }
-    // Synchronous lock check: immediately aborts duplicate same-tick invocations
-    if (inFlightAppliedRef.current.has(job.id)) return;
-    inFlightAppliedRef.current.add(job.id);
-    setUpdatingAppliedJobId(job.id);
-
-    try {
-      const apps = await getTrackedApplications(user.id);
-      const existing = apps.find((a) => isMatchingTrackerJob(a, job));
-
-      if (!existing) {
-        // No record: create at applied
-        await quickTrackJob(
-          {
-            id: job.id,
-            title: job.title,
-            company: job.company,
-            location: job.location,
-            salary_text: job.salary,
-            apply_url: job.applyUrl,
-          },
-          "applied"
-        );
-        trackFunnelEvent("apply_completed", { path: "/jobs" });
-        toast.success(`Marked "${job.title}" as applied! Added to Tracker.`);
-      } else if (existing.stage === "saved") {
-        // Existing saved record: move to applied, preserving notes, dates, and other fields
-        await updateApplicationStage(existing.id, "applied");
-        trackFunnelEvent("apply_completed", { path: "/jobs" });
-        toast.success(`Marked "${job.title}" as applied! Moved to Tracker Applied tab.`);
-      } else if (existing.stage === "applied") {
-        // Already applied: clicking again must NOT demote it
-        toast.info(`"${job.title}" is already marked as applied in Tracker.`);
-      } else {
-        // Any other stage (interview, offer, rejected): preserve it, notes, dates and other fields
-        const stageLabel = existing.stage.charAt(0).toUpperCase() + existing.stage.slice(1);
-        toast.info(`"${job.title}" is currently in ${stageLabel} stage in Tracker.`);
-      }
-
-      const updatedApps = await getTrackedApplications(user.id);
-      setTrackedApplications(updatedApps);
-      // Write-through: keep the dashboard SWR bundle consistent with the
-      // mutation so it never paints the pre-mutation list (row 88).
-      updateSwr(`dashboard:${user.id}`, (bundle: { appsRes: TrackedApplication[] }) => ({
-        ...bundle,
-        appsRes: updatedApps,
-      }));
-      const appliedApps = updatedApps.filter((a) => a.stage === "applied");
-      setAppliedJobIds(appliedApps.map((a) => a.jobId || "").filter(Boolean));
-      setAppliedCount(appliedApps.length);
-
-      const savedApps = updatedApps.filter((a) => a.stage === "saved");
-      setSavedJobIds(savedApps.map((a) => a.jobId || "").filter(Boolean));
-    } catch {
-      toast.error("Could not update application status.");
-    } finally {
-      inFlightAppliedRef.current.delete(job.id);
-      setUpdatingAppliedJobId(null);
-    }
+  const handleToggleApplied = async (_job: LiveJob) => {
+    toast.info("Application tracking is coming soon.");
   };
 
-  const handleSaveJob = async (job: LiveJob) => {
-    if (!user) {
-      toast.info("Please create a free account or sign in to like and track jobs.");
-      router.push(`/signup?next=${encodeURIComponent("/jobs")}`);
-      return;
-    }
-
-    // Synchronous lock check (same pattern as handleUpdateApplied):
-    // immediately aborts duplicate same-tick invocations (double-click race).
-    if (inFlightSaveRef.current.has(job.id)) return;
-    inFlightSaveRef.current.add(job.id);
-
-    try {
-      if (savedJobIds.includes(job.id)) {
-        try {
-          await removeApplicationFromTracker(job.id);
-          setSavedJobIds((prev) => prev.filter((id) => id !== job.id));
-          updateSwr(`dashboard:${user.id}`, (bundle: { appsRes: TrackedApplication[] }) => ({
-            ...bundle,
-            appsRes: bundle.appsRes.filter((a) => a.jobId !== job.id),
-          }));
-          toast.info(`Removed "${job.title}" from Liked Jobs.`);
-        } catch {
-          toast.error("Could not update saved job.");
-        }
-        return;
-      }
-
-      try {
-        const created = await addApplicationToTracker({
-          jobId: job.id,
-          title: job.title,
-          company: job.company,
-          location: job.location,
-          salaryText: job.salary,
-          applyUrl: job.applyUrl,
-          stage: "saved",
-        });
-        setSavedJobIds((prev) => [...prev, job.id]);
-        updateSwr(`dashboard:${user.id}`, (bundle: { appsRes: TrackedApplication[] }) => ({
-          ...bundle,
-          appsRes: [...bundle.appsRes, created],
-        }));
-        toast.success(`Liked "${job.title}"! Saved to your tracker.`);
-      } catch {
-        toast.error("Could not save job.");
-      }
-    } finally {
-      inFlightSaveRef.current.delete(job.id);
-    }
+  const handleSaveJob = async (_job: LiveJob) => {
+    toast.info("Job bookmarking is coming soon.");
   };
 
   const handleRetryUnlock = async (jobId: string) => {
