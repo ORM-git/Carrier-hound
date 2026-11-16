@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { measureRouteBudget } from "@/lib/api/routeBudget";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { checkRequiredEnv } from "@/lib/api/envCheck";
 import { getClientIpFromRequest, checkRateLimit } from "@/lib/ai/serviceHandler";
 import {
@@ -13,12 +13,19 @@ import { withRouteSpan } from "@/lib/monitoring/tracing";
 import { computeWeakEtag, notModifiedResponse } from "@/lib/api/etag";
 
 import { createLogger } from "@/lib/observability/logger";
+import { singleFlight } from "@/lib/cache/singleFlight";
 
 const baseLog = createLogger({ context: { route: "/api/stats" } });
 
 export const runtime = "edge";
 
-function getSupabaseAdmin() {
+let cachedStatsAdminClient: SupabaseClient | null = null;
+let cachedStatsAdminKey = "";
+const STATS_CACHE_TTL_MS = 60_000;
+let cachedRecentCount: { value: number; expiresAt: number } | null = null;
+let cachedCorpusCounts: { totalActive: number; companyCount: number; expiresAt: number } | null = null;
+
+function getSupabaseAdmin(): SupabaseClient {
   const supabaseUrl =
     process.env.NEXT_PUBLIC_SUPABASE_URL ||
     process.env.SUPABASE_URL;
@@ -37,9 +44,16 @@ function getSupabaseAdmin() {
     throw new Error(JSON.stringify(missing));
   }
 
-  return createClient(supabaseUrl!, serviceKey!, {
-    auth: { persistSession: false },
+  const cacheKey = `${supabaseUrl}::${serviceKey}`;
+  if (cachedStatsAdminClient && cachedStatsAdminKey === cacheKey && process.env.NODE_ENV !== "test") {
+    return cachedStatsAdminClient;
+  }
+  const client = createClient(supabaseUrl!, serviceKey!, {
+    auth: { persistSession: false, autoRefreshToken: false },
   });
+  cachedStatsAdminClient = client;
+  cachedStatsAdminKey = cacheKey;
+  return client;
 }
 
 /**
@@ -110,14 +124,27 @@ async function getHandler(req: Request) {
     }
 
     // 1. Jobs posted/created today (UTC midnight to now) - required for public UI
-    const todayMidnight = new Date();
-    todayMidnight.setUTCHours(0, 0, 0, 0);
-    const { count: recentJobs, error: recentErr } = await supabase
-      .from("jobs_public")
-      .select("id", { count: "exact", head: true })
-      .eq("is_active", true)
-      .eq("status", "active")
-      .gte("created_at", todayMidnight.toISOString());
+    let recentJobs: number | null = null;
+    let recentErr: any = null;
+    if (process.env.NODE_ENV !== "test" && cachedRecentCount && cachedRecentCount.expiresAt > Date.now()) {
+      recentJobs = cachedRecentCount.value;
+    } else {
+      const todayMidnight = new Date();
+      todayMidnight.setUTCHours(0, 0, 0, 0);
+      const res = await singleFlight("stats:recentJobs", async () =>
+        supabase
+          .from("jobs_public")
+          .select("id", { count: "exact", head: true })
+          .eq("is_active", true)
+          .eq("status", "active")
+          .gte("created_at", todayMidnight.toISOString())
+      );
+      recentJobs = res.count;
+      recentErr = res.error;
+      if (!recentErr && process.env.NODE_ENV !== "test") {
+        cachedRecentCount = { value: recentJobs ?? 0, expiresAt: Date.now() + STATS_CACHE_TTL_MS };
+      }
+    }
 
     if (recentErr) {
       return NextResponse.json(
@@ -160,40 +187,46 @@ async function getHandler(req: Request) {
     }
 
     // 2. Authenticated + approved callers: return full corpus metrics
-    const { count: totalActive, error: activeErr } = await supabase
-      .from("jobs_public")
-      .select("id", { count: "exact", head: true })
-      .eq("is_active", true)
-      .eq("status", "active");
-
-    if (activeErr) {
-      return NextResponse.json(
-        { error: "Service unavailable" },
-        {
-          status: 503,
-          headers: {
-            "Cache-Control": "no-store",
-            Vary: "Authorization",
-          },
-        }
+    let totalActive: number | null = null;
+    let companyCount: number | null = null;
+    if (process.env.NODE_ENV !== "test" && cachedCorpusCounts && cachedCorpusCounts.expiresAt > Date.now()) {
+      totalActive = cachedCorpusCounts.totalActive;
+      companyCount = cachedCorpusCounts.companyCount;
+    } else {
+      const [activeRes, companyRes] = await singleFlight("stats:corpusCounts", async () =>
+        Promise.all([
+          supabase
+            .from("jobs_public")
+            .select("id", { count: "exact", head: true })
+            .eq("is_active", true)
+            .eq("status", "active"),
+          supabase
+            .from("companies")
+            .select("id", { count: "exact", head: true }),
+        ])
       );
-    }
 
-    const { count: companyCount, error: companyErr } = await supabase
-      .from("companies")
-      .select("id", { count: "exact", head: true });
-
-    if (companyErr) {
-      return NextResponse.json(
-        { error: "Service unavailable" },
-        {
-          status: 503,
-          headers: {
-            "Cache-Control": "no-store",
-            Vary: "Authorization",
-          },
-        }
-      );
+      if (activeRes.error || companyRes.error) {
+        return NextResponse.json(
+          { error: "Service unavailable" },
+          {
+            status: 503,
+            headers: {
+              "Cache-Control": "no-store",
+              Vary: "Authorization",
+            },
+          }
+        );
+      }
+      totalActive = activeRes.count;
+      companyCount = companyRes.count;
+      if (process.env.NODE_ENV !== "test") {
+        cachedCorpusCounts = {
+          totalActive: totalActive ?? 0,
+          companyCount: companyCount ?? 0,
+          expiresAt: Date.now() + STATS_CACHE_TTL_MS,
+        };
+      }
     }
 
     return NextResponse.json(

@@ -208,7 +208,7 @@ export function createHandler(deps: JobsSearchDeps = {}) {
           userId = user.id;
           const { data: sub } = await supabaseAdmin
             .from("subscriptions")
-            .select("*")
+            .select("status, current_period_end, grace_period_end")
             .eq("user_id", user.id)
             .order("created_at", { ascending: false })
             .limit(1)
@@ -268,7 +268,7 @@ export function createHandler(deps: JobsSearchDeps = {}) {
     const normalizedUserCountries = normalizeUserCountries(userLocations);
 
     const selectColumns = (isPro && hasServiceKey)
-      ? "*, companies(name, logo_url)"
+      ? "id, title, company, location, category, remote, remote_scope, remote_eligibility, country_code, country, job_type, verified, posted_at, created_at, salary_min, salary_max, currency, salary_period, salary_text, source_type, source, apply_url, description, skills, status, is_active, logo_url, company_id, companies(name, logo_url)"
       : hasServiceKey
       ? "id, title, company, location, category, remote, remote_scope, remote_eligibility, country_code, country, job_type, verified, posted_at, created_at, salary_min, salary_max, currency, salary_period, salary_text, source_type, source, company_id, companies(name, logo_url)"
       : "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at";

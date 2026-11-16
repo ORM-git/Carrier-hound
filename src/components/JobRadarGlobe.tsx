@@ -249,7 +249,7 @@ export default function JobRadarGlobe() {
     setIsLoadingTelemetry(true);
     setTelemetryError(null);
     try {
-      let res = await fetch("/api/radar", { cache: "no-store", signal });
+      let res = await fetch("/api/radar", { signal });
       if (!res.ok) {
         res = await fetch("/api/radar.json", { signal });
       }

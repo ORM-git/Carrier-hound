@@ -1,11 +1,14 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { formatSalary } from "../../src/lib/salary/parser";
 import { verifyUserNotBanned } from "../../src/lib/admin/auth";
 import { COUNTRY_CODE_TO_NAME, getCountryFilterClause } from "../../src/lib/countries";
 import { sanitizeSearchQuery } from "../../src/lib/api/jobs";
 import { safeLog } from "./_logger";
 
-function getSupabaseAdmin() {
+let cachedNetlifyJobsProAdmin: SupabaseClient | null = null;
+let cachedNetlifyJobsProKey = "";
+
+function getSupabaseAdmin(): SupabaseClient {
   const supabaseUrl =
     process.env.NEXT_PUBLIC_SUPABASE_URL ||
     process.env.SUPABASE_URL ||
@@ -29,9 +32,16 @@ function getSupabaseAdmin() {
     }));
   }
 
-  return createClient(supabaseUrl, serviceKey, {
-    auth: { persistSession: false },
+  const cacheKey = `${supabaseUrl}::${serviceKey}`;
+  if (cachedNetlifyJobsProAdmin && cachedNetlifyJobsProKey === cacheKey && process.env.NODE_ENV !== "test") {
+    return cachedNetlifyJobsProAdmin;
+  }
+  const client = createClient(supabaseUrl, serviceKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
   });
+  cachedNetlifyJobsProAdmin = client;
+  cachedNetlifyJobsProKey = cacheKey;
+  return client;
 }
 
 async function verifyProUser(event: any) {
@@ -67,7 +77,7 @@ async function verifyProUser(event: any) {
   // Check subscription table directly on server
   const { data: sub, error: subError } = await supabaseAdmin
     .from("subscriptions")
-    .select("*")
+    .select("status, current_period_end, grace_period_end")
     .eq("user_id", user.id)
     .order("created_at", { ascending: false })
     .limit(1)

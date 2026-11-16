@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { resolveLocation, TRUSTED_CITIES, COUNTRY_CENTROIDS } from '@/lib/geo/cities';
 
 import { reportRequestErrorToSentry } from '@/lib/monitoring/sentryErrorReporter';
@@ -20,6 +20,20 @@ interface CachedRadarData {
 
 let memoryCache: CachedRadarData | null = null;
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const MAX_RADAR_CHUNKS = 15; // Cap at 15,000 rows max to prevent unbounded corpus scans
+
+let cachedRadarClient: SupabaseClient | null = null;
+let cachedRadarClientKey = "";
+function getRadarSupabase(url: string, key: string): SupabaseClient {
+  const cacheKey = `${url}::${key}`;
+  if (cachedRadarClient && cachedRadarClientKey === cacheKey && process.env.NODE_ENV !== "test") {
+    return cachedRadarClient;
+  }
+  const client = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+  cachedRadarClient = client;
+  cachedRadarClientKey = cacheKey;
+  return client;
+}
 
 async function fetchJobsChunks(
   supabase: any,
@@ -27,7 +41,7 @@ async function fetchJobsChunks(
   batchSize: number = 5,
   chunkSize: number = 1000
 ): Promise<any[]> {
-  const chunkCount = Math.ceil((totalActive || 0) / chunkSize);
+  const chunkCount = Math.min(Math.ceil((totalActive || 0) / chunkSize), MAX_RADAR_CHUNKS);
   const jobs: any[] = [];
 
   for (let b = 0; b < chunkCount; b += batchSize) {
@@ -39,7 +53,7 @@ async function fetchJobsChunks(
       batchPromises.push(
         supabase
           .from('jobs_public')
-          .select('id, company, title, location, country_code, remote_scope, remote_eligibility, verified')
+          .select('id, company, location, country_code, remote_scope, remote_eligibility, verified')
           .eq('is_active', true)
           .eq('status', 'active')
           .range(from, to)
@@ -71,7 +85,7 @@ async function computeRadarPayload(supabase: any, now: number): Promise<any> {
     // 2. Fetch active jobs in parallel chunks (bypassing PostgREST 1000 row cap)
     const { count: totalActive } = await supabase
       .from('jobs_public')
-      .select('*', { count: 'exact', head: true })
+      .select('id', { count: 'exact', head: true })
       .eq('is_active', true)
       .eq('status', 'active');
 
@@ -249,9 +263,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'Supabase credentials not configured' }, { status: 500 });
   }
 
-  const supabase = createClient(supabaseUrl, serviceKey, {
-    auth: { persistSession: false },
-  });
+  const supabase = getRadarSupabase(supabaseUrl, serviceKey);
 
   try {
     // Cache stampede guard: concurrent misses share ONE aggregation (and its

@@ -1,6 +1,9 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-function getSupabaseAdmin() {
+let cachedNetlifyStatsAdmin: SupabaseClient | null = null;
+let cachedNetlifyStatsKey = "";
+
+function getSupabaseAdmin(): SupabaseClient {
   const supabaseUrl =
     process.env.NEXT_PUBLIC_SUPABASE_URL ||
     process.env.SUPABASE_URL;
@@ -24,9 +27,16 @@ function getSupabaseAdmin() {
     }));
   }
 
-  return createClient(supabaseUrl, serviceKey, {
-    auth: { persistSession: false },
+  const cacheKey = `${supabaseUrl}::${serviceKey}`;
+  if (cachedNetlifyStatsAdmin && cachedNetlifyStatsKey === cacheKey && process.env.NODE_ENV !== "test") {
+    return cachedNetlifyStatsAdmin;
+  }
+  const client = createClient(supabaseUrl, serviceKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
   });
+  cachedNetlifyStatsAdmin = client;
+  cachedNetlifyStatsKey = cacheKey;
+  return client;
 }
 
 import { buildCorsHeaders, handleCorsPreflight } from "./_cors";
