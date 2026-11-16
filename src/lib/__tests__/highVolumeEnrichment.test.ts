@@ -93,10 +93,12 @@ describe("High-Volume Multi-Source Ingestion & Schema Enrichment", () => {
     // 2. jobs columns & check
     expect(sql).toMatch(/ALTER TABLE public\.jobs ADD COLUMN IF NOT EXISTS role_category text/i);
     expect(sql).toMatch(/ALTER TABLE public\.jobs ADD COLUMN IF NOT EXISTS top_keywords text\[\]/i);
+    expect(sql).toMatch(/ALTER TABLE public\.jobs ADD COLUMN IF NOT EXISTS source_id text/i);
     expect(sql).toMatch(/ALTER TABLE public\.jobs ADD COLUMN IF NOT EXISTS dedupe_hash text/i);
     expect(sql).toMatch(/ALTER TABLE public\.jobs ADD COLUMN IF NOT EXISTS is_remote boolean/i);
     expect(sql).toMatch(/ALTER TABLE public\.jobs ADD COLUMN IF NOT EXISTS logo_url text/i);
     expect(sql).toMatch(/'SDE',\s*'AI_ML',\s*'CLOUD',\s*'DATA',\s*'OTHER'/);
+    expect(sql).toMatch(/jobs_source_type_check/i);
 
     // Assert migration is non-destructive (no destructive row mutations or renames)
     expect(sql).not.toMatch(/UPDATE public\.jobs[\s\S]*?__dup_/i);
@@ -108,8 +110,7 @@ describe("High-Volume Multi-Source Ingestion & Schema Enrichment", () => {
     expect(sql).toMatch(/idx_jobs_active_category[\s\S]*?WHERE is_active = TRUE/i);
     expect(sql).toMatch(/idx_jobs_active_country[\s\S]*?WHERE is_active = TRUE/i);
     expect(sql).toMatch(/idx_jobs_active_posted_at_desc[\s\S]*?WHERE is_active = TRUE/i);
-    expect(sql).toMatch(/idx_jobs_source_type_source_job_id_uniq/i);
-    expect(sql).toMatch(/jobs_source_type_source_job_id_key/i);
+    expect(sql).toMatch(/idx_jobs_source_id_source_job_id_uniq/i);
     expect(sql).toMatch(/idx_jobs_active_dedupe_hash_uniq[\s\S]*?WHERE is_active = TRUE AND dedupe_hash IS NOT NULL/i);
   });
 });

@@ -273,7 +273,7 @@ export function createHandler(deps: JobsSearchDeps = {}) {
     const normalizedUserCountries = normalizeUserCountries(userLocations);
 
     const selectColumns = (isPro && hasServiceKey)
-      ? "*, companies(name, logo_url)"
+      ? "*, companies(name, logo_url, category, canonical_domain, domain)"
       : hasServiceKey
       ? "id, title, company, location, category, remote, remote_scope, remote_eligibility, country_code, country, job_type, verified, posted_at, created_at, salary_min, salary_max, currency, salary_period, salary_text, source_type, source, company_id, companies(name, logo_url), role_category, top_keywords, is_remote"
       : "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at, role_category, top_keywords, is_remote";
@@ -282,7 +282,7 @@ export function createHandler(deps: JobsSearchDeps = {}) {
     if (idParam) {
       const cleanId = sanitizeSearchQuery(idParam).trim();
       const singleColumns = (isPro && hasServiceKey)
-        ? "*, companies(name, logo_url)"
+        ? "*, companies(name, logo_url, category, canonical_domain, domain)"
         : hasServiceKey
         ? "id, title, company, location, category, remote, remote_scope, remote_eligibility, country_code, country, job_type, verified, posted_at, created_at, status, is_active, company_id, companies(name, logo_url), role_category, top_keywords, is_remote"
         : "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at, status, is_active, role_category, top_keywords, is_remote";
@@ -356,6 +356,12 @@ export function createHandler(deps: JobsSearchDeps = {}) {
              ))
           : null;
 
+      const singleDomain =
+        jobRow.canonical_domain ||
+        jobRow.companies?.canonical_domain ||
+        jobRow.companies?.domain ||
+        (jobRow.company_slug ? `${jobRow.company_slug}.com` : null);
+
       const formatted = {
         id: jobRow.id,
         title: jobRow.title || "Untitled Position",
@@ -367,6 +373,11 @@ export function createHandler(deps: JobsSearchDeps = {}) {
         category: jobRow.category || "engineering",
         role_category: singleRoleCategory,
         company_category: singleCompanyCategory,
+        ...(isPro && !isInactive ? {
+          company_domain: singleDomain,
+          canonical_domain: singleDomain,
+          domain: singleDomain,
+        } : {}),
         top_keywords: singleTopKeywords,
         remote: Boolean(jobRow.remote),
         is_remote: Boolean(jobRow.is_remote ?? jobRow.remote),
@@ -913,6 +924,11 @@ export function createHandler(deps: JobsSearchDeps = {}) {
             row.companies?.canonical_domain || row.companies?.domain,
             row.country_code
           );
+        const resolvedDomain =
+          row.canonical_domain ||
+          row.companies?.canonical_domain ||
+          row.companies?.domain ||
+          (row.company_slug ? `${row.company_slug}.com` : null);
         return {
           id: row.id,
           title: row.title || "Untitled Position",
@@ -927,6 +943,9 @@ export function createHandler(deps: JobsSearchDeps = {}) {
           category: row.category || "engineering",
           role_category: resolvedRoleCategory,
           company_category: resolvedCompanyCategory,
+          company_domain: resolvedDomain,
+          canonical_domain: resolvedDomain,
+          domain: resolvedDomain,
           top_keywords: resolvedTopKeywords,
           remote: Boolean(row.remote),
           is_remote: Boolean(row.is_remote ?? row.remote),

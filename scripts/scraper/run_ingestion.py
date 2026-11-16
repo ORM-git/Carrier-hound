@@ -44,7 +44,7 @@ from .fetchers import (
 )
 from .rate_limiter import PerHostRateLimiter, redact_sensitive_params
 
-PARTIAL_COVERAGE_SOURCES: frozenset[str] = frozenset({"workday", "amazon", "microsoft", "arbeitnow"})
+PARTIAL_COVERAGE_SOURCES: frozenset[str] = frozenset({"workday", "amazon", "microsoft", "arbeitnow", "smartrecruiters", "jobspy", "adzuna"})
 
 
 def evaluate_count_drop_guard(
@@ -175,18 +175,20 @@ async def run_master_ingestion(
     ) as client:
         scheduled_tasks: list[asyncio.Task[dict[str, Any]]] = []
 
-        # Layer 1: Public ATS APIs (Full coverage)
+        # Layer 1: Public ATS APIs (Greenhouse, Lever, Ashby full coverage; SmartRecruiters single page = partial)
         for s in layer1_seeds:
             ats = str(s.get("ats") or "").lower()
             slug = str(s.get("slug") or "").lower()
-            if _matches_source_filter(source_filter, "layer1", ats, slug, f"{ats}:{slug}"):
+            board_id = f"{ats}:{slug}"
+            is_full = False if ats == "smartrecruiters" else True
+            if _matches_source_filter(source_filter, "layer1", ats, slug, board_id):
                 scheduled_tasks.append(
                     asyncio.create_task(
                         run_isolated_source(
-                            f"layer1:{ats}:{slug}",
+                            board_id,
                             ats,
                             lambda seed=s: fetch_layer1_seed(client, limiter, seed),
-                            is_full_coverage=True,
+                            is_full_coverage=is_full,
                         )
                     )
                 )
@@ -194,11 +196,12 @@ async def run_master_ingestion(
         # Layer 2: Enterprise & Big Tech JSON APIs (Partial coverage, max_pages=1)
         for wd in workday_seeds:
             slug = str(wd.get("slug") or "").lower()
-            if _matches_source_filter(source_filter, "layer2", "workday", slug, f"workday:{slug}"):
+            board_id = f"workday:{slug}"
+            if _matches_source_filter(source_filter, "layer2", "workday", slug, board_id):
                 scheduled_tasks.append(
                     asyncio.create_task(
                         run_isolated_source(
-                            f"layer2:workday:{slug}",
+                            board_id,
                             "workday",
                             lambda seed=wd: fetch_workday_cxs(client, limiter, seed, max_pages=1),
                             is_full_coverage=False,
@@ -211,7 +214,7 @@ async def run_master_ingestion(
             scheduled_tasks.append(
                 asyncio.create_task(
                     run_isolated_source(
-                        "layer2:amazon",
+                        "amazon",
                         "amazon",
                         lambda: fetch_amazon_jobs(client, limiter, amz_seed, max_pages=1),
                         is_full_coverage=False,
@@ -224,7 +227,7 @@ async def run_master_ingestion(
             scheduled_tasks.append(
                 asyncio.create_task(
                     run_isolated_source(
-                        "layer2:microsoft",
+                        "microsoft",
                         "microsoft",
                         lambda: fetch_microsoft_jobs(client, limiter, ms_seed, max_pages=1),
                         is_full_coverage=False,
@@ -237,7 +240,7 @@ async def run_master_ingestion(
             scheduled_tasks.append(
                 asyncio.create_task(
                     run_isolated_source(
-                        "layer3:jobspy_india",
+                        "jobspy:india",
                         "jobspy",
                         lambda: fetch_jobspy_india(),
                         is_full_coverage=False,
@@ -249,7 +252,7 @@ async def run_master_ingestion(
             scheduled_tasks.append(
                 asyncio.create_task(
                     run_isolated_source(
-                        "layer3:arbeitnow",
+                        "arbeitnow",
                         "arbeitnow",
                         lambda: fetch_arbeitnow(client, limiter, max_pages=1),
                         is_full_coverage=False,
@@ -261,7 +264,7 @@ async def run_master_ingestion(
             scheduled_tasks.append(
                 asyncio.create_task(
                     run_isolated_source(
-                        "layer3:adzuna",
+                        "adzuna:in",
                         "adzuna",
                         lambda: fetch_adzuna(client, limiter),
                         is_full_coverage=False,
@@ -274,14 +277,16 @@ async def run_master_ingestion(
         all_jobs: list[dict[str, Any]] = []
         source_reports: list[dict[str, Any]] = []
         failed_sources: list[dict[str, str]] = []
-        source_status_map: dict[str, dict[str, Any]] = {}
+        board_status_map: dict[str, dict[str, Any]] = {}
 
         for rep in task_reports:
+            bsid = rep["source"]
             st = rep["source_type"]
             all_jobs.extend(rep["jobs"])
             source_reports.append(
                 {
-                    "source": rep["source"],
+                    "source": bsid,
+                    "source_id": bsid,
                     "source_type": st,
                     "status": rep["status"],
                     "completed": rep["completed"],
@@ -291,21 +296,16 @@ async def run_master_ingestion(
                 }
             )
             if not rep["completed"] or rep["status"] == "failed":
-                failed_sources.append({"source": rep["source"], "error": rep["error"] or "Source incomplete or failed"})
+                failed_sources.append({"source": bsid, "error": rep["error"] or "Board incomplete or failed"})
 
-            if st not in source_status_map:
-                source_status_map[st] = {
-                    "completed": True,
-                    "is_full_coverage": rep["is_full_coverage"],
-                    "error": None,
-                    "fetched_jobs": [],
-                }
-            if not rep["completed"]:
-                source_status_map[st]["completed"] = False
-                source_status_map[st]["error"] = rep["error"]
-            if not rep["is_full_coverage"]:
-                source_status_map[st]["is_full_coverage"] = False
-            source_status_map[st]["fetched_jobs"].extend(rep["jobs"])
+            board_status_map[bsid] = {
+                "source_id": bsid,
+                "source_type": st,
+                "completed": rep["completed"],
+                "is_full_coverage": rep["is_full_coverage"],
+                "error": rep["error"],
+                "fetched_jobs": rep["jobs"],
+            }
 
         # Sort: Direct ATS (priority 1) before Aggregators (priority 2)
         all_jobs.sort(key=lambda j: int(j.get("source_priority", 2)))
@@ -333,66 +333,80 @@ async def run_master_ingestion(
 
         # Expiration safety checks:
         # 1. Any persistence failure vetos expiry completely.
-        # 2. Never expire sources not in this run.
-        # 3. Workday, Amazon, Microsoft, Arbeitnow are partial coverage -> never expire.
-        # 4. Incomplete or failed sources -> skip expiry for that source.
-        # 5. Baseline query failure / null -> skip expiry for that source (never treat as 0).
-        # 6. Per-source 50% drop guard -> skip if fetched/persisted < baseline * 0.5.
+        # 2. Expiry is scoped strictly per board (source_id), never whole-vendor.
+        # 3. With --source, only scheduled boards are in board_status_map; unscheduled boards are never touched.
+        # 4. Workday, Amazon, Microsoft, Arbeitnow, SmartRecruiters are partial coverage -> never expire.
+        # 5. Incomplete or failed boards -> skip expiry for that board.
+        # 6. Baseline query failure / null -> skip expiry for that board (never treat as 0).
+        # 7. Per-board 50% drop guard -> skip if persisted < baseline * 0.5.
         expiry_vetoed = db_stats.get("persistence_failed", False)
         expiry_reports: list[dict[str, Any]] = []
 
         if not dry_run and supabase_url and service_key and not expiry_vetoed:
             writer = SupabaseSetDiffWriter(supabase_url, service_key)
             cutoff = (datetime.now(timezone.utc) - timedelta(hours=expire_stale_hours)).isoformat()
-            persisted_set = set(db_stats.get("persisted_ids") or [])
+            persisted_keys = set(tuple(k) for k in db_stats.get("persisted_source_keys") or [])
 
-            for st, st_info in source_status_map.items():
-                if st in PARTIAL_COVERAGE_SOURCES or not st_info["is_full_coverage"]:
-                    expiry_reports.append({
-                        "source_type": st,
-                        "expired": 0,
-                        "status": "skipped_partial_coverage",
-                        "reason": f"Source {st} is partial coverage; stale expiry is disabled.",
-                    })
-                    continue
+            for bsid, b_info in board_status_map.items():
+                st = b_info["source_type"]
 
-                if not st_info["completed"] or st_info["error"]:
+                if not b_info["completed"] or b_info["error"]:
                     expiry_reports.append({
+                        "source_id": bsid,
                         "source_type": st,
                         "expired": 0,
                         "status": "skipped_incomplete_source",
-                        "reason": f"Source {st} had errors or incomplete fetch ({st_info['error']}).",
+                        "reason": f"Board {bsid} had errors or incomplete fetch ({b_info['error']}).",
                     })
                     continue
 
-                # Query baseline count for this source_type
+                if not b_info["is_full_coverage"] or st in PARTIAL_COVERAGE_SOURCES or bsid in PARTIAL_COVERAGE_SOURCES:
+                    expiry_reports.append({
+                        "source_id": bsid,
+                        "source_type": st,
+                        "expired": 0,
+                        "status": "skipped_partial_coverage",
+                        "reason": f"Board {bsid} is partial coverage; stale expiry is disabled.",
+                    })
+                    continue
+
+                # Query baseline count for this exact board (source_id)
                 try:
                     cnt_resp = await client.get(
-                        f"{writer.base_url}/jobs?select=id&is_active=eq.true&source_type=eq.{st}&limit=1",
+                        f"{writer.base_url}/jobs?select=id&is_active=eq.true&source_id=eq.{bsid}&limit=1",
                         headers={**writer.headers, "Prefer": "count=exact"},
                     )
                     content_range = cnt_resp.headers.get("content-range") or ""
                     if cnt_resp.status_code == 200 and "/" in content_range and content_range.split("/")[-1].isdigit():
-                        st_baseline = int(content_range.split("/")[-1])
+                        board_baseline = int(content_range.split("/")[-1])
                     else:
-                        st_baseline = None
+                        board_baseline = None
                 except Exception as exc:
-                    st_baseline = None
+                    board_baseline = None
 
-                if st_baseline is None or st_baseline <= 0:
+                if board_baseline is None or board_baseline <= 0:
                     expiry_reports.append({
+                        "source_id": bsid,
                         "source_type": st,
                         "expired": 0,
                         "status": "skipped_no_baseline",
-                        "reason": f"Baseline query failed or returned no baseline for {st}; skipping expiration.",
+                        "reason": f"Baseline query failed or returned no baseline for {bsid}; skipping expiration.",
                     })
                     continue
 
-                persisted_st_count = sum(1 for j in st_info["fetched_jobs"] if j.get("source_type") == st and (not persisted_set or j.get("id") in persisted_set))
-                guard = evaluate_count_drop_guard(persisted_st_count, st_baseline, source_name=st, min_ratio=0.5)
+                if persisted_keys:
+                    persisted_board_count = sum(
+                        1 for j in b_info["fetched_jobs"]
+                        if (str(j.get("source_id") or "") == bsid and (str(j.get("source_id") or ""), str(j.get("source_job_id") or "")) in persisted_keys)
+                    )
+                else:
+                    persisted_board_count = len(b_info["fetched_jobs"])
+
+                guard = evaluate_count_drop_guard(persisted_board_count, board_baseline, source_name=bsid, min_ratio=0.5)
 
                 if not guard["allowed"]:
                     expiry_reports.append({
+                        "source_id": bsid,
                         "source_type": st,
                         "expired": 0,
                         "status": "skipped_drop_guard",
@@ -400,10 +414,10 @@ async def run_master_ingestion(
                     })
                     continue
 
-                # Run safe per-source stale job expiration
+                # Run safe per-board stale job expiration
                 try:
                     exp_resp = await client.patch(
-                        f"{writer.base_url}/jobs?is_active=eq.true&source_type=eq.{st}&last_seen_at=lt.{cutoff}",
+                        f"{writer.base_url}/jobs?is_active=eq.true&source_id=eq.{bsid}&last_seen_at=lt.{cutoff}",
                         headers={**writer.headers, "Prefer": "return=representation"},
                         json={"is_active": False, "status": "expired"},
                     )
@@ -411,12 +425,22 @@ async def run_master_ingestion(
                         exp_count = len(exp_resp.json())
                         db_stats["expired"] += exp_count
                         expiry_reports.append({
+                            "source_id": bsid,
                             "source_type": st,
                             "expired": exp_count,
                             "status": "completed",
                         })
+                    else:
+                        expiry_reports.append({
+                            "source_id": bsid,
+                            "source_type": st,
+                            "expired": 0,
+                            "status": "failed",
+                            "error": f"HTTP {exp_resp.status_code}: {exp_resp.text}",
+                        })
                 except Exception as exc:
                     expiry_reports.append({
+                        "source_id": bsid,
                         "source_type": st,
                         "expired": 0,
                         "status": "failed",

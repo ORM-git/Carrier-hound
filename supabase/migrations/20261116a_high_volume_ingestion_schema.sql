@@ -72,6 +72,7 @@ ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS category text;
 ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS role_category text;
 ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS top_keywords text[] DEFAULT '{}'::text[];
 ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS source_type text;
+ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS source_id text;
 ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS source_job_id text;
 ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS dedupe_hash text;
 ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS is_remote boolean DEFAULT false;
@@ -80,6 +81,19 @@ ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS last_seen_at timestamptz DEFAUL
 ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS is_active boolean DEFAULT true;
 ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS source_priority smallint DEFAULT 2;
 ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS logo_url text;
+ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS canonical_domain text;
+
+-- Safe update to jobs_source_type_check supporting all direct ATS & aggregator sources
+ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_source_type_check;
+ALTER TABLE public.jobs
+  ADD CONSTRAINT jobs_source_type_check
+  CHECK (source_type IS NULL OR source_type IN (
+    'ats', 'api', 'feed', 'direct',
+    'greenhouse', 'lever', 'ashby', 'smartrecruiters',
+    'workday', 'amazon', 'microsoft',
+    'jobspy', 'arbeitnow', 'adzuna'
+  ))
+  NOT VALID;
 
 ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_role_category_check;
 ALTER TABLE public.jobs
@@ -284,23 +298,14 @@ CREATE INDEX IF NOT EXISTS idx_jobs_active_category_country_posted_at
   ON public.jobs (category, country, posted_at DESC)
   WHERE is_active = TRUE;
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_source_type_source_job_id_uniq
-  ON public.jobs (source_type, source_job_id)
-  WHERE source_type IS NOT NULL AND source_job_id IS NOT NULL;
+-- Drop the old unsafe unique constraint and index that could fail on legacy cross-vendor duplicates
+ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_source_type_source_job_id_key;
+DROP INDEX IF EXISTS public.idx_jobs_source_type_source_job_id_uniq;
 
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1
-    FROM pg_constraint
-    WHERE conname = 'jobs_source_type_source_job_id_key'
-      AND conrelid = 'public.jobs'::regclass
-  ) THEN
-    ALTER TABLE public.jobs
-      ADD CONSTRAINT jobs_source_type_source_job_id_key
-      UNIQUE (source_type, source_job_id);
-  END IF;
-END $$;
+-- Canonical unique index for new ingestion rows (keyed on source_id + source_job_id, safe on legacy rows where source_id IS NULL)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_source_id_source_job_id_uniq
+  ON public.jobs (source_id, source_job_id)
+  WHERE source_id IS NOT NULL AND source_job_id IS NOT NULL;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_active_dedupe_hash_uniq
   ON public.jobs (dedupe_hash)
@@ -354,8 +359,7 @@ COMMIT;
 --   DROP FUNCTION IF EXISTS public.merge_job_by_dedupe_priority();
 --   DROP FUNCTION IF EXISTS public.compute_job_dedupe_hash(text, text, text, text);
 --   DROP INDEX IF EXISTS public.idx_jobs_active_dedupe_hash_uniq;
---   ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_source_type_source_job_id_key;
---   DROP INDEX IF EXISTS public.idx_jobs_source_type_source_job_id_uniq;
+--   DROP INDEX IF EXISTS public.idx_jobs_source_id_source_job_id_uniq;
 --   DROP INDEX IF EXISTS public.idx_jobs_active_category_country_posted_at;
 --   DROP INDEX IF EXISTS public.idx_jobs_active_posted_at_desc;
 --   DROP INDEX IF EXISTS public.idx_jobs_active_country;
@@ -363,7 +367,13 @@ COMMIT;
 --   DROP INDEX IF EXISTS public.idx_jobs_active_category;
 --   ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_source_priority_check;
 --   ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_role_category_check;
+--   ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_source_type_check;
+--   ALTER TABLE public.jobs DROP COLUMN IF EXISTS source_id;
+--   ALTER TABLE public.jobs DROP COLUMN IF EXISTS canonical_domain;
+--   ALTER TABLE public.jobs DROP COLUMN IF EXISTS logo_url;
 --   ALTER TABLE public.companies DROP CONSTRAINT IF EXISTS companies_category_check;
 --   DROP INDEX IF EXISTS public.idx_companies_category;
 --   DROP INDEX IF EXISTS public.idx_companies_slug_uniq;
+--   ALTER TABLE public.companies DROP COLUMN IF EXISTS canonical_domain;
+--   ALTER TABLE public.companies DROP COLUMN IF EXISTS logo_url;
 -- ============================================================================

@@ -12,9 +12,11 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
+import json
 import os
 from pathlib import Path
 import re
+import sys
 from typing import Any
 
 import httpx
@@ -93,6 +95,7 @@ def normalize_aggregator_job(
     apply_url: str,
     source: str,
     source_type: str = "aggregator",
+    source_id: str | None = None,
     source_job_id: str,
     description_raw: str | None = None,
     posted_at: Any = None,
@@ -101,6 +104,7 @@ def normalize_aggregator_job(
     salary_min: float | None = None,
     salary_max: float | None = None,
     currency: str = "USD",
+    salary_period: str = "year",
     ats_logo_url: str | None = None,
 ) -> dict[str, Any]:
     """
@@ -126,6 +130,7 @@ def normalize_aggregator_job(
         seed=seed,
         source=source,
         source_type=source_type,
+        source_id=source_id or f"{source_type}:{source}",
         source_job_id=source_job_id,
         title=title,
         location=location,
@@ -137,10 +142,100 @@ def normalize_aggregator_job(
         salary_min=salary_min,
         salary_max=salary_max,
         currency=currency,
+        salary_period=salary_period,
         country_code_hint=detected_cc,
         source_layer="layer3",
         source_priority=2,  # Aggregator priority = 2 (Direct ATS = 1)
     )
+
+
+async def run_jobspy_scrape_in_subprocess(
+    *,
+    sites: tuple[str, ...],
+    search_term: str,
+    location: str,
+    results_wanted: int,
+    hours_old: int,
+    is_remote: bool,
+    timeout_seconds: float = 30.0,
+) -> tuple[list[dict[str, Any]], str | None]:
+    """
+    Executes a single JobSpy scrape in an isolated subprocess with a hard kill deadline.
+    If the worker hangs, the OS process is forcefully killed (SIGKILL / TerminateProcess),
+    guaranteeing that blocked socket threads can NEVER hang the ingestion CLI.
+    """
+    worker_script = (
+        "import sys, json\n"
+        "try:\n"
+        "    from jobspy import scrape_jobs\n"
+        "except ImportError:\n"
+        "    try:\n"
+        "        from jobspy.scrapers import scrape_jobs\n"
+        "    except ImportError:\n"
+        "        sys.stderr.write('IMPORT_ERROR: python-jobspy not installed')\n"
+        "        sys.exit(2)\n"
+        "try:\n"
+        "    kwargs = json.loads(sys.argv[1])\n"
+        "    res = scrape_jobs(**kwargs)\n"
+        "    if hasattr(res, 'to_dict'):\n"
+        "        rows = res.to_dict('records')\n"
+        "    elif isinstance(res, list):\n"
+        "        rows = res\n"
+        "    else:\n"
+        "        rows = []\n"
+        "    clean_rows = []\n"
+        "    for r in rows:\n"
+        "        if isinstance(r, dict):\n"
+        "            clean_rows.append({k: (str(v) if not isinstance(v, (str, int, float, bool, type(None))) else v) for k, v in r.items()})\n"
+        "    sys.stdout.write(json.dumps(clean_rows))\n"
+        "except Exception as e:\n"
+        "    sys.stderr.write(f'SCRAPE_ERROR: {e}')\n"
+        "    sys.exit(1)\n"
+    )
+
+    params = {
+        "site_name": list(sites),
+        "search_term": search_term,
+        "location": location,
+        "results_wanted": results_wanted,
+        "hours_old": hours_old,
+        "country_indeed": "india",
+        "is_remote": is_remote,
+    }
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            sys.executable,
+            "-c",
+            worker_script,
+            json.dumps(params),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+    except Exception as exc:
+        return [], f"Failed to spawn JobSpy subprocess: {exc}"
+
+    try:
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_seconds)
+    except asyncio.TimeoutError:
+        try:
+            proc.kill()
+            await proc.wait()
+        except Exception:
+            pass
+        return [], f"JobSpy timed out after {timeout_seconds}s for {search_term} in {location} (process killed)"
+
+    if proc.returncode == 2:
+        return [], "python-jobspy not installed. Run 'pip install python-jobspy'"
+    if proc.returncode != 0:
+        err_msg = stderr.decode("utf-8", errors="replace").strip()
+        return [], f"JobSpy error for {search_term} in {location}: {err_msg}"
+
+    try:
+        data = json.loads(stdout.decode("utf-8", errors="replace") or "[]")
+        return data if isinstance(data, list) else [], None
+    except Exception as exc:
+        return [], f"JobSpy output parse error: {exc}"
 
 
 async def fetch_jobspy_india(
@@ -151,20 +246,14 @@ async def fetch_jobspy_india(
     results_wanted: int = 25,
     hours_old: int = 24,
     scrape_timeout_seconds: float = 30.0,
+    scrape_fn: Any | None = None,
 ) -> tuple[list[dict[str, Any]], str | None]:
     """
     Query LinkedIn Guest, Indeed, and Naukri across India with hours_old=24.
+    Runs each scrape in a separate process with a hard kill deadline.
     Returns (results, error). If python-jobspy is not installed or scrape fails/times out,
     returns (results, error_message) so expiry can be safely withheld.
     """
-    try:
-        from jobspy import scrape_jobs as scrape_fn  # type: ignore
-    except ImportError:
-        try:
-            from jobspy.scrapers import scrape_jobs as scrape_fn  # type: ignore
-        except ImportError:
-            return [], "python-jobspy not installed. Run 'pip install python-jobspy'"
-
     results: list[dict[str, Any]] = []
     seen_urls: set[str] = set()
     errors: list[str] = []
@@ -172,33 +261,41 @@ async def fetch_jobspy_india(
     for role in roles:
         for loc in locations:
             is_remote_query = "remote" in loc.lower()
-            try:
-                raw_records = await asyncio.wait_for(
-                    asyncio.to_thread(
-                        scrape_fn,
-                        site_name=list(sites),
-                        search_term=role,
-                        location=loc,
-                        results_wanted=results_wanted,
-                        hours_old=hours_old,
-                        country_indeed="india",
-                        is_remote=is_remote_query,
-                    ),
-                    timeout=scrape_timeout_seconds,
-                )
-            except asyncio.TimeoutError:
-                errors.append(f"JobSpy timed out after {scrape_timeout_seconds}s for {role} in {loc}")
-                continue
-            except Exception as exc:
-                clean_err = redact_sensitive_params(str(exc))
-                errors.append(f"JobSpy error for {role} in {loc}: {clean_err}")
-                continue
-
-            if hasattr(raw_records, "to_dict"):
-                rows = raw_records.to_dict("records")
-            elif isinstance(raw_records, list):
-                rows = raw_records
+            if scrape_fn is not None:
+                # In-process hook for mock tests
+                try:
+                    raw_records = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            scrape_fn,
+                            site_name=list(sites),
+                            search_term=role,
+                            location=loc,
+                            results_wanted=results_wanted,
+                            hours_old=hours_old,
+                            country_indeed="india",
+                            is_remote=is_remote_query,
+                        ),
+                        timeout=scrape_timeout_seconds,
+                    )
+                    rows = raw_records.to_dict("records") if hasattr(raw_records, "to_dict") else (raw_records if isinstance(raw_records, list) else [])
+                    sub_err = None
+                except asyncio.TimeoutError:
+                    rows, sub_err = [], f"JobSpy timed out after {scrape_timeout_seconds}s for {role} in {loc}"
+                except Exception as exc:
+                    rows, sub_err = [], f"JobSpy error: {redact_sensitive_params(str(exc))}"
             else:
+                rows, sub_err = await run_jobspy_scrape_in_subprocess(
+                    sites=sites,
+                    search_term=role,
+                    location=loc,
+                    results_wanted=results_wanted,
+                    hours_old=hours_old,
+                    is_remote=is_remote_query,
+                    timeout_seconds=scrape_timeout_seconds,
+                )
+
+            if sub_err:
+                errors.append(sub_err)
                 continue
 
             for item in rows:
@@ -226,6 +323,7 @@ async def fetch_jobspy_india(
                         apply_url=apply_url,
                         source=site,
                         source_type="jobspy",
+                        source_id=f"jobspy:{site}",
                         source_job_id=f"{site}:{job_id}",
                         description_raw=item.get("description"),
                         posted_at=str(item.get("date_posted") or ""),
@@ -286,6 +384,7 @@ async def fetch_arbeitnow(
                     apply_url=str(apply_url),
                     source="arbeitnow",
                     source_type="arbeitnow",
+                    source_id="arbeitnow",
                     source_job_id=f"arbeitnow:{slug}",
                     description_raw=desc,
                     posted_at=item.get("created_at"),
@@ -365,6 +464,7 @@ async def fetch_adzuna(
                         apply_url=apply_url,
                         source="adzuna",
                         source_type="adzuna",
+                        source_id=f"adzuna:{country}",
                         source_job_id=f"adzuna:{country}:{job_id}",
                         description_raw=item.get("description"),
                         posted_at=item.get("created"),

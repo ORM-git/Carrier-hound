@@ -66,9 +66,11 @@ def load_company_seeds(path: str | Path = DEFAULT_SEEDS_PATH) -> dict[str, Any]:
 
 def compute_content_fingerprint(row: dict[str, Any]) -> str:
     """Fingerprint of all mutable job fields used for set-diff comparison."""
-    kws = sorted(str(k).lower() for k in (row.get("top_keywords") or []))
+    skills = sorted(str(s).strip().lower() for s in (row.get("skills") or []) if str(s).strip())
+    kws = sorted(str(k).strip().lower() for k in (row.get("top_keywords") or []) if str(k).strip())
     parts = [
         str(row.get("company") or "").strip(),
+        str(row.get("company_id") or "").strip(),
         str(row.get("title") or "").strip(),
         str(row.get("description") or "").strip(),
         str(row.get("location") or "").strip(),
@@ -77,16 +79,23 @@ def compute_content_fingerprint(row: dict[str, Any]) -> str:
         str(row.get("currency") or "").strip(),
         str(bool(row.get("remote") if row.get("remote") is not None else row.get("is_remote", False))),
         str(bool(row.get("is_remote") if row.get("is_remote") is not None else row.get("remote", False))),
+        str(row.get("remote_scope") or "").strip(),
+        str(row.get("remote_eligibility") or "").strip(),
+        str(row.get("job_type") or "").strip(),
+        str(row.get("category") or "").strip(),
+        str(row.get("role_category") or "").strip(),
         str(row.get("status") or "active").strip(),
+        str(bool(row.get("is_active", True))),
+        str(bool(row.get("verified", False))),
         str(row.get("logo_url") or "").strip(),
         str(row.get("apply_url") or "").strip(),
-        str(row.get("role_category") or "").strip(),
         str(row.get("salary_text") or "").strip(),
         str(row.get("salary_min") or ""),
         str(row.get("salary_max") or ""),
-        str(bool(row.get("is_active", True))),
+        str(row.get("salary_period") or "year").strip().lower(),
         str(int(row.get("source_priority") or 2)),
         ",".join(kws),
+        ",".join(skills),
     ]
     return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
 
@@ -110,11 +119,15 @@ def partition_set_diff(
         if prev is None or int(job.get("source_priority", 2)) < int(prev.get("source_priority", 2)):
             deduped_incoming[d_hash] = job
 
+    by_source_id_key: dict[tuple[str, str], dict[str, Any]] = {}
     by_source_key: dict[tuple[str, str], dict[str, Any]] = {}
     by_dedupe_hash: dict[str, dict[str, Any]] = {}
     for ex in existing_rows:
+        src_id = str(ex.get("source_id") or "")
         st = str(ex.get("source_type") or "")
         sid = str(ex.get("source_job_id") or "")
+        if src_id and sid:
+            by_source_id_key[(src_id, sid)] = ex
         if st and sid:
             by_source_key[(st, sid)] = ex
         dh = ex.get("dedupe_hash")
@@ -126,11 +139,18 @@ def partition_set_diff(
     unchanged_ids: list[str] = []
 
     for job in deduped_incoming.values():
+        src_id_key = (str(job.get("source_id") or ""), str(job.get("source_job_id") or ""))
         s_key = (str(job.get("source_type") or ""), str(job.get("source_job_id") or ""))
         d_hash = str(job.get("dedupe_hash") or "")
 
-        # Look up by primary source key first, then fall back to dedupe_hash for cross-source dedupe
-        existing = by_source_key.get(s_key)
+        # Look up by exact board (source_id, source_job_id) first,
+        # then fallback to legacy (source_type, source_job_id),
+        # then dedupe_hash for cross-source deduplication.
+        existing = None
+        if src_id_key[0] and src_id_key[1]:
+            existing = by_source_id_key.get(src_id_key)
+        if existing is None and s_key[0] and s_key[1]:
+            existing = by_source_key.get(s_key)
         if existing is None and d_hash:
             existing = by_dedupe_hash.get(d_hash)
 
@@ -139,6 +159,7 @@ def partition_set_diff(
             continue
 
         ex_id = str(existing["id"])
+        job["_existing_id"] = ex_id
         ex_priority = int(existing.get("source_priority") or 2)
         in_priority = int(job.get("source_priority") or 2)
 
@@ -299,16 +320,18 @@ class SupabaseSetDiffWriter:
             "persistence_failed": False,
             "write_errors": [],
             "persisted_ids": [],
+            "persisted_source_keys": [],
         }
+        persisted_source_keys: set[tuple[str, str]] = set()
         batch_size = 50
 
         db_columns = {
             "company", "company_id", "title", "location", "country", "country_code",
-            "remote", "is_remote", "remote_scope", "job_type", "category",
+            "remote", "is_remote", "remote_scope", "remote_eligibility", "job_type", "category",
             "role_category", "top_keywords", "skills", "salary_text", "salary_min",
-            "salary_max", "currency", "description", "apply_url", "logo_url",
-            "source", "source_type", "source_job_id", "source_url",
-            "source_priority", "dedupe_hash", "verified", "posted_at",
+            "salary_max", "salary_period", "currency", "description", "apply_url", "logo_url",
+            "source", "source_type", "source_id", "source_job_id", "source_url",
+            "source_priority", "dedupe_hash", "verified", "canonical_domain", "posted_at",
             "last_seen_at", "is_active", "status",
         }
 
@@ -334,7 +357,7 @@ class SupabaseSetDiffWriter:
             if or_parts:
                 q_url = (
                     f"{self.base_url}/jobs"
-                    f"?select=id,company,title,location,country,country_code,currency,remote,is_remote,status,description,logo_url,apply_url,role_category,salary_text,salary_min,salary_max,is_active,source,source_type,source_job_id,source_priority,dedupe_hash,top_keywords"
+                    f"?select=id,company,company_id,title,location,country,country_code,currency,remote,is_remote,remote_scope,remote_eligibility,job_type,category,role_category,status,description,logo_url,apply_url,salary_text,salary_min,salary_max,salary_period,is_active,verified,source,source_id,source_type,source_job_id,source_priority,dedupe_hash,top_keywords,skills,canonical_domain"
                     f"&or=({','.join(or_parts)})"
                 )
                 try:
@@ -371,6 +394,13 @@ class SupabaseSetDiffWriter:
                         else:
                             stats["skipped_unchanged"] += len(u_chunk)
                             stats["persisted_ids"].extend(u_chunk)
+                            u_set = set(u_chunk)
+                            for j in chunk:
+                                if j.get("_existing_id") in u_set:
+                                    sid = str(j.get("source_id") or "")
+                                    sjid = str(j.get("source_job_id") or "")
+                                    if sid and sjid:
+                                        persisted_source_keys.add((sid, sjid))
                     except Exception as exc:
                         self.failed_writes += len(u_chunk)
                         self.persistence_failed = True
@@ -390,6 +420,11 @@ class SupabaseSetDiffWriter:
                         for r in inserted_rows:
                             if isinstance(r, dict) and "id" in r:
                                 stats["persisted_ids"].append(r["id"])
+                        for row in to_insert:
+                            sid = str(row.get("source_id") or "")
+                            sjid = str(row.get("source_job_id") or "")
+                            if sid and sjid:
+                                persisted_source_keys.add((sid, sjid))
                     else:
                         self.failed_writes += len(clean_insert)
                         self.persistence_failed = True
@@ -410,6 +445,10 @@ class SupabaseSetDiffWriter:
                     if upd_resp.status_code < 300:
                         stats["updated"] += 1
                         stats["persisted_ids"].append(ex_id)
+                        sid = str(row.get("source_id") or "")
+                        sjid = str(row.get("source_job_id") or "")
+                        if sid and sjid:
+                            persisted_source_keys.add((sid, sjid))
                     else:
                         self.failed_writes += 1
                         self.persistence_failed = True
@@ -419,6 +458,7 @@ class SupabaseSetDiffWriter:
                     self.persistence_failed = True
                     self.write_errors.append(f"Job update exception on {ex_id}: {redact_sensitive_params(str(exc))}")
 
+        stats["persisted_source_keys"] = [list(k) for k in persisted_source_keys]
         stats["failed_writes"] = self.failed_writes
         stats["persistence_failed"] = self.persistence_failed
         stats["write_errors"] = self.write_errors
@@ -501,6 +541,7 @@ async def run_ingestion(
             "persistence_failed": False,
             "write_errors": [],
             "persisted_ids": [],
+            "persisted_source_keys": [],
         }
 
         if not dry_run:

@@ -122,9 +122,10 @@ async def request_with_backoff(
                 retry_after_hdr = response.headers.get("Retry-After")
                 if retry_after_hdr:
                     delay = parse_retry_after(retry_after_hdr, default_delay=base_backoff * (2**attempt))
+                    await asyncio.sleep(delay)
                 else:
                     delay = base_backoff * (2**attempt) + random.uniform(0.05, 0.25)
-                await asyncio.sleep(min(delay, 30.0))
+                    await asyncio.sleep(min(delay, 30.0))
                 continue
             response.raise_for_status()
             return response

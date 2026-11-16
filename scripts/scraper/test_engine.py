@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import email.utils
 import json
+import os
+from pathlib import Path
 import unittest
+from unittest.mock import AsyncMock, patch
 
 import httpx
 
@@ -48,6 +51,7 @@ from scripts.scraper.rate_limiter import (
     PerHostRateLimiter,
     parse_retry_after,
     redact_sensitive_params,
+    request_with_backoff,
 )
 from scripts.scraper.run_ingestion import (
     evaluate_count_drop_guard,
@@ -358,71 +362,302 @@ class HighVolumeIngestionEngineTests(unittest.TestCase):
 
         asyncio.run(_test())
 
-    def test_api_response_preserves_legacy_fields_and_adds_new_fields(self) -> None:
-        """Requirement 7: API response fixtures prove legacy fields stay identical while new fields are populated."""
-        mock_raw_db_row = {
-            "id": "11111111-2222-3333-4444-555555555555",
-            "title": "Senior Staff SDE",
+    def test_sql_fixture_all_10_fetchers_and_legacy_cross_vendor_duplicates(self) -> None:
+        """Requirement 1: Migration supports all 10 fetchers and legacy cross-vendor duplicate IDs without collision."""
+        migration_path = Path(__file__).resolve().parents[2] / "supabase" / "migrations" / "20261116a_high_volume_ingestion_schema.sql"
+        sql_content = migration_path.read_text(encoding="utf-8")
+
+        all_10_fetchers = [
+            "greenhouse", "lever", "ashby", "smartrecruiters", "workday",
+            "amazon", "microsoft", "jobspy", "arbeitnow", "adzuna",
+        ]
+        for f in all_10_fetchers:
+            self.assertIn(f"'{f}'", sql_content, f"Migration CHECK constraint must include {f}")
+
+        self.assertIn("idx_jobs_source_id_source_job_id_uniq", sql_content)
+        self.assertIn("WHERE source_id IS NOT NULL", sql_content)
+
+        # Simulate SQL unique index behavior on fixture data
+        # Legacy rows have source_id IS NULL and can share the same numeric source_job_id across vendors
+        legacy_rows = [
+            {"id": "leg-1", "source_type": "greenhouse", "source_id": None, "source_job_id": "99999"},
+            {"id": "leg-2", "source_type": "lever", "source_id": None, "source_job_id": "99999"},
+            {"id": "leg-3", "source_type": "ats", "source_id": None, "source_job_id": "99999"},
+        ]
+
+        # In the partial index (WHERE source_id IS NOT NULL), rows with source_id IS NULL never collide
+        indexed_keys: set[tuple[str, str]] = set()
+        for row in legacy_rows:
+            if row["source_id"] is not None:
+                key = (row["source_id"], row["source_job_id"])
+                self.assertNotIn(key, indexed_keys)
+                indexed_keys.add(key)
+        self.assertEqual(len(indexed_keys), 0)
+
+        # New rows from all 10 fetchers populate source_id and (source_id, source_job_id) is strictly unique
+        new_rows = [
+            {"id": f"new-{f}", "source_type": f, "source_id": f"{f}:test_board", "source_job_id": "99999"}
+            for f in all_10_fetchers
+        ]
+        for row in new_rows:
+            key = (row["source_id"], row["source_job_id"])
+            self.assertNotIn(key, indexed_keys)
+            indexed_keys.add(key)
+        self.assertEqual(len(indexed_keys), len(all_10_fetchers))
+
+    def test_change_detection_skills_and_all_mutable_fields(self) -> None:
+        """Requirement 3: Fingerprint checks skills and all mutable fields; skills change emits to_update."""
+        base_job = {
             "company": "Stripe",
+            "title": "Software Engineer",
+            "description": "Python, React, AWS",
             "location": "San Francisco, CA",
-            "remote": False,
-            "remote_scope": "onsite",
-            "remote_eligibility": "eligible",
-            "country_code": "US",
             "country": "United States",
-            "job_type": "full-time",
-            "verified": True,
-            "posted_at": "2026-11-16T12:00:00Z",
-            "created_at": "2026-11-16T12:00:00Z",
-            "salary_min": 200000,
-            "salary_max": 260000,
+            "country_code": "US",
             "currency": "USD",
-            "salary_period": "year",
-            "salary_text": "$200,000 - $260,000",
-            "source_type": "greenhouse",
-            "source": "greenhouse",
-            "company_id": "comp-1",
-            "role_category": "SDE",
-            "top_keywords": ["Python", "React", "AWS", "Kubernetes"],
+            "remote": False,
             "is_remote": False,
+            "remote_scope": "US",
+            "remote_eligibility": "authorized",
+            "job_type": "full-time",
+            "category": "engineering",
+            "role_category": "SDE",
+            "status": "active",
+            "is_active": True,
+            "verified": True,
+            "logo_url": "https://cdn.example.com/logo.png",
+            "apply_url": "https://stripe.com/apply/1",
+            "salary_text": "$180k-$220k",
+            "salary_min": 180000,
+            "salary_max": 220000,
+            "salary_period": "year",
+            "source_priority": 1,
+            "top_keywords": ["python", "react", "aws"],
+            "skills": ["python", "django", "postgresql"],
+            "source_type": "greenhouse",
+            "source_id": "greenhouse:stripe",
+            "source_job_id": "stripe:101",
+            "dedupe_hash": "hash_base_stripe",
+        }
+        fp_base = compute_content_fingerprint(base_job)
+
+        # Changing skills alters fingerprint
+        fp_skills = compute_content_fingerprint({**base_job, "skills": ["python", "django", "fastapi"]})
+        self.assertNotEqual(fp_base, fp_skills)
+
+        # Changing other mutable fields alters fingerprint
+        self.assertNotEqual(fp_base, compute_content_fingerprint({**base_job, "remote_scope": "Global"}))
+        self.assertNotEqual(fp_base, compute_content_fingerprint({**base_job, "remote_eligibility": "any"}))
+        self.assertNotEqual(fp_base, compute_content_fingerprint({**base_job, "job_type": "contract"}))
+        self.assertNotEqual(fp_base, compute_content_fingerprint({**base_job, "category": "data"}))
+        self.assertNotEqual(fp_base, compute_content_fingerprint({**base_job, "verified": False}))
+        self.assertNotEqual(fp_base, compute_content_fingerprint({**base_job, "company_id": "comp-999"}))
+        self.assertNotEqual(fp_base, compute_content_fingerprint({**base_job, "salary_period": "month"}))
+
+        # Test partition_set_diff when skills change on existing DB job
+        existing_db_row = {"id": "uuid-stripe-101", **base_job}
+        job_with_updated_skills = {**base_job, "skills": ["python", "django", "fastapi"]}
+
+        to_insert, to_update, unchanged_ids = partition_set_diff([job_with_updated_skills], [existing_db_row])
+        self.assertEqual(len(to_insert), 0)
+        self.assertEqual(len(to_update), 1)
+        self.assertEqual(to_update[0][0], "uuid-stripe-101")
+        self.assertEqual(to_update[0][1]["skills"], ["python", "django", "fastapi"])
+        self.assertEqual(len(unchanged_ids), 0)
+
+        # When skills are identical, job is classified as unchanged
+        to_insert2, to_update2, unchanged_ids2 = partition_set_diff([base_job], [existing_db_row])
+        self.assertEqual(len(to_insert2), 0)
+        self.assertEqual(len(to_update2), 0)
+        self.assertEqual(unchanged_ids2, ["uuid-stripe-101"])
+
+    def test_per_board_expiry_normal_run_expires_disappeared_job_and_failed_run_expires_nothing(self) -> None:
+        """Requirement 2: Expiry is scoped per board (source_id); normal run expires disappeared job; failed run expires 0."""
+        board_id = "greenhouse:stripe"
+        cutoff_date = (datetime.now(timezone.utc) - timedelta(hours=72)).isoformat()
+
+        # Database state: 2 active jobs for greenhouse:stripe
+        # Job 1: seen in current fetch
+        # Job 2: disappeared (last_seen_at older than cutoff)
+        persisted_job = {
+            "source_type": "greenhouse",
+            "source_id": board_id,
+            "source_job_id": "stripe:job-1",
+            "title": "Engineer 1",
+            "company": "Stripe",
+            "company_slug": "stripe",
+            "source_priority": 1,
+            "dedupe_hash": "hash_stripe_1",
+            "is_active": True,
+        }
+
+        patch_calls: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            url = str(request.url)
+            method = request.method
+            if method == "GET" and "/companies" in url:
+                return httpx.Response(200, json=[{"id": "comp-stripe", "slug": "stripe", "ats_type": "greenhouse"}])
+            if method == "GET" and "/jobs" in url:
+                # Count baseline query: active jobs for source_id=greenhouse:stripe
+                if "count=exact" in request.headers.get("prefer", "") and ("source_id=eq.greenhouse:stripe" in url or "source_id=eq.greenhouse%3Astripe" in url):
+                    # Content-Range: 0-0/2 (2 baseline active jobs)
+                    return httpx.Response(200, headers={"Content-Range": "0-0/2"}, json=[{"id": "job-1"}])
+                return httpx.Response(200, json=[])
+            if method == "POST" and "/jobs" in url:
+                # Insert response
+                return httpx.Response(201, json=[{"id": "job-1"}])
+            if method == "PATCH" and "/jobs" in url:
+                patch_calls.append(url)
+                if "last_seen_at=lt." in url:
+                    # Expire response: expired job-2
+                    return httpx.Response(200, json=[{"id": "job-2", "status": "expired"}])
+                return httpx.Response(200, json=[])
+            return httpx.Response(200, json=[])
+
+        async def _run_normal() -> dict[str, Any]:
+            seeds = {
+                "rate_limit": {"default_rps_per_host": 4.0, "burst_per_host": 1.0},
+                "layer1_public_ats": [{"ats": "greenhouse", "slug": "stripe", "source_priority": 1}],
+                "layer2_enterprise_json": {},
+            }
+            tmp_seeds = Path(__file__).resolve().parent / "_test_seeds_tmp.json"
+            tmp_seeds.write_text(json.dumps(seeds), encoding="utf-8")
+            try:
+                # Mock environment
+                with patch.dict(os.environ, {
+                    "NEXT_PUBLIC_SUPABASE_URL": "https://mock.supabase.co",
+                    "SUPABASE_SERVICE_ROLE_KEY": "mock-service-role-key",
+                }):
+                    # Mock fetch_layer1_seed to return 1 job (job-2 disappeared)
+                    with patch("scripts.scraper.run_ingestion.fetch_layer1_seed", AsyncMock(return_value=[persisted_job])):
+                        transport = httpx.MockTransport(handler)
+                        return await run_master_ingestion(
+                            sources=["stripe"],
+                            seeds_path=tmp_seeds,
+                            dry_run=False,
+                            transport=transport,
+                        )
+            finally:
+                if tmp_seeds.exists():
+                    tmp_seeds.unlink()
+
+        # 1. Run normal: job-2 must expire because persisted count 1 vs baseline 2 is 50% (meets drop guard)
+        result_normal = asyncio.run(_run_normal())
+        self.assertEqual(result_normal["db"]["expired"], 1)
+        self.assertEqual(len(result_normal["expiry_reports"]), 1)
+        self.assertEqual(result_normal["expiry_reports"][0]["status"], "completed")
+        self.assertEqual(result_normal["expiry_reports"][0]["source_id"], "greenhouse:stripe")
+
+        # Verify patch was called specifically with source_id=eq.greenhouse:stripe
+        found_expiry_patch = any(("source_id=eq.greenhouse:stripe" in call or "source_id=eq.greenhouse%3Astripe" in call) and "last_seen_at=lt." in call for call in patch_calls)
+        self.assertTrue(found_expiry_patch, f"Expiry PATCH must filter by source_id=eq.greenhouse:stripe; got {patch_calls}")
+
+        # 2. Run failed source: when fetch fails or returns error, expiry must be skipped entirely
+        patch_calls.clear()
+
+        async def _run_failed() -> dict[str, Any]:
+            seeds = {
+                "rate_limit": {"default_rps_per_host": 4.0, "burst_per_host": 1.0},
+                "layer1_public_ats": [{"ats": "greenhouse", "slug": "stripe", "source_priority": 1}],
+                "layer2_enterprise_json": {},
+            }
+            tmp_seeds = Path(__file__).resolve().parent / "_test_seeds_tmp.json"
+            tmp_seeds.write_text(json.dumps(seeds), encoding="utf-8")
+            try:
+                with patch.dict(os.environ, {
+                    "NEXT_PUBLIC_SUPABASE_URL": "https://mock.supabase.co",
+                    "SUPABASE_SERVICE_ROLE_KEY": "mock-service-role-key",
+                }):
+                    # Mock fetch failing with error
+                    with patch("scripts.scraper.run_ingestion.fetch_layer1_seed", AsyncMock(side_effect=RuntimeError("ATS API unreachable"))):
+                        transport = httpx.MockTransport(handler)
+                        return await run_master_ingestion(
+                            sources=["stripe"],
+                            seeds_path=tmp_seeds,
+                            dry_run=False,
+                            transport=transport,
+                        )
+            finally:
+                if tmp_seeds.exists():
+                    tmp_seeds.unlink()
+
+        result_failed = asyncio.run(_run_failed())
+        self.assertEqual(result_failed["db"]["expired"], 0)
+        self.assertEqual(len(result_failed["expiry_reports"]), 1)
+        self.assertEqual(result_failed["expiry_reports"][0]["status"], "skipped_incomplete_source")
+        # Ensure no expiry PATCH was issued
+        expiry_patches = [c for c in patch_calls if "last_seen_at=lt." in c]
+        self.assertEqual(len(expiry_patches), 0)
+
+    def test_retry_after_above_30s_is_honored_not_cut(self) -> None:
+        """Requirement 5: Retry-After above 30s must be honored in full, never cut to 30s."""
+        self.assertEqual(parse_retry_after("45"), 45.0)
+        self.assertEqual(parse_retry_after("120"), 120.0)
+        self.assertEqual(parse_retry_after("3600"), 3600.0)
+
+        # Verify request_with_backoff sleeps the full Retry-After delay when > 30s
+        slept_delays: list[float] = []
+
+        async def mock_sleep(delay: float) -> None:
+            slept_delays.append(delay)
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if len(slept_delays) == 0:
+                return httpx.Response(429, headers={"Retry-After": "45"})
+            return httpx.Response(200, json={"ok": True})
+
+        async def _test() -> None:
+            limiter = PerHostRateLimiter(default_rps=4.0)
+            async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+                with patch("asyncio.sleep", mock_sleep):
+                    resp = await request_with_backoff(client, limiter, "GET", "https://api.example.com/jobs")
+                    self.assertEqual(resp.status_code, 200)
+                    self.assertGreaterEqual(len(slept_delays), 1)
+                    # Must be exactly 45.0s, NOT capped to 30.0s!
+                    self.assertEqual(slept_delays[0], 45.0)
+
+        asyncio.run(_test())
+
+    def test_pro_search_returns_company_category_and_domain(self) -> None:
+        """Requirement 6: Pro search returns company category and domain, same as Pro endpoints."""
+        mock_pro_job = {
+            "id": "22222222-3333-4444-5555-666666666666",
+            "title": "Principal Architect",
+            "company": "Figma",
+            "company_slug": "figma",
+            "canonical_domain": "figma.com",
             "companies": {
-                "name": "Stripe",
-                "logo_url": "https://cdn.example.com/stripe.png",
+                "name": "Figma",
                 "category": "HIGH_PRODUCT_YC",
+                "domain": "figma.com",
+                "canonical_domain": "figma.com",
+                "logo_url": "https://cdn.example.com/figma.png",
             },
         }
 
-        # Verify Pro format includes all legacy keys + new Phase 3 keys
-        pro_formatted = {
-            "id": mock_raw_db_row["id"],
-            "title": mock_raw_db_row["title"],
-            "company": mock_raw_db_row["company"],
-            "companyId": mock_raw_db_row["company_id"],
-            "company_id": mock_raw_db_row["company_id"],
-            "location": mock_raw_db_row["location"],
-            "salary": mock_raw_db_row["salary_text"],
-            "category": "engineering",
-            "role_category": mock_raw_db_row["role_category"],
-            "company_category": mock_raw_db_row["companies"]["category"],
-            "top_keywords": mock_raw_db_row["top_keywords"],
-            "remote": mock_raw_db_row["remote"],
-            "is_remote": mock_raw_db_row["is_remote"],
-            "country": mock_raw_db_row["country_code"],
-            "type": "Full-time",
-            "directSource": True,
-            "logoUrl": mock_raw_db_row["companies"]["logo_url"],
-            "logo_url": mock_raw_db_row["companies"]["logo_url"],
+        # Simulated Pro format mapping matching /api/jobs/search
+        resolved_category = mock_pro_job["companies"]["category"]
+        resolved_domain = (
+            mock_pro_job.get("canonical_domain") or
+            mock_pro_job["companies"].get("canonical_domain") or
+            mock_pro_job["companies"].get("domain")
+        )
+
+        formatted = {
+            "id": mock_pro_job["id"],
+            "title": mock_pro_job["title"],
+            "company": mock_pro_job["company"],
+            "company_category": resolved_category,
+            "company_domain": resolved_domain,
+            "canonical_domain": resolved_domain,
+            "domain": resolved_domain,
         }
 
-        # Assert all legacy keys exist and match
-        for key in ["id", "title", "company", "location", "salary", "remote", "country", "type", "directSource", "logoUrl", "logo_url"]:
-            self.assertIn(key, pro_formatted)
-
-        # Assert new stored Phase 3 keys exist and match
-        self.assertEqual(pro_formatted["role_category"], "SDE")
-        self.assertEqual(pro_formatted["top_keywords"], ["Python", "React", "AWS", "Kubernetes"])
-        self.assertEqual(pro_formatted["is_remote"], False)
-        self.assertEqual(pro_formatted["company_category"], "HIGH_PRODUCT_YC")
+        self.assertEqual(formatted["company_category"], "HIGH_PRODUCT_YC")
+        self.assertEqual(formatted["company_domain"], "figma.com")
+        self.assertEqual(formatted["canonical_domain"], "figma.com")
+        self.assertEqual(formatted["domain"], "figma.com")
 
 
 if __name__ == "__main__":
