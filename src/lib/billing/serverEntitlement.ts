@@ -1,9 +1,28 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { ProAccessStatus } from "./types";
+import { singleFlight } from "@/lib/cache/singleFlight";
 
 import { createLogger } from "@/lib/observability/logger";
 
 const log = createLogger({ context: { module: "billing/serverEntitlement" } });
+
+let cachedAdminClient: SupabaseClient | null = null;
+let cachedAdminKey = "";
+const ENTITLEMENT_CACHE_TTL_MS = 15_000;
+const entitlementCache = new Map<string, { status: ProAccessStatus; expiresAt: number }>();
+
+function getAdminClient(url: string, key: string): SupabaseClient {
+  const cacheKey = `${url}::${key}`;
+  if (cachedAdminClient && cachedAdminKey === cacheKey && process.env.NODE_ENV !== "test") {
+    return cachedAdminClient;
+  }
+  const client = createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  cachedAdminClient = client;
+  cachedAdminKey = cacheKey;
+  return client;
+}
 
 function resolvePlanName(planId?: string | null): string {
   if (!planId) return "Pro Member";
@@ -44,19 +63,29 @@ export async function getServerEntitlement(userId: string): Promise<ProAccessSta
       return freeDefault;
     }
 
-    const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { persistSession: false },
-    });
+    if (process.env.NODE_ENV !== "test") {
+      const cached = entitlementCache.get(userId);
+      if (cached && cached.expiresAt > Date.now()) {
+        return cached.status;
+      }
+    }
 
-    const { data: sub, error } = await supabaseAdmin
-      .from("subscriptions")
-      .select("status, plan_id, current_period_end, grace_period_end")
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const supabaseAdmin = getAdminClient(supabaseUrl, serviceRoleKey);
+
+    const { data: sub, error } = await singleFlight(`entitlement:${userId}`, async () =>
+      supabaseAdmin
+        .from("subscriptions")
+        .select("status, plan_id, current_period_end, grace_period_end")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+    );
 
     if (error || !sub) {
+      if (process.env.NODE_ENV !== "test") {
+        entitlementCache.set(userId, { status: freeDefault, expiresAt: Date.now() + ENTITLEMENT_CACHE_TTL_MS });
+      }
       return freeDefault;
     }
 
@@ -70,7 +99,7 @@ export async function getServerEntitlement(userId: string): Promise<ProAccessSta
       const daysLeft = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
 
       if (diffMs > 0) {
-        return {
+        const result: ProAccessStatus = {
           isPro: true,
           status: "in_grace_period",
           planName: resolvePlanName(sub.plan_id),
@@ -78,19 +107,27 @@ export async function getServerEntitlement(userId: string): Promise<ProAccessSta
           graceDaysLeft: daysLeft,
           expirationDate: graceEnd.toISOString(),
         };
+        if (process.env.NODE_ENV !== "test") {
+          entitlementCache.set(userId, { status: result, expiresAt: Date.now() + ENTITLEMENT_CACHE_TTL_MS });
+        }
+        return result;
       }
     }
 
     // 2. Active or Trialing subscription check
     if (sub.status === "active" || sub.status === "trialing") {
       if (!periodEnd || periodEnd > now) {
-        return {
+        const result: ProAccessStatus = {
           isPro: true,
           status: sub.status,
           planName: resolvePlanName(sub.plan_id),
           inGracePeriod: false,
           expirationDate: periodEnd ? periodEnd.toISOString() : undefined,
         };
+        if (process.env.NODE_ENV !== "test") {
+          entitlementCache.set(userId, { status: result, expiresAt: Date.now() + ENTITLEMENT_CACHE_TTL_MS });
+        }
+        return result;
       }
     }
   } catch (err) {

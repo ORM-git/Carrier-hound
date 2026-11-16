@@ -23,8 +23,8 @@ export default function PageViewTracker() {
     const queryString = searchParams?.toString();
     const fullPath = queryString ? `${pathname}?${queryString}` : pathname;
 
-    if (lastTracked.current === fullPath) return;
-    lastTracked.current = fullPath;
+    if (lastTracked.current === pathname) return;
+    lastTracked.current = pathname;
 
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent("careermonke_route_changed"));

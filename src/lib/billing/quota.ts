@@ -1,9 +1,25 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { getServerEntitlement } from "./serverEntitlement";
 
 import { createLogger } from "@/lib/observability/logger";
 
 const log = createLogger({ context: { module: "billing/quota" } });
+
+let cachedQuotaAdminClient: SupabaseClient | null = null;
+let cachedQuotaAdminKey = "";
+
+function getQuotaAdminClient(url: string, key: string): SupabaseClient {
+  const cacheKey = `${url}::${key}`;
+  if (cachedQuotaAdminClient && cachedQuotaAdminKey === cacheKey && process.env.NODE_ENV !== "test") {
+    return cachedQuotaAdminClient;
+  }
+  const client = createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  cachedQuotaAdminClient = client;
+  cachedQuotaAdminKey = cacheKey;
+  return client;
+}
 
 export type PlanCode = "weekly" | "monthly" | "quarterly";
 
@@ -322,9 +338,7 @@ export async function getPlanQuota(
       return FREE_QUOTA_DEFAULT;
     }
 
-    const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { persistSession: false },
-    });
+    const supabaseAdmin = getQuotaAdminClient(supabaseUrl, serviceRoleKey);
 
     // 2. Fetch latest subscription record
     const { data: sub, error: subError } = await supabaseAdmin
@@ -381,63 +395,68 @@ export async function getPlanQuota(
       now
     );
 
-    // 5. Query plan usage events since current period start
+    // 5. Query plan usage events, non-expired add-on credits, and today's generation counts in parallel
     let resumesUsed = 0;
     let coverLettersUsed = 0;
-    try {
-      const { data: events } = await supabaseAdmin
-        .from("plan_usage_events")
-        .select("kind")
-        .eq("user_id", userId)
-        .eq("source", "plan")
-        .gte("created_at", periodStart.toISOString());
+    let addonSetsRemaining = 0;
+    let generationsToday = 0;
+    const istDayStart = getStartOfIstDay(now).toISOString();
 
-      if (events && Array.isArray(events)) {
-        for (const ev of events) {
-          if (ev.kind === "resume_tailor") resumesUsed++;
-          else if (ev.kind === "cover_letter") coverLettersUsed++;
+    await Promise.all([
+      (async () => {
+        try {
+          const { data: events } = await supabaseAdmin
+            .from("plan_usage_events")
+            .select("kind")
+            .eq("user_id", userId)
+            .eq("source", "plan")
+            .gte("created_at", periodStart.toISOString());
+
+          if (events && Array.isArray(events)) {
+            for (const ev of events) {
+              if (ev.kind === "resume_tailor") resumesUsed++;
+              else if (ev.kind === "cover_letter") coverLettersUsed++;
+            }
+          }
+        } catch {
+          // Table may not exist yet on unmigrated instances
         }
-      }
-    } catch {
-      // Table may not exist yet on unmigrated instances
-    }
+      })(),
+      (async () => {
+        try {
+          const { data: addonCredits } = await supabaseAdmin
+            .from("user_addon_credits")
+            .select("sets_remaining, expires_at")
+            .eq("user_id", userId)
+            .gt("expires_at", now.toISOString())
+            .gt("sets_remaining", 0);
+
+          if (addonCredits && Array.isArray(addonCredits)) {
+            addonSetsRemaining = sumValidAddonCredits(addonCredits, now);
+          }
+        } catch {
+          // Table may not exist yet
+        }
+      })(),
+      (async () => {
+        try {
+          const { count, error: usageErr } = await supabaseAdmin
+            .from("plan_usage_events")
+            .select("id", { count: "exact", head: true })
+            .eq("user_id", userId)
+            .gte("created_at", istDayStart);
+
+          if (!usageErr && typeof count === "number") {
+            generationsToday = count;
+          }
+        } catch {
+          // Graceful fallback
+        }
+      })(),
+    ]);
 
     const resumesRemaining = Math.max(0, plan.resume_quota - resumesUsed);
     const coverLettersRemaining = Math.max(0, plan.cover_letter_quota - coverLettersUsed);
-
-    // 6. Query non-expired add-on credits
-    let addonSetsRemaining = 0;
-    try {
-      const { data: addonCredits } = await supabaseAdmin
-        .from("user_addon_credits")
-        .select("sets_remaining, expires_at")
-        .eq("user_id", userId)
-        .gt("expires_at", now.toISOString())
-        .gt("sets_remaining", 0);
-
-      if (addonCredits && Array.isArray(addonCredits)) {
-        addonSetsRemaining = sumValidAddonCredits(addonCredits, now);
-      }
-    } catch {
-      // Table may not exist yet
-    }
-
-    // 7. Query today's generation counts from plan_usage_events over the same IST day window the RPCs use
-    let generationsToday = 0;
-    const istDayStart = getStartOfIstDay(now).toISOString();
-    try {
-      const { count, error: usageErr } = await supabaseAdmin
-        .from("plan_usage_events")
-        .select("id", { count: "exact", head: true })
-        .eq("user_id", userId)
-        .gte("created_at", istDayStart);
-
-      if (!usageErr && typeof count === "number") {
-        generationsToday = count;
-      }
-    } catch {
-      // Graceful fallback
-    }
 
     const dailyCap = plan.daily_generation_cap || 30;
 
