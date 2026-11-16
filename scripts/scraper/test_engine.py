@@ -8,6 +8,7 @@ import email.utils
 import json
 import os
 from pathlib import Path
+import subprocess
 import unittest
 from unittest.mock import AsyncMock, patch
 
@@ -417,7 +418,24 @@ class HighVolumeIngestionEngineTests(unittest.TestCase):
         rollback_block = sql_content.split("-- ROLLBACK", 1)[1] if "-- ROLLBACK" in sql_content else ""
         self.assertTrue(len(rollback_block) > 0, "Migration must contain ROLLBACK block")
         self.assertNotIn("DROP COLUMN", rollback_block, "Rollback must be non-destructive and NOT drop additive columns")
-        self.assertIn("jobs_source_type_check", rollback_block, "Rollback must restore legacy source_type check constraint")
+        self.assertIn("DROP VIEW IF EXISTS public.jobs_public", rollback_block, "Rollback must use transactional DROP VIEW to avoid column order conflicts")
+        self.assertIn("CREATE VIEW public.jobs_public AS", rollback_block, "Rollback must re-create pre-migration jobs_public view")
+
+        # Requirement 2: Rollback must preserve compatible expanded source_type check to prevent vendor row violations
+        self.assertIn("jobs_source_type_check", rollback_block)
+        for f in all_10_fetchers:
+            self.assertIn(f"'{f}'", rollback_block, f"Rollback constraint must retain vendor '{f}'")
+
+        # Requirement 3: Actually execute forward then rollback SQL on populated Postgres fixture
+        proc = subprocess.run(
+            ["npx", "tsx", "scripts/test-postgres-migration-rollback-fixture.ts"],
+            cwd=str(Path(__file__).resolve().parents[2]),
+            capture_output=True,
+            text=True,
+            shell=True,
+        )
+        self.assertEqual(proc.returncode, 0, f"PostgreSQL forward & rollback fixture execution failed:\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}")
+        self.assertIn("[PASS] All post-rollback assertions PASSED", proc.stdout)
 
     def test_change_detection_skills_and_all_mutable_fields(self) -> None:
         """Requirement 3: Fingerprint checks skills and all mutable fields; skills change emits to_update."""

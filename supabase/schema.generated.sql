@@ -10352,39 +10352,32 @@ COMMIT;
 --   DROP FUNCTION IF EXISTS public.merge_job_by_dedupe_priority();
 --   DROP FUNCTION IF EXISTS public.compute_job_dedupe_hash(text, text, text, text);
 --
---   -- 2. Drop performance view and restore legacy jobs_public view
+--   -- 2. Drop performance view and restore legacy jobs_public view via transactional DROP + CREATE
 --   DROP VIEW IF EXISTS public.v_active_jobs_perf;
---   CREATE OR REPLACE VIEW public.jobs_public AS
+--   DROP VIEW IF EXISTS public.jobs_public;
+--   CREATE VIEW public.jobs_public AS
 --   SELECT
 --     id,
---     company_slug,
 --     title,
 --     location,
---     country,
---     country_code,
+--     remote,
+--     remote_scope,
+--     remote_eligibility,
 --     job_type,
 --     category,
---     remote,
---     salary_min,
---     salary_max,
---     salary_period,
---     currency,
---     created_at,
---     updated_at,
---     posted_at,
---     expires_at,
---     status,
---     is_featured,
---     featured_until,
---     experience_level,
---     tags,
---     workplace_type,
---     department,
---     external_id,
---     source,
---     source_type,
+--     country,
+--     country_code,
+--     seniority,
 --     verified,
+--     source_type,
+--     first_seen_at,
+--     last_seen_at,
+--     discovered_at,
+--     posted_at,
+--     created_at,
+--     status,
 --     is_active,
+--     -- Locked fields: Never served to anonymous or non-Pro users
 --     'Verified Employer'::text AS company,
 --     NULL::text AS salary_text,
 --     NULL::text AS description,
@@ -10410,9 +10403,17 @@ COMMIT;
 --   ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_role_category_check;
 --   ALTER TABLE public.companies DROP CONSTRAINT IF EXISTS companies_category_check;
 --
---   -- 5. Restore legacy CHECK on jobs.source_type
+--   -- 5. Preserve compatible expanded CHECK on jobs.source_type
+--   --    Policy: A strict legacy-only CHECK cannot be re-added once vendor-valued
+--   --    rows exist. The expanded constraint is backward-compatible with all legacy
+--   --    and new values and must remain in place during rollback.
 --   ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_source_type_check;
---   ALTER TABLE public.jobs ADD CONSTRAINT jobs_source_type_check CHECK (source_type IN ('ats', 'api', 'feed', 'direct'));
+--   ALTER TABLE public.jobs ADD CONSTRAINT jobs_source_type_check
+--     CHECK (source_type IN (
+--       'ats', 'api', 'feed', 'direct',
+--       'greenhouse', 'lever', 'ashby', 'smartrecruiters', 'workday',
+--       'amazon', 'microsoft', 'jobspy', 'arbeitnow', 'adzuna'
+--     )) NOT VALID;
 --
 --   -- NOTE: Additive columns are intentionally preserved and NOT dropped.
 -- ============================================================================
