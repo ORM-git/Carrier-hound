@@ -52,8 +52,10 @@ describe("Pricing Page Add-on Pack Buy Flow", () => {
   let root: Root | null = null;
   let container: HTMLElement | null = null;
   let originalLocation: Location;
+  const originalBillingEnv = process.env.NEXT_PUBLIC_BILLING_ENABLED;
 
   beforeEach(() => {
+    process.env.NEXT_PUBLIC_BILLING_ENABLED = "true";
     mockHandleProCheckout.mockReset();
     mockGetSession.mockReset();
     mockGetProAccessStatus.mockReset().mockResolvedValue({ isPro: true });
@@ -77,6 +79,7 @@ describe("Pricing Page Add-on Pack Buy Flow", () => {
     container?.remove();
     container = null;
     (window as any).location = originalLocation;
+    process.env.NEXT_PUBLIC_BILLING_ENABLED = originalBillingEnv;
     vi.restoreAllMocks();
   });
 
@@ -363,5 +366,52 @@ describe("Pricing Page Add-on Pack Buy Flow", () => {
         redirectTarget: "/pricing",
       })
     );
+  });
+
+  it("keeps all add-on Buy buttons disabled when NEXT_PUBLIC_BILLING_ENABLED is off", async () => {
+    process.env.NEXT_PUBLIC_BILLING_ENABLED = "false";
+    mockGetSession.mockResolvedValue({
+      data: {
+        session: {
+          user: { id: "test-user-id", email: "candidate@gmail.com" },
+        },
+      },
+    });
+
+    await mountPage();
+
+    const buyButtons = container ? Array.from(container.querySelectorAll<HTMLButtonElement>("button[data-addon-code]")) : [];
+    expect(buyButtons.length).toBe(3);
+
+    for (const btn of buyButtons) {
+      expect(btn.disabled).toBe(true);
+      expect(btn.getAttribute("aria-disabled")).toBe("true");
+      await act(async () => {
+        btn.click();
+        await Promise.resolve();
+      });
+      expect(mockHandleProCheckout).not.toHaveBeenCalled();
+    }
+  });
+
+  it("keeps all add-on Buy buttons disabled when NEXT_PUBLIC_BILLING_ENABLED is undefined", async () => {
+    delete process.env.NEXT_PUBLIC_BILLING_ENABLED;
+    mockGetSession.mockResolvedValue({
+      data: {
+        session: {
+          user: { id: "test-user-id", email: "candidate@gmail.com" },
+        },
+      },
+    });
+
+    await mountPage();
+
+    const buyButtons = container ? Array.from(container.querySelectorAll<HTMLButtonElement>("button[data-addon-code]")) : [];
+    expect(buyButtons.length).toBe(3);
+
+    for (const btn of buyButtons) {
+      expect(btn.disabled).toBe(true);
+      expect(btn.getAttribute("aria-disabled")).toBe("true");
+    }
   });
 });
