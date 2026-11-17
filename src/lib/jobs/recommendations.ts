@@ -91,25 +91,32 @@ function extractRoleTokens(roles: string[]): string[] {
   return Array.from(tokens);
 }
 
+export type JobScoringCandidate = {
+  title?: string | null;
+  category?: string | null;
+  location?: string | null;
+  country?: string | null;
+  country_code?: string | null;
+  remote?: boolean | null;
+  remote_scope?: string | null;
+  remote_eligibility?: string | null;
+  job_type?: string | null;
+  posted_at?: string | null;
+  created_at?: string | null;
+  first_seen_at?: string | null;
+  company?: string | null;
+  company_id?: string | null;
+  companyId?: string | null;
+  companyGroupId?: string | null;
+  [key: string]: any;
+};
+
 /**
  * Scores a single job against onboarding answers.
  * Returns score (0 - 100) and breakdown.
  */
 export function scoreJobRecommendation(
-  job: {
-    title?: string | null;
-    category?: string | null;
-    location?: string | null;
-    country?: string | null;
-    country_code?: string | null;
-    remote?: boolean | null;
-    remote_scope?: string | null;
-    remote_eligibility?: string | null;
-    job_type?: string | null;
-    posted_at?: string | null;
-    created_at?: string | null;
-    first_seen_at?: string | null;
-  },
+  job: JobScoringCandidate,
   answers: OnboardingAnswers
 ): ScoredJobResult {
   const reasons: string[] = [];
@@ -321,7 +328,7 @@ export function scoreJobRecommendation(
  * Ranks an array of jobs according to onboarding answers.
  * If answers are empty or null, falls back cleanly to latest jobs (posted_at DESC).
  */
-export function rankJobsByRecommendation<T extends Record<string, any>>(
+export function rankJobsByRecommendation<T extends JobScoringCandidate = JobScoringCandidate>(
   jobs: T[],
   answers?: OnboardingAnswers | null
 ): (T & { _matchScore?: number; matchScore?: number })[] {
