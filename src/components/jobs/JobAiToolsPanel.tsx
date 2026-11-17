@@ -76,7 +76,11 @@ export default function JobAiToolsPanel({
   const [showLoginModal, setShowLoginModal] = useState(false);
 
   const hasConfirmedResume = Boolean(candidate && candidate.confirmedAt);
-  const matchScore = diagnostics ? Math.max(10, Math.min(99, Math.round(diagnostics.score))) : null;
+  const matchScore = typeof job?.matchScore === "number" && !isNaN(job.matchScore)
+    ? Math.max(10, Math.min(99, Math.round(job.matchScore)))
+    : diagnostics
+    ? Math.max(10, Math.min(99, Math.round(diagnostics.score)))
+    : null;
   const matchLabel =
     matchScore !== null
       ? matchScore > 70

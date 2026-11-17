@@ -195,7 +195,11 @@ export default function JobDetailView({
     }
   }, [hasConfirmedResume, candidate, job]);
 
-  const matchScore = diagnostics ? Math.max(10, Math.min(99, Math.round(diagnostics.score))) : null;
+  const matchScore = typeof job.matchScore === "number"
+    ? Math.max(10, Math.min(99, Math.round(job.matchScore)))
+    : diagnostics
+    ? Math.max(10, Math.min(99, Math.round(diagnostics.score)))
+    : null;
 
   const expSubScore = diagnostics
     ? Math.min(100, Math.max(0, Math.round((diagnostics.breakdown.experienceScore / 15) * 100)))
