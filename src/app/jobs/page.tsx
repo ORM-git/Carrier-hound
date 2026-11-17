@@ -1869,10 +1869,12 @@ function JobsPageInner() {
                       {displayedJobs.map((job, index) => {
                         const isSaved = savedJobIds.includes(job.id);
                         const staggerDelay = Math.min(index * 0.03, 0.3);
-                        const matchScore = typeof job.matchScore === "number" ? job.matchScore : getJobMatchScore(job, candidate);
-                        if (typeof job.matchScore !== "number" && matchScore !== null) {
+                        const diagnostics = cardDiagnosticsMap.get(job.id) ?? getJobDiagnostics(job, candidate);
+                        const matchScore = getJobMatchScore(job, candidate);
+                        if (matchScore !== null) {
                           job.matchScore = matchScore;
                         }
+                        const cardZeroSkills = Boolean(diagnostics && diagnostics.matchedSkills && diagnostics.matchedSkills.length === 0);
                         const isRecent = Boolean(job.postedAt && isPostedUnder24Hours(job.postedAt) && isEarlyApplicant(job) !== undefined);
                         const postedRelative = job.postedAt ? formatDesktopPillTime(job.postedAt) : null;
                         const companyPills = getCompanyTagPills(job.category);
@@ -2125,7 +2127,13 @@ function JobsPageInner() {
                                       isPro={isPro}
                                     />
                                     <div className="text-[11px] font-bold uppercase tracking-wider text-slate-100 mt-2">
-                                      Match
+                                      {cardZeroSkills
+                                        ? "EXPERIENCE MATCH"
+                                        : matchScore !== null && matchScore >= 80
+                                        ? "STRONG MATCH"
+                                        : matchScore !== null && matchScore >= 60
+                                        ? "GOOD MATCH"
+                                        : "FAIR MATCH"}
                                     </div>
                                   </div>
 
@@ -2195,8 +2203,8 @@ function JobsPageInner() {
                                   {matchScore !== null ? (
                                     <div
                                       className="w-[54px] h-[30px] rounded-full border border-emerald-500/30 bg-emerald-500/10 flex items-center justify-center text-xs font-bold text-emerald-600"
-                                      title={`Match: ${matchScore}%`}
-                                      aria-label={`Match: ${matchScore}%`}
+                                      title={`Fit Match: ${matchScore}%`}
+                                      aria-label={`Fit Match: ${matchScore}%`}
                                     >
                                       {matchScore}%
                                     </div>
@@ -2205,7 +2213,7 @@ function JobsPageInner() {
                                       href="/resume"
                                       onClick={(e) => e.stopPropagation()}
                                       className="h-[30px] px-2.5 rounded-full border border-blue-500/30 bg-blue-500/10 flex items-center justify-center text-[11px] font-bold text-blue-600 hover:bg-blue-500/20 transition"
-                                      title="Match: Upload resume"
+                                      title="Fit Match: Upload resume"
                                     >
                                       +Score
                                     </Link>

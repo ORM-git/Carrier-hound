@@ -181,9 +181,9 @@ export async function GET(req: Request) {
     const locationParam = searchParams.get("location") || "";
     const jobTypeParam = searchParams.get("jobType") || "";
     const levelParam = searchParams.get("level") || "";
-    const workModelParam = searchParams.get("workModel") || "";
+    const workModelParam = searchParams.get("workModel") || searchParams.get("remotePreference") || "";
     const dateParam = searchParams.get("datePosted") || searchParams.get("date") || "";
-    const experienceParam = searchParams.get("experience") || searchParams.get("exp") || "";
+    const experienceParam = searchParams.get("experience") || searchParams.get("experienceLevel") || searchParams.get("exp") || "";
     const salaryMinParam = searchParams.get("salaryMin") || searchParams.get("salary_min") || "";
     const sourceTypeParam = searchParams.get("sourceType") || searchParams.get("source_type") || "";
     const companyParam = searchParams.get("company") || "";
@@ -437,8 +437,26 @@ export async function GET(req: Request) {
     const rankedJobs = isPersonalized
       ? rankJobsByRecommendation(candidateJobs, answers)
       : rankJobsByRecommendation(candidateJobs, null);
-    const cappedJobs = capJobsPerCompany(rankedJobs, 3, 30);
-    totalCount = cappedJobs.length; // Honestly reports the bounded pool total
+
+    // Hard preference exclusion: drop every row failing user's hard preferences or with matchScore <= 0
+    const qualifyingJobs = isPersonalized && answers
+      ? rankedJobs.filter((job) => {
+          const score = job.matchScore ?? job._matchScore ?? 0;
+          if (score <= 0) return false;
+          if (answers.remotePreference === "remote") {
+            const isRemote =
+              job.remote === true ||
+              (job.remote_scope || "").toLowerCase() === "remote" ||
+              (job.remote_scope || "").toLowerCase() === "worldwide" ||
+              (job.location || "").toLowerCase().includes("remote");
+            if (!isRemote) return false;
+          }
+          return true;
+        })
+      : rankedJobs;
+
+    const cappedJobs = capJobsPerCompany(qualifyingJobs, 3, 30);
+    totalCount = cappedJobs.length; // Honestly reports the bounded pool total after exclusions
     paginatedJobs = cappedJobs.slice(from, to + 1);
 
     // Build company group ID map for non-Pro responses to prevent company_id leakage

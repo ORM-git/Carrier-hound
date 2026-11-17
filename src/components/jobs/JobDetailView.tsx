@@ -220,7 +220,14 @@ export default function JobDetailView({
       )
     : null;
 
-  const matchLabel = matchScore !== null ? "Match" : "";
+  const matchLabel =
+    matchScore !== null
+      ? matchScore > 70
+        ? "Great match"
+        : matchScore >= 50
+        ? "Good match"
+        : "Fair match"
+      : "";
 
   // Extract structured lists if present
   const requirementsList: string[] = useMemo(() => {
@@ -785,7 +792,7 @@ export default function JobDetailView({
                         : "bg-slate-100 text-slate-700 border border-slate-200"
                     }`}
                   >
-                    {isUnlocked ? matchLabel : "Match"}
+                    {isUnlocked ? matchLabel : "Pro Match"}
                   </span>
                 </div>
 

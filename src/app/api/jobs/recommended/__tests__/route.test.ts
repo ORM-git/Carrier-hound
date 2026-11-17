@@ -8,14 +8,14 @@ const state = vi.hoisted(() => ({
 
 vi.mock("@supabase/supabase-js", () => {
   function from(table: string) {
-    const filters: Array<[string, unknown]> = [];
+    const predicates: Array<(r: any) => boolean> = [];
     const orders: Array<{ col: string; ascending: boolean; nullsFirst?: boolean }> = [];
     let rangeBounds: [number, number] | null = null;
     let limitCount: number | null = null;
 
     const run = () => {
       let data = [...(state.tables[table] || [])].filter((r) =>
-        filters.every(([c, v]) => r[c] === v)
+        predicates.every((p) => p(r))
       );
 
       // Real order execution
@@ -55,7 +55,69 @@ vi.mock("@supabase/supabase-js", () => {
           }
           if (prop === "eq") {
             return (c: string, v: unknown) => {
-              filters.push([c, v]);
+              predicates.push((r) => r[c] === v);
+              return b;
+            };
+          }
+          if (prop === "ilike") {
+            return (c: string, pattern: string) => {
+              const term = pattern.replace(/^%|%$/g, "").toLowerCase();
+              predicates.push((r) => String(r[c] || "").toLowerCase().includes(term));
+              return b;
+            };
+          }
+          if (prop === "gte") {
+            return (c: string, val: any) => {
+              predicates.push((r) => {
+                const v = r[c];
+                if (v == null) return false;
+                if (typeof val === "number") return Number(v) >= val;
+                return v >= val;
+              });
+              return b;
+            };
+          }
+          if (prop === "not") {
+            return (c: string, op: string, val: any) => {
+              if (op === "is" && val === null) {
+                predicates.push((r) => r[c] != null);
+              } else if (op === "ilike") {
+                const term = String(val).replace(/^%|%$/g, "").toLowerCase();
+                predicates.push((r) => !String(r[c] || "").toLowerCase().includes(term));
+              } else {
+                predicates.push((r) => r[c] !== val);
+              }
+              return b;
+            };
+          }
+          if (prop === "in") {
+            return (c: string, values: any[]) => {
+              predicates.push((r) => Array.isArray(values) && values.includes(r[c]));
+              return b;
+            };
+          }
+          if (prop === "or") {
+            return (expr: string) => {
+              const clauses = expr.split(",");
+              predicates.push((r) => {
+                return clauses.some((clause: string) => {
+                  const parts = clause.split(".");
+                  if (parts.length >= 3) {
+                    const col = parts[0];
+                    const op = parts[1];
+                    const rawVal = parts.slice(2).join(".");
+                    if (op === "eq") {
+                      const boolVal = rawVal === "true" ? true : rawVal === "false" ? false : rawVal;
+                      return r[col] === boolVal || String(r[col]) === String(rawVal);
+                    }
+                    if (op === "ilike") {
+                      const term = rawVal.replace(/^%|%$/g, "").toLowerCase();
+                      return String(r[col] || "").toLowerCase().includes(term);
+                    }
+                  }
+                  return false;
+                });
+              });
               return b;
             };
           }
@@ -108,8 +170,8 @@ vi.mock("@supabase/supabase-js", () => {
 
 vi.mock("@cloudflare/next-on-pages", () => ({ getRequestContext: () => ({ env: undefined }) }));
 
-// 300 test jobs corpus for realistic pagination and ranking assertions
-function generateTestCorpus(count: number = 300) {
+// 320 test jobs corpus for realistic pagination and ranking assertions
+function generateTestCorpus(count: number = 320) {
   const jobs: any[] = [];
   const baseTime = Date.now() - 30 * 864e5;
 
@@ -135,6 +197,8 @@ function generateTestCorpus(count: number = 300) {
     salary_period: "year",
     salary_text: "$130k - $160k",
     apply_url: "https://careers.frontendmasters.com/jobs/1",
+    source_type: "direct",
+    source: "direct",
     description: "Lead modern React and TypeScript architecture",
     skills: ["TypeScript", "React", "Next.js"],
     status: "active",
@@ -198,22 +262,50 @@ function generateTestCorpus(count: number = 300) {
     logo_url: "https://cdn.example.com/logo-sales.png",
   });
 
-  // Remaining jobs to reach 300 items
-  for (let i = 4; i <= count; i++) {
-    const isEng = i % 2 === 0;
-    const isRemote = i % 3 === 0;
+  jobs.push({
+    id: "44444444-4444-4444-8444-444444444444",
+    title: "Junior Entry Web Developer",
+    company: "Remote Craft Inc",
+    company_id: "co_remotecraft",
+    location: "Remote (Worldwide)",
+    category: "engineering",
+    remote: true,
+    is_remote: true,
+    remote_scope: "worldwide",
+    country_code: "US",
+    job_type: "full-time",
+    verified: true,
+    posted_at: new Date(baseTime + 27 * 864e5).toISOString(),
+    created_at: new Date(baseTime + 27 * 864e5).toISOString(),
+    salary_min: 65000,
+    salary_max: 80000,
+    currency: "USD",
+    salary_period: "year",
+    salary_text: "$65k - $80k",
+    apply_url: "https://careers.remotecraft.com/jobs/4",
+    description: "Entry level web development",
+    skills: ["JavaScript", "HTML", "CSS"],
+    status: "active",
+    is_active: true,
+    logo_url: "https://cdn.example.com/logo-remotecraft.png",
+  });
+
+  // Remaining jobs to reach 300+ items (all remote engineering to test page 1 vs page 11 with exclusions)
+  for (let i = 5; i <= count; i++) {
     jobs.push({
       id: `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`,
-      title: isEng ? `Software Engineer #${i}` : `Operations Specialist #${i}`,
+      title: `Software Engineer #${i}`,
       company: `Company ${i}`,
       company_id: `co_${i}`,
-      location: isRemote ? "Remote (Worldwide)" : `City ${i}, State`,
-      category: isEng ? "engineering" : "operations",
-      remote: isRemote,
-      is_remote: isRemote,
-      remote_scope: isRemote ? "worldwide" : "onsite",
+      location: "Remote (Worldwide)",
+      category: "engineering",
+      remote: true,
+      is_remote: true,
+      remote_scope: "worldwide",
       country_code: "US",
       job_type: "full-time",
+      source_type: "direct",
+      source: "direct",
       verified: true,
       posted_at: new Date(baseTime + (i % 24) * 864e5).toISOString(),
       created_at: new Date(baseTime + (i % 24) * 864e5).toISOString(),
@@ -224,7 +316,7 @@ function generateTestCorpus(count: number = 300) {
       salary_text: `$${80 + Math.floor(i / 10)}k - $${120 + Math.floor(i / 10)}k`,
       apply_url: `https://careers.company${i}.com/job/${i}`,
       description: `Job description for position #${i}`,
-      skills: ["General", "Tech"],
+      skills: ["General", "Tech", "React"],
       status: "active",
       is_active: true,
       logo_url: `https://cdn.example.com/logo-${i}.png`,
@@ -255,7 +347,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   process.env.COMPANY_GROUP_ID_SECRET = "test-hmac-secret-012345678901234567890";
-  const corpus = generateTestCorpus(300);
+  const corpus = generateTestCorpus(320);
 
   state.users = {
     "tok-free-with-answers": {
@@ -394,8 +486,8 @@ describe("GET /api/jobs/recommended Handler & Service Integration", () => {
       expect(body11.personalized).toBe(false);
       expect(body1.jobs.length).toBe(25);
       expect(body11.jobs.length).toBe(25);
-      expect(body1.totalCount).toBe(300);
-      expect(body11.totalCount).toBe(300);
+      expect(body1.totalCount).toBe(320);
+      expect(body11.totalCount).toBe(320);
     });
 
     it("Validates page and pageSize parameters (gracefully handles NaN and out-of-bounds)", async () => {
@@ -529,7 +621,7 @@ describe("GET /api/jobs/recommended Handler & Service Integration", () => {
         preferences: freePrefs,
         category: "engineering",
         remoteOnly: true,
-        location: "Remote (Worldwide)",
+        location: "Remote",
         level: "senior",
         jobType: "full-time",
         workModel: "remote",
@@ -545,6 +637,46 @@ describe("GET /api/jobs/recommended Handler & Service Integration", () => {
       expect(res.isDegraded).toBe(false);
       expect(res.jobs.length).toBeGreaterThanOrEqual(1);
       expect(res.jobs[0].title).toContain("Frontend");
+
+      // Negative assertions: hard filters executed by mock strictly drop non-matching jobs
+      expect(res.jobs.every((j) => j.company === "Frontend Masters Inc" || j.company === "Verified Employer")).toBe(true);
+      expect(res.jobs.some((j) => j.company === "Apex Sales Group")).toBe(false);
+      expect(res.jobs.some((j) => j.category === "sales")).toBe(false);
+      expect(res.jobs.every((j) => j.remote === true)).toBe(true);
+      expect(res.jobs.some((j) => j.remote === false)).toBe(false);
+    });
+
+    it("Route-level test: with experienceLevel=entry&remotePreference=remote&pageSize=100, assert no returned row has remote=false or matchScore=0", async () => {
+      const res = await recommendedRoute(
+        req(
+          "http://localhost/api/jobs/recommended?experienceLevel=entry&remotePreference=remote&pageSize=100",
+          "tok-user-no-answers"
+        )
+      );
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.jobs).toBeDefined();
+      expect(json.jobs.length).toBeGreaterThan(0);
+
+      // Assert no returned row has remote=false or matchScore=0
+      for (const job of json.jobs) {
+        expect(job.remote).not.toBe(false);
+        expect(job.remote).toBe(true);
+        expect(job.matchScore).toBeDefined();
+        expect(job.matchScore).not.toBe(0);
+        expect(job.matchScore).toBeGreaterThan(0);
+      }
+
+      // Negative assertions: assert incompatible jobs in fixture were strictly excluded
+      const returnedIds = new Set(json.jobs.map((j: any) => j.id));
+      // Non-remote job must be excluded
+      expect(returnedIds.has("22222222-2222-4222-8222-222222222222")).toBe(false);
+      // Senior job must be excluded for entry level
+      expect(returnedIds.has("11111111-1111-4111-8111-111111111111")).toBe(false);
+      // Lead sales job (seniority + non-remote) must be excluded
+      expect(returnedIds.has("33333333-3333-4333-8333-333333333333")).toBe(false);
+      // Entry remote job must be included
+      expect(returnedIds.has("44444444-4444-4444-8444-444444444444")).toBe(true);
     });
 
     it("getLiveJobs handles 403, 503, and fallback 500 cleanly", async () => {

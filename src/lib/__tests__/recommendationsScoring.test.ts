@@ -231,12 +231,12 @@ describe("Deterministic Recommendation Scoring Engine", () => {
       // Qualifying entry remote role scores high
       expect(entryRemoteScore.score).toBeGreaterThanOrEqual(80);
 
-      // In ranking, only qualifying role is returned as #1 top match; disqualified roles score 0
+      // In ranking, only qualifying role is returned as #1 top match; disqualified roles are strictly excluded
       const ranked = rankJobsByRecommendation(jobs, entryRemoteAnswers);
       expect(ranked[0].id).toBe("entry-remote");
       expect(ranked[0].matchScore).toBe(entryRemoteScore.score);
       const seniorOnsiteRanked = ranked.find((j) => j.id === "senior-onsite");
-      expect(seniorOnsiteRanked?.matchScore).toBe(0);
+      expect(seniorOnsiteRanked).toBeUndefined();
     });
 
     it("respects salary and country preferences as hard filters / strong ranking signals", () => {
@@ -285,10 +285,11 @@ describe("Deterministic Recommendation Scoring Engine", () => {
       expect(qualScore.score).toBeGreaterThanOrEqual(60);
 
       const ranked = rankJobsByRecommendation([lowSalaryJob, foreignCountryJob, qualifyingJob], answers);
+      expect(ranked.length).toBe(1);
       expect(ranked[0].id).toBe("qualifying");
       expect(ranked[0].matchScore).toBe(qualScore.score);
-      expect(ranked[1].matchScore).toBe(0);
-      expect(ranked[2].matchScore).toBe(0);
+      expect(ranked.find((j) => j.id === "low-pay")).toBeUndefined();
+      expect(ranked.find((j) => j.id === "foreign-country")).toBeUndefined();
     });
 
     it("falls back to latest jobs (posted_at DESC) when user has no answers", () => {

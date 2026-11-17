@@ -843,9 +843,9 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
           return { row, score: finalScore };
         });
 
-        // Hard filter enforcement: prioritize qualifying roles if any exist
+        // Hard filter enforcement: only include qualifying roles; never show disqualified jobs
         const qualifyingPool = scoredPool.filter((item) => item.score > 0);
-        const poolToSort = qualifyingPool.length > 0 ? qualifyingPool : scoredPool;
+        const poolToSort = qualifyingPool;
 
         // Sort by match score descending, then recency descending
         poolToSort.sort((a, b) => {
@@ -858,6 +858,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         // Cap jobs per company: max 3 per company in visible top-30
         const cappedPool = capJobsPerCompany(poolToSort.map((item) => item.row), 3, 30);
         data = cappedPool.slice(from, to + 1);
+        count = cappedPool.length;
       }
     } else if (isMatchSort && (!candidate || relevanceTerms.length === 0)) {
       if (hasOnboardingAnswers(preferences)) {

@@ -478,9 +478,59 @@ export function rankJobsByRecommendation<T extends JobScoringCandidate = JobScor
     });
   }
 
-  const scored = jobs.map((job) => scoreJobRecommendation(job, answers!));
+  const userRemote = (answers!.remotePreference || "").toLowerCase().trim();
+  const userExp = (answers!.experienceLevel || "").toLowerCase().trim();
+  const userLocations = [
+    ...(answers!.locations || []),
+    ...(answers!.country ? [answers!.country] : []),
+    ...(answers!.countryCode ? [answers!.countryCode] : []),
+  ].filter((l): l is string => Boolean(l && l.trim().length > 0));
 
-  scored.sort((a, b) => {
+  // Drop every row that fails the user's hard preferences (remote, experience, country) or scores 0
+  const qualifyingScored = jobs
+    .map((job) => scoreJobRecommendation(job, answers!))
+    .filter((s) => {
+      // Must have positive score (not scored 0 / disqualified)
+      if (s.score <= 0) return false;
+
+      const job = s.job;
+      const title = (job.title || "").toLowerCase();
+      const location = (job.location || "").toLowerCase();
+      const isRemote =
+        job.remote === true ||
+        (job.remote_scope || "").toLowerCase() === "remote" ||
+        (job.remote_scope || "").toLowerCase() === "worldwide" ||
+        (job.remoteScope || "").toLowerCase() === "remote" ||
+        (job.remoteScope || "").toLowerCase() === "worldwide" ||
+        location.includes("remote");
+
+      // 1. Remote hard preference: if remote, must be remote
+      if (userRemote === "remote" && !isRemote) {
+        return false;
+      }
+      if (userRemote === "onsite" && isRemote) {
+        return false;
+      }
+
+      // 2. Experience hard preference
+      const isSeniorOrLead = /\b(lead|staff|principal|head|director|architect|manager|vp|chief|senior|sr\.?)\b/i.test(title);
+      const isJuniorOrEntry = /\b(junior|entry|associate|graduate|fresher|intern|internship)\b/i.test(title);
+      if ((userExp === "entry" || userExp === "intern") && isSeniorOrLead) {
+        return false;
+      }
+      if ((userExp === "senior" || userExp === "lead") && isJuniorOrEntry) {
+        return false;
+      }
+
+      // 3. Country / Geographic hard preference
+      if (userLocations.length > 0 && !isJobEligible(job, userLocations)) {
+        return false;
+      }
+
+      return true;
+    });
+
+  qualifyingScored.sort((a, b) => {
     // 1. Primary sort: recommendation score DESC
     if (b.score !== a.score) {
       return b.score - a.score;
@@ -497,7 +547,7 @@ export function rankJobsByRecommendation<T extends JobScoringCandidate = JobScor
     return idB.localeCompare(idA);
   });
 
-  return scored.map((s) => ({
+  return qualifyingScored.map((s) => ({
     ...s.job,
     _matchScore: s.score,
     matchScore: s.score,

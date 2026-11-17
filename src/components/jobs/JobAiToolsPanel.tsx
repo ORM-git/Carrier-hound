@@ -76,8 +76,19 @@ export default function JobAiToolsPanel({
   const [showLoginModal, setShowLoginModal] = useState(false);
 
   const hasConfirmedResume = Boolean(candidate && candidate.confirmedAt);
-  const matchScore = diagnostics ? Math.max(10, Math.min(99, Math.round(diagnostics.score))) : null;
-  const matchLabel = matchScore !== null ? "Match" : null;
+  const matchScore = typeof job?.matchScore === "number" && !isNaN(job.matchScore)
+    ? Math.max(10, Math.min(99, Math.round(job.matchScore)))
+    : diagnostics
+    ? Math.max(10, Math.min(99, Math.round(diagnostics.score)))
+    : null;
+  const matchLabel =
+    matchScore !== null
+      ? matchScore > 70
+        ? "Great match"
+        : matchScore >= 50
+        ? "Good match"
+        : "Fair match"
+      : null;
 
   const topMatchedSkills = diagnostics?.matchedSkills ? diagnostics.matchedSkills.slice(0, 5) : [];
   const topMissingSkills = diagnostics?.missingSkills ? diagnostics.missingSkills.slice(0, 4) : [];
