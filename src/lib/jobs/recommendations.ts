@@ -324,7 +324,7 @@ export function scoreJobRecommendation(
 export function rankJobsByRecommendation<T extends Record<string, any>>(
   jobs: T[],
   answers?: OnboardingAnswers | null
-): T[] {
+): (T & { _matchScore?: number; matchScore?: number })[] {
   if (!Array.isArray(jobs) || jobs.length === 0) {
     return [];
   }
