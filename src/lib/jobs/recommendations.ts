@@ -13,8 +13,6 @@
  * Strictly non-AI, zero external calls, pure TypeScript scoring.
  */
 
-import { formatSalary } from "@/lib/salary/parser";
-
 export interface OnboardingAnswers {
   roles?: string[];
   experienceLevel?: "entry" | "mid" | "senior" | "lead" | "intern" | string | null;

@@ -99,7 +99,6 @@ export async function GET(req: Request) {
 
     // Check optional Pro entitlement and user preferences via Bearer token
     let isPro = false;
-    let userId: string | null = null;
     let dbAnswers: OnboardingAnswers = {};
 
     const authHeader = req.headers.get("authorization") || req.headers.get("Authorization");
@@ -108,7 +107,6 @@ export async function GET(req: Request) {
       try {
         const { data: { user } } = await supabaseAdmin.auth.getUser(token);
         if (user) {
-          userId = user.id;
           const entitlement = await getServerEntitlement(user.id);
           isPro = Boolean(entitlement.isPro);
 
