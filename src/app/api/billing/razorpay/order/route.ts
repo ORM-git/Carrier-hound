@@ -3,9 +3,6 @@ import { createClient } from "@supabase/supabase-js";
 import {
   resolveOrderPricing,
   normalizePlanCode,
-  checkMonthlyIntroEligibilityAndReserve,
-  releaseMonthlyIntroReservation,
-  hasEarlierSuccessfulMonthlyPayment,
 } from "@/lib/billing/quota";
 import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
 import { getRazorpayKeyMode } from "@/lib/billing/mode";
@@ -304,38 +301,11 @@ export async function POST(req: Request) {
 
     const body = await req.json().catch(() => ({}));
 
-    // Server-side first-month check: authoritative and fail-closed
-    let isFirstMonthlyPurchase = true;
-    const requestedPlanCode = normalizePlanCode(
-      body.planCode || body.planId || (!body.addonCode && !body.planCode ? "monthly" : null)
-    );
-    if (requestedPlanCode === "monthly") {
-      if (typeof deps.checkMonthlyIntroEligibilityAndReserve === "function") {
-        const eligibility = await deps.checkMonthlyIntroEligibilityAndReserve(
-          supabaseAdmin,
-          user.id,
-          configuredMode
-        );
-        isFirstMonthlyPurchase = eligibility.isFirstMonthlyPurchase;
-      } else if (typeof deps.hasEarlierSuccessfulMonthlyPayment === "function") {
-        const hasEarlier = await deps.hasEarlierSuccessfulMonthlyPayment(supabaseAdmin, user.id);
-        isFirstMonthlyPurchase = !hasEarlier;
-      } else {
-        const eligibility = await checkMonthlyIntroEligibilityAndReserve(
-          supabaseAdmin,
-          user.id,
-          configuredMode
-        );
-        isFirstMonthlyPurchase = eligibility.isFirstMonthlyPurchase;
-      }
-    }
-
     // Resolve server-authoritative price from plans/addon_packs catalog, ignoring any client amount
     const pricing = resolveOrderPricing({
       planCode: body.planCode,
       planId: body.planId || (!body.addonCode && !body.planCode ? "monthly" : undefined),
       addonCode: body.addonCode,
-      isFirstMonthlyPurchase,
     });
 
     if (!pricing) {
@@ -397,9 +367,6 @@ export async function POST(req: Request) {
     });
 
     if (!rzpRes.ok) {
-      if (requestedPlanCode === "monthly" && isFirstMonthlyPurchase) {
-        await releaseMonthlyIntroReservation(supabaseAdmin, user.id).catch(() => {});
-      }
       const err = await rzpRes.json().catch(() => ({}));
       return NextResponse.json(
         { error: err.error?.description || "Failed to create Razorpay order" },
@@ -410,8 +377,6 @@ export async function POST(req: Request) {
     const orderData = await rzpRes.json();
 
     // Record order in payment_orders table with status 'created' and resolved server mode
-    const isIntroPromo =
-      pricing.type === "plan" && pricing.code === "monthly" && isFirstMonthlyPurchase;
     const insertResult = supabaseAdmin.from("payment_orders").insert({
       user_id: user.id,
       provider: "razorpay",
@@ -422,9 +387,6 @@ export async function POST(req: Request) {
       currency,
       status: "created",
       mode: resolvedMode,
-      metadata: {
-        is_intro_promo: isIntroPromo,
-      },
     });
 
     let orderRow: any = null;
@@ -440,9 +402,6 @@ export async function POST(req: Request) {
     }
 
     if (insertErr) {
-      if (requestedPlanCode === "monthly" && isFirstMonthlyPurchase) {
-        await releaseMonthlyIntroReservation(supabaseAdmin, user.id).catch(() => {});
-      }
       log.error("Critical: payment_orders insert failed; failing closed", {
         error: insertErr?.message || String(insertErr),
       });
@@ -453,21 +412,6 @@ export async function POST(req: Request) {
         },
         { status: 500 }
       );
-    }
-
-    if (isIntroPromo && orderRow?.id) {
-      try {
-        await supabaseAdmin
-          .from("intro_promo_reservations")
-          .update({
-            order_id: orderRow.id,
-            provider_order_id: orderData.id,
-          })
-          .eq("user_id", user.id)
-          .eq("status", "active");
-      } catch {
-        // Non-fatal reservation metadata update
-      }
     }
 
     return NextResponse.json({

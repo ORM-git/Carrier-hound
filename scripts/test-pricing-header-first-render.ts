@@ -41,7 +41,11 @@ async function runPricingHeaderFirstRenderSuite() {
   console.log("   PRICING PAGE FIRST-RENDER HEADER & HYDRATION TEST SUITE [PASS-LOCAL]         ");
   console.log("================================================================================");
 
-  const isNegativeControl = process.argv.includes("--negative-control");
+  const originalBillingEnabled = process.env.NEXT_PUBLIC_BILLING_ENABLED;
+  process.env.NEXT_PUBLIC_BILLING_ENABLED = "false";
+
+  try {
+    const isNegativeControl = process.argv.includes("--negative-control");
 
   if (isNegativeControl) {
     console.log("\n[NEGATIVE CONTROL MODE] Intentionally asserting invalid condition (server HTML must NOT equal first client render)...\n");
@@ -230,6 +234,13 @@ async function runPricingHeaderFirstRenderSuite() {
   console.log("\n================================================================================");
   console.log("   ALL PRICING FIRST-RENDER TESTS PASSED SUCCESSFULLY [PASS-LOCAL]              ");
   console.log("================================================================================");
+  } finally {
+    if (originalBillingEnabled !== undefined) {
+      process.env.NEXT_PUBLIC_BILLING_ENABLED = originalBillingEnabled;
+    } else {
+      delete process.env.NEXT_PUBLIC_BILLING_ENABLED;
+    }
+  }
 }
 
 runPricingHeaderFirstRenderSuite().catch((err) => {

@@ -7,7 +7,7 @@
  *
  * APPROVED PRICES & QUOTAS:
  * - Weekly: ₹399, access 7 days: 15 sets/week.
- * - Monthly: ₹499 for first ever purchase, ₹799 for every later purchase, access 30 days: 60 sets/month. Badge: "Recommended". Default selected.
+ * - Monthly: ₹499 for everyone, access 30 days: 60 sets/month. Badge: "Recommended". Default selected.
  * - Quarterly: ₹2,199, access 90 days: 60 sets each month, resetting monthly. Badge: "Best value".
  * - Separate usage pools per feature: Weekly = 15 resume tailorings + 15 cover letters per 7 days; Monthly (30 days) & Quarterly (90 days) = 60 resume tailorings + 60 cover letters per 30 days.
  * - Add-ons: ₹149 / ₹399 / ₹699 for 10 / 30 / 60 extra generations, valid 60 days (planned / coming soon).
@@ -22,10 +22,6 @@ export interface PlanPricingItem {
   duration_days: number;
   price_paise: number;
   price_inr: number;
-  first_purchase_price_paise?: number;
-  first_purchase_price_inr?: number;
-  repeat_price_paise?: number;
-  repeat_price_inr?: number;
 }
 
 /**
@@ -46,10 +42,6 @@ export const PLAN_PRICING: Record<"weekly" | "monthly" | "quarterly", PlanPricin
     duration_days: 30,
     price_paise: 49900,
     price_inr: 499,
-    first_purchase_price_paise: 49900,
-    first_purchase_price_inr: 499,
-    repeat_price_paise: 79900,
-    repeat_price_inr: 799,
   },
   quarterly: {
     code: "quarterly",
@@ -61,31 +53,15 @@ export const PLAN_PRICING: Record<"weekly" | "monthly" | "quarterly", PlanPricin
 } as const;
 
 export function getPlanPricePaise(
-  planCode: "weekly" | "monthly" | "quarterly",
-  isFirstMonthlyPurchase: boolean = true
+  planCode: "weekly" | "monthly" | "quarterly"
 ): number {
-  const plan = PLAN_PRICING[planCode];
-  if (!plan) return 0;
-  if (planCode === "monthly") {
-    return isFirstMonthlyPurchase
-      ? (plan.first_purchase_price_paise ?? plan.price_paise)
-      : (plan.repeat_price_paise ?? plan.price_paise);
-  }
-  return plan.price_paise;
+  return PLAN_PRICING[planCode]?.price_paise ?? 0;
 }
 
 export function getPlanPriceINR(
-  planCode: "weekly" | "monthly" | "quarterly",
-  isFirstMonthlyPurchase: boolean = true
+  planCode: "weekly" | "monthly" | "quarterly"
 ): number {
-  const plan = PLAN_PRICING[planCode];
-  if (!plan) return 0;
-  if (planCode === "monthly") {
-    return isFirstMonthlyPurchase
-      ? (plan.first_purchase_price_inr ?? plan.price_inr)
-      : (plan.repeat_price_inr ?? plan.price_inr);
-  }
-  return plan.price_inr;
+  return PLAN_PRICING[planCode]?.price_inr ?? 0;
 }
 
 export interface PlanConfig {
@@ -196,7 +172,7 @@ export const PLANS: PlanConfig[] = [
     savingsBadge: "Save 50%",
     currency: "INR",
     interval: "month",
-    billingText: "30 days access (₹499 first time, then ₹799)",
+    billingText: "30 days access",
     subLine: "60 sets/month",
     quotaSets: 60,
     quotaPeriodText: "60 sets per month",

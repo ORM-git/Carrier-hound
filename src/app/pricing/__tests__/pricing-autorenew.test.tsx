@@ -157,7 +157,7 @@ describe("Pricing Page Auto-Renew Subscription Permutations & Lock Behavior", ()
     expect(mockOpenRazorpaySubscription).not.toHaveBeenCalled();
   });
 
-  it("calls openRazorpaySubscription when both BILLING and AUTORENEW are on", async () => {
+  it("calls handleProCheckout prepaid flow even when both BILLING and AUTORENEW are on (prepaid forced)", async () => {
     process.env.NEXT_PUBLIC_BILLING_ENABLED = "true";
     process.env.NEXT_PUBLIC_AUTORENEW_ENABLED = "true";
 
@@ -173,22 +173,22 @@ describe("Pricing Page Auto-Renew Subscription Permutations & Lock Behavior", ()
       weeklyButton?.click();
     });
 
-    expect(mockOpenRazorpaySubscription).toHaveBeenCalledTimes(1);
-    expect(mockOpenRazorpaySubscription).toHaveBeenCalledWith(
+    expect(mockHandleProCheckout).toHaveBeenCalledTimes(1);
+    expect(mockHandleProCheckout).toHaveBeenCalledWith(
       expect.objectContaining({
         planCode: "weekly",
         redirectTarget: "/pricing",
       })
     );
-    expect(mockHandleProCheckout).not.toHaveBeenCalled();
+    expect(mockOpenRazorpaySubscription).not.toHaveBeenCalled();
   });
 
-  it("holds lock while subscription checkout is pending and re-enables on dismissal", async () => {
+  it("holds lock while checkout is pending and re-enables on dismissal", async () => {
     process.env.NEXT_PUBLIC_BILLING_ENABLED = "true";
     process.env.NEXT_PUBLIC_AUTORENEW_ENABLED = "true";
 
     let capturedOptions: any = null;
-    mockOpenRazorpaySubscription.mockImplementation((opts: any) => {
+    mockHandleProCheckout.mockImplementation((opts: any) => {
       capturedOptions = opts;
       return new Promise<void>(() => {}); // Stays pending
     });
@@ -205,12 +205,12 @@ describe("Pricing Page Auto-Renew Subscription Permutations & Lock Behavior", ()
       'button[data-addon-code="addon10"]'
     ) as HTMLButtonElement | null;
 
-    // First click initiates subscription checkout
+    // First click initiates prepaid checkout
     await act(async () => {
       monthlyButton?.click();
     });
 
-    expect(mockOpenRazorpaySubscription).toHaveBeenCalledTimes(1);
+    expect(mockHandleProCheckout).toHaveBeenCalledTimes(1);
     expect(monthlyButton?.disabled).toBe(true);
     expect(weeklyButton?.disabled).toBe(true);
     if (addonButton) {
@@ -221,7 +221,7 @@ describe("Pricing Page Auto-Renew Subscription Permutations & Lock Behavior", ()
     await act(async () => {
       weeklyButton?.click();
     });
-    expect(mockOpenRazorpaySubscription).toHaveBeenCalledTimes(1);
+    expect(mockHandleProCheckout).toHaveBeenCalledTimes(1);
 
     // Terminal callback (e.g. user dismisses modal) releases lock
     await act(async () => {
@@ -252,6 +252,7 @@ describe("Pricing Page Auto-Renew Subscription Permutations & Lock Behavior", ()
     });
 
     expect(mockOpenRazorpaySubscription).not.toHaveBeenCalled();
+    expect(mockHandleProCheckout).not.toHaveBeenCalled();
     expect(window.location.href).toBe("/login?returnTo=%2Fpricing");
   });
 
@@ -263,10 +264,10 @@ describe("Pricing Page Auto-Renew Subscription Permutations & Lock Behavior", ()
 
     const textContent = container?.textContent || "";
     expect(textContent).toContain(
-      "Plans are prepaid for a fixed duration and do not auto-renew. (Weekly: ₹399 for 7 days, Monthly: ₹499 first time then ₹799 for 30 days, Quarterly: ₹2,199 for 90 days). Premium access ends automatically when the plan period expires."
+      "Plans are prepaid for a fixed duration and do not auto-renew. (Weekly: ₹399 for 7 days, Monthly: ₹499 for 30 days, Quarterly: ₹2,199 for 90 days). Premium access ends automatically when the plan period expires."
     );
     expect(textContent).toContain("7 days access");
-    expect(textContent).toContain("30 days access (₹499 first time, then ₹799)");
+    expect(textContent).toContain("30 days access");
     expect(textContent).toContain("90 days access");
   });
 
@@ -279,7 +280,7 @@ describe("Pricing Page Auto-Renew Subscription Permutations & Lock Behavior", ()
     const textContent = container?.textContent || "";
     expect(textContent).toContain("Plans are prepaid for a fixed duration and do not auto-renew");
     expect(textContent).toContain("Weekly: ₹399 for 7 days");
-    expect(textContent).toContain("Monthly: ₹499 first time then ₹799 for 30 days");
+    expect(textContent).toContain("Monthly: ₹499 for 30 days");
     expect(textContent).toContain("Quarterly: ₹2,199 for 90 days");
     expect(textContent).toContain("7 days access");
     expect(textContent).toContain("30 days access");

@@ -46,7 +46,11 @@ async function runPlanPickerSuite() {
   console.log("   PLAN PICKER PAGE & CONFIG VERIFICATION TEST SUITE [PASS-LOCAL]              ");
   console.log("================================================================================");
 
-  const isNegativeControl = process.argv.includes("--negative-control");
+  const originalBillingEnabled = process.env.NEXT_PUBLIC_BILLING_ENABLED;
+  process.env.NEXT_PUBLIC_BILLING_ENABLED = "false";
+
+  try {
+    const isNegativeControl = process.argv.includes("--negative-control");
 
   if (isNegativeControl) {
     console.log("\n[NEGATIVE CONTROL MODE] Intentionally asserting invalid condition...");
@@ -75,7 +79,7 @@ async function runPlanPickerSuite() {
   const weekly = PLANS[0];
   assert.strictEqual(weekly.id, "weekly");
   assert.strictEqual(weekly.price, 399, "Weekly price must be approved ₹399");
-  assert.strictEqual(getPlanBillingLabel(weekly), "Billed weekly");
+  assert.strictEqual(getPlanBillingLabel(weekly), "7 days access");
   assert.strictEqual(weekly.subLine, "15 sets/week");
   assert.strictEqual(calculatePerWeek(weekly.price, "week"), 399);
   assert.strictEqual(getPlanPerWeekText(weekly), "₹399 /week");
@@ -85,7 +89,7 @@ async function runPlanPickerSuite() {
   assert.strictEqual(monthly.id, "monthly");
   assert.strictEqual(monthly.price, 499, "Monthly price must be approved ₹499");
   assert.strictEqual(monthly.isDefault, true, "Monthly plan must be default");
-  assert.strictEqual(getPlanBillingLabel(monthly), "₹499, billed monthly");
+  assert.strictEqual(getPlanBillingLabel(monthly), "₹499, 30 days access");
   assert.strictEqual(monthly.subLine, "60 sets/month");
   assert.strictEqual(calculatePerWeek(monthly.price, "month"), 115); // Math.round(499 * 12 / 52) = 115
   assert.strictEqual(getPlanPerWeekText(monthly), "₹115 /week*");
@@ -94,7 +98,7 @@ async function runPlanPickerSuite() {
   const quarterly = PLANS[2];
   assert.strictEqual(quarterly.id, "quarterly");
   assert.strictEqual(quarterly.price, 2199, "Quarterly price must be approved ₹2,199");
-  assert.strictEqual(getPlanBillingLabel(quarterly), "₹2,199, billed every 3 months");
+  assert.strictEqual(getPlanBillingLabel(quarterly), "₹2,199, 90 days access");
   assert.strictEqual(quarterly.subLine, "60 sets each month (resets monthly)");
   assert.strictEqual(calculatePerWeek(quarterly.price, "quarter"), 169); // Math.round(2199 * 4 / 52) = 169
   assert.strictEqual(getPlanPerWeekText(quarterly), "₹169 /week*");
@@ -163,19 +167,19 @@ async function runPlanPickerSuite() {
   assert.ok(serverHtml.includes("₹399"), "Weekly price must be ₹399");
   assert.ok(serverHtml.includes("15 sets/week"), "Weekly subline must be present");
   assert.ok(serverHtml.includes("₹399 /week"), "Weekly per-week text must be ₹399 /week");
-  assert.ok(serverHtml.includes("Billed weekly"), "Weekly billing text must be present");
+  assert.ok(serverHtml.includes("7 days access"), "Weekly billing text must be present");
 
   assert.ok(serverHtml.includes("Monthly"), "Monthly plan title must be present");
   assert.ok(serverHtml.includes("₹499"), "Monthly price must be ₹499");
   assert.ok(serverHtml.includes("115"), "Monthly per-week price 115 must be present");
   assert.ok(serverHtml.includes("60 sets/month"), "Monthly subline must be present");
-  assert.ok(serverHtml.includes("billed monthly"), "Monthly billing text must be present");
+  assert.ok(serverHtml.includes("30 days access"), "Monthly billing text must be present");
 
   assert.ok(serverHtml.includes("Quarterly"), "Quarterly plan title must be present");
   assert.ok(serverHtml.includes("₹2,199"), "Quarterly price must be ₹2,199");
   assert.ok(serverHtml.includes("169"), "Quarterly per-week price 169 must be present");
   assert.ok(serverHtml.includes("60 sets each month (resets monthly)"), "Quarterly subline must be present");
-  assert.ok(serverHtml.includes("billed every 3 months"), "Quarterly billing text must be present");
+  assert.ok(serverHtml.includes("90 days access"), "Quarterly billing text must be present");
 
   // Free Tier Card
   assert.ok(serverHtml.includes("Free Plan"), "Free tier heading 'Free Plan' must be present");
@@ -224,6 +228,13 @@ async function runPlanPickerSuite() {
   console.log("\n================================================================================");
   console.log("   ALL PLAN PICKER VERIFICATION TESTS PASSED SUCCESSFULLY [PASS-LOCAL]         ");
   console.log("================================================================================");
+  } finally {
+    if (originalBillingEnabled !== undefined) {
+      process.env.NEXT_PUBLIC_BILLING_ENABLED = originalBillingEnabled;
+    } else {
+      delete process.env.NEXT_PUBLIC_BILLING_ENABLED;
+    }
+  }
 }
 
 runPlanPickerSuite().catch((err) => {

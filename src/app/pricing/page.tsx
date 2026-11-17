@@ -31,7 +31,6 @@ import { toast } from "react-toastify";
 export default function PricingPage() {
   const [user, setUser] = useState<User | null>(null);
   const [isPro, setIsPro] = useState(false);
-  const [isRepeatMonthlyBuyer, setIsRepeatMonthlyBuyer] = useState(false);
   const [selectedPlanId, setSelectedPlanId] = useState<PlanConfig["id"]>("monthly");
 
   useEffect(() => {
@@ -49,42 +48,6 @@ export default function PricingPage() {
           const proStatus = await getProAccessStatus(session.user.id);
           if (!mounted) return;
           setIsPro(proStatus.isPro);
-
-          // Check if user is a repeat monthly buyer
-          try {
-            const { data: paidOrders } = await supabase
-              .from("payment_orders")
-              .select("id")
-              .eq("user_id", session.user.id)
-              .eq("plan_code", "monthly")
-              .eq("status", "paid")
-              .limit(1);
-
-            if (mounted && paidOrders && paidOrders.length > 0) {
-              setIsRepeatMonthlyBuyer(true);
-            } else {
-              const { data: subs } = await supabase
-                .from("subscriptions")
-                .select("id, plan_id, status, amount")
-                .eq("user_id", session.user.id)
-                .limit(5);
-
-              if (
-                mounted &&
-                subs &&
-                subs.some(
-                  (s: any) =>
-                    (s.plan_id === "monthly" || s.plan_id?.includes("month")) &&
-                    s.status !== "unpaid" &&
-                    (s.amount ?? 0) > 0
-                )
-              ) {
-                setIsRepeatMonthlyBuyer(true);
-              }
-            }
-          } catch {
-            // Non-fatal fallback
-          }
         }
       } catch (err) {
         console.warn("[Pricing] Auth / Pro check failed:", err);
@@ -152,37 +115,20 @@ export default function PricingPage() {
     }
 
     try {
-      if (isAutorenewEnabled) {
-        await openRazorpaySubscription({
-          planCode,
-          redirectTarget: "/pricing",
-          onError: (errMsg) => {
-            resetLock();
-            toast.error(errMsg || "Payment processing failed. Please try again.");
-          },
-          onSuccess: () => {
-            resetLock();
-          },
-          onDismiss: () => {
-            resetLock();
-          },
-        });
-      } else {
-        await handleProCheckout({
-          planCode,
-          redirectTarget: "/pricing",
-          onError: (errMsg) => {
-            resetLock();
-            toast.error(errMsg || "Payment processing failed. Please try again.");
-          },
-          onSuccess: () => {
-            resetLock();
-          },
-          onDismiss: () => {
-            resetLock();
-          },
-        });
-      }
+      await handleProCheckout({
+        planCode,
+        redirectTarget: "/pricing",
+        onError: (errMsg) => {
+          resetLock();
+          toast.error(errMsg || "Payment processing failed. Please try again.");
+        },
+        onSuccess: () => {
+          resetLock();
+        },
+        onDismiss: () => {
+          resetLock();
+        },
+      });
     } catch (err: any) {
       resetLock();
       toast.error(err?.message || "Failed to initiate plan checkout.");
@@ -264,19 +210,9 @@ export default function PricingPage() {
     setSelectedPlanId(planId as PlanConfig["id"]);
   };
 
-  const paidPlansToDisplay = PAID_PLANS_DISPLAY_ORDER.map((id) => {
-    const basePlan = PLANS.find((p) => p.id === id)!;
-    if (id === "monthly" && isRepeatMonthlyBuyer) {
-      return {
-        ...basePlan,
-        price: PLAN_PRICING.monthly.repeat_price_inr ?? 799,
-        originalPrice: undefined,
-        savingsBadge: undefined,
-        billingText: "30 days access",
-      };
-    }
-    return basePlan;
-  });
+  const paidPlansToDisplay = PAID_PLANS_DISPLAY_ORDER.map(
+    (id) => PLANS.find((p) => p.id === id)!
+  );
 
   const handleKeyDownPlan = (
     e: React.KeyboardEvent<HTMLDivElement>,
@@ -347,9 +283,7 @@ export default function PricingPage() {
                         plan.id === "weekly"
                           ? "7 days access"
                           : plan.id === "monthly"
-                          ? isRepeatMonthlyBuyer
-                            ? "30 days access"
-                            : "30 days access (₹499 first time, then ₹799)"
+                          ? "30 days access"
                           : "90 days access";
 
                       return (
@@ -598,9 +532,7 @@ export default function PricingPage() {
                 plan.id === "weekly"
                   ? "7 days access"
                   : plan.id === "monthly"
-                  ? isRepeatMonthlyBuyer
-                    ? "30 days access"
-                    : "30 days access (₹499 first time, then ₹799)"
+                  ? "30 days access"
                   : "90 days access";
 
               return (
@@ -858,7 +790,7 @@ export default function PricingPage() {
         <div className="pt-2 text-center space-y-2 text-xs text-slate-500 dark:text-slate-400">
           <p className="font-bold text-[#090E34] dark:text-white">All sales final · no refunds</p>
           <p>
-            Plans are prepaid for a fixed duration and do not auto-renew. (Weekly: ₹399 for 7 days, Monthly: ₹499 first time then ₹799 for 30 days, Quarterly: ₹2,199 for 90 days). Premium access ends automatically when the plan period expires. Add-on packs expire together with the subscription.
+            Plans are prepaid for a fixed duration and do not auto-renew. (Weekly: ₹399 for 7 days, Monthly: ₹499 for 30 days, Quarterly: ₹2,199 for 90 days). Premium access ends automatically when the plan period expires. Add-on packs expire together with the subscription.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
             <Link

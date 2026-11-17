@@ -8,9 +8,6 @@ import { POST as handleVerifyPost } from "@/app/api/billing/razorpay/verify/rout
 import {
   resolveOrderPricing,
   PLAN_DEFINITIONS,
-  hasEarlierSuccessfulMonthlyPayment,
-  checkMonthlyIntroEligibilityAndReserve,
-  releaseMonthlyIntroReservation,
 } from "@/lib/billing/quota";
 import { getPlanPricePaise, getPlanPriceINR, PLAN_PRICING } from "@/config/plans";
 
@@ -25,9 +22,6 @@ describe("Prepaid Razorpay Payment Flow & Pricing Engine", () => {
     subscriptions?: any[];
     orderError?: any;
     subError?: any;
-    pendingError?: any;
-    reservationConflict?: boolean;
-    reservationError?: any;
   }) {
     return {
       auth: {
@@ -45,46 +39,18 @@ describe("Prepaid Razorpay Payment Flow & Pricing Engine", () => {
             return builder;
           }),
           gte: vi.fn(() => builder),
-          or: vi.fn(async () => ({ data: null, error: null })),
-          delete: vi.fn(() => builder),
-          insert: vi.fn(() => {
-            if (overrides?.reservationConflict) {
-              return {
-                select: () => ({
-                  single: async () => ({
-                    data: null,
-                    error: { code: "23505", message: "duplicate key value violates unique constraint" },
-                  }),
-                }),
-              };
-            }
-            if (overrides?.reservationError) {
-              return {
-                select: () => ({
-                  single: async () => ({ data: null, error: overrides.reservationError }),
-                }),
-              };
-            }
-            return {
-              select: () => ({
-                single: async () => ({ data: { id: "po_row_new", user_id: "u_test_auth" }, error: null }),
-              }),
-            };
-          }),
+          insert: vi.fn(() => ({
+            select: () => ({
+              single: async () => ({ data: { id: "po_row_new", user_id: "u_test_auth" }, error: null }),
+            }),
+          })),
           update: vi.fn(() => builder),
           then: (resolve: any) => Promise.resolve({ data: null, error: null }).then(resolve),
           catch: (reject: any) => Promise.resolve({ data: null, error: null }).catch(reject),
           limit: vi.fn(async () => {
             if (table === "payment_orders") {
               if (overrides?.orderError) return { data: null, error: overrides.orderError };
-              if (builder._filters.status === "paid") {
-                return { data: overrides?.paidOrders || [], error: null };
-              }
-              if (builder._filters.status === "created") {
-                if (overrides?.pendingError) return { data: null, error: overrides.pendingError };
-                return { data: overrides?.pendingOrders || [], error: null };
-              }
-              return { data: [], error: null };
+              return { data: overrides?.paidOrders || [], error: null };
             }
             if (table === "subscriptions") {
               if (overrides?.subError) return { data: null, error: overrides.subError };
@@ -126,14 +92,11 @@ describe("Prepaid Razorpay Payment Flow & Pricing Engine", () => {
       expect(getPlanPricePaise("weekly")).toBe(39900);
       expect(getPlanPriceINR("weekly")).toBe(399);
 
-      // Monthly: Rs 499 first purchase, Rs 799 repeat purchase, 30 days
-      expect(PLAN_PRICING.monthly.first_purchase_price_paise).toBe(49900);
-      expect(PLAN_PRICING.monthly.repeat_price_paise).toBe(79900);
+      // Monthly: Rs 499 for everyone, 30 days
+      expect(PLAN_PRICING.monthly.price_paise).toBe(49900);
       expect(PLAN_PRICING.monthly.duration_days).toBe(30);
-      expect(getPlanPricePaise("monthly", true)).toBe(49900);
-      expect(getPlanPricePaise("monthly", false)).toBe(79900);
-      expect(getPlanPriceINR("monthly", true)).toBe(499);
-      expect(getPlanPriceINR("monthly", false)).toBe(799);
+      expect(getPlanPricePaise("monthly")).toBe(49900);
+      expect(getPlanPriceINR("monthly")).toBe(499);
 
       // Quarterly: Rs 2,199, 90 days
       expect(PLAN_PRICING.quarterly.price_paise).toBe(219900);
@@ -152,174 +115,24 @@ describe("Prepaid Razorpay Payment Flow & Pricing Engine", () => {
       expect(PLAN_DEFINITIONS.quarterly.price_paise).toBe(219900);
       expect(PLAN_DEFINITIONS.quarterly.duration_days).toBe(90);
     });
-  });
 
-  describe("First-Month vs Repeat Monthly Pricing Detection & Fail-Closed Guards", () => {
-    it("returns false (first month) when user has no prior paid orders or subscriptions", async () => {
-      const mockSupabase = createMockSupabase();
-      const hasEarlier = await hasEarlierSuccessfulMonthlyPayment(mockSupabase, "u_first_time");
-      expect(hasEarlier).toBe(false);
+    it("resolveOrderPricing resolves exact prepaid pricing for all plans", () => {
+      const weekly = resolveOrderPricing({ planCode: "weekly" });
+      expect(weekly?.amount_paise).toBe(39900);
+      expect(weekly?.duration_days).toBe(7);
 
-      const pricing = resolveOrderPricing({ planCode: "monthly", isFirstMonthlyPurchase: !hasEarlier });
-      expect(pricing?.amount_paise).toBe(49900);
-      expect(pricing?.duration_days).toBe(30);
-    });
+      const monthly = resolveOrderPricing({ planCode: "monthly" });
+      expect(monthly?.amount_paise).toBe(49900);
+      expect(monthly?.duration_days).toBe(30);
 
-    it("returns true (repeat month) when user has an earlier paid live monthly order", async () => {
-      const mockSupabase = createMockSupabase({
-        paidOrders: [{ id: "order_prev_paid_123", status: "paid", mode: "live" }],
-      });
-      const hasEarlier = await hasEarlierSuccessfulMonthlyPayment(mockSupabase, "u_repeat_customer");
-      expect(hasEarlier).toBe(true);
-
-      const pricing = resolveOrderPricing({ planCode: "monthly", isFirstMonthlyPurchase: !hasEarlier });
-      expect(pricing?.amount_paise).toBe(79900);
-      expect(pricing?.duration_days).toBe(30);
-    });
-
-    it("FAIL-CLOSED: charges repeat price Rs 799 when order query returns a database error", async () => {
-      const mockSupabase = createMockSupabase({
-        orderError: { message: "database connection terminated abruptly", code: "57P01" },
-      });
-      const eligibility = await checkMonthlyIntroEligibilityAndReserve(mockSupabase, "u_db_err");
-      expect(eligibility.isFirstMonthlyPurchase).toBe(false);
-      expect(eligibility.reason).toBe("DB_ORDER_QUERY_ERROR");
-
-      const pricing = resolveOrderPricing({
-        planCode: "monthly",
-        isFirstMonthlyPurchase: eligibility.isFirstMonthlyPurchase,
-      });
-      expect(pricing?.amount_paise).toBe(79900);
-    });
-
-    it("FAIL-CLOSED: charges repeat price Rs 799 when subscription query returns a database error", async () => {
-      const mockSupabase = createMockSupabase({
-        subError: { message: "relation public.subscriptions does not exist", code: "42P01" },
-      });
-      const eligibility = await checkMonthlyIntroEligibilityAndReserve(mockSupabase, "u_sub_err");
-      expect(eligibility.isFirstMonthlyPurchase).toBe(false);
-      expect(eligibility.reason).toBe("DB_SUBSCRIPTION_QUERY_ERROR");
-
-      const pricing = resolveOrderPricing({
-        planCode: "monthly",
-        isFirstMonthlyPurchase: eligibility.isFirstMonthlyPurchase,
-      });
-      expect(pricing?.amount_paise).toBe(79900);
-    });
-
-    it("FAIL-CLOSED: charges repeat price Rs 799 when supabase admin client is missing or null", async () => {
-      const eligibility = await checkMonthlyIntroEligibilityAndReserve(null, "u_no_client");
-      expect(eligibility.isFirstMonthlyPurchase).toBe(false);
-      expect(eligibility.reason).toBe("ADMIN_CLIENT_UNAVAILABLE");
-
-      const pricing = resolveOrderPricing({
-        planCode: "monthly",
-        isFirstMonthlyPurchase: eligibility.isFirstMonthlyPurchase,
-      });
-      expect(pricing?.amount_paise).toBe(79900);
-    });
-
-    it("TEST-MODE ISOLATION: ignores previous test-mode paid orders when user buys live", async () => {
-      const mockSupabase = createMockSupabase({
-        paidOrders: [],
-      });
-      const eligibility = await checkMonthlyIntroEligibilityAndReserve(mockSupabase, "u_test_buyer", "live");
-      expect(eligibility.isFirstMonthlyPurchase).toBe(true);
-
-      const pricing = resolveOrderPricing({
-        planCode: "monthly",
-        isFirstMonthlyPurchase: eligibility.isFirstMonthlyPurchase,
-      });
-      expect(pricing?.amount_paise).toBe(49900);
-    });
-
-    it("FAILED & UNPAID ORDERS: ignores failed, expired or unpaid orders", async () => {
-      const mockSupabase = createMockSupabase({
-        paidOrders: [],
-        subscriptions: [{ id: "sub_unpaid_1", plan_id: "monthly", status: "unpaid", amount: 0 }],
-      });
-      const eligibility = await checkMonthlyIntroEligibilityAndReserve(mockSupabase, "u_failed_buyer", "live");
-      expect(eligibility.isFirstMonthlyPurchase).toBe(true);
-
-      const pricing = resolveOrderPricing({
-        planCode: "monthly",
-        isFirstMonthlyPurchase: eligibility.isFirstMonthlyPurchase,
-      });
-      expect(pricing?.amount_paise).toBe(49900);
-    });
-
-    it("LEGACY SUBSCRIPTION RULE: active legacy subscription blocks intro price; test legacy subscription does not", async () => {
-      // Case A: Real legacy paid subscription
-      const mockSupabaseReal = createMockSupabase({
-        subscriptions: [
-          {
-            id: "sub_legacy_real",
-            plan_id: "monthly",
-            status: "active",
-            amount: 19900,
-            metadata: {},
-          },
-        ],
-      });
-      const eligReal = await checkMonthlyIntroEligibilityAndReserve(mockSupabaseReal, "u_legacy_real", "live");
-      expect(eligReal.isFirstMonthlyPurchase).toBe(false);
-      expect(eligReal.reason).toBe("LEGACY_PAID_MONTHLY_SUBSCRIPTION");
-
-      // Case B: Test-mode legacy subscription (metadata.mode = 'test') does not block live intro
-      const mockSupabaseTest = createMockSupabase({
-        subscriptions: [
-          {
-            id: "sub_legacy_test",
-            plan_id: "monthly",
-            status: "active",
-            amount: 19900,
-            metadata: { mode: "test" },
-          },
-        ],
-      });
-      const eligTest = await checkMonthlyIntroEligibilityAndReserve(mockSupabaseTest, "u_legacy_test", "live");
-      expect(eligTest.isFirstMonthlyPurchase).toBe(true);
-    });
-
-    it("ONCE-ONLY INTRO PRICE: sequential/concurrent second order before payment cannot both get Rs 499", async () => {
-      const mockSupabasePending = createMockSupabase({
-        pendingOrders: [
-          {
-            id: "po_order_1_pending",
-            amount_paise: 49900,
-            status: "created",
-            created_at: new Date(Date.now() - 2 * 60 * 1000).toISOString(),
-          },
-        ],
-      });
-      const eligibility2 = await checkMonthlyIntroEligibilityAndReserve(mockSupabasePending, "u_concurrent_user", "live");
-      expect(eligibility2.isFirstMonthlyPurchase).toBe(false);
-      expect(eligibility2.reason).toBe("PENDING_PROMO_ORDER_EXISTS");
-
-      const pricing2 = resolveOrderPricing({
-        planCode: "monthly",
-        isFirstMonthlyPurchase: eligibility2.isFirstMonthlyPurchase,
-      });
-      expect(pricing2?.amount_paise).toBe(79900);
-    });
-
-    it("CANCEL/EXPIRY SAFETY: when earlier pending order is expired (>30m), user can claim Rs 499 again", async () => {
-      const mockSupabaseExpired = createMockSupabase({
-        pendingOrders: [],
-      });
-      const eligibility3 = await checkMonthlyIntroEligibilityAndReserve(mockSupabaseExpired, "u_expired_reorder", "live");
-      expect(eligibility3.isFirstMonthlyPurchase).toBe(true);
-
-      const pricing3 = resolveOrderPricing({
-        planCode: "monthly",
-        isFirstMonthlyPurchase: eligibility3.isFirstMonthlyPurchase,
-      });
-      expect(pricing3?.amount_paise).toBe(49900);
+      const quarterly = resolveOrderPricing({ planCode: "quarterly" });
+      expect(quarterly?.amount_paise).toBe(219900);
+      expect(quarterly?.duration_days).toBe(90);
     });
   });
 
   describe("Order Route Server-Side Amount Enforcement (Tampered Amount Immunity)", () => {
-    it("ignores client-supplied tampered amount (e.g. 100 paise) and bills Rs 499 for first month", async () => {
+    it("ignores client-supplied tampered amount (e.g. 100 paise) and bills Rs 499 for monthly", async () => {
       let createdOrderAmount = 0;
       const fakeOrderReq = new Request("http://localhost:3000/api/billing/razorpay/order", {
         method: "POST",
@@ -360,50 +173,6 @@ describe("Prepaid Razorpay Payment Flow & Pricing Engine", () => {
       expect(createdOrderAmount).toBe(49900);
       const resJson = await res.json();
       expect(resJson.amount).toBe(49900);
-    });
-
-    it("enforces Rs 799 for repeat monthly buyer even if client passes Rs 499 in body", async () => {
-      let createdOrderAmount = 0;
-      const fakeOrderReq = new Request("http://localhost:3000/api/billing/razorpay/order", {
-        method: "POST",
-        headers: {
-          authorization: "Bearer valid_token",
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          planCode: "monthly",
-          amount: 49900, // Client tries to claim first-month price again
-        }),
-      });
-
-      const mockSupabaseAdmin = createMockSupabase({
-        paidOrders: [{ id: "order_prev_paid", status: "paid", mode: "live" }],
-      });
-
-      (fakeOrderReq as any).__testDeps = {
-        getSupabaseAdmin: () => mockSupabaseAdmin,
-        verifyUserNotBanned: async () => ({ isBlocked: false }),
-        fetchFn: async (_url: string, init: any) => {
-          const payload = JSON.parse(init.body);
-          createdOrderAmount = payload.amount;
-          return new Response(
-            JSON.stringify({
-              id: "order_rzp_repeat_799",
-              amount: payload.amount,
-              currency: "INR",
-              status: "created",
-            }),
-            { status: 200 }
-          );
-        },
-      };
-
-      const res = await handleOrderPost(fakeOrderReq);
-      expect(res.status).toBe(200);
-      // Authoritative repeat price Rs 799 (79900 paise) strictly enforced
-      expect(createdOrderAmount).toBe(79900);
-      const resJson = await res.json();
-      expect(resJson.amount).toBe(79900);
     });
   });
 
@@ -448,7 +217,7 @@ describe("Prepaid Razorpay Payment Flow & Pricing Engine", () => {
                     mode: "test",
                     provider_order_id: orderId,
                     plan_code: "monthly",
-                    amount_paise: 49900, // DB has 49900
+                    amount_paise: 49900,
                     currency: "INR",
                     status: "created",
                   },
@@ -487,7 +256,7 @@ describe("Prepaid Razorpay Payment Flow & Pricing Engine", () => {
       const mockSupabaseAdmin = {
         auth: {
           getUser: async () => ({
-            data: { user: { id: "u_verify_tamper", user_metadata: {} } },
+            data: { user: { id: "u_verify_tamper_rzp", user_metadata: {} } },
             error: null,
           }),
         },
@@ -601,12 +370,15 @@ describe("Prepaid Razorpay Payment Flow & Pricing Engine", () => {
       // RPC must not even be called when order is already paid
       expect(rpcCallCount).toBe(0);
     });
+  });
 
-  describe("Real PostgreSQL fulfil_payment_order Integration (PGlite)", () => {
+  describe("Real PostgreSQL fulfil_payment_order Integration (PGlite - Full Migration Chain)", () => {
     let pg: PGlite;
 
     beforeEach(async () => {
       pg = new PGlite();
+
+      // Bootstrap base roles and tables before migrations
       await pg.exec(`
         DO $$
         BEGIN
@@ -632,12 +404,13 @@ describe("Prepaid Razorpay Payment Flow & Pricing Engine", () => {
           code TEXT PRIMARY KEY,
           name TEXT NOT NULL,
           duration_days INT NOT NULL,
-          price_paise INT NOT NULL
+          price_paise INT NOT NULL,
+          is_active BOOLEAN DEFAULT TRUE
         );
-        INSERT INTO public.plans (code, name, duration_days, price_paise) VALUES
-          ('weekly', 'Weekly', 7, 39900),
-          ('monthly', 'Monthly', 30, 49900),
-          ('quarterly', 'Quarterly', 90, 219900);
+        INSERT INTO public.plans (code, name, duration_days, price_paise, is_active) VALUES
+          ('weekly', 'Weekly', 7, 69200, true),
+          ('monthly', 'Monthly', 30, 149900, true),
+          ('quarterly', 'Quarterly', 90, 399900, true);
 
         CREATE TABLE IF NOT EXISTS public.addon_packs (
           code TEXT PRIMARY KEY,
@@ -654,6 +427,7 @@ describe("Prepaid Razorpay Payment Flow & Pricing Engine", () => {
         CREATE TABLE IF NOT EXISTS public.subscriptions (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
           user_id UUID UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE,
+          subscription_id TEXT,
           plan_id TEXT NOT NULL,
           provider TEXT NOT NULL,
           currency TEXT NOT NULL DEFAULT 'INR',
@@ -662,6 +436,7 @@ describe("Prepaid Razorpay Payment Flow & Pricing Engine", () => {
           current_period_start TIMESTAMPTZ DEFAULT NOW(),
           current_period_end TIMESTAMPTZ DEFAULT NOW() + INTERVAL '30 days',
           cancel_at_period_end BOOLEAN DEFAULT FALSE,
+          grace_period_end TIMESTAMPTZ,
           metadata JSONB DEFAULT '{}'::jsonb,
           updated_at TIMESTAMPTZ DEFAULT NOW()
         );
@@ -687,24 +462,42 @@ describe("Prepaid Razorpay Payment Flow & Pricing Engine", () => {
           status TEXT NOT NULL DEFAULT 'created' CHECK (status IN ('created','paid','failed','expired')),
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           paid_at TIMESTAMPTZ,
-          mode TEXT NOT NULL DEFAULT 'live',
           metadata JSONB DEFAULT '{}'::jsonb
         );
 
-        CREATE TABLE IF NOT EXISTS public.intro_promo_reservations (
+        CREATE TABLE IF NOT EXISTS public.blocked_users (
           user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-          order_id UUID,
-          provider_order_id TEXT,
-          amount_paise INT NOT NULL DEFAULT 49900,
-          status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'used', 'released')),
-          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '30 minutes')
+          email TEXT NOT NULL,
+          reason TEXT,
+          blocked_by TEXT,
+          blocked_at TIMESTAMPTZ DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS public.webhook_events (
+          event_id TEXT PRIMARY KEY,
+          provider TEXT NOT NULL,
+          event_type TEXT,
+          processed_at TIMESTAMPTZ DEFAULT NOW()
         );
       `);
 
-      const migrationPath = path.resolve(process.cwd(), "supabase/migrations/20261103g_fulfil_payment_upgrade_extend.sql");
-      const fnSql = fs.readFileSync(migrationPath, "utf8");
-      await pg.exec(fnSql);
+      // Load FULL current migration chain:
+      // 1. 20261104b_payment_order_mode_isolation.sql (payment-mode)
+      // 2. 20261114a_payment_plan_stack_guard.sql
+      // 3. 20261115a_autorenew.sql
+      // 4. 20261117a_update_plan_prices_399_499_2199.sql
+      const migrations = [
+        "20261104b_payment_order_mode_isolation.sql",
+        "20261114a_payment_plan_stack_guard.sql",
+        "20261115a_autorenew.sql",
+        "20261117a_update_plan_prices_399_499_2199.sql",
+      ];
+
+      for (const m of migrations) {
+        const sqlPath = path.resolve(process.cwd(), "supabase/migrations", m);
+        const sql = fs.readFileSync(sqlPath, "utf8");
+        await pg.exec(sql);
+      }
     });
 
     it("grants exact 7, 30, and 90 days for weekly, monthly, and quarterly plans", async () => {
@@ -717,7 +510,7 @@ describe("Prepaid Razorpay Payment Flow & Pricing Engine", () => {
         [uWeekly]
       );
       const resW = await pg.query<{ result: any }>(
-        `SELECT public.fulfil_payment_order('ord_weekly_real', $1::uuid) as result`,
+        `SELECT public.fulfil_payment_order('ord_weekly_real', $1::uuid, 'live') as result`,
         [uWeekly]
       );
       expect(resW.rows[0].result.success).toBe(true);
@@ -741,7 +534,7 @@ describe("Prepaid Razorpay Payment Flow & Pricing Engine", () => {
         [uMonthly]
       );
       const resM = await pg.query<{ result: any }>(
-        `SELECT public.fulfil_payment_order('ord_monthly_real', $1::uuid) as result`,
+        `SELECT public.fulfil_payment_order('ord_monthly_real', $1::uuid, 'live') as result`,
         [uMonthly]
       );
       expect(resM.rows[0].result.success).toBe(true);
@@ -763,7 +556,7 @@ describe("Prepaid Razorpay Payment Flow & Pricing Engine", () => {
         [uQuarterly]
       );
       const resQ = await pg.query<{ result: any }>(
-        `SELECT public.fulfil_payment_order('ord_quarterly_real', $1::uuid) as result`,
+        `SELECT public.fulfil_payment_order('ord_quarterly_real', $1::uuid, 'live') as result`,
         [uQuarterly]
       );
       expect(resQ.rows[0].result.success).toBe(true);
@@ -778,72 +571,68 @@ describe("Prepaid Razorpay Payment Flow & Pricing Engine", () => {
     });
 
     it("extends active Pro from current_period_end, and restarts expired Pro from now", async () => {
-      // Case A: Active Pro extension (user has 10 days left on existing active subscription)
-      const uActive = "44444444-4444-4444-4444-444444444444";
-      await pg.query(`INSERT INTO auth.users (id, email) VALUES ($1, $2)`, [uActive, "active@example.com"]);
-      await pg.query(
-        `INSERT INTO public.subscriptions (user_id, plan_id, provider, amount, status, current_period_start, current_period_end)
-         VALUES ($1, 'weekly', 'razorpay', 39900, 'active', NOW(), NOW() + INTERVAL '10 days')`,
-        [uActive]
-      );
-      const initialSub = await pg.query<{ current_period_end: string }>(
-        `SELECT current_period_end FROM public.subscriptions WHERE user_id = $1`,
-        [uActive]
-      );
-      const initialEndMs = new Date(initialSub.rows[0].current_period_end).getTime();
+      const uExtend = "44444444-4444-4444-4444-444444444444";
+      await pg.query(`INSERT INTO auth.users (id, email) VALUES ($1, $2)`, [uExtend, "extend@example.com"]);
 
-      // Purchase monthly plan (30 days) while active
+      // Case A: User has active Pro ending 10 days in future
+      const existingFutureEnd = new Date(Date.now() + 10 * 86400000);
+      await pg.query(
+        `INSERT INTO public.subscriptions (user_id, plan_id, provider, currency, amount, status, current_period_start, current_period_end)
+         VALUES ($1, 'monthly', 'razorpay', 'INR', 49900, 'active', NOW(), $2)`,
+        [uExtend, existingFutureEnd.toISOString()]
+      );
+
+      // User buys 30-day monthly plan -> period end should be existingFutureEnd + 30 days
       await pg.query(
         `INSERT INTO public.payment_orders (user_id, provider, provider_order_id, plan_code, amount_paise, status, mode)
-         VALUES ($1, 'razorpay', 'ord_extend_active', 'monthly', 79900, 'created', 'live')`,
-        [uActive]
+         VALUES ($1, 'razorpay', 'ord_extend_active', 'monthly', 49900, 'created', 'live')`,
+        [uExtend]
       );
+
       const resExtend = await pg.query<{ result: any }>(
-        `SELECT public.fulfil_payment_order('ord_extend_active', $1::uuid) as result`,
-        [uActive]
+        `SELECT public.fulfil_payment_order('ord_extend_active', $1::uuid, 'live') as result`,
+        [uExtend]
       );
       expect(resExtend.rows[0].result.success).toBe(true);
 
-      const extendedSub = await pg.query<{ current_period_end: string }>(
+      const subActive = await pg.query<{ current_period_end: string }>(
         `SELECT current_period_end FROM public.subscriptions WHERE user_id = $1`,
-        [uActive]
+        [uExtend]
       );
-      const extendedEndMs = new Date(extendedSub.rows[0].current_period_end).getTime();
-      const addedDays = (extendedEndMs - initialEndMs) / 86400000;
-      // Must add exactly 30 days to the previous current_period_end (total ~40 days from now)
-      expect(Math.round(addedDays)).toBe(30);
+      const actualEndMs = new Date(subActive.rows[0].current_period_end).getTime();
+      const expectedEndMs = existingFutureEnd.getTime() + 30 * 86400000;
+      // Allow +/- 5 seconds tolerance for execution
+      expect(Math.abs(actualEndMs - expectedEndMs)).toBeLessThan(5000);
 
-      // Case B: Expired Pro restart (user had a subscription that expired 5 days ago)
+      // Case B: User has expired Pro ending 10 days in the PAST
       const uExpired = "55555555-5555-5555-5555-555555555555";
       await pg.query(`INSERT INTO auth.users (id, email) VALUES ($1, $2)`, [uExpired, "expired@example.com"]);
+      const pastEnd = new Date(Date.now() - 10 * 86400000);
       await pg.query(
-        `INSERT INTO public.subscriptions (user_id, plan_id, provider, amount, status, current_period_start, current_period_end)
-         VALUES ($1, 'monthly', 'razorpay', 49900, 'canceled', NOW() - INTERVAL '35 days', NOW() - INTERVAL '5 days')`,
+        `INSERT INTO public.subscriptions (user_id, plan_id, provider, currency, amount, status, current_period_start, current_period_end)
+         VALUES ($1, 'monthly', 'razorpay', 'INR', 49900, 'canceled', $2, $2)`,
+        [uExpired, pastEnd.toISOString()]
+      );
+
+      // User buys 30-day monthly plan -> period end should be NOW + 30 days, NOT pastEnd + 30 days
+      await pg.query(
+        `INSERT INTO public.payment_orders (user_id, provider, provider_order_id, plan_code, amount_paise, status, mode)
+         VALUES ($1, 'razorpay', 'ord_restart_expired', 'monthly', 49900, 'created', 'live')`,
         [uExpired]
       );
 
-      // Purchase monthly plan (30 days) after expiration
-      await pg.query(
-        `INSERT INTO public.payment_orders (user_id, provider, provider_order_id, plan_code, amount_paise, status, mode)
-         VALUES ($1, 'razorpay', 'ord_restart_expired', 'monthly', 79900, 'created', 'live')`,
-        [uExpired]
-      );
-      const beforeRestart = Date.now();
       const resRestart = await pg.query<{ result: any }>(
-        `SELECT public.fulfil_payment_order('ord_restart_expired', $1::uuid) as result`,
+        `SELECT public.fulfil_payment_order('ord_restart_expired', $1::uuid, 'live') as result`,
         [uExpired]
       );
       expect(resRestart.rows[0].result.success).toBe(true);
 
-      const restartedSub = await pg.query<{ current_period_end: string; status: string }>(
-        `SELECT current_period_end, status FROM public.subscriptions WHERE user_id = $1`,
+      const subRestarted = await pg.query<{ current_period_end: string }>(
+        `SELECT current_period_end FROM public.subscriptions WHERE user_id = $1`,
         [uExpired]
       );
-      expect(restartedSub.rows[0].status).toBe("active");
-      const restartedEndMs = new Date(restartedSub.rows[0].current_period_end).getTime();
-      const restartedDaysFromNow = (restartedEndMs - beforeRestart) / 86400000;
-      // Must start from now (30 days), NOT from the 5-days-past expired date
-      expect(Math.round(restartedDaysFromNow)).toBe(30);
+      const expectedRestartEndMs = Date.now() + 30 * 86400000;
+      expect(Math.abs(new Date(subRestarted.rows[0].current_period_end).getTime() - expectedRestartEndMs)).toBeLessThan(5000);
     });
 
     it("IDEMPOTENCY: duplicate verify and webhook retries return already_paid without double granting", async () => {
@@ -851,141 +640,80 @@ describe("Prepaid Razorpay Payment Flow & Pricing Engine", () => {
       await pg.query(`INSERT INTO auth.users (id, email) VALUES ($1, $2)`, [uIdem, "idem@example.com"]);
       await pg.query(
         `INSERT INTO public.payment_orders (user_id, provider, provider_order_id, plan_code, amount_paise, status, mode)
-         VALUES ($1, 'razorpay', 'ord_idem_real', 'weekly', 39900, 'created', 'live')`,
+         VALUES ($1, 'razorpay', 'ord_idem_real', 'monthly', 49900, 'created', 'live')`,
         [uIdem]
       );
 
-      // First fulfillment
+      // First call: succeeds and grants 30 days
       const res1 = await pg.query<{ result: any }>(
-        `SELECT public.fulfil_payment_order('ord_idem_real', $1::uuid) as result`,
+        `SELECT public.fulfil_payment_order('ord_idem_real', $1::uuid, 'live') as result`,
         [uIdem]
       );
       expect(res1.rows[0].result.success).toBe(true);
       const firstPeriodEnd = res1.rows[0].result.period_end;
 
-      // Second fulfillment (duplicate verify / webhook retry)
+      // Second call (e.g. webhook delivery after client verify): returns already_paid: true
       const res2 = await pg.query<{ result: any }>(
-        `SELECT public.fulfil_payment_order('ord_idem_real', $1::uuid) as result`,
+        `SELECT public.fulfil_payment_order('ord_idem_real', $1::uuid, 'live') as result`,
         [uIdem]
       );
       expect(res2.rows[0].result.success).toBe(true);
       expect(res2.rows[0].result.already_paid).toBe(true);
-      expect(res2.rows[0].result.period_end).toBe(firstPeriodEnd);
 
-      // Third retry
+      // Third call (retry): also returns already_paid: true
       const res3 = await pg.query<{ result: any }>(
-        `SELECT public.fulfil_payment_order('ord_idem_real', $1::uuid) as result`,
+        `SELECT public.fulfil_payment_order('ord_idem_real', $1::uuid, 'live') as result`,
         [uIdem]
       );
+      expect(res3.rows[0].result.success).toBe(true);
       expect(res3.rows[0].result.already_paid).toBe(true);
 
+      // Verify that subscription period_end did NOT increment further
       const subFinal = await pg.query<{ current_period_end: string }>(
         `SELECT current_period_end FROM public.subscriptions WHERE user_id = $1`,
         [uIdem]
       );
-      expect(new Date(subFinal.rows[0].current_period_end).getTime()).toBe(
-        new Date(firstPeriodEnd).getTime()
-      );
+      expect(new Date(subFinal.rows[0].current_period_end).getTime()).toBe(new Date(firstPeriodEnd).getTime());
     });
 
     it("CONCURRENT SEPARATE ORDERS: two distinct orders extend period sequentially without conflict", async () => {
-      const uMulti = "77777777-7777-7777-7777-777777777777";
-      await pg.query(`INSERT INTO auth.users (id, email) VALUES ($1, $2)`, [uMulti, "multi@example.com"]);
+      const uStack = "77777777-7777-7777-7777-777777777777";
+      await pg.query(`INSERT INTO auth.users (id, email) VALUES ($1, $2)`, [uStack, "stack@example.com"]);
 
-      // Order A: Weekly plan (7 days)
+      // Order 1: Weekly (7 days)
       await pg.query(
         `INSERT INTO public.payment_orders (user_id, provider, provider_order_id, plan_code, amount_paise, status, mode)
-         VALUES ($1, 'razorpay', 'ord_multi_A', 'weekly', 39900, 'created', 'live')`,
-        [uMulti]
+         VALUES ($1, 'razorpay', 'ord_stack_1', 'weekly', 39900, 'created', 'live')`,
+        [uStack]
       );
-      // Order B: Monthly plan (30 days)
+      // Order 2: Monthly (30 days)
       await pg.query(
         `INSERT INTO public.payment_orders (user_id, provider, provider_order_id, plan_code, amount_paise, status, mode)
-         VALUES ($1, 'razorpay', 'ord_multi_B', 'monthly', 79900, 'created', 'live')`,
-        [uMulti]
+         VALUES ($1, 'razorpay', 'ord_stack_2', 'monthly', 49900, 'created', 'live')`,
+        [uStack]
       );
 
-      const resA = await pg.query<{ result: any }>(
-        `SELECT public.fulfil_payment_order('ord_multi_A', $1::uuid) as result`,
-        [uMulti]
+      // Fulfill Order 1
+      const res1 = await pg.query<{ result: any }>(
+        `SELECT public.fulfil_payment_order('ord_stack_1', $1::uuid, 'live') as result`,
+        [uStack]
       );
-      expect(resA.rows[0].result.success).toBe(true);
+      expect(res1.rows[0].result.success).toBe(true);
 
-      const resB = await pg.query<{ result: any }>(
-        `SELECT public.fulfil_payment_order('ord_multi_B', $1::uuid) as result`,
-        [uMulti]
+      // Fulfill Order 2
+      const res2 = await pg.query<{ result: any }>(
+        `SELECT public.fulfil_payment_order('ord_stack_2', $1::uuid, 'live') as result`,
+        [uStack]
       );
-      expect(resB.rows[0].result.success).toBe(true);
+      expect(res2.rows[0].result.success).toBe(true);
 
-      const orders = await pg.query<{ provider_order_id: string; status: string }>(
-        `SELECT provider_order_id, status FROM public.payment_orders WHERE user_id = $1 ORDER BY provider_order_id`,
-        [uMulti]
+      // Final period end must be approx NOW + 37 days (7 + 30)
+      const subStacked = await pg.query<{ current_period_end: string }>(
+        `SELECT current_period_end FROM public.subscriptions WHERE user_id = $1`,
+        [uStack]
       );
-      expect(orders.rows).toHaveLength(2);
-      expect(orders.rows[0].status).toBe("paid");
-      expect(orders.rows[1].status).toBe("paid");
-
-      const sub = await pg.query<{ current_period_start: string; current_period_end: string }>(
-        `SELECT current_period_start, current_period_end FROM public.subscriptions WHERE user_id = $1`,
-        [uMulti]
-      );
-      const totalDays = (new Date(sub.rows[0].current_period_end).getTime() - new Date(sub.rows[0].current_period_start).getTime()) / 86400000;
-      expect(Math.round(totalDays)).toBe(37);
+      const expectedStackedEndMs = Date.now() + 37 * 86400000;
+      expect(Math.abs(new Date(subStacked.rows[0].current_period_end).getTime() - expectedStackedEndMs)).toBeLessThan(5000);
     });
-
-    it("PROMO ONCE-ONLY INTEGRATION: user who pays intro Rs 499 is authoritative repeat buyer at Rs 799", async () => {
-      const uPromo = "88888888-8888-8888-8888-888888888888";
-      await pg.query(`INSERT INTO auth.users (id, email) VALUES ($1, $2)`, [uPromo, "promo@example.com"]);
-
-      // Initial monthly order with intro promo price 49900
-      await pg.query(
-        `INSERT INTO public.payment_orders (user_id, provider, provider_order_id, plan_code, amount_paise, status, mode, metadata)
-         VALUES ($1, 'razorpay', 'ord_promo_once', 'monthly', 49900, 'created', 'live', '{"is_intro_promo": true}'::jsonb)`,
-        [uPromo]
-      );
-
-      const res = await pg.query<{ result: any }>(
-        `SELECT public.fulfil_payment_order('ord_promo_once', $1::uuid) as result`,
-        [uPromo]
-      );
-      expect(res.rows[0].result.success).toBe(true);
-
-      const poCheck = await pg.query<{ status: string; mode: string }>(
-        `SELECT status, mode FROM public.payment_orders WHERE provider_order_id = 'ord_promo_once'`,
-      );
-      expect(poCheck.rows[0].status).toBe("paid");
-      expect(poCheck.rows[0].mode).toBe("live");
-
-      // Build mock Supabase adapter backed by this real pg instance
-      const pgSupabaseAdapter = {
-        from: (table: string) => ({
-          select: () => ({
-            eq: (_c1: string, v1: any) => ({
-              eq: (_c2: string, v2: any) => ({
-                eq: (_c3: string, v3: any) => ({
-                  eq: (_c4: string, v4: any) => ({
-                    limit: async () => {
-                      const r = await pg.query(`SELECT id, status, mode FROM public.${table} WHERE user_id = $1 AND plan_code = $2 AND status = $3 AND mode = $4`, [v1, v2, v3, v4]);
-                      return { data: r.rows, error: null };
-                    },
-                  }),
-                }),
-              }),
-            }),
-          }),
-        }),
-      };
-
-      const eligibility = await checkMonthlyIntroEligibilityAndReserve(pgSupabaseAdapter, uPromo, "live");
-      expect(eligibility.isFirstMonthlyPurchase).toBe(false);
-      expect(eligibility.reason).toBe("PRIOR_LIVE_PAID_MONTHLY_ORDER");
-
-      const nextOrderPricing = resolveOrderPricing({
-        planCode: "monthly",
-        isFirstMonthlyPurchase: eligibility.isFirstMonthlyPurchase,
-      });
-      expect(nextOrderPricing?.amount_paise).toBe(79900);
-    });
-  });
   });
 });

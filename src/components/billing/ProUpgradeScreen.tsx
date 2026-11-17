@@ -14,6 +14,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { PLAN_PRICING, formatPriceINR } from "@/config/plans";
 
 interface ProUpgradeScreenProps {
   title?: string;
@@ -91,8 +92,10 @@ export default function ProUpgradeScreen({
                 : "text-ink-muted hover:text-ink"
             }`}
           >
-            <span>Weekly</span>
-            <span className="text-[11px] font-semibold text-ink-muted">₹399 / 7d</span>
+            <span>{PLAN_PRICING.weekly.name}</span>
+            <span className="text-[11px] font-semibold text-ink-muted">
+              {formatPriceINR(PLAN_PRICING.weekly.price_inr)} / {PLAN_PRICING.weekly.duration_days}d
+            </span>
           </button>
           <button
             type="button"
@@ -103,8 +106,10 @@ export default function ProUpgradeScreen({
                 : "text-ink-muted hover:text-ink"
             }`}
           >
-            <span>Monthly</span>
-            <span className="text-[11px] font-semibold text-ink-muted">₹499 / 30d</span>
+            <span>{PLAN_PRICING.monthly.name}</span>
+            <span className="text-[11px] font-semibold text-ink-muted">
+              {formatPriceINR(PLAN_PRICING.monthly.price_inr)} / {PLAN_PRICING.monthly.duration_days}d
+            </span>
           </button>
           <button
             type="button"
@@ -115,8 +120,10 @@ export default function ProUpgradeScreen({
                 : "text-ink-muted hover:text-ink"
             }`}
           >
-            <span>Quarterly</span>
-            <span className="text-[11px] font-semibold text-ink-muted">₹2,199 / 90d</span>
+            <span>{PLAN_PRICING.quarterly.name}</span>
+            <span className="text-[11px] font-semibold text-ink-muted">
+              {formatPriceINR(PLAN_PRICING.quarterly.price_inr)} / {PLAN_PRICING.quarterly.duration_days}d
+            </span>
           </button>
         </div>
 

@@ -182,15 +182,10 @@ describe("Billing Mode, Plan Mapping & Entitlements", () => {
           duration_days: 7,
         });
 
-        // Default / first monthly purchase: Rs 499 (49900 paise)
-        const monthlyFirst = resolveOrderPricing({ planId: "monthly" });
-        expect(monthlyFirst?.amount_paise).toBe(49900);
-        expect(monthlyFirst?.duration_days).toBe(30);
-
-        // Repeat monthly purchase: Rs 799 (79900 paise)
-        const monthlyRepeat = resolveOrderPricing({ planId: "monthly", isFirstMonthlyPurchase: false });
-        expect(monthlyRepeat?.amount_paise).toBe(79900);
-        expect(monthlyRepeat?.duration_days).toBe(30);
+        // Flat monthly purchase: Rs 499 (49900 paise) for everyone
+        const monthly = resolveOrderPricing({ planId: "monthly" });
+        expect(monthly?.amount_paise).toBe(49900);
+        expect(monthly?.duration_days).toBe(30);
 
         const quarterly = resolveOrderPricing({ planCode: "quarterly" });
         expect(quarterly?.amount_paise).toBe(219900);

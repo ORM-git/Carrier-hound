@@ -2,8 +2,6 @@ import { createClient } from "@supabase/supabase-js";
 import {
   resolveOrderPricing,
   normalizePlanCode,
-  checkMonthlyIntroEligibilityAndReserve,
-  releaseMonthlyIntroReservation,
 } from "../../src/lib/billing/quota";
 import { getServerEntitlement } from "../../src/lib/billing/serverEntitlement";
 import { getRazorpayKeyMode } from "../../src/lib/billing/mode";
@@ -269,37 +267,10 @@ export function createHandler(deps: BillingOrderDeps = {}) {
         }
       }
 
-      // Server-side first-month check: authoritative and fail-closed
-      let isFirstMonthlyPurchase = true;
-      const requestedPlanCode = normalizePlanCode(
-        body.planCode || body.planId || (!body.addonCode && !body.planCode ? "monthly" : null)
-      );
-      if (requestedPlanCode === "monthly") {
-        if (typeof (deps as any)?.checkMonthlyIntroEligibilityAndReserve === "function") {
-          const eligibility = await (deps as any).checkMonthlyIntroEligibilityAndReserve(
-            supabaseAdmin,
-            user.id,
-            configuredMode
-          );
-          isFirstMonthlyPurchase = eligibility.isFirstMonthlyPurchase;
-        } else if (typeof (deps as any)?.hasEarlierSuccessfulMonthlyPayment === "function") {
-          const hasEarlier = await (deps as any).hasEarlierSuccessfulMonthlyPayment(supabaseAdmin, user.id);
-          isFirstMonthlyPurchase = !hasEarlier;
-        } else {
-          const eligibility = await checkMonthlyIntroEligibilityAndReserve(
-            supabaseAdmin,
-            user.id,
-            configuredMode
-          );
-          isFirstMonthlyPurchase = eligibility.isFirstMonthlyPurchase;
-        }
-      }
-
       const pricing = resolveOrderPricing({
         planCode: body.planCode,
         planId: body.planId || (!body.addonCode && !body.planCode ? "monthly" : undefined),
         addonCode: body.addonCode,
-        isFirstMonthlyPurchase,
       });
 
       if (!pricing) {
@@ -418,9 +389,6 @@ export function createHandler(deps: BillingOrderDeps = {}) {
       });
 
       if (!rzpRes.ok) {
-        if (requestedPlanCode === "monthly" && isFirstMonthlyPurchase) {
-          await releaseMonthlyIntroReservation(supabaseAdmin, user.id).catch(() => {});
-        }
         const err = await rzpRes.json().catch(() => ({}));
         return {
           statusCode: rzpRes.status || 500,
@@ -434,8 +402,6 @@ export function createHandler(deps: BillingOrderDeps = {}) {
       const orderData: any = await rzpRes.json();
 
       // Record in payment_orders table with status 'created' and resolved server mode
-      const isIntroPromo =
-        pricing.type === "plan" && pricing.code === "monthly" && isFirstMonthlyPurchase;
       const insertResult = supabaseAdmin.from("payment_orders").insert({
         user_id: user.id,
         provider: "razorpay",
@@ -446,9 +412,6 @@ export function createHandler(deps: BillingOrderDeps = {}) {
         currency,
         status: "created",
         mode: resolvedMode,
-        metadata: {
-          is_intro_promo: isIntroPromo,
-        },
       });
 
       let orderRow: any = null;
@@ -464,9 +427,6 @@ export function createHandler(deps: BillingOrderDeps = {}) {
       }
 
       if (insertErr) {
-        if (requestedPlanCode === "monthly" && isFirstMonthlyPurchase) {
-          await releaseMonthlyIntroReservation(supabaseAdmin, user.id).catch(() => {});
-        }
         safeLog.error("[Netlify /billing-razorpay-order] payment_orders insert failed:", insertErr);
         return {
           statusCode: 500,
@@ -476,21 +436,6 @@ export function createHandler(deps: BillingOrderDeps = {}) {
             code: "ORDER_RECORD_FAILED",
           }),
         };
-      }
-
-      if (isIntroPromo && orderRow?.id) {
-        try {
-          await supabaseAdmin
-            .from("intro_promo_reservations")
-            .update({
-              order_id: orderRow.id,
-              provider_order_id: orderData.id,
-            })
-            .eq("user_id", user.id)
-            .eq("status", "active");
-        } catch {
-          // Non-fatal reservation metadata update
-        }
       }
 
       return {
