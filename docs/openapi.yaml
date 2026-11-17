@@ -279,6 +279,15 @@ paths:
       summary: Current user quota status
       responses:
         "200": { description: Quota payload }
+  /api/onboarding:
+    post:
+      tags: [account]
+      summary: Save onboarding preferences
+      description: Validates and saves onboarding preferences for authenticated users.
+      responses:
+        "200": { description: Onboarding preferences saved }
+        "400": { description: Invalid parameters }
+        "401": { description: Unauthorized }
   /api/radar:
     get:
       tags: [public]
