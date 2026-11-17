@@ -105,11 +105,26 @@ async function denied(p: Promise<any>, label: string) {
   assert.fail(`${label}: expected denial`);
 }
 
+/** Per-fixture lifecycle: boot a fresh PGlite, run the test, always close it before the next fixture. */
+let openInstances = 0;
+async function withFixture(name: string, fn: (pg: PGlite) => Promise<void>) {
+  assert.equal(openInstances, 0, `${name}: previous PGlite fixture was not closed`);
+  const pg = await boot();
+  openInstances++;
+  try {
+    await fn(pg);
+  } finally {
+    await pg.close();
+    openInstances--;
+    assert.ok(pg.closed, `${name}: PGlite instance did not close`);
+  }
+}
+
 async function main() {
   console.log("Onboarding resume uploads migration (PGlite)");
 
   // ---------- happy path ----------
-  const pg = await boot();
+  await withFixture("happy path", async (pg) => {
   const bucketBefore = await pg.query(`SELECT row_to_json(b)::text AS j FROM storage.buckets b WHERE id='resumes'`);
   const policiesBefore = await pg.query(
     `SELECT string_agg(policyname||cmd||coalesce(qual,'')||coalesce(with_check,''), '|' ORDER BY policyname) AS j FROM pg_policies WHERE schemaname='storage'`
@@ -192,10 +207,10 @@ async function main() {
   const bucketPostRollback = await pg.query(`SELECT row_to_json(b)::text AS j FROM storage.buckets b WHERE id='resumes'`);
   assert.deepEqual(bucketPostRollback.rows, bucketBefore.rows);
   ok("guarded rollback: renames (keeps rows), drops marked function, bucket untouched, re-runnable");
+  });
 
   // ---------- refusals ----------
-  {
-    const p = await boot();
+  await withFixture("refusal fixture 1", async (p) => {
     await p.exec(`CREATE POLICY "sneaky_resume_insert" ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id = 'resumes')`);
     await refuses(p, /unexpected client write policy.*sneaky_resume_insert/, "sneaky policy");
     await p.exec(`DROP POLICY "sneaky_resume_insert" ON storage.objects;
@@ -204,10 +219,9 @@ async function main() {
     const exists = await p.query(`SELECT to_regclass('public.onboarding_resume_uploads') AS t`);
     assert.equal(exists.rows[0].t, null, "refused migration must leave nothing behind");
     ok("preflight refuses unexpected client INSERT/UPDATE policy (with details) and rolls back");
-  }
-  {
+  });
+  await withFixture("refusal fixture 2", async (p) => {
     // Owner-folder policies (the shape earlier migrations used) reach <uid>/onboarding/: refuse, by shape not name.
-    const p = await boot();
     const REACH = /unexpected client write policy.*can reach resumes/;
     await p.exec(`CREATE POLICY "Owner can insert own resume files" ON storage.objects FOR INSERT TO authenticated
       WITH CHECK (bucket_id = 'resumes' AND (storage.foldername(name))[1] = auth.uid()::text)`);
@@ -258,10 +272,9 @@ async function main() {
     const exists = await p.query(`SELECT to_regclass('public.onboarding_resume_uploads') AS t`);
     assert.equal(exists.rows[0].t, null, "refused migration must leave nothing behind");
     ok("preflight refuses owner-folder, inherited-role, OR-escaped, UPDATE-USING, ALL and RLS-off write paths");
-  }
-  {
+  });
+  await withFixture("refusal fixture 3", async (p) => {
     // Policies that provably exclude onboarding/ (or another bucket, or non-client roles) pass.
-    const p = await boot();
     await p.exec(`
       CREATE POLICY "owner_insert_not_onboarding" ON storage.objects FOR INSERT TO authenticated
         WITH CHECK (bucket_id = 'resumes' AND (storage.foldername(name))[1] = auth.uid()::text
@@ -281,23 +294,20 @@ async function main() {
     const after = await p.query(`SELECT string_agg(policyname||coalesce(qual,'')||coalesce(with_check,''), '|' ORDER BY policyname) AS j FROM pg_policies WHERE schemaname='storage'`);
     assert.deepEqual(after.rows, before.rows, "storage policies must be unchanged");
     ok("preflight passes policies that provably exclude onboarding/, other buckets, service_role and restrictive ones");
-  }
-  {
-    const p = await boot();
+  });
+  await withFixture("refusal fixture 4", async (p) => {
     await p.exec(`CREATE TABLE public.onboarding_resume_uploads (user_id uuid primary key, storage_path text)`);
     await refuses(p, /not created by this migration/, "foreign table");
     await p.exec(`COMMENT ON TABLE public.onboarding_resume_uploads IS 'created-by:20261118_onboarding_resume_uploads'`);
     await refuses(p, /incompatible columns/, "incompatible table");
     ok("preflight refuses a foreign or incompatible existing table");
-  }
-  {
-    const p = await boot();
+  });
+  await withFixture("refusal fixture 5", async (p) => {
     await p.exec(`CREATE FUNCTION public.list_onboarding_resume_orphans(p_limit integer) RETURNS SETOF text LANGUAGE sql AS $$ SELECT 'x' $$`);
     await refuses(p, /incompatible or foreign public\.list_onboarding_resume_orphans/, "foreign function");
     ok("preflight refuses an incompatible or foreign existing function");
-  }
-  {
-    const p = await boot();
+  });
+  await withFixture("refusal fixture 6", async (p) => {
     await p.exec(`CREATE TABLE public.onboarding_resume_uploads_x (id int)`);
     await p.exec(rollbackSql());
     await p.exec(`CREATE TABLE public.onboarding_resume_uploads (id int)`);
@@ -305,7 +315,7 @@ async function main() {
     const still = await p.query(`SELECT to_regclass('public.onboarding_resume_uploads') AS t`);
     assert.ok(still.rows[0].t, "rollback must not touch an unmarked table");
     ok("guarded rollback skips objects this migration did not create");
-  }
+  });
 
   console.log(`\nALL ${passed} onboarding resume migration checks passed [PASS-LOCAL]`);
 }
