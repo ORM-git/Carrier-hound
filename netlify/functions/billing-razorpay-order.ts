@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { resolveOrderPricing } from "../../src/lib/billing/quota";
+import { resolveOrderPricing, normalizePlanCode } from "../../src/lib/billing/quota";
 import { getServerEntitlement } from "../../src/lib/billing/serverEntitlement";
 import { getRazorpayKeyMode } from "../../src/lib/billing/mode";
 import { verifyUserNotBanned } from "../../src/lib/admin/auth";
@@ -264,10 +264,49 @@ export function createHandler(deps: BillingOrderDeps = {}) {
         }
       }
 
+      // Server-side first-month check: no earlier successful monthly payment for that user
+      let isFirstMonthlyPurchase = true;
+      const requestedPlanCode = normalizePlanCode(
+        body.planCode || body.planId || (!body.addonCode && !body.planCode ? "monthly" : null)
+      );
+      if (requestedPlanCode === "monthly") {
+        if (typeof (deps as any)?.hasEarlierSuccessfulMonthlyPayment === "function") {
+          const hasEarlier = await (deps as any).hasEarlierSuccessfulMonthlyPayment(supabaseAdmin, user.id);
+          isFirstMonthlyPurchase = !hasEarlier;
+        } else if (typeof supabaseAdmin?.from === "function") {
+          try {
+            const { data: paidOrders } = await supabaseAdmin
+              .from("payment_orders")
+              .select("id")
+              .eq("user_id", user.id)
+              .eq("plan_code", "monthly")
+              .eq("status", "paid")
+              .limit(1);
+
+            if (paidOrders && paidOrders.length > 0) {
+              isFirstMonthlyPurchase = false;
+            } else {
+              const { data: subs } = await supabaseAdmin
+                .from("subscriptions")
+                .select("id, plan_id")
+                .eq("user_id", user.id)
+                .limit(5);
+
+              if (subs && subs.some((s: any) => s.plan_id === "monthly" || s.plan_id?.toLowerCase()?.includes("month"))) {
+                isFirstMonthlyPurchase = false;
+              }
+            }
+          } catch {
+            // fallback
+          }
+        }
+      }
+
       const pricing = resolveOrderPricing({
         planCode: body.planCode,
         planId: body.planId || (!body.addonCode && !body.planCode ? "monthly" : undefined),
         addonCode: body.addonCode,
+        isFirstMonthlyPurchase,
       });
 
       if (!pricing) {

@@ -457,7 +457,7 @@ async function runAutorenewTests() {
     provider: "razorpay",
     provider_order_id: "sub_rzp_reused_monthly_999",
     plan_code: "monthly",
-    amount_paise: 149900,
+    amount_paise: 79900,
     status: "created",
   });
   let rzpCalledOnReuse = false;
@@ -529,19 +529,19 @@ async function runAutorenewTests() {
       planCode: "weekly",
       expectedPlanId: "plan_weekly_123",
       expectedTotalCount: 52, // 52 weeks = 1 year
-      expectedAmountPaise: 69200,
+      expectedAmountPaise: 39900,
     },
     {
       planCode: "monthly",
       expectedPlanId: "plan_monthly_456",
       expectedTotalCount: 12, // 12 months = 1 year
-      expectedAmountPaise: 149900,
+      expectedAmountPaise: 79900,
     },
     {
       planCode: "quarterly",
       expectedPlanId: "plan_quarterly_789",
       expectedTotalCount: 4, // 4 quarters = 1 year
-      expectedAmountPaise: 399900,
+      expectedAmountPaise: 219900,
     },
   ];
 

@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { getServerEntitlement } from "./serverEntitlement";
+import { PLAN_PRICING, getPlanPricePaise } from "@/config/plans";
 
 import { createLogger } from "@/lib/observability/logger";
 
@@ -24,8 +25,8 @@ export const PLAN_DEFINITIONS: Record<PlanCode, PlanDefinition> = {
   weekly: {
     code: "weekly",
     name: "Weekly",
-    duration_days: 7,
-    price_paise: 69200,
+    duration_days: PLAN_PRICING.weekly.duration_days,
+    price_paise: PLAN_PRICING.weekly.price_paise,
     resume_quota: 15,
     cover_letter_quota: 15,
     quota_period_days: 7,
@@ -36,8 +37,8 @@ export const PLAN_DEFINITIONS: Record<PlanCode, PlanDefinition> = {
   monthly: {
     code: "monthly",
     name: "Monthly",
-    duration_days: 30,
-    price_paise: 149900,
+    duration_days: PLAN_PRICING.monthly.duration_days,
+    price_paise: PLAN_PRICING.monthly.price_paise,
     resume_quota: 60,
     cover_letter_quota: 60,
     quota_period_days: 30,
@@ -48,8 +49,8 @@ export const PLAN_DEFINITIONS: Record<PlanCode, PlanDefinition> = {
   quarterly: {
     code: "quarterly",
     name: "Quarterly",
-    duration_days: 90,
-    price_paise: 399900,
+    duration_days: PLAN_PRICING.quarterly.duration_days,
+    price_paise: PLAN_PRICING.quarterly.price_paise,
     resume_quota: 60,
     cover_letter_quota: 60,
     quota_period_days: 30,
@@ -107,7 +108,7 @@ export interface ResolvedOrderPricing {
 
 /**
  * Central plan normalization shared across order pricing and subscription derivation.
- * Ensures "3_month" maps to "quarterly" (3999), not monthly.
+ * Ensures "3_month" maps to "quarterly" (2199), not monthly.
  */
 export function normalizePlanCode(raw?: string | null): PlanCode | null {
   if (!raw || typeof raw !== "string") return null;
@@ -133,11 +134,13 @@ export function normalizePlanCode(raw?: string | null): PlanCode | null {
 /**
  * Server-authoritative order price resolution.
  * Ignores any client-supplied amount; retrieves exact price_paise from plans/addon_packs catalog.
+ * Supports first-time monthly purchase (Rs 499) vs repeat monthly purchase (Rs 799).
  */
 export function resolveOrderPricing(input: {
   planCode?: string | null;
   planId?: string | null;
   addonCode?: string | null;
+  isFirstMonthlyPurchase?: boolean;
 }): ResolvedOrderPricing | null {
   if (input.addonCode) {
     const addon = ADDON_PACK_DEFINITIONS[input.addonCode];
@@ -173,11 +176,15 @@ export function resolveOrderPricing(input: {
 
     const plan = PLAN_DEFINITIONS[code];
     if (!plan) return null;
+
+    const isFirst = input.isFirstMonthlyPurchase !== false;
+    const amount_paise = getPlanPricePaise(code, isFirst);
+
     return {
       type: "plan",
       code: plan.code,
       name: plan.name,
-      amount_paise: plan.price_paise,
+      amount_paise,
       currency: "INR",
       duration_days: plan.duration_days,
     };
@@ -456,3 +463,52 @@ export async function getPlanQuota(
     return FREE_QUOTA_DEFAULT;
   }
 }
+
+/**
+ * Checks whether the user has had any earlier successful monthly payment.
+ * First-month price (Rs 499) applies only if no prior successful monthly payment exists.
+ * Every later monthly purchase is Rs 799.
+ */
+export async function hasEarlierSuccessfulMonthlyPayment(
+  supabaseAdmin: any,
+  userId: string
+): Promise<boolean> {
+  if (!supabaseAdmin || !userId) return false;
+
+  try {
+    if (typeof supabaseAdmin.from === "function") {
+      // 1. Look for any prior paid order for monthly plan
+      const { data: paidOrders, error: orderErr } = await supabaseAdmin
+        .from("payment_orders")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("plan_code", "monthly")
+        .eq("status", "paid")
+        .limit(1);
+
+      if (!orderErr && paidOrders && paidOrders.length > 0) {
+        return true;
+      }
+
+      // 2. Also check subscriptions table if user previously had or currently has a monthly subscription
+      const { data: subs, error: subErr } = await supabaseAdmin
+        .from("subscriptions")
+        .select("id, plan_id")
+        .eq("user_id", userId)
+        .limit(5);
+
+      if (!subErr && subs && subs.length > 0) {
+        for (const s of subs) {
+          if (s.plan_id === "monthly" || s.plan_id?.toLowerCase()?.includes("month")) {
+            return true;
+          }
+        }
+      }
+    }
+  } catch {
+    // Non-fatal fallback
+  }
+
+  return false;
+}
+

@@ -572,11 +572,11 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
         const subscriptionData: any = await rzpRes.json();
 
         const PLAN_PAISE: Record<string, number> = {
-          weekly: 69200,
-          monthly: 149900,
-          quarterly: 399900,
+          weekly: 39900,
+          monthly: 79900,
+          quarterly: 219900,
         };
-        const amountInPaise = PLAN_PAISE[planCode] ?? 149900;
+        const amountInPaise = PLAN_PAISE[planCode] ?? 79900;
 
         // Record pending subscription order in payment_orders
         const { error: orderInsertErr } = await supabaseAdmin

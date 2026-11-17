@@ -277,7 +277,7 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
     expect(pendingOrder).toBeDefined();
     expect(pendingOrder.provider_order_id).toBe("sub_rzp_weekly_123456");
     expect(pendingOrder.plan_code).toBe("weekly");
-    expect(pendingOrder.amount_paise).toBe(69200);
+    expect(pendingOrder.amount_paise).toBe(39900);
     expect(pendingOrder.status).toBe("created");
   });
 
@@ -319,7 +319,7 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
     expect(pendingOrder).toBeDefined();
     expect(pendingOrder.provider_order_id).toBe("sub_rzp_monthly_654321");
     expect(pendingOrder.plan_code).toBe("monthly");
-    expect(pendingOrder.amount_paise).toBe(149900);
+    expect(pendingOrder.amount_paise).toBe(79900);
   });
 
   it("creates quarterly subscription with total_count=4 (1 year) and stores pending order separately", async () => {
@@ -360,7 +360,7 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
     expect(pendingOrder).toBeDefined();
     expect(pendingOrder.provider_order_id).toBe("sub_rzp_quarterly_987654");
     expect(pendingOrder.plan_code).toBe("quarterly");
-    expect(pendingOrder.amount_paise).toBe(399900);
+    expect(pendingOrder.amount_paise).toBe(219900);
   });
 
   it("does NOT overwrite existing active subscription_id or plan_id, storing pending subscription separately", async () => {
@@ -499,7 +499,7 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
       provider: "razorpay",
       provider_order_id: "sub_rzp_existing_pending_1",
       plan_code: "monthly",
-      amount_paise: 149900,
+      amount_paise: 79900,
       status: "created",
     });
 
@@ -530,7 +530,7 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
       provider: "razorpay",
       provider_order_id: "sub_rzp_pending_weekly",
       plan_code: "weekly",
-      amount_paise: 69200,
+      amount_paise: 39900,
       status: "created",
     });
 
@@ -592,7 +592,7 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
       provider: "razorpay",
       provider_order_id: "order_prepaid_123",
       plan_code: "monthly",
-      amount_paise: 149900,
+      amount_paise: 79900,
       status: "created",
       mode: "test",
     });
@@ -637,7 +637,7 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
       provider: "razorpay",
       provider_order_id: "sub_test_old",
       plan_code: "monthly",
-      amount_paise: 149900,
+      amount_paise: 79900,
       status: "created",
       mode: "test",
     });
@@ -682,7 +682,7 @@ describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () 
       provider: "razorpay",
       provider_order_id: "sub_live_existing_mandate",
       plan_code: "monthly",
-      amount_paise: 149900,
+      amount_paise: 79900,
       status: "created",
       mode: "live",
     });

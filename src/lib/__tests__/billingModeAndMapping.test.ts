@@ -177,17 +177,23 @@ describe("Billing Mode, Plan Mapping & Entitlements", () => {
           type: "plan",
           code: "weekly",
           name: PLAN_DEFINITIONS.weekly.name,
-          amount_paise: 69200,
+          amount_paise: 39900,
           currency: "INR",
           duration_days: 7,
         });
 
-        const monthly = resolveOrderPricing({ planId: "monthly" });
-        expect(monthly?.amount_paise).toBe(149900);
-        expect(monthly?.duration_days).toBe(30);
+        // Default / first monthly purchase: Rs 499 (49900 paise)
+        const monthlyFirst = resolveOrderPricing({ planId: "monthly" });
+        expect(monthlyFirst?.amount_paise).toBe(49900);
+        expect(monthlyFirst?.duration_days).toBe(30);
+
+        // Repeat monthly purchase: Rs 799 (79900 paise)
+        const monthlyRepeat = resolveOrderPricing({ planId: "monthly", isFirstMonthlyPurchase: false });
+        expect(monthlyRepeat?.amount_paise).toBe(79900);
+        expect(monthlyRepeat?.duration_days).toBe(30);
 
         const quarterly = resolveOrderPricing({ planCode: "quarterly" });
-        expect(quarterly?.amount_paise).toBe(399900);
+        expect(quarterly?.amount_paise).toBe(219900);
         expect(quarterly?.duration_days).toBe(90);
       });
 

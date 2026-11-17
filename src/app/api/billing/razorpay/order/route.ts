@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { resolveOrderPricing } from "@/lib/billing/quota";
+import {
+  resolveOrderPricing,
+  normalizePlanCode,
+  hasEarlierSuccessfulMonthlyPayment,
+} from "@/lib/billing/quota";
 import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
 import { getRazorpayKeyMode } from "@/lib/billing/mode";
 import { verifyUserNotBanned } from "@/lib/admin/auth";
@@ -175,6 +179,8 @@ async function checkAddonEligibility(
   return false;
 }
 
+
+
 export async function POST(req: Request) {
   const log = baseLog.child({ requestId: req?.headers.get("x-request-id") ?? "unknown" });
   const deps = (req as any).__testDeps || {};
@@ -295,11 +301,25 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json().catch(() => ({}));
+
+    // Server-side first-month check: no earlier successful monthly payment for that user
+    let isFirstMonthlyPurchase = true;
+    const requestedPlanCode = normalizePlanCode(
+      body.planCode || body.planId || (!body.addonCode && !body.planCode ? "monthly" : null)
+    );
+    if (requestedPlanCode === "monthly") {
+      const checkEarlierFn =
+        deps.hasEarlierSuccessfulMonthlyPayment || hasEarlierSuccessfulMonthlyPayment;
+      const hasEarlier = await checkEarlierFn(supabaseAdmin, user.id);
+      isFirstMonthlyPurchase = !hasEarlier;
+    }
+
     // Resolve server-authoritative price from plans/addon_packs catalog, ignoring any client amount
     const pricing = resolveOrderPricing({
       planCode: body.planCode,
       planId: body.planId || (!body.addonCode && !body.planCode ? "monthly" : undefined),
       addonCode: body.addonCode,
+      isFirstMonthlyPurchase,
     });
 
     if (!pricing) {

@@ -136,7 +136,7 @@ describe("Billing Checkout & Razorpay (Browser/JSDOM Environment)", () => {
         new Response(
           JSON.stringify({
             orderId: "order_fallback_1",
-            amount: 149900,
+            amount: 49900,
             currency: "INR",
             keyId: "rzp_test_fallback_from_server_env",
           }),
@@ -223,7 +223,7 @@ describe("Billing Checkout & Razorpay (Browser/JSDOM Environment)", () => {
         new Response(
           JSON.stringify({
             orderId: "order_123",
-            amount: 149900,
+            amount: 49900,
             currency: "INR",
           }),
           { status: 200, headers: { "Content-Type": "application/json" } }
@@ -292,7 +292,7 @@ describe("Billing Checkout & Razorpay (Browser/JSDOM Environment)", () => {
         new Response(
           JSON.stringify({
             orderId: "order_dismiss_test",
-            amount: 149900,
+            amount: 49900,
             currency: "INR",
           }),
           { status: 200, headers: { "Content-Type": "application/json" } }
@@ -322,7 +322,7 @@ describe("Billing Checkout & Razorpay (Browser/JSDOM Environment)", () => {
         new Response(
           JSON.stringify({
             orderId: "order_fail_test",
-            amount: 149900,
+            amount: 49900,
             currency: "INR",
           }),
           { status: 200, headers: { "Content-Type": "application/json" } }
@@ -373,7 +373,7 @@ describe("Billing Checkout & Razorpay (Browser/JSDOM Environment)", () => {
           return new Response(
             JSON.stringify({
               orderId: "order_verify_test_1",
-              amount: 149900,
+              amount: 49900,
               currency: "INR",
             }),
             { status: 200, headers: { "Content-Type": "application/json" } }
@@ -418,7 +418,7 @@ describe("Billing Checkout & Razorpay (Browser/JSDOM Environment)", () => {
       const mockFetch = vi.fn().mockImplementation(async (url: string) => {
         if (url.includes("/order")) {
           return new Response(
-            JSON.stringify({ orderId: "order_123", amount: 149900, currency: "INR" }),
+            JSON.stringify({ orderId: "order_123", amount: 49900, currency: "INR" }),
             { status: 200, headers: { "Content-Type": "application/json" } }
           );
         }
@@ -461,7 +461,7 @@ describe("Billing Checkout & Razorpay (Browser/JSDOM Environment)", () => {
       const mockFetch = vi.fn().mockImplementation(async (url: string) => {
         if (url.includes("/order")) {
           return new Response(
-            JSON.stringify({ orderId: "order_123", amount: 149900, currency: "INR" }),
+            JSON.stringify({ orderId: "order_123", amount: 49900, currency: "INR" }),
             { status: 200, headers: { "Content-Type": "application/json" } }
           );
         }
@@ -500,7 +500,7 @@ describe("Billing Checkout & Razorpay (Browser/JSDOM Environment)", () => {
     it("handles exception thrown by rzp.open()", async () => {
       const mockFetch = vi.fn().mockResolvedValue(
         new Response(
-          JSON.stringify({ orderId: "order_open_throw", amount: 149900, currency: "INR" }),
+          JSON.stringify({ orderId: "order_open_throw", amount: 49900, currency: "INR" }),
           { status: 200, headers: { "Content-Type": "application/json" } }
         )
       );
@@ -735,7 +735,7 @@ describe("Billing Checkout & Razorpay (Browser/JSDOM Environment)", () => {
       const mockFetch = vi.fn().mockImplementation(async (url: string) => {
         if (url.includes("/order")) {
           return new Response(
-            JSON.stringify({ orderId: "order_orch_1", amount: 149900, currency: "INR" }),
+            JSON.stringify({ orderId: "order_orch_1", amount: 49900, currency: "INR" }),
             { status: 200, headers: { "Content-Type": "application/json" } }
           );
         }

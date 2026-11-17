@@ -71,33 +71,33 @@ async function runPlanPickerSuite() {
     "Plans must be in exact order: Weekly, Monthly, Quarterly"
   );
 
-  // Weekly plan assertions (approved price: ₹692)
+  // Weekly plan assertions (approved price: ₹399)
   const weekly = PLANS[0];
   assert.strictEqual(weekly.id, "weekly");
-  assert.strictEqual(weekly.price, 692, "Weekly price must be approved ₹692");
+  assert.strictEqual(weekly.price, 399, "Weekly price must be approved ₹399");
   assert.strictEqual(getPlanBillingLabel(weekly), "Billed weekly");
   assert.strictEqual(weekly.subLine, "15 sets/week");
-  assert.strictEqual(calculatePerWeek(weekly.price, "week"), 692);
-  assert.strictEqual(getPlanPerWeekText(weekly), "₹692 /week");
+  assert.strictEqual(calculatePerWeek(weekly.price, "week"), 399);
+  assert.strictEqual(getPlanPerWeekText(weekly), "₹399 /week");
 
-  // Monthly plan assertions (selected by default, approved ₹1,499)
+  // Monthly plan assertions (selected by default, approved ₹499)
   const monthly = PLANS[1];
   assert.strictEqual(monthly.id, "monthly");
-  assert.strictEqual(monthly.price, 1499, "Monthly price must be approved ₹1,499");
+  assert.strictEqual(monthly.price, 499, "Monthly price must be approved ₹499");
   assert.strictEqual(monthly.isDefault, true, "Monthly plan must be default");
-  assert.strictEqual(getPlanBillingLabel(monthly), "₹1,499, billed monthly");
+  assert.strictEqual(getPlanBillingLabel(monthly), "₹499, billed monthly");
   assert.strictEqual(monthly.subLine, "60 sets/month");
-  assert.strictEqual(calculatePerWeek(monthly.price, "month"), 346); // Math.round(1499 * 12 / 52) = 346
-  assert.strictEqual(getPlanPerWeekText(monthly), "₹346 /week*");
+  assert.strictEqual(calculatePerWeek(monthly.price, "month"), 115); // Math.round(499 * 12 / 52) = 115
+  assert.strictEqual(getPlanPerWeekText(monthly), "₹115 /week*");
 
-  // Quarterly plan assertions (approved ₹3,999)
+  // Quarterly plan assertions (approved ₹2,199)
   const quarterly = PLANS[2];
   assert.strictEqual(quarterly.id, "quarterly");
-  assert.strictEqual(quarterly.price, 3999, "Quarterly price must be approved ₹3,999");
-  assert.strictEqual(getPlanBillingLabel(quarterly), "₹3,999, billed every 3 months");
+  assert.strictEqual(quarterly.price, 2199, "Quarterly price must be approved ₹2,199");
+  assert.strictEqual(getPlanBillingLabel(quarterly), "₹2,199, billed every 3 months");
   assert.strictEqual(quarterly.subLine, "60 sets each month (resets monthly)");
-  assert.strictEqual(calculatePerWeek(quarterly.price, "quarter"), 308); // Math.round(3999 * 4 / 52) = 308
-  assert.strictEqual(getPlanPerWeekText(quarterly), "₹308 /week*");
+  assert.strictEqual(calculatePerWeek(quarterly.price, "quarter"), 169); // Math.round(2199 * 4 / 52) = 169
+  assert.strictEqual(getPlanPerWeekText(quarterly), "₹169 /week*");
 
   // Verify per-week calculations are dynamic, not hardcoded
   assert.strictEqual(calculatePerWeek(1200, "month"), Math.round((1200 * 12) / 52));
@@ -160,20 +160,20 @@ async function runPlanPickerSuite() {
 
   // Visible plan rows and prices
   assert.ok(serverHtml.includes("Weekly"), "Weekly plan title must be present");
-  assert.ok(serverHtml.includes("₹692"), "Weekly price must be ₹692");
+  assert.ok(serverHtml.includes("₹399"), "Weekly price must be ₹399");
   assert.ok(serverHtml.includes("15 sets/week"), "Weekly subline must be present");
-  assert.ok(serverHtml.includes("₹692 /week"), "Weekly per-week text must be ₹692 /week");
+  assert.ok(serverHtml.includes("₹399 /week"), "Weekly per-week text must be ₹399 /week");
   assert.ok(serverHtml.includes("Billed weekly"), "Weekly billing text must be present");
 
   assert.ok(serverHtml.includes("Monthly"), "Monthly plan title must be present");
-  assert.ok(serverHtml.includes("₹1,499"), "Monthly price must be ₹1,499");
-  assert.ok(serverHtml.includes("346"), "Monthly per-week price 346 must be present");
+  assert.ok(serverHtml.includes("₹499"), "Monthly price must be ₹499");
+  assert.ok(serverHtml.includes("115"), "Monthly per-week price 115 must be present");
   assert.ok(serverHtml.includes("60 sets/month"), "Monthly subline must be present");
   assert.ok(serverHtml.includes("billed monthly"), "Monthly billing text must be present");
 
   assert.ok(serverHtml.includes("Quarterly"), "Quarterly plan title must be present");
-  assert.ok(serverHtml.includes("₹3,999"), "Quarterly price must be ₹3,999");
-  assert.ok(serverHtml.includes("308"), "Quarterly per-week price 308 must be present");
+  assert.ok(serverHtml.includes("₹2,199"), "Quarterly price must be ₹2,199");
+  assert.ok(serverHtml.includes("169"), "Quarterly per-week price 169 must be present");
   assert.ok(serverHtml.includes("60 sets each month (resets monthly)"), "Quarterly subline must be present");
   assert.ok(serverHtml.includes("billed every 3 months"), "Quarterly billing text must be present");
 
