@@ -10255,6 +10255,21 @@ DECLARE
     'file_name:text:NO,mime_type:text:NO,size_bytes:integer:NO,storage_path:text:NO,'
     || 'uploaded_at:timestamp with time zone:NO,user_id:uuid:NO';
   v_bad      text;
+  v_pol      record;
+  v_exprs    text[];
+  v_expr     text;
+  v_queue    text[];
+  v_parts    text[];
+  v_part     text;
+  v_ch       text;
+  v_excluded boolean;
+  v_inq      boolean;
+  v_has_or   boolean;
+  v_depth    integer;
+  v_close    integer;
+  v_start    integer;
+  v_i        integer;
+  v_old_path text;
 BEGIN
   -- 1. Bucket prerequisites (read only; never modified here).
   IF NOT EXISTS (SELECT 1 FROM storage.buckets WHERE id = 'resumes') THEN
@@ -10278,34 +10293,127 @@ BEGIN
     RAISE EXCEPTION 'preflight: public.check_rate_limit(text,integer,integer) is missing';
   END IF;
 
-  -- 2. Refuse if any unexpected permissive policy lets clients INSERT/UPDATE into
-  --    the resumes bucket (or any bucket, when the policy has no bucket_id filter).
-  --    Allowed: the known owner-folder policies and the coming-soon deny policies.
-  SELECT string_agg(
-           format('%s [%s] roles=%s using=%s check=%s',
-                  p.policyname, p.cmd, p.roles, coalesce(p.qual, '-'), coalesce(p.with_check, '-')),
-           '; ')
-    INTO v_bad
-    FROM pg_policies p
-   WHERE p.schemaname = 'storage'
-     AND p.tablename = 'objects'
-     AND p.permissive = 'PERMISSIVE'
-     AND p.cmd IN ('INSERT', 'UPDATE', 'ALL')
-     AND p.roles && ARRAY['authenticated', 'anon', 'public']::name[]
-     AND (   coalesce(p.qual, '') || coalesce(p.with_check, '') LIKE '%resumes%'
-          OR coalesce(p.qual, '') || coalesce(p.with_check, '') NOT LIKE '%bucket_id%')
-     AND NOT (
-           p.policyname IN ('Owner can insert own resume files', 'Owner can update own resume files',
-                            'Users can upload their own resume', 'Users can update their own resume')
-           AND coalesce(p.with_check, p.qual) LIKE '%foldername(%'
-           AND coalesce(p.with_check, p.qual) LIKE '%auth.uid()%')
-     AND NOT (
-           p.policyname IN ('resumes_storage_coming_soon_block_insert', 'resumes_storage_coming_soon_block_update')
-           AND coalesce(p.with_check, p.qual) LIKE '%false%');
-  IF v_bad IS NOT NULL THEN
-    RAISE EXCEPTION 'preflight: unexpected client write policy on storage.objects for resumes: %', v_bad
-      USING HINT = 'Review these policies before applying; this migration does not change storage policies.';
+  -- 2. Refuse if ANY effective client write path on storage.objects can reach
+  --    resumes/<uid>/onboarding/... (second path segment = 'onboarding', the same
+  --    rule as the table CHECK and the orphan finder). No allow-listing by name.
+  --    * If RLS is off on storage.objects, any INSERT/UPDATE grant to anon or
+  --      authenticated is a write path: refuse.
+  --    * Every PERMISSIVE INSERT/UPDATE/ALL policy whose roles reach anon or
+  --      authenticated (PUBLIC, the role itself, or any role either one inherits)
+  --      must PROVABLY exclude the prefix. Each expression Postgres evaluates for
+  --      the command (INSERT: WITH CHECK; UPDATE: USING and WITH CHECK; a missing
+  --      WITH CHECK falls back to USING; a missing expression means "true") needs
+  --      a top-level AND conjunct that is one of:
+  --        false
+  --        bucket_id = '<a bucket other than resumes>'
+  --        (storage.foldername(name))[2] <> 'onboarding'
+  --        (storage.foldername(name))[2] IS DISTINCT FROM 'onboarding'
+  --      Anything else (a top-level OR, other functions, NOT, ...) counts as
+  --      reaching the prefix. Restrictive policies cannot grant access and are
+  --      not credited as exclusions.
+  --    search_path is pinned so pg_get_expr deparses schema-qualified names.
+  v_old_path := current_setting('search_path');
+  PERFORM set_config('search_path', 'pg_catalog', true);
+
+  IF NOT (SELECT c.relrowsecurity FROM pg_class c WHERE c.oid = 'storage.objects'::regclass)
+     AND (   has_table_privilege('anon', 'storage.objects', 'INSERT')
+          OR has_table_privilege('anon', 'storage.objects', 'UPDATE')
+          OR has_table_privilege('authenticated', 'storage.objects', 'INSERT')
+          OR has_table_privilege('authenticated', 'storage.objects', 'UPDATE')) THEN
+    RAISE EXCEPTION 'preflight: storage.objects has RLS disabled while anon/authenticated can INSERT or UPDATE it';
   END IF;
+
+  v_bad := NULL;
+  FOR v_pol IN
+    SELECT pol.polname::text AS polname,
+           pol.polcmd,
+           pg_get_expr(pol.polqual, pol.polrelid)      AS qual,
+           pg_get_expr(pol.polwithcheck, pol.polrelid) AS wcheck
+      FROM pg_policy pol
+     WHERE pol.polrelid = 'storage.objects'::regclass
+       AND pol.polpermissive
+       AND pol.polcmd IN ('a', 'w', '*')
+       AND EXISTS (
+             SELECT 1 FROM unnest(pol.polroles) AS r(roid)
+              WHERE CASE WHEN r.roid = 0 THEN true
+                         ELSE pg_has_role('anon', r.roid, 'MEMBER')
+                           OR pg_has_role('authenticated', r.roid, 'MEMBER') END)
+     ORDER BY pol.polname
+  LOOP
+    v_exprs := CASE WHEN v_pol.polcmd = 'a'
+                    THEN ARRAY[coalesce(v_pol.wcheck, v_pol.qual, 'true')]
+                    ELSE ARRAY[coalesce(v_pol.qual, 'true'),
+                               coalesce(v_pol.wcheck, v_pol.qual, 'true')] END;
+    FOREACH v_expr IN ARRAY v_exprs LOOP
+      v_excluded := false;
+      v_queue := ARRAY[v_expr];
+      WHILE NOT v_excluded AND cardinality(v_queue) > 0 LOOP
+        v_part := btrim(v_queue[1]);
+        v_queue := v_queue[2:];
+
+        -- Strip outer parentheses that wrap the whole expression.
+        LOOP
+          EXIT WHEN left(v_part, 1) <> '(' OR right(v_part, 1) <> ')';
+          v_depth := 0; v_inq := false; v_close := 0;
+          FOR v_i IN 1..length(v_part) LOOP
+            v_ch := substr(v_part, v_i, 1);
+            IF v_ch = '''' THEN v_inq := NOT v_inq;
+            ELSIF NOT v_inq AND v_ch = '(' THEN v_depth := v_depth + 1;
+            ELSIF NOT v_inq AND v_ch = ')' THEN
+              v_depth := v_depth - 1;
+              IF v_depth = 0 THEN v_close := v_i; EXIT; END IF;
+            END IF;
+          END LOOP;
+          EXIT WHEN v_close <> length(v_part);
+          v_part := btrim(substr(v_part, 2, length(v_part) - 2));
+        END LOOP;
+
+        -- Split on top-level AND; a top-level OR proves nothing.
+        v_parts := ARRAY[]::text[]; v_depth := 0; v_inq := false; v_start := 1; v_has_or := false;
+        v_i := 1;
+        WHILE v_i <= length(v_part) LOOP
+          v_ch := substr(v_part, v_i, 1);
+          IF v_ch = '''' THEN v_inq := NOT v_inq;
+          ELSIF NOT v_inq AND v_ch = '(' THEN v_depth := v_depth + 1;
+          ELSIF NOT v_inq AND v_ch = ')' THEN v_depth := v_depth - 1;
+          ELSIF NOT v_inq AND v_depth = 0 AND substr(v_part, v_i, 4) = ' OR ' THEN v_has_or := true;
+          ELSIF NOT v_inq AND v_depth = 0 AND substr(v_part, v_i, 5) = ' AND ' THEN
+            v_parts := v_parts || substr(v_part, v_start, v_i - v_start);
+            v_start := v_i + 5;
+            v_i := v_i + 4;
+          END IF;
+          v_i := v_i + 1;
+        END LOOP;
+        CONTINUE WHEN v_has_or;
+        IF cardinality(v_parts) > 0 THEN
+          v_queue := v_queue || v_parts || substr(v_part, v_start);
+          CONTINUE;
+        END IF;
+
+        -- Atomic conjunct: is it one of the proven exclusions?
+        v_part := regexp_replace(v_part, '\s+', ' ', 'g');
+        IF v_part = 'false'
+           OR (v_part ~ '^bucket_id = ''[^'']*''::text$' AND v_part <> 'bucket_id = ''resumes''::text')
+           OR v_part IN ('(storage.foldername(name))[2] <> ''onboarding''::text',
+                         '(storage.foldername(name))[2] IS DISTINCT FROM ''onboarding''::text') THEN
+          v_excluded := true;
+        END IF;
+      END LOOP;
+
+      IF NOT v_excluded THEN
+        v_bad := concat_ws('; ', v_bad,
+                   format('%s [%s] using=%s check=%s', v_pol.polname,
+                          CASE v_pol.polcmd WHEN 'a' THEN 'INSERT' WHEN 'w' THEN 'UPDATE' ELSE 'ALL' END,
+                          coalesce(v_pol.qual, '-'), coalesce(v_pol.wcheck, '-')));
+        EXIT;
+      END IF;
+    END LOOP;
+  END LOOP;
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'preflight: unexpected client write policy on storage.objects can reach resumes/<uid>/onboarding/: %', v_bad
+      USING HINT = 'Each such policy must provably exclude the onboarding/ prefix; this migration does not change storage policies.';
+  END IF;
+  PERFORM set_config('search_path', v_old_path, true);
 
   -- 3. Refuse an incompatible or foreign pre-existing table.
   IF v_table IS NOT NULL THEN
