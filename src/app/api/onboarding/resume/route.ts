@@ -59,6 +59,24 @@ async function removeUncommitted(supabaseAdmin: any, path: string, userId: strin
 }
 
 /**
+ * After a failed upsert: does the user's pointer row reference `path`?
+ * "unknown" when the re-read itself fails. Never throws.
+ */
+async function pointerReferences(supabaseAdmin: any, userId: string, path: string): Promise<"yes" | "no" | "unknown"> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("onboarding_resume_uploads")
+      .select("storage_path")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (error) return "unknown";
+    return data?.storage_path === path ? "yes" : "no";
+  } catch {
+    return "unknown";
+  }
+}
+
+/**
  * Stores an onboarding resume (PDF/DOCX, <= 5 MB) privately under <uid>/onboarding/.
  * Store only: no parsing or text extraction happens here.
  */
@@ -90,9 +108,11 @@ export async function POST(req: Request) {
   }
 
   // Tracks the blob written in this request and whether its pointer row committed, so any
-  // failure after the upload (returned or thrown) removes the blob in `finally`.
+  // failure after the upload (returned or thrown) removes the blob in `finally` — unless
+  // a failed upsert left it unclear whether the row references the blob.
   let uploadedPath: string | null = null;
   let pointerCommitted = false;
+  let keepUploadedBlob = false;
   let userId = "unknown";
 
   try {
@@ -175,20 +195,40 @@ export async function POST(req: Request) {
       return json({ error: SAVE_FAILED }, 500);
     }
 
-    const { error: upsertError } = await supabaseAdmin.from("onboarding_resume_uploads").upsert(
-      {
-        user_id: user.id,
-        storage_path: storagePath,
-        file_name: fileName,
-        mime_type: RESUME_MIME[kind],
-        size_bytes: bytes.byteLength,
-        uploaded_at: new Date().toISOString(),
-      },
-      { onConflict: "user_id" }
-    );
-    if (upsertError) {
-      log.error("Resume pointer upsert failed", { userId, error: upsertError.message });
-      return json({ error: SAVE_FAILED }, 500);
+    let upsertFailure: string | null = null;
+    try {
+      const { error: upsertError } = await supabaseAdmin.from("onboarding_resume_uploads").upsert(
+        {
+          user_id: user.id,
+          storage_path: storagePath,
+          file_name: fileName,
+          mime_type: RESUME_MIME[kind],
+          size_bytes: bytes.byteLength,
+          uploaded_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id" }
+      );
+      if (upsertError) upsertFailure = upsertError.message || "upsert error";
+    } catch (err: any) {
+      upsertFailure = err?.message || String(err);
+    }
+    if (upsertFailure !== null) {
+      // The write may have committed even though the call failed (e.g. a reset after commit).
+      // Re-read the pointer before touching the blob.
+      const ref = await pointerReferences(supabaseAdmin, user.id, storagePath);
+      if (ref === "yes") {
+        log.warn("Resume pointer upsert reported failure but the row references the new object; keeping it", {
+          userId,
+          error: upsertFailure,
+        });
+      } else {
+        if (ref === "unknown") {
+          // Can't prove the row doesn't reference the blob: leave it for the orphan sweep.
+          keepUploadedBlob = true;
+        }
+        log.error("Resume pointer upsert failed", { userId, error: upsertFailure, pointerCheck: ref });
+        return json({ error: SAVE_FAILED }, 500);
+      }
     }
     pointerCommitted = true;
 
@@ -212,7 +252,7 @@ export async function POST(req: Request) {
     log.error("Unhandled error in resume upload", { userId, error: err?.message || String(err) });
     return json({ error: SAVE_FAILED }, 500);
   } finally {
-    if (uploadedPath && !pointerCommitted) {
+    if (uploadedPath && !pointerCommitted && !keepUploadedBlob) {
       await removeUncommitted(supabaseAdmin, uploadedPath, userId);
     }
   }

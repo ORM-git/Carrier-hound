@@ -6,7 +6,9 @@
  *  - bucket row and storage.objects policies are byte-for-byte unchanged
  *  - anon/authenticated cannot write the table or execute the orphan finder; service_role can
  *  - an owner can read only their own row
- *  - preflight REFUSES: an unexpected client write policy on resumes, a foreign/incompatible
+ *  - preflight REFUSES any client INSERT/UPDATE path that can reach resumes/<uid>/onboarding/
+ *    (owner-folder policies, inherited roles, OR-escapes, UPDATE USING, RLS off) and PASSES
+ *    policies that provably exclude the prefix; also refuses a foreign/incompatible
  *    pre-existing table, a foreign/incompatible pre-existing function
  *  - guarded rollback only touches objects carrying this migration's marker and keeps the data
  */
@@ -202,6 +204,83 @@ async function main() {
     const exists = await p.query(`SELECT to_regclass('public.onboarding_resume_uploads') AS t`);
     assert.equal(exists.rows[0].t, null, "refused migration must leave nothing behind");
     ok("preflight refuses unexpected client INSERT/UPDATE policy (with details) and rolls back");
+  }
+  {
+    // Owner-folder policies (the shape earlier migrations used) reach <uid>/onboarding/: refuse, by shape not name.
+    const p = await boot();
+    const REACH = /unexpected client write policy.*can reach resumes/;
+    await p.exec(`CREATE POLICY "Owner can insert own resume files" ON storage.objects FOR INSERT TO authenticated
+      WITH CHECK (bucket_id = 'resumes' AND (storage.foldername(name))[1] = auth.uid()::text)`);
+    await refuses(p, /Owner can insert own resume files/, "owner-folder insert policy");
+    await p.exec(`DROP POLICY "Owner can insert own resume files" ON storage.objects;
+      CREATE POLICY "Owner can update own resume files" ON storage.objects FOR UPDATE TO authenticated
+      USING (bucket_id = 'resumes' AND (storage.foldername(name))[1] = auth.uid()::text)
+      WITH CHECK (bucket_id = 'resumes' AND (storage.foldername(name))[1] = auth.uid()::text)`);
+    await refuses(p, /Owner can update own resume files/, "owner-folder update policy");
+    await p.exec(`DROP POLICY "Owner can update own resume files" ON storage.objects`);
+
+    // Same name as a formerly allow-listed policy, but the body reaches onboarding/: still refused.
+    await p.exec(`CREATE POLICY "Users can upload their own resume" ON storage.objects FOR INSERT TO anon
+      WITH CHECK (bucket_id = 'resumes' AND (storage.foldername(name))[1] = auth.uid()::text)`);
+    await refuses(p, /Users can upload their own resume/, "allow-listed name, reaching body");
+    await p.exec(`DROP POLICY "Users can upload their own resume" ON storage.objects`);
+
+    // Inherited role: policy granted to a role that authenticated is a member of.
+    await p.exec(`CREATE ROLE resume_writers NOLOGIN; GRANT resume_writers TO authenticated;
+      CREATE POLICY "group_resume_insert" ON storage.objects FOR INSERT TO resume_writers
+      WITH CHECK (bucket_id = 'resumes')`);
+    await refuses(p, /group_resume_insert/, "policy inherited via another role");
+    await p.exec(`DROP POLICY "group_resume_insert" ON storage.objects`);
+
+    // Exclusion hidden behind a top-level OR proves nothing.
+    await p.exec(`CREATE POLICY "or_escape" ON storage.objects FOR INSERT TO authenticated
+      WITH CHECK (bucket_id = 'resumes' AND ((storage.foldername(name))[2] <> 'onboarding' OR auth.uid() IS NOT NULL))`);
+    await refuses(p, /or_escape/, "OR around the exclusion");
+    await p.exec(`DROP POLICY "or_escape" ON storage.objects`);
+
+    // UPDATE: WITH CHECK excludes onboarding but USING still reaches existing onboarding objects.
+    await p.exec(`CREATE POLICY "update_using_reaches" ON storage.objects FOR UPDATE TO authenticated
+      USING (bucket_id = 'resumes')
+      WITH CHECK (bucket_id = 'resumes' AND (storage.foldername(name))[2] <> 'onboarding')`);
+    await refuses(p, /update_using_reaches/, "UPDATE USING reaches onboarding");
+    await p.exec(`DROP POLICY "update_using_reaches" ON storage.objects`);
+
+    // ALL policy with no WITH CHECK falls back to USING, which reaches onboarding.
+    await p.exec(`CREATE POLICY "all_cmd" ON storage.objects FOR ALL TO public USING (bucket_id = 'resumes')`);
+    await refuses(p, REACH, "ALL policy to PUBLIC");
+    await p.exec(`DROP POLICY "all_cmd" ON storage.objects`);
+
+    // RLS off with a client grant is a write path.
+    await p.exec(`ALTER TABLE storage.objects DISABLE ROW LEVEL SECURITY; GRANT INSERT ON storage.objects TO authenticated`);
+    await refuses(p, /RLS disabled/, "RLS disabled");
+    await p.exec(`REVOKE INSERT ON storage.objects FROM authenticated; ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY`);
+
+    const exists = await p.query(`SELECT to_regclass('public.onboarding_resume_uploads') AS t`);
+    assert.equal(exists.rows[0].t, null, "refused migration must leave nothing behind");
+    ok("preflight refuses owner-folder, inherited-role, OR-escaped, UPDATE-USING, ALL and RLS-off write paths");
+  }
+  {
+    // Policies that provably exclude onboarding/ (or another bucket, or non-client roles) pass.
+    const p = await boot();
+    await p.exec(`
+      CREATE POLICY "owner_insert_not_onboarding" ON storage.objects FOR INSERT TO authenticated
+        WITH CHECK (bucket_id = 'resumes' AND (storage.foldername(name))[1] = auth.uid()::text
+                    AND (storage.foldername(name))[2] <> 'onboarding');
+      CREATE POLICY "owner_update_not_onboarding" ON storage.objects FOR UPDATE TO authenticated
+        USING (bucket_id = 'resumes' AND (storage.foldername(name))[2] IS DISTINCT FROM 'onboarding')
+        WITH CHECK (bucket_id = 'resumes' AND (storage.foldername(name))[2] <> 'onboarding');
+      CREATE POLICY "other_bucket_insert" ON storage.objects FOR INSERT TO authenticated
+        WITH CHECK (bucket_id = 'avatars');
+      CREATE POLICY "service_only_any" ON storage.objects FOR ALL TO service_role USING (true);
+      CREATE POLICY "restrictive_any" ON storage.objects AS RESTRICTIVE FOR INSERT TO authenticated
+        WITH CHECK (true);`);
+    const before = await p.query(`SELECT string_agg(policyname||coalesce(qual,'')||coalesce(with_check,''), '|' ORDER BY policyname) AS j FROM pg_policies WHERE schemaname='storage'`);
+    await p.exec(migrationSql());
+    const t = await p.query(`SELECT to_regclass('public.onboarding_resume_uploads') AS t, current_setting('search_path') AS sp`);
+    assert.ok(t.rows[0].t, "migration should apply when every client write policy excludes onboarding/");
+    const after = await p.query(`SELECT string_agg(policyname||coalesce(qual,'')||coalesce(with_check,''), '|' ORDER BY policyname) AS j FROM pg_policies WHERE schemaname='storage'`);
+    assert.deepEqual(after.rows, before.rows, "storage policies must be unchanged");
+    ok("preflight passes policies that provably exclude onboarding/, other buckets, service_role and restrictive ones");
   }
   {
     const p = await boot();

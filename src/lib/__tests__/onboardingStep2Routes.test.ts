@@ -37,6 +37,10 @@ function makeAdmin(opts: {
   upsertError?: any;
   orphans?: string[];
   throwOn?: "getUser" | "updateUser" | "read" | "upload" | "upsert" | "removeOld" | "rpc";
+  /** The upsert commits the row remotely, then the call throws (e.g. connection reset after commit). */
+  upsertCommitsThenThrows?: boolean;
+  /** The pointer re-read after a failed upsert is unavailable: "error" returns an error, "throw" throws. */
+  rereadFails?: "error" | "throw";
 } = {}) {
   const calls = {
     updateUserById: [] as any[],
@@ -48,6 +52,9 @@ function makeAdmin(opts: {
   const boom = (where: string) => {
     if (opts.throwOn === where) throw new Error(`network reset during ${where}`);
   };
+  // Server-side pointer row; reads after the first one are re-reads.
+  let pointerRow: { storage_path: string } | null = opts.previousPath ? { storage_path: opts.previousPath } : null;
+  let reads = 0;
   const admin = {
     calls,
     auth: {
@@ -67,17 +74,25 @@ function makeAdmin(opts: {
       select: () => ({
         eq: () => ({
           maybeSingle: async () => {
-            boom("read");
-            return {
-              data: opts.previousPath ? { storage_path: opts.previousPath } : null,
-              error: opts.readError ?? null,
-            };
+            reads++;
+            if (reads === 1) {
+              boom("read");
+              return { data: pointerRow, error: opts.readError ?? null };
+            }
+            if (opts.rereadFails === "throw") throw new Error("network reset during reread");
+            if (opts.rereadFails === "error") return { data: null, error: { message: "upstream timeout" } };
+            return { data: pointerRow, error: null };
           },
         }),
       }),
       upsert: async (row: any) => {
         calls.upserts.push(row);
+        if (opts.upsertCommitsThenThrows) {
+          pointerRow = { storage_path: row.storage_path };
+          throw new Error("connection reset after commit");
+        }
         boom("upsert");
+        if (!opts.upsertError) pointerRow = { storage_path: row.storage_path };
         return { error: opts.upsertError ?? null };
       },
     })),
@@ -362,6 +377,25 @@ describe("thrown failures return a clean 500 and never leave an orphan blob", ()
     expect(res.status).toBe(500);
     const path = state.admin.calls.uploads[0].path;
     expect(state.admin.calls.removes).toEqual([[path]]);
+  });
+
+  it("resume: upsert commits remotely then throws => re-read finds the new row, blob NOT deleted, save kept", async () => {
+    const old = `${USER_ID}/onboarding/old.pdf`;
+    state.admin = makeAdmin({ upsertCommitsThenThrows: true, previousPath: old });
+    const res = await postResume(resumeReq(validPdf()));
+    expect(res.status).toBe(200);
+    const path = state.admin.calls.uploads[0].path;
+    expect(state.admin.calls.removes.flat()).not.toContain(path);
+    expect(state.admin.calls.removes).toContainEqual([old]);
+  });
+
+  it("resume: upsert throws and the pointer re-read is unavailable => 500, blob kept for the orphan sweep", async () => {
+    for (const rereadFails of ["error", "throw"] as const) {
+      state.admin = makeAdmin({ throwOn: "upsert", rereadFails, previousPath: `${USER_ID}/onboarding/old.pdf` });
+      const res = await postResume(resumeReq(validPdf()));
+      expect(res.status).toBe(500);
+      expect(state.admin.calls.removes).toHaveLength(0);
+    }
   });
 
   it("resume: storage upload returns an error => 500 and the (possibly partial) blob is removed", async () => {
