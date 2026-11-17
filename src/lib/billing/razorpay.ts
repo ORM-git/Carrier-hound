@@ -229,125 +229,12 @@ export interface RazorpaySubscriptionOptions {
 }
 
 /**
- * Initiates Razorpay checkout in browser in Subscription mode.
- * Creates subscription server-side via /api/billing/razorpay/subscription.
- * Unreachable when NEXT_PUBLIC_AUTORENEW_ENABLED !== "true".
+ * Recurring (auto-renew) subscriptions are disabled for launch: every plan is a
+ * one-time prepaid order (see openRazorpayCheckout). This always fails closed
+ * without any network call, regardless of NEXT_PUBLIC_AUTORENEW_ENABLED.
  */
 export async function openRazorpaySubscription(
   options: RazorpaySubscriptionOptions
 ): Promise<void> {
-  // Flag-off gate: if auto-renew or billing is disabled, fail immediately without network calls
-  if (
-    process.env.NEXT_PUBLIC_AUTORENEW_ENABLED !== "true" ||
-    process.env.NEXT_PUBLIC_BILLING_ENABLED !== "true"
-  ) {
-    options.onError?.(new Error("Auto-renew subscriptions are currently disabled."));
-    return;
-  }
-
-  const keyId =
-    process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID ||
-    process.env.RAZORPAY_KEY_ID;
-
-  if (!keyId) {
-    options.onError?.(new Error("Payments not enabled. Razorpay is not configured."));
-    return;
-  }
-
-  let token = options.authToken;
-  if (!token) {
-    try {
-      const { createClient } = await import("../supabase/client");
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      token = session?.access_token;
-    } catch {
-      // Fallback
-    }
-  }
-
-  if (!token) {
-    options.onError?.(new Error("Please sign in to proceed with payment."));
-    return;
-  }
-
-  // 1. Load Razorpay Checkout SDK dynamically so checkout.js is fetched and window.Razorpay is defined
-  const scriptPromise = loadRazorpayScript();
-
-  // 2. Create subscription server-side via /api/billing/razorpay/subscription
-  let subData: { subscriptionId: string; keyId?: string };
-  try {
-    const res = await fetch("/api/billing/razorpay/subscription", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        planCode: options.planCode,
-      }),
-    });
-
-    if (!res.ok) {
-      const errJson = await res.json().catch(() => ({}));
-      options.onError?.(new Error(errJson.error || "Failed to create subscription"));
-      return;
-    }
-
-    subData = await res.json();
-  } catch (err: any) {
-    options.onError?.(new Error(err?.message || "Network error while creating subscription"));
-    return;
-  }
-
-  // 3. Ensure Razorpay Checkout SDK is ready
-  const isLoaded = await scriptPromise;
-  if (!isLoaded) {
-    options.onError?.(new Error("Failed to load Razorpay payment gateway"));
-    return;
-  }
-
-  // 3. Open Razorpay Checkout modal in subscription mode
-  const razorpayOptions = {
-    key: subData.keyId || keyId,
-    subscription_id: subData.subscriptionId,
-    name: "CareerMonke",
-    description: "CareerMonke Pro Auto-Renew",
-    image: "/icon.png",
-    prefill: {
-      name: options.userName || "Candidate",
-      email: options.userEmail || "",
-      contact: options.userPhone || "",
-    },
-    theme: {
-      color: "#2563EB",
-    },
-    handler: function (response: any) {
-      options.onSuccess?.({
-        subscriptionId: response.razorpay_subscription_id || subData.subscriptionId,
-        paymentId: response.razorpay_payment_id || "",
-      });
-    },
-    modal: {
-      ondismiss: function () {
-        options.onDismiss?.();
-      },
-    },
-  };
-
-  try {
-    const rzp = new (window as any).Razorpay(razorpayOptions);
-    if (typeof rzp.on === "function") {
-      rzp.on("payment.failed", function (resp: any) {
-        const errorDesc =
-          resp?.error?.description ||
-          resp?.error?.reason ||
-          "Subscription payment failed. Please try again.";
-        options.onError?.(new Error(errorDesc));
-      });
-    }
-    rzp.open();
-  } catch (err) {
-    options.onError?.(err);
-  }
+  options.onError?.(new Error("Recurring subscriptions are disabled. All plans are one-time prepaid purchases."));
 }

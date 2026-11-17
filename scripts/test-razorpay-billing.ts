@@ -77,7 +77,7 @@ async function runSuite() {
     assert(!content.includes("Hidden CI compatibility text"), "Hidden CI compatibility block must be removed");
   });
 
-  // 2. Plan and pricing data consistency (Weekly ₹399, Monthly ₹499/₹799, Quarterly ₹2,199)
+  // 2. Plan and pricing data consistency (Weekly ₹399, Monthly ₹499, Quarterly ₹2,199)
   check("Plan definitions in quota.ts and config/plans.ts match approved prices", () => {
     assert.strictEqual(PLAN_DEFINITIONS.weekly.price_paise, 39900, "Weekly plan must be 39900 paise (₹399)");
     assert.strictEqual(PLAN_DEFINITIONS.monthly.price_paise, 49900, "Monthly plan must be 49900 paise (₹499)");

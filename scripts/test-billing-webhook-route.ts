@@ -13,6 +13,7 @@
 import assert from "assert";
 import crypto from "crypto";
 import * as webhookRoute from "../src/app/api/billing/razorpay/webhook/route";
+import { PLAN_PRICING } from "../src/config/plans";
 import {
   verifyWebhookSignature,
   verifyWebhookSignatureBytes,
@@ -317,11 +318,11 @@ function createMockSupabase(db: MockDbState) {
 
         const planCode = order?.plan_code || sub?.plan_id || "monthly";
         const planPrices: Record<string, number> = {
-          weekly: 39900,
-          monthly: 79900,
-          quarterly: 219900,
+          weekly: PLAN_PRICING.weekly.price_paise,
+          monthly: PLAN_PRICING.monthly.price_paise,
+          quarterly: PLAN_PRICING.quarterly.price_paise,
         };
-        const expectedPrice = planPrices[planCode] || 79900;
+        const expectedPrice = planPrices[planCode] || PLAN_PRICING.monthly.price_paise;
         if (args.p_amount_paise && args.p_amount_paise !== expectedPrice) {
           return {
             data: {
@@ -1527,7 +1528,7 @@ async function runTestSuite() {
             provider: "razorpay",
             mode: "test",
             status: "paid",
-            amount_paise: 79900,
+            amount_paise: PLAN_PRICING.monthly.price_paise,
             plan_code: "monthly",
           },
         ],
@@ -1542,7 +1543,7 @@ async function runTestSuite() {
       event: "subscription.charged",
       payload: {
         subscription: { entity: { id: "sub_rzp_renewal_1" } },
-        payment: { entity: { id: "pay_cycle_2", amount: 79900 } },
+        payment: { entity: { id: "pay_cycle_2", amount: PLAN_PRICING.monthly.price_paise } },
       },
     });
     const req = buildMockRequest({

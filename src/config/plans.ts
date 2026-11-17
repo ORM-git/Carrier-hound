@@ -64,6 +64,17 @@ export function getPlanPriceINR(
   return PLAN_PRICING[planCode]?.price_inr ?? 0;
 }
 
+/**
+ * Flat prepaid price summary built from PLAN_PRICING, used by Pricing, Terms and Refund copy.
+ * e.g. "Weekly: ₹399 for 7 days, Monthly: ₹499 for 30 days, Quarterly: ₹2,199 for 90 days"
+ */
+export const PREPAID_PRICE_SUMMARY: string = (["weekly", "monthly", "quarterly"] as const)
+  .map((code) => {
+    const p = PLAN_PRICING[code];
+    return `${p.name}: ₹${p.price_inr.toLocaleString("en-IN")} for ${p.duration_days} days`;
+  })
+  .join(", ");
+
 export interface PlanConfig {
   id: "weekly" | "monthly" | "quarterly";
   name: string;

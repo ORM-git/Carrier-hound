@@ -7,7 +7,6 @@ import Footer from "@/components/Footer";
 import { cnTokens } from "@/components/ui/cn-tokens";
 import {
   PLANS,
-  PLAN_PRICING,
   type PlanConfig,
   PAID_PLANS_DISPLAY_ORDER,
   getPlanBillingLabel,
@@ -19,13 +18,14 @@ import {
   PLAN_QUOTA_SUMMARY_NOTE,
   PER_WEEK_NOTE,
   UPGRADE_BUTTON_LABEL,
+  PREPAID_PRICE_SUMMARY,
 } from "@/config/plans";
 import { PLAN_FEATURE_ROWS } from "@/config/plan-features";
 import { getProAccessStatus } from "@/lib/billing/subscription";
 import { createClient } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
 import { BreadcrumbJsonLd } from "@/components/seo/BreadcrumbJsonLd";
-import { handleProCheckout, openRazorpaySubscription } from "@/lib/billing/checkout";
+import { handleProCheckout } from "@/lib/billing/checkout";
 import { toast } from "react-toastify";
 
 export default function PricingPage() {
@@ -70,7 +70,6 @@ export default function PricingPage() {
   }, []);
 
   const isBillingEnabled = process.env.NEXT_PUBLIC_BILLING_ENABLED === "true";
-  const isAutorenewEnabled = process.env.NEXT_PUBLIC_AUTORENEW_ENABLED === "true";
 
   // Single synchronous purchase lock shared by plan and add-on purchases
   const checkoutLockRef = useRef<boolean>(false);
@@ -790,7 +789,7 @@ export default function PricingPage() {
         <div className="pt-2 text-center space-y-2 text-xs text-slate-500 dark:text-slate-400">
           <p className="font-bold text-[#090E34] dark:text-white">All sales final · no refunds</p>
           <p>
-            Plans are prepaid for a fixed duration and do not auto-renew. (Weekly: ₹399 for 7 days, Monthly: ₹499 for 30 days, Quarterly: ₹2,199 for 90 days). Premium access ends automatically when the plan period expires. Add-on packs expire together with the subscription.
+            Plans are prepaid for a fixed duration and do not auto-renew. ({PREPAID_PRICE_SUMMARY}). Premium access ends automatically when the plan period expires. Add-on packs expire together with the subscription.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
             <Link

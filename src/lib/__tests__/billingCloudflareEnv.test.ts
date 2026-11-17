@@ -242,10 +242,7 @@ describe("Cloudflare Pages Runtime Secret Reading for Billing Routes", () => {
     );
   });
 
-  it("subscription route picks up plan IDs and secrets present ONLY in Cloudflare request context", async () => {
-    expect(process.env.RAZORPAY_AUTORENEW_PLAN_WEEKLY).toBeUndefined();
-    expect(process.env.SUPABASE_SERVICE_ROLE_KEY).toBeUndefined();
-
+  it("subscription route stays disabled (410) even when Cloudflare context enables AUTORENEW and has plan IDs", async () => {
     mockRequestContextEnv = {
       NEXT_PUBLIC_BILLING_ENABLED: "true",
       NEXT_PUBLIC_AUTORENEW_ENABLED: "true",
@@ -257,16 +254,6 @@ describe("Cloudflare Pages Runtime Secret Reading for Billing Routes", () => {
       RAZORPAY_AUTORENEW_PLAN_WEEKLY: "plan_test_weekly_cf_123",
     };
 
-    const mockFetch = vi.fn(async () => ({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        id: "sub_test_cf_999",
-        status: "created",
-        plan_id: "plan_test_weekly_cf_123",
-      }),
-    }));
-
     const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
       method: "POST",
       headers: {
@@ -275,18 +262,13 @@ describe("Cloudflare Pages Runtime Secret Reading for Billing Routes", () => {
       },
       body: JSON.stringify({ planCode: "weekly" }),
     });
-    (req as any).__testDeps = { fetchFn: mockFetch };
 
     const res = await handleSubscription(req);
     const body = await res.json();
 
-    expect(res.status).toBe(200);
-    expect(body.subscriptionId).toBe("sub_test_cf_999");
-    expect(mockCreateClient).toHaveBeenCalledWith(
-      "https://cf-test.supabase.co",
-      "cf-test-service-role-key",
-      expect.any(Object)
-    );
+    expect(res.status).toBe(410);
+    expect(body.code).toBe("RECURRING_DISABLED");
+    expect(mockCreateClient).not.toHaveBeenCalled();
   });
 
   it("webhook route picks up RAZORPAY_WEBHOOK_SECRET and SUPABASE_SERVICE_ROLE_KEY present ONLY in Cloudflare request context", async () => {

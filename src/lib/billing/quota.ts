@@ -139,7 +139,6 @@ export function resolveOrderPricing(input: {
   planCode?: string | null;
   planId?: string | null;
   addonCode?: string | null;
-  isFirstMonthlyPurchase?: boolean;
 }): ResolvedOrderPricing | null {
   if (input.addonCode) {
     const addon = ADDON_PACK_DEFINITIONS[input.addonCode];
