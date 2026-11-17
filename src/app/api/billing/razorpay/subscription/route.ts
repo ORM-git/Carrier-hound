@@ -328,7 +328,7 @@ export async function POST(req: Request) {
     // If explicit entitlement mock is provided in test deps, evaluate it fail-closed
     if (!hasActivePlan && deps.getServerEntitlement && typeof deps.getServerEntitlement === "function") {
       try {
-        const ent = await deps.getServerEntitlement(user.id);
+        const ent = await deps.getServerEntitlement(user.id, cfEnv);
         if (ent?.isPro) {
           hasActivePlan = true;
         }

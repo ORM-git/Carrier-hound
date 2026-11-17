@@ -57,6 +57,8 @@ import { POST as handleVerify } from "@/app/api/billing/razorpay/verify/route";
 import { POST as handleSubscription } from "@/app/api/billing/razorpay/subscription/route";
 import { POST as handleWebhook } from "@/app/api/billing/razorpay/webhook/route";
 import { getRuntimeEnv } from "@/lib/ai/serviceHandler";
+import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
+import { getSupabaseAdmin } from "@/lib/admin/auth";
 
 describe("Cloudflare Pages Runtime Secret Reading for Billing Routes", () => {
   const originalEnv = { ...process.env };
@@ -177,6 +179,7 @@ describe("Cloudflare Pages Runtime Secret Reading for Billing Routes", () => {
 
     expect(res.status).toBe(500);
     expect(body.error).toBe("Supabase service configuration missing");
+    expect(body.code).toBe("ORDER_ROUTE_SUPABASE_CONFIG_MISSING");
   });
 
   it("verify route picks up secrets present ONLY in Cloudflare request context", async () => {
@@ -351,6 +354,42 @@ describe("Cloudflare Pages Runtime Secret Reading for Billing Routes", () => {
 
     expect(res.status).toBe(200);
     expect(body.received).toBe(true);
+    expect(mockCreateClient).toHaveBeenCalledWith(
+      "https://cf-test.supabase.co",
+      "cf-test-service-role-key",
+      expect.any(Object)
+    );
+  });
+
+  it("getServerEntitlement picks up secrets present ONLY in cfEnv / request context", async () => {
+    expect(process.env.SUPABASE_SERVICE_ROLE_KEY).toBeUndefined();
+    expect(process.env.NEXT_PUBLIC_SUPABASE_URL).toBeUndefined();
+
+    const cfEnv = {
+      NEXT_PUBLIC_SUPABASE_URL: "https://cf-test.supabase.co",
+      SUPABASE_SERVICE_ROLE_KEY: "cf-test-service-role-key",
+    };
+
+    const status = await getServerEntitlement("user_cf_test_1", cfEnv);
+    expect(status).toBeDefined();
+    expect(mockCreateClient).toHaveBeenCalledWith(
+      "https://cf-test.supabase.co",
+      "cf-test-service-role-key",
+      expect.any(Object)
+    );
+  });
+
+  it("getSupabaseAdmin picks up secrets present ONLY in cfEnv / request context", () => {
+    expect(process.env.SUPABASE_SERVICE_ROLE_KEY).toBeUndefined();
+    expect(process.env.NEXT_PUBLIC_SUPABASE_URL).toBeUndefined();
+
+    const cfEnv = {
+      NEXT_PUBLIC_SUPABASE_URL: "https://cf-test.supabase.co",
+      SUPABASE_SERVICE_ROLE_KEY: "cf-test-service-role-key",
+    };
+
+    const client = getSupabaseAdmin(cfEnv);
+    expect(client).toBeDefined();
     expect(mockCreateClient).toHaveBeenCalledWith(
       "https://cf-test.supabase.co",
       "cf-test-service-role-key",

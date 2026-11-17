@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { ProAccessStatus } from "./types";
+import { getRuntimeEnv } from "@/lib/ai/serviceHandler";
 
 import { createLogger } from "@/lib/observability/logger";
 
@@ -19,7 +20,10 @@ function resolvePlanName(planId?: string | null): string {
  * Reads ONLY from the server-managed Supabase `subscriptions` table.
  * Strictly ignores user_metadata, localStorage, or any client-editable fields.
  */
-export async function getServerEntitlement(userId: string): Promise<ProAccessStatus> {
+export async function getServerEntitlement(
+  userId: string,
+  cfEnv?: Record<string, any>
+): Promise<ProAccessStatus> {
   const freeDefault: ProAccessStatus = {
     isPro: false,
     status: "none",
@@ -33,11 +37,12 @@ export async function getServerEntitlement(userId: string): Promise<ProAccessSta
 
   try {
     const supabaseUrl =
-      process.env.NEXT_PUBLIC_SUPABASE_URL ||
-      process.env.SUPABASE_URL ||
+      getRuntimeEnv("NEXT_PUBLIC_SUPABASE_URL", cfEnv) ||
+      getRuntimeEnv("SUPABASE_URL", cfEnv) ||
       "https://szakevhxhwpeskidvtfs.supabase.co";
     const serviceRoleKey =
-      process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
+      getRuntimeEnv("SUPABASE_SERVICE_ROLE_KEY", cfEnv) ||
+      getRuntimeEnv("SUPABASE_SERVICE_KEY", cfEnv);
 
     if (!supabaseUrl || !serviceRoleKey) {
       log.warn("[getServerEntitlement] Missing Supabase service credentials on server");

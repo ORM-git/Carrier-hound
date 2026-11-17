@@ -1,5 +1,6 @@
 import { createClient as createAdminSupabaseClient } from "@supabase/supabase-js";
 import type { User } from "@supabase/supabase-js";
+import { getRuntimeEnv } from "@/lib/ai/serviceHandler";
 import { noteAdminAuthFailure } from "../security/authMonitor";
 import { isLockedOut, recordFailureAndMaybeLock } from "../security/progressiveLockout";
 import { getRequestIp } from "../security/authMonitor";
@@ -28,11 +29,14 @@ export {
 /**
  * Returns a server-side Supabase admin client using the service role key.
  */
-export function getSupabaseAdmin() {
+export function getSupabaseAdmin(cfEnv?: Record<string, any>) {
   const supabaseUrl =
-    process.env.NEXT_PUBLIC_SUPABASE_URL || "https://szakevhxhwpeskidvtfs.supabase.co";
+    getRuntimeEnv("NEXT_PUBLIC_SUPABASE_URL", cfEnv) ||
+    getRuntimeEnv("SUPABASE_URL", cfEnv) ||
+    "https://szakevhxhwpeskidvtfs.supabase.co";
   const serviceKey =
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
+    getRuntimeEnv("SUPABASE_SERVICE_ROLE_KEY", cfEnv) ||
+    getRuntimeEnv("SUPABASE_SERVICE_KEY", cfEnv);
 
   if (!serviceKey) {
     throw new Error("SUPABASE_SERVICE_ROLE_KEY is required for admin operations");

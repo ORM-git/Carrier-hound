@@ -120,7 +120,8 @@ function isProductionHost(req: Request, deps?: any, cfEnv?: Record<string, any>)
 async function checkAddonEligibility(
   supabaseAdmin: any,
   userId: string,
-  deps?: any
+  deps?: any,
+  cfEnv?: Record<string, any>
 ): Promise<boolean> {
   if (deps?.checkAddonEligibility) {
     return Boolean(await deps.checkAddonEligibility(userId));
@@ -159,7 +160,7 @@ async function checkAddonEligibility(
   const entitlementChecker = deps?.getServerEntitlement || getServerEntitlement;
   if (typeof entitlementChecker === "function") {
     try {
-      const entitlement = await entitlementChecker(userId);
+      const entitlement = await entitlementChecker(userId, cfEnv);
       if (!entitlement?.isPro) return false;
       if (entitlement.inGracePeriod || entitlement.status === "in_grace_period") return false;
       if (entitlement.status !== "active" && entitlement.status !== "trialing") return false;
@@ -210,108 +211,11 @@ export async function POST(req: Request) {
         getRuntimeEnv("SUPABASE_SERVICE_KEY", cfEnv);
 
       if (!supabaseUrl || !serviceRoleKey) {
-        let hasRequestContext = false;
-        let ctxEnvHasKey = false;
-        let rawTypeInCtxEnv = "unknown";
-        let hasInCtxEnv = false;
-        let keyCount = 0;
-        let plainTextKeyPresent = false;
-        let otherSecretPresent = false;
-        let trimmedHasKey = false;
-
-        try {
-          const mod = await import("@cloudflare/next-on-pages").catch(() => null);
-          const ctx = mod?.getRequestContext?.();
-          if (ctx) {
-            hasRequestContext = true;
-            const env = ctx.env as Record<string, any> | undefined;
-            if (env) {
-              keyCount = Object.keys(env).length;
-              rawTypeInCtxEnv = typeof env.SUPABASE_SERVICE_ROLE_KEY;
-              hasInCtxEnv = "SUPABASE_SERVICE_ROLE_KEY" in env;
-              plainTextKeyPresent = "RAZORPAY_KEY_ID" in env;
-              otherSecretPresent = "RAZORPAY_KEY_SECRET" in env;
-              trimmedHasKey = Object.keys(env).some((k) => k.trim() === "SUPABASE_SERVICE_ROLE_KEY");
-              if (typeof (env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_SERVICE_KEY) === "string") {
-                ctxEnvHasKey = true;
-              }
-            }
-          }
-        } catch {}
-
-        let isEmptySupabaseKey = false;
-        let isEmptyRazorpaySecret = false;
-        let isEmptyRazorpayKeyId = false;
-        let isNonEmptySupabaseKey = false;
-        try {
-          const mod = await import("@cloudflare/next-on-pages").catch(() => null);
-          const ctx = mod?.getRequestContext?.();
-          const env = ctx?.env as Record<string, any> | undefined;
-          if (env) {
-            isEmptySupabaseKey = env.SUPABASE_SERVICE_ROLE_KEY === "";
-            isEmptyRazorpaySecret = env.RAZORPAY_KEY_SECRET === "";
-            isEmptyRazorpayKeyId = env.RAZORPAY_KEY_ID === "";
-            isNonEmptySupabaseKey = typeof env.SUPABASE_SERVICE_ROLE_KEY === "string" && env.SUPABASE_SERVICE_ROLE_KEY.trim().length > 0;
-          }
-        } catch {}
-
-        const processEnvHasKey = Boolean(
-          typeof process !== "undefined" &&
-            process?.env &&
-            typeof (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY) === "string" &&
-            (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY)?.trim()
-        );
-
-        let globalCtxHasKey = false;
-        try {
-          const cfContext = (globalThis as any)[Symbol.for("__cloudflare-request-context__")];
-          if (cfContext?.env && typeof (cfContext.env.SUPABASE_SERVICE_ROLE_KEY || cfContext.env.SUPABASE_SERVICE_KEY) === "string") {
-            globalCtxHasKey = true;
-          }
-        } catch {}
-
-        let cfEnvSymbolHasKey = false;
-        try {
-          const cfEnvGlobal = (globalThis as any)[Symbol.for("__cloudflare-env__")];
-          if (cfEnvGlobal && typeof (cfEnvGlobal.SUPABASE_SERVICE_ROLE_KEY || cfEnvGlobal.SUPABASE_SERVICE_KEY) === "string") {
-            cfEnvSymbolHasKey = true;
-          }
-        } catch {}
-
-        const servedBy: "cloudflare-pages" | "netlify" | "node" =
-          Boolean((globalThis as any)[Symbol.for("__cloudflare-request-context__")] || process.env.CF_PAGES === "1")
-            ? "cloudflare-pages"
-            : process.env.NETLIFY === "true"
-            ? "netlify"
-            : "node";
-
-        const diagnostic = {
-          servedBy,
-          hasRequestContext,
-          ctxEnvHasKey,
-          processEnvHasKey,
-          globalCtxHasKey,
-          cfEnvSymbolHasKey,
-          rawTypeInCtxEnv,
-          hasInCtxEnv,
-          keyCount,
-          plainTextKeyPresent,
-          otherSecretPresent,
-          trimmedHasKey,
-          isEmptySupabaseKey,
-          isEmptyRazorpaySecret,
-          isEmptyRazorpayKeyId,
-          isNonEmptySupabaseKey,
-          routeVersion: "067a70a0-diag3",
-        };
-
-        log.warn("Supabase service configuration missing in order route", { diagnostic });
-
+        log.warn("Supabase service configuration missing in order route");
         return NextResponse.json(
           {
             error: "Supabase service configuration missing",
-            code: "SUPABASE_SERVICE_KEY_MISSING",
-            diagnostic,
+            code: "ORDER_ROUTE_SUPABASE_CONFIG_MISSING",
           },
           { status: 500 }
         );
@@ -423,7 +327,7 @@ export async function POST(req: Request) {
     // Add-ons require active Pro subscription (aligned with fulfillment SQL)
     if (pricing.type === "addon") {
       // Pre-charge eligibility check: status active/trialing AND current_period_end not null and in future
-      const isEligible = await checkAddonEligibility(supabaseAdmin, user.id, deps);
+      const isEligible = await checkAddonEligibility(supabaseAdmin, user.id, deps, cfEnv);
       if (!isEligible) {
         return NextResponse.json(
           {
