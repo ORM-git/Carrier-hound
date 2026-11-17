@@ -9,19 +9,14 @@ import AppTopBar from "@/components/shell/AppTopBar";
 import LoggedInAppShell from "@/components/shell/LoggedInAppShell";
 import { useSidebarMode } from "@/lib/sidebar";
 import ProOnboardingCard from "@/components/onboarding/ProOnboardingCard";
-import ResumeUploadAndConfirm from "@/components/resume/ResumeUploadAndConfirm";
-import TopTenCompatibleJobs from "@/components/dashboard/TopTenCompatibleJobs";
-import FreeDashboardTopTenPreview from "@/components/dashboard/FreeDashboardTopTenPreview";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { buttonClasses } from "@/components/ui/button";
 import { getAuthUser, getUserPreferences, saveUserPreferences } from "@/lib/auth/session";
 import { UserPreferences } from "@/lib/auth/types";
-import { getCandidateProfile } from "@/lib/resume/storage";
 import { CandidateProfile } from "@/lib/resume/types";
 import { getProAccessStatus } from "@/lib/billing/subscription";
-import { getTrackedApplications } from "@/lib/tracker/storage";
 import { createClient } from "@/lib/supabase/client";
 import { checkAccountOnboardingCompleted } from "@/lib/auth/onboarding";
 import { toast } from "react-toastify";
@@ -161,8 +156,8 @@ export default function DashboardPage() {
     type DashboardBundle = {
       proRes: Awaited<ReturnType<typeof getProAccessStatus>>;
       prefRes: Awaited<ReturnType<typeof getUserPreferences>>;
-      profileRes: Awaited<ReturnType<typeof getCandidateProfile>>;
-      appsRes: Awaited<ReturnType<typeof getTrackedApplications>>;
+      profileRes: CandidateProfile | null;
+      appsRes: TrackedApplication[];
       onboardingCompleted: boolean;
     };
     const cacheKey = `dashboard:${authUser.id}`;
@@ -202,14 +197,12 @@ export default function DashboardPage() {
         Promise.all([
           getProAccessStatus(authUser.id),
           getUserPreferences(authUser.id),
-          getCandidateProfile(authUser.id),
-          getTrackedApplications(authUser.id),
           checkAccountOnboardingCompleted(supabase, authUser.id),
-        ]).then(([proRes, prefRes, profileRes, appsRes, isCompleted]) => ({
+        ]).then(([proRes, prefRes, isCompleted]) => ({
           proRes,
           prefRes,
-          profileRes,
-          appsRes,
+          profileRes: null,
+          appsRes: [],
           onboardingCompleted: isCompleted,
         }))
       );
@@ -594,74 +587,69 @@ export default function DashboardPage() {
             />
           )}
 
-          {/* STEP 2: RESUME STEP (Upload or Skip & fill manually) */}
+          {/* STEP 2: RESUME STEP (Coming Soon) */}
           {activeStep === "resume" && (
             <Card variant="surface" className="p-tk-3 sm:p-tk-2">
               <div className="mb-tk-2 pb-tk-2 border-b border-line flex flex-wrap items-center justify-between gap-tk-1">
                 <div className="space-y-0.5">
-                  <span className="text-tk-caption font-semibold text-brand-700 uppercase tracking-wider">
-                    Step 2 of 2 • Guided Pro Flow
-                  </span>
-                  <h2 className="text-tk-h3 sm:text-tk-h2 text-ink">Verify Your Resume Facts</h2>
+                  <div className="flex items-center gap-2">
+                    <span className="text-tk-caption font-semibold text-brand-700 uppercase tracking-wider">
+                      Step 2 • Resume Verification
+                    </span>
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800">
+                      Coming soon
+                    </span>
+                  </div>
+                  <h2 className="text-tk-h3 sm:text-tk-h2 text-ink">Resume Verification</h2>
                   <p className="text-tk-body-sm text-ink-muted">
-                    Upload your resume document or skip to fill in verified facts manually.
+                    Resume parsing and verification features are currently being upgraded.
                   </p>
                 </div>
-
-                {candidate?.confirmedAt && (
-                  <button
-                    type="button"
-                    onClick={() => setActiveStep("matches")}
-                    className={buttonClasses({ variant: "ghost", className: "text-brand-700" })}
-                  >
-                    View Top 10 Matches →
-                  </button>
-                )}
               </div>
-
-              <ResumeUploadAndConfirm
-                isPro={isPro}
-                onProfileConfirmed={(p) => {
-                  setCandidate(p);
-                  setActiveStep("matches");
-                }}
-              />
+              <div className="p-8 text-center space-y-3">
+                <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto">
+                  <FileText className="w-6 h-6" />
+                </div>
+                <h3 className="text-base font-bold text-slate-900">Resume Upload & Parsing Coming Soon</h3>
+                <p className="text-sm text-slate-500 max-w-md mx-auto">
+                  We are rolling out our enhanced deterministic parser and verification engine. You can browse live active jobs directly on the job board.
+                </p>
+                <div className="pt-2">
+                  <Link
+                    href="/jobs"
+                    className={buttonClasses({ variant: "ghost", className: "border border-line text-ink" })}
+                  >
+                    <span>Browse All Jobs →</span>
+                  </Link>
+                </div>
+              </div>
             </Card>
           )}
 
-          {/* STEP 3 & 4: TOP 10 JOBS WITH COMPATIBLE SCORE & PER-JOB AI ACTIONS */}
-          {activeStep === "matches" && candidate && (
-            isPro ? (
-              <TopTenCompatibleJobs candidate={candidate} isPro={isPro} userId={user?.id || null} />
-            ) : (
-              <FreeDashboardTopTenPreview />
-            )
-          )}
-
-          {/* Fallback prompt if step is matches but resume is not uploaded */}
-          {activeStep === "matches" && !candidate && (
-            <Card
-              variant="surface"
-              data-testid="dashboard-resume-empty"
-              className="p-tk-4 sm:p-tk-3 text-center space-y-tk-2"
-            >
-              <div className="w-12 h-12 rounded-tk-xl bg-brand-50 text-brand-600 flex items-center justify-center mx-auto">
-                <FileText className="w-6 h-6" />
+          {/* STEP 3: TOP 10 JOBS (Coming Soon) */}
+          {activeStep === "matches" && (
+            <Card variant="surface" className="p-tk-3 sm:p-tk-2 space-y-4">
+              <div className="flex items-center justify-between p-2.5 rounded-lg bg-amber-50 border border-amber-200">
+                <span className="text-xs font-medium text-amber-900">AI Top 10 Compatible Matches</span>
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800">Coming soon</span>
               </div>
-              <div className="space-y-1">
-                <h3 className="text-tk-h3 text-ink">Resume Required for Scoring</h3>
-                <p className="text-tk-body-sm text-ink-muted max-w-sm mx-auto">
-                  Upload your resume or fill skills manually to compute your Top 10 compatible job matches.
+              <div className="p-8 text-center space-y-3">
+                <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto">
+                  <TrendingUp className="w-6 h-6" />
+                </div>
+                <h3 className="text-base font-bold text-slate-900">Personalized Match Rankings Coming Soon</h3>
+                <p className="text-sm text-slate-500 max-w-md mx-auto">
+                  Automated top 10 compatibility rankings and candidate scoring are currently being upgraded.
                 </p>
+                <div className="pt-2">
+                  <Link
+                    href="/jobs"
+                    className={buttonClasses({ variant: "ghost", className: "border border-line text-ink" })}
+                  >
+                    <span>Browse All Jobs →</span>
+                  </Link>
+                </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setActiveStep("resume")}
-                className={buttonClasses({ variant: "ghost", className: "border border-line text-ink" })}
-              >
-                <span>Add Resume Facts</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
             </Card>
           )}
         </motion.div>

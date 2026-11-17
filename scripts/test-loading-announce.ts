@@ -20,8 +20,6 @@ function check(cond: boolean, label: string): void {
 // inside a role="status" container.
 const LOADING_STATES: Array<{ file: string; marker: RegExp; note: string }> = [
   { file: "src/app/jobs/loading.tsx", marker: /animate-pulse/, note: "jobs route skeleton" },
-  { file: "src/app/jobs/[id]/skill-what-if/SkillWhatIfClient.tsx", marker: /animate-spin/, note: "skill what-if auth gate" },
-  { file: "src/app/jobs/[id]/interview-pack/InterviewPackClient.tsx", marker: /animate-spin/, note: "interview pack auth gate" },
   { file: "src/app/job-search/all/page.tsx", marker: /animate-spin/, note: "canonical redirect spinner" },
   { file: "src/app/onboarding/page.tsx", marker: /animate-spin/, note: "onboarding auth gate" },
   { file: "src/app/auth/callback/page.tsx", marker: /animate-spin/, note: "auth callback spinner" },

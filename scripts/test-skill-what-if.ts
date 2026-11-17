@@ -131,8 +131,9 @@ async function run() {
     serverCode.includes("status: 401") &&
     !serverCode.includes("user_metadata?.is_pro") &&
     !serverCode.includes("user_metadata?.pro_granted") &&
-    clientCode.includes("ProUpgradeScreen") &&
-    clientCode.includes("getProAccessStatus");
+    // Launch scope: client page is a ComingSoonView; route is gated with 503 while the handler keeps server enforcement.
+    routeCode.includes("FEATURE_COMING_SOON") &&
+    routeCode.includes("status: 503");
   if (!hasServerProEnforcement) {
     failures.push(
       "SERVER PRO ENFORCEMENT FAIL: /api/jobs/skill-what-if must validate token and use getServerEntitlement with no user_metadata trust."

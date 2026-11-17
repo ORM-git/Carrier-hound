@@ -40,8 +40,8 @@ import {
   Globe,
 } from "lucide-react";
 
-const TailorResumeModal = dynamic(() => import("@/components/resume/TailorResumeModal"), { ssr: false });
 import JobAiToolsPanel from "@/components/jobs/JobAiToolsPanel";
+import { toast } from "react-toastify";
 
 export const VERIFIED_SUPPORT_EMAIL = "support@careermonke.com";
 
@@ -652,7 +652,7 @@ export default function JobDetailView({
         onSave={onSave}
         onToggleApplied={onToggleApplied}
         onOpenTailor={() => {
-          setIsTailorOpen(true);
+          toast.info("Tailor Resume is coming soon.");
         }}
         onOpenPaywall={onApply}
       />
@@ -1112,8 +1112,11 @@ export default function JobDetailView({
                 <div className="w-8 h-8 rounded-full bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600 shrink-0">
                   <Sparkles className="w-4 h-4" />
                 </div>
-                <div>
-                  <h3 className="text-sm font-bold text-[#0F172A]">Tailor Resume</h3>
+                <div className="flex-1">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-[#0F172A]">Tailor Resume</h3>
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800">Coming soon</span>
+                  </div>
                   <p className="text-[11px] text-[#64748B]">
                     Customize your resume for this role
                   </p>
@@ -1123,11 +1126,7 @@ export default function JobDetailView({
               <button
                 type="button"
                 onClick={() => {
-                  if (!isUnlocked) {
-                    onApply();
-                  } else {
-                    setIsTailorOpen(true);
-                  }
+                  toast.info("Tailor Resume is coming soon.");
                 }}
                 className="w-full py-2 px-4 rounded-full text-xs font-bold transition border border-blue-200 bg-blue-50 hover:bg-blue-100 text-[#1D4ED8] flex items-center justify-center gap-1.5 cursor-pointer min-h-[38px]"
               >
@@ -1144,8 +1143,11 @@ export default function JobDetailView({
                 <div className="w-8 h-8 rounded-full bg-blue-50 border border-blue-200 flex items-center justify-center text-[#2563EB] shrink-0">
                   <FileText className="w-4 h-4" />
                 </div>
-                <div>
-                  <h3 className="text-sm font-bold text-[#0F172A]">Interview Pack</h3>
+                <div className="flex-1">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-[#0F172A]">Interview Pack</h3>
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800">Coming soon</span>
+                  </div>
                   <p className="text-[11px] text-[#64748B]">
                     Dossier, questions & tailored answers
                   </p>
@@ -1170,8 +1172,11 @@ export default function JobDetailView({
                 <div className="w-8 h-8 rounded-full bg-blue-50 border border-blue-200 flex items-center justify-center text-[#2563EB] shrink-0">
                   <TrendingUp className="w-4 h-4" />
                 </div>
-                <div>
-                  <h3 className="text-sm font-bold text-[#0F172A]">Skill What-If</h3>
+                <div className="flex-1">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-[#0F172A]">Skill What-If</h3>
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800">Coming soon</span>
+                  </div>
                   <p className="text-[11px] text-[#64748B]">
                     Simulate match gain by adding skills
                   </p>
@@ -1241,17 +1246,6 @@ export default function JobDetailView({
           )}
         </div>
       </div>
-
-      {candidate && isTailorOpen && (
-        <TailorResumeModal
-          isPro={isPro}
-          open={isTailorOpen}
-          onOpenChange={setIsTailorOpen}
-          candidate={candidate}
-          job={job}
-          userId={user?.id || null}
-        />
-      )}
 
       {/* Mobile Sticky Bottom Apply Bar */}
       <div className="md:hidden fixed inset-x-0 bottom-0 z-30 bg-white/95 backdrop-blur-md border-t border-[#E2E8F0] p-3 flex items-center justify-between gap-3 shadow-lg">

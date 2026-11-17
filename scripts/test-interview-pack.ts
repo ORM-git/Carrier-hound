@@ -119,9 +119,9 @@ async function run() {
     !serverCode.includes("user_metadata?.is_pro") &&
     !serverCode.includes("user_metadata?.pro_granted") &&
     !serverCode.includes("invalid-non-pro-token") &&
-    clientCode.includes("ProUpgradeScreen") &&
-    clientCode.includes("getProAccessStatus") &&
-    !clientCode.includes("user_metadata?.pro_granted");
+    // Launch scope: client page is a ComingSoonView; route is gated with 503 while the handler keeps server enforcement.
+    routeCode.includes("FEATURE_COMING_SOON") &&
+    routeCode.includes("status: 503");
   if (!hasServerProEnforcement) {
     failures.push("SERVER PRO ENFORCEMENT FAIL: /api/jobs/interview-pack must validate token and use getServerEntitlement with no literal shortcuts or user_metadata trust.");
   } else {

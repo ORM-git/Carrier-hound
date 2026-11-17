@@ -245,8 +245,8 @@ function run() {
   }
 
   // 5b. Pages use AppIconRail and AppTopBar
-  const pagesHaveRail = dashboardCode.includes("AppIconRail") && jobsCode.includes("AppIconRail") && trackerCode.includes("AppIconRail") && resumeCode.includes("AppIconRail") && settingsCode.includes("AppIconRail");
-  const pagesHaveTopBar = dashboardCode.includes("AppTopBar") && jobsCode.includes("AppTopBar") && trackerCode.includes("AppTopBar") && resumeCode.includes("AppTopBar") && settingsCode.includes("AppTopBar");
+  const pagesHaveRail = dashboardCode.includes("AppIconRail") && jobsCode.includes("AppIconRail") && (trackerCode.includes("AppIconRail") || (trackerCode.includes("LoggedInAppShell") && shellContainerCode.includes("AppIconRail"))) && resumeCode.includes("AppIconRail") && settingsCode.includes("AppIconRail");
+  const pagesHaveTopBar = dashboardCode.includes("AppTopBar") && jobsCode.includes("AppTopBar") && (trackerCode.includes("AppTopBar") || (trackerCode.includes("LoggedInAppShell") && shellContainerCode.includes("AppTopBar"))) && resumeCode.includes("AppTopBar") && settingsCode.includes("AppTopBar");
   if (!pagesHaveRail || !pagesHaveTopBar) {
     failures.push("SHELL ADOPTION FAIL: AppIconRail and AppTopBar must be adopted on /dashboard, /jobs, /tracker, /resume, and /settings.");
   } else {

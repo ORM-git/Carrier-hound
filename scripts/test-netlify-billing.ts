@@ -272,8 +272,11 @@ async function runSuite() {
     fetchFn: mockFetch,
   });
 
+  // Provider payments the mocked Razorpay API returns, keyed by payment id.
+  const providerPayments = new Map<string, any>();
   const verifyHandler = createVerifyHandler({
     getSupabaseAdmin: mockAdminGetter,
+    fetchRazorpayPayment: async (paymentId: string) => providerPayments.get(paymentId) ?? null,
   });
 
   const webhookHandler = createWebhookHandler({
@@ -560,6 +563,43 @@ async function runSuite() {
     console.log("\nTest 6: Verifying verify fulfillment and repeat idempotency...");
 
     mockDb.rpcFulfilCalls = [];
+
+    // 6-pre: fail-closed provider checks. Every mismatch must be 400 with no fulfilment.
+    const recordedOrder: any = Array.from(mockDb.orders.values()).find((o: any) => o.provider_order_id === targetOrderId);
+    assert(recordedOrder, "Monthly order must be recorded");
+    const goodPayment = {
+      id: samplePaymentId,
+      order_id: targetOrderId,
+      status: "captured",
+      amount: recordedOrder.amount_paise,
+      currency: recordedOrder.currency || "INR",
+    };
+    const verifyBody6 = JSON.stringify({
+      order_id: targetOrderId,
+      payment_id: samplePaymentId,
+      razorpay_signature: validSignature,
+    });
+    const badProviderCases: Array<[string, any, string]> = [
+      ["not captured", { ...goodPayment, status: "authorized" }, "PAYMENT_NOT_CAPTURED"],
+      ["amount mismatch", { ...goodPayment, amount: goodPayment.amount - 1 }, "AMOUNT_MISMATCH"],
+      ["currency mismatch", { ...goodPayment, currency: "USD" }, "CURRENCY_MISMATCH"],
+      ["order mismatch", { ...goodPayment, order_id: "order_other" }, "ORDER_MISMATCH"],
+      ["payment id mismatch", { ...goodPayment, id: "pay_other" }, "PAYMENT_ID_MISMATCH"],
+      ["payment not found", null, "PAYMENT_NOT_FOUND"],
+    ];
+    for (const [label, providerPayment, code] of badProviderCases) {
+      providerPayments.set(samplePaymentId, providerPayment);
+      const r = await verifyHandler({
+        httpMethod: "POST",
+        headers: { authorization: "Bearer valid-token-pro" },
+        body: verifyBody6,
+      });
+      assert.strictEqual(r.statusCode, 400, `provider ${label} must be 400`);
+      assert.strictEqual(JSON.parse(r.body).code, code, `provider ${label} code`);
+      assert.strictEqual(mockDb.rpcFulfilCalls.length, 0, `provider ${label} must not fulfil`);
+    }
+    providerPayments.set(samplePaymentId, goodPayment);
+
     // 6A: First valid verify call
     const verifySuccess = await verifyHandler({
       httpMethod: "POST",

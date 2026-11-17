@@ -53,7 +53,7 @@ function SettingsPageInner() {
   const [workAuth, setWorkAuth] = useState("");
   const [minSalary, setMinSalary] = useState<number | undefined>(undefined);
   const [salaryCurrency, setSalaryCurrency] = useState("USD");
-  const [dailyDigestOptIn, setDailyDigestOptIn] = useState(true);
+  const [dailyDigestOptIn] = useState(false);
 
   // Billing state
   const [subscription, setSubscription] = useState<UserSubscription | null>(null);
@@ -95,7 +95,6 @@ function SettingsPageInner() {
         setWorkAuth(p.workAuth || "");
         setMinSalary(p.minSalary);
         setSalaryCurrency(p.salaryCurrency || "USD");
-        setDailyDigestOptIn(p.dailyDigestOptIn ?? true);
       });
 
       getUserSubscription().then((sub: UserSubscription | null) => {
@@ -462,19 +461,23 @@ function SettingsPageInner() {
             <div className="space-y-4">
               <div className="flex items-start justify-between gap-4 p-4 rounded-xl border border-slate-200 bg-slate-50/70">
                 <div className="space-y-1">
-                  <span className="font-bold text-sm text-slate-900 block">
-                    Daily AI Matching Digest
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-sm text-slate-900 block">
+                      Daily AI Matching Digest
+                    </span>
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800">Coming soon</span>
+                  </div>
                   <p className="text-xs text-slate-500">
-                    Receive daily curated job recommendations matching your confirmed resume and target roles.
+                    Receive daily curated job recommendations matching your confirmed resume and target roles (Feature coming soon).
                   </p>
                 </div>
                 <input
                   type="checkbox"
                   aria-label="Daily AI Matching Digest"
                   checked={dailyDigestOptIn}
-                  onChange={(e) => setDailyDigestOptIn(e.target.checked)}
-                  className="mt-1 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                  disabled
+                  aria-disabled="true"
+                  className="mt-1 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-not-allowed opacity-60"
                 />
               </div>
             </div>

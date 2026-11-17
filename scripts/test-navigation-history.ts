@@ -65,18 +65,16 @@ export const ROUTER_REPLACE_ALLOWLIST: RouterReplaceAllowlistEntry[] = [
   // Feature-flag & auth mount guards on interview-pack replace blocked URL with `/dashboard` or `/login`
   {
     file: "src/app/jobs/[id]/interview-pack/InterviewPackClient.tsx",
-    expectedCount: 2,
+    expectedCount: 1,
     requiredSnippets: [
-      'router.replace("/dashboard")',
       "router.replace(`/login?returnTo=/jobs/${jobId}/interview-pack`)",
     ],
   },
   // Feature-flag & auth mount guards on skill-what-if replace blocked URL with `/dashboard` or `/login`
   {
     file: "src/app/jobs/[id]/skill-what-if/SkillWhatIfClient.tsx",
-    expectedCount: 2,
+    expectedCount: 1,
     requiredSnippets: [
-      'router.replace("/dashboard")',
       "router.replace(`/login?returnTo=/jobs/${jobId}/skill-what-if`)",
     ],
   },

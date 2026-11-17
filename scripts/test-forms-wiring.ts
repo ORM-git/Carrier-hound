@@ -133,15 +133,10 @@ check(
 // 1.5 Tracker Page (src/app/tracker/page.tsx)
 const trackerSrc = fs.readFileSync(path.join(ROOT, "src/app/tracker/page.tsx"), "utf8");
 const addAppMatch = trackerSrc.match(/<button[^>]*type="submit"[^>]*>[\s\S]*?Save Application[\s\S]*?<\/button>/);
-check(
-  Boolean(addAppMatch && !addAppMatch[0].includes("disabled")),
-  "Tracker: Confirmed gap - Save Application submit button currently lacks disabled attribute"
-);
+// Launch scope: the tracker board is Coming Soon, so its forms no longer exist.
+check(!addAppMatch, "Tracker: Save Application form removed (Coming Soon)");
 const saveNotesMatch = trackerSrc.match(/<button[^>]*onClick=\{handleSaveNotes\}[^>]*>[\s\S]*?Save Notes[\s\S]*?<\/button>/);
-check(
-  Boolean(saveNotesMatch && !saveNotesMatch[0].includes("disabled")),
-  "Tracker: Confirmed gap - Save Notes button currently lacks disabled attribute"
-);
+check(!saveNotesMatch, "Tracker: Save Notes form removed (Coming Soon)");
 
 // 1.6 Audit Documentation Verification
 const auditDocPath = path.join(ROOT, "docs/forms-wiring-audit.md");

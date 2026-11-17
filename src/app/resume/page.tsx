@@ -7,6 +7,7 @@ import { toast } from "react-toastify";
 import AppIconRail from "@/components/shell/AppIconRail";
 import AppTopBar from "@/components/shell/AppTopBar";
 import LoggedInAppShell from "@/components/shell/LoggedInAppShell";
+import ComingSoonView from "@/components/common/ComingSoonView";
 import ProUpgradeScreen from "@/components/billing/ProUpgradeScreen";
 import ResumeUploadAndConfirm from "@/components/resume/ResumeUploadAndConfirm";
 import {
@@ -131,20 +132,9 @@ export default function ResumePage() {
         return;
       }
       setUser(u);
-      loadData(u.id);
+      setLoading(false);
     });
-
-    const handleUpdate = () => {
-      getAuthUser().then((u) => {
-        if (u) {
-          setUser(u);
-          loadData(u.id);
-        }
-      });
-    };
-    window.addEventListener("careermonke_profile_updated", handleUpdate);
-    return () => window.removeEventListener("careermonke_profile_updated", handleUpdate);
-  }, [router, loadData]);
+  }, [router]);
 
   const handleDeleteProfile = async () => {
     if (
@@ -203,24 +193,6 @@ export default function ResumePage() {
     toast.success("Resume facts confirmed successfully!");
   };
 
-  if (loading || (!isPro && !isProDefinitive)) {
-    return <ResumeSkeleton user={user} isPro={isPro} />;
-  }
-
-  // Definitively non-Pro
-  if (!isPro) {
-    return (
-      <LoggedInAppShell pageLabel="RESUME" user={user} isPro={false}>
-        <div className="max-w-[1176px] mx-auto px-4 sm:px-6 py-8 w-full">
-          <ProUpgradeScreen
-            title="Unlock CareerMonke Pro"
-            subtitle="Upgrade to Pro to upload your resume, compute compatibility scores, and generate AI tailored applications."
-          />
-        </div>
-              </LoggedInAppShell>
-    );
-  }
-
   const isConfirmed = Boolean(candidate && candidate.confirmedAt);
   const uploadedDateStr = candidate?.confirmedAt || candidate?.updatedAt;
   const formattedDate = uploadedDateStr
@@ -242,6 +214,18 @@ export default function ResumePage() {
   return (
     <LoggedInAppShell pageLabel="RESUME" user={user} isPro={isPro}>
       <div className="w-full max-w-[1176px] mx-auto px-4 lg:px-0 py-6 sm:py-8 space-y-6">
+        <ComingSoonView
+          title="Resume Management & Tailoring"
+          description="Resume uploads, automated fact extraction, and AI tailoring are coming soon."
+        />
+      </div>
+
+      <div className="hidden" aria-hidden="true">
+        <ProUpgradeScreen
+          title="Unlock CareerMonke Pro"
+          subtitle="Upgrade to Pro to upload your resume, compute compatibility scores, and generate AI tailored applications."
+        />
+        <div className="w-full max-w-[1176px] mx-auto px-4 lg:px-0 py-6 sm:py-8 space-y-6">
         {/* ================================================================= */}
         {/* PAGE HEADER: "RESUME" bold 24px                                   */}
         {/* ================================================================= */}
@@ -768,6 +752,7 @@ export default function ResumePage() {
           </div>
         </div>
       )}
+      </div>
     </LoggedInAppShell>
   );
 }

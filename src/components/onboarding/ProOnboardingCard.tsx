@@ -94,7 +94,7 @@ export default function ProOnboardingCard({
         employmentTypes: jobTypes,
         locations: initialPreferences?.locations || [],
         salaryCurrency: initialPreferences?.salaryCurrency || "USD",
-        dailyDigestOptIn: initialPreferences?.dailyDigestOptIn ?? true,
+        dailyDigestOptIn: false,
         onboardingCompleted: true,
         updatedAt: new Date().toISOString(),
       };
