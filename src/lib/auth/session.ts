@@ -223,7 +223,9 @@ export async function saveUserPreferences(prefs: UserPreferences, userId?: strin
 
   const supabase = createClient();
   if (userId && userId !== "local-user") {
-    const row: Record<string, unknown> = {
+    // Explicit column list (object literal). country / country_code are only written when the
+    // caller set them, so a save without a country never blanks a stored one.
+    const { error: upsertError } = await supabase.from("user_preferences").upsert({
       user_id: userId,
       roles: updatedPrefs.roles || [],
       categories: updatedPrefs.categories || [],
@@ -239,15 +241,11 @@ export async function saveUserPreferences(prefs: UserPreferences, userId?: strin
       onboarding_completed: updatedPrefs.onboardingCompleted ?? false,
       eligibility_filter: updatedPrefs.eligibilityFilter ?? true,
       updated_at: updatedPrefs.updatedAt,
-    };
-    if (updatedPrefs.country !== undefined) {
-      row.country = updatedPrefs.country || null;
-    }
-    if (updatedPrefs.countryCode !== undefined) {
-      row.country_code = updatedPrefs.countryCode ? updatedPrefs.countryCode.toUpperCase() : null;
-    }
-
-    const { error: upsertError } = await supabase.from("user_preferences").upsert(row);
+      ...(updatedPrefs.country !== undefined ? { country: updatedPrefs.country || null } : {}),
+      ...(updatedPrefs.countryCode !== undefined
+        ? { country_code: updatedPrefs.countryCode ? updatedPrefs.countryCode.toUpperCase() : null }
+        : {}),
+    });
 
     if (upsertError) {
       if (isMissingCountryColumnError(upsertError)) {

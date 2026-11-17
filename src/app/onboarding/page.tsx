@@ -47,9 +47,10 @@ function OnboardingPageInner() {
   const [remoteTouched, setRemoteTouched] = useState(false);
   const [existingPrefs, setExistingPrefs] = useState<UserPreferences | null>(null);
 
-  // Funnel tracking: onboarding started on mount
+  // Funnel tracking: onboarding started on mount. Editing saved preferences is not onboarding,
+  // so edit mode emits no funnel events (keeps the signup -> onboarding funnel honest).
   useEffect(() => {
-    trackFunnelEvent("onboarding_started", { path: isEditMode ? "/onboarding?mode=edit" : "/onboarding" });
+    if (!isEditMode) trackFunnelEvent("onboarding_started", { path: "/onboarding" });
   }, [isEditMode]);
 
   // Auth gate & existing preferences check
@@ -247,8 +248,8 @@ function OnboardingPageInner() {
         await markAccountOnboardingCompleted(supabase, userId).catch(() => {});
       }
 
-      // Funnel event: onboarding completed
-      trackFunnelEvent("onboarding_completed", { path: isEditMode ? "/onboarding?mode=edit" : "/onboarding" });
+      // Funnel event: onboarding completed (first-run only; edits are not onboarding)
+      if (!isEditMode) trackFunnelEvent("onboarding_completed", { path: "/onboarding" });
 
       // Update dashboard SWR cache so next mount reflects completed status
       updateSwr<any>(`dashboard:${userId}`, (current) =>

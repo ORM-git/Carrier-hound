@@ -225,27 +225,12 @@ export async function POST(req: Request) {
 
   try {
     // 8. Upsert user_preferences. country / country_code are required columns of this write.
-    const fullDbPayload: Record<string, any> = {
-      user_id: user.id,
-      roles: sanitizedRoles,
-      categories: mergedCategories,
-      employment_types: sanitizedTypes,
-      locations: mergedLocations,
-      remote_preference: finalRemotePref,
-      work_auth: sanitizedWorkAuth,
-      country: resolvedCountry.name,
-      country_code: resolvedCountry.code,
-      // Launch scope: daily digest is Coming Soon; never opt in (the column defaults to true on insert).
-      daily_digest_opt_in: false,
-      onboarding_completed: true,
-      updated_at: new Date().toISOString(),
-    };
-
     // Carry saved values over explicitly; write null for a new user so column defaults
     // (salary_currency defaults to 'USD') never invent a value the user did not choose.
-    fullDbPayload.experience_level = existingDbPrefs?.experience_level || null;
-    fullDbPayload.min_salary = existingDbPrefs?.min_salary ?? null;
-    fullDbPayload.salary_currency = existingDbPrefs?.salary_currency || null;
+    const experienceLevel = existingDbPrefs?.experience_level || null;
+    const minSalary = existingDbPrefs?.min_salary ?? null;
+    const salaryCurrency = existingDbPrefs?.salary_currency || null;
+    const updatedAt = new Date().toISOString();
 
     // The validated preferences exactly as written, returned so the client caches what the DB holds.
     const savedPreferences: UserPreferences = {
@@ -257,18 +242,37 @@ export async function POST(req: Request) {
       countryCode: resolvedCountry.code,
       workAuth: sanitizedWorkAuth,
       remotePreference: finalRemotePref,
-      experienceLevel: fullDbPayload.experience_level || undefined,
-      minSalary: fullDbPayload.min_salary ?? undefined,
-      salaryCurrency: fullDbPayload.salary_currency || undefined,
+      experienceLevel: experienceLevel || undefined,
+      minSalary: minSalary ?? undefined,
+      salaryCurrency: salaryCurrency || undefined,
       dailyDigestOptIn: false,
       onboardingCompleted: true,
       eligibilityFilter: existingDbPrefs?.eligibility_filter ?? true,
-      updatedAt: fullDbPayload.updated_at,
+      updatedAt,
     };
 
-    const { error: prefError } = await supabaseAdmin
-      .from("user_preferences")
-      .upsert(fullDbPayload, { onConflict: "user_id" });
+    // Explicit column list (object literal): no request field reaches the DB unvetted.
+    const { error: prefError } = await supabaseAdmin.from("user_preferences").upsert(
+      {
+        user_id: user.id,
+        roles: sanitizedRoles,
+        categories: mergedCategories,
+        employment_types: sanitizedTypes,
+        locations: mergedLocations,
+        remote_preference: finalRemotePref,
+        work_auth: sanitizedWorkAuth,
+        country: resolvedCountry.name,
+        country_code: resolvedCountry.code,
+        experience_level: experienceLevel,
+        min_salary: minSalary,
+        salary_currency: salaryCurrency,
+        // Launch scope: daily digest is Coming Soon; never opt in (the column defaults to true on insert).
+        daily_digest_opt_in: false,
+        onboarding_completed: true,
+        updated_at: updatedAt,
+      },
+      { onConflict: "user_id" }
+    );
 
     // No retry without the country columns: a save that drops the country must never report success.
     if (prefError && isMissingCountryColumnError(prefError)) {
