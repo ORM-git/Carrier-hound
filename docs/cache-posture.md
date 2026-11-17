@@ -69,6 +69,7 @@ This catalog inventories every API route and serverless function in CareerMonke,
 | `src/app/api/jobs/suggest/route.ts` | GET | Public | `"public, max-age=60"` (200) / `"no-store"` (err) | `public cacheable` | ✅ **Compliant**: Masked `jobs_public` title autocomplete cached 60s; errors/429 strictly `no-store`. |
 | `src/app/api/jobs/top10/route.ts` | POST | User Auth (`Bearer`) + Approved / Pro | `none set` | `private/no-store` | ⚠️ **Needs Remediation**: Strictly requires `Authorization: Bearer <token>` (returns `401` to guests—no guest path) and computes personalized Pro job rankings; currently omits explicit `no-store`. |
 | `src/app/api/me/quota/route.ts` | GET | User Auth (`Bearer`) | `"private, no-cache, no-store, must-revalidate"` | `private/no-store` | ✅ **Compliant**: Authenticated user quota enforces `private, no-cache, no-store, must-revalidate`. |
+| `src/app/api/onboarding/route.ts` | POST | Authenticated User (`Bearer`) | `"private, no-cache, no-store, must-revalidate"` | `private/no-store` | ✅ **Compliant**: User onboarding preferences save enforces `private, no-cache, no-store, must-revalidate`. |
 | `src/app/api/radar/route.ts` | GET | Public | `'public, s-maxage=300, stale-while-revalidate=600'` | `public cacheable` | ✅ **Compliant**: Uniform public job radar edge-cached 5m with 10m SWR and weak ETag. |
 | `src/app/api/stats/route.ts` | GET | Dual-Mode: Public (anon) / Approved User Auth (`Bearer`) | `"public, s-maxage=60, stale-while-revalidate=300"` (no `Auth`) / `"no-store"` (`Auth` or err) + `Vary: Authorization` | **Split**: Anon-safe = `public cacheable` / Authed = `private/no-store` | ✅ **Compliant**: Any request with `Authorization` header (valid or invalid) receives `"no-store"` + `Vary: Authorization`; only anonymous calls receive edge `s-maxage`. |
 | `src/app/api/ticker/route.ts` | GET | Public | `"public, s-maxage=60, stale-while-revalidate=300"` (200) / `"no-store"` (err) | `public cacheable` | ✅ **Compliant**: Public recent job feed edge-cached 60s with SWR and weak ETag; errors `no-store`. |
@@ -109,7 +110,7 @@ Routes whose response is identical for all anonymous callers and exposes zero PI
 Endpoints handling authenticated sessions (`Bearer`), PII, admin operations, billing, Pro-unmasked data, user preferences, HMAC tokens, or health checks:
 - **Compliant (`no-store` already set)**:
   - `src/app/api/health/route.ts`, `src/app/api/health/ready/route.ts`, `netlify/functions/health.ts` (`"no-store, no-cache, must-revalidate"`)
-  - `src/app/api/me/quota/route.ts`, `src/app/api/jobs/interview-pack/route.ts`, `src/app/api/jobs/skill-what-if/route.ts` (`"private, no-cache, no-store, must-revalidate"`)
+  - `src/app/api/me/quota/route.ts`, `src/app/api/onboarding/route.ts`, `src/app/api/jobs/interview-pack/route.ts`, `src/app/api/jobs/skill-what-if/route.ts` (`"private, no-cache, no-store, must-revalidate"`)
   - `src/app/api/account/export/route.ts` (`"no-store"`)
   - `src/app/api/stats/route.ts` (**authenticated / any `Authorization` header branch**: `"no-store"` + `Vary: Authorization`)
 - **Non-`no-store` / Missing `no-store` Remediation Targets**:

@@ -4,12 +4,65 @@ import { markAccountOnboardingCompleted } from "@/lib/auth/onboarding";
 import { UserPreferences } from "@/lib/auth/types";
 import { getRequestContext } from "@cloudflare/next-on-pages";
 import { createLogger } from "@/lib/observability/logger";
+import { COUNTRY_CODE_TO_NAME, SUPPORTED_COUNTRIES } from "@/lib/countries";
 
 const log = createLogger({ context: { route: "/api/onboarding" } });
 
 export const runtime = "edge";
 
+const CACHE_CONTROL_HEADER = "private, no-cache, no-store, must-revalidate";
+
 const VALID_EMPLOYMENT_TYPES = new Set(["full-time", "contract", "part-time", "internship"]);
+const REMOTE_PREFERENCES = new Set<UserPreferences["remotePreference"]>(["any", "hybrid", "remote", "onsite"]);
+
+interface ResolvedCountry {
+  code: string;
+  name: string;
+}
+
+function resolveCountry(input: unknown): ResolvedCountry | null {
+  if (typeof input !== "string" || !input.trim()) {
+    return null;
+  }
+  const raw = input.trim();
+  const upper = raw.toUpperCase();
+  const lower = raw.toLowerCase();
+
+  // 1. Direct code lookup (e.g. "IN", "US")
+  if (COUNTRY_CODE_TO_NAME[upper]) {
+    return { code: upper, name: COUNTRY_CODE_TO_NAME[upper] };
+  }
+
+  // 2. Direct name match in COUNTRY_CODE_TO_NAME
+  for (const [code, name] of Object.entries(COUNTRY_CODE_TO_NAME)) {
+    if (name.toLowerCase() === lower) {
+      return { code, name };
+    }
+  }
+
+  // 3. Supported countries label / name match
+  for (const opt of SUPPORTED_COUNTRIES) {
+    if (!opt.code) continue;
+    if (
+      opt.name.toLowerCase() === lower ||
+      opt.label.toLowerCase() === lower ||
+      opt.code.toUpperCase() === upper
+    ) {
+      return { code: opt.code, name: opt.name };
+    }
+  }
+
+  return null;
+}
+
+function jsonResponse(data: any, status: number = 200): NextResponse {
+  return NextResponse.json(data, {
+    status,
+    headers: {
+      "Cache-Control": CACHE_CONTROL_HEADER,
+    },
+  });
+}
 
 export async function POST(req: Request) {
   let cfEnv: Record<string, any> | undefined;
@@ -22,11 +75,17 @@ export async function POST(req: Request) {
 
   const authHeader = req.headers.get("authorization") || req.headers.get("Authorization");
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return NextResponse.json({ error: "Unauthorized: Missing authentication token" }, { status: 401 });
+    return jsonResponse({ error: "Unauthorized: Missing authentication token" }, 401);
   }
 
   const token = authHeader.replace("Bearer ", "").trim();
-  const supabaseAdmin = getSupabaseAdminClient(cfEnv, true);
+  let supabaseAdmin: any;
+  try {
+    supabaseAdmin = getSupabaseAdminClient(cfEnv, true);
+  } catch (err: any) {
+    log.error("Database service unavailable in /api/onboarding", { error: err?.message || err });
+    return jsonResponse({ error: "Database service unavailable" }, 503);
+  }
 
   const {
     data: { user },
@@ -34,19 +93,19 @@ export async function POST(req: Request) {
   } = await supabaseAdmin.auth.getUser(token);
 
   if (authError || !user) {
-    return NextResponse.json({ error: "Unauthorized: Invalid session" }, { status: 401 });
+    return jsonResponse({ error: "Unauthorized: Invalid session" }, 401);
   }
 
   let body: any;
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON request body" }, { status: 400 });
+    return jsonResponse({ error: "Invalid JSON request body" }, 400);
   }
 
-  // 1. Validate Roles (Required, 1-20 roles, strings up to 100 chars)
+  // 1. Validate Roles (Required, 1-20 roles)
   if (!Array.isArray(body.roles) || body.roles.length === 0) {
-    return NextResponse.json({ error: "At least one target role is required" }, { status: 400 });
+    return jsonResponse({ error: "At least one target role is required" }, 400);
   }
 
   const sanitizedRoles: string[] = [];
@@ -59,15 +118,15 @@ export async function POST(req: Request) {
   }
 
   if (sanitizedRoles.length === 0) {
-    return NextResponse.json({ error: "At least one valid target role is required" }, { status: 400 });
+    return jsonResponse({ error: "At least one valid target role is required" }, 400);
   }
   if (sanitizedRoles.length > 20) {
-    return NextResponse.json({ error: "Maximum 20 roles may be selected" }, { status: 400 });
+    return jsonResponse({ error: "Maximum 20 roles may be selected" }, 400);
   }
 
   // 2. Validate Employment Types (Required, non-empty, allowed values)
   if (!Array.isArray(body.employmentTypes) || body.employmentTypes.length === 0) {
-    return NextResponse.json({ error: "At least one job type must be selected" }, { status: 400 });
+    return jsonResponse({ error: "At least one job type must be selected" }, 400);
   }
 
   const sanitizedTypes: string[] = [];
@@ -80,21 +139,67 @@ export async function POST(req: Request) {
   }
 
   if (sanitizedTypes.length === 0) {
-    return NextResponse.json({ error: "Please select a valid job type (Full-time, Contract, Part-time, Internship)" }, { status: 400 });
+    return jsonResponse(
+      { error: "Please select a valid job type (Full-time, Contract, Part-time, Internship)" },
+      400
+    );
   }
 
-  // 3. Validate Location
-  let location = "Anywhere in India";
-  if (typeof body.location === "string" && body.location.trim().length > 0) {
-    location = body.location.trim().slice(0, 120);
+  // 3. Validate Location / Country (Required, searchable country picker, no fallback)
+  const resolvedCountry = resolveCountry(body.country || body.countryCode);
+  if (!resolvedCountry) {
+    return jsonResponse(
+      { error: "Valid country is required. Please select a supported country." },
+      400
+    );
   }
 
-  // 4. Validate Remote Preference
-  const openToRemote = body.openToRemote !== false;
-  const remotePreference: UserPreferences["remotePreference"] = openToRemote ? "remote" : "onsite";
+  // 4. Validate Work Authorization (Required, never defaulted)
+  if (typeof body.workAuth !== "string" || !body.workAuth.trim()) {
+    return jsonResponse({ error: "Work authorization status is required" }, 400);
+  }
+  const sanitizedWorkAuth = body.workAuth.trim().slice(0, 100);
 
-  // Derive categories from roles
-  const categories: string[] = Array.from(
+  // Fetch existing DB preferences to preserve old locations, experience level, currency, and work model
+  // Fail closed: if we cannot read saved prefs we must not overwrite them (would drop old locations).
+  let existingDbPrefs: any = null;
+  try {
+    const { data: dbData, error: readError } = await supabaseAdmin
+      .from("user_preferences")
+      .select("roles, categories, experience_level, employment_types, locations, remote_preference, work_auth, min_salary, salary_currency")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (readError) {
+      log.error("Failed to read existing user_preferences in /api/onboarding", { error: readError.message });
+      return jsonResponse({ error: "Failed to load saved preferences" }, 500);
+    }
+    existingDbPrefs = dbData;
+  } catch (err: any) {
+    log.error("Failed to read existing user_preferences in /api/onboarding", { error: err?.message || err });
+    return jsonResponse({ error: "Failed to load saved preferences" }, 500);
+  }
+
+  // 5. Locations: preserve ALL old saved locations without clobbering
+  const existingLocations: string[] = Array.isArray(existingDbPrefs?.locations)
+    ? existingDbPrefs.locations
+    : [];
+  const mergedLocations = Array.from(
+    new Set([resolvedCountry.name, ...existingLocations])
+  ).filter(Boolean);
+
+  // 6. Remote preference: keep any/hybrid/remote/onsite without narrowing
+  //    Explicit value wins; otherwise the saved value is kept as-is; legacy openToRemote only for new users.
+  let finalRemotePref: UserPreferences["remotePreference"];
+  if (REMOTE_PREFERENCES.has(body.remotePreference)) {
+    finalRemotePref = body.remotePreference;
+  } else if (REMOTE_PREFERENCES.has(existingDbPrefs?.remote_preference)) {
+    finalRemotePref = existingDbPrefs.remote_preference;
+  } else {
+    finalRemotePref = body.openToRemote === false ? "onsite" : "remote";
+  }
+
+  // 7. Derive categories from roles
+  const derivedCategories: string[] = Array.from(
     new Set(
       sanitizedRoles.map((role) => {
         const lower = role.toLowerCase();
@@ -113,46 +218,81 @@ export async function POST(req: Request) {
     )
   );
 
-  const payload: Partial<UserPreferences> = {
+  const mergedCategories = Array.from(
+    new Set([...(existingDbPrefs?.categories || []), ...derivedCategories])
+  );
+
+  const clientPreferences: Partial<UserPreferences> = {
     roles: sanitizedRoles,
-    categories,
+    categories: mergedCategories,
     employmentTypes: sanitizedTypes,
-    locations: [location],
-    remotePreference,
+    locations: mergedLocations,
+    country: resolvedCountry.name,
+    countryCode: resolvedCountry.code,
+    workAuth: sanitizedWorkAuth,
+    remotePreference: finalRemotePref,
     onboardingCompleted: true,
+    experienceLevel: existingDbPrefs?.experience_level || undefined,
+    minSalary: existingDbPrefs?.min_salary ?? undefined,
+    salaryCurrency: existingDbPrefs?.salary_currency || undefined,
     updatedAt: new Date().toISOString(),
   };
 
   try {
-    // Upsert user_preferences
-    const { error: prefError } = await supabaseAdmin.from("user_preferences").upsert(
-      {
-        user_id: user.id,
-        roles: sanitizedRoles,
-        categories,
-        employment_types: sanitizedTypes,
-        locations: [location],
-        remote_preference: remotePreference,
-        onboarding_completed: true,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "user_id" }
-    );
+    // 8. Upsert user_preferences - attempt with separate country columns first
+    const fullDbPayload: Record<string, any> = {
+      user_id: user.id,
+      roles: sanitizedRoles,
+      categories: mergedCategories,
+      employment_types: sanitizedTypes,
+      locations: mergedLocations,
+      remote_preference: finalRemotePref,
+      work_auth: sanitizedWorkAuth,
+      country: resolvedCountry.name,
+      country_code: resolvedCountry.code,
+      onboarding_completed: true,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (existingDbPrefs?.experience_level) {
+      fullDbPayload.experience_level = existingDbPrefs.experience_level;
+    }
+    if (existingDbPrefs?.min_salary != null) {
+      fullDbPayload.min_salary = existingDbPrefs.min_salary;
+    }
+    if (existingDbPrefs?.salary_currency) {
+      fullDbPayload.salary_currency = existingDbPrefs.salary_currency;
+    }
+
+    let { error: prefError } = await supabaseAdmin
+      .from("user_preferences")
+      .upsert(fullDbPayload, { onConflict: "user_id" });
+
+    // Fallback: If country column does not exist yet in live DB, retry without country/country_code
+    if (prefError && (prefError.message?.includes("country") || prefError.code === "PGRST204")) {
+      log.warn("Retrying user_preferences upsert without country columns", { error: prefError.message });
+      delete fullDbPayload.country;
+      delete fullDbPayload.country_code;
+      const retryResult = await supabaseAdmin
+        .from("user_preferences")
+        .upsert(fullDbPayload, { onConflict: "user_id" });
+      prefError = retryResult.error;
+    }
 
     if (prefError) {
       log.error("Failed to persist user_preferences in /api/onboarding", { error: prefError.message });
-      return NextResponse.json({ error: "Failed to save preferences to database" }, { status: 500 });
+      return jsonResponse({ error: "Failed to save preferences to database" }, 500);
     }
 
     // Persist account onboarding completion timestamp
     await markAccountOnboardingCompleted(supabaseAdmin, user.id);
 
-    return NextResponse.json({
+    return jsonResponse({
       success: true,
-      preferences: payload,
+      preferences: clientPreferences,
     });
   } catch (err: any) {
     log.error("Unhandled error in /api/onboarding", { error: err?.message || err });
-    return NextResponse.json({ error: "Internal server error while saving preferences" }, { status: 500 });
+    return jsonResponse({ error: "Internal server error while saving preferences" }, 500);
   }
 }

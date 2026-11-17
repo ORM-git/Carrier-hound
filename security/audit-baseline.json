@@ -110,5 +110,13 @@
     "source": 1139510,
     "title": "PostCSS: Path Traversal in Previous Source Map Auto-Loading (sourceMappingURL) leads to Arbitrary .map File Disclosure",
     "reason": "PostCSS build-time path traversal in sourceMappingURL. Used exclusively during build compilation and not exposed to external runtime user input."
+  },
+  {
+    "id": "GHSA-fc5q-39xc-vjpf",
+    "package": "picomatch",
+    "severity": "high",
+    "title": "picomatch vulnerable to ReDoS through single-branch repeated extglobs",
+    "url": "https://github.com/advisories/GHSA-fc5q-39xc-vjpf",
+    "reason": "picomatch ReDoS in extglobs. Transitive build/routing dependency, unexploitable in CareerMonke client runtime. Awaiting upstream patch."
   }
 ]

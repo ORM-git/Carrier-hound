@@ -1,13 +1,15 @@
 export interface UserPreferences {
   roles: string[];
   categories: string[];
-  experienceLevel: "intern" | "entry" | "mid" | "senior" | "lead";
+  experienceLevel?: "intern" | "entry" | "mid" | "senior" | "lead" | string;
   employmentTypes: string[]; // ['full-time', 'contract', 'internship']
   locations: string[];
   remotePreference: "remote" | "hybrid" | "onsite" | "any";
   workAuth?: string;
+  country?: string;
+  countryCode?: string;
   minSalary?: number;
-  salaryCurrency: string; // 'USD', 'INR', 'EUR', 'GBP'
+  salaryCurrency?: string; // 'USD', 'INR', 'EUR', 'GBP'
   dailyDigestOptIn: boolean;
   onboardingCompleted: boolean;
   eligibilityFilter?: boolean;

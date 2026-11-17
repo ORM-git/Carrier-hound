@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
 import { X, Search, ChevronDown, ChevronUp, Check, Plus } from "lucide-react";
 import { ONBOARDING_CATEGORIES, OnboardingCategory } from "@/data/onboardingCategories";
 
@@ -17,11 +17,60 @@ export default function JobFunctionBottomSheet({
   selectedRoles,
   onToggleRole,
 }: JobFunctionBottomSheetProps) {
+  const modalRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({
     "software-internet-ai": true,
     "human-resource-administrative-legal": false,
   });
+
+  // Focus trap & Escape key listener
+  useEffect(() => {
+    if (!isOpen) return;
+
+    // Auto-focus search input
+    const timer = setTimeout(() => {
+      searchInputRef.current?.focus();
+    }, 50);
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+        return;
+      }
+
+      if (e.key === "Tab") {
+        if (!modalRef.current) return;
+        const focusableElements = modalRef.current.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        );
+        if (focusableElements.length === 0) return;
+
+        const firstElement = focusableElements[0];
+        const lastElement = focusableElements[focusableElements.length - 1];
+
+        if (e.shiftKey) {
+          if (document.activeElement === firstElement) {
+            e.preventDefault();
+            lastElement.focus();
+          }
+        } else {
+          if (document.activeElement === lastElement) {
+            e.preventDefault();
+            firstElement.focus();
+          }
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen, onClose]);
 
   const toggleCategory = (catId: string) => {
     setExpandedCategories((prev) => ({
@@ -79,7 +128,10 @@ export default function JobFunctionBottomSheet({
       />
 
       {/* Bottom sheet on mobile, Modal on desktop */}
-      <div className="relative z-10 w-full sm:max-w-xl max-h-[88vh] sm:max-h-[82vh] flex flex-col bg-white dark:bg-zinc-900 border-t sm:border border-zinc-200 dark:border-zinc-800 rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-5 duration-200">
+      <div
+        ref={modalRef}
+        className="relative z-10 w-full sm:max-w-xl max-h-[88vh] sm:max-h-[82vh] flex flex-col bg-white dark:bg-zinc-900 border-t sm:border border-zinc-200 dark:border-zinc-800 rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-5 duration-200"
+      >
         {/* Handle for mobile pull affordance */}
         <div className="w-12 h-1.5 bg-zinc-300 dark:bg-zinc-700 rounded-full mx-auto mt-3 mb-1 sm:hidden" />
 
@@ -106,6 +158,7 @@ export default function JobFunctionBottomSheet({
           <div className="relative">
             <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
+              ref={searchInputRef}
               type="text"
               aria-label="Search expected job function or role"
               value={searchQuery}
