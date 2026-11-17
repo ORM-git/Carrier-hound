@@ -731,5 +731,51 @@ describe("GET /api/jobs/recommended Handler & Service Integration", () => {
       expect(body.jobs[0].id).toBe("11111111-1111-4111-8111-111111111111");
       expect(body.jobs[0].matchScore).toBeGreaterThan(60);
     });
+
+    it("Handler-level test: job salary 12000 USD period 'year' with minSalary 100000 USD must return empty", async () => {
+      const lowSalaryJob = {
+        id: "low-salary-12k-usd-year",
+        title: "Frontend Developer",
+        company: "Budget Tech",
+        company_id: "co_budget",
+        location: "Remote",
+        category: "engineering",
+        remote: true,
+        is_remote: true,
+        remote_scope: "remote",
+        country_code: "US",
+        job_type: "full-time",
+        verified: true,
+        posted_at: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+        salary_min: 12000,
+        salary_max: 12000,
+        currency: "USD",
+        salary_period: "year",
+        salary_text: "$12,000 / year",
+        apply_url: "https://example.com/apply",
+        description: "Frontend developer role",
+        skills: ["React"],
+        status: "active",
+        is_active: true,
+        logo_url: "https://cdn.example.com/logo-budget.png",
+      };
+
+      state.tables.jobs = [lowSalaryJob];
+      state.tables.jobs_public = [lowSalaryJob];
+
+      const res = await recommendedRoute(
+        req(
+          "http://localhost/api/jobs/recommended?minSalary=100000&salaryCurrency=USD",
+          "tok-user-no-answers"
+        )
+      );
+
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.jobs).toBeDefined();
+      expect(json.jobs.length).toBe(0);
+      expect(json.totalCount).toBe(0);
+    });
   });
 });

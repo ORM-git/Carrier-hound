@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseSalary, formatSalary } from "@/lib/salary/parser";
+import { parseSalary, formatSalary, detectPayPeriod, normalizeSalaryPeriod } from "@/lib/salary/parser";
 import { convertCurrency } from "@/lib/salary/fx";
 
 describe("Salary Parser & Formatter Unit Tests", () => {
@@ -109,5 +109,35 @@ Founded in 2012. We have 1,500 employees worldwide.
     // FX direct conversion check
     expect(convertCurrency(100, "USD", "EUR")).toBeGreaterThan(0);
     expect(convertCurrency(100, "UNKNOWN", "USD")).toBeNull();
+  });
+
+  it("detects and normalizes pay period aliases across year, month, and hour variants", () => {
+    // Yearly aliases
+    const yearlyAliases = ["year", "yearly", "annual", "annum", "yr", "pa", "p.a.", "lpa", "per year", "/yr", "per annum", "annually"];
+    for (const alias of yearlyAliases) {
+      expect(detectPayPeriod(alias)).toBe("yearly");
+      expect(normalizeSalaryPeriod(alias)).toBe("yearly");
+    }
+
+    // Monthly aliases
+    const monthlyAliases = ["month", "monthly", "mo", "pm", "p.m.", "per month", "/mo", "a month"];
+    for (const alias of monthlyAliases) {
+      expect(detectPayPeriod(alias)).toBe("monthly");
+      expect(normalizeSalaryPeriod(alias)).toBe("monthly");
+    }
+
+    // Hourly aliases
+    const hourlyAliases = ["hour", "hourly", "hr", "per hour", "/hr", "an hour"];
+    for (const alias of hourlyAliases) {
+      expect(detectPayPeriod(alias)).toBe("hourly");
+      expect(normalizeSalaryPeriod(alias)).toBe("hourly");
+    }
+
+    // Non-period and empty strings
+    expect(detectPayPeriod("")).toBeNull();
+    expect(detectPayPeriod(null)).toBeNull();
+    expect(detectPayPeriod(undefined)).toBeNull();
+    expect(detectPayPeriod("unspecified")).toBeNull();
+    expect(detectPayPeriod("401(k) matching")).toBeNull();
   });
 });

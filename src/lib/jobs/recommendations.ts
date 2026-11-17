@@ -15,6 +15,8 @@
 
 
 import { isJobEligible } from "./eligibility";
+import { detectPayPeriod, parseSalary } from "../salary/parser";
+import { convertCurrency } from "../salary/fx";
 
 export interface OnboardingAnswers {
   roles?: string[];
@@ -228,7 +230,7 @@ export function scoreJobRecommendation(
   }
 
   // 4. Salary Hard Filter:
-  // If the job explicitly offers maximum compensation below 80% of user minSalary requirement, disqualify
+  // If the job explicitly offers maximum compensation below user minSalary requirement, disqualify
   if (typeof answers.minSalary === "number" && answers.minSalary > 0) {
     const rawMax =
       job.salary_max ??
@@ -238,26 +240,87 @@ export function scoreJobRecommendation(
       job.min_amount ??
       job.salaryMin;
     if (typeof rawMax === "number" && rawMax > 0) {
-      const period = (job.salary_period || job.period || "").toLowerCase();
+      const rawPeriod = (job.salary_period || job.period || (job as any).salaryPeriod || "")
+        .toString()
+        .trim();
+      const normalizedPeriod = rawPeriod ? detectPayPeriod(rawPeriod) : null;
+      const isExplicitPeriod = Boolean(rawPeriod);
+
       let annualMax = rawMax;
-      if (period === "hourly" || (rawMax < 500 && period !== "yearly")) {
+      if (normalizedPeriod === "hourly") {
         annualMax = rawMax * 2080;
-      } else if (period === "monthly" || (rawMax < 25000 && period !== "yearly")) {
+      } else if (normalizedPeriod === "monthly") {
         annualMax = rawMax * 12;
+      } else if (normalizedPeriod === "yearly") {
+        annualMax = rawMax;
+      } else {
+        // Never guess monthly when the period is explicit
+        if (!isExplicitPeriod) {
+          if (rawMax < 500) {
+            annualMax = rawMax * 2080;
+          } else if (rawMax < 25000) {
+            annualMax = rawMax * 12;
+          }
+        }
       }
-      if (annualMax < answers.minSalary * 0.8) {
-        return {
-          job,
-          score: 0,
-          breakdown: {
-            roleScore: 0,
-            locationScore: 0,
-            experienceScore: 0,
-            jobTypeScore: 0,
-            recencyScore: 0,
-          },
-          reasons: ["Salary mismatch: compensation below minimum salary requirement"],
-        };
+
+      // Currency comparison:
+      // Compare user's salaryCurrency with job currency.
+      // Skip the salary filter for a job whose currency can't be compared (don't silently compare across currencies).
+      const userCurrency = (answers.salaryCurrency || "USD").toString().toUpperCase().trim();
+      let jobCurrency = (
+        job.currency ||
+        job.salary_currency ||
+        (job as any).salaryCurrency ||
+        ""
+      ).toString().toUpperCase().trim();
+
+      if (!jobCurrency && typeof job.salary_text === "string" && job.salary_text.trim()) {
+        const parsed = parseSalary(job.salary_text, {
+          location: job.location || undefined,
+          countryCode: job.country_code || undefined,
+          isExplicitSalaryField: true,
+        });
+        if (parsed.currency) {
+          jobCurrency = parsed.currency.toUpperCase().trim();
+        }
+      }
+
+      // If job currency is unknown:
+      // If user specified a non-USD currency, we cannot compare -> skip filter.
+      // If user is USD, default unknown job currency to USD (platform standard).
+      if (!jobCurrency) {
+        if (answers.salaryCurrency && answers.salaryCurrency.toUpperCase().trim() !== "USD") {
+          jobCurrency = "";
+        } else {
+          jobCurrency = "USD";
+        }
+      }
+
+      if (jobCurrency) {
+        let comparableAnnualMax: number | null = null;
+        if (jobCurrency === userCurrency) {
+          comparableAnnualMax = annualMax;
+        } else {
+          comparableAnnualMax = convertCurrency(annualMax, jobCurrency, userCurrency);
+        }
+
+        // If currency can be compared and compensation is strictly below minimum requirement, disqualify
+        // No 80% tolerance: minimum means minimum
+        if (comparableAnnualMax !== null && comparableAnnualMax < answers.minSalary) {
+          return {
+            job,
+            score: 0,
+            breakdown: {
+              roleScore: 0,
+              locationScore: 0,
+              experienceScore: 0,
+              jobTypeScore: 0,
+              recencyScore: 0,
+            },
+            reasons: ["Salary mismatch: compensation below minimum salary requirement"],
+          };
+        }
       }
     }
   }

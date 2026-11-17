@@ -156,6 +156,7 @@ export async function GET(req: Request) {
     const queryLocations = searchParams.get("locations") || searchParams.get("location") || "";
     const queryEmployment = searchParams.get("employmentTypes") || searchParams.get("jobType") || "";
     const queryMinSalary = searchParams.get("minSalary") || searchParams.get("salaryMin") || searchParams.get("salary_min") || "";
+    const querySalaryCurrency = searchParams.get("salaryCurrency") || searchParams.get("salary_currency") || "";
     const queryCountry = searchParams.get("country") || "";
     const queryCountryCode = searchParams.get("countryCode") || searchParams.get("country_code") || "";
 
@@ -167,7 +168,7 @@ export async function GET(req: Request) {
       employmentTypes: queryEmployment ? queryEmployment.split(",").map((s) => s.trim()).filter(Boolean) : (dbAnswers.employmentTypes || []),
       categories: dbAnswers.categories || [],
       minSalary: queryMinSalary ? Number(queryMinSalary) : (dbAnswers.minSalary ?? null),
-      salaryCurrency: dbAnswers.salaryCurrency || "USD",
+      salaryCurrency: querySalaryCurrency || dbAnswers.salaryCurrency || "USD",
       country: queryCountry || dbAnswers.country || null,
       countryCode: queryCountryCode || dbAnswers.countryCode || null,
     };

@@ -474,6 +474,62 @@ describe("Deterministic Recommendation Scoring Engine", () => {
       );
       expect(monthlyLow.score).toBe(0);
 
+      // 6. Explicit period "year" / "annual" / "annum" with low salary is NOT treated as monthly
+      const yearLow = scoreJobRecommendation(
+        { title: "Engineer", remote: true, salary_max: 12000, salary_period: "year", currency: "USD" },
+        { roles: ["Engineer"], minSalary: 100000, salaryCurrency: "USD" }
+      );
+      expect(yearLow.score).toBe(0);
+
+      const annualLow = scoreJobRecommendation(
+        { title: "Engineer", remote: true, salary_max: 12000, salary_period: "annual", currency: "USD" },
+        { roles: ["Engineer"], minSalary: 100000, salaryCurrency: "USD" }
+      );
+      expect(annualLow.score).toBe(0);
+
+      // Monthly with $12,000 * 12 = $144,000 qualifies for $100,000
+      const monthPass = scoreJobRecommendation(
+        { title: "Engineer", remote: true, salary_max: 12000, salary_period: "month", currency: "USD" },
+        { roles: ["Engineer"], minSalary: 100000, salaryCurrency: "USD" }
+      );
+      expect(monthPass.score).toBeGreaterThan(0);
+
+      // 7. Strict minimum without 80% tolerance: $95,000 < $100,000 is disqualified
+      const underTol = scoreJobRecommendation(
+        { title: "Engineer", remote: true, salary_max: 95000, salary_period: "year", currency: "USD" },
+        { roles: ["Engineer"], minSalary: 100000, salaryCurrency: "USD" }
+      );
+      expect(underTol.score).toBe(0);
+
+      // $100,000 qualifies
+      const exactMin = scoreJobRecommendation(
+        { title: "Engineer", remote: true, salary_max: 100000, salary_period: "year", currency: "USD" },
+        { roles: ["Engineer"], minSalary: 100000, salaryCurrency: "USD" }
+      );
+      expect(exactMin.score).toBeGreaterThan(0);
+
+      // 8. Currency comparison & skip when cannot be compared
+      // Unsupported currency skips filter (not disqualified)
+      const unsupportedCurr = scoreJobRecommendation(
+        { title: "Engineer", remote: true, salary_max: 12000, currency: "XYZ", salary_period: "year" },
+        { roles: ["Engineer"], minSalary: 100000, salaryCurrency: "USD" }
+      );
+      expect(unsupportedCurr.score).toBeGreaterThan(0);
+
+      // EUR converted to USD (95,000 EUR / 0.92 = ~103k USD >= 100k USD)
+      const eurPass = scoreJobRecommendation(
+        { title: "Engineer", remote: true, salary_max: 95000, currency: "EUR", salary_period: "year" },
+        { roles: ["Engineer"], minSalary: 100000, salaryCurrency: "USD" }
+      );
+      expect(eurPass.score).toBeGreaterThan(0);
+
+      // EUR converted to USD (80,000 EUR / 0.92 = ~87k USD < 100k USD -> disqualified)
+      const eurFail = scoreJobRecommendation(
+        { title: "Engineer", remote: true, salary_max: 80000, currency: "EUR", salary_period: "year" },
+        { roles: ["Engineer"], minSalary: 100000, salaryCurrency: "USD" }
+      );
+      expect(eurFail.score).toBe(0);
+
       const fullTimeFallback = scoreJobRecommendation(
         { title: "Engineer", remote: true, job_type: "job" },
         { employmentTypes: ["full-time"] }
